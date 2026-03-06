@@ -132,20 +132,44 @@ function MetricCard({ label, value, suffix = "", positive, isMobile }) {
 
 // ─── PROGRESS BAR ───────────────────────────────────────────────────────────
 
-function ProgressBar({ progress, status }) {
+function ProgressBar({ progress, status, startedAt }) {
+  const isReplaying = status === "REPLAYING";
+  const elapsed = startedAt ? Math.floor((Date.now() / 1000) - startedAt) : 0;
+  const elapsedStr = elapsed > 0 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : "";
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!isReplaying) return;
+    const iv = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(iv);
+  }, [isReplaying]);
+
+  const displayLabel = isReplaying ? "REPLAYING — engines running..." : status;
+  const displayProgress = isReplaying ? `${elapsedStr}` : `${progress.toFixed(0)}%`;
+
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontSize: 10, color: T.text3, fontFamily: T.mono }}>{status}</span>
-        <span style={{ fontSize: 10, color: T.accent, fontFamily: T.mono }}>{progress.toFixed(0)}%</span>
+        <span style={{ fontSize: 10, color: T.text3, fontFamily: T.mono }}>{displayLabel}</span>
+        <span style={{ fontSize: 10, color: T.accent, fontFamily: T.mono }}>{displayProgress}</span>
       </div>
       <div style={{ height: 4, background: "rgba(255,255,255,0.04)", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{
-          width: `${progress}%`, height: "100%",
-          background: `linear-gradient(90deg, ${T.accent}, ${T.accent}cc)`,
-          borderRadius: 2, transition: "width 0.5s ease",
-        }} />
+        {isReplaying ? (
+          <div style={{
+            width: "30%", height: "100%",
+            background: `linear-gradient(90deg, transparent, ${T.accent}, transparent)`,
+            borderRadius: 2,
+            animation: "replayPulse 1.5s ease-in-out infinite",
+          }} />
+        ) : (
+          <div style={{
+            width: `${progress}%`, height: "100%",
+            background: `linear-gradient(90deg, ${T.accent}, ${T.accent}cc)`,
+            borderRadius: 2, transition: "width 0.5s ease",
+          }} />
+        )}
       </div>
+      <style>{`@keyframes replayPulse { 0%,100% { opacity: 0.3; transform: translateX(0); } 50% { opacity: 1; transform: translateX(230%); } }`}</style>
     </div>
   );
 }
@@ -168,26 +192,35 @@ export default function BacktestPanel({ isMobile }) {
   const [showTrades, setShowTrades] = useState(false);
   const pollRef = useRef(null);
 
-  // Poll for results
+  // Poll for results (silently retry on network errors during replay)
+  const pollFailCount = useRef(0);
   const poll = useCallback(async (id) => {
     try {
-      const resp = await fetch(`${API}/api/backtest/${id}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const resp = await fetch(`${API}/api/backtest/${id}`, { signal: controller.signal });
+      clearTimeout(timeout);
       if (!resp.ok) throw new Error("Poll failed");
       const data = await resp.json();
       setResult(data);
+      pollFailCount.current = 0;
       if (data.status === "complete" || data.status === "error") {
         setPolling(false);
         if (data.error) setError(data.error);
       }
     } catch (e) {
-      setError(e.message);
-      setPolling(false);
+      // Server may be temporarily busy — silently retry (backtests can take 15+ min)
+      pollFailCount.current += 1;
+      if (pollFailCount.current > 200) {
+        setError("Server unresponsive");
+        setPolling(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     if (polling && btId) {
-      pollRef.current = setInterval(() => poll(btId), 2000);
+      pollRef.current = setInterval(() => poll(btId), 3000);
       return () => clearInterval(pollRef.current);
     }
   }, [polling, btId, poll]);
@@ -268,7 +301,7 @@ export default function BacktestPanel({ isMobile }) {
           background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius,
           padding: 20, marginBottom: 16,
         }}>
-          <ProgressBar progress={result.progress || 0} status={result.status?.toUpperCase() || "STARTING"} />
+          <ProgressBar progress={result.progress || 0} status={result.status?.toUpperCase() || "STARTING"} startedAt={result.started_at} />
           {result.symbols_loaded > 0 && (
             <div style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, marginTop: 8 }}>
               {result.symbols_loaded} symbols loaded | {result.bar_count || 0} bars processed

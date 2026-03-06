@@ -31,8 +31,8 @@ from data_fetcher import _parse_ohlcv, _create_exchange
 # ---------------------------------------------------------------------------
 
 _MAX_CANDLES_PER_REQUEST = 1000  # Binance limit
-_MAX_CONCURRENT_FETCHES = 5
-_INTER_REQUEST_DELAY_S = 0.15
+_MAX_CONCURRENT_FETCHES = 3     # Lower than live scanner to avoid rate limits
+_INTER_REQUEST_DELAY_S = 0.25   # Slightly longer delay for reliability
 _FALLBACK_EXCHANGES = ["binance", "bybit"]
 
 # Timeframe durations in milliseconds

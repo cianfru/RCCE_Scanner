@@ -82,9 +82,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_backtest_running = False  # Flag to pause scans during backtest
+
+
 async def _periodic_scan():
-    """Run scans every 5 minutes."""
+    """Run scans every 5 minutes. Pauses while a backtest is fetching data."""
     while True:
+        if _backtest_running:
+            logger.info("Scan deferred — backtest in progress")
+            await asyncio.sleep(30)
+            continue
         try:
             logger.info("Starting scheduled scan...")
             await run_scan(cache)
@@ -285,7 +292,7 @@ async def confluence_for_symbol(symbol: str):
 @app.post("/api/backtest")
 async def start_backtest(body: BacktestRequest):
     """Launch a backtest in the background. Returns backtest ID for polling."""
-    from backtest.runner import run_backtest, BacktestConfig, DEFAULT_BACKTEST_SYMBOLS
+    from backtest.runner import run_backtest, get_backtest, BacktestConfig, DEFAULT_BACKTEST_SYMBOLS
 
     config = BacktestConfig(
         symbols=body.symbols if body.symbols else DEFAULT_BACKTEST_SYMBOLS.copy(),
@@ -295,7 +302,31 @@ async def start_backtest(body: BacktestRequest):
         use_confluence=body.use_confluence,
         use_fear_greed=body.use_fear_greed,
     )
+
+    # Pause live scanner during backtest to avoid event loop contention
+    global _backtest_running
+    _backtest_running = True
+
+    # Wait for any in-progress scan to finish before starting
+    wait_count = 0
+    while cache.is_scanning and wait_count < 300:
+        await asyncio.sleep(1)
+        wait_count += 1
+
     bt_id = await run_backtest(config)
+
+    # Monitor and re-enable scanner when backtest finishes
+    async def _wait_for_completion():
+        global _backtest_running
+        while True:
+            await asyncio.sleep(5)
+            result = get_backtest(bt_id)
+            if result is None or result.status in ("complete", "error"):
+                _backtest_running = False
+                logger.info("Backtest %s finished, resuming live scanner", bt_id)
+                break
+
+    asyncio.create_task(_wait_for_completion())
     return {"id": bt_id, "status": "started"}
 
 

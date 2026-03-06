@@ -10,6 +10,7 @@ identical results to the live scanner by construction.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -93,7 +94,7 @@ def _find_daily_index(ohlcv_1d: dict, timestamp_ms: float) -> int:
 # Main replay function
 # ---------------------------------------------------------------------------
 
-def run_replay(
+async def run_replay(
     symbols: List[str],
     ohlcv_4h: Dict[str, dict],
     ohlcv_1d: Dict[str, dict],
@@ -160,6 +161,11 @@ def run_replay(
         ref_sym = btc_sym if btc_sym in ohlcv_4h else valid_symbols[0]
         current_ts = ohlcv_4h[ref_sym]["timestamp"][bar_idx]
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+        # Yield to event loop every 5 bars to keep server responsive
+        # (~500ms between yields — fast enough for HTTP polls)
+        if bar_idx % 5 == 0:
+            await asyncio.sleep(0)
 
         if on_progress and bar_idx % 50 == 0:
             on_progress(progress, f"Bar {bar_idx - warmup_bars}/{total_replay_bars} ({current_date})")

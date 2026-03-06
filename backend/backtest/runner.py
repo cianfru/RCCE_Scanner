@@ -146,11 +146,17 @@ async def _run_backtest_task(
         result.status = "fetching"
         result.progress = 5.0
 
-        # Fetch 3 timeframes in parallel
-        ohlcv_4h, ohlcv_1d, ohlcv_1w = await asyncio.gather(
-            fetch_historical_batch(symbols, "4h", config.start_date, config.end_date, warmup_bars=WARMUP_BARS),
-            fetch_historical_batch(symbols, "1d", config.start_date, config.end_date, warmup_bars=60),
-            fetch_historical_batch(symbols, "1w", config.start_date, config.end_date, warmup_bars=15),
+        # Fetch 3 timeframes sequentially to avoid exchange rate limits
+        ohlcv_4h = await fetch_historical_batch(
+            symbols, "4h", config.start_date, config.end_date, warmup_bars=WARMUP_BARS,
+        )
+        result.progress = 10.0
+        ohlcv_1d = await fetch_historical_batch(
+            symbols, "1d", config.start_date, config.end_date, warmup_bars=60,
+        )
+        result.progress = 18.0
+        ohlcv_1w = await fetch_historical_batch(
+            symbols, "1w", config.start_date, config.end_date, warmup_bars=15,
         )
 
         result.symbols_loaded = len(ohlcv_4h)
@@ -172,16 +178,15 @@ async def _run_backtest_task(
 
         result.progress = 30.0
 
-        # --- Phase B: Run replay engine ---
+        # --- Phase B: Run replay engine (async, yields to event loop per bar) ---
         result.status = "replaying"
-
         valid_symbols = [s for s in symbols if s in ohlcv_4h]
 
         def on_progress(pct: float, msg: str):
             # Map replay progress (0-100) to result progress (30-80)
             result.progress = 30.0 + pct * 0.5
 
-        bar_results = run_replay(
+        bar_results = await run_replay(
             symbols=valid_symbols,
             ohlcv_4h=ohlcv_4h,
             ohlcv_1d=ohlcv_1d,
@@ -207,11 +212,20 @@ async def _run_backtest_task(
         btc_initial_price = None
         btc_equity: List[Tuple[float, float]] = []
 
+        # Build BTC price series from raw OHLCV (more reliable than bar results)
+        btc_4h = ohlcv_4h.get(btc_sym)
+        btc_price_lookup: Dict[float, float] = {}
+        if btc_4h is not None:
+            for i in range(len(btc_4h["timestamp"])):
+                btc_price_lookup[btc_4h["timestamp"][i]] = btc_4h["close"][i]
+
         # Group bars by timestamp for mark-to-market
         bars_by_ts: Dict[float, List[BarResult]] = {}
         for b in bar_results:
             bars_by_ts.setdefault(b.timestamp, []).append(b)
 
+        bar_count = 0
+        total_bars = len(bars_by_ts)
         for ts in sorted(bars_by_ts.keys()):
             bars = bars_by_ts[ts]
 
@@ -223,13 +237,18 @@ async def _run_backtest_task(
             prices = {b.symbol: b.price for b in bars}
             pm.mark_to_market(ts, prices)
 
-            # BTC benchmark
-            btc_price = prices.get(btc_sym)
+            # BTC benchmark (from raw OHLCV data, or from bar results)
+            btc_price = btc_price_lookup.get(ts) or prices.get(btc_sym)
             if btc_price:
                 if btc_initial_price is None:
                     btc_initial_price = btc_price
                 btc_eq = config.initial_capital * (btc_price / btc_initial_price)
                 btc_equity.append((ts, btc_eq))
+
+            bar_count += 1
+            if bar_count % 100 == 0:
+                result.progress = 80.0 + (bar_count / total_bars) * 10.0
+                await asyncio.sleep(0)
 
         # Close remaining positions
         if bar_results:
