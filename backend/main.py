@@ -24,6 +24,7 @@ from models import (
     StablecoinResponse,
     ConfluenceResponse,
     PositioningResponse,
+    BacktestRequest,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -81,9 +82,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_backtest_running = False  # Flag to pause scans during backtest
+
+
 async def _periodic_scan():
-    """Run scans every 5 minutes."""
+    """Run scans every 5 minutes. Pauses while a backtest is fetching data."""
     while True:
+        if _backtest_running:
+            logger.info("Scan deferred — backtest in progress")
+            await asyncio.sleep(30)
+            continue
         try:
             logger.info("Starting scheduled scan...")
             await run_scan(cache)
@@ -275,6 +283,178 @@ async def confluence_for_symbol(symbol: str):
     if c is None:
         return ConfluenceResponse()
     return ConfluenceResponse(**c)
+
+
+# ---------------------------------------------------------------------------
+# Backtest endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/backtest")
+async def start_backtest(body: BacktestRequest):
+    """Launch a backtest in the background. Returns backtest ID for polling."""
+    from backtest.runner import run_backtest, get_backtest, BacktestConfig, DEFAULT_BACKTEST_SYMBOLS
+
+    config = BacktestConfig(
+        symbols=body.symbols if body.symbols else DEFAULT_BACKTEST_SYMBOLS.copy(),
+        start_date=body.start_date,
+        end_date=body.end_date,
+        initial_capital=body.initial_capital,
+        use_confluence=body.use_confluence,
+        use_fear_greed=body.use_fear_greed,
+        timeframe=body.timeframe,
+        leverage=body.leverage,
+    )
+
+    # Pause live scanner during backtest to avoid event loop contention
+    global _backtest_running
+    _backtest_running = True
+
+    # Wait for any in-progress scan to finish before starting
+    wait_count = 0
+    while cache.is_scanning and wait_count < 300:
+        await asyncio.sleep(1)
+        wait_count += 1
+
+    bt_id = await run_backtest(config)
+
+    # Monitor and re-enable scanner when backtest finishes
+    async def _wait_for_completion():
+        global _backtest_running
+        while True:
+            await asyncio.sleep(5)
+            result = get_backtest(bt_id)
+            if result is None or result.status in ("complete", "error"):
+                _backtest_running = False
+                logger.info("Backtest %s finished, resuming live scanner", bt_id)
+                break
+
+    asyncio.create_task(_wait_for_completion())
+    return {"id": bt_id, "status": "started"}
+
+
+@app.get("/api/backtest/{bt_id}")
+async def get_backtest_status(bt_id: str):
+    """Get backtest status and results."""
+    from backtest.runner import get_backtest
+    from dataclasses import asdict
+
+    result = get_backtest(bt_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+
+    # Build response
+    resp = {
+        "id": result.id,
+        "status": result.status,
+        "progress": result.progress,
+        "error": result.error,
+        "started_at": result.started_at,
+        "completed_at": result.completed_at,
+        "bar_count": result.bar_count,
+        "symbols_loaded": result.symbols_loaded,
+        "signal_distribution": result.signal_distribution,
+    }
+
+    if result.config:
+        resp["config"] = {
+            "symbols": result.config.symbols,
+            "start_date": result.config.start_date,
+            "end_date": result.config.end_date,
+            "initial_capital": result.config.initial_capital,
+        }
+
+    if result.status == "complete" and result.metrics:
+        m = result.metrics
+        resp["metrics"] = {
+            "total_return_pct": round(m.total_return_pct, 2),
+            "btc_return_pct": round(m.btc_return_pct, 2),
+            "alpha_pct": round(m.alpha_pct, 2),
+            "annualized_return_pct": round(m.annualized_return_pct, 2),
+            "max_drawdown_pct": round(m.max_drawdown_pct, 2),
+            "sharpe_ratio": round(m.sharpe_ratio, 3),
+            "sortino_ratio": round(m.sortino_ratio, 3),
+            "calmar_ratio": round(m.calmar_ratio, 3),
+            "win_rate": round(m.win_rate, 1),
+            "profit_factor": round(m.profit_factor, 2) if m.profit_factor != float("inf") else 999.0,
+            "total_trades": m.total_trades,
+            "avg_bars_held": round(m.avg_bars_held, 1),
+            "avg_trade_return_pct": round(m.avg_trade_return_pct, 2),
+            "best_trade_pct": round(m.best_trade_pct, 2),
+            "worst_trade_pct": round(m.worst_trade_pct, 2),
+            "avg_win_pct": round(m.avg_win_pct, 2),
+            "avg_loss_pct": round(m.avg_loss_pct, 2),
+        }
+
+        # Signal stats
+        resp["signal_stats"] = {
+            sig: {
+                "count": s.count,
+                "wins": s.wins,
+                "losses": s.losses,
+                "win_rate": round(s.win_rate, 1),
+                "avg_return_pct": round(s.avg_return_pct, 2),
+                "avg_bars_held": round(s.avg_bars_held, 1),
+                "total_pnl_pct": round(s.total_pnl_pct, 2),
+            }
+            for sig, s in m.signal_stats.items()
+        }
+
+        # Condition analysis
+        resp["condition_analysis"] = [
+            {
+                "name": ca.condition_name,
+                "times_true": ca.times_true,
+                "times_false": ca.times_false,
+                "avg_return_true": ca.avg_return_when_true,
+                "avg_return_false": ca.avg_return_when_false,
+                "predictive_value": ca.predictive_value,
+            }
+            for ca in result.condition_analysis
+        ]
+
+        # Trades (limited to last 200 for payload size)
+        resp["trades"] = [
+            {
+                "symbol": t.symbol,
+                "entry_signal": t.entry_signal,
+                "exit_signal": t.exit_signal,
+                "entry_price": round(t.entry_price, 4),
+                "exit_price": round(t.exit_price, 4) if t.exit_price else None,
+                "entry_time": t.entry_time,
+                "exit_time": t.exit_time,
+                "pnl_pct": round(t.pnl_pct, 2) if t.pnl_pct is not None else None,
+                "pnl_usd": round(t.pnl_usd, 2) if t.pnl_usd is not None else None,
+                "bars_held": t.bars_held,
+                "size_pct": round(t.size_pct * 100, 0),
+                "confluence": t.confluence_at_entry,
+            }
+            for t in result.trades[-200:]
+        ]
+
+        # Equity curves (sample to max ~500 points for chart)
+        resp["equity_curve"] = _sample_curve(result.equity_curve, 500)
+        resp["btc_equity_curve"] = _sample_curve(result.btc_equity_curve, 500)
+
+    return resp
+
+
+@app.get("/api/backtests")
+async def list_all_backtests():
+    """List all backtests (running + completed)."""
+    from backtest.runner import list_backtests
+    return {"backtests": list_backtests()}
+
+
+def _sample_curve(curve: list, max_points: int) -> list:
+    """Downsample an equity curve to max_points for JSON payload."""
+    if len(curve) <= max_points:
+        return [[ts, round(eq, 2)] for ts, eq in curve]
+    step = max(1, len(curve) // max_points)
+    sampled = curve[::step]
+    # Always include the last point
+    if sampled[-1] != curve[-1]:
+        sampled.append(curve[-1])
+    return [[ts, round(eq, 2)] for ts, eq in sampled]
 
 
 @app.get("/health")

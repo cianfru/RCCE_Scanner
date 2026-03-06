@@ -6,6 +6,7 @@ import FearGreedGauge from "./components/FearGreedGauge.jsx";
 import StablecoinWidget from "./components/StablecoinWidget.jsx";
 import PositioningPanel from "./components/PositioningPanel.jsx";
 import ConfluencePanel from "./components/ConfluencePanel.jsx";
+import BacktestPanel from "./components/BacktestPanel.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -737,8 +738,8 @@ export default function App() {
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["backtest", "BACKTEST"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["backtest", "BACKTEST"]];
 
   const TableHeader = ({ onSort, currentSort }) => (
     <thead>
@@ -1011,19 +1012,19 @@ export default function App() {
       {/* ── MAIN CONTENT ── */}
       <div style={{ padding: `${isMobile ? 16 : 20}px ${hPad}px`, paddingBottom: isMobile ? 80 : 60 }}>
 
-        {/* Summary + Stats */}
-        {(data4h.length > 0 || data1d.length > 0) && (
+        {/* Summary + Stats (hidden on backtest tab) */}
+        {activeTab !== "backtest" && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>
             <SummaryBar results={activeTab === "1d" ? sorted1d : sorted4h} />
             <StatCards results={activeTab === "1d" ? sorted1d : sorted4h} isMobile={isMobile} isTablet={isTablet} />
           </FadeIn>
         )}
 
-        {/* Consensus + Market Context */}
-        <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />
+        {/* Consensus + Market Context (hidden on backtest tab) */}
+        {activeTab !== "backtest" && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />}
 
         {/* ── MARKET CONTEXT WIDGETS (BTC.D, Alt Season, Fear & Greed, Stablecoins) ── */}
-        {(globalMetrics?.btc_dominance > 0 || altSeason || sentiment || stablecoin) && (
+        {activeTab !== "backtest" && (globalMetrics?.btc_dominance > 0 || altSeason || sentiment || stablecoin) && (
           <FadeIn delay={380}>
             <div style={{
               display: "flex", gap: isMobile ? 8 : 10,
@@ -1116,7 +1117,7 @@ export default function App() {
         )}
 
         {/* Notable Signals */}
-        {(notable4h.length > 0 || notable1d.length > 0) && (
+        {activeTab !== "backtest" && (notable4h.length > 0 || notable1d.length > 0) && (
           <FadeIn delay={420}>
             <GlassCard
               className="notable-scroll"
@@ -1171,30 +1172,39 @@ export default function App() {
         )}
 
         {/* Tables */}
-        <div style={{
-          display: "flex",
-          flexDirection: isDesktop ? "row" : "column",
-          gap: isDesktop ? 20 : 16,
-          marginTop: isMobile ? 16 : 20,
-        }}>
-          {(activeTab === "4h" || activeTab === "split") && (
-            <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-              <DataTable results={sorted4h} label={activeTab === "split" ? "4H TIMEFRAME" : null} />
-            </FadeIn>
-          )}
-          {activeTab === "split" && (
-            <div style={{
-              width: isDesktop ? 1 : "100%",
-              height: isDesktop ? undefined : 1,
-              background: T.border, flexShrink: 0,
-            }} />
-          )}
-          {(activeTab === "1d" || activeTab === "split") && (
-            <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
-              <DataTable results={sorted1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null} />
-            </FadeIn>
-          )}
-        </div>
+        {activeTab !== "backtest" && (
+          <div style={{
+            display: "flex",
+            flexDirection: isDesktop ? "row" : "column",
+            gap: isDesktop ? 20 : 16,
+            marginTop: isMobile ? 16 : 20,
+          }}>
+            {(activeTab === "4h" || activeTab === "split") && (
+              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
+                <DataTable results={sorted4h} label={activeTab === "split" ? "4H TIMEFRAME" : null} />
+              </FadeIn>
+            )}
+            {activeTab === "split" && (
+              <div style={{
+                width: isDesktop ? 1 : "100%",
+                height: isDesktop ? undefined : 1,
+                background: T.border, flexShrink: 0,
+              }} />
+            )}
+            {(activeTab === "1d" || activeTab === "split") && (
+              <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
+                <DataTable results={sorted1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null} />
+              </FadeIn>
+            )}
+          </div>
+        )}
+
+        {/* Backtest Panel */}
+        {activeTab === "backtest" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <BacktestPanel isMobile={isMobile} />
+          </FadeIn>
+        )}
       </div>
 
       {/* ── WATCHLIST MODAL ── */}
