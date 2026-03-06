@@ -12,6 +12,9 @@ class ScanResult(BaseModel):
     regime: str
     confidence: float
     signal: str
+    raw_signal: str = "WAIT"
+    signal_reason: str = ""
+    signal_warnings: List[str] = []
     zscore: float
     energy: float
     vol_state: str
@@ -25,6 +28,8 @@ class ScanResult(BaseModel):
     deviation_pct: float = 0.0
     exhaustion_state: str = "NEUTRAL"
     floor_confirmed: bool = False
+    is_absorption: bool = False
+    is_climax: bool = False
     effort: float = 0.0
     rel_vol: float = 0.0
 
@@ -42,6 +47,15 @@ class ConsensusResponse(BaseModel):
     timeframe: str
 
 
+class GlobalMetricsResponse(BaseModel):
+    btc_dominance: float = 0.0
+    eth_dominance: float = 0.0
+    total_market_cap: float = 0.0
+    alt_market_cap: float = 0.0
+    btc_market_cap: float = 0.0
+    timestamp: float = 0.0
+
+
 class StatusResponse(BaseModel):
     is_scanning: bool
     last_scan_time: Optional[float] = None
@@ -55,3 +69,13 @@ class WatchlistResponse(BaseModel):
 
 class WatchlistUpdate(BaseModel):
     symbols: List[str]
+
+
+class WatchlistAddRequest(BaseModel):
+    symbol: str
+
+
+class SymbolSearchResult(BaseModel):
+    symbol: str
+    base: str
+    quote: str

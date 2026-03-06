@@ -216,19 +216,58 @@ function RegimeBadge({ regime }) {
   );
 }
 
-function SignalDot({ signal }) {
+function SignalDot({ signal, reason, warnings, isMobile }) {
   const m = SIGNAL_META[signal] || SIGNAL_META.WAIT;
+  const [showTip, setShowTip] = useState(false);
+  const hasInfo = reason || (warnings && warnings.length > 0);
+
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      color: m.color, fontFamily: T.mono, fontSize: 10, whiteSpace: "nowrap",
-      fontWeight: 500,
-    }}>
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        color: m.color, fontFamily: T.mono, fontSize: 10, whiteSpace: "nowrap",
+        fontWeight: 500, position: "relative", cursor: hasInfo ? "help" : "default",
+      }}
+      onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
+      onMouseLeave={() => setShowTip(false)}
+      onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
+    >
       <span style={{
         fontSize: 8,
         filter: signal !== "WAIT" ? `drop-shadow(0 0 3px ${m.color})` : "none",
       }}>{m.dot}</span>
       {m.label}
+      {warnings && warnings.length > 0 && (
+        <span style={{ fontSize: 7, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
+      )}
+      {showTip && hasInfo && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: 0,
+          background: "rgba(0,0,0,0.95)", border: `1px solid ${T.borderH}`,
+          borderRadius: T.radiusSm, padding: "10px 12px",
+          minWidth: 220, maxWidth: 300, zIndex: 300,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+        }}
+          onClick={e => e.stopPropagation()}
+        >
+          {reason && (
+            <div style={{ fontSize: 9, color: T.text2, fontFamily: T.mono, lineHeight: 1.5, marginBottom: warnings?.length ? 8 : 0 }}>
+              {reason}
+            </div>
+          )}
+          {warnings && warnings.length > 0 && (
+            <div style={{ borderTop: reason ? `1px solid ${T.border}` : "none", paddingTop: reason ? 6 : 0 }}>
+              {warnings.map((w, i) => (
+                <div key={i} style={{ fontSize: 8, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.5, display: "flex", gap: 4, alignItems: "flex-start" }}>
+                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </span>
   );
 }
@@ -317,7 +356,7 @@ function CellContent({ colLabel, row, isMobile }) {
     case "REGIME":
       return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} /></td>;
     case "SIGNAL":
-      return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} /></td>;
+      return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
     case "Z-SCORE":
       return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
     case "ENERGY":
@@ -560,6 +599,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("4h");
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // Global metrics & alt season
+  const [globalMetrics, setGlobalMetrics] = useState(null);
+  const [altSeason, setAltSeason] = useState(null);
+
+  // Watchlist modal
+  const [showWatchlist, setShowWatchlist] = useState(false);
+  const [watchlistSymbols, setWatchlistSymbols] = useState([]);
+  const [watchlistSearch, setWatchlistSearch] = useState("");
+  const [watchlistResults, setWatchlistResults] = useState([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+
   // Force off split view on mobile
   useEffect(() => {
     if (isMobile && activeTab === "split") setActiveTab("4h");
@@ -586,12 +636,22 @@ export default function App() {
       setScanRunning(r4h.scan_running);
       setCacheAge(r4h.cache_age_seconds);
       setLastRefresh(new Date());
+
+      // Fetch global metrics & alt season (non-blocking)
+      try {
+        const [gm, as] = await Promise.all([
+          fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()),
+          fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()),
+        ]);
+        setGlobalMetrics(gm);
+        setAltSeason(as);
+      } catch (_) { /* metrics are optional */ }
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [fetchData]);
+  }, [fetchData, activeTab]);
 
   useEffect(() => {
     loadAll();
@@ -604,6 +664,69 @@ export default function App() {
     setScanRunning(true);
     setTimeout(loadAll, 3000);
   };
+
+  // Watchlist management
+  const loadWatchlist = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlist`);
+      const data = await res.json();
+      setWatchlistSymbols(data.symbols || []);
+    } catch (_) {}
+  }, []);
+
+  const searchSymbols = useCallback(async (q) => {
+    if (!q || q.length < 1) { setWatchlistResults([]); return; }
+    setWatchlistLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlist/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      setWatchlistResults(data.results || []);
+    } catch (_) {
+      setWatchlistResults([]);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, []);
+
+  const addSymbol = async (symbol) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlist/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      if (res.ok) {
+        await loadWatchlist();
+        setWatchlistSearch("");
+        setWatchlistResults([]);
+      }
+    } catch (_) {}
+  };
+
+  const removeSymbol = async (symbol) => {
+    try {
+      await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+      await loadWatchlist();
+    } catch (_) {}
+  };
+
+  const resetWatchlist = async () => {
+    try {
+      await fetch(`${API_BASE}/api/watchlist/reset`, { method: "POST" });
+      await loadWatchlist();
+    } catch (_) {}
+  };
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => searchSymbols(watchlistSearch), 300);
+    return () => clearTimeout(timer);
+  }, [watchlistSearch, searchSymbols]);
+
+  // Load watchlist when modal opens
+  useEffect(() => {
+    if (showWatchlist) loadWatchlist();
+  }, [showWatchlist, loadWatchlist]);
 
   const sortResults = (results) => {
     return [...results].sort((a, b) => {
@@ -834,6 +957,27 @@ export default function App() {
 
         {!isMobile && <div style={{ width: 1, height: 18, background: T.border }} />}
 
+        {/* Manage Watchlist */}
+        <button
+          onClick={() => setShowWatchlist(true)}
+          style={{
+            padding: isMobile ? "8px 14px" : "5px 14px",
+            background: T.surface,
+            border: `1px solid ${T.border}`, borderRadius: "20px",
+            color: T.text3, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+            cursor: "pointer", letterSpacing: "0.04em",
+            transition: "all 0.25s ease",
+            display: "flex", alignItems: "center", gap: 6,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent + "40"; e.currentTarget.style.color = T.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text3; }}
+        >
+          <span style={{ fontSize: 12 }}>{"\u2699"}</span>
+          {!isMobile && "Watchlist"}
+        </button>
+
+        {!isMobile && <div style={{ width: 1, height: 18, background: T.border }} />}
+
         {/* Filters */}
         {[
           { value: filterRegime, onChange: e => setFilterRegime(e.target.value), all: "All Regimes", options: Object.keys(REGIME_META) },
@@ -892,8 +1036,74 @@ export default function App() {
           </FadeIn>
         )}
 
-        {/* Consensus */}
+        {/* Consensus + Market Context */}
         <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />
+
+        {/* BTC Dominance & Alt Season */}
+        {(globalMetrics?.btc_dominance > 0 || altSeason) && (
+          <FadeIn delay={380}>
+            <div style={{
+              display: "flex", gap: isMobile ? 8 : 10,
+              marginTop: isMobile ? 10 : 12,
+              flexWrap: "wrap",
+            }}>
+              {globalMetrics?.btc_dominance > 0 && (
+                <GlassCard style={{
+                  padding: isMobile ? "8px 14px" : "10px 16px",
+                  display: "flex", alignItems: "center", gap: 10,
+                  flex: isMobile ? "1 1 auto" : undefined,
+                }}>
+                  <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
+                    BTC.D
+                  </span>
+                  <span style={{
+                    fontFamily: T.mono, fontSize: 13, fontWeight: 700,
+                    color: globalMetrics.btc_dominance > 55 ? "#fbbf24" : globalMetrics.btc_dominance > 45 ? T.text1 : "#34d399",
+                  }}>
+                    {globalMetrics.btc_dominance.toFixed(1)}%
+                  </span>
+                  {globalMetrics.eth_dominance > 0 && (
+                    <>
+                      <div style={{ width: 1, height: 14, background: T.border }} />
+                      <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
+                      <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text2 }}>
+                        {globalMetrics.eth_dominance.toFixed(1)}%
+                      </span>
+                    </>
+                  )}
+                </GlassCard>
+              )}
+              {altSeason && (
+                <GlassCard style={{
+                  padding: isMobile ? "8px 14px" : "10px 16px",
+                  display: "flex", alignItems: "center", gap: 10,
+                  flex: isMobile ? "1 1 auto" : undefined,
+                  border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
+                }}>
+                  <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
+                    Alt Season
+                  </span>
+                  <span style={{
+                    padding: "2px 10px", borderRadius: "20px",
+                    background: altSeason.label === "HOT" ? "rgba(248,113,113,0.1)" :
+                               altSeason.label === "ACTIVE" ? "rgba(52,211,153,0.1)" :
+                               altSeason.label === "NEUTRAL" ? "rgba(251,191,36,0.1)" : "rgba(82,82,91,0.1)",
+                    color: altSeason.label === "HOT" ? "#f87171" :
+                           altSeason.label === "ACTIVE" ? "#34d399" :
+                           altSeason.label === "NEUTRAL" ? "#fbbf24" :
+                           altSeason.label === "WEAK" ? "#fb923c" : T.text4,
+                    fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+                  }}>
+                    {altSeason.label}
+                  </span>
+                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text3, fontWeight: 500 }}>
+                    {altSeason.score?.toFixed(0)}
+                  </span>
+                </GlassCard>
+              )}
+            </div>
+          </FadeIn>
+        )}
 
         {/* Notable Signals */}
         {(notable4h.length > 0 || notable1d.length > 0) && (
@@ -977,6 +1187,191 @@ export default function App() {
         </div>
       </div>
 
+      {/* ── WATCHLIST MODAL ── */}
+      {showWatchlist && (
+        <>
+          <div
+            onClick={() => setShowWatchlist(false)}
+            style={{
+              position: "fixed", inset: 0, zIndex: 299,
+              background: "rgba(0,0,0,0.6)",
+            }}
+          />
+          <div style={{
+            position: "fixed",
+            top: isMobile ? "5%" : "50%",
+            left: isMobile ? "3%" : "50%",
+            transform: isMobile ? "none" : "translate(-50%, -50%)",
+            width: isMobile ? "94%" : 480,
+            maxHeight: isMobile ? "90vh" : "80vh",
+            background: "rgba(0,0,0,0.95)",
+            backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+            border: `1px solid ${T.borderH}`,
+            borderRadius: T.radius,
+            zIndex: 300,
+            display: "flex", flexDirection: "column",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: "18px 20px", borderBottom: `1px solid ${T.border}`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.01em" }}>
+                  Manage Watchlist
+                </div>
+                <div style={{ fontSize: 10, color: T.text4, fontFamily: T.mono, marginTop: 3 }}>
+                  {watchlistSymbols.length} symbols tracked
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWatchlist(false)}
+                style={{
+                  background: T.surface, border: `1px solid ${T.border}`,
+                  borderRadius: "50%", width: 28, height: 28,
+                  color: T.text3, cursor: "pointer", fontSize: 12,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >{"\u2715"}</button>
+            </div>
+
+            {/* Search */}
+            <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  placeholder="Search symbols (e.g. DOGE, SUI)..."
+                  value={watchlistSearch}
+                  onChange={e => setWatchlistSearch(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px 14px", paddingLeft: 36,
+                    background: T.surface, border: `1px solid ${T.border}`,
+                    borderRadius: T.radiusSm, color: T.text1,
+                    fontFamily: T.mono, fontSize: 12, outline: "none",
+                    transition: "border-color 0.2s",
+                  }}
+                  onFocus={e => e.target.style.borderColor = T.accent + "40"}
+                  onBlur={e => e.target.style.borderColor = T.border}
+                />
+                <span style={{
+                  position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                  fontSize: 14, color: T.text4,
+                }}>{"\ud83d\udd0d"}</span>
+              </div>
+
+              {/* Search results dropdown */}
+              {watchlistSearch && watchlistResults.length > 0 && (
+                <div style={{
+                  marginTop: 6, maxHeight: 200, overflowY: "auto",
+                  background: "rgba(24,24,27,0.98)", border: `1px solid ${T.border}`,
+                  borderRadius: T.radiusSm,
+                }}>
+                  {watchlistResults.slice(0, 20).map(r => {
+                    const inList = watchlistSymbols.includes(r.symbol);
+                    return (
+                      <div
+                        key={r.symbol}
+                        onClick={() => !inList && addSymbol(r.symbol)}
+                        style={{
+                          padding: "8px 14px", cursor: inList ? "default" : "pointer",
+                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                          borderBottom: `1px solid ${T.border}`,
+                          opacity: inList ? 0.4 : 1,
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={e => { if (!inList) e.currentTarget.style.background = T.surfaceH; }}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      >
+                        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
+                          {r.base}<span style={{ color: T.text4 }}>/USDT</span>
+                        </span>
+                        {inList ? (
+                          <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
+                        ) : (
+                          <span style={{ fontSize: 9, color: T.accent, fontFamily: T.mono, fontWeight: 600 }}>+ Add</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {watchlistSearch && watchlistResults.length === 0 && !watchlistLoading && (
+                <div style={{ marginTop: 8, fontSize: 10, color: T.text4, fontFamily: T.mono, textAlign: "center" }}>
+                  No matches found
+                </div>
+              )}
+            </div>
+
+            {/* Current watchlist */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+              <div style={{
+                display: "flex", flexWrap: "wrap", gap: 6,
+              }}>
+                {watchlistSymbols.map(sym => (
+                  <span
+                    key={sym}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      padding: "5px 10px", borderRadius: "20px",
+                      background: T.surface, border: `1px solid ${T.border}`,
+                      fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
+                    }}
+                  >
+                    {getBaseSymbol(sym)}
+                    <span
+                      onClick={() => removeSymbol(sym)}
+                      style={{
+                        cursor: "pointer", color: T.text4, fontSize: 10,
+                        display: "flex", alignItems: "center",
+                        transition: "color 0.15s",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
+                      onMouseLeave={e => e.currentTarget.style.color = T.text4}
+                    >{"\u2715"}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: "12px 20px", borderTop: `1px solid ${T.border}`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              <button
+                onClick={resetWatchlist}
+                style={{
+                  padding: "7px 16px", background: "transparent",
+                  border: `1px solid ${T.border}`, borderRadius: "20px",
+                  color: T.text3, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                  cursor: "pointer", letterSpacing: "0.04em",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c40"; e.currentTarget.style.color = "#fb923c"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text3; }}
+              >
+                Reset to Defaults
+              </button>
+              <button
+                onClick={() => { setShowWatchlist(false); triggerScan(); }}
+                style={{
+                  padding: "7px 20px", background: T.accent,
+                  border: "none", borderRadius: "20px",
+                  color: "#000", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                  cursor: "pointer", letterSpacing: "0.06em",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+              >
+                Scan Now
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── DETAIL PANEL ── */}
       {selected && isMobile && (
         <div
@@ -1033,10 +1428,59 @@ export default function App() {
             >{"\u2715"}</button>
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <RegimeBadge regime={selected.regime} />
             <SignalDot signal={selected.signal} />
           </div>
+
+          {/* Signal reason */}
+          {selected.signal_reason && (
+            <div style={{
+              padding: "8px 12px", borderRadius: T.radiusXs,
+              background: T.surface, border: `1px solid ${T.border}`,
+              marginBottom: 12,
+            }}>
+              <div style={{ fontSize: 8, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, marginBottom: 4, textTransform: "uppercase" }}>
+                Signal Reason
+              </div>
+              <div style={{ fontSize: 10, color: T.text2, fontFamily: T.mono, lineHeight: 1.5 }}>
+                {selected.signal_reason}
+              </div>
+            </div>
+          )}
+
+          {/* Signal warnings */}
+          {selected.signal_warnings && selected.signal_warnings.length > 0 && (
+            <div style={{
+              padding: "8px 12px", borderRadius: T.radiusXs,
+              background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)",
+              marginBottom: 16,
+            }}>
+              {selected.signal_warnings.map((w, i) => (
+                <div key={i} style={{
+                  fontSize: 9, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6,
+                  display: "flex", gap: 6, alignItems: "flex-start",
+                }}>
+                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Raw vs Final signal comparison */}
+          {selected.raw_signal && selected.raw_signal !== selected.signal && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+              fontSize: 9, color: T.text4, fontFamily: T.mono,
+            }}>
+              <span>Raw: </span>
+              <SignalDot signal={selected.raw_signal} />
+              <span style={{ color: T.text4 }}>{"\u2192"}</span>
+              <span>Final: </span>
+              <SignalDot signal={selected.signal} />
+            </div>
+          )}
 
           <div style={{ marginBottom: 20 }}>
             <ZScoreBar z={selected.zscore} isMobile={isMobile} />
@@ -1056,6 +1500,8 @@ export default function App() {
             [null],
             ["Exhaustion", selected.exhaustion_state || "\u2014", exhaustMeta(selected.exhaustion_state).color],
             ["Floor", selected.floor_confirmed ? "Confirmed" : "No", selected.floor_confirmed ? "#34d399" : null],
+            ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#67e8f9" : null],
+            ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
             ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
             ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
           ].map(([label, value, valColor], i) => {
