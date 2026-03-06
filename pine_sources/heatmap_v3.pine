@@ -1,0 +1,116 @@
+//@version=6
+indicator("Structural Heat Map (V3)", overlay=false, max_labels_count=500)
+
+// Inputs
+ema_len = input.int(21)
+sma_len = input.int(20)
+atr_len_d = input.int(14)
+atr_len_w = input.int(14)
+atr_regime_len = input.int(20)
+
+// Weekly BMSB baseline
+bmsb_ema_w = request.security(syminfo.tickerid, "W", ta.ema(close, ema_len))
+bmsb_sma_w = request.security(syminfo.tickerid, "W", ta.sma(close, sma_len))
+bmsb_mid = (bmsb_ema_w + bmsb_sma_w) / 2
+
+// Deviations
+dev = close - bmsb_mid
+abs_dev = math.abs(dev)
+dir = dev >= 0 ? 1 : -1
+
+// Volatility components
+atr_d = ta.atr(atr_len_d)
+atr_w = request.security(syminfo.tickerid, "W", ta.atr(atr_len_w))
+atr_w_sma = request.security(syminfo.tickerid, "W", ta.sma(ta.atr(atr_len_w), atr_regime_len))
+
+// Hybrid scaling (R3)
+r1 = atr_d / atr_w
+r2 = atr_w / atr_w_sma
+r3 = r1 * r2
+
+// Heat 0–100 scale
+x = (abs_dev / atr_d) * r3
+heat = math.min(100, math.round(x * 12.5))
+
+// Symmetric color ladder
+base_color =
+     heat >= 80 ? color.red :
+     heat >= 70 ? color.rgb(255,90,70) :
+     heat >= 60 ? color.orange :
+     heat >= 40 ? color.yellow :
+     heat >= 20 ? color.green :
+                  color.gray
+
+// Fading (slope)
+slope = heat - heat[1]
+isFading = slope < 0 and heat > 40
+fade_color = color.new(base_color, 30)
+
+// Plot heat with symmetric vertical placement
+plot(heat * dir, style=plot.style_columns, color=isFading ? fade_color : base_color, linewidth=2)
+
+// Blow-off entry (triangles for dir > 0 only)
+enter_up_peak = heat > 80 and dir > 0 and heat[1] <= 80
+plotshape(enter_up_peak, style=shape.triangleup, color=color.rgb(82, 218, 255), size=size.tiny, location=location.top)
+
+// Exhaustion detection (both sides)
+exhaustTop = heat[1] > 80 and heat[1] > heat and heat[1] > heat[2] and dir > 0
+exhaustBottom = heat[1] > 80 and heat[1] > heat and heat[1] > heat[2] and dir < 0
+
+plotshape(exhaustTop, style=shape.circle, color=color.rgb(243, 255, 82), size=size.tiny, location=location.top)
+plotshape(exhaustBottom, style=shape.circle, color=color.rgb(229, 255, 82), size=size.tiny, location=location.bottom)
+
+// Structural phase classification
+phase = "Neutral"
+if exhaustTop or exhaustBottom
+    phase := "Exhaustion"
+else if enter_up_peak
+    phase := "Entry"
+else if isFading
+    phase := "Fading"
+else if heat > 20
+    phase := "Extension"
+
+// ATR regime classification
+atrRegime = "Normal"
+if r3 > 1.5
+    atrRegime := "High"
+else if r3 > 1.1
+    atrRegime := "Elevated"
+else if r3 < 0.8
+    atrRegime := "Compressed"
+
+// Deviation stats
+devPct = (dev / bmsb_mid) * 100
+devPctTxt = str.tostring(math.round(devPct)) + "%"
+devAbsTxt = str.tostring(math.round(dev))
+
+// === FUNCTION DEFINITION (Global Scope) ===
+// This handles the two-column layout for each diagnostic row
+fillCell(table_id, row, label, val, valCol) =>
+    table.cell(table_id, 0, row, label, text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(table_id, 1, row, val, text_color=valCol, text_size=size.small, text_halign=text.align_left)
+
+// === DIAGNOSTIC DASHBOARD ===
+// Simplified table.new to avoid version-specific argument conflicts
+// We use position.middle_right to keep it on the side
+var table dash = table.new(position.middle_right, 2, 8, bgcolor=color.new(color.black, 100), border_width=0)
+
+if barstate.islast
+    // Ensure all variables are defined for the dashboard
+    string dirTxt = dir > 0 ? "Up" : "Down"
+    string eventTxt = exhaustTop ? "Blow-Off" : exhaustBottom ? "Capitulation" : "None"
+    
+    // Color Logic
+    color state_col = (exhaustTop or exhaustBottom) ? color.yellow : heat >= 80 ? color.red : heat >= 40 ? color.orange : color.green
+    color dist_col  = devPct > 5 or devPct < -5 ? color.orange : color.gray
+    
+    // Row-by-row data entry
+    fillCell(dash, 0, "Heat:", str.tostring(math.abs(heat)), state_col)
+    fillCell(dash, 1, "Deviation:", str.tostring(math.round(devPct)) + "% (" + str.tostring(math.round(dev)) + ")", dist_col)
+    fillCell(dash, 2, "Direction:", dirTxt, color.white)
+    fillCell(dash, 3, "Event:", eventTxt, color.white)
+    fillCell(dash, 4, "Phase:", phase, color.white)
+    fillCell(dash, 5, "ATR Regime:", atrRegime, color.white)
+    fillCell(dash, 6, "BMSB Mid:", str.tostring(math.round(bmsb_mid)), color.white)
+    fillCell(dash, 7, "Volatility (R3):", str.tostring(math.round(r3*100)/100), color.aqua)
