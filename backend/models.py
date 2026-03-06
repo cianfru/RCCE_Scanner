@@ -122,3 +122,16 @@ class SymbolSearchResult(BaseModel):
     symbol: str
     base: str
     quote: str
+
+
+# ---------------------------------------------------------------------------
+# Backtest models
+# ---------------------------------------------------------------------------
+
+class BacktestRequest(BaseModel):
+    symbols: List[str] = []         # empty = default 10 symbols
+    start_date: str = "2025-01-01"
+    end_date: str = ""              # empty = today
+    initial_capital: float = 10000.0
+    use_confluence: bool = True
+    use_fear_greed: bool = True
