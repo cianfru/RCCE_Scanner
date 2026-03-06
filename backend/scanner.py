@@ -2,7 +2,7 @@
 scanner.py
 ~~~~~~~~~~
 Scan orchestrator -- coordinates RCCE, Heatmap, and Exhaustion engines
-across 60+ crypto symbols on multiple timeframes (4h, 1d).
+across crypto symbols on multiple timeframes (4h, 1d).
 
 Responsibilities
 ----------------
@@ -10,8 +10,10 @@ Responsibilities
 2. Coordinate three independent engines per symbol
 3. Compute market-wide consensus (Module 11)
 4. Detect BTC-relative divergences (Module 12)
-5. Calculate alt-season gauge
-6. Cache results in memory for the API layer
+5. Synthesize final signals via cross-engine Decision Matrix
+6. Fetch global market data (BTC dominance, alt market cap)
+7. Calculate alt-season gauge (with real market cap when available)
+8. Cache results in memory for the API layer
 
 Public API (imported by main.py)
 --------------------------------
@@ -32,6 +34,8 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
+from signal_synthesizer import synthesize_signal
+from market_data import fetch_global_metrics, GlobalMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -167,29 +171,40 @@ def detect_divergence(symbol_regime: str, btc_regime: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Alt-season gauge
+# Alt-season gauge (upgraded with real market cap data)
 # ---------------------------------------------------------------------------
 
-def compute_alt_season_gauge(results: List[dict]) -> dict:
-    """Calculate an alt-season gauge from scan results.
+def compute_alt_season_gauge(
+    results: List[dict],
+    global_metrics: Optional[GlobalMetrics] = None,
+) -> dict:
+    """Calculate an alt-season gauge from scan results and global market data.
 
-    Methodology:
-      - Count ALT + MEME symbols in MARKUP or REACC regimes.
-      - Compare against BTC regime strength.
-      - Score 0-100 where >75 signals alt-season territory.
+    When global_metrics is available (from CoinGecko), the score blends
+    real alt market cap dominance with regime-based analysis.  Falls back
+    to pure regime counting when global data is unavailable.
 
     Returns
     -------
     dict
-        ``score``   -- 0-100 alt-season score
-        ``label``   -- BTC_SEASON / ALT_WARMING / ALT_SEASON / MIXED
-        ``alts_up`` -- count of alts in bullish regimes
-        ``total_alts`` -- count of alt symbols in scan
+        ``score``        -- 0-100 alt-season score
+        ``label``        -- HOT / ACTIVE / NEUTRAL / WEAK / COLD
+        ``alts_up``      -- count of alts in bullish regimes
+        ``total_alts``   -- count of alt symbols in scan
+        ``btc_dominance``-- BTC.D percentage (if available)
     """
     alts = [r for r in results if r.get("asset_class") in ("ALT", "MEME")]
     total_alts = len(alts)
+    btc_dom = global_metrics.btc_dominance if global_metrics else None
+
     if total_alts == 0:
-        return {"score": 0.0, "label": "MIXED", "alts_up": 0, "total_alts": 0}
+        return {
+            "score": 0.0,
+            "label": "COLD",
+            "alts_up": 0,
+            "total_alts": 0,
+            "btc_dominance": btc_dom,
+        }
 
     alts_up = sum(
         1 for r in alts
@@ -204,28 +219,50 @@ def compute_alt_season_gauge(results: List[dict]) -> dict:
         for r in btc_results
     )
 
-    # Score: if BTC is bullish but alts are lagging, reduce score
-    if btc_bullish and alt_pct < 0.3:
-        score = alt_pct * 100.0 * 0.5  # damped
+    # --- Compute score ---
+    if global_metrics is not None and global_metrics.total_market_cap > 0:
+        # Blend real dominance data with regime analysis
+        # Alt dominance = 100 - BTC dominance (rough proxy)
+        alt_dominance = 100.0 - global_metrics.btc_dominance
+
+        # Regime-based component (how many alts are actually in markup)
+        regime_score = alt_pct * 100.0
+
+        # Blend: 40% dominance-based, 60% regime-based
+        # Alt dominance > 60% is historically alt-season territory
+        dominance_score = min(100.0, max(0.0, (alt_dominance - 40.0) / 0.3))
+        score = dominance_score * 0.4 + regime_score * 0.6
+
+        # Dampen if BTC is bullish but alts are lagging
+        if btc_bullish and alt_pct < 0.3:
+            score *= 0.6
     else:
-        score = alt_pct * 100.0
+        # Fallback: pure regime-counting
+        if btc_bullish and alt_pct < 0.3:
+            score = alt_pct * 100.0 * 0.5  # damped
+        else:
+            score = alt_pct * 100.0
 
     score = min(100.0, max(0.0, score))
 
+    # Labels aligned with User Guide
     if score >= 75:
-        label = "ALT_SEASON"
-    elif score >= 40:
-        label = "ALT_WARMING"
-    elif btc_bullish and score < 25:
-        label = "BTC_SEASON"
+        label = "HOT"
+    elif score >= 50:
+        label = "ACTIVE"
+    elif score >= 25:
+        label = "NEUTRAL"
+    elif score >= 10:
+        label = "WEAK"
     else:
-        label = "MIXED"
+        label = "COLD"
 
     return {
         "score": round(score, 1),
         "label": label,
         "alts_up": alts_up,
         "total_alts": total_alts,
+        "btc_dominance": btc_dom,
     }
 
 
@@ -244,6 +281,7 @@ class ScanCache:
         self.results: Dict[str, List[dict]] = {}       # timeframe -> results
         self.consensus: Dict[str, dict] = {}            # timeframe -> consensus
         self.alt_season: Dict[str, dict] = {}           # timeframe -> alt gauge
+        self.global_metrics: Optional[dict] = None      # latest global metrics
         self.last_scan_time: Optional[float] = None
         self.is_scanning: bool = False
         self.symbols: List[str] = DEFAULT_SYMBOLS.copy()
@@ -300,6 +338,10 @@ def _process_symbol(
 
     Each engine call is independently guarded -- if one fails the others
     still contribute.
+
+    NOTE: This produces a ``raw_signal`` from the RCCE engine.  The final
+    ``signal`` is set to "WAIT" here and overwritten by the signal
+    synthesizer after consensus and divergence are computed.
     """
     # --- RCCE engine -------------------------------------------------------
     rcce: dict = {}
@@ -332,7 +374,10 @@ def _process_symbol(
         # RCCE fields
         "regime": rcce.get("regime", "FLAT"),
         "confidence": round(rcce.get("confidence", 0), 1),
-        "signal": rcce.get("signal", "WAIT"),
+        "raw_signal": rcce.get("raw_signal", "WAIT"),
+        "signal": "WAIT",               # placeholder — synthesizer fills this
+        "signal_reason": "",             # synthesizer fills
+        "signal_warnings": [],           # synthesizer fills
         "zscore": round(rcce.get("z_score", 0), 3),
         "energy": round(rcce.get("energy", 0), 3),
         "vol_state": rcce.get("vol_state", "MID"),
@@ -348,6 +393,8 @@ def _process_symbol(
         # Exhaustion fields
         "exhaustion_state": exhaustion.get("state", "NEUTRAL"),
         "floor_confirmed": exhaustion.get("floor_confirmed", False),
+        "is_absorption": exhaustion.get("is_absorption", False),
+        "is_climax": exhaustion.get("is_climax", False),
         "effort": round(exhaustion.get("effort", 0), 3),
         "rel_vol": round(exhaustion.get("rel_vol", 0), 2),
     }
@@ -357,18 +404,22 @@ def _process_symbol(
 async def _scan_timeframe(
     symbols: List[str],
     tf: str,
-) -> tuple[List[dict], dict, dict]:
-    """Run a full scan for one timeframe and return (results, consensus, alt_gauge).
+) -> tuple[List[dict], dict, dict, Optional[GlobalMetrics]]:
+    """Run a full scan for one timeframe.
 
-    Steps
-    -----
+    Returns (results, consensus, alt_gauge, global_metrics).
+
+    Pipeline
+    --------
     1. Batch-fetch OHLCV data for the requested timeframe.
     2. Batch-fetch weekly data (required by heatmap + exhaustion engines).
     3. Extract BTC and ETH reference data for beta calculations.
-    4. Process each symbol through all three engines.
+    4. Process each symbol through all three engines (raw_signal only).
     5. Compute consensus across results.
-    6. Detect divergences and apply signal overrides.
-    7. Compute alt-season gauge.
+    6. Fetch global market metrics (BTC dominance, alt market cap).
+    7. Detect divergences.
+    8. Synthesize final signals using cross-engine Decision Matrix.
+    9. Compute alt-season gauge (using global metrics when available).
     """
     logger.info("Starting scan for timeframe=%s (%d symbols)", tf, len(symbols))
     t0 = time.time()
@@ -393,7 +444,7 @@ async def _scan_timeframe(
     btc_data = ohlcv_batch.get("BTC/USDT")
     eth_data = ohlcv_batch.get("ETH/USDT")
 
-    # 4. Process each symbol
+    # 4. Process each symbol (engines only — no final signal yet)
     results: List[dict] = []
     for symbol in symbols:
         ohlcv = ohlcv_batch.get(symbol)
@@ -421,43 +472,76 @@ async def _scan_timeframe(
         len(results), tf, time.time() - t0,
     )
 
-    # 5. Compute consensus
+    # 5. Compute consensus (BEFORE signal synthesis — signals need this)
     consensus = compute_consensus(results)
     logger.info(
         "Consensus for %s: %s (strength=%.1f%%)",
         tf, consensus["consensus"], consensus["strength"],
     )
 
-    # 6. Divergences + signal override
+    # 6. Fetch global market metrics (BTC dominance, alt market cap)
+    gm: Optional[GlobalMetrics] = None
+    try:
+        gm = await fetch_global_metrics()
+        if gm:
+            logger.info(
+                "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
+                gm.btc_dominance, gm.alt_market_cap / 1e9,
+            )
+    except Exception:
+        logger.warning("Failed to fetch global metrics — signals will not use BTC dominance")
+
+    # 7. Detect divergences
     btc_regime = next(
         (r["regime"] for r in results if "BTC" in r["symbol"]),
         "FLAT",
     )
-
     for r in results:
-        # Divergence vs BTC
         r["divergence"] = detect_divergence(r["regime"], btc_regime)
-
-        # Override: MARKDOWN + WAIT -> RISK_OFF when market is RISK-OFF
-        if (
-            consensus["consensus"] == "RISK-OFF"
-            and r["signal"] == "WAIT"
-            and r["regime"] == "MARKDOWN"
-        ):
-            r["signal"] = "RISK_OFF"
 
     divergence_count = sum(1 for r in results if r["divergence"] is not None)
     if divergence_count:
         logger.info("Detected %d divergences on %s", divergence_count, tf)
 
-    # 7. Alt-season gauge
-    alt_gauge = compute_alt_season_gauge(results)
+    # 8. Synthesize final signals (cross-engine Decision Matrix)
+    gm_dict = None
+    if gm is not None:
+        gm_dict = {
+            "btc_dominance": gm.btc_dominance,
+            "eth_dominance": gm.eth_dominance,
+            "total_market_cap": gm.total_market_cap,
+            "alt_market_cap": gm.alt_market_cap,
+        }
+
+    for r in results:
+        try:
+            synth = synthesize_signal(r, consensus, gm_dict)
+            r["signal"] = synth.signal
+            r["signal_reason"] = synth.reason
+            r["signal_warnings"] = synth.warnings
+            # raw_signal already set in _process_symbol
+        except Exception:
+            logger.exception("Signal synthesis failed for %s", r.get("symbol"))
+            # Keep raw_signal as fallback
+            r["signal"] = r.get("raw_signal", "WAIT")
+            r["signal_reason"] = "synthesis error — using raw signal"
+            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
+
+    signal_summary = {}
+    for r in results:
+        sig = r["signal"]
+        signal_summary[sig] = signal_summary.get(sig, 0) + 1
+    logger.info("Signal distribution for %s: %s", tf, signal_summary)
+
+    # 9. Alt-season gauge (using global metrics when available)
+    alt_gauge = compute_alt_season_gauge(results, gm)
     logger.info(
-        "Alt-season gauge for %s: score=%.1f label=%s",
+        "Alt-season gauge for %s: score=%.1f label=%s btc_dom=%s",
         tf, alt_gauge["score"], alt_gauge["label"],
+        f"{gm.btc_dominance:.1f}%" if gm else "N/A",
     )
 
-    return results, consensus, alt_gauge
+    return results, consensus, alt_gauge, gm
 
 
 async def run_scan(
@@ -490,12 +574,22 @@ async def run_scan(
 
         for tf in timeframes:
             try:
-                results, consensus, alt_gauge = await _scan_timeframe(
+                results, consensus, alt_gauge, gm = await _scan_timeframe(
                     scan_cache.symbols, tf,
                 )
                 scan_cache.results[tf] = results
                 scan_cache.consensus[tf] = consensus
                 scan_cache.alt_season[tf] = alt_gauge
+                # Store latest global metrics (shared across timeframes)
+                if gm is not None:
+                    scan_cache.global_metrics = {
+                        "btc_dominance": gm.btc_dominance,
+                        "eth_dominance": gm.eth_dominance,
+                        "total_market_cap": gm.total_market_cap,
+                        "alt_market_cap": gm.alt_market_cap,
+                        "btc_market_cap": gm.btc_market_cap,
+                        "timestamp": gm.timestamp,
+                    }
             except Exception:
                 logger.exception("Scan failed for timeframe %s", tf)
 
@@ -538,6 +632,7 @@ def get_all_results() -> dict:
         "results": cache.results,
         "consensus": cache.consensus,
         "alt_season": cache.alt_season,
+        "global_metrics": cache.global_metrics,
     }
 
 

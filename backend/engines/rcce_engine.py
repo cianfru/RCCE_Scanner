@@ -508,7 +508,7 @@ def compute_rcce(
     Returns
     -------
     dict  with keys:
-        regime, confidence, z_score, energy, vol_state, signal,
+        regime, confidence, z_score, energy, vol_state, raw_signal,
         asset_class, beta_btc, beta_eth, momentum, regime_probabilities
     """
     close: np.ndarray = np.asarray(ohlcv["close"], dtype=np.float64)
@@ -521,7 +521,7 @@ def compute_rcce(
         "z_score": 0.0,
         "energy": 0.0,
         "vol_state": "MID",
-        "signal": "WAIT",
+        "raw_signal": "WAIT",
         "asset_class": "",
         "beta_btc": 0.0,
         "beta_eth": 0.0,
@@ -663,15 +663,15 @@ def compute_rcce(
         momentum = 0.0
 
     # ------------------------------------------------------------------
-    # 9. Signal
+    # 9. Raw Signal (RCCE-only, before cross-engine synthesis)
     # ------------------------------------------------------------------
-    signal = _generate_signal(
+    raw_signal = _generate_signal(
         phase=regime_label,
         z=z_last,
         vol_low=vol_low_last,
         vol_high=vol_high_last,
         confidence=confidence_last,
-        market_consensus=None,  # scanner will override
+        market_consensus=None,  # synthesizer handles consensus gating
     )
 
     # ------------------------------------------------------------------
@@ -683,7 +683,7 @@ def compute_rcce(
         "z_score": round(z_last, 4),
         "energy": round(energy_last, 4),
         "vol_state": _vol_state_label(vol_low_last, vol_high_last),
-        "signal": signal,
+        "raw_signal": raw_signal,
         "asset_class": "",  # placeholder -- scanner sets this
         "beta_btc": round(beta_btc_val, 4),
         "beta_eth": round(beta_eth_val, 4),
