@@ -20,6 +20,10 @@ from models import (
     WatchlistAddRequest,
     GlobalMetricsResponse,
     SymbolSearchResult,
+    SentimentResponse,
+    StablecoinResponse,
+    ConfluenceResponse,
+    PositioningResponse,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -89,7 +93,7 @@ async def _periodic_scan():
         await asyncio.sleep(300)  # 5 minutes
 
 
-app = FastAPI(title="RCCE Scanner API", version="3.0", lifespan=lifespan)
+app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -227,6 +231,50 @@ async def reset_watchlist():
     from data_fetcher import DEFAULT_SYMBOLS
     cache.symbols = DEFAULT_SYMBOLS.copy()
     return {"ok": True, "count": len(cache.symbols)}
+
+
+# ---------------------------------------------------------------------------
+# New data endpoints (v4.0)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sentiment")
+async def sentiment():
+    """Return Fear & Greed Index."""
+    s = cache.sentiment
+    if s is None:
+        return SentimentResponse()
+    return SentimentResponse(**s)
+
+
+@app.get("/api/stablecoin")
+async def stablecoin():
+    """Return stablecoin supply data."""
+    sc = cache.stablecoin
+    if sc is None:
+        return StablecoinResponse()
+    return StablecoinResponse(**sc)
+
+
+@app.get("/api/positioning/{symbol}")
+async def positioning(symbol: str):
+    """Return Hyperliquid positioning data for a symbol."""
+    symbol = symbol.upper().replace("-", "/")
+    # Find in latest scan results
+    for tf in ("4h", "1d"):
+        for r in cache.results.get(tf, []):
+            if r.get("symbol") == symbol and r.get("positioning"):
+                return PositioningResponse(**r["positioning"])
+    return PositioningResponse()
+
+
+@app.get("/api/confluence/{symbol}")
+async def confluence_for_symbol(symbol: str):
+    """Return multi-TF confluence for a symbol."""
+    symbol = symbol.upper().replace("-", "/")
+    c = cache.confluence.get(symbol)
+    if c is None:
+        return ConfluenceResponse()
+    return ConfluenceResponse(**c)
 
 
 @app.get("/health")

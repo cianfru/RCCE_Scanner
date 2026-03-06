@@ -1,54 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge } from "./theme.js";
+import SparklineCell from "./components/SparklineCell.jsx";
+import TradingViewWidget from "./components/TradingViewWidget.jsx";
+import FearGreedGauge from "./components/FearGreedGauge.jsx";
+import StablecoinWidget from "./components/StablecoinWidget.jsx";
+import PositioningPanel from "./components/PositioningPanel.jsx";
+import ConfluencePanel from "./components/ConfluencePanel.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-const REGIME_META = {
-  MARKUP:    { color: "#34d399", bg: "rgba(52,211,153,0.08)", glow: "rgba(52,211,153,0.25)", label: "MARKUP",    glyph: "\u2197" },
-  BLOWOFF:   { color: "#f87171", bg: "rgba(248,113,113,0.08)", glow: "rgba(248,113,113,0.25)", label: "BLOWOFF",   glyph: "\u25b2\u25b2" },
-  REACC:     { color: "#22d3ee", bg: "rgba(34,211,238,0.08)",  glow: "rgba(34,211,238,0.25)",  label: "REACC",     glyph: "\u25c6" },
-  MARKDOWN:  { color: "#fb923c", bg: "rgba(251,146,60,0.08)",  glow: "rgba(251,146,60,0.25)",  label: "MARKDOWN",  glyph: "\u25bc" },
-  CAP:       { color: "#c084fc", bg: "rgba(192,132,252,0.08)", glow: "rgba(192,132,252,0.25)", label: "CAP",       glyph: "\u25bc\u25bc" },
-  ACCUM:     { color: "#6ee7b7", bg: "rgba(110,231,183,0.08)", glow: "rgba(110,231,183,0.25)", label: "ACCUM",     glyph: "\u25c7" },
-  ABSORBING: { color: "#d8b4fe", bg: "rgba(216,180,254,0.08)", glow: "rgba(216,180,254,0.25)", label: "ABSORBING", glyph: "\u2715" },
-  FLAT:      { color: "#52525b", bg: "rgba(82,82,91,0.06)",    glow: "rgba(82,82,91,0.15)",    label: "FLAT",      glyph: "\u2014" },
-};
-
-const SIGNAL_META = {
-  STRONG_LONG:  { color: "#34d399", label: "STRONG LONG",  dot: "\u25cf" },
-  LIGHT_LONG:   { color: "#6ee7b7", label: "LIGHT LONG",   dot: "\u25cf" },
-  ACCUMULATE:   { color: "#22d3ee", label: "ACCUMULATE",    dot: "\u25c6" },
-  REVIVAL_SEED: { color: "#67e8f9", label: "REVIVAL",       dot: "\u25cf" },
-  WAIT:         { color: "#52525b", label: "WAIT",          dot: "\u25cb" },
-  TRIM:         { color: "#fbbf24", label: "TRIM",          dot: "\u25cf" },
-  TRIM_HARD:    { color: "#f87171", label: "TRIM HARD",     dot: "\u25cf" },
-  RISK_OFF:     { color: "#ef4444", label: "RISK-OFF",      dot: "\u25cf" },
-  NO_LONG:      { color: "#d8b4fe", label: "NO LONG",       dot: "\u2715" },
-};
-
-const REGIME_ORDER = ["BLOWOFF","MARKUP","REACC","ACCUM","CAP","MARKDOWN","ABSORBING","FLAT"];
-
-// ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
-
-const T = {
-  bg:        "#000000",
-  surface:   "rgba(255,255,255,0.02)",
-  surfaceH:  "rgba(255,255,255,0.04)",
-  border:    "rgba(255,255,255,0.06)",
-  borderH:   "rgba(255,255,255,0.10)",
-  text1:     "#e4e4e7",
-  text2:     "#a1a1aa",
-  text3:     "#71717a",
-  text4:     "#3f3f46",
-  accent:    "#22d3ee",
-  accentDim: "rgba(34,211,238,0.15)",
-  font:      "'Inter', -apple-system, sans-serif",
-  mono:      "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
-  radius:    "12px",
-  radiusSm:  "8px",
-  radiusXs:  "6px",
-};
 
 // ─── VIEWPORT HOOK ──────────────────────────────────────────────────────────
 
@@ -77,57 +38,6 @@ function useViewport() {
   return vp;
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-function fmt(val, decimals = 2, suffix = "") {
-  if (val === null || val === undefined || isNaN(val)) return "\u2014";
-  return `${Number(val).toFixed(decimals)}${suffix}`;
-}
-
-function zBar(z) {
-  if (z === null || z === undefined) return null;
-  const clamped = Math.max(-3, Math.min(3, z));
-  const pct = ((clamped + 3) / 6) * 100;
-  let color = "#71717a";
-  if (z <= -1) color = "#c084fc";
-  else if (z <= 0) color = "#22d3ee";
-  else if (z <= 1.2) color = "#34d399";
-  else if (z <= 2.0) color = "#fbbf24";
-  else color = "#f87171";
-  return { pct, color };
-}
-
-function getBaseSymbol(sym) { return sym.replace("/USDT", ""); }
-
-function formatCacheAge(seconds) {
-  if (!seconds) return "\u2014";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  return `${Math.round(seconds / 60)}m`;
-}
-
-function heatColor(heat) {
-  if (heat == null) return "#3f3f46";
-  if (heat >= 80) return "#f87171";
-  if (heat >= 60) return "#fb923c";
-  if (heat >= 40) return "#fbbf24";
-  if (heat >= 20) return "#34d399";
-  return "#3f3f46";
-}
-
-function phaseColor(phase) {
-  return { Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#22d3ee", Neutral: "#52525b" }[phase] || "#52525b";
-}
-
-function exhaustMeta(state) {
-  return {
-    EXHAUSTED_FLOOR: { color: "#22d3ee", text: "FLOOR" },
-    CLIMAX:          { color: "#fbbf24", text: "CLIMAX" },
-    ABSORBING:       { color: "#67e8f9", text: "ABSORB" },
-    BEAR_ZONE:       { color: "#f87171", text: "BEAR" },
-    NEUTRAL:         { color: "#3f3f46", text: "\u2014" },
-  }[state] || { color: "#3f3f46", text: "\u2014" };
-}
-
 // ─── ANIMATED WRAPPER ────────────────────────────────────────────────────────
 
 function FadeIn({ children, delay = 0, style = {} }) {
@@ -151,18 +61,22 @@ function FadeIn({ children, delay = 0, style = {} }) {
 // [sortKey, label, minViewportWidth]
 
 const COLUMNS = [
-  ["symbol",   "SYMBOL",  0],
-  ["regime",   "REGIME",  0],
-  [null,       "SIGNAL",  0],
-  ["zscore",   "Z-SCORE", 480],
-  ["momentum", "MOM",     480],
-  [null,       "PRICE",   480],
-  ["heat",     "HEAT",    768],
-  [null,       "DIV",     768],
-  [null,       "EXHAUST", 768],
-  [null,       "ENERGY",  1024],
-  [null,       "PHASE",   1024],
-  [null,       "FLOOR",   1024],
+  ["symbol",   "SYMBOL",     0],
+  ["regime",   "REGIME",     0],
+  [null,       "SIGNAL",     0],
+  [null,       "SPARK",      480],
+  ["zscore",   "Z-SCORE",    480],
+  ["momentum", "MOM",        480],
+  [null,       "PRICE",      480],
+  ["heat",     "HEAT",       768],
+  [null,       "DIV",        768],
+  [null,       "EXHAUST",    768],
+  [null,       "FUNDING",    1024],
+  [null,       "OI",         1024],
+  [null,       "CONF",       1024],
+  [null,       "ENERGY",     1200],
+  [null,       "PHASE",      1200],
+  [null,       "FLOOR",      1200],
 ];
 
 // ─── SUBCOMPONENTS ────────────────────────────────────────────────────────────
@@ -343,6 +257,59 @@ function FloorCell({ confirmed }) {
   return <span style={{ color: T.text4, fontSize: 11 }}>{"\u2014"}</span>;
 }
 
+// ─── NEW TABLE CELLS ─────────────────────────────────────────────────────────
+
+function FundingCell({ rate }) {
+  if (rate == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  const color = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text2;
+  return (
+    <span style={{ fontFamily: T.mono, fontSize: 9, color, fontWeight: 500 }}>
+      {(rate * 100).toFixed(3)}%
+    </span>
+  );
+}
+
+function OITrendBadge({ trend }) {
+  if (!trend) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  const meta = {
+    BUILDING:    { color: "#34d399", label: "BUILD" },
+    SQUEEZE:     { color: "#fbbf24", label: "SQUZ" },
+    LIQUIDATING: { color: "#f87171", label: "LIQ" },
+    SHORTING:    { color: "#c084fc", label: "SHORT" },
+  }[trend] || { color: T.text4, label: trend.slice(0, 5) };
+  return (
+    <span style={{
+      padding: "2px 6px", borderRadius: "20px",
+      background: `${meta.color}10`, color: meta.color,
+      fontSize: 8, fontFamily: T.mono, fontWeight: 600,
+      letterSpacing: "0.04em", border: `1px solid ${meta.color}15`,
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+function ConfluenceBadge({ score, label }) {
+  if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <div style={{
+        width: 20, height: 3, background: "rgba(255,255,255,0.04)",
+        borderRadius: 2, overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${Math.min(score ?? 0, 100)}%`, height: "100%",
+          background: color, borderRadius: 2,
+        }} />
+      </div>
+      <span style={{ fontFamily: T.mono, fontSize: 9, color, fontWeight: 600 }}>
+        {score != null ? Math.round(score) : "\u2014"}
+      </span>
+    </div>
+  );
+}
+
 // Cell renderer for column-based rendering
 function CellContent({ colLabel, row, isMobile }) {
   const cellPad = isMobile ? "8px 10px" : "10px 12px";
@@ -357,6 +324,8 @@ function CellContent({ colLabel, row, isMobile }) {
       return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} /></td>;
     case "SIGNAL":
       return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
+    case "SPARK":
+      return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={56} height={22} /></td>;
     case "Z-SCORE":
       return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
     case "ENERGY":
@@ -385,6 +354,12 @@ function CellContent({ colLabel, row, isMobile }) {
       return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
     case "FLOOR":
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
+    case "FUNDING":
+      return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
+    case "OI":
+      return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
+    case "CONF":
+      return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
     default:
       return <td style={{ padding: cellPad }}>{"\u2014"}</td>;
   }
@@ -415,9 +390,9 @@ function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile })
 
 // ─── GLASS CARD ──────────────────────────────────────────────────────────────
 
-function GlassCard({ children, style = {}, glow = null }) {
+function GlassCard({ children, style = {}, glow = null, className = "" }) {
   return (
-    <div style={{
+    <div className={className} style={{
       background: T.surface,
       border: `1px solid ${T.border}`,
       borderRadius: T.radius,
@@ -603,6 +578,10 @@ export default function App() {
   const [globalMetrics, setGlobalMetrics] = useState(null);
   const [altSeason, setAltSeason] = useState(null);
 
+  // Sentiment & stablecoin (new)
+  const [sentiment, setSentiment] = useState(null);
+  const [stablecoin, setStablecoin] = useState(null);
+
   // Watchlist modal
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [watchlistSymbols, setWatchlistSymbols] = useState([]);
@@ -637,14 +616,18 @@ export default function App() {
       setCacheAge(r4h.cache_age_seconds);
       setLastRefresh(new Date());
 
-      // Fetch global metrics & alt season (non-blocking)
+      // Fetch global metrics, alt season, sentiment, stablecoin (non-blocking)
       try {
-        const [gm, as] = await Promise.all([
-          fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()),
-          fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()),
+        const [gm, as, sent, stable] = await Promise.all([
+          fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/stablecoin`).then(r => r.json()).catch(() => null),
         ]);
-        setGlobalMetrics(gm);
-        setAltSeason(as);
+        if (gm) setGlobalMetrics(gm);
+        if (as) setAltSeason(as);
+        if (sent) setSentiment(sent);
+        if (stable) setStablecoin(stable);
       } catch (_) { /* metrics are optional */ }
     } catch (e) {
       setError(e.message);
@@ -1039,19 +1022,33 @@ export default function App() {
         {/* Consensus + Market Context */}
         <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />
 
-        {/* BTC Dominance & Alt Season */}
-        {(globalMetrics?.btc_dominance > 0 || altSeason) && (
+        {/* ── MARKET CONTEXT WIDGETS (BTC.D, Alt Season, Fear & Greed, Stablecoins) ── */}
+        {(globalMetrics?.btc_dominance > 0 || altSeason || sentiment || stablecoin) && (
           <FadeIn delay={380}>
             <div style={{
               display: "flex", gap: isMobile ? 8 : 10,
               marginTop: isMobile ? 10 : 12,
               flexWrap: "wrap",
+              alignItems: "center",
             }}>
+              {/* Fear & Greed Gauge */}
+              {sentiment?.fear_greed_value != null && (
+                <GlassCard style={{
+                  padding: "4px 8px",
+                  display: "flex", alignItems: "center",
+                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
+                  justifyContent: "center",
+                }}>
+                  <FearGreedGauge value={sentiment.fear_greed_value} label={sentiment.fear_greed_label || "Fear & Greed"} />
+                </GlassCard>
+              )}
+
+              {/* BTC Dominance */}
               {globalMetrics?.btc_dominance > 0 && (
                 <GlassCard style={{
                   padding: isMobile ? "8px 14px" : "10px 16px",
                   display: "flex", alignItems: "center", gap: 10,
-                  flex: isMobile ? "1 1 auto" : undefined,
+                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
                 }}>
                   <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
                     BTC.D
@@ -1073,11 +1070,13 @@ export default function App() {
                   )}
                 </GlassCard>
               )}
+
+              {/* Alt Season */}
               {altSeason && (
                 <GlassCard style={{
                   padding: isMobile ? "8px 14px" : "10px 16px",
                   display: "flex", alignItems: "center", gap: 10,
-                  flex: isMobile ? "1 1 auto" : undefined,
+                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
                   border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
                 }}>
                   <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
@@ -1100,6 +1099,17 @@ export default function App() {
                     {altSeason.score?.toFixed(0)}
                   </span>
                 </GlassCard>
+              )}
+
+              {/* Stablecoin Widget */}
+              {stablecoin && (
+                <div style={{ flex: isMobile ? "1 1 calc(50% - 4px)" : undefined }}>
+                  <StablecoinWidget
+                    trend={stablecoin.trend}
+                    changePct={stablecoin.change_7d_pct}
+                    totalCap={stablecoin.total_cap}
+                  />
+                </div>
               )}
             </div>
           </FadeIn>
@@ -1386,7 +1396,7 @@ export default function App() {
         <div style={{
           position: "fixed", right: 0, top: 0, bottom: 0,
           left: isMobile ? 0 : undefined,
-          width: isMobile ? "100%" : isTablet ? 300 : 320,
+          width: isMobile ? "100%" : isTablet ? 340 : 380,
           background: isMobile ? "rgba(0,0,0,0.95)" : "rgba(0,0,0,0.85)",
           backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
           borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
@@ -1403,7 +1413,7 @@ export default function App() {
             }} />
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
             <div>
               <div style={{ fontSize: isMobile ? 20 : 22, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
                 {getBaseSymbol(selected.symbol)}
@@ -1428,9 +1438,28 @@ export default function App() {
             >{"\u2715"}</button>
           </div>
 
+          {/* TradingView Chart (hidden on mobile) */}
+          {!isMobile && (
+            <TradingViewWidget
+              symbol={selected.symbol}
+              timeframe={selected.timeframe === "1d" ? "D" : "240"}
+            />
+          )}
+
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <RegimeBadge regime={selected.regime} />
             <SignalDot signal={selected.signal} />
+            {/* Signal confidence */}
+            {selected.signal_confidence != null && (
+              <span style={{
+                padding: "3px 8px", borderRadius: "20px",
+                background: T.surface, border: `1px solid ${T.border}`,
+                fontSize: 9, fontFamily: T.mono, fontWeight: 500,
+                color: selected.signal_confidence >= 0.8 ? "#34d399" : selected.signal_confidence >= 0.5 ? "#fbbf24" : T.text3,
+              }}>
+                {Math.round(selected.signal_confidence * 100)}%
+              </span>
+            )}
           </div>
 
           {/* Signal reason */}
@@ -1454,7 +1483,7 @@ export default function App() {
             <div style={{
               padding: "8px 12px", borderRadius: T.radiusXs,
               background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)",
-              marginBottom: 16,
+              marginBottom: 12,
             }}>
               {selected.signal_warnings.map((w, i) => (
                 <div key={i} style={{
@@ -1471,7 +1500,7 @@ export default function App() {
           {/* Raw vs Final signal comparison */}
           {selected.raw_signal && selected.raw_signal !== selected.signal && (
             <div style={{
-              display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
               fontSize: 9, color: T.text4, fontFamily: T.mono,
             }}>
               <span>Raw: </span>
@@ -1482,7 +1511,13 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ marginBottom: 20 }}>
+          {/* Confluence Panel */}
+          <ConfluencePanel confluence={selected.confluence} />
+
+          {/* Positioning Panel */}
+          <PositioningPanel positioning={selected.positioning} />
+
+          <div style={{ marginBottom: 16 }}>
             <ZScoreBar z={selected.zscore} isMobile={isMobile} />
           </div>
 

@@ -34,8 +34,14 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
+from engines.positioning_engine import compute_positioning
 from signal_synthesizer import synthesize_signal
-from market_data import fetch_global_metrics, GlobalMetrics
+from market_data import (
+    fetch_global_metrics, GlobalMetrics,
+    fetch_fear_greed, fetch_stablecoin_supply,
+)
+from hyperliquid_data import fetch_hyperliquid_metrics
+from confluence import compute_all_confluences
 
 logger = logging.getLogger(__name__)
 
@@ -118,17 +124,17 @@ def compute_consensus(results: List[dict]) -> dict:
         "total": total,
     }
 
-    # Decision rules (evaluated in priority order)
-    if markup_n / total > 0.6:
+    # Decision rules (evaluated in priority order, uniform 55% threshold)
+    if markup_n / total > 0.55:
         consensus = "RISK-ON"
         strength = (markup_n / total) * 100.0
-    elif blowoff_n / total > 0.5:
+    elif blowoff_n / total > 0.55:
         consensus = "EUPHORIA"
         strength = (blowoff_n / total) * 100.0
-    elif markdown_n / total > 0.5:
+    elif markdown_n / total > 0.55:
         consensus = "RISK-OFF"
         strength = (markdown_n / total) * 100.0
-    elif accum_n / total > 0.5:
+    elif accum_n / total > 0.55:
         consensus = "ACCUMULATION"
         strength = (accum_n / total) * 100.0
     else:
@@ -163,7 +169,7 @@ def detect_divergence(symbol_regime: str, btc_regime: str) -> Optional[str]:
     sym = symbol_regime.upper()
     btc = btc_regime.upper()
 
-    if sym in ("MARKUP", "REACC") and btc in ("MARKDOWN", "BLOWOFF"):
+    if sym in ("MARKUP", "REACC") and btc == "MARKDOWN":
         return "BEAR-DIV"
     if sym in ("MARKDOWN", "CAP") and btc == "MARKUP":
         return "BULL-DIV"
@@ -230,7 +236,7 @@ def compute_alt_season_gauge(
 
         # Blend: 40% dominance-based, 60% regime-based
         # Alt dominance > 60% is historically alt-season territory
-        dominance_score = min(100.0, max(0.0, (alt_dominance - 40.0) / 0.3))
+        dominance_score = min(100.0, max(0.0, (alt_dominance - 40.0) / 30.0 * 100.0))
         score = dominance_score * 0.4 + regime_score * 0.6
 
         # Dampen if BTC is bullish but alts are lagging
@@ -282,6 +288,10 @@ class ScanCache:
         self.consensus: Dict[str, dict] = {}            # timeframe -> consensus
         self.alt_season: Dict[str, dict] = {}           # timeframe -> alt gauge
         self.global_metrics: Optional[dict] = None      # latest global metrics
+        self.sentiment: Optional[dict] = None           # Fear & Greed
+        self.stablecoin: Optional[dict] = None          # Stablecoin supply
+        self.confluence: Dict[str, dict] = {}           # symbol -> confluence
+        self.prev_oi: Dict[str, float] = {}             # symbol -> previous OI for trend
         self.last_scan_time: Optional[float] = None
         self.is_scanning: bool = False
         self.symbols: List[str] = DEFAULT_SYMBOLS.copy()
@@ -397,6 +407,8 @@ def _process_symbol(
         "is_climax": exhaustion.get("is_climax", False),
         "effort": round(exhaustion.get("effort", 0), 3),
         "rel_vol": round(exhaustion.get("rel_vol", 0), 2),
+        # Sparkline: last 24 close prices
+        "sparkline": [round(float(c), 6) for c in ohlcv["close"][-24:]],
     }
     return result
 
@@ -479,19 +491,72 @@ async def _scan_timeframe(
         tf, consensus["consensus"], consensus["strength"],
     )
 
-    # 6. Fetch global market metrics (BTC dominance, alt market cap)
+    # 6. Fetch external data in parallel (global metrics, Hyperliquid, sentiment, stablecoins)
     gm: Optional[GlobalMetrics] = None
-    try:
-        gm = await fetch_global_metrics()
-        if gm:
-            logger.info(
-                "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
-                gm.btc_dominance, gm.alt_market_cap / 1e9,
-            )
-    except Exception:
-        logger.warning("Failed to fetch global metrics — signals will not use BTC dominance")
+    hl_metrics = {}
+    sentiment_data = None
+    stablecoin_data = None
 
-    # 7. Detect divergences
+    try:
+        gm, hl_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
+            fetch_global_metrics(),
+            fetch_hyperliquid_metrics(symbols),
+            fetch_fear_greed(),
+            fetch_stablecoin_supply(),
+        )
+    except Exception:
+        logger.warning("Some external data fetches failed — proceeding with available data")
+        # Individual failures are handled by each fetcher's fallback logic
+
+    if gm:
+        logger.info(
+            "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
+            gm.btc_dominance, gm.alt_market_cap / 1e9,
+        )
+    if hl_metrics:
+        logger.info("Hyperliquid: %d perps with positioning data", len(hl_metrics))
+    if sentiment_data:
+        logger.info("Fear & Greed: %d (%s)", sentiment_data.fear_greed_value, sentiment_data.fear_greed_label)
+    if stablecoin_data:
+        logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
+
+    # 7. Compute positioning per symbol from Hyperliquid data
+    for r in results:
+        symbol = r["symbol"]
+        hl = hl_metrics.get(symbol) if hl_metrics else None
+        if hl is not None:
+            # Get price change from sparkline data
+            sparkline = r.get("sparkline", [])
+            price_change_pct = 0.0
+            if len(sparkline) >= 2 and sparkline[0] > 0:
+                price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+            prev_oi = cache.prev_oi.get(symbol)
+            pos = compute_positioning(
+                funding_rate=hl.funding_rate,
+                open_interest=hl.open_interest,
+                price_change_pct=price_change_pct,
+                prev_oi=prev_oi,
+                predicted_funding=hl.predicted_funding,
+                mark_price=hl.mark_price,
+                oracle_price=hl.oracle_price,
+                volume_24h=hl.volume_24h,
+            )
+            r["positioning"] = {
+                "funding_regime": pos.funding_regime,
+                "funding_rate": pos.funding_rate,
+                "oi_trend": pos.oi_trend,
+                "oi_value": pos.oi_value,
+                "oi_change_pct": pos.oi_change_pct,
+                "leverage_risk": pos.leverage_risk,
+                "predicted_funding": pos.predicted_funding,
+                "mark_price": pos.mark_price,
+                "volume_24h": pos.volume_24h,
+            }
+            # Store OI for next scan's trend calculation
+            cache.prev_oi[symbol] = hl.open_interest
+
+    # 8. Detect divergences
     btc_regime = next(
         (r["regime"] for r in results if "BTC" in r["symbol"]),
         "FLAT",
@@ -503,7 +568,7 @@ async def _scan_timeframe(
     if divergence_count:
         logger.info("Detected %d divergences on %s", divergence_count, tf)
 
-    # 8. Synthesize final signals (cross-engine Decision Matrix)
+    # 9. Synthesize final signals (cross-engine Decision Matrix + positioning + sentiment)
     gm_dict = None
     if gm is not None:
         gm_dict = {
@@ -513,16 +578,38 @@ async def _scan_timeframe(
             "alt_market_cap": gm.alt_market_cap,
         }
 
+    sentiment_dict = None
+    if sentiment_data is not None:
+        sentiment_dict = {
+            "fear_greed_value": sentiment_data.fear_greed_value,
+            "fear_greed_label": sentiment_data.fear_greed_label,
+        }
+
+    stablecoin_dict = None
+    if stablecoin_data is not None:
+        stablecoin_dict = {
+            "trend": stablecoin_data.trend,
+            "change_7d_pct": stablecoin_data.change_7d_pct,
+            "total_cap": stablecoin_data.total_stablecoin_cap,
+        }
+
     for r in results:
         try:
-            synth = synthesize_signal(r, consensus, gm_dict)
+            synth = synthesize_signal(
+                r, consensus, gm_dict,
+                positioning=r.get("positioning"),
+                sentiment=sentiment_dict,
+                stablecoin=stablecoin_dict,
+            )
             r["signal"] = synth.signal
             r["signal_reason"] = synth.reason
             r["signal_warnings"] = synth.warnings
-            # raw_signal already set in _process_symbol
+            r["signal_confidence"] = (
+                round(synth.conditions_met / synth.conditions_total * 100)
+                if synth.conditions_total > 0 else 0
+            )
         except Exception:
             logger.exception("Signal synthesis failed for %s", r.get("symbol"))
-            # Keep raw_signal as fallback
             r["signal"] = r.get("raw_signal", "WAIT")
             r["signal_reason"] = "synthesis error — using raw signal"
             r["signal_warnings"] = ["Signal synthesizer encountered an error"]
@@ -593,6 +680,54 @@ async def run_scan(
             except Exception:
                 logger.exception("Scan failed for timeframe %s", tf)
 
+        # Store sentiment & stablecoin data from latest fetch
+        from market_data import get_cached_sentiment, get_cached_stablecoin
+        s = get_cached_sentiment()
+        if s:
+            scan_cache.sentiment = {
+                "fear_greed_value": s.fear_greed_value,
+                "fear_greed_label": s.fear_greed_label,
+            }
+        sc = get_cached_stablecoin()
+        if sc:
+            scan_cache.stablecoin = {
+                "usdt_market_cap": sc.usdt_market_cap,
+                "usdc_market_cap": sc.usdc_market_cap,
+                "total_cap": sc.total_stablecoin_cap,
+                "trend": sc.trend,
+                "change_7d_pct": sc.change_7d_pct,
+            }
+
+        # Compute multi-TF confluence (requires both timeframes)
+        if "4h" in scan_cache.results and "1d" in scan_cache.results:
+            try:
+                confluences = compute_all_confluences(
+                    scan_cache.results["4h"],
+                    scan_cache.results["1d"],
+                )
+                # Store and inject into results
+                scan_cache.confluence = {
+                    sym: {
+                        "score": c.score,
+                        "label": c.label,
+                        "regime_aligned": c.regime_aligned,
+                        "signal_aligned": c.signal_aligned,
+                        "regime_4h": c.regime_4h,
+                        "regime_1d": c.regime_1d,
+                        "signal_4h": c.signal_4h,
+                        "signal_1d": c.signal_1d,
+                    }
+                    for sym, c in confluences.items()
+                }
+                # Inject confluence into each result for API response
+                for tf_key in ("4h", "1d"):
+                    for r in scan_cache.results.get(tf_key, []):
+                        sym = r.get("symbol", "")
+                        if sym in scan_cache.confluence:
+                            r["confluence"] = scan_cache.confluence[sym]
+            except Exception:
+                logger.exception("Confluence computation failed")
+
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start
         logger.info("=== Scan completed in %.1fs ===", elapsed)
@@ -633,6 +768,9 @@ def get_all_results() -> dict:
         "consensus": cache.consensus,
         "alt_season": cache.alt_season,
         "global_metrics": cache.global_metrics,
+        "sentiment": cache.sentiment,
+        "stablecoin": cache.stablecoin,
+        "confluence": cache.confluence,
     }
 
 

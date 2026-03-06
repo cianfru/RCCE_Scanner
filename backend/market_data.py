@@ -178,3 +178,215 @@ async def _fetch_from_coingecko() -> GlobalMetrics:
 def get_cached_metrics() -> Optional[GlobalMetrics]:
     """Return the current cached metrics (even if expired). Useful for sync callers."""
     return _cache.get_fallback()
+
+
+# ---------------------------------------------------------------------------
+# Fear & Greed Index (Alternative.me)
+# ---------------------------------------------------------------------------
+
+_FNG_URL = "https://api.alternative.me/fng/"
+
+
+@dataclass
+class SentimentData:
+    """Fear & Greed Index snapshot."""
+    fear_greed_value: int = 50       # 0-100
+    fear_greed_label: str = "Neutral"  # Extreme Fear / Fear / Neutral / Greed / Extreme Greed
+    timestamp: float = 0.0
+
+
+@dataclass
+class _SentimentCache:
+    data: Optional[SentimentData] = None
+    expires_at: float = 0.0
+
+    def get(self) -> Optional[SentimentData]:
+        if self.data and time.monotonic() < self.expires_at:
+            return self.data
+        return None
+
+    def put(self, data: SentimentData) -> None:
+        self.data = data
+        self.expires_at = time.monotonic() + _CACHE_TTL
+
+    def get_fallback(self) -> Optional[SentimentData]:
+        return self.data
+
+
+_sentiment_cache = _SentimentCache()
+
+
+async def fetch_fear_greed() -> Optional[SentimentData]:
+    """Fetch the current Fear & Greed Index from Alternative.me.
+
+    Free API, no key required, ~60 req/min.
+    """
+    cached = _sentiment_cache.get()
+    if cached is not None:
+        return cached
+
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_FNG_URL) as resp:
+                resp.raise_for_status()
+                payload = await resp.json()
+
+        data_list = payload.get("data", [])
+        if not data_list:
+            return _sentiment_cache.get_fallback()
+
+        entry = data_list[0]
+        result = SentimentData(
+            fear_greed_value=int(entry.get("value", 50)),
+            fear_greed_label=entry.get("value_classification", "Neutral"),
+            timestamp=time.time(),
+        )
+        _sentiment_cache.put(result)
+        logger.info("Fear & Greed Index: %d (%s)", result.fear_greed_value, result.fear_greed_label)
+        return result
+
+    except Exception as exc:
+        logger.warning("Failed to fetch Fear & Greed: %s", exc)
+        return _sentiment_cache.get_fallback()
+
+
+# ---------------------------------------------------------------------------
+# Stablecoin Supply (CoinGecko)
+# ---------------------------------------------------------------------------
+
+_STABLECOIN_URL = (
+    "https://api.coingecko.com/api/v3/coins/markets"
+    "?vs_currency=usd&ids=tether,usd-coin&order=market_cap_desc"
+)
+
+
+@dataclass
+class StablecoinData:
+    """Stablecoin market cap snapshot."""
+    usdt_market_cap: float = 0.0
+    usdc_market_cap: float = 0.0
+    total_stablecoin_cap: float = 0.0
+    trend: str = "STABLE"            # EXPANDING / CONTRACTING / STABLE
+    change_7d_pct: float = 0.0       # 7-day change percentage
+    timestamp: float = 0.0
+
+
+@dataclass
+class _StablecoinCache:
+    data: Optional[StablecoinData] = None
+    expires_at: float = 0.0
+    # Track history for trend calculation (deque of (timestamp, total_cap))
+    history: list = field(default_factory=list)
+
+    def get(self) -> Optional[StablecoinData]:
+        if self.data and time.monotonic() < self.expires_at:
+            return self.data
+        return None
+
+    def put(self, data: StablecoinData) -> None:
+        self.data = data
+        self.expires_at = time.monotonic() + _CACHE_TTL
+        # Add to history (keep last 7 days at 5-min intervals = ~2016 entries)
+        self.history.append((data.timestamp, data.total_stablecoin_cap))
+        if len(self.history) > 2100:
+            self.history = self.history[-2016:]
+
+    def get_fallback(self) -> Optional[StablecoinData]:
+        return self.data
+
+    def compute_trend(self, current_cap: float) -> tuple:
+        """Compute 7-day trend from history.
+
+        Returns (trend_label, change_pct).
+        """
+        if not self.history:
+            return "STABLE", 0.0
+
+        # Find entry closest to 7 days ago
+        target_time = time.time() - 7 * 24 * 3600
+        old_cap = None
+        for ts, cap in self.history:
+            if ts >= target_time:
+                old_cap = cap
+                break
+
+        if old_cap is None or old_cap == 0:
+            # Not enough history — use oldest available
+            old_cap = self.history[0][1] if self.history else current_cap
+
+        if old_cap == 0:
+            return "STABLE", 0.0
+
+        change_pct = ((current_cap - old_cap) / old_cap) * 100.0
+
+        if change_pct > 1.0:
+            trend = "EXPANDING"
+        elif change_pct < -1.0:
+            trend = "CONTRACTING"
+        else:
+            trend = "STABLE"
+
+        return trend, round(change_pct, 2)
+
+
+_stablecoin_cache = _StablecoinCache()
+
+
+async def fetch_stablecoin_supply() -> Optional[StablecoinData]:
+    """Fetch USDT and USDC market caps from CoinGecko.
+
+    Computes 7-day trend from cached history.
+    """
+    cached = _stablecoin_cache.get()
+    if cached is not None:
+        return cached
+
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_STABLECOIN_URL) as resp:
+                resp.raise_for_status()
+                coins = await resp.json()
+
+        usdt_cap = 0.0
+        usdc_cap = 0.0
+        for coin in coins:
+            cid = coin.get("id", "")
+            mcap = coin.get("market_cap", 0) or 0
+            if cid == "tether":
+                usdt_cap = float(mcap)
+            elif cid == "usd-coin":
+                usdc_cap = float(mcap)
+
+        total_cap = usdt_cap + usdc_cap
+        trend, change_pct = _stablecoin_cache.compute_trend(total_cap)
+
+        result = StablecoinData(
+            usdt_market_cap=usdt_cap,
+            usdc_market_cap=usdc_cap,
+            total_stablecoin_cap=total_cap,
+            trend=trend,
+            change_7d_pct=change_pct,
+            timestamp=time.time(),
+        )
+        _stablecoin_cache.put(result)
+        logger.info(
+            "Stablecoin supply: $%.1fB (USDT $%.1fB + USDC $%.1fB) trend=%s (%.1f%%)",
+            total_cap / 1e9, usdt_cap / 1e9, usdc_cap / 1e9, trend, change_pct,
+        )
+        return result
+
+    except Exception as exc:
+        logger.warning("Failed to fetch stablecoin supply: %s", exc)
+        return _stablecoin_cache.get_fallback()
+
+
+def get_cached_sentiment() -> Optional[SentimentData]:
+    """Return cached Fear & Greed data."""
+    return _sentiment_cache.get_fallback()
+
+
+def get_cached_stablecoin() -> Optional[StablecoinData]:
+    """Return cached stablecoin data."""
+    return _stablecoin_cache.get_fallback()
