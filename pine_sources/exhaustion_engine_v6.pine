@@ -1,0 +1,99 @@
+//@version=6
+indicator("V6.0-Down (Right Diagnostic)", overlay=false, max_boxes_count=500)
+
+// === INPUTS ===
+atr_len      = input.int(14, "ATR Lookback")
+vol_lookback = input.int(20, "RelVol Lookback")
+sens         = input.float(1.2, "Exhaustion Sensitivity", step=0.1)
+cluster_req  = input.int(3, "Min. Aqua Dots", minval=1)
+cluster_look = input.int(10, "Cluster Window")
+
+// === DATA PREP ===
+atr_now  = ta.tr(true) 
+avg_atr  = ta.atr(atr_len)
+
+// --- DIRECTIONAL EFFORT ---
+roc_down = close < close[1] ? math.abs(close - close[1]) : 0
+eff_down = roc_down / nz(avg_atr, 1)
+eff_s    = ta.sma(eff_down, 3) 
+
+// --- CANDLE ANATOMY ---
+is_red     = close < open
+body_size  = math.abs(close - open)
+lower_wick = close < open ? (close - low) : (open - low)
+upper_wick = close < open ? (high - open) : (high - close)
+
+// === WEEKLY BMSB ANCHOR ===
+w_mid = request.security(syminfo.tickerid, "W", (ta.ema(close, 21) + ta.sma(close, 20)) / 2.0, lookahead=barmerge.lookahead_on)
+weekly_down_zone = close < w_mid
+dist_pct         = ((close - w_mid) / w_mid) * 100
+
+// === THE SIGNAL LOGIC ===
+effort_avg   = ta.sma(eff_s, 20)
+effort_peak  = eff_s > effort_avg * sens
+
+is_absorption = weekly_down_zone and is_red and (atr_now < avg_atr) and effort_peak
+is_climax     = weekly_down_zone and (atr_now > avg_atr * 1.5) and (lower_wick > body_size * 1.5) and (lower_wick > upper_wick) and effort_peak
+capitulation  = is_absorption or is_climax
+
+// === CLUSTER & DIVERGENCE ===
+aqua_in_window = math.sum(is_absorption ? 1 : 0, cluster_look)
+var float start_vol = na
+if is_absorption and aqua_in_window == 1
+    start_vol := volume
+floor_confirmed = (aqua_in_window >= cluster_req) and (volume < start_vol)
+
+// === MASTER BOX LOGIC ===
+var box master_box = na
+var float master_low = na
+if capitulation and na(master_box)
+    master_low := low
+    master_box := box.new(bar_index, w_mid, bar_index, master_low, bgcolor=color.new(color.blue, 92), border_color=color.new(color.blue, 85), force_overlay=true)
+
+if not na(master_box)
+    if close > w_mid
+        box.set_right(master_box, bar_index)
+        master_box := na
+    else
+        box.set_right(master_box, bar_index)
+        box.set_top(master_box, w_mid)
+        if low < master_low
+            master_low := low
+            box.set_bottom(master_box, master_low)
+
+// === VISUALIZATION ===
+heat_col = is_climax ? color.yellow : is_absorption ? color.aqua : eff_s > 1.8 ? color.red : eff_s > 1.2 ? color.orange : color.gray
+plot(-eff_s, style=plot.style_columns, color=heat_col, title="Effort")
+hline(0, "Baseline", color=color.new(color.gray, 50))
+plotchar(capitulation ? -eff_s : na, char="●", location=location.absolute, color=is_climax ? color.yellow : color.aqua, size=size.tiny)
+plotchar(floor_confirmed and not floor_confirmed[1], char="x", location=location.bottom, color=color.new(color.aqua, 40), size=size.tiny)
+
+rel_vol = volume / ta.sma(volume, vol_lookback)
+plot(-rel_vol * 0.4, color=color.new(color.gray, 85), style=plot.style_area, title="RelVol")
+
+// === DIAGNOSTIC DASHBOARD (Middle Right) ===
+var table dash = table.new(position.middle_right, 2, 6, bgcolor=color.new(color.black, 100), border_width=0)
+if barstate.islast
+    state_txt = floor_confirmed ? "EXHAUSTED FLOOR" : is_climax ? "CLIMAX" : is_absorption ? "ABSORBING" : weekly_down_zone ? "BEAR ZONE" : "NEUTRAL"
+    state_col = floor_confirmed ? color.aqua : is_climax ? color.yellow : is_absorption ? color.aqua : color.gray
+    dist_col  = dist_pct < -15 ? color.red : dist_pct < -5 ? color.orange : color.gray
+    
+    // Row 0: Effort
+    table.cell(dash, 0, 0, "Effort:", text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 1, 0, str.tostring(eff_s, "#.##"), text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    
+    // Row 1: Relative Volume
+    table.cell(dash, 0, 1, "RelVol:", text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 1, 1, str.tostring(rel_vol, "#.##") + "x", text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    
+    // Row 2: Structural Phase
+    table.cell(dash, 0, 2, "Phase:", text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 1, 2, state_txt, text_color=state_col, text_size=size.small, text_halign=text.align_left)
+    
+    // Row 3: Distance from Weekly Mean
+    table.cell(dash, 0, 3, "Dev %:", text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 1, 3, str.tostring(dist_pct, "#.##") + "%", text_color=dist_col, text_size=size.small, text_halign=text.align_left)
+
+    // Row 4: Weekly Mid Price
+    table.cell(dash, 0, 4, "W-BMSB:", text_color=color.gray, text_size=size.small, text_halign=text.align_right)
+    table.cell(dash, 1, 4, str.tostring(math.round(w_mid)), text_color=color.white, text_size=size.small, text_halign=text.align_left)

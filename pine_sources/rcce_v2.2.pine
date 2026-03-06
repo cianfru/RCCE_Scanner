@@ -1,0 +1,1060 @@
+//@version=6
+indicator("RCCE v2.2", shorttitle="RCCE", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ==========================================================
+// CONFIGURATION CONSTANTS
+// ==========================================================
+
+// Lookback periods
+LEN_LONG = input.int(200, "Long Period (Zscore/MA)", minval=50, group="Core Parameters")
+LEN_SHORT = input.int(30, "Short Period (Vol)", minval=10, group="Core Parameters")
+LEN_ENERGY_FAST = input.int(14, "Energy Fast", minval=5, group="Core Parameters")
+LEN_ENERGY_SLOW = input.int(50, "Energy Slow", minval=20, group="Core Parameters")
+LEN_BETA = input.int(100, "Beta Calculation Period", minval=50, group="Core Parameters")
+
+// Regime thresholds
+Z_BLOWOFF = input.float(2.0, "Z-Score Blowoff Threshold", minval=1.0, group="Core Parameters")
+Z_CAPITULATION = input.float(-1.0, "Z-Score Capitulation Threshold", maxval=-0.5, group="Core Parameters")
+Z_TRIM = input.float(3.0, "Z-Score Trim Threshold", minval=2.0, group="Core Parameters")
+Z_TRIM_HARD = input.float(3.5, "Z-Score Hard Trim Threshold", minval=3.0, group="Core Parameters")
+
+// Regime persistence
+MIN_REGIME_BARS = input.int(5, "Min Bars Before Regime Change", minval=1, group="Core Parameters")
+
+// ==========================================================
+// MODULE 0 — SYMBOL CLASSIFICATION
+// ==========================================================
+
+sym = syminfo.ticker
+sym_lower = str.lower(sym)
+
+mode_class = input.string("AUTO", "Classification Mode", options=["AUTO", "FORCE ALT", "FORCE MEME"], group="Classification")
+
+is_btc = str.contains(sym_lower, "btc")
+is_eth = str.contains(sym_lower, "eth")
+
+var string asset_class = "ALT"
+
+if mode_class == "FORCE ALT"
+    asset_class := "ALT"
+else if mode_class == "FORCE MEME"
+    asset_class := "MEME"
+else
+    if is_btc
+        asset_class := "BTC"
+    else if is_eth
+        asset_class := "ETH"
+    else if str.contains(sym_lower, "wif") or str.contains(sym_lower, "bonk") or str.contains(sym_lower, "shib") or str.contains(sym_lower, "doge") or str.contains(sym_lower, "pepe") or str.contains(sym_lower, "meme")
+        asset_class := "MEME"
+    else
+        asset_class := "ALT"
+
+// Reference tickers
+btc_ticker = input.symbol("BINANCE:BTCUSDT", "BTC Reference", group="Classification")
+eth_ticker = input.symbol("BINANCE:ETHUSDT", "ETH Reference", group="Classification")
+
+btc_close = request.security(btc_ticker, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+eth_close = request.security(eth_ticker, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// ==========================================================
+// SCANNER CONFIGURATION
+// ==========================================================
+
+show_scanner = input.bool(true, "Show Global Scanner", group="Scanner")
+scanner_position = input.string("BOTTOM_LEFT", "Scanner Position", 
+                                options=["TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT"], 
+                                group="Scanner")
+
+// Flexible ticker inputs with custom labels
+scan_ticker_1 = input.symbol("BINANCE:BTCUSDT", "Scanner Ticker 1", group="Scanner")
+scan_label_1 = input.string("BTC", "Ticker 1 Label", group="Scanner", inline="lbl1")
+show_scan_1 = input.bool(true, "Show", group="Scanner", inline="lbl1")
+
+scan_ticker_2 = input.symbol("BINANCE:ETHUSDT", "Scanner Ticker 2", group="Scanner")
+scan_label_2 = input.string("ETH", "Ticker 2 Label", group="Scanner", inline="lbl2")
+show_scan_2 = input.bool(true, "Show", group="Scanner", inline="lbl2")
+
+scan_ticker_3 = input.symbol("BINANCE:SOLUSDT", "Scanner Ticker 3", group="Scanner")
+scan_label_3 = input.string("SOL", "Ticker 3 Label", group="Scanner", inline="lbl3")
+show_scan_3 = input.bool(true, "Show", group="Scanner", inline="lbl3")
+
+scan_ticker_4 = input.symbol("BINANCE:BNBUSDT", "Scanner Ticker 4", group="Scanner")
+scan_label_4 = input.string("BNB", "Ticker 4 Label", group="Scanner", inline="lbl4")
+show_scan_4 = input.bool(true, "Show", group="Scanner", inline="lbl4")
+
+scan_ticker_5 = input.symbol("CRYPTOCAP:TOTAL", "Scanner Ticker 5", group="Scanner")
+scan_label_5 = input.string("TOTAL", "Ticker 5 Label", group="Scanner", inline="lbl5")
+show_scan_5 = input.bool(true, "Show", group="Scanner", inline="lbl5")
+
+scan_ticker_6 = input.symbol("CRYPTOCAP:TOTAL3", "Scanner Ticker 6", group="Scanner")
+scan_label_6 = input.string("TOTAL3", "Ticker 6 Label", group="Scanner", inline="lbl6")
+show_scan_6 = input.bool(true, "Show", group="Scanner", inline="lbl6")
+
+// Alt season detection
+enable_alt_season_detection = input.bool(true, "Enable Alt Season Detection", group="Alt Season")
+alt_calc_method = input.string("MANUAL", "Alt Cap Method", 
+                               options=["MANUAL", "AUTO_CALC"], 
+                               group="Alt Season",
+                               tooltip="MANUAL: Use a ticker you specify | AUTO_CALC: Calculate TOTAL3 - Stablecoins")
+
+manual_alt_ticker = input.symbol("CRYPTOCAP:TOTAL3", "Manual Alt Cap Ticker", group="Alt Season")
+
+usdt_ticker = input.symbol("CRYPTOCAP:USDT", "USDT Market Cap", group="Alt Season")
+usdc_ticker = input.symbol("CRYPTOCAP:USDC", "USDC Market Cap", group="Alt Season")
+dai_ticker = input.symbol("CRYPTOCAP:DAI", "DAI Market Cap", group="Alt Season")
+
+major_ticker_for_alt_szn = input.int(1, "Major Ticker Slot (for Alt Season)", 
+                                     minval=1, maxval=6, group="Alt Season",
+                                     tooltip="Which scanner slot is BTC/ETH?")
+
+show_alt_cap_in_scanner = input.bool(true, "Show Alt Cap in Scanner", group="Alt Season")
+
+// ==========================================================
+// VISUAL CONFIGURATION
+// ==========================================================
+
+show_ribbon = input.bool(true, "Show Conviction Ribbon", group="Visual")
+ribbon_style = input.string("BACKGROUND", "Ribbon Style", options=["BACKGROUND", "BAND", "BOTH"], group="Visual")
+ribbon_intensity = input.float(50, "Ribbon Intensity", minval=10, maxval=100, step=10, group="Visual")
+show_hud = input.bool(true, "Show HUD", group="Visual")
+
+show_entry_signals = input.bool(true, "Show Entry Signals", group="Signals")
+show_exit_signals = input.bool(true, "Show Exit Signals", group="Signals")
+show_market_warnings = input.bool(true, "Show Market Warnings (Euphoria/Panic)", group="Signals")
+
+// ==========================================================
+// HELPER FUNCTIONS
+// ==========================================================
+
+// Calculate Z-score on log returns
+calc_zscore(series float src, simple int len) =>
+    logp = math.log(src)
+    ma = ta.sma(logp, len)
+    dev = logp - ma
+    mean_dev = ta.sma(dev, len)
+    std_dev = ta.stdev(dev, len)
+    (dev - mean_dev) / (std_dev == 0 ? 1e-10 : std_dev)
+
+// Calculate proper beta (covariance / variance) - Fixed: custom covariance
+calc_beta(series float asset_price, series float benchmark_price, simple int len) =>
+    asset_ret = ta.change(asset_price) / asset_price[1]
+    bench_ret = ta.change(benchmark_price) / benchmark_price[1]
+    
+    // Manual covariance calculation since ta.cov doesn't exist
+    asset_mean = ta.sma(asset_ret, len)
+    bench_mean = ta.sma(bench_ret, len)
+    
+    // Covariance = E[(X - mean_X)(Y - mean_Y)]
+    covar = ta.sma((asset_ret - asset_mean) * (bench_ret - bench_mean), len)
+    bench_var = ta.variance(bench_ret, len)
+    
+    covar / (bench_var == 0 ? 1e-10 : bench_var)
+
+// Calculate regime probabilities
+calc_regime_probabilities(float z, float vol, bool vol_high, bool vol_low, float energy) =>
+    p_markup = math.max(0, z) * (energy > 1 ? 1.0 : 0.5)
+    p_blowoff = math.max(0, z - Z_BLOWOFF)
+    p_reacc = (z < 0 and not vol_high ? -z : 0.0)
+    p_md = (vol_high and z < 0 ? vol * 2 : 0.0)
+    p_cap = (vol_low and z < Z_CAPITULATION ? -z : 0.0)
+    p_acc = (vol_low and z > -0.5 and z < 0.5 ? 1.0 : 0.0)
+    
+    sum_p = p_markup + p_blowoff + p_reacc + p_md + p_cap + p_acc + 1e-10
+    
+    [p_markup/sum_p, p_blowoff/sum_p, p_reacc/sum_p, p_md/sum_p, p_cap/sum_p, p_acc/sum_p]
+
+// Get dominant regime with confidence
+get_dominant_regime(float p_markup, float p_blowoff, float p_reacc, float p_md, float p_cap, float p_acc, bool meme_dead) =>
+    if meme_dead
+        ["ABSORBING", 1.0]
+    else
+        max_prob = math.max(p_markup, p_blowoff, p_reacc, p_md, p_cap, p_acc)
+        
+        phase = "FLAT"
+        if max_prob == p_markup
+            phase := "MARKUP"
+        else if max_prob == p_blowoff
+            phase := "BLOWOFF"
+        else if max_prob == p_reacc
+            phase := "REACC"
+        else if max_prob == p_md
+            phase := "MARKDOWN"
+        else if max_prob == p_cap
+            phase := "CAP"
+        else if max_prob == p_acc
+            phase := "ACCUM"
+        
+        [phase, max_prob]
+
+// Enhanced regime detection for external tickers
+get_ticker_regime_detailed(simple string ticker) =>
+    [t_close, t_volume] = request.security(ticker, timeframe.period, [close, volume], 
+                                           barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+    
+    // Calculate Z-score
+    t_logp = math.log(t_close)
+    t_ma = ta.sma(t_logp, LEN_LONG)
+    t_dev = t_logp - t_ma
+    t_mean_dev = ta.sma(t_dev, LEN_LONG)
+    t_std_dev = ta.stdev(t_dev, LEN_LONG)
+    t_z = (t_dev - t_mean_dev) / (t_std_dev == 0 ? 1e-10 : t_std_dev)
+    
+    // Calculate volatility metrics
+    t_vol = ta.stdev(t_close, LEN_SHORT) / t_close
+    t_vol_low = t_vol < ta.percentile_linear_interpolation(t_vol, LEN_SHORT, 25)
+    t_vol_high = t_vol > ta.percentile_linear_interpolation(t_vol, LEN_SHORT, 75)
+    
+    // Calculate energy
+    t_energy = ta.stdev(t_close, LEN_ENERGY_FAST) / ta.stdev(t_close, LEN_ENERGY_SLOW)
+    
+    // Determine regime with same logic as main indicator
+    t_phase = "FLAT"
+    t_conf = 0.0
+    
+    if t_z > Z_TRIM_HARD
+        t_phase := "BLOWOFF"
+        t_conf := math.min(1.0, (t_z - Z_TRIM_HARD) / 2)
+    else if t_z > Z_BLOWOFF
+        t_phase := "MARKUP"
+        t_conf := (t_z - Z_BLOWOFF) / (Z_TRIM_HARD - Z_BLOWOFF)
+    else if t_z > 0
+        t_phase := "MARKUP"
+        t_conf := t_z / Z_BLOWOFF * 0.6
+    else if t_vol_high and t_z < 0
+        t_phase := "MARKDOWN"
+        t_conf := math.min(1.0, (-t_z) * 0.4)
+    else if t_vol_low and t_z < Z_CAPITULATION
+        t_phase := "CAP"
+        t_conf := math.min(1.0, (-t_z + Z_CAPITULATION) * 0.5)
+    else if t_vol_low and t_z > -0.5 and t_z < 0.5
+        t_phase := "ACCUM"
+        t_conf := 1.0 - math.abs(t_z)
+    else if t_z < 0 and not t_vol_high
+        t_phase := "REACC"
+        t_conf := (-t_z) * 0.3
+    
+    [t_phase, t_z, t_conf, t_energy]
+
+// ==========================================================
+// MODULE 1 — CORE SYNTHETIC SIGNALS
+// ==========================================================
+
+z = calc_zscore(close, LEN_LONG)
+
+vol = ta.stdev(close, LEN_SHORT) / close
+vol_low = vol < ta.percentile_linear_interpolation(vol, LEN_SHORT, 25)
+vol_high = vol > ta.percentile_linear_interpolation(vol, LEN_SHORT, 75)
+vol_mid = not vol_low and not vol_high
+
+energy = ta.stdev(close, LEN_ENERGY_FAST) / ta.stdev(close, LEN_ENERGY_SLOW)
+energy_norm = energy - 1.0
+
+// ==========================================================
+// MODULE 2 — REGIME PROBABILITIES
+// ==========================================================
+
+[p_markup, p_blowoff, p_reacc, p_md, p_cap, p_acc] = calc_regime_probabilities(z, vol, vol_high, vol_low, energy)
+
+// ==========================================================
+// MODULE 3 — PROPER BETA CALCULATION
+// ==========================================================
+
+is_alt = (asset_class == "ALT")
+is_meme = (asset_class == "MEME")
+
+// Calculate actual betas
+beta_to_btc = is_btc ? 1.0 : calc_beta(close, btc_close, LEN_BETA)
+beta_to_eth = is_eth ? 1.0 : calc_beta(close, eth_close, LEN_BETA)
+
+// Weight based on absolute beta magnitude
+abs_beta_btc = math.abs(beta_to_btc)
+abs_beta_eth = math.abs(beta_to_eth)
+
+beta_sum = abs_beta_btc + abs_beta_eth + 1e-10
+w_btc = abs_beta_btc / beta_sum
+w_eth = abs_beta_eth / beta_sum
+
+// ==========================================================
+// MODULE 4 — ALT REFLEXIVE BOOTSTRAP
+// ==========================================================
+
+bootstrap = is_alt ? (energy_norm + z) : 0.0
+
+// ==========================================================
+// MODULE 5 — MEME ECOLOGY
+// ==========================================================
+
+var bool meme_dead = false
+collapse_cond = (z < -2 and vol_high)
+
+if is_meme and collapse_cond
+    meme_dead := true
+
+// ==========================================================
+// MODULE 6 — REGIME DETECTION WITH PERSISTENCE
+// ==========================================================
+
+[raw_phase, confidence] = get_dominant_regime(p_markup, p_blowoff, p_reacc, p_md, p_cap, p_acc, meme_dead)
+
+var string phase = "FLAT"
+var string prev_phase = "FLAT"
+var int regime_bars = 0
+
+// Regime persistence filter
+if raw_phase != prev_phase
+    if regime_bars < MIN_REGIME_BARS
+        phase := prev_phase
+        regime_bars += 1
+    else
+        phase := raw_phase
+        prev_phase := raw_phase
+        regime_bars := 0
+else
+    phase := raw_phase
+    regime_bars += 1
+
+// ==========================================================
+// MODULE 7 — ROTATION SIGNALS
+// ==========================================================
+
+beta_alt = is_alt ? math.abs(bootstrap) : 0.0
+beta_meme = is_meme and not meme_dead ? math.abs(bootstrap) * 0.5 : 0.0
+
+sum_beta_all = w_btc + w_eth + beta_alt + beta_meme + 1e-10
+
+beta_btc_n = w_btc / sum_beta_all
+beta_eth_n = w_eth / sum_beta_all
+beta_alt_n = beta_alt / sum_beta_all
+beta_meme_n = beta_meme / sum_beta_all
+
+rot = "NONE"
+
+if beta_eth_n > beta_btc_n and beta_alt_n > beta_eth_n
+    rot := "ROT-UP"
+else if beta_alt_n > beta_eth_n and phase == "MARKUP"
+    rot := "ROT-CONT"
+else if phase == "MARKDOWN"
+    rot := "ROT-DOWN"
+
+if meme_dead
+    rot := "ROT-COLL"
+
+// ==========================================================
+// MODULE 8 — MEME REVIVAL LOGIC
+// ==========================================================
+
+if is_meme and meme_dead
+    if (rot == "ROT-UP" or rot == "ROT-CONT") and z > 0 and (vol_low or vol_mid)
+        meme_dead := false
+
+// ==========================================================
+// MODULE 9 — SCANNER REGIME DETECTION
+// ==========================================================
+
+// Initialize variables
+var string scan_regime_1 = "N/A"
+var float scan_z_1 = 0.0
+var float scan_conf_1 = 0.0
+var float scan_energy_1 = 0.0
+
+var string scan_regime_2 = "N/A"
+var float scan_z_2 = 0.0
+var float scan_conf_2 = 0.0
+var float scan_energy_2 = 0.0
+
+var string scan_regime_3 = "N/A"
+var float scan_z_3 = 0.0
+var float scan_conf_3 = 0.0
+var float scan_energy_3 = 0.0
+
+var string scan_regime_4 = "N/A"
+var float scan_z_4 = 0.0
+var float scan_conf_4 = 0.0
+var float scan_energy_4 = 0.0
+
+var string scan_regime_5 = "N/A"
+var float scan_z_5 = 0.0
+var float scan_conf_5 = 0.0
+var float scan_energy_5 = 0.0
+
+var string scan_regime_6 = "N/A"
+var float scan_z_6 = 0.0
+var float scan_conf_6 = 0.0
+var float scan_energy_6 = 0.0
+
+if show_scan_1
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_1)
+    scan_regime_1 := tmp_regime
+    scan_z_1 := tmp_z
+    scan_conf_1 := tmp_conf
+    scan_energy_1 := tmp_energy
+
+if show_scan_2
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_2)
+    scan_regime_2 := tmp_regime
+    scan_z_2 := tmp_z
+    scan_conf_2 := tmp_conf
+    scan_energy_2 := tmp_energy
+
+if show_scan_3
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_3)
+    scan_regime_3 := tmp_regime
+    scan_z_3 := tmp_z
+    scan_conf_3 := tmp_conf
+    scan_energy_3 := tmp_energy
+
+if show_scan_4
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_4)
+    scan_regime_4 := tmp_regime
+    scan_z_4 := tmp_z
+    scan_conf_4 := tmp_conf
+    scan_energy_4 := tmp_energy
+
+if show_scan_5
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_5)
+    scan_regime_5 := tmp_regime
+    scan_z_5 := tmp_z
+    scan_conf_5 := tmp_conf
+    scan_energy_5 := tmp_energy
+
+if show_scan_6
+    [tmp_regime, tmp_z, tmp_conf, tmp_energy] = get_ticker_regime_detailed(scan_ticker_6)
+    scan_regime_6 := tmp_regime
+    scan_z_6 := tmp_z
+    scan_conf_6 := tmp_conf
+    scan_energy_6 := tmp_energy
+
+// ==========================================================
+// MODULE 10 — TRUE ALT CAP CALCULATION (SAFE VERSION)
+// ==========================================================
+
+get_true_alt_cap() =>
+    float result = na
+    
+    if alt_calc_method == "MANUAL"
+        result := request.security(manual_alt_ticker, timeframe.period, close, 
+                                   barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+    else
+        total3_cap = request.security("CRYPTOCAP:TOTAL3", timeframe.period, close, 
+                                     barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+        
+        usdt_cap = request.security(usdt_ticker, timeframe.period, close, 
+                                   barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+        usdc_cap = request.security(usdc_ticker, timeframe.period, close, 
+                                   barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+        dai_cap = request.security(dai_ticker, timeframe.period, close, 
+                                  barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+        
+        // Handle NA values
+        usdt_safe = na(usdt_cap) ? 0.0 : usdt_cap
+        usdc_safe = na(usdc_cap) ? 0.0 : usdc_cap
+        dai_safe = na(dai_cap) ? 0.0 : dai_cap
+        
+        total_stables = usdt_safe + usdc_safe + dai_safe
+        result := na(total3_cap) ? close : total3_cap - total_stables
+    
+    na(result) ? close : result
+
+true_alt_cap = get_true_alt_cap()
+
+// Calculate regime for true alt cap
+get_alt_cap_regime(float alt_cap_price) =>
+    alt_logp = math.log(alt_cap_price)
+    alt_ma = ta.sma(alt_logp, LEN_LONG)
+    alt_dev = alt_logp - alt_ma
+    alt_mean_dev = ta.sma(alt_dev, LEN_LONG)
+    alt_std_dev = ta.stdev(alt_dev, LEN_LONG)
+    alt_z = (alt_dev - alt_mean_dev) / (alt_std_dev == 0 ? 1e-10 : alt_std_dev)
+    
+    alt_vol = ta.stdev(alt_cap_price, LEN_SHORT) / alt_cap_price
+    alt_vol_low = alt_vol < ta.percentile_linear_interpolation(alt_vol, LEN_SHORT, 25)
+    alt_vol_high = alt_vol > ta.percentile_linear_interpolation(alt_vol, LEN_SHORT, 75)
+    
+    alt_phase = "FLAT"
+    alt_conf = 0.0
+    
+    if alt_z > Z_TRIM_HARD
+        alt_phase := "BLOWOFF"
+        alt_conf := math.min(1.0, (alt_z - Z_TRIM_HARD) / 2)
+    else if alt_z > Z_BLOWOFF
+        alt_phase := "MARKUP"
+        alt_conf := (alt_z - Z_BLOWOFF) / (Z_TRIM_HARD - Z_BLOWOFF)
+    else if alt_z > 0
+        alt_phase := "MARKUP"
+        alt_conf := alt_z / Z_BLOWOFF * 0.6
+    else if alt_vol_high and alt_z < 0
+        alt_phase := "MARKDOWN"
+        alt_conf := math.min(1.0, (-alt_z) * 0.4)
+    else if alt_vol_low and alt_z < Z_CAPITULATION
+        alt_phase := "CAP"
+        alt_conf := math.min(1.0, (-alt_z + Z_CAPITULATION) * 0.5)
+    else if alt_vol_low and alt_z > -0.5 and alt_z < 0.5
+        alt_phase := "ACCUM"
+        alt_conf := 1.0 - math.abs(alt_z)
+    
+    [alt_phase, alt_z, alt_conf]
+
+[true_alt_regime, true_alt_z, true_alt_conf] = get_alt_cap_regime(true_alt_cap)
+
+// ==========================================================
+// MODULE 11 — MARKET CONSENSUS
+// ==========================================================
+
+get_market_consensus() =>
+    regimes = array.new<string>()
+    
+    if show_scan_1
+        array.push(regimes, scan_regime_1)
+    if show_scan_2
+        array.push(regimes, scan_regime_2)
+    if show_scan_3
+        array.push(regimes, scan_regime_3)
+    if show_scan_4
+        array.push(regimes, scan_regime_4)
+    if show_scan_5
+        array.push(regimes, scan_regime_5)
+    if show_scan_6
+        array.push(regimes, scan_regime_6)
+    
+    markup_count = 0
+    blowoff_count = 0
+    markdown_count = 0
+    accum_count = 0
+    
+    for i = 0 to array.size(regimes) - 1
+        r = array.get(regimes, i)
+        if r == "MARKUP"
+            markup_count += 1
+        else if r == "BLOWOFF"
+            blowoff_count += 1
+        else if r == "MARKDOWN"
+            markdown_count += 1
+        else if r == "ACCUM" or r == "CAP" or r == "REACC"
+            accum_count += 1
+    
+    total = array.size(regimes)
+    
+    consensus = "MIXED"
+    consensus_pct = 0.0
+    
+    if total > 0
+        if markup_count / total > 0.6
+            consensus := "RISK-ON"
+            consensus_pct := markup_count / total
+        else if blowoff_count / total > 0.5
+            consensus := "EUPHORIA"
+            consensus_pct := blowoff_count / total
+        else if markdown_count / total > 0.5
+            consensus := "RISK-OFF"
+            consensus_pct := markdown_count / total
+        else if accum_count / total > 0.5
+            consensus := "ACCUMULATION"
+            consensus_pct := accum_count / total
+    
+    [consensus, consensus_pct]
+
+[market_consensus, consensus_strength] = get_market_consensus()
+
+// ==========================================================
+// MODULE 12 — DIVERGENCE DETECTION
+// ==========================================================
+
+detect_divergence() =>
+    div_type = "NONE"
+    
+    major_regime = major_ticker_for_alt_szn == 1 ? scan_regime_1 :
+                   major_ticker_for_alt_szn == 2 ? scan_regime_2 :
+                   major_ticker_for_alt_szn == 3 ? scan_regime_3 :
+                   major_ticker_for_alt_szn == 4 ? scan_regime_4 :
+                   major_ticker_for_alt_szn == 5 ? scan_regime_5 :
+                   scan_regime_6
+    
+    major_z = major_ticker_for_alt_szn == 1 ? scan_z_1 :
+              major_ticker_for_alt_szn == 2 ? scan_z_2 :
+              major_ticker_for_alt_szn == 3 ? scan_z_3 :
+              major_ticker_for_alt_szn == 4 ? scan_z_4 :
+              major_ticker_for_alt_szn == 5 ? scan_z_5 :
+              scan_z_6
+    
+    if (phase == "MARKUP" or phase == "REACC")
+        if major_regime == "MARKDOWN" or major_regime == "BLOWOFF"
+            div_type := "⚠️ BEAR-DIV"
+    
+    if (phase == "MARKDOWN" or phase == "CAP")
+        if major_regime == "MARKUP"
+            div_type := "⚡ BULL-DIV"
+    
+    if enable_alt_season_detection
+        if true_alt_regime == "MARKUP" and major_regime != "MARKUP"
+            div_type := "?? ALT-SZN"
+        else if true_alt_z > major_z and true_alt_z > 0.5 and major_z < 0.5
+            div_type := "?? EARLY-ALT"
+        else if true_alt_regime == "BLOWOFF" and major_regime == "BLOWOFF"
+            div_type := "⚠️ ALT-PEAK"
+    
+    div_type
+
+divergence_signal = detect_divergence()
+
+// ==========================================================
+// MODULE 13 — ALT SEASON STRENGTH
+// ==========================================================
+
+calc_alt_season_strength() =>
+    btc_cap = request.security("CRYPTOCAP:BTC", timeframe.period, close, 
+                              barmerge.gaps_off, barmerge.lookahead_off)
+    
+    total_cap = btc_cap + true_alt_cap
+    alt_dominance = true_alt_cap / total_cap * 100
+    
+    // Calculate historical percentile of dominance (fixed percentiles)
+    dom_25 = ta.percentile_linear_interpolation(alt_dominance, 200, 25)
+    dom_50 = ta.percentile_linear_interpolation(alt_dominance, 200, 50)
+    dom_75 = ta.percentile_linear_interpolation(alt_dominance, 200, 75)
+    
+    // Determine if current dominance is historically high/low
+    dom_score = alt_dominance > dom_75 ? 1.0 : alt_dominance > dom_50 ? 0.5 : alt_dominance > dom_25 ? 0.25 : 0.0
+    
+    // Strength score: 0-100
+    strength = 0.0
+    
+    if true_alt_regime == "MARKUP" and true_alt_z > 1.0
+        strength := 80 + (dom_score * 20)
+    else if true_alt_regime == "MARKUP"
+        strength := 60 + (dom_score * 20)
+    else if true_alt_z > 0
+        strength := 40 + (true_alt_z * 20)
+    else if true_alt_z > -1
+        strength := 20 + ((true_alt_z + 1) * 20)
+    else
+        strength := 0 + math.max(0, (true_alt_z + 2) * 10)
+    
+    [alt_dominance, strength]
+
+[alt_dominance_pct, alt_season_strength] = calc_alt_season_strength()
+
+// ==========================================================
+// MODULE 14 — ACTIONABLE CONTEXT (NO POSITION SIZING - FIXED)
+// ==========================================================
+
+var string action = "FLAT"
+is_revival = is_meme and not meme_dead and (rot == "ROT-UP" or rot == "ROT-CONT") and z > 0 and (vol_low or vol_mid)
+
+// FIXED: Exit conditions first, then conservative entry conditions
+if phase == "ABSORBING"
+    action := "NO LONG"
+    
+// EXIT CONDITIONS (checked first - most important)
+else if phase == "BLOWOFF" and z > Z_TRIM_HARD
+    action := "TRIM HARD"
+else if phase == "BLOWOFF" and z > Z_TRIM
+    action := "TRIM"
+else if phase == "BLOWOFF"
+    action := "TRIM"
+else if phase == "MARKDOWN" and market_consensus == "RISK-OFF"
+    action := "RISK-OFF"
+else if phase == "MARKDOWN"
+    action := "WAIT"
+    
+// ENTRY CONDITIONS (conservative - only in good setups)
+else if is_revival
+    action := "REVIVAL SEED"
+else if phase == "ACCUM" and z < 0 and vol_low and confidence > 0.4
+    action := "ACCUMULATE"
+else if phase == "CAP" and z < -1.0 and vol_high and confidence > 0.3
+    action := "ACCUMULATE"
+else if phase == "MARKUP" and z > -0.5 and z < 1.0 and confidence > 0.6 and market_consensus != "RISK-OFF"
+    action := "STRONG LONG"
+else if phase == "MARKUP" and z > 1.0 and z < Z_BLOWOFF and confidence > 0.5
+    action := "LIGHT LONG"
+else if phase == "REACC" and z < 0.5 and confidence > 0.4 and market_consensus == "RISK-ON"
+    action := "LIGHT LONG"
+    
+// DEFAULT
+else
+    action := "WAIT"
+
+// ==========================================================
+// MODULE 16 — VISUAL SIGNALS (REDUCED CLUTTER)
+// ==========================================================
+
+// Only show signals on FIRST bar of new action (prevents clutter)
+// Check if action changed from previous bar (string comparison)
+action_changed = action != action[1]
+
+entry_strong = action == "STRONG LONG" and action[1] != "STRONG LONG"
+entry_light = action == "LIGHT LONG" and action[1] != "LIGHT LONG"
+entry_accum = action == "ACCUMULATE" and action[1] != "ACCUMULATE"
+entry_revival = action == "REVIVAL SEED" and action[1] != "REVIVAL SEED"
+
+exit_trim = action == "TRIM" and action[1] != "TRIM"
+exit_hard = action == "TRIM HARD" and action[1] != "TRIM HARD"
+exit_risk = action == "RISK-OFF" and action[1] != "RISK-OFF"
+
+// Entry signals - controlled by show_entry_signals
+plotshape(show_entry_signals and entry_strong, "Strong Long", shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.normal, text="BUY")
+plotshape(show_entry_signals and entry_light, "Light Long", shape.triangleup, location.belowbar, color.new(color.green, 30), size=size.small, text="")
+plotshape(show_entry_signals and entry_accum, "Accumulate", shape.diamond, location.belowbar, color.new(color.blue, 0), size=size.tiny, text="DCA")
+plotshape(show_entry_signals and entry_revival, "Revival", shape.triangleup, location.belowbar, color.new(color.aqua, 0), size=size.small, text="REV")
+
+// Exit signals - controlled by show_exit_signals
+plotshape(show_exit_signals and exit_trim, "Trim", shape.triangledown, location.abovebar, color.new(color.orange, 0), size=size.small, text="")
+plotshape(show_exit_signals and exit_hard, "Trim Hard", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal, text="SELL")
+plotshape(show_exit_signals and exit_risk, "Risk-Off", shape.xcross, location.abovebar, color.new(color.red, 0), size=size.small, text="EXIT")
+
+// Regime markers
+absorbing_marker = phase == "ABSORBING" and phase[1] != "ABSORBING"
+plotshape(show_exit_signals and absorbing_marker, "Absorbing", shape.xcross, location.abovebar, color.new(color.maroon, 0), size=size.tiny, text="DEAD")
+
+// Market-wide warnings - controlled by show_market_warnings, only when they FIRST appear
+euphoria_warning = market_consensus == "EUPHORIA" and consensus_strength > 0.75 and market_consensus[1] != "EUPHORIA"
+panic_warning = market_consensus == "RISK-OFF" and consensus_strength > 0.75 and market_consensus[1] != "RISK-OFF"
+
+plotshape(show_market_warnings and euphoria_warning, 
+          title="Market Euphoria", style=shape.xcross, location=location.abovebar, 
+          color=color.new(color.orange, 0), size=size.large, 
+          text="⚠️ EUPHORIA")
+
+plotshape(show_market_warnings and panic_warning, 
+          title="Market Panic", style=shape.xcross, location=location.belowbar, 
+          color=color.new(color.red, 0), size=size.large, 
+          text="⚠️ PANIC")
+
+// ==========================================================
+// MODULE 17 — ALERTS
+// ==========================================================
+
+alertcondition(entry_strong, "Strong Long Signal", "STRONG LONG: {{ticker}} @ {{close}}")
+alertcondition(entry_revival, "Meme Revival", "REVIVAL: {{ticker}} @ {{close}}")
+alertcondition(exit_hard, "Hard Exit", "TRIM HARD: {{ticker}} @ {{close}}")
+alertcondition(exit_trim, "Trim Exit", "TRIM: {{ticker}} @ {{close}}")
+alertcondition(phase == "ABSORBING" and phase[1] != "ABSORBING", "Meme Collapse", "MEME COLLAPSED: {{ticker}}")
+alertcondition(divergence_signal == "⚠️ BEAR-DIV", "Bearish Divergence", "WARNING: {{ticker}} bullish but majors bearish!")
+alertcondition(divergence_signal == "?? ALT-SZN" and divergence_signal[1] != "?? ALT-SZN", "Alt Season Started", "ALT SEASON ACTIVE")
+alertcondition(divergence_signal == "?? EARLY-ALT", "Early Alt Season", "EARLY ALT SEASON: Alts outperforming")
+alertcondition(divergence_signal == "⚠️ ALT-PEAK", "Alt Season Peak", "WARNING: Alt season may be peaking")
+
+// ==========================================================
+// MODULE 19 — UNIFIED DASHBOARD (TOP RIGHT)
+// ==========================================================
+
+// Helper function - MUST be defined outside if statement
+populate_scanner_row(table t, int r, string name, string regime_val, float z_val, float conf_val) =>
+    table.cell(t, 0, r, name, text_color=color.white, text_size=size.tiny)
+    
+    regime_color = regime_val == "MARKUP" ? color.green :
+                  regime_val == "BLOWOFF" ? color.orange :
+                  regime_val == "REACC" ? color.blue :
+                  regime_val == "MARKDOWN" ? color.red :
+                  regime_val == "CAP" ? color.maroon :
+                  regime_val == "ACCUM" ? color.teal : color.gray
+    
+    table.cell(t, 1, r, regime_val, 
+               bgcolor=color.new(regime_color, 70), 
+               text_color=color.white, 
+               text_size=size.tiny)
+    
+    z_color = z_val > 2 ? color.orange : z_val > 0 ? color.green : z_val > -1 ? color.yellow : color.red
+    table.cell(t, 2, r, str.tostring(z_val, "#.#"), 
+               text_color=z_color, 
+               text_size=size.tiny)
+    
+    conf_blocks = int(conf_val * 5)
+    conf_bar = ""
+    for i = 0 to 4
+        conf_bar += i < conf_blocks ? "█" : "░"
+    table.cell(t, 3, r, conf_bar, 
+               text_color=color.gray, 
+               text_size=size.tiny)
+
+if barstate.islast
+    // Calculate number of rows needed
+    scanner_rows = (show_scan_1 ? 1 : 0) + (show_scan_2 ? 1 : 0) + (show_scan_3 ? 1 : 0) + 
+                   (show_scan_4 ? 1 : 0) + (show_scan_5 ? 1 : 0) + (show_scan_6 ? 1 : 0) + 
+                   (show_alt_cap_in_scanner ? 1 : 0)
+    
+    total_rows = 3 + 6 + scanner_rows + 3 + 6  // Header + Context + Scanner + Consensus + Alt Season
+    
+    var table dashboard = table.new(position.top_right, 4, total_rows, border_width=1)
+    
+    row = 0
+    
+    // ===========================================
+    // SECTION 1: HEADER
+    // ===========================================
+    
+    table.cell(dashboard, 0, row, "RCCE DASHBOARD", 
+               bgcolor=color.new(color.navy, 20), 
+               text_color=color.white, 
+               text_size=size.normal)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // Separator
+    table.cell(dashboard, 0, row, "━━━━━━━━━━━━━━━━━━━━━━━━", 
+               text_color=color.new(color.gray, 50), 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // ===========================================
+    // SECTION 2: CURRENT ASSET CONTEXT
+    // ===========================================
+    
+    table.cell(dashboard, 0, row, "?? CURRENT ASSET", 
+               bgcolor=color.new(color.gray, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // Phase
+    table.cell(dashboard, 0, row, "Phase", text_color=color.white, text_size=size.small)
+    phase_color = phase == "MARKUP" ? color.green :
+                  phase == "BLOWOFF" ? color.orange :
+                  phase == "REACC" ? color.blue :
+                  phase == "MARKDOWN" ? color.red :
+                  phase == "CAP" ? color.maroon :
+                  phase == "ACCUM" ? color.teal :
+                  phase == "ABSORBING" ? color.purple : color.gray
+    table.cell(dashboard, 1, row, phase, 
+               bgcolor=color.new(phase_color, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    
+    // Confidence
+    table.cell(dashboard, 2, row, "Confidence", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 3, row, str.tostring(confidence*100, "#") + "%",
+               bgcolor=confidence > 0.6 ? color.new(color.green, 70) : 
+                       confidence > 0.4 ? color.new(color.yellow, 70) : 
+                       color.new(color.red, 70),
+               text_color=color.white, 
+               text_size=size.small)
+    row += 1
+    
+    // Context Action
+    table.cell(dashboard, 0, row, "Context", text_color=color.white, text_size=size.small)
+    action_color = str.contains(action, "LONG") ? color.green :
+                   str.contains(action, "TRIM") ? color.orange :
+                   str.contains(action, "RISK-OFF") ? color.red :
+                   str.contains(action, "ACCUM") ? color.teal : color.gray
+    table.cell(dashboard, 1, row, action, 
+               bgcolor=color.new(action_color, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    
+    // Z-Score
+    table.cell(dashboard, 2, row, "Z-Score", text_color=color.white, text_size=size.small)
+    z_color = z > 3 ? color.red : z > 2 ? color.orange : z > 0 ? color.green : z > -1 ? color.yellow : color.teal
+    table.cell(dashboard, 3, row, str.tostring(z, "#.##"), 
+               text_color=z_color, 
+               text_size=size.small)
+    row += 1
+    
+    // Class
+    table.cell(dashboard, 0, row, "Class", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, row, asset_class,
+               bgcolor=asset_class == "BTC" ? color.new(color.orange, 70) : 
+                       asset_class == "ETH" ? color.new(color.blue, 70) :
+                       asset_class == "MEME" ? color.new(color.purple, 70) : 
+                       color.new(color.teal, 70),
+               text_color=color.white, 
+               text_size=size.small)
+    
+    // Vol
+    table.cell(dashboard, 2, row, "Vol", text_color=color.white, text_size=size.small)
+    vol_text = vol_low ? "LOW" : vol_high ? "HIGH" : "MID"
+    vol_color = vol_high ? color.red : vol_low ? color.green : color.yellow
+    table.cell(dashboard, 3, row, vol_text, 
+               text_color=vol_color, 
+               text_size=size.small)
+    row += 1
+    
+    // Separator
+    table.cell(dashboard, 0, row, "━━━━━━━━━━━━━━━━━━━━━━━━", 
+               text_color=color.new(color.gray, 50), 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // ===========================================
+    // SECTION 3: GLOBAL REGIME SCANNER
+    // ===========================================
+    
+    table.cell(dashboard, 0, row, "?? GLOBAL SCANNER", 
+               bgcolor=color.new(color.gray, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // Scanner Header
+    table.cell(dashboard, 0, row, "ASSET", 
+               bgcolor=color.new(color.gray, 80), 
+               text_color=color.white, 
+               text_size=size.tiny)
+    table.cell(dashboard, 1, row, "REGIME", 
+               bgcolor=color.new(color.gray, 80), 
+               text_color=color.white, 
+               text_size=size.tiny)
+    table.cell(dashboard, 2, row, "Z", 
+               bgcolor=color.new(color.gray, 80), 
+               text_color=color.white, 
+               text_size=size.tiny)
+    table.cell(dashboard, 3, row, "CONF", 
+               bgcolor=color.new(color.gray, 80), 
+               text_color=color.white, 
+               text_size=size.tiny)
+    row += 1
+    
+    // Scanner rows
+    if show_scan_1
+        populate_scanner_row(dashboard, row, scan_label_1, scan_regime_1, scan_z_1, scan_conf_1)
+        row += 1
+    
+    if show_scan_2
+        populate_scanner_row(dashboard, row, scan_label_2, scan_regime_2, scan_z_2, scan_conf_2)
+        row += 1
+    
+    if show_scan_3
+        populate_scanner_row(dashboard, row, scan_label_3, scan_regime_3, scan_z_3, scan_conf_3)
+        row += 1
+    
+    if show_scan_4
+        populate_scanner_row(dashboard, row, scan_label_4, scan_regime_4, scan_z_4, scan_conf_4)
+        row += 1
+    
+    if show_scan_5
+        populate_scanner_row(dashboard, row, scan_label_5, scan_regime_5, scan_z_5, scan_conf_5)
+        row += 1
+    
+    if show_scan_6
+        populate_scanner_row(dashboard, row, scan_label_6, scan_regime_6, scan_z_6, scan_conf_6)
+        row += 1
+    
+    if show_alt_cap_in_scanner
+        alt_label = alt_calc_method == "MANUAL" ? "ALT (M)" : "ALT (C)"
+        populate_scanner_row(dashboard, row, alt_label, true_alt_regime, true_alt_z, true_alt_conf)
+        row += 1
+    
+    // Separator
+    table.cell(dashboard, 0, row, "━━━━━━━━━━━━━━━━━━━━━━━━", 
+               text_color=color.new(color.gray, 50), 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // ===========================================
+    // SECTION 4: MARKET CONSENSUS
+    // ===========================================
+    
+    table.cell(dashboard, 0, row, "?? MARKET", 
+               bgcolor=color.new(color.gray, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // Consensus
+    consensus_color = market_consensus == "RISK-ON" ? color.green :
+                     market_consensus == "EUPHORIA" ? color.orange :
+                     market_consensus == "RISK-OFF" ? color.red :
+                     market_consensus == "ACCUMULATION" ? color.teal : color.gray
+    
+    table.cell(dashboard, 0, row, "Consensus", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, row, market_consensus, 
+               bgcolor=color.new(consensus_color, 60), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.cell(dashboard, 2, row, "Strength", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 3, row, str.tostring(consensus_strength * 100, "#") + "%", 
+               text_color=color.white, 
+               text_size=size.small)
+    row += 1
+    
+    // Divergence Signal (if any)
+    if divergence_signal != "NONE"
+        div_color = str.contains(divergence_signal, "BEAR") ? color.red :
+                   str.contains(divergence_signal, "BULL") ? color.green : color.purple
+        
+        table.cell(dashboard, 0, row, "⚠️ SIGNAL", text_color=color.white, text_size=size.small)
+        table.cell(dashboard, 1, row, divergence_signal, 
+                   bgcolor=color.new(div_color, 50), 
+                   text_color=color.white, 
+                   text_size=size.small)
+        table.merge_cells(dashboard, 1, row, 3, row)
+        row += 1
+    
+    // Separator
+    table.cell(dashboard, 0, row, "━━━━━━━━━━━━━━━━━━━━━━━━", 
+               text_color=color.new(color.gray, 50), 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // ===========================================
+    // SECTION 5: ALT SEASON GAUGE
+    // ===========================================
+    
+    table.cell(dashboard, 0, row, "?? ALT SEASON", 
+               bgcolor=color.new(color.gray, 70), 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 0, row, 3, row)
+    row += 1
+    
+    // Strength bar
+    strength_blocks = int(alt_season_strength / 10)
+    strength_bar = ""
+    for i = 0 to 9
+        strength_bar += i < strength_blocks ? "█" : "░"
+    
+    gauge_color = alt_season_strength > 80 ? color.lime :
+                  alt_season_strength > 60 ? color.green :
+                  alt_season_strength > 40 ? color.yellow :
+                  alt_season_strength > 20 ? color.orange : color.red
+    
+    table.cell(dashboard, 0, row, "Strength", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, row, strength_bar, 
+               text_color=gauge_color, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 1, row, 3, row)
+    row += 1
+    
+    // Alt Dominance
+    table.cell(dashboard, 0, row, "Alt Dom", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, row, str.tostring(alt_dominance_pct, "#.#") + "%", 
+               text_color=color.white, 
+               text_size=size.small)
+    
+    // Status
+    status_text = alt_season_strength > 70 ? "?? HOT" :
+                  alt_season_strength > 50 ? "?? ACTIVE" :
+                  alt_season_strength > 30 ? "?? NEUTRAL" : "❄️ COLD"
+    
+    table.cell(dashboard, 2, row, status_text, 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 2, row, 3, row)
+    row += 1
+    
+    // Signal
+    signal_text = alt_season_strength > 70 ? "ROTATE ALTS" :
+                  alt_season_strength > 50 ? "HOLD ALTS" :
+                  alt_season_strength > 30 ? "CAUTIOUS" : "ROTATE BTC"
+    
+    signal_color = alt_season_strength > 70 ? color.new(color.lime, 60) :
+                   alt_season_strength > 50 ? color.new(color.green, 70) :
+                   alt_season_strength > 30 ? color.new(color.yellow, 70) :
+                   color.new(color.orange, 70)
+    
+    table.cell(dashboard, 0, row, "Action", text_color=color.white, text_size=size.small)
+    table.cell(dashboard, 1, row, signal_text, 
+               bgcolor=signal_color, 
+               text_color=color.white, 
+               text_size=size.small)
+    table.merge_cells(dashboard, 1, row, 3, row)
+
+// Invisible plots for alerts
+plot(alt_season_strength, "Alt Season Strength", display=display.none)
+plot(alt_dominance_pct, "Alt Dominance", display=display.none)
