@@ -301,6 +301,8 @@ async def start_backtest(body: BacktestRequest):
         initial_capital=body.initial_capital,
         use_confluence=body.use_confluence,
         use_fear_greed=body.use_fear_greed,
+        timeframe=body.timeframe,
+        leverage=body.leverage,
     )
 
     # Pause live scanner during backtest to avoid event loop contention

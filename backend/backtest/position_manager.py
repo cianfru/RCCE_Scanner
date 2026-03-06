@@ -49,6 +49,7 @@ class Position:
     size_pct: float              # current size as % of allocation
     bars_held: int = 0
     confluence_at_entry: str = "UNKNOWN"
+    peak_price: float = 0.0      # highest price since entry (for trailing stop)
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ class Position:
 _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
     "STRONG_LONG":   {"STRONG": 1.00, "MODERATE": 0.75, "WEAK": 0.50, "CONFLICTING": 0.50, "UNKNOWN": 0.50},
     "LIGHT_LONG":    {"STRONG": 0.50, "MODERATE": 0.50, "WEAK": 0.25, "CONFLICTING": 0.25, "UNKNOWN": 0.25},
-    "ACCUMULATE":    {"STRONG": 0.25, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},
+    # "ACCUMULATE":    {"STRONG": 0.25, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},  # DISABLED for testing
     "REVIVAL_SEED":  {"STRONG": 0.10, "MODERATE": 0.10, "WEAK": 0.00, "CONFLICTING": 0.00, "UNKNOWN": 0.05},
 }
 
@@ -70,7 +71,9 @@ _EXIT_100_SIGNALS = {"TRIM_HARD", "NO_LONG"}
 _EXIT_50_SIGNALS = {"TRIM"}
 _EXIT_ALL_SIGNAL = "RISK_OFF"
 
-_SIGNAL_DECAY_THRESHOLD = 5   # consecutive WAIT bars before stale exit
+_SIGNAL_DECAY_THRESHOLD = 20  # consecutive WAIT/neutral bars before stale exit
+
+_STOP_LOSS_PCT = -0.08        # -8% stop-loss per position
 
 
 # ---------------------------------------------------------------------------
@@ -80,17 +83,18 @@ _SIGNAL_DECAY_THRESHOLD = 5   # consecutive WAIT bars before stale exit
 class PositionManager:
     """Manages positions across multiple symbols for a backtest run."""
 
-    def __init__(self, initial_capital: float, symbols: List[str]):
+    def __init__(self, initial_capital: float, symbols: List[str], leverage: float = 1.0):
         self.initial_capital = initial_capital
+        self.leverage = max(leverage, 1.0)
         self.num_symbols = max(len(symbols), 1)
-        self.per_symbol_alloc = initial_capital / self.num_symbols
+        self.per_symbol_alloc = (initial_capital * self.leverage) / self.num_symbols
 
         self.positions: Dict[str, Position] = {}
         self.trades: List[Trade] = []
         self.equity_curve: List[Tuple[float, float]] = []   # (timestamp, equity)
 
-        # Cash not allocated to positions
-        self.cash = initial_capital
+        # Cash not allocated to positions (leveraged buying power)
+        self.cash = initial_capital * self.leverage
 
         # Track consecutive WAIT signals per symbol for decay exit
         self._wait_counts: Dict[str, int] = {s: 0 for s in symbols}
@@ -122,6 +126,15 @@ class PositionManager:
         # Increment bars held on open positions
         if sym in self.positions:
             self.positions[sym].bars_held += 1
+
+        # --- STOP-LOSS: check before any signal logic ---
+        if sym in self.positions:
+            pos = self.positions[sym]
+            unrealized = (price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
+            if unrealized <= _STOP_LOSS_PCT:
+                trade = self._close_position(sym, bar.timestamp, price, "STOP_LOSS", close_pct=1.0)
+                self._wait_counts[sym] = 0
+                return trade
 
         # --- RISK_OFF: close ALL positions ---
         if signal == _EXIT_ALL_SIGNAL:
@@ -217,6 +230,7 @@ class PositionManager:
             entry_signal=bar.signal,
             size_pct=size_pct,
             confluence_at_entry=confluence,
+            peak_price=bar.price,
         )
         self.positions[sym] = pos
 
@@ -327,8 +341,13 @@ class PositionManager:
     # ------------------------------------------------------------------
 
     def _compute_equity(self) -> float:
-        """Cash + mark-to-market value of open positions."""
-        equity = self.cash
+        """Equity = cash + mark-to-market positions - borrowed amount.
+
+        With leverage, we borrow (leverage - 1) * initial_capital. The equity
+        curve tracks returns against the actual capital deposited.
+        """
+        borrowed = self.initial_capital * (self.leverage - 1)
+        equity = self.cash - borrowed
         for sym, pos in self.positions.items():
             price = self._latest_prices.get(sym, pos.entry_price)
             alloc_usd = self.per_symbol_alloc * pos.size_pct

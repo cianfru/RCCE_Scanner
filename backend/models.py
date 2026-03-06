@@ -135,3 +135,5 @@ class BacktestRequest(BaseModel):
     initial_capital: float = 10000.0
     use_confluence: bool = True
     use_fear_greed: bool = True
+    timeframe: str = "4h"           # "4h" or "1d"
+    leverage: float = 1.0           # 1.0 = no leverage, 2.0 = 2x, etc.

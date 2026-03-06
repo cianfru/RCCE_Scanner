@@ -55,6 +55,8 @@ class BacktestConfig:
     initial_capital: float = 10000.0
     use_confluence: bool = True
     use_fear_greed: bool = True
+    timeframe: str = "4h"  # "4h" or "1d"
+    leverage: float = 1.0  # 1.0 = spot, 2.0 = 2x, etc.
 
 
 @dataclass
@@ -162,9 +164,9 @@ async def _run_backtest_task(
         result.symbols_loaded = len(ohlcv_4h)
         result.progress = 25.0
 
-        if not ohlcv_4h:
+        if not ohlcv_4h and not ohlcv_1d:
             result.status = "error"
-            result.error = "Failed to fetch any 4h data"
+            result.error = "Failed to fetch any data"
             return
 
         # Fetch Fear & Greed history
@@ -180,7 +182,20 @@ async def _run_backtest_task(
 
         # --- Phase B: Run replay engine (async, yields to event loop per bar) ---
         result.status = "replaying"
-        valid_symbols = [s for s in symbols if s in ohlcv_4h]
+
+        # Select primary timeframe data
+        if config.timeframe == "1d":
+            primary_ohlcv = ohlcv_1d
+            warmup = 200  # 1d needs fewer warmup bars
+            higher_tf = ohlcv_1w  # Use weekly for confluence
+            confluence_ohlcv = {}  # No separate confluence TF for 1d
+        else:
+            primary_ohlcv = ohlcv_4h
+            warmup = WARMUP_BARS
+            higher_tf = ohlcv_1w
+            confluence_ohlcv = ohlcv_1d
+
+        valid_symbols = [s for s in symbols if s in primary_ohlcv]
 
         def on_progress(pct: float, msg: str):
             # Map replay progress (0-100) to result progress (30-80)
@@ -188,11 +203,11 @@ async def _run_backtest_task(
 
         bar_results = await run_replay(
             symbols=valid_symbols,
-            ohlcv_4h=ohlcv_4h,
-            ohlcv_1d=ohlcv_1d,
-            ohlcv_1w=ohlcv_1w,
+            ohlcv_4h=primary_ohlcv,
+            ohlcv_1d=confluence_ohlcv,
+            ohlcv_1w=higher_tf,
             fear_greed=fear_greed,
-            warmup_bars=WARMUP_BARS,
+            warmup_bars=warmup,
             on_progress=on_progress,
         )
 
@@ -205,7 +220,7 @@ async def _run_backtest_task(
             return
 
         # --- Phase C: Position manager ---
-        pm = PositionManager(config.initial_capital, valid_symbols)
+        pm = PositionManager(config.initial_capital, valid_symbols, leverage=config.leverage)
 
         # Also track BTC buy-and-hold
         btc_sym = "BTC/USDT"
@@ -213,7 +228,7 @@ async def _run_backtest_task(
         btc_equity: List[Tuple[float, float]] = []
 
         # Build BTC price series from raw OHLCV (more reliable than bar results)
-        btc_4h = ohlcv_4h.get(btc_sym)
+        btc_4h = primary_ohlcv.get(btc_sym)
         btc_price_lookup: Dict[float, float] = {}
         if btc_4h is not None:
             for i in range(len(btc_4h["timestamp"])):

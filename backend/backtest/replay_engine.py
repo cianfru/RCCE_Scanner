@@ -63,8 +63,18 @@ class BarResult:
 # OHLCV slicing helpers
 # ---------------------------------------------------------------------------
 
-def _slice_ohlcv(ohlcv: dict, end_idx: int) -> dict:
-    """Slice OHLCV arrays up to end_idx (exclusive)."""
+_ROLLING_WINDOW = 500  # Max bars to pass to engines (they need ~200 max)
+
+
+def _slice_ohlcv(ohlcv: dict, end_idx: int, rolling: bool = False) -> dict:
+    """Slice OHLCV arrays up to end_idx (exclusive).
+
+    If rolling=True, only keep the last _ROLLING_WINDOW bars to avoid
+    O(n²) cost from expanding windows.
+    """
+    if rolling:
+        start = max(0, end_idx - _ROLLING_WINDOW)
+        return {k: v[start:end_idx] for k, v in ohlcv.items()}
     return {k: v[:end_idx] for k, v in ohlcv.items()}
 
 
@@ -178,15 +188,15 @@ async def run_replay(
             if bar_idx >= len(data_4h["timestamp"]):
                 continue
 
-            # Slice 4h data up to current bar (expanding window)
-            slice_4h = _slice_ohlcv(data_4h, bar_idx + 1)
+            # Slice 4h data up to current bar (rolling window for performance)
+            slice_4h = _slice_ohlcv(data_4h, bar_idx + 1, rolling=True)
 
             # Get weekly slice for heatmap/exhaustion
             weekly = _find_weekly_slice(ohlcv_1w.get(symbol), current_ts) if symbol in ohlcv_1w else None
 
-            # Get BTC/ETH reference slices
-            btc_slice = _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1) if btc_sym in ohlcv_4h else None
-            eth_slice = _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1) if eth_sym in ohlcv_4h else None
+            # Get BTC/ETH reference slices (rolling)
+            btc_slice = _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1, rolling=True) if btc_sym in ohlcv_4h else None
+            eth_slice = _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1, rolling=True) if eth_sym in ohlcv_4h else None
 
             try:
                 result = _process_symbol(
@@ -225,10 +235,10 @@ async def run_replay(
                 daily_idx = _find_daily_index(ohlcv_1d[symbol], current_ts)
                 if daily_idx < 50:
                     continue
-                slice_1d = _slice_ohlcv(ohlcv_1d[symbol], daily_idx)
+                slice_1d = _slice_ohlcv(ohlcv_1d[symbol], daily_idx, rolling=True)
                 weekly = _find_weekly_slice(ohlcv_1w.get(symbol), current_ts) if symbol in ohlcv_1w else None
-                btc_1d = _slice_ohlcv(ohlcv_1d[btc_sym], daily_idx) if btc_sym in ohlcv_1d else None
-                eth_1d = _slice_ohlcv(ohlcv_1d[eth_sym], daily_idx) if eth_sym in ohlcv_1d else None
+                btc_1d = _slice_ohlcv(ohlcv_1d[btc_sym], daily_idx, rolling=True) if btc_sym in ohlcv_1d else None
+                eth_1d = _slice_ohlcv(ohlcv_1d[eth_sym], daily_idx, rolling=True) if eth_sym in ohlcv_1d else None
 
                 try:
                     cached_1d_results[symbol] = _process_symbol(

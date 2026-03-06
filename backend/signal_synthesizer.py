@@ -307,6 +307,7 @@ def synthesize_signal(
         and vol_low
         and confidence > CONF_ACCUM
         and mkt_consensus != "RISK-OFF"
+        and heat < 70
     ):
         if fear_greed <= FNG_FEAR:
             out.signal = "ACCUMULATE"
@@ -341,7 +342,7 @@ def synthesize_signal(
         return out
 
     # --- LIGHT_LONG: 4+ conditions met + supportive regime ---
-    if conditions_met >= 4 and regime in ("MARKUP", "REACC", "ACCUM"):
+    if conditions_met >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
         # MARKUP LIGHT_LONG: extended z (1.0-2.0) with decent confidence
         if (regime == "MARKUP" and 1.0 < z < Z_BLOWOFF
                 and confidence > CONF_LIGHT
@@ -357,18 +358,18 @@ def synthesize_signal(
         if (regime == "MARKUP" and 0 < z < Z_BLOWOFF
                 and confidence > CONF_LIGHT
                 and heat < HEAT_BLOCK_STRONG
-                and mkt_consensus != "RISK-OFF"
+                and mkt_consensus in ("RISK-ON", "MIXED")
                 and divergence != "BEAR-DIV"):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + f" [{conditions_met}/{len(conditions)} conditions]"
             out.warnings = warnings
             return out
 
-        # REACC LIGHT_LONG: needs RISK-ON consensus + decent confidence
+        # REACC LIGHT_LONG: needs supportive consensus + decent confidence
         if (regime == "REACC" and z < 0.5
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
-                and mkt_consensus == "RISK-ON"):
+                and mkt_consensus in ("RISK-ON", "MIXED")):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [REACC + RISK-ON]"
             out.warnings = warnings
