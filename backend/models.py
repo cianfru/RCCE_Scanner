@@ -137,3 +137,18 @@ class BacktestRequest(BaseModel):
     use_fear_greed: bool = True
     timeframe: str = "4h"           # "4h" or "1d"
     leverage: float = 1.0           # 1.0 = no leverage, 2.0 = 2x, etc.
+
+
+class WalkForwardRequest(BaseModel):
+    symbols: List[str] = []         # empty = default 10 symbols
+    start_date: str = "2021-01-01"  # wider default for walk-forward
+    end_date: str = ""              # empty = today
+    initial_capital: float = 10000.0
+    use_confluence: bool = True
+    use_fear_greed: bool = True
+    timeframe: str = "4h"
+    leverage: float = 1.0
+    # Walk-forward specific
+    test_window_days: int = 180     # 6-month windows
+    step_days: int = 180            # non-overlapping
+    warmup_days: int = 0            # 0 = auto (70 for 4h, 210 for 1d)
