@@ -7,12 +7,15 @@ Orchestrates a full backtest: fetch data → replay → trades → metrics.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import logging
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
+
+import numpy as np
 
 from backtest.data_loader import (
     fetch_historical_batch,
@@ -109,6 +112,83 @@ def list_backtests() -> List[dict]:
 
 
 # ---------------------------------------------------------------------------
+# BMSB (Bull Market Support Band) macro filter
+# ---------------------------------------------------------------------------
+
+def _compute_bmsb_filter(ohlcv_1w_btc: dict, consecutive_weeks: int = 2) -> Dict[float, bool]:
+    """Compute BMSB blocked status from BTC weekly OHLCV.
+
+    BMSB = midline of weekly EMA-21 and SMA-20.
+    When BTC weekly close is below the midline for `consecutive_weeks`
+    or more, all entries are blocked.
+
+    Returns
+    -------
+    dict[float, bool]
+        {weekly_timestamp_ms: is_blocked}
+    """
+    close = np.asarray(ohlcv_1w_btc["close"], dtype=np.float64)
+    timestamps = ohlcv_1w_btc["timestamp"]
+    n = len(close)
+
+    if n < 21:
+        return {}
+
+    # SMA-20
+    sma20 = np.full(n, np.nan)
+    for i in range(19, n):
+        sma20[i] = np.mean(close[i - 19 : i + 1])
+
+    # EMA-21 (seeded with SMA of first 21 bars)
+    ema21 = np.full(n, np.nan)
+    alpha = 2.0 / (21 + 1)
+    ema21[20] = np.mean(close[:21])
+    for i in range(21, n):
+        ema21[i] = alpha * close[i] + (1 - alpha) * ema21[i - 1]
+
+    # Midline = average of the two bands
+    midline = (sma20 + ema21) / 2.0
+
+    # Track consecutive weeks below midline
+    blocked: Dict[float, bool] = {}
+    consec_below = 0
+    for i in range(n):
+        ts = timestamps[i] if not isinstance(timestamps, np.ndarray) else float(timestamps[i])
+        if np.isnan(midline[i]):
+            blocked[ts] = False
+            continue
+        if close[i] < midline[i]:
+            consec_below += 1
+        else:
+            consec_below = 0
+        blocked[ts] = consec_below >= consecutive_weeks
+
+    logger.info(
+        "BMSB filter: %d/%d weeks blocked (%.0f%%)",
+        sum(blocked.values()), len(blocked),
+        sum(blocked.values()) / max(len(blocked), 1) * 100,
+    )
+    return blocked
+
+
+def _is_bmsb_blocked(
+    bmsb_map: Dict[float, bool],
+    weekly_timestamps: List[float],
+    current_ts: float,
+) -> bool:
+    """Check if entries are blocked at the given timestamp.
+
+    Looks up the most recent weekly bar before current_ts.
+    """
+    if not weekly_timestamps:
+        return False
+    idx = bisect.bisect_right(weekly_timestamps, current_ts) - 1
+    if idx < 0:
+        return False
+    return bmsb_map.get(weekly_timestamps[idx], False)
+
+
+# ---------------------------------------------------------------------------
 # Main backtest runner
 # ---------------------------------------------------------------------------
 
@@ -158,7 +238,7 @@ async def _run_backtest_task(
         )
         result.progress = 18.0
         ohlcv_1w = await fetch_historical_batch(
-            symbols, "1w", config.start_date, config.end_date, warmup_bars=15,
+            symbols, "1w", config.start_date, config.end_date, warmup_bars=30,
         )
 
         result.symbols_loaded = len(ohlcv_4h)
@@ -222,8 +302,16 @@ async def _run_backtest_task(
         # --- Phase C: Position manager ---
         pm = PositionManager(config.initial_capital, valid_symbols, leverage=config.leverage)
 
-        # Also track BTC buy-and-hold
+        # --- BMSB macro filter ---
         btc_sym = "BTC/USDT"
+        bmsb_blocked_map: Dict[float, bool] = {}
+        bmsb_weekly_ts: List[float] = []
+        btc_weekly_data = ohlcv_1w.get(btc_sym)
+        if btc_weekly_data is not None and len(btc_weekly_data.get("close", [])) >= 21:
+            bmsb_blocked_map = _compute_bmsb_filter(btc_weekly_data)
+            bmsb_weekly_ts = sorted(bmsb_blocked_map.keys())
+
+        # Also track BTC buy-and-hold
         btc_initial_price = None
         btc_equity: List[Tuple[float, float]] = []
 
@@ -243,6 +331,9 @@ async def _run_backtest_task(
         total_bars = len(bars_by_ts)
         for ts in sorted(bars_by_ts.keys()):
             bars = bars_by_ts[ts]
+
+            # Update BMSB macro filter
+            pm.macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
 
             # Process each symbol's signal
             for bar in bars:

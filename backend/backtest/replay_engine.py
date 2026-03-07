@@ -135,26 +135,46 @@ async def run_replay(
     """
     t0 = time.time()
 
-    # Filter to symbols that have 4h data
+    # Filter to symbols that have primary data
     valid_symbols = [s for s in symbols if s in ohlcv_4h]
     if not valid_symbols:
-        logger.error("No valid symbols with 4h data")
+        logger.error("No valid symbols with primary data")
         return []
 
-    # Find the common bar range (intersection of available timestamps)
-    # Use the symbol with the fewest bars to determine range
-    min_bars = min(len(ohlcv_4h[s]["timestamp"]) for s in valid_symbols)
-    logger.info("Replay: %d symbols, %d total bars, warmup=%d", len(valid_symbols), min_bars, warmup_bars)
-
-    if min_bars <= warmup_bars:
-        logger.error("Insufficient bars (%d) for warmup (%d)", min_bars, warmup_bars)
-        return []
-
-    # Reference data (BTC/ETH) for RCCE beta calculations
+    # Reference data (BTC/ETH) for RCCE beta calculations and timeline
     btc_sym = "BTC/USDT"
     eth_sym = "ETH/USDT"
 
-    total_replay_bars = min_bars - warmup_bars
+    # Use the reference symbol (BTC) to drive the replay timeline.
+    # Other symbols join when their data becomes available.
+    ref_sym = btc_sym if btc_sym in ohlcv_4h else valid_symbols[0]
+    ref_data = ohlcv_4h[ref_sym]
+    ref_bars = len(ref_data["timestamp"])
+
+    if ref_bars <= warmup_bars:
+        logger.error("Insufficient ref bars (%d) for warmup (%d)", ref_bars, warmup_bars)
+        return []
+
+    # Build timestamp → local index mapping for each symbol.
+    # This allows symbols with different start dates (e.g. SUI, JUP)
+    # to be included only when they have sufficient data.
+    sym_ts_to_idx: Dict[str, Dict[float, int]] = {}
+    for sym in valid_symbols:
+        ts_arr = ohlcv_4h[sym]["timestamp"]
+        mapping: Dict[float, int] = {}
+        for i in range(len(ts_arr)):
+            t = float(ts_arr[i]) if isinstance(ts_arr, np.ndarray) else ts_arr[i]
+            mapping[t] = i
+        sym_ts_to_idx[sym] = mapping
+
+    # Log per-symbol bar counts
+    for sym in valid_symbols:
+        sym_bars = len(ohlcv_4h[sym]["timestamp"])
+        logger.info("  %s: %d bars (active after warmup=%d)", sym, sym_bars, warmup_bars)
+    logger.info("Replay: %d symbols, ref=%s with %d bars, warmup=%d",
+                len(valid_symbols), ref_sym, ref_bars, warmup_bars)
+
+    total_replay_bars = ref_bars - warmup_bars
     all_results: List[BarResult] = []
 
     # Cache for 1d results (updated every ~6 bars)
@@ -164,37 +184,38 @@ async def run_replay(
     # Track consecutive WAIT signals per symbol for decay
     wait_counts: Dict[str, int] = {s: 0 for s in valid_symbols}
 
-    for bar_idx in range(warmup_bars, min_bars):
+    for bar_idx in range(warmup_bars, ref_bars):
         progress = (bar_idx - warmup_bars) / total_replay_bars * 100.0
 
-        # Current timestamp from BTC (or first available symbol)
-        ref_sym = btc_sym if btc_sym in ohlcv_4h else valid_symbols[0]
-        current_ts = ohlcv_4h[ref_sym]["timestamp"][bar_idx]
+        # Current timestamp from the reference symbol
+        current_ts = float(ref_data["timestamp"][bar_idx])
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
         # Yield to event loop every 5 bars to keep server responsive
-        # (~500ms between yields — fast enough for HTTP polls)
         if bar_idx % 5 == 0:
             await asyncio.sleep(0)
 
         if on_progress and bar_idx % 50 == 0:
             on_progress(progress, f"Bar {bar_idx - warmup_bars}/{total_replay_bars} ({current_date})")
 
-        # --- Step 1: Run 4h engines on all symbols ---
+        # --- Step 1: Run engines on all symbols with data at this timestamp ---
         bar_results_raw: List[dict] = []
 
         for symbol in valid_symbols:
-            data_4h = ohlcv_4h[symbol]
-            if bar_idx >= len(data_4h["timestamp"]):
-                continue
+            # Look up this symbol's local index for the current timestamp
+            local_idx = sym_ts_to_idx.get(symbol, {}).get(current_ts)
+            if local_idx is None or local_idx < warmup_bars:
+                continue  # Symbol has no data or insufficient warmup at this time
 
-            # Slice 4h data up to current bar (rolling window for performance)
-            slice_4h = _slice_ohlcv(data_4h, bar_idx + 1, rolling=True)
+            data_primary = ohlcv_4h[symbol]
+
+            # Slice symbol's data using its LOCAL index (not the ref bar_idx)
+            slice_primary = _slice_ohlcv(data_primary, local_idx + 1, rolling=True)
 
             # Get weekly slice for heatmap/exhaustion
             weekly = _find_weekly_slice(ohlcv_1w.get(symbol), current_ts) if symbol in ohlcv_1w else None
 
-            # Get BTC/ETH reference slices (rolling)
+            # BTC/ETH reference slices use the REF bar_idx (they're always aligned)
             btc_slice = _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1, rolling=True) if btc_sym in ohlcv_4h else None
             eth_slice = _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1, rolling=True) if eth_sym in ohlcv_4h else None
 
@@ -202,14 +223,14 @@ async def run_replay(
                 result = _process_symbol(
                     symbol=symbol,
                     timeframe="4h",
-                    ohlcv=slice_4h,
+                    ohlcv=slice_primary,
                     weekly=weekly,
                     btc_data=btc_slice,
                     eth_data=eth_slice,
                 )
                 bar_results_raw.append(result)
             except Exception:
-                logger.debug("Engine failed for %s at bar %d", symbol, bar_idx)
+                logger.debug("Engine failed for %s at bar %d (local=%d)", symbol, bar_idx, local_idx)
                 continue
 
         if not bar_results_raw:
