@@ -25,6 +25,7 @@ from models import (
     ConfluenceResponse,
     PositioningResponse,
     BacktestRequest,
+    WalkForwardRequest,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -443,6 +444,158 @@ async def list_all_backtests():
     """List all backtests (running + completed)."""
     from backtest.runner import list_backtests
     return {"backtests": list_backtests()}
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward validation endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/walkforward")
+async def start_walkforward(body: WalkForwardRequest):
+    """Launch walk-forward validation. Returns ID for polling."""
+    from backtest.walkforward import run_walkforward, WalkForwardConfig, get_walkforward
+    from backtest.runner import DEFAULT_BACKTEST_SYMBOLS
+
+    config = WalkForwardConfig(
+        symbols=body.symbols if body.symbols else DEFAULT_BACKTEST_SYMBOLS.copy(),
+        start_date=body.start_date,
+        end_date=body.end_date,
+        initial_capital=body.initial_capital,
+        use_confluence=body.use_confluence,
+        use_fear_greed=body.use_fear_greed,
+        timeframe=body.timeframe,
+        leverage=body.leverage,
+        test_window_days=body.test_window_days,
+        step_days=body.step_days,
+        warmup_days=body.warmup_days,
+    )
+
+    # Pause live scanner
+    global _backtest_running
+    _backtest_running = True
+
+    wait_count = 0
+    while cache.is_scanning and wait_count < 300:
+        await asyncio.sleep(1)
+        wait_count += 1
+
+    wf_id = await run_walkforward(config)
+
+    # Monitor and re-enable scanner when done
+    async def _wait_for_completion():
+        global _backtest_running
+        while True:
+            await asyncio.sleep(5)
+            result = get_walkforward(wf_id)
+            if result is None or result.status in ("complete", "error"):
+                _backtest_running = False
+                logger.info("Walk-forward %s finished, resuming live scanner", wf_id)
+                break
+
+    asyncio.create_task(_wait_for_completion())
+    return {"id": wf_id, "status": "started"}
+
+
+@app.get("/api/walkforward/{wf_id}")
+async def get_walkforward_status(wf_id: str):
+    """Get walk-forward status and results."""
+    from backtest.walkforward import get_walkforward
+
+    result = get_walkforward(wf_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Walk-forward not found")
+
+    resp = {
+        "id": result.id,
+        "status": result.status,
+        "progress": result.progress,
+        "current_window": result.current_window,
+        "total_windows": result.total_windows,
+        "error": result.error,
+        "started_at": result.started_at,
+        "completed_at": result.completed_at,
+    }
+
+    if result.config:
+        resp["config"] = {
+            "symbols": result.config.symbols,
+            "start_date": result.config.start_date,
+            "end_date": result.config.end_date,
+            "initial_capital": result.config.initial_capital,
+            "timeframe": result.config.timeframe,
+            "leverage": result.config.leverage,
+            "test_window_days": result.config.test_window_days,
+            "step_days": result.config.step_days,
+        }
+
+    if result.status == "complete":
+        # Per-window summaries
+        resp["windows"] = []
+        for wr in result.window_results:
+            w_data = {
+                "index": wr.window_index,
+                "test_start": wr.test_start,
+                "test_end": wr.test_end,
+                "warmup_start": wr.warmup_start,
+                "bar_count": wr.bar_count,
+                "bmsb_blocked_pct": round(wr.bmsb_blocked_pct, 1),
+                "signal_distribution": wr.signal_distribution,
+            }
+            if wr.metrics:
+                w_data["metrics"] = _format_metrics(wr.metrics)
+            resp["windows"].append(w_data)
+
+        # Aggregate metrics
+        if result.aggregate_metrics:
+            resp["aggregate_metrics"] = _format_metrics(result.aggregate_metrics)
+
+        # Full-period metrics
+        if result.full_period_metrics:
+            resp["full_period_metrics"] = _format_metrics(result.full_period_metrics)
+
+        # Overfitting analysis
+        resp["overfitting_analysis"] = {
+            "overfitting_score": round(result.overfitting_score, 3) if result.overfitting_score is not None else None,
+            "consistency_score": round(result.consistency_score, 3) if result.consistency_score is not None else None,
+            "sharpe_stability": round(result.sharpe_stability, 3) if result.sharpe_stability is not None else None,
+        }
+
+        # Equity curves
+        resp["stitched_equity_curve"] = _sample_curve(result.stitched_equity_curve, 500)
+        resp["full_equity_curve"] = _sample_curve(result.full_equity_curve, 500)
+        resp["btc_equity_curve"] = _sample_curve(result.btc_equity_curve, 500)
+
+    return resp
+
+
+@app.get("/api/walkforwards")
+async def list_all_walkforwards():
+    """List all walk-forward runs."""
+    from backtest.walkforward import list_walkforwards
+    return {"walkforwards": list_walkforwards()}
+
+
+def _format_metrics(m) -> dict:
+    """Format a BacktestMetrics object for JSON response."""
+    return {
+        "total_return_pct": round(m.total_return_pct, 2),
+        "btc_return_pct": round(m.btc_return_pct, 2),
+        "alpha_pct": round(m.alpha_pct, 2),
+        "annualized_return_pct": round(m.annualized_return_pct, 2),
+        "max_drawdown_pct": round(m.max_drawdown_pct, 2),
+        "sharpe_ratio": round(m.sharpe_ratio, 3),
+        "sortino_ratio": round(m.sortino_ratio, 3),
+        "calmar_ratio": round(m.calmar_ratio, 3),
+        "win_rate": round(m.win_rate, 1),
+        "profit_factor": round(m.profit_factor, 2) if m.profit_factor != float("inf") else 999.0,
+        "total_trades": m.total_trades,
+        "avg_bars_held": round(m.avg_bars_held, 1),
+        "avg_trade_return_pct": round(m.avg_trade_return_pct, 2),
+        "best_trade_pct": round(m.best_trade_pct, 2),
+        "worst_trade_pct": round(m.worst_trade_pct, 2),
+        "avg_win_pct": round(m.avg_win_pct, 2),
+        "avg_loss_pct": round(m.avg_loss_pct, 2),
+    }
 
 
 def _sample_curve(curve: list, max_points: int) -> list:
