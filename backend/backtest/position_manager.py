@@ -67,8 +67,8 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
 
 # Exit signals and their behaviour
-_EXIT_100_SIGNALS = {"TRIM_HARD", "NO_LONG"}
-_EXIT_50_SIGNALS = {"TRIM"}
+_EXIT_100_SIGNALS = {"TRIM_HARD", "NO_LONG", "TRIM"}
+_EXIT_50_SIGNALS: set = set()  # TRIM moved to 100% for cleaner trade tracking
 _EXIT_ALL_SIGNAL = "RISK_OFF"
 
 _SIGNAL_DECAY_THRESHOLD = 20  # consecutive WAIT/neutral bars before stale exit
@@ -101,6 +101,10 @@ class PositionManager:
 
         # Track latest prices for mark-to-market
         self._latest_prices: Dict[str, float] = {}
+
+        # Macro filter: when True, all entry signals are blocked
+        # Set externally by runner (e.g. BMSB below for 2+ weeks)
+        self.macro_blocked: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,6 +172,11 @@ class PositionManager:
         # --- Entry signals ---
         if signal in _ENTRY_SIGNALS:
             self._wait_counts[sym] = 0
+
+            # Macro filter: block ALL entries when BMSB is bearish
+            if self.macro_blocked:
+                return None
+
             confluence = bar.confluence_label
 
             # ACCUMULATE: can add to existing position (DCA)
