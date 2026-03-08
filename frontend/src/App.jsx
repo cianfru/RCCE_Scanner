@@ -846,7 +846,17 @@ export default function App() {
         backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
+          <img
+            src="/logo.png"
+            alt="RCCE Scanner"
+            style={{
+              height: isMobile ? 32 : 38,
+              width: "auto",
+              objectFit: "contain",
+              flexShrink: 0,
+            }}
+          />
           <div>
             <div style={{
               fontSize: isMobile ? 13 : 15, fontWeight: 700, letterSpacing: "0.08em",
