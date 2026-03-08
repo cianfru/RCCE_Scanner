@@ -26,6 +26,9 @@ from models import (
     PositioningResponse,
     BacktestRequest,
     WalkForwardRequest,
+    ExecutorInitRequest,
+    ExecutorStatusResponse,
+    ExecutorTradeResponse,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -608,6 +611,130 @@ def _sample_curve(curve: list, max_points: int) -> list:
     if sampled[-1] != curve[-1]:
         sampled.append(curve[-1])
     return [[ts, round(eq, 2)] for ts, eq in sampled]
+
+
+# ---------------------------------------------------------------------------
+# Executor endpoints (Kraken paper/live trading)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/executor/init")
+async def executor_init(body: ExecutorInitRequest = ExecutorInitRequest()):
+    """Initialize the executor (paper or live mode).
+
+    Discovers available Kraken pairs from the current watchlist
+    and initializes the paper trading account.
+    """
+    from executor import init_executor
+
+    try:
+        executor = await init_executor(
+            mode=body.mode,
+            balance=body.balance,
+            scanner_symbols=cache.symbols,
+        )
+        return {
+            "status": "initialized",
+            "mode": body.mode,
+            "balance": body.balance,
+            "pairs_available": len(executor.pair_map),
+            "pairs": sorted(executor.pair_map.keys()),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/executor/enable")
+async def executor_enable():
+    """Enable signal execution. Executor must be initialized first."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor or not executor.initialized:
+        raise HTTPException(
+            status_code=400,
+            detail="Executor not initialized. Call POST /api/executor/init first.",
+        )
+    executor.enabled = True
+    logger.info("Executor ENABLED — signals will be executed via Kraken (%s mode)", executor.mode)
+    return {"status": "enabled", "mode": executor.mode}
+
+
+@app.post("/api/executor/disable")
+async def executor_disable():
+    """Disable signal execution. Open positions remain."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+    executor.enabled = False
+    logger.info("Executor DISABLED — signals will NOT be executed")
+    return {"status": "disabled", "open_positions": len(executor.positions)}
+
+
+@app.get("/api/executor/status")
+async def executor_status():
+    """Get executor status: mode, positions, PnL, last signals."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        return ExecutorStatusResponse()
+
+    status = await executor.get_status()
+    return status
+
+
+@app.get("/api/executor/trades")
+async def executor_trades():
+    """Get trade history from the executor."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        return {"trades": []}
+
+    return {"trades": executor.get_trades()}
+
+
+@app.get("/api/executor/portfolio")
+async def executor_portfolio():
+    """Get current paper portfolio from Kraken."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor or not executor.initialized:
+        return {"error": "Executor not initialized"}
+
+    try:
+        if executor.mode == "paper":
+            status = await executor._kraken_call(["paper", "status"])
+            balance = await executor._kraken_call(["paper", "balance"])
+            history = await executor._kraken_call(["paper", "history"])
+            return {
+                "status": status,
+                "balance": balance,
+                "recent_trades": history.get("trades", [])[-20:],
+            }
+        else:
+            balance = await executor._kraken_call(["balance"])
+            orders = await executor._kraken_call(["open-orders"])
+            return {"balance": balance, "open_orders": orders}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/executor/reset")
+async def executor_reset():
+    """Reset paper trading account and clear all state."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    result = await executor.reset()
+    return result
 
 
 @app.get("/health")

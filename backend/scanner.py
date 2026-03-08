@@ -728,6 +728,23 @@ async def run_scan(
             except Exception:
                 logger.exception("Confluence computation failed")
 
+        # 11. Execute signals via Kraken (if executor is enabled)
+        try:
+            from executor import get_executor
+            executor = get_executor()
+            if executor and executor.enabled:
+                # Use 4h results as the primary signal source
+                exec_results = scan_cache.results.get("4h", [])
+                if exec_results:
+                    exec_summary = await executor.process_scan_results(exec_results)
+                    actions = exec_summary.get("actions", [])
+                    if actions:
+                        logger.info("Executor: %d actions — %s", len(actions), actions)
+        except ImportError:
+            pass  # executor module not available
+        except Exception:
+            logger.exception("Executor processing failed (scan unaffected)")
+
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start
         logger.info("=== Scan completed in %.1fs ===", elapsed)
