@@ -259,7 +259,7 @@ async def _run_window(
             warmup_start=window["warmup_start"],
         )
 
-    # Run replay engine
+    # Run replay engine (with BMSB data for LIGHT_SHORT signals)
     bar_results = await run_replay(
         symbols=valid_symbols,
         ohlcv_4h=sliced_4h,
@@ -267,6 +267,8 @@ async def _run_window(
         ohlcv_1w=sliced_1w,
         fear_greed=fear_greed,
         warmup_bars=warmup_bars,
+        bmsb_blocked_map=bmsb_blocked_map,
+        bmsb_weekly_ts=bmsb_weekly_ts,
     )
 
     if not bar_results:
@@ -301,15 +303,22 @@ async def _run_window(
     # Track BMSB blocking for stats
     bmsb_blocked_count = 0
     total_ts_count = 0
+    prev_macro_blocked = False
 
     for ts in sorted(bars_by_ts.keys()):
         bars = bars_by_ts[ts]
 
         # BMSB macro filter
-        pm.macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
-        if pm.macro_blocked:
+        current_macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
+        pm.macro_blocked = current_macro_blocked
+        if current_macro_blocked:
             bmsb_blocked_count += 1
         total_ts_count += 1
+
+        # Macro flip: bearish → bullish → close ALL shorts globally
+        if prev_macro_blocked and not current_macro_blocked:
+            pm.close_all_shorts(ts, "MACRO_FLIP")
+        prev_macro_blocked = current_macro_blocked
 
         for bar in bars:
             pm.process_bar(bar)
@@ -574,6 +583,8 @@ async def _run_walkforward_task(
             ohlcv_1w=sliced_1w_full,
             fear_greed=fear_greed,
             warmup_bars=max(full_warmup_bars, 50),
+            bmsb_blocked_map=bmsb_blocked_map,
+            bmsb_weekly_ts=bmsb_weekly_ts,
         )
         result.progress = 85.0
 
@@ -593,9 +604,17 @@ async def _run_walkforward_task(
             for b in full_bar_results:
                 full_bars_by_ts.setdefault(b.timestamp, []).append(b)
 
+            full_prev_macro = False
             for ts in sorted(full_bars_by_ts.keys()):
                 bars = full_bars_by_ts[ts]
-                full_pm.macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
+                full_macro = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
+                full_pm.macro_blocked = full_macro
+
+                # Macro flip: close all shorts when BMSB turns bullish
+                if full_prev_macro and not full_macro:
+                    full_pm.close_all_shorts(ts, "MACRO_FLIP")
+                full_prev_macro = full_macro
+
                 for bar in bars:
                     full_pm.process_bar(bar)
                 prices = {b.symbol: b.price for b in bars}

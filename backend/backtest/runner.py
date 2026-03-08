@@ -277,6 +277,15 @@ async def _run_backtest_task(
 
         valid_symbols = [s for s in symbols if s in primary_ohlcv]
 
+        # --- BMSB macro filter (computed before replay for LIGHT_SHORT signals) ---
+        btc_sym = "BTC/USDT"
+        bmsb_blocked_map: Dict[float, bool] = {}
+        bmsb_weekly_ts: List[float] = []
+        btc_weekly_data = ohlcv_1w.get(btc_sym)
+        if btc_weekly_data is not None and len(btc_weekly_data.get("close", [])) >= 21:
+            bmsb_blocked_map = _compute_bmsb_filter(btc_weekly_data)
+            bmsb_weekly_ts = sorted(bmsb_blocked_map.keys())
+
         def on_progress(pct: float, msg: str):
             # Map replay progress (0-100) to result progress (30-80)
             result.progress = 30.0 + pct * 0.5
@@ -289,6 +298,8 @@ async def _run_backtest_task(
             fear_greed=fear_greed,
             warmup_bars=warmup,
             on_progress=on_progress,
+            bmsb_blocked_map=bmsb_blocked_map,
+            bmsb_weekly_ts=bmsb_weekly_ts,
         )
 
         result.bar_count = len(bar_results)
@@ -301,15 +312,6 @@ async def _run_backtest_task(
 
         # --- Phase C: Position manager ---
         pm = PositionManager(config.initial_capital, valid_symbols, leverage=config.leverage)
-
-        # --- BMSB macro filter ---
-        btc_sym = "BTC/USDT"
-        bmsb_blocked_map: Dict[float, bool] = {}
-        bmsb_weekly_ts: List[float] = []
-        btc_weekly_data = ohlcv_1w.get(btc_sym)
-        if btc_weekly_data is not None and len(btc_weekly_data.get("close", [])) >= 21:
-            bmsb_blocked_map = _compute_bmsb_filter(btc_weekly_data)
-            bmsb_weekly_ts = sorted(bmsb_blocked_map.keys())
 
         # Also track BTC buy-and-hold
         btc_initial_price = None
@@ -329,11 +331,18 @@ async def _run_backtest_task(
 
         bar_count = 0
         total_bars = len(bars_by_ts)
+        prev_macro_blocked = False
         for ts in sorted(bars_by_ts.keys()):
             bars = bars_by_ts[ts]
 
             # Update BMSB macro filter
-            pm.macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
+            current_macro_blocked = _is_bmsb_blocked(bmsb_blocked_map, bmsb_weekly_ts, ts)
+            pm.macro_blocked = current_macro_blocked
+
+            # Macro flip: bearish → bullish → close ALL shorts globally
+            if prev_macro_blocked and not current_macro_blocked:
+                pm.close_all_shorts(ts, "MACRO_FLIP")
+            prev_macro_blocked = current_macro_blocked
 
             # Process each symbol's signal
             for bar in bars:
