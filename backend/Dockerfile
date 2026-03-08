@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Ensure Python output is unbuffered for real-time logging
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Install curl for kraken-cli download

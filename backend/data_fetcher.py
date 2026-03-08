@@ -197,10 +197,11 @@ async def fetch_ohlcv(
         logger.debug("Cache hit for %s %s", symbol, timeframe)
         return cached
 
-    # Try primary exchange, then fallback
+    # Try primary exchange, then fallbacks
+    # Note: binance/bybit geo-block US IPs; kucoin works from US for public data
     exchanges_to_try = [exchange_id]
     if exchange_id == "binance":
-        exchanges_to_try.append("bybit")
+        exchanges_to_try.extend(["bybit", "kucoin"])
 
     last_error: Optional[Exception] = None
 
@@ -210,7 +211,7 @@ async def fetch_ohlcv(
             await exchange.load_markets()
 
             if symbol not in exchange.markets:
-                logger.info(
+                logger.debug(
                     "%s not found on %s, trying next exchange",
                     symbol, exch_id,
                 )
@@ -231,7 +232,7 @@ async def fetch_ohlcv(
             return data
 
         except ccxt.BadSymbol:
-            logger.info("%s not listed on %s", symbol, exch_id)
+            logger.debug("%s not listed on %s", symbol, exch_id)
             continue
         except ccxt.NetworkError as exc:
             last_error = exc
