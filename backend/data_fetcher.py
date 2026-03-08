@@ -3,8 +3,8 @@ data_fetcher.py
 ~~~~~~~~~~~~~~~
 Fetches OHLCV data from crypto exchanges via CCXT (async).
 
-Primary exchange : Binance
-Fallback exchange: Bybit (used when a symbol is not listed on Binance)
+Primary exchange : Kraken  (matches execution venue)
+Fallback exchanges: KuCoin → Binance → Bybit
 
 Concurrency is throttled with an asyncio.Semaphore (max 5 parallel
 requests) and an inter-request delay of 100 ms.  Results are cached
@@ -166,7 +166,7 @@ async def _create_exchange(exchange_id: str) -> ccxt.Exchange:
 async def fetch_ohlcv(
     symbol: str,
     timeframe: str,
-    exchange_id: str = "binance",
+    exchange_id: str = "kraken",
     limit: int = 250,
 ) -> Optional[dict]:
     """Fetch OHLCV data for a single *symbol*.
@@ -182,7 +182,7 @@ async def fetch_ohlcv(
     timeframe:
         Candle interval -- ``"4h"`` or ``"1d"``.
     exchange_id:
-        Primary exchange to try (default ``"binance"``).
+        Primary exchange to try (default ``"kraken"``).
     limit:
         Number of candles to retrieve (default 250).
     """
@@ -198,10 +198,12 @@ async def fetch_ohlcv(
         return cached
 
     # Try primary exchange, then fallbacks
-    # Note: binance/bybit geo-block US IPs; kucoin works from US for public data
+    # Kraken is default (execution venue); kucoin/binance as fallbacks
     exchanges_to_try = [exchange_id]
-    if exchange_id == "binance":
-        exchanges_to_try.extend(["bybit", "kucoin"])
+    if exchange_id == "kraken":
+        exchanges_to_try.extend(["kucoin", "binance", "bybit"])
+    elif exchange_id == "binance":
+        exchanges_to_try.extend(["kraken", "bybit", "kucoin"])
 
     last_error: Optional[Exception] = None
 

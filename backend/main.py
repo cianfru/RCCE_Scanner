@@ -57,7 +57,7 @@ async def _load_exchange_symbols() -> List[dict]:
         symbols = []
         seen = set()
 
-        for exch_id in ("binance", "bybit"):
+        for exch_id in ("kraken", "kucoin", "binance", "bybit"):
             try:
                 exchange = getattr(ccxt, exch_id)({"enableRateLimit": True})
                 await exchange.load_markets()
