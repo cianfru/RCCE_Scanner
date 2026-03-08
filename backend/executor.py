@@ -69,6 +69,8 @@ class ExecutorPosition:
     size_pct: float = 0.0           # % of allocation used
     confluence_at_entry: str = "UNKNOWN"
     order_id: str = ""              # Kraken order ID
+    entry_reason: str = ""          # signal_reason at entry time
+    entry_warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -94,6 +96,8 @@ class ExecutorTrade:
     pnl_pct: float = 0.0
     pnl_usd: float = 0.0
     order_ids: List[str] = field(default_factory=list)
+    entry_reason: str = ""
+    entry_warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -228,9 +232,13 @@ class Executor:
             if symbol not in self.pair_map:
                 continue
 
+            signal_reason = r.get("signal_reason", "")
+            signal_warnings = r.get("signal_warnings", [])
+
             try:
                 action = await self._process_signal(
-                    symbol, signal, price, confluence_label
+                    symbol, signal, price, confluence_label,
+                    signal_reason, signal_warnings,
                 )
                 if action:
                     actions_taken.append(action)
@@ -266,6 +274,8 @@ class Executor:
         signal: str,
         price: float,
         confluence_label: str,
+        signal_reason: str = "",
+        signal_warnings: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Process a single symbol's signal. Returns action description or None."""
 
@@ -290,6 +300,7 @@ class Executor:
 
             action = await self._execute_entry(
                 symbol, signal, price, size_pct, confluence_label,
+                signal_reason, signal_warnings or [],
             )
             return action
 
@@ -306,6 +317,8 @@ class Executor:
         price: float,
         size_pct: float,
         confluence_label: str,
+        signal_reason: str = "",
+        signal_warnings: Optional[List[str]] = None,
     ) -> str:
         """Place an entry order (buy for LONG, sell for SHORT)."""
         kraken_pair = self.pair_map[symbol]
@@ -355,6 +368,8 @@ class Executor:
             size_pct=size_pct,
             confluence_at_entry=confluence_label,
             order_id=order_id,
+            entry_reason=signal_reason,
+            entry_warnings=signal_warnings or [],
         )
 
         action = f"{side} {symbol} @ ${fill_price:,.2f} ({signal}, {size_pct*100:.0f}%, vol={volume})"
@@ -412,6 +427,8 @@ class Executor:
             pnl_pct=pnl_pct,
             pnl_usd=pnl_usd,
             order_ids=[pos.order_id, result.get("order_id", "")],
+            entry_reason=pos.entry_reason,
+            entry_warnings=pos.entry_warnings,
         )
         self.trade_log.append(trade)
 
