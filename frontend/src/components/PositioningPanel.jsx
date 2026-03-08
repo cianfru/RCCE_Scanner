@@ -61,6 +61,7 @@ export default function PositioningPanel({ positioning }) {
     leverage_risk,
     predicted_funding,
     volume_24h,
+    source,
   } = positioning;
 
   const oiMeta = oiTrendMeta(oi_trend);
@@ -181,11 +182,29 @@ export default function PositioningPanel({ positioning }) {
         justifyContent: "space-between",
       }}>
         <span>Positioning</span>
-        {volume_24h != null && (
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, fontWeight: 500, letterSpacing: "0.02em" }}>
-            Vol {formatVolume(volume_24h)}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {source && (
+            <span style={{
+              padding: "1px 5px",
+              borderRadius: "3px",
+              background: source === "kraken" ? "#5741d920" : "#06b6d420",
+              color: source === "kraken" ? "#a78bfa" : "#22d3ee",
+              fontSize: 7,
+              fontFamily: T.mono,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              border: `1px solid ${source === "kraken" ? "#5741d930" : "#06b6d430"}`,
+              textTransform: "uppercase",
+            }}>
+              {source}
+            </span>
+          )}
+          {volume_24h != null && (
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, fontWeight: 500, letterSpacing: "0.02em" }}>
+              Vol {formatVolume(volume_24h)}
+            </span>
+          )}
+        </div>
       </div>
       {rows.map((row, i) => (
         <div key={row.label} style={{

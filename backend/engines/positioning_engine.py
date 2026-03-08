@@ -1,8 +1,9 @@
 """
 positioning_engine.py
 ~~~~~~~~~~~~~~~~~~~~~
-Converts raw Hyperliquid data (funding rates, open interest) into actionable
-positioning metrics per symbol.
+Converts raw positioning data (funding rates, open interest) into actionable
+metrics per symbol.  Data sources: Kraken Futures (primary) and Hyperliquid
+(fallback).
 
 Produces funding regime (CROWDED_LONG / CROWDED_SHORT / NEUTRAL),
 OI trend (BUILDING / SQUEEZE / LIQUIDATING / SHORTING), and leverage risk.
@@ -34,7 +35,7 @@ OI_CHANGE_THRESHOLD = 2.0        # > 2% change considered significant
 
 @dataclass
 class PositioningResult:
-    """Per-symbol positioning analysis from Hyperliquid data."""
+    """Per-symbol positioning analysis (Kraken Futures / Hyperliquid)."""
     funding_regime: str = "NEUTRAL"       # CROWDED_LONG | CROWDED_SHORT | NEUTRAL
     funding_rate: float = 0.0             # Raw hourly funding rate
     oi_trend: str = "UNKNOWN"             # BUILDING | SQUEEZE | LIQUIDATING | SHORTING | STABLE
@@ -61,7 +62,7 @@ def compute_positioning(
     oracle_price: float = 0.0,
     volume_24h: float = 0.0,
 ) -> PositioningResult:
-    """Analyze positioning from Hyperliquid data.
+    """Analyze positioning from exchange data (Kraken Futures or Hyperliquid).
 
     Parameters
     ----------
