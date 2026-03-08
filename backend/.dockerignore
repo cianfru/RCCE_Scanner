@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+backtest/tests/
+data/
+start_server.py
+start.sh
