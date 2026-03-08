@@ -2,7 +2,7 @@
 RCCE Scanner — Pydantic response models
 """
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 class PositioningResponse(BaseModel):
@@ -152,3 +152,44 @@ class WalkForwardRequest(BaseModel):
     test_window_days: int = 180     # 6-month windows
     step_days: int = 180            # non-overlapping
     warmup_days: int = 0            # 0 = auto (70 for 4h, 210 for 1d)
+
+
+# ---------------------------------------------------------------------------
+# Executor models
+# ---------------------------------------------------------------------------
+
+class ExecutorInitRequest(BaseModel):
+    mode: str = "paper"              # "paper" or "live"
+    balance: float = 10000.0
+
+class ExecutorStatusResponse(BaseModel):
+    mode: str = "disabled"
+    enabled: bool = False
+    initialized: bool = False
+    positions: Dict[str, dict] = {}
+    open_position_count: int = 0
+    total_trades: int = 0
+    total_pnl_pct: float = 0.0
+    win_rate: float = 0.0
+    last_scan_signals: Dict[str, str] = {}
+    last_error: Optional[str] = None
+    last_execution_time: Optional[float] = None
+    total_executions: int = 0
+    available_pairs: int = 0
+    paper_balance: float = 0.0
+    portfolio: dict = {}
+
+class ExecutorTradeResponse(BaseModel):
+    symbol: str
+    kraken_pair: str = ""
+    side: str = "LONG"
+    entry_price: float = 0.0
+    entry_time: float = 0.0
+    entry_signal: str = ""
+    exit_price: float = 0.0
+    exit_time: float = 0.0
+    exit_signal: str = ""
+    volume: float = 0.0
+    pnl_pct: float = 0.0
+    pnl_usd: float = 0.0
+    order_ids: List[str] = []
