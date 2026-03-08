@@ -551,6 +551,7 @@ class Executor:
             _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
             state = {
                 "mode": self.mode,
+                "enabled": self.enabled,
                 "initial_balance": self.initial_balance,
                 "positions": {
                     sym: pos.to_dict()
@@ -579,6 +580,10 @@ class Executor:
                 logger.info("Mode changed (%s → %s) — starting fresh",
                            state.get("mode"), self.mode)
                 return
+
+            # Restore enabled flag
+            if state.get("enabled"):
+                self.enabled = True
 
             # Restore positions
             for sym, pos_dict in state.get("positions", {}).items():

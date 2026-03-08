@@ -91,6 +91,7 @@ _backtest_running = False  # Flag to pause scans during backtest
 
 async def _periodic_scan():
     """Run scans every 5 minutes. Pauses while a backtest is fetching data."""
+    _executor_auto_started = False
     while True:
         if _backtest_running:
             logger.info("Scan deferred — backtest in progress")
@@ -100,9 +101,43 @@ async def _periodic_scan():
             logger.info("Starting scheduled scan...")
             await run_scan(cache)
             logger.info("Scan complete.")
+
+            # Auto-initialize executor after first successful scan
+            if not _executor_auto_started:
+                _executor_auto_started = True
+                await _auto_init_executor()
         except Exception as e:
             logger.error("Scan failed: %s", e)
         await asyncio.sleep(300)  # 5 minutes
+
+
+async def _auto_init_executor():
+    """Auto-initialize and enable the executor after first scan.
+
+    This ensures the executor is always running after a Railway redeploy
+    without requiring manual "Initialize" button clicks.
+    """
+    try:
+        from executor import init_executor, get_executor
+
+        executor = get_executor()
+        if executor and executor.initialized:
+            logger.info("Executor already initialized — skipping auto-init")
+            return
+
+        logger.info("Auto-initializing executor (paper mode)...")
+        executor = await init_executor(
+            mode="paper",
+            balance=10000.0,
+            scanner_symbols=cache.symbols,
+        )
+        executor.enabled = True
+        logger.info(
+            "Executor auto-initialized and enabled: %d pairs available",
+            len(executor.pair_map),
+        )
+    except Exception as e:
+        logger.warning("Failed to auto-initialize executor: %s (non-fatal)", e)
 
 
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
@@ -655,6 +690,7 @@ async def executor_enable():
             detail="Executor not initialized. Call POST /api/executor/init first.",
         )
     executor.enabled = True
+    executor._save_state()
     logger.info("Executor ENABLED — signals will be executed via Kraken (%s mode)", executor.mode)
     return {"status": "enabled", "mode": executor.mode}
 
@@ -668,6 +704,7 @@ async def executor_disable():
     if not executor:
         raise HTTPException(status_code=400, detail="Executor not initialized")
     executor.enabled = False
+    executor._save_state()
     logger.info("Executor DISABLED — signals will NOT be executed")
     return {"status": "disabled", "open_positions": len(executor.positions)}
 
