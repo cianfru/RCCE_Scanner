@@ -851,25 +851,12 @@ export default function App() {
             src="/logo.png"
             alt="RCCE Scanner"
             style={{
-              height: isMobile ? 32 : 38,
+              height: isMobile ? 36 : 48,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
             }}
           />
-          <div>
-            <div style={{
-              fontSize: isMobile ? 13 : 15, fontWeight: 700, letterSpacing: "0.08em",
-              fontFamily: T.font,
-              background: "linear-gradient(135deg, #22d3ee, #a78bfa)",
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-            }}>
-              RCCE SCANNER
-            </div>
-            <div style={{ fontSize: isMobile ? 9 : 10, color: T.text4, letterSpacing: "0.06em", fontFamily: T.font, fontWeight: 400, marginTop: 2 }}>
-              Reflexive Crypto Cycle Engine {"\u00b7"} {data4h.length} symbols
-            </div>
-          </div>
           {scanRunning && (
             <div style={{
               display: "flex", alignItems: "center", gap: 6,
