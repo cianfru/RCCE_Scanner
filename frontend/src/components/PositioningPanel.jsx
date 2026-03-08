@@ -73,23 +73,23 @@ export default function PositioningPanel({ positioning }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
             fontFamily: T.mono,
-            fontSize: 12,
-            fontWeight: 600,
+            fontSize: 13,
+            fontWeight: 700,
             color: fundingColor(funding_rate),
           }}>
             {funding_rate != null ? `${(funding_rate * 100).toFixed(4)}%` : "\u2014"}
           </span>
           {funding_regime && (
             <span style={{
-              padding: "2px 7px",
+              padding: "3px 8px",
               borderRadius: "20px",
-              background: `${fundingRegimeColor(funding_regime)}10`,
+              background: `${fundingRegimeColor(funding_regime)}14`,
               color: fundingRegimeColor(funding_regime),
-              fontSize: 8,
+              fontSize: 10,
               fontFamily: T.mono,
-              fontWeight: 600,
+              fontWeight: 700,
               letterSpacing: "0.04em",
-              border: `1px solid ${fundingRegimeColor(funding_regime)}15`,
+              border: `1px solid ${fundingRegimeColor(funding_regime)}25`,
             }}>
               {funding_regime}
             </span>
@@ -102,24 +102,24 @@ export default function PositioningPanel({ positioning }) {
       value: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
-            padding: "2px 8px",
+            padding: "3px 10px",
             borderRadius: "20px",
-            background: `${oiMeta.color}10`,
+            background: `${oiMeta.color}14`,
             color: oiMeta.color,
-            fontSize: 9,
+            fontSize: 11,
             fontFamily: T.mono,
-            fontWeight: 600,
+            fontWeight: 700,
             letterSpacing: "0.04em",
-            border: `1px solid ${oiMeta.color}15`,
+            border: `1px solid ${oiMeta.color}25`,
             display: "inline-flex",
             alignItems: "center",
-            gap: 3,
+            gap: 4,
           }}>
-            <span style={{ fontSize: 9 }}>{oiMeta.arrow}</span>
+            <span style={{ fontSize: 11 }}>{oiMeta.arrow}</span>
             {oiMeta.label}
           </span>
           {oi_value != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text3 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text2, fontWeight: 500 }}>
               {formatVolume(oi_value)}
             </span>
           )}
@@ -130,15 +130,15 @@ export default function PositioningPanel({ positioning }) {
       label: "Leverage Risk",
       value: (
         <span style={{
-          padding: "2px 8px",
+          padding: "3px 10px",
           borderRadius: "20px",
-          background: `${leverageColor(leverage_risk)}10`,
+          background: `${leverageColor(leverage_risk)}14`,
           color: leverageColor(leverage_risk),
-          fontSize: 9,
+          fontSize: 11,
           fontFamily: T.mono,
-          fontWeight: 600,
+          fontWeight: 700,
           letterSpacing: "0.04em",
-          border: `1px solid ${leverageColor(leverage_risk)}15`,
+          border: `1px solid ${leverageColor(leverage_risk)}25`,
         }}>
           {leverage_risk || "\u2014"}
         </span>
@@ -149,8 +149,8 @@ export default function PositioningPanel({ positioning }) {
       value: (
         <span style={{
           fontFamily: T.mono,
-          fontSize: 11,
-          fontWeight: 500,
+          fontSize: 13,
+          fontWeight: 600,
           color: fundingColor(predicted_funding),
         }}>
           {predicted_funding != null ? `${(predicted_funding * 100).toFixed(4)}%` : "\u2014"}
@@ -164,18 +164,18 @@ export default function PositioningPanel({ positioning }) {
       background: T.surface,
       border: `1px solid ${T.border}`,
       borderRadius: T.radiusSm,
-      padding: "12px",
+      padding: "14px",
       marginBottom: 12,
       backdropFilter: "blur(12px)",
       WebkitBackdropFilter: "blur(12px)",
     }}>
       <div style={{
-        fontSize: 8,
-        color: T.text4,
+        fontSize: 10,
+        color: T.text3,
         letterSpacing: "0.12em",
         fontFamily: T.font,
-        fontWeight: 600,
-        marginBottom: 10,
+        fontWeight: 700,
+        marginBottom: 12,
         textTransform: "uppercase",
         display: "flex",
         alignItems: "center",
@@ -185,11 +185,11 @@ export default function PositioningPanel({ positioning }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {source && (
             <span style={{
-              padding: "1px 5px",
-              borderRadius: "3px",
+              padding: "2px 7px",
+              borderRadius: "4px",
               background: source === "kraken" ? "#5741d920" : "#06b6d420",
               color: source === "kraken" ? "#a78bfa" : "#22d3ee",
-              fontSize: 7,
+              fontSize: 9,
               fontFamily: T.mono,
               fontWeight: 700,
               letterSpacing: "0.08em",
@@ -200,7 +200,7 @@ export default function PositioningPanel({ positioning }) {
             </span>
           )}
           {volume_24h != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, fontWeight: 500, letterSpacing: "0.02em" }}>
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text2, fontWeight: 500, letterSpacing: "0.02em" }}>
               Vol {formatVolume(volume_24h)}
             </span>
           )}
@@ -211,12 +211,12 @@ export default function PositioningPanel({ positioning }) {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          padding: "7px 0",
+          padding: "8px 0",
           borderTop: i > 0 ? `1px solid ${T.border}` : "none",
         }}>
           <span style={{
-            fontSize: 9,
-            color: T.text4,
+            fontSize: 11,
+            color: T.text3,
             fontFamily: T.font,
             fontWeight: 500,
             letterSpacing: "0.04em",
