@@ -106,7 +106,7 @@ function ZScoreBar({ z, isMobile }) {
           width: 1, background: "rgba(255,255,255,0.08)"
         }} />
       </div>
-      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 9 : 10, minWidth: 36, textAlign: "right", fontWeight: 500 }}>
+      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
         {fmt(z, 2)}
       </span>
     </div>
@@ -118,15 +118,15 @@ function RegimeBadge({ regime }) {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "3px 10px", borderRadius: "20px",
+      padding: "4px 12px", borderRadius: "20px",
       background: m.bg, color: m.color,
-      fontSize: 9, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.06em",
-      border: `1px solid ${m.color}18`,
+      border: `1px solid ${m.color}25`,
       boxShadow: `0 0 12px ${m.glow}`,
       whiteSpace: "nowrap",
     }}>
-      <span style={{ fontSize: 8, opacity: 0.8 }}>{m.glyph}</span>
+      <span style={{ fontSize: 10, opacity: 0.9 }}>{m.glyph}</span>
       {m.label}
     </span>
   );
@@ -140,21 +140,21 @@ function SignalDot({ signal, reason, warnings, isMobile }) {
   return (
     <span
       style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        color: m.color, fontFamily: T.mono, fontSize: 10, whiteSpace: "nowrap",
-        fontWeight: 500, position: "relative", cursor: hasInfo ? "help" : "default",
+        display: "inline-flex", alignItems: "center", gap: 5,
+        color: m.color, fontFamily: T.mono, fontSize: 11, whiteSpace: "nowrap",
+        fontWeight: 600, position: "relative", cursor: hasInfo ? "help" : "default",
       }}
       onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
       onMouseLeave={() => setShowTip(false)}
       onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
     >
       <span style={{
-        fontSize: 8,
-        filter: signal !== "WAIT" ? `drop-shadow(0 0 3px ${m.color})` : "none",
+        fontSize: 9,
+        filter: signal !== "WAIT" ? `drop-shadow(0 0 4px ${m.color})` : "none",
       }}>{m.dot}</span>
       {m.label}
       {warnings && warnings.length > 0 && (
-        <span style={{ fontSize: 7, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
+        <span style={{ fontSize: 8, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
       )}
       {showTip && hasInfo && (
         <div style={{
@@ -193,10 +193,10 @@ function DivergencePill({ div }) {
   const color = div.includes("BULL") ? "#34d399" : "#f87171";
   return (
     <span style={{
-      padding: "2px 8px", borderRadius: "20px",
-      background: `${color}10`, color,
-      fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.06em", border: `1px solid ${color}20`,
+      padding: "3px 10px", borderRadius: "20px",
+      background: `${color}14`, color,
+      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      letterSpacing: "0.06em", border: `1px solid ${color}28`,
     }}>
       {div}
     </span>
@@ -208,9 +208,9 @@ function HeatCell({ heat }) {
   const color = heatColor(heat);
   const pct = Math.min(heat, 100);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 50 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
       <div style={{
-        width: 28, height: 3, background: "rgba(255,255,255,0.04)",
+        width: 32, height: 4, background: "rgba(255,255,255,0.06)",
         borderRadius: 2, overflow: "hidden",
       }}>
         <div style={{
@@ -218,7 +218,7 @@ function HeatCell({ heat }) {
           boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 10, color, fontWeight: 500 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
         {Math.round(heat)}
       </span>
     </div>
@@ -228,7 +228,7 @@ function HeatCell({ heat }) {
 function PhaseCell({ phase }) {
   if (!phase) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   return (
-    <span style={{ fontFamily: T.mono, fontSize: 9, color: phaseColor(phase), fontWeight: 500, letterSpacing: "0.03em" }}>
+    <span style={{ fontFamily: T.mono, fontSize: 11, color: phaseColor(phase), fontWeight: 600, letterSpacing: "0.03em" }}>
       {phase}
     </span>
   );
@@ -239,10 +239,10 @@ function ExhaustBadge({ state }) {
   if (meta.text === "\u2014") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   return (
     <span style={{
-      padding: "2px 7px", borderRadius: "20px",
-      background: `${meta.color}10`, color: meta.color,
-      fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}15`,
+      padding: "3px 9px", borderRadius: "20px",
+      background: `${meta.color}14`, color: meta.color,
+      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
     }}>
       {meta.text}
     </span>
@@ -252,11 +252,11 @@ function ExhaustBadge({ state }) {
 function FloorCell({ confirmed }) {
   if (confirmed) {
     return <span style={{
-      color: "#34d399", fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+      color: "#34d399", fontFamily: T.mono, fontSize: 13, fontWeight: 700,
       filter: "drop-shadow(0 0 4px rgba(52,211,153,0.5))",
     }}>{"\u2713"}</span>;
   }
-  return <span style={{ color: T.text4, fontSize: 11 }}>{"\u2014"}</span>;
+  return <span style={{ color: T.text4, fontSize: 12 }}>{"\u2014"}</span>;
 }
 
 // ─── NEW TABLE CELLS ─────────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ function FundingCell({ rate }) {
   if (rate == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text2;
   return (
-    <span style={{ fontFamily: T.mono, fontSize: 9, color, fontWeight: 500 }}>
+    <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
       {(rate * 100).toFixed(3)}%
     </span>
   );
@@ -281,10 +281,10 @@ function OITrendBadge({ trend }) {
   }[trend] || { color: T.text4, label: trend.slice(0, 5) };
   return (
     <span style={{
-      padding: "2px 6px", borderRadius: "20px",
-      background: `${meta.color}10`, color: meta.color,
-      fontSize: 8, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}15`,
+      padding: "3px 8px", borderRadius: "20px",
+      background: `${meta.color}14`, color: meta.color,
+      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
     }}>
       {meta.label}
     </span>
@@ -295,9 +295,9 @@ function ConfluenceBadge({ score, label }) {
   if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{
-        width: 20, height: 3, background: "rgba(255,255,255,0.04)",
+        width: 24, height: 4, background: "rgba(255,255,255,0.06)",
         borderRadius: 2, overflow: "hidden",
       }}>
         <div style={{
@@ -305,7 +305,7 @@ function ConfluenceBadge({ score, label }) {
           background: color, borderRadius: 2,
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 9, color, fontWeight: 600 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 700 }}>
         {score != null ? Math.round(score) : "\u2014"}
       </span>
     </div>
@@ -314,11 +314,11 @@ function ConfluenceBadge({ score, label }) {
 
 // Cell renderer for column-based rendering
 function CellContent({ colLabel, row, isMobile }) {
-  const cellPad = isMobile ? "8px 10px" : "10px 12px";
+  const cellPad = isMobile ? "10px 10px" : "12px 14px";
   switch (colLabel) {
     case "SYMBOL":
       return (
-        <td style={{ padding: isMobile ? "8px 10px" : "10px 14px", fontFamily: T.mono, fontWeight: 600, color: T.text1, fontSize: isMobile ? 10 : 11, letterSpacing: "0.02em" }}>
+        <td style={{ padding: isMobile ? "10px 10px" : "12px 16px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 13, letterSpacing: "0.02em" }}>
           {getBaseSymbol(row.symbol)}
         </td>
       );
@@ -331,11 +331,11 @@ function CellContent({ colLabel, row, isMobile }) {
     case "Z-SCORE":
       return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
     case "ENERGY":
-      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 9 : 10, color: T.text3 }}>{fmt(row.energy, 2)}</td>;
+      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 11, color: T.text2 }}>{fmt(row.energy, 2)}</td>;
     case "MOM":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 9 : 10 }}>
-          <span style={{ color: row.momentum >= 0 ? "#34d399" : "#f87171" }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12 }}>
+          <span style={{ color: row.momentum >= 0 ? "#34d399" : "#f87171", fontWeight: 600 }}>
             {row.momentum != null ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
           </span>
         </td>
@@ -344,7 +344,7 @@ function CellContent({ colLabel, row, isMobile }) {
       return <td style={{ padding: cellPad }}><DivergencePill div={row.divergence} /></td>;
     case "PRICE":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 9 : 10, color: T.text2 }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, color: T.text1, fontWeight: 500 }}>
           {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
         </td>
       );
@@ -470,7 +470,7 @@ function StatCards({ results, isMobile, isTablet }) {
             }}
           >
             <div style={{
-              fontSize: isMobile ? 22 : 28, fontWeight: 700, fontFamily: T.mono,
+              fontSize: isMobile ? 26 : 32, fontWeight: 700, fontFamily: T.mono,
               color: c.value > 0 ? c.color : T.text4,
               lineHeight: 1,
               filter: c.value > 0 ? `drop-shadow(0 0 8px ${c.color}30)` : "none",
@@ -478,8 +478,8 @@ function StatCards({ results, isMobile, isTablet }) {
               {c.value}
             </div>
             <div style={{
-              fontSize: 9, color: c.value > 0 ? T.text3 : T.text4,
-              fontFamily: T.font, fontWeight: 500,
+              fontSize: 10, color: c.value > 0 ? T.text2 : T.text4,
+              fontFamily: T.font, fontWeight: 600,
               letterSpacing: "0.1em", marginTop: 6,
               textTransform: "uppercase",
             }}>
@@ -516,21 +516,21 @@ function ConsensusBar({ consensus, isMobile }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{
-            fontSize: 9, color: T.text3, letterSpacing: "0.12em", fontFamily: T.font, fontWeight: 500,
+            fontSize: 11, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",
           }}>Consensus</span>
           <span style={{
-            padding: "4px 14px", borderRadius: "20px",
-            background: `${color}12`, color,
-            fontSize: 11, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-            border: `1px solid ${color}20`,
+            padding: "5px 16px", borderRadius: "20px",
+            background: `${color}15`, color,
+            fontSize: 13, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+            border: `1px solid ${color}28`,
             boxShadow: `0 0 16px ${color}15`,
           }}>
             {consensus.consensus}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: isMobile ? 1 : undefined }}>
-          <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 500 }}>STR</span>
+          <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
           <div style={{
             width: isMobile ? undefined : 100,
             flex: isMobile ? 1 : undefined,
@@ -546,8 +546,8 @@ function ConsensusBar({ consensus, isMobile }) {
             }} />
           </div>
           <span style={{
-            fontFamily: T.mono, fontSize: 11, color, fontWeight: 600,
-            minWidth: 32, textAlign: "right",
+            fontFamily: T.mono, fontSize: 13, color, fontWeight: 700,
+            minWidth: 36, textAlign: "right",
           }}>{Math.round(consensus.strength)}%</span>
         </div>
       </GlassCard>
@@ -744,16 +744,16 @@ export default function App() {
 
   const TableHeader = ({ onSort, currentSort }) => (
     <thead>
-      <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+      <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
         {visibleColumns.map(([key, label]) => (
           <th
             key={label}
             onClick={() => key && onSort(key)}
             style={{
-              padding: isMobile ? "8px 10px" : "10px 14px", textAlign: "left",
-              fontFamily: T.font, fontSize: isMobile ? 8 : 9, fontWeight: 600,
-              color: currentSort === key ? T.accent : T.text4,
-              letterSpacing: "0.12em", cursor: key ? "pointer" : "default",
+              padding: isMobile ? "10px 10px" : "12px 16px", textAlign: "left",
+              fontFamily: T.font, fontSize: isMobile ? 9 : 11, fontWeight: 700,
+              color: currentSort === key ? T.accent : T.text3,
+              letterSpacing: "0.1em", cursor: key ? "pointer" : "default",
               userSelect: "none", whiteSpace: "nowrap",
               textTransform: "uppercase",
               transition: "color 0.2s",
@@ -929,8 +929,8 @@ export default function App() {
                 padding: isMobile ? "8px 16px" : "5px 16px", borderRadius: "20px", border: "none",
                 background: activeTab === key ? T.accent : "transparent",
                 color: activeTab === key ? "#000" : T.text3,
-                fontFamily: T.mono, fontSize: 10, cursor: "pointer",
-                fontWeight: 600, letterSpacing: "0.06em",
+                fontFamily: T.mono, fontSize: 11, cursor: "pointer",
+                fontWeight: 700, letterSpacing: "0.06em",
                 transition: "all 0.2s ease",
                 flex: isMobile ? 1 : undefined,
               }}
@@ -1052,7 +1052,7 @@ export default function App() {
                   display: "flex", alignItems: "center", gap: 10,
                   flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
                 }}>
-                  <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
+                  <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
                     BTC.D
                   </span>
                   <span style={{
@@ -1081,7 +1081,7 @@ export default function App() {
                   flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
                   border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
                 }}>
-                  <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, textTransform: "uppercase" }}>
+                  <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
                     Alt Season
                   </span>
                   <span style={{
@@ -1136,8 +1136,8 @@ export default function App() {
               }}
             >
               <span style={{
-                fontSize: 9, color: T.text4, letterSpacing: "0.12em",
-                fontFamily: T.font, fontWeight: 600, marginRight: 6,
+                fontSize: 10, color: T.text3, letterSpacing: "0.12em",
+                fontFamily: T.font, fontWeight: 700, marginRight: 6,
                 textTransform: "uppercase",
                 flexShrink: 0,
               }}>
@@ -1153,9 +1153,9 @@ export default function App() {
                       key={`${r.symbol}-${r.tf}`}
                       onClick={() => setSelected(r)}
                       style={{
-                        padding: "3px 10px", borderRadius: "20px", cursor: "pointer",
-                        background: `${sm.color}08`, border: `1px solid ${sm.color}15`,
-                        color: sm.color, fontSize: 10, fontFamily: T.mono, fontWeight: 500,
+                        padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
+                        background: `${sm.color}10`, border: `1px solid ${sm.color}20`,
+                        color: sm.color, fontSize: 11, fontFamily: T.mono, fontWeight: 600,
                         display: "inline-flex", alignItems: "center", gap: 4,
                         transition: "all 0.2s ease",
                         flexShrink: 0,
@@ -1564,8 +1564,8 @@ export default function App() {
                 display: "flex", justifyContent: "space-between", alignItems: "center",
                 padding: "8px 0",
               }}>
-                <span style={{ fontSize: 10, color: T.text4, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-                <span style={{ fontFamily: T.mono, fontSize: isMobile ? 11 : 12, color: valColor || T.text2, fontWeight: 500 }}>{value}</span>
+                <span style={{ fontSize: 11, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
+                <span style={{ fontFamily: T.mono, fontSize: isMobile ? 12 : 13, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
               </div>
             );
           })}
