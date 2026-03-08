@@ -11,6 +11,7 @@ identical results to the live scanner by construction.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -112,6 +113,8 @@ async def run_replay(
     fear_greed: Dict[str, int],
     warmup_bars: int = 400,
     on_progress: Optional[Callable[[float, str], None]] = None,
+    bmsb_blocked_map: Optional[Dict[float, bool]] = None,
+    bmsb_weekly_ts: Optional[List[float]] = None,
 ) -> List[BarResult]:
     """Run bar-by-bar replay through all engines.
 
@@ -127,6 +130,10 @@ async def run_replay(
         Number of bars to skip at the start for engine warmup.
     on_progress : callable or None
         Called with (progress_pct, status_msg) for UI updates.
+    bmsb_blocked_map : dict or None
+        {timestamp_ms: bool} from _compute_bmsb_filter(). Used for LIGHT_SHORT.
+    bmsb_weekly_ts : list or None
+        Sorted list of weekly timestamps for BMSB lookup.
 
     Returns
     -------
@@ -184,12 +191,22 @@ async def run_replay(
     # Track consecutive WAIT signals per symbol for decay
     wait_counts: Dict[str, int] = {s: 0 for s in valid_symbols}
 
+    # Track previous heat per symbol for LIGHT_SHORT momentum stall filter
+    prev_heat_map: Dict[str, int] = {}
+
     for bar_idx in range(warmup_bars, ref_bars):
         progress = (bar_idx - warmup_bars) / total_replay_bars * 100.0
 
         # Current timestamp from the reference symbol
         current_ts = float(ref_data["timestamp"][bar_idx])
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+        # Compute macro_blocked for LIGHT_SHORT signal generation
+        macro_blocked = False
+        if bmsb_blocked_map and bmsb_weekly_ts:
+            idx = bisect.bisect_right(bmsb_weekly_ts, current_ts) - 1
+            if idx >= 0:
+                macro_blocked = bmsb_blocked_map.get(bmsb_weekly_ts[idx], False)
 
         # Yield to event loop every 5 bars to keep server responsive
         if bar_idx % 5 == 0:
@@ -290,14 +307,22 @@ async def run_replay(
         # --- Step 7: Synthesize signals ---
         for r in bar_results_raw:
             try:
+                sym = r["symbol"]
+                prev_heat = prev_heat_map.get(sym, 0)
+
                 synth = synthesize_signal(
                     r, consensus,
                     global_metrics=None,
                     positioning=None,
                     sentiment=sentiment_dict,
                     stablecoin=None,
+                    macro_blocked=macro_blocked,
+                    prev_heat=prev_heat,
                 )
-                sym = r["symbol"]
+
+                # Update prev_heat tracker for next bar
+                prev_heat_map[sym] = r.get("heat", 0)
+
                 conf = confluences.get(sym, {})
 
                 bar_result = BarResult(

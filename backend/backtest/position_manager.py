@@ -47,6 +47,7 @@ class Position:
     entry_time: float
     entry_signal: str
     size_pct: float              # current size as % of allocation
+    side: str = "LONG"           # "LONG" or "SHORT"
     bars_held: int = 0
     confluence_at_entry: str = "UNKNOWN"
     peak_price: float = 0.0      # highest price since entry (for trailing stop)
@@ -62,6 +63,7 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
     "LIGHT_LONG":    {"STRONG": 0.50, "MODERATE": 0.50, "WEAK": 0.25, "CONFLICTING": 0.25, "UNKNOWN": 0.25},
     # "ACCUMULATE":    {"STRONG": 0.25, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},  # DISABLED for testing
     "REVIVAL_SEED":  {"STRONG": 0.10, "MODERATE": 0.10, "WEAK": 0.00, "CONFLICTING": 0.00, "UNKNOWN": 0.05},
+    "LIGHT_SHORT":   {"STRONG": 0.30, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},
 }
 
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
@@ -73,7 +75,8 @@ _EXIT_ALL_SIGNAL = "RISK_OFF"
 
 _SIGNAL_DECAY_THRESHOLD = 20  # consecutive WAIT/neutral bars before stale exit
 
-_STOP_LOSS_PCT = -0.08        # -8% stop-loss per position
+_STOP_LOSS_PCT = -0.08        # -8% stop-loss per position (LONG)
+_SHORT_STOP_LOSS_PCT = 0.05   # +5% above entry triggers short stop
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +137,25 @@ class PositionManager:
         # --- STOP-LOSS: check before any signal logic ---
         if sym in self.positions:
             pos = self.positions[sym]
-            unrealized = (price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
-            if unrealized <= _STOP_LOSS_PCT:
-                trade = self._close_position(sym, bar.timestamp, price, "STOP_LOSS", close_pct=1.0)
-                self._wait_counts[sym] = 0
-                return trade
+            if pos.side == "SHORT":
+                # SHORT stop: price moved UP against us
+                unrealized = (pos.entry_price - price) / pos.entry_price if pos.entry_price > 0 else 0
+                if unrealized <= -_SHORT_STOP_LOSS_PCT:
+                    trade = self._close_position(sym, bar.timestamp, price, "STOP_LOSS", close_pct=1.0)
+                    self._wait_counts[sym] = 0
+                    return trade
+            else:
+                # LONG stop: price moved DOWN against us
+                unrealized = (price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
+                if unrealized <= _STOP_LOSS_PCT:
+                    trade = self._close_position(sym, bar.timestamp, price, "STOP_LOSS", close_pct=1.0)
+                    self._wait_counts[sym] = 0
+                    return trade
+
+        # SHORT exits are managed by stop loss (5%) and macro flip only.
+        # No regime exit — RCCE reclassifies bear rallies as MARKUP/REACC,
+        # and shorts enter during those regimes. Regime exit would close
+        # them immediately.
 
         # --- RISK_OFF: close ALL positions ---
         if signal == _EXIT_ALL_SIGNAL:
@@ -173,9 +190,8 @@ class PositionManager:
         if signal in _ENTRY_SIGNALS:
             self._wait_counts[sym] = 0
 
-            # Macro filter: block ALL entries when BMSB is bearish
-            if self.macro_blocked:
-                return None
+            # No macro gating here — the synthesizer enforces direction:
+            # BMSB bullish → long signals only, BMSB bearish → LIGHT_SHORT only
 
             confluence = bar.confluence_label
 
@@ -232,20 +248,22 @@ class PositionManager:
 
         self.cash -= alloc_usd
 
+        side = "SHORT" if bar.signal == "LIGHT_SHORT" else "LONG"
         pos = Position(
             symbol=sym,
             entry_price=bar.price,
             entry_time=bar.timestamp,
             entry_signal=bar.signal,
             size_pct=size_pct,
+            side=side,
             confluence_at_entry=confluence,
             peak_price=bar.price,
         )
         self.positions[sym] = pos
 
         logger.debug(
-            "OPEN %s: %s @ %.4f, size=%.0f%%, confluence=%s",
-            sym, bar.signal, bar.price, size_pct * 100, confluence,
+            "OPEN %s %s: %s @ %.4f, size=%.0f%%, confluence=%s",
+            side, sym, bar.signal, bar.price, size_pct * 100, confluence,
         )
         return None  # Trade not recorded until closed
 
@@ -298,8 +316,11 @@ class PositionManager:
         close_size = pos.size_pct * close_pct
         alloc_usd = self.per_symbol_alloc * close_size
 
-        # P&L calculation
-        pnl_pct = (price - pos.entry_price) / pos.entry_price * 100.0 if pos.entry_price > 0 else 0.0
+        # P&L calculation — inverted for shorts
+        if pos.side == "SHORT":
+            pnl_pct = (pos.entry_price - price) / pos.entry_price * 100.0 if pos.entry_price > 0 else 0.0
+        else:
+            pnl_pct = (price - pos.entry_price) / pos.entry_price * 100.0 if pos.entry_price > 0 else 0.0
         pnl_usd = alloc_usd * (pnl_pct / 100.0)
 
         # Return capital + P&L to cash
@@ -307,7 +328,7 @@ class PositionManager:
 
         trade = Trade(
             symbol=sym,
-            side="LONG",
+            side=pos.side,
             entry_time=pos.entry_time,
             entry_price=pos.entry_price,
             entry_signal=pos.entry_signal,
@@ -332,6 +353,19 @@ class PositionManager:
             sym, exit_signal, price, pnl_pct, pnl_usd, pos.bars_held,
         )
         return trade
+
+    def close_all_shorts(
+        self, timestamp: float, exit_signal: str = "MACRO_FLIP",
+    ) -> List[Trade]:
+        """Close all SHORT positions (macro regime flipped bullish)."""
+        trades = []
+        for sym in list(self.positions.keys()):
+            if self.positions[sym].side == "SHORT":
+                price = self._latest_prices.get(sym, self.positions[sym].entry_price)
+                t = self._close_position(sym, timestamp, price, exit_signal, close_pct=1.0)
+                if t:
+                    trades.append(t)
+        return trades
 
     def _close_all(
         self, timestamp: float, price_override: Optional[float], exit_signal: str,
@@ -360,6 +394,9 @@ class PositionManager:
         for sym, pos in self.positions.items():
             price = self._latest_prices.get(sym, pos.entry_price)
             alloc_usd = self.per_symbol_alloc * pos.size_pct
-            pnl_pct = (price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
+            if pos.side == "SHORT":
+                pnl_pct = (pos.entry_price - price) / pos.entry_price if pos.entry_price > 0 else 0
+            else:
+                pnl_pct = (price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
             equity += alloc_usd * (1 + pnl_pct)
         return equity

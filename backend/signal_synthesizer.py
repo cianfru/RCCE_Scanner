@@ -73,6 +73,8 @@ def synthesize_signal(
     positioning: Optional[dict] = None,
     sentiment: Optional[dict] = None,
     stablecoin: Optional[dict] = None,
+    macro_blocked: bool = False,
+    prev_heat: int = 0,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -125,6 +127,22 @@ def synthesize_signal(
     reasons: list = []
     warnings: list = []
 
+    # Helper: build human-readable reason string
+    def _reason_parts() -> list:
+        parts = [regime]
+        parts.append(f"z={z:.2f}")
+        parts.append(f"conf={confidence*100:.0f}%")
+        parts.append(f"consensus={mkt_consensus}")
+        if heat > 0:
+            parts.append(f"heat={heat}")
+        if divergence:
+            parts.append(f"div={divergence}")
+        if funding_regime != "NEUTRAL":
+            parts.append(f"funding={funding_regime}")
+        if oi_trend not in ("UNKNOWN", "STABLE"):
+            parts.append(f"OI={oi_trend}")
+        return parts
+
     # -----------------------------------------------------------------------
     # STEP 1: EXIT RULES (highest priority — any single trigger fires)
     # -----------------------------------------------------------------------
@@ -137,7 +155,8 @@ def synthesize_signal(
         return out
 
     # 1b. Exhaustion ABSORBING → institutional accumulation signal
-    if exhaustion_state == "ABSORBING":
+    # When macro_blocked, skip — no long entries in bear macro regime.
+    if exhaustion_state == "ABSORBING" and not macro_blocked:
         out.signal = "ACCUMULATE"
         out.reason = "Absorption detected — institutional accumulation in exhaustion engine"
         out.warnings = ["Absorption phase: declining volume on dips suggests accumulation"]
@@ -157,7 +176,9 @@ def synthesize_signal(
         warnings.append(f"BLOWOFF regime (z={z:.2f}) — monitor for escalation")
 
     # 1d. MARKDOWN + RISK-OFF -> RISK_OFF
-    if regime == "MARKDOWN" and mkt_consensus == "RISK-OFF":
+    # When macro_blocked, skip RISK_OFF (no longs to exit) — fall through
+    # to 1g for LIGHT_SHORT evaluation instead.
+    if regime == "MARKDOWN" and mkt_consensus == "RISK-OFF" and not macro_blocked:
         out.signal = "RISK_OFF"
         out.reason = f"MARKDOWN + consensus RISK-OFF"
         return out
@@ -180,8 +201,8 @@ def synthesize_signal(
         out.warnings = ["Market in euphoria with extended z-score"]
         return out
 
-    # 1g. MARKDOWN without RISK-OFF -> WAIT (no entries allowed)
-    if regime == "MARKDOWN":
+    # 1g. MARKDOWN without macro_blocked — WAIT (no entries in downtrend)
+    if regime == "MARKDOWN" and not macro_blocked:
         out.signal = "WAIT"
         out.reason = f"MARKDOWN regime (consensus={mkt_consensus})"
         if divergence == "BULL-DIV":
@@ -194,6 +215,27 @@ def synthesize_signal(
         out.signal = "WAIT"
         out.reason = "Exhaustion climax detected — entries blocked"
         out.warnings = ["Climactic selling/buying volume — wait for resolution"]
+        return out
+
+    # 1i. Macro blocked — LIGHT_SHORT for failed rallies, WAIT otherwise
+    # Fires across ALL regimes: the RCCE engine reclassifies bear rallies
+    # as MARKUP/REACC before z/heat reach short-entry levels, so we use
+    # the BMSB macro filter as the bear market confirmation and z/heat/stall
+    # to identify rally exhaustion points.
+    if macro_blocked:
+        if (0.3 <= z <= 1.2
+                and heat >= 20
+                and heat <= prev_heat          # rally momentum stalling
+                and divergence != "BULL-DIV"
+                and funding_regime != "CROWDED_SHORT"
+                and confidence > 0.30):
+            out.signal = "LIGHT_SHORT"
+            out.reason = " + ".join(_reason_parts()) + " [macro blocked bear rally short]"
+            out.warnings = warnings
+            return out
+        out.signal = "WAIT"
+        out.reason = f"Macro blocked (BMSB bearish) — {regime} regime, long entries blocked"
+        out.warnings = warnings
         return out
 
     # -----------------------------------------------------------------------
@@ -228,22 +270,6 @@ def synthesize_signal(
     conditions_met = sum(conditions)
     out.conditions_met = conditions_met
     out.conditions_total = len(conditions)
-
-    # Build reason parts
-    def _reason_parts() -> list:
-        parts = [regime]
-        parts.append(f"z={z:.2f}")
-        parts.append(f"conf={confidence*100:.0f}%")
-        parts.append(f"consensus={mkt_consensus}")
-        if heat > 0:
-            parts.append(f"heat={heat}")
-        if divergence:
-            parts.append(f"div={divergence}")
-        if funding_regime != "NEUTRAL":
-            parts.append(f"funding={funding_regime}")
-        if oi_trend not in ("UNKNOWN", "STABLE"):
-            parts.append(f"OI={oi_trend}")
-        return parts
 
     # Collect warnings
     if divergence == "BEAR-DIV":
