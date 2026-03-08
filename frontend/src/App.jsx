@@ -835,7 +835,7 @@ export default function App() {
 
       {/* ── HEADER ── */}
       <div style={{
-        padding: `${isMobile ? 12 : 18}px ${hPad}px`,
+        padding: `${isMobile ? 8 : 10}px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex",
         flexDirection: isMobile ? "column" : "row",
@@ -851,7 +851,7 @@ export default function App() {
             src="/logo.png"
             alt="RCCE Scanner"
             style={{
-              height: isMobile ? 36 : 48,
+              height: isMobile ? 80 : 120,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
