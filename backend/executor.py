@@ -33,7 +33,11 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_STATE_FILE = Path(__file__).parent / "data" / "executor_state.json"
+# Prefer Railway persistent volume (/data), fall back to local directory
+_PERSIST_DIR = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ""))
+if not _PERSIST_DIR.is_dir():
+    _PERSIST_DIR = Path(__file__).parent / "data"
+_STATE_FILE = _PERSIST_DIR / "executor_state.json"
 
 # Reuse sizing logic from backtest position_manager
 _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
@@ -156,6 +160,8 @@ class Executor:
 
     async def initialize(self, scanner_symbols: List[str]) -> dict:
         """Initialize the executor: find kraken, discover pairs, init paper."""
+        logger.info("Executor state file: %s (volume: %s)",
+                     _STATE_FILE, "yes" if "/data" in str(_STATE_FILE) else "no")
         self._kraken_path = get_kraken_binary()
         if not self._kraken_path:
             raise ExecutorError("config", "kraken-cli not found. Install: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh")
@@ -372,6 +378,8 @@ class Executor:
             entry_warnings=signal_warnings or [],
         )
 
+        self._save_state()  # persist immediately after entry
+
         action = f"{side} {symbol} @ ${fill_price:,.2f} ({signal}, {size_pct*100:.0f}%, vol={volume})"
         logger.info("ENTRY: %s", action)
         return action
@@ -434,6 +442,7 @@ class Executor:
 
         # Remove position
         del self.positions[symbol]
+        self._save_state()  # persist immediately after exit
 
         pnl_sign = "+" if pnl_pct >= 0 else ""
         action = (
@@ -535,6 +544,8 @@ class Executor:
             "available_pairs": len(self.pair_map),
             "paper_balance": self.initial_balance,
             "portfolio": portfolio,
+            "state_file": str(_STATE_FILE),
+            "state_persistent": _STATE_FILE.exists(),
         }
 
     def get_trades(self) -> List[dict]:
@@ -546,9 +557,10 @@ class Executor:
     # ------------------------------------------------------------------
 
     def _save_state(self) -> None:
-        """Persist executor state to disk."""
+        """Persist executor state to disk (Railway volume or local)."""
         try:
             _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            logger.debug("Saving executor state to %s", _STATE_FILE)
             state = {
                 "mode": self.mode,
                 "enabled": self.enabled,
