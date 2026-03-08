@@ -851,7 +851,7 @@ export default function App() {
             src="/logo.png"
             alt="RCCE Scanner"
             style={{
-              height: isMobile ? 80 : 120,
+              height: isMobile ? 44 : 56,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
