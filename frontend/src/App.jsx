@@ -1920,7 +1920,7 @@ export default function App() {
         <div style={{
           position: "fixed", right: 0, top: 0, bottom: 0,
           left: isMobile ? 0 : undefined,
-          width: isMobile ? "100%" : isTablet ? 340 : 380,
+          width: isMobile ? "100%" : isTablet ? 400 : 520,
           background: isMobile
             ? "linear-gradient(180deg, rgba(20,20,22,0.98) 0%, rgba(10,10,12,0.99) 100%)"
             : "linear-gradient(180deg, rgba(20,20,22,0.92) 0%, rgba(10,10,12,0.94) 100%)",
@@ -1962,12 +1962,21 @@ export default function App() {
             >{"\u2715"}</button>
           </div>
 
-          {/* BMSB Chart (replaces TradingView iframe) */}
+          {/* BMSB Chart with signal overlays */}
           {!isMobile && (
             <BMSBChart
               symbol={selected.symbol}
               timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
-              height={280}
+              height={360}
+              signal={selected.signal}
+              regime={selected.regime}
+              heat={selected.heat}
+              conditions={selected.conditions_met}
+              conditionsTotal={selected.conditions_total}
+              exhaustionState={selected.exhaustion_state}
+              floorConfirmed={selected.floor_confirmed}
+              signalConfidence={selected.signal_confidence}
+              momentum={selected.momentum}
             />
           )}
 
