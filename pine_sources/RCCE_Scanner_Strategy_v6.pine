@@ -387,32 +387,35 @@ else if is_climax
 
 // ── STEP 2: ENTRY RULES ───────────────────────────────────────────────────
 else
-    // Condition checklist (7 of 10 — TV has no F&G/positioning/stablecoin)
+    // BMSB structural gate: price must be above weekly BMSB for STRONG/LIGHT_LONG
+    bool above_bmsb = not weekly_down_zone
+
+    // Condition checklist (6 of 11 — TV has no F&G/positioning/stablecoin/consensus/divergence)
     bool cond_bullish  = current_regime == REG_MARKUP or current_regime == REG_ACCUM
     bool cond_conf     = confidence > i_confStrong
     bool cond_z_range  = z_score >= -0.5 and z_score <= 2.5
     bool cond_heat_ok  = heat < i_heatBlock
     bool cond_no_climax = not is_climax
+    bool cond_bmsb     = above_bmsb
     // TV-unavailable conditions default to true (permissive)
-    // cond_consensus, cond_no_bear_div, cond_funding_ok, cond_not_greedy, cond_liquidity_ok
     int conds_met = (cond_bullish ? 1 : 0) + (cond_conf ? 1 : 0) +
                     (cond_z_range ? 1 : 0) + (cond_heat_ok ? 1 : 0) +
-                    (cond_no_climax ? 1 : 0)
+                    (cond_no_climax ? 1 : 0) + (cond_bmsb ? 1 : 0)
 
-    // ── STRONG_LONG: all conditions + regime confirmation ──
-    if conds_met == 5
+    // ── STRONG_LONG: all conditions + above BMSB + regime confirmation ──
+    if conds_met == 6 and above_bmsb
         if current_regime == REG_MARKUP and z_score > -0.5 and z_score < 1.0
             final_signal := SIG_STRONG_LONG
-            signal_reason := "STRONG_LONG [all 5/5]"
+            signal_reason := "STRONG_LONG [all 6/6]"
         else if current_regime == REG_ACCUM
             final_signal := SIG_STRONG_LONG
             signal_reason := "STRONG_LONG [ACCUM]"
         else
             final_signal := SIG_WAIT
-            signal_reason := str.tostring(conds_met) + "/5 conditions"
+            signal_reason := str.tostring(conds_met) + "/6 conditions"
     else
         final_signal := SIG_WAIT
-        signal_reason := str.tostring(conds_met) + "/5 conditions"
+        signal_reason := str.tostring(conds_met) + "/6 conditions"
 
     // ── ACCUMULATE: ACCUM regime + low z + low vol ──
     if final_signal == SIG_WAIT
@@ -436,14 +439,14 @@ else
                 final_signal := SIG_REVIVAL
                 signal_reason := "REVIVAL_SEED [CAP]"
 
-    // ── LIGHT_LONG: MARKUP with extended z ──
-    if final_signal == SIG_WAIT and conds_met >= 3
+    // ── LIGHT_LONG: MARKUP with extended z (must be above BMSB) ──
+    if final_signal == SIG_WAIT and conds_met >= 3 and above_bmsb
         if current_regime == REG_MARKUP and z_score > 0 and z_score < Z_BLOWOFF and confidence > i_confLight and heat < i_heatWarn
             final_signal := SIG_LIGHT_LONG
             signal_reason := "LIGHT_LONG [MARKUP]"
 
-    // ── LIGHT_LONG: REACC with support ──
-    if final_signal == SIG_WAIT
+    // ── LIGHT_LONG: REACC with support (must be above BMSB) ──
+    if final_signal == SIG_WAIT and above_bmsb
         if current_regime == REG_REACC and z_score < 0.5 and confidence > i_confLight and heat < i_heatWarn
             final_signal := SIG_LIGHT_LONG
             signal_reason := "LIGHT_LONG [REACC]"
