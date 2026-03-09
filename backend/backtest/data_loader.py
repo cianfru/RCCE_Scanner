@@ -97,6 +97,13 @@ async def fetch_historical_ohlcv(
     for exch_id in [exchange_id] + [e for e in _FALLBACK_EXCHANGES if e != exchange_id]:
         try:
             exchange = await _create_exchange(exch_id)
+            await exchange.load_markets()
+
+            if symbol not in exchange.markets:
+                logger.debug("%s not found on %s, trying next exchange", symbol, exch_id)
+                await exchange.close()
+                continue
+
             all_candles = []
             cursor = start_ms
 

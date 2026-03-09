@@ -295,7 +295,7 @@ function SymbolPicker({ symbols, onChange, isMobile }) {
               onClick={() => removeSymbol(sym)}
               style={{ cursor: "pointer", color: T.text4, fontSize: 12, lineHeight: 1, marginLeft: 2 }}
             >
-              \u00d7
+              {"\u00d7"}
             </span>
           </div>
         ))}
