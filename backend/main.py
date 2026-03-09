@@ -558,9 +558,10 @@ _kraken_perps_ts: float = 0.0
 
 @app.get("/api/perpetuals/kraken")
 async def kraken_perpetuals():
-    """Discover all active Kraken perpetual contracts.
+    """Discover active Kraken perpetual contracts available on Binance/Bybit.
 
-    Maps Kraken Futures base currencies to {BASE}/USDT scanner format.
+    Maps Kraken Futures base currencies to {BASE}/USDT scanner format,
+    then filters to only symbols the scanner can fetch OHLCV data for.
     Results are cached for 24 hours.
     """
     import ccxt
@@ -568,46 +569,41 @@ async def kraken_perpetuals():
 
     # Return cached if fresh (24h)
     if _kraken_perps is not None and (time.time() - _kraken_perps_ts) < 86400:
-        return {"symbols": _kraken_perps, "cached": True}
+        return {"symbols": _kraken_perps, "cached": True, "count": len(_kraken_perps)}
 
     try:
+        # Step 1: Discover Kraken perpetual base currencies
         exchange = ccxt.krakenfutures({"enableRateLimit": True})
         markets = exchange.load_markets()
 
-        bases = set()
+        kraken_bases = set()
         for market in markets.values():
             if market.get("type") == "swap" and market.get("active"):
                 base = market.get("base", "")
                 if base and base not in ("USD", "USDT", "USDC"):
-                    bases.add(base)
+                    kraken_bases.add(base)
 
-        # Map to scanner format: {BASE}/USDT
-        symbols = sorted(f"{b}/USDT" for b in bases)
+        # Step 2: Filter to symbols available on Binance/Bybit for OHLCV data
+        available = await _load_exchange_symbols()
+        available_set = {s["symbol"] for s in available}
+
+        symbols = sorted(
+            f"{b}/USDT" for b in kraken_bases
+            if f"{b}/USDT" in available_set
+        )
+
         _kraken_perps = symbols
         _kraken_perps_ts = time.time()
 
-        return {"symbols": symbols, "cached": False}
+        logger.info(
+            "Kraken perps: %d perp bases, %d available on exchanges",
+            len(kraken_bases), len(symbols),
+        )
+        return {"symbols": symbols, "cached": False, "count": len(symbols)}
+
     except Exception as exc:
-        logger.warning("Kraken Futures discovery failed: %s", exc)
-        # Fallback: try regular kraken exchange
-        try:
-            exchange = ccxt.kraken({"enableRateLimit": True})
-            markets = exchange.load_markets()
-
-            bases = set()
-            for market in markets.values():
-                if market.get("type") == "swap" and market.get("active"):
-                    base = market.get("base", "")
-                    if base and base not in ("USD", "USDT", "USDC"):
-                        bases.add(base)
-
-            symbols = sorted(f"{b}/USDT" for b in bases)
-            _kraken_perps = symbols
-            _kraken_perps_ts = time.time()
-            return {"symbols": symbols, "cached": False}
-        except Exception as exc2:
-            logger.error("Kraken fallback also failed: %s", exc2)
-            return {"symbols": [], "error": str(exc2)}
+        logger.error("Kraken Futures discovery failed: %s", exc)
+        return {"symbols": [], "error": str(exc), "count": 0}
 
 
 # ---------------------------------------------------------------------------

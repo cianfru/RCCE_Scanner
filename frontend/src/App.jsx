@@ -765,8 +765,12 @@ export default function App() {
           body: JSON.stringify({ symbols: data.symbols }),
         });
         await loadWatchlist();
+        setShowWatchlist(false);
+        triggerScan();
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error("Kraken perps fetch failed:", e);
+    }
     setKrakenPerpsLoading(false);
   };
 
