@@ -1,22 +1,22 @@
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
 
 export const T = {
-  bg:        "#09090b",
-  surface:   "rgba(255,255,255,0.04)",
-  surfaceH:  "rgba(255,255,255,0.07)",
-  border:    "rgba(255,255,255,0.10)",
-  borderH:   "rgba(255,255,255,0.16)",
-  text1:     "#f4f4f5",
-  text2:     "#d4d4d8",
-  text3:     "#a1a1aa",
-  text4:     "#71717a",
+  bg:        "#0a0a0c",
+  surface:   "rgba(255,255,255,0.05)",
+  surfaceH:  "rgba(255,255,255,0.09)",
+  border:    "rgba(255,255,255,0.12)",
+  borderH:   "rgba(255,255,255,0.20)",
+  text1:     "#f5f5f7",
+  text2:     "#d1d1d6",
+  text3:     "#98989f",
+  text4:     "#6e6e73",
   accent:    "#22d3ee",
-  accentDim: "rgba(34,211,238,0.15)",
-  font:      "'Inter', -apple-system, sans-serif",
-  mono:      "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
-  radius:    "12px",
-  radiusSm:  "8px",
-  radiusXs:  "6px",
+  accentDim: "rgba(34,211,238,0.12)",
+  font:      "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
+  mono:      "'SF Mono', 'JetBrains Mono', 'Fira Code', monospace",
+  radius:    "14px",
+  radiusSm:  "10px",
+  radiusXs:  "8px",
 };
 
 // ─── REGIME METADATA ────────────────────────────────────────────────────────
