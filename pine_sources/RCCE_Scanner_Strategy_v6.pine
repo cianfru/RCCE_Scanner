@@ -300,27 +300,17 @@ else
         final_signal := SIG_WAIT
         signal_reason := str.tostring(conds_met) + "/6"
 
-    // ── ACCUMULATE: ACCUM regime + low z + low vol ──
-    if final_signal == SIG_WAIT
+    // ── ACCUMULATE: ACCUM regime + low z + low vol (above BMSB) ──
+    if final_signal == SIG_WAIT and above_bmsb
         if current_regime == REG_ACCUM and z_score < 0 and vol_low and confidence > i_confAccum and heat < 70
             final_signal := SIG_ACCUMULATE
             signal_reason := "ACCUM [low vol]"
 
-    // ── ACCUMULATE via absorption ──
-    if final_signal == SIG_WAIT
+    // ── ACCUMULATE via absorption (above BMSB) ──
+    if final_signal == SIG_WAIT and above_bmsb
         if is_absorption and (current_regime == REG_ACCUM or current_regime == REG_REACC) and confidence > i_confAccum and heat < 70
             final_signal := SIG_ACCUMULATE
             signal_reason := "ACCUM [absorption]"
-
-    // ── REVIVAL_SEED: CAP extreme ──
-    if final_signal == SIG_WAIT
-        if current_regime == REG_CAP and z_score < -1.0 and vol_high and confidence > i_confRevival
-            if floor_confirmed
-                final_signal := SIG_REVIVAL_CONF
-                signal_reason := "REVIVAL [floor]"
-            else
-                final_signal := SIG_REVIVAL
-                signal_reason := "REVIVAL [CAP]"
 
     // ── LIGHT_LONG: MARKUP (above BMSB) ──
     if final_signal == SIG_WAIT and conds_met >= 3 and above_bmsb
@@ -334,12 +324,6 @@ else
             final_signal := SIG_LIGHT_LONG
             signal_reason := "LIGHT [REACC]"
 
-    // ── CAP absorption ──
-    if final_signal == SIG_WAIT
-        if current_regime == REG_CAP and z_score < -1.0 and confidence > i_confRevival and is_absorption
-            final_signal := SIG_ACCUMULATE
-            signal_reason := "ACCUM [CAP abs]"
-
     // ── DEFAULT ──
     if final_signal == SIG_WAIT
         signal_reason := regime_label + " z=" + str.tostring(z_score, "#.##")
@@ -351,27 +335,23 @@ else
 
 bool is_entry = final_signal == SIG_STRONG_LONG or final_signal == SIG_LIGHT_LONG or final_signal == SIG_ACCUMULATE or final_signal == SIG_REVIVAL or final_signal == SIG_REVIVAL_CONF
 
-bool is_exit = final_signal == SIG_TRIM or final_signal == SIG_TRIM_HARD or final_signal == SIG_RISK_OFF or final_signal == SIG_NO_LONG
-
 // ════════════════════════════════════════════════════════════════════════════
 // STRATEGY + MARKERS (in sync — same bar, same conditions)
 // ════════════════════════════════════════════════════════════════════════════
 
-// Track our own position state to avoid strategy.position_size timing issues
+// Track our own position state
 var bool in_position = false
 
+// Enter when entry signal fires and flat
 bool do_enter = is_entry and not in_position
-bool do_exit  = is_exit and in_position
-bool do_exit_md = current_regime == REG_MARKDOWN and in_position and not do_exit
+// Exit when signal is no longer an entry signal (WAIT, TRIM, MARKDOWN, etc.)
+bool do_exit = not is_entry and in_position
 
 if do_enter
     strategy.entry("Long", strategy.long, comment=signal_reason)
     in_position := true
 if do_exit
     strategy.close("Long", comment=signal_reason)
-    in_position := false
-if do_exit_md
-    strategy.close("Long", comment="MARKDOWN")
     in_position := false
 
 
@@ -392,16 +372,8 @@ plotshape(do_enter and final_signal == SIG_REVIVAL, "REVIVAL", location=location
 
 plotshape(do_enter and final_signal == SIG_REVIVAL_CONF, "FLOOR", location=location.belowbar, style=shape.diamond, color=#a3e635, size=size.normal, text="FLOOR!", textcolor=#a3e635)
 
-// ── Exits (above bar) ──
-plotshape(do_exit and final_signal == SIG_TRIM, "TRIM", location=location.abovebar, style=shape.triangledown, color=#fb923c, size=size.small, text="TRIM", textcolor=#fb923c)
-
-plotshape(do_exit and final_signal == SIG_TRIM_HARD, "TRIM!", location=location.abovebar, style=shape.triangledown, color=#ef4444, size=size.normal, text="TRIM!", textcolor=#ef4444)
-
-plotshape(do_exit and final_signal == SIG_RISK_OFF, "RISK", location=location.abovebar, style=shape.xcross, color=#dc2626, size=size.normal, text="RISK", textcolor=#dc2626)
-
-plotshape(do_exit and final_signal == SIG_NO_LONG, "EXIT", location=location.abovebar, style=shape.xcross, color=#f87171, size=size.small, text="EXIT", textcolor=#f87171)
-
-plotshape(do_exit_md, "MARKDOWN", location=location.abovebar, style=shape.xcross, color=#dc2626, size=size.small, text="MD", textcolor=#dc2626)
+// ── Exit (above bar) ──
+plotshape(do_exit, "EXIT", location=location.abovebar, style=shape.triangledown, color=#ef4444, size=size.small, text="EXIT", textcolor=#ef4444)
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -409,4 +381,4 @@ plotshape(do_exit_md, "MARKDOWN", location=location.abovebar, style=shape.xcross
 // ════════════════════════════════════════════════════════════════════════════
 
 alertcondition(do_enter, title="Entry Signal", message="RCCE: Entry signal on {{ticker}}")
-alertcondition(do_exit or do_exit_md, title="Exit Signal", message="RCCE: Exit signal on {{ticker}}")
+alertcondition(do_exit, title="Exit Signal", message="RCCE: Exit signal on {{ticker}}")
