@@ -15,7 +15,7 @@ class PositioningResponse(BaseModel):
     predicted_funding: float = 0.0
     mark_price: float = 0.0
     volume_24h: float = 0.0
-    source: str = ""                # "coinglass"
+    source: str = ""                # "binance" or "hyperliquid"
 
 
 class SentimentResponse(BaseModel):
@@ -80,7 +80,7 @@ class ScanResult(BaseModel):
     is_climax: bool = False
     effort: float = 0.0
     rel_vol: float = 0.0
-    # Positioning (CoinGlass aggregated cross-exchange)
+    # Positioning (Binance Futures primary, Hyperliquid fallback)
     positioning: Optional[PositioningResponse] = None
     # Multi-TF confluence
     confluence: Optional[ConfluenceResponse] = None
