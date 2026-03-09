@@ -76,6 +76,7 @@ const COLUMNS = [
   ["heat",       "HEAT",       768],
   [null,         "DIV",        768],
   [null,         "EXHAUST",    768],
+  [null,         "SMC",        768],
   [null,         "FUNDING",    1024],
   [null,         "OI",         1024],
   [null,         "CONF",       1024],
@@ -316,13 +317,16 @@ function ConfluenceBadge({ score, label }) {
 }
 
 // Cell renderer for column-based rendering
-function CellContent({ colLabel, row, isMobile }) {
+function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
   const cellPad = isMobile ? "8px 8px" : "10px 10px";
   switch (colLabel) {
     case "SYMBOL":
       return (
         <td style={{ padding: isMobile ? "8px 8px" : "10px 10px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 12, letterSpacing: "0.02em" }}>
           {getBaseSymbol(row.symbol)}
+          {backtestSymbols && backtestSymbols.has(row.symbol) && (
+            <span style={{ fontSize: 8, fontWeight: 700, color: "#34d399", opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
+          )}
         </td>
       );
     case "REGIME":
@@ -357,6 +361,18 @@ function CellContent({ colLabel, row, isMobile }) {
       return <td style={{ padding: cellPad }}><PhaseCell phase={row.heat_phase} /></td>;
     case "EXHAUST":
       return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
+    case "SMC": {
+      const bias = row.smc_bias || "NEUTRAL";
+      const smcColor = bias === "BULLISH" ? "#34d399" : bias === "BEARISH" ? "#f87171" : T.text4;
+      const smcLabel = bias === "BULLISH" ? "BULL" : bias === "BEARISH" ? "BEAR" : "\u2014";
+      return (
+        <td style={{ padding: cellPad }}>
+          <span style={{ fontFamily: T.mono, fontSize: 10, fontWeight: 700, color: smcColor, letterSpacing: "0.04em" }}>
+            {smcLabel}
+          </span>
+        </td>
+      );
+    }
     case "FLOOR":
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
     case "FUNDING":
@@ -384,7 +400,7 @@ function CellContent({ colLabel, row, isMobile }) {
   }
 }
 
-function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile }) {
+function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile, backtestSymbols }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.signal);
 
@@ -401,7 +417,7 @@ function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile })
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = selected ? "rgba(34,211,238,0.04)" : isHighlight ? rm.bg : "transparent"; }}
     >
       {visibleColumns.map(([, label]) => (
-        <CellContent key={label} colLabel={label} row={row} isMobile={isMobile} />
+        <CellContent key={label} colLabel={label} row={row} isMobile={isMobile} backtestSymbols={backtestSymbols} />
       ))}
     </tr>
   );
@@ -609,6 +625,10 @@ export default function App() {
   const [watchlistSearch, setWatchlistSearch] = useState("");
   const [watchlistResults, setWatchlistResults] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [krakenPerpsLoading, setKrakenPerpsLoading] = useState(false);
+
+  // Backtest badge tracking
+  const [backtestSymbols, setBacktestSymbols] = useState(new Set());
 
   // Force off split view on mobile
   useEffect(() => {
@@ -721,6 +741,35 @@ export default function App() {
     } catch (_) {}
   };
 
+  // Backtest badge: fetch symbols from completed backtests
+  const refreshBacktestSymbols = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/backtest/symbols`);
+      const data = await res.json();
+      setBacktestSymbols(new Set(data.symbols || []));
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => { refreshBacktestSymbols(); }, [refreshBacktestSymbols]);
+
+  // Kraken perps: load perpetual contracts as watchlist
+  const loadKrakenPerps = async () => {
+    setKrakenPerpsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/perpetuals/kraken`);
+      const data = await res.json();
+      if (data.symbols && data.symbols.length > 0) {
+        await fetch(`${API_BASE}/api/watchlist`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbols: data.symbols }),
+        });
+        await loadWatchlist();
+      }
+    } catch (_) {}
+    setKrakenPerpsLoading(false);
+  };
+
   // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => searchSymbols(watchlistSearch), 300);
@@ -822,6 +871,7 @@ export default function App() {
                     onSelect={setSelected}
                     visibleColumns={visibleColumns}
                     isMobile={isMobile}
+                    backtestSymbols={backtestSymbols}
                   />
                 ))
               )}
@@ -1333,7 +1383,7 @@ export default function App() {
         {/* Backtest Panel */}
         {activeTab === "backtest" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <BacktestPanel isMobile={isMobile} />
+            <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
           </FadeIn>
         )}
 
@@ -1495,7 +1545,7 @@ export default function App() {
             {/* Modal Footer */}
             <div style={{
               padding: "12px 20px", borderTop: `1px solid ${T.border}`,
-              display: "flex", justifyContent: "space-between", alignItems: "center",
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
             }}>
               <button
                 className="apple-btn"
@@ -1507,6 +1557,21 @@ export default function App() {
                 }}
               >
                 Reset to Defaults
+              </button>
+              <button
+                className="apple-btn"
+                onClick={loadKrakenPerps}
+                disabled={krakenPerpsLoading}
+                style={{
+                  padding: "8px 18px",
+                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  color: "#fb923c",
+                  borderColor: "rgba(251,146,60,0.2)",
+                  opacity: krakenPerpsLoading ? 0.5 : 1,
+                }}
+              >
+                {krakenPerpsLoading ? "Loading..." : "KRAKEN PERPS"}
               </button>
               <button
                 className="apple-btn apple-btn-accent"
@@ -1689,6 +1754,12 @@ export default function App() {
             ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
             ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
             ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
+            [null],
+            ["SMC Bias", selected.smc_bias || "\u2014", selected.smc_bias === "BULLISH" ? "#34d399" : selected.smc_bias === "BEARISH" ? "#f87171" : null],
+            ["BOS", selected.smc_bos === "BOS_UP" ? "UP" : selected.smc_bos === "BOS_DOWN" ? "DOWN" : "\u2014", selected.smc_bos === "BOS_UP" ? "#34d399" : selected.smc_bos === "BOS_DOWN" ? "#f87171" : null],
+            ["CHoCH", selected.smc_choch === "CHOCH_UP" ? "UP" : selected.smc_choch === "CHOCH_DOWN" ? "DOWN" : "\u2014", selected.smc_choch === "CHOCH_UP" ? "#34d399" : selected.smc_choch === "CHOCH_DOWN" ? "#f87171" : null],
+            ["FVG", selected.smc_fvg === "FVG_UP" ? "UP" : selected.smc_fvg === "FVG_DOWN" ? "DOWN" : "\u2014", selected.smc_fvg === "FVG_UP" ? "#34d399" : selected.smc_fvg === "FVG_DOWN" ? "#f87171" : null],
+            ["Order Block", selected.smc_ob === "OB_UP" ? "UP" : selected.smc_ob === "OB_DOWN" ? "DOWN" : "\u2014", selected.smc_ob === "OB_UP" ? "#34d399" : selected.smc_ob === "OB_DOWN" ? "#f87171" : null],
           ].map(([label, value, valColor], i) => {
             if (!label) return <div key={i} style={{ height: 1, background: T.border, margin: "8px 0" }} />;
             return (

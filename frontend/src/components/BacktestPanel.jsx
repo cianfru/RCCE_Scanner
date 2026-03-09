@@ -414,7 +414,7 @@ function TimeframeToggle({ value, onChange }) {
 
 // ─── MAIN PANEL ────────────────────────────────────────────────────────────
 
-export default function BacktestPanel({ isMobile }) {
+export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   const [config, setConfig] = useState({
     start_date: "2025-01-01",
     end_date: "",
@@ -447,6 +447,7 @@ export default function BacktestPanel({ isMobile }) {
       if (data.status === "complete" || data.status === "error") {
         setPolling(false);
         if (data.error) setError(data.error);
+        if (data.status === "complete" && onBacktestComplete) onBacktestComplete();
       }
     } catch (e) {
       // Server may be temporarily busy — silently retry (backtests can take 15+ min)

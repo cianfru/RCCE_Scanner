@@ -80,6 +80,12 @@ class ScanResult(BaseModel):
     is_climax: bool = False
     effort: float = 0.0
     rel_vol: float = 0.0
+    # Smart Money Concepts (informational only)
+    smc_bias: str = "NEUTRAL"
+    smc_bos: str = "NEUTRAL"
+    smc_choch: str = "NEUTRAL"
+    smc_fvg: str = "NEUTRAL"
+    smc_ob: str = "NEUTRAL"
     # Positioning (Binance Futures primary, Hyperliquid fallback)
     positioning: Optional[PositioningResponse] = None
     # Multi-TF confluence

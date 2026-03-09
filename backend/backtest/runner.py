@@ -111,6 +111,15 @@ def list_backtests() -> List[dict]:
     ]
 
 
+def get_backtested_symbols() -> List[str]:
+    """Return sorted list of all symbols from completed backtests."""
+    symbols = set()
+    for r in _backtest_store.values():
+        if r.status == "complete" and r.config:
+            symbols.update(r.config.symbols)
+    return sorted(symbols)
+
+
 # ---------------------------------------------------------------------------
 # BMSB (Bull Market Support Band) macro filter
 # ---------------------------------------------------------------------------

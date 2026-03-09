@@ -4,3 +4,5 @@ ccxt>=4.1.0
 numpy>=1.24.0
 pydantic>=2.5.0
 aiohttp>=3.9.0
+pandas>=2.0.0
+smartmoneyconcepts>=0.0.26

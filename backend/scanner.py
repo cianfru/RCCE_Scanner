@@ -34,6 +34,7 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
+from engines.smc_engine import compute_smc
 from engines.positioning_engine import compute_positioning
 from signal_synthesizer import synthesize_signal
 from market_data import (
@@ -388,6 +389,13 @@ def _process_symbol(
         except Exception:
             logger.exception("Exhaustion engine failed for %s (%s)", symbol, timeframe)
 
+    # --- SMC engine (informational only) -----------------------------------
+    smc_data: dict = {}
+    try:
+        smc_data = compute_smc(ohlcv)
+    except Exception:
+        logger.exception("SMC engine failed for %s (%s)", symbol, timeframe)
+
     # --- Merge into ScanResult shape ---------------------------------------
     result: dict = {
         "symbol": symbol,
@@ -419,6 +427,12 @@ def _process_symbol(
         "is_climax": exhaustion.get("is_climax", False),
         "effort": round(exhaustion.get("effort", 0), 3),
         "rel_vol": round(exhaustion.get("rel_vol", 0), 2),
+        # Smart Money Concepts (informational only)
+        "smc_bias": smc_data.get("smc_bias", "NEUTRAL"),
+        "smc_bos": smc_data.get("smc_bos", "NEUTRAL"),
+        "smc_choch": smc_data.get("smc_choch", "NEUTRAL"),
+        "smc_fvg": smc_data.get("smc_fvg", "NEUTRAL"),
+        "smc_ob": smc_data.get("smc_ob", "NEUTRAL"),
         # Sparkline: last 24 close prices
         "sparkline": [round(float(c), 6) for c in ohlcv["close"][-24:]],
     }
