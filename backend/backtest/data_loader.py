@@ -30,10 +30,10 @@ from data_fetcher import _parse_ohlcv, _create_exchange
 # Constants
 # ---------------------------------------------------------------------------
 
-_MAX_CANDLES_PER_REQUEST = 1000  # Binance limit
+_MAX_CANDLES_PER_REQUEST = 720   # Kraken limit (Binance allows 1000)
 _MAX_CONCURRENT_FETCHES = 3     # Lower than live scanner to avoid rate limits
 _INTER_REQUEST_DELAY_S = 0.25   # Slightly longer delay for reliability
-_FALLBACK_EXCHANGES = ["binance", "bybit"]
+_FALLBACK_EXCHANGES = ["kraken", "kucoin", "binance", "bybit"]
 
 # Timeframe durations in milliseconds
 _TF_MS = {
@@ -67,7 +67,7 @@ async def fetch_historical_ohlcv(
     timeframe: str,
     start_ms: int,
     end_ms: int,
-    exchange_id: str = "binance",
+    exchange_id: str = "kraken",
 ) -> Optional[dict]:
     """Fetch historical OHLCV for a single symbol with pagination.
 
@@ -115,7 +115,7 @@ async def fetch_historical_ohlcv(
                         limit=_MAX_CANDLES_PER_REQUEST,
                     )
                 except Exception as exc:
-                    logger.debug("Fetch failed for %s at %d: %s", symbol, cursor, exc)
+                    logger.warning("Fetch chunk failed for %s on %s at %d: %s", symbol, exch_id, cursor, exc)
                     break
 
                 if not candles:
