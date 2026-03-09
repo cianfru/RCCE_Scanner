@@ -642,11 +642,21 @@ async def _scan_timeframe(
 
     for r in results:
         try:
+            # Compute macro_blocked from BMSB direction
+            heat_direction = r.get("heat_direction", 0)
+            macro_blocked = heat_direction < 0  # price below weekly BMSB mid
+
+            # Get prev_heat from cache (for rally stall detection in LIGHT_SHORT)
+            symbol = r.get("symbol", "")
+            prev_heat = cache.prev_heat.get(symbol, 0) if hasattr(cache, 'prev_heat') else 0
+
             synth = synthesize_signal(
                 r, consensus, gm_dict,
                 positioning=r.get("positioning"),
                 sentiment=sentiment_dict,
                 stablecoin=stablecoin_dict,
+                macro_blocked=macro_blocked,
+                prev_heat=prev_heat,
             )
             r["signal"] = synth.signal
             r["signal_reason"] = synth.reason
@@ -655,6 +665,11 @@ async def _scan_timeframe(
                 round(synth.conditions_met / synth.conditions_total * 100)
                 if synth.conditions_total > 0 else 0
             )
+
+            # Store current heat for next scan
+            if not hasattr(cache, 'prev_heat'):
+                cache.prev_heat = {}
+            cache.prev_heat[symbol] = r.get("heat", 0)
         except Exception:
             logger.exception("Signal synthesis failed for %s", r.get("symbol"))
             r["signal"] = r.get("raw_signal", "WAIT")
