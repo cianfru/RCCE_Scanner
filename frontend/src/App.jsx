@@ -412,12 +412,14 @@ function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile })
 function GlassCard({ children, style = {}, glow = null, className = "" }) {
   return (
     <div className={className} style={{
-      background: T.surface,
+      background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
       border: `1px solid ${T.border}`,
       borderRadius: T.radius,
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
-      boxShadow: glow ? `0 0 30px ${glow}` : "0 1px 3px rgba(0,0,0,0.3)",
+      backdropFilter: "blur(16px) saturate(1.2)",
+      WebkitBackdropFilter: "blur(16px) saturate(1.2)",
+      boxShadow: glow
+        ? `0 0 30px ${glow}, inset 0 1px 0 rgba(255,255,255,0.04)`
+        : "0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
       ...style,
     }}>
       {children}
@@ -836,43 +838,99 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${T.bg}; -webkit-font-smoothing: antialiased; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        body { background: ${T.bg}; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 6px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
         tr:hover td { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.15);} 50%{box-shadow: 0 0 20px rgba(34,211,238,0.3);} }
+        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
         select { outline: none; appearance: none; -webkit-appearance: none; }
-        select option { background: #18181b; color: #a1a1aa; }
+        select option { background: #1c1c1e; color: #98989f; }
         .notable-scroll::-webkit-scrollbar { display: none; }
         .notable-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .apple-btn {
+          position: relative;
+          background: linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%);
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 10px;
+          color: ${T.text2};
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .apple-btn:hover {
+          background: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.07) 100%);
+          border-color: rgba(255,255,255,0.22);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+          color: ${T.text1};
+        }
+        .apple-btn:active {
+          background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 100%);
+          box-shadow: 0 0px 1px rgba(0,0,0,0.4), inset 0 1px 3px rgba(0,0,0,0.2);
+          transform: scale(0.98);
+        }
+        .apple-btn-accent {
+          background: linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%);
+          border: 1px solid rgba(34,211,238,0.5);
+          color: #000;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.20);
+        }
+        .apple-btn-accent:hover {
+          background: linear-gradient(180deg, #40e8ff 0%, #22d3ee 100%);
+          border-color: rgba(34,211,238,0.7);
+          box-shadow: 0 2px 12px rgba(34,211,238,0.25), inset 0 1px 0 rgba(255,255,255,0.25);
+          color: #000;
+        }
+        .apple-btn-accent:active {
+          background: linear-gradient(180deg, #18b8d0 0%, #1aa8c0 100%);
+          box-shadow: 0 0px 1px rgba(0,0,0,0.4), inset 0 1px 3px rgba(0,0,0,0.15);
+          transform: scale(0.98);
+        }
+        .apple-select {
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 10px;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+          transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          outline: none;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        .apple-select:hover {
+          border-color: rgba(255,255,255,0.22);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .apple-select:focus {
+          border-color: rgba(34,211,238,0.4);
+          box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px rgba(0,0,0,0.4);
+        }
       `}</style>
 
       {/* ── HEADER ── */}
       <div style={{
-        padding: `${isMobile ? 8 : 10}px ${hPad}px`,
+        padding: `0 ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex",
         flexDirection: isMobile ? "column" : "row",
         alignItems: isMobile ? "stretch" : "center",
         justifyContent: "space-between",
         gap: isMobile ? 10 : 0,
-        background: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+        background: "linear-gradient(180deg, rgba(18,18,20,0.92) 0%, rgba(10,10,12,0.88) 100%)",
+        backdropFilter: "blur(24px) saturate(1.4)", WebkitBackdropFilter: "blur(24px) saturate(1.4)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
           <img
             src="/logo.png"
-            alt="RCCE Scanner"
+            alt="Reflex"
             style={{
-              height: isMobile ? 44 : 56,
+              height: isMobile ? 48 : 64,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
+              display: "block",
             }}
           />
           {scanRunning && (
@@ -907,47 +965,43 @@ export default function App() {
               border: `1px solid ${T.border}`,
             }}>{formatCacheAge(cacheAge)}</span>
           )}
-          <button
-            onClick={triggerScan}
-            style={{
-              padding: isMobile ? "10px 20px" : "6px 16px", background: T.surface,
-              border: `1px solid ${T.border}`, borderRadius: "20px",
-              color: T.text3, fontFamily: T.font, fontSize: 10, fontWeight: 500,
-              cursor: "pointer", letterSpacing: "0.06em",
-              transition: "all 0.25s ease",
-            }}
-            onMouseEnter={e => { e.target.style.borderColor = T.accent + "40"; e.target.style.color = T.accent; e.target.style.boxShadow = `0 0 12px ${T.accentDim}`; }}
-            onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.text3; e.target.style.boxShadow = "none"; }}
-          >
-            Refresh
-          </button>
         </div>
       </div>
 
       {/* ── CONTROLS ── */}
       <div style={{
-        padding: `12px ${hPad}px`,
+        padding: `10px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 100%)",
       }}>
         {/* Timeframe tabs */}
         <div style={{
-          display: "flex", gap: 2, background: T.surface,
-          borderRadius: "20px", padding: 3, border: `1px solid ${T.border}`,
+          display: "flex", gap: 2,
+          background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+          borderRadius: 12, padding: 3,
+          border: `1px solid ${T.border}`,
+          boxShadow: "inset 0 1px 2px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)",
           flex: isMobile ? "1 1 100%" : undefined,
         }}>
           {tabOptions.map(([key, label]) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
+              className={activeTab === key ? "apple-btn-accent" : ""}
               style={{
-                padding: isMobile ? "8px 16px" : "5px 16px", borderRadius: "20px", border: "none",
-                background: activeTab === key ? T.accent : "transparent",
+                padding: isMobile ? "8px 16px" : "6px 18px", borderRadius: 10, border: "none",
+                background: activeTab === key
+                  ? "linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%)"
+                  : "transparent",
                 color: activeTab === key ? "#000" : T.text3,
                 fontFamily: T.mono, fontSize: 11, cursor: "pointer",
-                fontWeight: 700, letterSpacing: "0.06em",
-                transition: "all 0.2s ease",
+                fontWeight: 700, letterSpacing: "0.04em",
+                transition: "all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                 flex: isMobile ? 1 : undefined,
+                boxShadow: activeTab === key
+                  ? "0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.20)"
+                  : "none",
               }}
             >
               {label}
@@ -955,28 +1009,24 @@ export default function App() {
           ))}
         </div>
 
-        {!isMobile && <div style={{ width: 1, height: 18, background: T.border }} />}
+        {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
         {/* Manage Watchlist */}
         <button
+          className="apple-btn"
           onClick={() => setShowWatchlist(true)}
           style={{
-            padding: isMobile ? "8px 14px" : "5px 14px",
-            background: T.surface,
-            border: `1px solid ${T.border}`, borderRadius: "20px",
-            color: T.text3, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-            cursor: "pointer", letterSpacing: "0.04em",
-            transition: "all 0.25s ease",
+            padding: isMobile ? "8px 14px" : "6px 14px",
+            fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+            letterSpacing: "0.04em",
             display: "flex", alignItems: "center", gap: 6,
           }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent + "40"; e.currentTarget.style.color = T.accent; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text3; }}
         >
           <span style={{ fontSize: 12 }}>{"\u2699"}</span>
           {!isMobile && "Watchlist"}
         </button>
 
-        {!isMobile && <div style={{ width: 1, height: 18, background: T.border }} />}
+        {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
         {/* Filters */}
         {[
@@ -985,28 +1035,35 @@ export default function App() {
         ].map((f, i) => (
           <select
             key={i}
+            className="apple-select"
             value={f.value}
             onChange={f.onChange}
             style={{
-              padding: isMobile ? "8px 28px 8px 12px" : "5px 28px 5px 12px",
-              background: T.surface,
-              border: `1px solid ${T.border}`, borderRadius: "20px",
+              padding: isMobile ? "8px 28px 8px 12px" : "6px 28px 6px 12px",
               color: T.text2, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
               cursor: "pointer", letterSpacing: "0.04em",
               flex: isMobile ? 1 : undefined,
               minWidth: 0,
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2371717a'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 10px center",
-              transition: "border-color 0.2s",
+              background: `rgba(255,255,255,0.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
             }}
-            onFocus={e => e.target.style.borderColor = T.accent + "40"}
-            onBlur={e => e.target.style.borderColor = T.border}
           >
             <option value="ALL">{f.all}</option>
             {f.options.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
         ))}
+
+        <button
+          className="apple-btn"
+          onClick={triggerScan}
+          style={{
+            marginLeft: "auto",
+            padding: isMobile ? "8px 18px" : "6px 18px",
+            fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+            letterSpacing: "0.06em",
+          }}
+        >
+          Refresh
+        </button>
       </div>
 
       {/* ── ERROR ── */}
@@ -1304,13 +1361,13 @@ export default function App() {
             transform: isMobile ? "none" : "translate(-50%, -50%)",
             width: isMobile ? "94%" : 480,
             maxHeight: isMobile ? "90vh" : "80vh",
-            background: "rgba(0,0,0,0.95)",
-            backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+            background: "linear-gradient(180deg, rgba(28,28,30,0.97) 0%, rgba(10,10,12,0.98) 100%)",
+            backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)",
             border: `1px solid ${T.borderH}`,
             borderRadius: T.radius,
             zIndex: 300,
             display: "flex", flexDirection: "column",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.85), 0 0 1px rgba(255,255,255,0.1)",
           }}>
             {/* Modal Header */}
             <div style={{
@@ -1326,11 +1383,11 @@ export default function App() {
                 </div>
               </div>
               <button
+                className="apple-btn"
                 onClick={() => setShowWatchlist(false)}
                 style={{
-                  background: T.surface, border: `1px solid ${T.border}`,
-                  borderRadius: "50%", width: 28, height: 28,
-                  color: T.text3, cursor: "pointer", fontSize: 12,
+                  borderRadius: "50%", width: 28, height: 28, padding: 0,
+                  fontSize: 12,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}
               >{"\u2715"}</button>
@@ -1440,30 +1497,24 @@ export default function App() {
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
               <button
+                className="apple-btn"
                 onClick={resetWatchlist}
                 style={{
-                  padding: "7px 16px", background: "transparent",
-                  border: `1px solid ${T.border}`, borderRadius: "20px",
-                  color: T.text3, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                  cursor: "pointer", letterSpacing: "0.04em",
-                  transition: "all 0.2s",
+                  padding: "8px 18px",
+                  fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                  letterSpacing: "0.04em",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "#fb923c40"; e.currentTarget.style.color = "#fb923c"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text3; }}
               >
                 Reset to Defaults
               </button>
               <button
+                className="apple-btn apple-btn-accent"
                 onClick={() => { setShowWatchlist(false); triggerScan(); }}
                 style={{
-                  padding: "7px 20px", background: T.accent,
-                  border: "none", borderRadius: "20px",
-                  color: "#000", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                  cursor: "pointer", letterSpacing: "0.06em",
-                  transition: "all 0.2s",
+                  padding: "8px 22px",
+                  fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                  letterSpacing: "0.06em",
                 }}
-                onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
-                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
               >
                 Scan Now
               </button>
@@ -1487,12 +1538,15 @@ export default function App() {
           position: "fixed", right: 0, top: 0, bottom: 0,
           left: isMobile ? 0 : undefined,
           width: isMobile ? "100%" : isTablet ? 340 : 380,
-          background: isMobile ? "rgba(0,0,0,0.95)" : "rgba(0,0,0,0.85)",
-          backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+          background: isMobile
+            ? "linear-gradient(180deg, rgba(20,20,22,0.98) 0%, rgba(10,10,12,0.99) 100%)"
+            : "linear-gradient(180deg, rgba(20,20,22,0.92) 0%, rgba(10,10,12,0.94) 100%)",
+          backdropFilter: "blur(32px) saturate(1.4)", WebkitBackdropFilter: "blur(32px) saturate(1.4)",
           borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
           padding: isMobile ? "20px 16px" : "24px 22px",
           overflowY: "auto", zIndex: 200,
-          transition: "transform 0.3s ease",
+          transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          boxShadow: isMobile ? "none" : "-8px 0 40px rgba(0,0,0,0.5)",
         }}>
           {/* Mobile drag handle */}
           {isMobile && (
@@ -1513,18 +1567,15 @@ export default function App() {
               </div>
             </div>
             <button
+              className="apple-btn"
               onClick={() => setSelected(null)}
               style={{
-                background: T.surface, border: `1px solid ${T.border}`,
-                borderRadius: "50%",
+                borderRadius: "50%", padding: 0,
                 width: isMobile ? 36 : 28,
                 height: isMobile ? 36 : 28,
-                color: T.text3, cursor: "pointer", fontSize: isMobile ? 14 : 12,
+                fontSize: isMobile ? 14 : 12,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.2s",
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = T.borderH; e.currentTarget.style.color = T.text1; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text3; }}
             >{"\u2715"}</button>
           </div>
 
@@ -1654,16 +1705,13 @@ export default function App() {
             href={`https://www.tradingview.com/chart/?symbol=BINANCE:${getBaseSymbol(selected.symbol)}USDT`}
             target="_blank"
             rel="noopener noreferrer"
+            className="apple-btn"
             style={{
               display: "block", marginTop: 24, padding: isMobile ? "12px 16px" : "10px 16px",
-              background: T.surface, border: `1px solid ${T.border}`,
-              borderRadius: "20px", color: T.text3, fontFamily: T.font,
+              borderRadius: 12, fontFamily: T.font,
               fontSize: 11, textDecoration: "none", textAlign: "center",
-              letterSpacing: "0.04em", transition: "all 0.25s ease",
-              fontWeight: 500,
+              letterSpacing: "0.04em", fontWeight: 500,
             }}
-            onMouseEnter={e => { e.target.style.borderColor = T.accent + "40"; e.target.style.color = T.accent; e.target.style.boxShadow = `0 0 16px ${T.accentDim}`; }}
-            onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.text3; e.target.style.boxShadow = "none"; }}
           >
             Open in TradingView {"\u2197"}
           </a>
