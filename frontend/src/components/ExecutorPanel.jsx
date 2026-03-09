@@ -370,13 +370,16 @@ export default function ExecutorPanel({ api }) {
   const [scanResults, setScanResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState(null);
+  const [whitelist, setWhitelist] = useState(null);
+  const [wlLoading, setWlLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const [statusResp, tradesResp, scanResp] = await Promise.all([
+      const [statusResp, tradesResp, scanResp, wlResp] = await Promise.all([
         fetch(`${api}/api/executor/status`),
         fetch(`${api}/api/executor/trades`),
         fetch(`${api}/api/scan?timeframe=4h`),
+        fetch(`${api}/api/executor/whitelist`).catch(() => null),
       ]);
       const statusData = await statusResp.json();
       const tradesData = await tradesResp.json();
@@ -384,6 +387,10 @@ export default function ExecutorPanel({ api }) {
       setStatus(statusData);
       setTrades(tradesData.trades || []);
       setScanResults(scanData.results || []);
+      if (wlResp?.ok) {
+        const wlData = await wlResp.json();
+        setWhitelist(wlData);
+      }
     } catch (e) {
       console.error("Executor fetch error:", e);
     }
@@ -404,6 +411,46 @@ export default function ExecutorPanel({ api }) {
       console.error("Executor API error:", e);
     }
     setLoading(false);
+  };
+
+  const toggleWhitelist = async (symbol, shouldAdd) => {
+    setWlLoading(true);
+    try {
+      if (shouldAdd) {
+        await fetch(`${api}/api/executor/whitelist/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        });
+      } else {
+        const encoded = encodeURIComponent(symbol);
+        await fetch(`${api}/api/executor/whitelist/${encoded}`, { method: "DELETE" });
+      }
+      await fetchData();
+    } catch (e) {
+      console.error("Whitelist toggle error:", e);
+    }
+    setWlLoading(false);
+  };
+
+  const resetWhitelist = async () => {
+    setWlLoading(true);
+    try {
+      await fetch(`${api}/api/executor/whitelist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbols: [
+            "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+            "ADA/USDT", "AVAX/USDT", "DOGE/USDT", "DOT/USDT", "LINK/USDT",
+          ],
+        }),
+      });
+      await fetchData();
+    } catch (e) {
+      console.error("Whitelist reset error:", e);
+    }
+    setWlLoading(false);
   };
 
   const positions = status?.positions ? Object.values(status.positions) : [];
@@ -473,7 +520,7 @@ export default function ExecutorPanel({ api }) {
             flexWrap: "wrap",
           }}>
             <StatBox label="BALANCE" value={`$${(status.paper_balance || 0).toLocaleString()}`} />
-            <StatBox label="PAIRS" value={status.available_pairs || 0} />
+            <StatBox label="PAIRS" value={`${status.whitelist_count || 0}/${status.available_pairs || 0}`} />
             <StatBox label="TRADES" value={status.total_trades || 0} />
             <StatBox
               label="WIN RATE"
@@ -529,6 +576,60 @@ export default function ExecutorPanel({ api }) {
           </div>
         )}
       </div>
+
+      {/* ─── TRADING WHITELIST ─── */}
+      {status?.initialized && whitelist && (
+        <div style={S.section}>
+          <div style={S.sectionHeader}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={S.sectionTitle}>Trading Whitelist</span>
+              <span style={{ fontSize: 11, fontFamily: T.mono, color: T.text3 }}>
+                {whitelist.whitelist_count}/{whitelist.available_count} pairs active
+              </span>
+            </div>
+            <button
+              style={S.btn}
+              onClick={resetWhitelist}
+              disabled={wlLoading}
+            >
+              Reset Default
+            </button>
+          </div>
+          <div style={{
+            padding: "14px 20px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+          }}>
+            {(whitelist.available_pairs || []).map(sym => {
+              const active = whitelist.whitelist.includes(sym);
+              const base = sym.replace("/USDT", "");
+              return (
+                <button
+                  key={sym}
+                  onClick={() => toggleWhitelist(sym, !active)}
+                  disabled={wlLoading}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    border: `1px solid ${active ? "rgba(34,211,238,0.35)" : T.border}`,
+                    background: active ? "rgba(34,211,238,0.08)" : "rgba(255,255,255,0.02)",
+                    color: active ? "#22d3ee" : T.text4,
+                    fontSize: 11,
+                    fontFamily: T.mono,
+                    fontWeight: active ? 700 : 500,
+                    cursor: wlLoading ? "not-allowed" : "pointer",
+                    transition: "all 0.15s",
+                    opacity: wlLoading ? 0.5 : 1,
+                  }}
+                >
+                  {base}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ─── OPEN POSITIONS ─── */}
       <div style={S.section}>

@@ -29,6 +29,8 @@ from models import (
     ExecutorInitRequest,
     ExecutorStatusResponse,
     ExecutorTradeResponse,
+    WhitelistUpdate,
+    WhitelistAddRequest,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -772,6 +774,57 @@ async def executor_reset():
 
     result = await executor.reset()
     return result
+
+
+# ---------- Executor whitelist ----------
+
+@app.get("/api/executor/whitelist")
+async def executor_whitelist():
+    """Get current executor whitelist and available pairs."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    return executor.get_whitelist()
+
+
+@app.post("/api/executor/whitelist")
+async def executor_set_whitelist(body: WhitelistUpdate):
+    """Set the full executor whitelist."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    return executor.set_whitelist(body.symbols)
+
+
+@app.post("/api/executor/whitelist/add")
+async def executor_add_whitelist(body: WhitelistAddRequest):
+    """Add a single symbol to the executor whitelist."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    return executor.add_to_whitelist(body.symbol)
+
+
+@app.delete("/api/executor/whitelist/{symbol:path}")
+async def executor_remove_whitelist(symbol: str):
+    """Remove a symbol from the executor whitelist."""
+    from executor import get_executor
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    symbol = symbol.upper().replace("-", "/")
+    return executor.remove_from_whitelist(symbol)
 
 
 @app.get("/health")

@@ -54,6 +54,12 @@ _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
 # Minimum order sizes on Kraken (approximate, in base currency)
 _MIN_ORDER_USD = 5.0  # Kraken minimum is usually ~$5-10
 
+# Default whitelist: only trade symbols validated by backtesting
+DEFAULT_WHITELIST = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "DOGE/USDT", "DOT/USDT", "LINK/USDT",
+]
+
 
 # ---------------------------------------------------------------------------
 # Data containers
@@ -151,6 +157,9 @@ class Executor:
         self.last_execution_time: Optional[float] = None
         self.total_executions: int = 0
 
+        # Whitelist: only trade these symbols (default: backtested set)
+        self.whitelist: List[str] = DEFAULT_WHITELIST.copy()
+
         # Kraken binary path
         self._kraken_path: Optional[str] = None
 
@@ -236,6 +245,10 @@ class Executor:
 
             # Skip symbols not on Kraken
             if symbol not in self.pair_map:
+                continue
+
+            # Skip non-whitelisted symbols (but always allow exits for open positions)
+            if symbol not in self.whitelist and symbol not in self.positions:
                 continue
 
             signal_reason = r.get("signal_reason", "")
@@ -331,7 +344,7 @@ class Executor:
         side = "SHORT" if signal == "LIGHT_SHORT" else "LONG"
 
         # Calculate volume
-        allocation = self.initial_balance / max(len(self.pair_map), 1)
+        allocation = self.initial_balance / max(len(self.whitelist), 1)
         usd_amount = allocation * size_pct
         if usd_amount < _MIN_ORDER_USD:
             logger.debug("Skipping %s — amount $%.2f below minimum", symbol, usd_amount)
@@ -542,6 +555,8 @@ class Executor:
             "last_execution_time": self.last_execution_time,
             "total_executions": self.total_executions,
             "available_pairs": len(self.pair_map),
+            "whitelist": sorted(self.whitelist),
+            "whitelist_count": len(self.whitelist),
             "paper_balance": self.initial_balance,
             "portfolio": portfolio,
             "state_file": str(_STATE_FILE),
@@ -565,6 +580,7 @@ class Executor:
                 "mode": self.mode,
                 "enabled": self.enabled,
                 "initial_balance": self.initial_balance,
+                "whitelist": self.whitelist,
                 "positions": {
                     sym: pos.to_dict()
                     for sym, pos in self.positions.items()
@@ -612,6 +628,11 @@ class Executor:
             if not self.pair_map:
                 self.pair_map = state.get("pair_map", {})
 
+            # Restore whitelist (or keep default if not in saved state)
+            saved_whitelist = state.get("whitelist")
+            if saved_whitelist is not None:
+                self.whitelist = saved_whitelist
+
             self.total_executions = state.get("total_executions", 0)
 
             logger.info(
@@ -638,9 +659,48 @@ class Executor:
         self.last_scan_signals.clear()
         self.last_error = None
         self.total_executions = 0
+        self.whitelist = DEFAULT_WHITELIST.copy()
         self._save_state()
 
         return {"status": "reset", "mode": self.mode, **result}
+
+    # ------------------------------------------------------------------
+    # Whitelist management
+    # ------------------------------------------------------------------
+
+    def get_whitelist(self) -> dict:
+        """Return whitelist and all available pairs."""
+        return {
+            "whitelist": sorted(self.whitelist),
+            "available_pairs": sorted(self.pair_map.keys()),
+            "whitelist_count": len(self.whitelist),
+            "available_count": len(self.pair_map),
+        }
+
+    def set_whitelist(self, symbols: List[str]) -> dict:
+        """Replace the entire whitelist."""
+        self.whitelist = [s.upper().replace("-", "/") for s in symbols]
+        self._save_state()
+        logger.info("Whitelist updated: %d symbols", len(self.whitelist))
+        return self.get_whitelist()
+
+    def add_to_whitelist(self, symbol: str) -> dict:
+        """Add a single symbol to the whitelist."""
+        symbol = symbol.upper().replace("-", "/")
+        if symbol not in self.whitelist:
+            self.whitelist.append(symbol)
+            self._save_state()
+            logger.info("Added %s to whitelist (%d total)", symbol, len(self.whitelist))
+        return self.get_whitelist()
+
+    def remove_from_whitelist(self, symbol: str) -> dict:
+        """Remove a single symbol from the whitelist."""
+        symbol = symbol.upper().replace("-", "/")
+        if symbol in self.whitelist:
+            self.whitelist.remove(symbol)
+            self._save_state()
+            logger.info("Removed %s from whitelist (%d total)", symbol, len(self.whitelist))
+        return self.get_whitelist()
 
 
 # ---------------------------------------------------------------------------

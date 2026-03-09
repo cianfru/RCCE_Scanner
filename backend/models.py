@@ -180,6 +180,14 @@ class ExecutorStatusResponse(BaseModel):
     paper_balance: float = 0.0
     portfolio: dict = {}
 
+# Whitelist models (same shape as Watchlist)
+class WhitelistUpdate(BaseModel):
+    symbols: List[str]
+
+class WhitelistAddRequest(BaseModel):
+    symbol: str
+
+
 class ExecutorTradeResponse(BaseModel):
     symbol: str
     kraken_pair: str = ""
