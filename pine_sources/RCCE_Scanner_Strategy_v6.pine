@@ -424,5 +424,5 @@ plotshape(final_signal == SIG_NO_LONG, "EXIT",
 // ALERTS
 // ════════════════════════════════════════════════════════════════════════════
 
-alertcondition(is_entry, title="Entry Signal", message="RCCE: Entry on {{ticker}} — " + signal_reason)
-alertcondition(is_exit,  title="Exit Signal",  message="RCCE: Exit on {{ticker}} — " + signal_reason)
+alertcondition(is_entry, title="Entry Signal", message="RCCE: Entry signal on {{ticker}}")
+alertcondition(is_exit,  title="Exit Signal",  message="RCCE: Exit signal on {{ticker}}")
