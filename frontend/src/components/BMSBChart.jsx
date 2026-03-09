@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { createChart, ColorType } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, ColorType } from "lightweight-charts";
 import { T } from "../theme.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -15,9 +15,11 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
 
     // Clean up previous chart
     if (chartRef.current) {
-      chartRef.current.remove();
+      try { chartRef.current.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     }
+
+    let cancelled = false;
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
@@ -46,8 +48,8 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
     });
     chartRef.current = chart;
 
-    // Candlestick series
-    const candleSeries = chart.addCandlestickSeries({
+    // v5 API: chart.addSeries(SeriesType, options)
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#34d399",
       downColor: "#f87171",
       borderUpColor: "#34d399",
@@ -56,8 +58,7 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
       wickDownColor: "rgba(248,113,113,0.5)",
     });
 
-    // BMSB Mid line (solid cyan)
-    const bmsbMidSeries = chart.addLineSeries({
+    const bmsbMidSeries = chart.addSeries(LineSeries, {
       color: "#22d3ee",
       lineWidth: 2,
       lineStyle: 0,
@@ -65,16 +66,14 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
       title: "BMSB",
     });
 
-    // BMSB EMA line (dimmer dashed)
-    const bmsbEmaSeries = chart.addLineSeries({
+    const bmsbEmaSeries = chart.addSeries(LineSeries, {
       color: "rgba(34,211,238,0.30)",
       lineWidth: 1,
       lineStyle: 2,
       crosshairMarkerVisible: false,
     });
 
-    // BMSB SMA line (dimmer dashed)
-    const bmsbSmaSeries = chart.addLineSeries({
+    const bmsbSmaSeries = chart.addSeries(LineSeries, {
       color: "rgba(34,211,238,0.20)",
       lineWidth: 1,
       lineStyle: 2,
@@ -92,6 +91,7 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
         return r.json();
       })
       .then(data => {
+        if (cancelled) return;
         if (data.candles?.length > 0) candleSeries.setData(data.candles);
         if (data.bmsb_mid?.length > 0) bmsbMidSeries.setData(data.bmsb_mid);
         if (data.bmsb_ema?.length > 0) bmsbEmaSeries.setData(data.bmsb_ema);
@@ -100,6 +100,7 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
         setLoading(false);
       })
       .catch(err => {
+        if (cancelled) return;
         setError(err.message);
         setLoading(false);
       });
@@ -113,8 +114,9 @@ export default function BMSBChart({ symbol, timeframe = "1d", height = 300 }) {
     ro.observe(containerRef.current);
 
     return () => {
+      cancelled = true;
       ro.disconnect();
-      chart.remove();
+      try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
   }, [symbol, timeframe, height]);
