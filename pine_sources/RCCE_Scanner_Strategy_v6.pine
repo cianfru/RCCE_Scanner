@@ -362,54 +362,50 @@ else if current_regime == REG_MARKDOWN and strategy.position_size > 0
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// CHART — only signals + BMSB
+// CHART — only first-bar signals + BMSB
 // ════════════════════════════════════════════════════════════════════════════
+
+// Track signal transitions — only show marker on first bar of new signal
+var int prev_signal = SIG_WAIT
+bool signal_changed = final_signal != prev_signal
+prev_signal := final_signal
+
+// Entry = signal just changed to an entry type AND we just entered a position
+bool show_entry = signal_changed and is_entry and strategy.position_size > 0 and strategy.position_size[1] == 0
+// Exit = signal just changed to an exit type AND we just closed
+bool show_exit = signal_changed and is_exit and strategy.position_size == 0 and strategy.position_size[1] > 0
+// Also catch MARKDOWN close
+bool show_md_exit = current_regime == REG_MARKDOWN and strategy.position_size == 0 and strategy.position_size[1] > 0
 
 // ── BMSB Midline ──
 plot(bmsb_mid, "BMSB Mid", color=color.new(color.yellow, 20), linewidth=2)
 
-// ── Entries (below bar) ──
-plotshape(final_signal == SIG_STRONG_LONG, "STRONG",
-     location=location.belowbar, style=shape.triangleup,
-     color=#34d399, size=size.normal, text="STRONG", textcolor=#34d399)
+// ── Entries (below bar) — only on first bar ──
+plotshape(show_entry and final_signal == SIG_STRONG_LONG, "STRONG", location=location.belowbar, style=shape.triangleup, color=#34d399, size=size.normal, text="STRONG", textcolor=#34d399)
 
-plotshape(final_signal == SIG_LIGHT_LONG, "LIGHT",
-     location=location.belowbar, style=shape.triangleup,
-     color=#22d3ee, size=size.small, text="LIGHT", textcolor=#22d3ee)
+plotshape(show_entry and final_signal == SIG_LIGHT_LONG, "LIGHT", location=location.belowbar, style=shape.triangleup, color=#22d3ee, size=size.small, text="LIGHT", textcolor=#22d3ee)
 
-plotshape(final_signal == SIG_ACCUMULATE, "ACCUM",
-     location=location.belowbar, style=shape.triangleup,
-     color=#818cf8, size=size.small, text="ACCUM", textcolor=#818cf8)
+plotshape(show_entry and final_signal == SIG_ACCUMULATE, "ACCUM", location=location.belowbar, style=shape.triangleup, color=#818cf8, size=size.small, text="ACCUM", textcolor=#818cf8)
 
-plotshape(final_signal == SIG_REVIVAL, "REVIVAL",
-     location=location.belowbar, style=shape.diamond,
-     color=#c084fc, size=size.small, text="REVIVE", textcolor=#c084fc)
+plotshape(show_entry and final_signal == SIG_REVIVAL, "REVIVAL", location=location.belowbar, style=shape.diamond, color=#c084fc, size=size.small, text="REVIVE", textcolor=#c084fc)
 
-plotshape(final_signal == SIG_REVIVAL_CONF, "FLOOR",
-     location=location.belowbar, style=shape.diamond,
-     color=#a3e635, size=size.normal, text="FLOOR!", textcolor=#a3e635)
+plotshape(show_entry and final_signal == SIG_REVIVAL_CONF, "FLOOR", location=location.belowbar, style=shape.diamond, color=#a3e635, size=size.normal, text="FLOOR!", textcolor=#a3e635)
 
-// ── Exits (above bar) ──
-plotshape(final_signal == SIG_TRIM, "TRIM",
-     location=location.abovebar, style=shape.triangledown,
-     color=#fb923c, size=size.small, text="TRIM", textcolor=#fb923c)
+// ── Exits (above bar) — only on first bar ──
+plotshape(show_exit and final_signal == SIG_TRIM, "TRIM", location=location.abovebar, style=shape.triangledown, color=#fb923c, size=size.small, text="TRIM", textcolor=#fb923c)
 
-plotshape(final_signal == SIG_TRIM_HARD, "TRIM!",
-     location=location.abovebar, style=shape.triangledown,
-     color=#ef4444, size=size.normal, text="TRIM!", textcolor=#ef4444)
+plotshape(show_exit and final_signal == SIG_TRIM_HARD, "TRIM!", location=location.abovebar, style=shape.triangledown, color=#ef4444, size=size.normal, text="TRIM!", textcolor=#ef4444)
 
-plotshape(final_signal == SIG_RISK_OFF, "RISK",
-     location=location.abovebar, style=shape.xcross,
-     color=#dc2626, size=size.normal, text="RISK", textcolor=#dc2626)
+plotshape(show_exit and final_signal == SIG_RISK_OFF, "RISK", location=location.abovebar, style=shape.xcross, color=#dc2626, size=size.normal, text="RISK", textcolor=#dc2626)
 
-plotshape(final_signal == SIG_NO_LONG, "EXIT",
-     location=location.abovebar, style=shape.xcross,
-     color=#f87171, size=size.small, text="EXIT", textcolor=#f87171)
+plotshape(show_exit and final_signal == SIG_NO_LONG, "EXIT", location=location.abovebar, style=shape.xcross, color=#f87171, size=size.small, text="EXIT", textcolor=#f87171)
+
+plotshape(show_md_exit, "MARKDOWN", location=location.abovebar, style=shape.xcross, color=#dc2626, size=size.small, text="MD", textcolor=#dc2626)
 
 
 // ════════════════════════════════════════════════════════════════════════════
 // ALERTS
 // ════════════════════════════════════════════════════════════════════════════
 
-alertcondition(is_entry, title="Entry Signal", message="RCCE: Entry signal on {{ticker}}")
-alertcondition(is_exit,  title="Exit Signal",  message="RCCE: Exit signal on {{ticker}}")
+alertcondition(show_entry, title="Entry Signal", message="RCCE: Entry signal on {{ticker}}")
+alertcondition(show_exit or show_md_exit, title="Exit Signal", message="RCCE: Exit signal on {{ticker}}")
