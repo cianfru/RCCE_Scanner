@@ -54,13 +54,16 @@ MEME_TOKENS = {"DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "MEME"}
 
 
 def classify_asset(symbol: str) -> str:
-    """Classify a trading pair into BTC / ETH / MEME / ALT."""
-    sym = symbol.upper()
-    if "BTC" in sym:
+    """Classify a trading pair into BTC / ETH / MEME / ALT.
+
+    Matches on the *base* currency only so that ALT/BTC pairs
+    (e.g. XMR/BTC) are correctly classified as ALT, not BTC.
+    """
+    base = symbol.upper().split("/")[0]
+    if base == "BTC":
         return "BTC"
-    if "ETH" in sym:
+    if base == "ETH":
         return "ETH"
-    base = sym.split("/")[0]
     if base in MEME_TOKENS:
         return "MEME"
     return "ALT"
@@ -355,9 +358,17 @@ def _process_symbol(
     synthesizer after consensus and divergence are computed.
     """
     # --- RCCE engine -------------------------------------------------------
+    # Skip beta calculation for /BTC pairs (currency mismatch with USD reference)
+    quote = symbol.split("/")[1] if "/" in symbol else "USDT"
+    is_btc_quoted = quote == "BTC"
+
     rcce: dict = {}
     try:
-        rcce = compute_rcce(ohlcv, btc_data, eth_data)
+        rcce = compute_rcce(
+            ohlcv,
+            None if is_btc_quoted else btc_data,
+            None if is_btc_quoted else eth_data,
+        )
     except Exception:
         logger.exception("RCCE engine failed for %s (%s)", symbol, timeframe)
 
@@ -610,7 +621,7 @@ async def _scan_timeframe(
 
     # 8. Detect divergences
     btc_regime = next(
-        (r["regime"] for r in results if "BTC" in r["symbol"]),
+        (r["regime"] for r in results if r["symbol"] == "BTC/USDT"),
         "FLAT",
     )
     for r in results:
