@@ -42,6 +42,13 @@ class ConfluenceResponse(BaseModel):
     signal_1d: str = ""
 
 
+class ConditionDetail(BaseModel):
+    name: str
+    label: str
+    desc: str = ""
+    met: bool
+
+
 class ScanResult(BaseModel):
     symbol: str
     timeframe: str
@@ -53,6 +60,9 @@ class ScanResult(BaseModel):
     signal_reason: str = ""
     signal_warnings: List[str] = []
     signal_confidence: int = 0       # conditions_met / conditions_total as %
+    conditions_met: int = 0
+    conditions_total: int = 10
+    conditions_detail: List[ConditionDetail] = []
     zscore: float
     energy: float
     vol_state: str

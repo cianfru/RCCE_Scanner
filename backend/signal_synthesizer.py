@@ -60,6 +60,7 @@ class SynthesizedSignal:
     warnings: list = field(default_factory=list)
     conditions_met: int = 0
     conditions_total: int = 10  # Max conditions for STRONG_LONG (expanded)
+    conditions_detail: list = field(default_factory=list)  # [{name, label, desc, met}]
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +127,49 @@ def synthesize_signal(
     out = SynthesizedSignal(raw_signal=raw_signal)
     reasons: list = []
     warnings: list = []
+
+    # -----------------------------------------------------------------------
+    # CONDITION CHECKLIST (computed for ALL symbols before exit/entry rules)
+    # These 10 booleans determine STRONG_LONG eligibility.  We compute them
+    # early so every symbol — even those that exit in Step 1 — gets a
+    # conditions_detail array for the Warming-Up ranking in the dashboard.
+    # -----------------------------------------------------------------------
+    cond_bullish_regime = regime in ("MARKUP", "ACCUM")
+    cond_confidence = confidence > CONF_STRONG
+    cond_consensus = mkt_consensus in ("RISK-ON", "ACCUMULATION")
+    cond_z_range = -0.5 <= z <= 2.5
+    cond_no_bear_div = divergence != "BEAR-DIV"
+    cond_heat_ok = heat < HEAT_BLOCK_STRONG
+    cond_no_climax = not is_climax
+    cond_funding_ok = funding_regime != "CROWDED_LONG"
+    cond_not_greedy = fear_greed < FNG_GREED
+    cond_liquidity_ok = stable_trend != "CONTRACTING"
+
+    conditions = [
+        cond_bullish_regime, cond_confidence, cond_consensus, cond_z_range,
+        cond_no_bear_div, cond_heat_ok, cond_no_climax,
+        cond_funding_ok, cond_not_greedy, cond_liquidity_ok,
+    ]
+    conditions_met = sum(conditions)
+    out.conditions_met = conditions_met
+    out.conditions_total = len(conditions)
+
+    _COND_NAMES = [
+        ("bullish_regime", "Regime",      "MARKUP or ACCUM"),
+        ("confidence",     "Confidence",  f"> {CONF_STRONG*100:.0f}%"),
+        ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION"),
+        ("z_range",        "Z-Score",     "-0.5 to 2.5"),
+        ("no_bear_div",    "No Bear Div", "No bearish divergence"),
+        ("heat_ok",        "Heat OK",     f"< {HEAT_BLOCK_STRONG}"),
+        ("no_climax",      "No Climax",   "No exhaustion climax"),
+        ("funding_ok",     "Funding OK",  "Not crowded long"),
+        ("not_greedy",     "Not Greedy",  f"F&G < {FNG_GREED}"),
+        ("liquidity_ok",   "Liquidity",   "Stables not contracting"),
+    ]
+    out.conditions_detail = [
+        {"name": n, "label": l, "desc": d, "met": bool(c)}
+        for (n, l, d), c in zip(_COND_NAMES, conditions)
+    ]
 
     # Helper: build human-readable reason string
     def _reason_parts() -> list:
@@ -234,35 +278,6 @@ def synthesize_signal(
     # -----------------------------------------------------------------------
     # STEP 2: ENTRY RULES (evaluated by signal strength)
     # -----------------------------------------------------------------------
-
-    # Build condition checklist for STRONG_LONG (expanded to 10)
-    cond_bullish_regime = regime in ("MARKUP", "ACCUM")
-    cond_confidence = confidence > CONF_STRONG
-    cond_consensus = mkt_consensus in ("RISK-ON", "ACCUMULATION")
-    cond_z_range = -0.5 <= z <= 2.5
-    cond_no_bear_div = divergence != "BEAR-DIV"
-    cond_heat_ok = heat < HEAT_BLOCK_STRONG
-    cond_no_climax = not is_climax  # Already handled above, but explicit
-    # New conditions from positioning/sentiment/stablecoin
-    cond_funding_ok = funding_regime != "CROWDED_LONG"
-    cond_not_greedy = fear_greed < FNG_GREED
-    cond_liquidity_ok = stable_trend != "CONTRACTING"
-
-    conditions = [
-        cond_bullish_regime,
-        cond_confidence,
-        cond_consensus,
-        cond_z_range,
-        cond_no_bear_div,
-        cond_heat_ok,
-        cond_no_climax,
-        cond_funding_ok,
-        cond_not_greedy,
-        cond_liquidity_ok,
-    ]
-    conditions_met = sum(conditions)
-    out.conditions_met = conditions_met
-    out.conditions_total = len(conditions)
 
     # Collect warnings
     if divergence == "BEAR-DIV":

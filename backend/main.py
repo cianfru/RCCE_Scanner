@@ -327,6 +327,60 @@ async def confluence_for_symbol(symbol: str):
 
 
 # ---------------------------------------------------------------------------
+# Chart data endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/chart/{symbol:path}")
+async def chart_data(
+    symbol: str,
+    timeframe: str = Query("1d", description="4h or 1d"),
+    limit: int = Query(120, description="Number of candles"),
+):
+    """Return OHLCV + BMSB overlay data for charting."""
+    from data_fetcher import fetch_ohlcv
+    from engines.heatmap_engine import compute_bmsb_series
+    import numpy as np
+
+    symbol = symbol.upper().replace("-", "/")
+
+    ohlcv = await fetch_ohlcv(symbol, timeframe, limit=limit)
+    if ohlcv is None:
+        raise HTTPException(status_code=404, detail=f"No data for {symbol}")
+
+    # Build candle array (timestamps in unix seconds for lightweight-charts)
+    candles = [
+        {
+            "time": int(ohlcv["timestamp"][i] / 1000),
+            "open": round(float(ohlcv["open"][i]), 6),
+            "high": round(float(ohlcv["high"][i]), 6),
+            "low": round(float(ohlcv["low"][i]), 6),
+            "close": round(float(ohlcv["close"][i]), 6),
+        }
+        for i in range(len(ohlcv["timestamp"]))
+    ]
+
+    # Compute BMSB series from weekly data
+    bmsb = {"mid": [], "ema": [], "sma": []}
+    try:
+        weekly = await fetch_ohlcv(symbol, "1w", limit=250)
+        if weekly is not None:
+            w_close = np.asarray(weekly["close"], dtype=np.float64)
+            w_ts = np.asarray(weekly["timestamp"], dtype=np.float64)
+            bmsb = compute_bmsb_series(w_close, w_ts)
+    except Exception:
+        logger.warning("BMSB computation failed for %s", symbol)
+
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candles": candles,
+        "bmsb_mid": bmsb["mid"],
+        "bmsb_ema": bmsb["ema"],
+        "bmsb_sma": bmsb["sma"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Backtest endpoints
 # ---------------------------------------------------------------------------
 

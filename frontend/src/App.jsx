@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge } from "./theme.js";
 import SparklineCell from "./components/SparklineCell.jsx";
 import TradingViewWidget from "./components/TradingViewWidget.jsx";
+import BMSBChart from "./components/BMSBChart.jsx";
+import ConditionsScorecard from "./components/ConditionsScorecard.jsx";
 import FearGreedGauge from "./components/FearGreedGauge.jsx";
 import StablecoinWidget from "./components/StablecoinWidget.jsx";
 import PositioningPanel from "./components/PositioningPanel.jsx";
@@ -63,22 +65,23 @@ function FadeIn({ children, delay = 0, style = {} }) {
 // [sortKey, label, minViewportWidth]
 
 const COLUMNS = [
-  ["symbol",   "SYMBOL",     0],
-  ["regime",   "REGIME",     0],
-  [null,       "SIGNAL",     0],
-  [null,       "SPARK",      480],
-  ["zscore",   "Z-SCORE",    480],
-  ["momentum", "MOM",        480],
-  [null,       "PRICE",      480],
-  ["heat",     "HEAT",       768],
-  [null,       "DIV",        768],
-  [null,       "EXHAUST",    768],
-  [null,       "FUNDING",    1024],
-  [null,       "OI",         1024],
-  [null,       "CONF",       1024],
-  [null,       "ENERGY",     1200],
-  [null,       "PHASE",      1200],
-  [null,       "FLOOR",      1200],
+  ["symbol",     "SYMBOL",     0],
+  ["regime",     "REGIME",     0],
+  [null,         "SIGNAL",     0],
+  ["conditions", "COND",       480],
+  [null,         "SPARK",      480],
+  ["zscore",     "Z-SCORE",    480],
+  ["momentum",   "MOM",        480],
+  [null,         "PRICE",      480],
+  ["heat",       "HEAT",       768],
+  [null,         "DIV",        768],
+  [null,         "EXHAUST",    768],
+  [null,         "FUNDING",    1024],
+  [null,         "OI",         1024],
+  [null,         "CONF",       1024],
+  [null,         "ENERGY",     1200],
+  [null,         "PHASE",      1200],
+  [null,         "FLOOR",      1200],
 ];
 
 // ─── SUBCOMPONENTS ────────────────────────────────────────────────────────────
@@ -362,6 +365,20 @@ function CellContent({ colLabel, row, isMobile }) {
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
     case "CONF":
       return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
+    case "COND": {
+      const cm = row.conditions_met ?? 0;
+      const ct = row.conditions_total ?? 10;
+      return (
+        <td style={{ padding: cellPad }}>
+          <span style={{
+            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+            color: cm >= 8 ? "#34d399" : cm >= 5 ? "#fbbf24" : T.text4,
+          }}>
+            {cm}/{ct}
+          </span>
+        </td>
+      );
+    }
     default:
       return <td style={{ padding: cellPad }}>{"\u2014"}</td>;
   }
@@ -724,6 +741,7 @@ export default function App() {
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
       if (sortKey === "symbol") return a.symbol.localeCompare(b.symbol);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
+      if (sortKey === "conditions") return (b.conditions_met || 0) - (a.conditions_met || 0);
       return 0;
     });
   };
@@ -1169,6 +1187,63 @@ export default function App() {
           </FadeIn>
         )}
 
+        {/* Warming Up */}
+        {activeTab !== "backtest" && activeTab !== "executor" && (() => {
+          const activeData = activeTab === "1d" ? sorted1d : sorted4h;
+          const warmingUp = activeData
+            .filter(r => (r.conditions_met || 0) >= 6 && r.signal === "WAIT")
+            .sort((a, b) => (b.conditions_met || 0) - (a.conditions_met || 0))
+            .slice(0, 12);
+          if (warmingUp.length === 0) return null;
+          return (
+            <FadeIn delay={460}>
+              <GlassCard
+                className="notable-scroll"
+                style={{
+                  marginTop: isMobile ? 10 : 14, padding: isMobile ? "10px 14px" : "10px 18px",
+                  display: "flex", gap: isMobile ? 6 : 8, flexWrap: "nowrap",
+                  overflowX: "auto", WebkitOverflowScrolling: "touch",
+                  alignItems: "center", scrollbarWidth: "none", msOverflowStyle: "none",
+                }}
+              >
+                <span style={{
+                  fontSize: 10, color: "#fbbf24", letterSpacing: "0.10em",
+                  fontFamily: T.font, fontWeight: 700, marginRight: 6,
+                  textTransform: "uppercase", flexShrink: 0,
+                  display: "flex", alignItems: "center", gap: 5,
+                }}>
+                  {"\ud83d\udd25"} Warming Up
+                </span>
+                {warmingUp.map(r => (
+                  <span
+                    key={r.symbol}
+                    onClick={() => setSelected(r)}
+                    style={{
+                      padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
+                      background: "rgba(251,191,36,0.06)",
+                      border: "1px solid rgba(251,191,36,0.15)",
+                      color: "#fbbf24", fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      transition: "all 0.2s ease", flexShrink: 0,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(251,191,36,0.12)"; e.currentTarget.style.boxShadow = "0 0 12px rgba(251,191,36,0.1)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(251,191,36,0.06)"; e.currentTarget.style.boxShadow = "none"; }}
+                  >
+                    {getBaseSymbol(r.symbol)}
+                    <span style={{
+                      padding: "1px 5px", borderRadius: "10px",
+                      background: "rgba(251,191,36,0.15)",
+                      fontSize: 9, fontWeight: 700,
+                    }}>
+                      {r.conditions_met}/{r.conditions_total || 10}
+                    </span>
+                  </span>
+                ))}
+              </GlassCard>
+            </FadeIn>
+          );
+        })()}
+
         {/* Tables */}
         {activeTab !== "backtest" && activeTab !== "executor" && (
           <div style={{
@@ -1453,11 +1528,12 @@ export default function App() {
             >{"\u2715"}</button>
           </div>
 
-          {/* TradingView Chart (hidden on mobile) */}
+          {/* BMSB Chart (replaces TradingView iframe) */}
           {!isMobile && (
-            <TradingViewWidget
+            <BMSBChart
               symbol={selected.symbol}
-              timeframe={selected.timeframe === "1d" ? "D" : "240"}
+              timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
+              height={280}
             />
           )}
 
@@ -1476,6 +1552,13 @@ export default function App() {
               </span>
             )}
           </div>
+
+          {/* Conditions Scorecard */}
+          <ConditionsScorecard
+            conditions={selected.conditions_detail}
+            met={selected.conditions_met}
+            total={selected.conditions_total}
+          />
 
           {/* Signal reason */}
           {selected.signal_reason && (
