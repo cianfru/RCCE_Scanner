@@ -1,0 +1,428 @@
+// ============================================================================
+// RCCE Scanner v6 — Unified Strategy (Clean)
+// ============================================================================
+// Three engines → one signal → entries & exits on chart.
+//
+//   1. RCCE Engine v2.2  — Z-score regime detection
+//   2. Structural Heatmap V3 — BMSB deviation heat (0-100)
+//   3. Exhaustion Engine V6 — Absorption / climax / floor
+//   4. Signal Synthesizer — Cross-engine decision matrix
+//
+// What you see on the chart:
+//   • Yellow BMSB midline (the structural gate)
+//   • Green markers below bar = ENTRY
+//   • Red markers above bar  = EXIT
+//   • Strategy equity curve in the panel
+//
+// Author: RCCE Scanner (auto-generated from Python engines)
+// ============================================================================
+
+//@version=6
+strategy("RCCE Scanner v6",
+     overlay            = true,
+     default_qty_type   = strategy.percent_of_equity,
+     default_qty_value  = 10,
+     pyramiding         = 0,
+     initial_capital    = 10000,
+     commission_type    = strategy.commission.percent,
+     commission_value   = 0.1,
+     slippage           = 2,
+     calc_on_every_tick = false)
+
+// ════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// --- RCCE Engine ---
+i_lenLong      = input.int(200,  "Z-Score Length (Long)",     minval=50,  group="RCCE Engine")
+i_lenShort     = input.int(30,   "Volatility Length",         minval=5,   group="RCCE Engine")
+i_energyFast   = input.int(14,   "Energy Fast Period",        minval=2,   group="RCCE Engine")
+i_energySlow   = input.int(50,   "Energy Slow Period",        minval=10,  group="RCCE Engine")
+i_minRegime    = input.int(5,    "Min Regime Persistence",    minval=1,   group="RCCE Engine")
+
+// --- Heatmap ---
+i_bmsbEma      = input.int(21,   "BMSB EMA Length",           minval=5,   group="Heatmap")
+i_bmsbSma      = input.int(20,   "BMSB SMA Length",           minval=5,   group="Heatmap")
+i_atrLen       = input.int(14,   "ATR Length",                minval=5,   group="Heatmap")
+i_atrRegimeLen = input.int(20,   "ATR Regime SMA Length",     minval=5,   group="Heatmap")
+
+// --- Exhaustion ---
+i_exhSens      = input.float(1.2, "Sensitivity Multiplier",   minval=0.5, step=0.1, group="Exhaustion")
+i_clusterReq   = input.int(3,    "Cluster Requirement",       minval=2,   group="Exhaustion")
+i_clusterLook  = input.int(10,   "Cluster Lookback",          minval=5,   group="Exhaustion")
+
+// --- Signal Thresholds ---
+i_confStrong   = input.int(60,   "Strong Long Confidence %",  minval=20,  maxval=100, group="Signal Thresholds") / 100.0
+i_confLight    = input.int(50,   "Light Long Confidence %",   minval=20,  maxval=100, group="Signal Thresholds") / 100.0
+i_confAccum    = input.int(40,   "Accumulate Confidence %",   minval=10,  maxval=100, group="Signal Thresholds") / 100.0
+i_confRevival  = input.int(30,   "Revival Confidence %",      minval=10,  maxval=100, group="Signal Thresholds") / 100.0
+i_heatWarn     = input.int(80,   "Heat Warning Level",        minval=50,  maxval=100, group="Signal Thresholds")
+i_heatBlock    = input.int(85,   "Heat Block Strong Level",   minval=50,  maxval=100, group="Signal Thresholds")
+i_heatForce    = input.int(95,   "Heat Force Trim Level",     minval=80,  maxval=100, group="Signal Thresholds")
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════════════════════════════════════════════════
+
+float Z_BLOWOFF     = 2.0
+float Z_CAPITULATION = -1.0
+float Z_TRIM        = 3.0
+float Z_TRIM_HARD   = 3.5
+float EPS           = 1e-10
+
+int REG_MARKUP   = 0
+int REG_BLOWOFF  = 1
+int REG_REACC    = 2
+int REG_MARKDOWN = 3
+int REG_CAP      = 4
+int REG_ACCUM    = 5
+
+int SIG_WAIT          =  0
+int SIG_STRONG_LONG   =  1
+int SIG_LIGHT_LONG    =  2
+int SIG_ACCUMULATE    =  3
+int SIG_REVIVAL       =  4
+int SIG_REVIVAL_CONF  =  5
+int SIG_TRIM          = -1
+int SIG_TRIM_HARD     = -2
+int SIG_RISK_OFF      = -3
+int SIG_NO_LONG       = -4
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE 1: WEEKLY DATA
+// ════════════════════════════════════════════════════════════════════════════
+
+f_wBmsbMid() =>
+    wEma = ta.ema(close, i_bmsbEma)
+    wSma = ta.sma(close, i_bmsbSma)
+    (wEma + wSma) / 2.0
+
+f_wAtr() =>
+    ta.atr(i_atrLen)
+
+f_wAtrSma() =>
+    ta.sma(ta.atr(i_atrLen), i_atrRegimeLen)
+
+float bmsb_mid  = request.security(syminfo.tickerid, "W", f_wBmsbMid(), lookahead=barmerge.lookahead_on)
+float w_atr     = request.security(syminfo.tickerid, "W", f_wAtr(),     lookahead=barmerge.lookahead_on)
+float w_atr_sma = request.security(syminfo.tickerid, "W", f_wAtrSma(),  lookahead=barmerge.lookahead_on)
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE 2: RCCE ENGINE — Z-Score Regime Detection
+// ════════════════════════════════════════════════════════════════════════════
+
+float logp     = math.log(math.max(close, EPS))
+float ma_logp  = ta.sma(logp, i_lenLong)
+float deviation = logp - ma_logp
+float mean_dev = ta.sma(deviation, i_lenLong)
+float std_dev  = ta.stdev(deviation, i_lenLong)
+float safe_std = nz(std_dev) < EPS ? EPS : nz(std_dev)
+float z_score  = (nz(deviation) - nz(mean_dev)) / safe_std
+
+float vol_raw  = ta.stdev(close, i_lenShort) / math.max(close, EPS)
+float vol_p25  = ta.percentile_linear_interpolation(vol_raw, i_lenShort, 25)
+float vol_p75  = ta.percentile_linear_interpolation(vol_raw, i_lenShort, 75)
+bool  vol_low  = not na(vol_raw) and not na(vol_p25) and vol_raw < vol_p25
+bool  vol_high = not na(vol_raw) and not na(vol_p75) and vol_raw > vol_p75
+
+float stdev_fast = ta.stdev(close, i_energyFast)
+float stdev_slow = ta.stdev(close, i_energySlow)
+float energy     = nz(stdev_fast) / math.max(nz(stdev_slow), EPS)
+
+float z_s   = nz(z_score, 0.0)
+float e_s   = nz(energy, 0.0)
+float v_s   = nz(vol_raw, 0.0)
+
+float p_markup  = math.max(0.0, z_s) * (e_s > 1.0 ? 1.0 : 0.5)
+float p_blowoff = math.max(0.0, z_s - Z_BLOWOFF)
+float p_reacc   = z_s < 0 and not vol_high ? -z_s : 0.0
+float p_md      = vol_high and z_s < 0 ? v_s * 2.0 : 0.0
+float p_cap     = vol_low and z_s < Z_CAPITULATION ? -z_s : 0.0
+float p_acc     = vol_low and z_s > -0.5 and z_s < 0.5 ? 1.0 : 0.0
+
+float sum_p = p_markup + p_blowoff + p_reacc + p_md + p_cap + p_acc + EPS
+p_markup  := p_markup  / sum_p
+p_blowoff := p_blowoff / sum_p
+p_reacc   := p_reacc   / sum_p
+p_md      := p_md      / sum_p
+p_cap     := p_cap     / sum_p
+p_acc     := p_acc     / sum_p
+
+float max_prob = math.max(p_markup, math.max(p_blowoff, math.max(p_reacc,
+                 math.max(p_md, math.max(p_cap, p_acc)))))
+
+int raw_regime = max_prob == p_markup  ? REG_MARKUP  :
+                 max_prob == p_blowoff ? REG_BLOWOFF :
+                 max_prob == p_reacc   ? REG_REACC   :
+                 max_prob == p_md      ? REG_MARKDOWN :
+                 max_prob == p_cap     ? REG_CAP     : REG_ACCUM
+
+var int current_regime  = REG_ACCUM
+var int pending_regime  = REG_ACCUM
+var int pending_count   = 0
+
+if raw_regime == current_regime
+    pending_regime := current_regime
+    pending_count  := 0
+else if raw_regime == pending_regime
+    pending_count += 1
+    if pending_count >= i_minRegime
+        current_regime := pending_regime
+        pending_count  := 0
+else
+    pending_regime := raw_regime
+    pending_count  := 1
+
+float confidence = switch current_regime
+    REG_MARKUP   => p_markup
+    REG_BLOWOFF  => p_blowoff
+    REG_REACC    => p_reacc
+    REG_MARKDOWN => p_md
+    REG_CAP      => p_cap
+    REG_ACCUM    => p_acc
+    => 0.0
+
+string regime_label = switch current_regime
+    REG_MARKUP   => "MARKUP"
+    REG_BLOWOFF  => "BLOWOFF"
+    REG_REACC    => "REACC"
+    REG_MARKDOWN => "MARKDOWN"
+    REG_CAP      => "CAP"
+    REG_ACCUM    => "ACCUM"
+    => "FLAT"
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE 3: STRUCTURAL HEATMAP V3
+// ════════════════════════════════════════════════════════════════════════════
+
+float d_atr = ta.atr(i_atrLen)
+
+float safe_w_atr     = math.max(nz(w_atr, 1.0), EPS)
+float safe_w_atr_sma = math.max(nz(w_atr_sma, 1.0), EPS)
+float r3 = (nz(d_atr) / safe_w_atr) * (nz(w_atr) / safe_w_atr_sma)
+
+float dev_bmsb = close - nz(bmsb_mid)
+float abs_dev  = math.abs(dev_bmsb)
+int   heat     = int(math.min(100, math.round((abs_dev / math.max(nz(d_atr, 1.0), EPS)) * nz(r3, 1.0) * 12.5)))
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE 4: EXHAUSTION ENGINE V6
+// ════════════════════════════════════════════════════════════════════════════
+
+float tr_val = ta.tr(true)
+
+float prev_c    = nz(close[1], close)
+float roc_down  = close < prev_c ? math.abs(close - prev_c) : 0.0
+float safe_atr  = math.max(nz(d_atr, 1.0), 1.0)
+float eff_down  = roc_down / safe_atr
+float eff_s     = nz(ta.sma(eff_down, 3), 0.0)
+
+float effort_avg  = nz(ta.sma(eff_s, 20), 0.0)
+bool  effort_peak = eff_s > effort_avg * i_exhSens
+
+bool  is_red      = close < open
+float body_size   = math.abs(close - open)
+float lower_wick  = is_red ? math.max(close - low, 0.0) : math.max(open - low, 0.0)
+float upper_wick  = is_red ? math.max(high - open, 0.0) : math.max(high - close, 0.0)
+
+bool weekly_down_zone = close < nz(bmsb_mid)
+
+bool is_absorption = weekly_down_zone and is_red and (tr_val < d_atr) and effort_peak
+
+bool is_climax = weekly_down_zone and
+                 (tr_val > d_atr * 1.5) and
+                 (lower_wick > body_size * 1.5) and
+                 (lower_wick > upper_wick) and
+                 effort_peak
+
+float abs_count = math.sum(is_absorption ? 1 : 0, i_clusterLook)
+
+var float start_vol = na
+if is_absorption and abs_count == 1
+    start_vol := volume
+
+bool floor_confirmed = abs_count >= i_clusterReq and volume < nz(start_vol, volume + 1)
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE 5: SIGNAL SYNTHESIS
+// ════════════════════════════════════════════════════════════════════════════
+
+var int final_signal = SIG_WAIT
+string signal_reason = ""
+
+// ── STEP 1: EXIT RULES ──────────────────────────────────────────────────────
+
+if heat >= i_heatForce
+    final_signal := SIG_TRIM
+    signal_reason := "HEAT " + str.tostring(heat)
+
+else if current_regime == REG_BLOWOFF and z_score > Z_TRIM_HARD
+    final_signal := SIG_TRIM_HARD
+    signal_reason := "BLOWOFF z=" + str.tostring(z_score, "#.##")
+
+else if current_regime == REG_BLOWOFF and z_score > Z_TRIM
+    final_signal := SIG_TRIM
+    signal_reason := "BLOWOFF z=" + str.tostring(z_score, "#.##")
+
+else if current_regime == REG_MARKDOWN
+    final_signal := SIG_WAIT
+    signal_reason := "MARKDOWN"
+
+else if is_climax
+    final_signal := SIG_WAIT
+    signal_reason := "Climax"
+
+// ── STEP 2: ENTRY RULES ─────────────────────────────────────────────────────
+else
+    bool above_bmsb = not weekly_down_zone
+
+    bool cond_bullish  = current_regime == REG_MARKUP or current_regime == REG_ACCUM
+    bool cond_conf     = confidence > i_confStrong
+    bool cond_z_range  = z_score >= -0.5 and z_score <= 2.5
+    bool cond_heat_ok  = heat < i_heatBlock
+    bool cond_no_climax = not is_climax
+    bool cond_bmsb     = above_bmsb
+    int conds_met = (cond_bullish ? 1 : 0) + (cond_conf ? 1 : 0) +
+                    (cond_z_range ? 1 : 0) + (cond_heat_ok ? 1 : 0) +
+                    (cond_no_climax ? 1 : 0) + (cond_bmsb ? 1 : 0)
+
+    // ── STRONG_LONG ──
+    if conds_met == 6 and above_bmsb
+        if current_regime == REG_MARKUP and z_score > -0.5 and z_score < 1.0
+            final_signal := SIG_STRONG_LONG
+            signal_reason := "STRONG [MARKUP]"
+        else if current_regime == REG_ACCUM
+            final_signal := SIG_STRONG_LONG
+            signal_reason := "STRONG [ACCUM]"
+        else
+            final_signal := SIG_WAIT
+            signal_reason := str.tostring(conds_met) + "/6"
+    else
+        final_signal := SIG_WAIT
+        signal_reason := str.tostring(conds_met) + "/6"
+
+    // ── ACCUMULATE: ACCUM regime + low z + low vol ──
+    if final_signal == SIG_WAIT
+        if current_regime == REG_ACCUM and z_score < 0 and vol_low and confidence > i_confAccum and heat < 70
+            final_signal := SIG_ACCUMULATE
+            signal_reason := "ACCUM [low vol]"
+
+    // ── ACCUMULATE via absorption ──
+    if final_signal == SIG_WAIT
+        if is_absorption and (current_regime == REG_ACCUM or current_regime == REG_REACC) and confidence > i_confAccum and heat < 70
+            final_signal := SIG_ACCUMULATE
+            signal_reason := "ACCUM [absorption]"
+
+    // ── REVIVAL_SEED: CAP extreme ──
+    if final_signal == SIG_WAIT
+        if current_regime == REG_CAP and z_score < -1.0 and vol_high and confidence > i_confRevival
+            if floor_confirmed
+                final_signal := SIG_REVIVAL_CONF
+                signal_reason := "REVIVAL [floor]"
+            else
+                final_signal := SIG_REVIVAL
+                signal_reason := "REVIVAL [CAP]"
+
+    // ── LIGHT_LONG: MARKUP (above BMSB) ──
+    if final_signal == SIG_WAIT and conds_met >= 3 and above_bmsb
+        if current_regime == REG_MARKUP and z_score > 0 and z_score < Z_BLOWOFF and confidence > i_confLight and heat < i_heatWarn
+            final_signal := SIG_LIGHT_LONG
+            signal_reason := "LIGHT [MARKUP]"
+
+    // ── LIGHT_LONG: REACC (above BMSB) ──
+    if final_signal == SIG_WAIT and above_bmsb
+        if current_regime == REG_REACC and z_score < 0.5 and confidence > i_confLight and heat < i_heatWarn
+            final_signal := SIG_LIGHT_LONG
+            signal_reason := "LIGHT [REACC]"
+
+    // ── CAP absorption ──
+    if final_signal == SIG_WAIT
+        if current_regime == REG_CAP and z_score < -1.0 and confidence > i_confRevival and is_absorption
+            final_signal := SIG_ACCUMULATE
+            signal_reason := "ACCUM [CAP abs]"
+
+    // ── DEFAULT ──
+    if final_signal == SIG_WAIT
+        signal_reason := regime_label + " z=" + str.tostring(z_score, "#.##")
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// STRATEGY ENTRIES & EXITS
+// ════════════════════════════════════════════════════════════════════════════
+
+bool is_entry = final_signal == SIG_STRONG_LONG or
+                final_signal == SIG_LIGHT_LONG or
+                final_signal == SIG_ACCUMULATE or
+                final_signal == SIG_REVIVAL or
+                final_signal == SIG_REVIVAL_CONF
+
+bool is_exit  = final_signal == SIG_TRIM or
+                final_signal == SIG_TRIM_HARD or
+                final_signal == SIG_RISK_OFF or
+                final_signal == SIG_NO_LONG
+
+if is_entry and strategy.position_size == 0
+    strategy.entry("Long", strategy.long, comment=signal_reason)
+else if is_exit and strategy.position_size > 0
+    strategy.close("Long", comment=signal_reason)
+else if current_regime == REG_MARKDOWN and strategy.position_size > 0
+    strategy.close("Long", comment="MARKDOWN")
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHART — only signals + BMSB
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── BMSB Midline ──
+plot(bmsb_mid, "BMSB Mid", color=color.new(color.yellow, 20), linewidth=2)
+
+// ── Entries (below bar) ──
+plotshape(final_signal == SIG_STRONG_LONG, "STRONG",
+     location=location.belowbar, style=shape.triangleup,
+     color=#34d399, size=size.normal, text="STRONG", textcolor=#34d399)
+
+plotshape(final_signal == SIG_LIGHT_LONG, "LIGHT",
+     location=location.belowbar, style=shape.triangleup,
+     color=#22d3ee, size=size.small, text="LIGHT", textcolor=#22d3ee)
+
+plotshape(final_signal == SIG_ACCUMULATE, "ACCUM",
+     location=location.belowbar, style=shape.triangleup,
+     color=#818cf8, size=size.small, text="ACCUM", textcolor=#818cf8)
+
+plotshape(final_signal == SIG_REVIVAL, "REVIVAL",
+     location=location.belowbar, style=shape.diamond,
+     color=#c084fc, size=size.small, text="REVIVE", textcolor=#c084fc)
+
+plotshape(final_signal == SIG_REVIVAL_CONF, "FLOOR",
+     location=location.belowbar, style=shape.diamond,
+     color=#a3e635, size=size.normal, text="FLOOR!", textcolor=#a3e635)
+
+// ── Exits (above bar) ──
+plotshape(final_signal == SIG_TRIM, "TRIM",
+     location=location.abovebar, style=shape.triangledown,
+     color=#fb923c, size=size.small, text="TRIM", textcolor=#fb923c)
+
+plotshape(final_signal == SIG_TRIM_HARD, "TRIM!",
+     location=location.abovebar, style=shape.triangledown,
+     color=#ef4444, size=size.normal, text="TRIM!", textcolor=#ef4444)
+
+plotshape(final_signal == SIG_RISK_OFF, "RISK",
+     location=location.abovebar, style=shape.xcross,
+     color=#dc2626, size=size.normal, text="RISK", textcolor=#dc2626)
+
+plotshape(final_signal == SIG_NO_LONG, "EXIT",
+     location=location.abovebar, style=shape.xcross,
+     color=#f87171, size=size.small, text="EXIT", textcolor=#f87171)
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ════════════════════════════════════════════════════════════════════════════
+
+alertcondition(is_entry, title="Entry Signal", message="RCCE: Entry on {{ticker}} — " + signal_reason)
+alertcondition(is_exit,  title="Exit Signal",  message="RCCE: Exit on {{ticker}} — " + signal_reason)
