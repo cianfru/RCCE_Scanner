@@ -233,11 +233,7 @@ bool weekly_down_zone = close < nz(bmsb_mid)
 
 bool is_absorption = weekly_down_zone and is_red and (tr_val < d_atr) and effort_peak
 
-bool is_climax = weekly_down_zone and
-                 (tr_val > d_atr * 1.5) and
-                 (lower_wick > body_size * 1.5) and
-                 (lower_wick > upper_wick) and
-                 effort_peak
+bool is_climax = weekly_down_zone and (tr_val > d_atr * 1.5) and (lower_wick > body_size * 1.5) and (lower_wick > upper_wick) and effort_peak
 
 float abs_count = math.sum(is_absorption ? 1 : 0, i_clusterLook)
 
@@ -287,9 +283,7 @@ else
     bool cond_heat_ok  = heat < i_heatBlock
     bool cond_no_climax = not is_climax
     bool cond_bmsb     = above_bmsb
-    int conds_met = (cond_bullish ? 1 : 0) + (cond_conf ? 1 : 0) +
-                    (cond_z_range ? 1 : 0) + (cond_heat_ok ? 1 : 0) +
-                    (cond_no_climax ? 1 : 0) + (cond_bmsb ? 1 : 0)
+    int conds_met = (cond_bullish ? 1 : 0) + (cond_conf ? 1 : 0) + (cond_z_range ? 1 : 0) + (cond_heat_ok ? 1 : 0) + (cond_no_climax ? 1 : 0) + (cond_bmsb ? 1 : 0)
 
     // ── STRONG_LONG ──
     if conds_met == 6 and above_bmsb
@@ -355,16 +349,9 @@ else
 // STRATEGY ENTRIES & EXITS
 // ════════════════════════════════════════════════════════════════════════════
 
-bool is_entry = final_signal == SIG_STRONG_LONG or
-                final_signal == SIG_LIGHT_LONG or
-                final_signal == SIG_ACCUMULATE or
-                final_signal == SIG_REVIVAL or
-                final_signal == SIG_REVIVAL_CONF
+bool is_entry = final_signal == SIG_STRONG_LONG or final_signal == SIG_LIGHT_LONG or final_signal == SIG_ACCUMULATE or final_signal == SIG_REVIVAL or final_signal == SIG_REVIVAL_CONF
 
-bool is_exit  = final_signal == SIG_TRIM or
-                final_signal == SIG_TRIM_HARD or
-                final_signal == SIG_RISK_OFF or
-                final_signal == SIG_NO_LONG
+bool is_exit = final_signal == SIG_TRIM or final_signal == SIG_TRIM_HARD or final_signal == SIG_RISK_OFF or final_signal == SIG_NO_LONG
 
 if is_entry and strategy.position_size == 0
     strategy.entry("Long", strategy.long, comment=signal_reason)
