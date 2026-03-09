@@ -306,7 +306,7 @@ async def stablecoin():
 
 @app.get("/api/positioning/{symbol}")
 async def positioning(symbol: str):
-    """Return Hyperliquid positioning data for a symbol."""
+    """Return positioning data for a symbol (CoinGlass aggregated)."""
     symbol = symbol.upper().replace("-", "/")
     # Find in latest scan results
     for tf in ("4h", "1d"):

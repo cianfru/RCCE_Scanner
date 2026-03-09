@@ -88,7 +88,7 @@ def synthesize_signal(
     global_metrics : dict or None
         BTC dominance etc from market_data module.
     positioning : dict or None
-        Hyperliquid positioning data (funding_regime, oi_trend, etc.).
+        CoinGlass positioning data (funding_regime, oi_trend, etc.).
     sentiment : dict or None
         Fear & Greed Index data.
     stablecoin : dict or None
