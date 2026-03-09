@@ -271,6 +271,37 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
     }
 
 
+def compute_bmsb_series(
+    w_close: np.ndarray, w_timestamps: np.ndarray
+) -> dict:
+    """Compute full BMSB series for chart overlay.
+
+    Returns dict with ``mid``, ``ema``, ``sma`` keys — each a list of
+    ``{"time": <unix_seconds>, "value": <float>}`` dicts suitable for
+    lightweight-charts ``LineSeries.setData()``.
+    """
+    empty = {"mid": [], "ema": [], "sma": []}
+    if len(w_close) < max(EMA_LEN, SMA_LEN):
+        return empty
+
+    bmsb_ema = _ema(w_close, EMA_LEN)
+    bmsb_sma = _sma(w_close, SMA_LEN)
+    bmsb_mid = (bmsb_ema + bmsb_sma) / 2.0
+
+    def _to_series(arr):
+        return [
+            {"time": int(w_timestamps[i] / 1000), "value": round(float(arr[i]), 6)}
+            for i in range(len(w_timestamps))
+            if not np.isnan(arr[i])
+        ]
+
+    return {
+        "mid": _to_series(bmsb_mid),
+        "ema": _to_series(bmsb_ema),
+        "sma": _to_series(bmsb_sma),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

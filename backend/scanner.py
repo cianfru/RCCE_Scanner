@@ -665,6 +665,9 @@ async def _scan_timeframe(
                 round(synth.conditions_met / synth.conditions_total * 100)
                 if synth.conditions_total > 0 else 0
             )
+            r["conditions_detail"] = synth.conditions_detail
+            r["conditions_met"] = synth.conditions_met
+            r["conditions_total"] = synth.conditions_total
 
             # Store current heat for next scan
             if not hasattr(cache, 'prev_heat'):
@@ -675,6 +678,9 @@ async def _scan_timeframe(
             r["signal"] = r.get("raw_signal", "WAIT")
             r["signal_reason"] = "synthesis error — using raw signal"
             r["signal_warnings"] = ["Signal synthesizer encountered an error"]
+            r["conditions_detail"] = []
+            r["conditions_met"] = 0
+            r["conditions_total"] = 10
 
     signal_summary = {}
     for r in results:
