@@ -59,7 +59,7 @@ class SynthesizedSignal:
     reason: str = ""
     warnings: list = field(default_factory=list)
     conditions_met: int = 0
-    conditions_total: int = 11  # Max conditions for STRONG_LONG (expanded)
+    conditions_total: int = 10  # Max conditions for STRONG_LONG (expanded)
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +73,8 @@ def synthesize_signal(
     positioning: Optional[dict] = None,
     sentiment: Optional[dict] = None,
     stablecoin: Optional[dict] = None,
+    macro_blocked: bool = False,
+    prev_heat: int = 0,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -109,8 +111,6 @@ def synthesize_signal(
     floor_confirmed = result.get("floor_confirmed", False)
     divergence = result.get("divergence")
     exhaustion_state = result.get("exhaustion_state", "NEUTRAL")
-    heat_direction = result.get("heat_direction", 0)
-    below_bmsb = heat_direction < 0  # price below weekly BMSB mid
 
     mkt_consensus = consensus.get("consensus", "MIXED")
 
@@ -127,6 +127,22 @@ def synthesize_signal(
     reasons: list = []
     warnings: list = []
 
+    # Helper: build human-readable reason string
+    def _reason_parts() -> list:
+        parts = [regime]
+        parts.append(f"z={z:.2f}")
+        parts.append(f"conf={confidence*100:.0f}%")
+        parts.append(f"consensus={mkt_consensus}")
+        if heat > 0:
+            parts.append(f"heat={heat}")
+        if divergence:
+            parts.append(f"div={divergence}")
+        if funding_regime != "NEUTRAL":
+            parts.append(f"funding={funding_regime}")
+        if oi_trend not in ("UNKNOWN", "STABLE"):
+            parts.append(f"OI={oi_trend}")
+        return parts
+
     # -----------------------------------------------------------------------
     # STEP 1: EXIT RULES (highest priority — any single trigger fires)
     # -----------------------------------------------------------------------
@@ -138,7 +154,15 @@ def synthesize_signal(
         out.warnings = [f"Heat at {heat}/100 — forced exit"]
         return out
 
-    # 1b. BLOWOFF exits (only when z is extended)
+    # 1b. Exhaustion ABSORBING → institutional accumulation signal
+    # When macro_blocked, skip — no long entries in bear macro regime.
+    if exhaustion_state == "ABSORBING" and not macro_blocked:
+        out.signal = "ACCUMULATE"
+        out.reason = "Absorption detected — institutional accumulation in exhaustion engine"
+        out.warnings = ["Absorption phase: declining volume on dips suggests accumulation"]
+        return out
+
+    # 1c. BLOWOFF exits (only when z is extended)
     if regime == "BLOWOFF":
         if z > Z_TRIM_HARD:
             out.signal = "TRIM_HARD"
@@ -152,7 +176,9 @@ def synthesize_signal(
         warnings.append(f"BLOWOFF regime (z={z:.2f}) — monitor for escalation")
 
     # 1d. MARKDOWN + RISK-OFF -> RISK_OFF
-    if regime == "MARKDOWN" and mkt_consensus == "RISK-OFF":
+    # When macro_blocked, skip RISK_OFF (no longs to exit) — fall through
+    # to 1g for LIGHT_SHORT evaluation instead.
+    if regime == "MARKDOWN" and mkt_consensus == "RISK-OFF" and not macro_blocked:
         out.signal = "RISK_OFF"
         out.reason = f"MARKDOWN + consensus RISK-OFF"
         return out
@@ -175,8 +201,8 @@ def synthesize_signal(
         out.warnings = ["Market in euphoria with extended z-score"]
         return out
 
-    # 1g. MARKDOWN without RISK-OFF -> WAIT (no entries allowed)
-    if regime == "MARKDOWN":
+    # 1g. MARKDOWN without macro_blocked — WAIT (no entries in downtrend)
+    if regime == "MARKDOWN" and not macro_blocked:
         out.signal = "WAIT"
         out.reason = f"MARKDOWN regime (consensus={mkt_consensus})"
         if divergence == "BULL-DIV":
@@ -191,6 +217,27 @@ def synthesize_signal(
         out.warnings = ["Climactic selling/buying volume — wait for resolution"]
         return out
 
+    # 1i. Macro blocked — LIGHT_SHORT for failed rallies, WAIT otherwise
+    # Fires across ALL regimes: the RCCE engine reclassifies bear rallies
+    # as MARKUP/REACC before z/heat reach short-entry levels, so we use
+    # the BMSB macro filter as the bear market confirmation and z/heat/stall
+    # to identify rally exhaustion points.
+    if macro_blocked:
+        if (0.3 <= z <= 1.2
+                and heat >= 20
+                and heat <= prev_heat          # rally momentum stalling
+                and divergence != "BULL-DIV"
+                and funding_regime != "CROWDED_SHORT"
+                and confidence > 0.30):
+            out.signal = "LIGHT_SHORT"
+            out.reason = " + ".join(_reason_parts()) + " [macro blocked bear rally short]"
+            out.warnings = warnings
+            return out
+        out.signal = "WAIT"
+        out.reason = f"Macro blocked (BMSB bearish) — {regime} regime, long entries blocked"
+        out.warnings = warnings
+        return out
+
     # -----------------------------------------------------------------------
     # STEP 2: ENTRY RULES (evaluated by signal strength)
     # -----------------------------------------------------------------------
@@ -203,7 +250,6 @@ def synthesize_signal(
     cond_no_bear_div = divergence != "BEAR-DIV"
     cond_heat_ok = heat < HEAT_BLOCK_STRONG
     cond_no_climax = not is_climax  # Already handled above, but explicit
-    cond_above_bmsb = not below_bmsb  # Must be above weekly BMSB for STRONG/LIGHT
     # New conditions from positioning/sentiment/stablecoin
     cond_funding_ok = funding_regime != "CROWDED_LONG"
     cond_not_greedy = fear_greed < FNG_GREED
@@ -217,7 +263,6 @@ def synthesize_signal(
         cond_no_bear_div,
         cond_heat_ok,
         cond_no_climax,
-        cond_above_bmsb,
         cond_funding_ok,
         cond_not_greedy,
         cond_liquidity_ok,
@@ -225,24 +270,6 @@ def synthesize_signal(
     conditions_met = sum(conditions)
     out.conditions_met = conditions_met
     out.conditions_total = len(conditions)
-
-    # Build reason parts
-    def _reason_parts() -> list:
-        parts = [regime]
-        parts.append(f"z={z:.2f}")
-        parts.append(f"conf={confidence*100:.0f}%")
-        parts.append(f"consensus={mkt_consensus}")
-        if heat > 0:
-            parts.append(f"heat={heat}")
-        if divergence:
-            parts.append(f"div={divergence}")
-        if funding_regime != "NEUTRAL":
-            parts.append(f"funding={funding_regime}")
-        if oi_trend not in ("UNKNOWN", "STABLE"):
-            parts.append(f"OI={oi_trend}")
-        if below_bmsb:
-            parts.append("BELOW_BMSB")
-        return parts
 
     # Collect warnings
     if divergence == "BEAR-DIV":
@@ -274,12 +301,9 @@ def synthesize_signal(
     # Stablecoin warnings
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
-    # BMSB structural warning
-    if below_bmsb:
-        warnings.append("Below weekly BMSB — STRONG/LIGHT_LONG blocked, only ACCUMULATE/REVIVAL allowed")
 
-    # --- STRONG_LONG: ALL conditions must hold + no BEAR-DIV + above BMSB ---
-    if conditions_met == len(conditions) and divergence != "BEAR-DIV" and not below_bmsb:
+    # --- STRONG_LONG: ALL 10 conditions must hold + no BEAR-DIV ---
+    if conditions_met == len(conditions) and divergence != "BEAR-DIV":
         # MARKUP with full confirmation
         if regime == "MARKUP" and z > -0.5 and z < 1.0:
             out.signal = "STRONG_LONG"
@@ -292,10 +316,8 @@ def synthesize_signal(
             out.reason = " + ".join(_reason_parts()) + " [all conditions met]"
             out.warnings = warnings
             return out
-    # STRONG_LONG with all core conditions met but blocked by funding/greed/liquidity
-    # Must still be above BMSB, and core conditions (confidence, consensus, heat, z) must pass
-    elif (conditions_met >= 8 and not cond_funding_ok and not below_bmsb
-            and cond_confidence and cond_consensus and cond_heat_ok and cond_z_range):
+    # STRONG_LONG with 7/10 original conditions but blocked by funding/greed/liquidity
+    elif conditions_met >= 7 and not cond_funding_ok:
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
         if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
             out.signal = "LIGHT_LONG"
@@ -323,21 +345,6 @@ def synthesize_signal(
             warnings.append(f"ACCUM conditions met but F&G={fear_greed} > {FNG_FEAR} — waiting for fear")
             # Fall through to LIGHT_LONG evaluation
 
-    # --- ACCUMULATE via absorption (non-CAP regimes) ---
-    # Absorption = price below weekly BMSB mid + red candle + contained TR + effort peak.
-    # Only valid when regime and consensus support it (not in MARKDOWN/RISK-OFF).
-    if (
-        is_absorption
-        and regime in ("ACCUM", "REACC")
-        and mkt_consensus != "RISK-OFF"
-        and confidence > CONF_ACCUM
-        and heat < 70
-    ):
-        out.signal = "ACCUMULATE"
-        out.reason = " + ".join(_reason_parts()) + f" [absorption in {regime}]"
-        out.warnings = warnings
-        return out
-
     # --- REVIVAL_SEED: CAP with strong bottom signals ---
     # Gated by Fear & Greed: revival seeds only in Fear territory
     if (
@@ -360,8 +367,8 @@ def synthesize_signal(
         out.warnings = warnings
         return out
 
-    # --- LIGHT_LONG: 5+ conditions met + supportive regime + above BMSB ---
-    if conditions_met >= 5 and regime in ("MARKUP", "REACC", "ACCUM") and not below_bmsb:
+    # --- LIGHT_LONG: 4+ conditions met + supportive regime ---
+    if conditions_met >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
         # MARKUP LIGHT_LONG: extended z (1.0-2.0) with decent confidence
         if (regime == "MARKUP" and 1.0 < z < Z_BLOWOFF
                 and confidence > CONF_LIGHT
@@ -384,26 +391,23 @@ def synthesize_signal(
             out.warnings = warnings
             return out
 
-        # REACC LIGHT_LONG: needs supportive consensus + decent confidence + no BEAR-DIV
+        # REACC LIGHT_LONG: needs supportive consensus + decent confidence
         if (regime == "REACC" and z < 0.5
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
-                and mkt_consensus in ("RISK-ON", "MIXED")
-                and divergence != "BEAR-DIV"):
+                and mkt_consensus in ("RISK-ON", "MIXED")):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [REACC + RISK-ON]"
             out.warnings = warnings
             return out
 
     # --- CAP without strong revival conditions ---
-    if (regime == "CAP" and z < -1.0 and confidence > CONF_REVIVAL
-            and is_absorption
-            and mkt_consensus != "RISK-OFF"
-            and heat < 70):
-        out.signal = "ACCUMULATE"
-        out.reason = " + ".join(_reason_parts()) + " [CAP absorption]"
-        out.warnings = warnings
-        return out
+    if regime == "CAP" and z < -1.0 and confidence > CONF_REVIVAL:
+        if is_absorption:
+            out.signal = "ACCUMULATE"
+            out.reason = " + ".join(_reason_parts()) + " [CAP absorption]"
+            out.warnings = warnings
+            return out
 
     # -----------------------------------------------------------------------
     # STEP 3: DEFAULT — WAIT
