@@ -12,6 +12,12 @@ from __future__ import annotations
 
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Constants (matching Pine defaults)
+# ---------------------------------------------------------------------------
+
+EMA_LEN = 21
+SMA_LEN = 20
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -138,9 +144,7 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
         ``bmsb_mid``      – weekly BMSB midline value (float)
         ``r3``            – hybrid volatility scaling factor (float)
     """
-    # ---- Constants (matching Pine defaults) --------------------------------
-    EMA_LEN = 21
-    SMA_LEN = 20
+    # ---- Constants -----------------------------------------------------------
     ATR_LEN_D = 14
     ATR_LEN_W = 14
     ATR_REGIME_LEN = 20
