@@ -3,6 +3,11 @@ import { T, SIGNAL_META, fmt } from "../theme.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+const DEFAULT_SYMBOLS = [
+  "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+  "ADA/USDT", "AVAX/USDT", "DOGE/USDT", "DOT/USDT", "LINK/USDT",
+];
+
 // ─── EQUITY CURVE CHART ──────────────────────────────────────────────────────
 
 function EquityChart({ equity, btcEquity, height = 260 }) {
@@ -144,7 +149,7 @@ function ProgressBar({ progress, status, startedAt }) {
     return () => clearInterval(iv);
   }, [isReplaying]);
 
-  const displayLabel = isReplaying ? "REPLAYING — engines running..." : status;
+  const displayLabel = isReplaying ? "REPLAYING \u2014 engines running..." : status;
   const displayProgress = isReplaying ? `${elapsedStr}` : `${progress.toFixed(0)}%`;
 
   return (
@@ -174,6 +179,239 @@ function ProgressBar({ progress, status, startedAt }) {
   );
 }
 
+// ─── SYMBOL PICKER ──────────────────────────────────────────────────────────
+
+function SymbolPicker({ symbols, onChange, isMobile }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const searchRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  // Search for symbols with debounce
+  useEffect(() => {
+    if (!searchQuery || searchQuery.length < 1) {
+      setSearchResults([]);
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const resp = await fetch(`${API}/api/watchlist/search?q=${encodeURIComponent(searchQuery)}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          // Filter out already-selected symbols
+          const filtered = (data.results || []).filter(r => !symbols.includes(r.symbol));
+          setSearchResults(filtered.slice(0, 15));
+        }
+      } catch (e) { /* ignore */ }
+      setLoading(false);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [searchQuery, symbols]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showSearch) return;
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSearch(false);
+        setSearchQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSearch]);
+
+  const addSymbol = (sym) => {
+    if (!symbols.includes(sym)) {
+      onChange([...symbols, sym]);
+    }
+    setSearchQuery("");
+    setSearchResults([]);
+  };
+
+  const removeSymbol = (sym) => {
+    onChange(symbols.filter(s => s !== sym));
+  };
+
+  const loadWatchlist = async () => {
+    try {
+      const resp = await fetch(`${API}/api/watchlist`);
+      if (resp.ok) {
+        const data = await resp.json();
+        onChange(data.symbols || []);
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  const formatChip = (sym) => {
+    if (sym.endsWith("/BTC")) return sym.replace("/BTC", "/\u20bf");
+    return sym.replace("/USDT", "");
+  };
+
+  const chipBg = (sym) => {
+    if (sym.endsWith("/BTC")) return "rgba(251,146,60,0.1)";
+    return "rgba(255,255,255,0.04)";
+  };
+
+  const chipBorder = (sym) => {
+    if (sym.endsWith("/BTC")) return "rgba(251,146,60,0.25)";
+    return T.border;
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div style={{ fontSize: 8, color: T.text4, fontFamily: T.mono, letterSpacing: "0.1em" }}>
+          SYMBOLS ({symbols.length})
+        </div>
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+          <button onClick={() => onChange([...DEFAULT_SYMBOLS])} style={quickBtnStyle}>
+            DEFAULT 10
+          </button>
+          <button onClick={loadWatchlist} style={quickBtnStyle}>
+            WATCHLIST
+          </button>
+          <button onClick={() => onChange([])} style={{ ...quickBtnStyle, color: "#f87171" }}>
+            CLEAR
+          </button>
+        </div>
+      </div>
+
+      {/* Symbol chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+        {symbols.map(sym => (
+          <div key={sym} style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            padding: "3px 8px", borderRadius: T.radiusXs,
+            background: chipBg(sym), border: `1px solid ${chipBorder(sym)}`,
+            fontSize: 10, fontFamily: T.mono, color: T.text2,
+          }}>
+            <span>{formatChip(sym)}</span>
+            <span
+              onClick={() => removeSymbol(sym)}
+              style={{ cursor: "pointer", color: T.text4, fontSize: 12, lineHeight: 1, marginLeft: 2 }}
+            >
+              \u00d7
+            </span>
+          </div>
+        ))}
+
+        {/* Add button / search */}
+        <div ref={searchRef} style={{ position: "relative", display: "inline-block" }}>
+          {showSearch ? (
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value.toUpperCase())}
+              placeholder="Type symbol..."
+              onKeyDown={e => {
+                if (e.key === "Escape") { setShowSearch(false); setSearchQuery(""); }
+                if (e.key === "Enter" && searchResults.length > 0) addSymbol(searchResults[0].symbol);
+              }}
+              style={{
+                padding: "3px 8px", borderRadius: T.radiusXs,
+                border: `1px solid ${T.accent}`, background: "rgba(0,0,0,0.4)",
+                color: T.text1, fontFamily: T.mono, fontSize: 10,
+                width: 120, outline: "none",
+              }}
+            />
+          ) : (
+            <button
+              onClick={() => setShowSearch(true)}
+              style={{
+                padding: "3px 10px", borderRadius: T.radiusXs,
+                border: `1px dashed ${T.border}`, background: "transparent",
+                color: T.text4, fontFamily: T.mono, fontSize: 10,
+                cursor: "pointer",
+              }}
+            >
+              + ADD
+            </button>
+          )}
+
+          {/* Search dropdown */}
+          {showSearch && searchResults.length > 0 && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, zIndex: 50,
+              marginTop: 4, minWidth: 180, maxHeight: 200, overflowY: "auto",
+              background: "#1a1a1e", border: `1px solid ${T.border}`,
+              borderRadius: T.radiusSm, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            }}>
+              {searchResults.map(r => (
+                <div
+                  key={r.symbol}
+                  onClick={() => addSymbol(r.symbol)}
+                  style={{
+                    padding: "6px 10px", cursor: "pointer",
+                    fontSize: 10, fontFamily: T.mono, color: T.text2,
+                    borderBottom: `1px solid ${T.border}`,
+                    display: "flex", justifyContent: "space-between",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >
+                  <span>{r.symbol}</span>
+                  <span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4, fontSize: 8 }}>
+                    {r.quote}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {showSearch && loading && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, zIndex: 50,
+              marginTop: 4, padding: "8px 12px",
+              background: "#1a1a1e", border: `1px solid ${T.border}`,
+              borderRadius: T.radiusSm, fontSize: 9, fontFamily: T.mono, color: T.text4,
+            }}>
+              Searching...
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const quickBtnStyle = {
+  padding: "2px 8px", borderRadius: "6px", border: `1px solid ${T.border}`,
+  background: "transparent", color: T.text4, fontFamily: T.mono,
+  fontSize: 8, cursor: "pointer", letterSpacing: "0.05em",
+};
+
+// ─── TIMEFRAME TOGGLE ───────────────────────────────────────────────────────
+
+function TimeframeToggle({ value, onChange }) {
+  const opts = ["4h", "1d"];
+  return (
+    <div>
+      <div style={{ fontSize: 8, color: T.text4, fontFamily: T.mono, letterSpacing: "0.1em", marginBottom: 4 }}>TIMEFRAME</div>
+      <div style={{ display: "flex", borderRadius: T.radiusSm, overflow: "hidden", border: `1px solid ${T.border}` }}>
+        {opts.map(tf => (
+          <button
+            key={tf}
+            onClick={() => onChange(tf)}
+            style={{
+              padding: "7px 14px", border: "none",
+              background: value === tf ? T.accent : "rgba(0,0,0,0.3)",
+              color: value === tf ? "#000" : T.text3,
+              fontFamily: T.mono, fontSize: 11, fontWeight: value === tf ? 700 : 400,
+              cursor: "pointer", letterSpacing: "0.04em",
+            }}
+          >
+            {tf.toUpperCase()}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN PANEL ────────────────────────────────────────────────────────────
 
 export default function BacktestPanel({ isMobile }) {
@@ -181,9 +419,11 @@ export default function BacktestPanel({ isMobile }) {
     start_date: "2025-01-01",
     end_date: "",
     initial_capital: 10000,
-    symbols: [],
+    symbols: [...DEFAULT_SYMBOLS],
     use_confluence: true,
     use_fear_greed: true,
+    timeframe: "4h",
+    leverage: 1.0,
   });
   const [btId, setBtId] = useState(null);
   const [result, setResult] = useState(null);
@@ -247,6 +487,12 @@ export default function BacktestPanel({ isMobile }) {
   const m = result?.metrics;
   const isDone = result?.status === "complete";
 
+  const formatSymbol = (sym) => {
+    if (!sym) return "";
+    if (sym.endsWith("/BTC")) return sym.replace("/BTC", "/\u20bf");
+    return sym.replace("/USDT", "");
+  };
+
   return (
     <div style={{ padding: isMobile ? 12 : 0 }}>
 
@@ -265,23 +511,31 @@ export default function BacktestPanel({ isMobile }) {
             onChange={v => setConfig(c => ({ ...c, end_date: v }))} isMobile={isMobile} />
           <InputField label="CAPITAL" type="number" value={config.initial_capital}
             onChange={v => setConfig(c => ({ ...c, initial_capital: Number(v) }))} isMobile={isMobile} />
+          <InputField label="LEVERAGE" type="number" value={config.leverage}
+            onChange={v => setConfig(c => ({ ...c, leverage: Math.max(0.1, Math.min(10, Number(v) || 1)) }))} isMobile={isMobile} />
+          <TimeframeToggle value={config.timeframe}
+            onChange={v => setConfig(c => ({ ...c, timeframe: v }))} />
           <button
             onClick={startBacktest}
-            disabled={isRunning}
+            disabled={isRunning || config.symbols.length === 0}
             style={{
               padding: "8px 24px", borderRadius: "20px", border: "none",
-              background: isRunning ? T.text4 : T.accent,
+              background: (isRunning || config.symbols.length === 0) ? T.text4 : T.accent,
               color: "#000", fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-              cursor: isRunning ? "not-allowed" : "pointer",
+              cursor: (isRunning || config.symbols.length === 0) ? "not-allowed" : "pointer",
               letterSpacing: "0.06em",
             }}
           >
             {isRunning ? "RUNNING..." : "RUN BACKTEST"}
           </button>
         </div>
-        <div style={{ fontSize: 9, color: T.text4, marginTop: 8, fontFamily: T.mono }}>
-          10 symbols (BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, DOT, LINK) | 4H primary + 1D confluence
-        </div>
+
+        {/* Symbol picker */}
+        <SymbolPicker
+          symbols={config.symbols}
+          onChange={syms => setConfig(c => ({ ...c, symbols: syms }))}
+          isMobile={isMobile}
+        />
       </div>
 
       {/* ── ERROR ── */}
@@ -455,7 +709,7 @@ export default function BacktestPanel({ isMobile }) {
                         return (
                           <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
                             <td style={{ padding: "5px 8px", color: T.text3, whiteSpace: "nowrap" }}>{d}</td>
-                            <td style={{ padding: "5px 8px", color: T.text2, fontWeight: 600 }}>{t.symbol?.replace("/USDT", "")}</td>
+                            <td style={{ padding: "5px 8px", color: T.text2, fontWeight: 600 }}>{formatSymbol(t.symbol)}</td>
                             <td style={{ padding: "5px 8px", color: entrySm.color }}>{t.entry_signal}</td>
                             <td style={{ padding: "5px 8px", color: exitSm.color }}>{t.exit_signal || ""}</td>
                             <td style={{ padding: "5px 8px", color: T.text3 }}>{t.entry_price}</td>
@@ -519,6 +773,7 @@ function InputField({ label, value, onChange, type = "text", placeholder, isMobi
         value={value}
         placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
+        step={type === "number" && label === "LEVERAGE" ? "0.5" : undefined}
         style={{
           padding: "7px 12px", borderRadius: T.radiusSm,
           border: `1px solid ${T.border}`, background: "rgba(0,0,0,0.3)",

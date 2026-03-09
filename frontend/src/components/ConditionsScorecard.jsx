@@ -63,12 +63,14 @@ export default function ConditionsScorecard({ conditions, met, total }) {
             key={c.name}
             title={c.desc}
             style={{
-              display: "flex", alignItems: "center", gap: 6,
+              display: "flex", alignItems: "center", gap: 5,
               padding: "5px 8px", borderRadius: 6,
               background: c.met ? "rgba(52,211,153,0.06)" : "rgba(248,113,113,0.04)",
               border: `1px solid ${c.met ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.10)"}`,
               cursor: "help",
               transition: "background 0.15s",
+              overflow: "hidden",
+              minWidth: 0,
             }}
           >
             <span style={{
@@ -80,14 +82,16 @@ export default function ConditionsScorecard({ conditions, met, total }) {
             <span style={{
               fontSize: 9, fontFamily: T.mono, fontWeight: 500,
               color: c.met ? T.text2 : T.text4,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}>
               {c.label}
             </span>
             <span style={{
               fontSize: 8, fontFamily: T.mono, fontWeight: 400,
               color: T.text4, marginLeft: "auto",
-              whiteSpace: "nowrap",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              minWidth: 0,
             }}>
               {c.desc}
             </span>

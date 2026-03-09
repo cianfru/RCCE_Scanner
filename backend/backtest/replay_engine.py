@@ -216,8 +216,16 @@ async def run_replay(
             weekly = _find_weekly_slice(ohlcv_1w.get(symbol), current_ts) if symbol in ohlcv_1w else None
 
             # BTC/ETH reference slices use the REF bar_idx (they're always aligned)
-            btc_slice = _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1, rolling=True) if btc_sym in ohlcv_4h else None
-            eth_slice = _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1, rolling=True) if eth_sym in ohlcv_4h else None
+            # Skip beta for /BTC pairs (currency mismatch with USD reference)
+            quote = symbol.split("/")[1] if "/" in symbol else "USDT"
+            is_btc_quoted = quote == "BTC"
+
+            btc_slice = None if is_btc_quoted else (
+                _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1, rolling=True) if btc_sym in ohlcv_4h else None
+            )
+            eth_slice = None if is_btc_quoted else (
+                _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1, rolling=True) if eth_sym in ohlcv_4h else None
+            )
 
             try:
                 result = _process_symbol(
@@ -241,7 +249,7 @@ async def run_replay(
 
         # --- Step 3: Detect divergences ---
         btc_regime = next(
-            (r["regime"] for r in bar_results_raw if "BTC" in r["symbol"]),
+            (r["regime"] for r in bar_results_raw if r["symbol"] == "BTC/USDT"),
             "FLAT",
         )
         for r in bar_results_raw:
@@ -258,8 +266,15 @@ async def run_replay(
                     continue
                 slice_1d = _slice_ohlcv(ohlcv_1d[symbol], daily_idx, rolling=True)
                 weekly = _find_weekly_slice(ohlcv_1w.get(symbol), current_ts) if symbol in ohlcv_1w else None
-                btc_1d = _slice_ohlcv(ohlcv_1d[btc_sym], daily_idx, rolling=True) if btc_sym in ohlcv_1d else None
-                eth_1d = _slice_ohlcv(ohlcv_1d[eth_sym], daily_idx, rolling=True) if eth_sym in ohlcv_1d else None
+                # Skip BTC/ETH reference for /BTC pairs (currency mismatch)
+                sym_quote = symbol.split("/")[1] if "/" in symbol else "USDT"
+                sym_is_btc_quoted = sym_quote == "BTC"
+                btc_1d = None if sym_is_btc_quoted else (
+                    _slice_ohlcv(ohlcv_1d[btc_sym], daily_idx, rolling=True) if btc_sym in ohlcv_1d else None
+                )
+                eth_1d = None if sym_is_btc_quoted else (
+                    _slice_ohlcv(ohlcv_1d[eth_sym], daily_idx, rolling=True) if eth_sym in ohlcv_1d else None
+                )
 
                 try:
                     cached_1d_results[symbol] = _process_symbol(

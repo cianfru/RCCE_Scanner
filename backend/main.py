@@ -64,15 +64,16 @@ async def _load_exchange_symbols() -> List[dict]:
                 exchange = getattr(ccxt, exch_id)({"enableRateLimit": True})
                 await exchange.load_markets()
                 for sym, market in exchange.markets.items():
-                    if sym not in seen and market.get("quote") == "USDT" and market.get("active", True):
+                    quote = market.get("quote", "")
+                    if sym not in seen and quote in ("USDT", "BTC") and market.get("active", True):
                         seen.add(sym)
                         symbols.append({
                             "symbol": sym,
                             "base": market.get("base", ""),
-                            "quote": market.get("quote", ""),
+                            "quote": quote,
                         })
                 await exchange.close()
-                logger.info("Loaded %d USDT pairs from %s", len(symbols), exch_id)
+                logger.info("Loaded %d USDT+BTC pairs from %s", len(symbols), exch_id)
             except Exception as exc:
                 logger.warning("Failed to load markets from %s: %s", exch_id, exc)
 
@@ -263,7 +264,7 @@ async def remove_from_watchlist(symbol: str):
 
 @app.get("/api/watchlist/search")
 async def search_symbols(q: str = Query(..., min_length=1, description="Search query")):
-    """Search available USDT trading pairs on supported exchanges."""
+    """Search available USDT and BTC trading pairs on supported exchanges."""
     available = await _load_exchange_symbols()
     query = q.upper()
     matches = [

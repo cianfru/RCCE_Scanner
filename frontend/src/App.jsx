@@ -317,11 +317,11 @@ function ConfluenceBadge({ score, label }) {
 
 // Cell renderer for column-based rendering
 function CellContent({ colLabel, row, isMobile }) {
-  const cellPad = isMobile ? "10px 10px" : "12px 14px";
+  const cellPad = isMobile ? "8px 8px" : "10px 10px";
   switch (colLabel) {
     case "SYMBOL":
       return (
-        <td style={{ padding: isMobile ? "10px 10px" : "12px 16px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 13, letterSpacing: "0.02em" }}>
+        <td style={{ padding: isMobile ? "8px 8px" : "10px 10px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 12, letterSpacing: "0.02em" }}>
           {getBaseSymbol(row.symbol)}
         </td>
       );
@@ -578,7 +578,7 @@ function ConsensusBar({ consensus, isMobile }) {
 
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
-  const hPad = isMobile ? 16 : isTablet ? 24 : 32;
+  const hPad = isMobile ? 12 : isTablet ? 20 : 24;
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -770,8 +770,8 @@ export default function App() {
             key={label}
             onClick={() => key && onSort(key)}
             style={{
-              padding: isMobile ? "10px 10px" : "12px 16px", textAlign: "left",
-              fontFamily: T.font, fontSize: isMobile ? 9 : 11, fontWeight: 700,
+              padding: isMobile ? "8px 8px" : "10px 10px", textAlign: "left",
+              fontFamily: T.font, fontSize: isMobile ? 9 : 10, fontWeight: 700,
               color: currentSort === key ? T.accent : T.text3,
               letterSpacing: "0.1em", cursor: key ? "pointer" : "default",
               userSelect: "none", whiteSpace: "nowrap",
@@ -931,6 +931,7 @@ export default function App() {
               objectFit: "contain",
               flexShrink: 0,
               display: "block",
+              margin: isMobile ? "6px 0" : "8px 0",
             }}
           />
           {scanRunning && (
@@ -1083,7 +1084,7 @@ export default function App() {
       )}
 
       {/* ── MAIN CONTENT ── */}
-      <div style={{ padding: `${isMobile ? 16 : 20}px ${hPad}px`, paddingBottom: isMobile ? 80 : 60 }}>
+      <div style={{ paddingTop: isMobile ? 16 : 20, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60 }}>
 
         {/* Summary + Stats (hidden on backtest tab) */}
         {activeTab !== "backtest" && activeTab !== "executor" && (data4h.length > 0 || data1d.length > 0) && (

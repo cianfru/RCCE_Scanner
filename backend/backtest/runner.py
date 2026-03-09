@@ -228,17 +228,21 @@ async def _run_backtest_task(
         result.status = "fetching"
         result.progress = 5.0
 
+        # Always include BTC/USDT + ETH/USDT reference data
+        # (needed for beta calculation, BMSB macro filter, divergence)
+        fetch_symbols = list(dict.fromkeys(symbols + ["BTC/USDT", "ETH/USDT"]))
+
         # Fetch 3 timeframes sequentially to avoid exchange rate limits
         ohlcv_4h = await fetch_historical_batch(
-            symbols, "4h", config.start_date, config.end_date, warmup_bars=WARMUP_BARS,
+            fetch_symbols, "4h", config.start_date, config.end_date, warmup_bars=WARMUP_BARS,
         )
         result.progress = 10.0
         ohlcv_1d = await fetch_historical_batch(
-            symbols, "1d", config.start_date, config.end_date, warmup_bars=60,
+            fetch_symbols, "1d", config.start_date, config.end_date, warmup_bars=60,
         )
         result.progress = 18.0
         ohlcv_1w = await fetch_historical_batch(
-            symbols, "1w", config.start_date, config.end_date, warmup_bars=30,
+            fetch_symbols, "1w", config.start_date, config.end_date, warmup_bars=30,
         )
 
         result.symbols_loaded = len(ohlcv_4h)

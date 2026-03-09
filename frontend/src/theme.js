@@ -94,6 +94,7 @@ export function zBar(z) {
 }
 
 export function getBaseSymbol(sym) {
+  if (sym.endsWith("/BTC")) return sym.replace("/BTC", "/\u20bf");
   return sym.replace("/USDT", "");
 }
 
