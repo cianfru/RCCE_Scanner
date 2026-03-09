@@ -154,15 +154,8 @@ def synthesize_signal(
         out.warnings = [f"Heat at {heat}/100 — forced exit"]
         return out
 
-    # 1b. Exhaustion ABSORBING → institutional accumulation signal
-    # When macro_blocked, skip — no long entries in bear macro regime.
-    if exhaustion_state == "ABSORBING" and not macro_blocked:
-        out.signal = "ACCUMULATE"
-        out.reason = "Absorption detected — institutional accumulation in exhaustion engine"
-        out.warnings = ["Absorption phase: declining volume on dips suggests accumulation"]
-        return out
-
-    # 1c. BLOWOFF exits (only when z is extended)
+    # 1b. BLOWOFF exits (only when z is extended)
+    # (Absorption-as-entry moved to Step 2, gated by regime/consensus/heat)
     if regime == "BLOWOFF":
         if z > Z_TRIM_HARD:
             out.signal = "TRIM_HARD"
@@ -344,6 +337,23 @@ def synthesize_signal(
             # Not fearful enough — signal as WAIT with note
             warnings.append(f"ACCUM conditions met but F&G={fear_greed} > {FNG_FEAR} — waiting for fear")
             # Fall through to LIGHT_LONG evaluation
+
+    # --- ACCUMULATE via absorption (non-CAP regimes) ---
+    # Absorption = declining volume on dips → institutional accumulation.
+    # Only valid in ACCUM/REACC regimes with supportive consensus.
+    # CAP absorption has its own path below; MARKUP/BLOWOFF are above BMSB
+    # where absorption is contradictory.
+    if (
+        is_absorption
+        and regime in ("ACCUM", "REACC")
+        and mkt_consensus != "RISK-OFF"
+        and confidence > CONF_ACCUM      # 0.40
+        and heat < 70
+    ):
+        out.signal = "ACCUMULATE"
+        out.reason = " + ".join(_reason_parts()) + " [absorption in " + regime + "]"
+        out.warnings = warnings
+        return out
 
     # --- REVIVAL_SEED: CAP with strong bottom signals ---
     # Gated by Fear & Greed: revival seeds only in Fear territory
