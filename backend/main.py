@@ -4,6 +4,7 @@ FastAPI backend for multi-signal crypto scanning
 """
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -31,7 +32,13 @@ from models import (
     ExecutorTradeResponse,
     WhitelistUpdate,
     WhitelistAddRequest,
+    PortfolioGroupResponse,
+    PortfolioGroupCreate,
+    PortfolioGroupUpdate,
+    PortfolioGroupAddSymbol,
+    PortfolioGroupReorder,
 )
+from portfolio_groups import PortfolioGroupManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -81,10 +88,17 @@ async def _load_exchange_symbols() -> List[dict]:
         return _exchange_symbols
 
 
+def _sync_cache_symbols() -> None:
+    """Set cache.symbols to the union of all portfolio groups."""
+    mgr = PortfolioGroupManager.get()
+    cache.symbols = mgr.get_union_symbols()
+    logger.info("Cache symbols synced: %d symbols from %d groups", len(cache.symbols), len(mgr.groups))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """On startup, trigger an initial scan and start periodic refresh."""
-    # Run initial scan in background
+    """On startup, load portfolio groups and start periodic refresh."""
+    _sync_cache_symbols()
     asyncio.create_task(_periodic_scan())
     yield
 
@@ -312,6 +326,99 @@ async def full_watchlist():
     from data_fetcher import FULL_SYMBOLS
     cache.symbols = FULL_SYMBOLS.copy()
     return {"ok": True, "count": len(cache.symbols)}
+
+
+# ---------------------------------------------------------------------------
+# Portfolio group endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/groups")
+async def list_groups():
+    """List all portfolio groups."""
+    mgr = PortfolioGroupManager.get()
+    return [
+        PortfolioGroupResponse(**{
+            "id": g.id, "name": g.name, "symbols": g.symbols,
+            "color": g.color, "order": g.order, "pinned": g.pinned,
+        })
+        for g in mgr.get_all()
+    ]
+
+
+@app.post("/api/groups")
+async def create_group(body: PortfolioGroupCreate):
+    """Create a new portfolio group."""
+    mgr = PortfolioGroupManager.get()
+    group = mgr.create_group(name=body.name, symbols=body.symbols, color=body.color)
+    _sync_cache_symbols()
+    return PortfolioGroupResponse(**{
+        "id": group.id, "name": group.name, "symbols": group.symbols,
+        "color": group.color, "order": group.order, "pinned": group.pinned,
+    })
+
+
+@app.put("/api/groups/{group_id}")
+async def update_group(group_id: str, body: PortfolioGroupUpdate):
+    """Update a group's name and/or color."""
+    mgr = PortfolioGroupManager.get()
+    group = mgr.update_group(group_id, name=body.name, color=body.color)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return PortfolioGroupResponse(**{
+        "id": group.id, "name": group.name, "symbols": group.symbols,
+        "color": group.color, "order": group.order, "pinned": group.pinned,
+    })
+
+
+@app.delete("/api/groups/{group_id}")
+async def delete_group(group_id: str):
+    """Delete a portfolio group. Pinned groups (Main, BTC) cannot be deleted."""
+    mgr = PortfolioGroupManager.get()
+    group = mgr.get_by_id(group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.pinned:
+        raise HTTPException(status_code=400, detail="Cannot delete pinned group")
+    mgr.delete_group(group_id)
+    _sync_cache_symbols()
+    return {"ok": True}
+
+
+@app.post("/api/groups/{group_id}/symbols")
+async def add_symbol_to_group(group_id: str, body: PortfolioGroupAddSymbol):
+    """Add a symbol to a portfolio group."""
+    mgr = PortfolioGroupManager.get()
+    group = mgr.add_symbol(group_id, body.symbol)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    _sync_cache_symbols()
+    return PortfolioGroupResponse(**{
+        "id": group.id, "name": group.name, "symbols": group.symbols,
+        "color": group.color, "order": group.order, "pinned": group.pinned,
+    })
+
+
+@app.delete("/api/groups/{group_id}/symbols/{symbol:path}")
+async def remove_symbol_from_group(group_id: str, symbol: str):
+    """Remove a symbol from a portfolio group."""
+    mgr = PortfolioGroupManager.get()
+    symbol = symbol.upper().replace("-", "/")
+    group = mgr.remove_symbol(group_id, symbol)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    _sync_cache_symbols()
+    return PortfolioGroupResponse(**{
+        "id": group.id, "name": group.name, "symbols": group.symbols,
+        "color": group.color, "order": group.order, "pinned": group.pinned,
+    })
+
+
+@app.post("/api/groups/reorder")
+async def reorder_groups(body: PortfolioGroupReorder):
+    """Reorder portfolio group tabs."""
+    mgr = PortfolioGroupManager.get()
+    mgr.reorder(body.order)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

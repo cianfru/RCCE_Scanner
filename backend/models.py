@@ -218,3 +218,35 @@ class ExecutorTradeResponse(BaseModel):
     pnl_pct: float = 0.0
     pnl_usd: float = 0.0
     order_ids: List[str] = []
+
+
+# ---------------------------------------------------------------------------
+# Portfolio group models
+# ---------------------------------------------------------------------------
+
+class PortfolioGroupResponse(BaseModel):
+    id: str
+    name: str
+    symbols: List[str] = []
+    color: str = "#22d3ee"
+    order: int = 0
+    pinned: bool = False
+
+
+class PortfolioGroupCreate(BaseModel):
+    name: str
+    symbols: List[str] = []
+    color: str = "#22d3ee"
+
+
+class PortfolioGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class PortfolioGroupAddSymbol(BaseModel):
+    symbol: str
+
+
+class PortfolioGroupReorder(BaseModel):
+    order: List[str]  # list of group IDs in desired order

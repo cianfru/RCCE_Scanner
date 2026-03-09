@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge } from "./theme.js";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge, MCAP_RANK } from "./theme.js";
 import SparklineCell from "./components/SparklineCell.jsx";
 import TradingViewWidget from "./components/TradingViewWidget.jsx";
 import BMSBChart from "./components/BMSBChart.jsx";
@@ -607,7 +607,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [sortKey, setSortKey] = useState("regime");
+  const [sortKey, setSortKey] = useState("symbol");
   const [activeTab, setActiveTab] = useState("4h");
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -615,18 +615,23 @@ export default function App() {
   const [globalMetrics, setGlobalMetrics] = useState(null);
   const [altSeason, setAltSeason] = useState(null);
 
-  // Sentiment & stablecoin (new)
+  // Sentiment & stablecoin
   const [sentiment, setSentiment] = useState(null);
   const [stablecoin, setStablecoin] = useState(null);
 
-  // Watchlist modal
-  const [showWatchlist, setShowWatchlist] = useState(false);
-  const [watchlistSymbols, setWatchlistSymbols] = useState([]);
+  // Portfolio groups
+  const [groups, setGroups] = useState([]);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null); // null=create, object=edit
+  const [groupName, setGroupName] = useState("");
+  const [groupColor, setGroupColor] = useState("#22d3ee");
+
+  // Symbol search (shared by group modal)
   const [watchlistSearch, setWatchlistSearch] = useState("");
   const [watchlistResults, setWatchlistResults] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [krakenPerpsLoading, setKrakenPerpsLoading] = useState(false);
-  const [krakenPerpsCount, setKrakenPerpsCount] = useState(null);
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -690,14 +695,76 @@ export default function App() {
     setTimeout(loadAll, 3000);
   };
 
-  // Watchlist management
-  const loadWatchlist = useCallback(async () => {
+  // ── Portfolio group management ───────────────────────────────────────────
+  const loadGroups = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/watchlist`);
+      const res = await fetch(`${API_BASE}/api/groups`);
       const data = await res.json();
-      setWatchlistSymbols(data.symbols || []);
+      setGroups(data || []);
+      // Auto-select first group if none active
+      if (!activeGroupId && data.length > 0) setActiveGroupId(data[0].id);
     } catch (_) {}
-  }, []);
+  }, [activeGroupId]);
+
+  useEffect(() => { loadGroups(); }, []);  // load on mount
+
+  const createGroup = async (name, symbols = [], color = "#22d3ee") => {
+    try {
+      const res = await fetch(`${API_BASE}/api/groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, symbols, color }),
+      });
+      if (res.ok) {
+        const g = await res.json();
+        await loadGroups();
+        setActiveGroupId(g.id);
+        return g;
+      }
+    } catch (_) {}
+  };
+
+  const updateGroup = async (id, updates) => {
+    try {
+      await fetch(`${API_BASE}/api/groups/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      await loadGroups();
+    } catch (_) {}
+  };
+
+  const deleteGroup = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/groups/${id}`, { method: "DELETE" });
+      await loadGroups();
+      // If deleted the active group, switch to first
+      if (activeGroupId === id) {
+        setActiveGroupId(groups.length > 1 ? groups.find(g => g.id !== id)?.id : null);
+      }
+    } catch (_) {}
+  };
+
+  const addSymbolToGroup = async (groupId, symbol) => {
+    try {
+      await fetch(`${API_BASE}/api/groups/${groupId}/symbols`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      await loadGroups();
+      setWatchlistSearch("");
+      setWatchlistResults([]);
+    } catch (_) {}
+  };
+
+  const removeSymbolFromGroup = async (groupId, symbol) => {
+    try {
+      await fetch(`${API_BASE}/api/groups/${groupId}/symbols/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+      await loadGroups();
+    } catch (_) {}
+  };
 
   const searchSymbols = useCallback(async (q) => {
     if (!q || q.length < 1) { setWatchlistResults([]); return; }
@@ -713,49 +780,6 @@ export default function App() {
     }
   }, []);
 
-  const addSymbol = async (symbol) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/watchlist/add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol }),
-      });
-      if (res.ok) {
-        await loadWatchlist();
-        setWatchlistSearch("");
-        setWatchlistResults([]);
-      }
-    } catch (_) {}
-  };
-
-  const removeSymbol = async (symbol) => {
-    try {
-      await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" });
-      await loadWatchlist();
-    } catch (_) {}
-  };
-
-  const resetWatchlist = async () => {
-    try {
-      await fetch(`${API_BASE}/api/watchlist/reset`, { method: "POST" });
-      await loadWatchlist();
-    } catch (_) {}
-  };
-
-  const clearWatchlist = async () => {
-    try {
-      await fetch(`${API_BASE}/api/watchlist/clear`, { method: "POST" });
-      await loadWatchlist();
-    } catch (_) {}
-  };
-
-  const loadFullList = async () => {
-    try {
-      await fetch(`${API_BASE}/api/watchlist/full`, { method: "POST" });
-      await loadWatchlist();
-    } catch (_) {}
-  };
-
   // Backtest badge: fetch symbols from completed backtests
   const refreshBacktestSymbols = useCallback(async () => {
     try {
@@ -767,22 +791,23 @@ export default function App() {
 
   useEffect(() => { refreshBacktestSymbols(); }, [refreshBacktestSymbols]);
 
-  // Kraken perps: load perpetual contracts as watchlist
-  const loadKrakenPerps = async () => {
+  // Kraken perps: add perpetual contracts to editing group
+  const loadKrakenPerps = async (groupId) => {
+    if (!groupId) return;
     setKrakenPerpsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/perpetuals/kraken`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
-        setKrakenPerpsCount(data.count || data.symbols.length);
-        // Merge with current watchlist (deduplicated)
-        const merged = [...new Set([...watchlistSymbols, ...data.symbols])];
-        await fetch(`${API_BASE}/api/watchlist`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbols: merged }),
-        });
-        await loadWatchlist();
+        // Add each symbol to the group
+        for (const sym of data.symbols) {
+          await fetch(`${API_BASE}/api/groups/${groupId}/symbols`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: sym }),
+          });
+        }
+        await loadGroups();
       }
     } catch (e) {
       console.error("Kraken perps fetch failed:", e);
@@ -796,13 +821,42 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [watchlistSearch, searchSymbols]);
 
-  // Load watchlist when modal opens
-  useEffect(() => {
-    if (showWatchlist) loadWatchlist();
-  }, [showWatchlist, loadWatchlist]);
+  // Active group filtering
+  const activeGroup = useMemo(() => groups.find(g => g.id === activeGroupId), [groups, activeGroupId]);
+  const activeGroupSymbols = useMemo(() => {
+    if (!activeGroup) return null;
+    return new Set(activeGroup.symbols);
+  }, [activeGroup]);
+
+  // Filter scan data by active group
+  const filtered4h = useMemo(() => {
+    if (!activeGroupSymbols) return data4h;
+    return data4h.filter(r => activeGroupSymbols.has(r.symbol));
+  }, [data4h, activeGroupSymbols]);
+
+  const filtered1d = useMemo(() => {
+    if (!activeGroupSymbols) return data1d;
+    return data1d.filter(r => activeGroupSymbols.has(r.symbol));
+  }, [data1d, activeGroupSymbols]);
+
+  // Group performance badges
+  const computeGroupPerf = useCallback((groupSymbols, scanData) => {
+    if (!groupSymbols || groupSymbols.length === 0) return null;
+    const symSet = new Set(groupSymbols);
+    const btcMom = scanData.find(r => r.symbol === "BTC/USDT")?.momentum ?? 0;
+    const members = scanData.filter(r => symSet.has(r.symbol));
+    if (members.length === 0) return null;
+    const beating = members.filter(r => (r.momentum ?? 0) > btcMom).length;
+    return { beating, total: members.length };
+  }, []);
 
   const sortResults = (results) => {
     return [...results].sort((a, b) => {
+      if (sortKey === "mcap" || sortKey === "symbol") {
+        const ra = MCAP_RANK[a.symbol] ?? 999;
+        const rb = MCAP_RANK[b.symbol] ?? 999;
+        return ra - rb;
+      }
       if (sortKey === "regime") {
         const ri = REGIME_ORDER.indexOf(a.regime) - REGIME_ORDER.indexOf(b.regime);
         if (ri !== 0) return ri;
@@ -810,18 +864,18 @@ export default function App() {
       }
       if (sortKey === "zscore") return (b.zscore || 0) - (a.zscore || 0);
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
-      if (sortKey === "symbol") return a.symbol.localeCompare(b.symbol);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
       if (sortKey === "conditions") return (b.conditions_met || 0) - (a.conditions_met || 0);
       return 0;
     });
   };
 
-  const sorted4h = sortResults(data4h);
-  const sorted1d = sortResults(data1d);
+  const sorted4h = sortResults(filtered4h);
+  const sorted1d = sortResults(filtered1d);
   const SIGNALS_NOTABLE = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "TRIM", "RISK_OFF"];
   const notable4h = sorted4h.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
+  const activeGroupCount = activeGroup ? activeGroup.symbols.length : 0;
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
 
   // Visible columns based on viewport width
@@ -1039,7 +1093,88 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── CONTROLS ── */}
+      {/* ── GROUP TABS (Level 1) ── */}
+      <div style={{
+        padding: `6px ${hPad}px`,
+        borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 4,
+        background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%)",
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "none", msOverflowStyle: "none",
+      }}>
+        {groups.map(g => {
+          const isActive = g.id === activeGroupId;
+          const perf = computeGroupPerf(g.symbols, activeTab === "1d" ? data1d : data4h);
+          const gColor = g.color || T.accent;
+          return (
+            <button
+              key={g.id}
+              onClick={() => setActiveGroupId(g.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setEditingGroup(g);
+                setGroupName(g.name);
+                setGroupColor(g.color || "#22d3ee");
+                setWatchlistSearch("");
+                setWatchlistResults([]);
+                setShowGroupModal(true);
+              }}
+              style={{
+                padding: isMobile ? "7px 14px" : "6px 16px",
+                borderRadius: 10,
+                border: `1px solid ${isActive ? gColor + "50" : T.border}`,
+                background: isActive
+                  ? `${gColor}15`
+                  : "transparent",
+                color: isActive ? gColor : T.text3,
+                fontFamily: T.mono, fontSize: 11, cursor: "pointer",
+                fontWeight: isActive ? 700 : 500,
+                letterSpacing: "0.04em",
+                transition: "all 0.2s ease",
+                display: "flex", alignItems: "center", gap: 6,
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {g.name}
+              {perf && perf.total > 0 && (
+                <span style={{
+                  fontSize: 9, fontWeight: 600,
+                  color: perf.beating > perf.total / 2 ? "#34d399" : "#f87171",
+                  opacity: isActive ? 1 : 0.6,
+                }}>
+                  {perf.beating}/{perf.total}{perf.beating > perf.total / 2 ? "\u25b2" : "\u25bc"}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        {/* Add group button */}
+        <button
+          onClick={() => {
+            setEditingGroup(null);
+            setGroupName("");
+            setGroupColor("#22d3ee");
+            setWatchlistSearch("");
+            setWatchlistResults([]);
+            setShowGroupModal(true);
+          }}
+          style={{
+            padding: "6px 12px", borderRadius: 10,
+            border: `1px dashed ${T.border}`,
+            background: "transparent", color: T.text4,
+            fontFamily: T.mono, fontSize: 13, cursor: "pointer",
+            fontWeight: 400, transition: "all 0.2s ease",
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.color = T.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text4; }}
+        >
+          +
+        </button>
+      </div>
+
+      {/* ── CONTROLS (Level 2: Timeframe tabs + Filters) ── */}
       <div style={{
         padding: `10px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
@@ -1082,20 +1217,29 @@ export default function App() {
 
         {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
-        {/* Manage Watchlist */}
-        <button
-          className="apple-btn"
-          onClick={() => setShowWatchlist(true)}
-          style={{
-            padding: isMobile ? "8px 14px" : "6px 14px",
-            fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-            letterSpacing: "0.04em",
-            display: "flex", alignItems: "center", gap: 6,
-          }}
-        >
-          <span style={{ fontSize: 12 }}>{"\u2699"}</span>
-          {!isMobile && "Watchlist"}
-        </button>
+        {/* Edit active group */}
+        {activeGroup && (
+          <button
+            className="apple-btn"
+            onClick={() => {
+              setEditingGroup(activeGroup);
+              setGroupName(activeGroup.name);
+              setGroupColor(activeGroup.color || "#22d3ee");
+              setWatchlistSearch("");
+              setWatchlistResults([]);
+              setShowGroupModal(true);
+            }}
+            style={{
+              padding: isMobile ? "8px 14px" : "6px 14px",
+              fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+              letterSpacing: "0.04em",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 12 }}>{"\u2699"}</span>
+            {!isMobile && `${activeGroup.name} (${activeGroup.symbols.length})`}
+          </button>
+        )}
 
         {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
@@ -1415,262 +1559,352 @@ export default function App() {
         )}
       </div>
 
-      {/* ── WATCHLIST MODAL ── */}
-      {showWatchlist && (
-        <>
-          <div
-            onClick={() => setShowWatchlist(false)}
-            style={{
-              position: "fixed", inset: 0, zIndex: 299,
-              background: "rgba(0,0,0,0.6)",
-            }}
-          />
-          <div style={{
-            position: "fixed",
-            top: isMobile ? "5%" : "50%",
-            left: isMobile ? "3%" : "50%",
-            transform: isMobile ? "none" : "translate(-50%, -50%)",
-            width: isMobile ? "94%" : 480,
-            maxHeight: isMobile ? "90vh" : "80vh",
-            background: "linear-gradient(180deg, rgba(28,28,30,0.97) 0%, rgba(10,10,12,0.98) 100%)",
-            backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)",
-            border: `1px solid ${T.borderH}`,
-            borderRadius: T.radius,
-            zIndex: 300,
-            display: "flex", flexDirection: "column",
-            boxShadow: "0 24px 80px rgba(0,0,0,0.85), 0 0 1px rgba(255,255,255,0.1)",
-          }}>
-            {/* Modal Header */}
+      {/* ── GROUP MANAGEMENT MODAL ── */}
+      {showGroupModal && (() => {
+        const isEditing = editingGroup != null;
+        const modalGroupId = editingGroup?.id;
+        const modalSymbols = isEditing ? (groups.find(g => g.id === modalGroupId)?.symbols || []) : [];
+        const usdtPairs = modalSymbols.filter(s => s.endsWith("/USDT"));
+        const btcPairs = modalSymbols.filter(s => s.endsWith("/BTC"));
+
+        return (
+          <>
+            <div
+              onClick={() => setShowGroupModal(false)}
+              style={{
+                position: "fixed", inset: 0, zIndex: 299,
+                background: "rgba(0,0,0,0.6)",
+              }}
+            />
             <div style={{
-              padding: "18px 20px", borderBottom: `1px solid ${T.border}`,
-              display: "flex", justifyContent: "space-between", alignItems: "center",
+              position: "fixed",
+              top: isMobile ? "5%" : "50%",
+              left: isMobile ? "3%" : "50%",
+              transform: isMobile ? "none" : "translate(-50%, -50%)",
+              width: isMobile ? "94%" : 480,
+              maxHeight: isMobile ? "90vh" : "80vh",
+              background: "linear-gradient(180deg, rgba(28,28,30,0.97) 0%, rgba(10,10,12,0.98) 100%)",
+              backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)",
+              border: `1px solid ${T.borderH}`,
+              borderRadius: T.radius,
+              zIndex: 300,
+              display: "flex", flexDirection: "column",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.85), 0 0 1px rgba(255,255,255,0.1)",
             }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.01em" }}>
-                  Manage Watchlist
-                </div>
-                <div style={{ fontSize: 10, color: T.text4, fontFamily: T.mono, marginTop: 3 }}>
-                  {watchlistSymbols.length} symbols tracked
-                </div>
-              </div>
-              <button
-                className="apple-btn"
-                onClick={() => setShowWatchlist(false)}
-                style={{
-                  borderRadius: "50%", width: 28, height: 28, padding: 0,
-                  fontSize: 12,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-              >{"\u2715"}</button>
-            </div>
-
-            {/* Search */}
-            <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ position: "relative" }}>
-                <input
-                  type="text"
-                  placeholder="Search symbols (e.g. DOGE, SUI)..."
-                  value={watchlistSearch}
-                  onChange={e => setWatchlistSearch(e.target.value)}
-                  style={{
-                    width: "100%", padding: "10px 14px", paddingLeft: 36,
-                    background: T.surface, border: `1px solid ${T.border}`,
-                    borderRadius: T.radiusSm, color: T.text1,
-                    fontFamily: T.mono, fontSize: 12, outline: "none",
-                    transition: "border-color 0.2s",
-                  }}
-                  onFocus={e => e.target.style.borderColor = T.accent + "40"}
-                  onBlur={e => e.target.style.borderColor = T.border}
-                />
-                <span style={{
-                  position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
-                  fontSize: 14, color: T.text4,
-                }}>{"\ud83d\udd0d"}</span>
-              </div>
-
-              {/* Search results dropdown */}
-              {watchlistSearch && watchlistResults.length > 0 && (
-                <div style={{
-                  marginTop: 6, maxHeight: 200, overflowY: "auto",
-                  background: "rgba(24,24,27,0.98)", border: `1px solid ${T.border}`,
-                  borderRadius: T.radiusSm,
-                }}>
-                  {watchlistResults.slice(0, 20).map(r => {
-                    const inList = watchlistSymbols.includes(r.symbol);
-                    return (
-                      <div
-                        key={r.symbol}
-                        onClick={() => !inList && addSymbol(r.symbol)}
-                        style={{
-                          padding: "8px 14px", cursor: inList ? "default" : "pointer",
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          borderBottom: `1px solid ${T.border}`,
-                          opacity: inList ? 0.4 : 1,
-                          transition: "background 0.15s",
-                        }}
-                        onMouseEnter={e => { if (!inList) e.currentTarget.style.background = T.surfaceH; }}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                      >
-                        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
-                          {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
-                        </span>
-                        {inList ? (
-                          <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
-                        ) : (
-                          <span style={{ fontSize: 9, color: T.accent, fontFamily: T.mono, fontWeight: 600 }}>+ Add</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {watchlistSearch && watchlistResults.length === 0 && !watchlistLoading && (
-                <div style={{ marginTop: 8, fontSize: 10, color: T.text4, fontFamily: T.mono, textAlign: "center" }}>
-                  No matches found
-                </div>
-              )}
-            </div>
-
-            {/* Current watchlist — split by quote currency */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
-              {(() => {
-                const usdtPairs = watchlistSymbols.filter(s => s.endsWith("/USDT"));
-                const btcPairs = watchlistSymbols.filter(s => s.endsWith("/BTC"));
-                const renderChips = (syms, borderAccent) => (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {syms.map(sym => (
-                      <span
-                        key={sym}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6,
-                          padding: "5px 10px", borderRadius: "20px",
-                          background: T.surface,
-                          border: `1px solid ${borderAccent || T.border}`,
-                          fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
-                        }}
-                      >
-                        {getBaseSymbol(sym)}
-                        <span
-                          onClick={() => removeSymbol(sym)}
+              {/* Modal Header */}
+              <div style={{
+                padding: "18px 20px", borderBottom: `1px solid ${T.border}`,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <div style={{ flex: 1 }}>
+                  {isEditing ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="text"
+                          value={groupName}
+                          onChange={e => setGroupName(e.target.value)}
+                          onBlur={() => { if (groupName && groupName !== editingGroup.name) updateGroup(modalGroupId, { name: groupName }); }}
                           style={{
-                            cursor: "pointer", color: T.text4, fontSize: 10,
-                            display: "flex", alignItems: "center",
-                            transition: "color 0.15s",
+                            fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font,
+                            letterSpacing: "-0.01em", background: "transparent", border: "none",
+                            borderBottom: `1px solid ${T.border}`, outline: "none",
+                            padding: "2px 0", width: "auto", minWidth: 100,
                           }}
-                          onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
-                          onMouseLeave={e => e.currentTarget.style.color = T.text4}
-                        >{"\u2715"}</span>
-                      </span>
-                    ))}
-                  </div>
-                );
-                return (
-                  <>
-                    {usdtPairs.length > 0 && (
-                      <>
-                        <div style={{
-                          fontSize: 9, fontFamily: T.mono, color: T.text4,
-                          fontWeight: 600, letterSpacing: "0.08em",
-                          marginBottom: 6, textTransform: "uppercase",
-                        }}>
-                          USDT Pairs ({usdtPairs.length})
+                        />
+                        {/* Color swatches */}
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24", "#67e8f9"].map(c => (
+                            <span
+                              key={c}
+                              onClick={() => { setGroupColor(c); updateGroup(modalGroupId, { color: c }); }}
+                              style={{
+                                width: 16, height: 16, borderRadius: "50%", cursor: "pointer",
+                                background: c,
+                                border: groupColor === c ? "2px solid white" : "2px solid transparent",
+                                transition: "border 0.15s",
+                              }}
+                            />
+                          ))}
                         </div>
-                        {renderChips(usdtPairs, null)}
-                      </>
-                    )}
-                    {btcPairs.length > 0 && (
-                      <>
-                        <div style={{
-                          fontSize: 9, fontFamily: T.mono, color: "#fb923c",
-                          fontWeight: 600, letterSpacing: "0.08em",
-                          marginTop: usdtPairs.length > 0 ? 14 : 0, marginBottom: 6,
-                          textTransform: "uppercase",
-                        }}>
-                          BTC Pairs ({btcPairs.length})
+                      </div>
+                      <div style={{ fontSize: 10, color: T.text4, fontFamily: T.mono, marginTop: 3 }}>
+                        {modalSymbols.length} symbols {editingGroup.pinned && "\u00b7 Pinned"}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.01em" }}>
+                        Create New Group
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                        <input
+                          type="text"
+                          placeholder="Group name (e.g. Memes, L1, DeFi)..."
+                          value={groupName}
+                          onChange={e => setGroupName(e.target.value)}
+                          style={{
+                            flex: 1, padding: "8px 12px",
+                            background: T.surface, border: `1px solid ${T.border}`,
+                            borderRadius: T.radiusSm, color: T.text1,
+                            fontFamily: T.mono, fontSize: 12, outline: "none",
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 3 }}>
+                          {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24"].map(c => (
+                            <span
+                              key={c}
+                              onClick={() => setGroupColor(c)}
+                              style={{
+                                width: 14, height: 14, borderRadius: "50%", cursor: "pointer",
+                                background: c,
+                                border: groupColor === c ? "2px solid white" : "2px solid transparent",
+                              }}
+                            />
+                          ))}
                         </div>
-                        {renderChips(btcPairs, "rgba(251,146,60,0.25)")}
-                      </>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button
+                  className="apple-btn"
+                  onClick={() => setShowGroupModal(false)}
+                  style={{
+                    borderRadius: "50%", width: 28, height: 28, padding: 0,
+                    fontSize: 12, flexShrink: 0, marginLeft: 12,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >{"\u2715"}</button>
+              </div>
 
-            {/* Modal Footer */}
-            <div style={{
-              padding: "12px 20px", borderTop: `1px solid ${T.border}`,
-              display: "flex", flexDirection: "column", gap: 8,
-            }}>
-              {/* Row 1: bulk actions */}
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="apple-btn"
-                  onClick={clearWatchlist}
-                  style={{
-                    flex: 1, padding: "7px 12px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                    letterSpacing: "0.04em", color: "#f87171",
-                    borderColor: "rgba(248,113,113,0.2)",
-                  }}
-                >
-                  Clear All
-                </button>
-                <button
-                  className="apple-btn"
-                  onClick={loadFullList}
-                  style={{
-                    flex: 1, padding: "7px 12px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Full List (65)
-                </button>
-              </div>
-              {/* Row 2: presets + actions */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <button
-                  className="apple-btn"
-                  onClick={resetWatchlist}
-                  style={{
-                    padding: "8px 18px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Defaults (25)
-                </button>
-                <button
-                  className="apple-btn"
-                  onClick={loadKrakenPerps}
-                  disabled={krakenPerpsLoading}
-                  style={{
-                    padding: "8px 18px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 600,
-                    letterSpacing: "0.04em",
-                    color: "#fb923c",
-                    borderColor: "rgba(251,146,60,0.2)",
-                    opacity: krakenPerpsLoading ? 0.5 : 1,
-                  }}
-                >
-                  {krakenPerpsLoading ? "Loading..." : `+ Kraken Perps${krakenPerpsCount ? ` (${krakenPerpsCount})` : ""}`}
-                </button>
-                <button
-                  className="apple-btn apple-btn-accent"
-                  onClick={() => { setShowWatchlist(false); triggerScan(); }}
-                  style={{
-                    padding: "8px 22px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  Scan Now
-                </button>
+              {/* Search (visible in edit mode or after creating) */}
+              {isEditing && (
+                <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      placeholder="Search symbols to add (e.g. DOGE, SUI)..."
+                      value={watchlistSearch}
+                      onChange={e => setWatchlistSearch(e.target.value)}
+                      style={{
+                        width: "100%", padding: "10px 14px", paddingLeft: 36,
+                        background: T.surface, border: `1px solid ${T.border}`,
+                        borderRadius: T.radiusSm, color: T.text1,
+                        fontFamily: T.mono, fontSize: 12, outline: "none",
+                        transition: "border-color 0.2s",
+                      }}
+                      onFocus={e => e.target.style.borderColor = T.accent + "40"}
+                      onBlur={e => e.target.style.borderColor = T.border}
+                    />
+                    <span style={{
+                      position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                      fontSize: 14, color: T.text4,
+                    }}>{"\ud83d\udd0d"}</span>
+                  </div>
+
+                  {/* Search results dropdown */}
+                  {watchlistSearch && watchlistResults.length > 0 && (
+                    <div style={{
+                      marginTop: 6, maxHeight: 200, overflowY: "auto",
+                      background: "rgba(24,24,27,0.98)", border: `1px solid ${T.border}`,
+                      borderRadius: T.radiusSm,
+                    }}>
+                      {watchlistResults.slice(0, 20).map(r => {
+                        const inList = modalSymbols.includes(r.symbol);
+                        return (
+                          <div
+                            key={r.symbol}
+                            onClick={() => !inList && addSymbolToGroup(modalGroupId, r.symbol)}
+                            style={{
+                              padding: "8px 14px", cursor: inList ? "default" : "pointer",
+                              display: "flex", justifyContent: "space-between", alignItems: "center",
+                              borderBottom: `1px solid ${T.border}`,
+                              opacity: inList ? 0.4 : 1,
+                              transition: "background 0.15s",
+                            }}
+                            onMouseEnter={e => { if (!inList) e.currentTarget.style.background = T.surfaceH; }}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
+                              {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
+                            </span>
+                            {inList ? (
+                              <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
+                            ) : (
+                              <span style={{ fontSize: 9, color: T.accent, fontFamily: T.mono, fontWeight: 600 }}>+ Add</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {watchlistSearch && watchlistResults.length === 0 && !watchlistLoading && (
+                    <div style={{ marginTop: 8, fontSize: 10, color: T.text4, fontFamily: T.mono, textAlign: "center" }}>
+                      No matches found
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Symbol chips (edit mode) */}
+              {isEditing && (
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+                  {usdtPairs.length > 0 && (
+                    <>
+                      <div style={{
+                        fontSize: 9, fontFamily: T.mono, color: T.text4,
+                        fontWeight: 600, letterSpacing: "0.08em",
+                        marginBottom: 6, textTransform: "uppercase",
+                      }}>
+                        USDT Pairs ({usdtPairs.length})
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {usdtPairs.map(sym => (
+                          <span
+                            key={sym}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "5px 10px", borderRadius: "20px",
+                              background: T.surface, border: `1px solid ${T.border}`,
+                              fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
+                            }}
+                          >
+                            {getBaseSymbol(sym)}
+                            <span
+                              onClick={() => removeSymbolFromGroup(modalGroupId, sym)}
+                              style={{ cursor: "pointer", color: T.text4, fontSize: 10, display: "flex", alignItems: "center", transition: "color 0.15s" }}
+                              onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
+                              onMouseLeave={e => e.currentTarget.style.color = T.text4}
+                            >{"\u2715"}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {btcPairs.length > 0 && (
+                    <>
+                      <div style={{
+                        fontSize: 9, fontFamily: T.mono, color: "#fb923c",
+                        fontWeight: 600, letterSpacing: "0.08em",
+                        marginTop: usdtPairs.length > 0 ? 14 : 0, marginBottom: 6,
+                        textTransform: "uppercase",
+                      }}>
+                        BTC Pairs ({btcPairs.length})
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {btcPairs.map(sym => (
+                          <span
+                            key={sym}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "5px 10px", borderRadius: "20px",
+                              background: T.surface, border: `1px solid rgba(251,146,60,0.25)`,
+                              fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
+                            }}
+                          >
+                            {getBaseSymbol(sym)}
+                            <span
+                              onClick={() => removeSymbolFromGroup(modalGroupId, sym)}
+                              style={{ cursor: "pointer", color: T.text4, fontSize: 10, display: "flex", alignItems: "center", transition: "color 0.15s" }}
+                              onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
+                              onMouseLeave={e => e.currentTarget.style.color = T.text4}
+                            >{"\u2715"}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {modalSymbols.length === 0 && (
+                    <div style={{ padding: "30px 0", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: 11 }}>
+                      No symbols yet. Use the search above to add symbols.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div style={{
+                padding: "12px 20px", borderTop: `1px solid ${T.border}`,
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+              }}>
+                {isEditing ? (
+                  <>
+                    {/* Delete (only for non-pinned) */}
+                    {!editingGroup.pinned && (
+                      <button
+                        className="apple-btn"
+                        onClick={async () => { await deleteGroup(modalGroupId); setShowGroupModal(false); }}
+                        style={{
+                          padding: "8px 16px", fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                          letterSpacing: "0.04em", color: "#f87171", borderColor: "rgba(248,113,113,0.2)",
+                        }}
+                      >
+                        Delete Group
+                      </button>
+                    )}
+                    <div style={{ flex: 1 }} />
+                    {/* Kraken Perps */}
+                    <button
+                      className="apple-btn"
+                      onClick={() => loadKrakenPerps(modalGroupId)}
+                      disabled={krakenPerpsLoading}
+                      style={{
+                        padding: "8px 14px", fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                        letterSpacing: "0.04em", color: "#fb923c", borderColor: "rgba(251,146,60,0.2)",
+                        opacity: krakenPerpsLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {krakenPerpsLoading ? "Loading..." : "+ Kraken Perps"}
+                    </button>
+                    <button
+                      className="apple-btn apple-btn-accent"
+                      onClick={() => { setShowGroupModal(false); triggerScan(); }}
+                      style={{
+                        padding: "8px 22px", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Scan Now
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="apple-btn"
+                      onClick={() => setShowGroupModal(false)}
+                      style={{
+                        padding: "8px 18px", fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="apple-btn apple-btn-accent"
+                      disabled={!groupName.trim()}
+                      onClick={async () => {
+                        const g = await createGroup(groupName.trim(), [], groupColor);
+                        if (g) {
+                          setEditingGroup(g);
+                          setGroupName(g.name);
+                          setGroupColor(g.color);
+                        }
+                      }}
+                      style={{
+                        padding: "8px 22px", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                        letterSpacing: "0.06em", opacity: groupName.trim() ? 1 : 0.4,
+                      }}
+                    >
+                      Create Group
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {/* ── DETAIL PANEL ── */}
       {selected && isMobile && (
