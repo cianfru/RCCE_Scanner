@@ -519,7 +519,11 @@ export default function ExecutorPanel({ api }) {
             gap: 16,
             flexWrap: "wrap",
           }}>
-            <StatBox label="BALANCE" value={`$${(status.paper_balance || 0).toLocaleString()}`} />
+            <StatBox
+              label="EQUITY"
+              value={`$${(status.portfolio?.current_value || status.paper_balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              color={status.portfolio?.current_value > status.paper_balance ? "#34d399" : status.portfolio?.current_value < status.paper_balance ? "#f87171" : T.text1}
+            />
             <StatBox label="PAIRS" value={`${status.whitelist_count || 0}/${status.available_pairs || 0}`} />
             <StatBox label="TRADES" value={status.total_trades || 0} />
             <StatBox
