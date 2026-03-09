@@ -76,7 +76,6 @@ const COLUMNS = [
   ["heat",       "HEAT",       768],
   [null,         "DIV",        768],
   [null,         "EXHAUST",    768],
-  [null,         "SMC",        768],
   [null,         "FUNDING",    1024],
   [null,         "OI",         1024],
   [null,         "CONF",       1024],
@@ -361,18 +360,6 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
       return <td style={{ padding: cellPad }}><PhaseCell phase={row.heat_phase} /></td>;
     case "EXHAUST":
       return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
-    case "SMC": {
-      const bias = row.smc_bias || "NEUTRAL";
-      const smcColor = bias === "BULLISH" ? "#34d399" : bias === "BEARISH" ? "#f87171" : T.text4;
-      const smcLabel = bias === "BULLISH" ? "BULL" : bias === "BEARISH" ? "BEAR" : "\u2014";
-      return (
-        <td style={{ padding: cellPad }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, fontWeight: 700, color: smcColor, letterSpacing: "0.04em" }}>
-            {smcLabel}
-          </span>
-        </td>
-      );
-    }
     case "FLOOR":
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
     case "FUNDING":
@@ -2080,12 +2067,6 @@ export default function App() {
             ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
             ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
             ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
-            [null],
-            ["SMC Bias", selected.smc_bias || "\u2014", selected.smc_bias === "BULLISH" ? "#34d399" : selected.smc_bias === "BEARISH" ? "#f87171" : null],
-            ["BOS", selected.smc_bos === "BOS_UP" ? "UP" : selected.smc_bos === "BOS_DOWN" ? "DOWN" : "\u2014", selected.smc_bos === "BOS_UP" ? "#34d399" : selected.smc_bos === "BOS_DOWN" ? "#f87171" : null],
-            ["CHoCH", selected.smc_choch === "CHOCH_UP" ? "UP" : selected.smc_choch === "CHOCH_DOWN" ? "DOWN" : "\u2014", selected.smc_choch === "CHOCH_UP" ? "#34d399" : selected.smc_choch === "CHOCH_DOWN" ? "#f87171" : null],
-            ["FVG", selected.smc_fvg === "FVG_UP" ? "UP" : selected.smc_fvg === "FVG_DOWN" ? "DOWN" : "\u2014", selected.smc_fvg === "FVG_UP" ? "#34d399" : selected.smc_fvg === "FVG_DOWN" ? "#f87171" : null],
-            ["Order Block", selected.smc_ob === "OB_UP" ? "UP" : selected.smc_ob === "OB_DOWN" ? "DOWN" : "\u2014", selected.smc_ob === "OB_UP" ? "#34d399" : selected.smc_ob === "OB_DOWN" ? "#f87171" : null],
           ].map(([label, value, valColor], i) => {
             if (!label) return <div key={i} style={{ height: 1, background: T.border, margin: "8px 0" }} />;
             return (
