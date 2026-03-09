@@ -257,9 +257,23 @@ async def _run_backtest_task(
         result.symbols_loaded = len(ohlcv_4h)
         result.progress = 25.0
 
+        # Log partial failures
+        if len(ohlcv_4h) < len(fetch_symbols):
+            missing = [s for s in fetch_symbols if s not in ohlcv_4h]
+            logger.warning(
+                "Backtest %s: fetched %d/%d symbols for 4h. Missing: %s",
+                bt_id, len(ohlcv_4h), len(fetch_symbols),
+                ", ".join(missing[:15]),
+            )
+
         if not ohlcv_4h and not ohlcv_1d:
+            failed_syms = [s for s in fetch_symbols if s not in ohlcv_4h and s not in ohlcv_1d]
             result.status = "error"
-            result.error = "Failed to fetch any data"
+            result.error = (
+                f"Failed to fetch data for any symbol. "
+                f"Attempted {len(fetch_symbols)}: {', '.join(failed_syms[:10])}"
+                f"{'...' if len(failed_syms) > 10 else ''}"
+            )
             return
 
         # Fetch Fear & Greed history

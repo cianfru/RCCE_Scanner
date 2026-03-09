@@ -26,10 +26,30 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Default watchlist (65 symbols, CCXT pair format)
+# Default watchlist (25 high-priority symbols, CCXT pair format)
 # ---------------------------------------------------------------------------
 
 DEFAULT_SYMBOLS: List[str] = [
+    # Large caps
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "NEAR/USDT",
+    # L2 / New L1
+    "ARB/USDT", "OP/USDT", "SUI/USDT", "INJ/USDT", "TIA/USDT",
+    # Meme
+    "DOGE/USDT", "PEPE/USDT", "WIF/USDT",
+    # AI / Compute
+    "FET/USDT", "RNDR/USDT", "TAO/USDT",
+    # DeFi
+    "AAVE/USDT", "RUNE/USDT",
+    # Infra
+    "TON/USDT", "HBAR/USDT",
+]
+
+# ---------------------------------------------------------------------------
+# Full list (65 symbols, available as preset)
+# ---------------------------------------------------------------------------
+
+FULL_SYMBOLS: List[str] = [
     # Large caps
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
     "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "MATIC/USDT",

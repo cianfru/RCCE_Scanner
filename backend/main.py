@@ -94,12 +94,28 @@ _backtest_running = False  # Flag to pause scans during backtest
 
 async def _periodic_scan():
     """Run scans every 5 minutes. Pauses while a backtest is fetching data."""
+    global _backtest_running
     _executor_auto_started = False
+    _backtest_defer_count = 0
     while True:
         if _backtest_running:
-            logger.info("Scan deferred — backtest in progress")
+            _backtest_defer_count += 1
+            # Safety valve: if deferred 40+ cycles (20 min) with no active backtest, force reset
+            if _backtest_defer_count > 40:
+                from backtest.runner import list_backtests
+                active = any(
+                    bt["status"] in ("pending", "fetching", "replaying")
+                    for bt in list_backtests()
+                )
+                if not active:
+                    logger.warning("_backtest_running stuck (no active backtest) — force resetting")
+                    _backtest_running = False
+                    _backtest_defer_count = 0
+                    continue
+            logger.info("Scan deferred — backtest in progress (defer #%d)", _backtest_defer_count)
             await asyncio.sleep(30)
             continue
+        _backtest_defer_count = 0
         try:
             logger.info("Starting scheduled scan...")
             await run_scan(cache)
@@ -277,9 +293,24 @@ async def search_symbols(q: str = Query(..., min_length=1, description="Search q
 
 @app.post("/api/watchlist/reset")
 async def reset_watchlist():
-    """Reset watchlist to defaults."""
+    """Reset watchlist to defaults (25 symbols)."""
     from data_fetcher import DEFAULT_SYMBOLS
     cache.symbols = DEFAULT_SYMBOLS.copy()
+    return {"ok": True, "count": len(cache.symbols)}
+
+
+@app.post("/api/watchlist/clear")
+async def clear_watchlist():
+    """Clear the entire watchlist."""
+    cache.symbols = []
+    return {"ok": True, "count": 0}
+
+
+@app.post("/api/watchlist/full")
+async def full_watchlist():
+    """Load the full 65-symbol preset."""
+    from data_fetcher import FULL_SYMBOLS
+    cache.symbols = FULL_SYMBOLS.copy()
     return {"ok": True, "count": len(cache.symbols)}
 
 
@@ -411,18 +442,31 @@ async def start_backtest(body: BacktestRequest):
         await asyncio.sleep(1)
         wait_count += 1
 
-    bt_id = await run_backtest(config)
+    try:
+        bt_id = await run_backtest(config)
+    except Exception as exc:
+        _backtest_running = False
+        logger.error("Failed to start backtest: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
     # Monitor and re-enable scanner when backtest finishes
     async def _wait_for_completion():
         global _backtest_running
-        while True:
-            await asyncio.sleep(5)
-            result = get_backtest(bt_id)
-            if result is None or result.status in ("complete", "error"):
-                _backtest_running = False
-                logger.info("Backtest %s finished, resuming live scanner", bt_id)
-                break
+        try:
+            timeout_count = 0
+            while timeout_count < 720:  # 720 × 5s = 60 min max
+                await asyncio.sleep(5)
+                timeout_count += 1
+                result = get_backtest(bt_id)
+                if result is None or result.status in ("complete", "error"):
+                    break
+            else:
+                logger.warning("Backtest %s: monitor timed out after 60 min", bt_id)
+        except Exception as exc:
+            logger.error("Backtest %s: monitor error: %s", bt_id, exc)
+        finally:
+            _backtest_running = False
+            logger.info("Backtest %s: scanner resumed", bt_id)
 
     asyncio.create_task(_wait_for_completion())
     return {"id": bt_id, "status": "started"}
@@ -639,18 +683,31 @@ async def start_walkforward(body: WalkForwardRequest):
         await asyncio.sleep(1)
         wait_count += 1
 
-    wf_id = await run_walkforward(config)
+    try:
+        wf_id = await run_walkforward(config)
+    except Exception as exc:
+        _backtest_running = False
+        logger.error("Failed to start walk-forward: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
     # Monitor and re-enable scanner when done
     async def _wait_for_completion():
         global _backtest_running
-        while True:
-            await asyncio.sleep(5)
-            result = get_walkforward(wf_id)
-            if result is None or result.status in ("complete", "error"):
-                _backtest_running = False
-                logger.info("Walk-forward %s finished, resuming live scanner", wf_id)
-                break
+        try:
+            timeout_count = 0
+            while timeout_count < 720:  # 60 min max
+                await asyncio.sleep(5)
+                timeout_count += 1
+                result = get_walkforward(wf_id)
+                if result is None or result.status in ("complete", "error"):
+                    break
+            else:
+                logger.warning("Walk-forward %s: monitor timed out after 60 min", wf_id)
+        except Exception as exc:
+            logger.error("Walk-forward %s: monitor error: %s", wf_id, exc)
+        finally:
+            _backtest_running = False
+            logger.info("Walk-forward %s: scanner resumed", wf_id)
 
     asyncio.create_task(_wait_for_completion())
     return {"id": wf_id, "status": "started"}

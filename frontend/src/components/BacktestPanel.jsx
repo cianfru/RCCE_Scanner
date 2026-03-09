@@ -452,8 +452,8 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
     } catch (e) {
       // Server may be temporarily busy — silently retry (backtests can take 15+ min)
       pollFailCount.current += 1;
-      if (pollFailCount.current > 200) {
-        setError("Server unresponsive");
+      if (pollFailCount.current > 600) {
+        setError("Server unresponsive — backtest may still be running in the background");
         setPolling(false);
       }
     }

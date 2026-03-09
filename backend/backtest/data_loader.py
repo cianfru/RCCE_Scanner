@@ -202,11 +202,18 @@ async def fetch_historical_batch(
     results: Dict[str, dict] = {}
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
 
+    fetch_count = [0]
+
     async def _fetch_one(sym: str):
         async with semaphore:
+            logger.info("Fetching %s %s (%d/%d)...", sym, timeframe, fetch_count[0] + 1, len(symbols))
             data = await fetch_historical_ohlcv(sym, timeframe, fetch_start_ms, end_ms)
+            fetch_count[0] += 1
             if data is not None:
                 results[sym] = data
+                logger.info("Fetched %s %s: %d bars", sym, timeframe, len(data.get("close", [])))
+            else:
+                logger.warning("Failed to fetch %s %s (no data returned)", sym, timeframe)
 
     tasks = [_fetch_one(sym) for sym in symbols]
     await asyncio.gather(*tasks)

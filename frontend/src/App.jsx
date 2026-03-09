@@ -626,6 +626,7 @@ export default function App() {
   const [watchlistResults, setWatchlistResults] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [krakenPerpsLoading, setKrakenPerpsLoading] = useState(false);
+  const [krakenPerpsCount, setKrakenPerpsCount] = useState(null);
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -741,6 +742,20 @@ export default function App() {
     } catch (_) {}
   };
 
+  const clearWatchlist = async () => {
+    try {
+      await fetch(`${API_BASE}/api/watchlist/clear`, { method: "POST" });
+      await loadWatchlist();
+    } catch (_) {}
+  };
+
+  const loadFullList = async () => {
+    try {
+      await fetch(`${API_BASE}/api/watchlist/full`, { method: "POST" });
+      await loadWatchlist();
+    } catch (_) {}
+  };
+
   // Backtest badge: fetch symbols from completed backtests
   const refreshBacktestSymbols = useCallback(async () => {
     try {
@@ -759,14 +774,15 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/perpetuals/kraken`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
+        setKrakenPerpsCount(data.count || data.symbols.length);
+        // Merge with current watchlist (deduplicated)
+        const merged = [...new Set([...watchlistSymbols, ...data.symbols])];
         await fetch(`${API_BASE}/api/watchlist`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbols: data.symbols }),
+          body: JSON.stringify({ symbols: merged }),
         });
         await loadWatchlist();
-        setShowWatchlist(false);
-        triggerScan();
       }
     } catch (e) {
       console.error("Kraken perps fetch failed:", e);
@@ -1496,7 +1512,7 @@ export default function App() {
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                       >
                         <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
-                          {r.base}<span style={{ color: T.text4 }}>/USDT</span>
+                          {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
                         </span>
                         {inList ? (
                           <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
@@ -1515,79 +1531,142 @@ export default function App() {
               )}
             </div>
 
-            {/* Current watchlist */}
+            {/* Current watchlist — split by quote currency */}
             <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
-              <div style={{
-                display: "flex", flexWrap: "wrap", gap: 6,
-              }}>
-                {watchlistSymbols.map(sym => (
-                  <span
-                    key={sym}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      padding: "5px 10px", borderRadius: "20px",
-                      background: T.surface, border: `1px solid ${T.border}`,
-                      fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
-                    }}
-                  >
-                    {getBaseSymbol(sym)}
-                    <span
-                      onClick={() => removeSymbol(sym)}
-                      style={{
-                        cursor: "pointer", color: T.text4, fontSize: 10,
-                        display: "flex", alignItems: "center",
-                        transition: "color 0.15s",
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
-                      onMouseLeave={e => e.currentTarget.style.color = T.text4}
-                    >{"\u2715"}</span>
-                  </span>
-                ))}
-              </div>
+              {(() => {
+                const usdtPairs = watchlistSymbols.filter(s => s.endsWith("/USDT"));
+                const btcPairs = watchlistSymbols.filter(s => s.endsWith("/BTC"));
+                const renderChips = (syms, borderAccent) => (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {syms.map(sym => (
+                      <span
+                        key={sym}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "5px 10px", borderRadius: "20px",
+                          background: T.surface,
+                          border: `1px solid ${borderAccent || T.border}`,
+                          fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
+                        }}
+                      >
+                        {getBaseSymbol(sym)}
+                        <span
+                          onClick={() => removeSymbol(sym)}
+                          style={{
+                            cursor: "pointer", color: T.text4, fontSize: 10,
+                            display: "flex", alignItems: "center",
+                            transition: "color 0.15s",
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
+                          onMouseLeave={e => e.currentTarget.style.color = T.text4}
+                        >{"\u2715"}</span>
+                      </span>
+                    ))}
+                  </div>
+                );
+                return (
+                  <>
+                    {usdtPairs.length > 0 && (
+                      <>
+                        <div style={{
+                          fontSize: 9, fontFamily: T.mono, color: T.text4,
+                          fontWeight: 600, letterSpacing: "0.08em",
+                          marginBottom: 6, textTransform: "uppercase",
+                        }}>
+                          USDT Pairs ({usdtPairs.length})
+                        </div>
+                        {renderChips(usdtPairs, null)}
+                      </>
+                    )}
+                    {btcPairs.length > 0 && (
+                      <>
+                        <div style={{
+                          fontSize: 9, fontFamily: T.mono, color: "#fb923c",
+                          fontWeight: 600, letterSpacing: "0.08em",
+                          marginTop: usdtPairs.length > 0 ? 14 : 0, marginBottom: 6,
+                          textTransform: "uppercase",
+                        }}>
+                          BTC Pairs ({btcPairs.length})
+                        </div>
+                        {renderChips(btcPairs, "rgba(251,146,60,0.25)")}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}
             <div style={{
               padding: "12px 20px", borderTop: `1px solid ${T.border}`,
-              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+              display: "flex", flexDirection: "column", gap: 8,
             }}>
-              <button
-                className="apple-btn"
-                onClick={resetWatchlist}
-                style={{
-                  padding: "8px 18px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                Reset to Defaults
-              </button>
-              <button
-                className="apple-btn"
-                onClick={loadKrakenPerps}
-                disabled={krakenPerpsLoading}
-                style={{
-                  padding: "8px 18px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
-                  letterSpacing: "0.04em",
-                  color: "#fb923c",
-                  borderColor: "rgba(251,146,60,0.2)",
-                  opacity: krakenPerpsLoading ? 0.5 : 1,
-                }}
-              >
-                {krakenPerpsLoading ? "Loading..." : "KRAKEN PERPS"}
-              </button>
-              <button
-                className="apple-btn apple-btn-accent"
-                onClick={() => { setShowWatchlist(false); triggerScan(); }}
-                style={{
-                  padding: "8px 22px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                  letterSpacing: "0.06em",
-                }}
-              >
-                Scan Now
-              </button>
+              {/* Row 1: bulk actions */}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="apple-btn"
+                  onClick={clearWatchlist}
+                  style={{
+                    flex: 1, padding: "7px 12px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                    letterSpacing: "0.04em", color: "#f87171",
+                    borderColor: "rgba(248,113,113,0.2)",
+                  }}
+                >
+                  Clear All
+                </button>
+                <button
+                  className="apple-btn"
+                  onClick={loadFullList}
+                  style={{
+                    flex: 1, padding: "7px 12px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Full List (65)
+                </button>
+              </div>
+              {/* Row 2: presets + actions */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <button
+                  className="apple-btn"
+                  onClick={resetWatchlist}
+                  style={{
+                    padding: "8px 18px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 500,
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Defaults (25)
+                </button>
+                <button
+                  className="apple-btn"
+                  onClick={loadKrakenPerps}
+                  disabled={krakenPerpsLoading}
+                  style={{
+                    padding: "8px 18px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                    letterSpacing: "0.04em",
+                    color: "#fb923c",
+                    borderColor: "rgba(251,146,60,0.2)",
+                    opacity: krakenPerpsLoading ? 0.5 : 1,
+                  }}
+                >
+                  {krakenPerpsLoading ? "Loading..." : `+ Kraken Perps${krakenPerpsCount ? ` (${krakenPerpsCount})` : ""}`}
+                </button>
+                <button
+                  className="apple-btn apple-btn-accent"
+                  onClick={() => { setShowWatchlist(false); triggerScan(); }}
+                  style={{
+                    padding: "8px 22px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Scan Now
+                </button>
+              </div>
             </div>
           </div>
         </>
