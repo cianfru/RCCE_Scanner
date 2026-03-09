@@ -292,9 +292,10 @@ def synthesize_signal(
             out.reason = " + ".join(_reason_parts()) + " [all conditions met]"
             out.warnings = warnings
             return out
-    # STRONG_LONG with 8/11 original conditions but blocked by funding/greed/liquidity
-    # Must still be above BMSB
-    elif conditions_met >= 8 and not cond_funding_ok and not below_bmsb:
+    # STRONG_LONG with all core conditions met but blocked by funding/greed/liquidity
+    # Must still be above BMSB, and core conditions (confidence, consensus, heat, z) must pass
+    elif (conditions_met >= 8 and not cond_funding_ok and not below_bmsb
+            and cond_confidence and cond_consensus and cond_heat_ok and cond_z_range):
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
         if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
             out.signal = "LIGHT_LONG"
@@ -383,23 +384,26 @@ def synthesize_signal(
             out.warnings = warnings
             return out
 
-        # REACC LIGHT_LONG: needs supportive consensus + decent confidence
+        # REACC LIGHT_LONG: needs supportive consensus + decent confidence + no BEAR-DIV
         if (regime == "REACC" and z < 0.5
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
-                and mkt_consensus in ("RISK-ON", "MIXED")):
+                and mkt_consensus in ("RISK-ON", "MIXED")
+                and divergence != "BEAR-DIV"):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [REACC + RISK-ON]"
             out.warnings = warnings
             return out
 
     # --- CAP without strong revival conditions ---
-    if regime == "CAP" and z < -1.0 and confidence > CONF_REVIVAL:
-        if is_absorption:
-            out.signal = "ACCUMULATE"
-            out.reason = " + ".join(_reason_parts()) + " [CAP absorption]"
-            out.warnings = warnings
-            return out
+    if (regime == "CAP" and z < -1.0 and confidence > CONF_REVIVAL
+            and is_absorption
+            and mkt_consensus != "RISK-OFF"
+            and heat < 70):
+        out.signal = "ACCUMULATE"
+        out.reason = " + ".join(_reason_parts()) + " [CAP absorption]"
+        out.warnings = warnings
+        return out
 
     # -----------------------------------------------------------------------
     # STEP 3: DEFAULT — WAIT
