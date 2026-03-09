@@ -2,8 +2,7 @@
 positioning_engine.py
 ~~~~~~~~~~~~~~~~~~~~~
 Converts raw positioning data (funding rates, open interest) into actionable
-metrics per symbol.  Data sources: Kraken Futures (primary) and Hyperliquid
-(fallback).
+metrics per symbol.  Primary data source: CoinGlass (aggregated cross-exchange).
 
 Produces funding regime (CROWDED_LONG / CROWDED_SHORT / NEUTRAL),
 OI trend (BUILDING / SQUEEZE / LIQUIDATING / SHORTING), and leverage risk.
@@ -35,12 +34,12 @@ OI_CHANGE_THRESHOLD = 2.0        # > 2% change considered significant
 
 @dataclass
 class PositioningResult:
-    """Per-symbol positioning analysis (Kraken Futures / Hyperliquid)."""
+    """Per-symbol positioning analysis (CoinGlass aggregated / exchange)."""
     funding_regime: str = "NEUTRAL"       # CROWDED_LONG | CROWDED_SHORT | NEUTRAL
-    funding_rate: float = 0.0             # Raw hourly funding rate
+    funding_rate: float = 0.0             # Funding rate (decimal)
     oi_trend: str = "UNKNOWN"             # BUILDING | SQUEEZE | LIQUIDATING | SHORTING | STABLE
     oi_value: float = 0.0                 # Open interest in USD
-    oi_change_pct: float = 0.0            # OI change since last scan (%)
+    oi_change_pct: float = 0.0            # OI change (%)
     leverage_risk: str = "UNKNOWN"        # HIGH | MEDIUM | LOW
     predicted_funding: float = 0.0        # Next predicted funding rate
     mark_price: float = 0.0
@@ -61,23 +60,32 @@ def compute_positioning(
     mark_price: float = 0.0,
     oracle_price: float = 0.0,
     volume_24h: float = 0.0,
+    oi_change_pct_override: Optional[float] = None,
+    oi_market_cap_ratio: Optional[float] = None,
 ) -> PositioningResult:
-    """Analyze positioning from exchange data (Kraken Futures or Hyperliquid).
+    """Analyze positioning from exchange data.
 
     Parameters
     ----------
     funding_rate : float
-        Current hourly funding rate (decimal, e.g. 0.0001 = 0.01%).
+        Funding rate (decimal, e.g. 0.0001 = 0.01%).
     open_interest : float
         Current open interest in USD.
     price_change_pct : float
-        Price change percentage over the scan period (from OHLCV).
+        Price change percentage over the scan period.
     prev_oi : float or None
-        Previous scan's open interest for trend calculation.
+        Previous scan's open interest for trend calculation (legacy).
     predicted_funding : float
         Next predicted funding rate.
     mark_price, oracle_price, volume_24h : float
         Additional context data.
+    oi_change_pct_override : float or None
+        Pre-computed OI change percentage (from CoinGlass).
+        When provided, bypasses ``prev_oi`` calculation — eliminates
+        the cold-start problem on deploy.
+    oi_market_cap_ratio : float or None
+        OI-to-market-cap ratio (leverage proxy from CoinGlass).
+        Used for leverage_risk when available.
 
     Returns
     -------
@@ -101,8 +109,14 @@ def compute_positioning(
         result.funding_regime = "NEUTRAL"
 
     # --- OI Trend ---
-    if prev_oi is not None and prev_oi > 0:
+    # Prefer pre-computed OI change from CoinGlass (no cold-start issue)
+    oi_change: Optional[float] = None
+    if oi_change_pct_override is not None:
+        oi_change = oi_change_pct_override
+    elif prev_oi is not None and prev_oi > 0:
         oi_change = ((open_interest - prev_oi) / prev_oi) * 100.0
+
+    if oi_change is not None:
         result.oi_change_pct = round(oi_change, 2)
 
         oi_up = oi_change > OI_CHANGE_THRESHOLD
@@ -128,13 +142,22 @@ def compute_positioning(
         result.oi_trend = "UNKNOWN"
 
     # --- Leverage Risk ---
-    # Based on funding rate magnitude (higher = more leveraged)
-    abs_funding = abs(funding_rate)
-    if abs_funding > 0.0003:  # > 0.03%/hr = very high leverage
-        result.leverage_risk = "HIGH"
-    elif abs_funding > 0.0001:  # > 0.01%/hr = moderate
-        result.leverage_risk = "MEDIUM"
+    # Prefer OI/market-cap ratio from CoinGlass (more accurate than funding alone)
+    if oi_market_cap_ratio is not None and oi_market_cap_ratio > 0:
+        if oi_market_cap_ratio > 0.05:     # OI > 5% of market cap = very leveraged
+            result.leverage_risk = "HIGH"
+        elif oi_market_cap_ratio > 0.03:   # OI > 3% of market cap = moderate
+            result.leverage_risk = "MEDIUM"
+        else:
+            result.leverage_risk = "LOW"
     else:
-        result.leverage_risk = "LOW"
+        # Fallback: use funding rate magnitude
+        abs_funding = abs(funding_rate)
+        if abs_funding > 0.0003:  # > 0.03%/hr = very high leverage
+            result.leverage_risk = "HIGH"
+        elif abs_funding > 0.0001:  # > 0.01%/hr = moderate
+            result.leverage_risk = "MEDIUM"
+        else:
+            result.leverage_risk = "LOW"
 
     return result

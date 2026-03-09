@@ -40,8 +40,7 @@ from market_data import (
     fetch_global_metrics, GlobalMetrics,
     fetch_fear_greed, fetch_stablecoin_supply,
 )
-from hyperliquid_data import fetch_hyperliquid_metrics
-from kraken_futures_data import fetch_kraken_futures_metrics
+from coinglass_data import fetch_coinglass_metrics
 from confluence import compute_all_confluences
 
 logger = logging.getLogger(__name__)
@@ -292,7 +291,7 @@ class ScanCache:
         self.sentiment: Optional[dict] = None           # Fear & Greed
         self.stablecoin: Optional[dict] = None          # Stablecoin supply
         self.confluence: Dict[str, dict] = {}           # symbol -> confluence
-        self.prev_oi: Dict[str, float] = {}             # symbol -> previous OI for trend
+        self.prev_oi: Dict[str, float] = {}             # legacy; CoinGlass provides OI change directly
         self.last_scan_time: Optional[float] = None
         self.is_scanning: bool = False
         self.symbols: List[str] = DEFAULT_SYMBOLS.copy()
@@ -493,18 +492,16 @@ async def _scan_timeframe(
     )
 
     # 6. Fetch external data in parallel
-    #    Kraken Futures (primary positioning) + Hyperliquid (fallback) + globals
+    #    CoinGlass (aggregated cross-exchange positioning) + globals
     gm: Optional[GlobalMetrics] = None
-    kf_metrics = {}
-    hl_metrics = {}
+    cg_metrics = {}
     sentiment_data = None
     stablecoin_data = None
 
     try:
-        gm, kf_metrics, hl_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
+        gm, cg_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
             fetch_global_metrics(),
-            fetch_kraken_futures_metrics(symbols),
-            fetch_hyperliquid_metrics(symbols),
+            fetch_coinglass_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
         )
@@ -517,71 +514,30 @@ async def _scan_timeframe(
             "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
             gm.btc_dominance, gm.alt_market_cap / 1e9,
         )
-    if kf_metrics:
-        logger.info("Kraken Futures: %d perps with positioning data", len(kf_metrics))
-    if hl_metrics:
-        logger.info("Hyperliquid: %d perps (fallback positioning)", len(hl_metrics))
+    if cg_metrics:
+        logger.info("CoinGlass: %d coins with positioning data", len(cg_metrics))
     if sentiment_data:
         logger.info("Fear & Greed: %d (%s)", sentiment_data.fear_greed_value, sentiment_data.fear_greed_label)
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
 
-    # 7. Compute positioning per symbol
-    #    Primary source: Kraken Futures (execution venue)
-    #    Fallback:       Hyperliquid (wider coverage)
-    kraken_pos_count = 0
-    hl_pos_count = 0
+    # 7. Compute positioning per symbol (CoinGlass aggregated data)
+    cg_pos_count = 0
 
     for r in results:
         symbol = r["symbol"]
-        kf = kf_metrics.get(symbol) if kf_metrics else None
-        hl = hl_metrics.get(symbol) if hl_metrics else None
+        cg = cg_metrics.get(symbol) if cg_metrics else None
 
-        # Pick primary source: Kraken > Hyperliquid
-        funding_rate = 0.0
-        open_interest = 0.0
-        predicted_funding = 0.0
-        mark_price = 0.0
-        oracle_price = 0.0
-        volume_24h = 0.0
-        source = ""
-
-        if kf is not None:
-            funding_rate = kf.funding_rate        # already normalised to hourly
-            open_interest = kf.open_interest       # already in USD
-            predicted_funding = kf.predicted_funding
-            mark_price = kf.mark_price
-            oracle_price = kf.index_price
-            volume_24h = kf.volume_24h
-            source = "kraken"
-            kraken_pos_count += 1
-        elif hl is not None:
-            funding_rate = hl.funding_rate
-            open_interest = hl.open_interest
-            predicted_funding = hl.predicted_funding
-            mark_price = hl.mark_price
-            oracle_price = hl.oracle_price
-            volume_24h = hl.volume_24h
-            source = "hyperliquid"
-            hl_pos_count += 1
-
-        if source:
-            # Get price change from sparkline data
-            sparkline = r.get("sparkline", [])
-            price_change_pct = 0.0
-            if len(sparkline) >= 2 and sparkline[0] > 0:
-                price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
-
-            prev_oi = cache.prev_oi.get(symbol)
+        if cg is not None:
+            # CoinGlass provides pre-computed OI change % — no cold-start
             pos = compute_positioning(
-                funding_rate=funding_rate,
-                open_interest=open_interest,
-                price_change_pct=price_change_pct,
-                prev_oi=prev_oi,
-                predicted_funding=predicted_funding,
-                mark_price=mark_price,
-                oracle_price=oracle_price,
-                volume_24h=volume_24h,
+                funding_rate=cg.funding_rate,
+                open_interest=cg.open_interest_usd,
+                price_change_pct=cg.price_change_pct_4h,
+                oi_change_pct_override=cg.oi_change_pct_4h,
+                oi_market_cap_ratio=cg.oi_market_cap_ratio,
+                mark_price=cg.current_price,
+                volume_24h=cg.volume_24h,
             )
             r["positioning"] = {
                 "funding_regime": pos.funding_regime,
@@ -593,15 +549,11 @@ async def _scan_timeframe(
                 "predicted_funding": pos.predicted_funding,
                 "mark_price": pos.mark_price,
                 "volume_24h": pos.volume_24h,
-                "source": source,
+                "source": "coinglass",
             }
-            # Store OI for next scan's trend calculation
-            cache.prev_oi[symbol] = open_interest
+            cg_pos_count += 1
 
-    logger.info(
-        "Positioning: %d from Kraken, %d from Hyperliquid",
-        kraken_pos_count, hl_pos_count,
-    )
+    logger.info("Positioning: %d coins from CoinGlass", cg_pos_count)
 
     # 8. Detect divergences
     btc_regime = next(
