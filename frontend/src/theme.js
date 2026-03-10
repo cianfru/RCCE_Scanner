@@ -1,23 +1,162 @@
-// ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
+// ─── THEME PALETTES ─────────────────────────────────────────────────────────
+
+const DARK = {
+  bg:          "#0a0a0c",
+  surface:     "rgba(255,255,255,0.05)",
+  surfaceH:    "rgba(255,255,255,0.09)",
+  border:      "rgba(255,255,255,0.12)",
+  borderH:     "rgba(255,255,255,0.20)",
+  text1:       "#f5f5f7",
+  text2:       "#d1d1d6",
+  text3:       "#98989f",
+  text4:       "#6e6e73",
+  accent:      "#22d3ee",
+  accentDim:   "rgba(34,211,238,0.12)",
+  // Overlay opacities (white on dark)
+  overlay02:   "rgba(255,255,255,0.02)",
+  overlay03:   "rgba(255,255,255,0.03)",
+  overlay04:   "rgba(255,255,255,0.04)",
+  overlay06:   "rgba(255,255,255,0.06)",
+  overlay08:   "rgba(255,255,255,0.08)",
+  overlay10:   "rgba(255,255,255,0.10)",
+  overlay12:   "rgba(255,255,255,0.12)",
+  overlay15:   "rgba(255,255,255,0.15)",
+  overlay20:   "rgba(255,255,255,0.20)",
+  overlay25:   "rgba(255,255,255,0.25)",
+  overlay30:   "rgba(255,255,255,0.30)",
+  // Shadows
+  shadow:      "rgba(0,0,0,0.3)",
+  shadowDeep:  "rgba(0,0,0,0.5)",
+  shadowHeavy: "rgba(0,0,0,0.85)",
+  // Composite backgrounds
+  glassBg:     "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+  glassInset:  "inset 0 1px 0 rgba(255,255,255,0.04)",
+  glassShadow: "0 2px 12px rgba(0,0,0,0.3)",
+  headerBg:    "linear-gradient(180deg, rgba(18,18,20,0.92) 0%, rgba(10,10,12,0.88) 100%)",
+  popoverBg:   "linear-gradient(180deg, rgba(30,30,34,0.98), rgba(20,20,24,0.98))",
+  drawerBg:    "linear-gradient(180deg, rgba(20,20,22,0.92) 0%, rgba(10,10,12,0.94) 100%)",
+  selectBg:    "#1c1c1e",
+  scrollThumb: "rgba(255,255,255,0.12)",
+  scrollHover: "rgba(255,255,255,0.25)",
+  // Chart-specific (resolved values for canvas/libraries)
+  chartGrid:   "rgba(255,255,255,0.03)",
+  chartCross:  "rgba(34,211,238,0.3)",
+  chartLabel:  "#1a1a1a",
+  chartText:   "#98989f",
+};
+
+const LIGHT = {
+  bg:          "#ffffff",
+  surface:     "rgba(0,0,0,0.04)",
+  surfaceH:    "rgba(0,0,0,0.07)",
+  border:      "rgba(0,0,0,0.15)",
+  borderH:     "rgba(0,0,0,0.25)",
+  text1:       "#000000",
+  text2:       "#1c1c1e",
+  text3:       "#48484a",
+  text4:       "#636366",
+  accent:      "#0e7490",
+  accentDim:   "rgba(14,116,144,0.10)",
+  // Overlay opacities (black on light)
+  overlay02:   "rgba(0,0,0,0.02)",
+  overlay03:   "rgba(0,0,0,0.03)",
+  overlay04:   "rgba(0,0,0,0.04)",
+  overlay06:   "rgba(0,0,0,0.05)",
+  overlay08:   "rgba(0,0,0,0.06)",
+  overlay10:   "rgba(0,0,0,0.08)",
+  overlay12:   "rgba(0,0,0,0.10)",
+  overlay15:   "rgba(0,0,0,0.13)",
+  overlay20:   "rgba(0,0,0,0.16)",
+  overlay25:   "rgba(0,0,0,0.20)",
+  overlay30:   "rgba(0,0,0,0.24)",
+  // Shadows
+  shadow:      "rgba(0,0,0,0.08)",
+  shadowDeep:  "rgba(0,0,0,0.14)",
+  shadowHeavy: "rgba(0,0,0,0.30)",
+  // Composite backgrounds
+  glassBg:     "linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.65) 100%)",
+  glassInset:  "inset 0 1px 0 rgba(255,255,255,0.7)",
+  glassShadow: "0 2px 12px rgba(0,0,0,0.08)",
+  headerBg:    "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(245,245,247,0.90) 100%)",
+  popoverBg:   "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,248,250,0.98))",
+  drawerBg:    "linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,248,250,0.98) 100%)",
+  selectBg:    "#ffffff",
+  scrollThumb: "rgba(0,0,0,0.15)",
+  scrollHover: "rgba(0,0,0,0.30)",
+  // Chart-specific (resolved values for canvas/libraries)
+  chartGrid:   "rgba(0,0,0,0.06)",
+  chartCross:  "rgba(14,116,144,0.3)",
+  chartLabel:  "#f5f5f7",
+  chartText:   "#48484a",
+};
+
+// ─── APPLY THEME (sets CSS custom properties on :root) ──────────────────────
+
+export function applyTheme(mode) {
+  const tokens = mode === "light" ? LIGHT : DARK;
+  const root = document.documentElement;
+  for (const [key, val] of Object.entries(tokens)) {
+    root.style.setProperty(`--t-${key}`, val);
+  }
+  root.dataset.theme = mode;
+}
+
+// Apply on module load to prevent flash
+applyTheme(localStorage.getItem("rcce-theme") || "dark");
+
+// ─── DESIGN TOKENS (CSS variable references) ───────────────────────────────
 
 export const T = {
-  bg:        "#0a0a0c",
-  surface:   "rgba(255,255,255,0.05)",
-  surfaceH:  "rgba(255,255,255,0.09)",
-  border:    "rgba(255,255,255,0.12)",
-  borderH:   "rgba(255,255,255,0.20)",
-  text1:     "#f5f5f7",
-  text2:     "#d1d1d6",
-  text3:     "#98989f",
-  text4:     "#6e6e73",
-  accent:    "#22d3ee",
-  accentDim: "rgba(34,211,238,0.12)",
-  font:      "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
-  mono:      "'SF Mono', 'JetBrains Mono', 'Fira Code', monospace",
-  radius:    "14px",
-  radiusSm:  "10px",
-  radiusXs:  "8px",
+  // Colors (theme-dependent → CSS vars)
+  bg:          "var(--t-bg)",
+  surface:     "var(--t-surface)",
+  surfaceH:    "var(--t-surfaceH)",
+  border:      "var(--t-border)",
+  borderH:     "var(--t-borderH)",
+  text1:       "var(--t-text1)",
+  text2:       "var(--t-text2)",
+  text3:       "var(--t-text3)",
+  text4:       "var(--t-text4)",
+  accent:      "var(--t-accent)",
+  accentDim:   "var(--t-accentDim)",
+  // Overlays
+  overlay02:   "var(--t-overlay02)",
+  overlay03:   "var(--t-overlay03)",
+  overlay04:   "var(--t-overlay04)",
+  overlay06:   "var(--t-overlay06)",
+  overlay08:   "var(--t-overlay08)",
+  overlay10:   "var(--t-overlay10)",
+  overlay12:   "var(--t-overlay12)",
+  overlay15:   "var(--t-overlay15)",
+  overlay20:   "var(--t-overlay20)",
+  overlay25:   "var(--t-overlay25)",
+  overlay30:   "var(--t-overlay30)",
+  // Shadows
+  shadow:      "var(--t-shadow)",
+  shadowDeep:  "var(--t-shadowDeep)",
+  shadowHeavy: "var(--t-shadowHeavy)",
+  // Composite backgrounds
+  glassBg:     "var(--t-glassBg)",
+  glassInset:  "var(--t-glassInset)",
+  glassShadow: "var(--t-glassShadow)",
+  headerBg:    "var(--t-headerBg)",
+  popoverBg:   "var(--t-popoverBg)",
+  drawerBg:    "var(--t-drawerBg)",
+  selectBg:    "var(--t-selectBg)",
+  scrollThumb: "var(--t-scrollThumb)",
+  scrollHover: "var(--t-scrollHover)",
+  // Static (not theme-dependent)
+  font:        "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
+  mono:        "'SF Mono', 'JetBrains Mono', 'Fira Code', monospace",
+  radius:      "14px",
+  radiusSm:    "10px",
+  radiusXs:    "8px",
 };
+
+// Helper to get resolved CSS variable value (for canvas/library APIs)
+export function resolveToken(key) {
+  return getComputedStyle(document.documentElement).getPropertyValue(`--t-${key}`).trim();
+}
 
 // ─── REGIME METADATA ────────────────────────────────────────────────────────
 

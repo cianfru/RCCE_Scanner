@@ -42,7 +42,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
 
       {/* Progress bar */}
       <div style={{
-        height: 4, background: "rgba(255,255,255,0.04)",
+        height: 4, background: T.overlay04,
         borderRadius: 2, overflow: "hidden", marginBottom: 12,
       }}>
         <div style={{

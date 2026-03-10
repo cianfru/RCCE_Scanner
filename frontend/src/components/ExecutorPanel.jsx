@@ -87,8 +87,8 @@ const S = {
   btn: {
     padding: "6px 14px",
     borderRadius: 6,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.04)",
+    border: `1px solid ${T.overlay12}`,
+    background: T.overlay04,
     color: T.text1,
     fontSize: 11,
     fontFamily: T.mono,
@@ -171,7 +171,7 @@ function ReasonBlock({ reason, warnings }) {
           color: T.text2,
           lineHeight: 1.5,
           padding: "6px 10px",
-          background: "rgba(255,255,255,0.02)",
+          background: T.overlay02,
           borderRadius: 4,
           borderLeft: "2px solid rgba(34,211,238,0.3)",
         }}>
@@ -296,7 +296,7 @@ function TradeRow({ trade, expanded, onToggle }) {
           background: trade.pnl_pct > 0 ? "rgba(52,211,153,0.03)" : trade.pnl_pct < 0 ? "rgba(248,113,113,0.03)" : "transparent",
           transition: "background 0.15s",
         }}
-        onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
+        onMouseOver={e => e.currentTarget.style.background = T.overlay04}
         onMouseOut={e => e.currentTarget.style.background = trade.pnl_pct > 0 ? "rgba(52,211,153,0.03)" : trade.pnl_pct < 0 ? "rgba(248,113,113,0.03)" : "transparent"}
       >
         <td style={cellStyle} title={fullDate(trade.entry_time)}>{timeAgo(trade.entry_time)}</td>
@@ -325,7 +325,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={7} style={{ padding: "8px 20px 14px", background: "rgba(255,255,255,0.015)" }}>
+          <td colSpan={7} style={{ padding: "8px 20px 14px", background: T.overlay02 }}>
             <ReasonBlock reason={trade.entry_reason} warnings={trade.entry_warnings} />
             {!trade.entry_reason && (
               <div style={{ fontSize: 11, color: T.text4, fontFamily: T.mono }}>
@@ -617,7 +617,7 @@ export default function ExecutorPanel({ api }) {
                     padding: "4px 10px",
                     borderRadius: 6,
                     border: `1px solid ${active ? "rgba(34,211,238,0.35)" : T.border}`,
-                    background: active ? "rgba(34,211,238,0.08)" : "rgba(255,255,255,0.02)",
+                    background: active ? "rgba(34,211,238,0.08)" : T.overlay02,
                     color: active ? "#22d3ee" : T.text4,
                     fontSize: 11,
                     fontFamily: T.mono,

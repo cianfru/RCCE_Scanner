@@ -57,7 +57,7 @@ export default function FearGreedGauge({ value, label }) {
         <path
           d={bgPath}
           fill="none"
-          stroke="rgba(255,255,255,0.06)"
+          stroke={T.overlay06}
           strokeWidth={strokeWidth}
           strokeLinecap="round"
         />

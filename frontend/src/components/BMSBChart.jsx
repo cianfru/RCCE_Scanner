@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { createChart, CandlestickSeries, LineSeries, ColorType } from "lightweight-charts";
-import { T, REGIME_META, SIGNAL_META, heatColor } from "../theme.js";
+import { T, REGIME_META, SIGNAL_META, heatColor, resolveToken } from "../theme.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -52,24 +52,24 @@ export default function BMSBChart({
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: T.text3,
+        textColor: resolveToken("chartText"),
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.03)" },
-        horzLines: { color: "rgba(255,255,255,0.03)" },
+        vertLines: { color: resolveToken("chartGrid") },
+        horzLines: { color: resolveToken("chartGrid") },
       },
       crosshair: {
-        vertLine: { color: "rgba(34,211,238,0.3)", labelBackgroundColor: "#1a1a1a" },
-        horzLine: { color: "rgba(34,211,238,0.3)", labelBackgroundColor: "#1a1a1a" },
+        vertLine: { color: resolveToken("chartCross"), labelBackgroundColor: resolveToken("chartLabel") },
+        horzLine: { color: resolveToken("chartCross"), labelBackgroundColor: resolveToken("chartLabel") },
       },
       timeScale: {
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: resolveToken("chartGrid"),
         timeVisible: true,
       },
       rightPriceScale: {
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: resolveToken("chartGrid"),
       },
     });
     chartRef.current = chart;

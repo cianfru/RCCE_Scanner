@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge, MCAP_RANK } from "./theme.js";
+import { useTheme } from "./ThemeContext";
 import SparklineCell from "./components/SparklineCell.jsx";
 import TradingViewWidget from "./components/TradingViewWidget.jsx";
 import BMSBChart from "./components/BMSBChart.jsx";
@@ -237,10 +238,10 @@ function InfoPopover({ info, anchor, onClose }) {
     <div ref={ref} style={{
       position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
       width: 280, padding: "14px 16px",
-      background: "linear-gradient(180deg, rgba(30,30,34,0.98), rgba(20,20,24,0.98))",
+      background: T.popoverBg,
       backdropFilter: "blur(20px) saturate(1.4)",
       border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+      borderRadius: T.radiusSm, boxShadow: `0 8px 32px ${T.shadowDeep}`,
       maxHeight: "70vh", overflowY: "auto",
     }}>
       <div style={{
@@ -288,14 +289,14 @@ function InfoButton({ label }) {
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 14, height: 14, borderRadius: "50%",
-          border: `1px solid ${open ? T.accent : "rgba(255,255,255,0.15)"}`,
+          border: `1px solid ${open ? T.accent : T.overlay15}`,
           color: open ? T.accent : T.text4,
           fontSize: 8, fontWeight: 700, fontFamily: T.font,
           cursor: "pointer", transition: "all 0.2s",
           lineHeight: 1, userSelect: "none",
         }}
-        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = T.text2; }}}
-        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = T.text4; }}}
+        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay30; e.currentTarget.style.color = T.text2; }}}
+        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay15; e.currentTarget.style.color = T.text4; }}}
       >i</span>
       {open && <InfoPopover info={info} anchor={btnRef.current} onClose={() => setOpen(false)} />}
     </span>
@@ -310,7 +311,7 @@ function ZScoreBar({ z, isMobile }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: isMobile ? 80 : 110 }}>
       <div style={{
-        flex: 1, height: 3, background: "rgba(255,255,255,0.04)", borderRadius: 2,
+        flex: 1, height: 3, background: T.overlay04, borderRadius: 2,
         overflow: "hidden", position: "relative"
       }}>
         <div style={{
@@ -324,7 +325,7 @@ function ZScoreBar({ z, isMobile }) {
         }} />
         <div style={{
           position: "absolute", left: "50%", top: -1, bottom: -1,
-          width: 1, background: "rgba(255,255,255,0.08)"
+          width: 1, background: T.overlay08
         }} />
       </div>
       <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
@@ -380,10 +381,10 @@ function SignalDot({ signal, reason, warnings, isMobile }) {
       {showTip && hasInfo && (
         <div style={{
           position: "absolute", bottom: "calc(100% + 8px)", left: 0,
-          background: "rgba(0,0,0,0.95)", border: `1px solid ${T.borderH}`,
+          background: T.popoverBg, border: `1px solid ${T.borderH}`,
           borderRadius: T.radiusSm, padding: "10px 12px",
           minWidth: 220, maxWidth: 300, zIndex: 300,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+          boxShadow: `0 8px 32px ${T.shadowDeep}`,
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
         }}
           onClick={e => e.stopPropagation()}
@@ -431,7 +432,7 @@ function HeatCell({ heat }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
       <div style={{
-        width: 32, height: 4, background: "rgba(255,255,255,0.06)",
+        width: 32, height: 4, background: T.overlay06,
         borderRadius: 2, overflow: "hidden",
       }}>
         <div style={{
@@ -518,7 +519,7 @@ function ConfluenceBadge({ score, label }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{
-        width: 24, height: 4, background: "rgba(255,255,255,0.06)",
+        width: 24, height: 4, background: T.overlay06,
         borderRadius: 2, overflow: "hidden",
       }}>
         <div style={{
@@ -633,14 +634,14 @@ function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile, b
 function GlassCard({ children, style = {}, glow = null, className = "" }) {
   return (
     <div className={className} style={{
-      background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+      background: T.glassBg,
       border: `1px solid ${T.border}`,
       borderRadius: T.radius,
       backdropFilter: "blur(16px) saturate(1.2)",
       WebkitBackdropFilter: "blur(16px) saturate(1.2)",
       boxShadow: glow
-        ? `0 0 30px ${glow}, inset 0 1px 0 rgba(255,255,255,0.04)`
-        : "0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
+        ? `0 0 30px ${glow}, ${T.glassInset}`
+        : `${T.glassShadow}, ${T.glassInset}`,
       ...style,
     }}>
       {children}
@@ -659,7 +660,7 @@ function SummaryBar({ results }) {
   return (
     <div style={{
       display: "flex", gap: 1, height: 4, borderRadius: 4, overflow: "hidden",
-      background: "rgba(255,255,255,0.02)",
+      background: T.overlay02,
     }}>
       {REGIME_ORDER.filter(r => counts[r] > 0).map(r => {
         const m = REGIME_META[r];
@@ -774,7 +775,7 @@ function ConsensusBar({ consensus, isMobile }) {
           <div style={{
             width: isMobile ? undefined : 100,
             flex: isMobile ? 1 : undefined,
-            height: 3, background: "rgba(255,255,255,0.04)",
+            height: 3, background: T.overlay04,
             borderRadius: 2, overflow: "hidden",
           }}>
             <div style={{
@@ -799,6 +800,7 @@ function ConsensusBar({ consensus, isMobile }) {
 
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
+  const { mode, toggle } = useTheme();
   const hPad = isMobile ? 12 : isTablet ? 20 : 24;
 
   const [data4h, setData4h] = useState([]);
@@ -1170,73 +1172,73 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${T.bg}; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 6px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+        ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 6px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--t-scrollHover); }
         tr:hover td { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
         select { outline: none; appearance: none; -webkit-appearance: none; }
-        select option { background: #1c1c1e; color: #98989f; }
+        select option { background: var(--t-selectBg); color: var(--t-text3); }
         .notable-scroll::-webkit-scrollbar { display: none; }
         .notable-scroll { scrollbar-width: none; -ms-overflow-style: none; }
         .apple-btn {
           position: relative;
-          background: linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%);
-          border: 1px solid rgba(255,255,255,0.14);
+          background: linear-gradient(180deg, var(--t-overlay10) 0%, var(--t-overlay04) 100%);
+          border: 1px solid var(--t-overlay15);
           border-radius: 10px;
-          color: ${T.text2};
+          color: var(--t-text2);
           cursor: pointer;
           transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-          box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+          box-shadow: 0 1px 2px var(--t-shadow), inset 0 1px 0 var(--t-overlay06);
         }
         .apple-btn:hover {
-          background: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.07) 100%);
-          border-color: rgba(255,255,255,0.22);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
-          color: ${T.text1};
+          background: linear-gradient(180deg, var(--t-overlay15) 0%, var(--t-overlay08) 100%);
+          border-color: var(--t-overlay25);
+          box-shadow: 0 2px 8px var(--t-shadowDeep), inset 0 1px 0 var(--t-overlay08);
+          color: var(--t-text1);
         }
         .apple-btn:active {
-          background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 100%);
-          box-shadow: 0 0px 1px rgba(0,0,0,0.4), inset 0 1px 3px rgba(0,0,0,0.2);
+          background: linear-gradient(180deg, var(--t-overlay06) 0%, var(--t-overlay08) 100%);
+          box-shadow: 0 0px 1px var(--t-shadow), inset 0 1px 3px var(--t-shadow);
           transform: scale(0.98);
         }
         .apple-btn-accent {
           background: linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%);
           border: 1px solid rgba(34,211,238,0.5);
           color: #000;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.20);
+          box-shadow: 0 1px 3px var(--t-shadow), inset 0 1px 0 var(--t-overlay20);
         }
         .apple-btn-accent:hover {
           background: linear-gradient(180deg, #40e8ff 0%, #22d3ee 100%);
           border-color: rgba(34,211,238,0.7);
-          box-shadow: 0 2px 12px rgba(34,211,238,0.25), inset 0 1px 0 rgba(255,255,255,0.25);
+          box-shadow: 0 2px 12px rgba(34,211,238,0.25), inset 0 1px 0 var(--t-overlay25);
           color: #000;
         }
         .apple-btn-accent:active {
           background: linear-gradient(180deg, #18b8d0 0%, #1aa8c0 100%);
-          box-shadow: 0 0px 1px rgba(0,0,0,0.4), inset 0 1px 3px rgba(0,0,0,0.15);
+          box-shadow: 0 0px 1px var(--t-shadow), inset 0 1px 3px var(--t-shadow);
           transform: scale(0.98);
         }
         .apple-select {
-          border: 1px solid rgba(255,255,255,0.14);
+          border: 1px solid var(--t-overlay15);
           border-radius: 10px;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+          box-shadow: 0 1px 2px var(--t-shadow), inset 0 1px 0 var(--t-overlay06);
           transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
           outline: none;
           appearance: none;
           -webkit-appearance: none;
         }
         .apple-select:hover {
-          border-color: rgba(255,255,255,0.22);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+          border-color: var(--t-overlay25);
+          box-shadow: 0 2px 8px var(--t-shadowDeep), inset 0 1px 0 var(--t-overlay08);
         }
         .apple-select:focus {
           border-color: rgba(34,211,238,0.4);
-          box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px rgba(0,0,0,0.4);
+          box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px var(--t-shadow);
         }
       `}</style>
 
@@ -1249,21 +1251,22 @@ export default function App() {
         alignItems: isMobile ? "stretch" : "center",
         justifyContent: "space-between",
         gap: isMobile ? 10 : 0,
-        background: "linear-gradient(180deg, rgba(18,18,20,0.92) 0%, rgba(10,10,12,0.88) 100%)",
+        background: T.headerBg,
         backdropFilter: "blur(24px) saturate(1.4)", WebkitBackdropFilter: "blur(24px) saturate(1.4)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, flex: 1 }}>
           <img
             src="/logo.png"
             alt="Reflex"
             style={{
-              height: isMobile ? 48 : 64,
+              height: isMobile ? 36 : 48,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
               display: "block",
               margin: isMobile ? "6px 0" : "8px 0",
+              filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
             }}
           />
           {scanRunning && (
@@ -1280,6 +1283,34 @@ export default function App() {
               <span style={{ animation: "pulse 1s infinite" }}>{"\u25cf"}</span> SCANNING
             </div>
           )}
+          <button
+            onClick={toggle}
+            title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            style={{
+              position: "relative",
+              width: 44, height: 24,
+              borderRadius: 12,
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              marginLeft: "auto",
+              background: mode === "dark" ? T.accent : T.overlay15,
+              transition: "background 0.3s ease",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: "absolute",
+              top: 2, left: mode === "dark" ? 22 : 2,
+              width: 20, height: 20,
+              borderRadius: "50%",
+              background: mode === "dark" ? T.bg : "#fff",
+              boxShadow: `0 1px 3px ${T.shadow}`,
+              transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 10, lineHeight: 1,
+            }}>{mode === "dark" ? "\uD83C\uDF19" : "\u2600\uFE0F"}</span>
+          </button>
         </div>
 
         <div style={{
@@ -1306,7 +1337,7 @@ export default function App() {
         padding: `6px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "center", gap: 4,
-        background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%)",
+        background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
         overflowX: "auto", WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none", msOverflowStyle: "none",
       }}>
@@ -1387,15 +1418,15 @@ export default function App() {
         padding: `10px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap",
-        background: "linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 100%)",
+        background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
       }}>
         {/* Timeframe tabs */}
         <div style={{
           display: "flex", gap: 2,
-          background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+          background: T.glassBg,
           borderRadius: 12, padding: 3,
           border: `1px solid ${T.border}`,
-          boxShadow: "inset 0 1px 2px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.03)",
+          boxShadow: `inset 0 1px 2px ${T.shadow}, 0 1px 0 ${T.overlay03}`,
           flex: isMobile ? "1 1 100%" : undefined,
         }}>
           {tabOptions.map(([key, label]) => (
@@ -1414,7 +1445,7 @@ export default function App() {
                 transition: "all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
                 flex: isMobile ? 1 : undefined,
                 boxShadow: activeTab === key
-                  ? "0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.20)"
+                  ? `0 1px 4px ${T.shadow}, inset 0 1px 0 ${T.overlay20}`
                   : "none",
               }}
             >
@@ -1467,7 +1498,7 @@ export default function App() {
               cursor: "pointer", letterSpacing: "0.04em",
               flex: isMobile ? 1 : undefined,
               minWidth: 0,
-              background: `rgba(255,255,255,0.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
+              background: `${T.overlay06} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
             }}
           >
             <option value="ALL">{f.all}</option>
@@ -1781,7 +1812,7 @@ export default function App() {
               onClick={() => setShowGroupModal(false)}
               style={{
                 position: "fixed", inset: 0, zIndex: 299,
-                background: "rgba(0,0,0,0.6)",
+                background: T.shadowDeep,
               }}
             />
             <div style={{
@@ -1791,13 +1822,13 @@ export default function App() {
               transform: isMobile ? "none" : "translate(-50%, -50%)",
               width: isMobile ? "94%" : 480,
               maxHeight: isMobile ? "90vh" : "80vh",
-              background: "linear-gradient(180deg, rgba(28,28,30,0.97) 0%, rgba(10,10,12,0.98) 100%)",
+              background: T.popoverBg,
               backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)",
               border: `1px solid ${T.borderH}`,
               borderRadius: T.radius,
               zIndex: 300,
               display: "flex", flexDirection: "column",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.85), 0 0 1px rgba(255,255,255,0.1)",
+              boxShadow: `0 24px 80px ${T.shadowHeavy}, 0 0 1px ${T.overlay10}`,
             }}>
               {/* Modal Header */}
               <div style={{
@@ -2120,7 +2151,7 @@ export default function App() {
           onClick={() => setSelected(null)}
           style={{
             position: "fixed", inset: 0, zIndex: 199,
-            background: "rgba(0,0,0,0.6)",
+            background: T.shadowDeep,
           }}
         />
       )}
@@ -2129,21 +2160,19 @@ export default function App() {
           position: "fixed", right: 0, top: 0, bottom: 0,
           left: isMobile ? 0 : undefined,
           width: isMobile ? "100%" : isTablet ? 400 : 520,
-          background: isMobile
-            ? "linear-gradient(180deg, rgba(20,20,22,0.98) 0%, rgba(10,10,12,0.99) 100%)"
-            : "linear-gradient(180deg, rgba(20,20,22,0.92) 0%, rgba(10,10,12,0.94) 100%)",
+          background: T.drawerBg,
           backdropFilter: "blur(32px) saturate(1.4)", WebkitBackdropFilter: "blur(32px) saturate(1.4)",
           borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
           padding: isMobile ? "20px 16px" : "24px 22px",
           overflowY: "auto", zIndex: 200,
           transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
-          boxShadow: isMobile ? "none" : "-8px 0 40px rgba(0,0,0,0.5)",
+          boxShadow: isMobile ? "none" : `-8px 0 40px ${T.shadowDeep}`,
         }}>
           {/* Mobile drag handle */}
           {isMobile && (
             <div style={{
               width: 36, height: 4, borderRadius: 2,
-              background: "rgba(255,255,255,0.15)",
+              background: T.overlay15,
               margin: "0 auto 16px auto",
             }} />
           )}

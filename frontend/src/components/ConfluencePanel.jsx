@@ -71,7 +71,7 @@ export default function ConfluencePanel({ confluence }) {
         <div style={{
           flex: 1,
           height: 4,
-          background: "rgba(255,255,255,0.04)",
+          background: T.overlay04,
           borderRadius: 2,
           overflow: "hidden",
         }}>
