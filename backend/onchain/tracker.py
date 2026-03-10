@@ -294,7 +294,69 @@ class WhaleTracker:
             # Small delay between tokens to avoid rate limit bursts
             await asyncio.sleep(0.3)
 
+        # Auto-enrich: try fetching supply for tokens that are missing it
+        await self._enrich_missing_supply(tokens)
+
         self.last_poll = time.time()
+
+    async def _enrich_missing_supply(self, tokens: list) -> None:
+        """Try to fetch total_supply for tokens where it's still 0.
+
+        This runs after each poll cycle so that tokens whose supply wasn't
+        available on initial add eventually get enriched automatically.
+        """
+        for token in tokens:
+            if token.total_supply > 0:
+                continue  # Already have supply data
+            fetcher = self._fetchers.get(token.chain)
+            if not fetcher:
+                continue
+
+            try:
+                supply = 0.0
+                if isinstance(fetcher, EtherscanFetcher):
+                    # Use the fast tokensupply endpoint
+                    supply = await fetcher.get_token_supply(
+                        token.contract, token.decimals
+                    )
+                elif isinstance(fetcher, SolscanFetcher):
+                    info = await fetcher.get_token_meta(token.contract)
+                    if info:
+                        supply = info.total_supply
+
+                if supply > 0:
+                    logger.info(
+                        "Auto-enriched total_supply for %s/%s: %s",
+                        token.chain, token.symbol or token.contract[:12], supply,
+                    )
+                    self.store.add_token(
+                        chain=token.chain,
+                        contract=token.contract,
+                        total_supply=supply,
+                    )
+                    # Update in-memory token record
+                    token.total_supply = supply
+                    # Rebuild holder map with new supply
+                    contract_key = (
+                        token.contract.lower()
+                        if token.chain != "solana"
+                        else token.contract
+                    )
+                    if contract_key in self._holder_cache:
+                        labels = self.store.wallet_labels.get(token.chain, {})
+                        price = self._get_price(token.symbol)
+                        self._holder_cache[contract_key] = build_holder_map(
+                            self._transfer_cache.get(contract_key, []),
+                            labels,
+                            price,
+                            supply,
+                        )
+            except Exception as exc:
+                logger.debug(
+                    "Supply enrichment failed for %s/%s: %s",
+                    token.chain, token.contract[:12], exc,
+                )
+            await asyncio.sleep(0.2)
 
     async def poll_holders_solana(self) -> None:
         """Fetch native holder lists for Solana tokens (free tier supported)."""
@@ -625,16 +687,30 @@ class WhaleTracker:
         if not fetcher:
             return 0.0
 
+        # Look up decimals from the tracked token record
+        token_record = next(
+            (t for t in self.store.tracked_tokens
+             if t.chain == chain and
+             (t.contract.lower() if t.chain != "solana" else t.contract)
+             == (contract.lower() if chain != "solana" else contract)),
+            None,
+        )
+        decimals = token_record.decimals if token_record else 18
+
         total_supply = 0.0
         try:
             if isinstance(fetcher, EtherscanFetcher):
-                info = await fetcher.get_token_info(contract)
-                if info:
-                    total_supply = info.total_supply
+                # Use the fast dedicated tokensupply endpoint
+                total_supply = await fetcher.get_token_supply(contract, decimals)
+                # Fall back to full get_token_info if tokensupply returned 0
+                if total_supply == 0:
+                    info = await fetcher.get_token_info(contract)
+                    if info:
+                        total_supply = info.total_supply
             elif isinstance(fetcher, SolscanFetcher):
                 info = await fetcher.get_token_meta(contract)
                 if info:
-                    total_supply = getattr(info, "total_supply", 0.0)
+                    total_supply = info.total_supply
         except Exception as exc:
             logger.warning("Supply refresh failed for %s: %s", contract[:12], exc)
 

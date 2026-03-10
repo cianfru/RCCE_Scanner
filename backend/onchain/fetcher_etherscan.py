@@ -226,14 +226,37 @@ class EtherscanFetcher:
 
         return results
 
+    async def get_token_supply(self, contract: str, decimals: int = 18) -> float:
+        """Fetch total supply using the fast tokensupply endpoint.
+
+        This uses ``module=stats&action=tokensupply`` which is available on
+        the free tier and returns almost instantly (unlike tokeninfo which
+        can be very slow or PRO-only).
+        """
+        try:
+            params = {
+                "module": "stats",
+                "action": "tokensupply",
+                "contractaddress": contract,
+            }
+            data = await self._request(params)
+            result = data.get("result")
+            if result and str(result).isdigit():
+                raw = int(result)
+                return raw / (10 ** decimals) if decimals > 0 else float(raw)
+        except Exception as exc:
+            logger.debug("tokensupply fetch failed for %s: %s", contract[:12], exc)
+        return 0.0
+
     async def get_token_info(self, contract: str) -> Optional[EtherscanTokenInfo]:
         """Resolve token metadata (symbol, name, decimals, supply).
 
-        Strategy: fetch a single recent transfer first (fast, always works),
-        then try the tokeninfo endpoint as an enrichment (may be PRO-only).
-        This avoids the 15-45s timeout penalty on free tier.
+        Strategy:
+        1. Fetch a single recent transfer (fast, always works) → symbol, name, decimals
+        2. Fetch total supply via tokensupply endpoint (fast, free tier)
+        3. Optionally try tokeninfo for richer metadata (slow, may fail)
         """
-        # Fast path: infer metadata from a single transfer (always available)
+        # Step 1: infer metadata from a single transfer (always available)
         transfers = await self.get_token_transfers(contract, offset=1, sort="desc")
         if transfers:
             t = transfers[0]
@@ -244,20 +267,26 @@ class EtherscanFetcher:
                 decimals=t.decimals,
                 total_supply=0,
             )
-            # Optionally try tokeninfo for total_supply (non-blocking, skip on error)
+
+            # Step 2: fast supply fetch via tokensupply (free tier, reliable)
+            info.total_supply = await self.get_token_supply(contract, info.decimals)
+
+            # Step 3: optionally try tokeninfo for richer name/symbol (non-blocking)
             try:
                 params = {
                     "module": "token",
                     "action": "tokeninfo",
                     "contractaddress": contract,
                 }
-                data = await asyncio.wait_for(self._request(params), timeout=5)
+                data = await asyncio.wait_for(self._request(params), timeout=8)
                 result = data.get("result")
                 if isinstance(result, list) and len(result) > 0:
                     ti = result[0]
-                    decimals = int(ti.get("divisor", info.decimals))
-                    total_raw = int(ti.get("totalSupply", 0))
-                    info.total_supply = total_raw / (10 ** decimals) if decimals > 0 else total_raw
+                    # If tokensupply didn't work, try getting supply from tokeninfo
+                    if info.total_supply == 0:
+                        decimals = int(ti.get("divisor", info.decimals))
+                        total_raw = int(ti.get("totalSupply", 0))
+                        info.total_supply = total_raw / (10 ** decimals) if decimals > 0 else total_raw
                     # Prefer tokeninfo name/symbol if available
                     if ti.get("symbol"):
                         info.symbol = ti["symbol"]
