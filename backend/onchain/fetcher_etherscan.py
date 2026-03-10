@@ -221,41 +221,45 @@ class EtherscanFetcher:
         return results
 
     async def get_token_info(self, contract: str) -> Optional[EtherscanTokenInfo]:
-        """Resolve token metadata (symbol, name, decimals, supply)."""
-        # Try the tokeninfo endpoint first (may not be available on all chains)
-        params = {
-            "module": "token",
-            "action": "tokeninfo",
-            "contractaddress": contract,
-        }
-        data = await self._request(params)
-        result = data.get("result")
+        """Resolve token metadata (symbol, name, decimals, supply).
 
-        if isinstance(result, list) and len(result) > 0:
-            info = result[0]
-            try:
-                decimals = int(info.get("divisor", 18))
-                total_raw = int(info.get("totalSupply", 0))
-                return EtherscanTokenInfo(
-                    contract=contract.lower(),
-                    symbol=info.get("symbol", ""),
-                    name=info.get("tokenName", info.get("name", "")),
-                    decimals=decimals,
-                    total_supply=total_raw / (10 ** decimals) if decimals > 0 else total_raw,
-                )
-            except (ValueError, TypeError):
-                pass
-
-        # Fallback: infer from a single transfer
+        Strategy: fetch a single recent transfer first (fast, always works),
+        then try the tokeninfo endpoint as an enrichment (may be PRO-only).
+        This avoids the 15-45s timeout penalty on free tier.
+        """
+        # Fast path: infer metadata from a single transfer (always available)
         transfers = await self.get_token_transfers(contract, offset=1, sort="desc")
         if transfers:
             t = transfers[0]
-            return EtherscanTokenInfo(
+            info = EtherscanTokenInfo(
                 contract=contract.lower(),
                 symbol=t.token_symbol,
                 name=t.token_name,
                 decimals=t.decimals,
                 total_supply=0,
             )
+            # Optionally try tokeninfo for total_supply (non-blocking, skip on error)
+            try:
+                params = {
+                    "module": "token",
+                    "action": "tokeninfo",
+                    "contractaddress": contract,
+                }
+                data = await asyncio.wait_for(self._request(params), timeout=5)
+                result = data.get("result")
+                if isinstance(result, list) and len(result) > 0:
+                    ti = result[0]
+                    decimals = int(ti.get("divisor", info.decimals))
+                    total_raw = int(ti.get("totalSupply", 0))
+                    info.total_supply = total_raw / (10 ** decimals) if decimals > 0 else total_raw
+                    # Prefer tokeninfo name/symbol if available
+                    if ti.get("symbol"):
+                        info.symbol = ti["symbol"]
+                    if ti.get("tokenName") or ti.get("name"):
+                        info.name = ti.get("tokenName", ti.get("name", info.name))
+            except (asyncio.TimeoutError, Exception) as exc:
+                logger.debug("tokeninfo enrichment skipped for %s: %s", contract[:12], exc)
+
+            return info
 
         return None
