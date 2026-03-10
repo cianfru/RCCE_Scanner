@@ -82,6 +82,7 @@ class WhaleTracker:
             if cfg["api_type"] == "etherscan":
                 self._fetchers[chain_id] = EtherscanFetcher(
                     chain_id, cfg["api_base"], key,
+                    etherscan_chain_id=cfg.get("chain_id", "1"),
                 )
             elif cfg["api_type"] == "solscan":
                 self._fetchers[chain_id] = SolscanFetcher(key)

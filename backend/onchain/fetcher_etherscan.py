@@ -62,12 +62,17 @@ class EtherscanTokenInfo:
 # ---------------------------------------------------------------------------
 
 class EtherscanFetcher:
-    """Rate-limited async client for Etherscan-format APIs."""
+    """Rate-limited async client for Etherscan V2 API.
 
-    def __init__(self, chain_id: str, api_base: str, api_key: str) -> None:
+    V2 uses a single base URL (https://api.etherscan.io/v2/api) with a
+    ``chainid`` parameter to select the target network.
+    """
+
+    def __init__(self, chain_id: str, api_base: str, api_key: str, etherscan_chain_id: str = "1") -> None:
         self._chain = chain_id
         self._base = api_base.rstrip("/")
         self._key = api_key
+        self._etherscan_chain_id = etherscan_chain_id  # "1" for ETH, "8453" for Base
         self._sem = asyncio.Semaphore(4)           # stay under 5/sec
         self._session: Optional[aiohttp.ClientSession] = None
 
@@ -89,6 +94,7 @@ class EtherscanFetcher:
     async def _request(self, params: dict) -> dict:
         """Rate-limited GET with retry."""
         params["apikey"] = self._key
+        params["chainid"] = self._etherscan_chain_id
         session = self._get_session()
         last_exc: Optional[Exception] = None
 

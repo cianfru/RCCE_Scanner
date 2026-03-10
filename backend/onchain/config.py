@@ -13,7 +13,8 @@ CHAINS: dict = {
         "name": "Ethereum",
         "short": "ETH",
         "color": "#627eea",
-        "api_base": "https://api.etherscan.io/api",
+        "api_base": "https://api.etherscan.io/v2/api",
+        "chain_id": "1",
         "api_key_env": "ETHERSCAN_API_KEY",
         "api_type": "etherscan",       # shared fetcher for etherscan-format APIs
         "rate_limit": 5,               # calls per second (free tier)
@@ -24,7 +25,8 @@ CHAINS: dict = {
         "name": "Base",
         "short": "BASE",
         "color": "#0052ff",
-        "api_base": "https://api.basescan.org/api",
+        "api_base": "https://api.etherscan.io/v2/api",
+        "chain_id": "8453",
         "api_key_env": "BASESCAN_API_KEY",
         "api_type": "etherscan",
         "rate_limit": 5,
