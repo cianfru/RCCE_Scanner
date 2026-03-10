@@ -15,6 +15,7 @@ import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
+import WhalesPanel from "./components/WhalesPanel.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -296,11 +297,11 @@ export default function App() {
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "whales";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["whales", "WHALES"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["whales", "WHALES"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -726,6 +727,12 @@ export default function App() {
         {activeTab === "executor" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <ExecutorPanel api={API_BASE} />
+          </FadeIn>
+        )}
+
+        {activeTab === "whales" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <WhalesPanel isMobile={isMobile} />
           </FadeIn>
         )}
       </div>

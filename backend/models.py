@@ -246,3 +246,83 @@ class PortfolioGroupAddSymbol(BaseModel):
 
 class PortfolioGroupReorder(BaseModel):
     order: List[str]  # list of group IDs in desired order
+
+
+# ---------------------------------------------------------------------------
+# On-chain whale tracking models
+# ---------------------------------------------------------------------------
+
+class TrackedTokenModel(BaseModel):
+    chain: str
+    contract: str
+    symbol: str = ""
+    name: str = ""
+    decimals: int = 18
+    added_at: float = 0.0
+
+
+class TokenTransferResponse(BaseModel):
+    tx_hash: str
+    chain: str
+    token_symbol: str
+    token_contract: str
+    from_addr: str
+    to_addr: str
+    from_label: str = ""
+    to_label: str = ""
+    value: float = 0.0
+    value_usd: float = 0.0
+    timestamp: int = 0
+    direction: str = "TRANSFER"     # BUY | SELL | TRANSFER
+
+
+class TokenHolderResponse(BaseModel):
+    address: str
+    label: str = ""
+    balance: float = 0.0
+    pct_supply: float = 0.0
+    net_flow_24h: float = 0.0       # positive = accumulating
+    tx_count_24h: int = 0
+    is_whale: bool = False
+
+
+class WhaleAlertResponse(BaseModel):
+    chain: str
+    contract: str
+    token_symbol: str
+    address: str
+    label: str = ""
+    alert_type: str = "LARGE_BUY"   # ACCUMULATING | DISTRIBUTING | NEW_WHALE | LARGE_BUY | LARGE_SELL
+    value_usd: float = 0.0
+    details: str = ""
+    timestamp: float = 0.0
+
+
+class TrendingTokenResponse(BaseModel):
+    chain: str
+    contract: str
+    symbol: str = ""
+    name: str = ""
+    whale_tx_count: int = 0
+    whale_volume_usd: float = 0.0
+    top_buyer: str = ""
+    detected_at: float = 0.0
+
+
+class WhaleStatusResponse(BaseModel):
+    active_chains: List[str] = []
+    tracked_token_count: int = 0
+    alert_count: int = 0
+    transfer_count: int = 0
+    last_poll: Optional[float] = None
+
+
+class WhaleTokenAddRequest(BaseModel):
+    chain: str
+    contract: str
+
+
+class WhaleWalletLabelRequest(BaseModel):
+    chain: str
+    address: str
+    label: str

@@ -4,9 +4,20 @@ FastAPI backend for multi-signal crypto scanning
 """
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Optional
+
+# Load .env file if present (before any env var reads)
+try:
+    from dotenv import load_dotenv
+    _env_file = Path(__file__).resolve().parent / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file)
+except ImportError:
+    pass
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +48,8 @@ from models import (
     PortfolioGroupUpdate,
     PortfolioGroupAddSymbol,
     PortfolioGroupReorder,
+    WhaleTokenAddRequest,
+    WhaleWalletLabelRequest,
 )
 from portfolio_groups import PortfolioGroupManager
 
@@ -100,6 +113,7 @@ async def lifespan(app: FastAPI):
     """On startup, load portfolio groups and start periodic refresh."""
     _sync_cache_symbols()
     asyncio.create_task(_periodic_scan())
+    asyncio.create_task(_periodic_whale_poll())
     yield
 
 
@@ -1109,6 +1123,131 @@ async def executor_remove_whitelist(symbol: str):
 
     symbol = symbol.upper().replace("-", "/")
     return executor.remove_from_whitelist(symbol)
+
+
+# ---------------------------------------------------------------------------
+# On-chain whale tracking
+# ---------------------------------------------------------------------------
+
+_whale_tracker = None
+
+
+def _get_whale_tracker():
+    global _whale_tracker
+    if _whale_tracker is None:
+        from onchain import WhaleTracker
+        _whale_tracker = WhaleTracker()
+        _whale_tracker.init_fetchers()
+    return _whale_tracker
+
+
+async def _periodic_whale_poll():
+    """Poll on-chain whale data every 2 minutes (separate from main scan)."""
+    await asyncio.sleep(30)  # let main scan start first
+    tracker = _get_whale_tracker()
+    while True:
+        try:
+            if tracker.store.get_tracked_tokens():
+                await tracker.poll_all()
+                await tracker.poll_trending()
+                # Solana holder lists less frequently (every 10 min)
+                if time.time() - tracker._last_holder_poll > 600:
+                    await tracker.poll_holders_solana()
+                logger.info(
+                    "Whale poll complete: %d tokens, %d transfers cached",
+                    len(tracker.store.tracked_tokens),
+                    sum(len(v) for v in tracker._transfer_cache.values()),
+                )
+        except Exception as e:
+            logger.error("Whale poll failed: %s", e)
+        await asyncio.sleep(120)  # 2 minutes
+
+
+@app.get("/api/whales/status")
+async def whale_status():
+    """Whale tracker health and chain availability."""
+    return _get_whale_tracker().get_status()
+
+
+@app.get("/api/whales/tokens")
+async def whale_tokens():
+    """List all tracked tokens."""
+    from dataclasses import asdict
+    tracker = _get_whale_tracker()
+    return [asdict(t) for t in tracker.store.get_tracked_tokens()]
+
+
+@app.post("/api/whales/tokens")
+async def whale_add_token(body: WhaleTokenAddRequest):
+    """Add a token to track by chain + contract address."""
+    tracker = _get_whale_tracker()
+    if body.chain not in tracker._active_chains:
+        available = tracker._active_chains or ["none — set API keys"]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Chain '{body.chain}' not available. Active: {available}",
+        )
+    result = await tracker.add_token(body.chain, body.contract)
+    if result is None:
+        raise HTTPException(status_code=400, detail="Failed to resolve token metadata")
+    return result
+
+
+@app.delete("/api/whales/tokens/{chain}/{contract:path}")
+async def whale_remove_token(chain: str, contract: str):
+    """Stop tracking a token."""
+    tracker = _get_whale_tracker()
+    removed = tracker.remove_token(chain, contract)
+    return {"removed": removed}
+
+
+@app.get("/api/whales/transfers")
+async def whale_transfers(
+    chain: Optional[str] = Query(None),
+    contract: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get recent transfers, optionally filtered by chain/contract."""
+    return _get_whale_tracker().get_transfers(chain, contract, limit)
+
+
+@app.get("/api/whales/holders/{chain}/{contract:path}")
+async def whale_holders(
+    chain: str,
+    contract: str,
+    limit: int = Query(40, ge=1, le=100),
+):
+    """Get holder map for a tracked token."""
+    return _get_whale_tracker().get_holders(chain, contract, limit)
+
+
+@app.get("/api/whales/alerts")
+async def whale_alerts(
+    chain: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Get recent whale alerts (accumulation, distribution, large txns)."""
+    return _get_whale_tracker().get_alerts(chain, limit)
+
+
+@app.get("/api/whales/trending")
+async def whale_trending():
+    """Get auto-detected trending tokens with whale activity."""
+    return _get_whale_tracker().get_trending()
+
+
+@app.post("/api/whales/wallet/label")
+async def whale_wallet_label(body: WhaleWalletLabelRequest):
+    """Tag a wallet address with a custom label."""
+    tracker = _get_whale_tracker()
+    tracker.store.set_wallet_label(body.chain, body.address, body.label)
+    return {"ok": True}
+
+
+@app.get("/api/whales/labels")
+async def whale_labels(chain: Optional[str] = Query(None)):
+    """Get all wallet labels, optionally filtered by chain."""
+    return _get_whale_tracker().store.get_all_labels(chain)
 
 
 @app.get("/health")
