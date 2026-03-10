@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import ReactDOM from "react-dom";
 import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge, MCAP_RANK } from "./theme.js";
 import SparklineCell from "./components/SparklineCell.jsx";
 import TradingViewWidget from "./components/TradingViewWidget.jsx";
@@ -83,6 +84,223 @@ const COLUMNS = [
   [null,         "PHASE",      1200],
   [null,         "FLOOR",      1200],
 ];
+
+// ─── COLUMN INFO TOOLTIPS ───────────────────────────────────────────────────
+
+const COLUMN_INFO = {
+  REGIME: {
+    title: "Market Regime",
+    desc: "Z-score based regime detection using price deviation from statistical mean. Identifies the current market phase in the cycle.",
+    values: [
+      ["MARKUP", "Price trending above mean — bullish momentum"],
+      ["BLOWOFF", "Extreme overextension — potential reversal zone"],
+      ["RE-ACC", "Re-accumulation — pullback within uptrend"],
+      ["MARKDOWN", "Price trending below mean — bearish momentum"],
+      ["CAPITULATION", "Extreme underextension — panic selling"],
+      ["ACCUM", "Accumulation — building base after decline"],
+    ],
+  },
+  SIGNAL: {
+    title: "Trading Signal",
+    desc: "Consensus signal derived from all three engines (RCCE, Heatmap, Exhaustion) plus conditions scoring.",
+    values: [
+      ["STRONG LONG", "High-conviction buy — multiple engines aligned"],
+      ["LIGHT LONG", "Moderate buy — some engines supportive"],
+      ["ACCUMULATE", "Gradual position building opportunity"],
+      ["TRIM", "Reduce exposure — signs of weakening"],
+      ["TRIM HARD", "Aggressively reduce — high risk detected"],
+      ["RISK OFF", "Exit entirely — conditions deteriorating"],
+      ["WAIT", "No clear edge — stay sidelined"],
+    ],
+  },
+  COND: {
+    title: "Conditions Met",
+    desc: "Number of entry conditions satisfied out of total checked. Higher ratio means more factors align for a trade. Conditions include trend, volume, momentum, and regime checks.",
+  },
+  SPARK: {
+    title: "Sparkline",
+    desc: "Mini price chart showing recent price action. Green means price is up, red means price is down over the displayed period.",
+  },
+  "Z-SCORE": {
+    title: "Z-Score",
+    desc: "Statistical measure of how far price deviates from its mean, in standard deviations. Range typically -3 to +3.",
+    values: [
+      ["> +2", "Strongly overbought — price far above mean"],
+      ["+1 to +2", "Above average — moderate bullish deviation"],
+      ["-1 to +1", "Near mean — neutral territory"],
+      ["-2 to -1", "Below average — moderate bearish deviation"],
+      ["< -2", "Strongly oversold — price far below mean"],
+    ],
+  },
+  MOM: {
+    title: "Momentum",
+    desc: "Rate of change in price expressed as a percentage. Positive values indicate upward momentum, negative values indicate downward pressure.",
+  },
+  PRICE: {
+    title: "Current Price",
+    desc: "Latest price from the exchange. Updates each scan cycle (every 5 minutes).",
+  },
+  HEAT: {
+    title: "BMSB Heat Score",
+    desc: "Heatmap engine output (0-100) measuring deviation from the BMSB bands. Higher heat means price is stretched further from equilibrium.",
+    values: [
+      ["0–20", "Cool — price near bands, low deviation"],
+      ["20–40", "Warm — moderate stretch"],
+      ["40–60", "Hot — significant deviation building"],
+      ["60–80", "Very hot — extended, caution warranted"],
+      ["80–100", "Extreme — likely reversal zone"],
+    ],
+  },
+  DIV: {
+    title: "Divergence",
+    desc: "Detects when price makes new highs/lows but the oscillator does not confirm. A leading reversal signal.",
+    values: [
+      ["BULL", "Bullish divergence — price falling but momentum rising"],
+      ["BEAR", "Bearish divergence — price rising but momentum fading"],
+    ],
+  },
+  EXHAUST: {
+    title: "Exhaustion State",
+    desc: "Exhaustion engine output detecting capitulation or climactic volume events that often mark turning points.",
+    values: [
+      ["FLOOR", "Downside exhaustion detected — selling drying up"],
+      ["CLIMAX", "Volume climax — extreme activity spike"],
+      ["ABSORB", "Absorption — large orders soaking up supply/demand"],
+      ["BEAR", "Bearish exhaustion conditions present"],
+    ],
+  },
+  FUNDING: {
+    title: "Funding Rate",
+    desc: "Perpetual futures funding rate from the exchange. Positive means longs pay shorts (bullish crowding), negative means shorts pay longs (bearish crowding).",
+  },
+  OI: {
+    title: "Open Interest Trend",
+    desc: "Direction and behavior of open interest in perpetual futures. Reveals positioning dynamics.",
+    values: [
+      ["BUILDING", "OI rising — new positions being opened"],
+      ["SQUZ", "Squeeze — forced liquidations likely"],
+      ["LIQ", "Liquidations occurring — cascading closes"],
+      ["SHORT", "Short interest dominant"],
+    ],
+  },
+  CONF: {
+    title: "Confluence Score",
+    desc: "Alignment score (0-100) between 4H and 1D timeframes. Higher score means both timeframes agree on regime and signal direction.",
+  },
+  ENERGY: {
+    title: "Energy",
+    desc: "Volatility-adjusted momentum measure from the RCCE engine. Indicates the strength of the current move relative to recent volatility.",
+  },
+  PHASE: {
+    title: "Heat Phase",
+    desc: "Qualitative phase derived from the heatmap engine's deviation analysis.",
+    values: [
+      ["Entry", "Low heat — favorable entry zone"],
+      ["Extension", "Rising heat — trend extending"],
+      ["Exhaustion", "High heat — move may be exhausting"],
+      ["Fading", "Heat declining — reversion underway"],
+    ],
+  },
+  FLOOR: {
+    title: "Floor Confirmed",
+    desc: "Boolean flag from the exhaustion engine. When true (checkmark), a downside floor has been confirmed — selling pressure has dried up and a base is forming.",
+  },
+};
+
+// ─── INFO BUTTON COMPONENT ──────────────────────────────────────────────────
+
+function InfoPopover({ info, anchor, onClose }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      const popW = 280;
+      let left = r.left;
+      // Keep popover within viewport
+      if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
+      if (left < 12) left = 12;
+      setPos({ top: r.bottom + 6, left });
+    }
+  }, [anchor]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  return ReactDOM.createPortal(
+    <div ref={ref} style={{
+      position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
+      width: 280, padding: "14px 16px",
+      background: "linear-gradient(180deg, rgba(30,30,34,0.98), rgba(20,20,24,0.98))",
+      backdropFilter: "blur(20px) saturate(1.4)",
+      border: `1px solid ${T.border}`,
+      borderRadius: T.radiusSm, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+      maxHeight: "70vh", overflowY: "auto",
+    }}>
+      <div style={{
+        fontFamily: T.font, fontSize: 12, fontWeight: 700, color: T.text1,
+        marginBottom: 6, letterSpacing: "0.02em",
+      }}>{info.title}</div>
+      <div style={{
+        fontFamily: T.font, fontSize: 11, color: T.text3, lineHeight: 1.5,
+        marginBottom: info.values ? 10 : 0,
+      }}>{info.desc}</div>
+      {info.values && (
+        <div style={{
+          display: "flex", flexDirection: "column", gap: 4,
+          borderTop: `1px solid ${T.border}`, paddingTop: 8,
+        }}>
+          {info.values.map(([label, desc]) => (
+            <div key={label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{
+                fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.accent,
+                minWidth: 70, flexShrink: 0, letterSpacing: "0.03em",
+              }}>{label}</span>
+              <span style={{
+                fontFamily: T.font, fontSize: 10, color: T.text4, lineHeight: 1.4,
+              }}>{desc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+function InfoButton({ label }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const info = COLUMN_INFO[label];
+  if (!info) return null;
+
+  return (
+    <span style={{ display: "inline-flex", marginLeft: 4 }}>
+      <span
+        ref={btnRef}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 14, height: 14, borderRadius: "50%",
+          border: `1px solid ${open ? T.accent : "rgba(255,255,255,0.15)"}`,
+          color: open ? T.accent : T.text4,
+          fontSize: 8, fontWeight: 700, fontFamily: T.font,
+          cursor: "pointer", transition: "all 0.2s",
+          lineHeight: 1, userSelect: "none",
+        }}
+        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = T.text2; }}}
+        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = T.text4; }}}
+      >i</span>
+      {open && <InfoPopover info={info} anchor={btnRef.current} onClose={() => setOpen(false)} />}
+    </span>
+  );
+}
 
 // ─── SUBCOMPONENTS ────────────────────────────────────────────────────────────
 
@@ -889,7 +1107,10 @@ export default function App() {
               transition: "color 0.2s",
             }}
           >
-            {label}{key && currentSort === key ? " \u25bc" : ""}
+            <span style={{ display: "inline-flex", alignItems: "center" }}>
+              {label}{key && currentSort === key ? " \u25bc" : ""}
+              {label !== "SYMBOL" && label !== "SPARK" && label !== "PRICE" && <InfoButton label={label} />}
+            </span>
           </th>
         ))}
       </tr>
