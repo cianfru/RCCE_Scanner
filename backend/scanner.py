@@ -337,6 +337,55 @@ cache = ScanCache()
 
 
 # ---------------------------------------------------------------------------
+# Priority score (composite 0-100 ranking)
+# ---------------------------------------------------------------------------
+
+def _compute_priority(r: dict) -> float:
+    """Compute a composite priority score (0-100) for ranking symbols.
+
+    Factors (total = 100 pts):
+        1. Conditions met:     0-25 pts  (% of conditions satisfied)
+        2. BMSB proximity:     0-25 pts  (how close to / above BMSB mid)
+        3. Floor confirmed:    0 or 15   (binary bonus)
+        4. Momentum:           0-15 pts  (normalised -10% .. +10%)
+        5. Heat headroom:      0-10 pts  (inverted — low heat = more room)
+        6. Volume/absorption:  0-10 pts  (rel_vol + absorption bonus)
+    """
+    score = 0.0
+
+    # 1. Conditions met: 0-25 pts
+    cond = r.get("conditions_met", 0)
+    cond_total = max(r.get("conditions_total", 10), 1)
+    score += (cond / cond_total) * 25
+
+    # 2. BMSB proximity: 0-25 pts
+    dev = r.get("deviation_pct", -50)
+    dev_clamped = max(-50.0, min(50.0, dev))
+    score += ((dev_clamped + 50) / 100) * 25
+
+    # 3. Floor confirmed: 0 or 15 pts
+    if r.get("floor_confirmed", False):
+        score += 15
+
+    # 4. Momentum: 0-15 pts
+    mom = r.get("momentum", -10)
+    mom_clamped = max(-10.0, min(10.0, mom))
+    score += ((mom_clamped + 10) / 20) * 15
+
+    # 5. Heat inverted: 0-10 pts (low heat = more upside room)
+    heat = r.get("heat", 50)
+    score += ((100 - min(heat, 100)) / 100) * 10
+
+    # 6. Volume / absorption: 0-10 pts
+    rel_vol = min(r.get("rel_vol", 1.0), 5.0)
+    score += (rel_vol / 5.0) * 5
+    if r.get("is_absorption", False):
+        score += 5
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
+# ---------------------------------------------------------------------------
 # Core scan logic
 # ---------------------------------------------------------------------------
 
@@ -697,6 +746,10 @@ async def _scan_timeframe(
             r["conditions_detail"] = []
             r["conditions_met"] = 0
             r["conditions_total"] = 10
+
+    # Compute priority score for each result
+    for r in results:
+        r["priority_score"] = _compute_priority(r)
 
     signal_summary = {}
     for r in results:

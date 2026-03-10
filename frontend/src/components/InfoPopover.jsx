@@ -3,6 +3,18 @@ import ReactDOM from "react-dom";
 import { T } from "../theme.js";
 
 const COLUMN_INFO = {
+  PRI: {
+    title: "Priority Score",
+    desc: "Composite 0\u2013100 ranking that helps identify which symbols to focus on first. Combines six weighted factors from all three engines.",
+    values: [
+      ["Conditions (25)", "% of entry conditions met \u2014 more conditions = stronger setup"],
+      ["BMSB Prox (25)", "How close price is to the Bull Market Support Band \u2014 closer/above = better"],
+      ["Floor (15)", "Binary bonus when exhaustion engine confirms a downside floor"],
+      ["Momentum (15)", "Recent rate of price change \u2014 positive momentum scores higher"],
+      ["Heat Room (10)", "Inverted heat score \u2014 low heat means more upside room"],
+      ["Volume (10)", "Relative volume + absorption detection \u2014 higher activity scores more"],
+    ],
+  },
   REGIME: {
     title: "Market Regime",
     desc: "Z-score based regime detection using price deviation from statistical mean. Identifies the current market phase in the cycle.",

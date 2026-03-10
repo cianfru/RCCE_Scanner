@@ -24,6 +24,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // [sortKey, label, minViewportWidth]
 
 const COLUMNS = [
+  ["priority_score", "PRI",    0],
   ["symbol",     "SYMBOL",     0],
   ["regime",     "REGIME",     0],
   [null,         "SIGNAL",     0],
@@ -61,7 +62,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [sortKey, setSortKey] = useState("symbol");
+  const [sortKey, setSortKey] = useState("priority_score");
   const [activeTab, setActiveTab] = useState("4h");
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -283,6 +284,7 @@ export default function App() {
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
       if (sortKey === "conditions") return (b.conditions_met || 0) - (a.conditions_met || 0);
+      if (sortKey === "priority_score") return (b.priority_score || 0) - (a.priority_score || 0);
       return 0;
     });
   };

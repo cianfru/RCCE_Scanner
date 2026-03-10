@@ -60,6 +60,20 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
     case "CONF":
       return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
+    case "PRI": {
+      const pri = row.priority_score ?? 0;
+      const priColor = pri >= 75 ? "#34d399" : pri >= 50 ? "#22d3ee" : pri >= 30 ? "#fbbf24" : T.text4;
+      return (
+        <td style={{ padding: cellPad }}>
+          <span style={{
+            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+            color: priColor, letterSpacing: "0.02em",
+          }}>
+            {Math.round(pri)}
+          </span>
+        </td>
+      );
+    }
     case "COND": {
       const cm = row.conditions_met ?? 0;
       const ct = row.conditions_total ?? 10;

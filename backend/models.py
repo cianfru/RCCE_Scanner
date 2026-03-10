@@ -84,6 +84,8 @@ class ScanResult(BaseModel):
     positioning: Optional[PositioningResponse] = None
     # Multi-TF confluence
     confluence: Optional[ConfluenceResponse] = None
+    # Priority ranking score (0-100 composite)
+    priority_score: float = 0.0
     # Sparkline data (last 24 close prices)
     sparkline: List[float] = []
 
