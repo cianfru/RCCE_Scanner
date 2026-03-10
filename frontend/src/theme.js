@@ -146,8 +146,8 @@ export const T = {
   scrollThumb: "var(--t-scrollThumb)",
   scrollHover: "var(--t-scrollHover)",
   // Static (not theme-dependent)
-  font:        "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
-  mono:        "'SF Mono', 'JetBrains Mono', 'Fira Code', monospace",
+  font:        "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+  mono:        "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
   radius:      "14px",
   radiusSm:    "10px",
   radiusXs:    "8px",

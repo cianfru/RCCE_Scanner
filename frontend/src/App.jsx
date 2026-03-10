@@ -1,67 +1,24 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import ReactDOM from "react-dom";
-import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, formatCacheAge, MCAP_RANK } from "./theme.js";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
-import SparklineCell from "./components/SparklineCell.jsx";
-import TradingViewWidget from "./components/TradingViewWidget.jsx";
-import BMSBChart from "./components/BMSBChart.jsx";
-import ConditionsScorecard from "./components/ConditionsScorecard.jsx";
-import FearGreedGauge from "./components/FearGreedGauge.jsx";
-import StablecoinWidget from "./components/StablecoinWidget.jsx";
-import PositioningPanel from "./components/PositioningPanel.jsx";
-import ConfluencePanel from "./components/ConfluencePanel.jsx";
+import useViewport from "./hooks/useViewport.js";
+import FadeIn from "./components/FadeIn.jsx";
+import SummaryBar from "./components/SummaryBar.jsx";
+import StatCards from "./components/StatCards.jsx";
+import ConsensusBar from "./components/ConsensusBar.jsx";
+import MarketContext from "./components/MarketContext.jsx";
+import NotableSignals from "./components/NotableSignals.jsx";
+import WarmingUp from "./components/WarmingUp.jsx";
+import DataTable from "./components/DataTable.jsx";
+import DetailPanel from "./components/DetailPanel.jsx";
+import GroupModal from "./components/GroupModal.jsx";
+import GlassCard from "./components/GlassCard.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-// ─── VIEWPORT HOOK ──────────────────────────────────────────────────────────
-
-function useViewport() {
-  const [vp, setVp] = useState(() => {
-    const w = typeof window !== "undefined" ? window.innerWidth : 1280;
-    return { width: w, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 };
-  });
-
-  useEffect(() => {
-    let ticking = false;
-    const update = () => {
-      const w = window.innerWidth;
-      setVp({ width: w, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 });
-    };
-    const onResize = () => {
-      if (!ticking) {
-        requestAnimationFrame(() => { update(); ticking = false; });
-        ticking = true;
-      }
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  return vp;
-}
-
-// ─── ANIMATED WRAPPER ────────────────────────────────────────────────────────
-
-function FadeIn({ children, delay = 0, style = {} }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.opacity = "0";
-    el.style.transform = "translateY(6px)";
-    const t = setTimeout(() => {
-      el.style.transition = "opacity 0.4s ease, transform 0.4s ease";
-      el.style.opacity = "1";
-      el.style.transform = "translateY(0)";
-    }, delay);
-    return () => clearTimeout(t);
-  }, [delay]);
-  return <div ref={ref} style={style}>{children}</div>;
-}
 
 // ─── COLUMN DEFINITIONS ─────────────────────────────────────────────────────
 // [sortKey, label, minViewportWidth]
@@ -85,716 +42,6 @@ const COLUMNS = [
   [null,         "PHASE",      1200],
   [null,         "FLOOR",      1200],
 ];
-
-// ─── COLUMN INFO TOOLTIPS ───────────────────────────────────────────────────
-
-const COLUMN_INFO = {
-  REGIME: {
-    title: "Market Regime",
-    desc: "Z-score based regime detection using price deviation from statistical mean. Identifies the current market phase in the cycle.",
-    values: [
-      ["MARKUP", "Price trending above mean — bullish momentum"],
-      ["BLOWOFF", "Extreme overextension — potential reversal zone"],
-      ["RE-ACC", "Re-accumulation — pullback within uptrend"],
-      ["MARKDOWN", "Price trending below mean — bearish momentum"],
-      ["CAPITULATION", "Extreme underextension — panic selling"],
-      ["ACCUM", "Accumulation — building base after decline"],
-    ],
-  },
-  SIGNAL: {
-    title: "Trading Signal",
-    desc: "Consensus signal derived from all three engines (RCCE, Heatmap, Exhaustion) plus conditions scoring.",
-    values: [
-      ["STRONG LONG", "High-conviction buy — multiple engines aligned"],
-      ["LIGHT LONG", "Moderate buy — some engines supportive"],
-      ["ACCUMULATE", "Gradual position building opportunity"],
-      ["TRIM", "Reduce exposure — signs of weakening"],
-      ["TRIM HARD", "Aggressively reduce — high risk detected"],
-      ["RISK OFF", "Exit entirely — conditions deteriorating"],
-      ["WAIT", "No clear edge — stay sidelined"],
-    ],
-  },
-  COND: {
-    title: "Conditions Met",
-    desc: "Number of entry conditions satisfied out of total checked. Higher ratio means more factors align for a trade. Conditions include trend, volume, momentum, and regime checks.",
-  },
-  SPARK: {
-    title: "Sparkline",
-    desc: "Mini price chart showing recent price action. Green means price is up, red means price is down over the displayed period.",
-  },
-  "Z-SCORE": {
-    title: "Z-Score",
-    desc: "Statistical measure of how far price deviates from its mean, in standard deviations. Range typically -3 to +3.",
-    values: [
-      ["> +2", "Strongly overbought — price far above mean"],
-      ["+1 to +2", "Above average — moderate bullish deviation"],
-      ["-1 to +1", "Near mean — neutral territory"],
-      ["-2 to -1", "Below average — moderate bearish deviation"],
-      ["< -2", "Strongly oversold — price far below mean"],
-    ],
-  },
-  MOM: {
-    title: "Momentum",
-    desc: "Rate of change in price expressed as a percentage. Positive values indicate upward momentum, negative values indicate downward pressure.",
-  },
-  PRICE: {
-    title: "Current Price",
-    desc: "Latest price from the exchange. Updates each scan cycle (every 5 minutes).",
-  },
-  HEAT: {
-    title: "BMSB Heat Score",
-    desc: "Heatmap engine output (0-100) measuring deviation from the BMSB bands. Higher heat means price is stretched further from equilibrium.",
-    values: [
-      ["0–20", "Cool — price near bands, low deviation"],
-      ["20–40", "Warm — moderate stretch"],
-      ["40–60", "Hot — significant deviation building"],
-      ["60–80", "Very hot — extended, caution warranted"],
-      ["80–100", "Extreme — likely reversal zone"],
-    ],
-  },
-  DIV: {
-    title: "Divergence",
-    desc: "Detects when price makes new highs/lows but the oscillator does not confirm. A leading reversal signal.",
-    values: [
-      ["BULL", "Bullish divergence — price falling but momentum rising"],
-      ["BEAR", "Bearish divergence — price rising but momentum fading"],
-    ],
-  },
-  EXHAUST: {
-    title: "Exhaustion State",
-    desc: "Exhaustion engine output detecting capitulation or climactic volume events that often mark turning points.",
-    values: [
-      ["FLOOR", "Downside exhaustion detected — selling drying up"],
-      ["CLIMAX", "Volume climax — extreme activity spike"],
-      ["ABSORB", "Absorption — large orders soaking up supply/demand"],
-      ["BEAR", "Bearish exhaustion conditions present"],
-    ],
-  },
-  FUNDING: {
-    title: "Funding Rate",
-    desc: "Perpetual futures funding rate from the exchange. Positive means longs pay shorts (bullish crowding), negative means shorts pay longs (bearish crowding).",
-  },
-  OI: {
-    title: "Open Interest Trend",
-    desc: "Direction and behavior of open interest in perpetual futures. Reveals positioning dynamics.",
-    values: [
-      ["BUILDING", "OI rising — new positions being opened"],
-      ["SQUZ", "Squeeze — forced liquidations likely"],
-      ["LIQ", "Liquidations occurring — cascading closes"],
-      ["SHORT", "Short interest dominant"],
-    ],
-  },
-  CONF: {
-    title: "Confluence Score",
-    desc: "Alignment score (0-100) between 4H and 1D timeframes. Higher score means both timeframes agree on regime and signal direction.",
-  },
-  ENERGY: {
-    title: "Energy",
-    desc: "Volatility-adjusted momentum measure from the RCCE engine. Indicates the strength of the current move relative to recent volatility.",
-  },
-  PHASE: {
-    title: "Heat Phase",
-    desc: "Qualitative phase derived from the heatmap engine's deviation analysis.",
-    values: [
-      ["Entry", "Low heat — favorable entry zone"],
-      ["Extension", "Rising heat — trend extending"],
-      ["Exhaustion", "High heat — move may be exhausting"],
-      ["Fading", "Heat declining — reversion underway"],
-    ],
-  },
-  FLOOR: {
-    title: "Floor Confirmed",
-    desc: "Boolean flag from the exhaustion engine. When true (checkmark), a downside floor has been confirmed — selling pressure has dried up and a base is forming.",
-  },
-};
-
-// ─── INFO BUTTON COMPONENT ──────────────────────────────────────────────────
-
-function InfoPopover({ info, anchor, onClose }) {
-  const ref = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      const popW = 280;
-      let left = r.left;
-      // Keep popover within viewport
-      if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
-      if (left < 12) left = 12;
-      setPos({ top: r.bottom + 6, left });
-    }
-  }, [anchor]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  return ReactDOM.createPortal(
-    <div ref={ref} style={{
-      position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
-      width: 280, padding: "14px 16px",
-      background: T.popoverBg,
-      backdropFilter: "blur(20px) saturate(1.4)",
-      border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm, boxShadow: `0 8px 32px ${T.shadowDeep}`,
-      maxHeight: "70vh", overflowY: "auto",
-    }}>
-      <div style={{
-        fontFamily: T.font, fontSize: 12, fontWeight: 700, color: T.text1,
-        marginBottom: 6, letterSpacing: "0.02em",
-      }}>{info.title}</div>
-      <div style={{
-        fontFamily: T.font, fontSize: 11, color: T.text3, lineHeight: 1.5,
-        marginBottom: info.values ? 10 : 0,
-      }}>{info.desc}</div>
-      {info.values && (
-        <div style={{
-          display: "flex", flexDirection: "column", gap: 4,
-          borderTop: `1px solid ${T.border}`, paddingTop: 8,
-        }}>
-          {info.values.map(([label, desc]) => (
-            <div key={label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-              <span style={{
-                fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.accent,
-                minWidth: 70, flexShrink: 0, letterSpacing: "0.03em",
-              }}>{label}</span>
-              <span style={{
-                fontFamily: T.font, fontSize: 10, color: T.text4, lineHeight: 1.4,
-              }}>{desc}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>,
-    document.body
-  );
-}
-
-function InfoButton({ label }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef(null);
-  const info = COLUMN_INFO[label];
-  if (!info) return null;
-
-  return (
-    <span style={{ display: "inline-flex", marginLeft: 4 }}>
-      <span
-        ref={btnRef}
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 14, height: 14, borderRadius: "50%",
-          border: `1px solid ${open ? T.accent : T.overlay15}`,
-          color: open ? T.accent : T.text4,
-          fontSize: 8, fontWeight: 700, fontFamily: T.font,
-          cursor: "pointer", transition: "all 0.2s",
-          lineHeight: 1, userSelect: "none",
-        }}
-        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay30; e.currentTarget.style.color = T.text2; }}}
-        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay15; e.currentTarget.style.color = T.text4; }}}
-      >i</span>
-      {open && <InfoPopover info={info} anchor={btnRef.current} onClose={() => setOpen(false)} />}
-    </span>
-  );
-}
-
-// ─── SUBCOMPONENTS ────────────────────────────────────────────────────────────
-
-function ZScoreBar({ z, isMobile }) {
-  const bar = zBar(z);
-  if (!bar) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: isMobile ? 80 : 110 }}>
-      <div style={{
-        flex: 1, height: 3, background: T.overlay04, borderRadius: 2,
-        overflow: "hidden", position: "relative"
-      }}>
-        <div style={{
-          position: "absolute",
-          left: bar.pct >= 50 ? "50%" : `${bar.pct}%`,
-          width: `${Math.abs(bar.pct - 50)}%`,
-          height: "100%",
-          background: `linear-gradient(90deg, ${bar.color}99, ${bar.color})`,
-          borderRadius: 2,
-          boxShadow: `0 0 8px ${bar.color}40`,
-        }} />
-        <div style={{
-          position: "absolute", left: "50%", top: -1, bottom: -1,
-          width: 1, background: T.overlay08
-        }} />
-      </div>
-      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
-        {fmt(z, 2)}
-      </span>
-    </div>
-  );
-}
-
-function RegimeBadge({ regime }) {
-  const m = REGIME_META[regime] || REGIME_META.FLAT;
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "4px 12px", borderRadius: "20px",
-      background: m.bg, color: m.color,
-      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.06em",
-      border: `1px solid ${m.color}25`,
-      boxShadow: `0 0 12px ${m.glow}`,
-      whiteSpace: "nowrap",
-    }}>
-      <span style={{ fontSize: 10, opacity: 0.9 }}>{m.glyph}</span>
-      {m.label}
-    </span>
-  );
-}
-
-function SignalDot({ signal, reason, warnings, isMobile }) {
-  const m = SIGNAL_META[signal] || SIGNAL_META.WAIT;
-  const [showTip, setShowTip] = useState(false);
-  const hasInfo = reason || (warnings && warnings.length > 0);
-
-  return (
-    <span
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        color: m.color, fontFamily: T.mono, fontSize: 11, whiteSpace: "nowrap",
-        fontWeight: 600, position: "relative", cursor: hasInfo ? "help" : "default",
-      }}
-      onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
-      onMouseLeave={() => setShowTip(false)}
-      onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
-    >
-      <span style={{
-        fontSize: 9,
-        filter: signal !== "WAIT" ? `drop-shadow(0 0 4px ${m.color})` : "none",
-      }}>{m.dot}</span>
-      {m.label}
-      {warnings && warnings.length > 0 && (
-        <span style={{ fontSize: 8, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
-      )}
-      {showTip && hasInfo && (
-        <div style={{
-          position: "absolute", bottom: "calc(100% + 8px)", left: 0,
-          background: T.popoverBg, border: `1px solid ${T.borderH}`,
-          borderRadius: T.radiusSm, padding: "10px 12px",
-          minWidth: 220, maxWidth: 300, zIndex: 300,
-          boxShadow: `0 8px 32px ${T.shadowDeep}`,
-          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-        }}
-          onClick={e => e.stopPropagation()}
-        >
-          {reason && (
-            <div style={{ fontSize: 9, color: T.text2, fontFamily: T.mono, lineHeight: 1.5, marginBottom: warnings?.length ? 8 : 0 }}>
-              {reason}
-            </div>
-          )}
-          {warnings && warnings.length > 0 && (
-            <div style={{ borderTop: reason ? `1px solid ${T.border}` : "none", paddingTop: reason ? 6 : 0 }}>
-              {warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: 8, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.5, display: "flex", gap: 4, alignItems: "flex-start" }}>
-                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
-                  <span>{w}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </span>
-  );
-}
-
-function DivergencePill({ div }) {
-  if (!div) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = div.includes("BULL") ? "#34d399" : "#f87171";
-  return (
-    <span style={{
-      padding: "3px 10px", borderRadius: "20px",
-      background: `${color}14`, color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.06em", border: `1px solid ${color}28`,
-    }}>
-      {div}
-    </span>
-  );
-}
-
-function HeatCell({ heat }) {
-  if (heat == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = heatColor(heat);
-  const pct = Math.min(heat, 100);
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
-      <div style={{
-        width: 32, height: 4, background: T.overlay06,
-        borderRadius: 2, overflow: "hidden",
-      }}>
-        <div style={{
-          width: `${pct}%`, height: "100%", background: color, borderRadius: 2,
-          boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
-        }} />
-      </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
-        {Math.round(heat)}
-      </span>
-    </div>
-  );
-}
-
-function PhaseCell({ phase }) {
-  if (!phase) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  return (
-    <span style={{ fontFamily: T.mono, fontSize: 11, color: phaseColor(phase), fontWeight: 600, letterSpacing: "0.03em" }}>
-      {phase}
-    </span>
-  );
-}
-
-function ExhaustBadge({ state }) {
-  const meta = exhaustMeta(state);
-  if (meta.text === "\u2014") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  return (
-    <span style={{
-      padding: "3px 9px", borderRadius: "20px",
-      background: `${meta.color}14`, color: meta.color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
-    }}>
-      {meta.text}
-    </span>
-  );
-}
-
-function FloorCell({ confirmed }) {
-  if (confirmed) {
-    return <span style={{
-      color: "#34d399", fontFamily: T.mono, fontSize: 13, fontWeight: 700,
-      filter: "drop-shadow(0 0 4px rgba(52,211,153,0.5))",
-    }}>{"\u2713"}</span>;
-  }
-  return <span style={{ color: T.text4, fontSize: 12 }}>{"\u2014"}</span>;
-}
-
-// ─── NEW TABLE CELLS ─────────────────────────────────────────────────────────
-
-function FundingCell({ rate }) {
-  if (rate == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text2;
-  return (
-    <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
-      {(rate * 100).toFixed(3)}%
-    </span>
-  );
-}
-
-function OITrendBadge({ trend }) {
-  if (!trend) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const meta = {
-    BUILDING:    { color: "#34d399", label: "BUILD" },
-    SQUEEZE:     { color: "#fbbf24", label: "SQUZ" },
-    LIQUIDATING: { color: "#f87171", label: "LIQ" },
-    SHORTING:    { color: "#c084fc", label: "SHORT" },
-  }[trend] || { color: T.text4, label: trend.slice(0, 5) };
-  return (
-    <span style={{
-      padding: "3px 8px", borderRadius: "20px",
-      background: `${meta.color}14`, color: meta.color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
-    }}>
-      {meta.label}
-    </span>
-  );
-}
-
-function ConfluenceBadge({ score, label }) {
-  if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{
-        width: 24, height: 4, background: T.overlay06,
-        borderRadius: 2, overflow: "hidden",
-      }}>
-        <div style={{
-          width: `${Math.min(score ?? 0, 100)}%`, height: "100%",
-          background: color, borderRadius: 2,
-        }} />
-      </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 700 }}>
-        {score != null ? Math.round(score) : "\u2014"}
-      </span>
-    </div>
-  );
-}
-
-// Cell renderer for column-based rendering
-function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
-  const cellPad = isMobile ? "8px 8px" : "10px 10px";
-  switch (colLabel) {
-    case "SYMBOL":
-      return (
-        <td style={{ padding: isMobile ? "8px 8px" : "10px 10px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 12, letterSpacing: "0.02em" }}>
-          {getBaseSymbol(row.symbol)}
-          {backtestSymbols && backtestSymbols.has(row.symbol) && (
-            <span style={{ fontSize: 8, fontWeight: 700, color: "#34d399", opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
-          )}
-        </td>
-      );
-    case "REGIME":
-      return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} /></td>;
-    case "SIGNAL":
-      return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
-    case "SPARK":
-      return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={56} height={22} /></td>;
-    case "Z-SCORE":
-      return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
-    case "ENERGY":
-      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 11, color: T.text2 }}>{fmt(row.energy, 2)}</td>;
-    case "MOM":
-      return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12 }}>
-          <span style={{ color: row.momentum >= 0 ? "#34d399" : "#f87171", fontWeight: 600 }}>
-            {row.momentum != null ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
-          </span>
-        </td>
-      );
-    case "DIV":
-      return <td style={{ padding: cellPad }}><DivergencePill div={row.divergence} /></td>;
-    case "PRICE":
-      return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, color: T.text1, fontWeight: 500 }}>
-          {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
-        </td>
-      );
-    case "HEAT":
-      return <td style={{ padding: cellPad }}><HeatCell heat={row.heat} /></td>;
-    case "PHASE":
-      return <td style={{ padding: cellPad }}><PhaseCell phase={row.heat_phase} /></td>;
-    case "EXHAUST":
-      return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
-    case "FLOOR":
-      return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
-    case "FUNDING":
-      return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
-    case "OI":
-      return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
-    case "CONF":
-      return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
-    case "COND": {
-      const cm = row.conditions_met ?? 0;
-      const ct = row.conditions_total ?? 10;
-      return (
-        <td style={{ padding: cellPad }}>
-          <span style={{
-            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-            color: cm >= 8 ? "#34d399" : cm >= 5 ? "#fbbf24" : T.text4,
-          }}>
-            {cm}/{ct}
-          </span>
-        </td>
-      );
-    }
-    default:
-      return <td style={{ padding: cellPad }}>{"\u2014"}</td>;
-  }
-}
-
-function SymbolRow({ row, selected, onSelect, index, visibleColumns, isMobile, backtestSymbols }) {
-  const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
-  const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.signal);
-
-  return (
-    <tr
-      onClick={() => onSelect(row)}
-      style={{
-        cursor: "pointer",
-        borderBottom: `1px solid ${T.border}`,
-        background: selected ? "rgba(34,211,238,0.04)" : isHighlight ? rm.bg : "transparent",
-        transition: "background 0.2s ease",
-      }}
-      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.surfaceH; }}
-      onMouseLeave={e => { if (!selected) e.currentTarget.style.background = selected ? "rgba(34,211,238,0.04)" : isHighlight ? rm.bg : "transparent"; }}
-    >
-      {visibleColumns.map(([, label]) => (
-        <CellContent key={label} colLabel={label} row={row} isMobile={isMobile} backtestSymbols={backtestSymbols} />
-      ))}
-    </tr>
-  );
-}
-
-// ─── GLASS CARD ──────────────────────────────────────────────────────────────
-
-function GlassCard({ children, style = {}, glow = null, className = "" }) {
-  return (
-    <div className={className} style={{
-      background: T.glassBg,
-      border: `1px solid ${T.border}`,
-      borderRadius: T.radius,
-      backdropFilter: "blur(16px) saturate(1.2)",
-      WebkitBackdropFilter: "blur(16px) saturate(1.2)",
-      boxShadow: glow
-        ? `0 0 30px ${glow}, ${T.glassInset}`
-        : `${T.glassShadow}, ${T.glassInset}`,
-      ...style,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-// ─── SUMMARY BAR ─────────────────────────────────────────────────────────────
-
-function SummaryBar({ results }) {
-  const counts = {};
-  REGIME_ORDER.forEach(r => counts[r] = 0);
-  results.forEach(r => { if (counts[r.regime] !== undefined) counts[r.regime]++; });
-  const total = results.length;
-
-  return (
-    <div style={{
-      display: "flex", gap: 1, height: 4, borderRadius: 4, overflow: "hidden",
-      background: T.overlay02,
-    }}>
-      {REGIME_ORDER.filter(r => counts[r] > 0).map(r => {
-        const m = REGIME_META[r];
-        const pct = (counts[r] / total) * 100;
-        return (
-          <div
-            key={r}
-            title={`${m.label}: ${counts[r]}`}
-            style={{
-              flex: pct,
-              background: `linear-gradient(90deg, ${m.color}cc, ${m.color})`,
-              minWidth: 2,
-              boxShadow: `0 0 8px ${m.glow}`,
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── STAT CARDS ──────────────────────────────────────────────────────────────
-
-function StatCards({ results, isMobile, isTablet }) {
-  const signals = { STRONG_LONG: 0, LIGHT_LONG: 0, ACCUMULATE: 0, TRIM: 0, TRIM_HARD: 0, RISK_OFF: 0 };
-  results.forEach(r => { if (signals[r.signal] !== undefined) signals[r.signal]++; });
-
-  const cards = [
-    { label: "STRONG LONG", value: signals.STRONG_LONG, color: "#34d399" },
-    { label: "LIGHT LONG",  value: signals.LIGHT_LONG,  color: "#6ee7b7" },
-    { label: "ACCUMULATE",  value: signals.ACCUMULATE,   color: "#22d3ee" },
-    { label: "TRIM",        value: signals.TRIM + signals.TRIM_HARD, color: "#fbbf24" },
-    { label: "RISK-OFF",    value: signals.RISK_OFF,     color: "#f87171" },
-  ];
-
-  const gridCols = isMobile ? "repeat(2, 1fr)" : isTablet ? "repeat(3, 1fr)" : "repeat(5, 1fr)";
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: isMobile ? 8 : 10, marginTop: isMobile ? 12 : 16 }}>
-      {cards.map((c, i) => (
-        <FadeIn key={c.label} delay={i * 60} style={isMobile && i === 4 ? { gridColumn: "1 / -1" } : undefined}>
-          <GlassCard
-            glow={c.value > 0 ? `${c.color}08` : null}
-            style={{
-              padding: isMobile ? "12px 14px" : "16px 18px",
-              border: `1px solid ${c.value > 0 ? c.color + "22" : T.border}`,
-              transition: "border-color 0.3s, box-shadow 0.3s",
-            }}
-          >
-            <div style={{
-              fontSize: isMobile ? 26 : 32, fontWeight: 700, fontFamily: T.mono,
-              color: c.value > 0 ? c.color : T.text4,
-              lineHeight: 1,
-              filter: c.value > 0 ? `drop-shadow(0 0 8px ${c.color}30)` : "none",
-            }}>
-              {c.value}
-            </div>
-            <div style={{
-              fontSize: 10, color: c.value > 0 ? T.text2 : T.text4,
-              fontFamily: T.font, fontWeight: 600,
-              letterSpacing: "0.1em", marginTop: 6,
-              textTransform: "uppercase",
-            }}>
-              {c.label}
-            </div>
-          </GlassCard>
-        </FadeIn>
-      ))}
-    </div>
-  );
-}
-
-// ─── CONSENSUS BAR ───────────────────────────────────────────────────────────
-
-function ConsensusBar({ consensus, isMobile }) {
-  if (!consensus) return null;
-  const colorMap = {
-    "RISK-ON": "#34d399", "EUPHORIA": "#fbbf24", "RISK-OFF": "#f87171",
-    "ACCUMULATION": "#22d3ee", "MIXED": "#52525b",
-  };
-  const color = colorMap[consensus.consensus] || "#52525b";
-
-  return (
-    <FadeIn delay={350}>
-      <GlassCard glow={`${color}08`} style={{
-        padding: isMobile ? "12px 14px" : "14px 20px",
-        marginTop: isMobile ? 12 : 16,
-        display: "flex",
-        flexDirection: isMobile ? "column" : "row",
-        alignItems: isMobile ? "stretch" : "center",
-        justifyContent: "space-between",
-        gap: isMobile ? 10 : 0,
-        border: `1px solid ${color}15`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{
-            fontSize: 11, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600,
-            textTransform: "uppercase",
-          }}>Consensus</span>
-          <span style={{
-            padding: "5px 16px", borderRadius: "20px",
-            background: `${color}15`, color,
-            fontSize: 13, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-            border: `1px solid ${color}28`,
-            boxShadow: `0 0 16px ${color}15`,
-          }}>
-            {consensus.consensus}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: isMobile ? 1 : undefined }}>
-          <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
-          <div style={{
-            width: isMobile ? undefined : 100,
-            flex: isMobile ? 1 : undefined,
-            height: 3, background: T.overlay04,
-            borderRadius: 2, overflow: "hidden",
-          }}>
-            <div style={{
-              width: `${consensus.strength}%`, height: "100%",
-              background: `linear-gradient(90deg, ${color}88, ${color})`,
-              borderRadius: 2,
-              boxShadow: `0 0 8px ${color}30`,
-              transition: "width 0.6s ease",
-            }} />
-          </div>
-          <span style={{
-            fontFamily: T.mono, fontSize: 13, color, fontWeight: 700,
-            minWidth: 36, textAlign: "right",
-          }}>{Math.round(consensus.strength)}%</span>
-        </div>
-      </GlassCard>
-    </FadeIn>
-  );
-}
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
@@ -830,15 +77,7 @@ export default function App() {
   const [groups, setGroups] = useState([]);
   const [activeGroupId, setActiveGroupId] = useState(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
-  const [editingGroup, setEditingGroup] = useState(null); // null=create, object=edit
-  const [groupName, setGroupName] = useState("");
-  const [groupColor, setGroupColor] = useState("#22d3ee");
-
-  // Symbol search (shared by group modal)
-  const [watchlistSearch, setWatchlistSearch] = useState("");
-  const [watchlistResults, setWatchlistResults] = useState([]);
-  const [watchlistLoading, setWatchlistLoading] = useState(false);
-  const [krakenPerpsLoading, setKrakenPerpsLoading] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -847,6 +86,8 @@ export default function App() {
   useEffect(() => {
     if (isMobile && activeTab === "split") setActiveTab("4h");
   }, [isMobile, activeTab]);
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async (tf) => {
     const params = new URLSearchParams({ timeframe: tf });
@@ -870,7 +111,6 @@ export default function App() {
       setCacheAge(r4h.cache_age_seconds);
       setLastRefresh(new Date());
 
-      // Fetch global metrics, alt season, sentiment, stablecoin (non-blocking)
       try {
         const [gm, as, sent, stable] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
@@ -882,7 +122,7 @@ export default function App() {
         if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
-      } catch (_) { /* metrics are optional */ }
+      } catch (_) {}
     } catch (e) {
       setError(e.message);
     } finally {
@@ -903,17 +143,17 @@ export default function App() {
   };
 
   // ── Portfolio group management ───────────────────────────────────────────
+
   const loadGroups = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/groups`);
       const data = await res.json();
       setGroups(data || []);
-      // Auto-select first group if none active
       if (!activeGroupId && data.length > 0) setActiveGroupId(data[0].id);
     } catch (_) {}
   }, [activeGroupId]);
 
-  useEffect(() => { loadGroups(); }, []);  // load on mount
+  useEffect(() => { loadGroups(); }, []);
 
   const createGroup = async (name, symbols = [], color = "#22d3ee") => {
     try {
@@ -946,7 +186,6 @@ export default function App() {
     try {
       await fetch(`${API_BASE}/api/groups/${id}`, { method: "DELETE" });
       await loadGroups();
-      // If deleted the active group, switch to first
       if (activeGroupId === id) {
         setActiveGroupId(groups.length > 1 ? groups.find(g => g.id !== id)?.id : null);
       }
@@ -961,8 +200,6 @@ export default function App() {
         body: JSON.stringify({ symbol }),
       });
       await loadGroups();
-      setWatchlistSearch("");
-      setWatchlistResults([]);
     } catch (_) {}
   };
 
@@ -973,40 +210,12 @@ export default function App() {
     } catch (_) {}
   };
 
-  const searchSymbols = useCallback(async (q) => {
-    if (!q || q.length < 1) { setWatchlistResults([]); return; }
-    setWatchlistLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/watchlist/search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      setWatchlistResults(data.results || []);
-    } catch (_) {
-      setWatchlistResults([]);
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }, []);
-
-  // Backtest badge: fetch symbols from completed backtests
-  const refreshBacktestSymbols = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/backtest/symbols`);
-      const data = await res.json();
-      setBacktestSymbols(new Set(data.symbols || []));
-    } catch (_) {}
-  }, []);
-
-  useEffect(() => { refreshBacktestSymbols(); }, [refreshBacktestSymbols]);
-
-  // Kraken perps: add perpetual contracts to editing group
   const loadKrakenPerps = async (groupId) => {
     if (!groupId) return;
-    setKrakenPerpsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/perpetuals/kraken`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
-        // Add each symbol to the group
         for (const sym of data.symbols) {
           await fetch(`${API_BASE}/api/groups/${groupId}/symbols`, {
             method: "POST",
@@ -1019,23 +228,27 @@ export default function App() {
     } catch (e) {
       console.error("Kraken perps fetch failed:", e);
     }
-    setKrakenPerpsLoading(false);
   };
 
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => searchSymbols(watchlistSearch), 300);
-    return () => clearTimeout(timer);
-  }, [watchlistSearch, searchSymbols]);
+  // Backtest badge
+  const refreshBacktestSymbols = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/backtest/symbols`);
+      const data = await res.json();
+      setBacktestSymbols(new Set(data.symbols || []));
+    } catch (_) {}
+  }, []);
 
-  // Active group filtering
+  useEffect(() => { refreshBacktestSymbols(); }, [refreshBacktestSymbols]);
+
+  // ── Computed data ─────────────────────────────────────────────────────────
+
   const activeGroup = useMemo(() => groups.find(g => g.id === activeGroupId), [groups, activeGroupId]);
   const activeGroupSymbols = useMemo(() => {
     if (!activeGroup) return null;
     return new Set(activeGroup.symbols);
   }, [activeGroup]);
 
-  // Filter scan data by active group
   const filtered4h = useMemo(() => {
     if (!activeGroupSymbols) return data4h;
     return data4h.filter(r => activeGroupSymbols.has(r.symbol));
@@ -1046,7 +259,6 @@ export default function App() {
     return data1d.filter(r => activeGroupSymbols.has(r.symbol));
   }, [data1d, activeGroupSymbols]);
 
-  // Group performance badges
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
     const symSet = new Set(groupSymbols);
@@ -1060,9 +272,7 @@ export default function App() {
   const sortResults = (results) => {
     return [...results].sort((a, b) => {
       if (sortKey === "mcap" || sortKey === "symbol") {
-        const ra = MCAP_RANK[a.symbol] ?? 999;
-        const rb = MCAP_RANK[b.symbol] ?? 999;
-        return ra - rb;
+        return (MCAP_RANK[a.symbol] ?? 999) - (MCAP_RANK[b.symbol] ?? 999);
       }
       if (sortKey === "regime") {
         const ri = REGIME_ORDER.indexOf(a.regime) - REGIME_ORDER.indexOf(b.regime);
@@ -1082,92 +292,18 @@ export default function App() {
   const SIGNALS_NOTABLE = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "TRIM", "RISK_OFF"];
   const notable4h = sorted4h.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
-  const activeGroupCount = activeGroup ? activeGroup.symbols.length : 0;
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
-
-  // Visible columns based on viewport width
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor";
 
   const tabOptions = isMobile
     ? [["4h", "4H"], ["1d", "1D"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"]]
     : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"]];
 
-  const TableHeader = ({ onSort, currentSort }) => (
-    <thead>
-      <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
-        {visibleColumns.map(([key, label]) => (
-          <th
-            key={label}
-            onClick={() => key && onSort(key)}
-            style={{
-              padding: isMobile ? "8px 8px" : "10px 10px", textAlign: "left",
-              fontFamily: T.font, fontSize: isMobile ? 9 : 10, fontWeight: 700,
-              color: currentSort === key ? T.accent : T.text3,
-              letterSpacing: "0.1em", cursor: key ? "pointer" : "default",
-              userSelect: "none", whiteSpace: "nowrap",
-              textTransform: "uppercase",
-              transition: "color 0.2s",
-            }}
-          >
-            <span style={{ display: "inline-flex", alignItems: "center" }}>
-              {label}{key && currentSort === key ? " \u25bc" : ""}
-              {label !== "SYMBOL" && label !== "SPARK" && label !== "PRICE" && <InfoButton label={label} />}
-            </span>
-          </th>
-        ))}
-      </tr>
-    </thead>
-  );
-
-  const DataTable = ({ results, label }) => (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      {label && (
-        <div style={{
-          fontFamily: T.font, fontSize: 9, color: T.text4, fontWeight: 600,
-          letterSpacing: "0.15em", marginBottom: 10, paddingLeft: isMobile ? 10 : 14,
-          textTransform: "uppercase",
-        }}>{label}</div>
-      )}
-      <GlassCard style={{ overflow: "hidden" }}>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <TableHeader onSort={setSortKey} currentSort={sortKey} />
-            <tbody>
-              {results.length === 0 ? (
-                <tr><td colSpan={visibleColumns.length} style={{
-                  padding: "60px 14px", textAlign: "center",
-                  color: T.text4, fontFamily: T.mono, fontSize: 11,
-                }}>
-                  {loading ? (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ animation: "spin 1.5s linear infinite", display: "inline-block" }}>{"\u25e0"}</span>
-                      SCANNING...
-                    </span>
-                  ) : "NO DATA"}
-                </td></tr>
-              ) : (
-                results.map((row, i) => (
-                  <SymbolRow
-                    key={row.symbol}
-                    row={row}
-                    index={i}
-                    selected={selected?.symbol === row.symbol}
-                    onSelect={setSelected}
-                    visibleColumns={visibleColumns}
-                    isMobile={isMobile}
-                    backtestSymbols={backtestSymbols}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </GlassCard>
-    </div>
-  );
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text1 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -1181,6 +317,7 @@ export default function App() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
+        @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         select { outline: none; appearance: none; -webkit-appearance: none; }
         select option { background: var(--t-selectBg); color: var(--t-text3); }
         .notable-scroll::-webkit-scrollbar { display: none; }
@@ -1228,9 +365,7 @@ export default function App() {
           border-radius: 10px;
           box-shadow: 0 1px 2px var(--t-shadow), inset 0 1px 0 var(--t-overlay06);
           transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-          outline: none;
-          appearance: none;
-          -webkit-appearance: none;
+          outline: none; appearance: none; -webkit-appearance: none;
         }
         .apple-select:hover {
           border-color: var(--t-overlay25);
@@ -1241,6 +376,30 @@ export default function App() {
           box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px var(--t-shadow);
         }
       `}</style>
+
+      {/* ── AMBIENT BACKGROUND ORBS ── */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", top: "-10%", left: "15%", width: 600, height: 600,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite",
+        }} />
+        <div style={{
+          position: "absolute", top: "40%", right: "10%", width: 500, height: 500,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(168,85,247,0.04) 0%, transparent 70%)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 3s",
+        }} />
+        <div style={{
+          position: "absolute", bottom: "10%", left: "30%", width: 450, height: 450,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,0.04) 0%, transparent 70%)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 6s",
+        }} />
+        <div style={{
+          position: "absolute", top: "20%", left: "60%", width: 400, height: 400,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(251,191,36,0.03) 0%, transparent 70%)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 8s",
+        }} />
+      </div>
 
       {/* ── HEADER ── */}
       <div style={{
@@ -1332,7 +491,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── GROUP TABS (Level 1) ── */}
+      {/* ── GROUP TABS ── */}
       <div style={{
         padding: `6px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
@@ -1352,27 +511,20 @@ export default function App() {
               onContextMenu={(e) => {
                 e.preventDefault();
                 setEditingGroup(g);
-                setGroupName(g.name);
-                setGroupColor(g.color || "#22d3ee");
-                setWatchlistSearch("");
-                setWatchlistResults([]);
                 setShowGroupModal(true);
               }}
               style={{
                 padding: isMobile ? "7px 14px" : "6px 16px",
                 borderRadius: 10,
                 border: `1px solid ${isActive ? gColor + "50" : T.border}`,
-                background: isActive
-                  ? `${gColor}15`
-                  : "transparent",
+                background: isActive ? `${gColor}15` : "transparent",
                 color: isActive ? gColor : T.text3,
                 fontFamily: T.mono, fontSize: 11, cursor: "pointer",
                 fontWeight: isActive ? 700 : 500,
                 letterSpacing: "0.04em",
                 transition: "all 0.2s ease",
                 display: "flex", alignItems: "center", gap: 6,
-                flexShrink: 0,
-                whiteSpace: "nowrap",
+                flexShrink: 0, whiteSpace: "nowrap",
               }}
             >
               {g.name}
@@ -1388,16 +540,8 @@ export default function App() {
             </button>
           );
         })}
-        {/* Add group button */}
         <button
-          onClick={() => {
-            setEditingGroup(null);
-            setGroupName("");
-            setGroupColor("#22d3ee");
-            setWatchlistSearch("");
-            setWatchlistResults([]);
-            setShowGroupModal(true);
-          }}
+          onClick={() => { setEditingGroup(null); setShowGroupModal(true); }}
           style={{
             padding: "6px 12px", borderRadius: 10,
             border: `1px dashed ${T.border}`,
@@ -1413,14 +557,13 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── CONTROLS (Level 2: Timeframe tabs + Filters) ── */}
+      {/* ── CONTROLS ── */}
       <div style={{
         padding: `10px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap",
         background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
       }}>
-        {/* Timeframe tabs */}
         <div style={{
           display: "flex", gap: 2,
           background: T.glassBg,
@@ -1456,18 +599,10 @@ export default function App() {
 
         {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
-        {/* Edit active group */}
         {activeGroup && (
           <button
             className="apple-btn"
-            onClick={() => {
-              setEditingGroup(activeGroup);
-              setGroupName(activeGroup.name);
-              setGroupColor(activeGroup.color || "#22d3ee");
-              setWatchlistSearch("");
-              setWatchlistResults([]);
-              setShowGroupModal(true);
-            }}
+            onClick={() => { setEditingGroup(activeGroup); setShowGroupModal(true); }}
             style={{
               padding: isMobile ? "8px 14px" : "6px 14px",
               fontFamily: T.mono, fontSize: 10, fontWeight: 500,
@@ -1482,7 +617,6 @@ export default function App() {
 
         {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
 
-        {/* Filters */}
         {[
           { value: filterRegime, onChange: e => setFilterRegime(e.target.value), all: "All Regimes", options: Object.keys(REGIME_META) },
           { value: filterSignal, onChange: e => setFilterSignal(e.target.value), all: "All Signals", options: Object.keys(SIGNAL_META) },
@@ -1537,260 +671,56 @@ export default function App() {
       )}
 
       {/* ── MAIN CONTENT ── */}
-      <div style={{ paddingTop: isMobile ? 16 : 20, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60 }}>
+      <div style={{ paddingTop: isMobile ? 16 : 20, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative", zIndex: 1 }}>
 
-        {/* Summary + Stats (hidden on backtest tab) */}
-        {activeTab !== "backtest" && activeTab !== "executor" && (data4h.length > 0 || data1d.length > 0) && (
+        {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>
             <SummaryBar results={activeTab === "1d" ? sorted1d : sorted4h} />
             <StatCards results={activeTab === "1d" ? sorted1d : sorted4h} isMobile={isMobile} isTablet={isTablet} />
           </FadeIn>
         )}
 
-        {/* Consensus + Market Context (hidden on backtest tab) */}
-        {activeTab !== "backtest" && activeTab !== "executor" && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />}
+        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />}
 
-        {/* ── MARKET CONTEXT WIDGETS (BTC.D, Alt Season, Fear & Greed, Stablecoins) ── */}
-        {activeTab !== "backtest" && activeTab !== "executor" && (globalMetrics?.btc_dominance > 0 || altSeason || sentiment || stablecoin) && (
-          <FadeIn delay={380}>
-            <div style={{
-              display: "flex", gap: isMobile ? 8 : 10,
-              marginTop: isMobile ? 10 : 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}>
-              {/* Fear & Greed Gauge */}
-              {sentiment?.fear_greed_value != null && (
-                <GlassCard style={{
-                  padding: "4px 8px",
-                  display: "flex", alignItems: "center",
-                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
-                  justifyContent: "center",
-                }}>
-                  <FearGreedGauge value={sentiment.fear_greed_value} label={sentiment.fear_greed_label || "Fear & Greed"} />
-                </GlassCard>
-              )}
-
-              {/* BTC Dominance */}
-              {globalMetrics?.btc_dominance > 0 && (
-                <GlassCard style={{
-                  padding: isMobile ? "8px 14px" : "10px 16px",
-                  display: "flex", alignItems: "center", gap: 10,
-                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
-                }}>
-                  <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
-                    BTC.D
-                  </span>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: 13, fontWeight: 700,
-                    color: globalMetrics.btc_dominance > 55 ? "#fbbf24" : globalMetrics.btc_dominance > 45 ? T.text1 : "#34d399",
-                  }}>
-                    {globalMetrics.btc_dominance.toFixed(1)}%
-                  </span>
-                  {globalMetrics.eth_dominance > 0 && (
-                    <>
-                      <div style={{ width: 1, height: 14, background: T.border }} />
-                      <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
-                      <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text2 }}>
-                        {globalMetrics.eth_dominance.toFixed(1)}%
-                      </span>
-                    </>
-                  )}
-                </GlassCard>
-              )}
-
-              {/* Alt Season */}
-              {altSeason && (
-                <GlassCard style={{
-                  padding: isMobile ? "8px 14px" : "10px 16px",
-                  display: "flex", alignItems: "center", gap: 10,
-                  flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
-                  border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
-                }}>
-                  <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
-                    Alt Season
-                  </span>
-                  <span style={{
-                    padding: "2px 10px", borderRadius: "20px",
-                    background: altSeason.label === "HOT" ? "rgba(248,113,113,0.1)" :
-                               altSeason.label === "ACTIVE" ? "rgba(52,211,153,0.1)" :
-                               altSeason.label === "NEUTRAL" ? "rgba(251,191,36,0.1)" : "rgba(82,82,91,0.1)",
-                    color: altSeason.label === "HOT" ? "#f87171" :
-                           altSeason.label === "ACTIVE" ? "#34d399" :
-                           altSeason.label === "NEUTRAL" ? "#fbbf24" :
-                           altSeason.label === "WEAK" ? "#fb923c" : T.text4,
-                    fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-                  }}>
-                    {altSeason.label}
-                  </span>
-                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text3, fontWeight: 500 }}>
-                    {altSeason.score?.toFixed(0)}
-                  </span>
-                </GlassCard>
-              )}
-
-              {/* Stablecoin Widget */}
-              {stablecoin && (
-                <div style={{ flex: isMobile ? "1 1 calc(50% - 4px)" : undefined }}>
-                  <StablecoinWidget
-                    trend={stablecoin.trend}
-                    changePct={stablecoin.change_7d_pct}
-                    totalCap={stablecoin.total_cap}
-                  />
-                </div>
-              )}
-            </div>
-          </FadeIn>
+        {showDashboard && (
+          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} isMobile={isMobile} />
         )}
 
-        {/* Notable Signals */}
-        {activeTab !== "backtest" && activeTab !== "executor" && (notable4h.length > 0 || notable1d.length > 0) && (
-          <FadeIn delay={420}>
-            <GlassCard
-              className="notable-scroll"
-              style={{
-                marginTop: isMobile ? 12 : 16,
-                padding: isMobile ? "10px 14px" : "12px 18px",
-                display: "flex",
-                gap: isMobile ? 6 : 8,
-                flexWrap: isMobile ? "nowrap" : "wrap",
-                overflowX: isMobile ? "auto" : "visible",
-                WebkitOverflowScrolling: "touch",
-                alignItems: "center",
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-              }}
-            >
-              <span style={{
-                fontSize: 10, color: T.text3, letterSpacing: "0.12em",
-                fontFamily: T.font, fontWeight: 700, marginRight: 6,
-                textTransform: "uppercase",
-                flexShrink: 0,
-              }}>
-                Notable
-              </span>
-              {[...notable4h.map(r => ({ ...r, tf: "4H" })), ...notable1d.map(r => ({ ...r, tf: "1D" }))]
-                .filter((r, i, a) => a.findIndex(x => x.symbol === r.symbol && x.tf === r.tf) === i)
-                .slice(0, 14)
-                .map(r => {
-                  const sm = SIGNAL_META[r.signal] || SIGNAL_META.WAIT;
-                  return (
-                    <span
-                      key={`${r.symbol}-${r.tf}`}
-                      onClick={() => setSelected(r)}
-                      style={{
-                        padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
-                        background: `${sm.color}10`, border: `1px solid ${sm.color}20`,
-                        color: sm.color, fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-                        display: "inline-flex", alignItems: "center", gap: 4,
-                        transition: "all 0.2s ease",
-                        flexShrink: 0,
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = `${sm.color}18`; e.currentTarget.style.boxShadow = `0 0 10px ${sm.color}15`; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = `${sm.color}08`; e.currentTarget.style.boxShadow = "none"; }}
-                    >
-                      {getBaseSymbol(r.symbol)}
-                      <span style={{ fontSize: 8, opacity: 0.5 }}>{r.tf}</span>
-                    </span>
-                  );
-                })}
-            </GlassCard>
-          </FadeIn>
-        )}
+        {showDashboard && <NotableSignals notable4h={notable4h} notable1d={notable1d} onSelect={setSelected} isMobile={isMobile} />}
 
-        {/* Warming Up */}
-        {activeTab !== "backtest" && activeTab !== "executor" && (() => {
-          const activeData = activeTab === "1d" ? sorted1d : sorted4h;
-          const warmingUp = activeData
-            .filter(r => (r.conditions_met || 0) >= 6 && r.signal === "WAIT")
-            .sort((a, b) => (b.conditions_met || 0) - (a.conditions_met || 0))
-            .slice(0, 12);
-          if (warmingUp.length === 0) return null;
-          return (
-            <FadeIn delay={460}>
-              <GlassCard
-                className="notable-scroll"
-                style={{
-                  marginTop: isMobile ? 10 : 14, padding: isMobile ? "10px 14px" : "10px 18px",
-                  display: "flex", gap: isMobile ? 6 : 8, flexWrap: "nowrap",
-                  overflowX: "auto", WebkitOverflowScrolling: "touch",
-                  alignItems: "center", scrollbarWidth: "none", msOverflowStyle: "none",
-                }}
-              >
-                <span style={{
-                  fontSize: 10, color: "#fbbf24", letterSpacing: "0.10em",
-                  fontFamily: T.font, fontWeight: 700, marginRight: 6,
-                  textTransform: "uppercase", flexShrink: 0,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  {"\ud83d\udd25"} Warming Up
-                </span>
-                {warmingUp.map(r => (
-                  <span
-                    key={r.symbol}
-                    onClick={() => setSelected(r)}
-                    style={{
-                      padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
-                      background: "rgba(251,191,36,0.06)",
-                      border: "1px solid rgba(251,191,36,0.15)",
-                      color: "#fbbf24", fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      transition: "all 0.2s ease", flexShrink: 0,
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(251,191,36,0.12)"; e.currentTarget.style.boxShadow = "0 0 12px rgba(251,191,36,0.1)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(251,191,36,0.06)"; e.currentTarget.style.boxShadow = "none"; }}
-                  >
-                    {getBaseSymbol(r.symbol)}
-                    <span style={{
-                      padding: "1px 5px", borderRadius: "10px",
-                      background: "rgba(251,191,36,0.15)",
-                      fontSize: 9, fontWeight: 700,
-                    }}>
-                      {r.conditions_met}/{r.conditions_total || 10}
-                    </span>
-                  </span>
-                ))}
-              </GlassCard>
-            </FadeIn>
-          );
-        })()}
+        {showDashboard && <WarmingUp data={activeTab === "1d" ? sorted1d : sorted4h} onSelect={setSelected} isMobile={isMobile} />}
 
-        {/* Tables */}
-        {activeTab !== "backtest" && activeTab !== "executor" && (
+        {showDashboard && (
           <div style={{
-            display: "flex",
-            flexDirection: isDesktop ? "row" : "column",
-            gap: isDesktop ? 20 : 16,
-            marginTop: isMobile ? 16 : 20,
+            display: "flex", flexDirection: isDesktop ? "row" : "column",
+            gap: isDesktop ? 20 : 16, marginTop: isMobile ? 16 : 20,
           }}>
             {(activeTab === "4h" || activeTab === "split") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={sorted4h} label={activeTab === "split" ? "4H TIMEFRAME" : null} />
+                <DataTable results={sorted4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
+                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
+                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
               </FadeIn>
             )}
             {activeTab === "split" && (
-              <div style={{
-                width: isDesktop ? 1 : "100%",
-                height: isDesktop ? undefined : 1,
-                background: T.border, flexShrink: 0,
-              }} />
+              <div style={{ width: isDesktop ? 1 : "100%", height: isDesktop ? undefined : 1, background: T.border, flexShrink: 0 }} />
             )}
             {(activeTab === "1d" || activeTab === "split") && (
               <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={sorted1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null} />
+                <DataTable results={sorted1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
+                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
+                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
               </FadeIn>
             )}
           </div>
         )}
 
-        {/* Backtest Panel */}
         {activeTab === "backtest" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
           </FadeIn>
         )}
 
-        {/* Executor Panel */}
         {activeTab === "executor" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <ExecutorPanel api={API_BASE} />
@@ -1798,554 +728,19 @@ export default function App() {
         )}
       </div>
 
-      {/* ── GROUP MANAGEMENT MODAL ── */}
-      {showGroupModal && (() => {
-        const isEditing = editingGroup != null;
-        const modalGroupId = editingGroup?.id;
-        const modalSymbols = isEditing ? (groups.find(g => g.id === modalGroupId)?.symbols || []) : [];
-        const usdtPairs = modalSymbols.filter(s => s.endsWith("/USDT"));
-        const btcPairs = modalSymbols.filter(s => s.endsWith("/BTC"));
-
-        return (
-          <>
-            <div
-              onClick={() => setShowGroupModal(false)}
-              style={{
-                position: "fixed", inset: 0, zIndex: 299,
-                background: T.shadowDeep,
-              }}
-            />
-            <div style={{
-              position: "fixed",
-              top: isMobile ? "5%" : "50%",
-              left: isMobile ? "3%" : "50%",
-              transform: isMobile ? "none" : "translate(-50%, -50%)",
-              width: isMobile ? "94%" : 480,
-              maxHeight: isMobile ? "90vh" : "80vh",
-              background: T.popoverBg,
-              backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)",
-              border: `1px solid ${T.borderH}`,
-              borderRadius: T.radius,
-              zIndex: 300,
-              display: "flex", flexDirection: "column",
-              boxShadow: `0 24px 80px ${T.shadowHeavy}, 0 0 1px ${T.overlay10}`,
-            }}>
-              {/* Modal Header */}
-              <div style={{
-                padding: "18px 20px", borderBottom: `1px solid ${T.border}`,
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-              }}>
-                <div style={{ flex: 1 }}>
-                  {isEditing ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <input
-                          type="text"
-                          value={groupName}
-                          onChange={e => setGroupName(e.target.value)}
-                          onBlur={() => { if (groupName && groupName !== editingGroup.name) updateGroup(modalGroupId, { name: groupName }); }}
-                          style={{
-                            fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font,
-                            letterSpacing: "-0.01em", background: "transparent", border: "none",
-                            borderBottom: `1px solid ${T.border}`, outline: "none",
-                            padding: "2px 0", width: "auto", minWidth: 100,
-                          }}
-                        />
-                        {/* Color swatches */}
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24", "#67e8f9"].map(c => (
-                            <span
-                              key={c}
-                              onClick={() => { setGroupColor(c); updateGroup(modalGroupId, { color: c }); }}
-                              style={{
-                                width: 16, height: 16, borderRadius: "50%", cursor: "pointer",
-                                background: c,
-                                border: groupColor === c ? "2px solid white" : "2px solid transparent",
-                                transition: "border 0.15s",
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 10, color: T.text4, fontFamily: T.mono, marginTop: 3 }}>
-                        {modalSymbols.length} symbols {editingGroup.pinned && "\u00b7 Pinned"}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.01em" }}>
-                        Create New Group
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-                        <input
-                          type="text"
-                          placeholder="Group name (e.g. Memes, L1, DeFi)..."
-                          value={groupName}
-                          onChange={e => setGroupName(e.target.value)}
-                          style={{
-                            flex: 1, padding: "8px 12px",
-                            background: T.surface, border: `1px solid ${T.border}`,
-                            borderRadius: T.radiusSm, color: T.text1,
-                            fontFamily: T.mono, fontSize: 12, outline: "none",
-                          }}
-                        />
-                        <div style={{ display: "flex", gap: 3 }}>
-                          {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24"].map(c => (
-                            <span
-                              key={c}
-                              onClick={() => setGroupColor(c)}
-                              style={{
-                                width: 14, height: 14, borderRadius: "50%", cursor: "pointer",
-                                background: c,
-                                border: groupColor === c ? "2px solid white" : "2px solid transparent",
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-                <button
-                  className="apple-btn"
-                  onClick={() => setShowGroupModal(false)}
-                  style={{
-                    borderRadius: "50%", width: 28, height: 28, padding: 0,
-                    fontSize: 12, flexShrink: 0, marginLeft: 12,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >{"\u2715"}</button>
-              </div>
-
-              {/* Search (visible in edit mode or after creating) */}
-              {isEditing && (
-                <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="text"
-                      placeholder="Search symbols to add (e.g. DOGE, SUI)..."
-                      value={watchlistSearch}
-                      onChange={e => setWatchlistSearch(e.target.value)}
-                      style={{
-                        width: "100%", padding: "10px 14px", paddingLeft: 36,
-                        background: T.surface, border: `1px solid ${T.border}`,
-                        borderRadius: T.radiusSm, color: T.text1,
-                        fontFamily: T.mono, fontSize: 12, outline: "none",
-                        transition: "border-color 0.2s",
-                      }}
-                      onFocus={e => e.target.style.borderColor = T.accent + "40"}
-                      onBlur={e => e.target.style.borderColor = T.border}
-                    />
-                    <span style={{
-                      position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
-                      fontSize: 14, color: T.text4,
-                    }}>{"\ud83d\udd0d"}</span>
-                  </div>
-
-                  {/* Search results dropdown */}
-                  {watchlistSearch && watchlistResults.length > 0 && (
-                    <div style={{
-                      marginTop: 6, maxHeight: 200, overflowY: "auto",
-                      background: "rgba(24,24,27,0.98)", border: `1px solid ${T.border}`,
-                      borderRadius: T.radiusSm,
-                    }}>
-                      {watchlistResults.slice(0, 20).map(r => {
-                        const inList = modalSymbols.includes(r.symbol);
-                        return (
-                          <div
-                            key={r.symbol}
-                            onClick={() => !inList && addSymbolToGroup(modalGroupId, r.symbol)}
-                            style={{
-                              padding: "8px 14px", cursor: inList ? "default" : "pointer",
-                              display: "flex", justifyContent: "space-between", alignItems: "center",
-                              borderBottom: `1px solid ${T.border}`,
-                              opacity: inList ? 0.4 : 1,
-                              transition: "background 0.15s",
-                            }}
-                            onMouseEnter={e => { if (!inList) e.currentTarget.style.background = T.surfaceH; }}
-                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                          >
-                            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
-                              {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
-                            </span>
-                            {inList ? (
-                              <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
-                            ) : (
-                              <span style={{ fontSize: 9, color: T.accent, fontFamily: T.mono, fontWeight: 600 }}>+ Add</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {watchlistSearch && watchlistResults.length === 0 && !watchlistLoading && (
-                    <div style={{ marginTop: 8, fontSize: 10, color: T.text4, fontFamily: T.mono, textAlign: "center" }}>
-                      No matches found
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Symbol chips (edit mode) */}
-              {isEditing && (
-                <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
-                  {usdtPairs.length > 0 && (
-                    <>
-                      <div style={{
-                        fontSize: 9, fontFamily: T.mono, color: T.text4,
-                        fontWeight: 600, letterSpacing: "0.08em",
-                        marginBottom: 6, textTransform: "uppercase",
-                      }}>
-                        USDT Pairs ({usdtPairs.length})
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {usdtPairs.map(sym => (
-                          <span
-                            key={sym}
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: 6,
-                              padding: "5px 10px", borderRadius: "20px",
-                              background: T.surface, border: `1px solid ${T.border}`,
-                              fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
-                            }}
-                          >
-                            {getBaseSymbol(sym)}
-                            <span
-                              onClick={() => removeSymbolFromGroup(modalGroupId, sym)}
-                              style={{ cursor: "pointer", color: T.text4, fontSize: 10, display: "flex", alignItems: "center", transition: "color 0.15s" }}
-                              onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
-                              onMouseLeave={e => e.currentTarget.style.color = T.text4}
-                            >{"\u2715"}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {btcPairs.length > 0 && (
-                    <>
-                      <div style={{
-                        fontSize: 9, fontFamily: T.mono, color: "#fb923c",
-                        fontWeight: 600, letterSpacing: "0.08em",
-                        marginTop: usdtPairs.length > 0 ? 14 : 0, marginBottom: 6,
-                        textTransform: "uppercase",
-                      }}>
-                        BTC Pairs ({btcPairs.length})
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {btcPairs.map(sym => (
-                          <span
-                            key={sym}
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: 6,
-                              padding: "5px 10px", borderRadius: "20px",
-                              background: T.surface, border: `1px solid rgba(251,146,60,0.25)`,
-                              fontFamily: T.mono, fontSize: 10, color: T.text2, fontWeight: 500,
-                            }}
-                          >
-                            {getBaseSymbol(sym)}
-                            <span
-                              onClick={() => removeSymbolFromGroup(modalGroupId, sym)}
-                              style={{ cursor: "pointer", color: T.text4, fontSize: 10, display: "flex", alignItems: "center", transition: "color 0.15s" }}
-                              onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
-                              onMouseLeave={e => e.currentTarget.style.color = T.text4}
-                            >{"\u2715"}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {modalSymbols.length === 0 && (
-                    <div style={{ padding: "30px 0", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: 11 }}>
-                      No symbols yet. Use the search above to add symbols.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Modal Footer */}
-              <div style={{
-                padding: "12px 20px", borderTop: `1px solid ${T.border}`,
-                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-              }}>
-                {isEditing ? (
-                  <>
-                    {/* Delete (only for non-pinned) */}
-                    {!editingGroup.pinned && (
-                      <button
-                        className="apple-btn"
-                        onClick={async () => { await deleteGroup(modalGroupId); setShowGroupModal(false); }}
-                        style={{
-                          padding: "8px 16px", fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                          letterSpacing: "0.04em", color: "#f87171", borderColor: "rgba(248,113,113,0.2)",
-                        }}
-                      >
-                        Delete Group
-                      </button>
-                    )}
-                    <div style={{ flex: 1 }} />
-                    {/* Kraken Perps */}
-                    <button
-                      className="apple-btn"
-                      onClick={() => loadKrakenPerps(modalGroupId)}
-                      disabled={krakenPerpsLoading}
-                      style={{
-                        padding: "8px 14px", fontFamily: T.mono, fontSize: 10, fontWeight: 600,
-                        letterSpacing: "0.04em", color: "#fb923c", borderColor: "rgba(251,146,60,0.2)",
-                        opacity: krakenPerpsLoading ? 0.5 : 1,
-                      }}
-                    >
-                      {krakenPerpsLoading ? "Loading..." : "+ Kraken Perps"}
-                    </button>
-                    <button
-                      className="apple-btn apple-btn-accent"
-                      onClick={() => { setShowGroupModal(false); triggerScan(); }}
-                      style={{
-                        padding: "8px 22px", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                        letterSpacing: "0.06em",
-                      }}
-                    >
-                      Scan Now
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      className="apple-btn"
-                      onClick={() => setShowGroupModal(false)}
-                      style={{
-                        padding: "8px 18px", fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="apple-btn apple-btn-accent"
-                      disabled={!groupName.trim()}
-                      onClick={async () => {
-                        const g = await createGroup(groupName.trim(), [], groupColor);
-                        if (g) {
-                          setEditingGroup(g);
-                          setGroupName(g.name);
-                          setGroupColor(g.color);
-                        }
-                      }}
-                      style={{
-                        padding: "8px 22px", fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                        letterSpacing: "0.06em", opacity: groupName.trim() ? 1 : 0.4,
-                      }}
-                    >
-                      Create Group
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
-      {/* ── DETAIL PANEL ── */}
-      {selected && isMobile && (
-        <div
-          onClick={() => setSelected(null)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 199,
-            background: T.shadowDeep,
-          }}
+      {/* ── GROUP MODAL ── */}
+      {showGroupModal && (
+        <GroupModal
+          editingGroup={editingGroup} groups={groups}
+          onClose={() => setShowGroupModal(false)}
+          onCreateGroup={createGroup} onUpdateGroup={updateGroup} onDeleteGroup={deleteGroup}
+          onAddSymbol={addSymbolToGroup} onRemoveSymbol={removeSymbolFromGroup}
+          onLoadKrakenPerps={loadKrakenPerps} onScanNow={triggerScan} isMobile={isMobile}
         />
       )}
-      {selected && (
-        <div style={{
-          position: "fixed", right: 0, top: 0, bottom: 0,
-          left: isMobile ? 0 : undefined,
-          width: isMobile ? "100%" : isTablet ? 400 : 520,
-          background: T.drawerBg,
-          backdropFilter: "blur(32px) saturate(1.4)", WebkitBackdropFilter: "blur(32px) saturate(1.4)",
-          borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
-          padding: isMobile ? "20px 16px" : "24px 22px",
-          overflowY: "auto", zIndex: 200,
-          transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
-          boxShadow: isMobile ? "none" : `-8px 0 40px ${T.shadowDeep}`,
-        }}>
-          {/* Mobile drag handle */}
-          {isMobile && (
-            <div style={{
-              width: 36, height: 4, borderRadius: 2,
-              background: T.overlay15,
-              margin: "0 auto 16px auto",
-            }} />
-          )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-            <div>
-              <div style={{ fontSize: isMobile ? 20 : 22, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
-                {getBaseSymbol(selected.symbol)}
-              </div>
-              <div style={{ fontSize: 10, color: T.text4, letterSpacing: "0.06em", fontFamily: T.mono, marginTop: 4 }}>
-                {selected.symbol} {"\u00b7"} {(selected.timeframe || "").toUpperCase()}
-              </div>
-            </div>
-            <button
-              className="apple-btn"
-              onClick={() => setSelected(null)}
-              style={{
-                borderRadius: "50%", padding: 0,
-                width: isMobile ? 36 : 28,
-                height: isMobile ? 36 : 28,
-                fontSize: isMobile ? 14 : 12,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >{"\u2715"}</button>
-          </div>
-
-          {/* BMSB Chart with signal overlays */}
-          {!isMobile && (
-            <BMSBChart
-              symbol={selected.symbol}
-              timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
-              height={360}
-              signal={selected.signal}
-              regime={selected.regime}
-              heat={selected.heat}
-              conditions={selected.conditions_met}
-              conditionsTotal={selected.conditions_total}
-              exhaustionState={selected.exhaustion_state}
-              floorConfirmed={selected.floor_confirmed}
-              signalConfidence={selected.signal_confidence}
-              momentum={selected.momentum}
-            />
-          )}
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <RegimeBadge regime={selected.regime} />
-            <SignalDot signal={selected.signal} />
-            {/* Signal confidence */}
-            {selected.signal_confidence != null && (
-              <span style={{
-                padding: "3px 8px", borderRadius: "20px",
-                background: T.surface, border: `1px solid ${T.border}`,
-                fontSize: 9, fontFamily: T.mono, fontWeight: 500,
-                color: selected.signal_confidence >= 0.8 ? "#34d399" : selected.signal_confidence >= 0.5 ? "#fbbf24" : T.text3,
-              }}>
-                {Math.round(selected.signal_confidence * 100)}%
-              </span>
-            )}
-          </div>
-
-          {/* Conditions Scorecard */}
-          <ConditionsScorecard
-            conditions={selected.conditions_detail}
-            met={selected.conditions_met}
-            total={selected.conditions_total}
-          />
-
-          {/* Signal reason */}
-          {selected.signal_reason && (
-            <div style={{
-              padding: "8px 12px", borderRadius: T.radiusXs,
-              background: T.surface, border: `1px solid ${T.border}`,
-              marginBottom: 12,
-            }}>
-              <div style={{ fontSize: 8, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, marginBottom: 4, textTransform: "uppercase" }}>
-                Signal Reason
-              </div>
-              <div style={{ fontSize: 10, color: T.text2, fontFamily: T.mono, lineHeight: 1.5 }}>
-                {selected.signal_reason}
-              </div>
-            </div>
-          )}
-
-          {/* Signal warnings */}
-          {selected.signal_warnings && selected.signal_warnings.length > 0 && (
-            <div style={{
-              padding: "8px 12px", borderRadius: T.radiusXs,
-              background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)",
-              marginBottom: 12,
-            }}>
-              {selected.signal_warnings.map((w, i) => (
-                <div key={i} style={{
-                  fontSize: 9, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6,
-                  display: "flex", gap: 6, alignItems: "flex-start",
-                }}>
-                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
-                  <span>{w}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Raw vs Final signal comparison */}
-          {selected.raw_signal && selected.raw_signal !== selected.signal && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-              fontSize: 9, color: T.text4, fontFamily: T.mono,
-            }}>
-              <span>Raw: </span>
-              <SignalDot signal={selected.raw_signal} />
-              <span style={{ color: T.text4 }}>{"\u2192"}</span>
-              <span>Final: </span>
-              <SignalDot signal={selected.signal} />
-            </div>
-          )}
-
-          {/* Confluence Panel */}
-          <ConfluencePanel confluence={selected.confluence} />
-
-          {/* Positioning Panel */}
-          <PositioningPanel positioning={selected.positioning} />
-
-          <div style={{ marginBottom: 16 }}>
-            <ZScoreBar z={selected.zscore} isMobile={isMobile} />
-          </div>
-
-          {[
-            ["Z-Score", fmt(selected.zscore, 3), zBar(selected.zscore)?.color],
-            ["Energy", fmt(selected.energy, 3), null],
-            ["Momentum", `${selected.momentum >= 0 ? "+" : ""}${fmt(selected.momentum, 2)}%`, selected.momentum >= 0 ? "#34d399" : "#f87171"],
-            ["Price", selected.price ? `$${selected.price < 1 ? fmt(selected.price, 5) : fmt(selected.price, 2)}` : "\u2014", null],
-            ["Divergence", selected.divergence || "None", selected.divergence ? "#fbbf24" : null],
-            [null],
-            ["Heat", selected.heat != null ? Math.round(selected.heat) : "\u2014", heatColor(selected.heat)],
-            ["Phase", selected.heat_phase || "\u2014", phaseColor(selected.heat_phase)],
-            ["ATR Regime", selected.atr_regime || "\u2014", null],
-            ["Deviation", selected.deviation_pct != null ? `${fmt(selected.deviation_pct, 2)}%` : "\u2014", null],
-            [null],
-            ["Exhaustion", selected.exhaustion_state || "\u2014", exhaustMeta(selected.exhaustion_state).color],
-            ["Floor", selected.floor_confirmed ? "Confirmed" : "No", selected.floor_confirmed ? "#34d399" : null],
-            ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#67e8f9" : null],
-            ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
-            ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
-            ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
-          ].map(([label, value, valColor], i) => {
-            if (!label) return <div key={i} style={{ height: 1, background: T.border, margin: "8px 0" }} />;
-            return (
-              <div key={label} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "8px 0",
-              }}>
-                <span style={{ fontSize: 11, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-                <span style={{ fontFamily: T.mono, fontSize: isMobile ? 12 : 13, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
-              </div>
-            );
-          })}
-
-          <a
-            href={`https://www.tradingview.com/chart/?symbol=BINANCE:${getBaseSymbol(selected.symbol)}USDT`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="apple-btn"
-            style={{
-              display: "block", marginTop: 24, padding: isMobile ? "12px 16px" : "10px 16px",
-              borderRadius: 12, fontFamily: T.font,
-              fontSize: 11, textDecoration: "none", textAlign: "center",
-              letterSpacing: "0.04em", fontWeight: 500,
-            }}
-          >
-            Open in TradingView {"\u2197"}
-          </a>
-        </div>
-      )}
+      {/* ── DETAIL PANEL ── */}
+      <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} />
     </div>
   );
 }
