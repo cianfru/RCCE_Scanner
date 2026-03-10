@@ -20,6 +20,7 @@ from .config import (
     LARGE_TX_USD,
     TRENDING_LOOKBACK_HOURS,
     TRENDING_MIN_WHALE_WALLETS,
+    WHALE_HOLDING_PCT,
     WHALE_HOLDING_USD,
 )
 
@@ -46,6 +47,7 @@ class HolderInfo:
     last_seen: int           # timestamp
     tx_count_24h: int = 0
     net_flow_24h: float = 0.0
+    pct_supply: float = 0.0  # % of total supply held
     is_whale: bool = False
 
 
@@ -111,6 +113,7 @@ def build_holder_map(
     transfers: list,
     labels: Dict[str, str],
     token_price_usd: float = 0.0,
+    total_supply: float = 0.0,
 ) -> Dict[str, HolderInfo]:
     """Reconstruct holder balances and activity from transfer history.
 
@@ -122,6 +125,7 @@ def build_holder_map(
         transfers: list of transfer records (EtherscanTransfer or SolscanTransfer)
         labels: {address: label} lookup
         token_price_usd: current token price for whale classification
+        total_supply: token total supply for %-based whale classification
     """
     holders: Dict[str, HolderInfo] = {}
     now = int(time.time())
@@ -175,9 +179,13 @@ def build_holder_map(
                 h.tx_count_24h += 1
                 h.net_flow_24h -= value
 
-    # Classify whales
-    if token_price_usd > 0:
-        for h in holders.values():
+    # Compute supply percentage and classify whales
+    for h in holders.values():
+        if total_supply > 0:
+            h.pct_supply = abs(h.balance) / total_supply * 100
+            h.is_whale = h.pct_supply >= WHALE_HOLDING_PCT
+        elif token_price_usd > 0:
+            # Fallback: USD-based when supply is unknown
             holding_usd = abs(h.balance) * token_price_usd
             h.is_whale = holding_usd >= WHALE_HOLDING_USD
 

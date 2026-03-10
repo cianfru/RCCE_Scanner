@@ -21,6 +21,7 @@ from .config import (
     MAX_TRANSFERS_PER_TOKEN,
     MAX_TRENDING,
     PRICE_CACHE_TTL,
+    WHALE_HOLDING_PCT,
 )
 from .fetcher_etherscan import EtherscanFetcher, EtherscanTransfer
 from .fetcher_solscan import SolscanFetcher, SolscanTransfer
@@ -154,6 +155,7 @@ class WhaleTracker:
                         "symbol": info.symbol,
                         "name": info.name,
                         "decimals": info.decimals,
+                        "total_supply": info.total_supply,
                     }
             elif isinstance(fetcher, SolscanFetcher):
                 info = await fetcher.get_token_meta(contract)
@@ -162,12 +164,13 @@ class WhaleTracker:
                         "symbol": info.symbol,
                         "name": info.name,
                         "decimals": info.decimals,
+                        "total_supply": getattr(info, "total_supply", 0.0),
                     }
         except Exception as exc:
             logger.warning("Failed to resolve token metadata for %s: %s", contract, exc)
 
         if meta is None:
-            meta = {"symbol": "", "name": "", "decimals": 18}
+            meta = {"symbol": "", "name": "", "decimals": 18, "total_supply": 0.0}
 
         record = self.store.add_token(
             chain=chain,
@@ -175,6 +178,7 @@ class WhaleTracker:
             symbol=meta["symbol"],
             name=meta["name"],
             decimals=meta["decimals"],
+            total_supply=meta.get("total_supply", 0.0),
         )
 
         # Do an initial fetch of transfers
@@ -248,10 +252,12 @@ class WhaleTracker:
         token_symbol = token_record.symbol if token_record else ""
         token_price = self._get_price(token_symbol)
 
+        total_supply = token_record.total_supply if token_record else 0.0
         holder_map = build_holder_map(
             self._transfer_cache[contract_key],
             labels,
             token_price,
+            total_supply,
         )
         self._holder_cache[contract_key] = holder_map
 
@@ -305,6 +311,7 @@ class WhaleTracker:
                 if holders:
                     token_price = self._get_price(token.symbol)
                     contract_key = token.contract
+                    total_supply = token.total_supply
                     # Merge with existing holder map
                     existing = self._holder_cache.get(contract_key, {})
                     for h in holders:
@@ -318,8 +325,15 @@ class WhaleTracker:
                             )
                         else:
                             existing[h.address].balance = h.amount
-                        # Whale classification
-                        if token_price > 0:
+                        # Supply % and whale classification
+                        if total_supply > 0:
+                            existing[h.address].pct_supply = (
+                                h.amount / total_supply * 100
+                            )
+                            existing[h.address].is_whale = (
+                                existing[h.address].pct_supply >= WHALE_HOLDING_PCT
+                            )
+                        elif token_price > 0:
                             existing[h.address].is_whale = (
                                 h.amount * token_price >= 100_000
                             )
@@ -406,16 +420,15 @@ class WhaleTracker:
         chain: str,
         contract: str,
         limit: int = 40,
+        min_pct: float = 0.0,
     ) -> list:
-        """Get holder map for a specific token."""
+        """Get holder map for a specific token.
+
+        Args:
+            min_pct: minimum % of total supply to include (e.g. 0.4 for whales)
+        """
         key = contract.lower() if chain != "solana" else contract
         holder_map = self._holder_cache.get(key, {})
-
-        holders = sorted(
-            holder_map.values(),
-            key=lambda h: abs(h.balance),
-            reverse=True,
-        )[:limit]
 
         token_record = next(
             (t for t in self.store.tracked_tokens
@@ -424,31 +437,54 @@ class WhaleTracker:
             None,
         )
         token_symbol = token_record.symbol if token_record else ""
+        total_supply = token_record.total_supply if token_record else 0.0
         price = self._get_price(token_symbol)
 
-        return [
-            {
-                "address": h.address,
-                "label": h.label,
-                "balance": h.balance,
-                "pct_supply": 0.0,  # would need total_supply for this
-                "net_flow_24h": h.net_flow_24h,
-                "tx_count_24h": h.tx_count_24h,
-                "is_whale": h.is_whale,
-                "balance_usd": h.balance * price if price > 0 else 0.0,
-            }
-            for h in holders
+        # Filter and sort holders
+        filtered = [
+            h for h in holder_map.values()
             if abs(h.balance) > 0
+            and (h.pct_supply >= min_pct if total_supply > 0 and min_pct > 0 else True)
         ]
+        filtered.sort(key=lambda h: abs(h.balance), reverse=True)
+
+        return {
+            "holders": [
+                {
+                    "address": h.address,
+                    "label": h.label,
+                    "balance": h.balance,
+                    "pct_supply": h.pct_supply,
+                    "net_flow": h.net_flow,
+                    "net_flow_24h": h.net_flow_24h,
+                    "tx_count_24h": h.tx_count_24h,
+                    "buy_count": h.buy_count,
+                    "sell_count": h.sell_count,
+                    "is_whale": h.is_whale,
+                    "last_seen": h.last_seen,
+                    "balance_usd": h.balance * price if price > 0 else 0.0,
+                }
+                for h in filtered[:limit]
+            ],
+            "total_supply": total_supply,
+            "whale_threshold_pct": min_pct if min_pct > 0 else 0.4,
+        }
 
     def get_alerts(
         self,
         chain: Optional[str] = None,
+        contract: Optional[str] = None,
         limit: int = 20,
     ) -> list:
         alerts = self._alerts
         if chain:
             alerts = [a for a in alerts if a.chain == chain]
+        if contract:
+            contract_key = contract.lower()
+            alerts = [
+                a for a in alerts
+                if a.contract.lower() == contract_key
+            ]
         return [
             {
                 "chain": a.chain,
@@ -478,3 +514,141 @@ class WhaleTracker:
             }
             for t in self._trending
         ]
+
+    # ── Cross-token wallet intelligence ──────────────────────────────────
+
+    def get_wallet_activity(
+        self,
+        chain: str,
+        address: str,
+        limit: int = 50,
+    ) -> dict:
+        """Get a wallet's activity across ALL tracked tokens on this chain."""
+        addr_key = address.lower() if chain != "solana" else address
+        labels = self.store.wallet_labels.get(chain, {})
+
+        # 1. Per-token holdings and activity
+        token_activity = []
+        for token in self.store.get_tracked_tokens(chain):
+            contract_key = (
+                token.contract.lower() if chain != "solana" else token.contract
+            )
+            holder_map = self._holder_cache.get(contract_key, {})
+            holder = holder_map.get(addr_key)
+
+            if holder and abs(holder.balance) > 0:
+                price = self._get_price(token.symbol)
+                total_supply = token.total_supply
+                pct = (
+                    abs(holder.balance) / total_supply * 100
+                    if total_supply > 0
+                    else 0.0
+                )
+
+                # Classify activity pattern
+                total_txns = holder.buy_count + holder.sell_count
+                if total_txns == 0:
+                    activity = "INACTIVE"
+                elif holder.buy_count > 0 and holder.sell_count == 0:
+                    activity = "ACCUMULATING"
+                elif holder.sell_count > 0 and holder.buy_count == 0:
+                    activity = "DISTRIBUTING"
+                elif holder.buy_count > holder.sell_count * 1.5:
+                    activity = "ACCUMULATING"
+                elif holder.sell_count > holder.buy_count * 1.5:
+                    activity = "DISTRIBUTING"
+                else:
+                    activity = "MIXED"
+
+                token_activity.append({
+                    "chain": chain,
+                    "contract": token.contract,
+                    "symbol": token.symbol,
+                    "name": token.name,
+                    "balance": holder.balance,
+                    "pct_supply": pct,
+                    "balance_usd": holder.balance * price if price > 0 else 0.0,
+                    "buy_count": holder.buy_count,
+                    "sell_count": holder.sell_count,
+                    "net_flow": holder.net_flow,
+                    "net_flow_24h": holder.net_flow_24h,
+                    "tx_count_24h": holder.tx_count_24h,
+                    "activity": activity,
+                    "last_seen": holder.last_seen,
+                    "is_whale": holder.is_whale,
+                })
+
+        # 2. Recent transfers across all tokens
+        all_transfers = []
+        for token in self.store.get_tracked_tokens(chain):
+            contract_key = (
+                token.contract.lower() if chain != "solana" else token.contract
+            )
+            transfers = self._transfer_cache.get(contract_key, [])
+            for t in transfers:
+                if t.from_addr == addr_key or t.to_addr == addr_key:
+                    all_transfers.append(t)
+
+        all_transfers.sort(key=lambda t: t.timestamp, reverse=True)
+
+        # 3. Format transfers
+        formatted_transfers = []
+        for t in all_transfers[:limit]:
+            formatted_transfers.append({
+                "tx_hash": t.tx_hash,
+                "chain": t.chain,
+                "token_symbol": t.token_symbol,
+                "token_contract": t.token_contract,
+                "from_addr": t.from_addr,
+                "to_addr": t.to_addr,
+                "from_label": labels.get(t.from_addr, ""),
+                "to_label": labels.get(t.to_addr, ""),
+                "value": t.value,
+                "value_usd": t.value * self._get_price(t.token_symbol),
+                "timestamp": t.timestamp,
+                "direction": classify_direction(t.from_addr, t.to_addr),
+            })
+
+        return {
+            "address": address,
+            "chain": chain,
+            "label": self.store.get_wallet_label(chain, address),
+            "token_activity": token_activity,
+            "recent_transfers": formatted_transfers,
+        }
+
+    async def refresh_token_supply(
+        self, chain: str, contract: str
+    ) -> float:
+        """Re-fetch total_supply for a token and update store."""
+        fetcher = self._fetchers.get(chain)
+        if not fetcher:
+            return 0.0
+
+        total_supply = 0.0
+        try:
+            if isinstance(fetcher, EtherscanFetcher):
+                info = await fetcher.get_token_info(contract)
+                if info:
+                    total_supply = info.total_supply
+            elif isinstance(fetcher, SolscanFetcher):
+                info = await fetcher.get_token_meta(contract)
+                if info:
+                    total_supply = getattr(info, "total_supply", 0.0)
+        except Exception as exc:
+            logger.warning("Supply refresh failed for %s: %s", contract[:12], exc)
+
+        if total_supply > 0:
+            # Update store
+            self.store.add_token(
+                chain=chain,
+                contract=contract,
+                total_supply=total_supply,
+            )
+            # Rebuild holder map with new supply
+            try:
+                await self._poll_single_token(chain, contract)
+            except Exception:
+                pass
+
+        return total_supply

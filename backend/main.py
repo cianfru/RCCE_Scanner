@@ -1216,18 +1216,20 @@ async def whale_holders(
     chain: str,
     contract: str,
     limit: int = Query(40, ge=1, le=100),
+    min_pct: float = Query(0.0, ge=0.0, le=100.0),
 ):
-    """Get holder map for a tracked token."""
-    return _get_whale_tracker().get_holders(chain, contract, limit)
+    """Get holder map for a tracked token. Use min_pct to filter by % of supply."""
+    return _get_whale_tracker().get_holders(chain, contract, limit, min_pct)
 
 
 @app.get("/api/whales/alerts")
 async def whale_alerts(
     chain: Optional[str] = Query(None),
+    contract: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     """Get recent whale alerts (accumulation, distribution, large txns)."""
-    return _get_whale_tracker().get_alerts(chain, limit)
+    return _get_whale_tracker().get_alerts(chain, contract, limit)
 
 
 @app.get("/api/whales/trending")
@@ -1242,6 +1244,25 @@ async def whale_wallet_label(body: WhaleWalletLabelRequest):
     tracker = _get_whale_tracker()
     tracker.store.set_wallet_label(body.chain, body.address, body.label)
     return {"ok": True}
+
+
+@app.get("/api/whales/wallet/{chain}/{address}")
+async def whale_wallet_activity(
+    chain: str,
+    address: str,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get a wallet's cross-token activity across all tracked tokens."""
+    tracker = _get_whale_tracker()
+    return tracker.get_wallet_activity(chain, address, limit)
+
+
+@app.post("/api/whales/tokens/{chain}/{contract:path}/refresh-supply")
+async def whale_refresh_supply(chain: str, contract: str):
+    """Re-fetch total_supply for a token (useful when initial fetch failed)."""
+    tracker = _get_whale_tracker()
+    new_supply = await tracker.refresh_token_supply(chain, contract)
+    return {"total_supply": new_supply}
 
 
 @app.get("/api/whales/labels")

@@ -43,6 +43,7 @@ class TrackedTokenRecord:
     symbol: str = ""
     name: str = ""
     decimals: int = 18
+    total_supply: float = 0.0
     added_at: float = 0.0
 
 
@@ -134,6 +135,7 @@ class WhaleStoreManager:
         symbol: str = "",
         name: str = "",
         decimals: int = 18,
+        total_supply: float = 0.0,
     ) -> TrackedTokenRecord:
         contract_key = contract.lower() if chain != "solana" else contract
         # Check if already tracked
@@ -147,6 +149,8 @@ class WhaleStoreManager:
                     t.name = name
                 if decimals != 18:
                     t.decimals = decimals
+                if total_supply > 0:
+                    t.total_supply = total_supply
                 self._save()
                 return t
 
@@ -156,6 +160,7 @@ class WhaleStoreManager:
             symbol=symbol,
             name=name,
             decimals=decimals,
+            total_supply=total_supply,
             added_at=time.time(),
         )
         self.tracked_tokens.append(record)

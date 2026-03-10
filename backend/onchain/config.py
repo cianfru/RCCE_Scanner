@@ -98,6 +98,9 @@ LARGE_TX_USD: float = 50_000.0
 # Minimum USD holdings to be classified as a "whale" for a given token
 WHALE_HOLDING_USD: float = 100_000.0
 
+# Supply-based whale threshold (% of total supply) — takes priority over USD
+WHALE_HOLDING_PCT: float = 0.4
+
 # Accumulation detection parameters
 ACCUMULATION_WINDOW: int = 20       # look at last N transfers per wallet
 ACCUMULATION_MIN_BUYS: int = 7      # min buy transactions in window to flag
