@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, SIGNAL_META, fmt } from "../theme.js";
+import { T, SIGNAL_META, fmt, resolveToken } from "../theme.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -35,14 +35,14 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
     const toY = (v) => pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch;
 
     // Grid
-    ctx.strokeStyle = "rgba(255,255,255,0.04)";
+    ctx.strokeStyle = resolveToken("overlay04");
     ctx.lineWidth = 1;
     const gridLines = 5;
     for (let i = 0; i <= gridLines; i++) {
       const y = pad.t + (ch / gridLines) * i;
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
       const val = yMax - (yMax - yMin) * (i / gridLines);
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.fillStyle = resolveToken("overlay25");
       ctx.font = "9px JetBrains Mono, monospace";
       ctx.textAlign = "right";
       ctx.fillText(`$${val.toFixed(0)}`, pad.l - 6, y + 3);
@@ -52,7 +52,7 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
     if (equity.length > 2) {
       const dates = equity.map(p => new Date(p[0]));
       const labelCount = Math.min(6, equity.length);
-      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.fillStyle = resolveToken("overlay20");
       ctx.font = "8px JetBrains Mono, monospace";
       ctx.textAlign = "center";
       for (let i = 0; i < labelCount; i++) {
@@ -158,7 +158,7 @@ function ProgressBar({ progress, status, startedAt }) {
         <span style={{ fontSize: 10, color: T.text3, fontFamily: T.mono }}>{displayLabel}</span>
         <span style={{ fontSize: 10, color: T.accent, fontFamily: T.mono }}>{displayProgress}</span>
       </div>
-      <div style={{ height: 4, background: "rgba(255,255,255,0.04)", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ height: 4, background: T.overlay04, borderRadius: 2, overflow: "hidden" }}>
         {isReplaying ? (
           <div style={{
             width: "30%", height: "100%",
@@ -254,7 +254,7 @@ function SymbolPicker({ symbols, onChange, isMobile }) {
 
   const chipBg = (sym) => {
     if (sym.endsWith("/BTC")) return "rgba(251,146,60,0.1)";
-    return "rgba(255,255,255,0.04)";
+    return T.overlay04;
   };
 
   const chipBorder = (sym) => {
@@ -339,7 +339,7 @@ function SymbolPicker({ symbols, onChange, isMobile }) {
               position: "absolute", top: "100%", left: 0, zIndex: 50,
               marginTop: 4, minWidth: 180, maxHeight: 200, overflowY: "auto",
               background: "#1a1a1e", border: `1px solid ${T.border}`,
-              borderRadius: T.radiusSm, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              borderRadius: T.radiusSm, boxShadow: `0 8px 32px ${T.shadowDeep}`,
             }}>
               {searchResults.map(r => (
                 <div
@@ -351,7 +351,7 @@ function SymbolPicker({ symbols, onChange, isMobile }) {
                     borderBottom: `1px solid ${T.border}`,
                     display: "flex", justifyContent: "space-between",
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                  onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                 >
                   <span>{r.symbol}</span>
@@ -746,7 +746,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
                     return (
                       <div key={sig} style={{
                         padding: "6px 12px", borderRadius: T.radiusXs,
-                        background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
+                        background: T.overlay02, border: `1px solid ${T.border}`,
                         display: "flex", gap: 8, alignItems: "center",
                       }}>
                         <span style={{ color: sm.color, fontFamily: T.mono, fontSize: 10, fontWeight: 600 }}>{sig}</span>
