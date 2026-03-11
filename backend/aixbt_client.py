@@ -137,6 +137,36 @@ async def _try_x402_purchase() -> str:
             return ""
 
 
+async def _try_x402_purchase_with_error() -> tuple:
+    """Wrapper that returns (key, error_string) for diagnostics."""
+    wallet_key = os.environ.get("AIXBT_WALLET_KEY", "").strip()
+    if not wallet_key:
+        return "", "no wallet key"
+    try:
+        key = await _try_x402_purchase()
+        if key:
+            return key, ""
+        # Purchase returned empty — get more detail
+        # Re-run without the lock's early-return to capture the error
+        from eth_account import Account
+        from x402 import x402ClientSync
+        from x402.mechanisms.evm import EthAccountSigner
+        from x402.mechanisms.evm.exact.register import register_exact_evm_client
+        from x402.http.clients import x402_requests
+
+        account = Account.from_key(wallet_key)
+        signer = EthAccountSigner(account)
+        client = x402ClientSync()
+        register_exact_evm_client(client, signer)
+
+        url = "https://api.aixbt.tech/x402/v2/api-keys/1d"
+        with x402_requests(client) as session:
+            response = session.post(url)
+        return "", f"HTTP {response.status_code}: {response.text[:200]}"
+    except Exception as e:
+        return "", str(e)[:200]
+
+
 # ── Symbol → AIXBT project name mapping ──────────────────────────────
 # AIXBT uses project names (e.g. "bitcoin"), scanner uses pairs (e.g. "BTC/USDT")
 _SYMBOL_MAP = {
@@ -331,11 +361,13 @@ async def confirm_symbol(symbol: str) -> AIXBTConfirmation:
     result = AIXBTConfirmation(project_name=name)
 
     api_key = _get_api_key()
+    x402_error = ""
     if not api_key:
         # Try auto-purchase via x402 (async)
-        api_key = await _try_x402_purchase()
+        api_key, x402_error = await _try_x402_purchase_with_error()
     if not api_key:
-        result.error = "No AIXBT access — set AIXBT_API_KEY or AIXBT_WALLET_KEY (x402)"
+        err_detail = f" [x402: {x402_error}]" if x402_error else ""
+        result.error = f"No AIXBT access — set AIXBT_API_KEY or AIXBT_WALLET_KEY (x402){err_detail}"
         result.confirmation = "UNAVAILABLE"
         return result
 
