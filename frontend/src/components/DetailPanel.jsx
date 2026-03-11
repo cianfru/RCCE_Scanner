@@ -68,22 +68,20 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose }) {
         </div>
 
         {/* BMSB Chart */}
-        {!isMobile && (
-          <BMSBChart
-            symbol={selected.symbol}
-            timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
-            height={360}
-            signal={selected.signal}
-            regime={selected.regime}
-            heat={selected.heat}
-            conditions={selected.conditions_met}
-            conditionsTotal={selected.conditions_total}
-            exhaustionState={selected.exhaustion_state}
-            floorConfirmed={selected.floor_confirmed}
-            signalConfidence={selected.signal_confidence}
-            momentum={selected.momentum}
-          />
-        )}
+        <BMSBChart
+          symbol={selected.symbol}
+          timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
+          height={isMobile ? 260 : isTablet ? 320 : 400}
+          signal={selected.signal}
+          regime={selected.regime}
+          heat={selected.heat}
+          conditions={selected.conditions_met}
+          conditionsTotal={selected.conditions_total}
+          exhaustionState={selected.exhaustion_state}
+          floorConfirmed={selected.floor_confirmed}
+          signalConfidence={selected.signal_confidence}
+          momentum={selected.momentum}
+        />
 
         {/* Regime + Signal badges */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

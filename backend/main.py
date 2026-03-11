@@ -487,7 +487,7 @@ async def confluence_for_symbol(symbol: str):
 async def chart_data(
     symbol: str,
     timeframe: str = Query("1d", description="4h or 1d"),
-    limit: int = Query(120, description="Number of candles"),
+    limit: int = Query(365, description="Number of candles"),
 ):
     """Return OHLCV + BMSB overlay data for charting."""
     from data_fetcher import fetch_ohlcv
@@ -496,18 +496,32 @@ async def chart_data(
 
     symbol = symbol.upper().replace("-", "/")
 
-    ohlcv = await fetch_ohlcv(symbol, timeframe, limit=limit)
+    # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
+    effective_limit = min(limit, 500)
+    ohlcv = await fetch_ohlcv(symbol, timeframe, limit=effective_limit)
     if ohlcv is None:
         raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 
-    # Build candle array (timestamps in unix seconds for lightweight-charts)
+    # Candle timestamps in unix seconds
+    candle_times = [int(ohlcv["timestamp"][i] / 1000) for i in range(len(ohlcv["timestamp"]))]
+
+    # Build candle + volume arrays
     candles = [
         {
-            "time": int(ohlcv["timestamp"][i] / 1000),
+            "time": candle_times[i],
             "open": round(float(ohlcv["open"][i]), 6),
             "high": round(float(ohlcv["high"][i]), 6),
             "low": round(float(ohlcv["low"][i]), 6),
             "close": round(float(ohlcv["close"][i]), 6),
+        }
+        for i in range(len(ohlcv["timestamp"]))
+    ]
+
+    volume = [
+        {
+            "time": candle_times[i],
+            "value": round(float(ohlcv["volume"][i]), 2),
+            "color": "rgba(52,211,153,0.18)" if float(ohlcv["close"][i]) >= float(ohlcv["open"][i]) else "rgba(248,113,113,0.18)",
         }
         for i in range(len(ohlcv["timestamp"]))
     ]
@@ -523,13 +537,28 @@ async def chart_data(
     except Exception:
         logger.warning("BMSB computation failed for %s", symbol)
 
+    # Interpolate weekly BMSB to match chart resolution for smooth lines
+    def _interpolate(series):
+        if not series or len(series) < 2:
+            return series
+        src_t = [p["time"] for p in series]
+        src_v = [p["value"] for p in series]
+        result = []
+        for ts in candle_times:
+            if ts < src_t[0] or ts > src_t[-1]:
+                continue
+            val = float(np.interp(ts, src_t, src_v))
+            result.append({"time": ts, "value": round(val, 6)})
+        return result
+
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "candles": candles,
-        "bmsb_mid": bmsb["mid"],
-        "bmsb_ema": bmsb["ema"],
-        "bmsb_sma": bmsb["sma"],
+        "volume": volume,
+        "bmsb_mid": _interpolate(bmsb["mid"]),
+        "bmsb_ema": _interpolate(bmsb["ema"]),
+        "bmsb_sma": _interpolate(bmsb["sma"]),
     }
 
 

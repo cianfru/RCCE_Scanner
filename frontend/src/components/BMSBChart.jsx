@@ -1,6 +1,15 @@
-import { useRef, useEffect, useState } from "react";
-import { createChart, CandlestickSeries, LineSeries, ColorType } from "lightweight-charts";
-import { T, REGIME_META, SIGNAL_META, heatColor, resolveToken } from "../theme.js";
+import { useRef, useEffect, useState, useCallback } from "react";
+import {
+  createChart,
+  CandlestickSeries,
+  LineSeries,
+  HistogramSeries,
+  ColorType,
+  LineStyle,
+  CrosshairMode,
+  createTextWatermark,
+} from "lightweight-charts";
+import { T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -17,10 +26,17 @@ const SIGNAL_MARKER = {
   NO_LONG:      { color: "#d8b4fe", shape: "arrowDown", position: "aboveBar", text: "NO LONG" },
 };
 
+// ─── Timeframe options ────────────────────────────────────────────────────────
+
+const TIMEFRAMES = [
+  { key: "4h", label: "4H", limit: 500 },
+  { key: "1d", label: "1D", limit: 365 },
+];
+
 export default function BMSBChart({
   symbol,
-  timeframe = "1d",
-  height = 300,
+  timeframe: initialTimeframe = "1d",
+  height = 360,
   signal,
   regime,
   heat,
@@ -35,8 +51,9 @@ export default function BMSBChart({
   const chartRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
 
-  useEffect(() => {
+  const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
 
     // Clean up previous chart
@@ -55,73 +72,137 @@ export default function BMSBChart({
         textColor: resolveToken("chartText"),
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10,
+        attributionLogo: false,
       },
       grid: {
-        vertLines: { color: resolveToken("chartGrid") },
-        horzLines: { color: resolveToken("chartGrid") },
+        vertLines: { color: "rgba(255,255,255,0.02)" },
+        horzLines: { color: "rgba(255,255,255,0.025)" },
       },
       crosshair: {
-        vertLine: { color: resolveToken("chartCross"), labelBackgroundColor: resolveToken("chartLabel") },
-        horzLine: { color: resolveToken("chartCross"), labelBackgroundColor: resolveToken("chartLabel") },
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: "rgba(34,211,238,0.15)",
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#1a1a1e",
+        },
+        horzLine: {
+          color: "rgba(34,211,238,0.15)",
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#1a1a1e",
+        },
       },
       timeScale: {
-        borderColor: resolveToken("chartGrid"),
+        borderColor: "rgba(255,255,255,0.06)",
         timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 5,
+        barSpacing: tf === "4h" ? 3 : 4,
+        minBarSpacing: 1,
       },
       rightPriceScale: {
-        borderColor: resolveToken("chartGrid"),
+        borderColor: "rgba(255,255,255,0.06)",
+        scaleMargins: { top: 0.08, bottom: 0.18 },
       },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true },
+      handleScale: { mouseWheel: true, pinch: true },
     });
     chartRef.current = chart;
 
-    // v5 API: chart.addSeries(SeriesType, options)
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#34d399",
-      downColor: "#f87171",
-      borderUpColor: "#34d399",
-      borderDownColor: "#f87171",
-      wickUpColor: "rgba(52,211,153,0.5)",
-      wickDownColor: "rgba(248,113,113,0.5)",
+    // Watermark
+    const baseSymbol = getBaseSymbol(symbol);
+    createTextWatermark(chart, {
+      lines: [
+        {
+          text: baseSymbol,
+          color: "rgba(255,255,255,0.04)",
+          fontSize: 48,
+          fontFamily: "'Inter', sans-serif",
+          fontStyle: "bold",
+        },
+      ],
     });
 
+    // ── Volume histogram (rendered first → behind candles) ──
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+      drawTicks: false,
+      borderVisible: false,
+    });
+
+    // ── Candlestick series ──
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#22c55e",
+      downColor: "#ef4444",
+      borderUpColor: "#22c55e",
+      borderDownColor: "#ef4444",
+      wickUpColor: "rgba(34,197,94,0.5)",
+      wickDownColor: "rgba(239,68,68,0.5)",
+    });
+
+    // ── BMSB lines ──
+    // EMA (upper band boundary)
+    const bmsbEmaSeries = chart.addSeries(LineSeries, {
+      color: "rgba(34,211,238,0.25)",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
+    // SMA (lower band boundary)
+    const bmsbSmaSeries = chart.addSeries(LineSeries, {
+      color: "rgba(34,211,238,0.25)",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
+    // Mid (main BMSB line — solid, prominent)
     const bmsbMidSeries = chart.addSeries(LineSeries, {
       color: "#22d3ee",
       lineWidth: 2,
-      lineStyle: 0,
-      crosshairMarkerVisible: false,
+      lineStyle: LineStyle.Solid,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3,
+      lastValueVisible: true,
+      priceLineVisible: false,
       title: "BMSB",
     });
 
-    const bmsbEmaSeries = chart.addSeries(LineSeries, {
-      color: "rgba(34,211,238,0.30)",
-      lineWidth: 1,
-      lineStyle: 2,
-      crosshairMarkerVisible: false,
-    });
-
-    const bmsbSmaSeries = chart.addSeries(LineSeries, {
-      color: "rgba(34,211,238,0.20)",
-      lineWidth: 1,
-      lineStyle: 2,
-      crosshairMarkerVisible: false,
-    });
-
-    // Fetch data
+    // ── Fetch data ──
+    const tfConfig = TIMEFRAMES.find(t => t.key === tf) || TIMEFRAMES[1];
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setError(null);
 
-    fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${timeframe}&limit=150`)
+    fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${tf}&limit=${tfConfig.limit}`)
       .then(r => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
       })
       .then(data => {
         if (cancelled) return;
+
         if (data.candles?.length > 0) {
           candleSeries.setData(data.candles);
 
-          // ── Signal marker on latest candle ──
+          // ── Volume data ──
+          if (data.volume?.length > 0) {
+            volumeSeries.setData(data.volume);
+          }
+
+          // ── Signal markers on latest candle ──
           const markerDef = signal && SIGNAL_MARKER[signal];
           if (markerDef) {
             const last = data.candles[data.candles.length - 1];
@@ -133,7 +214,6 @@ export default function BMSBChart({
               text: markerDef.text,
             }];
 
-            // Add exhaustion/floor markers too
             if (floorConfirmed) {
               markers.push({
                 time: last.time,
@@ -153,28 +233,28 @@ export default function BMSBChart({
               });
             }
 
-            // Sort markers by time (required by lightweight-charts)
             markers.sort((a, b) => a.time - b.time);
             candleSeries.setMarkers(markers);
           }
 
-          // ── BMSB mid price line ──
-          if (data.bmsb_mid?.length > 0) {
-            const lastMid = data.bmsb_mid[data.bmsb_mid.length - 1].value;
-            candleSeries.createPriceLine({
-              price: lastMid,
-              color: "rgba(34,211,238,0.35)",
-              lineWidth: 1,
-              lineStyle: 2,
-              axisLabelVisible: true,
-              title: "",
-            });
-          }
+          // ── Current price line ──
+          const lastCandle = data.candles[data.candles.length - 1];
+          const priceUp = lastCandle.close >= lastCandle.open;
+          candleSeries.createPriceLine({
+            price: lastCandle.close,
+            color: priceUp ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: "",
+          });
         }
 
+        // ── BMSB overlay data ──
         if (data.bmsb_mid?.length > 0) bmsbMidSeries.setData(data.bmsb_mid);
         if (data.bmsb_ema?.length > 0) bmsbEmaSeries.setData(data.bmsb_ema);
         if (data.bmsb_sma?.length > 0) bmsbSmaSeries.setData(data.bmsb_sma);
+
         chart.timeScale().fitContent();
         setLoading(false);
       })
@@ -198,133 +278,199 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, timeframe, height, signal, regime, exhaustionState, floorConfirmed]);
+  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed]);
+
+  // Build chart on mount and when dependencies change
+  useEffect(() => {
+    const cleanup = buildChart(activeTimeframe);
+    return cleanup;
+  }, [activeTimeframe, buildChart]);
 
   // ── Info strip data ──
   const rm = regime ? REGIME_META[regime] || REGIME_META.FLAT : null;
   const sm = signal ? SIGNAL_META[signal] || SIGNAL_META.WAIT : null;
   const hColor = heatColor(heat);
-  const momColor = momentum != null ? (momentum >= 0 ? "#34d399" : "#f87171") : null;
+  const momColor = momentum != null ? (momentum >= 0 ? "#22c55e" : "#ef4444") : null;
 
   return (
     <div style={{
       width: "100%",
-      borderRadius: T.radiusSm,
+      borderRadius: 12,
       overflow: "hidden",
-      border: `1px solid ${T.border}`,
-      background: T.surface,
+      border: "1px solid rgba(255,255,255,0.06)",
+      background: "rgba(10,10,14,0.6)",
       marginBottom: 14,
       position: "relative",
     }}>
-      {/* Signal info strip */}
+      {/* ── Top bar: info strip + timeframe toggle ── */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, zIndex: 5,
-        display: "flex", alignItems: "center", gap: 6,
-        padding: "6px 10px",
-        background: "linear-gradient(180deg, rgba(10,10,12,0.85) 0%, rgba(10,10,12,0.4) 70%, transparent 100%)",
-        flexWrap: "wrap",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "7px 10px",
+        background: "linear-gradient(180deg, rgba(10,10,14,0.92) 0%, rgba(10,10,14,0.5) 70%, transparent 100%)",
       }}>
-        {/* Timeframe */}
-        <span style={{
-          fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-          color: T.text4, letterSpacing: "0.08em",
+        {/* Left: info pills */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+          {/* Regime pill */}
+          {rm && (
+            <span style={{
+              padding: "2px 7px", borderRadius: 10,
+              background: rm.bg, color: rm.color,
+              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              letterSpacing: "0.04em",
+              border: `1px solid ${rm.color}20`,
+              display: "inline-flex", alignItems: "center", gap: 3,
+            }}>
+              <span style={{ fontSize: 7 }}>{rm.glyph}</span>
+              {rm.label}
+            </span>
+          )}
+
+          {/* Signal pill */}
+          {sm && signal !== "WAIT" && (
+            <span style={{
+              padding: "2px 7px", borderRadius: 10,
+              background: `${sm.color}12`, color: sm.color,
+              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              letterSpacing: "0.04em",
+              border: `1px solid ${sm.color}18`,
+              display: "inline-flex", alignItems: "center", gap: 3,
+            }}>
+              <span style={{ fontSize: 6 }}>{sm.dot}</span>
+              {sm.label}
+            </span>
+          )}
+
+          {/* Conditions */}
+          {conditions != null && conditionsTotal != null && (
+            <span style={{
+              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              color: conditions >= 8 ? "#22c55e" : conditions >= 5 ? "#fbbf24" : "rgba(255,255,255,0.3)",
+              padding: "2px 5px",
+            }}>
+              {conditions}/{conditionsTotal}
+            </span>
+          )}
+
+          {/* Heat */}
+          {heat != null && (
+            <span style={{
+              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              color: hColor, opacity: 0.9,
+            }}>
+              H:{Math.round(heat)}
+            </span>
+          )}
+
+          {/* Momentum */}
+          {momentum != null && (
+            <span style={{
+              fontSize: 9, fontFamily: T.mono, fontWeight: 600,
+              color: momColor, opacity: 0.9,
+            }}>
+              {momentum >= 0 ? "+" : ""}{momentum.toFixed(1)}%
+            </span>
+          )}
+
+          {/* Confidence */}
+          {signalConfidence != null && signal !== "WAIT" && (
+            <span style={{
+              fontSize: 8, fontFamily: T.mono, fontWeight: 500,
+              color: signalConfidence >= 0.8 ? "#22c55e" : signalConfidence >= 0.5 ? "#fbbf24" : "rgba(255,255,255,0.25)",
+              opacity: 0.7,
+            }}>
+              {Math.round(signalConfidence * 100)}%
+            </span>
+          )}
+        </div>
+
+        {/* Right: timeframe toggle */}
+        <div style={{
+          display: "flex", gap: 2,
+          background: "rgba(255,255,255,0.04)",
+          borderRadius: 6, padding: 2,
         }}>
-          {timeframe.toUpperCase()}
-        </span>
-
-        {/* Regime pill */}
-        {rm && (
-          <span style={{
-            padding: "2px 8px", borderRadius: "12px",
-            background: rm.bg, color: rm.color,
-            fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-            letterSpacing: "0.04em",
-            border: `1px solid ${rm.color}25`,
-            display: "inline-flex", alignItems: "center", gap: 3,
-          }}>
-            <span style={{ fontSize: 8 }}>{rm.glyph}</span>
-            {rm.label}
-          </span>
-        )}
-
-        {/* Signal pill */}
-        {sm && signal !== "WAIT" && (
-          <span style={{
-            padding: "2px 8px", borderRadius: "12px",
-            background: `${sm.color}15`, color: sm.color,
-            fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-            letterSpacing: "0.04em",
-            border: `1px solid ${sm.color}25`,
-            display: "inline-flex", alignItems: "center", gap: 3,
-          }}>
-            <span style={{ fontSize: 7 }}>{sm.dot}</span>
-            {sm.label}
-          </span>
-        )}
-
-        {/* Conditions */}
-        {conditions != null && conditionsTotal != null && (
-          <span style={{
-            fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-            color: conditions >= 8 ? "#34d399" : conditions >= 5 ? "#fbbf24" : T.text4,
-          }}>
-            {conditions}/{conditionsTotal}
-          </span>
-        )}
-
-        {/* Heat */}
-        {heat != null && (
-          <span style={{
-            fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-            color: hColor,
-          }}>
-            H:{Math.round(heat)}
-          </span>
-        )}
-
-        {/* Momentum */}
-        {momentum != null && (
-          <span style={{
-            fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-            color: momColor,
-          }}>
-            {momentum >= 0 ? "+" : ""}{momentum.toFixed(1)}%
-          </span>
-        )}
-
-        {/* Confidence */}
-        {signalConfidence != null && signal !== "WAIT" && (
-          <span style={{
-            fontSize: 8, fontFamily: T.mono, fontWeight: 500,
-            color: signalConfidence >= 0.8 ? "#34d399" : signalConfidence >= 0.5 ? "#fbbf24" : T.text4,
-            opacity: 0.7,
-          }}>
-            {Math.round(signalConfidence * 100)}%
-          </span>
-        )}
+          {TIMEFRAMES.map(tf => (
+            <button
+              key={tf.key}
+              onClick={() => setActiveTimeframe(tf.key)}
+              style={{
+                padding: "3px 10px",
+                borderRadius: 4,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                transition: "all 0.15s ease",
+                background: activeTimeframe === tf.key
+                  ? "rgba(34,211,238,0.15)"
+                  : "transparent",
+                color: activeTimeframe === tf.key
+                  ? "#22d3ee"
+                  : "rgba(255,255,255,0.3)",
+              }}
+            >
+              {tf.label}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {/* ── Loading overlay ── */}
       {loading && (
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(9,9,11,0.7)", zIndex: 10,
-          color: T.text4, fontFamily: T.mono, fontSize: 10,
+          background: "rgba(10,10,14,0.8)", zIndex: 10,
         }}>
-          Loading chart...
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+          }}>
+            <div style={{
+              width: 20, height: 20,
+              border: "2px solid rgba(34,211,238,0.15)",
+              borderTopColor: "#22d3ee",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }} />
+            <span style={{
+              color: "rgba(255,255,255,0.3)",
+              fontFamily: T.mono, fontSize: 9,
+              letterSpacing: "0.1em",
+            }}>
+              LOADING
+            </span>
+          </div>
         </div>
       )}
+
+      {/* ── Error overlay ── */}
       {error && !loading && (
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: T.surface, zIndex: 10,
-          color: "#f87171", fontFamily: T.mono, fontSize: 10,
+          background: "rgba(10,10,14,0.9)", zIndex: 10,
         }}>
-          Chart unavailable ({error})
+          <span style={{
+            color: "rgba(239,68,68,0.7)", fontFamily: T.mono, fontSize: 10,
+            letterSpacing: "0.04em",
+          }}>
+            Chart unavailable ({error})
+          </span>
         </div>
       )}
+
+      {/* ── Chart container ── */}
       <div ref={containerRef} style={{ width: "100%", height }} />
+
+      {/* ── CSS for spinner ── */}
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
