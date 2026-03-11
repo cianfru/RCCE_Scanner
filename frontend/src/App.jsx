@@ -64,7 +64,7 @@ export default function App() {
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
-  const [activeTab, setActiveTab] = useState("4h");
+  const [activeTab, setActiveTab] = useState("1d");
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // Global metrics & alt season
