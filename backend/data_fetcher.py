@@ -4,7 +4,10 @@ data_fetcher.py
 Fetches OHLCV data from crypto exchanges via CCXT (async).
 
 Primary exchange : Kraken  (matches execution venue)
-Fallback exchanges: KuCoin → Binance → Bybit
+Fallback exchanges: KuCoin → Binance → Bybit → Hyperliquid
+
+Hyperliquid is the final fallback via its candleSnapshot REST API,
+covering HL-only pairs that aren't listed on CEXes.
 
 Concurrency is throttled with an asyncio.Semaphore (max 5 parallel
 requests) and an inter-request delay of 100 ms.  Results are cached
@@ -20,6 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+import aiohttp
 import ccxt.async_support as ccxt
 import numpy as np
 
@@ -168,6 +172,103 @@ def _parse_ohlcv(raw: list) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Hyperliquid candle fallback (direct REST, no CCXT)
+# ---------------------------------------------------------------------------
+
+_HL_API_URL = "https://api.hyperliquid.xyz/info"
+
+# Timeframe → milliseconds per candle (for calculating startTime)
+_TF_MS: Dict[str, int] = {
+    "4h": 4 * 3600 * 1000,
+    "1d": 86400 * 1000,
+    "1w": 7 * 86400 * 1000,
+}
+
+
+async def _fetch_ohlcv_hyperliquid(
+    symbol: str,
+    timeframe: str,
+    limit: int = 250,
+) -> Optional[dict]:
+    """Fetch OHLCV candles from Hyperliquid's candleSnapshot API.
+
+    Falls back to this when all CCXT exchanges fail. Returns the same
+    dict-of-numpy-arrays format as _parse_ohlcv(), or None on failure.
+    """
+    coin = symbol.split("/")[0].upper()
+    tf_ms = _TF_MS.get(timeframe)
+    if tf_ms is None:
+        return None
+
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - (limit * tf_ms)
+
+    payload = {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": coin,
+            "interval": timeframe,
+            "startTime": start_ms,
+            "endTime": now_ms,
+        },
+    }
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                _HL_API_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                candles = await resp.json()
+
+        if not candles or not isinstance(candles, list):
+            return None
+
+        # Parse HL candle format: {t, T, s, i, o, c, h, l, v, n}
+        # Values are strings except t, T, n
+        rows = []
+        for c in candles:
+            try:
+                rows.append([
+                    float(c["t"]),        # timestamp (ms)
+                    float(c["o"]),        # open
+                    float(c["h"]),        # high
+                    float(c["l"]),        # low
+                    float(c["c"]),        # close
+                    float(c["v"]),        # volume
+                ])
+            except (KeyError, ValueError, TypeError):
+                continue
+
+        if not rows:
+            return None
+
+        arr = np.array(rows, dtype=np.float64)
+        data = {
+            "timestamp": arr[:, 0],
+            "open":      arr[:, 1],
+            "high":      arr[:, 2],
+            "low":       arr[:, 3],
+            "close":     arr[:, 4],
+            "volume":    arr[:, 5],
+        }
+
+        logger.info(
+            "Fetched %d bars for %s (%s) from hyperliquid",
+            len(rows), symbol, timeframe,
+        )
+        return data
+
+    except Exception as exc:
+        logger.debug("Hyperliquid candle fetch failed for %s: %s", symbol, exc)
+        return None
+
+
 async def _create_exchange(exchange_id: str) -> ccxt.Exchange:
     """Instantiate a CCXT async exchange with rate-limiting enabled."""
     exchange_class = getattr(ccxt, exchange_id, None)
@@ -271,10 +372,16 @@ async def fetch_ohlcv(
         finally:
             await exchange.close()
 
+    # Final fallback: Hyperliquid candleSnapshot (covers HL-only pairs)
+    hl_data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, limit)
+    if hl_data is not None:
+        _cache.put(symbol, timeframe, hl_data)
+        return hl_data
+
     if last_error:
-        logger.error("All exchanges failed for %s: %s", symbol, last_error)
+        logger.error("All exchanges + Hyperliquid failed for %s: %s", symbol, last_error)
     else:
-        logger.error("Symbol %s not available on any exchange", symbol)
+        logger.debug("Symbol %s not available on any exchange or Hyperliquid", symbol)
 
     return None
 

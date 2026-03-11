@@ -65,7 +65,7 @@ _exchange_symbols_lock = asyncio.Lock()
 
 
 async def _load_exchange_symbols() -> List[dict]:
-    """Load available trading pairs from Binance (primary) + Bybit (fallback)."""
+    """Load available trading pairs from CEXes + Hyperliquid, tracking which exchanges list each."""
     global _exchange_symbols
     if _exchange_symbols is not None:
         return _exchange_symbols
@@ -76,28 +76,54 @@ async def _load_exchange_symbols() -> List[dict]:
             return _exchange_symbols
 
         import ccxt.async_support as ccxt
-        symbols = []
-        seen = set()
 
+        # {symbol: {symbol, base, quote, exchanges: [...]}}
+        sym_map: dict = {}
+
+        # CEX exchanges via CCXT
         for exch_id in ("kraken", "kucoin", "binance", "bybit"):
             try:
                 exchange = getattr(ccxt, exch_id)({"enableRateLimit": True})
                 await exchange.load_markets()
                 for sym, market in exchange.markets.items():
                     quote = market.get("quote", "")
-                    if sym not in seen and quote in ("USDT", "BTC") and market.get("active", True):
-                        seen.add(sym)
-                        symbols.append({
-                            "symbol": sym,
-                            "base": market.get("base", ""),
-                            "quote": quote,
-                        })
+                    if quote in ("USDT", "BTC") and market.get("active", True):
+                        if sym in sym_map:
+                            sym_map[sym]["exchanges"].append(exch_id)
+                        else:
+                            sym_map[sym] = {
+                                "symbol": sym,
+                                "base": market.get("base", ""),
+                                "quote": quote,
+                                "exchanges": [exch_id],
+                            }
                 await exchange.close()
-                logger.info("Loaded %d USDT+BTC pairs from %s", len(symbols), exch_id)
+                logger.info("Loaded exchange symbols from %s (%d total so far)", exch_id, len(sym_map))
             except Exception as exc:
                 logger.warning("Failed to load markets from %s: %s", exch_id, exc)
 
-        _exchange_symbols = sorted(symbols, key=lambda x: x["symbol"])
+        # Hyperliquid perps (direct API, no CCXT)
+        try:
+            from hyperliquid_data import fetch_hyperliquid_metrics
+            metrics = await fetch_hyperliquid_metrics()
+            hl_added = 0
+            for m in metrics.values():
+                sym = f"{m.coin}/USDT"
+                if sym in sym_map:
+                    sym_map[sym]["exchanges"].append("hyperliquid")
+                else:
+                    sym_map[sym] = {
+                        "symbol": sym,
+                        "base": m.coin,
+                        "quote": "USDT",
+                        "exchanges": ["hyperliquid"],
+                    }
+                    hl_added += 1
+            logger.info("Added %d Hyperliquid-only symbols (%d total)", hl_added, len(sym_map))
+        except Exception as exc:
+            logger.warning("Failed to load Hyperliquid symbols: %s", exc)
+
+        _exchange_symbols = sorted(sym_map.values(), key=lambda x: x["symbol"])
         return _exchange_symbols
 
 

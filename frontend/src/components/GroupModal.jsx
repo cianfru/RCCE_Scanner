@@ -202,9 +202,26 @@ export default function GroupModal({
                       onMouseEnter={e => { if (!inList) e.currentTarget.style.background = T.surfaceH; }}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                     >
-                      <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
-                        {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text1, fontWeight: 500 }}>
+                          {r.base}<span style={{ color: r.quote === "BTC" ? "#fb923c" : T.text4 }}>/{r.quote}</span>
+                        </span>
+                        {r.exchanges && r.exchanges.length > 0 && (
+                          <span style={{ display: "inline-flex", gap: 3 }}>
+                            {r.exchanges.map(ex => {
+                              const tag = { hyperliquid: "HL", binance: "BIN", bybit: "BBT", kraken: "KRK", kucoin: "KUC" }[ex] || ex.slice(0,3).toUpperCase();
+                              const color = ex === "hyperliquid" ? "#4ade80" : "#64748b";
+                              return (
+                                <span key={ex} style={{
+                                  fontSize: 7, fontFamily: T.mono, fontWeight: 700,
+                                  padding: "1px 4px", borderRadius: 3, letterSpacing: "0.04em",
+                                  color, border: `1px solid ${color}40`, background: `${color}10`,
+                                }}>{tag}</span>
+                              );
+                            })}
+                          </span>
+                        )}
+                      </div>
                       {inList ? (
                         <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{"\u2713"} Added</span>
                       ) : (
