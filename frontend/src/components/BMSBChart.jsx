@@ -110,19 +110,26 @@ export default function BMSBChart({
     });
     chartRef.current = chart;
 
-    // Watermark
+    // Watermark (must be attached to a pane, not the chart)
     const baseSymbol = getBaseSymbol(symbol);
-    createTextWatermark(chart, {
-      lines: [
-        {
-          text: baseSymbol,
-          color: "rgba(255,255,255,0.04)",
-          fontSize: 48,
-          fontFamily: "'Inter', sans-serif",
-          fontStyle: "bold",
-        },
-      ],
-    });
+    try {
+      const pane = chart.panes()[0];
+      if (pane) {
+        createTextWatermark(pane, {
+          lines: [
+            {
+              text: baseSymbol,
+              color: "rgba(255,255,255,0.04)",
+              fontSize: 48,
+              fontFamily: "'Inter', sans-serif",
+              fontStyle: "bold",
+            },
+          ],
+        });
+      }
+    } catch (_) {
+      // Watermark is cosmetic — don't crash if it fails
+    }
 
     // ── Volume histogram (rendered first → behind candles) ──
     const volumeSeries = chart.addSeries(HistogramSeries, {
