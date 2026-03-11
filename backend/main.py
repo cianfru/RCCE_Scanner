@@ -1319,12 +1319,13 @@ async def aixbt_status():
         except ImportError as e:
             x402_diag["x402_client"] = f"MISSING: {e}"
         try:
-            from x402.mechanisms.evm.exact import ExactEvmScheme
+            from x402.mechanisms.evm import EthAccountSigner
+            from x402.mechanisms.evm.exact.register import register_exact_evm_client
             x402_diag["x402_evm"] = "ok"
         except ImportError as e:
             x402_diag["x402_evm"] = f"MISSING: {e}"
         try:
-            from x402.clients import x402_requests
+            from x402.http.clients import x402_requests
             x402_diag["x402_requests"] = "ok"
         except ImportError as e:
             x402_diag["x402_requests"] = f"MISSING: {e}"

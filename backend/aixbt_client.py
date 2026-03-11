@@ -80,16 +80,18 @@ async def _try_x402_purchase() -> str:
         try:
             from eth_account import Account
             from x402 import x402ClientSync
-            from x402.mechanisms.evm.exact import ExactEvmScheme
-            from x402.clients import x402_requests
+            from x402.mechanisms.evm import EthAccountSigner
+            from x402.mechanisms.evm.exact.register import register_exact_evm_client
+            from x402.http.clients import x402_requests
 
             # Create signer from wallet private key
             account = Account.from_key(wallet_key)
+            signer = EthAccountSigner(account)
             log.info("x402 wallet: %s", account.address)
 
-            # Initialize x402 client
+            # Initialize x402 client and register EVM payment scheme
             client = x402ClientSync()
-            client.register("eip155:*", ExactEvmScheme(signer=account))
+            register_exact_evm_client(client, signer)
 
             # Purchase the key — x402 handles 402 → sign → retry automatically
             url = "https://api.aixbt.tech/x402/v2/api-keys/1d"
