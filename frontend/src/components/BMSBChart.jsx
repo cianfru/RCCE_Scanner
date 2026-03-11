@@ -8,6 +8,7 @@ import {
   LineStyle,
   CrosshairMode,
   createTextWatermark,
+  createSeriesMarkers,
 } from "lightweight-charts";
 import { T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
 
@@ -241,7 +242,7 @@ export default function BMSBChart({
             }
 
             markers.sort((a, b) => a.time - b.time);
-            candleSeries.setMarkers(markers);
+            createSeriesMarkers(candleSeries, markers);
           }
 
           // ── Current price line ──
