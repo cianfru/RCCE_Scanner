@@ -1170,10 +1170,19 @@ def _get_whale_tracker():
     return _whale_tracker
 
 
+async def _ensure_whale_db():
+    """Initialize snapshot DB (idempotent — safe to call multiple times)."""
+    tracker = _get_whale_tracker()
+    if tracker._snapshot_db is None:
+        await tracker.init_db()
+
+
 async def _periodic_whale_poll():
     """Poll on-chain whale data every 2 minutes (separate from main scan)."""
     await asyncio.sleep(30)  # let main scan start first
     tracker = _get_whale_tracker()
+    # Initialize snapshot DB on first poll
+    await _ensure_whale_db()
     while True:
         try:
             if tracker.store.get_tracked_tokens():
@@ -1247,8 +1256,9 @@ async def whale_holders(
     limit: int = Query(40, ge=1, le=100),
     min_pct: float = Query(0.0, ge=0.0, le=100.0),
 ):
-    """Get holder map for a tracked token. Use min_pct to filter by % of supply."""
-    return _get_whale_tracker().get_holders(chain, contract, limit, min_pct)
+    """Get holder data for a tracked token, enriched with balance changes."""
+    await _ensure_whale_db()
+    return await _get_whale_tracker().get_holders(chain, contract, limit, min_pct)
 
 
 @app.get("/api/whales/alerts")
@@ -1298,6 +1308,19 @@ async def whale_refresh_supply(chain: str, contract: str):
 async def whale_labels(chain: Optional[str] = Query(None)):
     """Get all wallet labels, optionally filtered by chain."""
     return _get_whale_tracker().store.get_all_labels(chain)
+
+
+@app.get("/api/whales/history/{chain}/{contract}/{address}")
+async def whale_address_history(
+    chain: str,
+    contract: str,
+    address: str,
+    days: int = Query(14, ge=1, le=90),
+):
+    """Balance history time series for a wallet on a specific token."""
+    await _ensure_whale_db()
+    tracker = _get_whale_tracker()
+    return await tracker.get_address_history(chain, contract, address, days)
 
 
 @app.get("/health")

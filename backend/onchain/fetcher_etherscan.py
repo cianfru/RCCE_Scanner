@@ -351,3 +351,47 @@ class EtherscanFetcher:
             return info
 
         return None
+
+    # ── Contract creation (LP auto-detection) ────────────────────────────
+
+    async def get_contract_creation(
+        self, addresses: List[str]
+    ) -> Dict[str, str]:
+        """Look up who created each contract address.
+
+        Uses ``module=contract&action=getcontractcreation`` which accepts
+        up to 5 addresses per call (free tier).
+
+        Returns: {address_lower: creator_address_lower}
+        """
+        result: Dict[str, str] = {}
+        if not addresses:
+            return result
+
+        # Etherscan allows up to 5 addresses per call
+        for i in range(0, len(addresses), 5):
+            batch = addresses[i:i + 5]
+            params = {
+                "module": "contract",
+                "action": "getcontractcreation",
+                "contractaddresses": ",".join(batch),
+            }
+            try:
+                data = await self._request(params)
+                items = data.get("result")
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict):
+                            addr = item.get("contractAddress", "").lower()
+                            creator = item.get("contractCreator", "").lower()
+                            if addr and creator:
+                                result[addr] = creator
+            except Exception as exc:
+                logger.debug(
+                    "getcontractcreation failed for batch %d: %s", i, exc
+                )
+            # Rate limit courtesy
+            if i + 5 < len(addresses):
+                await asyncio.sleep(0.25)
+
+        return result

@@ -17,10 +17,14 @@ import aiohttp
 from .config import (
     CHAINS,
     COINGECKO_PRICE_URL,
+    KNOWN_DEX_ROUTERS,
+    KNOWN_LP_FACTORIES,
     MAX_ALERTS,
     MAX_TRANSFERS_PER_TOKEN,
     MAX_TRENDING,
     PRICE_CACHE_TTL,
+    SNAPSHOT_INTERVAL_S,
+    SNAPSHOT_MIN_BALANCE_PCT,
     WHALE_HOLDING_PCT,
 )
 from .fetcher_etherscan import EtherscanFetcher, EtherscanTransfer
@@ -34,6 +38,7 @@ from .processor import (
     detect_trending,
     generate_alerts,
 )
+from .snapshot_db import SnapshotDB
 from .store import WhaleStoreManager
 
 logger = logging.getLogger(__name__)
@@ -56,6 +61,16 @@ class WhaleTracker:
         # Price cache for USD estimation
         self._price_cache: Dict[str, float] = {}     # "symbol" -> usd price
         self._price_cache_ts: float = 0.0
+
+        # Snapshot DB (SQLite persistence)
+        self._snapshot_db: Optional[SnapshotDB] = None
+        self._last_snapshot_ts: Dict[str, float] = {}   # contract_key -> ts
+        self._last_cleanup_ts: float = 0.0
+
+        # LP detection: {address_lower: "LP" | "ROUTER" | "CEX" | "WALLET"}
+        self._address_type_cache: Dict[str, str] = {}
+        # Pre-populate router + CEX addresses
+        self._init_address_types()
 
         # Poll tracking
         self.last_poll: Optional[float] = None
@@ -95,11 +110,96 @@ class WhaleTracker:
         self._initialized = True
         return available
 
+    def _init_address_types(self) -> None:
+        """Pre-populate address type cache from known seeds."""
+        # Routers
+        for chain, routers in KNOWN_DEX_ROUTERS.items():
+            for addr in routers:
+                self._address_type_cache[addr.lower()] = "ROUTER"
+        # CEX wallets from whale seeds (heuristic: label contains exchange name)
+        _cex_keywords = {"binance", "kucoin", "bybit", "coinbase", "okx", "kraken", "ftx"}
+        for chain, seeds in self.store.wallet_labels.items():
+            for addr, label in seeds.items():
+                low_label = label.lower()
+                if any(kw in low_label for kw in _cex_keywords):
+                    self._address_type_cache[addr.lower()] = "CEX"
+
+    def _get_dex_routers(self, chain: str) -> set:
+        """Get the set of DEX router addresses for a chain."""
+        return set(KNOWN_DEX_ROUTERS.get(chain, {}).keys())
+
+    def _get_address_type(self, address: str) -> str:
+        """Get cached address type (LP/ROUTER/CEX/WALLET)."""
+        return self._address_type_cache.get(address.lower(), "WALLET")
+
+    async def _detect_lp_contracts(
+        self, chain: str, addresses: List[str]
+    ) -> Dict[str, str]:
+        """Auto-detect LP contracts by checking who created them.
+
+        Uses Etherscan getcontractcreation and cross-references
+        with known LP factory addresses.
+
+        Returns: {address: lp_label} for identified LP contracts.
+        """
+        fetcher = self._fetchers.get(chain)
+        if not isinstance(fetcher, EtherscanFetcher):
+            return {}
+
+        factories = KNOWN_LP_FACTORIES.get(chain, {})
+        if not factories:
+            return {}
+
+        # Only check addresses we haven't classified yet
+        unknown = [
+            a for a in addresses
+            if self._address_type_cache.get(a.lower(), "WALLET") == "WALLET"
+            and a.lower() not in self.store.wallet_labels.get(chain, {})
+        ]
+        if not unknown:
+            return {}
+
+        # Batch lookup: who created these contracts?
+        try:
+            creators = await fetcher.get_contract_creation(unknown)
+        except Exception as exc:
+            logger.debug("LP detection failed for %s: %s", chain, exc)
+            return {}
+
+        lp_labels: Dict[str, str] = {}
+        for addr, creator in creators.items():
+            factory_label = factories.get(creator)
+            if factory_label:
+                label = f"{factory_label} LP"
+                lp_labels[addr] = label
+                self._address_type_cache[addr] = "LP"
+                # Persist the label so we don't re-query
+                self.store.set_wallet_label(chain, addr, label)
+                logger.info("Auto-labeled LP: %s → %s", addr[:12], label)
+            else:
+                # It's a contract but not a known LP factory
+                # Mark as contract so we don't re-check
+                if creator:  # has a creator = is a contract
+                    self._address_type_cache[addr] = "CONTRACT"
+
+        return lp_labels
+
+    async def init_db(self) -> None:
+        """Initialize the SQLite snapshot database."""
+        self._snapshot_db = SnapshotDB.get()
+        await self._snapshot_db.init()
+        logger.info("Snapshot database initialized")
+
     async def shutdown(self) -> None:
-        """Close all fetcher sessions."""
+        """Close all fetcher sessions and snapshot DB."""
         for fetcher in self._fetchers.values():
             try:
                 await fetcher.close()
+            except Exception:
+                pass
+        if self._snapshot_db:
+            try:
+                await self._snapshot_db.close()
             except Exception:
                 pass
 
@@ -186,6 +286,12 @@ class WhaleTracker:
             await self._poll_single_token(chain, contract)
         except Exception as exc:
             logger.warning("Initial transfer fetch failed for %s: %s", contract, exc)
+
+        # Force an immediate snapshot (day 0 baseline)
+        try:
+            await self._force_snapshot(chain, contract)
+        except Exception as exc:
+            logger.debug("Initial snapshot failed for %s: %s", contract[:12], exc)
 
         return asdict(record)
 
@@ -274,6 +380,21 @@ class WhaleTracker:
                     chain, contract[:12], exc,
                 )
 
+        # ── 3b. Auto-detect LP contracts among top holders ──
+        if real_holders and isinstance(fetcher, EtherscanFetcher):
+            unlabeled_addrs = [
+                rh["address"] for rh in real_holders[:30]
+                if not labels.get(rh["address"])
+            ]
+            if unlabeled_addrs:
+                try:
+                    lp_labels = await self._detect_lp_contracts(chain, unlabeled_addrs)
+                    if lp_labels:
+                        # Refresh labels dict after auto-labeling
+                        labels = self.store.wallet_labels.get(chain, {})
+                except Exception as exc:
+                    logger.debug("LP detection error: %s", exc)
+
         # ── 4. Merge: real balances + transfer-based activity ──
         if real_holders:
             # Use real balances as the source of truth, enrich with activity
@@ -321,13 +442,74 @@ class WhaleTracker:
             self._holder_cache[contract_key] = transfer_holder_map
 
         # ── 5. Generate alerts ──
+        routers = self._get_dex_routers(chain)
         new_alerts = generate_alerts(
             self._holder_cache[contract_key], chain, contract,
             token_symbol, token_price,
             transfers=self._transfer_cache.get(contract_key, []),
+            known_dex_routers=routers,
         )
         if new_alerts:
             self._alerts = (new_alerts + self._alerts)[:MAX_ALERTS]
+
+        # ── 6. Persist balance snapshot if interval has elapsed ──
+        await self._maybe_save_snapshot(chain, contract_key, total_supply)
+
+    async def _maybe_save_snapshot(
+        self, chain: str, contract_key: str, total_supply: float
+    ) -> None:
+        """Save a balance snapshot if enough time has passed."""
+        if not self._snapshot_db:
+            return
+
+        now = time.time()
+        last_snap = self._last_snapshot_ts.get(contract_key, 0.0)
+
+        if now - last_snap < SNAPSHOT_INTERVAL_S:
+            return
+
+        holder_map = self._holder_cache.get(contract_key, {})
+        if not holder_map:
+            return
+
+        holders_to_snap = []
+        for addr, h in holder_map.items():
+            pct = h.pct_supply if h.pct_supply > 0 else (
+                (abs(h.balance) / total_supply * 100) if total_supply > 0 else 0.0
+            )
+            if pct >= SNAPSHOT_MIN_BALANCE_PCT:
+                holders_to_snap.append({
+                    "address": addr,
+                    "balance": h.balance,
+                    "pct_supply": pct,
+                })
+
+        if holders_to_snap:
+            try:
+                count = await self._snapshot_db.save_snapshot(
+                    chain, contract_key, holders_to_snap
+                )
+                if count > 0:
+                    self._last_snapshot_ts[contract_key] = now
+            except Exception as exc:
+                logger.warning("Snapshot save failed for %s: %s", contract_key[:12], exc)
+
+    async def _force_snapshot(
+        self, chain: str, contract: str
+    ) -> None:
+        """Force an immediate snapshot (used on token add)."""
+        contract_key = contract.lower() if chain != "solana" else contract
+        # Reset the last snapshot time so _maybe_save_snapshot will fire
+        self._last_snapshot_ts.pop(contract_key, None)
+
+        token_record = next(
+            (t for t in self.store.tracked_tokens
+             if t.chain == chain and
+             (t.contract.lower() if t.chain != "solana" else t.contract) == contract_key),
+            None,
+        )
+        total_supply = token_record.total_supply if token_record else 0.0
+        await self._maybe_save_snapshot(chain, contract_key, total_supply)
 
     async def poll_all(self) -> None:
         """Poll all tracked tokens across all active chains."""
@@ -356,6 +538,15 @@ class WhaleTracker:
 
         # Auto-enrich: try fetching supply for tokens that are missing it
         await self._enrich_missing_supply(tokens)
+
+        # Periodic snapshot cleanup (once per day)
+        now = time.time()
+        if self._snapshot_db and now - self._last_cleanup_ts > 86400:
+            try:
+                await self._snapshot_db.cleanup_old()
+                self._last_cleanup_ts = now
+            except Exception as exc:
+                logger.debug("Snapshot cleanup failed: %s", exc)
 
         self.last_poll = time.time()
 
@@ -521,6 +712,7 @@ class WhaleTracker:
         labels_all = self.store.wallet_labels
         for t in transfers[:limit]:
             chain_labels = labels_all.get(t.chain, {})
+            routers = self._get_dex_routers(t.chain)
             result.append({
                 "tx_hash": t.tx_hash,
                 "chain": t.chain,
@@ -533,18 +725,20 @@ class WhaleTracker:
                 "value": t.value,
                 "value_usd": t.value * self._get_price(t.token_symbol),
                 "timestamp": t.timestamp,
-                "direction": classify_direction(t.from_addr, t.to_addr),
+                "direction": classify_direction(
+                    t.from_addr, t.to_addr, routers
+                ),
             })
         return result
 
-    def get_holders(
+    async def get_holders(
         self,
         chain: str,
         contract: str,
         limit: int = 40,
         min_pct: float = 0.0,
-    ) -> list:
-        """Get holder map for a specific token.
+    ) -> dict:
+        """Get holder map for a specific token, enriched with balance changes.
 
         Args:
             min_pct: minimum % of total supply to include (e.g. 0.4 for whales)
@@ -570,24 +764,46 @@ class WhaleTracker:
         ]
         filtered.sort(key=lambda h: abs(h.balance), reverse=True)
 
+        # Get historical change data from snapshot DB
+        change_lookup: Dict[str, dict] = {}
+        if self._snapshot_db:
+            try:
+                snap_holders = await self._snapshot_db.get_holders_with_changes(
+                    chain, key, min_pct=0.0, limit=200,
+                )
+                change_lookup = {h["address"]: h for h in snap_holders}
+            except Exception as exc:
+                logger.debug("Snapshot query failed for %s: %s", key[:12], exc)
+
+        holders_out = []
+        for h in filtered[:limit]:
+            snap = change_lookup.get(h.address, {})
+            holders_out.append({
+                "address": h.address,
+                "label": h.label,
+                "balance": h.balance,
+                "pct_supply": h.pct_supply,
+                "net_flow": h.net_flow,
+                "net_flow_24h": h.net_flow_24h,
+                "tx_count_24h": h.tx_count_24h,
+                "buy_count": h.buy_count,
+                "sell_count": h.sell_count,
+                "is_whale": h.is_whale,
+                "last_seen": h.last_seen,
+                "balance_usd": h.balance * price if price > 0 else 0.0,
+                # Snapshot-based change data
+                "change_1d": snap.get("change_1d"),
+                "change_7d": snap.get("change_7d"),
+                "change_14d": snap.get("change_14d"),
+                "change_1d_pct": snap.get("change_1d_pct"),
+                "change_7d_pct": snap.get("change_7d_pct"),
+                "change_14d_pct": snap.get("change_14d_pct"),
+                "trend": snap.get("trend", "NEW"),
+                "address_type": self._get_address_type(h.address),
+            })
+
         return {
-            "holders": [
-                {
-                    "address": h.address,
-                    "label": h.label,
-                    "balance": h.balance,
-                    "pct_supply": h.pct_supply,
-                    "net_flow": h.net_flow,
-                    "net_flow_24h": h.net_flow_24h,
-                    "tx_count_24h": h.tx_count_24h,
-                    "buy_count": h.buy_count,
-                    "sell_count": h.sell_count,
-                    "is_whale": h.is_whale,
-                    "last_seen": h.last_seen,
-                    "balance_usd": h.balance * price if price > 0 else 0.0,
-                }
-                for h in filtered[:limit]
-            ],
+            "holders": holders_out,
             "total_supply": total_supply,
             "whale_threshold_pct": min_pct if min_pct > 0 else 0.4,
         }
@@ -636,6 +852,26 @@ class WhaleTracker:
             }
             for t in self._trending
         ]
+
+    # ── Balance history (snapshot-based) ────────────────────────────────
+
+    async def get_address_history(
+        self,
+        chain: str,
+        contract: str,
+        address: str,
+        days: int = 14,
+    ) -> List[dict]:
+        """Get balance time series for a wallet on a specific token."""
+        if not self._snapshot_db:
+            return []
+        try:
+            return await self._snapshot_db.get_address_history(
+                chain, contract, address, days
+            )
+        except Exception as exc:
+            logger.warning("Address history query failed: %s", exc)
+            return []
 
     # ── Cross-token wallet intelligence ──────────────────────────────────
 
@@ -714,6 +950,7 @@ class WhaleTracker:
         all_transfers.sort(key=lambda t: t.timestamp, reverse=True)
 
         # 3. Format transfers
+        routers = self._get_dex_routers(chain)
         formatted_transfers = []
         for t in all_transfers[:limit]:
             formatted_transfers.append({
@@ -728,7 +965,9 @@ class WhaleTracker:
                 "value": t.value,
                 "value_usd": t.value * self._get_price(t.token_symbol),
                 "timestamp": t.timestamp,
-                "direction": classify_direction(t.from_addr, t.to_addr),
+                "direction": classify_direction(
+                    t.from_addr, t.to_addr, routers
+                ),
             })
 
         return {

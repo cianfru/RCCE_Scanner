@@ -51,3 +51,15 @@ export function fmtPct(v) {
   if (v >= 1) return `${v.toFixed(2)}%`;
   return `${v.toFixed(3)}%`;
 }
+
+export function fmtChange(v) {
+  if (v === null || v === undefined) return "\u2014";
+  const sign = v > 0 ? "+" : "";
+  return sign + fmtTokenVal(v);
+}
+
+export function fmtChangePct(v) {
+  if (v === null || v === undefined) return "";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(1)}%`;
+}

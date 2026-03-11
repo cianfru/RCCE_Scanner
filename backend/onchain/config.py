@@ -89,6 +89,59 @@ KNOWN_WHALE_SEEDS: dict = {
 }
 
 # ---------------------------------------------------------------------------
+# DEX routers — used for BUY/SELL classification of transfers
+# {chain: {address_lower: label}}
+# ---------------------------------------------------------------------------
+
+KNOWN_DEX_ROUTERS: dict = {
+    "ethereum": {
+        "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2 Router",
+        "0xe592427a0aece92de3edee1f18e0157c05861564": "Uniswap V3 Router",
+        "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": "Uniswap V3 Router 02",
+        "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": "Uniswap Universal Router",
+        "0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b": "Uniswap Universal Router (old)",
+        "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": "SushiSwap Router",
+        "0x1111111254eeb25477b68fb85ed929f73a960582": "1inch Router V5",
+        "0x1111111254fb6c44bac0bed2854e76f90643097d": "1inch Router V4",
+        "0xdef1c0ded9bec7f1a1670819833240f027b25eff": "0x Exchange Proxy",
+        "0x6131b5fae19ea4f9d964eac0408e4408b66337b5": "Kyber Aggregator",
+        "0x881d40237659c251811cec9c364ef91dc08d300c": "MetaMask Swap Router",
+        "0x11111112542d85b3ef69ae05771c2dccff4faa26": "1inch Router V3",
+    },
+    "base": {
+        "0x2626664c2603336e57b271c5c0b26f421741e481": "Uniswap V3 Router (Base)",
+        "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": "Uniswap Universal Router",
+        "0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43": "Aerodrome Router",
+        "0x327df1e6de05895d2ab08513aadd9313fe505d86": "BaseSwap Router",
+        "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": "SushiSwap Router",
+        "0xdef1c0ded9bec7f1a1670819833240f027b25eff": "0x Exchange Proxy",
+    },
+    "solana": {},
+}
+
+# ---------------------------------------------------------------------------
+# LP factory addresses — if a contract was created by one of these,
+# it's an LP pair/pool and gets auto-labeled.
+# {chain: {factory_addr_lower: label_prefix}}
+# ---------------------------------------------------------------------------
+
+KNOWN_LP_FACTORIES: dict = {
+    "ethereum": {
+        "0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f": "Uniswap V2",
+        "0x1f98431c8ad98523631ae4a59f267346ea31f984": "Uniswap V3",
+        "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac": "SushiSwap",
+        "0x5f1dddbf348ac2fbe22a163e30f99f9ece3dd50a": "Kyber DMM",
+        "0xba12222222228d8ba445958a75a0704d566bf2c8": "Balancer V2 Vault",
+    },
+    "base": {
+        "0x8909dc15e40173ff4699343b6eb8132c65e18ec6": "Uniswap V3 (Base)",
+        "0x420dd381b31aef6683db6b902084cb0ffece40da": "Aerodrome",
+        "0xfda619b6d20975be80a10332cd39b9a4b0faa8bb": "BaseSwap",
+    },
+    "solana": {},
+}
+
+# ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
 
@@ -126,6 +179,14 @@ POLL_INTERVAL_HOLDERS: int = 600     # 10 minutes
 MAX_TRANSFERS_PER_TOKEN: int = 300   # keep last N transfers in memory
 MAX_ALERTS: int = 100                # keep last N alerts
 MAX_TRENDING: int = 20               # max trending tokens to surface
+
+# ---------------------------------------------------------------------------
+# Snapshot persistence (SQLite time-series)
+# ---------------------------------------------------------------------------
+
+SNAPSHOT_INTERVAL_S: int = 21600          # 6 hours between balance snapshots
+SNAPSHOT_RETENTION_DAYS: int = 30         # prune snapshots older than this
+SNAPSHOT_MIN_BALANCE_PCT: float = 0.1     # only snapshot wallets >= 0.1% supply
 
 # ---------------------------------------------------------------------------
 # CoinGecko price endpoint (for USD estimation)

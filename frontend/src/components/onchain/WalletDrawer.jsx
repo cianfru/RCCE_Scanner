@@ -13,6 +13,8 @@ import {
   fmtTimeAgo,
   fmtTokenVal,
   fmtPct,
+  fmtChange,
+  fmtChangePct,
 } from "./helpers.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -28,6 +30,8 @@ export default function WalletDrawer({
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [labelEdit, setLabelEdit] = useState(false);
   const [labelVal, setLabelVal] = useState("");
   const [copied, setCopied] = useState(false);
@@ -49,9 +53,28 @@ export default function WalletDrawer({
     }
   }, [chain, address]);
 
+  // ── Fetch balance history for source token ────────────────────────────
+
+  const fetchHistory = useCallback(async () => {
+    if (!sourceToken) return;
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(
+        `${API}/api/whales/history/${chain}/${encodeURIComponent(sourceToken)}/${encodeURIComponent(address)}?days=14`
+      );
+      const json = await res.json();
+      setHistory(Array.isArray(json) ? json : []);
+    } catch (_) {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [chain, address, sourceToken]);
+
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchHistory();
+  }, [fetchData, fetchHistory]);
 
   // ── Actions ────────────────────────────────────────────────────────────
 
@@ -86,6 +109,25 @@ export default function WalletDrawer({
   const explorerUrl = chain === "solana"
     ? `${explorerBase}/account/${address}`
     : `${explorerBase}/address/${address}`;
+
+  // ── Balance history summary ───────────────────────────────────────────
+
+  const historyDelta = (() => {
+    if (!history || history.length < 2) return null;
+    const first = history[0];
+    const last = history[history.length - 1];
+    const change = last.balance - first.balance;
+    const changePct = first.balance !== 0
+      ? (change / first.balance * 100)
+      : (change > 0 ? 100 : 0);
+    return {
+      from: first.balance,
+      to: last.balance,
+      change,
+      changePct,
+      days: Math.round((last.timestamp - first.timestamp) / 86400),
+    };
+  })();
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -377,6 +419,175 @@ export default function WalletDrawer({
                 <div style={{ marginTop: 8 }}>
                   <ActivityBadge activity={sourceActivity.activity} />
                 </div>
+              </div>
+            )}
+
+            {/* ── Section 1b: Balance History ───────────────────────── */}
+            {history && history.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: T.surface || T.overlay06,
+                  border: `1px solid ${T.border}`,
+                }}
+              >
+                <div
+                  style={{
+                    ...S.label,
+                    marginBottom: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  BALANCE HISTORY
+                  {historyDelta && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: T.text4,
+                        fontWeight: 400,
+                      }}
+                    >
+                      ({historyDelta.days}d tracked)
+                    </span>
+                  )}
+                </div>
+
+                {/* Summary delta */}
+                {historyDelta && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 10,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: T.overlay04,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        color: T.text3,
+                      }}
+                    >
+                      {fmtTokenVal(historyDelta.from)}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        color: T.text4,
+                      }}
+                    >
+                      {"\u2192"}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        color: T.text1,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {fmtTokenVal(historyDelta.to)}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color:
+                          historyDelta.change > 0
+                            ? "#34d399"
+                            : historyDelta.change < 0
+                            ? "#f87171"
+                            : T.text4,
+                        marginLeft: "auto",
+                      }}
+                    >
+                      {fmtChange(historyDelta.change)}{" "}
+                      <span style={{ fontSize: 8, opacity: 0.8 }}>
+                        ({fmtChangePct(historyDelta.changePct)})
+                      </span>
+                    </span>
+                  </div>
+                )}
+
+                {/* History table */}
+                <div style={{ overflowX: "auto", maxHeight: 200 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...S.th, fontSize: 8 }}>DATE</th>
+                        <th style={{ ...S.th, fontSize: 8 }}>BALANCE</th>
+                        <th style={{ ...S.th, fontSize: 8 }}>% SUPPLY</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...history].reverse().slice(0, 20).map((snap, i) => (
+                        <tr
+                          key={snap.timestamp}
+                          style={{
+                            borderBottom: `1px solid ${T.border}`,
+                            background:
+                              i % 2 === 0 ? "transparent" : T.overlay02,
+                          }}
+                        >
+                          <td style={{ ...S.td, color: T.text4, fontSize: 9 }}>
+                            {new Date(snap.timestamp * 1000).toLocaleDateString(
+                              undefined,
+                              { month: "short", day: "numeric" }
+                            )}{" "}
+                            {new Date(snap.timestamp * 1000).toLocaleTimeString(
+                              undefined,
+                              { hour: "2-digit", minute: "2-digit" }
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              ...S.td,
+                              color: T.text2,
+                              fontSize: 10,
+                            }}
+                          >
+                            {fmtTokenVal(snap.balance)}
+                          </td>
+                          <td
+                            style={{
+                              ...S.td,
+                              color: T.text3,
+                              fontSize: 10,
+                            }}
+                          >
+                            {snap.pct_supply > 0
+                              ? fmtPct(snap.pct_supply)
+                              : "\u2014"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {historyLoading && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "8px 0",
+                  color: T.text4,
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  marginBottom: 12,
+                }}
+              >
+                Loading balance history...
               </div>
             )}
 

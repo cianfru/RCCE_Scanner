@@ -203,6 +203,7 @@ def generate_alerts(
     token_symbol: str,
     token_price_usd: float = 0.0,
     transfers: Optional[list] = None,
+    known_dex_routers: Optional[set] = None,
 ) -> List[Alert]:
     """Detect accumulation, distribution, new whales, and large transactions."""
     alerts: List[Alert] = []
@@ -264,7 +265,7 @@ def generate_alerts(
                     sell_count=0, net_flow=0, last_seen=0,
                 )).label
 
-                direction = classify_direction(tx.from_addr, tx.to_addr)
+                direction = classify_direction(tx.from_addr, tx.to_addr, known_dex_routers)
                 alert_type = "LARGE_BUY" if direction == "BUY" else "LARGE_SELL" if direction == "SELL" else "LARGE_BUY"
                 addr = tx.to_addr if direction == "BUY" else tx.from_addr
                 label = to_label if direction == "BUY" else from_label

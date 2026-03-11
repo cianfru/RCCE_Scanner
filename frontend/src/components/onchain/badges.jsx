@@ -1,6 +1,6 @@
 // Shared badge components for on-chain views
 import { T } from "../../theme.js";
-import { S, CHAIN_META, ALERT_COLORS, ACTIVITY_COLORS } from "./styles.js";
+import { S, CHAIN_META, ALERT_COLORS, ACTIVITY_COLORS, ADDRESS_TYPE_COLORS } from "./styles.js";
 import { truncAddr } from "./helpers.js";
 
 export function ChainBadge({ chain, small }) {
@@ -33,6 +33,23 @@ export function ActivityBadge({ activity }) {
   return (
     <span style={{ ...S.chip(color), fontSize: 8, padding: "2px 8px" }}>
       {label}
+    </span>
+  );
+}
+
+export function AddressTypeBadge({ type }) {
+  if (!type || type === "WALLET") return null;
+  const color = ADDRESS_TYPE_COLORS[type] || T.text4;
+  return (
+    <span
+      style={{
+        ...S.chip(color),
+        fontSize: 7,
+        padding: "1px 5px",
+        lineHeight: "1.2",
+      }}
+    >
+      {type}
     </span>
   );
 }

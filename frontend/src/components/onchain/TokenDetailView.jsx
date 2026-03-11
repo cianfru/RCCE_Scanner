@@ -6,6 +6,7 @@ import {
   ChainBadge,
   DirectionBadge,
   ActivityBadge,
+  AddressTypeBadge,
   ClickableAddr,
 } from "./badges.jsx";
 import {
@@ -14,6 +15,8 @@ import {
   fmtTime,
   fmtPct,
   fmtSupply,
+  fmtChange,
+  fmtChangePct,
   truncAddr,
 } from "./helpers.js";
 
@@ -24,16 +27,36 @@ const SORT_KEYS = {
   balance: (h) => Math.abs(h.balance),
   net_flow_24h: (h) => h.net_flow_24h,
   tx_count_24h: (h) => h.tx_count_24h,
+  change_1d: (h) => h.change_1d ?? -Infinity,
+  change_7d: (h) => h.change_7d ?? -Infinity,
+  change_14d: (h) => h.change_14d ?? -Infinity,
 };
 
-function classifyActivity(h) {
-  const total = h.buy_count + h.sell_count;
-  if (total === 0) return "INACTIVE";
-  if (h.buy_count > 0 && h.sell_count === 0) return "ACCUMULATING";
-  if (h.sell_count > 0 && h.buy_count === 0) return "DISTRIBUTING";
-  if (h.buy_count > h.sell_count * 1.5 && h.net_flow > 0) return "ACCUMULATING";
-  if (h.sell_count > h.buy_count * 1.5 && h.net_flow < 0) return "DISTRIBUTING";
-  return "MIXED";
+// ─── CHANGE CELL ──────────────────────────────────────────────────────────────
+
+function ChangeCell({ value, pctValue }) {
+  if (value === null || value === undefined) {
+    return (
+      <span style={{ color: T.text4, opacity: 0.5 }}>{"\u2014"}</span>
+    );
+  }
+  const color = value > 0 ? "#34d399" : value < 0 ? "#f87171" : T.text4;
+  return (
+    <span style={{ color, fontWeight: value !== 0 ? 600 : 400 }}>
+      {fmtChange(value)}
+      {pctValue !== null && pctValue !== undefined && (
+        <span
+          style={{
+            fontSize: 8,
+            opacity: 0.7,
+            marginLeft: 3,
+          }}
+        >
+          {fmtChangePct(pctValue)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -229,26 +252,33 @@ export default function TokenDetailView({
                       % SUPPLY{sortIcon("pct_supply")}
                     </th>
                   )}
-                  <th
-                    style={{ ...S.th, cursor: "pointer" }}
-                    onClick={() => handleSort("net_flow_24h")}
-                  >
-                    24H FLOW{sortIcon("net_flow_24h")}
-                  </th>
-                  <th style={S.th}>ACTIVITY</th>
                   {!isMobile && (
                     <th
                       style={{ ...S.th, cursor: "pointer" }}
-                      onClick={() => handleSort("tx_count_24h")}
+                      onClick={() => handleSort("change_1d")}
                     >
-                      TXN{sortIcon("tx_count_24h")}
+                      1D CHG{sortIcon("change_1d")}
                     </th>
                   )}
+                  <th
+                    style={{ ...S.th, cursor: "pointer" }}
+                    onClick={() => handleSort("change_7d")}
+                  >
+                    7D CHG{sortIcon("change_7d")}
+                  </th>
+                  {!isMobile && (
+                    <th
+                      style={{ ...S.th, cursor: "pointer" }}
+                      onClick={() => handleSort("change_14d")}
+                    >
+                      14D CHG{sortIcon("change_14d")}
+                    </th>
+                  )}
+                  <th style={S.th}>TREND</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedHolders.map((h, i) => {
-                  const activity = classifyActivity(h);
                   return (
                     <tr
                       key={h.address}
@@ -259,12 +289,15 @@ export default function TokenDetailView({
                     >
                       <td style={{ ...S.td, color: T.text4 }}>{i + 1}</td>
                       <td style={S.td}>
-                        <ClickableAddr
-                          addr={h.address}
-                          label={h.label}
-                          chain={token.chain}
-                          onClick={onSelectWallet}
-                        />
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <ClickableAddr
+                            addr={h.address}
+                            label={h.label}
+                            chain={token.chain}
+                            onClick={onSelectWallet}
+                          />
+                          <AddressTypeBadge type={h.address_type} />
+                        </span>
                       </td>
                       <td style={{ ...S.td, color: T.text2 }}>
                         {fmtTokenVal(h.balance)}
@@ -296,29 +329,31 @@ export default function TokenDetailView({
                           {h.pct_supply > 0 ? fmtPct(h.pct_supply) : "\u2014"}
                         </td>
                       )}
-                      <td
-                        style={{
-                          ...S.td,
-                          color:
-                            h.net_flow_24h > 0
-                              ? "#34d399"
-                              : h.net_flow_24h < 0
-                              ? "#f87171"
-                              : T.text4,
-                          fontWeight: h.net_flow_24h !== 0 ? 600 : 400,
-                        }}
-                      >
-                        {h.net_flow_24h > 0 ? "+" : ""}
-                        {fmtTokenVal(h.net_flow_24h)}
-                      </td>
-                      <td style={S.td}>
-                        <ActivityBadge activity={activity} />
-                      </td>
                       {!isMobile && (
-                        <td style={{ ...S.td, color: T.text4 }}>
-                          {h.tx_count_24h}
+                        <td style={S.td}>
+                          <ChangeCell
+                            value={h.change_1d}
+                            pctValue={h.change_1d_pct}
+                          />
                         </td>
                       )}
+                      <td style={S.td}>
+                        <ChangeCell
+                          value={h.change_7d}
+                          pctValue={h.change_7d_pct}
+                        />
+                      </td>
+                      {!isMobile && (
+                        <td style={S.td}>
+                          <ChangeCell
+                            value={h.change_14d}
+                            pctValue={h.change_14d_pct}
+                          />
+                        </td>
+                      )}
+                      <td style={S.td}>
+                        <ActivityBadge activity={h.trend || "NEW"} />
+                      </td>
                     </tr>
                   );
                 })}

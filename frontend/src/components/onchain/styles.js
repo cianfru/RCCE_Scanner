@@ -110,6 +110,16 @@ export const ACTIVITY_COLORS = {
   DISTRIBUTING: "#f87171",
   MIXED: "#fbbf24",
   INACTIVE: "#6b7280",
+  HOLDING: "#6b7280",
+  NEW: "#60a5fa",
   NET_BUYER: "#34d399",
   NET_SELLER: "#f87171",
+};
+
+export const ADDRESS_TYPE_COLORS = {
+  LP: "#a78bfa",
+  ROUTER: "#f59e0b",
+  CEX: "#3b82f6",
+  CONTRACT: "#6b7280",
+  WALLET: "",  // no badge for regular wallets
 };
