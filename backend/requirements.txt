@@ -7,3 +7,4 @@ aiohttp>=3.9.0
 python-dotenv>=1.0.0
 pandas>=2.0.0
 aiosqlite>=0.20.0
+x402[requests,evm]>=2.3.0

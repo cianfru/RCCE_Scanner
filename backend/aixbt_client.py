@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,10 +23,13 @@ log = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────
 AIXBT_API_BASE = "https://api.aixbt.tech/v2"
 _KEY_FILE = Path(__file__).resolve().parent / "data" / "aixbt_key.json"
-_X402_DIR = Path(__file__).resolve().parent / "x402"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 # Cache TTL: don't hammer AIXBT on every confirm request
 _CACHE_TTL = 300  # 5 minutes
+
+# x402 purchase lock to prevent concurrent purchases
+_purchase_lock = asyncio.Lock()
 
 
 def _get_api_key() -> str:
@@ -54,59 +56,83 @@ def _get_api_key() -> str:
         except Exception as e:
             log.warning("Failed to read AIXBT key file: %s", e)
 
-    # Priority 3: Try auto-purchase via x402
-    return _try_x402_purchase()
+    return ""
 
 
-def _try_x402_purchase() -> str:
-    """Attempt to purchase a 1-day AIXBT key via x402 Node.js helper."""
+async def _try_x402_purchase() -> str:
+    """Attempt to purchase a 1-day AIXBT API key via x402 Python SDK."""
     wallet_key = os.environ.get("AIXBT_WALLET_KEY", "").strip()
     if not wallet_key:
         log.debug("No AIXBT_WALLET_KEY set — AIXBT unavailable")
         return ""
 
-    buy_script = _X402_DIR / "buy-key.js"
-    if not buy_script.exists():
-        log.warning("x402 buy-key.js not found at %s", buy_script)
-        return ""
+    async with _purchase_lock:
+        # Re-check key file in case another request purchased while we waited
+        if _KEY_FILE.exists():
+            try:
+                data = json.loads(_KEY_FILE.read_text())
+                if data.get("expires_ts", 0) > (time.time() * 1000) + 3_600_000:
+                    return data.get("api_key", "")
+            except Exception:
+                pass
 
-    # Check if npm deps are installed
-    node_modules = _X402_DIR / "node_modules"
-    if not node_modules.exists():
-        log.info("Installing x402 dependencies...")
+        log.info("Purchasing AIXBT 1-day key via x402 (Python)...")
         try:
-            subprocess.run(
-                ["npm", "install", "--silent"],
-                cwd=str(_X402_DIR),
-                timeout=30,
-                capture_output=True,
-            )
-        except Exception as e:
-            log.error("npm install failed: %s", e)
-            return ""
+            from eth_account import Account
+            from x402 import x402ClientSync
+            from x402.mechanisms.evm.exact import ExactEvmScheme
+            from x402.clients import x402_requests
 
-    log.info("Purchasing AIXBT 1-day key via x402...")
-    try:
-        result = subprocess.run(
-            ["node", str(buy_script), "1d", "--quiet"],
-            env={**os.environ, "AIXBT_WALLET_KEY": wallet_key},
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            key = result.stdout.strip()
-            log.info("AIXBT key purchased successfully via x402")
-            return key
-        else:
-            log.error("x402 purchase failed: %s", result.stderr.strip())
+            # Create signer from wallet private key
+            account = Account.from_key(wallet_key)
+            log.info("x402 wallet: %s", account.address)
+
+            # Initialize x402 client
+            client = x402ClientSync()
+            client.register("eip155:*", ExactEvmScheme(signer=account))
+
+            # Purchase the key — x402 handles 402 → sign → retry automatically
+            url = "https://api.aixbt.tech/x402/v2/api-keys/1d"
+            with x402_requests(client) as session:
+                response = session.post(url)
+
+            if response.status_code != 200:
+                log.error("x402 purchase failed (%d): %s", response.status_code, response.text[:200])
+                return ""
+
+            result = response.json()
+            api_key = result.get("data", {}).get("apiKey") or result.get("apiKey") or result.get("key", "")
+
+            if not api_key:
+                log.error("x402 purchase succeeded but no key in response: %s", result)
+                return ""
+
+            # Save key to file
+            now = time.time() * 1000  # ms
+            duration_ms = 24 * 60 * 60 * 1000
+            key_data = {
+                "api_key": api_key,
+                "purchased_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime((now + duration_ms) / 1000)),
+                "expires_ts": now + duration_ms,
+                "duration": "1d",
+                "wallet": account.address,
+            }
+            _DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _KEY_FILE.write_text(json.dumps(key_data, indent=2))
+
+            log.info("AIXBT key purchased successfully via x402 (expires %s)", key_data["expires_at"])
+            return api_key
+
+        except ImportError as e:
+            log.warning("x402 Python deps not installed (%s) — run: pip install x402[requests,evm]", e)
             return ""
-    except subprocess.TimeoutExpired:
-        log.error("x402 purchase timed out")
-        return ""
-    except Exception as e:
-        log.error("x402 purchase error: %s", e)
-        return ""
+        except Exception as e:
+            if "insufficient" in str(e).lower():
+                log.error("x402: Insufficient USDC balance. Fund wallet on Base chain.")
+            else:
+                log.error("x402 purchase error: %s", e)
+            return ""
 
 
 # ── Symbol → AIXBT project name mapping ──────────────────────────────
@@ -303,6 +329,9 @@ async def confirm_symbol(symbol: str) -> AIXBTConfirmation:
     result = AIXBTConfirmation(project_name=name)
 
     api_key = _get_api_key()
+    if not api_key:
+        # Try auto-purchase via x402 (async)
+        api_key = await _try_x402_purchase()
     if not api_key:
         result.error = "No AIXBT access — set AIXBT_API_KEY or AIXBT_WALLET_KEY (x402)"
         result.confirmation = "UNAVAILABLE"
