@@ -213,10 +213,10 @@ export default function App() {
     } catch (_) {}
   };
 
-  const loadKrakenPerps = async (groupId) => {
+  const loadHyperliquidPerps = async (groupId) => {
     if (!groupId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/perpetuals/kraken`);
+      const res = await fetch(`${API_BASE}/api/perpetuals/hyperliquid`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
         for (const sym of data.symbols) {
@@ -229,7 +229,7 @@ export default function App() {
         await loadGroups();
       }
     } catch (e) {
-      console.error("Kraken perps fetch failed:", e);
+      console.error("Hyperliquid perps fetch failed:", e);
     }
   };
 
@@ -750,7 +750,7 @@ export default function App() {
           onClose={() => setShowGroupModal(false)}
           onCreateGroup={createGroup} onUpdateGroup={updateGroup} onDeleteGroup={deleteGroup}
           onAddSymbol={addSymbolToGroup} onRemoveSymbol={removeSymbolFromGroup}
-          onLoadKrakenPerps={loadKrakenPerps} onScanNow={triggerScan} isMobile={isMobile}
+          onLoadHyperliquidPerps={loadHyperliquidPerps} onScanNow={triggerScan} isMobile={isMobile}
         />
       )}
 

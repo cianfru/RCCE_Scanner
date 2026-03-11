@@ -766,60 +766,54 @@ async def backtested_symbols():
 
 
 # ---------------------------------------------------------------------------
-# Kraken Perpetuals discovery
+# Hyperliquid Perpetuals discovery
 # ---------------------------------------------------------------------------
 
-_kraken_perps: Optional[list] = None
-_kraken_perps_ts: float = 0.0
+_hl_perps: Optional[list] = None
+_hl_perps_ts: float = 0.0
 
 
-@app.get("/api/perpetuals/kraken")
-async def kraken_perpetuals():
-    """Discover active Kraken perpetual contracts available on Binance/Bybit.
+@app.get("/api/perpetuals/hyperliquid")
+async def hyperliquid_perpetuals():
+    """Discover active Hyperliquid perpetual contracts.
 
-    Maps Kraken Futures base currencies to {BASE}/USDT scanner format,
-    then filters to only symbols the scanner can fetch OHLCV data for.
+    Fetches all listed perps from Hyperliquid, maps to {BASE}/USDT scanner
+    format, then filters to symbols the scanner can fetch OHLCV data for.
     Results are cached for 24 hours.
     """
-    import ccxt
-    global _kraken_perps, _kraken_perps_ts
+    global _hl_perps, _hl_perps_ts
 
     # Return cached if fresh (24h)
-    if _kraken_perps is not None and (time.time() - _kraken_perps_ts) < 86400:
-        return {"symbols": _kraken_perps, "cached": True, "count": len(_kraken_perps)}
+    if _hl_perps is not None and (time.time() - _hl_perps_ts) < 86400:
+        return {"symbols": _hl_perps, "cached": True, "count": len(_hl_perps)}
 
     try:
-        # Step 1: Discover Kraken perpetual base currencies
-        exchange = ccxt.krakenfutures({"enableRateLimit": True})
-        markets = exchange.load_markets()
+        from hyperliquid_data import fetch_hyperliquid_metrics
 
-        kraken_bases = set()
-        for market in markets.values():
-            if market.get("type") == "swap" and market.get("active"):
-                base = market.get("base", "")
-                if base and base not in ("USD", "USDT", "USDC"):
-                    kraken_bases.add(base)
+        # Step 1: Fetch all Hyperliquid perps (no API key needed)
+        metrics = await fetch_hyperliquid_metrics()
+        hl_coins = {m.coin for m in metrics.values()}
 
         # Step 2: Filter to symbols available on Binance/Bybit for OHLCV data
         available = await _load_exchange_symbols()
         available_set = {s["symbol"] for s in available}
 
         symbols = sorted(
-            f"{b}/USDT" for b in kraken_bases
-            if f"{b}/USDT" in available_set
+            f"{coin}/USDT" for coin in hl_coins
+            if f"{coin}/USDT" in available_set
         )
 
-        _kraken_perps = symbols
-        _kraken_perps_ts = time.time()
+        _hl_perps = symbols
+        _hl_perps_ts = time.time()
 
         logger.info(
-            "Kraken perps: %d perp bases, %d available on exchanges",
-            len(kraken_bases), len(symbols),
+            "Hyperliquid perps: %d listed, %d available on exchanges",
+            len(hl_coins), len(symbols),
         )
         return {"symbols": symbols, "cached": False, "count": len(symbols)}
 
     except Exception as exc:
-        logger.error("Kraken Futures discovery failed: %s", exc)
+        logger.error("Hyperliquid perps discovery failed: %s", exc)
         return {"symbols": [], "error": str(exc), "count": 0}
 
 
@@ -1088,7 +1082,7 @@ async def executor_trades():
 
 @app.get("/api/executor/portfolio")
 async def executor_portfolio():
-    """Get current paper portfolio from Kraken."""
+    """Get current portfolio from trading engine."""
     from executor import get_executor
 
     executor = get_executor()
@@ -1096,19 +1090,13 @@ async def executor_portfolio():
         return {"error": "Executor not initialized"}
 
     try:
-        if executor.mode == "paper":
-            status = await executor._kraken_call(["paper", "status"])
-            balance = await executor._kraken_call(["paper", "balance"])
-            history = await executor._kraken_call(["paper", "history"])
-            return {
-                "status": status,
-                "balance": balance,
-                "recent_trades": history.get("trades", [])[-20:],
-            }
-        else:
-            balance = await executor._kraken_call(["balance"])
-            orders = await executor._kraken_call(["open-orders"])
-            return {"balance": balance, "open_orders": orders}
+        portfolio = executor.engine.get_portfolio() if executor.engine else {}
+        recent_trades = executor.get_trades()[-20:]
+        return {
+            "portfolio": portfolio,
+            "recent_trades": recent_trades,
+            "mode": executor.mode,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

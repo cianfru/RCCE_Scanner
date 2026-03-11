@@ -556,7 +556,7 @@ export default function ExecutorPanel({ api }) {
             fontSize: 13,
             fontFamily: T.font,
           }}>
-            Click <strong style={{ color: T.accent }}>Initialize</strong> to start paper trading with Kraken CLI.
+            Click <strong style={{ color: T.accent }}>Initialize</strong> to start paper trading.
             <br />
             <span style={{ fontSize: 11, color: T.text4, marginTop: 8, display: "inline-block" }}>
               The executor will convert scanner signals into paper orders on each 5-minute scan cycle.

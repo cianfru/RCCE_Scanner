@@ -1,18 +1,17 @@
 """
 executor.py
 ~~~~~~~~~~~
-Execution engine that converts scanner signals into Kraken orders.
-Supports paper trading (default) and live trading modes.
+Execution engine that converts scanner signals into trading orders.
+Supports paper trading (default) and live trading (Hyperliquid) modes.
 
 Signal flow:
-    Scanner → synthesize_signal() → Executor → kraken CLI → orders
+    Scanner → synthesize_signal() → Executor → TradingEngine → orders
 
 The executor is a singleton — access via get_executor().
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -21,11 +20,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from kraken_pairs import (
-    discover_tradeable_pairs,
-    scanner_to_kraken,
-    get_kraken_binary,
-)
+from trading_engine import TradingEngine, PaperEngine, HyperliquidEngine, EngineError
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +46,8 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
 
-# Minimum order sizes on Kraken (approximate, in base currency)
-_MIN_ORDER_USD = 5.0  # Kraken minimum is usually ~$5-10
+# Minimum order size in USD
+_MIN_ORDER_USD = 5.0
 
 # Default whitelist: only trade symbols validated by backtesting
 DEFAULT_WHITELIST = [
@@ -69,7 +64,7 @@ DEFAULT_WHITELIST = [
 class ExecutorPosition:
     """An open position tracked by the executor."""
     symbol: str                     # scanner format: BTC/USDT
-    kraken_pair: str                # kraken format: BTCUSD
+    exchange_pair: str              # exchange format: BTC (Hyperliquid) or BTCUSD (legacy)
     side: str = "LONG"              # LONG or SHORT
     entry_price: float = 0.0
     entry_time: float = 0.0
@@ -78,15 +73,23 @@ class ExecutorPosition:
     cost_usd: float = 0.0           # USD cost at entry
     size_pct: float = 0.0           # % of allocation used
     confluence_at_entry: str = "UNKNOWN"
-    order_id: str = ""              # Kraken order ID
+    order_id: str = ""              # order ID from engine
     entry_reason: str = ""          # signal_reason at entry time
     entry_warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        # Backward compat: also emit kraken_pair for any old state readers
+        d["kraken_pair"] = d["exchange_pair"]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> ExecutorPosition:
+        # Accept both old "kraken_pair" and new "exchange_pair"
+        if "exchange_pair" not in d and "kraken_pair" in d:
+            d["exchange_pair"] = d.pop("kraken_pair")
+        elif "kraken_pair" in d and "exchange_pair" in d:
+            d.pop("kraken_pair")
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -94,7 +97,7 @@ class ExecutorPosition:
 class ExecutorTrade:
     """A completed trade."""
     symbol: str
-    kraken_pair: str
+    exchange_pair: str
     side: str = "LONG"
     entry_price: float = 0.0
     entry_time: float = 0.0
@@ -110,7 +113,9 @@ class ExecutorTrade:
     entry_warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["kraken_pair"] = d["exchange_pair"]
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +123,7 @@ class ExecutorTrade:
 # ---------------------------------------------------------------------------
 
 class ExecutorError(Exception):
-    """Raised when a Kraken CLI call fails."""
+    """Raised when an executor operation fails."""
     def __init__(self, category: str, message: str):
         self.category = category
         self.message = message
@@ -130,11 +135,11 @@ class ExecutorError(Exception):
 # ---------------------------------------------------------------------------
 
 class Executor:
-    """Converts scanner signals into Kraken orders.
+    """Converts scanner signals into trading orders.
 
     Modes:
-        paper  — uses kraken paper buy/sell (no auth, live prices)
-        live   — uses kraken order buy/sell (requires auth)
+        paper  — uses PaperEngine for simulated trading
+        live   — uses HyperliquidEngine for real orders (future)
         disabled — no execution
     """
 
@@ -148,10 +153,13 @@ class Executor:
         self.enabled = False
         self.initialized = False
 
+        # Trading engine
+        self.engine: Optional[TradingEngine] = None
+
         # State
         self.positions: Dict[str, ExecutorPosition] = {}
         self.trade_log: List[ExecutorTrade] = []
-        self.pair_map: Dict[str, str] = {}  # {scanner_sym: kraken_pair}
+        self.pair_map: Dict[str, str] = {}  # {scanner_sym: exchange_pair}
         self.last_scan_signals: Dict[str, str] = {}
         self.last_error: Optional[str] = None
         self.last_execution_time: Optional[float] = None
@@ -160,50 +168,55 @@ class Executor:
         # Whitelist: only trade these symbols (default: backtested set)
         self.whitelist: List[str] = DEFAULT_WHITELIST.copy()
 
-        # Kraken binary path
-        self._kraken_path: Optional[str] = None
-
     # ------------------------------------------------------------------
     # Initialization
     # ------------------------------------------------------------------
 
     async def initialize(self, scanner_symbols: List[str]) -> dict:
-        """Initialize the executor: find kraken, discover pairs, init paper."""
+        """Initialize the executor: create engine, build pair map."""
         logger.info("Executor state file: %s (volume: %s)",
                      _STATE_FILE, "yes" if "/data" in str(_STATE_FILE) else "no")
-        self._kraken_path = get_kraken_binary()
-        if not self._kraken_path:
-            raise ExecutorError("config", "kraken-cli not found. Install: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh")
 
-        # Discover which scanner symbols are tradeable on Kraken
-        self.pair_map = await discover_tradeable_pairs(
-            scanner_symbols, self._kraken_path
-        )
-        logger.info("Executor: %d tradeable pairs discovered", len(self.pair_map))
-
-        # Initialize paper trading account
         if self.mode == "paper":
+            # Paper mode: pure simulation, no network calls needed
+            self.engine = PaperEngine(self.initial_balance)
+
+            # Map all scanner symbols directly (paper trades any symbol)
+            self.pair_map = {
+                sym: sym.split("/")[0].upper()
+                for sym in scanner_symbols
+            }
+            logger.info(
+                "Paper engine initialized: $%.0f balance, %d symbols mapped",
+                self.initial_balance, len(self.pair_map),
+            )
+
+        elif self.mode == "live":
+            # Live mode: Hyperliquid
+            self.engine = HyperliquidEngine()
+
+            # Discover which scanner symbols are tradeable on Hyperliquid
             try:
-                result = await self._kraken_call([
-                    "paper", "init",
-                    "--balance", str(self.initial_balance),
-                ])
-            except ExecutorError as e:
-                if "already initialized" in str(e).lower():
-                    # Reset clears AND re-initializes with default balance
-                    result = await self._kraken_call(["paper", "reset"])
-                    # If we need a different balance, re-init
-                    if self.initial_balance != 10000.0:
-                        try:
-                            result = await self._kraken_call([
-                                "paper", "init",
-                                "--balance", str(self.initial_balance),
-                            ])
-                        except ExecutorError:
-                            pass  # reset already initialized with default
-                else:
-                    raise
-            logger.info("Paper account initialized: %s", result)
+                from hyperliquid_data import fetch_hyperliquid_metrics
+                metrics = await fetch_hyperliquid_metrics()
+                hl_coins = {m.coin for m in metrics.values()}
+
+                self.pair_map = {}
+                for sym in scanner_symbols:
+                    coin = sym.split("/")[0].upper()
+                    if coin in hl_coins:
+                        self.pair_map[sym] = coin
+
+                logger.info(
+                    "Hyperliquid engine: %d/%d scanner symbols available",
+                    len(self.pair_map), len(scanner_symbols),
+                )
+            except Exception as e:
+                logger.error("Failed to discover Hyperliquid pairs: %s", e)
+                self.pair_map = {}
+
+        else:
+            raise ExecutorError("config", f"Unknown mode: {self.mode}")
 
         # Load persisted state if exists
         self._load_state()
@@ -243,7 +256,7 @@ class Executor:
 
             self.last_scan_signals[symbol] = signal
 
-            # Skip symbols not on Kraken
+            # Skip symbols not in pair map
             if symbol not in self.pair_map:
                 continue
 
@@ -261,7 +274,7 @@ class Executor:
                 )
                 if action:
                     actions_taken.append(action)
-            except ExecutorError as e:
+            except (ExecutorError, EngineError) as e:
                 logger.error("Executor error for %s: %s", symbol, e)
                 self.last_error = str(e)
             except Exception as e:
@@ -340,7 +353,7 @@ class Executor:
         signal_warnings: Optional[List[str]] = None,
     ) -> str:
         """Place an entry order (buy for LONG, sell for SHORT)."""
-        kraken_pair = self.pair_map[symbol]
+        exchange_pair = self.pair_map[symbol]
         side = "SHORT" if signal == "LIGHT_SHORT" else "LONG"
 
         # Calculate volume
@@ -354,22 +367,14 @@ class Executor:
         if volume <= 0:
             return None
 
-        # Format volume (Kraken expects reasonable precision)
+        # Format volume to appropriate precision
         volume = _format_volume(volume, price)
 
-        # Place order
-        if self.mode == "paper":
-            order_cmd = "sell" if side == "SHORT" else "buy"
-            result = await self._kraken_call([
-                "paper", order_cmd, kraken_pair, str(volume),
-            ])
+        # Place order via trading engine
+        if side == "SHORT":
+            result = self.engine.sell(symbol, volume, price)
         else:
-            # Live mode (future)
-            order_cmd = "sell" if side == "SHORT" else "buy"
-            result = await self._kraken_call([
-                "order", order_cmd, kraken_pair, str(volume),
-                "--type", "market",
-            ])
+            result = self.engine.buy(symbol, volume, price)
 
         # Record position
         order_id = result.get("order_id", "")
@@ -377,7 +382,7 @@ class Executor:
 
         self.positions[symbol] = ExecutorPosition(
             symbol=symbol,
-            kraken_pair=kraken_pair,
+            exchange_pair=exchange_pair,
             side=side,
             entry_price=fill_price,
             entry_time=time.time(),
@@ -408,20 +413,12 @@ class Executor:
             return None
 
         pos = self.positions[symbol]
-        kraken_pair = pos.kraken_pair
 
-        # Place closing order (reverse direction)
-        if self.mode == "paper":
-            close_cmd = "buy" if pos.side == "SHORT" else "sell"
-            result = await self._kraken_call([
-                "paper", close_cmd, kraken_pair, str(pos.volume),
-            ])
+        # Place closing order via trading engine (reverse direction)
+        if pos.side == "SHORT":
+            result = self.engine.buy(symbol, pos.volume, price)
         else:
-            close_cmd = "buy" if pos.side == "SHORT" else "sell"
-            result = await self._kraken_call([
-                "order", close_cmd, kraken_pair, str(pos.volume),
-                "--type", "market",
-            ])
+            result = self.engine.sell(symbol, pos.volume, price)
 
         fill_price = result.get("price", price)
 
@@ -436,7 +433,7 @@ class Executor:
         # Record trade
         trade = ExecutorTrade(
             symbol=symbol,
-            kraken_pair=kraken_pair,
+            exchange_pair=pos.exchange_pair,
             side=pos.side,
             entry_price=pos.entry_price,
             entry_time=pos.entry_time,
@@ -466,75 +463,17 @@ class Executor:
         return action
 
     # ------------------------------------------------------------------
-    # Kraken CLI wrapper
-    # ------------------------------------------------------------------
-
-    async def _kraken_call(
-        self,
-        args: List[str],
-        retries: int = 0,
-    ) -> dict:
-        """Call kraken CLI and return parsed JSON response."""
-        if not self._kraken_path:
-            raise ExecutorError("config", "kraken-cli not found")
-
-        cmd = [self._kraken_path] + args + ["-o", "json"]
-        logger.debug("Kraken call: %s", " ".join(args))
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=30
-            )
-        except asyncio.TimeoutError:
-            raise ExecutorError("network", f"Kraken CLI timed out: {' '.join(args)}")
-
-        stdout_str = stdout.decode().strip() if stdout else ""
-        if not stdout_str:
-            raise ExecutorError("io", f"No output from kraken CLI: {' '.join(args)}")
-
-        try:
-            data = json.loads(stdout_str)
-        except json.JSONDecodeError:
-            raise ExecutorError("parse", f"Invalid JSON from kraken: {stdout_str[:200]}")
-
-        if proc.returncode != 0:
-            category = data.get("error", "unknown")
-            message = data.get("message", str(data))
-
-            # Retry on transient errors
-            if category == "rate_limit" and retries < 2:
-                wait = 5 * (retries + 1)
-                logger.warning("Rate limited — waiting %ds before retry", wait)
-                await asyncio.sleep(wait)
-                return await self._kraken_call(args, retries + 1)
-
-            if category == "network" and retries < 3:
-                wait = 2 ** retries
-                logger.warning("Network error — retrying in %ds", wait)
-                await asyncio.sleep(wait)
-                return await self._kraken_call(args, retries + 1)
-
-            raise ExecutorError(category, message)
-
-        return data
-
-    # ------------------------------------------------------------------
     # Status & queries
     # ------------------------------------------------------------------
 
     async def get_status(self) -> dict:
         """Return current executor status."""
         portfolio = {}
-        if self.initialized and self.mode == "paper":
+        if self.initialized and self.engine:
             try:
-                portfolio = await self._kraken_call(["paper", "status"])
+                portfolio = self.engine.get_portfolio()
             except Exception as e:
-                logger.warning("Failed to get paper status: %s", e)
+                logger.warning("Failed to get portfolio status: %s", e)
 
         total_pnl = sum(t.pnl_pct for t in self.trade_log)
         wins = sum(1 for t in self.trade_log if t.pnl_pct > 0)
@@ -589,6 +528,7 @@ class Executor:
                 "pair_map": self.pair_map,
                 "last_scan_signals": self.last_scan_signals,
                 "total_executions": self.total_executions,
+                "engine_state": self.engine.get_state() if self.engine else {},
                 "saved_at": time.time(),
             }
             _STATE_FILE.write_text(json.dumps(state, indent=2))
@@ -619,6 +559,11 @@ class Executor:
 
             # Restore trade log
             for t_dict in state.get("trade_log", []):
+                # Accept both old "kraken_pair" and new "exchange_pair"
+                if "exchange_pair" not in t_dict and "kraken_pair" in t_dict:
+                    t_dict["exchange_pair"] = t_dict.pop("kraken_pair")
+                elif "kraken_pair" in t_dict and "exchange_pair" in t_dict:
+                    t_dict.pop("kraken_pair")
                 self.trade_log.append(ExecutorTrade(**{
                     k: v for k, v in t_dict.items()
                     if k in ExecutorTrade.__dataclass_fields__
@@ -635,6 +580,11 @@ class Executor:
 
             self.total_executions = state.get("total_executions", 0)
 
+            # Restore engine state
+            engine_state = state.get("engine_state")
+            if engine_state and self.engine:
+                self.engine.load_state(engine_state)
+
             logger.info(
                 "Restored executor state: %d positions, %d trades",
                 len(self.positions), len(self.trade_log),
@@ -647,12 +597,13 @@ class Executor:
     # ------------------------------------------------------------------
 
     async def reset(self) -> dict:
-        """Reset paper account and clear all state."""
-        if self.mode == "paper":
-            # reset both clears state AND re-initializes with default balance
-            result = await self._kraken_call(["paper", "reset"])
-        else:
-            result = {}
+        """Reset trading engine and clear all state."""
+        result = {}
+        if self.engine:
+            try:
+                result = self.engine.reset(self.initial_balance)
+            except Exception as e:
+                logger.warning("Engine reset error: %s", e)
 
         self.positions.clear()
         self.trade_log.clear()
@@ -708,26 +659,21 @@ class Executor:
 # ---------------------------------------------------------------------------
 
 def _format_volume(volume: float, price: float) -> float:
-    """Format volume to appropriate precision for Kraken.
+    """Format volume to appropriate precision.
 
     High-value assets (BTC): 8 decimal places
     Mid-value assets: 4-6 decimal places
     Low-value assets: 0-2 decimal places
     """
     if price > 10000:
-        # BTC-class: up to 8 decimals
         return round(volume, 8)
     elif price > 100:
-        # ETH/BNB-class: up to 6 decimals
         return round(volume, 6)
     elif price > 1:
-        # Mid-cap: up to 4 decimals
         return round(volume, 4)
     elif price > 0.01:
-        # Small-cap: up to 2 decimals
         return round(volume, 2)
     else:
-        # Micro-cap (SHIB, PEPE): integer volume
         return round(volume, 0)
 
 

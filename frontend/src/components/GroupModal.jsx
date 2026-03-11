@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export default function GroupModal({
   editingGroup, groups, onClose, onCreateGroup, onUpdateGroup, onDeleteGroup,
-  onAddSymbol, onRemoveSymbol, onLoadKrakenPerps, onScanNow, isMobile,
+  onAddSymbol, onRemoveSymbol, onLoadHyperliquidPerps, onScanNow, isMobile,
 }) {
   const isEditing = editingGroup != null;
   const modalGroupId = editingGroup?.id;
@@ -18,7 +18,7 @@ export default function GroupModal({
   const [watchlistSearch, setWatchlistSearch] = useState("");
   const [watchlistResults, setWatchlistResults] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
-  const [krakenPerpsLoading, setKrakenPerpsLoading] = useState(false);
+  const [hlPerpsLoading, setHlPerpsLoading] = useState(false);
 
   const searchSymbols = useCallback(async (q) => {
     if (!q || q.length < 1) { setWatchlistResults([]); return; }
@@ -39,10 +39,10 @@ export default function GroupModal({
     return () => clearTimeout(timer);
   }, [watchlistSearch, searchSymbols]);
 
-  const handleLoadKrakenPerps = async () => {
-    setKrakenPerpsLoading(true);
-    await onLoadKrakenPerps(modalGroupId);
-    setKrakenPerpsLoading(false);
+  const handleLoadHyperliquidPerps = async () => {
+    setHlPerpsLoading(true);
+    await onLoadHyperliquidPerps(modalGroupId);
+    setHlPerpsLoading(false);
   };
 
   return (
@@ -321,15 +321,15 @@ export default function GroupModal({
               <div style={{ flex: 1 }} />
               <button
                 className="apple-btn"
-                onClick={handleLoadKrakenPerps}
-                disabled={krakenPerpsLoading}
+                onClick={handleLoadHyperliquidPerps}
+                disabled={hlPerpsLoading}
                 style={{
                   padding: "8px 14px", fontFamily: T.mono, fontSize: 10, fontWeight: 600,
                   letterSpacing: "0.04em", color: "#fb923c", borderColor: "rgba(251,146,60,0.2)",
-                  opacity: krakenPerpsLoading ? 0.5 : 1,
+                  opacity: hlPerpsLoading ? 0.5 : 1,
                 }}
               >
-                {krakenPerpsLoading ? "Loading..." : "+ Kraken Perps"}
+                {hlPerpsLoading ? "Loading..." : "+ Hyperliquid Perps"}
               </button>
               <button
                 className="apple-btn apple-btn-accent"
