@@ -1,0 +1,12 @@
+{
+  "name": "rcce-x402",
+  "version": "1.0.0",
+  "private": true,
+  "description": "x402 pay-per-request helper for AIXBT API key purchase",
+  "type": "module",
+  "dependencies": {
+    "@x402/fetch": "^0.0.3",
+    "@x402/evm": "^0.0.3",
+    "viem": "^2.0.0"
+  }
+}

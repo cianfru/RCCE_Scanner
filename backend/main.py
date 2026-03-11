@@ -1278,6 +1278,121 @@ async def signal_recent_changes(
 
 
 # ---------------------------------------------------------------------------
+# AIXBT Entry Confirmation
+# ---------------------------------------------------------------------------
+
+@app.get("/api/aixbt/status")
+async def aixbt_status():
+    """Check AIXBT integration status: key availability, wallet, expiry."""
+    from aixbt_client import _get_api_key, _KEY_FILE
+    import json as _json
+
+    has_env_key = bool(os.environ.get("AIXBT_API_KEY", "").strip())
+    has_wallet = bool(os.environ.get("AIXBT_WALLET_KEY", "").strip())
+
+    key_file_info = None
+    if _KEY_FILE.exists():
+        try:
+            data = _json.loads(_KEY_FILE.read_text())
+            key_file_info = {
+                "expires_at": data.get("expires_at"),
+                "duration": data.get("duration"),
+                "cost": data.get("cost"),
+                "valid": data.get("expires_ts", 0) > time.time() * 1000,
+            }
+        except Exception:
+            pass
+
+    active_key = _get_api_key()
+    return {
+        "connected": bool(active_key),
+        "auth_method": "api_key" if has_env_key else ("x402" if has_wallet else "none"),
+        "has_env_key": has_env_key,
+        "has_wallet": has_wallet,
+        "key_file": key_file_info,
+        "setup_instructions": (
+            "Set AIXBT_WALLET_KEY in .env with a Base wallet private key funded with USDC. "
+            "Run: cd backend/x402 && node buy-key.js --generate-wallet"
+        ) if not active_key else None,
+    }
+
+
+@app.get("/api/confirm/{symbol}")
+async def confirm_entry(
+    symbol: str,
+    timeframe: str = Query("4h"),
+):
+    """
+    Entry confirmation: combines scanner signal + AIXBT social intelligence.
+    Returns a GO / LEAN_GO / WAIT / NO / EXIT verdict.
+    Used by the rcce-entry-confirm Claude Skill.
+    """
+    from aixbt_client import build_confirmation_report
+
+    # Find scanner data for this symbol
+    scanner_data = None
+    results = cache.results.get(timeframe, [])
+    # Normalize input: "BTC" → match "BTC/USDT", "SOL" → "SOL/USDT"
+    sym_upper = symbol.upper().replace("/USDT", "").replace("USDT", "")
+    for r in results:
+        r_base = r.get("symbol", "").replace("/USDT", "")
+        if r_base == sym_upper:
+            scanner_data = r
+            break
+
+    if not scanner_data:
+        # Still run AIXBT even without scanner data
+        report = await build_confirmation_report(symbol)
+        report["scanner"] = None
+        report["verdict"]["reason"] = (
+            f"Symbol {symbol} not in current scan — AIXBT only. "
+            + report["verdict"].get("reason", "")
+        )
+        return report
+
+    return await build_confirmation_report(symbol, scanner_data=scanner_data)
+
+
+@app.get("/api/confirm")
+async def confirm_entry_list(
+    timeframe: str = Query("4h"),
+    signals_only: bool = Query(True),
+):
+    """
+    Batch confirmation for all symbols with active entry signals.
+    If signals_only=True, only confirms symbols with entry signals.
+    """
+    from aixbt_client import build_confirmation_report
+
+    results = cache.results.get(timeframe, [])
+    entry_signals = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
+
+    targets = []
+    for r in results:
+        if signals_only and r.get("signal") not in entry_signals:
+            continue
+        targets.append(r)
+
+    if not targets:
+        return {"confirmations": [], "message": "No active entry signals"}
+
+    # Run confirmations concurrently
+    tasks = [
+        build_confirmation_report(t["symbol"], scanner_data=t)
+        for t in targets[:10]  # Cap at 10 to stay within rate limits
+    ]
+    reports = await asyncio.gather(*tasks, return_exceptions=True)
+
+    confirmations = []
+    for report in reports:
+        if isinstance(report, Exception):
+            continue
+        confirmations.append(report)
+
+    return {"confirmations": confirmations, "count": len(confirmations)}
+
+
+# ---------------------------------------------------------------------------
 # Whale tracker endpoints
 # ---------------------------------------------------------------------------
 
