@@ -155,6 +155,25 @@ export default function BMSBChart({
       wickDownColor: "rgba(239,68,68,0.5)",
     });
 
+    // ── CTO Line Advanced (rendered behind BMSB) ──
+    const ctoFastSeries = chart.addSeries(LineSeries, {
+      color: "#c0c0c0",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    const ctoSlowSeries = chart.addSeries(LineSeries, {
+      color: "#c0c0c0",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      title: "CTO",
+    });
+
     // ── BMSB lines ──
     // EMA (upper band boundary)
     const bmsbEmaSeries = chart.addSeries(LineSeries, {
@@ -257,6 +276,10 @@ export default function BMSBChart({
             title: "",
           });
         }
+
+        // ── CTO Line overlay data ──
+        if (data.cto_fast?.length > 0) ctoFastSeries.setData(data.cto_fast);
+        if (data.cto_slow?.length > 0) ctoSlowSeries.setData(data.cto_slow);
 
         // ── BMSB overlay data ──
         if (data.bmsb_mid?.length > 0) bmsbMidSeries.setData(data.bmsb_mid);

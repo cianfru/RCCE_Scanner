@@ -558,6 +558,7 @@ async def chart_data(
     """Return OHLCV + BMSB overlay data for charting."""
     from data_fetcher import fetch_ohlcv
     from engines.heatmap_engine import compute_bmsb_series
+    from engines.cto_engine import compute_cto_series
     import numpy as np
 
     symbol = symbol.upper().replace("-", "/")
@@ -592,6 +593,15 @@ async def chart_data(
         for i in range(len(ohlcv["timestamp"]))
     ]
 
+    # Compute CTO Line overlay on chart-timeframe data
+    cto = {"cto_fast": [], "cto_slow": []}
+    try:
+        cto = compute_cto_series(
+            ohlcv["high"], ohlcv["low"], ohlcv["close"], ohlcv["timestamp"],
+        )
+    except Exception:
+        logger.warning("CTO computation failed for %s", symbol)
+
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
     try:
@@ -625,6 +635,8 @@ async def chart_data(
         "bmsb_mid": _interpolate(bmsb["mid"]),
         "bmsb_ema": _interpolate(bmsb["ema"]),
         "bmsb_sma": _interpolate(bmsb["sma"]),
+        "cto_fast": cto["cto_fast"],
+        "cto_slow": cto["cto_slow"],
     }
 
 
