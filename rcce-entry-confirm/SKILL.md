@@ -51,7 +51,7 @@ The script calls the scanner API's `/api/confirm/{symbol}` endpoint and returns 
 
 If the script is not available or the API is down, use WebFetch as fallback:
 
-Fetch `{SCANNER_URL}/api/confirm/{symbol}?timeframe=4h` where SCANNER_URL is the user's deployed scanner URL.
+Fetch `https://rccescanner-production.up.railway.app/api/confirm/{symbol}?timeframe=4h`
 
 ### Step 3: Interpret the Report
 

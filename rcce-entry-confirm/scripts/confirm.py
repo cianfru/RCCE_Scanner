@@ -20,7 +20,7 @@ import sys
 import urllib.request
 import urllib.error
 
-SCANNER_URL = os.environ.get("SCANNER_URL", "http://localhost:8000")
+SCANNER_URL = os.environ.get("SCANNER_URL", "https://rccescanner-production.up.railway.app")
 
 
 def fetch_json(url: str) -> dict:
