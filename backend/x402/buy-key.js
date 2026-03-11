@@ -14,7 +14,7 @@
  *   AIXBT_WALLET_KEY — Private key for Base wallet with USDC
  */
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -70,15 +70,22 @@ async function buyKey(duration = "1d") {
   );
 
   try {
-    // Dynamic imports for x402
+    // Dynamic imports for x402 v2.x
     const { wrapFetchWithPayment } = await import("@x402/fetch");
+    const { x402Client } = await import("@x402/core/client");
+    const { registerExactEvmScheme } = await import("@x402/evm/exact/client");
     const { privateKeyToAccount } = await import("viem/accounts");
 
+    // Create signer from private key
     const signer = privateKeyToAccount(walletKey);
     console.log(`Wallet: ${signer.address}`);
 
+    // Initialize x402 client and register EVM scheme for Base
+    const client = new x402Client();
+    registerExactEvmScheme(client, { signer });
+
     // Create x402 payment-wrapped fetch
-    const fetchWithPayment = wrapFetchWithPayment(fetch, signer);
+    const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
     // Purchase the API key
     const url = `https://api.aixbt.tech${durConfig.endpoint}`;
