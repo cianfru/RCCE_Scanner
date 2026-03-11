@@ -31,26 +31,44 @@ _CACHE_TTL = 300  # 5 minutes
 # x402 purchase lock to prevent concurrent purchases
 _purchase_lock = asyncio.Lock()
 
+# In-memory key store — survives container lifetime even if key file is lost
+_mem_key: Dict[str, Any] = {}  # {"api_key": str, "expires_ts": float}
+
+# Cooldown: don't attempt another purchase within 10 minutes of a failure
+_last_purchase_attempt: float = 0
+_PURCHASE_COOLDOWN = 600  # 10 minutes
+
 
 def _get_api_key() -> str:
     """
     Resolve AIXBT API key from (in priority order):
     1. AIXBT_API_KEY env var (manual key)
-    2. data/aixbt_key.json (x402-purchased key, auto-renewed)
+    2. In-memory key store (survives within container lifetime)
+    3. data/aixbt_key.json (x402-purchased key, persists across restarts if volume mounted)
     """
+    now_ms = time.time() * 1000
+
     # Priority 1: env var
     key = os.environ.get("AIXBT_API_KEY", "").strip()
     if key:
         return key
 
-    # Priority 2: x402-purchased key file
+    # Priority 2: in-memory key (survives even if file is lost)
+    if _mem_key.get("api_key") and _mem_key.get("expires_ts", 0) > now_ms + 3_600_000:
+        return _mem_key["api_key"]
+
+    # Priority 3: x402-purchased key file
     if _KEY_FILE.exists():
         try:
             data = json.loads(_KEY_FILE.read_text())
             expires_ts = data.get("expires_ts", 0)
             # Key still valid (with 1hr buffer)
-            if expires_ts > (time.time() * 1000) + 3_600_000:
-                return data.get("api_key", "")
+            if expires_ts > now_ms + 3_600_000:
+                api_key = data.get("api_key", "")
+                # Promote to memory so we don't lose it
+                _mem_key["api_key"] = api_key
+                _mem_key["expires_ts"] = expires_ts
+                return api_key
             else:
                 log.info("AIXBT key expired, will attempt x402 renewal")
         except Exception as e:
@@ -60,22 +78,47 @@ def _get_api_key() -> str:
 
 
 async def _try_x402_purchase() -> str:
-    """Attempt to purchase a 1-day AIXBT API key via x402 Python SDK."""
+    """Attempt to purchase a 1-day AIXBT API key via x402 Python SDK.
+
+    Safety measures:
+    - asyncio.Lock prevents concurrent purchases
+    - Re-checks memory + file inside lock (another request may have bought while waiting)
+    - 10-minute cooldown after any failed attempt to prevent drain
+    - Key saved to both file AND memory (memory survives if file is lost)
+    """
+    global _last_purchase_attempt
+
     wallet_key = os.environ.get("AIXBT_WALLET_KEY", "").strip()
     if not wallet_key:
         log.debug("No AIXBT_WALLET_KEY set — AIXBT unavailable")
         return ""
 
     async with _purchase_lock:
-        # Re-check key file in case another request purchased while we waited
+        now_ms = time.time() * 1000
+
+        # Re-check in-memory key (another request may have purchased while we waited)
+        if _mem_key.get("api_key") and _mem_key.get("expires_ts", 0) > now_ms + 3_600_000:
+            return _mem_key["api_key"]
+
+        # Re-check key file
         if _KEY_FILE.exists():
             try:
                 data = json.loads(_KEY_FILE.read_text())
-                if data.get("expires_ts", 0) > (time.time() * 1000) + 3_600_000:
-                    return data.get("api_key", "")
+                if data.get("expires_ts", 0) > now_ms + 3_600_000:
+                    api_key = data.get("api_key", "")
+                    _mem_key["api_key"] = api_key
+                    _mem_key["expires_ts"] = data["expires_ts"]
+                    return api_key
             except Exception:
                 pass
 
+        # Cooldown check: don't attempt purchase if we recently failed
+        if _last_purchase_attempt and (time.time() - _last_purchase_attempt) < _PURCHASE_COOLDOWN:
+            remaining = int(_PURCHASE_COOLDOWN - (time.time() - _last_purchase_attempt))
+            log.warning("x402 purchase on cooldown (%ds remaining) — skipping to prevent drain", remaining)
+            return ""
+
+        _last_purchase_attempt = time.time()
         log.info("Purchasing AIXBT 1-day key via x402 (Python)...")
         try:
             from eth_account import Account
@@ -109,19 +152,29 @@ async def _try_x402_purchase() -> str:
                 log.error("x402 purchase succeeded but no key in response: %s", result)
                 return ""
 
-            # Save key to file
+            # Save key to BOTH memory and file
             now = time.time() * 1000  # ms
             duration_ms = 24 * 60 * 60 * 1000
+            expires_ts = now + duration_ms
+
+            # Memory (primary — survives file loss)
+            _mem_key["api_key"] = api_key
+            _mem_key["expires_ts"] = expires_ts
+
+            # File (secondary — survives container restart if volume mounted)
             key_data = {
                 "api_key": api_key,
                 "purchased_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime((now + duration_ms) / 1000)),
-                "expires_ts": now + duration_ms,
+                "expires_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires_ts / 1000)),
+                "expires_ts": expires_ts,
                 "duration": "1d",
                 "wallet": account.address,
             }
             _DATA_DIR.mkdir(parents=True, exist_ok=True)
             _KEY_FILE.write_text(json.dumps(key_data, indent=2))
+
+            # Clear cooldown on success
+            _last_purchase_attempt = 0
 
             log.info("AIXBT key purchased successfully via x402 (expires %s)", key_data["expires_at"])
             return api_key
@@ -138,7 +191,9 @@ async def _try_x402_purchase() -> str:
 
 
 async def _try_x402_purchase_with_error() -> tuple:
-    """Wrapper that returns (key, error_string) for diagnostics."""
+    """Wrapper that returns (key, error_string) for diagnostics.
+    IMPORTANT: Never retry a real x402 payment — each attempt costs $1.
+    """
     wallet_key = os.environ.get("AIXBT_WALLET_KEY", "").strip()
     if not wallet_key:
         return "", "no wallet key"
@@ -146,23 +201,8 @@ async def _try_x402_purchase_with_error() -> tuple:
         key = await _try_x402_purchase()
         if key:
             return key, ""
-        # Purchase returned empty — get more detail
-        # Re-run without the lock's early-return to capture the error
-        from eth_account import Account
-        from x402 import x402ClientSync
-        from x402.mechanisms.evm import EthAccountSigner
-        from x402.mechanisms.evm.exact.register import register_exact_evm_client
-        from x402.http.clients import x402_requests
-
-        account = Account.from_key(wallet_key)
-        signer = EthAccountSigner(account)
-        client = x402ClientSync()
-        register_exact_evm_client(client, signer)
-
-        url = "https://api.aixbt.tech/x402/v2/api-keys/1d"
-        with x402_requests(client) as session:
-            response = session.post(url)
-        return "", f"HTTP {response.status_code}: {response.text[:200]}"
+        # Purchase returned empty — report last known error without retrying
+        return "", "x402 purchase returned empty (check logs for details)"
     except Exception as e:
         return "", str(e)[:200]
 
