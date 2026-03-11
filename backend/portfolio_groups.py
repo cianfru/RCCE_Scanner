@@ -202,6 +202,24 @@ class PortfolioGroupManager:
             self._save()
         return g
 
+    def add_symbols_batch(self, group_id: str, symbols: List[str]) -> Optional[PortfolioGroup]:
+        """Add multiple symbols to a group in one operation (single save)."""
+        g = self.get_by_id(group_id)
+        if g is None:
+            return None
+        existing = set(g.symbols)
+        added = 0
+        for sym in symbols:
+            sym = sym.upper().replace("-", "/")
+            if sym not in existing:
+                g.symbols.append(sym)
+                existing.add(sym)
+                added += 1
+        if added > 0:
+            self._save()
+            logger.info("Batch added %d symbols to group %s", added, g.name)
+        return g
+
     def remove_symbol(self, group_id: str, symbol: str) -> Optional[PortfolioGroup]:
         """Remove a symbol from a group."""
         g = self.get_by_id(group_id)

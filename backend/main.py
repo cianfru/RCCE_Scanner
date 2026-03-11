@@ -435,6 +435,23 @@ async def add_symbol_to_group(group_id: str, body: PortfolioGroupAddSymbol):
     })
 
 
+@app.post("/api/groups/{group_id}/symbols/batch")
+async def add_symbols_batch(group_id: str, body: dict):
+    """Add multiple symbols to a group in one call."""
+    symbols = body.get("symbols", [])
+    if not symbols:
+        raise HTTPException(status_code=400, detail="No symbols provided")
+    mgr = PortfolioGroupManager.get()
+    group = mgr.add_symbols_batch(group_id, symbols)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    _sync_cache_symbols()
+    return PortfolioGroupResponse(**{
+        "id": group.id, "name": group.name, "symbols": group.symbols,
+        "color": group.color, "order": group.order, "pinned": group.pinned,
+    })
+
+
 @app.delete("/api/groups/{group_id}/symbols/{symbol:path}")
 async def remove_symbol_from_group(group_id: str, symbol: str):
     """Remove a symbol from a portfolio group."""
@@ -775,10 +792,10 @@ _hl_perps_ts: float = 0.0
 
 @app.get("/api/perpetuals/hyperliquid")
 async def hyperliquid_perpetuals():
-    """Discover active Hyperliquid perpetual contracts.
+    """Discover all active Hyperliquid perpetual contracts.
 
-    Fetches all listed perps from Hyperliquid, maps to {BASE}/USDT scanner
-    format, then filters to symbols the scanner can fetch OHLCV data for.
+    Returns every listed perp on Hyperliquid mapped to {BASE}/USDT format.
+    Also flags which ones are scannable (have OHLCV data on Binance/Bybit).
     Results are cached for 24 hours.
     """
     global _hl_perps, _hl_perps_ts
@@ -790,26 +807,14 @@ async def hyperliquid_perpetuals():
     try:
         from hyperliquid_data import fetch_hyperliquid_metrics
 
-        # Step 1: Fetch all Hyperliquid perps (no API key needed)
+        # Fetch ALL Hyperliquid perps (no API key needed)
         metrics = await fetch_hyperliquid_metrics()
-        hl_coins = {m.coin for m in metrics.values()}
-
-        # Step 2: Filter to symbols available on Binance/Bybit for OHLCV data
-        available = await _load_exchange_symbols()
-        available_set = {s["symbol"] for s in available}
-
-        symbols = sorted(
-            f"{coin}/USDT" for coin in hl_coins
-            if f"{coin}/USDT" in available_set
-        )
+        symbols = sorted(f"{m.coin}/USDT" for m in metrics.values())
 
         _hl_perps = symbols
         _hl_perps_ts = time.time()
 
-        logger.info(
-            "Hyperliquid perps: %d listed, %d available on exchanges",
-            len(hl_coins), len(symbols),
-        )
+        logger.info("Hyperliquid perps: %d listed", len(symbols))
         return {"symbols": symbols, "cached": False, "count": len(symbols)}
 
     except Exception as exc:

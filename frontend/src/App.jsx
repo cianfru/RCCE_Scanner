@@ -219,13 +219,11 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/perpetuals/hyperliquid`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
-        for (const sym of data.symbols) {
-          await fetch(`${API_BASE}/api/groups/${groupId}/symbols`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ symbol: sym }),
-          });
-        }
+        await fetch(`${API_BASE}/api/groups/${groupId}/symbols/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbols: data.symbols }),
+        });
         await loadGroups();
       }
     } catch (e) {
