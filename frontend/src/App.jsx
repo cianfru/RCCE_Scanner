@@ -409,15 +409,14 @@ export default function App() {
         padding: `0 ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
         display: "flex",
-        flexDirection: isMobile ? "column" : "row",
-        alignItems: isMobile ? "stretch" : "center",
+        alignItems: "center",
         justifyContent: "space-between",
-        gap: isMobile ? 10 : 0,
         background: T.headerBg,
         backdropFilter: "blur(24px) saturate(1.4)", WebkitBackdropFilter: "blur(24px) saturate(1.4)",
         position: "sticky", top: 0, zIndex: 100,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, flex: 1 }}>
+        {/* Left: logo + scanning */}
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 16 }}>
           <img
             src="/logo.png"
             alt="Reflex"
@@ -445,6 +444,25 @@ export default function App() {
               <span style={{ animation: "pulse 1s infinite" }}>{"\u25cf"}</span> SCANNING
             </div>
           )}
+        </div>
+
+        {/* Right: timestamp, cache, theme toggle — all on one line */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: isMobile ? 8 : 12,
+          flexShrink: 0,
+        }}>
+          {lastRefresh && (
+            <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.06em", fontFamily: T.font }}>
+              {lastRefresh.toLocaleTimeString()}
+            </span>
+          )}
+          {cacheAge != null && (
+            <span style={{
+              fontSize: 9, color: T.text4, fontFamily: T.mono,
+              padding: "2px 8px", background: T.surface, borderRadius: "20px",
+              border: `1px solid ${T.border}`,
+            }}>{formatCacheAge(cacheAge)}</span>
+          )}
           <button
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -455,7 +473,6 @@ export default function App() {
               border: "none",
               cursor: "pointer",
               padding: 0,
-              marginLeft: "auto",
               background: mode === "dark" ? T.accent : T.overlay15,
               transition: "background 0.3s ease",
               flexShrink: 0,
@@ -473,24 +490,6 @@ export default function App() {
               fontSize: 10, lineHeight: 1,
             }}>{mode === "dark" ? "\uD83C\uDF19" : "\u2600\uFE0F"}</span>
           </button>
-        </div>
-
-        <div style={{
-          display: "flex", alignItems: "center", gap: isMobile ? 10 : 14,
-          justifyContent: isMobile ? "space-between" : "flex-end",
-        }}>
-          {lastRefresh && (
-            <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.06em", fontFamily: T.font }}>
-              {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
-          {cacheAge != null && (
-            <span style={{
-              fontSize: 9, color: T.text4, fontFamily: T.mono,
-              padding: "2px 8px", background: T.surface, borderRadius: "20px",
-              border: `1px solid ${T.border}`,
-            }}>{formatCacheAge(cacheAge)}</span>
-          )}
         </div>
       </div>
 
