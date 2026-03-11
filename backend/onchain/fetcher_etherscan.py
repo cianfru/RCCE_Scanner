@@ -237,11 +237,12 @@ class EtherscanFetcher:
     ) -> List[dict]:
         """Fetch top token holders with real on-chain balances.
 
-        Uses ``module=token&action=tokenholderlist`` which returns actual
-        balances (not reconstructed from transfers).  Available on free tier.
+        Tries Etherscan ``tokenholderlist`` first (PRO), then falls back to
+        Ethplorer's free ``getTopTokenHolders`` endpoint.
 
-        Returns list of dicts: [{address, balance, pct_supply}, ...]
+        Returns list of dicts: [{address, balance}, ...]
         """
+        # ── Try Etherscan tokenholderlist (PRO endpoint) ──
         params = {
             "module": "token",
             "action": "tokenholderlist",
@@ -251,31 +252,32 @@ class EtherscanFetcher:
         }
         data = await self._request(params)
         result = data.get("result")
-        if not isinstance(result, list):
-            # Fallback: endpoint might not be available (PRO only on some chains)
-            logger.debug(
-                "tokenholderlist not available for %s on %s: %s",
-                contract[:12], self._chain, data.get("message", ""),
-            )
-            return []
-
-        holders = []
-        for item in result:
-            if not isinstance(item, dict):
-                continue
-            try:
-                raw_balance = int(item.get("TokenHolderQuantity", 0))
-                balance = raw_balance / (10 ** decimals) if decimals > 0 else float(raw_balance)
-                if balance <= 0:
+        if isinstance(result, list) and len(result) > 0:
+            holders = []
+            for item in result:
+                if not isinstance(item, dict):
                     continue
-                holders.append({
-                    "address": item.get("TokenHolderAddress", "").lower(),
-                    "balance": balance,
-                })
-            except (ValueError, TypeError):
-                continue
+                try:
+                    raw_balance = int(item.get("TokenHolderQuantity", 0))
+                    balance = raw_balance / (10 ** decimals) if decimals > 0 else float(raw_balance)
+                    if balance <= 0:
+                        continue
+                    holders.append({
+                        "address": item.get("TokenHolderAddress", "").lower(),
+                        "balance": balance,
+                    })
+                except (ValueError, TypeError):
+                    continue
+            if holders:
+                return holders
 
-        return holders
+        # ── Fallback: Ethplorer free API ──
+        logger.debug(
+            "tokenholderlist unavailable for %s on %s (PRO only), "
+            "falling back to Ethplorer",
+            contract[:12], self._chain,
+        )
+        return await self._get_holders_ethplorer(contract, decimals, limit=offset)
 
     # ── Token supply ──────────────────────────────────────────────────────
 
@@ -351,6 +353,68 @@ class EtherscanFetcher:
             return info
 
         return None
+
+    # ── Ethplorer fallback (free holder data) ─────────────────────────────
+
+    async def _get_holders_ethplorer(
+        self,
+        contract: str,
+        decimals: int = 18,
+        limit: int = 50,
+    ) -> List[dict]:
+        """Fetch top token holders from Ethplorer's free API.
+
+        Ethplorer provides ``getTopTokenHolders`` on the free tier (key=freekey,
+        5 req/s).  Only works for Ethereum mainnet, not Base/other chains.
+
+        Returns list of dicts: [{address, balance}, ...]
+        """
+        if self._chain != "ethereum":
+            return []
+
+        url = (
+            f"https://api.ethplorer.io/getTopTokenHolders/"
+            f"{contract}?apiKey=freekey&limit={limit}"
+        )
+        session = self._get_session()
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    logger.debug("Ethplorer returned %d for %s", resp.status, contract[:12])
+                    return []
+                data = await resp.json()
+        except Exception as exc:
+            logger.debug("Ethplorer request failed for %s: %s", contract[:12], exc)
+            return []
+
+        raw_holders = data.get("holders", [])
+        if not isinstance(raw_holders, list):
+            return []
+
+        holders = []
+        for item in raw_holders:
+            if not isinstance(item, dict):
+                continue
+            try:
+                addr = item.get("address", "").lower()
+                raw_balance = float(item.get("balance", 0))
+                balance = raw_balance / (10 ** decimals) if decimals > 0 else raw_balance
+                if balance <= 0 or not addr:
+                    continue
+                holders.append({
+                    "address": addr,
+                    "balance": balance,
+                })
+            except (ValueError, TypeError):
+                continue
+
+        if holders:
+            logger.info(
+                "Ethplorer returned %d holders for %s (top: %.2f%%)",
+                len(holders), contract[:12],
+                data.get("holders", [{}])[0].get("share", 0) if raw_holders else 0,
+            )
+        return holders
 
     # ── Contract creation (LP auto-detection) ────────────────────────────
 
