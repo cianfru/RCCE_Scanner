@@ -98,7 +98,7 @@ async def _try_x402_purchase() -> str:
             with x402_requests(client) as session:
                 response = session.post(url)
 
-            if response.status_code != 200:
+            if response.status_code not in (200, 201):
                 log.error("x402 purchase failed (%d): %s", response.status_code, response.text[:200])
                 return ""
 
