@@ -226,6 +226,59 @@ class EtherscanFetcher:
 
         return results
 
+    # ── Token holders ─────────────────────────────────────────────────────
+
+    async def get_token_holders(
+        self,
+        contract: str,
+        decimals: int = 18,
+        page: int = 1,
+        offset: int = 100,
+    ) -> List[dict]:
+        """Fetch top token holders with real on-chain balances.
+
+        Uses ``module=token&action=tokenholderlist`` which returns actual
+        balances (not reconstructed from transfers).  Available on free tier.
+
+        Returns list of dicts: [{address, balance, pct_supply}, ...]
+        """
+        params = {
+            "module": "token",
+            "action": "tokenholderlist",
+            "contractaddress": contract,
+            "page": str(page),
+            "offset": str(offset),
+        }
+        data = await self._request(params)
+        result = data.get("result")
+        if not isinstance(result, list):
+            # Fallback: endpoint might not be available (PRO only on some chains)
+            logger.debug(
+                "tokenholderlist not available for %s on %s: %s",
+                contract[:12], self._chain, data.get("message", ""),
+            )
+            return []
+
+        holders = []
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            try:
+                raw_balance = int(item.get("TokenHolderQuantity", 0))
+                balance = raw_balance / (10 ** decimals) if decimals > 0 else float(raw_balance)
+                if balance <= 0:
+                    continue
+                holders.append({
+                    "address": item.get("TokenHolderAddress", "").lower(),
+                    "balance": balance,
+                })
+            except (ValueError, TypeError):
+                continue
+
+        return holders
+
+    # ── Token supply ──────────────────────────────────────────────────────
+
     async def get_token_supply(self, contract: str, decimals: int = 18) -> float:
         """Fetch total supply using the fast tokensupply endpoint.
 

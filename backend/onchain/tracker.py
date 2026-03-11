@@ -199,7 +199,7 @@ class WhaleTracker:
     # ── Polling ────────────────────────────────────────────────────────────
 
     async def _poll_single_token(self, chain: str, contract: str) -> None:
-        """Fetch transfers for one token and update caches."""
+        """Fetch transfers + real holder data for one token and update caches."""
         fetcher = self._fetchers.get(chain)
         if not fetcher:
             return
@@ -207,6 +207,7 @@ class WhaleTracker:
         contract_key = contract.lower() if chain != "solana" else contract
         start_block = self.store.get_last_block(chain, contract)
 
+        # ── 1. Fetch recent transfers (for activity metrics & alerts) ──
         transfers: list = []
         try:
             if isinstance(fetcher, EtherscanFetcher):
@@ -219,29 +220,26 @@ class WhaleTracker:
                 )
         except Exception as exc:
             logger.warning("Transfer fetch failed for %s/%s: %s", chain, contract[:12], exc)
-            return
 
-        if not transfers:
-            return
+        if transfers:
+            # Update block cursor (highest block seen)
+            max_block = max(t.block_number for t in transfers)
+            if max_block > start_block:
+                self.store.set_last_block(chain, contract, max_block)
 
-        # Update block cursor (highest block seen)
-        max_block = max(t.block_number for t in transfers)
-        if max_block > start_block:
-            self.store.set_last_block(chain, contract, max_block)
+            # Merge into cache (dedup by tx_hash)
+            existing = self._transfer_cache.get(contract_key, [])
+            seen_hashes = {t.tx_hash for t in existing}
+            for t in transfers:
+                if t.tx_hash not in seen_hashes:
+                    existing.append(t)
+                    seen_hashes.add(t.tx_hash)
 
-        # Merge into cache (dedup by tx_hash)
-        existing = self._transfer_cache.get(contract_key, [])
-        seen_hashes = {t.tx_hash for t in existing}
-        for t in transfers:
-            if t.tx_hash not in seen_hashes:
-                existing.append(t)
-                seen_hashes.add(t.tx_hash)
+            # Sort by timestamp desc, cap size
+            existing.sort(key=lambda t: t.timestamp, reverse=True)
+            self._transfer_cache[contract_key] = existing[:MAX_TRANSFERS_PER_TOKEN]
 
-        # Sort by timestamp desc, cap size
-        existing.sort(key=lambda t: t.timestamp, reverse=True)
-        self._transfer_cache[contract_key] = existing[:MAX_TRANSFERS_PER_TOKEN]
-
-        # Rebuild holder map from cached transfers
+        # ── 2. Build activity map from transfers (buy/sell counts, flow) ──
         labels = self.store.wallet_labels.get(chain, {})
         token_record = next(
             (t for t in self.store.tracked_tokens
@@ -251,20 +249,82 @@ class WhaleTracker:
         )
         token_symbol = token_record.symbol if token_record else ""
         token_price = self._get_price(token_symbol)
-
         total_supply = token_record.total_supply if token_record else 0.0
-        holder_map = build_holder_map(
-            self._transfer_cache[contract_key],
+
+        # Build transfer-based holder map (gives activity metrics)
+        transfer_holder_map = build_holder_map(
+            self._transfer_cache.get(contract_key, []),
             labels,
             token_price,
             total_supply,
         )
-        self._holder_cache[contract_key] = holder_map
 
-        # Generate alerts
+        # ── 3. Fetch REAL holder balances (Etherscan tokenholderlist) ──
+        real_holders: list = []
+        if isinstance(fetcher, EtherscanFetcher) and token_record:
+            try:
+                real_holders = await fetcher.get_token_holders(
+                    contract,
+                    decimals=token_record.decimals,
+                    offset=100,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Holder list fetch failed for %s/%s: %s",
+                    chain, contract[:12], exc,
+                )
+
+        # ── 4. Merge: real balances + transfer-based activity ──
+        if real_holders:
+            # Use real balances as the source of truth, enrich with activity
+            holder_map = {}
+            for rh in real_holders:
+                addr = rh["address"]
+                balance = rh["balance"]
+
+                # Look up activity data from transfer analysis
+                activity = transfer_holder_map.get(addr)
+
+                pct_supply = (balance / total_supply * 100) if total_supply > 0 else 0.0
+                is_whale = pct_supply >= WHALE_HOLDING_PCT if total_supply > 0 else (
+                    balance * token_price >= 100_000 if token_price > 0 else False
+                )
+
+                holder_map[addr] = HolderInfo(
+                    address=addr,
+                    label=labels.get(addr, ""),
+                    balance=balance,
+                    buy_count=activity.buy_count if activity else 0,
+                    sell_count=activity.sell_count if activity else 0,
+                    net_flow=activity.net_flow if activity else 0.0,
+                    last_seen=activity.last_seen if activity else 0,
+                    tx_count_24h=activity.tx_count_24h if activity else 0,
+                    net_flow_24h=activity.net_flow_24h if activity else 0.0,
+                    pct_supply=pct_supply,
+                    is_whale=is_whale,
+                )
+
+            # Also keep transfer-only wallets not in top holders
+            # (active traders who might not be in top 100 by balance)
+            for addr, th in transfer_holder_map.items():
+                if addr not in holder_map and (th.buy_count + th.sell_count) >= 2:
+                    holder_map[addr] = th
+
+            self._holder_cache[contract_key] = holder_map
+            logger.debug(
+                "Merged %d real holders + %d transfer wallets for %s",
+                len(real_holders), len(holder_map) - len(real_holders),
+                token_symbol or contract[:12],
+            )
+        else:
+            # Fallback: use transfer-reconstructed data only
+            self._holder_cache[contract_key] = transfer_holder_map
+
+        # ── 5. Generate alerts ──
         new_alerts = generate_alerts(
-            holder_map, chain, contract, token_symbol, token_price,
-            transfers=self._transfer_cache[contract_key],
+            self._holder_cache[contract_key], chain, contract,
+            token_symbol, token_price,
+            transfers=self._transfer_cache.get(contract_key, []),
         )
         if new_alerts:
             self._alerts = (new_alerts + self._alerts)[:MAX_ALERTS]
