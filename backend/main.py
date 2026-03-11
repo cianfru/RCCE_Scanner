@@ -1304,12 +1304,38 @@ async def aixbt_status():
             pass
 
     active_key = _get_api_key()
+
+    # x402 diagnostics
+    x402_diag = {}
+    if has_wallet and not active_key:
+        try:
+            from eth_account import Account
+            x402_diag["eth_account"] = "ok"
+        except ImportError as e:
+            x402_diag["eth_account"] = f"MISSING: {e}"
+        try:
+            from x402 import x402ClientSync
+            x402_diag["x402_client"] = "ok"
+        except ImportError as e:
+            x402_diag["x402_client"] = f"MISSING: {e}"
+        try:
+            from x402.mechanisms.evm.exact import ExactEvmScheme
+            x402_diag["x402_evm"] = "ok"
+        except ImportError as e:
+            x402_diag["x402_evm"] = f"MISSING: {e}"
+        try:
+            from x402.clients import x402_requests
+            x402_diag["x402_requests"] = "ok"
+        except ImportError as e:
+            x402_diag["x402_requests"] = f"MISSING: {e}"
+
     return {
         "connected": bool(active_key),
         "auth_method": "api_key" if has_env_key else ("x402" if has_wallet else "none"),
         "has_env_key": has_env_key,
         "has_wallet": has_wallet,
         "key_file": key_file_info,
+        "x402_diagnostics": x402_diag or None,
         "setup_instructions": (
             "Set AIXBT_WALLET_KEY in .env with a Base wallet private key funded with USDC. "
             "Run: cd backend/x402 && node buy-key.js --generate-wallet"
