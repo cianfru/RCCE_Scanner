@@ -59,8 +59,10 @@ class SynthesizedSignal:
     reason: str = ""
     warnings: list = field(default_factory=list)
     conditions_met: int = 0
+    effective_conditions: int = 0   # Post-boost/penalty (may differ from conditions_met)
     conditions_total: int = 10  # Max conditions for STRONG_LONG (expanded)
     conditions_detail: list = field(default_factory=list)  # [{name, label, desc, met}]
+    vol_scale: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +109,7 @@ def synthesize_signal(
     vol_low = vol_state == "LOW"
     vol_high = vol_state == "HIGH"
     heat = result.get("heat", 0)
+    heat_phase = result.get("heat_phase", "Neutral")
     is_climax = result.get("is_climax", False)
     is_absorption = result.get("is_absorption", False)
     floor_confirmed = result.get("floor_confirmed", False)
@@ -124,6 +127,25 @@ def synthesize_signal(
 
     stable_trend = (stablecoin or {}).get("trend", "STABLE")
 
+    # ── Dynamic Z-score thresholds (Feature A) ──
+    vs = result.get("vol_scale", 1.0)
+    z_trim = Z_TRIM * vs
+    z_trim_hard = Z_TRIM_HARD * vs
+    z_blowoff = Z_BLOWOFF * vs
+
+    # ── Regime-adaptive heat thresholds (Feature B) ──
+    # BLOWOFF: overextension is more dangerous → tighter thresholds
+    # CAP/ACCUM: at bottoms, heat is irrelevant → disabled
+    if regime == "BLOWOFF":
+        heat_force = 85
+        heat_block = 75
+    elif regime in ("CAP", "ACCUM"):
+        heat_force = 100      # never force-trim at bottoms
+        heat_block = 100
+    else:
+        heat_force = HEAT_FORCE_TRIM
+        heat_block = HEAT_BLOCK_STRONG
+
     out = SynthesizedSignal(raw_signal=raw_signal)
     reasons: list = []
     warnings: list = []
@@ -139,7 +161,7 @@ def synthesize_signal(
     cond_consensus = mkt_consensus in ("RISK-ON", "ACCUMULATION")
     cond_z_range = -0.5 <= z <= 2.5
     cond_no_bear_div = divergence != "BEAR-DIV"
-    cond_heat_ok = heat < HEAT_BLOCK_STRONG
+    cond_heat_ok = heat < heat_block
     cond_no_climax = not is_climax
     cond_funding_ok = funding_regime != "CROWDED_LONG"
     cond_not_greedy = fear_greed < FNG_GREED
@@ -160,7 +182,7 @@ def synthesize_signal(
         ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION"),
         ("z_range",        "Z-Score",     "-0.5 to 2.5"),
         ("no_bear_div",    "No Bear Div", "No bearish divergence"),
-        ("heat_ok",        "Heat OK",     f"< {HEAT_BLOCK_STRONG}"),
+        ("heat_ok",        "Heat OK",     f"< {heat_block}"),
         ("no_climax",      "No Climax",   "No exhaustion climax"),
         ("funding_ok",     "Funding OK",  "Not crowded long"),
         ("not_greedy",     "Not Greedy",  f"F&G < {FNG_GREED}"),
@@ -170,6 +192,27 @@ def synthesize_signal(
         {"name": n, "label": l, "desc": d, "met": bool(c)}
         for (n, l, d), c in zip(_COND_NAMES, conditions)
     ]
+
+    # ── Feature B: Regime-specific boosters & penalties ──
+    effective = conditions_met
+    boost_reasons: list = []
+
+    # Exhaustion engine boosters — floor/absorption are strong bottom signals
+    if regime in ("CAP", "ACCUM"):
+        if floor_confirmed:
+            effective += 2
+            boost_reasons.append("+2 floor boost")
+        if is_absorption:
+            effective += 1
+            boost_reasons.append("+1 absorption boost")
+
+    # Heat phase penalty — fading momentum in MARKUP is a warning
+    if regime == "MARKUP" and heat_phase in ("Fading", "Exhaustion"):
+        effective -= 1
+        boost_reasons.append(f"-1 heat {heat_phase.lower()}")
+
+    out.effective_conditions = effective
+    out.vol_scale = vs
 
     # Helper: build human-readable reason string
     def _reason_parts() -> list:
@@ -185,29 +228,33 @@ def synthesize_signal(
             parts.append(f"funding={funding_regime}")
         if oi_trend not in ("UNKNOWN", "STABLE"):
             parts.append(f"OI={oi_trend}")
+        if vs != 1.0:
+            parts.append(f"vs={vs:.2f}")
+        if boost_reasons:
+            parts.append("[" + ", ".join(boost_reasons) + "]")
         return parts
 
     # -----------------------------------------------------------------------
     # STEP 1: EXIT RULES (highest priority — any single trigger fires)
     # -----------------------------------------------------------------------
 
-    # 1a. Heat force-trim (extreme overextension)
-    if heat >= HEAT_FORCE_TRIM:
+    # 1a. Heat force-trim (extreme overextension, regime-adaptive)
+    if heat >= heat_force:
         out.signal = "TRIM"
-        out.reason = f"Heat={heat} >= {HEAT_FORCE_TRIM} (extreme overextension)"
+        out.reason = f"Heat={heat} >= {heat_force} (extreme overextension)"
         out.warnings = [f"Heat at {heat}/100 — forced exit"]
         return out
 
-    # 1b. BLOWOFF exits (only when z is extended)
+    # 1b. BLOWOFF exits (dynamic z-thresholds scaled by vol_scale)
     # (Absorption-as-entry moved to Step 2, gated by regime/consensus/heat)
     if regime == "BLOWOFF":
-        if z > Z_TRIM_HARD:
+        if z > z_trim_hard:
             out.signal = "TRIM_HARD"
-            out.reason = f"BLOWOFF + z={z:.2f} > {Z_TRIM_HARD}"
+            out.reason = f"BLOWOFF + z={z:.2f} > {z_trim_hard:.2f}"
             return out
-        if z > Z_TRIM:
+        if z > z_trim:
             out.signal = "TRIM"
-            out.reason = f"BLOWOFF + z={z:.2f} > {Z_TRIM}"
+            out.reason = f"BLOWOFF + z={z:.2f} > {z_trim:.2f}"
             return out
         # BLOWOFF with moderate z — warn but allow entry evaluation
         warnings.append(f"BLOWOFF regime (z={z:.2f}) — monitor for escalation")
@@ -232,9 +279,9 @@ def synthesize_signal(
         warnings.append(f"BEAR-DIV active (conf={confidence*100:.0f}%) — STRONG_LONG blocked")
 
     # 1f. EUPHORIA consensus + high z -> NO_LONG
-    if mkt_consensus == "EUPHORIA" and z > Z_BLOWOFF:
+    if mkt_consensus == "EUPHORIA" and z > z_blowoff:
         out.signal = "NO_LONG"
-        out.reason = f"Consensus EUPHORIA + z={z:.2f} > {Z_BLOWOFF}"
+        out.reason = f"Consensus EUPHORIA + z={z:.2f} > {z_blowoff:.2f}"
         out.warnings = ["Market in euphoria with extended z-score"]
         return out
 
@@ -310,22 +357,24 @@ def synthesize_signal(
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
 
-    # --- STRONG_LONG: ALL 10 conditions must hold + no BEAR-DIV ---
-    if conditions_met == len(conditions) and divergence != "BEAR-DIV":
+    # --- STRONG_LONG: effective conditions >= total (raw + boosts) + no BEAR-DIV ---
+    if effective >= len(conditions) and divergence != "BEAR-DIV":
         # MARKUP with full confirmation
         if regime == "MARKUP" and z > -0.5 and z < 1.0:
+            _tag = f"[{conditions_met}/{len(conditions)} raw, {effective} effective]"
             out.signal = "STRONG_LONG"
-            out.reason = " + ".join(_reason_parts()) + " [all conditions met]"
+            out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
             return out
-        # ACCUM with full confirmation
-        if regime == "ACCUM":
+        # ACCUM with full confirmation (boosts help here)
+        if regime in ("ACCUM", "CAP"):
+            _tag = f"[{conditions_met}/{len(conditions)} raw, {effective} effective]"
             out.signal = "STRONG_LONG"
-            out.reason = " + ".join(_reason_parts()) + " [all conditions met]"
+            out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
             return out
-    # STRONG_LONG with 7/10 original conditions but blocked by funding/greed/liquidity
-    elif conditions_met >= 7 and not cond_funding_ok:
+    # STRONG_LONG with 7+ effective conditions but blocked by funding/greed/liquidity
+    elif effective >= 7 and not cond_funding_ok:
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
         if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
             out.signal = "LIGHT_LONG"
@@ -392,10 +441,10 @@ def synthesize_signal(
         out.warnings = warnings
         return out
 
-    # --- LIGHT_LONG: 4+ conditions met + supportive regime ---
-    if conditions_met >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
+    # --- LIGHT_LONG: 5+ effective conditions + supportive regime ---
+    if effective >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
         # MARKUP LIGHT_LONG: extended z (1.0-2.0) with decent confidence
-        if (regime == "MARKUP" and 1.0 < z < Z_BLOWOFF
+        if (regime == "MARKUP" and 1.0 < z < z_blowoff
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
                 and mkt_consensus != "RISK-OFF"
@@ -406,13 +455,13 @@ def synthesize_signal(
             return out
 
         # MARKUP LIGHT_LONG: moderate z with conditions support
-        if (regime == "MARKUP" and 0 < z < Z_BLOWOFF
+        if (regime == "MARKUP" and 0 < z < z_blowoff
                 and confidence > CONF_LIGHT
-                and heat < HEAT_BLOCK_STRONG
+                and heat < heat_block
                 and mkt_consensus in ("RISK-ON", "MIXED")
                 and divergence != "BEAR-DIV"):
             out.signal = "LIGHT_LONG"
-            out.reason = " + ".join(_reason_parts()) + f" [{conditions_met}/{len(conditions)} conditions]"
+            out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective]"
             out.warnings = warnings
             return out
 
@@ -439,6 +488,6 @@ def synthesize_signal(
     # -----------------------------------------------------------------------
 
     out.signal = "WAIT"
-    out.reason = " + ".join(_reason_parts()) + f" [{conditions_met}/{len(conditions)} conditions — insufficient]"
+    out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective — insufficient]"
     out.warnings = warnings
     return out

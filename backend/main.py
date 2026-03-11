@@ -112,6 +112,14 @@ def _sync_cache_symbols() -> None:
 async def lifespan(app: FastAPI):
     """On startup, load portfolio groups and start periodic refresh."""
     _sync_cache_symbols()
+
+    # Initialize signal log DB
+    try:
+        from signal_log import SignalLog
+        await SignalLog.get().init()
+    except Exception as e:
+        logger.warning("Signal log init failed (non-fatal): %s", e)
+
     asyncio.create_task(_periodic_scan())
     asyncio.create_task(_periodic_whale_poll())
     yield
@@ -148,6 +156,21 @@ async def _periodic_scan():
             logger.info("Starting scheduled scan...")
             await run_scan(cache)
             logger.info("Scan complete.")
+
+            # Update signal outcomes with current prices
+            try:
+                from signal_log import SignalLog
+                sig_log = SignalLog.get()
+                # Build {symbol: price} from latest 4h results
+                current_prices = {
+                    r["symbol"]: r["price"]
+                    for r in cache.results.get("4h", [])
+                    if r.get("price")
+                }
+                if current_prices:
+                    await sig_log.update_outcomes(current_prices)
+            except Exception:
+                logger.debug("Signal outcome update failed (non-fatal)")
 
             # Auto-initialize executor after first successful scan
             if not _executor_auto_started:
@@ -1200,6 +1223,63 @@ async def _periodic_whale_poll():
             logger.error("Whale poll failed: %s", e)
         await asyncio.sleep(120)  # 2 minutes
 
+
+# ---------------------------------------------------------------------------
+# Signal Log endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/signals/history")
+async def signal_history(
+    timeframe: str = Query("4h"),
+    symbol: Optional[str] = Query(None),
+    signal: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Paginated signal event history."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    events = await sig_log.get_history(
+        timeframe=timeframe,
+        symbol=symbol,
+        signal_type=signal,
+        limit=limit,
+        offset=offset,
+    )
+    total = await sig_log.get_history_count(
+        timeframe=timeframe,
+        symbol=symbol,
+        signal_type=signal,
+    )
+    return {"events": events, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/signals/scorecard")
+async def signal_scorecard(
+    timeframe: str = Query("4h"),
+):
+    """Per-signal-type win-rate scorecard."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    cards = await sig_log.get_scorecard(timeframe=timeframe)
+    return {"cards": cards, "timeframe": timeframe}
+
+
+@app.get("/api/signals/recent")
+async def signal_recent_changes(
+    timeframe: str = Query("4h"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Latest signal transitions."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    changes = await sig_log.get_recent_changes(timeframe=timeframe, limit=limit)
+    return {"changes": changes, "timeframe": timeframe}
+
+
+# ---------------------------------------------------------------------------
+# Whale tracker endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/api/whales/status")
 async def whale_status():

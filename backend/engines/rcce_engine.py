@@ -31,6 +31,8 @@ LEN_SHORT: int = 30
 LEN_ENERGY_FAST: int = 14
 LEN_ENERGY_SLOW: int = 50
 LEN_BETA: int = 100
+LEN_ATR_FAST: int = 14
+LEN_ATR_SLOW: int = 50
 Z_BLOWOFF: float = 2.0
 Z_CAPITULATION: float = -1.0
 Z_TRIM: float = 3.0
@@ -317,6 +319,48 @@ def _calc_beta(
 
 
 # ---------------------------------------------------------------------------
+# ATR & volatility scaling
+# ---------------------------------------------------------------------------
+
+def _true_range(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    """Compute True Range series (NaN for bar 0)."""
+    tr = np.full(len(high), np.nan, dtype=np.float64)
+    if len(high) < 2:
+        return tr
+    prev_close = np.concatenate(([np.nan], close[:-1]))
+    tr1 = high - low
+    tr2 = np.abs(high - prev_close)
+    tr3 = np.abs(low - prev_close)
+    tr = np.maximum(tr1, np.maximum(tr2, tr3))
+    tr[0] = high[0] - low[0]
+    return tr
+
+
+def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, n: int) -> np.ndarray:
+    """Average True Range (simple moving average of TR)."""
+    tr = _true_range(high, low, close)
+    return _sma_nan_safe(tr, n)
+
+
+def _vol_scale_factor(atr_ratio: float) -> float:
+    """Derive a threshold scaling multiplier from the ATR fast/slow ratio.
+
+    In compressed volatility regimes, z-scores are less meaningful at
+    fixed absolute levels, so thresholds tighten.  In elevated vol,
+    z-scores naturally extend further, so thresholds widen.
+
+    Returns a multiplier for Z_BLOWOFF, Z_TRIM, etc.
+    """
+    if atr_ratio < 0.8:
+        return 0.85       # Compressed: tighter thresholds
+    if atr_ratio < 1.1:
+        return 1.0         # Normal: baseline
+    if atr_ratio < 1.5:
+        return 1.15        # Elevated: wider thresholds
+    return 1.25             # High vol: widest
+
+
+# ---------------------------------------------------------------------------
 # Regime probability vectors (vectorised)
 # ---------------------------------------------------------------------------
 
@@ -326,13 +370,21 @@ def _calc_regime_probabilities(
     vol: np.ndarray,
     vol_low: np.ndarray,
     vol_high: np.ndarray,
+    vol_scale: float = 1.0,
 ) -> Tuple[np.ndarray, ...]:
     """Return six probability arrays (markup, blowoff, reacc, markdown,
     cap, accum) normalised so they sum to 1 at each bar.
 
     NaN inputs are replaced with 0.0 before computing so that bars without
     a valid z-score yield uniform-ish probabilities rather than NaN output.
+
+    ``vol_scale`` adjusts the Z-score thresholds used for regime boundaries
+    (dynamic thresholds based on ATR regime).
     """
+    # Dynamic Z-thresholds scaled by volatility regime
+    z_blowoff = Z_BLOWOFF * vol_scale
+    z_cap = Z_CAPITULATION * vol_scale
+
     # Replace NaN with neutral values for safe arithmetic
     z_safe = np.nan_to_num(z, nan=0.0)
     energy_safe = np.nan_to_num(energy, nan=0.0)
@@ -343,10 +395,10 @@ def _calc_regime_probabilities(
     vh = np.asarray(vol_high, dtype=bool)
 
     p_markup = np.maximum(0.0, z_safe) * np.where(energy_safe > 1.0, 1.0, 0.5)
-    p_blowoff = np.maximum(0.0, z_safe - Z_BLOWOFF)
+    p_blowoff = np.maximum(0.0, z_safe - z_blowoff)
     p_reacc = np.where((z_safe < 0) & (~vh), -z_safe, 0.0)
     p_md = np.where((vh) & (z_safe < 0), vol_safe * 2.0, 0.0)
-    p_cap = np.where((vl) & (z_safe < Z_CAPITULATION), -z_safe, 0.0)
+    p_cap = np.where((vl) & (z_safe < z_cap), -z_safe, 0.0)
     p_acc = np.where((vl) & (z_safe > -0.5) & (z_safe < 0.5), 1.0, 0.0)
 
     sum_p = p_markup + p_blowoff + p_reacc + p_md + p_cap + p_acc + _EPS
@@ -423,17 +475,23 @@ def _generate_signal(
     vol_high: bool,
     confidence: float,
     market_consensus: Optional[str] = None,
+    vol_scale: float = 1.0,
 ) -> str:
     """Derive the action signal from the current regime and market state.
 
     Priority-ordered rules matching the Pine Script Module 14 logic.
     ``confidence`` here is already in 0-1 scale (not percentage).
+    ``vol_scale`` adjusts Z-thresholds for the current volatility regime.
     """
+    z_trim = Z_TRIM * vol_scale
+    z_trim_hard = Z_TRIM_HARD * vol_scale
+    z_blowoff = Z_BLOWOFF * vol_scale
+
     if phase == "ABSORBING":
         return "NO_LONG"
-    if phase == "BLOWOFF" and z > Z_TRIM_HARD:
+    if phase == "BLOWOFF" and z > z_trim_hard:
         return "TRIM_HARD"
-    if phase == "BLOWOFF" and z > Z_TRIM:
+    if phase == "BLOWOFF" and z > z_trim:
         return "TRIM"
     if phase == "BLOWOFF":
         return "TRIM"
@@ -448,7 +506,7 @@ def _generate_signal(
         return "ACCUMULATE"
     if phase == "MARKUP" and z > -0.5 and z < 1.0 and confidence > 0.6:
         return "STRONG_LONG"
-    if phase == "MARKUP" and z > 1.0 and z < Z_BLOWOFF and confidence > 0.5:
+    if phase == "MARKUP" and z > 1.0 and z < z_blowoff and confidence > 0.5:
         return "LIGHT_LONG"
     if phase == "REACC" and z < 0.5 and confidence > 0.4:
         return "LIGHT_LONG"
@@ -571,11 +629,24 @@ def compute_rcce(
     )
 
     # ------------------------------------------------------------------
-    # 4. Regime probabilities (vectorised)
+    # 3b. ATR-based volatility scaling (dynamic thresholds)
+    # ------------------------------------------------------------------
+    high: np.ndarray = np.asarray(ohlcv["high"], dtype=np.float64)
+    low: np.ndarray = np.asarray(ohlcv["low"], dtype=np.float64)
+    atr_fast = _atr(high, low, close, LEN_ATR_FAST)
+    atr_slow = _atr(high, low, close, LEN_ATR_SLOW)
+    atr_fast_last = _last_finite(atr_fast, 1.0)
+    atr_slow_last = _last_finite(atr_slow, 1.0)
+    atr_ratio = atr_fast_last / atr_slow_last if atr_slow_last > _EPS else 1.0
+    vol_scale = _vol_scale_factor(atr_ratio)
+
+    # ------------------------------------------------------------------
+    # 4. Regime probabilities (vectorised, with dynamic thresholds)
     # ------------------------------------------------------------------
     p_markup, p_blowoff, p_reacc, p_md, p_cap, p_acc = (
         _calc_regime_probabilities(
             z_series, energy_series, vol_series, vol_low_series, vol_high_series,
+            vol_scale=vol_scale,
         )
     )
     prob_stack = np.vstack(
@@ -672,6 +743,7 @@ def compute_rcce(
         vol_high=vol_high_last,
         confidence=confidence_last,
         market_consensus=None,  # synthesizer handles consensus gating
+        vol_scale=vol_scale,
     )
 
     # ------------------------------------------------------------------
@@ -688,6 +760,8 @@ def compute_rcce(
         "beta_btc": round(beta_btc_val, 4),
         "beta_eth": round(beta_eth_val, 4),
         "momentum": round(momentum, 4),
+        "vol_scale": round(vol_scale, 3),
+        "atr_ratio": round(atr_ratio, 3),
         "regime_probabilities": {
             "markup": round(float(np.nan_to_num(p_markup[-1], nan=0.0)), 4),
             "blowoff": round(float(np.nan_to_num(p_blowoff[-1], nan=0.0)), 4),

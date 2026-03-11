@@ -453,6 +453,7 @@ def _process_symbol(
         "energy": round(rcce.get("energy", 0), 3),
         "vol_state": rcce.get("vol_state", "MID"),
         "momentum": round(rcce.get("momentum", 0), 2),
+        "vol_scale": rcce.get("vol_scale", 1.0),
         "divergence": None,  # populated after consensus pass
         "asset_class": classify_asset(symbol),
         # Heatmap fields
@@ -733,6 +734,8 @@ async def _scan_timeframe(
             r["conditions_detail"] = synth.conditions_detail
             r["conditions_met"] = synth.conditions_met
             r["conditions_total"] = synth.conditions_total
+            r["effective_conditions"] = synth.effective_conditions
+            r["vol_scale"] = synth.vol_scale
 
             # Store current heat for next scan
             if not hasattr(cache, 'prev_heat'):
@@ -804,6 +807,18 @@ async def run_scan(
                 scan_cache.results[tf] = results
                 scan_cache.consensus[tf] = consensus
                 scan_cache.alt_season[tf] = alt_gauge
+
+                # Log signal transitions
+                try:
+                    from signal_log import SignalLog
+                    sig_log = SignalLog.get()
+                    await sig_log.log_signals(
+                        results, tf,
+                        consensus.get("consensus", "MIXED"),
+                    )
+                except Exception:
+                    logger.debug("Signal logging failed for %s (non-fatal)", tf)
+
                 # Store latest global metrics (shared across timeframes)
                 if gm is not None:
                     scan_cache.global_metrics = {
