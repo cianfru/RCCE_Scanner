@@ -327,3 +327,24 @@ class WhaleWalletLabelRequest(BaseModel):
     chain: str
     address: str
     label: str
+
+
+# ---------------------------------------------------------------------------
+# Chat / assistant models
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = "default"
+    symbol: Optional[str] = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    session_id: str
+    detected_symbol: Optional[str] = None
+
+
+class BriefingResponse(BaseModel):
+    briefing: str
+    timestamp: float
