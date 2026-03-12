@@ -24,7 +24,7 @@ export default function ConsensusBar({ consensus, isMobile }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{
-            fontSize: 11, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600,
+            fontSize: 12, color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",
           }}>Consensus</span>
           <span style={{
@@ -38,7 +38,7 @@ export default function ConsensusBar({ consensus, isMobile }) {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: isMobile ? 1 : undefined }}>
-          <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
+          <span style={{ fontSize: 11, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
           <div style={{
             width: isMobile ? undefined : 100,
             flex: isMobile ? 1 : undefined,

@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { T } from "../theme.js";
 
-export default function GlassCard({ children, style = {}, glow = null, hoverable = false, className = "" }) {
+export default function GlassCard({ children, style = {}, glow = null, hoverable = false, className = "", onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
       className={className}
+      onClick={onClick}
       onMouseEnter={() => hoverable && setHovered(true)}
       onMouseLeave={() => hoverable && setHovered(false)}
       style={{

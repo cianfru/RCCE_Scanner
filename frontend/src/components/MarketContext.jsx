@@ -34,7 +34,7 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
             display: "flex", alignItems: "center", gap: 10,
             flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
           }}>
-            <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+            <span style={{ fontSize: 11, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
               BTC.D
             </span>
             <span style={{
@@ -46,8 +46,8 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
             {globalMetrics.eth_dominance > 0 && (
               <>
                 <div style={{ width: 1, height: 14, background: T.border }} />
-                <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
-                <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text2 }}>
+                <span style={{ fontSize: 11, color: T.text4, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
+                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text2 }}>
                   {globalMetrics.eth_dominance.toFixed(1)}%
                 </span>
               </>
@@ -63,7 +63,7 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
             flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
             border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
           }}>
-            <span style={{ fontSize: 10, color: T.text3, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+            <span style={{ fontSize: 11, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
               Alt Season
             </span>
             <span style={{
@@ -75,11 +75,11 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
                      altSeason.label === "ACTIVE" ? "#34d399" :
                      altSeason.label === "NEUTRAL" ? "#fbbf24" :
                      altSeason.label === "WEAK" ? "#fb923c" : T.text4,
-              fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+              fontSize: 11, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
             }}>
               {altSeason.label}
             </span>
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text3, fontWeight: 500 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text3, fontWeight: 500 }}>
               {altSeason.score?.toFixed(0)}
             </span>
           </GlassCard>

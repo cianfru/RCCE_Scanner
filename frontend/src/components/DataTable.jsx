@@ -9,14 +9,14 @@ import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
 function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
-  const cellPad = isMobile ? "8px 8px" : "10px 10px";
+  const cellPad = isMobile ? "10px 8px" : "12px 10px";
   switch (colLabel) {
     case "SYMBOL":
       return (
-        <td style={{ padding: isMobile ? "8px 8px" : "10px 10px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 11 : 12, letterSpacing: "0.02em" }}>
+        <td style={{ padding: isMobile ? "10px 8px" : "12px 10px", fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? 13 : 14, letterSpacing: "0.02em" }}>
           {getBaseSymbol(row.symbol)}
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
-            <span style={{ fontSize: 8, fontWeight: 700, color: "#34d399", opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#34d399", opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
         </td>
       );
@@ -29,10 +29,10 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
     case "Z-SCORE":
       return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
     case "ENERGY":
-      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 11, color: T.text2 }}>{fmt(row.energy, 2)}</td>;
+      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 12 : 13, color: T.text2 }}>{fmt(row.energy, 2)}</td>;
     case "MOM":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12 }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 12 : 13 }}>
           <span style={{ color: row.momentum >= 0 ? "#34d399" : "#f87171", fontWeight: 600 }}>
             {row.momentum != null ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
           </span>
@@ -42,7 +42,7 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
       return <td style={{ padding: cellPad }}><DivergencePill div={row.divergence} /></td>;
     case "PRICE":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, color: T.text1, fontWeight: 500 }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? 12 : 13, color: T.text1, fontWeight: 500 }}>
           {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
         </td>
       );
@@ -66,7 +66,7 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
       return (
         <td style={{ padding: cellPad }}>
           <span style={{
-            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+            fontFamily: T.mono, fontSize: 13, fontWeight: 700,
             color: priColor, letterSpacing: "0.02em",
           }}>
             {Math.round(pri)}
@@ -80,7 +80,7 @@ function CellContent({ colLabel, row, isMobile, backtestSymbols }) {
       return (
         <td style={{ padding: cellPad }}>
           <span style={{
-            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+            fontFamily: T.mono, fontSize: 13, fontWeight: 700,
             color: cm >= 8 ? "#34d399" : cm >= 5 ? "#fbbf24" : T.text4,
           }}>
             {cm}/{ct}
@@ -121,8 +121,8 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
         <div style={{
-          fontFamily: T.font, fontSize: 9, color: T.text4, fontWeight: 600,
-          letterSpacing: "0.15em", marginBottom: 10, paddingLeft: isMobile ? 10 : 14,
+          fontFamily: T.font, fontSize: 11, color: T.text3, fontWeight: 700,
+          letterSpacing: "0.12em", marginBottom: 10, paddingLeft: isMobile ? 10 : 14,
           textTransform: "uppercase",
         }}>{label}</div>
       )}
@@ -136,13 +136,14 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     key={colLabel}
                     onClick={() => key && onSort(key)}
                     style={{
-                      padding: isMobile ? "8px 8px" : "10px 10px", textAlign: "left",
-                      fontFamily: T.font, fontSize: isMobile ? 9 : 10, fontWeight: 700,
+                      padding: isMobile ? "10px 8px" : "12px 10px", textAlign: "left",
+                      fontFamily: T.font, fontSize: isMobile ? 11 : 12, fontWeight: 700,
                       color: sortKey === key ? T.accent : T.text3,
-                      letterSpacing: "0.1em", cursor: key ? "pointer" : "default",
+                      letterSpacing: "0.08em", cursor: key ? "pointer" : "default",
                       userSelect: "none", whiteSpace: "nowrap",
                       textTransform: "uppercase",
                       transition: "color 0.2s",
+                      borderBottom: `2px solid ${T.border}`,
                     }}
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>

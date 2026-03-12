@@ -23,7 +23,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
         }}
       >
         <span style={{
-          fontSize: 10, color: T.text3, letterSpacing: "0.12em",
+          fontSize: 12, color: T.text3, letterSpacing: "0.1em",
           fontFamily: T.font, fontWeight: 700, marginRight: 6,
           textTransform: "uppercase",
           flexShrink: 0,
@@ -42,7 +42,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
                 style={{
                   padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
                   background: `${sm.color}10`, border: `1px solid ${sm.color}20`,
-                  color: sm.color, fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                  color: sm.color, fontSize: 12, fontFamily: T.mono, fontWeight: 600,
                   display: "inline-flex", alignItems: "center", gap: 4,
                   transition: "all 0.2s ease",
                   flexShrink: 0,
@@ -51,7 +51,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
                 onMouseLeave={e => { e.currentTarget.style.background = `${sm.color}08`; e.currentTarget.style.boxShadow = "none"; }}
               >
                 {getBaseSymbol(r.symbol)}
-                <span style={{ fontSize: 8, opacity: 0.5 }}>{r.tf}</span>
+                <span style={{ fontSize: 9, opacity: 0.5 }}>{r.tf}</span>
               </span>
             );
           })}

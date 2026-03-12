@@ -19,6 +19,7 @@ import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
+import NavDrawer from "./components/NavDrawer.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export default function App() {
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
+  const [statCardFilter, setStatCardFilter] = useState(null);
   const [activeTab, setActiveTab] = useState("1d");
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -83,6 +85,9 @@ export default function App() {
   const [activeGroupId, setActiveGroupId] = useState(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
+
+  // Nav drawer
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -293,6 +298,16 @@ export default function App() {
 
   const sorted4h = sortResults(filtered4h);
   const sorted1d = sortResults(filtered1d);
+
+  // Apply stat card signal filter to table data
+  const applyStatFilter = (data) => {
+    if (!statCardFilter) return data;
+    if (statCardFilter === "TRIM") return data.filter(r => r.signal === "TRIM" || r.signal === "TRIM_HARD");
+    return data.filter(r => r.signal === statCardFilter);
+  };
+  const display4h = applyStatFilter(sorted4h);
+  const display1d = applyStatFilter(sorted1d);
+
   const SIGNALS_NOTABLE = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "TRIM", "RISK_OFF"];
   const notable4h = sorted4h.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
@@ -311,8 +326,9 @@ export default function App() {
       {/* Fonts & Global Styles */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+        table, th, td, span, div, button, select, input, textarea, p, label { font-family: inherit; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 6px; }
@@ -405,6 +421,20 @@ export default function App() {
         }} />
       </div>
 
+      {/* ── NAV DRAWER ── */}
+      <NavDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        isMobile={isMobile}
+        groups={groups}
+        activeGroupId={activeGroupId}
+        onGroupChange={setActiveGroupId}
+        onGroupCreate={() => { setEditingGroup(null); setShowGroupModal(true); }}
+        onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
+      />
+
       {/* ── HEADER ── */}
       <div style={{
         padding: `0 ${hPad}px`,
@@ -415,19 +445,19 @@ export default function App() {
         background: T.headerBg,
         backdropFilter: "blur(24px) saturate(1.4)", WebkitBackdropFilter: "blur(24px) saturate(1.4)",
         position: "sticky", top: 0, zIndex: 100,
+        height: isMobile ? 52 : 56,
       }}>
         {/* Left: logo + scanning */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 14 }}>
           <img
             src="/logo.png"
             alt="Reflex"
             style={{
-              height: isMobile ? 36 : 48,
+              height: isMobile ? 32 : 40,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
               display: "block",
-              margin: isMobile ? "6px 0" : "8px 0",
               filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
             }}
           />
@@ -438,7 +468,7 @@ export default function App() {
               background: T.accentDim,
               border: `1px solid ${T.accent}20`,
               borderRadius: "20px",
-              fontSize: 9, color: T.accent, letterSpacing: "0.08em",
+              fontSize: 10, color: T.accent, letterSpacing: "0.08em",
               fontFamily: T.mono, fontWeight: 600,
               animation: "glow 2s ease infinite",
             }}>
@@ -447,20 +477,20 @@ export default function App() {
           )}
         </div>
 
-        {/* Right: timestamp, cache, theme toggle — all on one line */}
+        {/* Right: timestamp, cache, theme toggle */}
         <div style={{
           display: "flex", alignItems: "center", gap: isMobile ? 8 : 12,
           flexShrink: 0,
         }}>
-          {lastRefresh && (
-            <span style={{ fontSize: 9, color: T.text4, letterSpacing: "0.06em", fontFamily: T.font }}>
+          {!isMobile && lastRefresh && (
+            <span style={{ fontSize: 11, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
               {lastRefresh.toLocaleTimeString()}
             </span>
           )}
           {cacheAge != null && (
             <span style={{
-              fontSize: 9, color: T.text4, fontFamily: T.mono,
-              padding: "2px 8px", background: T.surface, borderRadius: "20px",
+              fontSize: 11, color: T.text4, fontFamily: T.mono,
+              padding: "3px 10px", background: T.surface, borderRadius: "20px",
               border: `1px solid ${T.border}`,
             }}>{formatCacheAge(cacheAge)}</span>
           )}
@@ -494,133 +524,59 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── GROUP TABS ── */}
-      <div style={{
-        padding: `6px ${hPad}px`,
-        borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: 4,
-        background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
-        overflowX: "auto", WebkitOverflowScrolling: "touch",
-        scrollbarWidth: "none", msOverflowStyle: "none",
-      }}>
-        {groups.map(g => {
-          const isActive = g.id === activeGroupId;
-          const perf = computeGroupPerf(g.symbols, activeTab === "1d" ? data1d : data4h);
-          const gColor = g.color || T.accent;
-          return (
-            <button
-              key={g.id}
-              onClick={() => setActiveGroupId(g.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setEditingGroup(g);
-                setShowGroupModal(true);
-              }}
-              style={{
-                padding: isMobile ? "7px 14px" : "6px 16px",
-                borderRadius: 10,
-                border: `1px solid ${isActive ? gColor + "50" : T.border}`,
-                background: isActive ? `${gColor}15` : "transparent",
-                color: isActive ? gColor : T.text3,
-                fontFamily: T.mono, fontSize: 11, cursor: "pointer",
-                fontWeight: isActive ? 700 : 500,
-                letterSpacing: "0.04em",
-                transition: "all 0.2s ease",
-                display: "flex", alignItems: "center", gap: 6,
-                flexShrink: 0, whiteSpace: "nowrap",
-              }}
-            >
-              {g.name}
-              {perf && perf.total > 0 && (
-                <span style={{
-                  fontSize: 9, fontWeight: 600,
-                  color: perf.beating > perf.total / 2 ? "#34d399" : "#f87171",
-                  opacity: isActive ? 1 : 0.6,
-                }}>
-                  {perf.beating}/{perf.total}{perf.beating > perf.total / 2 ? "\u25b2" : "\u25bc"}
-                </span>
-              )}
-            </button>
-          );
-        })}
-        <button
-          onClick={() => { setEditingGroup(null); setShowGroupModal(true); }}
-          style={{
-            padding: "6px 12px", borderRadius: 10,
-            border: `1px dashed ${T.border}`,
-            background: "transparent", color: T.text4,
-            fontFamily: T.mono, fontSize: 13, cursor: "pointer",
-            fontWeight: 400, transition: "all 0.2s ease",
-            flexShrink: 0,
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.color = T.accent; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.text4; }}
-        >
-          +
-        </button>
-      </div>
-
       {/* ── CONTROLS ── */}
       <div style={{
-        padding: `10px ${hPad}px`,
+        padding: `8px ${hPad}px`,
         borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
         background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
       }}>
-        <div style={{
-          display: "flex", gap: 2,
-          background: T.glassBg,
-          borderRadius: 12, padding: 3,
-          border: `1px solid ${T.border}`,
-          boxShadow: `inset 0 1px 2px ${T.shadow}, 0 1px 0 ${T.overlay03}`,
-          flex: isMobile ? "1 1 100%" : undefined,
-        }}>
-          {tabOptions.map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={activeTab === key ? "apple-btn-accent" : ""}
-              style={{
-                padding: isMobile ? "8px 16px" : "6px 18px", borderRadius: 10, border: "none",
-                background: activeTab === key
-                  ? "linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%)"
-                  : "transparent",
-                color: activeTab === key ? "#000" : T.text3,
-                fontFamily: T.mono, fontSize: 11, cursor: "pointer",
-                fontWeight: 700, letterSpacing: "0.04em",
-                transition: "all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
-                flex: isMobile ? 1 : undefined,
-                boxShadow: activeTab === key
-                  ? `0 1px 4px ${T.shadow}, inset 0 1px 0 ${T.overlay20}`
-                  : "none",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation"
+          className="apple-btn"
+          style={{
+            width: 36, height: 36, borderRadius: 10,
+            display: "flex",
+            flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: 4, padding: 0, flexShrink: 0,
+          }}
+        >
+          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
+          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
+          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
+        </button>
 
-        {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
-
-        {activeGroup && (
-          <button
-            className="apple-btn"
-            onClick={() => { setEditingGroup(activeGroup); setShowGroupModal(true); }}
-            style={{
-              padding: isMobile ? "8px 14px" : "6px 14px",
-              fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-              letterSpacing: "0.04em",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            <span style={{ fontSize: 12 }}>{"\u2699"}</span>
-            {!isMobile && `${activeGroup.name} (${activeGroup.symbols.length})`}
-          </button>
+        {/* Timeframe toggle — only on scanner pages */}
+        {showDashboard && (
+          <div style={{
+            display: "flex", borderRadius: 10,
+            border: `1px solid ${T.border}`,
+            overflow: "hidden",
+          }}>
+            {(isMobile ? [["4h", "4H"], ["1d", "1D"]] : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"]]).map(([key, label]) => {
+              const isActive = activeTab === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  style={{
+                    padding: isMobile ? "7px 16px" : "7px 18px",
+                    border: "none",
+                    background: isActive ? T.accent : "transparent",
+                    color: isActive ? T.bg : T.text3,
+                    fontFamily: T.font, fontSize: 12, fontWeight: isActive ? 700 : 500,
+                    cursor: "pointer", letterSpacing: "0.04em",
+                    transition: "all 0.15s ease",
+                  }}
+                >{label}</button>
+              );
+            })}
+          </div>
         )}
 
-        {!isMobile && <div style={{ width: 1, height: 20, background: T.border, opacity: 0.6 }} />}
-
-        {[
+        {/* Regime/Signal filters — only on scanner pages */}
+        {showDashboard && [
           { value: filterRegime, onChange: e => setFilterRegime(e.target.value), all: "All Regimes", options: Object.keys(REGIME_META) },
           { value: filterSignal, onChange: e => setFilterSignal(e.target.value), all: "All Signals", options: Object.keys(SIGNAL_META) },
         ].map((f, i) => (
@@ -630,9 +586,9 @@ export default function App() {
             value={f.value}
             onChange={f.onChange}
             style={{
-              padding: isMobile ? "8px 28px 8px 12px" : "6px 28px 6px 12px",
-              color: T.text2, fontFamily: T.mono, fontSize: 10, fontWeight: 500,
-              cursor: "pointer", letterSpacing: "0.04em",
+              padding: isMobile ? "8px 28px 8px 12px" : "7px 28px 7px 12px",
+              color: T.text2, fontFamily: T.font, fontSize: 12, fontWeight: 500,
+              cursor: "pointer", letterSpacing: "0.02em",
               flex: isMobile ? 1 : undefined,
               minWidth: 0,
               background: `${T.overlay06} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
@@ -646,14 +602,20 @@ export default function App() {
         <button
           className="apple-btn"
           onClick={triggerScan}
+          title="Refresh scan"
           style={{
             marginLeft: "auto",
-            padding: isMobile ? "8px 18px" : "6px 18px",
-            fontFamily: T.mono, fontSize: 10, fontWeight: 600,
-            letterSpacing: "0.06em",
+            width: 36, height: 36, borderRadius: 10,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, flexShrink: 0,
           }}
         >
-          Refresh
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{
+            animation: scanRunning ? "spin 1s linear infinite" : "none",
+            transition: "transform 0.2s ease",
+          }}>
+            <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
+          </svg>
         </button>
       </div>
 
@@ -666,7 +628,7 @@ export default function App() {
             display: "flex", alignItems: "center", gap: 10,
           }}>
             <span style={{ color: "#f87171", fontSize: 14 }}>{"\u26a0"}</span>
-            <span style={{ fontSize: 11, color: "#fca5a5", fontFamily: T.mono }}>
+            <span style={{ fontSize: 13, color: "#fca5a5", fontFamily: T.font }}>
               API Error: {error} {"\u2014"} ensure backend is running on {API_BASE}
             </span>
           </GlassCard>
@@ -679,7 +641,7 @@ export default function App() {
         {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>
             <SummaryBar results={activeTab === "1d" ? sorted1d : sorted4h} />
-            <StatCards results={activeTab === "1d" ? sorted1d : sorted4h} isMobile={isMobile} isTablet={isTablet} />
+            <StatCards results={activeTab === "1d" ? sorted1d : sorted4h} isMobile={isMobile} isTablet={isTablet} activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
           </FadeIn>
         )}
 
@@ -700,7 +662,7 @@ export default function App() {
           }}>
             {(activeTab === "4h" || activeTab === "split") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={sorted4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
+                <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
               </FadeIn>
@@ -710,7 +672,7 @@ export default function App() {
             )}
             {(activeTab === "1d" || activeTab === "split") && (
               <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={sorted1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
+                <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
               </FadeIn>

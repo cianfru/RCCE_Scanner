@@ -22,7 +22,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
         }}
       >
         <span style={{
-          fontSize: 10, color: "#fbbf24", letterSpacing: "0.10em",
+          fontSize: 12, color: "#fbbf24", letterSpacing: "0.08em",
           fontFamily: T.font, fontWeight: 700, marginRight: 6,
           textTransform: "uppercase", flexShrink: 0,
           display: "flex", alignItems: "center", gap: 5,
@@ -37,7 +37,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
               padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
               background: "rgba(251,191,36,0.06)",
               border: "1px solid rgba(251,191,36,0.15)",
-              color: "#fbbf24", fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+              color: "#fbbf24", fontSize: 12, fontFamily: T.mono, fontWeight: 600,
               display: "inline-flex", alignItems: "center", gap: 6,
               transition: "all 0.2s ease", flexShrink: 0,
             }}
@@ -48,7 +48,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
             <span style={{
               padding: "1px 5px", borderRadius: "10px",
               background: "rgba(251,191,36,0.15)",
-              fontSize: 9, fontWeight: 700,
+              fontSize: 10, fontWeight: 700,
             }}>
               {r.conditions_met}/{r.conditions_total || 10}
             </span>

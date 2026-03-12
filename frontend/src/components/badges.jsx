@@ -24,7 +24,7 @@ export function ZScoreBar({ z, isMobile }) {
           width: 1, background: T.overlay08
         }} />
       </div>
-      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 10 : 12, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
+      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 12 : 13, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
         {fmt(z, 2)}
       </span>
     </div>
@@ -38,13 +38,13 @@ export function RegimeBadge({ regime }) {
       display: "inline-flex", alignItems: "center", gap: 4,
       padding: "4px 12px", borderRadius: "20px",
       background: m.bg, color: m.color,
-      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 12, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.06em",
       border: `1px solid ${m.color}25`,
       boxShadow: `0 0 12px ${m.glow}`,
       whiteSpace: "nowrap",
     }}>
-      <span style={{ fontSize: 10, opacity: 0.9 }}>{m.glyph}</span>
+      <span style={{ fontSize: 11, opacity: 0.9 }}>{m.glyph}</span>
       {m.label}
     </span>
   );
@@ -59,7 +59,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
     <span
       style={{
         display: "inline-flex", alignItems: "center", gap: 5,
-        color: m.color, fontFamily: T.mono, fontSize: 11, whiteSpace: "nowrap",
+        color: m.color, fontFamily: T.mono, fontSize: 12, whiteSpace: "nowrap",
         fontWeight: 600, position: "relative", cursor: hasInfo ? "help" : "default",
       }}
       onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
@@ -113,7 +113,7 @@ export function DivergencePill({ div }) {
     <span style={{
       padding: "3px 10px", borderRadius: "20px",
       background: `${color}14`, color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.06em", border: `1px solid ${color}28`,
     }}>
       {div}
@@ -136,7 +136,7 @@ export function HeatCell({ heat }) {
           boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 12, color, fontWeight: 600 }}>
         {Math.round(heat)}
       </span>
     </div>
@@ -146,7 +146,7 @@ export function HeatCell({ heat }) {
 export function PhaseCell({ phase }) {
   if (!phase) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   return (
-    <span style={{ fontFamily: T.mono, fontSize: 11, color: phaseColor(phase), fontWeight: 600, letterSpacing: "0.03em" }}>
+    <span style={{ fontFamily: T.mono, fontSize: 12, color: phaseColor(phase), fontWeight: 600, letterSpacing: "0.03em" }}>
       {phase}
     </span>
   );
@@ -159,7 +159,7 @@ export function ExhaustBadge({ state }) {
     <span style={{
       padding: "3px 9px", borderRadius: "20px",
       background: `${meta.color}14`, color: meta.color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
     }}>
       {meta.text}
@@ -181,7 +181,7 @@ export function FundingCell({ rate }) {
   if (rate == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text2;
   return (
-    <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 600 }}>
+    <span style={{ fontFamily: T.mono, fontSize: 12, color, fontWeight: 600 }}>
       {(rate * 100).toFixed(3)}%
     </span>
   );
@@ -199,7 +199,7 @@ export function OITrendBadge({ trend }) {
     <span style={{
       padding: "3px 8px", borderRadius: "20px",
       background: `${meta.color}14`, color: meta.color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
     }}>
       {meta.label}
@@ -221,7 +221,7 @@ export function ConfluenceBadge({ score, label }) {
           background: color, borderRadius: 2,
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color, fontWeight: 700 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 12, color, fontWeight: 700 }}>
         {score != null ? Math.round(score) : "\u2014"}
       </span>
     </div>
