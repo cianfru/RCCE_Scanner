@@ -94,8 +94,12 @@ _CACHE_TTL: Dict[str, int] = {
 SUPPORTED_TIMEFRAMES = list(_CACHE_TTL.keys())
 
 # Concurrency knobs
-_MAX_CONCURRENT_FETCHES = 5
-_INTER_REQUEST_DELAY_S = 0.1  # 100 ms
+_MAX_CONCURRENT_FETCHES = 15
+_INTER_REQUEST_DELAY_S = 0.05  # 50 ms
+
+# Self-learning exchange hint: symbols that only resolve via Hyperliquid.
+# Populated at runtime when all CCXT exchanges fail and HL succeeds.
+_hl_only: set = set()
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +200,7 @@ async def _fetch_ohlcv_hyperliquid(
     Falls back to this when all CCXT exchanges fail. Returns the same
     dict-of-numpy-arrays format as _parse_ohlcv(), or None on failure.
     """
-    coin = symbol.split("/")[0].upper()
+    coin = symbol.split("/")[0]  # Preserve case (HL has kPEPE, kSHIB, etc.)
     tf_ms = _TF_MS.get(timeframe)
     if tf_ms is None:
         return None
@@ -318,6 +322,16 @@ async def fetch_ohlcv(
         logger.debug("Cache hit for %s %s", symbol, timeframe)
         return cached
 
+    # Fast path: known HL-only symbol → skip CCXT entirely
+    if symbol in _hl_only:
+        hl_data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, limit)
+        if hl_data is not None:
+            _cache.put(symbol, timeframe, hl_data)
+            logger.debug("HL-only fast path for %s %s", symbol, timeframe)
+            return hl_data
+        # HL failed — maybe delisted? Clear hint, fall through to CCXT
+        _hl_only.discard(symbol)
+
     # Try primary exchange, then fallbacks
     # Kraken is default (execution venue); kucoin/binance as fallbacks
     exchanges_to_try = [exchange_id]
@@ -375,7 +389,9 @@ async def fetch_ohlcv(
     # Final fallback: Hyperliquid candleSnapshot (covers HL-only pairs)
     hl_data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, limit)
     if hl_data is not None:
+        _hl_only.add(symbol)  # Remember: skip CCXT next time
         _cache.put(symbol, timeframe, hl_data)
+        logger.info("Learned HL-only: %s (total %d)", symbol, len(_hl_only))
         return hl_data
 
     if last_error:
