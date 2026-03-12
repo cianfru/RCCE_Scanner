@@ -857,8 +857,8 @@ async def hyperliquid_perpetuals():
     """
     global _hl_perps, _hl_perps_ts
 
-    # Return cached if fresh (24h)
-    if _hl_perps is not None and (time.time() - _hl_perps_ts) < 3600:
+    # Return cached if fresh (1h) and has a reasonable count (>100)
+    if _hl_perps is not None and len(_hl_perps) > 100 and (time.time() - _hl_perps_ts) < 3600:
         return {"symbols": _hl_perps, "cached": True, "count": len(_hl_perps)}
 
     try:
@@ -877,6 +877,33 @@ async def hyperliquid_perpetuals():
     except Exception as exc:
         logger.error("Hyperliquid perps discovery failed: %s", exc)
         return {"symbols": [], "error": str(exc), "count": 0}
+
+
+@app.get("/api/perpetuals/hyperliquid/debug")
+async def hyperliquid_perpetuals_debug():
+    """Debug: bypass all caches, return raw HL perp count."""
+    import aiohttp
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                "https://api.hyperliquid.xyz/info",
+                json={"type": "metaAndAssetCtxs"},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                data = await resp.json()
+                universe = data[0].get("universe", []) if isinstance(data, list) and len(data) >= 2 else []
+                asset_ctxs = data[1] if isinstance(data, list) and len(data) >= 2 else []
+                coins = [u.get("name", "") for u in universe]
+                return {
+                    "universe_count": len(universe),
+                    "asset_ctxs_count": len(asset_ctxs),
+                    "coins_sample": coins[:10],
+                    "coins_total": len(coins),
+                    "cached_perps_count": len(_hl_perps) if _hl_perps else 0,
+                }
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 # ---------------------------------------------------------------------------

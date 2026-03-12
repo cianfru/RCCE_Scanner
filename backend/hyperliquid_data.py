@@ -204,21 +204,13 @@ def _parse_metrics(
                 elif isinstance(funding_data, (int, float)):
                     pred_lookup[coin] = float(funding_data)
 
-    # Parse each asset
-    wanted_coins = None
-    if symbols:
-        wanted_coins = {_coin_from_symbol(s) for s in symbols}
-
+    # Parse ALL assets (never filter during parse — cache needs the full set)
     for i, ctx in enumerate(asset_ctxs):
         if i >= len(universe):
             break
 
         coin_info = universe[i]
         coin = coin_info.get("name", "")
-
-        if wanted_coins and coin not in wanted_coins:
-            continue
-
         scanner_symbol = _symbol_from_coin(coin)
 
         try:
