@@ -5,31 +5,37 @@ import BMSBChart from "./BMSBChart.jsx";
 import ConditionsScorecard from "./ConditionsScorecard.jsx";
 import ConfluencePanel from "./ConfluencePanel.jsx";
 import PositioningPanel from "./PositioningPanel.jsx";
+import { useWallet } from "../WalletContext.jsx";
+import * as hlClient from "../services/hlClient.js";
 
 // ---------------------------------------------------------------------------
-// Trade Form (renders at bottom of drawer)
+// Trade Form (renders at bottom of drawer — wallet-signed)
 // ---------------------------------------------------------------------------
 
 const LEVERAGE_PRESETS = [1, 2, 3, 5, 10, 20];
 
 function TradeForm({ selected, api, isMobile }) {
+  const { address, isConnected, walletClient, connect, error: walletError } = useWallet();
   const [side, setSide] = useState("LONG");
   const [sizeMode, setSizeMode] = useState("usd");
   const [sizeValue, setSizeValue] = useState("");
   const [leverage, setLeverage] = useState(3);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [accountData, setAccountData] = useState(null);
 
   const coin = getBaseSymbol(selected.symbol);
 
+  // Fetch account data when wallet is connected
   useEffect(() => {
-    fetch(`${api}/api/trade/account`)
+    if (!isConnected || !address) { setAccountData(null); return; }
+    fetch(`${api}/api/trade/account?address=${address}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => setAccountData(d))
       .catch(() => {});
-  }, [api]);
+  }, [api, address, isConnected]);
 
   // Reset form when symbol changes
   useEffect(() => {
@@ -41,36 +47,63 @@ function TradeForm({ selected, api, isMobile }) {
   const equity = accountData?.account_value || 0;
   const estimatedUsd = sizeMode === "usd" ? parsedSize : equity * parsedSize / 100;
   const estimatedMargin = leverage > 0 ? estimatedUsd / leverage : estimatedUsd;
-  const canTrade = estimatedUsd >= 5 && !loading;
+  const canTrade = isConnected && estimatedUsd >= 5 && !loading;
 
   const handleExecute = async () => {
     if (!confirm) { setConfirm(true); return; }
+    if (!walletClient) { setFeedback({ ok: false, msg: "Wallet not connected" }); return; }
     setLoading(true);
     setFeedback(null);
+
     try {
-      const body = {
-        symbol: selected.symbol,
-        side,
-        leverage,
-        ...(sizeMode === "usd" ? { size_usd: estimatedUsd } : { size_pct: parsedSize }),
-      };
-      const resp = await fetch(`${api}/api/trade/open`, {
+      // 1. Set leverage (wallet popup — skipped if cached)
+      setLoadingMsg("Setting leverage...");
+      await hlClient.setLeverage(walletClient, { coin, leverage, isCross: true });
+
+      // 2. Place market order (wallet popup)
+      setLoadingMsg("Awaiting signature...");
+      const isBuy = side === "LONG";
+      const result = await hlClient.placeMarketOrder(walletClient, {
+        coin,
+        isBuy,
+        sizeUsd: estimatedUsd,
+        slippage: 0.01,
+      });
+
+      // 3. Report to backend for trade journal
+      setLoadingMsg("Logging trade...");
+      await fetch(`${api}/api/trade/log`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          address,
+          symbol: selected.symbol,
+          coin,
+          side,
+          size_usd: estimatedUsd,
+          volume: result.volume || result.totalSz,
+          leverage,
+          entry_price: result.avgPx,
+          order_id: String(result.oid || ""),
+        }),
       });
-      const data = await resp.json();
-      if (resp.ok && data.status === "ok") {
-        const t = data.trade;
-        setFeedback({ ok: true, msg: `${t.side} ${t.coin} $${t.size_usd.toFixed(0)} @ $${t.entry_price.toFixed(2)} (${t.leverage}x)` });
-        setSizeValue("");
-      } else {
-        setFeedback({ ok: false, msg: data.detail || "Trade failed" });
-      }
+
+      setFeedback({
+        ok: true,
+        msg: `${side} ${coin} $${estimatedUsd.toFixed(0)} @ $${result.avgPx.toFixed(2)} (${leverage}x)`,
+      });
+      setSizeValue("");
     } catch (e) {
-      setFeedback({ ok: false, msg: e.message || "Network error" });
+      const msg = e.message || "Trade failed";
+      // User rejected in wallet
+      if (msg.includes("rejected") || msg.includes("denied") || msg.includes("User rejected")) {
+        setFeedback({ ok: false, msg: "Signature rejected" });
+      } else {
+        setFeedback({ ok: false, msg });
+      }
     }
     setLoading(false);
+    setLoadingMsg("");
     setConfirm(false);
     setTimeout(() => setFeedback(null), 6000);
   };
@@ -94,184 +127,208 @@ function TradeForm({ selected, api, isMobile }) {
         Manual Trade
       </div>
 
-      {/* Side toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {["LONG", "SHORT"].map(s => {
-          const active = side === s;
-          const c = s === "LONG" ? "#34d399" : "#f87171";
-          return (
-            <button
-              key={s}
-              onClick={() => { setSide(s); setConfirm(false); }}
-              style={{
-                flex: 1, padding: "8px 0", borderRadius: 8,
-                border: `1px solid ${active ? c + "50" : T.border}`,
-                background: active ? c + "18" : T.overlay02,
-                color: active ? c : T.text4,
-                fontSize: 11, fontFamily: T.mono, fontWeight: 700,
-                cursor: "pointer", transition: "all 0.15s",
-                letterSpacing: "0.06em",
-              }}
-            >
-              {s}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Size input + mode toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        <input
-          type="number"
-          placeholder={sizeMode === "usd" ? "Amount (USD)" : "% of equity"}
-          value={sizeValue}
-          onChange={e => { setSizeValue(e.target.value); setConfirm(false); }}
-          style={{
-            flex: 1, padding: "8px 12px", borderRadius: 8,
-            border: `1px solid ${T.border}`,
-            background: T.overlay04, color: T.text1,
-            fontSize: 12, fontFamily: T.mono, fontWeight: 500,
-            outline: "none",
-          }}
-        />
-        <button
-          onClick={() => { setSizeMode(m => m === "usd" ? "pct" : "usd"); setConfirm(false); }}
-          style={{
-            padding: "8px 12px", borderRadius: 8,
-            border: `1px solid ${T.border}`,
-            background: T.overlay04, color: T.accent,
-            fontSize: 11, fontFamily: T.mono, fontWeight: 700,
-            cursor: "pointer", minWidth: 42,
-          }}
-        >
-          {sizeMode === "usd" ? "$" : "%"}
-        </button>
-      </div>
-
-      {/* Leverage presets */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-        {LEVERAGE_PRESETS.map(lev => (
+      {/* Wallet connection */}
+      {!isConnected ? (
+        <div style={{ marginBottom: 12 }}>
           <button
-            key={lev}
-            onClick={() => { setLeverage(lev); setConfirm(false); }}
+            onClick={connect}
             style={{
-              flex: 1, padding: "6px 0", borderRadius: 6,
-              border: `1px solid ${leverage === lev ? "rgba(139,92,246,0.4)" : T.border}`,
-              background: leverage === lev ? "rgba(139,92,246,0.12)" : T.overlay02,
-              color: leverage === lev ? "#8b5cf6" : T.text4,
-              fontSize: 10, fontFamily: T.mono, fontWeight: 700,
-              cursor: "pointer", transition: "all 0.15s",
+              width: "100%", padding: "10px 0", borderRadius: 10,
+              border: `1px solid rgba(139,92,246,0.3)`,
+              background: "rgba(139,92,246,0.08)",
+              color: "#8b5cf6",
+              fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+              cursor: "pointer", letterSpacing: "0.06em",
             }}
           >
-            {lev}x
+            Connect Wallet
           </button>
-        ))}
-      </div>
-
-      {/* Estimates */}
-      {parsedSize > 0 && (
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          padding: "6px 0", marginBottom: 8,
-          fontSize: 10, fontFamily: T.mono, color: T.text3,
-        }}>
-          <span>Est. Cost: ${estimatedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-          <span>Margin: ${estimatedMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+          {walletError && (
+            <div style={{ marginTop: 6, fontSize: 9, color: "#f87171", fontFamily: T.mono, textAlign: "center" }}>
+              {walletError}
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Equity display */}
-      {accountData && (
-        <div style={{
-          fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 10,
-        }}>
-          Equity: ${equity.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-        </div>
-      )}
-
-      {/* Execute / Confirm */}
-      {!confirm ? (
-        <button
-          onClick={handleExecute}
-          disabled={!canTrade}
-          style={{
-            width: "100%", padding: "10px 0", borderRadius: 10,
-            border: `1px solid ${canTrade ? sideBorder : T.border}`,
-            background: canTrade ? sideBg : T.overlay02,
-            color: canTrade ? sideColor : T.text4,
-            fontSize: 12, fontFamily: T.mono, fontWeight: 700,
-            cursor: canTrade ? "pointer" : "not-allowed",
-            letterSpacing: "0.06em", transition: "all 0.15s",
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? "Executing..." : `${side} ${coin}`}
-        </button>
       ) : (
         <div style={{
-          padding: "10px 14px", borderRadius: 10,
-          border: `1px solid ${sideBorder}`,
-          background: sideBg,
+          display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
+          fontSize: 9, fontFamily: T.mono, color: T.text4,
         }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399" }} />
+          {address.slice(0, 6)}...{address.slice(-4)}
+        </div>
+      )}
+
+      {isConnected && <>
+        {/* Side toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {["LONG", "SHORT"].map(s => {
+            const active = side === s;
+            const c = s === "LONG" ? "#34d399" : "#f87171";
+            return (
+              <button
+                key={s}
+                onClick={() => { setSide(s); setConfirm(false); }}
+                style={{
+                  flex: 1, padding: "8px 0", borderRadius: 8,
+                  border: `1px solid ${active ? c + "50" : T.border}`,
+                  background: active ? c + "18" : T.overlay02,
+                  color: active ? c : T.text4,
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  cursor: "pointer", transition: "all 0.15s",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Size input + mode toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <input
+            type="number"
+            placeholder={sizeMode === "usd" ? "Amount (USD)" : "% of equity"}
+            value={sizeValue}
+            onChange={e => { setSizeValue(e.target.value); setConfirm(false); }}
+            style={{
+              flex: 1, padding: "8px 12px", borderRadius: 8,
+              border: `1px solid ${T.border}`,
+              background: T.overlay04, color: T.text1,
+              fontSize: 12, fontFamily: T.mono, fontWeight: 500,
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={() => { setSizeMode(m => m === "usd" ? "pct" : "usd"); setConfirm(false); }}
+            style={{
+              padding: "8px 12px", borderRadius: 8,
+              border: `1px solid ${T.border}`,
+              background: T.overlay04, color: T.accent,
+              fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+              cursor: "pointer", minWidth: 42,
+            }}
+          >
+            {sizeMode === "usd" ? "$" : "%"}
+          </button>
+        </div>
+
+        {/* Leverage presets */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+          {LEVERAGE_PRESETS.map(lev => (
+            <button
+              key={lev}
+              onClick={() => { setLeverage(lev); setConfirm(false); }}
+              style={{
+                flex: 1, padding: "6px 0", borderRadius: 6,
+                border: `1px solid ${leverage === lev ? "rgba(139,92,246,0.4)" : T.border}`,
+                background: leverage === lev ? "rgba(139,92,246,0.12)" : T.overlay02,
+                color: leverage === lev ? "#8b5cf6" : T.text4,
+                fontSize: 10, fontFamily: T.mono, fontWeight: 700,
+                cursor: "pointer", transition: "all 0.15s",
+              }}
+            >
+              {lev}x
+            </button>
+          ))}
+        </div>
+
+        {/* Estimates */}
+        {parsedSize > 0 && (
           <div style={{
-            fontSize: 11, fontFamily: T.mono, color: sideColor,
-            fontWeight: 600, marginBottom: 8, textAlign: "center",
+            display: "flex", justifyContent: "space-between",
+            padding: "6px 0", marginBottom: 8,
+            fontSize: 10, fontFamily: T.mono, color: T.text3,
           }}>
-            Confirm {side} {coin} ${estimatedUsd.toFixed(0)} @ {leverage}x?
+            <span>Est. Cost: ${estimatedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <span>Margin: ${estimatedMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={handleExecute}
-              disabled={loading}
-              style={{
-                flex: 1, padding: "8px 0", borderRadius: 8,
-                border: `1px solid ${sideColor}50`,
-                background: sideColor + "25",
-                color: sideColor,
-                fontSize: 11, fontFamily: T.mono, fontWeight: 700,
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {loading ? "..." : "Confirm"}
-            </button>
-            <button
-              onClick={cancelConfirm}
-              style={{
-                flex: 1, padding: "8px 0", borderRadius: 8,
-                border: `1px solid ${T.border}`,
-                background: T.overlay04, color: T.text3,
-                fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
+        )}
+
+        {/* Equity display */}
+        {accountData && (
+          <div style={{
+            fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 10,
+          }}>
+            Equity: ${equity.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Feedback */}
-      {feedback && (
-        <div style={{
-          marginTop: 8, padding: "8px 12px", borderRadius: 8,
-          border: `1px solid ${feedback.ok ? "rgba(52,211,153,0.2)" : "rgba(248,113,113,0.2)"}`,
-          background: feedback.ok ? "rgba(52,211,153,0.06)" : "rgba(248,113,113,0.06)",
-          fontSize: 10, fontFamily: T.mono,
-          color: feedback.ok ? "#34d399" : "#f87171",
-        }}>
-          {feedback.ok ? "\u2713 " : "\u2717 "}{feedback.msg}
-        </div>
-      )}
+        {/* Execute / Confirm */}
+        {!confirm ? (
+          <button
+            onClick={handleExecute}
+            disabled={!canTrade}
+            style={{
+              width: "100%", padding: "10px 0", borderRadius: 10,
+              border: `1px solid ${canTrade ? sideBorder : T.border}`,
+              background: canTrade ? sideBg : T.overlay02,
+              color: canTrade ? sideColor : T.text4,
+              fontSize: 12, fontFamily: T.mono, fontWeight: 700,
+              cursor: canTrade ? "pointer" : "not-allowed",
+              letterSpacing: "0.06em", transition: "all 0.15s",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? (loadingMsg || "Executing...") : `${side} ${coin}`}
+          </button>
+        ) : (
+          <div style={{
+            padding: "10px 14px", borderRadius: 10,
+            border: `1px solid ${sideBorder}`,
+            background: sideBg,
+          }}>
+            <div style={{
+              fontSize: 11, fontFamily: T.mono, color: sideColor,
+              fontWeight: 600, marginBottom: 8, textAlign: "center",
+            }}>
+              Confirm {side} {coin} ${estimatedUsd.toFixed(0)} @ {leverage}x?
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={handleExecute}
+                disabled={loading}
+                style={{
+                  flex: 1, padding: "8px 0", borderRadius: 8,
+                  border: `1px solid ${sideColor}50`,
+                  background: sideColor + "25",
+                  color: sideColor,
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
+              >
+                {loading ? (loadingMsg || "...") : "Confirm"}
+              </button>
+              <button
+                onClick={cancelConfirm}
+                style={{
+                  flex: 1, padding: "8px 0", borderRadius: 8,
+                  border: `1px solid ${T.border}`,
+                  background: T.overlay04, color: T.text3,
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
-      {/* No HL key warning */}
-      {accountData === null && (
-        <div style={{
-          marginTop: 8, fontSize: 9, fontFamily: T.mono, color: T.text4,
-          textAlign: "center",
-        }}>
-          Connect HL wallet to enable trading
-        </div>
-      )}
+        {/* Feedback */}
+        {feedback && (
+          <div style={{
+            marginTop: 8, padding: "8px 12px", borderRadius: 8,
+            border: `1px solid ${feedback.ok ? "rgba(52,211,153,0.2)" : "rgba(248,113,113,0.2)"}`,
+            background: feedback.ok ? "rgba(52,211,153,0.06)" : "rgba(248,113,113,0.06)",
+            fontSize: 10, fontFamily: T.mono,
+            color: feedback.ok ? "#34d399" : "#f87171",
+          }}>
+            {feedback.ok ? "\u2713 " : "\u2717 "}{feedback.msg}
+          </div>
+        )}
+      </>}
     </div>
   );
 }

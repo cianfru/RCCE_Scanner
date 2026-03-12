@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { T } from "../theme.js";
+import { useWallet } from "../WalletContext.jsx";
+import * as hlClient from "../services/hlClient.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -7,7 +9,7 @@ import { T } from "../theme.js";
 
 function timeAgo(ts) {
   if (!ts) return "\u2014";
-  const s = typeof ts === "number" && ts > 1e12 ? ts / 1000 : ts; // handle ms or s
+  const s = typeof ts === "number" && ts > 1e12 ? ts / 1000 : ts;
   const diff = (Date.now() / 1000) - s;
   if (diff < 60)   return `${Math.round(diff)}s ago`;
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
@@ -104,14 +106,13 @@ function PositionCard({ pos, onClose, closing }) {
 
   return (
     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}` }}>
-      {/* Row 1: coin + badges + PnL */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 15, fontFamily: T.mono, fontWeight: 700, color: T.text1 }}>
           {pos.coin}
         </span>
         <span style={S.badge(sideBg, sideColor, sideBorder)}>{pos.side}</span>
         <span style={S.badge("rgba(139,92,246,0.12)", "#8b5cf6", "rgba(139,92,246,0.3)")}>
-          {pos.leverage}x
+          {pos.leverage_value || pos.leverage || "?"}x
         </span>
         <span style={{
           marginLeft: "auto", fontSize: 14, fontFamily: T.mono, fontWeight: 700,
@@ -121,7 +122,6 @@ function PositionCard({ pos, onClose, closing }) {
         </span>
       </div>
 
-      {/* Row 2: details */}
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
         <div>
           <span style={S.label}>Entry </span>
@@ -132,21 +132,17 @@ function PositionCard({ pos, onClose, closing }) {
           <span style={S.value}>{Math.abs(pos.size).toFixed(4)}</span>
         </div>
         <div>
-          <span style={S.label}>Notional </span>
-          <span style={S.value}>{fmtUsd(pos.notional_value)}</span>
-        </div>
-        <div>
           <span style={S.label}>Margin </span>
           <span style={S.value}>{fmtUsd(pos.margin_used)}</span>
         </div>
-        {pos.liquidation_price && (
+        {pos.liquidation_px && (
           <div>
             <span style={S.label}>Liq </span>
-            <span style={{ ...S.value, color: "#f87171" }}>{fmtPrice(pos.liquidation_price)}</span>
+            <span style={{ ...S.value, color: "#f87171" }}>{fmtPrice(pos.liquidation_px)}</span>
           </div>
         )}
         <button
-          onClick={() => onClose(pos.symbol || `${pos.coin}/USDT`)}
+          onClick={() => onClose(pos.coin, pos.size, pos.side === "LONG")}
           disabled={closing}
           style={{
             ...S.btn, ...S.btnDanger, marginLeft: "auto",
@@ -165,35 +161,31 @@ function PositionCard({ pos, onClose, closing }) {
 // ---------------------------------------------------------------------------
 
 export default function TradingPanel({ api }) {
+  const { address, isConnected, walletClient, connect, error: walletError } = useWallet();
   const [account, setAccount] = useState(null);
   const [positions, setPositions] = useState([]);
   const [history, setHistory] = useState({ trades: [], stats: {} });
   const [fills, setFills] = useState([]);
   const [closing, setClosing] = useState(null);
-  const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
+    if (!isConnected || !address) return;
     try {
       const [accResp, posResp, histResp, fillsResp] = await Promise.all([
-        fetch(`${api}/api/trade/account`).catch(() => null),
-        fetch(`${api}/api/trade/positions`).catch(() => null),
+        fetch(`${api}/api/trade/account?address=${address}`).catch(() => null),
+        fetch(`${api}/api/trade/positions?address=${address}`).catch(() => null),
         fetch(`${api}/api/trade/history`).catch(() => null),
-        fetch(`${api}/api/trade/fills?limit=20`).catch(() => null),
+        fetch(`${api}/api/trade/fills?address=${address}&limit=20`).catch(() => null),
       ]);
 
-      if (accResp?.ok) {
-        setAccount(await accResp.json());
-        setError(null);
-      } else {
-        setError("HL_PRIVATE_KEY not configured or HL connection failed");
-      }
+      if (accResp?.ok) setAccount(await accResp.json());
       if (posResp?.ok) setPositions((await posResp.json()).positions || []);
       if (histResp?.ok) setHistory(await histResp.json());
       if (fillsResp?.ok) setFills((await fillsResp.json()).fills || []);
     } catch (e) {
-      setError("Failed to connect to trading API");
+      console.error("TradingPanel fetch error:", e);
     }
-  }, [api]);
+  }, [api, address, isConnected]);
 
   useEffect(() => {
     fetchData();
@@ -201,18 +193,26 @@ export default function TradingPanel({ api }) {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const closePosition = async (symbol) => {
-    if (!window.confirm(`Close ${symbol} position?`)) return;
-    setClosing(symbol);
+  const closePosition = async (coin, size, isLong) => {
+    if (!walletClient) return;
+    if (!window.confirm(`Close ${coin} position?`)) return;
+    setClosing(coin);
     try {
-      await fetch(`${api}/api/trade/close`, {
+      const result = await hlClient.closePosition(walletClient, { coin, size, isLong, slippage: 0.02 });
+      // Log to backend
+      await fetch(`${api}/api/trade/log-close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol }),
+        body: JSON.stringify({
+          symbol: `${coin}/USDT`,
+          exit_price: result.avgPx,
+          close_order_id: String(result.oid || ""),
+        }),
       });
       await fetchData();
     } catch (e) {
       console.error("Close error:", e);
+      alert(e.message || "Failed to close position");
     }
     setClosing(null);
   };
@@ -223,18 +223,32 @@ export default function TradingPanel({ api }) {
   return (
     <div style={S.panel}>
 
-      {/* ─── CONNECTION ERROR ─── */}
-      {error && (
+      {/* ─── NOT CONNECTED ─── */}
+      {!isConnected && (
         <div style={{
-          ...S.section, borderColor: "rgba(248,113,113,0.2)",
-          padding: "20px", textAlign: "center",
+          ...S.section, padding: "30px 20px", textAlign: "center",
         }}>
-          <div style={{ fontSize: 12, fontFamily: T.mono, color: "#f87171", marginBottom: 6 }}>
-            {error}
+          <div style={{ fontSize: 12, fontFamily: T.mono, color: T.text3, marginBottom: 14 }}>
+            Connect your wallet to view account and trade
           </div>
-          <div style={{ fontSize: 10, fontFamily: T.mono, color: T.text4 }}>
-            Set HL_PRIVATE_KEY (agent wallet) in your environment to enable live trading.
-          </div>
+          <button
+            onClick={connect}
+            style={{
+              padding: "10px 32px", borderRadius: 10,
+              border: "1px solid rgba(139,92,246,0.3)",
+              background: "rgba(139,92,246,0.08)",
+              color: "#8b5cf6",
+              fontSize: 12, fontFamily: T.mono, fontWeight: 700,
+              cursor: "pointer", letterSpacing: "0.06em",
+            }}
+          >
+            Connect Wallet
+          </button>
+          {walletError && (
+            <div style={{ marginTop: 8, fontSize: 10, color: "#f87171", fontFamily: T.mono }}>
+              {walletError}
+            </div>
+          )}
         </div>
       )}
 
@@ -245,11 +259,11 @@ export default function TradingPanel({ api }) {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={S.title}>Hyperliquid Account</span>
               <span style={S.badge(
-                "rgba(248,113,113,0.12)", "#f87171", "rgba(248,113,113,0.3)",
+                "rgba(52,211,153,0.12)", "#34d399", "rgba(52,211,153,0.3)",
               )}>LIVE</span>
             </div>
             <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text4 }}>
-              {account.address?.slice(0, 6)}...{account.address?.slice(-4)}
+              {address?.slice(0, 6)}...{address?.slice(-4)}
             </span>
           </div>
           <div style={{
@@ -294,7 +308,7 @@ export default function TradingPanel({ api }) {
             padding: "24px 20px", textAlign: "center",
             color: T.text4, fontSize: 12, fontFamily: T.mono,
           }}>
-            {account ? "No open positions" : "Connect wallet to view positions"}
+            {isConnected ? "No open positions" : "Connect wallet to view positions"}
           </div>
         ) : (
           positions.map(pos => (
@@ -302,7 +316,7 @@ export default function TradingPanel({ api }) {
               key={pos.coin}
               pos={pos}
               onClose={closePosition}
-              closing={closing === (pos.symbol || `${pos.coin}/USDT`)}
+              closing={closing === pos.coin}
             />
           ))
         )}
@@ -411,14 +425,13 @@ export default function TradingPanel({ api }) {
                   <th style={headerCell}>Size</th>
                   <th style={headerCell}>Price</th>
                   <th style={{ ...headerCell, textAlign: "right" }}>Fee</th>
-                  <th style={{ ...headerCell, textAlign: "right" }}>Closed PnL</th>
                 </tr>
               </thead>
               <tbody>
                 {fills.map((f, i) => {
                   const isBuy = f.side === "B" || f.side?.toLowerCase() === "buy";
                   return (
-                    <tr key={f.hash || i}>
+                    <tr key={f.oid || i}>
                       <td style={cellStyle}>{timeAgo(f.time)}</td>
                       <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>{f.coin}</td>
                       <td style={cellStyle}>
@@ -431,9 +444,6 @@ export default function TradingPanel({ api }) {
                       <td style={cellStyle}>{fmtPrice(f.price)}</td>
                       <td style={{ ...cellStyle, textAlign: "right", color: T.text3 }}>
                         ${f.fee?.toFixed(4) || "0"}
-                      </td>
-                      <td style={{ ...cellStyle, textAlign: "right", color: pnlColor(f.closed_pnl), fontWeight: 600 }}>
-                        {f.closed_pnl ? fmtUsd(f.closed_pnl) : "\u2014"}
                       </td>
                     </tr>
                   );

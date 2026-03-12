@@ -44,9 +44,8 @@ from models import (
     WhitelistUpdate,
     WhitelistAddRequest,
     HLLeverageRequest,
-    TradeOpenRequest,
-    TradeCloseRequest,
-    TradeLeverageRequest,
+    TradeLogRequest,
+    TradeCloseLogRequest,
     PortfolioGroupResponse,
     PortfolioGroupCreate,
     PortfolioGroupUpdate,
@@ -1341,16 +1340,115 @@ async def hl_set_leverage(body: HLLeverageRequest):
 
 
 # ---------------------------------------------------------------------------
-# Manual Trading endpoints (standalone — no executor dependency)
+# Manual Trading endpoints (wallet-signed — no private key on server)
 # ---------------------------------------------------------------------------
 
-@app.post("/api/trade/open")
-async def trade_open(body: TradeOpenRequest):
-    """Open a manual position on Hyperliquid."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
+# Standalone HL Info for read-only queries (no private key needed)
+_hl_info = None
 
-    # Capture scanner context for the symbol
+def _get_hl_info():
+    global _hl_info
+    if _hl_info is None:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        _hl_info = Info(constants.MAINNET_API_URL, skip_ws=True)
+    return _hl_info
+
+
+@app.get("/api/trade/account")
+async def trade_account(address: str = Query(..., min_length=10)):
+    """Get Hyperliquid account summary for a wallet address."""
+    try:
+        info = _get_hl_info()
+        state = await asyncio.to_thread(info.user_state, address)
+        summary = state.get("marginSummary", {})
+        positions = state.get("assetPositions", [])
+        active = [p for p in positions if abs(float(p.get("position", {}).get("szi", 0))) > 1e-12]
+        return {
+            "address": address,
+            "account_value": float(summary.get("accountValue", 0)),
+            "total_margin_used": float(summary.get("totalMarginUsed", 0)),
+            "total_ntl_pos": float(summary.get("totalNtlPos", 0)),
+            "total_raw_usd": float(summary.get("totalRawUsd", 0)),
+            "positions_count": len(active),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/positions")
+async def trade_positions(address: str = Query(..., min_length=10)):
+    """Get current Hyperliquid positions for a wallet address."""
+    try:
+        info = _get_hl_info()
+        state = await asyncio.to_thread(info.user_state, address)
+        raw_positions = state.get("assetPositions", [])
+        positions = []
+        for ap in raw_positions:
+            pos = ap.get("position", {})
+            szi = float(pos.get("szi", 0))
+            if abs(szi) < 1e-12:
+                continue
+            positions.append({
+                "coin": pos.get("coin", ""),
+                "side": "LONG" if szi > 0 else "SHORT",
+                "size": abs(szi),
+                "entry_price": float(pos.get("entryPx", 0)),
+                "unrealized_pnl": float(pos.get("unrealizedPnl", 0)),
+                "margin_used": float(pos.get("marginUsed", 0)),
+                "liquidation_px": float(pos.get("liquidationPx", 0)) if pos.get("liquidationPx") else None,
+                "leverage_type": pos.get("leverage", {}).get("type", "cross"),
+                "leverage_value": int(pos.get("leverage", {}).get("value", 1)),
+                "return_on_equity": float(pos.get("returnOnEquity", 0)),
+            })
+        return {"positions": positions, "count": len(positions)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/fills")
+async def trade_fills(
+    address: str = Query(..., min_length=10),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Get recent Hyperliquid fills for a wallet address."""
+    try:
+        info = _get_hl_info()
+        raw_fills = await asyncio.to_thread(info.user_fills, address)
+        fills = []
+        for f in raw_fills[:limit]:
+            fills.append({
+                "coin": f.get("coin", ""),
+                "side": f.get("side", ""),
+                "price": float(f.get("px", 0)),
+                "size": float(f.get("sz", 0)),
+                "time": f.get("time", 0),
+                "fee": float(f.get("fee", 0)),
+                "oid": f.get("oid", 0),
+                "crossed": f.get("crossed", False),
+            })
+        return {"fills": fills, "count": len(fills)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/history")
+async def trade_history():
+    """Get manual trade journal with stats."""
+    from manual_trader import get_trade_journal
+    journal = get_trade_journal()
+    trades = journal.get_trade_history()
+    stats = journal.get_stats()
+    return {"trades": trades, "stats": stats}
+
+
+@app.post("/api/trade/log")
+async def trade_log(body: TradeLogRequest):
+    """Log a completed trade reported by the frontend wallet."""
+    from manual_trader import get_trade_journal
+    journal = get_trade_journal()
+
+    # Capture scanner signal/regime at trade time
     signal_at_trade = ""
     regime_at_trade = ""
     for r in (cache.results_4h or []):
@@ -1359,91 +1457,36 @@ async def trade_open(body: TradeOpenRequest):
             regime_at_trade = r.get("regime", "")
             break
 
-    try:
-        result = await asyncio.to_thread(
-            trader.open_position,
-            symbol=body.symbol,
-            side=body.side,
-            size_usd=body.size_usd,
-            size_pct=body.size_pct,
-            leverage=body.leverage,
-            signal_at_trade=signal_at_trade,
-            regime_at_trade=regime_at_trade,
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    trade = journal.log_trade(
+        address=body.address,
+        symbol=body.symbol,
+        coin=body.coin,
+        side=body.side,
+        size_usd=body.size_usd,
+        volume=body.volume,
+        leverage=body.leverage,
+        entry_price=body.entry_price,
+        order_id=body.order_id,
+        signal_at_trade=signal_at_trade,
+        regime_at_trade=regime_at_trade,
+    )
+    return {"status": "ok", "trade": trade.to_dict()}
 
 
-@app.post("/api/trade/close")
-async def trade_close(body: TradeCloseRequest):
-    """Close a position on Hyperliquid."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    try:
-        result = await asyncio.to_thread(trader.close_position, body.symbol)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+@app.post("/api/trade/log-close")
+async def trade_log_close(body: TradeCloseLogRequest):
+    """Log a position closure reported by the frontend wallet."""
+    from manual_trader import get_trade_journal
+    journal = get_trade_journal()
 
-
-@app.get("/api/trade/account")
-async def trade_account():
-    """Get Hyperliquid account summary."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    try:
-        return await asyncio.to_thread(trader.get_account)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/positions")
-async def trade_positions():
-    """Get current Hyperliquid positions."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    try:
-        positions = await asyncio.to_thread(trader.get_positions)
-        return {"positions": positions, "count": len(positions)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/fills")
-async def trade_fills(limit: int = Query(50, ge=1, le=500)):
-    """Get recent Hyperliquid fill history."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    try:
-        fills = await asyncio.to_thread(trader.get_fills, limit)
-        return {"fills": fills, "count": len(fills)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/history")
-async def trade_history():
-    """Get manual trade log with stats."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    trades = trader.get_trade_history()
-    stats = trader.get_stats()
-    return {"trades": trades, "stats": stats}
-
-
-@app.post("/api/trade/leverage")
-async def trade_set_leverage(body: TradeLeverageRequest):
-    """Set leverage for a coin on Hyperliquid."""
-    from manual_trader import get_manual_trader
-    trader = get_manual_trader()
-    try:
-        result = await asyncio.to_thread(
-            trader.set_leverage, body.coin, body.leverage, body.is_cross,
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    trade = journal.log_close(
+        symbol=body.symbol,
+        exit_price=body.exit_price,
+        close_order_id=body.close_order_id,
+    )
+    if not trade:
+        raise HTTPException(status_code=404, detail=f"No open trade found for {body.symbol}")
+    return {"status": "closed", "trade": trade.to_dict()}
 
 
 # ---------------------------------------------------------------------------
