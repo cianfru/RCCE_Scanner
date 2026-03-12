@@ -205,6 +205,25 @@ class HLLeverageRequest(BaseModel):
     leverage: int = 3
     is_cross: bool = True
 
+# ---------------------------------------------------------------------------
+# Manual trading models
+# ---------------------------------------------------------------------------
+
+class TradeOpenRequest(BaseModel):
+    symbol: str                         # "BTC/USDT"
+    side: str = "LONG"                  # "LONG" or "SHORT"
+    size_usd: Optional[float] = None    # absolute USD amount
+    size_pct: Optional[float] = None    # % of account equity (1-100)
+    leverage: int = 3
+
+class TradeCloseRequest(BaseModel):
+    symbol: str                         # "BTC/USDT"
+
+class TradeLeverageRequest(BaseModel):
+    coin: str                           # "BTC"
+    leverage: int = 3
+    is_cross: bool = True
+
 
 class ExecutorTradeResponse(BaseModel):
     symbol: str

@@ -15,6 +15,7 @@ import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
+import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
@@ -297,11 +298,11 @@ export default function App() {
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "TRADING"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "TRADING"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -729,6 +730,12 @@ export default function App() {
           </FadeIn>
         )}
 
+        {activeTab === "trading" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <TradingPanel api={API_BASE} />
+          </FadeIn>
+        )}
+
         {activeTab === "signals" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <SignalLogPanel api={API_BASE} isMobile={isMobile} />
@@ -760,7 +767,7 @@ export default function App() {
       )}
 
       {/* ── DETAIL PANEL ── */}
-      <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} />
+      <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
     </div>
   );
 }

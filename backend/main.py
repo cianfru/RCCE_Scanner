@@ -44,6 +44,9 @@ from models import (
     WhitelistUpdate,
     WhitelistAddRequest,
     HLLeverageRequest,
+    TradeOpenRequest,
+    TradeCloseRequest,
+    TradeLeverageRequest,
     PortfolioGroupResponse,
     PortfolioGroupCreate,
     PortfolioGroupUpdate,
@@ -1335,6 +1338,112 @@ async def hl_set_leverage(body: HLLeverageRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Manual Trading endpoints (standalone — no executor dependency)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/trade/open")
+async def trade_open(body: TradeOpenRequest):
+    """Open a manual position on Hyperliquid."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+
+    # Capture scanner context for the symbol
+    signal_at_trade = ""
+    regime_at_trade = ""
+    for r in (cache.results_4h or []):
+        if r.get("symbol") == body.symbol:
+            signal_at_trade = r.get("signal", "")
+            regime_at_trade = r.get("regime", "")
+            break
+
+    try:
+        result = await asyncio.to_thread(
+            trader.open_position,
+            symbol=body.symbol,
+            side=body.side,
+            size_usd=body.size_usd,
+            size_pct=body.size_pct,
+            leverage=body.leverage,
+            signal_at_trade=signal_at_trade,
+            regime_at_trade=regime_at_trade,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/trade/close")
+async def trade_close(body: TradeCloseRequest):
+    """Close a position on Hyperliquid."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    try:
+        result = await asyncio.to_thread(trader.close_position, body.symbol)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/account")
+async def trade_account():
+    """Get Hyperliquid account summary."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    try:
+        return await asyncio.to_thread(trader.get_account)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/positions")
+async def trade_positions():
+    """Get current Hyperliquid positions."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    try:
+        positions = await asyncio.to_thread(trader.get_positions)
+        return {"positions": positions, "count": len(positions)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/fills")
+async def trade_fills(limit: int = Query(50, ge=1, le=500)):
+    """Get recent Hyperliquid fill history."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    try:
+        fills = await asyncio.to_thread(trader.get_fills, limit)
+        return {"fills": fills, "count": len(fills)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trade/history")
+async def trade_history():
+    """Get manual trade log with stats."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    trades = trader.get_trade_history()
+    stats = trader.get_stats()
+    return {"trades": trades, "stats": stats}
+
+
+@app.post("/api/trade/leverage")
+async def trade_set_leverage(body: TradeLeverageRequest):
+    """Set leverage for a coin on Hyperliquid."""
+    from manual_trader import get_manual_trader
+    trader = get_manual_trader()
+    try:
+        result = await asyncio.to_thread(
+            trader.set_leverage, body.coin, body.leverage, body.is_cross,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
