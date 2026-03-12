@@ -200,6 +200,11 @@ class WhitelistUpdate(BaseModel):
 class WhitelistAddRequest(BaseModel):
     symbol: str
 
+class HLLeverageRequest(BaseModel):
+    coin: str                         # e.g. "BTC"
+    leverage: int = 3
+    is_cross: bool = True
+
 
 class ExecutorTradeResponse(BaseModel):
     symbol: str

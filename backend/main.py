@@ -43,6 +43,7 @@ from models import (
     ExecutorTradeResponse,
     WhitelistUpdate,
     WhitelistAddRequest,
+    HLLeverageRequest,
     PortfolioGroupResponse,
     PortfolioGroupCreate,
     PortfolioGroupUpdate,
@@ -1252,6 +1253,88 @@ async def executor_remove_whitelist(symbol: str):
 
     symbol = symbol.upper().replace("-", "/")
     return executor.remove_from_whitelist(symbol)
+
+
+# ---------------------------------------------------------------------------
+# Hyperliquid live-mode endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/executor/hl/account")
+async def hl_account():
+    """Get Hyperliquid account summary (equity, margin, positions count)."""
+    from executor import get_executor
+    import asyncio
+
+    executor = get_executor()
+    if not executor or not executor.initialized or executor.mode != "live":
+        raise HTTPException(
+            status_code=400,
+            detail="Executor not in live mode. Init with mode='live' first.",
+        )
+    try:
+        summary = await asyncio.to_thread(executor.engine.get_account_summary)
+        return summary
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/executor/hl/positions")
+async def hl_positions():
+    """Get real-time Hyperliquid positions (bypasses executor state)."""
+    from executor import get_executor
+    import asyncio
+
+    executor = get_executor()
+    if not executor or not executor.initialized or executor.mode != "live":
+        raise HTTPException(
+            status_code=400,
+            detail="Executor not in live mode.",
+        )
+    try:
+        positions = await asyncio.to_thread(executor.engine.get_positions)
+        return {"positions": positions, "count": len(positions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/executor/hl/fills")
+async def hl_fills(limit: int = Query(50, ge=1, le=500)):
+    """Get recent Hyperliquid fill history."""
+    from executor import get_executor
+    import asyncio
+
+    executor = get_executor()
+    if not executor or not executor.initialized or executor.mode != "live":
+        raise HTTPException(
+            status_code=400,
+            detail="Executor not in live mode.",
+        )
+    try:
+        fills = await asyncio.to_thread(executor.engine.get_fills, limit)
+        return {"fills": fills, "count": len(fills)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/executor/hl/leverage")
+async def hl_set_leverage(body: HLLeverageRequest):
+    """Set leverage for a specific coin on Hyperliquid."""
+    from executor import get_executor
+    import asyncio
+
+    executor = get_executor()
+    if not executor or not executor.initialized or executor.mode != "live":
+        raise HTTPException(
+            status_code=400,
+            detail="Executor not in live mode.",
+        )
+    try:
+        result = await asyncio.to_thread(
+            executor.engine.set_leverage, body.coin, body.leverage, body.is_cross,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

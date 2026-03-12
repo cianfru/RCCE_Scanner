@@ -20,6 +20,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import asyncio
+
 from trading_engine import TradingEngine, PaperEngine, HyperliquidEngine, EngineError
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,15 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
 
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
+
+# Leverage per signal — used in live (Hyperliquid) mode
+_LEVERAGE_MAP: Dict[str, int] = {
+    "STRONG_LONG":  5,
+    "LIGHT_LONG":   3,
+    "ACCUMULATE":   2,
+    "REVIVAL_SEED": 1,
+    "LIGHT_SHORT":  3,
+}
 
 # Minimum order size in USD
 _MIN_ORDER_USD = 5.0
@@ -370,11 +381,21 @@ class Executor:
         # Format volume to appropriate precision
         volume = _format_volume(volume, price)
 
+        # Determine leverage (only meaningful for live mode)
+        leverage = _LEVERAGE_MAP.get(signal, 3) if self.mode == "live" else None
+
         # Place order via trading engine
+        # Hyperliquid SDK is synchronous — use asyncio.to_thread for live mode
         if side == "SHORT":
-            result = self.engine.sell(symbol, volume, price)
+            if self.mode == "live":
+                result = await asyncio.to_thread(self.engine.sell, symbol, volume, price, leverage)
+            else:
+                result = self.engine.sell(symbol, volume, price)
         else:
-            result = self.engine.buy(symbol, volume, price)
+            if self.mode == "live":
+                result = await asyncio.to_thread(self.engine.buy, symbol, volume, price, leverage)
+            else:
+                result = self.engine.buy(symbol, volume, price)
 
         # Record position
         order_id = result.get("order_id", "")
@@ -415,10 +436,29 @@ class Executor:
         pos = self.positions[symbol]
 
         # Place closing order via trading engine (reverse direction)
-        if pos.side == "SHORT":
-            result = self.engine.buy(symbol, pos.volume, price)
+        # For live mode, use market_close for full position closure
+        if self.mode == "live" and hasattr(self.engine, "close_position"):
+            try:
+                result = await asyncio.to_thread(self.engine.close_position, symbol)
+                # market_close doesn't return fill price — use provided price
+                result["price"] = price
+                result["order_id"] = result.get("order_id", f"hl-close-{symbol}")
+            except Exception:
+                # Fallback to regular sell/buy if market_close fails
+                if pos.side == "SHORT":
+                    result = await asyncio.to_thread(self.engine.buy, symbol, pos.volume, price)
+                else:
+                    result = await asyncio.to_thread(self.engine.sell, symbol, pos.volume, price)
+        elif pos.side == "SHORT":
+            if self.mode == "live":
+                result = await asyncio.to_thread(self.engine.buy, symbol, pos.volume, price)
+            else:
+                result = self.engine.buy(symbol, pos.volume, price)
         else:
-            result = self.engine.sell(symbol, pos.volume, price)
+            if self.mode == "live":
+                result = await asyncio.to_thread(self.engine.sell, symbol, pos.volume, price)
+            else:
+                result = self.engine.sell(symbol, pos.volume, price)
 
         fill_price = result.get("price", price)
 
@@ -471,14 +511,17 @@ class Executor:
         portfolio = {}
         if self.initialized and self.engine:
             try:
-                portfolio = self.engine.get_portfolio()
+                if self.mode == "live":
+                    portfolio = await asyncio.to_thread(self.engine.get_portfolio)
+                else:
+                    portfolio = self.engine.get_portfolio()
             except Exception as e:
                 logger.warning("Failed to get portfolio status: %s", e)
 
         total_pnl = sum(t.pnl_pct for t in self.trade_log)
         wins = sum(1 for t in self.trade_log if t.pnl_pct > 0)
 
-        return {
+        result = {
             "mode": self.mode,
             "enabled": self.enabled,
             "initialized": self.initialized,
@@ -501,6 +544,15 @@ class Executor:
             "state_file": str(_STATE_FILE),
             "state_persistent": _STATE_FILE.exists(),
         }
+
+        # Include live account info when in HL mode
+        if self.mode == "live" and portfolio:
+            result["account_value"] = portfolio.get("account_value", 0)
+            result["margin_used"] = portfolio.get("margin_used", 0)
+            result["available_margin"] = portfolio.get("available_margin", 0)
+            result["hl_positions"] = portfolio.get("positions", [])
+
+        return result
 
     def get_trades(self) -> List[dict]:
         """Return trade history."""

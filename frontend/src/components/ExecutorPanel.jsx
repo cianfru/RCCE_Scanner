@@ -26,6 +26,11 @@ function fmtPrice(p) {
   return `$${p.toFixed(6)}`;
 }
 
+function fmtUsd(v) {
+  if (v == null) return "\u2014";
+  return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function fmtPnl(pct) {
   if (pct == null) return "\u2014";
   const sign = pct >= 0 ? "+" : "";
@@ -101,6 +106,11 @@ const S = {
     background: "rgba(34,211,238,0.12)",
     borderColor: "rgba(34,211,238,0.3)",
     color: "#22d3ee",
+  },
+  btnLive: {
+    background: "rgba(248,113,113,0.12)",
+    borderColor: "rgba(248,113,113,0.3)",
+    color: "#f87171",
   },
   btnDanger: {
     background: "rgba(248,113,113,0.08)",
@@ -201,7 +211,7 @@ function ReasonBlock({ reason, warnings }) {
 }
 
 // ---------------------------------------------------------------------------
-// Open Position Card
+// Open Position Card (Paper mode)
 // ---------------------------------------------------------------------------
 
 function PositionCard({ pos, scanResults }) {
@@ -277,6 +287,81 @@ function PositionCard({ pos, scanResults }) {
 
       {/* Row 3: Reason */}
       <ReasonBlock reason={pos.entry_reason} warnings={pos.entry_warnings} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hyperliquid Live Position Card
+// ---------------------------------------------------------------------------
+
+function HLPositionCard({ pos }) {
+  const side = sideBadge(pos.side);
+  const pnlPct = pos.entry_price > 0
+    ? ((pos.side === "LONG"
+        ? (pos.unrealized_pnl / (Math.abs(pos.size) * pos.entry_price))
+        : (pos.unrealized_pnl / (Math.abs(pos.size) * pos.entry_price))
+      ) * 100)
+    : null;
+
+  return (
+    <div style={{
+      padding: "14px 20px",
+      borderBottom: `1px solid ${T.border}`,
+      transition: "background 0.15s",
+    }}>
+      {/* Row 1: Symbol + badges */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 15, fontFamily: T.mono, fontWeight: 700, color: T.text1 }}>
+          {pos.coin}
+        </span>
+        <span style={S.badge(side.bg, side.color, side.border)}>{side.label}</span>
+        <span style={S.badge(
+          "rgba(139,92,246,0.12)",
+          "#8b5cf6",
+          "rgba(139,92,246,0.3)",
+        )}>{pos.leverage}x</span>
+        <span style={S.badge(
+          "rgba(82,82,91,0.12)",
+          T.text3,
+          T.border,
+        )}>{pos.leverage_type || "cross"}</span>
+        <span style={{
+          marginLeft: "auto",
+          fontSize: 14,
+          fontFamily: T.mono,
+          fontWeight: 700,
+          color: pnlColor(pos.unrealized_pnl),
+        }}>
+          {pos.unrealized_pnl >= 0 ? "+" : ""}{fmtUsd(pos.unrealized_pnl)}
+        </span>
+      </div>
+
+      {/* Row 2: Details */}
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <span style={S.label}>Entry </span>
+          <span style={S.value}>{fmtPrice(pos.entry_price)}</span>
+        </div>
+        <div>
+          <span style={S.label}>Size </span>
+          <span style={S.value}>{Math.abs(pos.size).toFixed(4)}</span>
+        </div>
+        <div>
+          <span style={S.label}>Notional </span>
+          <span style={S.value}>{fmtUsd(pos.notional_value)}</span>
+        </div>
+        <div>
+          <span style={S.label}>Margin </span>
+          <span style={S.value}>{fmtUsd(pos.margin_used)}</span>
+        </div>
+        {pos.liquidation_price && (
+          <div>
+            <span style={S.label}>Liq </span>
+            <span style={{ ...S.value, color: "#f87171" }}>{fmtPrice(pos.liquidation_price)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -372,15 +457,21 @@ export default function ExecutorPanel({ api }) {
   const [expandedTrade, setExpandedTrade] = useState(null);
   const [whitelist, setWhitelist] = useState(null);
   const [wlLoading, setWlLoading] = useState(false);
+  const [hlPositions, setHlPositions] = useState([]);
+  const [hlAccount, setHlAccount] = useState(null);
+
+  const isLive = status?.mode === "live";
 
   const fetchData = useCallback(async () => {
     try {
-      const [statusResp, tradesResp, scanResp, wlResp] = await Promise.all([
+      const fetches = [
         fetch(`${api}/api/executor/status`),
         fetch(`${api}/api/executor/trades`),
         fetch(`${api}/api/scan?timeframe=4h`),
         fetch(`${api}/api/executor/whitelist`).catch(() => null),
-      ]);
+      ];
+
+      const [statusResp, tradesResp, scanResp, wlResp] = await Promise.all(fetches);
       const statusData = await statusResp.json();
       const tradesData = await tradesResp.json();
       const scanData = await scanResp.json();
@@ -390,6 +481,26 @@ export default function ExecutorPanel({ api }) {
       if (wlResp?.ok) {
         const wlData = await wlResp.json();
         setWhitelist(wlData);
+      }
+
+      // Fetch live HL data when in live mode
+      if (statusData?.mode === "live" && statusData?.initialized) {
+        try {
+          const [posResp, accResp] = await Promise.all([
+            fetch(`${api}/api/executor/hl/positions`).catch(() => null),
+            fetch(`${api}/api/executor/hl/account`).catch(() => null),
+          ]);
+          if (posResp?.ok) {
+            const posData = await posResp.json();
+            setHlPositions(posData.positions || []);
+          }
+          if (accResp?.ok) {
+            const accData = await accResp.json();
+            setHlAccount(accData);
+          }
+        } catch (e) {
+          console.error("HL data fetch error:", e);
+        }
       }
     } catch (e) {
       console.error("Executor fetch error:", e);
@@ -402,15 +513,31 @@ export default function ExecutorPanel({ api }) {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const callApi = async (endpoint, method = "POST") => {
+  const callApi = async (endpoint, method = "POST", body = null) => {
     setLoading(true);
     try {
-      await fetch(`${api}${endpoint}`, { method });
+      const opts = { method };
+      if (body) {
+        opts.headers = { "Content-Type": "application/json" };
+        opts.body = JSON.stringify(body);
+      }
+      await fetch(`${api}${endpoint}`, opts);
       await fetchData();
     } catch (e) {
       console.error("Executor API error:", e);
     }
     setLoading(false);
+  };
+
+  const initLive = async () => {
+    const confirmed = confirm(
+      "You are about to enable LIVE trading on Hyperliquid.\n\n" +
+      "REAL FUNDS will be used for order execution.\n" +
+      "Make sure HL_PRIVATE_KEY is set in your environment.\n\n" +
+      "Continue?"
+    );
+    if (!confirmed) return;
+    await callApi("/api/executor/init", "POST", { mode: "live", balance: 0 });
   };
 
   const toggleWhitelist = async (symbol, shouldAdd) => {
@@ -456,6 +583,15 @@ export default function ExecutorPanel({ api }) {
   const positions = status?.positions ? Object.values(status.positions) : [];
   const reversedTrades = [...trades].reverse(); // newest first
 
+  // Compute equity value
+  const equityValue = isLive
+    ? (hlAccount?.account_value || status?.account_value || 0)
+    : (status?.portfolio?.current_value || status?.paper_balance || 0);
+
+  const equityColor = isLive
+    ? T.text1
+    : (status?.portfolio?.current_value > status?.paper_balance ? "#34d399" : status?.portfolio?.current_value < status?.paper_balance ? "#f87171" : T.text1);
+
   return (
     <div style={S.panel}>
 
@@ -468,17 +604,26 @@ export default function ExecutorPanel({ api }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {(!status?.initialized) && (
-              <button
-                style={{ ...S.btn, ...S.btnPrimary }}
-                onClick={() => callApi("/api/executor/init")}
-                disabled={loading}
-              >
-                Initialize
-              </button>
+              <>
+                <button
+                  style={{ ...S.btn, ...S.btnPrimary }}
+                  onClick={() => callApi("/api/executor/init")}
+                  disabled={loading}
+                >
+                  Paper Mode
+                </button>
+                <button
+                  style={{ ...S.btn, ...S.btnLive }}
+                  onClick={initLive}
+                  disabled={loading}
+                >
+                  Live Mode
+                </button>
+              </>
             )}
             {status?.initialized && !status?.enabled && (
               <button
-                style={{ ...S.btn, ...S.btnPrimary }}
+                style={{ ...S.btn, ...(isLive ? S.btnLive : S.btnPrimary) }}
                 onClick={() => callApi("/api/executor/enable")}
                 disabled={loading}
               >
@@ -498,7 +643,10 @@ export default function ExecutorPanel({ api }) {
               <button
                 style={{ ...S.btn, ...S.btnDanger }}
                 onClick={() => {
-                  if (confirm("Reset all positions and trade history?")) {
+                  const msg = isLive
+                    ? "Reset executor state? This clears local tracking only \u2014 live positions on Hyperliquid are NOT affected."
+                    : "Reset all positions and trade history?";
+                  if (confirm(msg)) {
                     callApi("/api/executor/reset");
                   }
                 }}
@@ -520,10 +668,23 @@ export default function ExecutorPanel({ api }) {
             flexWrap: "wrap",
           }}>
             <StatBox
-              label="EQUITY"
-              value={`$${(status.portfolio?.current_value || status.paper_balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              color={status.portfolio?.current_value > status.paper_balance ? "#34d399" : status.portfolio?.current_value < status.paper_balance ? "#f87171" : T.text1}
+              label={isLive ? "ACCOUNT EQUITY" : "EQUITY"}
+              value={fmtUsd(equityValue)}
+              color={equityColor}
             />
+            {isLive && hlAccount && (
+              <>
+                <StatBox
+                  label="MARGIN USED"
+                  value={fmtUsd(hlAccount.total_margin_used)}
+                  color={hlAccount.total_margin_used > 0 ? "#fbbf24" : T.text3}
+                />
+                <StatBox
+                  label="HL POSITIONS"
+                  value={hlAccount.positions_count || hlPositions.length || 0}
+                />
+              </>
+            )}
             <StatBox label="PAIRS" value={`${status.whitelist_count || 0}/${status.available_pairs || 0}`} />
             <StatBox label="TRADES" value={status.total_trades || 0} />
             <StatBox
@@ -556,10 +717,11 @@ export default function ExecutorPanel({ api }) {
             fontSize: 13,
             fontFamily: T.font,
           }}>
-            Click <strong style={{ color: T.accent }}>Initialize</strong> to start paper trading.
+            Choose a mode to start the executor.
             <br />
             <span style={{ fontSize: 11, color: T.text4, marginTop: 8, display: "inline-block" }}>
-              The executor will convert scanner signals into paper orders on each 5-minute scan cycle.
+              <strong style={{ color: "#22d3ee" }}>Paper</strong> simulates trades.{" "}
+              <strong style={{ color: "#f87171" }}>Live</strong> executes real orders on Hyperliquid.
             </span>
           </div>
         )}
@@ -580,6 +742,47 @@ export default function ExecutorPanel({ api }) {
           </div>
         )}
       </div>
+
+      {/* ─── HYPERLIQUID LIVE POSITIONS ─── */}
+      {isLive && status?.initialized && (
+        <div style={{
+          ...S.section,
+          borderColor: "rgba(248,113,113,0.2)",
+        }}>
+          <div style={S.sectionHeader}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ ...S.sectionTitle, color: "#f87171" }}>
+                Hyperliquid Positions {hlPositions.length > 0 && `(${hlPositions.length})`}
+              </span>
+              <span style={S.badge(
+                "rgba(248,113,113,0.12)",
+                "#f87171",
+                "rgba(248,113,113,0.3)",
+              )}>LIVE</span>
+            </div>
+            {hlAccount && (
+              <span style={{ fontSize: 11, fontFamily: T.mono, color: T.text3 }}>
+                {hlAccount.address?.slice(0, 6)}...{hlAccount.address?.slice(-4)}
+              </span>
+            )}
+          </div>
+          {hlPositions.length === 0 ? (
+            <div style={{
+              padding: "24px 20px",
+              textAlign: "center",
+              color: T.text4,
+              fontSize: 12,
+              fontFamily: T.mono,
+            }}>
+              No open positions on Hyperliquid
+            </div>
+          ) : (
+            hlPositions.map(pos => (
+              <HLPositionCard key={pos.coin} pos={pos} />
+            ))
+          )}
+        </div>
+      )}
 
       {/* ─── TRADING WHITELIST ─── */}
       {status?.initialized && whitelist && (
@@ -635,11 +838,11 @@ export default function ExecutorPanel({ api }) {
         </div>
       )}
 
-      {/* ─── OPEN POSITIONS ─── */}
+      {/* ─── EXECUTOR POSITIONS (Paper / Tracked) ─── */}
       <div style={S.section}>
         <div style={S.sectionHeader}>
           <span style={S.sectionTitle}>
-            Open Positions {positions.length > 0 && `(${positions.length})`}
+            {isLive ? "Tracked Positions" : "Open Positions"} {positions.length > 0 && `(${positions.length})`}
           </span>
         </div>
         {positions.length === 0 ? (
