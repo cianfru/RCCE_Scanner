@@ -15,7 +15,7 @@ try:
     from dotenv import load_dotenv
     _env_file = Path(__file__).resolve().parent / ".env"
     if _env_file.exists():
-        load_dotenv(_env_file)
+        load_dotenv(_env_file, override=True)
 except ImportError:
     pass
 
@@ -50,6 +50,9 @@ from models import (
     PortfolioGroupReorder,
     WhaleTokenAddRequest,
     WhaleWalletLabelRequest,
+    ChatRequest,
+    ChatResponse,
+    BriefingResponse,
 )
 from portfolio_groups import PortfolioGroupManager
 
@@ -146,9 +149,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Signal log init failed (non-fatal): %s", e)
 
+    # Start Telegram bot (if configured)
+    try:
+        from telegram_bot import get_telegram_bot
+        bot = get_telegram_bot()
+        await bot.start()
+    except Exception as e:
+        logger.warning("Telegram bot init failed (non-fatal): %s", e)
+
     asyncio.create_task(_periodic_scan())
     asyncio.create_task(_periodic_whale_poll())
     yield
+
+    # Shutdown Telegram bot
+    try:
+        from telegram_bot import get_telegram_bot
+        bot = get_telegram_bot()
+        await bot.stop()
+    except Exception:
+        pass
 
 
 _backtest_running = False  # Flag to pause scans during backtest
@@ -1574,6 +1593,57 @@ async def whale_address_history(
     await _ensure_whale_db()
     tracker = _get_whale_tracker()
     return await tracker.get_address_history(chain, contract, address, days)
+
+
+# ---------------------------------------------------------------------------
+# LLM Assistant endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_endpoint(req: ChatRequest):
+    """LLM-powered trading assistant chat."""
+    try:
+        from assistant import get_assistant
+        assistant = get_assistant()
+        reply, detected = await assistant.chat(
+            session_id=req.session_id,
+            user_message=req.message,
+            symbol=req.symbol,
+        )
+        return ChatResponse(
+            reply=reply,
+            session_id=req.session_id,
+            detected_symbol=detected,
+        )
+    except Exception as e:
+        logger.error("Chat error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/briefing", response_model=BriefingResponse)
+async def briefing_endpoint():
+    """Generate a daily market briefing."""
+    try:
+        from assistant import get_assistant
+        assistant = get_assistant()
+        briefing = await assistant.daily_briefing()
+        return BriefingResponse(briefing=briefing, timestamp=time.time())
+    except Exception as e:
+        logger.error("Briefing error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/explain/{symbol:path}")
+async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
+    """Explain the current signal for a symbol."""
+    try:
+        from assistant import get_assistant
+        assistant = get_assistant()
+        explanation = await assistant.explain_signal(symbol, timeframe)
+        return {"symbol": symbol, "timeframe": timeframe, "explanation": explanation}
+    except Exception as e:
+        logger.error("Explain error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
