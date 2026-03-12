@@ -858,7 +858,7 @@ async def hyperliquid_perpetuals():
     global _hl_perps, _hl_perps_ts
 
     # Return cached if fresh (24h)
-    if _hl_perps is not None and (time.time() - _hl_perps_ts) < 86400:
+    if _hl_perps is not None and (time.time() - _hl_perps_ts) < 3600:
         return {"symbols": _hl_perps, "cached": True, "count": len(_hl_perps)}
 
     try:
@@ -1648,4 +1648,4 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    return {"ok": True, "build": "2026-03-12-cto"}
