@@ -219,3 +219,88 @@ export async function closePosition(walletClient, { coin, size, isLong, slippage
   }
   return { avgPx: midPrice, totalSz: vol, oid: 0 };
 }
+
+// ---------------------------------------------------------------------------
+// Portfolio read-only queries (no wallet needed)
+// ---------------------------------------------------------------------------
+
+const PERIOD_MAP = {
+  "1D": "perpDay", "1W": "perpWeek", "1M": "perpMonth", "ALL": "perpAllTime",
+  day: "day", week: "week", month: "month", allTime: "allTime",
+  perpDay: "perpDay", perpWeek: "perpWeek", perpMonth: "perpMonth", perpAllTime: "perpAllTime",
+};
+
+/**
+ * Get historical portfolio data (account value, PnL, volume) by time period.
+ * Returns { perpDay, perpWeek, perpMonth, perpAllTime, ... } each with
+ * { accountValueHistory: [{time,value}], pnlHistory: [{time,value}], vlm }
+ */
+export async function getPortfolio(address) {
+  const raw = await infoClient.portfolio({ user: address });
+  const byPeriod = {};
+  for (const [period, data] of raw) {
+    byPeriod[period] = {
+      accountValueHistory: data.accountValueHistory.map(([ts, val]) => ({
+        time: Math.floor(ts / 1000),
+        value: parseFloat(val),
+      })),
+      pnlHistory: data.pnlHistory.map(([ts, val]) => ({
+        time: Math.floor(ts / 1000),
+        value: parseFloat(val),
+      })),
+      vlm: parseFloat(data.vlm),
+    };
+  }
+  return byPeriod;
+}
+
+/** Resolve a friendly period key (e.g. "1W") to the SDK period name. */
+export function resolvePeriod(key) {
+  return PERIOD_MAP[key] || key;
+}
+
+/**
+ * Get full clearinghouse state (margin, positions, withdrawable).
+ */
+export async function getClearinghouseState(address) {
+  return infoClient.clearinghouseState({ user: address });
+}
+
+/**
+ * Get open orders with frontend display fields.
+ */
+export async function getOpenOrders(address) {
+  return infoClient.frontendOpenOrders({ user: address });
+}
+
+/**
+ * Get user trade fills (with closedPnl, fee, dir).
+ */
+export async function getUserFills(address) {
+  return infoClient.userFills({ user: address, aggregateByTime: true });
+}
+
+/**
+ * Get funding payment history.
+ */
+export async function getUserFunding(address, startTime) {
+  const params = { user: address };
+  if (startTime) params.startTime = startTime;
+  return infoClient.userFunding(params);
+}
+
+/**
+ * Get fee schedule, current rates, volume history.
+ */
+export async function getUserFees(address) {
+  return infoClient.userFees({ user: address });
+}
+
+/**
+ * Cancel an open order (requires wallet signature).
+ */
+export async function cancelOrder(walletClient, { coin, oid }) {
+  const assetIdx = await getAssetIndex(coin);
+  const exchange = new ExchangeClient(makeExchangeConfig(walletClient));
+  return exchange.cancel({ cancels: [{ a: assetIdx, o: oid }] });
+}

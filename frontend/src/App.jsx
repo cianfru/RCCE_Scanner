@@ -301,8 +301,8 @@ export default function App() {
   const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "TRADING"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "TRADING"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
