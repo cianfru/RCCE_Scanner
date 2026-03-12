@@ -78,6 +78,7 @@ def synthesize_signal(
     stablecoin: Optional[dict] = None,
     macro_blocked: bool = False,
     prev_heat: int = 0,
+    bmsb_valid: bool = True,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -307,6 +308,12 @@ def synthesize_signal(
     # the BMSB macro filter as the bear market confirmation and z/heat/stall
     # to identify rally exhaustion points.
     if macro_blocked:
+        # No BMSB data at all → always WAIT (no shorts either without BMSB)
+        if not bmsb_valid:
+            out.signal = "WAIT"
+            out.reason = f"BMSB data unavailable (insufficient weekly bars) — {regime} regime, all entries blocked"
+            out.warnings = warnings + ["No BMSB data — token too new or weekly history too short"]
+            return out
         if (0.3 <= z <= 1.2
                 and heat >= 20
                 and heat <= prev_heat          # rally momentum stalling

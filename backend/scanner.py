@@ -710,7 +710,15 @@ async def _scan_timeframe(
         try:
             # Compute macro_blocked from BMSB direction
             heat_direction = r.get("heat_direction", 0)
-            macro_blocked = heat_direction < 0  # price below weekly BMSB mid
+            deviation_pct = r.get("deviation_pct", 0.0)
+            heat_val = r.get("heat", 0)
+
+            # No valid BMSB data (heatmap returned defaults) → block entries
+            bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
+            if not bmsb_valid:
+                macro_blocked = True  # no BMSB = no signal = WAIT
+            else:
+                macro_blocked = heat_direction < 0  # price below weekly BMSB mid
 
             # Get prev_heat from cache (for rally stall detection in LIGHT_SHORT)
             symbol = r.get("symbol", "")
@@ -723,6 +731,7 @@ async def _scan_timeframe(
                 stablecoin=stablecoin_dict,
                 macro_blocked=macro_blocked,
                 prev_heat=prev_heat,
+                bmsb_valid=bmsb_valid,
             )
             r["signal"] = synth.signal
             r["signal_reason"] = synth.reason
