@@ -16,12 +16,13 @@ function MdText({ text }) {
     if (/^#{1,3}\s/.test(line)) {
       const level = line.match(/^(#+)/)[1].length;
       const content = line.replace(/^#+\s*/, "");
-      const sz = level === 1 ? 13 : level === 2 ? 12 : 11;
+      const sz = level === 1 ? 16 : level === 2 ? 15 : 14;
       elements.push(
         <div key={key++} style={{
           fontSize: sz, fontWeight: 700, color: T.accent,
-          marginTop: level === 1 ? 10 : 8, marginBottom: 4,
-          letterSpacing: "0.03em",
+          fontFamily: T.font,
+          marginTop: level === 1 ? 14 : 10, marginBottom: 6,
+          letterSpacing: "-0.01em",
         }}>
           {renderInline(content)}
         </div>
@@ -31,7 +32,7 @@ function MdText({ text }) {
       elements.push(
         <hr key={key++} style={{
           border: "none", borderTop: `1px solid ${T.border}`,
-          margin: "8px 0",
+          margin: "10px 0",
         }} />
       );
     // List item
@@ -40,10 +41,10 @@ function MdText({ text }) {
       const content = line.replace(/^\s*[-•]\s*/, "");
       elements.push(
         <div key={key++} style={{
-          paddingLeft: 12 + indent * 12,
-          position: "relative", marginBottom: 2,
+          paddingLeft: 16 + indent * 14,
+          position: "relative", marginBottom: 3,
         }}>
-          <span style={{ position: "absolute", left: indent * 12, color: T.text4 }}>•</span>
+          <span style={{ position: "absolute", left: indent * 14, color: T.text4 }}>•</span>
           {renderInline(content)}
         </div>
       );
@@ -53,16 +54,16 @@ function MdText({ text }) {
       const indent = (match[1].length / 2) | 0;
       elements.push(
         <div key={key++} style={{
-          paddingLeft: 12 + indent * 12,
-          position: "relative", marginBottom: 2,
+          paddingLeft: 16 + indent * 14,
+          position: "relative", marginBottom: 3,
         }}>
-          <span style={{ position: "absolute", left: indent * 12, color: T.text4 }}>{match[2]}.</span>
+          <span style={{ position: "absolute", left: indent * 14, color: T.text4 }}>{match[2]}.</span>
           {renderInline(match[3])}
         </div>
       );
     // Empty line
     } else if (line.trim() === "") {
-      elements.push(<div key={key++} style={{ height: 6 }} />);
+      elements.push(<div key={key++} style={{ height: 8 }} />);
     // Regular text
     } else {
       elements.push(<div key={key++}>{renderInline(line)}</div>);
@@ -71,12 +72,11 @@ function MdText({ text }) {
   return <>{elements}</>;
 }
 
-/** Render inline markdown: **bold**, *italic*, `code`, ✓/✗ markers */
+/** Render inline markdown: **bold**, *italic*, `code` */
 function renderInline(text) {
   const parts = [];
   let remaining = text;
   let i = 0;
-  // Match **bold**, *italic*, `code`
   const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
   let lastIdx = 0;
   let match;
@@ -85,17 +85,15 @@ function renderInline(text) {
       parts.push(<span key={i++}>{remaining.slice(lastIdx, match.index)}</span>);
     }
     if (match[2]) {
-      // **bold**
       parts.push(<span key={i++} style={{ fontWeight: 700, color: T.text1 }}>{match[2]}</span>);
     } else if (match[3]) {
-      // *italic*
       parts.push(<span key={i++} style={{ fontStyle: "italic", color: T.text2 }}>{match[3]}</span>);
     } else if (match[4]) {
-      // `code`
       parts.push(
         <span key={i++} style={{
-          background: T.overlay08, padding: "1px 5px",
-          borderRadius: 4, fontSize: "0.95em", color: T.accent,
+          background: T.overlay08, padding: "1px 6px",
+          borderRadius: 4, fontSize: "0.9em", color: T.accent,
+          fontFamily: T.mono,
         }}>{match[4]}</span>
       );
     }
@@ -117,10 +115,10 @@ function getSessionId() {
 }
 
 const QUICK_ACTIONS = [
-  { label: "BRIEFING", msg: "Give me a daily market briefing." },
-  { label: "TOP SIGNALS", msg: "What are the strongest signals right now?" },
-  { label: "RISK CHECK", msg: "Are there any risk warnings I should know about?" },
-  { label: "WARMING UP", msg: "Which symbols are closest to upgrading their signal?" },
+  { label: "Briefing", msg: "Give me a daily market briefing." },
+  { label: "Top Signals", msg: "What are the strongest signals right now?" },
+  { label: "Risk Check", msg: "Are there any risk warnings I should know about?" },
+  { label: "Warming Up", msg: "Which symbols are closest to upgrading their signal?" },
 ];
 
 export default function ChatPanel({ isMobile, selectedSymbol }) {
@@ -182,59 +180,50 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   };
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "0 8px" : 0 }}>
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "0 4px" : 0 }}>
       {/* Header */}
-      <GlassCard style={{ padding: "12px 20px", marginBottom: 12 }}>
+      <GlassCard style={{ padding: isMobile ? "14px 16px" : "16px 22px", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
-              fontSize: 11, fontWeight: 700, fontFamily: T.mono,
-              letterSpacing: "0.08em", color: T.text1,
+              fontSize: T.textBase, fontWeight: 700, fontFamily: T.font,
+              letterSpacing: "-0.01em", color: T.text1,
             }}>
-              RCCE ASSISTANT
+              Reflex Assistant
             </span>
             <span style={{
-              fontSize: 9, fontFamily: T.mono, color: T.text4,
-              padding: "2px 8px", borderRadius: T.radiusXs,
+              fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
+              padding: "3px 10px", borderRadius: T.radiusXs,
               background: T.overlay06, letterSpacing: "0.06em",
+              fontWeight: 600,
             }}>
               HAIKU
             </span>
           </div>
-          <button onClick={clearChat} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: T.text4, fontSize: 10, fontFamily: T.mono,
-            padding: "4px 8px", borderRadius: T.radiusXs,
+          <button onClick={clearChat} className="apple-btn" style={{
+            padding: "6px 14px", fontSize: T.textSm, fontFamily: T.font,
+            fontWeight: 600, color: T.text3, cursor: "pointer",
           }}>
-            CLEAR
+            Clear
           </button>
         </div>
       </GlassCard>
 
       {/* Quick actions */}
       <div style={{
-        display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap",
+        display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap",
       }}>
         {QUICK_ACTIONS.map((qa, i) => (
           <button
             key={i}
             onClick={() => send(qa.msg)}
             disabled={loading}
+            className="apple-btn"
             style={{
-              padding: "5px 12px", fontSize: 9, fontFamily: T.mono,
-              letterSpacing: "0.05em", fontWeight: 600,
-              background: T.overlay06, border: `1px solid ${T.border}`,
-              borderRadius: T.radiusXs, color: T.text3, cursor: "pointer",
-              transition: "all 0.15s ease",
+              padding: "8px 16px", fontSize: T.textSm, fontFamily: T.font,
+              fontWeight: 600, color: T.text2, cursor: "pointer",
               opacity: loading ? 0.5 : 1,
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = T.overlay12;
-              e.target.style.color = T.accent;
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = T.overlay06;
-              e.target.style.color = T.text3;
+              transition: "all 0.15s ease",
             }}
           >
             {qa.label}
@@ -245,23 +234,23 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
       {/* Messages area */}
       <GlassCard style={{
         padding: 0,
-        minHeight: isMobile ? 350 : 450,
+        minHeight: isMobile ? 350 : 460,
         maxHeight: isMobile ? "60vh" : "65vh",
         display: "flex", flexDirection: "column",
       }}>
         <div style={{
-          flex: 1, padding: "16px 18px", overflowY: "auto",
+          flex: 1, padding: isMobile ? "16px 14px" : "20px 22px", overflowY: "auto",
           scrollbarWidth: "thin",
           scrollbarColor: `${T.scrollThumb} transparent`,
         }}>
           {messages.length === 0 && (
             <div style={{
-              color: T.text4, fontSize: 11, fontFamily: T.mono,
+              color: T.text4, fontSize: T.textBase, fontFamily: T.font,
               textAlign: "center", padding: "80px 20px", lineHeight: 1.8,
             }}>
               Ask about any signal, symbol, or market condition.
               <br />
-              <span style={{ color: T.text3 }}>
+              <span style={{ color: T.text3, fontSize: T.textSm }}>
                 Try: "Why is BTC showing WAIT?"
               </span>
             </div>
@@ -269,12 +258,12 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
 
           {messages.map((msg, i) => (
             <div key={i} style={{
-              marginBottom: 14,
+              marginBottom: 16,
               display: "flex",
               justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
             }}>
               <div style={{
-                padding: "10px 14px",
+                padding: isMobile ? "12px 14px" : "14px 18px",
                 borderRadius: T.radiusSm,
                 background: msg.role === "user" ? T.accentDim : T.overlay04,
                 border: `1px solid ${msg.role === "user"
@@ -282,14 +271,15 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                 maxWidth: "85%",
               }}>
                 <div style={{
-                  fontSize: 9, fontWeight: 700, fontFamily: T.mono,
+                  fontSize: T.textXs, fontWeight: 700, fontFamily: T.mono,
                   color: msg.role === "user" ? T.accent : T.text4,
-                  letterSpacing: "0.08em", marginBottom: 5,
+                  letterSpacing: "0.08em", marginBottom: 6,
+                  textTransform: "uppercase",
                 }}>
-                  {msg.role === "user" ? "YOU" : "ASSISTANT"}
+                  {msg.role === "user" ? "You" : "Assistant"}
                 </div>
                 <div style={{
-                  fontSize: 11.5, lineHeight: 1.65, fontFamily: T.mono,
+                  fontSize: T.textBase, lineHeight: 1.7, fontFamily: T.font,
                   color: T.text1, wordBreak: "break-word",
                   whiteSpace: msg.role === "user" ? "pre-wrap" : "normal",
                 }}>
@@ -302,14 +292,14 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           {loading && (
             <div style={{
               display: "flex", justifyContent: "flex-start",
-              marginBottom: 14,
+              marginBottom: 16,
             }}>
               <div style={{
-                padding: "10px 14px", borderRadius: T.radiusSm,
+                padding: "14px 18px", borderRadius: T.radiusSm,
                 background: T.overlay04, border: `1px solid ${T.border}`,
               }}>
                 <span style={{
-                  fontSize: 11, fontFamily: T.mono, color: T.text4,
+                  fontSize: T.textBase, fontFamily: T.font, color: T.text4,
                   animation: "pulse 1.5s ease-in-out infinite",
                 }}>
                   Thinking...
@@ -323,9 +313,9 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
 
         {/* Input */}
         <div style={{
-          padding: "10px 14px",
+          padding: isMobile ? "12px 14px" : "14px 18px",
           borderTop: `1px solid ${T.border}`,
-          display: "flex", gap: 8, alignItems: "flex-end",
+          display: "flex", gap: 10, alignItems: "flex-end",
         }}>
           <textarea
             ref={inputRef}
@@ -337,11 +327,11 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
               : "Ask about signals, symbols, or market conditions..."}
             rows={1}
             style={{
-              flex: 1, resize: "none", padding: "9px 14px",
+              flex: 1, resize: "none", padding: "10px 16px",
               borderRadius: T.radiusSm,
               border: `1px solid ${T.border}`,
               background: T.overlay04, color: T.text1,
-              fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.5,
+              fontFamily: T.font, fontSize: T.textBase, lineHeight: 1.5,
               outline: "none",
               transition: "border-color 0.15s ease",
             }}
@@ -351,17 +341,17 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           <button
             onClick={() => send(input)}
             disabled={loading || !input.trim()}
+            className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
             style={{
-              padding: "9px 18px", borderRadius: T.radiusSm,
-              background: loading || !input.trim() ? T.overlay06 : T.accent,
-              color: loading || !input.trim() ? T.text4 : "#0a0a0c",
-              border: "none", cursor: loading || !input.trim() ? "default" : "pointer",
-              fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-              letterSpacing: "0.06em",
+              padding: "10px 22px", borderRadius: T.radiusSm,
+              fontFamily: T.font, fontSize: T.textSm, fontWeight: 700,
+              letterSpacing: "0.02em",
+              cursor: loading || !input.trim() ? "default" : "pointer",
+              opacity: loading || !input.trim() ? 0.5 : 1,
               transition: "all 0.15s ease",
             }}
           >
-            SEND
+            Send
           </button>
         </div>
       </GlassCard>
@@ -369,22 +359,14 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
       {/* Error */}
       {error && (
         <div style={{
-          marginTop: 8, padding: "8px 14px", borderRadius: T.radiusXs,
+          marginTop: 10, padding: "10px 16px", borderRadius: T.radiusXs,
           background: "rgba(248,113,113,0.1)",
           border: "1px solid rgba(248,113,113,0.2)",
-          fontSize: 10, color: "#f87171", fontFamily: T.mono,
+          fontSize: T.textSm, color: "#f87171", fontFamily: T.font,
         }}>
           Error: {error}
         </div>
       )}
-
-      {/* Pulse animation */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
