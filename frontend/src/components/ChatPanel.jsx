@@ -356,7 +356,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
               fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
               letterSpacing: "0.02em",
               cursor: loading || !input.trim() ? "default" : "pointer",
-              opacity: loading || !input.trim() ? 0.4 : 1,
+              color: loading || !input.trim() ? "rgba(34,211,238,0.45)" : undefined,
+              background: loading || !input.trim() ? "rgba(34,211,238,0.06)" : undefined,
+              border: loading || !input.trim() ? "1px solid rgba(34,211,238,0.15)" : undefined,
+              opacity: 1,
               transition: "all 0.15s ease",
               boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(34,211,238,0.25)",
             }}
