@@ -47,12 +47,6 @@ const NAV_ICONS = {
 
 const NAV_SECTIONS = [
   {
-    label: "Scanner",
-    items: [
-      { key: "1d", label: "Scanner", desc: "Asset scan results" },
-    ],
-  },
-  {
     label: "Intelligence",
     items: [
       { key: "chat", label: "AI Assist", desc: "Ask about any asset" },
@@ -70,7 +64,7 @@ const NAV_SECTIONS = [
   },
 ];
 
-export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect }) {
+export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
@@ -172,147 +166,199 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           </button>
         </div>
 
-        {/* Nav sections + Watchlists */}
+        {/* Scanner + Watchlists + Nav sections */}
         <div style={{ padding: "12px 12px 24px", flex: 1 }}>
-          {NAV_SECTIONS.map((section, sIdx) => (
-            <div key={section.label}>
-              {/* Render section nav items */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: T.text4,
-                  fontFamily: T.font, letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  padding: "0 8px 8px",
-                }}>
-                  {section.label}
-                </div>
-                {section.items
-                  .filter(item => !item.desktopOnly || !isMobile)
-                  .map((item) => {
-                    const SCANNER_TABS = ["4h", "1d", "split"];
-                    const isActive = item.key === "1d" && item.label === "Scanner"
-                      ? SCANNER_TABS.includes(activeTab)
-                      : activeTab === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => { onTabChange(item.key); onClose(); }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 12,
-                          width: "100%", textAlign: "left",
-                          padding: "12px 12px",
-                          borderRadius: 10,
-                          border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
-                          background: isActive ? T.accentDim : "transparent",
-                          cursor: "pointer",
-                          transition: "all 0.15s ease",
-                          marginBottom: 2,
-                        }}
-                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
-                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                      >
-                        <div style={{
-                          width: 20, height: 20,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          color: isActive ? T.accent : T.text3,
-                          flexShrink: 0,
-                        }}>
-                          {NAV_ICONS[item.key] || null}
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{
-                            fontFamily: T.font, fontSize: T.textLg, fontWeight: isActive ? 600 : 500,
-                            color: isActive ? T.accent : T.text1,
-                            letterSpacing: "-0.01em",
-                          }}>
-                            {item.label}
-                          </div>
-                          <div style={{
-                            fontFamily: T.font, fontSize: T.textSm, color: T.text4,
-                            marginTop: 1,
-                          }}>
-                            {item.desc}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
+          {/* ── Scanner section (All Assets + Watchlists) ── */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: T.text4,
+              fontFamily: T.font, letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              padding: "0 8px 8px",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <span>Scanner</span>
+              <button
+                onClick={() => { onGroupCreate?.(); onClose(); }}
+                style={{
+                  background: T.surface, border: `1px solid ${T.border}`,
+                  borderRadius: 8, color: T.text3,
+                  cursor: "pointer", fontSize: 20, fontWeight: 500,
+                  width: 32, height: 32,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent + "40"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; e.currentTarget.style.borderColor = T.border; }}
+              >+</button>
+            </div>
 
-              {/* Watchlists — rendered right after the Scanner section */}
-              {sIdx === 0 && groups && groups.length > 0 && (
-                <div style={{ marginBottom: 20 }}>
+            {/* All Assets */}
+            {(() => {
+              const SCANNER_TABS = ["4h", "1d", "split"];
+              const isAllActive = !activeGroupId && SCANNER_TABS.includes(activeTab);
+              return (
+                <button
+                  onClick={() => { onWatchlistSelect?.(null); onClose(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", textAlign: "left",
+                    padding: "10px 12px", borderRadius: 10,
+                    border: isAllActive ? `1px solid ${T.accent}30` : "1px solid transparent",
+                    background: isAllActive ? T.accentDim : "transparent",
+                    cursor: "pointer", transition: "all 0.15s ease",
+                    marginBottom: 2,
+                  }}
+                  onMouseEnter={e => { if (!isAllActive) e.currentTarget.style.background = T.surface; }}
+                  onMouseLeave={e => { if (!isAllActive) e.currentTarget.style.background = isAllActive ? T.accentDim : "transparent"; }}
+                >
                   <div style={{
-                    fontSize: 11, fontWeight: 700, color: T.text4,
-                    fontFamily: T.font, letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    padding: "0 8px 8px",
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    width: 20, height: 20,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: isAllActive ? T.accent : T.text3,
+                    flexShrink: 0,
                   }}>
-                    <span>Watchlists</span>
-                    <button
-                      onClick={() => { onGroupCreate?.(); onClose(); }}
-                      style={{
-                        background: T.surface, border: `1px solid ${T.border}`,
-                        borderRadius: 8, color: T.text3,
-                        cursor: "pointer", fontSize: 20, fontWeight: 500,
-                        width: 32, height: 32,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        transition: "all 0.15s ease",
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent + "40"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; e.currentTarget.style.borderColor = T.border; }}
-                    >+</button>
+                    {NAV_ICONS["1d"]}
                   </div>
-                  {groups.map(g => {
-                    const isActive = g.id === activeGroupId;
-                    const gColor = g.color || T.accent;
-                    return (
-                      <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                        <button
-                          onClick={() => { onWatchlistSelect?.(g.id); onClose(); }}
-                          style={{
-                            flex: 1, display: "flex", alignItems: "center", gap: 8,
-                            padding: "10px 12px", borderRadius: 10, textAlign: "left",
-                            border: isActive ? `1px solid ${gColor}40` : "1px solid transparent",
-                            background: isActive ? `${gColor}12` : "transparent",
-                            cursor: "pointer", transition: "all 0.15s ease",
-                          }}
-                          onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
-                          onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? `${gColor}12` : "transparent"; }}
-                        >
-                          <span style={{
-                            width: 8, height: 8, borderRadius: "50%",
-                            background: gColor, flexShrink: 0,
-                            opacity: isActive ? 1 : 0.4,
-                          }} />
-                          <span style={{
-                            fontFamily: T.font, fontSize: 14,
-                            fontWeight: isActive ? 600 : 500,
-                            color: isActive ? gColor : T.text1,
-                          }}>{g.name}</span>
-                          <span style={{
-                            fontSize: 11, color: T.text4, fontFamily: T.mono,
-                            marginLeft: "auto",
-                          }}>{g.symbols?.length || 0}</span>
-                        </button>
-                        <button
-                          onClick={() => { onGroupEdit?.(g); onClose(); }}
-                          style={{
-                            width: 32, height: 32, borderRadius: 8,
-                            border: `1px solid ${T.border}`, background: T.surface,
-                            color: T.text3, cursor: "pointer", fontSize: 16,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            flexShrink: 0, transition: "all 0.15s ease",
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.text1; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
-                        >{"\u2699"}</button>
-                      </div>
-                    );
-                  })}
+                  <span style={{
+                    fontFamily: T.font, fontSize: 14,
+                    fontWeight: isAllActive ? 600 : 500,
+                    color: isAllActive ? T.accent : T.text1,
+                  }}>All Assets</span>
+                  <span style={{
+                    fontSize: 11, color: T.text4, fontFamily: T.mono,
+                    marginLeft: "auto",
+                  }}>{scanData?.length || 0}</span>
+                </button>
+              );
+            })()}
+
+            {/* Watchlists */}
+            {groups && groups.map(g => {
+              const isActive = g.id === activeGroupId;
+              const gColor = g.color || T.accent;
+
+              // Compute group performance vs BTC
+              const btcMom = scanData?.find(r => r.symbol === "BTC/USDT")?.momentum ?? 0;
+              const members = scanData?.filter(r => g.symbols?.includes(r.symbol)) || [];
+              const beating = members.filter(r => (r.momentum ?? 0) > btcMom).length;
+              const total = members.length;
+
+              return (
+                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+                  <button
+                    onClick={() => { onWatchlistSelect?.(g.id); onClose(); }}
+                    style={{
+                      flex: 1, display: "flex", alignItems: "center", gap: 8,
+                      padding: "10px 12px", borderRadius: 10, textAlign: "left",
+                      border: isActive ? `1px solid ${gColor}40` : "1px solid transparent",
+                      background: isActive ? `${gColor}12` : "transparent",
+                      cursor: "pointer", transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? `${gColor}12` : "transparent"; }}
+                  >
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: gColor, flexShrink: 0,
+                      opacity: isActive ? 1 : 0.4,
+                    }} />
+                    <span style={{
+                      fontFamily: T.font, fontSize: 14,
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? gColor : T.text1,
+                    }}>{g.name}</span>
+                    <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                      {total > 0 && (
+                        <span style={{
+                          fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+                          color: beating > total / 2 ? T.green : beating > 0 ? T.yellow : T.text4,
+                          letterSpacing: "0.02em",
+                        }}>
+                          {beating}/{total} {"\u25B2"}BTC
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: 11, color: T.text4, fontFamily: T.mono,
+                      }}>{g.symbols?.length || 0}</span>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => { onGroupEdit?.(g); onClose(); }}
+                    style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      border: `1px solid ${T.border}`, background: T.surface,
+                      color: T.text3, cursor: "pointer", fontSize: 16,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0, transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.text1; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
+                  >{"\u2699"}</button>
                 </div>
-              )}
+              );
+            })}
+          </div>
+
+          {/* ── Other nav sections ── */}
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} style={{ marginBottom: 20 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: T.text4,
+                fontFamily: T.font, letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                padding: "0 8px 8px",
+              }}>
+                {section.label}
+              </div>
+              {section.items
+                .filter(item => !item.desktopOnly || !isMobile)
+                .map((item) => {
+                  const isActive = activeTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => { onTabChange(item.key); onClose(); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        width: "100%", textAlign: "left",
+                        padding: "12px 12px",
+                        borderRadius: 10,
+                        border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
+                        background: isActive ? T.accentDim : "transparent",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        marginBottom: 2,
+                      }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{
+                        width: 20, height: 20,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: isActive ? T.accent : T.text3,
+                        flexShrink: 0,
+                      }}>
+                        {NAV_ICONS[item.key] || null}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: T.font, fontSize: T.textLg, fontWeight: isActive ? 600 : 500,
+                          color: isActive ? T.accent : T.text1,
+                          letterSpacing: "-0.01em",
+                        }}>
+                          {item.label}
+                        </div>
+                        <div style={{
+                          fontFamily: T.font, fontSize: T.textSm, color: T.text4,
+                          marginTop: 1,
+                        }}>
+                          {item.desc}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
           ))}
         </div>

@@ -434,7 +434,8 @@ export default function App() {
         onGroupChange={setActiveGroupId}
         onGroupCreate={() => { setEditingGroup(null); setShowGroupModal(true); }}
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
-        onWatchlistSelect={(gId) => { setActiveGroupId(gId); setActiveTab("1d"); }}
+        onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d" && activeTab !== "split") setActiveTab("1d"); }}
+        scanData={activeTab === "1d" || activeTab === "split" ? data1d : data4h}
       />
 
       {/* ── HEADER ── */}
