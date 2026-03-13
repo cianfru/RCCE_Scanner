@@ -456,25 +456,24 @@ export default function App() {
           ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
           : "0 1px 0 rgba(255,255,255,0.6), 0 4px 20px rgba(0,0,0,0.06)",
       }}>
-        {/* Aura orbs */}
+        {/* Aura: cyan band across bottom edge */}
         <div style={{
-          position: "absolute", top: "-50%", left: "8%",
-          width: isMobile ? 180 : 260, height: isMobile ? 100 : 140,
-          borderRadius: "50%",
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          height: "60%",
           background: mode === "dark"
-            ? "radial-gradient(circle, rgba(34,211,238,0.15) 0%, rgba(34,211,238,0.04) 50%, transparent 70%)"
-            : "radial-gradient(circle, rgba(14,116,144,0.12) 0%, rgba(14,116,144,0.03) 50%, transparent 70%)",
-          filter: "blur(30px)",
+            ? "linear-gradient(0deg, rgba(34,211,238,0.10) 0%, rgba(34,211,238,0.03) 60%, transparent 100%)"
+            : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
+        {/* Aura: purple accent orb right side */}
         <div style={{
-          position: "absolute", top: "-40%", right: "10%",
-          width: isMobile ? 160 : 220, height: isMobile ? 90 : 120,
+          position: "absolute", top: "-30%", right: "12%",
+          width: isMobile ? 160 : 240, height: isMobile ? 90 : 120,
           borderRadius: "50%",
           background: mode === "dark"
-            ? "radial-gradient(circle, rgba(168,85,247,0.12) 0%, rgba(168,85,247,0.03) 50%, transparent 70%)"
-            : "radial-gradient(circle, rgba(126,34,206,0.08) 0%, rgba(126,34,206,0.02) 50%, transparent 70%)",
-          filter: "blur(30px)",
+            ? "radial-gradient(circle, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.02) 50%, transparent 70%)"
+            : "radial-gradient(circle, rgba(126,34,206,0.07) 0%, rgba(126,34,206,0.01) 50%, transparent 70%)",
+          filter: "blur(25px)",
           pointerEvents: "none",
         }} />
         {/* Left: hamburger + logo + scanning */}
