@@ -1,116 +1,71 @@
 import { T } from "../theme.js";
 
 function gaugeColor(value) {
-  if (value <= 25) return "#f87171";      // Extreme Fear - red
-  if (value <= 45) return "#fb923c";      // Fear - orange
-  if (value <= 55) return "#facc15";      // Neutral - yellow
-  if (value <= 75) return "#34d399";      // Greed - green
-  return "#f87171";                        // Extreme Greed - red
+  if (value <= 25) return T.red;          // Extreme Fear
+  if (value <= 45) return T.orange;       // Fear
+  if (value <= 55) return T.yellow;       // Neutral
+  if (value <= 75) return T.green;        // Greed
+  return T.red;                           // Extreme Greed
 }
 
-export default function FearGreedGauge({ value, label }) {
+function gaugeLabel(value) {
+  if (value <= 25) return "Extreme Fear";
+  if (value <= 45) return "Fear";
+  if (value <= 55) return "Neutral";
+  if (value <= 75) return "Greed";
+  return "Extreme Greed";
+}
+
+export default function FearGreedGauge({ value }) {
   if (value == null) return null;
 
   const clamped = Math.max(0, Math.min(100, value));
   const color = gaugeColor(clamped);
-
-  // SVG arc dimensions
-  const cx = 50;
-  const cy = 48;
-  const r = 38;
-  const strokeWidth = 6;
-
-  // Arc from 180deg to 0deg (left to right, semi-circle)
-  const startAngle = Math.PI;          // 180 degrees
-  const endAngle = 0;                  // 0 degrees
-  const sweepAngle = startAngle - (clamped / 100) * Math.PI;
-
-  // Background arc path (full semi-circle)
-  const bgX1 = cx + r * Math.cos(startAngle);
-  const bgY1 = cy - r * Math.sin(startAngle);
-  const bgX2 = cx + r * Math.cos(endAngle);
-  const bgY2 = cy - r * Math.sin(endAngle);
-  const bgPath = `M ${bgX1} ${bgY1} A ${r} ${r} 0 0 1 ${bgX2} ${bgY2}`;
-
-  // Value arc path
-  const valX1 = cx + r * Math.cos(startAngle);
-  const valY1 = cy - r * Math.sin(startAngle);
-  const valX2 = cx + r * Math.cos(sweepAngle);
-  const valY2 = cy - r * Math.sin(sweepAngle);
-  const largeArc = clamped > 50 ? 1 : 0;
-  const valPath = `M ${valX1} ${valY1} A ${r} ${r} 0 ${largeArc} 1 ${valX2} ${valY2}`;
-
-  // Needle endpoint
-  const needleX = cx + (r - 2) * Math.cos(sweepAngle);
-  const needleY = cy - (r - 2) * Math.sin(sweepAngle);
+  const label = gaugeLabel(clamped);
 
   return (
     <div style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      width: 100,
-      padding: "6px 0",
+      display: "flex", alignItems: "center", gap: 10,
+      width: "100%",
     }}>
-      <svg width={100} height={56} viewBox="0 0 100 56">
-        {/* Background arc */}
-        <path
-          d={bgPath}
-          fill="none"
-          stroke={T.overlay06}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-        />
-        {/* Value arc */}
-        {clamped > 0 && (
-          <path
-            d={valPath}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            style={{
-              filter: `drop-shadow(0 0 4px ${color}60)`,
-            }}
-          />
-        )}
-        {/* Needle dot */}
-        <circle
-          cx={needleX}
-          cy={needleY}
-          r={2.5}
-          fill={color}
-          style={{
-            filter: `drop-shadow(0 0 3px ${color}80)`,
-          }}
-        />
-        {/* Value text */}
-        <text
-          x={cx}
-          y={cy - 4}
-          textAnchor="middle"
-          fill={color}
-          fontSize="16"
-          fontWeight="700"
-          fontFamily={T.mono}
-        >
-          {Math.round(clamped)}
-        </text>
-      </svg>
       {/* Label */}
-      <div style={{
-        fontSize: 8,
-        color: T.text4,
-        fontFamily: T.font,
-        fontWeight: 500,
-        letterSpacing: "0.1em",
-        textTransform: "uppercase",
-        marginTop: -2,
-        textAlign: "center",
-        lineHeight: 1,
+      <span style={{
+        fontSize: T.textSm, color: T.text3, letterSpacing: "0.08em",
+        fontFamily: T.font, fontWeight: 600, textTransform: "uppercase",
+        flexShrink: 0,
       }}>
-        {label || "Fear & Greed"}
+        F&G
+      </span>
+
+      {/* Value number */}
+      <span style={{
+        fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
+        color, minWidth: 22, textAlign: "right", flexShrink: 0,
+      }}>
+        {Math.round(clamped)}
+      </span>
+
+      {/* Horizontal bar */}
+      <div style={{
+        flex: 1, height: 5, background: T.overlay04,
+        borderRadius: 2, overflow: "hidden", minWidth: 40,
+      }}>
+        <div style={{
+          width: `${clamped}%`, height: "100%",
+          background: `linear-gradient(90deg, ${color}88, ${color})`,
+          borderRadius: 2,
+          boxShadow: `0 0 8px ${color}30`,
+          transition: "width 0.6s ease",
+        }} />
       </div>
+
+      {/* Sentiment label */}
+      <span style={{
+        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
+        color, flexShrink: 0, letterSpacing: "0.04em",
+      }}>
+        {label}
+      </span>
     </div>
   );
 }

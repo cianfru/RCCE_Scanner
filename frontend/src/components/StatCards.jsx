@@ -7,17 +7,17 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
   results.forEach(r => { if (signals[r.signal] !== undefined) signals[r.signal]++; });
 
   const cards = [
-    { label: "STRONG LONG", filterKey: "STRONG_LONG", value: signals.STRONG_LONG, color: "#34d399" },
-    { label: "LIGHT LONG",  filterKey: "LIGHT_LONG",  value: signals.LIGHT_LONG,  color: "#6ee7b7" },
-    { label: "ACCUMULATE",  filterKey: "ACCUMULATE",   value: signals.ACCUMULATE,   color: "#22d3ee" },
-    { label: "TRIM",        filterKey: "TRIM",         value: signals.TRIM + signals.TRIM_HARD, color: "#fbbf24" },
-    { label: "RISK-OFF",    filterKey: "RISK_OFF",     value: signals.RISK_OFF,     color: "#f87171" },
+    { label: "STRONG LONG", filterKey: "STRONG_LONG", value: signals.STRONG_LONG, color: T.green },
+    { label: "LIGHT LONG",  filterKey: "LIGHT_LONG",  value: signals.LIGHT_LONG,  color: T.greenDim },
+    { label: "ACCUMULATE",  filterKey: "ACCUMULATE",   value: signals.ACCUMULATE,   color: T.cyan },
+    { label: "TRIM",        filterKey: "TRIM",         value: signals.TRIM + signals.TRIM_HARD, color: T.yellow },
+    { label: "RISK-OFF",    filterKey: "RISK_OFF",     value: signals.RISK_OFF,     color: T.red },
   ];
 
   const gridCols = isMobile ? "repeat(2, 1fr)" : isTablet ? "repeat(3, 1fr)" : "repeat(5, 1fr)";
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: isMobile ? 8 : 10, marginTop: isMobile ? 12 : 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: isMobile ? 6 : 8, marginTop: isMobile ? T.sp2 : T.sp3 }}>
       {cards.map((c, i) => {
         const isActive = activeSignalFilter === c.filterKey;
         return (
@@ -26,7 +26,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               hoverable
               glow={c.value > 0 ? `${c.color}08` : null}
               style={{
-                padding: isMobile ? "12px 14px" : "16px 18px",
+                padding: isMobile ? "10px 12px" : "12px 16px",
                 border: `1px solid ${isActive ? c.color + "60" : c.value > 0 ? c.color + "22" : T.border}`,
                 transition: "border-color 0.3s, box-shadow 0.3s",
                 cursor: c.value > 0 ? "pointer" : "default",
@@ -38,7 +38,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               }}
             >
               <div style={{
-                fontSize: isMobile ? 26 : 32, fontWeight: 700, fontFamily: T.mono,
+                fontSize: isMobile ? 22 : 26, fontWeight: 700, fontFamily: T.mono,
                 color: c.value > 0 ? c.color : T.text4,
                 lineHeight: 1,
                 filter: c.value > 0 ? `drop-shadow(0 0 8px ${c.color}30)` : "none",
@@ -46,9 +46,9 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
                 {c.value}
               </div>
               <div style={{
-                fontSize: 12, color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
+                fontSize: T.textSm, color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
                 fontFamily: T.font, fontWeight: 600,
-                letterSpacing: "0.08em", marginTop: 6,
+                letterSpacing: "0.08em", marginTop: T.sp1,
                 textTransform: "uppercase",
               }}>
                 {c.label}

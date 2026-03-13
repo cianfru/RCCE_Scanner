@@ -151,6 +151,40 @@ export const T = {
   radius:      "14px",
   radiusSm:    "10px",
   radiusXs:    "8px",
+
+  // ─── SPACING SCALE (4px grid) ─────────────────────────────────────────────
+  sp1:  4,
+  sp2:  8,
+  sp3:  12,
+  sp4:  16,
+  sp5:  20,
+  sp6:  24,
+  sp8:  32,
+  sp10: 40,
+
+  // ─── TYPE SCALE ───────────────────────────────────────────────────────────
+  textXs:   10,   // smallest allowed (no 8-9px)
+  textSm:   11,   // secondary labels, captions
+  textBase: 12,   // body text, table cells, badges
+  textMd:   13,   // emphasized data values
+  textLg:   14,   // primary text, nav items
+  textXl:   18,   // section titles
+  text2xl:  24,   // stat card numbers
+  text3xl:  32,   // hero display (if needed)
+
+  // ─── SEMANTIC COLORS (static) ─────────────────────────────────────────────
+  green:    "#34d399",
+  greenDim: "#6ee7b7",
+  red:      "#f87171",
+  redDark:  "#ef4444",
+  yellow:   "#fbbf24",
+  cyan:     "#22d3ee",
+  cyanDim:  "#67e8f9",
+  purple:   "#c084fc",
+  purpleDim:"#d8b4fe",
+  orange:   "#fb923c",
+  gray:     "#52525b",
+  grayDim:  "#3f3f46",
 };
 
 // Helper to get resolved CSS variable value (for canvas/library APIs)

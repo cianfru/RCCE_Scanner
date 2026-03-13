@@ -11,12 +11,12 @@ function formatCap(cap) {
 function trendMeta(trend) {
   switch (trend) {
     case "EXPANDING":
-      return { arrow: "\u2191", color: "#34d399", label: "EXPANDING" };
+      return { arrow: "\u2191", color: T.green, label: "EXPANDING" };
     case "CONTRACTING":
-      return { arrow: "\u2193", color: "#f87171", label: "CONTRACT" };
+      return { arrow: "\u2193", color: T.red, label: "CONTRACT" };
     case "STABLE":
     default:
-      return { arrow: "\u2192", color: "#71717a", label: "STABLE" };
+      return { arrow: "\u2192", color: T.gray, label: "STABLE" };
   }
 }
 
@@ -38,7 +38,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
       WebkitBackdropFilter: "blur(12px)",
     }}>
       <span style={{
-        fontSize: 9,
+        fontSize: T.textSm,
         color: T.text4,
         letterSpacing: "0.1em",
         fontFamily: T.font,
@@ -54,7 +54,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
         borderRadius: "20px",
         background: `${meta.color}10`,
         color: meta.color,
-        fontSize: 9,
+        fontSize: T.textXs,
         fontFamily: T.mono,
         fontWeight: 700,
         letterSpacing: "0.06em",
@@ -63,7 +63,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
         alignItems: "center",
         gap: 3,
       }}>
-        <span style={{ fontSize: 10 }}>{meta.arrow}</span>
+        <span style={{ fontSize: T.textSm }}>{meta.arrow}</span>
         {meta.label}
       </span>
 
@@ -73,9 +73,9 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
           <div style={{ width: 1, height: 14, background: T.border }} />
           <span style={{
             fontFamily: T.mono,
-            fontSize: 11,
+            fontSize: T.textSm,
             fontWeight: 600,
-            color: changePct >= 0 ? "#34d399" : "#f87171",
+            color: changePct >= 0 ? T.green : T.red,
           }}>
             {changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%
           </span>
@@ -88,7 +88,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
           <div style={{ width: 1, height: 14, background: T.border }} />
           <span style={{
             fontFamily: T.mono,
-            fontSize: 10,
+            fontSize: T.textXs,
             color: T.text3,
             fontWeight: 500,
           }}>

@@ -10,20 +10,20 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
   return (
     <FadeIn delay={380}>
       <div style={{
-        display: "flex", gap: isMobile ? 8 : 10,
-        marginTop: isMobile ? 10 : 12,
+        display: "flex", gap: isMobile ? 6 : 8,
+        marginTop: isMobile ? T.sp2 : T.sp2,
         flexWrap: "wrap",
         alignItems: "center",
       }}>
-        {/* Fear & Greed Gauge */}
+        {/* Fear & Greed */}
         {sentiment?.fear_greed_value != null && (
           <GlassCard style={{
-            padding: "4px 8px",
+            padding: isMobile ? "8px 14px" : "10px 16px",
             display: "flex", alignItems: "center",
-            flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
-            justifyContent: "center",
+            flex: isMobile ? "1 1 calc(50% - 4px)" : "1 1 auto",
+            minWidth: isMobile ? undefined : 200,
           }}>
-            <FearGreedGauge value={sentiment.fear_greed_value} label={sentiment.fear_greed_label || "Fear & Greed"} />
+            <FearGreedGauge value={sentiment.fear_greed_value} />
           </GlassCard>
         )}
 
@@ -39,7 +39,7 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
             </span>
             <span style={{
               fontFamily: T.mono, fontSize: 13, fontWeight: 700,
-              color: globalMetrics.btc_dominance > 55 ? "#fbbf24" : globalMetrics.btc_dominance > 45 ? T.text1 : "#34d399",
+              color: globalMetrics.btc_dominance > 55 ? T.yellow : globalMetrics.btc_dominance > 45 ? T.text1 : T.green,
             }}>
               {globalMetrics.btc_dominance.toFixed(1)}%
             </span>

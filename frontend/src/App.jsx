@@ -29,6 +29,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // [sortKey, label, minViewportWidth]
 
 const COLUMNS = [
+  [null,         "#",          0],
   ["priority_score", "PRI",    0],
   ["symbol",     "SYMBOL",     0],
   ["regime",     "REGIME",     0],
@@ -433,6 +434,7 @@ export default function App() {
         onGroupChange={setActiveGroupId}
         onGroupCreate={() => { setEditingGroup(null); setShowGroupModal(true); }}
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
+        onWatchlistSelect={(gId) => { setActiveGroupId(gId); setActiveTab("1d"); }}
       />
 
       {/* ── HEADER ── */}
@@ -447,11 +449,29 @@ export default function App() {
         position: "sticky", top: 0, zIndex: 100,
         height: isMobile ? 52 : 56,
       }}>
-        {/* Left: logo + scanning */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 14 }}>
+        {/* Left: hamburger + logo + scanning */}
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation"
+            style={{
+              width: 24, height: 24,
+              display: "flex",
+              flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 4, padding: 0, flexShrink: 0,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
+            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
+            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
+          </button>
           <img
             src="/logo.png"
             alt="Reflex"
+            onClick={() => { setActiveTab("1d"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
             style={{
               height: isMobile ? 32 : 40,
               width: "auto",
@@ -459,6 +479,7 @@ export default function App() {
               flexShrink: 0,
               display: "block",
               filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
+              cursor: "pointer",
             }}
           />
           {scanRunning && (
@@ -477,9 +498,9 @@ export default function App() {
           )}
         </div>
 
-        {/* Right: timestamp, cache, theme toggle */}
+        {/* Right: timestamp, refresh, cache, theme toggle */}
         <div style={{
-          display: "flex", alignItems: "center", gap: isMobile ? 8 : 12,
+          display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
           flexShrink: 0,
         }}>
           {!isMobile && lastRefresh && (
@@ -494,6 +515,28 @@ export default function App() {
               border: `1px solid ${T.border}`,
             }}>{formatCacheAge(cacheAge)}</span>
           )}
+          <button
+            onClick={triggerScan}
+            title="Refresh scan"
+            style={{
+              width: 28, height: 28, borderRadius: 8,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 0, flexShrink: 0,
+              border: `1px solid ${T.border}`,
+              background: T.surface,
+              color: T.text3,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{
+              animation: scanRunning ? "spin 1s linear infinite" : "none",
+            }}>
+              <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
+            </svg>
+          </button>
           <button
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -531,22 +574,6 @@ export default function App() {
         display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
         background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
       }}>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open navigation"
-          className="apple-btn"
-          style={{
-            width: 36, height: 36, borderRadius: 10,
-            display: "flex",
-            flexDirection: "column", alignItems: "center", justifyContent: "center",
-            gap: 4, padding: 0, flexShrink: 0,
-          }}
-        >
-          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
-          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
-          <span style={{ width: 16, height: 2, background: T.text2, borderRadius: 1 }} />
-        </button>
-
         {/* Timeframe toggle — only on scanner pages */}
         {showDashboard && (
           <div style={{
@@ -587,10 +614,12 @@ export default function App() {
             onChange={f.onChange}
             style={{
               padding: isMobile ? "8px 28px 8px 12px" : "7px 28px 7px 12px",
-              color: T.text2, fontFamily: T.font, fontSize: 12, fontWeight: 500,
+              color: f.value !== "ALL" ? T.accent : T.text2,
+              fontFamily: T.font, fontSize: T.textBase, fontWeight: 500,
               cursor: "pointer", letterSpacing: "0.02em",
               flex: isMobile ? 1 : undefined,
               minWidth: 0,
+              borderColor: f.value !== "ALL" ? "rgba(34,211,238,0.4)" : undefined,
               background: `${T.overlay06} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
             }}
           >
@@ -599,24 +628,6 @@ export default function App() {
           </select>
         ))}
 
-        <button
-          className="apple-btn"
-          onClick={triggerScan}
-          title="Refresh scan"
-          style={{
-            marginLeft: "auto",
-            width: 36, height: 36, borderRadius: 10,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 0, flexShrink: 0,
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{
-            animation: scanRunning ? "spin 1s linear infinite" : "none",
-            transition: "transform 0.2s ease",
-          }}>
-            <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
-          </svg>
-        </button>
       </div>
 
       {/* ── ERROR ── */}
@@ -635,8 +646,26 @@ export default function App() {
         </div>
       )}
 
+      {/* ── SECTION TITLE ── */}
+      <div style={{
+        padding: `${T.sp3}px ${hPad}px ${T.sp1}px`,
+        fontSize: T.textXl,
+        fontWeight: 700,
+        color: T.text1,
+        fontFamily: T.font,
+        letterSpacing: "-0.02em",
+      }}>
+        {activeTab === "backtest" ? "Backtest" :
+         activeTab === "executor" ? "Executor" :
+         activeTab === "trading" ? "Portfolio" :
+         activeTab === "signals" ? "Signal Log" :
+         activeTab === "onchain" ? "On-Chain" :
+         activeTab === "chat" ? "AI Assist" :
+         "Scanner"}
+      </div>
+
       {/* ── MAIN CONTENT ── */}
-      <div style={{ paddingTop: isMobile ? 16 : 20, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative", zIndex: 1 }}>
+      <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative", zIndex: 1 }}>
 
         {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>
@@ -658,7 +687,7 @@ export default function App() {
         {showDashboard && (
           <div style={{
             display: "flex", flexDirection: isDesktop ? "row" : "column",
-            gap: isDesktop ? 20 : 16, marginTop: isMobile ? 16 : 20,
+            gap: isDesktop ? 16 : 12, marginTop: isMobile ? 12 : 16,
           }}>
             {(activeTab === "4h" || activeTab === "split") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
