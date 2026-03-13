@@ -567,68 +567,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── CONTROLS ── */}
-      <div style={{
-        padding: `8px ${hPad}px`,
-        borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
-        background: `linear-gradient(180deg, ${T.overlay02} 0%, transparent 100%)`,
-      }}>
-        {/* Timeframe toggle — only on scanner pages */}
-        {showDashboard && (
-          <div style={{
-            display: "flex", borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            overflow: "hidden",
-          }}>
-            {(isMobile ? [["4h", "4H"], ["1d", "1D"]] : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"]]).map(([key, label]) => {
-              const isActive = activeTab === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setActiveTab(key)}
-                  style={{
-                    padding: isMobile ? "7px 16px" : "7px 18px",
-                    border: "none",
-                    background: isActive ? T.accent : "transparent",
-                    color: isActive ? T.bg : T.text3,
-                    fontFamily: T.font, fontSize: 12, fontWeight: isActive ? 700 : 500,
-                    cursor: "pointer", letterSpacing: "0.04em",
-                    transition: "all 0.15s ease",
-                  }}
-                >{label}</button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Regime/Signal filters — only on scanner pages */}
-        {showDashboard && [
-          { value: filterRegime, onChange: e => setFilterRegime(e.target.value), all: "All Regimes", options: Object.keys(REGIME_META) },
-          { value: filterSignal, onChange: e => setFilterSignal(e.target.value), all: "All Signals", options: Object.keys(SIGNAL_META) },
-        ].map((f, i) => (
-          <select
-            key={i}
-            className="apple-select"
-            value={f.value}
-            onChange={f.onChange}
-            style={{
-              padding: isMobile ? "8px 28px 8px 12px" : "7px 28px 7px 12px",
-              color: f.value !== "ALL" ? T.accent : T.text2,
-              fontFamily: T.font, fontSize: T.textBase, fontWeight: 500,
-              cursor: "pointer", letterSpacing: "0.02em",
-              flex: isMobile ? 1 : undefined,
-              minWidth: 0,
-              borderColor: f.value !== "ALL" ? "rgba(34,211,238,0.4)" : undefined,
-              background: `${T.overlay06} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236e6e73'/%3E%3C/svg%3E") no-repeat right 10px center`,
-            }}
-          >
-            <option value="ALL">{f.all}</option>
-            {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        ))}
-
-      </div>
+      {/* Controls bar removed — timeframe toggle moved into ConsensusBar,
+          regime/signal dropdowns removed (stat cards + column sort cover the need) */}
 
       {/* ── ERROR ── */}
       {error && (
@@ -674,7 +614,7 @@ export default function App() {
           </FadeIn>
         )}
 
-        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} />}
+        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} />}
 
         {showDashboard && (
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} isMobile={isMobile} />
