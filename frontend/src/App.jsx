@@ -441,15 +441,42 @@ export default function App() {
       {/* ── HEADER ── */}
       <div style={{
         padding: `0 ${hPad}px`,
-        borderBottom: `1px solid ${T.border}`,
+        borderBottom: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        background: T.headerBg,
-        backdropFilter: "blur(24px) saturate(1.4)", WebkitBackdropFilter: "blur(24px) saturate(1.4)",
+        background: mode === "dark"
+          ? "linear-gradient(90deg, rgba(10,10,14,0.82) 0%, rgba(12,12,18,0.78) 50%, rgba(10,10,14,0.82) 100%)"
+          : "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(248,248,252,0.84) 50%, rgba(255,255,255,0.88) 100%)",
+        backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)",
         position: "sticky", top: 0, zIndex: 100,
         height: isMobile ? 52 : 56,
+        overflow: "hidden",
+        boxShadow: mode === "dark"
+          ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
+          : "0 1px 0 rgba(255,255,255,0.6), 0 4px 20px rgba(0,0,0,0.06)",
       }}>
+        {/* Aura orbs */}
+        <div style={{
+          position: "absolute", top: "-50%", left: "8%",
+          width: isMobile ? 180 : 260, height: isMobile ? 100 : 140,
+          borderRadius: "50%",
+          background: mode === "dark"
+            ? "radial-gradient(circle, rgba(34,211,238,0.15) 0%, rgba(34,211,238,0.04) 50%, transparent 70%)"
+            : "radial-gradient(circle, rgba(14,116,144,0.12) 0%, rgba(14,116,144,0.03) 50%, transparent 70%)",
+          filter: "blur(30px)",
+          pointerEvents: "none",
+        }} />
+        <div style={{
+          position: "absolute", top: "-40%", right: "10%",
+          width: isMobile ? 160 : 220, height: isMobile ? 90 : 120,
+          borderRadius: "50%",
+          background: mode === "dark"
+            ? "radial-gradient(circle, rgba(168,85,247,0.12) 0%, rgba(168,85,247,0.03) 50%, transparent 70%)"
+            : "radial-gradient(circle, rgba(126,34,206,0.08) 0%, rgba(126,34,206,0.02) 50%, transparent 70%)",
+          filter: "blur(30px)",
+          pointerEvents: "none",
+        }} />
         {/* Left: hamburger + logo + scanning */}
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
           <button
