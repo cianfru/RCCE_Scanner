@@ -20,7 +20,7 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
           <GlassCard style={{
             padding: isMobile ? "8px 14px" : "10px 16px",
             display: "flex", alignItems: "center",
-            flex: isMobile ? "1 1 calc(50% - 4px)" : "1 1 auto",
+            flex: isMobile ? "1 1 calc(50% - 3px)" : "1 1 auto",
             minWidth: isMobile ? undefined : 200,
           }}>
             <FearGreedGauge value={sentiment.fear_greed_value} />
@@ -31,8 +31,8 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
         {globalMetrics?.btc_dominance > 0 && (
           <GlassCard style={{
             padding: isMobile ? "8px 14px" : "10px 16px",
-            display: "flex", alignItems: "center", gap: 10,
-            flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            flex: isMobile ? "1 1 calc(50% - 3px)" : undefined,
           }}>
             <span style={{ fontSize: 11, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
               BTC.D
@@ -59,8 +59,8 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
         {altSeason && (
           <GlassCard style={{
             padding: isMobile ? "8px 14px" : "10px 16px",
-            display: "flex", alignItems: "center", gap: 10,
-            flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            flex: isMobile ? "1 1 calc(50% - 3px)" : undefined,
             border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
           }}>
             <span style={{ fontSize: 11, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
@@ -87,13 +87,17 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
 
         {/* Stablecoin Widget */}
         {stablecoin && (
-          <div style={{ flex: isMobile ? "1 1 calc(50% - 4px)" : undefined }}>
+          <GlassCard style={{
+            padding: isMobile ? "8px 14px" : "10px 16px",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            flex: isMobile ? "1 1 calc(50% - 3px)" : undefined,
+          }}>
             <StablecoinWidget
               trend={stablecoin.trend}
               changePct={stablecoin.change_7d_pct}
               totalCap={stablecoin.total_cap}
             />
-          </div>
+          </GlassCard>
         )}
       </div>
     </FadeIn>

@@ -26,17 +26,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
   const meta = trendMeta(trend);
 
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      padding: "8px 14px",
-      background: T.surface,
-      border: `1px solid ${T.border}`,
-      borderRadius: T.radius,
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
-    }}>
+    <>
       <span style={{
         fontSize: T.textSm,
         color: T.text4,
@@ -50,7 +40,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
 
       {/* Trend arrow + badge */}
       <span style={{
-        padding: "2px 8px",
+        padding: "2px 10px",
         borderRadius: "20px",
         background: `${meta.color}10`,
         color: meta.color,
@@ -58,7 +48,6 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
         fontFamily: T.mono,
         fontWeight: 700,
         letterSpacing: "0.06em",
-        border: `1px solid ${meta.color}20`,
         display: "inline-flex",
         alignItems: "center",
         gap: 3,
@@ -96,6 +85,6 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
           </span>
         </>
       )}
-    </div>
+    </>
   );
 }
