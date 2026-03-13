@@ -130,8 +130,16 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
 
+  // Scroll window to top on mount
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
+  // Scroll chat to bottom only when new messages arrive
+  useEffect(() => {
+    if (messages.length > 0) {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   const send = useCallback(async (text) => {
@@ -237,6 +245,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         minHeight: isMobile ? 350 : 460,
         maxHeight: isMobile ? "60vh" : "65vh",
         display: "flex", flexDirection: "column",
+        border: `1px solid ${T.borderH}`,
       }}>
         <div style={{
           flex: 1, padding: isMobile ? "16px 14px" : "20px 22px", overflowY: "auto",
@@ -343,12 +352,13 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             disabled={loading || !input.trim()}
             className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
             style={{
-              padding: "10px 22px", borderRadius: T.radiusSm,
-              fontFamily: T.font, fontSize: T.textSm, fontWeight: 700,
+              padding: "10px 26px", borderRadius: T.radiusSm,
+              fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
               letterSpacing: "0.02em",
               cursor: loading || !input.trim() ? "default" : "pointer",
-              opacity: loading || !input.trim() ? 0.5 : 1,
+              opacity: loading || !input.trim() ? 0.4 : 1,
               transition: "all 0.15s ease",
+              boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(34,211,238,0.25)",
             }}
           >
             Send
