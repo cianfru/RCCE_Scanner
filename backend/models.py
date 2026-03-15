@@ -368,8 +368,34 @@ class ChatResponse(BaseModel):
     reply: str
     session_id: str
     detected_symbol: Optional[str] = None
+    model: Optional[str] = None
 
 
 class BriefingResponse(BaseModel):
     briefing: str
     timestamp: float
+
+
+# ---------------------------------------------------------------------------
+# Model selection models (OpenRouter integration)
+# ---------------------------------------------------------------------------
+
+class ModelInfo(BaseModel):
+    id: str
+    label: str
+    provider: str
+
+
+class ModelsResponse(BaseModel):
+    models: list[ModelInfo]
+    current: str
+    mode: str  # "openrouter" or "anthropic"
+
+
+class SetModelRequest(BaseModel):
+    model_id: str
+
+
+class SetModelResponse(BaseModel):
+    success: bool
+    current: str

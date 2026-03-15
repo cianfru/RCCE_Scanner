@@ -130,9 +130,40 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
 
+  // Model selection state
+  const [models, setModels] = useState([]);
+  const [currentModel, setCurrentModel] = useState("");
+  const [providerMode, setProviderMode] = useState("");
+
   // Scroll window to top on mount
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
+  // Fetch available models on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/api/models`)
+      .then((r) => r.json())
+      .then((d) => {
+        setModels(d.models || []);
+        setCurrentModel(d.current || "");
+        setProviderMode(d.mode || "");
+      })
+      .catch(() => {}); // silent fail — header will show fallback badge
+  }, []);
+
+  const handleModelChange = useCallback(async (modelId) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+      const d = await res.json();
+      if (d.success) setCurrentModel(d.current);
+    } catch (e) {
+      // silent fail
+    }
   }, []);
 
   // Scroll chat to bottom only when new messages arrive
@@ -199,14 +230,44 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             }}>
               Reflex Assistant
             </span>
-            <span style={{
-              fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
-              padding: "3px 10px", borderRadius: T.radiusXs,
-              background: T.overlay06, letterSpacing: "0.06em",
-              fontWeight: 600,
-            }}>
-              HAIKU
-            </span>
+            {providerMode === "openrouter" && models.length > 0 ? (
+              <select
+                value={currentModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                style={{
+                  fontSize: T.textXs,
+                  fontFamily: T.mono,
+                  color: T.text3,
+                  padding: "3px 8px",
+                  borderRadius: T.radiusXs,
+                  background: T.overlay06,
+                  border: `1px solid ${T.border}`,
+                  letterSpacing: "0.04em",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  outline: "none",
+                  WebkitAppearance: "none",
+                  appearance: "none",
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 6px center",
+                  paddingRight: 20,
+                }}
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{
+                fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
+                padding: "3px 10px", borderRadius: T.radiusXs,
+                background: T.overlay06, letterSpacing: "0.06em",
+                fontWeight: 600,
+              }}>
+                {providerMode === "anthropic" ? "HAIKU (DIRECT)" : "HAIKU"}
+              </span>
+            )}
           </div>
           <button onClick={clearChat} className="apple-btn" style={{
             padding: "6px 14px", fontSize: T.textSm, fontFamily: T.font,

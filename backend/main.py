@@ -56,6 +56,9 @@ from models import (
     ChatRequest,
     ChatResponse,
     BriefingResponse,
+    ModelsResponse,
+    SetModelRequest,
+    SetModelResponse,
 )
 from portfolio_groups import PortfolioGroupManager
 
@@ -1942,9 +1945,42 @@ async def chat_endpoint(req: ChatRequest):
             reply=reply,
             session_id=req.session_id,
             detected_symbol=detected,
+            model=assistant.get_current_model(),
         )
     except Exception as e:
         logger.error("Chat error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/models", response_model=ModelsResponse)
+async def get_models():
+    """List available LLM models and current selection."""
+    try:
+        from assistant import get_assistant
+        assistant = get_assistant()
+        return ModelsResponse(
+            models=assistant.get_available_models(),
+            current=assistant.get_current_model(),
+            mode=assistant.get_mode(),
+        )
+    except Exception as e:
+        logger.error("Models list error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/models", response_model=SetModelResponse)
+async def set_model(req: SetModelRequest):
+    """Switch the active LLM model."""
+    try:
+        from assistant import get_assistant
+        assistant = get_assistant()
+        success = assistant.set_model(req.model_id)
+        return SetModelResponse(
+            success=success,
+            current=assistant.get_current_model(),
+        )
+    except Exception as e:
+        logger.error("Model switch error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

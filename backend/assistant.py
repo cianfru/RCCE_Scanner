@@ -1,10 +1,12 @@
 """
 assistant.py
 ~~~~~~~~~~~~
-LLM-powered trading assistant using Claude Haiku.
+LLM-powered trading assistant with OpenRouter multi-model support.
 
 Provides natural-language signal explanations, daily briefings,
 and conversational Q&A over live RCCE Scanner data.
+Supports model switching via OpenRouter (Claude, GPT, Gemini, DeepSeek, etc.)
+with automatic fallback to direct Anthropic API.
 """
 
 from __future__ import annotations
@@ -14,26 +16,65 @@ import os
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-def _get_api_key() -> str:
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
-        # Fallback: re-read .env with override in case shell had empty var
-        try:
-            from dotenv import load_dotenv
-            from pathlib import Path
-            env_file = Path(__file__).resolve().parent / ".env"
-            if env_file.exists():
-                load_dotenv(env_file, override=True)
-            key = os.environ.get("ANTHROPIC_API_KEY", "")
-        except ImportError:
-            pass
-    return key
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
+# ---------------------------------------------------------------------------
+# Model catalogue & provider config
+# ---------------------------------------------------------------------------
+
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
+ANTHROPIC_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 MAX_HISTORY_MESSAGES = 20
+
+AVAILABLE_MODELS = [
+    {"id": "anthropic/claude-3.5-haiku",        "label": "Claude 3.5 Haiku",  "provider": "Anthropic"},
+    {"id": "anthropic/claude-sonnet-4",          "label": "Claude Sonnet 4",   "provider": "Anthropic"},
+    {"id": "openai/gpt-4o-mini",                "label": "GPT-4o Mini",       "provider": "OpenAI"},
+    {"id": "google/gemini-2.0-flash-001",       "label": "Gemini 2.0 Flash",  "provider": "Google"},
+    {"id": "deepseek/deepseek-chat-v3-0324",    "label": "DeepSeek V3",       "provider": "DeepSeek"},
+]
+
+
+def _load_env():
+    """Ensure .env is loaded (idempotent)."""
+    try:
+        from dotenv import load_dotenv
+        from pathlib import Path
+        env_file = Path(__file__).resolve().parent / ".env"
+        if env_file.exists():
+            load_dotenv(env_file, override=True)
+    except ImportError:
+        pass
+
+
+def _get_provider_config() -> Tuple[str, Optional[str], str]:
+    """Return (api_key, base_url, mode) for the active LLM provider.
+
+    Prefers OpenRouter; falls back to direct Anthropic SDK.
+    """
+    # Try OpenRouter first
+    or_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not or_key:
+        _load_env()
+        or_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    if or_key:
+        return or_key, "https://openrouter.ai/api/v1", "openrouter"
+
+    # Fallback: direct Anthropic
+    ant_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not ant_key:
+        _load_env()
+        ant_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    if ant_key:
+        return ant_key, None, "anthropic"
+
+    raise RuntimeError(
+        "No LLM API key found. Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in .env"
+    )
 
 # ---------------------------------------------------------------------------
 # System prompt — encodes the full RCCE decision matrix
@@ -264,17 +305,60 @@ class ChatSession:
 # ---------------------------------------------------------------------------
 
 class AssistantManager:
-    """Manages chat sessions and Anthropic API calls."""
+    """Manages chat sessions and LLM API calls (OpenRouter or Anthropic)."""
 
     def __init__(self):
         self.sessions: Dict[str, ChatSession] = {}
         self._client = None
+        self._mode: Optional[str] = None  # "openrouter" or "anthropic"
+        self._current_model: str = DEFAULT_MODEL
 
     def _get_client(self):
         if self._client is None:
-            from anthropic import Anthropic
-            self._client = Anthropic(api_key=_get_api_key())
+            api_key, base_url, mode = _get_provider_config()
+            self._mode = mode
+            if mode == "openrouter":
+                from openai import OpenAI
+                self._client = OpenAI(
+                    api_key=api_key,
+                    base_url=base_url,
+                    default_headers={
+                        "HTTP-Referer": "https://rcce-scanner.local",
+                        "X-Title": "RCCE Scanner",
+                    },
+                )
+                logger.info("LLM provider: OpenRouter (model=%s)", self._current_model)
+            else:
+                from anthropic import Anthropic
+                self._client = Anthropic(api_key=api_key)
+                logger.info("LLM provider: Anthropic direct (model=%s)", ANTHROPIC_FALLBACK_MODEL)
         return self._client
+
+    # -- Model management ---------------------------------------------------
+
+    def get_current_model(self) -> str:
+        """Return the active model ID."""
+        if self._mode == "anthropic":
+            return ANTHROPIC_FALLBACK_MODEL
+        return self._current_model
+
+    def set_model(self, model_id: str) -> bool:
+        """Switch to a different model. Returns True on success."""
+        valid_ids = {m["id"] for m in AVAILABLE_MODELS}
+        if model_id not in valid_ids:
+            return False
+        self._current_model = model_id
+        logger.info("Model switched to: %s", model_id)
+        return True
+
+    def get_available_models(self) -> list:
+        """Return the curated model catalogue."""
+        return AVAILABLE_MODELS
+
+    def get_mode(self) -> str:
+        """Return current provider mode, initialising client if needed."""
+        self._get_client()
+        return self._mode or "unknown"
 
     def get_or_create_session(self, session_id: str) -> ChatSession:
         if session_id not in self.sessions:
@@ -675,14 +759,26 @@ class AssistantManager:
         system = SYSTEM_PROMPT + "\n\n## Current Scanner Data\n\n" + context
 
         client = self._get_client()
-        response = client.messages.create(
-            model=HAIKU_MODEL,
-            max_tokens=1024,
-            system=system,
-            messages=messages,
-        )
 
-        reply = response.content[0].text
+        if self._mode == "openrouter":
+            # OpenAI-compatible format: system is first message in array
+            openai_messages = [{"role": "system", "content": system}] + messages
+            response = client.chat.completions.create(
+                model=self._current_model,
+                max_tokens=1024,
+                messages=openai_messages,
+            )
+            reply = response.choices[0].message.content
+        else:
+            # Direct Anthropic SDK (fallback)
+            response = client.messages.create(
+                model=ANTHROPIC_FALLBACK_MODEL,
+                max_tokens=1024,
+                system=system,
+                messages=messages,
+            )
+            reply = response.content[0].text
+
         session.messages.append(ChatMessage(role="assistant", content=reply))
 
         return reply, detected
