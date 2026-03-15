@@ -26,9 +26,19 @@ Public API (imported by main.py)
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
+import os
 import time
+from functools import partial
 from typing import Dict, List, Optional
+
+# Thread pool for CPU-bound engine work (symbol processing + signal synthesis)
+_CPU_WORKERS = min(8, (os.cpu_count() or 4))
+_engine_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=_CPU_WORKERS,
+    thread_name_prefix="rcce-engine",
+)
 
 from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
     fetch_batch_hip3, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP
@@ -531,28 +541,39 @@ async def _scan_timeframe(
     btc_data = ohlcv_batch.get("BTC/USDT")
     eth_data = ohlcv_batch.get("ETH/USDT")
 
-    # 4. Process each symbol (engines only — no final signal yet)
-    results: List[dict] = []
+    # 4. Process each symbol through engines (parallel via thread pool)
+    loop = asyncio.get_running_loop()
+    engine_futures = []
+    engine_symbols = []
     for symbol in symbols:
         ohlcv = ohlcv_batch.get(symbol)
         if ohlcv is None:
             logger.debug("Skipping %s -- no OHLCV data", symbol)
             continue
-
         weekly = weekly_batch.get(symbol)
-
-        try:
-            result = _process_symbol(
-                symbol=symbol,
-                timeframe=tf,
-                ohlcv=ohlcv,
-                weekly=weekly,
-                btc_data=btc_data,
-                eth_data=eth_data,
+        engine_symbols.append(symbol)
+        engine_futures.append(
+            loop.run_in_executor(
+                _engine_pool,
+                partial(
+                    _process_symbol,
+                    symbol=symbol,
+                    timeframe=tf,
+                    ohlcv=ohlcv,
+                    weekly=weekly,
+                    btc_data=btc_data,
+                    eth_data=eth_data,
+                ),
             )
-            results.append(result)
-        except Exception:
-            logger.exception("Failed to process %s on %s", symbol, tf)
+        )
+
+    results: List[dict] = []
+    settled = await asyncio.gather(*engine_futures, return_exceptions=True)
+    for symbol, outcome in zip(engine_symbols, settled):
+        if isinstance(outcome, Exception):
+            logger.exception("Failed to process %s on %s: %s", symbol, tf, outcome)
+        else:
+            results.append(outcome)
 
     logger.info(
         "Processed %d symbols for %s (%.1fs total)",
@@ -719,33 +740,46 @@ async def _scan_timeframe(
             "total_cap": stablecoin_data.total_stablecoin_cap,
         }
 
-    for r in results:
-        try:
-            # Compute macro_blocked from BMSB direction
-            heat_direction = r.get("heat_direction", 0)
-            deviation_pct = r.get("deviation_pct", 0.0)
-            heat_val = r.get("heat", 0)
+    # Build prev_heat snapshot once (thread-safe read)
+    if not hasattr(cache, 'prev_heat'):
+        cache.prev_heat = {}
+    prev_heat_snapshot = dict(cache.prev_heat)
 
-            # No valid BMSB data (heatmap returned defaults) → block entries
-            bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
-            if not bmsb_valid:
-                macro_blocked = True  # no BMSB = no signal = WAIT
-            else:
-                macro_blocked = heat_direction < 0  # price below weekly BMSB mid
+    def _synth_one(r):
+        """Run synthesize_signal for a single result (CPU-bound, thread-safe)."""
+        heat_direction = r.get("heat_direction", 0)
+        deviation_pct = r.get("deviation_pct", 0.0)
+        heat_val = r.get("heat", 0)
+        bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
+        macro_blocked = True if not bmsb_valid else heat_direction < 0
+        symbol = r.get("symbol", "")
+        prev_heat = prev_heat_snapshot.get(symbol, 0)
+        return synthesize_signal(
+            r, consensus, gm_dict,
+            positioning=r.get("positioning"),
+            sentiment=sentiment_dict,
+            stablecoin=stablecoin_dict,
+            macro_blocked=macro_blocked,
+            prev_heat=prev_heat,
+            bmsb_valid=bmsb_valid,
+        )
 
-            # Get prev_heat from cache (for rally stall detection in LIGHT_SHORT)
-            symbol = r.get("symbol", "")
-            prev_heat = cache.prev_heat.get(symbol, 0) if hasattr(cache, 'prev_heat') else 0
+    synth_futures = [
+        loop.run_in_executor(_engine_pool, _synth_one, r)
+        for r in results
+    ]
+    synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
 
-            synth = synthesize_signal(
-                r, consensus, gm_dict,
-                positioning=r.get("positioning"),
-                sentiment=sentiment_dict,
-                stablecoin=stablecoin_dict,
-                macro_blocked=macro_blocked,
-                prev_heat=prev_heat,
-                bmsb_valid=bmsb_valid,
-            )
+    for r, synth in zip(results, synth_results):
+        if isinstance(synth, Exception):
+            logger.exception("Signal synthesis failed for %s: %s", r.get("symbol"), synth)
+            r["signal"] = r.get("raw_signal", "WAIT")
+            r["signal_reason"] = "synthesis error — using raw signal"
+            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
+            r["conditions_detail"] = []
+            r["conditions_met"] = 0
+            r["conditions_total"] = 10
+        else:
             r["signal"] = synth.signal
             r["signal_reason"] = synth.reason
             r["signal_warnings"] = synth.warnings
@@ -758,19 +792,8 @@ async def _scan_timeframe(
             r["conditions_total"] = synth.conditions_total
             r["effective_conditions"] = synth.effective_conditions
             r["vol_scale"] = synth.vol_scale
-
-            # Store current heat for next scan
-            if not hasattr(cache, 'prev_heat'):
-                cache.prev_heat = {}
-            cache.prev_heat[symbol] = r.get("heat", 0)
-        except Exception:
-            logger.exception("Signal synthesis failed for %s", r.get("symbol"))
-            r["signal"] = r.get("raw_signal", "WAIT")
-            r["signal_reason"] = "synthesis error — using raw signal"
-            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
-            r["conditions_detail"] = []
-            r["conditions_met"] = 0
-            r["conditions_total"] = 10
+            # Update prev_heat for next scan
+            cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
 
     # Compute priority score for each result
     for r in results:
@@ -805,7 +828,7 @@ async def run_scan(
         Cache to store results in.  Defaults to the module-level ``cache``.
     timeframe : str or None
         Single timeframe to scan (``"4h"`` or ``"1d"``).  When ``None``
-        both timeframes are scanned sequentially.
+        both timeframes are scanned concurrently.
     """
     if scan_cache is None:
         scan_cache = cache
@@ -821,38 +844,42 @@ async def run_scan(
     try:
         timeframes = [timeframe] if timeframe else ["4h", "1d"]
 
-        for tf in timeframes:
+        async def _run_one_tf(tf):
+            results, consensus, alt_gauge, gm = await _scan_timeframe(
+                scan_cache.symbols, tf,
+            )
+            scan_cache.results[tf] = results
+            scan_cache.consensus[tf] = consensus
+            scan_cache.alt_season[tf] = alt_gauge
+
+            # Log signal transitions
             try:
-                results, consensus, alt_gauge, gm = await _scan_timeframe(
-                    scan_cache.symbols, tf,
+                from signal_log import SignalLog
+                sig_log = SignalLog.get()
+                await sig_log.log_signals(
+                    results, tf,
+                    consensus.get("consensus", "MIXED"),
                 )
-                scan_cache.results[tf] = results
-                scan_cache.consensus[tf] = consensus
-                scan_cache.alt_season[tf] = alt_gauge
-
-                # Log signal transitions
-                try:
-                    from signal_log import SignalLog
-                    sig_log = SignalLog.get()
-                    await sig_log.log_signals(
-                        results, tf,
-                        consensus.get("consensus", "MIXED"),
-                    )
-                except Exception:
-                    logger.debug("Signal logging failed for %s (non-fatal)", tf)
-
-                # Store latest global metrics (shared across timeframes)
-                if gm is not None:
-                    scan_cache.global_metrics = {
-                        "btc_dominance": gm.btc_dominance,
-                        "eth_dominance": gm.eth_dominance,
-                        "total_market_cap": gm.total_market_cap,
-                        "alt_market_cap": gm.alt_market_cap,
-                        "btc_market_cap": gm.btc_market_cap,
-                        "timestamp": gm.timestamp,
-                    }
             except Exception:
-                logger.exception("Scan failed for timeframe %s", tf)
+                logger.debug("Signal logging failed for %s (non-fatal)", tf)
+
+            # Store latest global metrics (shared across timeframes)
+            if gm is not None:
+                scan_cache.global_metrics = {
+                    "btc_dominance": gm.btc_dominance,
+                    "eth_dominance": gm.eth_dominance,
+                    "total_market_cap": gm.total_market_cap,
+                    "alt_market_cap": gm.alt_market_cap,
+                    "btc_market_cap": gm.btc_market_cap,
+                    "timestamp": gm.timestamp,
+                }
+
+        # Run all timeframes concurrently
+        tf_tasks = [_run_one_tf(tf) for tf in timeframes]
+        tf_results = await asyncio.gather(*tf_tasks, return_exceptions=True)
+        for tf, outcome in zip(timeframes, tf_results):
+            if isinstance(outcome, Exception):
+                logger.exception("Scan failed for timeframe %s: %s", tf, outcome)
 
         # Store sentiment & stablecoin data from latest fetch
         from market_data import get_cached_sentiment, get_cached_stablecoin
@@ -943,111 +970,128 @@ async def run_tradfi_scan(
 
     logger.info("=== TradFi scan started (%d symbols) ===", len(TRADFI_SYMBOL_LIST))
     t0 = time.time()
+    loop = asyncio.get_running_loop()
 
-    for tf in ("4h", "1d"):
-        try:
-            # 1. Fetch OHLCV for all TradFi symbols
-            ohlcv_batch = await fetch_batch_hip3(tf)
-            fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
-            logger.info("TradFi: fetched %d/%d for %s", fetched, len(TRADFI_SYMBOL_LIST), tf)
+    async def _tradfi_one_tf(tf):
+        # 1. Fetch OHLCV for all TradFi symbols
+        ohlcv_batch = await fetch_batch_hip3(tf)
+        fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
+        logger.info("TradFi: fetched %d/%d for %s", fetched, len(TRADFI_SYMBOL_LIST), tf)
 
-            if fetched == 0:
-                logger.warning("TradFi: no data for %s — skipping", tf)
+        if fetched == 0:
+            logger.warning("TradFi: no data for %s — skipping", tf)
+            return
+
+        # 2. Fetch weekly data for heatmap + exhaustion
+        weekly_batch = await fetch_batch_hip3("1w")
+
+        # 3. Process each symbol through engines (parallel via thread pool)
+        sym_info_map = {}
+        engine_futures = []
+        for sym_info in TRADFI_SYMBOLS:
+            symbol = sym_info["symbol"]
+            ohlcv = ohlcv_batch.get(symbol)
+            if ohlcv is None:
                 continue
-
-            # 2. Fetch weekly data for heatmap + exhaustion
-            weekly_batch = await fetch_batch_hip3("1w")
-
-            # 3. Process each symbol through engines (no BTC/ETH reference)
-            results: List[dict] = []
-            for sym_info in TRADFI_SYMBOLS:
-                symbol = sym_info["symbol"]
-                ohlcv = ohlcv_batch.get(symbol)
-                if ohlcv is None:
-                    continue
-
-                weekly = weekly_batch.get(symbol)
-
-                try:
-                    result = _process_symbol(
+            weekly = weekly_batch.get(symbol)
+            sym_info_map[symbol] = sym_info
+            engine_futures.append(
+                loop.run_in_executor(
+                    _engine_pool,
+                    partial(
+                        _process_symbol,
                         symbol=symbol,
                         timeframe=tf,
                         ohlcv=ohlcv,
                         weekly=weekly,
-                        btc_data=None,   # No BTC reference for TradFi
-                        eth_data=None,   # No ETH reference for TradFi
-                    )
-                    # Override asset_class with TradFi category
-                    result["asset_class"] = sym_info["category"]
-                    result["tradfi_name"] = sym_info["name"]
-                    result["tradfi_coin"] = sym_info["coin"]
-                    results.append(result)
-                except Exception:
-                    logger.exception("TradFi: failed to process %s on %s", symbol, tf)
-
-            if not results:
-                continue
-
-            # 4. Compute TradFi-specific consensus (among TradFi assets only)
-            tradfi_consensus = compute_consensus(results)
-
-            # 5. Synthesize signals — use neutral macro context
-            for r in results:
-                try:
-                    heat_direction = r.get("heat_direction", 0)
-                    deviation_pct = r.get("deviation_pct", 0.0)
-                    heat_val = r.get("heat", 0)
-                    bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
-                    macro_blocked = heat_direction < 0 if bmsb_valid else True
-
-                    synth = synthesize_signal(
-                        result=r,
-                        consensus=tradfi_consensus,
-                        global_metrics=None,     # No crypto global metrics
-                        positioning=None,         # No HL/Binance positioning for TradFi
-                        sentiment=None,           # No crypto Fear & Greed
-                        stablecoin=None,          # No stablecoin context
-                        macro_blocked=macro_blocked,
-                        prev_heat=r.get("heat", 0),
-                        bmsb_valid=bmsb_valid,
-                    )
-                    r["signal"] = synth.signal
-                    r["signal_reason"] = synth.reason
-                    r["signal_warnings"] = synth.warnings
-                    r["signal_confidence"] = synth.confidence
-                    r["conditions_met"] = synth.conditions_met
-                    r["conditions_total"] = synth.conditions_total
-                    r["conditions_detail"] = synth.conditions_detail
-                    r["effective_conditions"] = synth.effective_conditions
-                except Exception:
-                    logger.debug("TradFi signal synthesis failed for %s", r.get("symbol"))
-
-            # 6. Compute priority scores
-            for r in results:
-                r["priority_score"] = _compute_priority(r)
-
-            # Sort by priority
-            results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
-
-            scan_cache.tradfi_results[tf] = results
-            logger.info(
-                "TradFi scan %s: %d results in %.1fs",
-                tf, len(results), time.time() - t0,
+                        btc_data=None,
+                        eth_data=None,
+                    ),
+                )
             )
 
-            # Log signal transitions for TradFi
-            try:
-                from signal_log import SignalLog
-                sig_log = SignalLog.get()
-                await sig_log.log_signals(
-                    results, f"tradfi_{tf}",
-                    tradfi_consensus.get("consensus", "MIXED"),
-                )
-            except Exception:
-                logger.debug("TradFi signal logging failed (non-fatal)")
+        settled = await asyncio.gather(*engine_futures, return_exceptions=True)
+        results: List[dict] = []
+        for outcome in settled:
+            if isinstance(outcome, Exception):
+                logger.exception("TradFi engine error: %s", outcome)
+                continue
+            sym_info = sym_info_map[outcome["symbol"]]
+            outcome["asset_class"] = sym_info["category"]
+            outcome["tradfi_name"] = sym_info["name"]
+            outcome["tradfi_coin"] = sym_info["coin"]
+            results.append(outcome)
 
+        if not results:
+            return
+
+        # 4. Compute TradFi-specific consensus
+        tradfi_consensus = compute_consensus(results)
+
+        # 5. Synthesize signals in parallel via thread pool
+        def _tradfi_synth_one(r):
+            heat_direction = r.get("heat_direction", 0)
+            deviation_pct = r.get("deviation_pct", 0.0)
+            heat_val = r.get("heat", 0)
+            bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
+            macro_blocked = heat_direction < 0 if bmsb_valid else True
+            return synthesize_signal(
+                result=r,
+                consensus=tradfi_consensus,
+                global_metrics=None,
+                positioning=None,
+                sentiment=None,
+                stablecoin=None,
+                macro_blocked=macro_blocked,
+                prev_heat=r.get("heat", 0),
+                bmsb_valid=bmsb_valid,
+            )
+
+        synth_futures = [
+            loop.run_in_executor(_engine_pool, _tradfi_synth_one, r)
+            for r in results
+        ]
+        synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
+        for r, synth in zip(results, synth_results):
+            if isinstance(synth, Exception):
+                logger.debug("TradFi signal synthesis failed for %s: %s", r.get("symbol"), synth)
+            else:
+                r["signal"] = synth.signal
+                r["signal_reason"] = synth.reason
+                r["signal_warnings"] = synth.warnings
+                r["signal_confidence"] = synth.confidence
+                r["conditions_met"] = synth.conditions_met
+                r["conditions_total"] = synth.conditions_total
+                r["conditions_detail"] = synth.conditions_detail
+                r["effective_conditions"] = synth.effective_conditions
+
+        # 6. Compute priority scores
+        for r in results:
+            r["priority_score"] = _compute_priority(r)
+
+        results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
+        scan_cache.tradfi_results[tf] = results
+        logger.info("TradFi scan %s: %d results in %.1fs", tf, len(results), time.time() - t0)
+
+        # Log signal transitions for TradFi
+        try:
+            from signal_log import SignalLog
+            sig_log = SignalLog.get()
+            await sig_log.log_signals(
+                results, f"tradfi_{tf}",
+                tradfi_consensus.get("consensus", "MIXED"),
+            )
         except Exception:
-            logger.exception("TradFi scan failed for %s", tf)
+            logger.debug("TradFi signal logging failed (non-fatal)")
+
+    # Run both timeframes concurrently
+    tf_results = await asyncio.gather(
+        _tradfi_one_tf("4h"), _tradfi_one_tf("1d"),
+        return_exceptions=True,
+    )
+    for tf, outcome in zip(("4h", "1d"), tf_results):
+        if isinstance(outcome, Exception):
+            logger.exception("TradFi scan failed for %s: %s", tf, outcome)
 
     # Compute TradFi multi-TF confluence
     if "4h" in scan_cache.tradfi_results and "1d" in scan_cache.tradfi_results:
