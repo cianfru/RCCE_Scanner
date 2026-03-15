@@ -291,3 +291,86 @@ async def fetch_funding_history(
 def get_cached_metrics() -> Optional[Dict[str, HyperliquidMetrics]]:
     """Return cached Hyperliquid metrics (even if expired)."""
     return _cache.get_fallback()
+
+
+# ---------------------------------------------------------------------------
+# User position fetching (clearinghouse state)
+# ---------------------------------------------------------------------------
+
+_POS_CACHE_TTL = 60  # 1 minute — positions refresh fast
+
+
+@dataclass
+class _PosCacheEntry:
+    data: Optional[dict] = None
+    expires_at: float = 0.0
+
+
+_pos_cache: Dict[str, _PosCacheEntry] = {}
+
+
+async def fetch_clearinghouse_state(address: str) -> Optional[dict]:
+    """Fetch a user's clearinghouse state from Hyperliquid (public, no auth).
+
+    Returns the raw API response dict containing:
+      - marginSummary: {accountValue, totalMarginUsed, ...}
+      - assetPositions: [{position: {coin, szi, entryPx, leverage, ...}}, ...]
+      - crossMarginSummary, withdrawable, etc.
+
+    Returns None on failure.
+    """
+    address = address.lower()
+
+    # Check per-address cache
+    entry = _pos_cache.get(address)
+    if entry and time.monotonic() < entry.expires_at:
+        return entry.data
+
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            data = await _post_info(session, {
+                "type": "clearinghouseState",
+                "user": address,
+            })
+        _pos_cache[address] = _PosCacheEntry(data=data, expires_at=time.monotonic() + _POS_CACHE_TTL)
+        return data
+    except Exception as exc:
+        logger.warning("Failed to fetch clearinghouse state for %s: %s", address[:10], exc)
+        # Return stale cache if available
+        if entry and entry.data:
+            return entry.data
+        return None
+
+
+def parse_open_positions(clearinghouse: dict) -> List[dict]:
+    """Extract open positions from clearinghouse state response.
+
+    Returns list of dicts with keys:
+      coin, side, size, size_usd, entry_px, unrealized_pnl, leverage, liq_px, margin_used
+    """
+    positions = []
+    for ap in clearinghouse.get("assetPositions", []):
+        pos = ap.get("position", {})
+        szi = float(pos.get("szi", 0))
+        if szi == 0:
+            continue
+
+        entry_px = float(pos.get("entryPx", 0))
+        coin = pos.get("coin", "")
+        leverage_val = pos.get("leverage", {})
+        lev = float(leverage_val.get("value", 1)) if isinstance(leverage_val, dict) else float(leverage_val or 1)
+
+        positions.append({
+            "coin": coin,
+            "symbol": f"{coin}/USDT",
+            "side": "LONG" if szi > 0 else "SHORT",
+            "size": abs(szi),
+            "size_usd": abs(szi) * entry_px,
+            "entry_px": entry_px,
+            "unrealized_pnl": float(pos.get("unrealizedPnl", 0)),
+            "leverage": lev,
+            "liq_px": float(pos.get("liquidationPx", 0) or 0),
+            "margin_used": float(pos.get("marginUsed", 0)),
+        })
+    return positions

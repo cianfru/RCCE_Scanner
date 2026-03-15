@@ -163,6 +163,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Telegram bot init failed (non-fatal): %s", e)
 
+    # Initialize position monitor (loads registry from disk)
+    try:
+        from position_monitor import PositionMonitor
+        monitor = PositionMonitor.get()
+        logger.info("Position monitor loaded (%d watchers)", len(monitor.watchers))
+    except Exception as e:
+        logger.warning("Position monitor init failed (non-fatal): %s", e)
+
     asyncio.create_task(_periodic_scan())
     asyncio.create_task(_periodic_whale_poll())
     yield
@@ -222,6 +230,14 @@ async def _periodic_scan():
                     await sig_log.update_outcomes(current_prices)
             except Exception:
                 logger.debug("Signal outcome update failed (non-fatal)")
+
+            # Notify position watchers about regime/signal changes
+            try:
+                from position_monitor import PositionMonitor
+                monitor = PositionMonitor.get()
+                await monitor.on_scan_complete(cache.results)
+            except Exception:
+                logger.debug("Position monitor notification failed (non-fatal)")
 
             # Auto-initialize executor after first successful scan
             if not _executor_auto_started:
