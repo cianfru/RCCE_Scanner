@@ -212,15 +212,23 @@ async def _periodic_scan():
             continue
         _backtest_defer_count = 0
         try:
-            logger.info("Starting scheduled scan...")
-            await run_scan(cache)
+            logger.info("Starting scheduled scan (crypto + TradFi parallel)...")
+            # Run crypto and TradFi scans concurrently
+            crypto_task = run_scan(cache)
+            tradfi_task = run_tradfi_scan(cache)
+            crypto_result, tradfi_result = await asyncio.gather(
+                crypto_task, tradfi_task, return_exceptions=True,
+            )
+            if isinstance(crypto_result, Exception):
+                logger.error("Crypto scan failed: %s", crypto_result)
+            if isinstance(tradfi_result, Exception):
+                logger.debug("TradFi scan failed (non-fatal): %s", tradfi_result)
             logger.info("Scan complete.")
 
             # Update signal outcomes with current prices
             try:
                 from signal_log import SignalLog
                 sig_log = SignalLog.get()
-                # Build {symbol: price} from latest 4h results
                 current_prices = {
                     r["symbol"]: r["price"]
                     for r in cache.results.get("4h", [])
@@ -230,12 +238,6 @@ async def _periodic_scan():
                     await sig_log.update_outcomes(current_prices)
             except Exception:
                 logger.debug("Signal outcome update failed (non-fatal)")
-
-            # Run TradFi (HIP-3) scan alongside crypto
-            try:
-                await run_tradfi_scan(cache)
-            except Exception:
-                logger.debug("TradFi scan failed (non-fatal)")
 
             # Notify position watchers about regime/signal changes
             try:
