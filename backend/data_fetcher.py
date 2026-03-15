@@ -449,3 +449,172 @@ async def fetch_batch(
 def get_cache() -> DataCache:
     """Return the module-level cache (useful for inspection / testing)."""
     return _cache
+
+
+# ---------------------------------------------------------------------------
+# TradFi / HIP-3 symbols (trade.xyz on Hyperliquid)
+# ---------------------------------------------------------------------------
+
+TRADFI_SYMBOLS: List[dict] = [
+    # Commodities — Precious Metals
+    {"coin": "GOLD",      "symbol": "GOLD/USD",      "name": "Gold",              "category": "Commodities"},
+    {"coin": "SILVER",    "symbol": "SILVER/USD",     "name": "Silver",            "category": "Commodities"},
+    {"coin": "PLATINUM",  "symbol": "PLATINUM/USD",   "name": "Platinum",          "category": "Commodities"},
+    {"coin": "PALLADIUM", "symbol": "PALLADIUM/USD",  "name": "Palladium",         "category": "Commodities"},
+    # Commodities — Energy
+    {"coin": "CL",        "symbol": "CL/USD",         "name": "WTI Crude Oil",     "category": "Commodities"},
+    {"coin": "BRENTOIL",  "symbol": "BRENTOIL/USD",   "name": "Brent Crude Oil",   "category": "Commodities"},
+    {"coin": "NATGAS",    "symbol": "NATGAS/USD",     "name": "Natural Gas",       "category": "Commodities"},
+    # Commodities — Industrial
+    {"coin": "COPPER",    "symbol": "COPPER/USD",     "name": "Copper",            "category": "Commodities"},
+    # Indices
+    {"coin": "XYZ100",    "symbol": "XYZ100/USD",     "name": "US 100 Index",      "category": "Indices"},
+    # Equities — US
+    {"coin": "TSLA",      "symbol": "TSLA/USD",       "name": "Tesla",             "category": "Equities"},
+    {"coin": "NVDA",      "symbol": "NVDA/USD",       "name": "NVIDIA",            "category": "Equities"},
+    {"coin": "GOOGL",     "symbol": "GOOGL/USD",      "name": "Alphabet",          "category": "Equities"},
+    {"coin": "AMZN",      "symbol": "AMZN/USD",       "name": "Amazon",            "category": "Equities"},
+    {"coin": "AMD",       "symbol": "AMD/USD",        "name": "AMD",               "category": "Equities"},
+    {"coin": "AAPL",      "symbol": "AAPL/USD",       "name": "Apple",             "category": "Equities"},
+    {"coin": "BABA",      "symbol": "BABA/USD",       "name": "Alibaba",           "category": "Equities"},
+    {"coin": "CRWV",      "symbol": "CRWV/USD",       "name": "CoreWeave",         "category": "Equities"},
+    # Korea / International
+    {"coin": "SMSN",      "symbol": "SMSN/USD",       "name": "Samsung",           "category": "Equities"},
+    {"coin": "SKHX",      "symbol": "SKHX/USD",       "name": "SK Hynix",          "category": "Equities"},
+    {"coin": "HYUNDAI",   "symbol": "HYUNDAI/USD",    "name": "Hyundai Motor",     "category": "Equities"},
+    # ETFs
+    {"coin": "EWY",       "symbol": "EWY/USD",        "name": "iShares Korea ETF", "category": "ETFs"},
+    {"coin": "EWJ",       "symbol": "EWJ/USD",        "name": "iShares Japan ETF", "category": "ETFs"},
+]
+
+# Quick lookups
+TRADFI_COIN_MAP: Dict[str, dict] = {s["coin"]: s for s in TRADFI_SYMBOLS}
+TRADFI_SYMBOL_LIST: List[str] = [s["symbol"] for s in TRADFI_SYMBOLS]
+TRADFI_COIN_TO_SYMBOL: Dict[str, str] = {s["coin"]: s["symbol"] for s in TRADFI_SYMBOLS}
+TRADFI_SYMBOL_TO_COIN: Dict[str, str] = {s["symbol"]: s["coin"] for s in TRADFI_SYMBOLS}
+
+
+async def fetch_ohlcv_hip3(
+    symbol: str,
+    timeframe: str,
+    limit: int = 250,
+) -> Optional[dict]:
+    """Fetch OHLCV from Hyperliquid for a HIP-3 (trade.xyz) asset.
+
+    Goes directly to HL candleSnapshot — no CCXT fallback needed since
+    these assets only exist on Hyperliquid.
+
+    Parameters
+    ----------
+    symbol : str
+        TradFi symbol (e.g. "GOLD/USD", "CL/USD", "XYZ100/USD").
+    timeframe : str
+        Candle interval ("4h" or "1d").
+    limit : int
+        Number of candles.
+    """
+    # Check cache first
+    cached = _cache.get(symbol, timeframe)
+    if cached is not None:
+        return cached
+
+    coin = TRADFI_SYMBOL_TO_COIN.get(symbol)
+    if coin is None:
+        # Fallback: extract from symbol
+        coin = symbol.split("/")[0]
+
+    data = await _fetch_ohlcv_hyperliquid_raw(coin, timeframe, limit)
+    if data is not None:
+        _cache.put(symbol, timeframe, data)
+    return data
+
+
+async def _fetch_ohlcv_hyperliquid_raw(
+    coin: str,
+    timeframe: str,
+    limit: int = 250,
+) -> Optional[dict]:
+    """Low-level HL candleSnapshot fetch by coin name (no symbol mapping)."""
+    tf_ms = _TF_MS.get(timeframe)
+    if tf_ms is None:
+        return None
+
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - (limit * tf_ms)
+
+    payload = {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": coin,
+            "interval": timeframe,
+            "startTime": start_ms,
+            "endTime": now_ms,
+        },
+    }
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                _HL_API_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                candles = await resp.json()
+
+        if not candles or not isinstance(candles, list):
+            return None
+
+        rows = []
+        for c in candles:
+            try:
+                rows.append([
+                    float(c["t"]),
+                    float(c["o"]),
+                    float(c["h"]),
+                    float(c["l"]),
+                    float(c["c"]),
+                    float(c["v"]),
+                ])
+            except (KeyError, ValueError, TypeError):
+                continue
+
+        if not rows:
+            return None
+
+        arr = np.array(rows, dtype=np.float64)
+        return {
+            "timestamp": arr[:, 0],
+            "open":      arr[:, 1],
+            "high":      arr[:, 2],
+            "low":       arr[:, 3],
+            "close":     arr[:, 4],
+            "volume":    arr[:, 5],
+        }
+
+    except Exception as exc:
+        logger.debug("HIP-3 candle fetch failed for %s: %s", coin, exc)
+        return None
+
+
+async def fetch_batch_hip3(
+    timeframe: str = "4h",
+) -> Dict[str, Optional[dict]]:
+    """Fetch OHLCV data for all TradFi HIP-3 symbols concurrently."""
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
+    results: Dict[str, Optional[dict]] = {}
+
+    async def _guarded_fetch(sym: str) -> None:
+        async with semaphore:
+            results[sym] = await fetch_ohlcv_hip3(sym, timeframe)
+            await asyncio.sleep(_INTER_REQUEST_DELAY_S)
+
+    tasks = []
+    for sym in TRADFI_SYMBOL_LIST:
+        tasks.append(asyncio.create_task(_guarded_fetch(sym)))
+        await asyncio.sleep(_INTER_REQUEST_DELAY_S)
+
+    await asyncio.gather(*tasks, return_exceptions=False)
+    return results
