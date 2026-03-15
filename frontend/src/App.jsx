@@ -465,15 +465,13 @@ export default function App() {
             : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
-        {/* Aura: purple accent orb right side */}
+        {/* Aura: purple accent band across full header */}
         <div style={{
-          position: "absolute", top: "-30%", right: "12%",
-          width: isMobile ? 160 : 240, height: isMobile ? 90 : 120,
-          borderRadius: "50%",
+          position: "absolute", top: 0, left: 0, right: 0,
+          height: "100%",
           background: mode === "dark"
-            ? "radial-gradient(circle, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.02) 50%, transparent 70%)"
-            : "radial-gradient(circle, rgba(126,34,206,0.07) 0%, rgba(126,34,206,0.01) 50%, transparent 70%)",
-          filter: "blur(25px)",
+            ? "linear-gradient(180deg, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.03) 60%, transparent 100%)"
+            : "linear-gradient(180deg, rgba(126,34,206,0.07) 0%, rgba(126,34,206,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
         {/* Left: hamburger + logo + scanning */}
