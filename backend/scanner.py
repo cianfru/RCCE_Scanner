@@ -588,27 +588,27 @@ async def _scan_timeframe(
             "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
             gm.btc_dominance, gm.alt_market_cap / 1e9,
         )
-    if bf_metrics:
-        logger.info("Binance Futures: %d perps with positioning data", len(bf_metrics))
     if hl_metrics:
-        logger.info("Hyperliquid: %d perps (fallback positioning)", len(hl_metrics))
+        logger.info("Hyperliquid: %d perps (primary positioning)", len(hl_metrics))
+    if bf_metrics:
+        logger.info("Binance Futures: %d perps (fallback positioning)", len(bf_metrics))
     if sentiment_data:
         logger.info("Fear & Greed: %d (%s)", sentiment_data.fear_greed_value, sentiment_data.fear_greed_label)
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
 
     # 7. Compute positioning per symbol
-    #    Primary source: Binance Futures (largest exchange)
-    #    Fallback:       Hyperliquid (on-chain, wider alt coverage)
-    binance_pos_count = 0
+    #    Primary source: Hyperliquid (on-chain, native environment)
+    #    Fallback:       Binance Futures (CEX coverage)
     hl_pos_count = 0
+    binance_pos_count = 0
 
     for r in results:
         symbol = r["symbol"]
         bf = bf_metrics.get(symbol) if bf_metrics else None
         hl = hl_metrics.get(symbol) if hl_metrics else None
 
-        # Pick primary source: Binance > Hyperliquid
+        # Pick primary source: Hyperliquid > Binance
         funding_rate = 0.0
         open_interest = 0.0
         predicted_funding = 0.0
@@ -617,14 +617,7 @@ async def _scan_timeframe(
         volume_24h = 0.0
         source = ""
 
-        if bf is not None and bf.open_interest > 0:
-            funding_rate = bf.funding_rate        # already normalised to hourly
-            open_interest = bf.open_interest       # already in USD
-            mark_price = bf.mark_price
-            oracle_price = bf.index_price
-            source = "binance"
-            binance_pos_count += 1
-        elif hl is not None:
+        if hl is not None:
             funding_rate = hl.funding_rate
             open_interest = hl.open_interest
             predicted_funding = hl.predicted_funding
@@ -633,6 +626,13 @@ async def _scan_timeframe(
             volume_24h = hl.volume_24h
             source = "hyperliquid"
             hl_pos_count += 1
+        elif bf is not None and bf.open_interest > 0:
+            funding_rate = bf.funding_rate        # already normalised to hourly
+            open_interest = bf.open_interest       # already in USD
+            mark_price = bf.mark_price
+            oracle_price = bf.index_price
+            source = "binance"
+            binance_pos_count += 1
 
         if source:
             # Get price change from sparkline data
