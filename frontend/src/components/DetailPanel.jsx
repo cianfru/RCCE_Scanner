@@ -358,7 +358,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
       <div style={{
         position: "fixed", right: 0, top: 0, bottom: 0,
         left: isMobile ? 0 : undefined,
-        width: isMobile ? "100%" : isTablet ? 400 : 520,
+        width: isMobile ? "100%" : isTablet ? 520 : 700,
         background: T.drawerBg,
         backdropFilter: "blur(32px) saturate(1.4)", WebkitBackdropFilter: "blur(32px) saturate(1.4)",
         borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
@@ -403,7 +403,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         <BMSBChart
           symbol={selected.symbol}
           timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
-          height={isMobile ? 260 : isTablet ? 320 : 400}
+          height={isMobile ? 300 : isTablet ? 420 : 520}
           signal={selected.signal}
           regime={selected.regime}
           heat={selected.heat}
