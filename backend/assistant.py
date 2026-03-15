@@ -28,13 +28,62 @@ DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
 ANTHROPIC_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 MAX_HISTORY_MESSAGES = 20
 
-AVAILABLE_MODELS = [
-    {"id": "anthropic/claude-3.5-haiku",        "label": "Claude 3.5 Haiku",  "provider": "Anthropic"},
-    {"id": "anthropic/claude-sonnet-4",          "label": "Claude Sonnet 4",   "provider": "Anthropic"},
-    {"id": "openai/gpt-4o-mini",                "label": "GPT-4o Mini",       "provider": "OpenAI"},
-    {"id": "google/gemini-2.0-flash-001",       "label": "Gemini 2.0 Flash",  "provider": "Google"},
-    {"id": "deepseek/deepseek-chat-v3-0324",    "label": "DeepSeek V3",       "provider": "DeepSeek"},
-]
+# Minimum context window to include a model (filters out tiny/toy models)
+_MIN_CONTEXT_LENGTH = 16_000
+
+# Cache for dynamically fetched OpenRouter models
+_openrouter_models_cache: Optional[list] = None
+_openrouter_models_fetched_at: float = 0
+_MODELS_CACHE_TTL = 3600  # re-fetch every hour
+
+
+async def _fetch_openrouter_models() -> list:
+    """Fetch all available models from OpenRouter API, cached for 1 hour."""
+    global _openrouter_models_cache, _openrouter_models_fetched_at
+
+    now = time.time()
+    if _openrouter_models_cache is not None and (now - _openrouter_models_fetched_at) < _MODELS_CACHE_TTL:
+        return _openrouter_models_cache
+
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://openrouter.ai/api/v1/models", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    logger.warning("OpenRouter models API returned %d", resp.status)
+                    return _openrouter_models_cache or []
+                data = await resp.json()
+    except Exception as e:
+        logger.warning("Failed to fetch OpenRouter models: %s", e)
+        return _openrouter_models_cache or []
+
+    models = []
+    for m in data.get("data", []):
+        model_id = m.get("id", "")
+        name = m.get("name", model_id)
+        ctx = m.get("context_length", 0)
+
+        # Skip models with tiny context (can't fit our system prompt + data)
+        if ctx < _MIN_CONTEXT_LENGTH:
+            continue
+
+        # Derive provider from model ID (e.g. "anthropic/claude-3.5-haiku" -> "Anthropic")
+        provider = model_id.split("/")[0].title() if "/" in model_id else "Unknown"
+
+        models.append({
+            "id": model_id,
+            "label": name,
+            "provider": provider,
+            "context_length": ctx,
+        })
+
+    # Sort: by provider name, then by model name
+    models.sort(key=lambda m: (m["provider"].lower(), m["label"].lower()))
+
+    _openrouter_models_cache = models
+    _openrouter_models_fetched_at = now
+    logger.info("Fetched %d models from OpenRouter (filtered from %d)", len(models), len(data.get("data", [])))
+    return models
 
 
 def _load_env():
@@ -343,17 +392,16 @@ class AssistantManager:
         return self._current_model
 
     def set_model(self, model_id: str) -> bool:
-        """Switch to a different model. Returns True on success."""
-        valid_ids = {m["id"] for m in AVAILABLE_MODELS}
-        if model_id not in valid_ids:
+        """Switch to a different model. Accepts any OpenRouter model ID."""
+        if not model_id or not isinstance(model_id, str):
             return False
         self._current_model = model_id
         logger.info("Model switched to: %s", model_id)
         return True
 
-    def get_available_models(self) -> list:
-        """Return the curated model catalogue."""
-        return AVAILABLE_MODELS
+    async def get_available_models(self) -> list:
+        """Return the full OpenRouter model catalogue (cached)."""
+        return await _fetch_openrouter_models()
 
     def get_mode(self) -> str:
         """Return current provider mode, initialising client if needed."""

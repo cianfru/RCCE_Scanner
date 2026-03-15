@@ -1959,7 +1959,7 @@ async def get_models():
         from assistant import get_assistant
         assistant = get_assistant()
         return ModelsResponse(
-            models=assistant.get_available_models(),
+            models=await assistant.get_available_models(),
             current=assistant.get_current_model(),
             mode=assistant.get_mode(),
         )

@@ -384,6 +384,7 @@ class ModelInfo(BaseModel):
     id: str
     label: str
     provider: str
+    context_length: Optional[int] = None
 
 
 class ModelsResponse(BaseModel):

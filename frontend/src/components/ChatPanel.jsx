@@ -134,6 +134,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   const [models, setModels] = useState([]);
   const [currentModel, setCurrentModel] = useState("");
   const [providerMode, setProviderMode] = useState("");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const modelPickerRef = useRef(null);
+  const modelSearchRef = useRef(null);
 
   // Scroll window to top on mount
   useEffect(() => {
@@ -149,8 +153,28 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         setCurrentModel(d.current || "");
         setProviderMode(d.mode || "");
       })
-      .catch(() => {}); // silent fail — header will show fallback badge
+      .catch(() => {});
   }, []);
+
+  // Close model picker on outside click
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    const handler = (e) => {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target)) {
+        setModelPickerOpen(false);
+        setModelSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [modelPickerOpen]);
+
+  // Auto-focus search when picker opens
+  useEffect(() => {
+    if (modelPickerOpen && modelSearchRef.current) {
+      modelSearchRef.current.focus();
+    }
+  }, [modelPickerOpen]);
 
   const handleModelChange = useCallback(async (modelId) => {
     try {
@@ -160,11 +184,30 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         body: JSON.stringify({ model_id: modelId }),
       });
       const d = await res.json();
-      if (d.success) setCurrentModel(d.current);
+      if (d.success) {
+        setCurrentModel(d.current);
+        setModelPickerOpen(false);
+        setModelSearch("");
+      }
     } catch (e) {
       // silent fail
     }
   }, []);
+
+  // Derive short display label from current model
+  const currentModelLabel = (() => {
+    const m = models.find((m) => m.id === currentModel);
+    if (m) return m.label;
+    // Fallback: extract name from ID like "anthropic/claude-3.5-haiku"
+    return currentModel.split("/").pop() || "Model";
+  })();
+
+  // Filter models by search term
+  const filteredModels = models.filter((m) => {
+    if (!modelSearch) return true;
+    const q = modelSearch.toLowerCase();
+    return m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q);
+  });
 
   // Scroll chat to bottom only when new messages arrive
   useEffect(() => {
@@ -231,33 +274,97 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
               Reflex Assistant
             </span>
             {providerMode === "openrouter" && models.length > 0 ? (
-              <select
-                value={currentModel}
-                onChange={(e) => handleModelChange(e.target.value)}
-                style={{
-                  fontSize: T.textXs,
-                  fontFamily: T.mono,
-                  color: T.text3,
-                  padding: "3px 8px",
-                  borderRadius: T.radiusXs,
-                  background: T.overlay06,
-                  border: `1px solid ${T.border}`,
-                  letterSpacing: "0.04em",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  outline: "none",
-                  WebkitAppearance: "none",
-                  appearance: "none",
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "right 6px center",
-                  paddingRight: 20,
-                }}
-              >
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
+              <div ref={modelPickerRef} style={{ position: "relative" }}>
+                {/* Clickable model badge */}
+                <button
+                  onClick={() => setModelPickerOpen(!modelPickerOpen)}
+                  style={{
+                    fontSize: T.textXs, fontFamily: T.mono, color: T.accent,
+                    padding: "3px 10px", borderRadius: T.radiusXs,
+                    background: T.overlay06, border: `1px solid ${T.border}`,
+                    letterSpacing: "0.04em", fontWeight: 600,
+                    cursor: "pointer", outline: "none",
+                    display: "flex", alignItems: "center", gap: 5,
+                  }}
+                >
+                  {currentModelLabel}
+                  <span style={{ fontSize: 8, opacity: 0.6 }}>{modelPickerOpen ? "▲" : "▼"}</span>
+                </button>
+
+                {/* Searchable model picker dropdown */}
+                {modelPickerOpen && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", left: 0,
+                    width: isMobile ? "calc(100vw - 40px)" : 380,
+                    maxHeight: 400, zIndex: 1000,
+                    background: T.surface, border: `1px solid ${T.border}`,
+                    borderRadius: T.radiusSm, overflow: "hidden",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  }}>
+                    {/* Search input */}
+                    <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                      <input
+                        ref={modelSearchRef}
+                        type="text"
+                        value={modelSearch}
+                        onChange={(e) => setModelSearch(e.target.value)}
+                        placeholder="Search models..."
+                        style={{
+                          width: "100%", fontSize: T.textSm, fontFamily: T.mono,
+                          color: T.text1, background: T.overlay06,
+                          border: `1px solid ${T.border}`, borderRadius: T.radiusXs,
+                          padding: "6px 10px", outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+
+                    {/* Model list */}
+                    <div style={{ overflowY: "auto", maxHeight: 340 }}>
+                      {filteredModels.length === 0 && (
+                        <div style={{
+                          padding: "16px", textAlign: "center",
+                          color: T.text4, fontSize: T.textSm, fontFamily: T.mono,
+                        }}>
+                          No models found
+                        </div>
+                      )}
+                      {filteredModels.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => handleModelChange(m.id)}
+                          style={{
+                            display: "block", width: "100%", textAlign: "left",
+                            padding: "8px 12px", border: "none", cursor: "pointer",
+                            fontFamily: T.mono, fontSize: T.textXs,
+                            background: m.id === currentModel ? T.overlay10 : "transparent",
+                            color: m.id === currentModel ? T.accent : T.text2,
+                            borderLeft: m.id === currentModel
+                              ? `2px solid ${T.accent}` : "2px solid transparent",
+                            transition: "background 0.1s",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (m.id !== currentModel) e.target.style.background = T.overlay06;
+                          }}
+                          onMouseLeave={(e) => {
+                            if (m.id !== currentModel) e.target.style.background = "transparent";
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, marginBottom: 2 }}>{m.label}</div>
+                          <div style={{
+                            fontSize: 10, color: T.text4, display: "flex", gap: 10,
+                          }}>
+                            <span>{m.provider}</span>
+                            {m.context_length && (
+                              <span>{(m.context_length / 1000).toFixed(0)}K ctx</span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <span style={{
                 fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
