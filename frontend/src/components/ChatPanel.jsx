@@ -275,104 +275,109 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             </span>
             {providerMode === "openrouter" && models.length > 0 ? (
               <div ref={modelPickerRef} style={{ position: "relative" }}>
-                {/* Clickable model badge */}
+                {/* Model badge button */}
                 <button
                   onClick={() => setModelPickerOpen(!modelPickerOpen)}
                   style={{
-                    fontSize: T.textXs, fontFamily: T.mono, color: T.accent,
-                    padding: "3px 10px", borderRadius: T.radiusXs,
+                    fontSize: T.textSm, fontFamily: T.font, color: T.text3,
+                    padding: "4px 12px", borderRadius: 6,
                     background: T.overlay06, border: `1px solid ${T.border}`,
-                    letterSpacing: "0.04em", fontWeight: 600,
-                    cursor: "pointer", outline: "none",
-                    display: "flex", alignItems: "center", gap: 5,
+                    fontWeight: 500, cursor: "pointer", outline: "none",
+                    display: "flex", alignItems: "center", gap: 6,
+                    transition: "all 0.15s",
                   }}
                 >
                   {currentModelLabel}
-                  <span style={{ fontSize: 8, opacity: 0.6 }}>{modelPickerOpen ? "▲" : "▼"}</span>
+                  <span style={{ fontSize: 7, opacity: 0.5, marginLeft: 2 }}>{modelPickerOpen ? "▲" : "▼"}</span>
                 </button>
 
-                {/* Searchable model picker dropdown */}
+                {/* Model picker dropdown */}
                 {modelPickerOpen && (
                   <div style={{
-                    position: "absolute", top: "calc(100% + 6px)", left: 0,
-                    width: isMobile ? "calc(100vw - 40px)" : 380,
-                    maxHeight: 400, zIndex: 9999,
-                    background: "#141419", border: `1px solid ${T.border}`,
-                    borderRadius: T.radiusSm, overflow: "hidden",
-                    boxShadow: "0 12px 40px rgba(0,0,0,0.8)",
+                    position: "absolute", top: "calc(100% + 4px)", left: 0,
+                    width: isMobile ? "calc(100vw - 32px)" : 320,
+                    maxHeight: 360, zIndex: 9999,
+                    background: "#16161e", border: `1px solid rgba(255,255,255,0.15)`,
+                    borderRadius: 8, overflow: "hidden",
+                    boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
                   }}>
-                    {/* Search input */}
-                    <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                    {/* Search */}
+                    <div style={{ padding: "6px 8px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                       <input
                         ref={modelSearchRef}
                         type="text"
                         value={modelSearch}
                         onChange={(e) => setModelSearch(e.target.value)}
-                        placeholder="Search models..."
+                        placeholder="Search..."
                         style={{
-                          width: "100%", fontSize: T.textSm, fontFamily: T.mono,
-                          color: T.text1, background: "#1a1a22",
-                          border: `1px solid ${T.border}`, borderRadius: T.radiusXs,
-                          padding: "6px 10px", outline: "none",
+                          width: "100%", fontSize: 12, fontFamily: T.font,
+                          color: "#e0e0e4", background: "#1e1e28",
+                          border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5,
+                          padding: "5px 8px", outline: "none",
                           boxSizing: "border-box",
                         }}
                       />
                     </div>
 
-                    {/* Model list */}
-                    <div style={{ overflowY: "auto", maxHeight: 340 }}>
+                    {/* List */}
+                    <div style={{ overflowY: "auto", maxHeight: 310 }}>
                       {filteredModels.length === 0 && (
                         <div style={{
-                          padding: "16px", textAlign: "center",
-                          color: T.text4, fontSize: T.textSm, fontFamily: T.mono,
+                          padding: 12, textAlign: "center",
+                          color: T.text4, fontSize: 11, fontFamily: T.font,
                         }}>
                           No models found
                         </div>
                       )}
-                      {filteredModels.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => handleModelChange(m.id)}
-                          style={{
-                            display: "block", width: "100%", textAlign: "left",
-                            padding: "8px 12px", border: "none", cursor: "pointer",
-                            fontFamily: T.mono, fontSize: T.textXs,
-                            background: m.id === currentModel ? T.overlay10 : "transparent",
-                            color: m.id === currentModel ? T.accent : T.text2,
-                            borderLeft: m.id === currentModel
-                              ? `2px solid ${T.accent}` : "2px solid transparent",
-                            transition: "background 0.1s",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (m.id !== currentModel) e.target.style.background = T.overlay06;
-                          }}
-                          onMouseLeave={(e) => {
-                            if (m.id !== currentModel) e.target.style.background = "transparent";
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, marginBottom: 2 }}>{m.label}</div>
-                          <div style={{
-                            fontSize: 10, color: T.text4, display: "flex", gap: 10,
-                          }}>
-                            <span>{m.provider}</span>
-                            {m.context_length && (
-                              <span>{(m.context_length / 1000).toFixed(0)}K ctx</span>
-                            )}
+                      {filteredModels.map((m) => {
+                        const active = m.id === currentModel;
+                        return (
+                          <div
+                            key={m.id}
+                            onClick={() => handleModelChange(m.id)}
+                            style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between",
+                              padding: "5px 10px", cursor: "pointer",
+                              background: active ? "rgba(34,211,238,0.08)" : "transparent",
+                              borderLeft: active ? "2px solid #22d3ee" : "2px solid transparent",
+                              transition: "background 0.1s",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!active) e.currentTarget.style.background = "transparent";
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{
+                                fontSize: 11, fontFamily: T.font, fontWeight: 500,
+                                color: active ? "#22d3ee" : "#d1d1d6",
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                              }}>
+                                {m.label}
+                              </div>
+                            </div>
+                            <div style={{
+                              fontSize: 9, fontFamily: T.font, color: "#6e6e73",
+                              flexShrink: 0, marginLeft: 8, textAlign: "right",
+                            }}>
+                              {m.context_length ? `${(m.context_length / 1000).toFixed(0)}K` : ""}
+                            </div>
                           </div>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
               </div>
             ) : (
               <span style={{
-                fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
-                padding: "3px 10px", borderRadius: T.radiusXs,
-                background: T.overlay06, letterSpacing: "0.06em",
-                fontWeight: 600,
+                fontSize: T.textSm, fontFamily: T.font, color: T.text4,
+                padding: "4px 12px", borderRadius: 6,
+                background: T.overlay06, fontWeight: 500,
               }}>
-                {providerMode === "anthropic" ? "HAIKU (DIRECT)" : "HAIKU"}
+                {providerMode === "anthropic" ? "Haiku (Direct)" : "Haiku"}
               </span>
             )}
           </div>
