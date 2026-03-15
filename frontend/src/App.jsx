@@ -19,6 +19,7 @@ import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
+import TradFiPanel from "./components/TradFiPanel.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
@@ -73,6 +74,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("1d");
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // TradFi (HIP-3) data
+  const [dataTradfi4h, setDataTradfi4h] = useState([]);
+  const [dataTradfi1d, setDataTradfi1d] = useState([]);
+
   // Global metrics & alt season
   const [globalMetrics, setGlobalMetrics] = useState(null);
   const [altSeason, setAltSeason] = useState(null);
@@ -123,16 +128,20 @@ export default function App() {
       setLastRefresh(new Date());
 
       try {
-        const [gm, as, sent, stable] = await Promise.all([
+        const [gm, as, sent, stable, tf4h, tf1d] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/stablecoin`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null),
         ]);
         if (gm) setGlobalMetrics(gm);
         if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
+        if (tf4h) setDataTradfi4h(tf4h.results || []);
+        if (tf1d) setDataTradfi1d(tf1d.results || []);
       } catch (_) {}
     } catch (e) {
       setError(e.message);
@@ -300,6 +309,9 @@ export default function App() {
   const sorted4h = sortResults(filtered4h);
   const sorted1d = sortResults(filtered1d);
 
+  // TradFi sorted data
+  const sortedTradfi = sortResults(activeTab === "tradfi" ? dataTradfi1d : dataTradfi4h);
+
   // Apply stat card signal filter to table data
   const applyStatFilter = (data) => {
     if (!statCardFilter) return data;
@@ -308,17 +320,18 @@ export default function App() {
   };
   const display4h = applyStatFilter(sorted4h);
   const display1d = applyStatFilter(sorted1d);
+  const displayTradfi = applyStatFilter(sortedTradfi);
 
   const SIGNALS_NOTABLE = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "TRIM", "RISK_OFF"];
   const notable4h = sorted4h.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat" && activeTab !== "tradfi";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -625,6 +638,7 @@ export default function App() {
          activeTab === "trading" ? "Portfolio" :
          activeTab === "signals" ? "Signal Log" :
          activeTab === "onchain" ? "On-Chain" :
+         activeTab === "tradfi" ? "TradFi" :
          activeTab === "chat" ? "AI Assist" :
          "Scanner"}
       </div>
@@ -701,6 +715,23 @@ export default function App() {
         {activeTab === "onchain" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <OnChainPanel isMobile={isMobile} />
+          </FadeIn>
+        )}
+
+        {activeTab === "tradfi" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <TradFiPanel
+              results={displayTradfi}
+              data4h={dataTradfi4h}
+              data1d={dataTradfi1d}
+              sortKey={sortKey}
+              onSort={setSortKey}
+              selected={selected}
+              onSelect={setSelected}
+              visibleColumns={visibleColumns}
+              isMobile={isMobile}
+              loading={loading}
+            />
           </FadeIn>
         )}
 

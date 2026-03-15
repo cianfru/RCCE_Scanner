@@ -30,7 +30,8 @@ import logging
 import time
 from typing import Dict, List, Optional
 
-from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache
+from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
+    fetch_batch_hip3, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
@@ -299,6 +300,8 @@ class ScanCache:
         self.last_scan_time: Optional[float] = None
         self.is_scanning: bool = False
         self.symbols: List[str] = DEFAULT_SYMBOLS.copy()
+        # TradFi (HIP-3) results — separate from crypto
+        self.tradfi_results: Dict[str, List[dict]] = {}  # timeframe -> results
 
     # -- query helpers -----------------------------------------------------
 
@@ -922,6 +925,157 @@ async def run_scan(
 
     finally:
         scan_cache.is_scanning = False
+
+
+async def run_tradfi_scan(
+    scan_cache: Optional[ScanCache] = None,
+) -> None:
+    """Scan TradFi/HIP-3 assets (commodities, indices, equities).
+
+    Uses the same RCCE + Heatmap + Exhaustion engines as crypto, but:
+    - Data comes from Hyperliquid HIP-3 candleSnapshot API only
+    - No BTC divergence (irrelevant for commodities/equities)
+    - No crypto consensus (separate market dynamics)
+    - Signals synthesized with neutral consensus context
+    """
+    if scan_cache is None:
+        scan_cache = cache
+
+    logger.info("=== TradFi scan started (%d symbols) ===", len(TRADFI_SYMBOL_LIST))
+    t0 = time.time()
+
+    for tf in ("4h", "1d"):
+        try:
+            # 1. Fetch OHLCV for all TradFi symbols
+            ohlcv_batch = await fetch_batch_hip3(tf)
+            fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
+            logger.info("TradFi: fetched %d/%d for %s", fetched, len(TRADFI_SYMBOL_LIST), tf)
+
+            if fetched == 0:
+                logger.warning("TradFi: no data for %s — skipping", tf)
+                continue
+
+            # 2. Fetch weekly data for heatmap + exhaustion
+            weekly_batch = await fetch_batch_hip3("1w")
+
+            # 3. Process each symbol through engines (no BTC/ETH reference)
+            results: List[dict] = []
+            for sym_info in TRADFI_SYMBOLS:
+                symbol = sym_info["symbol"]
+                ohlcv = ohlcv_batch.get(symbol)
+                if ohlcv is None:
+                    continue
+
+                weekly = weekly_batch.get(symbol)
+
+                try:
+                    result = _process_symbol(
+                        symbol=symbol,
+                        timeframe=tf,
+                        ohlcv=ohlcv,
+                        weekly=weekly,
+                        btc_data=None,   # No BTC reference for TradFi
+                        eth_data=None,   # No ETH reference for TradFi
+                    )
+                    # Override asset_class with TradFi category
+                    result["asset_class"] = sym_info["category"]
+                    result["tradfi_name"] = sym_info["name"]
+                    result["tradfi_coin"] = sym_info["coin"]
+                    results.append(result)
+                except Exception:
+                    logger.exception("TradFi: failed to process %s on %s", symbol, tf)
+
+            if not results:
+                continue
+
+            # 4. Compute TradFi-specific consensus (among TradFi assets only)
+            tradfi_consensus = compute_consensus(results)
+
+            # 5. Synthesize signals — use neutral macro context
+            for r in results:
+                try:
+                    heat_direction = r.get("heat_direction", 0)
+                    deviation_pct = r.get("deviation_pct", 0.0)
+                    heat_val = r.get("heat", 0)
+                    bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
+                    macro_blocked = heat_direction < 0 if bmsb_valid else True
+
+                    synth = synthesize_signal(
+                        result=r,
+                        consensus=tradfi_consensus,
+                        global_metrics=None,     # No crypto global metrics
+                        positioning=None,         # No HL/Binance positioning for TradFi
+                        sentiment=None,           # No crypto Fear & Greed
+                        stablecoin=None,          # No stablecoin context
+                        macro_blocked=macro_blocked,
+                        prev_heat=r.get("heat", 0),
+                        bmsb_valid=bmsb_valid,
+                    )
+                    r["signal"] = synth.signal
+                    r["signal_reason"] = synth.reason
+                    r["signal_warnings"] = synth.warnings
+                    r["signal_confidence"] = synth.confidence
+                    r["conditions_met"] = synth.conditions_met
+                    r["conditions_total"] = synth.conditions_total
+                    r["conditions_detail"] = synth.conditions_detail
+                    r["effective_conditions"] = synth.effective_conditions
+                except Exception:
+                    logger.debug("TradFi signal synthesis failed for %s", r.get("symbol"))
+
+            # 6. Compute priority scores
+            for r in results:
+                r["priority_score"] = _compute_priority(r)
+
+            # Sort by priority
+            results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
+
+            scan_cache.tradfi_results[tf] = results
+            logger.info(
+                "TradFi scan %s: %d results in %.1fs",
+                tf, len(results), time.time() - t0,
+            )
+
+            # Log signal transitions for TradFi
+            try:
+                from signal_log import SignalLog
+                sig_log = SignalLog.get()
+                await sig_log.log_signals(
+                    results, f"tradfi_{tf}",
+                    tradfi_consensus.get("consensus", "MIXED"),
+                )
+            except Exception:
+                logger.debug("TradFi signal logging failed (non-fatal)")
+
+        except Exception:
+            logger.exception("TradFi scan failed for %s", tf)
+
+    # Compute TradFi multi-TF confluence
+    if "4h" in scan_cache.tradfi_results and "1d" in scan_cache.tradfi_results:
+        try:
+            confluences = compute_all_confluences(
+                scan_cache.tradfi_results["4h"],
+                scan_cache.tradfi_results["1d"],
+            )
+            for tf_key in ("4h", "1d"):
+                for r in scan_cache.tradfi_results.get(tf_key, []):
+                    sym = r.get("symbol", "")
+                    if sym in confluences:
+                        c = confluences[sym]
+                        r["confluence"] = {
+                            "score": c.score,
+                            "label": c.label,
+                            "regime_aligned": c.regime_aligned,
+                            "signal_aligned": c.signal_aligned,
+                            "regime_4h": c.regime_4h,
+                            "regime_1d": c.regime_1d,
+                            "signal_4h": c.signal_4h,
+                            "signal_1d": c.signal_1d,
+                        }
+        except Exception:
+            logger.debug("TradFi confluence computation failed (non-fatal)")
+
+    elapsed = time.time() - t0
+    logger.info("=== TradFi scan completed in %.1fs ===", elapsed)
 
 
 def run_scan_sync(
