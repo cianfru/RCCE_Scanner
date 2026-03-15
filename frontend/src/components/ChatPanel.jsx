@@ -264,7 +264,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "0 4px" : 0 }}>
       {/* Header */}
-      <GlassCard style={{ padding: isMobile ? "14px 16px" : "16px 22px", marginBottom: 14 }}>
+      <GlassCard style={{ padding: isMobile ? "14px 16px" : "16px 22px", marginBottom: 14, overflow: "visible", position: "relative", zIndex: modelPickerOpen ? 999 : "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
@@ -296,10 +296,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                   <div style={{
                     position: "absolute", top: "calc(100% + 6px)", left: 0,
                     width: isMobile ? "calc(100vw - 40px)" : 380,
-                    maxHeight: 400, zIndex: 1000,
-                    background: T.surface, border: `1px solid ${T.border}`,
+                    maxHeight: 400, zIndex: 9999,
+                    background: "#141419", border: `1px solid ${T.border}`,
                     borderRadius: T.radiusSm, overflow: "hidden",
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                    boxShadow: "0 12px 40px rgba(0,0,0,0.8)",
                   }}>
                     {/* Search input */}
                     <div style={{ padding: "8px 10px", borderBottom: `1px solid ${T.border}` }}>
@@ -311,7 +311,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                         placeholder="Search models..."
                         style={{
                           width: "100%", fontSize: T.textSm, fontFamily: T.mono,
-                          color: T.text1, background: T.overlay06,
+                          color: T.text1, background: "#1a1a22",
                           border: `1px solid ${T.border}`, borderRadius: T.radiusXs,
                           padding: "6px 10px", outline: "none",
                           boxSizing: "border-box",
