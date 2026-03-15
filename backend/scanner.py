@@ -1059,7 +1059,10 @@ async def run_tradfi_scan(
                 r["signal"] = synth.signal
                 r["signal_reason"] = synth.reason
                 r["signal_warnings"] = synth.warnings
-                r["signal_confidence"] = synth.confidence
+                r["signal_confidence"] = (
+                    round(synth.conditions_met / synth.conditions_total * 100)
+                    if synth.conditions_total > 0 else 0
+                )
                 r["conditions_met"] = synth.conditions_met
                 r["conditions_total"] = synth.conditions_total
                 r["conditions_detail"] = synth.conditions_detail
