@@ -43,9 +43,22 @@ const NAV_ICONS = {
       <path d="M2 8h3l2-5 2 10 2-5h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   ),
+  tradfi: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="6" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="6.5" y="3" width="3" height="10" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="11" y="5" width="3" height="8" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  ),
 };
 
 const NAV_SECTIONS = [
+  {
+    label: "Markets",
+    items: [
+      { key: "tradfi", label: "TradFi", desc: "Commodities, equities, indices (HIP-3)" },
+    ],
+  },
   {
     label: "Intelligence",
     items: [

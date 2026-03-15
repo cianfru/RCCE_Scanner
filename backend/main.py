@@ -22,7 +22,7 @@ except ImportError:
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from scanner import cache, run_scan, get_scan_status
+from scanner import cache, run_scan, run_tradfi_scan, get_scan_status
 from models import (
     ScanResponse,
     ConsensusResponse,
@@ -231,6 +231,12 @@ async def _periodic_scan():
             except Exception:
                 logger.debug("Signal outcome update failed (non-fatal)")
 
+            # Run TradFi (HIP-3) scan alongside crypto
+            try:
+                await run_tradfi_scan(cache)
+            except Exception:
+                logger.debug("TradFi scan failed (non-fatal)")
+
             # Notify position watchers about regime/signal changes
             try:
                 from position_monitor import PositionMonitor
@@ -306,6 +312,27 @@ async def scan(
         cache_age_seconds=cache.get_cache_age(),
         consensus=consensus,
     )
+
+
+@app.get("/api/tradfi")
+async def tradfi_scan(
+    timeframe: str = Query("4h", description="4h or 1d"),
+    regime: Optional[str] = Query(None),
+    signal: Optional[str] = Query(None),
+):
+    """Return cached TradFi (HIP-3) scan results."""
+    items = cache.tradfi_results.get(timeframe, [])
+    if regime is not None:
+        regime_upper = regime.upper()
+        items = [r for r in items if r.get("regime", "").upper() == regime_upper]
+    if signal is not None:
+        signal_upper = signal.upper()
+        items = [r for r in items if r.get("signal", "").upper() == signal_upper]
+    return {
+        "results": items,
+        "scan_running": cache.is_scanning,
+        "cache_age_seconds": cache.get_cache_age(),
+    }
 
 
 @app.get("/api/consensus")
