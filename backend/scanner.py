@@ -471,6 +471,16 @@ def _process_symbol(
         "rel_vol": round(exhaustion.get("rel_vol", 0), 2),
         # Sparkline: last 24 close prices
         "sparkline": [round(float(c), 6) for c in ohlcv["close"][-24:]],
+        # Extra engine fields (persisted via context JSON in signal_log)
+        "deviation_abs": round(heatmap.get("deviation_abs", 0), 4),
+        "bmsb_mid": round(heatmap.get("bmsb_mid", 0), 4),
+        "r3": round(heatmap.get("r3", 0), 4),
+        "dist_pct": round(exhaustion.get("dist_pct", 0), 4),
+        "w_bmsb": round(exhaustion.get("w_bmsb", 0), 4),
+        "beta_btc": round(rcce.get("beta_btc", 0), 4),
+        "beta_eth": round(rcce.get("beta_eth", 0), 4),
+        "atr_ratio": round(rcce.get("atr_ratio", 0), 3),
+        "regime_probabilities": rcce.get("regime_probabilities", {}),
     }
     return result
 

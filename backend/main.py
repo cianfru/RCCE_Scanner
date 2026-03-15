@@ -1589,6 +1589,72 @@ async def signal_recent_changes(
     return {"changes": changes, "timeframe": timeframe}
 
 
+@app.get("/api/signals/timeline")
+async def signal_timeline(
+    timeframe: str = Query("4h"),
+    symbol: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Unified timeline: signal + regime events interleaved by timestamp."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    events = await sig_log.get_timeline(
+        timeframe=timeframe, symbol=symbol,
+        limit=limit, offset=offset,
+    )
+    total = await sig_log.get_timeline_count(
+        timeframe=timeframe, symbol=symbol,
+    )
+    return {"events": events, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/signals/regime-history")
+async def signal_regime_history(
+    timeframe: str = Query("4h"),
+    symbol: Optional[str] = Query(None),
+    regime: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Paginated regime transition history."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    events = await sig_log.get_regime_history(
+        timeframe=timeframe, symbol=symbol, regime=regime,
+        limit=limit, offset=offset,
+    )
+    total = await sig_log.get_regime_history_count(
+        timeframe=timeframe, symbol=symbol, regime=regime,
+    )
+    return {"events": events, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/signals/upgrade-scorecard")
+async def signal_upgrade_scorecard(
+    timeframe: str = Query("4h"),
+):
+    """Per-transition-type win-rate scorecard (UPGRADE/DOWNGRADE/ENTRY/EXIT)."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    data = await sig_log.get_upgrade_scorecard(timeframe=timeframe)
+    return data
+
+
+@app.get("/api/signals/regime-durations")
+async def signal_regime_durations(
+    timeframe: str = Query("4h"),
+    symbol: Optional[str] = Query(None),
+):
+    """Average regime durations by regime type."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    durations = await sig_log.get_regime_durations(
+        timeframe=timeframe, symbol=symbol,
+    )
+    return {"durations": durations, "timeframe": timeframe}
+
+
 # ---------------------------------------------------------------------------
 # AIXBT Entry Confirmation
 # ---------------------------------------------------------------------------

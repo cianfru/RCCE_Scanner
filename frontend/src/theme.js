@@ -221,6 +221,17 @@ export const SIGNAL_META = {
 
 export const REGIME_ORDER = ["BLOWOFF","MARKUP","REACC","ACCUM","CAP","MARKDOWN","ABSORBING","FLAT"];
 
+// ─── TRANSITION METADATA ───────────────────────────────────────────────────
+
+export const TRANSITION_META = {
+  UPGRADE:   { color: "#34d399", glyph: "\u2191", label: "UPGRADE" },
+  DOWNGRADE: { color: "#f87171", glyph: "\u2193", label: "DOWNGRADE" },
+  ENTRY:     { color: "#22d3ee", glyph: "\u25b6", label: "ENTRY" },
+  EXIT:      { color: "#fb923c", glyph: "\u25a0", label: "EXIT" },
+  LATERAL:   { color: "#52525b", glyph: "\u2192", label: "LATERAL" },
+  INITIAL:   { color: "#c084fc", glyph: "\u25c6", label: "INITIAL" },
+};
+
 // ─── COLOR HELPERS ──────────────────────────────────────────────────────────
 
 export function heatColor(heat) {

@@ -9,6 +9,7 @@ and conversational Q&A over live RCCE Scanner data.
 
 from __future__ import annotations
 
+import json
 import os
 import logging
 import time
@@ -120,13 +121,125 @@ LIQUIDATING (OI down + price down)
 - BEAR-DIV: symbol in MARKUP/REACC while BTC in MARKDOWN
 - BULL-DIV: symbol in MARKDOWN/CAP while BTC in MARKUP
 
+## Historical Signal Log
+
+The scanner persists every signal transition and regime change with full engine \
+context snapshots. When provided, "Recent History" data shows:
+
+- **Signal events**: transitions like WAIT→LIGHT_LONG with a classification:
+  - ENTRY: non-long → long signal (new position)
+  - EXIT: long → exit/wait (position closed)
+  - UPGRADE: signal improved (e.g. LIGHT_LONG → STRONG_LONG)
+  - DOWNGRADE: signal weakened (e.g. STRONG_LONG → LIGHT_LONG)
+  - LATERAL: same-rank lateral move
+  - INITIAL: first observation
+
+- **Regime events**: structural phase transitions like MARKUP→BLOWOFF
+
+## Metric Trends
+
+When "Metric Trends" data is provided, it shows how key engine metrics evolved \
+across recent signal events with sampled values and direction arrows:
+- Heat: structural intensity (0-100), rising = overextension building
+- Z-Score: deviation from mean, rising = price extending from equilibrium
+- Confidence: regime conviction (0-100%), falling = weakening structure
+- Energy: fast/slow volatility ratio, rising = acceleration
+- Effort: directional pressure from exhaustion engine
+- Deviation%: price distance from BMSB weekly band
+
+Cross-metric patterns to watch:
+- All rising together = potential blowoff / overextension risk
+- Heat rising + Z falling = structural divergence
+- Confidence falling + Energy rising = regime uncertainty
+- Heat cooling + Confidence rising = healthy consolidation
+
+Reference specific trend arrows (e.g. "heat: 30 → 45 → 62 → 78") when they \
+add clarity. The trend data supplements the point-in-time snapshot.
+
+Use historical events to:
+- Identify momentum: multiple upgrades = strengthening, downgrades = weakening
+- Spot regime rotation patterns (e.g. ACCUM→MARKUP = healthy, MARKUP→BLOWOFF = caution)
+- Note how long a symbol has been in its current regime
+- Reference recent signal changes when explaining current state ("recently upgraded from...")
+- Warn when a symbol has been rapidly cycling between signals (instability)
+
 ## Response Style
 - Walk through which conditions pass/fail when explaining signals.
 - Use the actual numbers from the data provided.
+- Reference recent signal/regime history when relevant to provide context.
 - Keep responses focused and under 300 words unless more detail is needed.
 - For position sizing, suggest conservative percentages based on signal strength \
 (STRONG_LONG: full size, LIGHT_LONG: 50-60%, ACCUMULATE: 25-30% DCA).
 """
+
+
+# ---------------------------------------------------------------------------
+# Trend analysis helpers
+# ---------------------------------------------------------------------------
+
+def _analyze_trend(values: list, label: str) -> Optional[str]:
+    """Produce a one-line trend summary.
+
+    Example output: 'Heat: 30 → 45 → 62 → 78 (↑ rising sharply, Δ+48.0)'
+    """
+    clean = [v for v in values if v is not None]
+    if len(clean) < 3:
+        return None
+
+    first, last = clean[0], clean[-1]
+    delta = last - first
+
+    # Direction
+    threshold = 0.05 * (abs(first) + 1)
+    if abs(delta) < threshold:
+        direction = "stable"
+    elif delta > 0:
+        direction = "rising"
+    else:
+        direction = "falling"
+
+    # Rate: compare first half vs second half
+    mid = len(clean) // 2
+    avg1 = sum(clean[:mid]) / mid
+    avg2 = sum(clean[mid:]) / (len(clean) - mid)
+    rng = max(clean) - min(clean)
+
+    if direction != "stable" and rng > 0:
+        half_delta = abs(avg2 - avg1)
+        if half_delta / rng > 0.5:
+            rate = "sharply"
+        elif half_delta / rng > 0.25:
+            rate = "steadily"
+        else:
+            rate = "gradually"
+    else:
+        rate = ""
+
+    # Sample 4-5 points for arrow sequence
+    step = max(1, len(clean) // 4)
+    sampled = [clean[i] for i in range(0, len(clean), step)]
+    if clean[-1] not in sampled:
+        sampled.append(clean[-1])
+
+    def _fmt(v):
+        if abs(v) >= 10:
+            return f"{v:.0f}"
+        if abs(v) >= 1:
+            return f"{v:.1f}"
+        return f"{v:.2f}"
+
+    arrow_str = " → ".join(_fmt(v) for v in sampled)
+    arrows = {"rising": "↑", "falling": "↓", "stable": "~"}
+    return f"{label}: {arrow_str} ({arrows[direction]} {rate} {direction}, Δ{delta:+.1f})"
+
+
+def _format_age_span(seconds: int) -> str:
+    """Format a duration span as 'over N days/hours'."""
+    if seconds < 3600:
+        return f"over {seconds // 60}m"
+    if seconds < 86400:
+        return f"over {seconds // 3600}h"
+    return f"over {seconds // 86400}d"
 
 
 # ---------------------------------------------------------------------------
@@ -170,12 +283,12 @@ class AssistantManager:
 
     # -- Context builder ---------------------------------------------------
 
-    def build_context(
+    async def build_context(
         self,
         symbol: Optional[str] = None,
         include_market: bool = True,
     ) -> str:
-        """Build a compact data snapshot from the live ScanCache."""
+        """Build a compact data snapshot from live ScanCache + signal log history."""
         from scanner import cache
 
         parts: List[str] = []
@@ -284,7 +397,222 @@ class AssistantManager:
                 if wait_count > 0:
                     parts.append(f"({wait_count} symbols on WAIT)")
 
+        # -- Historical signal log context ----------------------------------
+        history_section = await self._build_history_context(symbol)
+        if history_section:
+            parts.append(history_section)
+
         return "\n\n".join(parts)
+
+    async def _build_trend_summary(
+        self,
+        symbol: str,
+    ) -> Optional[str]:
+        """Analyze metric trajectories and generate narrative summary."""
+        try:
+            from signal_log import SignalLog
+            slog = SignalLog.get()
+            if slog._db is None:
+                return None
+        except Exception:
+            return None
+
+        events = await slog.get_metric_series(symbol, "4h", limit=20)
+        if len(events) < 3:
+            return None
+
+        # Extract metric sequences
+        heats = [e["heat"] for e in events]
+        zscores = [e["zscore"] for e in events]
+        confs = [e["confidence"] for e in events]
+        energies = [e["energy"] for e in events]
+        efforts = [e["effort"] for e in events]
+        devs = [e["deviation_pct"] for e in events]
+
+        lines: List[str] = [f"## Metric Trends — {symbol}"]
+
+        # Individual metric trends with direction tracking
+        trends: Dict[str, str] = {}
+        for values, label, key in [
+            (heats, "Heat", "heat"),
+            (zscores, "Z-Score", "zscore"),
+            (confs, "Confidence", "confidence"),
+            (energies, "Energy", "energy"),
+            (efforts, "Effort", "effort"),
+            (devs, "Deviation%", "deviation"),
+        ]:
+            result = _analyze_trend(values, label)
+            if result:
+                lines.append(f"- {result}")
+                # Track direction for cross-metric patterns
+                clean = [v for v in values if v is not None]
+                if len(clean) >= 3:
+                    d = clean[-1] - clean[0]
+                    th = 0.05 * (abs(clean[0]) + 1)
+                    trends[key] = (
+                        "rising" if d > th
+                        else "falling" if d < -th
+                        else "stable"
+                    )
+
+        # Time span context
+        if len(events) >= 2:
+            span = events[-1]["timestamp"] - events[0]["timestamp"]
+            lines.append(
+                f"- Span: {len(events)} events {_format_age_span(span)}"
+            )
+
+        # Cross-metric pattern detection
+        patterns: List[str] = []
+        h = trends.get("heat")
+        z = trends.get("zscore")
+        c = trends.get("confidence")
+        e = trends.get("energy")
+
+        if h == "rising" and z == "rising" and c == "rising":
+            patterns.append(
+                "Heat + Z-Score + Confidence all rising "
+                "→ acceleration, watch for overextension"
+            )
+        if h == "rising" and z == "falling":
+            patterns.append(
+                "Heat rising while Z-Score falling "
+                "→ possible structural divergence"
+            )
+        if c == "falling" and e == "rising":
+            patterns.append(
+                "Confidence declining + Energy rising "
+                "→ regime uncertainty, volatility increasing"
+            )
+        if h == "falling" and c == "rising":
+            patterns.append(
+                "Heat cooling + Confidence rising "
+                "→ healthy consolidation"
+            )
+        if h == "rising" and z == "rising" and c == "falling":
+            patterns.append(
+                "Heat & Z rising but Confidence falling "
+                "→ stretched move losing conviction"
+            )
+        if all(d == "stable" for d in [h, z, c] if d):
+            patterns.append(
+                "All metrics stable → range-bound, waiting for catalyst"
+            )
+
+        if patterns:
+            lines.append("Patterns:")
+            for p in patterns:
+                lines.append(f"  → {p}")
+
+        return "\n".join(lines)
+
+    async def _build_history_context(
+        self,
+        symbol: Optional[str] = None,
+    ) -> Optional[str]:
+        """Query signal log for recent signal + regime events and format as text."""
+        try:
+            from signal_log import SignalLog
+            slog = SignalLog.get()
+            if slog._db is None:
+                return None
+        except Exception:
+            return None
+
+        lines: List[str] = []
+
+        if symbol:
+            # Trend summary first (prepended before raw events)
+            trend = await self._build_trend_summary(symbol)
+            if trend:
+                lines.append(trend)
+
+            # Symbol-specific: recent timeline events (signals + regimes)
+            events = await slog.get_timeline(
+                timeframe="4h", symbol=symbol, limit=30
+            )
+            if events:
+                lines.append(
+                    f"## Recent History — {symbol} ({len(events)} events)"
+                )
+                for ev in events[:15]:
+                    ts = ev.get("timestamp", 0)
+                    age = self._format_age(ts)
+                    etype = ev.get("event_type", "?")
+                    label = ev.get("label", "?")
+                    prev = ev.get("prev_label")
+                    price = ev.get("price", 0)
+                    z = ev.get("zscore")
+                    conf = ev.get("confidence")
+
+                    if etype == "signal":
+                        tt = ev.get("transition_type", "")
+                        arrow = f"{prev} → " if prev else ""
+                        z_str = f", z={z:.2f}" if z is not None else ""
+                        c_str = (
+                            f", conf={conf:.0f}%"
+                            if conf is not None else ""
+                        )
+                        lines.append(
+                            f"- [{age}] SIG {tt}: {arrow}{label} "
+                            f"@ ${price:.6g}{z_str}{c_str}"
+                        )
+                    else:  # regime
+                        arrow = f"{prev} → " if prev else ""
+                        e_str = ""
+                        ctx_str = ev.get("context")
+                        if ctx_str:
+                            try:
+                                ctx = json.loads(ctx_str)
+                                energy = ctx.get("rcce", {}).get("energy")
+                                if energy is not None:
+                                    e_str = f", energy={energy:.3f}"
+                            except Exception:
+                                pass
+                        c_str = (
+                            f", conf={conf:.0f}%"
+                            if conf is not None else ""
+                        )
+                        lines.append(
+                            f"- [{age}] REG: {arrow}{label} "
+                            f"@ ${price:.6g}{c_str}{e_str}"
+                        )
+        else:
+            # No symbol: show recent signal changes across all assets
+            recent = await slog.get_recent_changes(timeframe="4h", limit=20)
+            if recent:
+                lines.append("## Recent Signal Changes (4H)")
+                for ev in recent:
+                    ts = ev.get("timestamp", 0)
+                    age = self._format_age(ts)
+                    sym = ev.get("symbol", "?")
+                    sig = ev.get("signal", "?")
+                    prev = ev.get("prev_signal")
+                    tt = ev.get("transition_type", "")
+                    regime = ev.get("regime", "?")
+                    price = ev.get("price", 0)
+
+                    arrow = f"{prev} → " if prev else ""
+                    lines.append(
+                        f"- [{age}] {sym}: {tt} {arrow}{sig} "
+                        f"({regime}) @ ${price:.6g}"
+                    )
+
+        return "\n".join(lines) if lines else None
+
+    @staticmethod
+    def _format_age(timestamp: int) -> str:
+        """Format a timestamp as relative age (e.g. '2h ago', '3d ago')."""
+        delta = int(time.time()) - timestamp
+        if delta < 60:
+            return "just now"
+        if delta < 3600:
+            return f"{delta // 60}m ago"
+        if delta < 86400:
+            h = delta // 3600
+            return f"{h}h ago"
+        d = delta // 86400
+        return f"{d}d ago"
 
     # -- Symbol detection --------------------------------------------------
 
@@ -327,8 +655,8 @@ class AssistantManager:
         if detected and "/" not in detected:
             detected = f"{detected}/USDT"
 
-        # Build context
-        context = self.build_context(symbol=detected, include_market=True)
+        # Build context (async — queries signal log history)
+        context = await self.build_context(symbol=detected, include_market=True)
 
         # Append user message
         session.messages.append(ChatMessage(role="user", content=user_message))
