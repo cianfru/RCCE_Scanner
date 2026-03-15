@@ -64,6 +64,23 @@ class TelegramBot:
         await self.app.start()
         await self.app.updater.start_polling(drop_pending_updates=True)
         self._running = True
+
+        # Register commands in Telegram's UI menu
+        try:
+            from telegram import BotCommand
+            await self.app.bot.set_my_commands([
+                BotCommand("briefing", "Daily market briefing"),
+                BotCommand("signals", "Active signals summary"),
+                BotCommand("explain", "Explain a signal (e.g. /explain HYPE)"),
+                BotCommand("watch", "Monitor HL positions (e.g. /watch 0x...)"),
+                BotCommand("unwatch", "Stop position monitoring"),
+                BotCommand("positions", "Show open positions with scanner context"),
+                BotCommand("overview", "Full portfolio overview + opportunities"),
+                BotCommand("help", "Show help message"),
+            ])
+        except Exception as e:
+            logger.warning("Failed to register bot commands menu: %s", e)
+
         logger.info("Telegram bot started")
 
     async def stop(self):
