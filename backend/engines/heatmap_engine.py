@@ -188,9 +188,12 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
 
     # ---- Hybrid scaling R3 -------------------------------------------------
     # If weekly ATR or its SMA is unavailable (< 34 weeks of data),
-    # default r3=1.0 so heat is computed from BMSB deviation alone.
+    # use median observed r3 (0.15) as fallback.  Real r3 values across
+    # major coins range 0.08-0.32 (median ≈ 0.15); defaulting to 1.0
+    # inflated heat by ~6x for newer listings.
+    _R3_FALLBACK = 0.15
     if np.isnan(atr_w) or atr_w == 0.0 or np.isnan(atr_w_sma) or atr_w_sma == 0.0:
-        r1 = 1.0
+        r1 = _R3_FALLBACK
         r2 = 1.0
     else:
         r1 = atr_d / atr_w
