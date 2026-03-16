@@ -1,20 +1,20 @@
 """
-RCCE v2.2 Engine -- Python / numpy port
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Ports the RCCE v2.2 Pine Script indicator to a pure-numpy implementation.
+RCCE v2.2 Engine -- Python / numpy port (hybrid baseline)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Ports the RCCE v2.2 Pine Script indicator to a pure-numpy implementation,
+enhanced with a hybrid z-score baseline:
+
+  - **Primary**: linreg(300) — follows the macro trend slope so trending
+    assets don't appear overextended with limited history.
+  - **Fallback**: SMA(200) — used when the coin has < 300 bars of data.
 
 Public API
 ----------
     compute_rcce(ohlcv, btc_ohlcv=None, eth_ohlcv=None) -> dict
 
-All rolling-window helpers (_sma, _stdev, _percentile_rolling) are vectorised
-where possible; regime persistence is simulated bar-by-bar over the full
-series so the returned values reflect the *last* bar exactly as Pine would.
-
-The z-score calculation requires 2 * LEN_LONG bars of data for full warm-up
-(first SMA needs LEN_LONG, then the inner SMA/stdev of the deviation also
-needs LEN_LONG).  The minimum requirement to produce any output is LEN_LONG
-bars; shorter series return a FLAT / WAIT stub.
+Z-score normalisation uses a 200-bar window for the inner mean/stdev,
+with optional smoothing (Z_SMOOTH) and scaling (Z_SCALE).  A warmup
+dampening factor is applied for coins with fewer than 2 * LEN_LONG bars.
 """
 
 from __future__ import annotations
@@ -33,7 +33,10 @@ LEN_ENERGY_SLOW: int = 50
 LEN_BETA: int = 100
 LEN_ATR_FAST: int = 14
 LEN_ATR_SLOW: int = 50
-Z_BLOWOFF: float = 2.0
+LEN_REGRESSION: int = 300       # linreg window (primary baseline)
+Z_SMOOTH: int = 1               # z-score SMA smoothing (1 = off)
+Z_SCALE: float = 1.0            # z-score output multiplier
+Z_BLOWOFF: float = 2.5          # raised from 2.0 — hybrid baseline is tighter
 Z_CAPITULATION: float = -1.0
 Z_TRIM: float = 3.0
 Z_TRIM_HARD: float = 3.5
@@ -231,44 +234,106 @@ def _percentile_rolling(arr: np.ndarray, n: int, pct: float) -> np.ndarray:
 # Core calculations (vectorised over the full series)
 # ---------------------------------------------------------------------------
 
-def _calc_zscore(close: np.ndarray, length: int) -> np.ndarray:
-    """Pine ``calc_zscore``: z-score of log-price deviation from its SMA.
+def _linreg(arr: np.ndarray, n: int) -> np.ndarray:
+    """Rolling linear regression fitted value at offset 0.
 
-    The Pine code is::
+    Matches Pine ``ta.linreg(src, length, 0)`` — fits a least-squares line
+    over the trailing *n* bars and returns the fitted value at the current bar.
+    Fully vectorised (no Python loops).
+    """
+    length = len(arr)
+    out = np.full(length, np.nan, dtype=np.float64)
+    if n < 2 or length < n:
+        return out
 
-        logp = math.log(src)
-        ma   = ta.sma(logp, len)
-        dev  = logp - ma
-        mean_dev = ta.sma(dev, len)
-        std_dev  = ta.stdev(dev, len)
-        (dev - mean_dev) / (std_dev == 0 ? 1e-10 : std_dev)
+    # Constants for x = 0, 1, ..., n-1
+    sx = n * (n - 1) / 2.0
+    sx2 = n * (n - 1) * (2 * n - 1) / 6.0
+    denom = n * sx2 - sx * sx
+    if abs(denom) < 1e-15:
+        return out
 
-    ``dev`` is NaN for the first ``length - 1`` bars (while the outer SMA
-    warms up).  The inner ``ta.sma(dev, len)`` and ``ta.stdev(dev, len)``
-    therefore need *another* ``length`` non-NaN ``dev`` values -- meaning the
-    z-score is first valid at bar ``2 * length - 2``.
+    indices = np.arange(length, dtype=np.float64)
+    jy = indices * arr
 
-    We use NaN-safe helpers so that the inner SMA/stdev start producing
-    output as soon as enough non-NaN ``dev`` values have accumulated,
-    matching Pine's bar-by-bar semantics.
+    cumsum_y = np.cumsum(arr)
+    cumsum_jy = np.cumsum(jy)
+
+    # Vectorised rolling sums
+    sy = cumsum_y[n - 1 :] - np.concatenate(([0.0], cumsum_y[: length - n]))
+    sum_jy = cumsum_jy[n - 1 :] - np.concatenate(([0.0], cumsum_jy[: length - n]))
+    lo = np.arange(0, length - n + 1, dtype=np.float64)  # window start index
+    sxy = sum_jy - lo * sy
+
+    b = (n * sxy - sx * sy) / denom
+    a = (sy - b * sx) / n
+    out[n - 1 :] = a + b * (n - 1)
+    return out
+
+
+def _calc_zscore_hybrid(
+    close: np.ndarray,
+    len_ma: int,
+    len_reg: int,
+    z_smooth: int = 1,
+    z_scale: float = 1.0,
+) -> np.ndarray:
+    """Hybrid z-score: linreg(len_reg) baseline with SMA(len_ma) fallback.
+
+    Matches the "Structural Risk & Exhaustion" Pine Script logic:
+
+    1. Primary baseline: ``ta.linreg(logp, len_reg, 0)`` — follows the
+       macro trend slope, so trending assets don't appear overextended.
+    2. Fallback baseline: ``ta.sma(logp, len_ma)`` — used when the coin
+       has fewer than ``len_reg`` bars of history.
+    3. Z-score normalisation uses the SMA window (``len_ma``) for the
+       inner mean/stdev of deviation, matching the Pine implementation.
+    4. Optional smoothing: ``ta.sma(z, z_smooth)`` (default 1 = off).
+    5. Optional scale multiplier (default 1.0).
     """
     logp = np.log(np.maximum(close, _EPS))
-    ma = _sma(logp, length)
-    dev = logp - ma  # NaN for bars 0..(length-2)
 
-    # Inner SMA and stdev must tolerate leading NaNs in `dev`
-    mean_dev = _sma_nan_safe(dev, length)
-    std_dev = _stdev_nan_safe(dev, length)
+    # SMA baseline (fallback)
+    log_ma = _sma(logp, len_ma)
 
-    # Guard: when std_dev is essentially zero (constant price or
-    # floating-point residuals below 1e-10), the z-score is meaningless.
-    # Pine's ``std_dev == 0 ? 1e-10 : std_dev`` has the same intent --
-    # but with numpy cumsum arithmetic, tiny FP residuals (~1e-14) can
-    # sneak through.  We treat anything < _EPS as zero.
+    # Linear regression baseline (primary)
+    log_reg = _linreg(logp, len_reg)
+
+    # Hybrid: use regression where available, SMA fallback
+    log_baseline = np.where(np.isnan(log_reg), log_ma, log_reg)
+
+    # Deviation from baseline
+    dev = logp - log_baseline  # NaN where baseline is NaN
+
+    # Z-score normalisation (same window as SMA)
+    mean_dev = _sma_nan_safe(dev, len_ma)
+    std_dev = _stdev_nan_safe(dev, len_ma)
+
     effectively_zero = (std_dev < _EPS) | np.isnan(std_dev)
     safe_std = np.where(effectively_zero, 1.0, std_dev)
     z = (dev - mean_dev) / safe_std
-    # Force z to 0 where std was effectively zero (no variance => no signal)
+    z = np.where(effectively_zero, 0.0, z)
+
+    # Scale
+    z = z * z_scale
+
+    # Smooth
+    if z_smooth > 1:
+        z = _sma_nan_safe(z, z_smooth)
+
+    return z
+
+
+def _calc_zscore(close: np.ndarray, length: int) -> np.ndarray:
+    """Legacy SMA-only z-score (kept for reference, no longer used)."""
+    logp = np.log(np.maximum(close, _EPS))
+    ma = _sma(logp, length)
+    dev = logp - ma
+    mean_dev = _sma_nan_safe(dev, length)
+    std_dev = _stdev_nan_safe(dev, length)
+    effectively_zero = (std_dev < _EPS) | np.isnan(std_dev)
+    safe_std = np.where(effectively_zero, 1.0, std_dev)
+    z = (dev - mean_dev) / safe_std
     z = np.where(effectively_zero, 0.0, z)
     return z
 
@@ -601,9 +666,30 @@ def compute_rcce(
         return _empty_result
 
     # ------------------------------------------------------------------
-    # 1. Z-Score (long-term, across entire series)
+    # Warmup quality: how well-populated is the z-score normalisation?
+    # Full warmup needs 2 × LEN_LONG bars.  With fewer bars the inner
+    # SMA/stdev operate over a truncated window, inflating z-scores.
+    # warmup_ratio goes from ~0.0 (barely enough) to 1.0 (fully warmed).
     # ------------------------------------------------------------------
-    z_series = _calc_zscore(close, LEN_LONG)
+    warmup_ratio = min(1.0, max(0.0, (n - LEN_LONG) / LEN_LONG))
+
+    # ------------------------------------------------------------------
+    # 1. Z-Score (hybrid linreg + SMA fallback)
+    # ------------------------------------------------------------------
+    z_series = _calc_zscore_hybrid(
+        close, len_ma=LEN_LONG, len_reg=LEN_REGRESSION,
+        z_smooth=Z_SMOOTH, z_scale=Z_SCALE,
+    )
+
+    # Determine which baseline was actually used on the last bar
+    has_regression = n >= LEN_REGRESSION
+    baseline_type = "REGRESSION" if has_regression else "SMA_FALLBACK"
+
+    # Dampen z-scores when warmup is incomplete.  A coin with only
+    # 250 bars (warmup_ratio ≈ 0.25) gets its z multiplied by ~0.25,
+    # preventing inflated regime calls on thin data.
+    if warmup_ratio < 1.0:
+        z_series = z_series * warmup_ratio
 
     # ------------------------------------------------------------------
     # 2. Volatility
@@ -734,6 +820,16 @@ def compute_rcce(
         momentum = 0.0
 
     # ------------------------------------------------------------------
+    # 8b. Blowoff declining detection (z peaked and now rolling over)
+    # ------------------------------------------------------------------
+    # Matches Pine: z_declining = z_final < ta.highest(z_final, 2)
+    if n >= 3 and np.isfinite(z_series[-1]) and np.isfinite(z_series[-2]):
+        z_recent_peak = float(np.nanmax(z_series[-3:]))
+        z_declining = z_last < z_recent_peak
+    else:
+        z_declining = False
+
+    # ------------------------------------------------------------------
     # 9. Raw Signal (RCCE-only, before cross-engine synthesis)
     # ------------------------------------------------------------------
     raw_signal = _generate_signal(
@@ -762,6 +858,10 @@ def compute_rcce(
         "momentum": round(momentum, 4),
         "vol_scale": round(vol_scale, 3),
         "atr_ratio": round(atr_ratio, 3),
+        "data_bars": n,
+        "warmup_quality": round(warmup_ratio, 2),
+        "baseline_type": baseline_type,
+        "z_declining": z_declining,
         "regime_probabilities": {
             "markup": round(float(np.nan_to_num(p_markup[-1], nan=0.0)), 4),
             "blowoff": round(float(np.nan_to_num(p_blowoff[-1], nan=0.0)), 4),
