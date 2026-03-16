@@ -118,8 +118,8 @@ export default function NotificationBell() {
       {/* Dropdown panel */}
       {open && (
         <div style={{
-          position: "absolute", top: 36, right: 0,
-          width: 320, maxHeight: 420,
+          position: "fixed", top: 56, right: 10,
+          width: 320, maxWidth: "calc(100vw - 20px)", maxHeight: 420,
           background: T.popoverBg,
           border: `1px solid ${T.border}`,
           borderRadius: T.radiusSm,

@@ -185,7 +185,7 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: T.text3,
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 10,
         attributionLogo: false,
       },

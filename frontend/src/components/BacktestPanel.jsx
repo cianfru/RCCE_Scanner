@@ -43,7 +43,7 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
       const val = yMax - (yMax - yMin) * (i / gridLines);
       ctx.fillStyle = resolveToken("overlay25");
-      ctx.font = "9px JetBrains Mono, monospace";
+      ctx.font = "9px SF Mono, Fira Code, monospace";
       ctx.textAlign = "right";
       ctx.fillText(`$${val.toFixed(0)}`, pad.l - 6, y + 3);
     }
@@ -53,7 +53,7 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
       const dates = equity.map(p => new Date(p[0]));
       const labelCount = Math.min(6, equity.length);
       ctx.fillStyle = resolveToken("overlay20");
-      ctx.font = "8px JetBrains Mono, monospace";
+      ctx.font = "8px SF Mono, Fira Code, monospace";
       ctx.textAlign = "center";
       for (let i = 0; i < labelCount; i++) {
         const idx = Math.floor((i / (labelCount - 1)) * (dates.length - 1));
@@ -97,7 +97,7 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
     // Legend
     ctx.setLineDash([]);
     const legendY = 12;
-    ctx.font = "9px JetBrains Mono, monospace";
+    ctx.font = "9px SF Mono, Fira Code, monospace";
 
     ctx.fillStyle = "rgb(34,211,238)";
     ctx.fillRect(pad.l, legendY - 4, 12, 2);

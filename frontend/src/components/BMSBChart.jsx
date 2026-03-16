@@ -71,7 +71,7 @@ export default function BMSBChart({
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: resolveToken("chartText"),
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 10,
         attributionLogo: false,
       },

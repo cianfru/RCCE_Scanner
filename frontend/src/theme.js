@@ -147,7 +147,7 @@ export const T = {
   scrollHover: "var(--t-scrollHover)",
   // Static (not theme-dependent)
   font:        "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  mono:        "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
+  mono:        "'SF Mono', 'Fira Code', monospace",
   radius:      "14px",
   radiusSm:    "10px",
   radiusXs:    "8px",
