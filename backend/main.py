@@ -2057,7 +2057,7 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "build": "2026-03-16-diag"}
+    return {"ok": True, "build": "2026-03-16-wave20"}
 
 
 @app.get("/api/data-sources")

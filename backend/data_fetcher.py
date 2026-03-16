@@ -503,28 +503,33 @@ async def fetch_batch(
     if not uncached:
         return results
 
-    # ── Phase 2: Fetch all from HL in waves of 50 ──
-    _WAVE_SIZE = 50
-    _WAVE_PAUSE_S = 1.0  # 1s between waves — well under HL rate limits
+    # ── Phase 2: Fetch all from HL in waves of 20 ──
+    _WAVE_SIZE = 20
+    _WAVE_PAUSE_S = 1.5  # 1.5s between waves — conservative for Railway
     hl_failures: List[str] = []
 
-    timeout = aiohttp.ClientTimeout(total=120)
+    timeout = aiohttp.ClientTimeout(total=180)
     connector = aiohttp.TCPConnector(limit=_MAX_CONCURRENT_FETCHES, keepalive_timeout=30)
 
-    async def _hl_fetch(session: aiohttp.ClientSession, sym: str) -> None:
+    async def _hl_fetch(session: aiohttp.ClientSession, sym: str) -> str:
+        """Returns sym on success, raises on failure."""
         coin = _hl_coin_name(sym)
         data = await _fetch_hl_candles(session, coin, timeframe)
         if data is not None:
             _cache.put(sym, timeframe, data)
             results[sym] = data
-        else:
-            hl_failures.append(sym)
+            return sym
+        raise ValueError(f"HL returned no data for {sym}")
 
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         for i in range(0, len(uncached), _WAVE_SIZE):
             wave = uncached[i : i + _WAVE_SIZE]
             tasks = [asyncio.create_task(_hl_fetch(session, s)) for s in wave]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+            # Track failures explicitly — exceptions from gather are captured here
+            for sym, outcome in zip(wave, outcomes):
+                if isinstance(outcome, Exception):
+                    hl_failures.append(sym)
             wave_ok = sum(1 for s in wave if s in results)
             logger.info(
                 "HL wave %d/%d: %d/%d OK",
@@ -538,27 +543,30 @@ async def fetch_batch(
     # ── Phase 3: Retry HL failures after cooldown ──
     if hl_failures:
         logger.warning(
-            "HL failures (%d), retrying after 2s: %s",
+            "HL failures (%d), retrying after 3s: %s",
             len(hl_failures), hl_failures[:10],
         )
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(3.0)
         retry_fails: List[str] = []
         async with aiohttp.ClientSession(timeout=timeout) as session:
             _RT_WAVE = 10
             for i in range(0, len(hl_failures), _RT_WAVE):
                 wave = hl_failures[i : i + _RT_WAVE]
 
-                async def _rt_fetch(s: aiohttp.ClientSession, sym: str) -> None:
+                async def _rt_fetch(s: aiohttp.ClientSession, sym: str) -> str:
                     coin = _hl_coin_name(sym)
                     data = await _fetch_hl_candles(s, coin, timeframe)
                     if data is not None:
                         _cache.put(sym, timeframe, data)
                         results[sym] = data
-                    else:
-                        retry_fails.append(sym)
+                        return sym
+                    raise ValueError(f"HL retry failed for {sym}")
 
                 tasks = [asyncio.create_task(_rt_fetch(session, sym)) for sym in wave]
-                await asyncio.gather(*tasks, return_exceptions=True)
+                outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+                for sym, outcome in zip(wave, outcomes):
+                    if isinstance(outcome, Exception):
+                        retry_fails.append(sym)
                 if i + _RT_WAVE < len(hl_failures):
                     await asyncio.sleep(1.0)
 

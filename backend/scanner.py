@@ -874,12 +874,12 @@ async def run_scan(
                     "timestamp": gm.timestamp,
                 }
 
-        # Run all timeframes concurrently
-        tf_tasks = [_run_one_tf(tf) for tf in timeframes]
-        tf_results = await asyncio.gather(*tf_tasks, return_exceptions=True)
-        for tf, outcome in zip(timeframes, tf_results):
-            if isinstance(outcome, Exception):
-                logger.exception("Scan failed for timeframe %s: %s", tf, outcome)
+        # Run timeframes sequentially to avoid double-hammering HL
+        for tf in timeframes:
+            try:
+                await _run_one_tf(tf)
+            except Exception:
+                logger.exception("Scan failed for timeframe %s", tf)
 
         # Store sentiment & stablecoin data from latest fetch
         from market_data import get_cached_sentiment, get_cached_stablecoin
