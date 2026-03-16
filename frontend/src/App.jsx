@@ -555,14 +555,14 @@ export default function App() {
               width: 28, height: 28, borderRadius: 8,
               display: "flex", alignItems: "center", justifyContent: "center",
               padding: 0, flexShrink: 0,
-              border: `1px solid ${T.border}`,
-              background: T.surface,
+              border: "none",
+              background: "transparent",
               color: T.text3,
               cursor: "pointer",
               transition: "all 0.15s ease",
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
+            onMouseEnter={e => { e.currentTarget.style.color = T.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
               <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
