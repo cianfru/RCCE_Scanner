@@ -2057,4 +2057,11 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "build": "2026-03-12-cto"}
+    return {"ok": True, "build": "2026-03-16-diag"}
+
+
+@app.get("/api/data-sources")
+async def data_sources():
+    """Diagnostic endpoint: shows data source routing info."""
+    from data_fetcher import get_data_source_info
+    return get_data_source_info()
