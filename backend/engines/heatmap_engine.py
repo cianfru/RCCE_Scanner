@@ -160,8 +160,8 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
 
     # ---- Validate minimum data ---------------------------------------------
     min_daily = ATR_LEN_D + 2  # need at least 3 heat bars for phase detection
-    min_weekly = max(EMA_LEN, SMA_LEN, ATR_LEN_W + ATR_REGIME_LEN)
-    if len(d_close) < min_daily or len(w_close) < min_weekly:
+    min_weekly_bmsb = max(EMA_LEN, SMA_LEN)  # 21 weeks for BMSB mid
+    if len(d_close) < min_daily or len(w_close) < min_weekly_bmsb:
         return _default_result()
 
     # ---- Weekly BMSB baseline ----------------------------------------------
@@ -185,14 +185,16 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
 
     if np.isnan(atr_d) or atr_d == 0.0:
         return _default_result()
-    if np.isnan(atr_w) or atr_w == 0.0:
-        return _default_result()
-    if np.isnan(atr_w_sma) or atr_w_sma == 0.0:
-        return _default_result()
 
     # ---- Hybrid scaling R3 -------------------------------------------------
-    r1 = atr_d / atr_w
-    r2 = atr_w / atr_w_sma
+    # If weekly ATR or its SMA is unavailable (< 34 weeks of data),
+    # default r3=1.0 so heat is computed from BMSB deviation alone.
+    if np.isnan(atr_w) or atr_w == 0.0 or np.isnan(atr_w_sma) or atr_w_sma == 0.0:
+        r1 = 1.0
+        r2 = 1.0
+    else:
+        r1 = atr_d / atr_w
+        r2 = atr_w / atr_w_sma
     r3 = r1 * r2
 
     # ---- Deviation from BMSB mid (daily close) -----------------------------
