@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
+import { T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
 
 export function ZScoreBar({ z, isMobile }) {
   const bar = zBar(z);
   if (!bar) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: isMobile ? 80 : 110 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: isMobile ? 90 : 110 }}>
       <div style={{
-        flex: 1, height: 3, background: T.overlay04, borderRadius: 2,
+        flex: 1, height: isMobile ? 4 : 3, background: T.overlay04, borderRadius: 2,
         overflow: "hidden", position: "relative"
       }}>
         <div style={{
@@ -24,34 +24,34 @@ export function ZScoreBar({ z, isMobile }) {
           width: 1, background: T.overlay08
         }} />
       </div>
-      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: isMobile ? 12 : 13, minWidth: 40, textAlign: "right", fontWeight: 600 }}>
+      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
         {fmt(z, 2)}
       </span>
     </div>
   );
 }
 
-export function RegimeBadge({ regime }) {
-  const m = REGIME_META[regime] || REGIME_META.FLAT;
+export function RegimeBadge({ regime, isMobile }) {
+  const rm = REGIME_META[regime] || REGIME_META.FLAT;
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "4px 12px", borderRadius: "20px",
-      background: m.bg, color: m.color,
-      fontSize: 12, fontFamily: T.mono, fontWeight: 600,
+      padding: isMobile ? "5px 12px" : "4px 12px", borderRadius: "20px",
+      background: rm.bg, color: rm.color,
+      fontSize: m(12, isMobile), fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.06em",
-      border: `1px solid ${m.color}25`,
-      boxShadow: `0 0 12px ${m.glow}`,
+      border: `1px solid ${rm.color}25`,
+      boxShadow: `0 0 12px ${rm.glow}`,
       whiteSpace: "nowrap",
     }}>
-      <span style={{ fontSize: 11, opacity: 0.9 }}>{m.glyph}</span>
-      {m.label}
+      <span style={{ fontSize: m(11, isMobile), opacity: 0.9 }}>{rm.glyph}</span>
+      {rm.label}
     </span>
   );
 }
 
 export function SignalDot({ signal, reason, warnings, isMobile }) {
-  const m = SIGNAL_META[signal] || SIGNAL_META.WAIT;
+  const sm = SIGNAL_META[signal] || SIGNAL_META.WAIT;
   const [showTip, setShowTip] = useState(false);
   const hasInfo = reason || (warnings && warnings.length > 0);
 
@@ -59,7 +59,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
     <span
       style={{
         display: "inline-flex", alignItems: "center", gap: 5,
-        color: m.color, fontFamily: T.mono, fontSize: 12, whiteSpace: "nowrap",
+        color: sm.color, fontFamily: T.mono, fontSize: m(12, isMobile), whiteSpace: "nowrap",
         fontWeight: 600, position: "relative", cursor: hasInfo ? "help" : "default",
       }}
       onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
@@ -67,18 +67,18 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
     >
       <span style={{
-        fontSize: 9,
-        filter: signal !== "WAIT" ? `drop-shadow(0 0 4px ${m.color})` : "none",
-      }}>{m.dot}</span>
-      {m.label}
+        fontSize: isMobile ? 11 : 9,
+        filter: signal !== "WAIT" ? `drop-shadow(0 0 4px ${sm.color})` : "none",
+      }}>{sm.dot}</span>
+      {sm.label}
       {warnings && warnings.length > 0 && (
-        <span style={{ fontSize: 8, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
+        <span style={{ fontSize: isMobile ? 10 : 8, color: "#fbbf24", marginLeft: 2 }}>{"\u26a0"}</span>
       )}
       {showTip && hasInfo && (
         <div style={{
           position: "absolute", bottom: "calc(100% + 8px)", left: 0,
           background: T.popoverBg, border: `1px solid ${T.borderH}`,
-          borderRadius: T.radiusSm, padding: "10px 12px",
+          borderRadius: T.radiusSm, padding: isMobile ? "12px 14px" : "10px 12px",
           minWidth: 220, maxWidth: 300, zIndex: 300,
           boxShadow: `0 8px 32px ${T.shadowDeep}`,
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
@@ -86,14 +86,14 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
           onClick={e => e.stopPropagation()}
         >
           {reason && (
-            <div style={{ fontSize: 9, color: T.text2, fontFamily: T.mono, lineHeight: 1.5, marginBottom: warnings?.length ? 8 : 0 }}>
+            <div style={{ fontSize: m(10, isMobile), color: T.text2, fontFamily: T.mono, lineHeight: 1.6, marginBottom: warnings?.length ? 8 : 0 }}>
               {reason}
             </div>
           )}
           {warnings && warnings.length > 0 && (
             <div style={{ borderTop: reason ? `1px solid ${T.border}` : "none", paddingTop: reason ? 6 : 0 }}>
               {warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: 8, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.5, display: "flex", gap: 4, alignItems: "flex-start" }}>
+                <div key={i} style={{ fontSize: m(9, isMobile), color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6, display: "flex", gap: 4, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
                   <span>{w}</span>
                 </div>
@@ -121,14 +121,14 @@ export function DivergencePill({ div }) {
   );
 }
 
-export function HeatCell({ heat }) {
+export function HeatCell({ heat, isMobile }) {
   if (heat == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = heatColor(heat);
   const pct = Math.min(heat, 100);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
       <div style={{
-        width: 32, height: 4, background: T.overlay06,
+        width: 32, height: isMobile ? 5 : 4, background: T.overlay06,
         borderRadius: 2, overflow: "hidden",
       }}>
         <div style={{
@@ -136,7 +136,7 @@ export function HeatCell({ heat }) {
           boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 12, color, fontWeight: 600 }}>
+      <span style={{ fontFamily: T.mono, fontSize: m(12, isMobile), color, fontWeight: 600 }}>
         {Math.round(heat)}
       </span>
     </div>

@@ -1,4 +1,4 @@
-import { T, SIGNAL_META, getBaseSymbol } from "../theme.js";
+import { T, m, SIGNAL_META, getBaseSymbol } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -23,7 +23,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
           }}
         >
           <span style={{
-            fontSize: T.textSm, color: T.text3, letterSpacing: "0.1em",
+            fontSize: m(T.textSm, isMobile), color: T.text3, letterSpacing: "0.1em",
             fontFamily: T.font, fontWeight: 700, marginRight: 6,
             textTransform: "uppercase",
             flexShrink: 0,
@@ -40,9 +40,9 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
                   key={`${r.symbol}-${r.tf}`}
                   onClick={() => onSelect(r)}
                   style={{
-                    padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
+                    padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: "20px", cursor: "pointer",
                     background: `${sm.color}10`, border: `1px solid ${sm.color}20`,
-                    color: sm.color, fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
+                    color: sm.color, fontSize: m(T.textSm, isMobile), fontFamily: T.mono, fontWeight: 600,
                     display: "inline-flex", alignItems: "center", gap: 4,
                     transition: "all 0.2s ease",
                     flexShrink: 0,
@@ -51,7 +51,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
                   onMouseLeave={e => { e.currentTarget.style.background = `${sm.color}08`; e.currentTarget.style.boxShadow = "none"; }}
                 >
                   {getBaseSymbol(r.symbol)}
-                  <span style={{ fontSize: T.textXs, opacity: 0.5 }}>{r.tf}</span>
+                  <span style={{ fontSize: m(T.textXs, isMobile), opacity: 0.5 }}>{r.tf}</span>
                 </span>
               );
             })}

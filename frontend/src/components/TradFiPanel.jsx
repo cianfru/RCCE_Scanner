@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { T, fmt } from "../theme.js";
+import { T, m, fmt } from "../theme.js";
 import {
   RegimeBadge, SignalDot, ZScoreBar, HeatCell, ConfluenceBadge,
 } from "./badges.jsx";
@@ -61,7 +61,7 @@ export default function TradFiPanel({
     return s;
   }, [sorted]);
 
-  const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
+  const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
 
   return (
     <div style={{ marginTop: isMobile ? 16 : 20 }}>
@@ -72,15 +72,15 @@ export default function TradFiPanel({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{
-            fontFamily: T.mono, fontWeight: 700, fontSize: isMobile ? T.textLg : T.textXl,
+            fontFamily: T.mono, fontWeight: 700, fontSize: m(isMobile ? T.textLg : T.textXl, isMobile),
             color: T.text1, letterSpacing: "0.04em",
           }}>
             TRADFI
           </span>
           <span style={{
-            fontFamily: T.mono, fontSize: T.textSm, color: T.text4,
+            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), color: T.text4,
             background: T.glassBg, border: `1px solid ${T.border}`,
-            borderRadius: 6, padding: "2px 8px",
+            borderRadius: 6, padding: isMobile ? "3px 10px" : "2px 8px",
           }}>
             HIP-3
           </span>
@@ -90,8 +90,8 @@ export default function TradFiPanel({
         <div style={{ display: "flex", gap: 4 }}>
           {TF_OPTIONS.map(([val, label]) => (
             <button key={val} onClick={() => setTfView(val)} style={{
-              fontFamily: T.mono, fontSize: T.textSm, fontWeight: 600,
-              padding: "4px 12px", borderRadius: 6, cursor: "pointer",
+              fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+              padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
               border: `1px solid ${tfView === val ? T.cyan : T.border}`,
               background: tfView === val ? `${T.cyan}18` : "transparent",
               color: tfView === val ? T.cyan : T.text3,
@@ -107,8 +107,8 @@ export default function TradFiPanel({
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
         {CATEGORIES.map(cat => (
           <button key={cat} onClick={() => setCategory(cat)} style={{
-            fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
-            padding: "4px 10px", borderRadius: 20, cursor: "pointer",
+            fontFamily: T.mono, fontSize: m(T.textXs, isMobile), fontWeight: 600,
+            padding: isMobile ? "6px 12px" : "4px 10px", borderRadius: 20, cursor: "pointer",
             border: `1px solid ${category === cat ? T.cyan : T.border}`,
             background: category === cat ? `${T.cyan}18` : "transparent",
             color: category === cat ? T.cyan : T.text4,
@@ -139,14 +139,14 @@ export default function TradFiPanel({
         {loading && sorted.length === 0 ? (
           <div style={{
             padding: 40, textAlign: "center", fontFamily: T.mono,
-            fontSize: T.textSm, color: T.text4,
+            fontSize: m(T.textSm, isMobile), color: T.text4,
           }}>
             Scanning TradFi markets...
           </div>
         ) : sorted.length === 0 ? (
           <div style={{
             padding: 40, textAlign: "center", fontFamily: T.mono,
-            fontSize: T.textSm, color: T.text4,
+            fontSize: m(T.textSm, isMobile), color: T.text4,
           }}>
             No TradFi data yet — waiting for first scan
           </div>
@@ -187,44 +187,44 @@ export default function TradFiPanel({
                       onMouseEnter={e => e.currentTarget.style.background = `${T.cyan}08`}
                       onMouseLeave={e => e.currentTarget.style.background = isSelected ? `${T.cyan}0a` : "transparent"}
                     >
-                      <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: T.textXs, color: T.text4, textAlign: "center" }}>
+                      <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, textAlign: "center" }}>
                         {i + 1}
                       </td>
                       <td style={{ padding: cellPad }}>
-                        <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? T.textBase : T.textMd }}>
+                        <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile) }}>
                           {r.tradfi_coin || r.symbol.split("/")[0]}
                         </div>
-                        <div style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginTop: 1 }}>
+                        <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2 }}>
                           {r.tradfi_name || r.symbol} — ${fmt(r.price, r.price > 100 ? 2 : 4)}
                         </div>
                       </td>
                       <td style={{ padding: cellPad }}>
                         <span style={{
-                          fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
+                          fontFamily: T.mono, fontSize: m(T.textXs, isMobile), fontWeight: 600,
                           color: T.text3, background: `${T.text4}18`, borderRadius: 4,
-                          padding: "2px 6px",
+                          padding: isMobile ? "3px 8px" : "2px 6px",
                         }}>
                           {r.asset_class}
                         </span>
                       </td>
-                      <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} /></td>
+                      <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} isMobile={isMobile} /></td>
                       <td style={{ padding: cellPad }}><SignalDot signal={r.signal} reason={r.signal_reason} warnings={r.signal_warnings} isMobile={isMobile} /></td>
                       <td style={{ padding: cellPad }}><SparklineCell data={r.sparkline} width={72} height={22} /></td>
                       <td style={{ padding: cellPad }}><ZScoreBar z={r.zscore} isMobile={isMobile} /></td>
                       <td style={{
                         padding: cellPad, fontFamily: T.mono,
-                        fontSize: isMobile ? T.textBase : T.textMd,
+                        fontSize: m(isMobile ? T.textBase : T.textMd, isMobile),
                         color: (r.momentum || 0) > 0 ? T.green : (r.momentum || 0) < 0 ? T.red : T.text3,
                       }}>
                         {fmt(r.momentum, 1)}%
                       </td>
-                      <td style={{ padding: cellPad }}><HeatCell heat={r.heat} phase={r.heat_phase} /></td>
+                      <td style={{ padding: cellPad }}><HeatCell heat={r.heat} phase={r.heat_phase} isMobile={isMobile} /></td>
                       <td style={{ padding: cellPad }}>
                         {r.confluence ? <ConfluenceBadge score={r.confluence.score} label={r.confluence.label} /> : <span style={{ color: T.text4 }}>—</span>}
                       </td>
                       <td style={{
                         padding: cellPad, fontFamily: T.mono,
-                        fontSize: T.textSm, fontWeight: 600,
+                        fontSize: m(T.textSm, isMobile), fontWeight: 600,
                         color: (r.priority_score || 0) >= 60 ? T.green : (r.priority_score || 0) >= 30 ? T.yellow : T.text4,
                       }}>
                         {Math.round(r.priority_score || 0)}
@@ -243,9 +243,9 @@ export default function TradFiPanel({
 
 function thStyle(isMobile) {
   return {
-    padding: isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`,
+    padding: isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`,
     fontFamily: T.mono,
-    fontSize: T.textXs,
+    fontSize: m(T.textXs, isMobile),
     fontWeight: 700,
     color: T.text4,
     textAlign: "left",

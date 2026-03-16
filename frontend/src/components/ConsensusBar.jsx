@@ -1,4 +1,4 @@
-import { T } from "../theme.js";
+import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -17,8 +17,8 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
   return (
     <FadeIn delay={350}>
       <GlassCard glow={`${color}08`} style={{
-        padding: isMobile ? "8px 12px" : "10px 16px",
-        marginTop: isMobile ? T.sp2 : T.sp3,
+        padding: isMobile ? "10px 14px" : "10px 16px",
+        marginTop: isMobile ? T.sp3 : T.sp3,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -41,11 +41,11 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
                     key={key}
                     onClick={() => onTabChange(key)}
                     style={{
-                      padding: "5px 12px",
+                      padding: isMobile ? "7px 14px" : "5px 12px",
                       border: "none",
                       background: isActive ? T.accent : "transparent",
                       color: isActive ? T.bg : T.text3,
-                      fontFamily: T.font, fontSize: T.textSm, fontWeight: isActive ? 700 : 500,
+                      fontFamily: T.font, fontSize: m(T.textSm, isMobile), fontWeight: isActive ? 700 : 500,
                       cursor: "pointer", letterSpacing: "0.04em",
                       transition: "all 0.15s ease",
                     }}
@@ -55,13 +55,13 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
             </div>
           )}
           <span style={{
-            fontSize: T.textBase, color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
+            fontSize: m(T.textBase, isMobile), color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",
           }}>Consensus</span>
           <span style={{
-            padding: "5px 16px", borderRadius: "20px",
+            padding: isMobile ? "6px 16px" : "5px 16px", borderRadius: "20px",
             background: `${color}15`, color,
-            fontSize: T.textMd, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+            fontSize: m(T.textMd, isMobile), fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
             border: `1px solid ${color}28`,
             boxShadow: `0 0 16px ${color}15`,
           }}>
@@ -71,7 +71,7 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
 
         {/* Right: strength bar */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: isMobile ? "1 1 100%" : undefined }}>
-          <span style={{ fontSize: T.textSm, color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
+          <span style={{ fontSize: m(T.textSm, isMobile), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600 }}>STR</span>
           <div style={{
             width: isMobile ? undefined : 100,
             flex: isMobile ? 1 : undefined,
@@ -87,7 +87,7 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
             }} />
           </div>
           <span style={{
-            fontFamily: T.mono, fontSize: T.textMd, color, fontWeight: 700,
+            fontFamily: T.mono, fontSize: m(T.textMd, isMobile), color, fontWeight: 700,
             minWidth: 36, textAlign: "right",
           }}>{Math.round(consensus.strength)}%</span>
         </div>

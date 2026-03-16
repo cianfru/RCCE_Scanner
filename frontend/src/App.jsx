@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { T, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
+import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
 import FadeIn from "./components/FadeIn.jsx";
@@ -56,7 +56,7 @@ const COLUMNS = [
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
   const { mode, toggle } = useTheme();
-  const hPad = isMobile ? 12 : isTablet ? 20 : 24;
+  const hPad = isMobile ? 16 : isTablet ? 20 : 24;
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -463,7 +463,7 @@ export default function App() {
           : "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(248,248,252,0.84) 50%, rgba(255,255,255,0.88) 100%)",
         backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)",
         position: "sticky", top: 0, zIndex: 100,
-        height: isMobile ? 52 : 56,
+        height: isMobile ? 56 : 56,
         overflow: "hidden",
         boxShadow: mode === "dark"
           ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
@@ -624,24 +624,25 @@ export default function App() {
         </div>
       )}
 
-      {/* ── SECTION TITLE ── */}
-      <div style={{
-        padding: `${T.sp3}px ${hPad}px ${T.sp1}px`,
-        fontSize: T.textXl,
-        fontWeight: 700,
-        color: T.text1,
-        fontFamily: T.font,
-        letterSpacing: "-0.02em",
-      }}>
-        {activeTab === "backtest" ? "Backtest" :
-         activeTab === "executor" ? "Executor" :
-         activeTab === "trading" ? "Portfolio" :
-         activeTab === "signals" ? "Signal Log" :
-         activeTab === "onchain" ? "On-Chain" :
-         activeTab === "tradfi" ? "TradFi" :
-         activeTab === "chat" ? "AI Assist" :
-         "Scanner"}
-      </div>
+      {/* ── SECTION TITLE (hidden for chat — full-immersion mode) ── */}
+      {activeTab !== "chat" && (
+        <div style={{
+          padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
+          fontSize: m(T.textXl, isMobile),
+          fontWeight: 700,
+          color: T.text1,
+          fontFamily: T.font,
+          letterSpacing: "-0.02em",
+        }}>
+          {activeTab === "backtest" ? "Backtest" :
+           activeTab === "executor" ? "Executor" :
+           activeTab === "trading" ? "Portfolio" :
+           activeTab === "signals" ? "Signal Log" :
+           activeTab === "onchain" ? "On-Chain" :
+           activeTab === "tradfi" ? "TradFi" :
+           "Scanner"}
+        </div>
+      )}
 
       {/* ── MAIN CONTENT ── */}
       <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative", zIndex: 1 }}>
@@ -736,9 +737,7 @@ export default function App() {
         )}
 
         {activeTab === "chat" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
-          </FadeIn>
+          <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
         )}
       </div>
 

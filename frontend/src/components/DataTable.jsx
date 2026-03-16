@@ -1,4 +1,4 @@
-import { T, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
+import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
 import {
   ZScoreBar, RegimeBadge, SignalDot, DivergencePill,
   HeatCell, PhaseCell, ExhaustBadge, FloorCell,
@@ -9,25 +9,25 @@ import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
 function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
-  const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
+  const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
   switch (colLabel) {
     case "#":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: T.textXs, color: T.text4, width: 28, textAlign: "center" }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, width: 28, textAlign: "center" }}>
           {index + 1}
         </td>
       );
     case "SYMBOL":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: isMobile ? T.textMd : T.textLg, letterSpacing: "0.02em" }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em" }}>
           {getBaseSymbol(row.symbol)}
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
-            <span style={{ fontSize: T.textXs, fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
+            <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
         </td>
       );
     case "REGIME":
-      return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} /></td>;
+      return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} isMobile={isMobile} /></td>;
     case "SIGNAL":
       return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
     case "SPARK":
@@ -35,10 +35,10 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
     case "Z-SCORE":
       return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
     case "ENERGY":
-      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? T.textBase : T.textMd, color: T.text2 }}>{fmt(row.energy, 2)}</td>;
+      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), color: T.text2 }}>{fmt(row.energy, 2)}</td>;
     case "MOM":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? T.textBase : T.textMd }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile) }}>
           <span style={{ color: row.momentum >= 0 ? T.green : T.red, fontWeight: 600 }}>
             {row.momentum != null ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
           </span>
@@ -48,7 +48,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
       return <td style={{ padding: cellPad }}><DivergencePill div={row.divergence} /></td>;
     case "PRICE":
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: isMobile ? T.textBase : T.textMd, color: T.text1, fontWeight: 500 }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), color: T.text1, fontWeight: 500 }}>
           {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
         </td>
       );
@@ -129,7 +129,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
         <div style={{
-          fontFamily: T.font, fontSize: T.textSm, color: T.text3, fontWeight: 700,
+          fontFamily: T.font, fontSize: m(T.textSm, isMobile), color: T.text3, fontWeight: 700,
           letterSpacing: "0.12em", marginBottom: T.sp3, paddingLeft: isMobile ? T.sp3 : T.sp4,
           textTransform: "uppercase",
         }}>{label}</div>
@@ -144,9 +144,9 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     key={colLabel}
                     onClick={() => key && onSort(key)}
                     style={{
-                      padding: isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`,
+                      padding: isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`,
                       textAlign: "left",
-                      fontFamily: T.font, fontSize: isMobile ? T.textSm : T.textBase, fontWeight: 700,
+                      fontFamily: T.font, fontSize: m(isMobile ? T.textSm : T.textBase, isMobile), fontWeight: 700,
                       color: sortKey === key ? T.accent : T.text3,
                       letterSpacing: "0.08em", cursor: key ? "pointer" : "default",
                       userSelect: "none", whiteSpace: "nowrap",

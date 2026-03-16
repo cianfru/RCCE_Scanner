@@ -1,72 +1,66 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T } from "../theme.js";
-import GlassCard from "./GlassCard.jsx";
+import { T, m } from "../theme.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /** Lightweight markdown→JSX for assistant messages (no deps). */
-function MdText({ text }) {
+function MdText({ text, isMobile }) {
   const lines = text.split("\n");
   const elements = [];
   let key = 0;
+  const baseFz = isMobile ? 15 : 14;
 
   for (const raw of lines) {
     const line = raw;
-    // Headings
     if (/^#{1,3}\s/.test(line)) {
       const level = line.match(/^(#+)/)[1].length;
       const content = line.replace(/^#+\s*/, "");
-      const sz = level === 1 ? 16 : level === 2 ? 15 : 14;
+      const sz = level === 1 ? baseFz + 4 : level === 2 ? baseFz + 2 : baseFz + 1;
       elements.push(
         <div key={key++} style={{
           fontSize: sz, fontWeight: 700, color: T.accent,
           fontFamily: T.font,
-          marginTop: level === 1 ? 14 : 10, marginBottom: 6,
+          marginTop: level === 1 ? 16 : 12, marginBottom: 8,
           letterSpacing: "-0.01em",
         }}>
           {renderInline(content)}
         </div>
       );
-    // Horizontal rule
     } else if (/^---+$/.test(line.trim())) {
       elements.push(
         <hr key={key++} style={{
           border: "none", borderTop: `1px solid ${T.border}`,
-          margin: "10px 0",
+          margin: "12px 0",
         }} />
       );
-    // List item
     } else if (/^\s*[-•]\s/.test(line)) {
       const indent = (line.match(/^(\s*)/)[1].length / 2) | 0;
       const content = line.replace(/^\s*[-•]\s*/, "");
       elements.push(
         <div key={key++} style={{
-          paddingLeft: 16 + indent * 14,
-          position: "relative", marginBottom: 3,
+          paddingLeft: 18 + indent * 16,
+          position: "relative", marginBottom: 4, fontSize: baseFz,
         }}>
-          <span style={{ position: "absolute", left: indent * 14, color: T.text4 }}>•</span>
+          <span style={{ position: "absolute", left: indent * 16, color: T.text4 }}>•</span>
           {renderInline(content)}
         </div>
       );
-    // Numbered list
     } else if (/^\s*\d+\.\s/.test(line)) {
       const match = line.match(/^(\s*)(\d+)\.\s(.*)/);
       const indent = (match[1].length / 2) | 0;
       elements.push(
         <div key={key++} style={{
-          paddingLeft: 16 + indent * 14,
-          position: "relative", marginBottom: 3,
+          paddingLeft: 18 + indent * 16,
+          position: "relative", marginBottom: 4, fontSize: baseFz,
         }}>
-          <span style={{ position: "absolute", left: indent * 14, color: T.text4 }}>{match[2]}.</span>
+          <span style={{ position: "absolute", left: indent * 16, color: T.text4 }}>{match[2]}.</span>
           {renderInline(match[3])}
         </div>
       );
-    // Empty line
     } else if (line.trim() === "") {
-      elements.push(<div key={key++} style={{ height: 8 }} />);
-    // Regular text
+      elements.push(<div key={key++} style={{ height: 10 }} />);
     } else {
-      elements.push(<div key={key++}>{renderInline(line)}</div>);
+      elements.push(<div key={key++} style={{ fontSize: baseFz }}>{renderInline(line)}</div>);
     }
   }
   return <>{elements}</>;
@@ -91,8 +85,8 @@ function renderInline(text) {
     } else if (match[4]) {
       parts.push(
         <span key={i++} style={{
-          background: T.overlay08, padding: "1px 6px",
-          borderRadius: 4, fontSize: "0.9em", color: T.accent,
+          background: T.overlay08, padding: "2px 7px",
+          borderRadius: 5, fontSize: "0.9em", color: T.accent,
           fontFamily: T.mono,
         }}>{match[4]}</span>
       );
@@ -196,17 +190,16 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
 
   // Derive short display label from current model
   const currentModelLabel = (() => {
-    const m = models.find((m) => m.id === currentModel);
-    if (m) return m.label;
-    // Fallback: extract name from ID like "anthropic/claude-3.5-haiku"
+    const md = models.find((mod) => mod.id === currentModel);
+    if (md) return md.label;
     return currentModel.split("/").pop() || "Model";
   })();
 
   // Filter models by search term
-  const filteredModels = models.filter((m) => {
+  const filteredModels = models.filter((mod) => {
     if (!modelSearch) return true;
     const q = modelSearch.toLowerCase();
-    return m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q);
+    return mod.label.toLowerCase().includes(q) || mod.id.toLowerCase().includes(q) || mod.provider.toLowerCase().includes(q);
   });
 
   // Scroll chat to bottom only when new messages arrive
@@ -261,294 +254,311 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
     sessionId.current = getSessionId();
   };
 
+  // ── Full-immersion chat layout ──────────────────────────────────────────────
+
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "0 4px" : 0 }}>
-      {/* Header */}
-      <GlassCard style={{ padding: isMobile ? "14px 16px" : "16px 22px", marginBottom: 14, overflow: "visible", position: "relative", zIndex: modelPickerOpen ? 999 : "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              fontSize: T.textBase, fontWeight: 700, fontFamily: T.font,
-              letterSpacing: "-0.01em", color: T.text1,
-            }}>
-              Reflex Assistant
-            </span>
-            {providerMode === "openrouter" && models.length > 0 ? (
-              <div ref={modelPickerRef} style={{ position: "relative" }}>
-                {/* Model badge button */}
-                <button
-                  onClick={() => setModelPickerOpen(!modelPickerOpen)}
-                  style={{
-                    fontSize: T.textSm, fontFamily: T.font, color: T.text3,
-                    padding: "4px 12px", borderRadius: 6,
-                    background: T.overlay06, border: `1px solid ${T.border}`,
-                    fontWeight: 500, cursor: "pointer", outline: "none",
-                    display: "flex", alignItems: "center", gap: 6,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {currentModelLabel}
-                  <span style={{ fontSize: 7, opacity: 0.5, marginLeft: 2 }}>{modelPickerOpen ? "▲" : "▼"}</span>
-                </button>
+    <div style={{
+      display: "flex", flexDirection: "column",
+      height: isMobile ? "calc(100vh - 100px)" : "calc(100vh - 120px)",
+      maxWidth: 860, margin: "0 auto",
+      padding: 0,
+    }}>
+      {/* ── Top bar: model + clear ── */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: isMobile ? "10px 4px" : "10px 0",
+        flexShrink: 0,
+        position: "relative", zIndex: modelPickerOpen ? 999 : "auto",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {providerMode === "openrouter" && models.length > 0 ? (
+            <div ref={modelPickerRef} style={{ position: "relative" }}>
+              <button
+                onClick={() => setModelPickerOpen(!modelPickerOpen)}
+                style={{
+                  fontSize: m(T.textSm, isMobile), fontFamily: T.font, color: T.text3,
+                  padding: isMobile ? "6px 14px" : "5px 12px", borderRadius: 8,
+                  background: T.overlay06, border: `1px solid ${T.border}`,
+                  fontWeight: 500, cursor: "pointer", outline: "none",
+                  display: "flex", alignItems: "center", gap: 6,
+                  transition: "all 0.15s",
+                }}
+              >
+                {currentModelLabel}
+                <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>{modelPickerOpen ? "\u25B2" : "\u25BC"}</span>
+              </button>
 
-                {/* Model picker dropdown */}
-                {modelPickerOpen && (
-                  <div style={{
-                    position: "absolute", top: "calc(100% + 4px)", left: 0,
-                    width: isMobile ? "calc(100vw - 32px)" : 320,
-                    maxHeight: 360, zIndex: 9999,
-                    background: "#16161e", border: `1px solid rgba(255,255,255,0.15)`,
-                    borderRadius: 8, overflow: "hidden",
-                    boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
-                  }}>
-                    {/* Search */}
-                    <div style={{ padding: "6px 8px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                      <input
-                        ref={modelSearchRef}
-                        type="text"
-                        value={modelSearch}
-                        onChange={(e) => setModelSearch(e.target.value)}
-                        placeholder="Search..."
-                        style={{
-                          width: "100%", fontSize: 12, fontFamily: T.font,
-                          color: "#e0e0e4", background: "#1e1e28",
-                          border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5,
-                          padding: "5px 8px", outline: "none",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-
-                    {/* List */}
-                    <div style={{ overflowY: "auto", maxHeight: 310 }}>
-                      {filteredModels.length === 0 && (
-                        <div style={{
-                          padding: 12, textAlign: "center",
-                          color: T.text4, fontSize: 11, fontFamily: T.font,
-                        }}>
-                          No models found
-                        </div>
-                      )}
-                      {filteredModels.map((m) => {
-                        const active = m.id === currentModel;
-                        return (
-                          <div
-                            key={m.id}
-                            onClick={() => handleModelChange(m.id)}
-                            style={{
-                              display: "flex", alignItems: "center", justifyContent: "space-between",
-                              padding: "5px 10px", cursor: "pointer",
-                              background: active ? "rgba(34,211,238,0.08)" : "transparent",
-                              borderLeft: active ? "2px solid #22d3ee" : "2px solid transparent",
-                              transition: "background 0.1s",
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!active) e.currentTarget.style.background = "transparent";
-                            }}
-                          >
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{
-                                fontSize: 11, fontFamily: T.font, fontWeight: 500,
-                                color: active ? "#22d3ee" : "#d1d1d6",
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                              }}>
-                                {m.label}
-                              </div>
-                            </div>
+              {modelPickerOpen && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 6px)", left: 0,
+                  width: isMobile ? "calc(100vw - 32px)" : 340,
+                  maxHeight: 400, zIndex: 9999,
+                  background: "#16161e", border: `1px solid rgba(255,255,255,0.15)`,
+                  borderRadius: 10, overflow: "hidden",
+                  boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
+                }}>
+                  <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                    <input
+                      ref={modelSearchRef}
+                      type="text"
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      placeholder="Search..."
+                      style={{
+                        width: "100%", fontSize: m(12, isMobile), fontFamily: T.font,
+                        color: "#e0e0e4", background: "#1e1e28",
+                        border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
+                        padding: isMobile ? "8px 10px" : "6px 8px", outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+                  <div style={{ overflowY: "auto", maxHeight: 340 }}>
+                    {filteredModels.length === 0 && (
+                      <div style={{
+                        padding: 14, textAlign: "center",
+                        color: T.text4, fontSize: m(12, isMobile), fontFamily: T.font,
+                      }}>
+                        No models found
+                      </div>
+                    )}
+                    {filteredModels.map((mod) => {
+                      const active = mod.id === currentModel;
+                      return (
+                        <div
+                          key={mod.id}
+                          onClick={() => handleModelChange(mod.id)}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: isMobile ? "8px 12px" : "6px 10px", cursor: "pointer",
+                            background: active ? "rgba(34,211,238,0.08)" : "transparent",
+                            borderLeft: active ? "2px solid #22d3ee" : "2px solid transparent",
+                            transition: "background 0.1s",
+                            minHeight: isMobile ? 40 : 32,
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!active) e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
                             <div style={{
-                              fontSize: 9, fontFamily: T.font, color: "#6e6e73",
-                              flexShrink: 0, marginLeft: 8, textAlign: "right",
+                              fontSize: m(12, isMobile), fontFamily: T.font, fontWeight: 500,
+                              color: active ? "#22d3ee" : "#d1d1d6",
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                             }}>
-                              {m.context_length ? `${(m.context_length / 1000).toFixed(0)}K` : ""}
+                              {mod.label}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div style={{
+                            fontSize: m(10, isMobile), fontFamily: T.font, color: "#6e6e73",
+                            flexShrink: 0, marginLeft: 8, textAlign: "right",
+                          }}>
+                            {mod.context_length ? `${(mod.context_length / 1000).toFixed(0)}K` : ""}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            ) : (
-              <span style={{
-                fontSize: T.textSm, fontFamily: T.font, color: T.text4,
-                padding: "4px 12px", borderRadius: 6,
-                background: T.overlay06, fontWeight: 500,
-              }}>
-                {providerMode === "anthropic" ? "Haiku (Direct)" : "Haiku"}
-              </span>
-            )}
-          </div>
-          <button onClick={clearChat} className="apple-btn" style={{
-            padding: "6px 14px", fontSize: T.textSm, fontFamily: T.font,
-            fontWeight: 600, color: T.text3, cursor: "pointer",
-          }}>
-            Clear
-          </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <span style={{
+              fontSize: m(T.textSm, isMobile), fontFamily: T.font, color: T.text4,
+              padding: isMobile ? "6px 14px" : "5px 12px", borderRadius: 8,
+              background: T.overlay06, fontWeight: 500,
+            }}>
+              {providerMode === "anthropic" ? "Haiku (Direct)" : "Haiku"}
+            </span>
+          )}
         </div>
-      </GlassCard>
-
-      {/* Quick actions */}
-      <div style={{
-        display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap",
-      }}>
-        {QUICK_ACTIONS.map((qa, i) => (
-          <button
-            key={i}
-            onClick={() => send(qa.msg)}
-            disabled={loading}
-            className="apple-btn"
-            style={{
-              padding: "8px 16px", fontSize: T.textSm, fontFamily: T.font,
-              fontWeight: 600, color: T.text2, cursor: "pointer",
-              opacity: loading ? 0.5 : 1,
-              transition: "all 0.15s ease",
-            }}
-          >
-            {qa.label}
-          </button>
-        ))}
+        <button onClick={clearChat} className="apple-btn" style={{
+          padding: isMobile ? "8px 16px" : "6px 14px",
+          fontSize: m(T.textSm, isMobile), fontFamily: T.font,
+          fontWeight: 600, color: T.text3, cursor: "pointer",
+        }}>
+          Clear
+        </button>
       </div>
 
-      {/* Messages area */}
-      <GlassCard style={{
-        padding: 0,
-        minHeight: isMobile ? 350 : 460,
-        maxHeight: isMobile ? "60vh" : "65vh",
-        display: "flex", flexDirection: "column",
-        border: `1px solid ${T.borderH}`,
+      {/* ── Messages area (fills available space) ── */}
+      <div style={{
+        flex: 1, overflowY: "auto", minHeight: 0,
+        padding: isMobile ? "8px 2px" : "12px 0",
+        scrollbarWidth: "thin",
+        scrollbarColor: `${T.scrollThumb} transparent`,
       }}>
-        <div style={{
-          flex: 1, padding: isMobile ? "16px 14px" : "20px 22px", overflowY: "auto",
-          scrollbarWidth: "thin",
-          scrollbarColor: `${T.scrollThumb} transparent`,
-        }}>
-          {messages.length === 0 && (
+        {messages.length === 0 && (
+          <div style={{
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            height: "100%", padding: "40px 20px", textAlign: "center",
+          }}>
             <div style={{
-              color: T.text4, fontSize: T.textBase, fontFamily: T.font,
-              textAlign: "center", padding: "80px 20px", lineHeight: 1.8,
+              fontSize: isMobile ? 40 : 48, marginBottom: 16, opacity: 0.15,
+            }}>
+              {"\u2728"}
+            </div>
+            <div style={{
+              color: T.text3, fontSize: m(T.textLg, isMobile), fontFamily: T.font,
+              fontWeight: 600, marginBottom: 8,
+            }}>
+              Reflex Assistant
+            </div>
+            <div style={{
+              color: T.text4, fontSize: m(T.textBase, isMobile), fontFamily: T.font,
+              lineHeight: 1.8, maxWidth: 360,
             }}>
               Ask about any signal, symbol, or market condition.
-              <br />
-              <span style={{ color: T.text3, fontSize: T.textSm }}>
-                Try: "Why is BTC showing WAIT?"
+            </div>
+
+            {/* Quick actions */}
+            <div style={{
+              display: "flex", gap: isMobile ? 8 : 10, marginTop: 24,
+              flexWrap: "wrap", justifyContent: "center",
+            }}>
+              {QUICK_ACTIONS.map((qa, i) => (
+                <button
+                  key={i}
+                  onClick={() => send(qa.msg)}
+                  disabled={loading}
+                  className="apple-btn"
+                  style={{
+                    padding: isMobile ? "10px 18px" : "8px 16px",
+                    fontSize: m(T.textSm, isMobile), fontFamily: T.font,
+                    fontWeight: 600, color: T.text2, cursor: "pointer",
+                    opacity: loading ? 0.5 : 1,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div key={i} style={{
+            marginBottom: isMobile ? 18 : 16,
+            display: "flex",
+            justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+            padding: isMobile ? "0 6px" : "0 4px",
+          }}>
+            <div style={{
+              padding: isMobile ? "14px 16px" : "14px 18px",
+              borderRadius: isMobile ? 18 : 16,
+              background: msg.role === "user" ? T.accentDim : T.overlay04,
+              border: `1px solid ${msg.role === "user"
+                ? "rgba(34,211,238,0.2)" : T.border}`,
+              maxWidth: isMobile ? "90%" : "82%",
+            }}>
+              <div style={{
+                fontSize: m(T.textXs, isMobile), fontWeight: 700, fontFamily: T.mono,
+                color: msg.role === "user" ? T.accent : T.text4,
+                letterSpacing: "0.08em", marginBottom: 6,
+                textTransform: "uppercase",
+              }}>
+                {msg.role === "user" ? "You" : "Assistant"}
+              </div>
+              <div style={{
+                fontSize: m(T.textBase, isMobile), lineHeight: 1.75, fontFamily: T.font,
+                color: T.text1, wordBreak: "break-word",
+                whiteSpace: msg.role === "user" ? "pre-wrap" : "normal",
+              }}>
+                {msg.role === "assistant" ? <MdText text={msg.content} isMobile={isMobile} /> : msg.content}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div style={{
+            display: "flex", justifyContent: "flex-start",
+            marginBottom: 16, padding: isMobile ? "0 6px" : "0 4px",
+          }}>
+            <div style={{
+              padding: isMobile ? "14px 18px" : "14px 18px",
+              borderRadius: isMobile ? 18 : 16,
+              background: T.overlay04, border: `1px solid ${T.border}`,
+            }}>
+              <span style={{
+                fontSize: m(T.textBase, isMobile), fontFamily: T.font, color: T.text4,
+                animation: "pulse 1.5s ease-in-out infinite",
+              }}>
+                Thinking...
               </span>
             </div>
-          )}
+          </div>
+        )}
 
-          {messages.map((msg, i) => (
-            <div key={i} style={{
-              marginBottom: 16,
-              display: "flex",
-              justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-            }}>
-              <div style={{
-                padding: isMobile ? "12px 14px" : "14px 18px",
-                borderRadius: T.radiusSm,
-                background: msg.role === "user" ? T.accentDim : T.overlay04,
-                border: `1px solid ${msg.role === "user"
-                  ? "rgba(34,211,238,0.2)" : T.border}`,
-                maxWidth: "85%",
-              }}>
-                <div style={{
-                  fontSize: T.textXs, fontWeight: 700, fontFamily: T.mono,
-                  color: msg.role === "user" ? T.accent : T.text4,
-                  letterSpacing: "0.08em", marginBottom: 6,
-                  textTransform: "uppercase",
-                }}>
-                  {msg.role === "user" ? "You" : "Assistant"}
-                </div>
-                <div style={{
-                  fontSize: T.textBase, lineHeight: 1.7, fontFamily: T.font,
-                  color: T.text1, wordBreak: "break-word",
-                  whiteSpace: msg.role === "user" ? "pre-wrap" : "normal",
-                }}>
-                  {msg.role === "assistant" ? <MdText text={msg.content} /> : msg.content}
-                </div>
-              </div>
-            </div>
-          ))}
+        <div ref={endRef} />
+      </div>
 
-          {loading && (
-            <div style={{
-              display: "flex", justifyContent: "flex-start",
-              marginBottom: 16,
-            }}>
-              <div style={{
-                padding: "14px 18px", borderRadius: T.radiusSm,
-                background: T.overlay04, border: `1px solid ${T.border}`,
-              }}>
-                <span style={{
-                  fontSize: T.textBase, fontFamily: T.font, color: T.text4,
-                  animation: "pulse 1.5s ease-in-out infinite",
-                }}>
-                  Thinking...
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div ref={endRef} />
-        </div>
-
-        {/* Input */}
-        <div style={{
-          padding: isMobile ? "12px 14px" : "14px 18px",
-          borderTop: `1px solid ${T.border}`,
-          display: "flex", gap: 10, alignItems: "flex-end",
-        }}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder={selectedSymbol
-              ? `Ask about ${selectedSymbol}...`
-              : "Ask about signals, symbols, or market conditions..."}
-            rows={1}
-            style={{
-              flex: 1, resize: "none", padding: "10px 16px",
-              borderRadius: T.radiusSm,
-              border: `1px solid ${T.border}`,
-              background: T.overlay04, color: T.text1,
-              fontFamily: T.font, fontSize: T.textBase, lineHeight: 1.5,
-              outline: "none",
-              transition: "border-color 0.15s ease",
-            }}
-            onFocus={(e) => e.target.style.borderColor = T.accent}
-            onBlur={(e) => e.target.style.borderColor = T.border}
-          />
-          <button
-            onClick={() => send(input)}
-            disabled={loading || !input.trim()}
-            className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
-            style={{
-              padding: "10px 26px", borderRadius: T.radiusSm,
-              fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
-              letterSpacing: "0.02em",
-              cursor: loading || !input.trim() ? "default" : "pointer",
-              color: loading || !input.trim() ? "rgba(34,211,238,0.45)" : undefined,
-              background: loading || !input.trim() ? "rgba(34,211,238,0.06)" : undefined,
-              border: loading || !input.trim() ? "1px solid rgba(34,211,238,0.15)" : undefined,
-              opacity: 1,
-              transition: "all 0.15s ease",
-              boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(34,211,238,0.25)",
-            }}
-          >
-            Send
-          </button>
-        </div>
-      </GlassCard>
+      {/* ── Input bar (pinned to bottom) ── */}
+      <div style={{
+        padding: isMobile ? "10px 4px 6px" : "12px 0 4px",
+        borderTop: `1px solid ${T.border}`,
+        display: "flex", gap: isMobile ? 8 : 10, alignItems: "flex-end",
+        flexShrink: 0,
+        background: T.bg,
+      }}>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder={selectedSymbol
+            ? `Ask about ${selectedSymbol}...`
+            : "Ask anything..."}
+          rows={1}
+          style={{
+            flex: 1, resize: "none",
+            padding: isMobile ? "12px 16px" : "10px 16px",
+            borderRadius: isMobile ? 20 : 12,
+            border: `1px solid ${T.border}`,
+            background: T.overlay04, color: T.text1,
+            fontFamily: T.font, fontSize: m(T.textBase, isMobile), lineHeight: 1.5,
+            outline: "none",
+            transition: "border-color 0.15s ease",
+          }}
+          onFocus={(e) => e.target.style.borderColor = T.accent}
+          onBlur={(e) => e.target.style.borderColor = T.border}
+        />
+        <button
+          onClick={() => send(input)}
+          disabled={loading || !input.trim()}
+          className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
+          style={{
+            padding: isMobile ? "12px 24px" : "10px 26px",
+            borderRadius: isMobile ? 20 : 12,
+            fontFamily: T.font, fontSize: m(T.textBase, isMobile), fontWeight: 700,
+            letterSpacing: "0.02em",
+            cursor: loading || !input.trim() ? "default" : "pointer",
+            color: loading || !input.trim() ? "rgba(34,211,238,0.45)" : undefined,
+            background: loading || !input.trim() ? "rgba(34,211,238,0.06)" : undefined,
+            border: loading || !input.trim() ? "1px solid rgba(34,211,238,0.15)" : undefined,
+            opacity: 1,
+            transition: "all 0.15s ease",
+            boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(34,211,238,0.25)",
+          }}
+        >
+          Send
+        </button>
+      </div>
 
       {/* Error */}
       {error && (
         <div style={{
-          marginTop: 10, padding: "10px 16px", borderRadius: T.radiusXs,
+          marginTop: 8, padding: isMobile ? "10px 14px" : "10px 16px",
+          borderRadius: T.radiusXs,
           background: "rgba(248,113,113,0.1)",
           border: "1px solid rgba(248,113,113,0.2)",
-          fontSize: T.textSm, color: "#f87171", fontFamily: T.font,
+          fontSize: m(T.textSm, isMobile), color: "#f87171", fontFamily: T.font,
+          flexShrink: 0,
         }}>
           Error: {error}
         </div>
