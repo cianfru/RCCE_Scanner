@@ -291,6 +291,19 @@ def compute_alt_season_gauge(
 # ScanCache
 # ---------------------------------------------------------------------------
 
+    # Tier-1 symbols: scanned every cycle (1 min)
+TIER1_SYMBOLS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "NEAR/USDT",
+    "DOGE/USDT", "SUI/USDT", "ARB/USDT", "OP/USDT", "TIA/USDT",
+    "PEPE/USDT", "WIF/USDT", "FET/USDT", "RNDR/USDT", "TAO/USDT",
+    "AAVE/USDT", "RUNE/USDT", "TON/USDT", "HBAR/USDT", "INJ/USDT",
+]
+
+# How many tier-2 symbols to scan per rolling cycle
+TIER2_CHUNK_SIZE = 40
+
+
 class ScanCache:
     """In-memory store for the most recent scan results.
 
@@ -312,6 +325,9 @@ class ScanCache:
         self.symbols: List[str] = DEFAULT_SYMBOLS.copy()
         # TradFi (HIP-3) results — separate from crypto
         self.tradfi_results: Dict[str, List[dict]] = {}  # timeframe -> results
+        # Rolling scan state
+        self._rotation_offset: int = 0
+        self._results_by_sym: Dict[str, Dict[str, dict]] = {}  # symbol -> {tf -> result}
 
     # -- query helpers -----------------------------------------------------
 
@@ -851,6 +867,11 @@ async def run_scan(
             scan_cache.results[tf] = results
             scan_cache.consensus[tf] = consensus
             scan_cache.alt_season[tf] = alt_gauge
+            # Sync per-symbol store so rolling scan picks up full-scan data
+            for r in results:
+                sym = r.get("symbol", "")
+                if sym:
+                    scan_cache._results_by_sym.setdefault(sym, {})[tf] = r
 
             # Log signal transitions
             try:
@@ -949,6 +970,175 @@ async def run_scan(
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start
         logger.info("=== Scan completed in %.1fs ===", elapsed)
+
+    finally:
+        scan_cache.is_scanning = False
+
+
+async def run_rolling_scan(
+    scan_cache: Optional[ScanCache] = None,
+) -> None:
+    """Rolling scan: tier-1 every cycle + rotating chunk of tier-2.
+
+    Instead of scanning all ~229 symbols every 5 min, this scans
+    ~65 symbols every 60s.  Tier-1 (top 25 majors) is refreshed
+    every cycle; tier-2 symbols rotate through in chunks of 40,
+    completing a full rotation every ~5 cycles.
+
+    Results are merged incrementally into ``scan_cache`` so the
+    API always has data for every symbol that has been scanned at
+    least once.
+    """
+    if scan_cache is None:
+        scan_cache = cache
+
+    if scan_cache.is_scanning:
+        logger.warning("Rolling scan skipped -- scan already in progress")
+        return
+
+    scan_cache.is_scanning = True
+    scan_start = time.time()
+
+    try:
+        # ── Build this cycle's symbol batch ──
+        all_symbols = scan_cache.symbols
+        tier1 = [s for s in TIER1_SYMBOLS if s in all_symbols]
+        tier2 = [s for s in all_symbols if s not in TIER1_SYMBOLS]
+
+        # Rotate through tier-2
+        offset = scan_cache._rotation_offset
+        chunk = tier2[offset : offset + TIER2_CHUNK_SIZE]
+        # Wrap around if we've reached the end
+        if len(chunk) < TIER2_CHUNK_SIZE and tier2:
+            remaining = TIER2_CHUNK_SIZE - len(chunk)
+            chunk += tier2[:remaining]
+        # Advance offset
+        next_offset = offset + TIER2_CHUNK_SIZE
+        if next_offset >= len(tier2):
+            next_offset = 0
+        scan_cache._rotation_offset = next_offset
+
+        batch = list(dict.fromkeys(tier1 + chunk))  # deduplicate, preserve order
+
+        logger.info(
+            "=== Rolling scan: %d symbols (T1=%d, T2=%d, offset=%d→%d) ===",
+            len(batch), len(tier1), len(chunk), offset, next_offset,
+        )
+
+        # ── Scan both timeframes sequentially ──
+        for tf in ("4h", "1d"):
+            try:
+                results, consensus, alt_gauge, gm = await _scan_timeframe(batch, tf)
+
+                # Merge results into per-symbol store
+                for r in results:
+                    sym = r.get("symbol", "")
+                    if sym:
+                        scan_cache._results_by_sym.setdefault(sym, {})[tf] = r
+
+                # Rebuild full result list from per-symbol store
+                full_results = [
+                    entry[tf]
+                    for entry in scan_cache._results_by_sym.values()
+                    if tf in entry
+                ]
+                scan_cache.results[tf] = full_results
+
+                # Recompute consensus from ALL symbols, not just this batch
+                scan_cache.consensus[tf] = compute_consensus(full_results)
+                scan_cache.alt_season[tf] = alt_gauge
+
+                # Log signal transitions
+                try:
+                    from signal_log import SignalLog
+                    sig_log = SignalLog.get()
+                    await sig_log.log_signals(
+                        results, tf,
+                        consensus.get("consensus", "MIXED"),
+                    )
+                except Exception:
+                    logger.debug("Signal logging failed for %s (non-fatal)", tf)
+
+                if gm is not None:
+                    scan_cache.global_metrics = {
+                        "btc_dominance": gm.btc_dominance,
+                        "eth_dominance": gm.eth_dominance,
+                        "total_market_cap": gm.total_market_cap,
+                        "alt_market_cap": gm.alt_market_cap,
+                        "btc_market_cap": gm.btc_market_cap,
+                        "timestamp": gm.timestamp,
+                    }
+            except Exception:
+                logger.exception("Rolling scan failed for timeframe %s", tf)
+
+        # ── Sentiment & stablecoin ──
+        from market_data import get_cached_sentiment, get_cached_stablecoin
+        s = get_cached_sentiment()
+        if s:
+            scan_cache.sentiment = {
+                "fear_greed_value": s.fear_greed_value,
+                "fear_greed_label": s.fear_greed_label,
+            }
+        sc = get_cached_stablecoin()
+        if sc:
+            scan_cache.stablecoin = {
+                "usdt_market_cap": sc.usdt_market_cap,
+                "usdc_market_cap": sc.usdc_market_cap,
+                "total_cap": sc.total_stablecoin_cap,
+                "trend": sc.trend,
+                "change_7d_pct": sc.change_7d_pct,
+            }
+
+        # ── Recompute confluence across ALL symbols (not just this batch) ──
+        if "4h" in scan_cache.results and "1d" in scan_cache.results:
+            try:
+                confluences = compute_all_confluences(
+                    scan_cache.results["4h"],
+                    scan_cache.results["1d"],
+                )
+                scan_cache.confluence = {
+                    sym: {
+                        "score": c.score,
+                        "label": c.label,
+                        "regime_aligned": c.regime_aligned,
+                        "signal_aligned": c.signal_aligned,
+                        "regime_4h": c.regime_4h,
+                        "regime_1d": c.regime_1d,
+                        "signal_4h": c.signal_4h,
+                        "signal_1d": c.signal_1d,
+                    }
+                    for sym, c in confluences.items()
+                }
+                for tf_key in ("4h", "1d"):
+                    for r in scan_cache.results.get(tf_key, []):
+                        sym = r.get("symbol", "")
+                        if sym in scan_cache.confluence:
+                            r["confluence"] = scan_cache.confluence[sym]
+            except Exception:
+                logger.exception("Confluence computation failed")
+
+        # ── Executor ──
+        try:
+            from executor import get_executor
+            executor = get_executor()
+            if executor and executor.enabled:
+                exec_results = scan_cache.results.get("4h", [])
+                if exec_results:
+                    exec_summary = await executor.process_scan_results(exec_results)
+                    actions = exec_summary.get("actions", [])
+                    if actions:
+                        logger.info("Executor: %d actions — %s", len(actions), actions)
+        except ImportError:
+            pass
+        except Exception:
+            logger.exception("Executor processing failed (scan unaffected)")
+
+        scan_cache.last_scan_time = time.time()
+        elapsed = time.time() - scan_start
+        logger.info(
+            "=== Rolling scan completed in %.1fs (%d symbols) ===",
+            elapsed, len(batch),
+        )
 
     finally:
         scan_cache.is_scanning = False
@@ -1165,9 +1355,15 @@ def get_all_results() -> dict:
 
 def get_scan_status() -> dict:
     """Return lightweight scan metadata."""
+    tier2_total = len([s for s in cache.symbols if s not in TIER1_SYMBOLS])
     return {
         "is_scanning": cache.is_scanning,
         "last_scan_time": cache.last_scan_time,
         "symbols_count": len(cache.symbols),
         "cache_age_seconds": cache.get_cache_age(),
+        "mode": "rolling",
+        "tier1_count": len([s for s in TIER1_SYMBOLS if s in cache.symbols]),
+        "tier2_count": tier2_total,
+        "rotation_offset": cache._rotation_offset,
+        "symbols_scanned": len(cache._results_by_sym),
     }

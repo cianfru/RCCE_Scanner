@@ -22,7 +22,7 @@ except ImportError:
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from scanner import cache, run_scan, run_tradfi_scan, get_scan_status
+from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status
 from models import (
     ScanResponse,
     ConsensusResponse,
@@ -188,14 +188,21 @@ _backtest_running = False  # Flag to pause scans during backtest
 
 
 async def _periodic_scan():
-    """Run scans every 5 minutes. Pauses while a backtest is fetching data."""
+    """Rolling scan every 60s + TradFi every 5 min.
+
+    Crypto: tier-1 (25 majors) refreshed every cycle, tier-2 rotates
+    in chunks of 40 — full rotation every ~5 cycles (~5 min).
+    TradFi: runs every 5th cycle (~5 min) since prices change slowly.
+    """
     global _backtest_running
     _executor_auto_started = False
     _backtest_defer_count = 0
+    _cycle = 0
+    _TRADFI_EVERY = 5  # run TradFi every 5th cycle (= every 5 min)
+
     while True:
         if _backtest_running:
             _backtest_defer_count += 1
-            # Safety valve: if deferred 40+ cycles (20 min) with no active backtest, force reset
             if _backtest_defer_count > 40:
                 from backtest.runner import list_backtests
                 active = any(
@@ -211,19 +218,19 @@ async def _periodic_scan():
             await asyncio.sleep(30)
             continue
         _backtest_defer_count = 0
+        _cycle += 1
+
         try:
-            logger.info("Starting scheduled scan (crypto + TradFi parallel)...")
-            # Run crypto and TradFi scans concurrently
-            crypto_task = run_scan(cache)
-            tradfi_task = run_tradfi_scan(cache)
-            crypto_result, tradfi_result = await asyncio.gather(
-                crypto_task, tradfi_task, return_exceptions=True,
-            )
-            if isinstance(crypto_result, Exception):
-                logger.error("Crypto scan failed: %s", crypto_result)
-            if isinstance(tradfi_result, Exception):
-                logger.debug("TradFi scan failed (non-fatal): %s", tradfi_result)
-            logger.info("Scan complete.")
+            # Rolling crypto scan (every cycle)
+            logger.info("Rolling scan cycle %d ...", _cycle)
+            await run_rolling_scan(cache)
+
+            # TradFi scan (every 5th cycle)
+            if _cycle % _TRADFI_EVERY == 0:
+                try:
+                    await run_tradfi_scan(cache)
+                except Exception:
+                    logger.debug("TradFi scan failed (non-fatal)", exc_info=True)
 
             # Update signal outcomes with current prices
             try:
@@ -252,8 +259,8 @@ async def _periodic_scan():
                 _executor_auto_started = True
                 await _auto_init_executor()
         except Exception as e:
-            logger.error("Scan failed: %s", e)
-        await asyncio.sleep(300)  # 5 minutes
+            logger.error("Rolling scan cycle %d failed: %s", _cycle, e)
+        await asyncio.sleep(60)  # 1 minute between cycles
 
 
 async def _auto_init_executor():
@@ -2057,7 +2064,7 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "build": "2026-03-16-wave20"}
+    return {"ok": True, "build": "2026-03-16-rolling"}
 
 
 @app.get("/api/data-sources")
