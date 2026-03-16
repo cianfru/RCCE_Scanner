@@ -225,12 +225,12 @@ async def _periodic_scan():
             logger.info("Rolling scan cycle %d ...", _cycle)
             await run_rolling_scan(cache)
 
-            # TradFi scan (every 5th cycle)
-            if _cycle % _TRADFI_EVERY == 0:
+            # TradFi scan (first cycle + every 5th cycle)
+            if _cycle == 1 or _cycle % _TRADFI_EVERY == 0:
                 try:
                     await run_tradfi_scan(cache)
                 except Exception:
-                    logger.debug("TradFi scan failed (non-fatal)", exc_info=True)
+                    logger.warning("TradFi scan failed (non-fatal)", exc_info=True)
 
             # Update signal outcomes with current prices
             try:
