@@ -2,7 +2,7 @@ import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
-export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChange }) {
+export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChange, searchTerm, onSearchChange }) {
   if (!consensus) return null;
   const colorMap = {
     "RISK-ON": T.green, "EUPHORIA": T.yellow, "RISK-OFF": T.red,
@@ -54,6 +54,26 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
               })}
             </div>
           )}
+          {/* Search */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.text4} strokeWidth="2.5" strokeLinecap="round"
+              style={{ position: "absolute", left: 8, pointerEvents: "none" }}>
+              <circle cx="10.5" cy="10.5" r="7" /><line x1="15.5" y1="15.5" x2="21" y2="21" />
+            </svg>
+            <input
+              value={searchTerm || ""}
+              onChange={e => onSearchChange?.(e.target.value)}
+              placeholder="Search..."
+              style={{
+                width: isMobile ? 100 : 120, height: 28,
+                padding: "0 8px 0 26px",
+                fontSize: 11, fontFamily: T.mono,
+                background: T.overlay04, color: T.text1,
+                border: `1px solid ${T.border}`, borderRadius: 8,
+                outline: "none",
+              }}
+            />
+          </div>
           <span style={{
             fontSize: m(T.textBase, isMobile), color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",

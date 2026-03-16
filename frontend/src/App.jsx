@@ -95,6 +95,20 @@ export default function App() {
 
   // Nav drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Favorites (persisted to localStorage)
+  const [favorites, setFavorites] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("reflex_favorites") || "[]")); } catch { return new Set(); }
+  });
+  const toggleFavorite = useCallback((symbol) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+      localStorage.setItem("reflex_favorites", JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -269,14 +283,18 @@ export default function App() {
   }, [activeGroup]);
 
   const filtered4h = useMemo(() => {
-    if (!activeGroupSymbols) return data4h;
-    return data4h.filter(r => activeGroupSymbols.has(r.symbol));
-  }, [data4h, activeGroupSymbols]);
+    let d = data4h;
+    if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
+    if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
+    return d;
+  }, [data4h, activeGroupSymbols, searchTerm]);
 
   const filtered1d = useMemo(() => {
-    if (!activeGroupSymbols) return data1d;
-    return data1d.filter(r => activeGroupSymbols.has(r.symbol));
-  }, [data1d, activeGroupSymbols]);
+    let d = data1d;
+    if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
+    if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
+    return d;
+  }, [data1d, activeGroupSymbols, searchTerm]);
 
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
@@ -290,6 +308,11 @@ export default function App() {
 
   const sortResults = (results) => {
     return [...results].sort((a, b) => {
+      // Favorites always first
+      const fa = favorites.has(a.symbol) ? 0 : 1;
+      const fb = favorites.has(b.symbol) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+
       if (sortKey === "mcap" || sortKey === "symbol") {
         return (MCAP_RANK[a.symbol] ?? 999) - (MCAP_RANK[b.symbol] ?? 999);
       }
@@ -311,7 +334,11 @@ export default function App() {
   const sorted1d = sortResults(filtered1d);
 
   // TradFi sorted data
-  const sortedTradfi = sortResults(activeTab === "tradfi" ? dataTradfi1d : dataTradfi4h);
+  const sortedTradfi = useMemo(() => {
+    let d = activeTab === "tradfi" ? dataTradfi1d : dataTradfi4h;
+    if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
+    return sortResults(d);
+  }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey]);
 
   // Apply stat card signal filter to table data
   const applyStatFilter = (data) => {
@@ -642,7 +669,7 @@ export default function App() {
           </FadeIn>
         )}
 
-        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} />}
+        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && (
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} isMobile={isMobile} />
@@ -661,7 +688,8 @@ export default function App() {
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
+                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
+                  favorites={favorites} onToggleFavorite={toggleFavorite} />
               </FadeIn>
             )}
             {activeTab === "split" && (
@@ -671,7 +699,8 @@ export default function App() {
               <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading} />
+                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
+                  favorites={favorites} onToggleFavorite={toggleFavorite} />
               </FadeIn>
             )}
           </div>

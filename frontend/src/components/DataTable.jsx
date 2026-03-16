@@ -8,7 +8,7 @@ import SparklineCell from "./SparklineCell.jsx";
 import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
-function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
+function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
   const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
   switch (colLabel) {
     case "#":
@@ -17,15 +17,22 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
           {index + 1}
         </td>
       );
-    case "SYMBOL":
+    case "SYMBOL": {
+      const isFav = favorites?.has(row.symbol);
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em" }}>
+        <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+          <span
+            onClick={e => { e.stopPropagation(); onToggleFavorite?.(row.symbol); }}
+            style={{ cursor: "pointer", marginRight: 4, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), color: isFav ? "#facc15" : T.text4, transition: "color 0.15s" }}
+            title={isFav ? "Remove from favorites" : "Add to favorites"}
+          >{isFav ? "\u2605" : "\u2606"}</span>
           {getBaseSymbol(row.symbol)}
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
         </td>
       );
+    }
     case "REGIME":
       return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} isMobile={isMobile} /></td>;
     case "SIGNAL":
@@ -99,7 +106,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols }) {
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols }) {
+function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.signal);
   const stripeBg = index % 2 === 1 ? T.overlay02 : "transparent";
@@ -118,13 +125,13 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = restBg; }}
     >
       {visibleColumns.map(([, label]) => (
-        <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} />
+        <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} />
       ))}
     </tr>
   );
 }
 
-export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading }) {
+export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
@@ -187,6 +194,8 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     visibleColumns={visibleColumns}
                     isMobile={isMobile}
                     backtestSymbols={backtestSymbols}
+                    favorites={favorites}
+                    onToggleFavorite={onToggleFavorite}
                   />
                 ))
               )}
