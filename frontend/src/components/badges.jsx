@@ -72,7 +72,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       }}>{sm.dot}</span>
       {sm.label}
       {warnings && warnings.length > 0 && (
-        <span style={{ fontSize: isMobile ? 16 : 14, color: "#fbbf24", marginLeft: 3 }}>{"\u26a0"}</span>
+        <span style={{ fontSize: "inherit", color: "#fbbf24", marginLeft: 3 }}>{"\u26a0"}</span>
       )}
       {showTip && hasInfo && (
         <div style={{
