@@ -108,6 +108,14 @@ _INTER_REQUEST_DELAY_S = 0.05  # 50 ms stagger
 # Populated at runtime; most symbols work fine on HL.
 _ccxt_only: set = set()
 
+# Minimum bar thresholds — if HL returns fewer than this, try CCXT for deeper history.
+# Based on engine requirements: heatmap needs 21 weekly bars, RCCE needs ~200 daily bars.
+_MIN_BARS: Dict[str, int] = {
+    "4h": 200,    # ~33 days minimum for 4h z-score
+    "1d": 200,    # ~6.5 months minimum for daily
+    "1w": 21,     # ~5 months — heatmap BMSB threshold
+}
+
 # Symbols known to exist on Binance.  Populated once on first batch fetch
 # via load_markets(), then reused.  Symbols on this set are fetched from
 # Binance (fast, generous rate limits); the rest go to HL.
@@ -163,6 +171,7 @@ _HL_COIN_MAP: Dict[str, str] = {
     "FLOKI": "kFLOKI",    # HL uses kFLOKI
     "RNDR":  "RENDER",    # Render rebrand
     "FTM":   "S",         # Sonic rebrand
+    "MKR":   "SKY",       # MakerDAO → Sky rebrand
 }
 
 
@@ -434,10 +443,11 @@ async def _fetch_ohlcv_ccxt(
         limit = _DEFAULT_LIMIT.get(timeframe, 500)
 
     exchanges_to_try = [exchange_id]
-    if exchange_id == "kraken":
-        exchanges_to_try.extend(["kucoin", "binance", "bybit"])
-    elif exchange_id == "binance":
-        exchanges_to_try.extend(["kraken", "bybit", "kucoin"])
+    # Fallback chain: Bybit/OKX/KuCoin/Gate have broad coverage and no geo-blocking
+    _FALLBACK_CHAIN = ["bybit", "okx", "kucoin", "gate", "kraken"]
+    for exch in _FALLBACK_CHAIN:
+        if exch != exchange_id:
+            exchanges_to_try.append(exch)
 
     last_error: Optional[Exception] = None
 
@@ -472,14 +482,15 @@ async def _fetch_ohlcv_ccxt(
 async def fetch_batch(
     symbols: Optional[List[str]] = None,
     timeframe: str = "4h",
-    skip_ccxt_fallback: bool = True,
+    skip_ccxt_fallback: bool = False,
 ) -> Dict[str, Optional[dict]]:
     """Fetch OHLCV data for many symbols concurrently.
 
-    HL-first strategy in batches of 50:
-      - All symbols fetched from Hyperliquid in waves of 50 with pauses.
+    HL-first strategy in batches:
+      - All symbols fetched from Hyperliquid in waves of 20 with pauses.
       - Any HL failures get a retry pass after cooldown.
-      - Remaining failures fall back to CCXT (Binance → Kraken → Bybit).
+      - Symbols with insufficient history are deepened via CCXT.
+      - Remaining failures fall back to CCXT (Bybit → OKX → KuCoin → Gate).
     """
     if symbols is None:
         symbols = DEFAULT_SYMBOLS
@@ -573,15 +584,32 @@ async def fetch_batch(
         if retry_fails:
             logger.warning("Final HL failures (%d): %s", len(retry_fails), retry_fails[:10])
 
-    # ── Phase 4: CCXT fallback for any remaining failures ──
+    # ── Phase 4: CCXT fallback for failures + shallow HL data ──
     if not skip_ccxt_fallback:
-        still_missing = [s for s in uncached if s not in results]
-        if still_missing:
-            logger.info("CCXT fallback for %d symbols", len(still_missing))
-            for sym in still_missing:
-                data = await _fetch_ohlcv_ccxt(sym, timeframe, "binance")
+        min_bars = _MIN_BARS.get(timeframe, 100)
+        # Collect symbols that failed OR have insufficient HL history
+        need_ccxt: List[str] = []
+        for sym in uncached:
+            if sym not in results:
+                need_ccxt.append(sym)
+            elif results[sym] is not None:
+                bar_count = len(results[sym].get("close", []))
+                if bar_count < min_bars:
+                    need_ccxt.append(sym)
+                    logger.info("Shallow HL data for %s (%d bars < %d min), trying CCXT", sym, bar_count, min_bars)
+
+        if need_ccxt:
+            logger.info("CCXT fallback for %d symbols (failures + shallow)", len(need_ccxt))
+            for sym in need_ccxt:
+                data = await _fetch_ohlcv_ccxt(sym, timeframe, "bybit")
                 if data is not None:
-                    results[sym] = data
+                    hl_count = len(results.get(sym, {}).get("close", [])) if results.get(sym) else 0
+                    ccxt_count = len(data.get("close", []))
+                    # Only replace if CCXT has more data
+                    if ccxt_count > hl_count:
+                        results[sym] = data
+                        _cache.put(sym, timeframe, data)
+                        logger.info("CCXT deepened %s: %d → %d bars", sym, hl_count, ccxt_count)
 
     # Fill None for any remaining
     missing = []
