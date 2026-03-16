@@ -1,6 +1,6 @@
 {
-  "name": "RCCE Scanner",
-  "short_name": "RCCE",
+  "name": "Reflex",
+  "short_name": "Reflex",
   "description": "Reflexive Crypto Cycle Engine",
   "start_url": "/",
   "display": "standalone",
