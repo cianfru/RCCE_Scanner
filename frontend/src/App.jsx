@@ -466,7 +466,7 @@ export default function App() {
         backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)",
         position: "sticky", top: 0, zIndex: 100,
         height: isMobile ? 56 : 56,
-        overflow: "hidden",
+        overflow: "visible",
         boxShadow: mode === "dark"
           ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
           : "0 1px 0 rgba(255,255,255,0.6), 0 4px 20px rgba(0,0,0,0.06)",
@@ -633,7 +633,7 @@ export default function App() {
       )}
 
       {/* ── MAIN CONTENT ── */}
-      <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative", zIndex: 1 }}>
+      <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
         {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>

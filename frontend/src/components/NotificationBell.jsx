@@ -124,7 +124,7 @@ export default function NotificationBell() {
           border: `1px solid ${T.border}`,
           borderRadius: T.radiusSm,
           boxShadow: T.shadowHeavy,
-          zIndex: 1000,
+          zIndex: 9999,
           overflowY: "auto",
         }}>
           {/* Header */}
