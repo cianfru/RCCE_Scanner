@@ -98,13 +98,46 @@ _DEFAULT_LIMIT: Dict[str, int] = {
     "1w": 500,     # ~9.6 years — covers most crypto history
 }
 
-# Concurrency knobs — tuned for Hyperliquid as primary source
-_MAX_CONCURRENT_FETCHES = 25   # Sweet spot: avoids HL throttle
-_INTER_REQUEST_DELAY_S = 0.01  # 10 ms (minimal stagger)
+# Concurrency knobs — tuned for Hyperliquid rate limits.
+# HL returns 429 when hit too hard; 10 concurrent + 50ms stagger
+# keeps us under the limit even at 200+ symbols × 2 timeframes.
+_MAX_CONCURRENT_FETCHES = 10
+_INTER_REQUEST_DELAY_S = 0.05  # 50 ms stagger
 
 # Symbols known to need CCXT (HL candleSnapshot fails).
 # Populated at runtime; most symbols work fine on HL.
 _ccxt_only: set = set()
+
+# Symbols known to exist on Binance.  Populated once on first batch fetch
+# via load_markets(), then reused.  Symbols on this set are fetched from
+# Binance (fast, generous rate limits); the rest go to HL.
+_binance_symbols: Optional[set] = None
+_binance_symbols_lock = asyncio.Lock()
+
+
+async def _ensure_binance_symbols() -> set:
+    """Lazy-load the set of Binance-listed symbols (cached for process life)."""
+    global _binance_symbols
+    if _binance_symbols is not None:
+        return _binance_symbols
+
+    async with _binance_symbols_lock:
+        if _binance_symbols is not None:
+            return _binance_symbols
+
+        try:
+            exchange = await _create_exchange("binance")
+            try:
+                await exchange.load_markets()
+                _binance_symbols = set(exchange.markets.keys())
+                logger.info("Binance market list loaded: %d symbols", len(_binance_symbols))
+            finally:
+                await exchange.close()
+        except Exception as exc:
+            logger.warning("Failed to load Binance markets: %s — will use HL only", exc)
+            _binance_symbols = set()
+
+        return _binance_symbols
 
 # Hyperliquid coin name mapping — handles rebrands and HL-specific names.
 # Key: CCXT base (from "BASE/USDT"), Value: HL coin name.
@@ -272,19 +305,31 @@ async def _fetch_hl_candles(
         },
     }
 
-    try:
-        async with session.post(
-            _HL_API_URL,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-        ) as resp:
-            if resp.status != 200:
-                return None
-            candles = await resp.json()
-        return _parse_hl_candles(candles)
-    except Exception as exc:
-        logger.debug("HL candle fetch failed for %s/%s: %s", coin, timeframe, exc)
-        return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with session.post(
+                _HL_API_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                if resp.status == 429:
+                    # Rate limited — back off and retry
+                    wait = 1.0 * (attempt + 1)
+                    logger.debug("HL 429 for %s/%s, retry %d in %.1fs", coin, timeframe, attempt + 1, wait)
+                    await asyncio.sleep(wait)
+                    continue
+                if resp.status != 200:
+                    return None
+                candles = await resp.json()
+            return _parse_hl_candles(candles)
+        except Exception as exc:
+            logger.debug("HL candle fetch failed for %s/%s: %s", coin, timeframe, exc)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.5)
+                continue
+            return None
+    return None
 
 
 def _hl_coin_name(symbol: str) -> str:
@@ -415,70 +460,119 @@ async def fetch_batch(
     timeframe: str = "4h",
     skip_ccxt_fallback: bool = True,
 ) -> Dict[str, Optional[dict]]:
-    """Fetch OHLCV data for many symbols concurrently via Hyperliquid.
+    """Fetch OHLCV data for many symbols concurrently.
 
-    Uses a single shared aiohttp session for all HL requests.
+    Dual-source strategy:
+      - **Binance** for symbols listed there (~180 of 229 HL perps).
+        Fast, generous rate limits (1200 req/min), deep history.
+      - **Hyperliquid** for HL-exclusive symbols (~50).
+        Small enough batch to avoid 429 rate limits.
 
-    Parameters
-    ----------
-    skip_ccxt_fallback : bool
-        When True (default), symbols that fail on HL are simply set to
-        None instead of trying the slow CCXT exchange chain.  Set False
-        only if you need non-HL symbols.
+    Both pools are fetched in parallel for speed.
     """
     if symbols is None:
         symbols = DEFAULT_SYMBOLS
 
     results: Dict[str, Optional[dict]] = {}
-    hl_failures: List[str] = []
 
-    # ── Phase 1: Check cache, collect uncached symbols ──
-    uncached: List[str] = []
+    # ── Phase 1: Check cache, split uncached into Binance vs HL pools ──
+    binance_symbols = await _ensure_binance_symbols()
+
+    binance_queue: List[str] = []
+    hl_queue: List[str] = []
+
     for sym in symbols:
         cached = _cache.get(sym, timeframe)
         if cached is not None:
             results[sym] = cached
-        elif not skip_ccxt_fallback and sym in _ccxt_only:
-            hl_failures.append(sym)  # Skip HL, go straight to CCXT
+        elif sym in binance_symbols:
+            binance_queue.append(sym)
         else:
-            uncached.append(sym)
+            hl_queue.append(sym)
 
-    # ── Phase 2: Batch fetch uncached from Hyperliquid (shared session) ──
-    if uncached:
-        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
-        timeout = aiohttp.ClientTimeout(total=30)
+    logger.info(
+        "Batch fetch %s: %d cached, %d→Binance, %d→HL",
+        timeframe, len(results), len(binance_queue), len(hl_queue),
+    )
+
+    # ── Phase 2a: Binance pool (CCXT, high concurrency) ──
+    async def _fetch_binance_pool() -> None:
+        if not binance_queue:
+            return
+        exchange = await _create_exchange("binance")
+        try:
+            await exchange.load_markets()
+            semaphore = asyncio.Semaphore(20)  # Binance handles this easily
+
+            async def _bn_fetch(sym: str) -> None:
+                async with semaphore:
+                    try:
+                        limit = _DEFAULT_LIMIT.get(timeframe, 500)
+                        raw = await exchange.fetch_ohlcv(sym, timeframe, limit=limit)
+                        if raw:
+                            data = _parse_ohlcv(raw)
+                            _cache.put(sym, timeframe, data)
+                            results[sym] = data
+                    except (ccxt.BadSymbol, ccxt.NetworkError, ccxt.ExchangeError) as exc:
+                        logger.debug("Binance failed for %s: %s", sym, exc)
+                    except Exception as exc:
+                        logger.debug("Binance error for %s: %s", sym, exc)
+
+            tasks = [asyncio.create_task(_bn_fetch(s)) for s in binance_queue]
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await exchange.close()
+
+    # ── Phase 2b: Hyperliquid pool (chunked waves, avoids 429) ──
+    hl_failures: List[str] = []
+
+    async def _fetch_hl_pool() -> None:
+        if not hl_queue:
+            return
+        _WAVE_SIZE = 15
+        _WAVE_PAUSE_S = 0.3
+        timeout = aiohttp.ClientTimeout(total=60)
         connector = aiohttp.TCPConnector(limit=_MAX_CONCURRENT_FETCHES, keepalive_timeout=30)
 
         async def _hl_fetch(session: aiohttp.ClientSession, sym: str) -> None:
-            async with semaphore:
+            coin = _hl_coin_name(sym)
+            data = await _fetch_hl_candles(session, coin, timeframe)
+            if data is not None:
+                _cache.put(sym, timeframe, data)
+                results[sym] = data
+            else:
+                hl_failures.append(sym)
+
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            for i in range(0, len(hl_queue), _WAVE_SIZE):
+                wave = hl_queue[i : i + _WAVE_SIZE]
+                tasks = [asyncio.create_task(_hl_fetch(session, s)) for s in wave]
+                await asyncio.gather(*tasks, return_exceptions=True)
+                if i + _WAVE_SIZE < len(hl_queue):
+                    await asyncio.sleep(_WAVE_PAUSE_S)
+
+    # ── Run both pools in parallel ──
+    await asyncio.gather(
+        _fetch_binance_pool(),
+        _fetch_hl_pool(),
+        return_exceptions=True,
+    )
+
+    # ── Phase 3: Binance symbols that failed → try HL as fallback ──
+    binance_misses = [s for s in binance_queue if s not in results]
+    if binance_misses:
+        logger.info("Binance misses → HL fallback for %d: %s", len(binance_misses), binance_misses[:5])
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for sym in binance_misses:
                 coin = _hl_coin_name(sym)
                 data = await _fetch_hl_candles(session, coin, timeframe)
                 if data is not None:
                     _cache.put(sym, timeframe, data)
                     results[sym] = data
-                else:
-                    hl_failures.append(sym)
 
-        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-            tasks = [asyncio.create_task(_hl_fetch(session, s)) for s in uncached]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    # ── Phase 3: CCXT fallback for HL failures (only when enabled) ──
-    if hl_failures and not skip_ccxt_fallback:
-        logger.info("CCXT fallback for %d symbols: %s", len(hl_failures), hl_failures[:10])
-        ccxt_sem = asyncio.Semaphore(10)
-
-        async def _ccxt_fetch(sym: str) -> None:
-            async with ccxt_sem:
-                data = await _fetch_ohlcv_ccxt(sym, timeframe)
-                results[sym] = data
-                if data is not None:
-                    _ccxt_only.add(sym)
-
-        ccxt_tasks = [asyncio.create_task(_ccxt_fetch(s)) for s in hl_failures]
-        await asyncio.gather(*ccxt_tasks, return_exceptions=True)
-    elif hl_failures:
-        logger.debug("Skipped CCXT fallback for %d symbols: %s", len(hl_failures), hl_failures[:5])
+    if hl_failures:
+        logger.debug("HL-only failures (%d): %s", len(hl_failures), hl_failures[:10])
 
     # Fill None for any remaining
     for sym in symbols:
