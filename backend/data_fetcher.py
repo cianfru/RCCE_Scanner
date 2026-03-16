@@ -377,15 +377,33 @@ async def _fetch_ohlcv_hyperliquid(
         return None
 
 
-async def _create_exchange(exchange_id: str) -> ccxt.Exchange:
-    """Instantiate a CCXT async exchange with rate-limiting enabled."""
-    exchange_class = getattr(ccxt, exchange_id, None)
-    if exchange_class is None:
-        raise ValueError(f"Unknown exchange: {exchange_id}")
-    exchange = exchange_class({
-        "enableRateLimit": True,
-    })
-    return exchange
+# ---------------------------------------------------------------------------
+# CCXT exchange pool — reuse instances instead of creating per call
+# ---------------------------------------------------------------------------
+_exchange_pool: Dict[str, ccxt.Exchange] = {}
+_exchange_pool_lock = asyncio.Lock()
+
+# Symbols already deepened via CCXT — skip on subsequent scan cycles
+_ccxt_deepened: Dict[str, set] = {}  # timeframe → set of symbols
+
+
+async def _get_exchange(exchange_id: str) -> ccxt.Exchange:
+    """Get or create a cached CCXT exchange with markets pre-loaded."""
+    if exchange_id in _exchange_pool:
+        return _exchange_pool[exchange_id]
+
+    async with _exchange_pool_lock:
+        if exchange_id in _exchange_pool:
+            return _exchange_pool[exchange_id]
+
+        exchange_class = getattr(ccxt, exchange_id, None)
+        if exchange_class is None:
+            raise ValueError(f"Unknown exchange: {exchange_id}")
+        exchange = exchange_class({"enableRateLimit": True})
+        await exchange.load_markets()
+        _exchange_pool[exchange_id] = exchange
+        logger.info("CCXT pool: loaded %s (%d markets)", exchange_id, len(exchange.markets))
+        return exchange
 
 
 # ---------------------------------------------------------------------------
@@ -452,9 +470,8 @@ async def _fetch_ohlcv_ccxt(
     last_error: Optional[Exception] = None
 
     for exch_id in exchanges_to_try:
-        exchange = await _create_exchange(exch_id)
         try:
-            await exchange.load_markets()
+            exchange = await _get_exchange(exch_id)
             if symbol not in exchange.markets:
                 continue
             raw = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
@@ -471,8 +488,6 @@ async def _fetch_ohlcv_ccxt(
             last_error = exc
             logger.error("Unexpected error fetching %s from %s: %s", symbol, exch_id, exc)
             continue
-        finally:
-            await exchange.close()
 
     if last_error:
         logger.warning("All CCXT exchanges failed for %s: %s", symbol, last_error)
@@ -585,11 +600,16 @@ async def fetch_batch(
             logger.warning("Final HL failures (%d): %s", len(retry_fails), retry_fails[:10])
 
     # ── Phase 4: CCXT fallback for failures + shallow HL data ──
+    # Only check symbols we haven't already deepened in a previous cycle.
     if not skip_ccxt_fallback:
         min_bars = _MIN_BARS.get(timeframe, 100)
+        deepened = _ccxt_deepened.setdefault(timeframe, set())
+
         # Collect symbols that failed OR have insufficient HL history
         need_ccxt: List[str] = []
         for sym in uncached:
+            if sym in deepened:
+                continue  # Already tried CCXT for this symbol+timeframe
             if sym not in results:
                 need_ccxt.append(sym)
             elif results[sym] is not None:
@@ -602,6 +622,7 @@ async def fetch_batch(
             logger.info("CCXT fallback for %d symbols (failures + shallow)", len(need_ccxt))
             for sym in need_ccxt:
                 data = await _fetch_ohlcv_ccxt(sym, timeframe, "bybit")
+                deepened.add(sym)  # Mark as tried regardless of outcome
                 if data is not None:
                     hl_count = len(results.get(sym, {}).get("close", [])) if results.get(sym) else 0
                     ccxt_count = len(data.get("close", []))
