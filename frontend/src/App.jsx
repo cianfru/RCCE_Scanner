@@ -541,13 +541,6 @@ export default function App() {
               {lastRefresh.toLocaleTimeString()}
             </span>
           )}
-          {cacheAge != null && (
-            <span style={{
-              fontSize: 11, color: T.text4, fontFamily: T.mono,
-              padding: "3px 10px", background: T.surface, borderRadius: "20px",
-              border: `1px solid ${T.border}`,
-            }}>{formatCacheAge(cacheAge)}</span>
-          )}
           <button
             onClick={triggerScan}
             title="Refresh scan"
