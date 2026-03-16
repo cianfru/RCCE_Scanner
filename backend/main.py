@@ -1711,6 +1711,64 @@ async def signal_regime_durations(
 
 
 # ---------------------------------------------------------------------------
+# Notifications feed (frontend toast / bell)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/notifications")
+async def notifications_feed(
+    since: Optional[int] = Query(None),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """Recent signal + regime transitions for the notification bell.
+
+    Parameters
+    ----------
+    since : int, optional
+        Unix timestamp (seconds).  Only return events newer than this.
+    limit : int
+        Max events to return (default 30).
+    """
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    db = sig_log._ensure_db()
+
+    since_filter = ""
+    params: list = []
+    if since is not None:
+        since_filter = " AND timestamp > ?"
+        params.append(since)
+
+    # Signal transitions (exclude INITIAL — first-ever scan noise)
+    sig_params = ["4h"] + params + ["4h"] + params + [limit]
+    cursor = await db.execute(
+        f"""SELECT * FROM (
+            SELECT 'signal' AS event_type, symbol, signal AS label,
+                   prev_signal AS prev_label, regime, price,
+                   transition_type, timestamp
+            FROM signal_events
+            WHERE timeframe = ?{since_filter}
+              AND transition_type IS NOT NULL
+              AND transition_type != 'INITIAL'
+              AND transition_type != 'LATERAL'
+
+            UNION ALL
+
+            SELECT 'regime' AS event_type, symbol, regime AS label,
+                   prev_regime AS prev_label, regime, price,
+                   NULL AS transition_type, timestamp
+            FROM regime_events
+            WHERE timeframe = ?{since_filter}
+        )
+        ORDER BY timestamp DESC
+        LIMIT ?""",
+        sig_params,
+    )
+    rows = await cursor.fetchall()
+    events = [dict(r) for r in rows]
+    return {"events": events, "count": len(events)}
+
+
+# ---------------------------------------------------------------------------
 # AIXBT Entry Confirmation
 # ---------------------------------------------------------------------------
 

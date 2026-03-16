@@ -13,6 +13,7 @@ import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
+import NotificationBell from "./components/NotificationBell.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
 import TradingPanel from "./components/TradingPanel.jsx";
@@ -561,6 +562,7 @@ export default function App() {
               <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
             </svg>
           </button>
+          <NotificationBell />
           <button
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
