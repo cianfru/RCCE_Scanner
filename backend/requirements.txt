@@ -12,3 +12,4 @@ anthropic>=0.40.0
 openai>=1.10.0
 python-telegram-bot>=21.0
 hyperliquid-python-sdk>=0.10.0
+yfinance>=0.2.36

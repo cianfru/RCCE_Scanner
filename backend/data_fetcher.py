@@ -613,34 +613,34 @@ def get_data_source_info() -> dict:
 
 TRADFI_SYMBOLS: List[dict] = [
     # Commodities — Precious Metals
-    {"coin": "GOLD",      "symbol": "GOLD/USD",      "name": "Gold",              "category": "Commodities"},
-    {"coin": "SILVER",    "symbol": "SILVER/USD",     "name": "Silver",            "category": "Commodities"},
-    {"coin": "PLATINUM",  "symbol": "PLATINUM/USD",   "name": "Platinum",          "category": "Commodities"},
-    {"coin": "PALLADIUM", "symbol": "PALLADIUM/USD",  "name": "Palladium",         "category": "Commodities"},
+    {"coin": "GOLD",      "symbol": "GOLD/USD",      "name": "Gold",              "category": "Commodities",  "yf": "GC=F"},
+    {"coin": "SILVER",    "symbol": "SILVER/USD",     "name": "Silver",            "category": "Commodities",  "yf": "SI=F"},
+    {"coin": "PLATINUM",  "symbol": "PLATINUM/USD",   "name": "Platinum",          "category": "Commodities",  "yf": "PL=F"},
+    {"coin": "PALLADIUM", "symbol": "PALLADIUM/USD",  "name": "Palladium",         "category": "Commodities",  "yf": "PA=F"},
     # Commodities — Energy
-    {"coin": "CL",        "symbol": "CL/USD",         "name": "WTI Crude Oil",     "category": "Commodities"},
-    {"coin": "BRENTOIL",  "symbol": "BRENTOIL/USD",   "name": "Brent Crude Oil",   "category": "Commodities"},
-    {"coin": "NATGAS",    "symbol": "NATGAS/USD",     "name": "Natural Gas",       "category": "Commodities"},
+    {"coin": "CL",        "symbol": "CL/USD",         "name": "WTI Crude Oil",     "category": "Commodities",  "yf": "CL=F"},
+    {"coin": "BRENTOIL",  "symbol": "BRENTOIL/USD",   "name": "Brent Crude Oil",   "category": "Commodities",  "yf": "BZ=F"},
+    {"coin": "NATGAS",    "symbol": "NATGAS/USD",     "name": "Natural Gas",       "category": "Commodities",  "yf": "NG=F"},
     # Commodities — Industrial
-    {"coin": "COPPER",    "symbol": "COPPER/USD",     "name": "Copper",            "category": "Commodities"},
+    {"coin": "COPPER",    "symbol": "COPPER/USD",     "name": "Copper",            "category": "Commodities",  "yf": "HG=F"},
     # Indices
-    {"coin": "XYZ100",    "symbol": "XYZ100/USD",     "name": "US 100 Index",      "category": "Indices"},
+    {"coin": "XYZ100",    "symbol": "XYZ100/USD",     "name": "US 100 Index",      "category": "Indices",      "yf": "NQ=F"},
     # Equities — US
-    {"coin": "TSLA",      "symbol": "TSLA/USD",       "name": "Tesla",             "category": "Equities"},
-    {"coin": "NVDA",      "symbol": "NVDA/USD",       "name": "NVIDIA",            "category": "Equities"},
-    {"coin": "GOOGL",     "symbol": "GOOGL/USD",      "name": "Alphabet",          "category": "Equities"},
-    {"coin": "AMZN",      "symbol": "AMZN/USD",       "name": "Amazon",            "category": "Equities"},
-    {"coin": "AMD",       "symbol": "AMD/USD",        "name": "AMD",               "category": "Equities"},
-    {"coin": "AAPL",      "symbol": "AAPL/USD",       "name": "Apple",             "category": "Equities"},
-    {"coin": "BABA",      "symbol": "BABA/USD",       "name": "Alibaba",           "category": "Equities"},
-    {"coin": "CRWV",      "symbol": "CRWV/USD",       "name": "CoreWeave",         "category": "Equities"},
+    {"coin": "TSLA",      "symbol": "TSLA/USD",       "name": "Tesla",             "category": "Equities",     "yf": "TSLA"},
+    {"coin": "NVDA",      "symbol": "NVDA/USD",       "name": "NVIDIA",            "category": "Equities",     "yf": "NVDA"},
+    {"coin": "GOOGL",     "symbol": "GOOGL/USD",      "name": "Alphabet",          "category": "Equities",     "yf": "GOOGL"},
+    {"coin": "AMZN",      "symbol": "AMZN/USD",       "name": "Amazon",            "category": "Equities",     "yf": "AMZN"},
+    {"coin": "AMD",       "symbol": "AMD/USD",        "name": "AMD",               "category": "Equities",     "yf": "AMD"},
+    {"coin": "AAPL",      "symbol": "AAPL/USD",       "name": "Apple",             "category": "Equities",     "yf": "AAPL"},
+    {"coin": "BABA",      "symbol": "BABA/USD",       "name": "Alibaba",           "category": "Equities",     "yf": "BABA"},
+    {"coin": "CRWV",      "symbol": "CRWV/USD",       "name": "CoreWeave",         "category": "Equities",     "yf": "CRWV"},
     # Korea / International
-    {"coin": "SMSN",      "symbol": "SMSN/USD",       "name": "Samsung",           "category": "Equities"},
-    {"coin": "SKHX",      "symbol": "SKHX/USD",       "name": "SK Hynix",          "category": "Equities"},
-    {"coin": "HYUNDAI",   "symbol": "HYUNDAI/USD",    "name": "Hyundai Motor",     "category": "Equities"},
+    {"coin": "SMSN",      "symbol": "SMSN/USD",       "name": "Samsung",           "category": "Equities",     "yf": "005930.KS"},
+    {"coin": "SKHX",      "symbol": "SKHX/USD",       "name": "SK Hynix",          "category": "Equities",     "yf": "000660.KS"},
+    {"coin": "HYUNDAI",   "symbol": "HYUNDAI/USD",    "name": "Hyundai Motor",     "category": "Equities",     "yf": "005380.KS"},
     # ETFs
-    {"coin": "EWY",       "symbol": "EWY/USD",        "name": "iShares Korea ETF", "category": "ETFs"},
-    {"coin": "EWJ",       "symbol": "EWJ/USD",        "name": "iShares Japan ETF", "category": "ETFs"},
+    {"coin": "EWY",       "symbol": "EWY/USD",        "name": "iShares Korea ETF", "category": "ETFs",         "yf": "EWY"},
+    {"coin": "EWJ",       "symbol": "EWJ/USD",        "name": "iShares Japan ETF", "category": "ETFs",         "yf": "EWJ"},
 ]
 
 # Quick lookups
@@ -648,18 +648,180 @@ TRADFI_COIN_MAP: Dict[str, dict] = {s["coin"]: s for s in TRADFI_SYMBOLS}
 TRADFI_SYMBOL_LIST: List[str] = [s["symbol"] for s in TRADFI_SYMBOLS]
 TRADFI_COIN_TO_SYMBOL: Dict[str, str] = {s["coin"]: s["symbol"] for s in TRADFI_SYMBOLS}
 TRADFI_SYMBOL_TO_COIN: Dict[str, str] = {s["symbol"]: s["coin"] for s in TRADFI_SYMBOLS}
+TRADFI_SYMBOL_TO_YF: Dict[str, str] = {s["symbol"]: s["yf"] for s in TRADFI_SYMBOLS}
 
 
+# ---------------------------------------------------------------------------
+# yfinance — TradFi data with deep history
+# ---------------------------------------------------------------------------
+
+def _yf_period_for_timeframe(timeframe: str) -> tuple[str, str]:
+    """Return (yfinance period, yfinance interval) for a scanner timeframe."""
+    if timeframe == "4h":
+        # yfinance max for hourly data is 730 days; fetch 2 years
+        return "2y", "1h"
+    elif timeframe == "1d":
+        return "5y", "1d"
+    elif timeframe == "1w":
+        return "10y", "1wk"
+    return "5y", "1d"
+
+
+def _parse_yf_to_ohlcv(df, timeframe: str) -> Optional[dict]:
+    """Convert a yfinance DataFrame into the standard OHLCV dict.
+
+    For 4h timeframe: yfinance only supports 1h, so we resample to 4h.
+    """
+    if df is None or df.empty:
+        return None
+
+    # yfinance returns columns: Open, High, Low, Close, Volume
+    # Drop rows with NaN close
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        return None
+
+    # Resample 1h → 4h if needed
+    if timeframe == "4h":
+        df = df.resample("4h").agg({
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum",
+        }).dropna(subset=["Close"])
+        if df.empty:
+            return None
+
+    timestamps = np.array([int(ts.timestamp() * 1000) for ts in df.index], dtype=np.float64)
+    return {
+        "timestamp": timestamps,
+        "open":      df["Open"].values.astype(np.float64),
+        "high":      df["High"].values.astype(np.float64),
+        "low":       df["Low"].values.astype(np.float64),
+        "close":     df["Close"].values.astype(np.float64),
+        "volume":    df["Volume"].values.astype(np.float64),
+    }
+
+
+async def fetch_ohlcv_yfinance(
+    symbol: str,
+    timeframe: str,
+) -> Optional[dict]:
+    """Fetch OHLCV for a TradFi symbol using yfinance.
+
+    Runs the blocking yfinance call in a thread executor.
+    """
+    cached = _cache.get(symbol, timeframe)
+    if cached is not None:
+        return cached
+
+    yf_ticker = TRADFI_SYMBOL_TO_YF.get(symbol)
+    if yf_ticker is None:
+        logger.warning("No yfinance ticker for %s", symbol)
+        return None
+
+    loop = asyncio.get_running_loop()
+    try:
+        import yfinance as yf
+        period, interval = _yf_period_for_timeframe(timeframe)
+
+        def _download():
+            t = yf.Ticker(yf_ticker)
+            return t.history(period=period, interval=interval)
+
+        df = await loop.run_in_executor(None, _download)
+        data = _parse_yf_to_ohlcv(df, timeframe)
+        if data is not None:
+            _cache.put(symbol, timeframe, data)
+            logger.debug("yfinance: %s (%s) → %d bars", symbol, timeframe, len(data["close"]))
+        return data
+    except Exception as exc:
+        logger.warning("yfinance fetch failed for %s (%s): %s", symbol, timeframe, exc)
+        return None
+
+
+async def fetch_batch_yfinance(
+    timeframe: str = "1d",
+) -> Dict[str, Optional[dict]]:
+    """Fetch OHLCV for all TradFi symbols using yfinance.
+
+    Downloads all tickers in a single yf.download() call for efficiency,
+    then parses each into the standard OHLCV dict format.
+    """
+    results: Dict[str, Optional[dict]] = {}
+
+    # Check cache first
+    uncached_symbols: List[str] = []
+    uncached_tickers: List[str] = []
+    for sym_info in TRADFI_SYMBOLS:
+        symbol = sym_info["symbol"]
+        cached = _cache.get(symbol, timeframe)
+        if cached is not None:
+            results[symbol] = cached
+        else:
+            uncached_symbols.append(symbol)
+            uncached_tickers.append(sym_info["yf"])
+
+    if not uncached_symbols:
+        return results
+
+    logger.info("yfinance batch: fetching %d/%d symbols for %s", len(uncached_symbols), len(TRADFI_SYMBOLS), timeframe)
+
+    loop = asyncio.get_running_loop()
+    try:
+        import yfinance as yf
+        period, interval = _yf_period_for_timeframe(timeframe)
+
+        def _download_all():
+            return yf.download(
+                uncached_tickers,
+                period=period,
+                interval=interval,
+                group_by="ticker",
+                threads=True,
+            )
+
+        df_all = await loop.run_in_executor(None, _download_all)
+
+        for symbol, yf_ticker in zip(uncached_symbols, uncached_tickers):
+            try:
+                if len(uncached_tickers) == 1:
+                    # Single ticker: yf.download returns flat DataFrame
+                    df = df_all
+                else:
+                    df = df_all[yf_ticker]
+                data = _parse_yf_to_ohlcv(df, timeframe)
+                if data is not None:
+                    _cache.put(symbol, timeframe, data)
+                    results[symbol] = data
+                else:
+                    results[symbol] = None
+            except Exception as exc:
+                logger.debug("yfinance parse failed for %s: %s", symbol, exc)
+                results[symbol] = None
+
+    except Exception as exc:
+        logger.error("yfinance batch download failed: %s", exc)
+
+    # Fill None for missing
+    for sym_info in TRADFI_SYMBOLS:
+        if sym_info["symbol"] not in results:
+            results[sym_info["symbol"]] = None
+
+    ok = sum(1 for v in results.values() if v is not None)
+    logger.info("yfinance batch %s: %d/%d success", timeframe, ok, len(TRADFI_SYMBOLS))
+    return results
+
+
+# Keep HIP-3 functions for backward compatibility (live price, single fetch)
 async def fetch_ohlcv_hip3(
     symbol: str,
     timeframe: str,
     limit: Optional[int] = None,
     session: Optional[aiohttp.ClientSession] = None,
 ) -> Optional[dict]:
-    """Fetch OHLCV from Hyperliquid for a HIP-3 (trade.xyz) asset.
-
-    Accepts an optional shared session for batch operations.
-    """
+    """Fetch OHLCV from Hyperliquid for a HIP-3 (trade.xyz) asset."""
     cached = _cache.get(symbol, timeframe)
     if cached is not None:
         return cached
@@ -671,7 +833,6 @@ async def fetch_ohlcv_hip3(
     if coin is None:
         coin = symbol.split("/")[0]
 
-    # HIP-3 spot tokens require "xyz:" prefix for candleSnapshot API
     hl_coin = f"xyz:{coin}"
 
     if session is not None:

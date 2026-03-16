@@ -41,7 +41,7 @@ _engine_pool = concurrent.futures.ThreadPoolExecutor(
 )
 
 from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
-    fetch_batch_hip3, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP
+    fetch_batch_hip3, fetch_batch_yfinance, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
@@ -973,17 +973,17 @@ async def run_tradfi_scan(
     loop = asyncio.get_running_loop()
 
     async def _tradfi_one_tf(tf):
-        # 1. Fetch OHLCV for all TradFi symbols
-        ohlcv_batch = await fetch_batch_hip3(tf)
+        # 1. Fetch OHLCV for all TradFi symbols (yfinance for deep history)
+        ohlcv_batch = await fetch_batch_yfinance(tf)
         fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
-        logger.info("TradFi: fetched %d/%d for %s", fetched, len(TRADFI_SYMBOL_LIST), tf)
+        logger.info("TradFi: fetched %d/%d for %s (yfinance)", fetched, len(TRADFI_SYMBOL_LIST), tf)
 
         if fetched == 0:
             logger.warning("TradFi: no data for %s — skipping", tf)
             return
 
-        # 2. Fetch weekly data for heatmap + exhaustion
-        weekly_batch = await fetch_batch_hip3("1w")
+        # 2. Fetch weekly data for heatmap + exhaustion (yfinance)
+        weekly_batch = await fetch_batch_yfinance("1w")
 
         # 3. Process each symbol through engines (parallel via thread pool)
         sym_info_map = {}
