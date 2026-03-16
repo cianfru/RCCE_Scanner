@@ -562,7 +562,7 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
           <img
-            src="/logo.png"
+            src="/logo.svg"
             alt="Reflex"
             onClick={() => { setActiveTab("1d"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
             style={{
@@ -571,7 +571,6 @@ export default function App() {
               objectFit: "contain",
               flexShrink: 0,
               display: "block",
-              filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
               cursor: "pointer",
             }}
           />
