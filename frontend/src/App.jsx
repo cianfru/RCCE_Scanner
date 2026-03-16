@@ -152,7 +152,7 @@ export default function App() {
 
   useEffect(() => {
     loadAll();
-    const interval = setInterval(loadAll, 5 * 60 * 1000);
+    const interval = setInterval(loadAll, 60 * 1000);
     return () => clearInterval(interval);
   }, [loadAll]);
 
@@ -520,20 +520,17 @@ export default function App() {
               cursor: "pointer",
             }}
           />
-          {scanRunning && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "4px 12px",
-              background: T.accentDim,
-              border: `1px solid ${T.accent}20`,
-              borderRadius: "20px",
-              fontSize: 10, color: T.accent, letterSpacing: "0.08em",
-              fontFamily: T.mono, fontWeight: 600,
-              animation: "glow 2s ease infinite",
-            }}>
-              <span style={{ animation: "pulse 1s infinite" }}>{"\u25cf"}</span> SCANNING
-            </div>
-          )}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 12px",
+            background: T.surface,
+            border: `1px solid ${T.border}`,
+            borderRadius: "20px",
+            fontSize: 10, color: T.text3, letterSpacing: "0.08em",
+            fontFamily: T.mono, fontWeight: 600,
+          }}>
+            <span style={{ color: "#22c55e" }}>{"\u25cf"}</span> LIVE
+          </div>
         </div>
 
         {/* Right: timestamp, refresh, cache, theme toggle */}
@@ -569,9 +566,7 @@ export default function App() {
             onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; }}
             onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{
-              animation: scanRunning ? "spin 1s linear infinite" : "none",
-            }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
               <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
             </svg>
           </button>

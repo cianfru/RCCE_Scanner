@@ -172,7 +172,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   {loading ? (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <span style={{ animation: "spin 1.5s linear infinite", display: "inline-block" }}>{"\u25e0"}</span>
-                      SCANNING...
+                      LOADING...
                     </span>
                   ) : "NO DATA"}
                 </td></tr>
