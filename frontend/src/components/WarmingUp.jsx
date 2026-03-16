@@ -1,4 +1,4 @@
-import { T, getBaseSymbol, SIGNAL_META } from "../theme.js";
+import { T, m, getBaseSymbol, SIGNAL_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -44,7 +44,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
           }}
         >
           <span style={{
-            fontSize: T.textSm, color: T.yellow, letterSpacing: "0.08em",
+            fontSize: m(T.textSm, isMobile), color: T.yellow, letterSpacing: "0.08em",
             fontFamily: T.font, fontWeight: 700, marginRight: 6,
             textTransform: "uppercase", flexShrink: 0,
             display: "flex", alignItems: "center", gap: 5,
@@ -58,10 +58,10 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
                 key={r.symbol}
                 onClick={() => onSelect(r)}
                 style={{
-                  padding: "4px 12px", borderRadius: "20px", cursor: "pointer",
+                  padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: "20px", cursor: "pointer",
                   background: `${sm.color}10`,
                   border: `1px solid ${sm.color}20`,
-                  color: sm.color, fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
+                  color: sm.color, fontSize: m(T.textSm, isMobile), fontFamily: T.mono, fontWeight: 600,
                   display: "inline-flex", alignItems: "center", gap: 6,
                   transition: "all 0.2s ease", flexShrink: 0,
                 }}
@@ -72,7 +72,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
                 <span style={{
                   padding: "1px 5px", borderRadius: "10px",
                   background: `${sm.color}18`,
-                  fontSize: T.textXs, fontWeight: 700,
+                  fontSize: m(T.textXs, isMobile), fontWeight: 700,
                 }}>
                   {r.conditions_met}/{r.conditions_total || 10}
                 </span>

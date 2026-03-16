@@ -1,4 +1,4 @@
-import { T } from "../theme.js";
+import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -17,7 +17,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
   const gridCols = isMobile ? "repeat(2, 1fr)" : isTablet ? "repeat(3, 1fr)" : "repeat(5, 1fr)";
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: isMobile ? 6 : 8, marginTop: isMobile ? T.sp2 : T.sp3 }}>
+    <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: isMobile ? 8 : 8, marginTop: isMobile ? T.sp3 : T.sp3 }}>
       {cards.map((c, i) => {
         const isActive = activeSignalFilter === c.filterKey;
         return (
@@ -26,7 +26,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               hoverable
               glow={c.value > 0 ? `${c.color}08` : null}
               style={{
-                padding: isMobile ? "10px 12px" : "12px 16px",
+                padding: isMobile ? "12px 14px" : "12px 16px",
                 border: `1px solid ${isActive ? c.color + "60" : c.value > 0 ? c.color + "22" : T.border}`,
                 transition: "border-color 0.3s, box-shadow 0.3s",
                 cursor: c.value > 0 ? "pointer" : "default",
@@ -38,7 +38,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               }}
             >
               <div style={{
-                fontSize: isMobile ? 22 : 26, fontWeight: 700, fontFamily: T.mono,
+                fontSize: isMobile ? 26 : 26, fontWeight: 700, fontFamily: T.mono,
                 color: c.value > 0 ? c.color : T.text4,
                 lineHeight: 1,
                 filter: c.value > 0 ? `drop-shadow(0 0 8px ${c.color}30)` : "none",
@@ -46,7 +46,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
                 {c.value}
               </div>
               <div style={{
-                fontSize: T.textSm, color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
+                fontSize: m(T.textSm, isMobile), color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
                 fontFamily: T.font, fontWeight: 600,
                 letterSpacing: "0.08em", marginTop: T.sp1,
                 textTransform: "uppercase",

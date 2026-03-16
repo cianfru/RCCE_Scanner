@@ -172,6 +172,16 @@ export const T = {
   text2xl:  24,   // stat card numbers
   text3xl:  32,   // hero display (if needed)
 
+  // ─── MOBILE TYPE SCALE (use with isMobile) ────────────────────────────────
+  mTextXs:   12,   // was 10 — minimum readable on mobile
+  mTextSm:   13,   // was 11
+  mTextBase: 14,   // was 12 — body text
+  mTextMd:   15,   // was 13
+  mTextLg:   16,   // was 14
+  mTextXl:   20,   // was 18 — section titles
+  mText2xl:  28,   // was 24 — stat card numbers
+  mText3xl:  36,   // was 32
+
   // ─── SEMANTIC COLORS (static) ─────────────────────────────────────────────
   green:    "#34d399",
   greenDim: "#6ee7b7",
@@ -186,6 +196,13 @@ export const T = {
   gray:     "#52525b",
   grayDim:  "#3f3f46",
 };
+
+/** Return mobile-scaled font size: `m(T.textBase, isMobile)` → 14 on mobile, 12 on desktop */
+export function m(desktopSize, isMobile) {
+  if (!isMobile) return desktopSize;
+  const MAP = { 10: 12, 11: 13, 12: 14, 13: 15, 14: 16, 18: 20, 24: 28, 32: 36 };
+  return MAP[desktopSize] || Math.round(desktopSize * 1.18);
+}
 
 // Helper to get resolved CSS variable value (for canvas/library APIs)
 export function resolveToken(key) {
