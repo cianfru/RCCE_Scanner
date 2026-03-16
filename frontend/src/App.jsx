@@ -351,6 +351,7 @@ export default function App() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
+        @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         select { outline: none; appearance: none; -webkit-appearance: none; }
         select option { background: var(--t-selectBg); color: var(--t-text3); }
@@ -523,13 +524,10 @@ export default function App() {
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 12px",
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: "20px",
             fontSize: 10, color: T.text3, letterSpacing: "0.08em",
             fontFamily: T.mono, fontWeight: 600,
           }}>
-            <span style={{ color: "#22c55e" }}>{"\u25cf"}</span> LIVE
+            <span style={{ color: "#22c55e", animation: "livePulse 2s ease-in-out infinite" }}>{"\u25cf"}</span> LIVE
           </div>
         </div>
 
