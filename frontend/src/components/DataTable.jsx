@@ -23,7 +23,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
             onClick={e => { e.stopPropagation(); onToggleFavorite?.(row.symbol); }}
-            style={{ cursor: "pointer", marginRight: 6, fontSize: "inherit", color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1 }}
+            style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 16 : 18, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
             title={isFav ? "Remove from favorites" : "Add to favorites"}
           >{isFav ? "\u2605" : "\u2606"}</span>
           {getBaseSymbol(row.symbol)}
