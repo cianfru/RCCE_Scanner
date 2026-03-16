@@ -523,7 +523,10 @@ async def fetch_ohlcv_hip3(
         # Fallback: extract from symbol
         coin = symbol.split("/")[0]
 
-    data = await _fetch_ohlcv_hyperliquid_raw(coin, timeframe, limit)
+    # HIP-3 spot tokens require "xyz:" prefix for candleSnapshot API
+    hl_coin = f"xyz:{coin}"
+
+    data = await _fetch_ohlcv_hyperliquid_raw(hl_coin, timeframe, limit)
     if data is not None:
         _cache.put(symbol, timeframe, data)
     return data
@@ -534,7 +537,10 @@ async def _fetch_ohlcv_hyperliquid_raw(
     timeframe: str,
     limit: int = 250,
 ) -> Optional[dict]:
-    """Low-level HL candleSnapshot fetch by coin name (no symbol mapping)."""
+    """Low-level HL candleSnapshot fetch by coin name (no symbol mapping).
+
+    Accepts plain perp coins ("BTC") or HIP-3 prefixed ("xyz:GOLD").
+    """
     tf_ms = _TF_MS.get(timeframe)
     if tf_ms is None:
         return None
@@ -561,6 +567,7 @@ async def _fetch_ohlcv_hyperliquid_raw(
                 headers={"Content-Type": "application/json"},
             ) as resp:
                 if resp.status != 200:
+                    logger.warning("HL candle %s/%s: HTTP %d", coin, timeframe, resp.status)
                     return None
                 candles = await resp.json()
 
@@ -595,7 +602,7 @@ async def _fetch_ohlcv_hyperliquid_raw(
         }
 
     except Exception as exc:
-        logger.debug("HIP-3 candle fetch failed for %s: %s", coin, exc)
+        logger.warning("HIP-3 candle fetch failed for %s/%s: %s", coin, timeframe, exc)
         return None
 
 
