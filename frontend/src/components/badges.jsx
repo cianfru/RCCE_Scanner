@@ -79,7 +79,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
           position: "absolute", bottom: "calc(100% + 8px)", left: 0,
           background: T.popoverBg, border: `1px solid ${T.borderH}`,
           borderRadius: T.radiusSm, padding: isMobile ? "12px 14px" : "10px 12px",
-          minWidth: 220, maxWidth: 300, zIndex: 300,
+          minWidth: 220, maxWidth: 420, zIndex: 300, whiteSpace: "normal", wordBreak: "break-word",
           boxShadow: `0 8px 32px ${T.shadowDeep}`,
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
         }}
