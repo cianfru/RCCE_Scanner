@@ -328,6 +328,9 @@ class ScanCache:
         # Rolling scan state
         self._rotation_offset: int = 0
         self._results_by_sym: Dict[str, Dict[str, dict]] = {}  # symbol -> {tf -> result}
+        # Engine result cache: skip recomputation when candle data hasn't changed
+        # Key: (symbol, timeframe) → {"last_candle_ts": int, "result": dict}
+        self._engine_cache: Dict[tuple, dict] = {}
 
     # -- query helpers -----------------------------------------------------
 
@@ -517,6 +520,7 @@ def _process_symbol(
 async def _scan_timeframe(
     symbols: List[str],
     tf: str,
+    scan_cache: Optional["ScanCache"] = None,
 ) -> tuple[List[dict], dict, dict, Optional[GlobalMetrics]]:
     """Run a full scan for one timeframe.
 
@@ -558,14 +562,39 @@ async def _scan_timeframe(
     eth_data = ohlcv_batch.get("ETH/USDT")
 
     # 4. Process each symbol through engines (parallel via thread pool)
+    #    Skip engine recomputation when the last closed candle hasn't changed.
+    #    OHLCV data only meaningfully changes when a new candle closes (every
+    #    4h / 1d), so we cache engine results keyed by last-closed-candle
+    #    timestamp and only rerun numpy when new bar data appears.
     loop = asyncio.get_running_loop()
     engine_futures = []
     engine_symbols = []
+    cache_hits = 0
+    cache_results: List[dict] = []  # results served from cache
+
     for symbol in symbols:
         ohlcv = ohlcv_batch.get(symbol)
         if ohlcv is None:
             logger.debug("Skipping %s -- no OHLCV data", symbol)
             continue
+
+        # Determine the last closed candle timestamp
+        timestamps = ohlcv.get("timestamp", [])
+        # Last element is the live (still-forming) candle; second-to-last is
+        # the most recently *closed* candle.
+        last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
+
+        cache_key = (symbol, tf)
+        cached_entry = scan_cache._engine_cache.get(cache_key) if scan_cache else None
+
+        if cached_entry and cached_entry["last_candle_ts"] == last_closed_ts:
+            # No new candle — reuse cached engine result, just update live price
+            cached_result = cached_entry["result"].copy()
+            cached_result["price"] = float(ohlcv["close"][-1])
+            cache_results.append(cached_result)
+            cache_hits += 1
+            continue
+
         weekly = weekly_batch.get(symbol)
         engine_symbols.append(symbol)
         engine_futures.append(
@@ -583,17 +612,26 @@ async def _scan_timeframe(
             )
         )
 
-    results: List[dict] = []
+    results: List[dict] = list(cache_results)
     settled = await asyncio.gather(*engine_futures, return_exceptions=True)
     for symbol, outcome in zip(engine_symbols, settled):
         if isinstance(outcome, Exception):
             logger.exception("Failed to process %s on %s: %s", symbol, tf, outcome)
         else:
             results.append(outcome)
+            # Store in engine cache for future cycles
+            if scan_cache:
+                ohlcv = ohlcv_batch.get(symbol)
+                timestamps = ohlcv.get("timestamp", []) if ohlcv else []
+                last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
+                scan_cache._engine_cache[(symbol, tf)] = {
+                    "last_candle_ts": last_closed_ts,
+                    "result": outcome.copy(),
+                }
 
     logger.info(
-        "Processed %d symbols for %s (%.1fs total)",
-        len(results), tf, time.time() - t0,
+        "Processed %d symbols for %s (%.1fs total, %d cache hits, %d recomputed)",
+        len(results), tf, time.time() - t0, cache_hits, len(engine_symbols),
     )
 
     # 5. Compute consensus (BEFORE signal synthesis — signals need this)
@@ -914,7 +952,7 @@ async def run_scan(
 
         async def _run_one_tf(tf):
             results, consensus, alt_gauge, gm = await _scan_timeframe(
-                scan_cache.symbols, tf,
+                scan_cache.symbols, tf, scan_cache=scan_cache,
             )
             scan_cache.results[tf] = results
             scan_cache.consensus[tf] = consensus
@@ -1080,7 +1118,7 @@ async def run_rolling_scan(
         # ── Scan both timeframes sequentially ──
         for tf in ("4h", "1d"):
             try:
-                results, consensus, alt_gauge, gm = await _scan_timeframe(batch, tf)
+                results, consensus, alt_gauge, gm = await _scan_timeframe(batch, tf, scan_cache=scan_cache)
 
                 # Merge results into per-symbol store
                 for r in results:

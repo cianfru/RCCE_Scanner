@@ -198,7 +198,7 @@ async def _periodic_scan():
     _executor_auto_started = False
     _backtest_defer_count = 0
     _cycle = 0
-    _TRADFI_EVERY = 5  # run TradFi every 5th cycle (= every 5 min)
+    _TRADFI_EVERY = 15  # run TradFi every 15th cycle (= every 15 min)
 
     while True:
         if _backtest_running:
