@@ -100,6 +100,7 @@ export default function AuthGate({ children }) {
             border: `1px solid ${error ? "#ef4444" : T.border}`,
             borderRadius: 10, outline: "none",
             transition: "border-color 0.2s",
+            boxSizing: "border-box",
           }}
           onFocus={e => e.target.style.borderColor = error ? "#ef4444" : T.accent}
           onBlur={e => e.target.style.borderColor = error ? "#ef4444" : T.border}
@@ -113,6 +114,7 @@ export default function AuthGate({ children }) {
         )}
         <button type="submit" style={{
           width: "100%", marginTop: 16, padding: "12px 0",
+          boxSizing: "border-box",
           fontSize: 13, fontWeight: 600, fontFamily: T.font,
           background: T.accent, color: T.bg,
           border: "none", borderRadius: 10, cursor: "pointer",
