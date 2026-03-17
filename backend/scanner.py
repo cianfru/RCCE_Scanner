@@ -683,6 +683,11 @@ async def _scan_timeframe(
             mark_price = bn.mark_price
             source = "binance"
             binance_pos_count += 1
+            # Supplement with HL data (volume, predicted funding, oracle)
+            if hl is not None:
+                volume_24h = hl.volume_24h
+                predicted_funding = hl.predicted_funding
+                oracle_price = hl.oracle_price
         # Priority 2: Hyperliquid
         elif hl is not None and hl.open_interest > 0:
             funding_rate = hl.funding_rate
