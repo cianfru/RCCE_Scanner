@@ -639,16 +639,36 @@ async def _scan_timeframe(
 
     # 7. Compute positioning per symbol
     #    Primary source: Hyperliquid (on-chain, native environment)
-    #    Fallback:       Binance Futures (CEX coverage)
+    #    Fallback 1:     Binance Futures (CEX coverage)
+    #    Fallback 2:     Bybit (for symbols not on HL or Binance)
     hl_pos_count = 0
     binance_pos_count = 0
+    bybit_pos_count = 0
+
+    # Identify symbols missing from HL and Binance, fetch from Bybit
+    bybit_metrics = {}
+    try:
+        gap_symbols = []
+        for r in results:
+            sym = r["symbol"]
+            has_hl = hl_metrics and sym in hl_metrics
+            has_bf = bf_metrics and sym in bf_metrics and bf_metrics[sym].open_interest > 0
+            if not has_hl and not has_bf:
+                gap_symbols.append(sym)
+        if gap_symbols:
+            from bybit_futures_data import fetch_bybit_futures_metrics
+            bybit_metrics = await fetch_bybit_futures_metrics(gap_symbols)
+            logger.info("Bybit fallback: requested %d, got %d", len(gap_symbols), len(bybit_metrics))
+    except Exception as exc:
+        logger.warning("Bybit fallback failed: %s", exc)
 
     for r in results:
         symbol = r["symbol"]
         bf = bf_metrics.get(symbol) if bf_metrics else None
         hl = hl_metrics.get(symbol) if hl_metrics else None
+        bb = bybit_metrics.get(symbol)
 
-        # Pick primary source: Hyperliquid > Binance
+        # Pick primary source: Hyperliquid > Binance > Bybit
         funding_rate = 0.0
         open_interest = 0.0
         predicted_funding = 0.0
@@ -673,6 +693,12 @@ async def _scan_timeframe(
             oracle_price = bf.index_price
             source = "binance"
             binance_pos_count += 1
+        elif bb is not None:
+            funding_rate = bb.funding_rate
+            open_interest = bb.open_interest
+            mark_price = bb.mark_price
+            source = "bybit"
+            bybit_pos_count += 1
 
         if source:
             # Get price change from sparkline data
@@ -715,8 +741,8 @@ async def _scan_timeframe(
             cache.prev_oi[symbol] = open_interest
 
     logger.info(
-        "Positioning: %d from Binance, %d from Hyperliquid",
-        binance_pos_count, hl_pos_count,
+        "Positioning: %d from HL, %d from Binance, %d from Bybit",
+        hl_pos_count, binance_pos_count, bybit_pos_count,
     )
 
     # 8. Detect divergences
