@@ -183,22 +183,29 @@ export default function PositioningPanel({ positioning }) {
       }}>
         <span>Positioning</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {source && (
-            <span style={{
-              padding: "2px 7px",
-              borderRadius: "4px",
-              background: source === "kraken" ? "#5741d920" : "#06b6d420",
-              color: source === "kraken" ? "#a78bfa" : "#22d3ee",
-              fontSize: 9,
-              fontFamily: T.mono,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              border: `1px solid ${source === "kraken" ? "#5741d930" : "#06b6d430"}`,
-              textTransform: "uppercase",
-            }}>
-              {source}
-            </span>
-          )}
+          {source && (() => {
+            const sourceColors = {
+              binance: { bg: "#f0b90b20", color: "#f0b90b", border: "#f0b90b30", label: "BINANCE" },
+              hyperliquid: { bg: "#4ade8020", color: "#4ade80", border: "#4ade8030", label: "HL" },
+              bybit: { bg: "#f6851b20", color: "#f6851b", border: "#f6851b30", label: "BYBIT" },
+            };
+            const sc = sourceColors[source] || { bg: "#06b6d420", color: "#22d3ee", border: "#06b6d430", label: source.toUpperCase() };
+            return (
+              <span style={{
+                padding: "2px 7px",
+                borderRadius: "4px",
+                background: sc.bg,
+                color: sc.color,
+                fontSize: 9,
+                fontFamily: T.mono,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                border: `1px solid ${sc.border}`,
+              }}>
+                {sc.label}
+              </span>
+            );
+          })()}
           {volume_24h != null && (
             <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text2, fontWeight: 500, letterSpacing: "0.02em" }}>
               Vol {formatVolume(volume_24h)}

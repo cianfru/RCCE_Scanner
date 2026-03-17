@@ -2129,7 +2129,7 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "build": "2026-03-17-hl-only"}
+    return {"ok": True, "build": "2026-03-17-multi-source"}
 
 
 @app.get("/api/data-sources")
@@ -2138,8 +2138,8 @@ async def data_sources():
     from data_fetcher import get_data_source_info
     info = get_data_source_info()
 
-    # Positioning source: HL only (Binance/Bybit geo-blocked on Railway)
-    info["positioning_source"] = "hyperliquid"
+    # Positioning: Binance (primary) → Hyperliquid → Bybit (fallback)
+    info["positioning_source"] = "binance+hyperliquid+bybit"
 
     try:
         from scanner import _scan_cache

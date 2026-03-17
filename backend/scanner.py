@@ -604,16 +604,21 @@ async def _scan_timeframe(
     )
 
     # 6. Fetch external data in parallel
-    #    Hyperliquid (positioning) + globals
+    #    Binance (primary positioning) + Hyperliquid + globals
+    from binance_futures_data import fetch_binance_futures_metrics
+    from bybit_futures_data import fetch_bybit_futures_metrics
+
     gm: Optional[GlobalMetrics] = None
     hl_metrics = {}
+    binance_metrics = {}
     sentiment_data = None
     stablecoin_data = None
 
     try:
-        gm, hl_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
+        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
             fetch_global_metrics(),
             fetch_hyperliquid_metrics(symbols),
+            fetch_binance_futures_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
         )
@@ -625,6 +630,8 @@ async def _scan_timeframe(
             "Global metrics: BTC.D=%.1f%% ALT MCap=$%.0fB",
             gm.btc_dominance, gm.alt_market_cap / 1e9,
         )
+    if binance_metrics:
+        logger.info("Binance Futures: %d perps (positioning)", len(binance_metrics))
     if hl_metrics:
         logger.info("Hyperliquid: %d perps (positioning)", len(hl_metrics))
     if sentiment_data:
@@ -632,14 +639,34 @@ async def _scan_timeframe(
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
 
+    # 6b. Fetch Bybit for symbols not covered by Binance or HL
+    covered_symbols = set()
+    if binance_metrics:
+        covered_symbols.update(binance_metrics.keys())
+    if hl_metrics:
+        covered_symbols.update(s for s, m in hl_metrics.items() if m.open_interest > 0)
+    gap_symbols = [s for s in symbols if s not in covered_symbols]
+
+    bybit_metrics = {}
+    if gap_symbols:
+        try:
+            bybit_metrics = await fetch_bybit_futures_metrics(gap_symbols)
+            if bybit_metrics:
+                logger.info("Bybit fallback: %d/%d gap symbols filled", len(bybit_metrics), len(gap_symbols))
+        except Exception as exc:
+            logger.warning("Bybit fallback fetch failed: %s", exc)
+
     # 7. Compute positioning per symbol
-    #    Source: Hyperliquid only (Binance/Bybit geo-blocked on Railway)
-    #    Symbols without active HL perps show dash — no fake data.
+    #    Priority: Binance (deepest liquidity) → Hyperliquid → Bybit (fallback)
+    binance_pos_count = 0
     hl_pos_count = 0
+    bybit_pos_count = 0
 
     for r in results:
         symbol = r["symbol"]
+        bn = binance_metrics.get(symbol) if binance_metrics else None
         hl = hl_metrics.get(symbol) if hl_metrics else None
+        by = bybit_metrics.get(symbol) if bybit_metrics else None
 
         funding_rate = 0.0
         open_interest = 0.0
@@ -649,7 +676,15 @@ async def _scan_timeframe(
         volume_24h = 0.0
         source = ""
 
-        if hl is not None and hl.open_interest > 0:
+        # Priority 1: Binance (largest OI, most reliable)
+        if bn is not None and bn.open_interest > 0:
+            funding_rate = bn.funding_rate
+            open_interest = bn.open_interest
+            mark_price = bn.mark_price
+            source = "binance"
+            binance_pos_count += 1
+        # Priority 2: Hyperliquid
+        elif hl is not None and hl.open_interest > 0:
             funding_rate = hl.funding_rate
             open_interest = hl.open_interest
             predicted_funding = hl.predicted_funding
@@ -658,6 +693,13 @@ async def _scan_timeframe(
             volume_24h = hl.volume_24h
             source = "hyperliquid"
             hl_pos_count += 1
+        # Priority 3: Bybit (fallback for gaps)
+        elif by is not None and by.open_interest > 0:
+            funding_rate = by.funding_rate
+            open_interest = by.open_interest
+            mark_price = by.mark_price
+            source = "bybit"
+            bybit_pos_count += 1
 
         if source:
             # Get price change from sparkline data
@@ -699,7 +741,11 @@ async def _scan_timeframe(
             # Store OI for next scan's trend calculation
             cache.prev_oi[symbol] = open_interest
 
-    logger.info("Positioning: %d symbols from Hyperliquid", hl_pos_count)
+    logger.info(
+        "Positioning: %d Binance, %d Hyperliquid, %d Bybit (%d total)",
+        binance_pos_count, hl_pos_count, bybit_pos_count,
+        binance_pos_count + hl_pos_count + bybit_pos_count,
+    )
 
     # 8. Detect divergences
     btc_regime = next(
