@@ -2151,3 +2151,45 @@ async def data_sources():
         pass
 
     return info
+
+
+@app.get("/api/geo-test")
+async def geo_test():
+    """Test if Binance/Bybit/CoinGlass are reachable from current Railway region."""
+    import httpx, asyncio
+
+    async def test_binance():
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get("https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT")
+                data = r.json()
+                if "symbol" in data:
+                    return {"status": "ok", "funding": data.get("lastFundingRate"), "code": r.status_code}
+                else:
+                    return {"status": "blocked", "response": data, "code": r.status_code}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    async def test_bybit():
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT")
+                data = r.json()
+                if data.get("retCode") == 0:
+                    return {"status": "ok", "code": r.status_code}
+                else:
+                    return {"status": "blocked", "response": data, "code": r.status_code}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    async def test_coinglass():
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get("https://open-api-v3.coinglass.com/api/futures/openInterest/chart?symbol=BTC&range=4h",
+                                headers={"accept": "application/json"})
+                return {"status": "reachable", "code": r.status_code}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    b, by, cg = await asyncio.gather(test_binance(), test_bybit(), test_coinglass())
+    return {"binance": b, "bybit": by, "coinglass": cg}
