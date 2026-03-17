@@ -222,6 +222,20 @@ export default function BMSBChart({
         if (cancelled) return;
 
         if (data.candles?.length > 0) {
+          // Auto-detect price precision for micro-cap coins (e.g. MOG at 0.0000001)
+          const samplePrice = data.candles[data.candles.length - 1]?.close || 0;
+          if (samplePrice > 0 && samplePrice < 0.01) {
+            const decimals = Math.max(2, Math.ceil(-Math.log10(samplePrice)) + 2);
+            const minMove = Math.pow(10, -decimals);
+            const pf = { type: "price", precision: decimals, minMove };
+            candleSeries.applyOptions({ priceFormat: pf });
+            try { ctoFastSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+            try { ctoSlowSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+            try { bmsbMidSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+            try { bmsbEmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+            try { bmsbSmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+          }
+
           candleSeries.setData(data.candles);
 
           // ── Volume data ──
