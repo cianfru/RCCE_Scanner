@@ -51,7 +51,7 @@ from market_data import (
     fetch_global_metrics, GlobalMetrics,
     fetch_fear_greed, fetch_stablecoin_supply,
 )
-from binance_futures_data import fetch_binance_futures_metrics
+# binance_futures_data removed — Binance geo-blocked on Railway
 from hyperliquid_data import fetch_hyperliquid_metrics
 from confluence import compute_all_confluences
 
@@ -604,24 +604,21 @@ async def _scan_timeframe(
     )
 
     # 6. Fetch external data in parallel
-    #    Binance Futures (primary positioning) + Hyperliquid (fallback) + globals
+    #    Hyperliquid (positioning) + globals
     gm: Optional[GlobalMetrics] = None
-    bf_metrics = {}
     hl_metrics = {}
     sentiment_data = None
     stablecoin_data = None
 
     try:
-        gm, bf_metrics, hl_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
+        gm, hl_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
             fetch_global_metrics(),
-            fetch_binance_futures_metrics(symbols),
             fetch_hyperliquid_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
         )
     except Exception:
         logger.warning("Some external data fetches failed — proceeding with available data")
-        # Individual failures are handled by each fetcher's fallback logic
 
     if gm:
         logger.info(
@@ -629,47 +626,21 @@ async def _scan_timeframe(
             gm.btc_dominance, gm.alt_market_cap / 1e9,
         )
     if hl_metrics:
-        logger.info("Hyperliquid: %d perps (primary positioning)", len(hl_metrics))
-    if bf_metrics:
-        logger.info("Binance Futures: %d perps (fallback positioning)", len(bf_metrics))
+        logger.info("Hyperliquid: %d perps (positioning)", len(hl_metrics))
     if sentiment_data:
         logger.info("Fear & Greed: %d (%s)", sentiment_data.fear_greed_value, sentiment_data.fear_greed_label)
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
 
     # 7. Compute positioning per symbol
-    #    Primary source: Hyperliquid (on-chain, native environment)
-    #    Fallback 1:     Binance Futures (CEX coverage)
-    #    Fallback 2:     Bybit (for symbols not on HL or Binance)
+    #    Source: Hyperliquid only (Binance/Bybit geo-blocked on Railway)
+    #    Symbols without active HL perps show dash — no fake data.
     hl_pos_count = 0
-    binance_pos_count = 0
-    bybit_pos_count = 0
-
-    # Identify symbols missing from HL and Binance, fetch from Bybit
-    bybit_metrics = {}
-    try:
-        gap_symbols = []
-        for r in results:
-            sym = r["symbol"]
-            hl_m = hl_metrics.get(sym) if hl_metrics else None
-            has_hl = hl_m is not None and hl_m.open_interest > 0
-            has_bf = bf_metrics and sym in bf_metrics and bf_metrics[sym].open_interest > 0
-            if not has_hl and not has_bf:
-                gap_symbols.append(sym)
-        if gap_symbols:
-            from bybit_futures_data import fetch_bybit_futures_metrics
-            bybit_metrics = await fetch_bybit_futures_metrics(gap_symbols)
-            logger.info("Bybit fallback: requested %d, got %d", len(gap_symbols), len(bybit_metrics))
-    except Exception as exc:
-        logger.warning("Bybit fallback failed: %s", exc)
 
     for r in results:
         symbol = r["symbol"]
-        bf = bf_metrics.get(symbol) if bf_metrics else None
         hl = hl_metrics.get(symbol) if hl_metrics else None
-        bb = bybit_metrics.get(symbol)
 
-        # Pick primary source: Hyperliquid > Binance > Bybit
         funding_rate = 0.0
         open_interest = 0.0
         predicted_funding = 0.0
@@ -687,19 +658,6 @@ async def _scan_timeframe(
             volume_24h = hl.volume_24h
             source = "hyperliquid"
             hl_pos_count += 1
-        elif bf is not None and bf.open_interest > 0:
-            funding_rate = bf.funding_rate        # already normalised to hourly
-            open_interest = bf.open_interest       # already in USD
-            mark_price = bf.mark_price
-            oracle_price = bf.index_price
-            source = "binance"
-            binance_pos_count += 1
-        elif bb is not None and bb.open_interest > 0:
-            funding_rate = bb.funding_rate
-            open_interest = bb.open_interest
-            mark_price = bb.mark_price
-            source = "bybit"
-            bybit_pos_count += 1
 
         if source:
             # Get price change from sparkline data
@@ -741,10 +699,7 @@ async def _scan_timeframe(
             # Store OI for next scan's trend calculation
             cache.prev_oi[symbol] = open_interest
 
-    logger.info(
-        "Positioning: %d from HL, %d from Binance, %d from Bybit",
-        hl_pos_count, binance_pos_count, bybit_pos_count,
-    )
+    logger.info("Positioning: %d symbols from Hyperliquid", hl_pos_count)
 
     # 8. Detect divergences
     btc_regime = next(

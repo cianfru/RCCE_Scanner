@@ -2129,7 +2129,7 @@ async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "build": "2026-03-17-bybit"}
+    return {"ok": True, "build": "2026-03-17-hl-only"}
 
 
 @app.get("/api/data-sources")
@@ -2138,27 +2138,15 @@ async def data_sources():
     from data_fetcher import get_data_source_info
     info = get_data_source_info()
 
-    # Add Bybit diagnostics
-    try:
-        from bybit_futures_data import _exchange, _symbol_map, _cache as bb_cache
-        info["bybit_loaded"] = _exchange is not None
-        info["bybit_markets"] = len(_exchange.markets) if _exchange else 0
-        info["bybit_mapped_symbols"] = len(_symbol_map)
-        info["bybit_cache_entries"] = len(bb_cache.data) if bb_cache.data else 0
-        info["bybit_map_sample"] = dict(list(_symbol_map.items())[:5])
-    except Exception as exc:
-        info["bybit_loaded"] = False
-        info["bybit_error"] = str(exc)
+    # Positioning source: HL only (Binance/Bybit geo-blocked on Railway)
+    info["positioning_source"] = "hyperliquid"
 
-    # Add positioning source counts from last scan
     try:
         from scanner import _scan_cache
         last_4h = _scan_cache.get("4h", {}).get("results", [])
-        sources = {}
-        for r in last_4h:
-            s = r.get("positioning", {}).get("source", "none")
-            sources[s] = sources.get(s, 0) + 1
-        info["positioning_sources"] = sources
+        with_pos = sum(1 for r in last_4h if r.get("positioning"))
+        info["positioning_count"] = with_pos
+        info["total_symbols"] = len(last_4h)
     except Exception:
         pass
 
