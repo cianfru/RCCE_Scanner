@@ -61,17 +61,16 @@ function SourceTag({ src }) {
   const sc = SOURCE_COLORS[src] || { bg: "#06b6d418", color: "#22d3ee", label: src.slice(0, 3).toUpperCase() };
   return (
     <span style={{
-      padding: "1px 4px",
+      padding: "2px 5px",
       borderRadius: "3px",
       background: sc.bg,
       color: sc.color,
-      fontSize: 8,
+      fontSize: 9,
       fontFamily: T.mono,
       fontWeight: 700,
       letterSpacing: "0.06em",
-      marginLeft: 6,
-      verticalAlign: "middle",
-      opacity: 0.85,
+      marginLeft: 8,
+      border: `1px solid ${sc.color}30`,
     }}>
       {sc.label}
     </span>
