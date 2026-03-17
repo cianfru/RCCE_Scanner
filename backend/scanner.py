@@ -651,7 +651,8 @@ async def _scan_timeframe(
         gap_symbols = []
         for r in results:
             sym = r["symbol"]
-            has_hl = hl_metrics and sym in hl_metrics
+            hl_m = hl_metrics.get(sym) if hl_metrics else None
+            has_hl = hl_m is not None and hl_m.open_interest > 0
             has_bf = bf_metrics and sym in bf_metrics and bf_metrics[sym].open_interest > 0
             if not has_hl and not has_bf:
                 gap_symbols.append(sym)
@@ -677,7 +678,7 @@ async def _scan_timeframe(
         volume_24h = 0.0
         source = ""
 
-        if hl is not None:
+        if hl is not None and hl.open_interest > 0:
             funding_rate = hl.funding_rate
             open_interest = hl.open_interest
             predicted_funding = hl.predicted_funding
@@ -693,7 +694,7 @@ async def _scan_timeframe(
             oracle_price = bf.index_price
             source = "binance"
             binance_pos_count += 1
-        elif bb is not None:
+        elif bb is not None and bb.open_interest > 0:
             funding_rate = bb.funding_rate
             open_interest = bb.open_interest
             mark_price = bb.mark_price

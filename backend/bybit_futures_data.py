@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 5 * 60          # 5 minutes
 _FUNDING_PERIOD_HOURS = 8     # Bybit funds every 8h
-_CONCURRENCY = 10
+_CONCURRENCY = 5              # Keep low to avoid rate limits
 
 # ---------------------------------------------------------------------------
 # Data container
@@ -65,41 +65,80 @@ _cache = _Cache()
 
 # Reuse exchange instance to avoid repeated load_markets()
 _exchange = None
+_symbol_map: Dict[str, str] = {}  # scanner_sym → bybit_sym
 
 
-def _get_exchange():
-    global _exchange
-    if _exchange is None:
-        import ccxt
-        _exchange = ccxt.bybit({
-            "enableRateLimit": True,
-            "options": {"defaultType": "swap"},
-        })
-        _exchange.load_markets()
-        logger.info("Bybit exchange loaded: %d markets", len(_exchange.markets))
-    return _exchange
+def _init_exchange():
+    """Synchronous init — must be called from executor."""
+    global _exchange, _symbol_map
+    if _exchange is not None:
+        return
+
+    import ccxt
+    _exchange = ccxt.bybit({
+        "enableRateLimit": True,
+        "options": {"defaultType": "swap"},
+    })
+    _exchange.load_markets()
+
+    # Pre-build symbol map for all USDT perps
+    for sym in _exchange.symbols:
+        if not sym.endswith("/USDT:USDT"):
+            continue
+        base = sym.split("/")[0]
+
+        # Strip known multiplier prefixes to get scanner base
+        scanner_base = base
+        for prefix in ["1000000", "10000", "1000", "100"]:
+            if base.startswith(prefix) and len(base) > len(prefix):
+                scanner_base = base[len(prefix):]
+                break
+
+        scanner_sym = f"{scanner_base}/USDT"
+        # Only store if not already mapped (prefer non-prefixed)
+        if scanner_sym not in _symbol_map or not any(
+            base.startswith(p) for p in ["1000000", "10000", "1000", "100"]
+        ):
+            _symbol_map[scanner_sym] = sym
+
+    logger.info("Bybit exchange loaded: %d markets, %d mapped symbols",
+                len(_exchange.markets), len(_symbol_map))
 
 
-def _scanner_to_bybit(scanner_symbol: str) -> Optional[str]:
-    """Convert scanner symbol to Bybit perp symbol.
+def _fetch_one_sync(scanner_sym: str, bybit_sym: str) -> Optional[BybitFuturesMetrics]:
+    """Synchronous fetch for one symbol — runs in executor."""
+    ex = _exchange
+    if ex is None:
+        return None
 
-    'MOG/USDT' → '1000000MOG/USDT:USDT' or 'MOG/USDT:USDT'
-    """
-    ex = _get_exchange()
-    base = scanner_symbol.split("/")[0]
+    base = scanner_sym.split("/")[0]
+    try:
+        # Funding rate
+        fr = ex.fetch_funding_rate(bybit_sym)
+        funding_raw = float(fr.get("fundingRate", 0.0))
+        funding_hourly = funding_raw / _FUNDING_PERIOD_HOURS
+        mark = float(fr.get("markPrice", 0.0)) if fr.get("markPrice") else 0.0
 
-    # Try exact match first
-    direct = f"{base}/USDT:USDT"
-    if direct in ex.symbols:
-        return direct
+        # Open interest
+        oi_val = 0.0
+        try:
+            oi = ex.fetch_open_interest(bybit_sym)
+            oi_amount = float(oi.get("openInterestAmount", 0.0))
+            oi_val = oi_amount * mark if mark > 0 else 0.0
+        except Exception:
+            pass
 
-    # Try with multiplier prefixes (common for micro-cap coins)
-    for prefix in ["1000000", "1000", "10000", "100"]:
-        prefixed = f"{prefix}{base}/USDT:USDT"
-        if prefixed in ex.symbols:
-            return prefixed
-
-    return None
+        return BybitFuturesMetrics(
+            coin=base,
+            funding_rate=funding_hourly,
+            funding_rate_raw=funding_raw,
+            open_interest=oi_val,
+            mark_price=mark,
+            timestamp=time.time(),
+        )
+    except Exception as exc:
+        logger.debug("Bybit fetch failed for %s (%s): %s", scanner_sym, bybit_sym, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -123,55 +162,39 @@ async def fetch_bybit_futures_metrics(
     if not symbols:
         return {}
 
+    loop = asyncio.get_running_loop()
+
+    # Init exchange in executor (blocking load_markets)
     try:
-        ex = _get_exchange()
+        if _exchange is None:
+            await loop.run_in_executor(None, _init_exchange)
     except Exception as exc:
         logger.error("Failed to init Bybit exchange: %s", exc)
         fallback = _cache.get_fallback()
         return fallback or {}
 
-    now = time.time()
-    results: Dict[str, BybitFuturesMetrics] = {}
+    # Map scanner symbols to Bybit symbols
+    to_fetch = []
+    for s in symbols:
+        bybit_sym = _symbol_map.get(s)
+        if bybit_sym:
+            to_fetch.append((s, bybit_sym))
+
+    if not to_fetch:
+        logger.info("Bybit fallback: no symbols matched from %d requested", len(symbols))
+        return {}
+
+    # Fetch in bounded parallel batches via executor
     sem = asyncio.Semaphore(_CONCURRENCY)
+    results: Dict[str, BybitFuturesMetrics] = {}
 
-    async def _fetch_one(scanner_sym: str):
+    async def _fetch_one(scanner_sym: str, bybit_sym: str):
         async with sem:
-            bybit_sym = _scanner_to_bybit(scanner_sym)
-            if not bybit_sym:
-                return
+            m = await loop.run_in_executor(None, _fetch_one_sync, scanner_sym, bybit_sym)
+            if m is not None:
+                results[scanner_sym] = m
 
-            base = scanner_sym.split("/")[0]
-            try:
-                # Funding rate
-                loop = asyncio.get_event_loop()
-                fr = await loop.run_in_executor(None, ex.fetch_funding_rate, bybit_sym)
-                funding_raw = float(fr.get("fundingRate", 0.0))
-                funding_hourly = funding_raw / _FUNDING_PERIOD_HOURS
-                mark = float(fr.get("markPrice", 0.0)) if fr.get("markPrice") else 0.0
-
-                # Open interest
-                # Mark price is already per-contract (e.g. 1000000MOG mark = price per 1M MOG)
-                # So OI_amount × mark = correct USD value, no multiplier adjustment needed
-                oi_val = 0.0
-                try:
-                    oi = await loop.run_in_executor(None, ex.fetch_open_interest, bybit_sym)
-                    oi_amount = float(oi.get("openInterestAmount", 0.0))
-                    oi_val = oi_amount * mark if mark > 0 else 0.0
-                except Exception:
-                    pass
-
-                results[scanner_sym] = BybitFuturesMetrics(
-                    coin=base,
-                    funding_rate=funding_hourly,
-                    funding_rate_raw=funding_raw,
-                    open_interest=oi_val,
-                    mark_price=mark,
-                    timestamp=now,
-                )
-            except Exception as exc:
-                logger.debug("Bybit fetch failed for %s: %s", scanner_sym, exc)
-
-    tasks = [_fetch_one(s) for s in symbols]
+    tasks = [_fetch_one(s, b) for s, b in to_fetch]
     await asyncio.gather(*tasks, return_exceptions=True)
 
     if results:
@@ -179,6 +202,6 @@ async def fetch_bybit_futures_metrics(
         existing = _cache.data or {}
         existing.update(results)
         _cache.put(existing)
-        logger.info("Bybit positioning: fetched %d symbols", len(results))
+        logger.info("Bybit positioning: fetched %d/%d symbols", len(results), len(to_fetch))
 
     return results
