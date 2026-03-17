@@ -192,17 +192,27 @@ def _parse_metrics(
     universe = meta_info.get("universe", [])
 
     # Build predicted funding lookup
+    # Response format: ["COIN", [["BinPerp", {fundingRate}], ["HlPerp", {fundingRate}], ...]]
     pred_lookup: Dict[str, float] = {}
     if isinstance(pred_resp, list):
         for item in pred_resp:
             if isinstance(item, list) and len(item) >= 2:
                 coin = item[0]
-                # predicted funding can be a dict with 'fundingRate' or similar
-                funding_data = item[1]
-                if isinstance(funding_data, dict):
-                    pred_lookup[coin] = float(funding_data.get("fundingRate", 0.0))
-                elif isinstance(funding_data, (int, float)):
-                    pred_lookup[coin] = float(funding_data)
+                venues = item[1]
+                if isinstance(venues, list):
+                    # Prefer HlPerp, fallback to first venue
+                    for venue in venues:
+                        if isinstance(venue, list) and len(venue) >= 2 and venue[0] == "HlPerp":
+                            if isinstance(venue[1], dict):
+                                pred_lookup[coin] = float(venue[1].get("fundingRate", 0.0))
+                            break
+                    else:
+                        # No HlPerp found — use first venue
+                        if venues and isinstance(venues[0], list) and len(venues[0]) >= 2:
+                            if isinstance(venues[0][1], dict):
+                                pred_lookup[coin] = float(venues[0][1].get("fundingRate", 0.0))
+                elif isinstance(venues, dict):
+                    pred_lookup[coin] = float(venues.get("fundingRate", 0.0))
 
     # Parse ALL assets (never filter during parse — cache needs the full set)
     for i, ctx in enumerate(asset_ctxs):
