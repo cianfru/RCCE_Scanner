@@ -297,9 +297,16 @@ def compute_bmsb_series(
     bmsb_sma = _sma(w_close, SMA_LEN)
     bmsb_mid = (bmsb_ema + bmsb_sma) / 2.0
 
+    # Dynamic precision: for sub-penny assets (MOG, SHIB) we need more decimals
+    sample = float(np.nanmean(w_close[-5:])) if len(w_close) >= 5 else float(w_close[-1])
+    if sample > 0 and sample < 0.01:
+        _prec = max(6, int(np.ceil(-np.log10(sample))) + 3)
+    else:
+        _prec = 6
+
     def _to_series(arr):
         return [
-            {"time": int(w_timestamps[i] / 1000), "value": round(float(arr[i]), 6)}
+            {"time": int(w_timestamps[i] / 1000), "value": round(float(arr[i]), _prec)}
             for i in range(len(w_timestamps))
             if not np.isnan(arr[i])
         ]

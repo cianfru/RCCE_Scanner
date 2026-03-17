@@ -690,6 +690,13 @@ async def chart_data(
     except Exception:
         logger.warning("BMSB computation failed for %s", symbol)
 
+    # Dynamic precision for sub-penny assets (MOG, SHIB etc)
+    sample_price = float(candles[-1]["close"]) if candles else 1.0
+    if sample_price > 0 and sample_price < 0.01:
+        interp_prec = max(6, int(np.ceil(-np.log10(sample_price))) + 3)
+    else:
+        interp_prec = 6
+
     # Interpolate weekly BMSB to match chart resolution for smooth lines
     def _interpolate(series):
         if not series or len(series) < 2:
@@ -701,7 +708,7 @@ async def chart_data(
             if ts < src_t[0] or ts > src_t[-1]:
                 continue
             val = float(np.interp(ts, src_t, src_v))
-            result.append({"time": ts, "value": round(val, 6)})
+            result.append({"time": ts, "value": round(val, interp_prec)})
         return result
 
     return {
