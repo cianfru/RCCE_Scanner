@@ -26,54 +26,58 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
         border: `1px solid ${color}15`,
         flexWrap: "wrap",
       }}>
-        {/* Left: timeframe toggle + consensus label + badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
-          {onTabChange && (
-            <div style={{
-              display: "flex", borderRadius: 8,
-              border: `1px solid ${T.border}`,
-              overflow: "hidden", flexShrink: 0,
-            }}>
-              {tfOptions.map(([key, label]) => {
-                const isActive = activeTab === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => onTabChange(key)}
-                    style={{
-                      padding: isMobile ? "7px 14px" : "5px 12px",
-                      border: "none",
-                      background: isActive ? T.accent : "transparent",
-                      color: isActive ? T.bg : T.text3,
-                      fontFamily: T.font, fontSize: m(T.textSm, isMobile), fontWeight: isActive ? 700 : 500,
-                      cursor: "pointer", letterSpacing: "0.04em",
-                      transition: "all 0.15s ease",
-                    }}
-                  >{label}</button>
-                );
-              })}
+        {/* Left: timeframe toggle + search + consensus label + badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+          {/* Row 1 on mobile: TF toggle + search */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, ...(isMobile ? { flex: "1 1 100%" } : {}) }}>
+            {onTabChange && (
+              <div style={{
+                display: "flex", borderRadius: 8,
+                border: `1px solid ${T.border}`,
+                overflow: "hidden", flexShrink: 0,
+              }}>
+                {tfOptions.map(([key, label]) => {
+                  const isActive = activeTab === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onTabChange(key)}
+                      style={{
+                        padding: isMobile ? "7px 14px" : "5px 12px",
+                        border: "none",
+                        background: isActive ? T.accent : "transparent",
+                        color: isActive ? T.bg : T.text3,
+                        fontFamily: T.font, fontSize: m(T.textSm, isMobile), fontWeight: isActive ? 700 : 500,
+                        cursor: "pointer", letterSpacing: "0.04em",
+                        transition: "all 0.15s ease",
+                      }}
+                    >{label}</button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Search */}
+            <div style={{ position: "relative", display: "flex", alignItems: "center", flex: isMobile ? 1 : undefined }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.text4} strokeWidth="2.5" strokeLinecap="round"
+                style={{ position: "absolute", left: 8, pointerEvents: "none" }}>
+                <circle cx="10.5" cy="10.5" r="7" /><line x1="15.5" y1="15.5" x2="21" y2="21" />
+              </svg>
+              <input
+                value={searchTerm || ""}
+                onChange={e => onSearchChange?.(e.target.value)}
+                placeholder="Search..."
+                style={{
+                  width: isMobile ? "100%" : 120, height: 28,
+                  padding: "0 8px 0 26px",
+                  fontSize: 11, fontFamily: T.mono,
+                  background: T.overlay04, color: T.text1,
+                  border: `1px solid ${T.border}`, borderRadius: 8,
+                  outline: "none",
+                }}
+              />
             </div>
-          )}
-          {/* Search */}
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.text4} strokeWidth="2.5" strokeLinecap="round"
-              style={{ position: "absolute", left: 8, pointerEvents: "none" }}>
-              <circle cx="10.5" cy="10.5" r="7" /><line x1="15.5" y1="15.5" x2="21" y2="21" />
-            </svg>
-            <input
-              value={searchTerm || ""}
-              onChange={e => onSearchChange?.(e.target.value)}
-              placeholder="Search..."
-              style={{
-                width: isMobile ? 100 : 120, height: 28,
-                padding: "0 8px 0 26px",
-                fontSize: 11, fontFamily: T.mono,
-                background: T.overlay04, color: T.text1,
-                border: `1px solid ${T.border}`, borderRadius: 8,
-                outline: "none",
-              }}
-            />
           </div>
+          {/* Row 2 on mobile: Consensus label + badge */}
           <span style={{
             fontSize: m(T.textBase, isMobile), color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",
