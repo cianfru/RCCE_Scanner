@@ -2142,10 +2142,13 @@ async def data_sources():
     try:
         from bybit_futures_data import _exchange, _symbol_map, _cache as bb_cache
         info["bybit_loaded"] = _exchange is not None
+        info["bybit_markets"] = len(_exchange.markets) if _exchange else 0
         info["bybit_mapped_symbols"] = len(_symbol_map)
         info["bybit_cache_entries"] = len(bb_cache.data) if bb_cache.data else 0
-    except Exception:
+        info["bybit_map_sample"] = dict(list(_symbol_map.items())[:5])
+    except Exception as exc:
         info["bybit_loaded"] = False
+        info["bybit_error"] = str(exc)
 
     # Add positioning source counts from last scan
     try:
