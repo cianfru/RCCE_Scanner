@@ -55,20 +55,15 @@ export default function AuthGate({ children }) {
         filter: "blur(80px)", pointerEvents: "none",
       }} />
 
-      {/* Logo + title */}
-      <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 40 }}>
-        <div style={{
-          fontSize: 32, fontWeight: 700, color: T.text1, letterSpacing: "-0.02em",
-          display: "flex", alignItems: "center", gap: 10, justifyContent: "center",
-        }}>
-          <svg width="36" height="36" viewBox="0 0 40 40" fill="none">
-            <circle cx="20" cy="20" r="18" stroke={T.accent} strokeWidth="2" opacity="0.3" />
-            <path d="M8 20 Q14 10 20 20 Q26 30 32 20" stroke={T.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
-          </svg>
-          REFLEX
-        </div>
+      {/* Logo */}
+      <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 48 }}>
+        <img
+          src="/logo.png"
+          alt="Reflex"
+          style={{ height: 56, width: "auto", objectFit: "contain", display: "block", margin: "0 auto" }}
+        />
         <p style={{
-          marginTop: 8, fontSize: 14, color: T.text4, letterSpacing: "0.04em",
+          marginTop: 12, fontSize: 14, color: T.text4, letterSpacing: "0.04em",
         }}>
           Market intelligence, distilled.
         </p>
