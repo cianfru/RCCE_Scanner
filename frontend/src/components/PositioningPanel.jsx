@@ -50,6 +50,34 @@ function formatVolume(vol) {
   return `$${vol.toFixed(0)}`;
 }
 
+const SOURCE_COLORS = {
+  binance: { bg: "#f0b90b18", color: "#f0b90b", label: "BIN" },
+  hyperliquid: { bg: "#4ade8018", color: "#4ade80", label: "HL" },
+  bybit: { bg: "#f6851b18", color: "#f6851b", label: "BBT" },
+};
+
+function SourceTag({ src }) {
+  if (!src) return null;
+  const sc = SOURCE_COLORS[src] || { bg: "#06b6d418", color: "#22d3ee", label: src.slice(0, 3).toUpperCase() };
+  return (
+    <span style={{
+      padding: "1px 4px",
+      borderRadius: "3px",
+      background: sc.bg,
+      color: sc.color,
+      fontSize: 8,
+      fontFamily: T.mono,
+      fontWeight: 700,
+      letterSpacing: "0.06em",
+      marginLeft: 6,
+      verticalAlign: "middle",
+      opacity: 0.85,
+    }}>
+      {sc.label}
+    </span>
+  );
+}
+
 export default function PositioningPanel({ positioning }) {
   if (!positioning) return null;
 
@@ -62,13 +90,16 @@ export default function PositioningPanel({ positioning }) {
     predicted_funding,
     volume_24h,
     source,
+    source_map,
   } = positioning;
 
+  const sm = source_map || {};
   const oiMeta = oiTrendMeta(oi_trend);
 
   const rows = [
     {
       label: "Funding Rate",
+      src: sm.funding,
       value: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
@@ -99,6 +130,7 @@ export default function PositioningPanel({ positioning }) {
     },
     {
       label: "OI Trend",
+      src: sm.oi,
       value: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
@@ -146,6 +178,7 @@ export default function PositioningPanel({ positioning }) {
     },
     {
       label: "Pred. Funding",
+      src: sm.pred_funding,
       value: (
         <span style={{
           fontFamily: T.mono,
@@ -157,6 +190,20 @@ export default function PositioningPanel({ positioning }) {
         </span>
       ),
     },
+    ...(volume_24h != null && volume_24h > 0 ? [{
+      label: "Volume 24h",
+      src: sm.volume,
+      value: (
+        <span style={{
+          fontFamily: T.mono,
+          fontSize: 13,
+          fontWeight: 600,
+          color: T.text2,
+        }}>
+          {formatVolume(volume_24h)}
+        </span>
+      ),
+    }] : []),
   ];
 
   return (
@@ -182,7 +229,7 @@ export default function PositioningPanel({ positioning }) {
         justifyContent: "space-between",
       }}>
         <span>Positioning</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {source && (() => {
             const sourceColors = {
               binance: { bg: "#f0b90b20", color: "#f0b90b", border: "#f0b90b30", label: "BINANCE" },
@@ -206,11 +253,6 @@ export default function PositioningPanel({ positioning }) {
               </span>
             );
           })()}
-          {volume_24h != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text2, fontWeight: 500, letterSpacing: "0.02em" }}>
-              Vol {formatVolume(volume_24h)}
-            </span>
-          )}
         </div>
       </div>
       {rows.map((row, i) => (
@@ -227,8 +269,11 @@ export default function PositioningPanel({ positioning }) {
             fontFamily: T.font,
             fontWeight: 500,
             letterSpacing: "0.04em",
+            display: "inline-flex",
+            alignItems: "center",
           }}>
             {row.label}
+            {row.src && <SourceTag src={row.src} />}
           </span>
           {row.value}
         </div>

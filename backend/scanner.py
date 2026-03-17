@@ -731,6 +731,24 @@ async def _scan_timeframe(
                 oracle_price=oracle_price,
                 volume_24h=volume_24h,
             )
+            # Build per-metric source map so frontend knows where each field comes from
+            source_map = {}
+            if source == "binance":
+                source_map["funding"] = "binance"
+                source_map["oi"] = "binance"
+                source_map["volume"] = "hyperliquid" if (hl is not None and hl.volume_24h > 0) else ""
+                source_map["pred_funding"] = "hyperliquid" if (hl is not None and hl.predicted_funding != 0) else ""
+            elif source == "hyperliquid":
+                source_map["funding"] = "hyperliquid"
+                source_map["oi"] = "hyperliquid"
+                source_map["volume"] = "hyperliquid"
+                source_map["pred_funding"] = "hyperliquid"
+            elif source == "bybit":
+                source_map["funding"] = "bybit"
+                source_map["oi"] = "bybit"
+                source_map["volume"] = ""
+                source_map["pred_funding"] = ""
+
             r["positioning"] = {
                 "funding_regime": pos.funding_regime,
                 "funding_rate": pos.funding_rate,
@@ -742,6 +760,7 @@ async def _scan_timeframe(
                 "mark_price": pos.mark_price,
                 "volume_24h": pos.volume_24h,
                 "source": source,
+                "source_map": source_map,
             }
             # Store OI for next scan's trend calculation
             cache.prev_oi[symbol] = open_interest
