@@ -403,13 +403,12 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             height: "100%", padding: "40px 20px", textAlign: "center",
           }}>
             <img
-              src="/logo.png"
-              alt="Reflex"
+              src="/Reflex_AI_logo_white.png"
+              alt="Reflex AI"
               style={{
-                width: isMobile ? 140 : 180,
-                marginBottom: 20,
-                opacity: 0.85,
-                ...(themeMode === "light" && { filter: "invert(1) hue-rotate(180deg)" }),
+                width: isMobile ? 200 : 280,
+                marginBottom: 16,
+                mixBlendMode: themeMode === "light" ? "multiply" : "screen",
               }}
             />
             <div style={{
