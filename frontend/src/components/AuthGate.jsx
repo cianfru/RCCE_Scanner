@@ -5,7 +5,9 @@ const PASSWORD = "Admin123";
 const AUTH_KEY = "reflex_auth";
 
 export function isAuthenticated() {
-  return sessionStorage.getItem(AUTH_KEY) === "1";
+  // Persist auth across sessions; also auto-bypass if wallet was previously connected
+  return localStorage.getItem(AUTH_KEY) === "1"
+    || !!localStorage.getItem("rcce-wallet-address");
 }
 
 export default function AuthGate({ children }) {
@@ -19,7 +21,7 @@ export default function AuthGate({ children }) {
   const submit = (e) => {
     e.preventDefault();
     if (value === PASSWORD) {
-      sessionStorage.setItem(AUTH_KEY, "1");
+      localStorage.setItem(AUTH_KEY, "1");
       setAuthed(true);
     } else {
       setError(true);
