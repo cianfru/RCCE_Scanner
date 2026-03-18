@@ -127,60 +127,98 @@ function heatColor(heat) {
 }
 
 // ---------------------------------------------------------------------------
+// Glassmorphism Design Tokens
+// ---------------------------------------------------------------------------
+
+const GLASS = {
+  bg: "rgba(255,255,255,0.03)",
+  bgHover: "rgba(255,255,255,0.055)",
+  border: "rgba(255,255,255,0.08)",
+  borderBright: "rgba(255,255,255,0.14)",
+  blur: "blur(24px)",
+  shadow: "0 4px 32px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset",
+  shadowSubtle: "0 2px 16px rgba(0,0,0,0.2)",
+  glow: (color, intensity = 0.12) => `0 0 32px rgba(${color},${intensity}), 0 0 8px rgba(${color},${intensity * 0.6})`,
+  displayFont: "'Outfit', 'Inter', sans-serif",
+};
+
+// ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
 const S = {
   panel: { padding: 0, maxWidth: 1200, margin: "0 auto" },
   section: {
-    background: T.surface, border: `1px solid ${T.border}`,
-    borderRadius: T.radius, marginBottom: 16, overflow: "hidden",
+    background: GLASS.bg,
+    backdropFilter: GLASS.blur,
+    WebkitBackdropFilter: GLASS.blur,
+    border: `1px solid ${GLASS.border}`,
+    borderRadius: 16, marginBottom: 20, overflow: "hidden",
+    boxShadow: GLASS.shadow,
+    transition: "all 0.25s ease",
   },
   sectionHeader: {
-    padding: "14px 20px", borderBottom: `1px solid ${T.border}`,
+    padding: "16px 24px",
+    borderBottom: `1px solid ${GLASS.border}`,
     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    background: "rgba(255,255,255,0.015)",
   },
   title: {
-    fontSize: 11, fontWeight: 700, fontFamily: T.mono, color: T.text2,
-    letterSpacing: "0.08em", textTransform: "uppercase",
+    fontSize: 13, fontWeight: 700, fontFamily: GLASS.displayFont, color: T.text1,
+    letterSpacing: "0.04em", textTransform: "uppercase",
   },
   btn: {
-    padding: "6px 14px", borderRadius: 6, border: `1px solid ${T.overlay12}`,
-    background: T.overlay04, color: T.text1, fontSize: 11, fontFamily: T.mono,
-    fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+    padding: "7px 16px", borderRadius: 8,
+    border: `1px solid ${GLASS.border}`,
+    background: "rgba(255,255,255,0.04)",
+    backdropFilter: "blur(12px)",
+    color: T.text1, fontSize: 11, fontFamily: T.mono,
+    fontWeight: 600, cursor: "pointer",
+    transition: "all 0.2s ease",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
   },
   btnDanger: {
-    background: "rgba(248,113,113,0.08)", borderColor: "rgba(248,113,113,0.2)", color: "#f87171",
+    background: "rgba(248,113,113,0.1)",
+    borderColor: "rgba(248,113,113,0.25)",
+    color: "#f87171",
+    boxShadow: "0 1px 8px rgba(248,113,113,0.1)",
   },
   label: { fontSize: 11, fontFamily: T.font, color: T.text3, fontWeight: 500 },
   value: { fontSize: 13, fontFamily: T.mono, color: T.text1, fontWeight: 600 },
   badge: (bg, color, border) => ({
-    display: "inline-block", padding: "3px 10px", borderRadius: 5,
+    display: "inline-flex", alignItems: "center", padding: "4px 12px", borderRadius: 6,
     background: bg, color, border: `1px solid ${border}`,
     fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+    backdropFilter: "blur(8px)",
+    boxShadow: `0 1px 6px ${bg}`,
   }),
   pillBtn: (active) => ({
-    padding: "4px 12px", borderRadius: 5, cursor: "pointer",
-    border: active ? "1px solid rgba(34,211,238,0.4)" : `1px solid ${T.overlay08}`,
-    background: active ? "rgba(34,211,238,0.12)" : T.overlay04,
+    padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+    border: active ? "1px solid rgba(34,211,238,0.45)" : `1px solid ${GLASS.border}`,
+    background: active
+      ? "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(34,211,238,0.06))"
+      : "rgba(255,255,255,0.03)",
     color: active ? "#22d3ee" : T.text3,
     fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-    transition: "all 0.15s",
+    transition: "all 0.2s ease",
+    backdropFilter: "blur(8px)",
+    boxShadow: active ? "0 0 12px rgba(34,211,238,0.12)" : "none",
   }),
   empty: {
-    padding: "24px 20px", textAlign: "center",
+    padding: "32px 24px", textAlign: "center",
     color: T.text4, fontSize: 12, fontFamily: T.mono,
   },
 };
 
 const cellStyle = {
-  padding: "10px 14px", fontSize: 12, fontFamily: T.mono, color: T.text2,
-  borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap",
+  padding: "12px 16px", fontSize: 12, fontFamily: T.mono, color: T.text2,
+  borderBottom: `1px solid ${GLASS.border}`, whiteSpace: "nowrap",
 };
 const headerCell = {
-  padding: "10px 14px", fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-  color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase",
-  borderBottom: `1px solid ${T.borderH}`, textAlign: "left",
+  padding: "12px 16px", fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+  color: T.text3, letterSpacing: "0.12em", textTransform: "uppercase",
+  borderBottom: `1px solid ${GLASS.borderBright}`, textAlign: "left",
+  background: "rgba(255,255,255,0.01)",
 };
 
 // ---------------------------------------------------------------------------
@@ -189,9 +227,30 @@ const headerCell = {
 
 function StatBox({ label, value, color, small }) {
   return (
-    <div style={{ textAlign: "center", minWidth: small ? 70 : 90 }}>
-      <div style={{ ...S.value, fontSize: small ? 14 : 18, color: color || T.text1 }}>{value}</div>
-      <div style={{ ...S.label, fontSize: 9, marginTop: 2 }}>{label}</div>
+    <div style={{
+      textAlign: "center", minWidth: small ? 80 : 100,
+      padding: small ? "8px 10px" : "10px 14px",
+      borderRadius: 10,
+      background: "rgba(255,255,255,0.02)",
+      border: `1px solid rgba(255,255,255,0.04)`,
+      transition: "all 0.2s ease",
+    }}>
+      <div style={{
+        fontSize: small ? 15 : 20,
+        fontFamily: GLASS.displayFont,
+        fontWeight: 700,
+        color: color || T.text1,
+        lineHeight: 1.2,
+        letterSpacing: "-0.01em",
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: 9, fontFamily: T.mono, color: T.text4,
+        marginTop: 4, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase",
+      }}>
+        {label}
+      </div>
     </div>
   );
 }
@@ -314,19 +373,24 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
   return (
     <div style={S.section}>
       <div style={S.sectionHeader}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={S.title}>Portfolio</span>
           {vlm > 0 && (
-            <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text4 }}>
+            <span style={{
+              fontSize: 10, fontFamily: T.mono, color: T.text4,
+              padding: "3px 8px", borderRadius: 6,
+              background: "rgba(255,255,255,0.03)",
+              border: `1px solid rgba(255,255,255,0.05)`,
+            }}>
               Vol: {fmtVlm(vlm)}
             </span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {/* Mode toggle */}
           <button style={S.pillBtn(mode === "value")} onClick={() => onModeChange("value")}>VALUE</button>
           <button style={S.pillBtn(mode === "pnl")} onClick={() => onModeChange("pnl")}>PnL</button>
-          <div style={{ width: 1, background: T.overlay12, margin: "0 4px" }} />
+          <div style={{ width: 1, height: 16, background: GLASS.border, margin: "0 4px" }} />
           {/* Period toggle */}
           {PERIODS.map(p => (
             <button key={p.key} style={S.pillBtn(period === p.key)} onClick={() => onPeriodChange(p.key)}>
@@ -335,7 +399,10 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
           ))}
         </div>
       </div>
-      <div ref={containerRef} style={{ height: 280, width: "100%" }} />
+      <div ref={containerRef} style={{
+        height: 280, width: "100%",
+        background: "radial-gradient(ellipse at 50% 80%, rgba(34,211,238,0.03) 0%, transparent 70%)",
+      }} />
     </div>
   );
 }
@@ -355,17 +422,19 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
 
   return (
     <div style={{
-      marginTop: 10,
-      padding: "8px 12px",
-      background: "rgba(255,255,255,0.018)",
-      borderRadius: 6,
-      border: `1px solid ${T.overlay08}`,
+      marginTop: 12,
+      padding: "10px 14px",
+      background: "rgba(255,255,255,0.02)",
+      backdropFilter: "blur(12px)",
+      borderRadius: 10,
+      border: `1px solid ${GLASS.border}`,
+      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
     }}>
       {/* Top row: badges */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         <span style={{
           fontSize: 9, fontFamily: T.mono, color: T.text4,
-          letterSpacing: "0.1em", fontWeight: 700,
+          letterSpacing: "0.12em", fontWeight: 700,
         }}>
           SCANNER
         </span>
@@ -373,9 +442,11 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
         {/* 4H Signal */}
         <span style={{
           fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "2px 6px", borderRadius: 3,
-          background: sigColor + "1a", color: sigColor,
+          padding: "3px 8px", borderRadius: 5,
+          background: sigColor + "18", color: sigColor,
           letterSpacing: "0.04em",
+          border: `1px solid ${sigColor}25`,
+          boxShadow: `0 0 8px ${sigColor}10`,
         }}>
           {SIGNAL_COMPACT[ctx4h.signal] || ctx4h.signal} · 4H
         </span>
@@ -383,19 +454,26 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
         {/* Regime */}
         <span style={{
           fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "2px 6px", borderRadius: 3,
-          background: regColor + "15", color: regColor,
+          padding: "3px 8px", borderRadius: 5,
+          background: regColor + "14", color: regColor,
+          border: `1px solid ${regColor}20`,
         }}>
           {ctx4h.regime}
         </span>
 
         {/* Heat */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>HEAT</span>
-          <div style={{ width: 40, height: 4, borderRadius: 2, background: T.overlay08 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, letterSpacing: "0.06em" }}>HEAT</span>
+          <div style={{
+            width: 44, height: 5, borderRadius: 3,
+            background: "rgba(255,255,255,0.06)",
+            overflow: "hidden",
+          }}>
             <div style={{
               width: `${ctx4h.heat}%`, height: "100%",
-              borderRadius: 2, background: hc, transition: "width 0.3s",
+              borderRadius: 3, background: hc,
+              boxShadow: `0 0 6px ${hc}50`,
+              transition: "width 0.3s ease",
             }} />
           </div>
           <span style={{ fontSize: 9, fontFamily: T.mono, color: hc, fontWeight: 700 }}>
@@ -407,9 +485,10 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
         {ctx1d && ctx1d.signal !== ctx4h.signal && (
           <span style={{
             fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-            padding: "2px 6px", borderRadius: 3,
-            background: (SIGNAL_COLOR[ctx1d.signal] || T.text4) + "15",
+            padding: "3px 8px", borderRadius: 5,
+            background: (SIGNAL_COLOR[ctx1d.signal] || T.text4) + "14",
             color: SIGNAL_COLOR[ctx1d.signal] || T.text4,
+            border: `1px solid ${(SIGNAL_COLOR[ctx1d.signal] || T.text4)}20`,
           }}>
             {SIGNAL_COMPACT[ctx1d.signal] || ctx1d.signal} · 1D
           </span>
@@ -419,10 +498,11 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
         <span style={{
           marginLeft: "auto",
           fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "2px 8px", borderRadius: 3,
+          padding: "3px 10px", borderRadius: 5,
           background: alignStyle.bg, color: alignStyle.color,
           border: `1px solid ${alignStyle.border}`,
           letterSpacing: "0.06em", flexShrink: 0,
+          boxShadow: `0 0 8px ${alignStyle.bg}`,
         }}>
           {alignment}
         </span>
@@ -430,15 +510,18 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
 
       {/* Warnings for this coin */}
       {posWarnings.length > 0 && (
-        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
           {posWarnings.map((w, i) => {
             const wc = w.severity === "critical" ? "#f87171" : w.severity === "high" ? "#fbbf24" : "#eab308";
             return (
               <div key={i} style={{
-                display: "flex", alignItems: "flex-start", gap: 5,
+                display: "flex", alignItems: "flex-start", gap: 6,
                 fontSize: 9, fontFamily: T.mono, color: wc,
+                padding: "4px 8px", borderRadius: 5,
+                background: wc + "08",
+                border: `1px solid ${wc}12`,
               }}>
-                <span style={{ flexShrink: 0 }}>&#9650;</span>
+                <span style={{ flexShrink: 0, fontSize: 7, marginTop: 2 }}>&#9650;</span>
                 <span style={{ lineHeight: 1.5 }}>{w.detail}</span>
               </div>
             );
@@ -520,22 +603,45 @@ function PortfolioHealthCard({ positions, scanMap4h, warnings }) {
     })
     .filter(Boolean);
 
+  // SVG arc for the circular gauge
+  const gaugeRadius = 38;
+  const gaugeCircumference = 2 * Math.PI * gaugeRadius;
+  const gaugeArc = (avgHealth / 100) * gaugeCircumference * 0.75; // 270° arc
+  const gaugeRGB = hc === "#34d399" ? "52,211,153" : hc === "#fbbf24" ? "251,191,36" : "248,113,113";
+
   return (
     <div style={{
       ...S.section,
-      marginBottom: 16,
+      marginBottom: 20,
+      position: "relative",
+      overflow: "hidden",
     }}>
+      {/* Radial glow background tied to health color */}
+      <div style={{
+        position: "absolute", top: -40, left: -20,
+        width: 200, height: 200,
+        borderRadius: "50%",
+        background: `radial-gradient(circle, rgba(${gaugeRGB},0.08) 0%, transparent 70%)`,
+        pointerEvents: "none",
+        filter: "blur(20px)",
+      }} />
+
       {/* Header */}
       <div style={{
-        padding: "10px 20px",
-        borderBottom: `1px solid ${T.border}`,
+        padding: "14px 24px",
+        borderBottom: `1px solid ${GLASS.border}`,
         display: "flex", alignItems: "center", gap: 12,
+        background: "rgba(255,255,255,0.015)",
+        position: "relative",
       }}>
         <span style={S.title}>Portfolio Health</span>
         <span style={{
-          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "2px 8px", borderRadius: 3,
-          background: hc + "1a", color: hc,
+          fontSize: 10, fontFamily: GLASS.displayFont, fontWeight: 700,
+          padding: "3px 10px", borderRadius: 6,
+          background: `rgba(${gaugeRGB},0.12)`, color: hc,
+          border: `1px solid rgba(${gaugeRGB},0.25)`,
+          letterSpacing: "0.04em",
+          boxShadow: `0 0 10px rgba(${gaugeRGB},0.1)`,
         }}>
           {label}
         </span>
@@ -543,65 +649,123 @@ function PortfolioHealthCard({ positions, scanMap4h, warnings }) {
 
       {/* Score + breakdowns */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 24,
-        padding: "14px 20px", flexWrap: "wrap",
-        borderBottom: actions.length > 0 ? `1px solid ${T.border}` : "none",
+        display: "flex", alignItems: "center", gap: 28,
+        padding: "20px 24px", flexWrap: "wrap",
+        borderBottom: actions.length > 0 ? `1px solid ${GLASS.border}` : "none",
+        position: "relative",
       }}>
-        {/* Score */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 30, fontFamily: T.mono, fontWeight: 700, color: hc, lineHeight: 1 }}>
-            {Math.round(avgHealth)}
-          </span>
-          <div>
-            <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 4 }}>/100</div>
-            <div style={{ width: 64, height: 5, borderRadius: 3, background: T.overlay08 }}>
-              <div style={{
-                width: `${avgHealth}%`, height: "100%",
-                borderRadius: 3, background: hc, transition: "width 0.4s",
-              }} />
+        {/* Circular gauge */}
+        <div style={{ position: "relative", width: 90, height: 90, flexShrink: 0 }}>
+          <svg width="90" height="90" viewBox="0 0 90 90" style={{ transform: "rotate(-225deg)" }}>
+            {/* Background arc */}
+            <circle
+              cx="45" cy="45" r={gaugeRadius}
+              fill="none"
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth="6"
+              strokeDasharray={`${gaugeCircumference * 0.75} ${gaugeCircumference * 0.25}`}
+              strokeLinecap="round"
+            />
+            {/* Health arc */}
+            <circle
+              cx="45" cy="45" r={gaugeRadius}
+              fill="none"
+              stroke={hc}
+              strokeWidth="6"
+              strokeDasharray={`${gaugeArc} ${gaugeCircumference - gaugeArc}`}
+              strokeLinecap="round"
+              style={{ transition: "stroke-dasharray 0.6s ease", filter: `drop-shadow(0 0 6px rgba(${gaugeRGB},0.4))` }}
+            />
+          </svg>
+          {/* Center score */}
+          <div style={{
+            position: "absolute", top: "50%", left: "50%",
+            transform: "translate(-50%, -50%)",
+            textAlign: "center",
+          }}>
+            <div style={{
+              fontSize: 26, fontFamily: GLASS.displayFont, fontWeight: 800,
+              color: hc, lineHeight: 1, letterSpacing: "-0.02em",
+            }}>
+              {Math.round(avgHealth)}
+            </div>
+            <div style={{
+              fontSize: 8, fontFamily: T.mono, color: T.text4,
+              letterSpacing: "0.12em", marginTop: 2,
+            }}>
+              /100
             </div>
           </div>
         </div>
 
         {/* Divider */}
-        <div style={{ width: 1, height: 36, background: T.overlay08 }} />
+        <div style={{ width: 1, height: 56, background: GLASS.border, flexShrink: 0 }} />
 
-        {/* Stats */}
-        <div style={{ display: "flex", gap: 20 }}>
+        {/* Alignment stats */}
+        <div style={{ display: "flex", gap: 16 }}>
           {aligned > 0 && (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: "#34d399" }}>{aligned}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>ALIGNED</div>
+            <div style={{
+              textAlign: "center", padding: "8px 12px", borderRadius: 10,
+              background: "rgba(52,211,153,0.05)",
+              border: "1px solid rgba(52,211,153,0.1)",
+            }}>
+              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: "#34d399" }}>{aligned}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: "#34d399", marginTop: 3, letterSpacing: "0.08em", opacity: 0.8 }}>ALIGNED</div>
             </div>
           )}
           {neutral > 0 && (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: T.text3 }}>{neutral}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>NEUTRAL</div>
+            <div style={{
+              textAlign: "center", padding: "8px 12px", borderRadius: 10,
+              background: "rgba(255,255,255,0.02)",
+              border: `1px solid rgba(255,255,255,0.05)`,
+            }}>
+              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: T.text3 }}>{neutral}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 3, letterSpacing: "0.08em" }}>NEUTRAL</div>
             </div>
           )}
           {conflicting > 0 && (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: "#f87171" }}>{conflicting}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>CONFLICTING</div>
+            <div style={{
+              textAlign: "center", padding: "8px 12px", borderRadius: 10,
+              background: "rgba(248,113,113,0.05)",
+              border: "1px solid rgba(248,113,113,0.1)",
+            }}>
+              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: "#f87171" }}>{conflicting}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: "#f87171", marginTop: 3, letterSpacing: "0.08em", opacity: 0.8 }}>CONFLICT</div>
             </div>
           )}
         </div>
 
-        {/* Per-position mini bars */}
+        {/* Per-position mini gauges */}
         {positionScores.length > 1 && (
           <>
-            <div style={{ width: 1, height: 36, background: T.overlay08 }} />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ width: 1, height: 56, background: GLASS.border, flexShrink: 0 }} />
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               {positionScores.map(ps => {
                 const phc = ps.health >= 68 ? "#34d399" : ps.health >= 45 ? "#fbbf24" : "#f87171";
                 return (
-                  <div key={ps.coin} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 3 }}>{ps.coin}</div>
-                    <div style={{ width: 36, height: 4, borderRadius: 2, background: T.overlay08 }}>
-                      <div style={{ width: `${ps.health}%`, height: "100%", borderRadius: 2, background: phc }} />
+                  <div key={ps.coin} style={{
+                    textAlign: "center", padding: "6px 8px", borderRadius: 8,
+                    background: "rgba(255,255,255,0.02)",
+                    border: `1px solid rgba(255,255,255,0.04)`,
+                    minWidth: 48,
+                  }}>
+                    <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text3, marginBottom: 4, fontWeight: 600 }}>{ps.coin}</div>
+                    <div style={{
+                      width: 40, height: 4, borderRadius: 2,
+                      background: "rgba(255,255,255,0.06)", margin: "0 auto",
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${ps.health}%`, height: "100%",
+                        borderRadius: 2, background: phc,
+                        boxShadow: `0 0 6px ${phc}40`,
+                        transition: "width 0.4s ease",
+                      }} />
                     </div>
-                    <div style={{ fontSize: 9, fontFamily: T.mono, color: phc, fontWeight: 700, marginTop: 2 }}>
+                    <div style={{
+                      fontSize: 10, fontFamily: GLASS.displayFont, color: phc,
+                      fontWeight: 700, marginTop: 3,
+                    }}>
                       {Math.round(ps.health)}
                     </div>
                   </div>
@@ -614,17 +778,23 @@ function PortfolioHealthCard({ positions, scanMap4h, warnings }) {
 
       {/* Suggested actions */}
       {actions.length > 0 && (
-        <div style={{ padding: "10px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, marginBottom: 2 }}>
+        <div style={{ padding: "14px 24px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{
+            fontSize: 9, fontFamily: T.mono, color: T.text4,
+            letterSpacing: "0.1em", fontWeight: 700, marginBottom: 2,
+          }}>
             SUGGESTED ACTIONS
           </div>
           {actions.map((a, i) => (
             <div key={i} style={{
-              display: "flex", alignItems: "center", gap: 8,
+              display: "flex", alignItems: "center", gap: 10,
               fontSize: 11, fontFamily: T.mono, color: a.color,
+              padding: "6px 12px", borderRadius: 8,
+              background: a.color + "08",
+              border: `1px solid ${a.color}15`,
             }}>
-              <span style={{ fontSize: 8, opacity: 0.7 }}>&#9654;</span>
-              <span>{a.text}</span>
+              <span style={{ fontSize: 7, opacity: 0.8 }}>&#9654;</span>
+              <span style={{ lineHeight: 1.4 }}>{a.text}</span>
             </div>
           ))}
         </div>
@@ -667,68 +837,84 @@ function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings
     w => w.symbol === coin || w.symbol === `${coin}/USDT`
   );
 
+  const pnlRGB = unrealizedPnl >= 0 ? "52,211,153" : "248,113,113";
+
   return (
-    <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}` }}>
+    <div style={{
+      padding: "18px 24px",
+      borderBottom: `1px solid ${GLASS.border}`,
+      position: "relative",
+      transition: "background 0.2s ease",
+    }}>
+      {/* Subtle PnL glow */}
+      <div style={{
+        position: "absolute", top: 0, right: 0, width: 160, height: "100%",
+        background: `linear-gradient(270deg, rgba(${pnlRGB},0.03) 0%, transparent 100%)`,
+        pointerEvents: "none",
+      }} />
+
       {/* Row 1: Coin + badges + PnL */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 15, fontFamily: T.mono, fontWeight: 700, color: T.text1 }}>{coin}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap", position: "relative" }}>
+        <span style={{
+          fontSize: 17, fontFamily: GLASS.displayFont, fontWeight: 700,
+          color: T.text1, letterSpacing: "-0.01em",
+        }}>
+          {coin}
+        </span>
         <span style={S.badge(sideBg, sideColor, sideBorder)}>{side}</span>
-        <span style={S.badge("rgba(139,92,246,0.12)", "#8b5cf6", "rgba(139,92,246,0.3)")}>
+        <span style={S.badge("rgba(139,92,246,0.1)", "#a78bfa", "rgba(139,92,246,0.2)")}>
           {leverage}x {leverageType}
         </span>
         {liqDanger && (
-          <span style={S.badge("rgba(239,68,68,0.12)", "#f87171", "rgba(239,68,68,0.3)")}>
+          <span style={{
+            ...S.badge("rgba(239,68,68,0.12)", "#f87171", "rgba(239,68,68,0.3)"),
+            animation: "none",
+            boxShadow: "0 0 10px rgba(239,68,68,0.15)",
+          }}>
             LIQ {liqDistPct.toFixed(1)}%
           </span>
         )}
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div style={{ fontSize: 14, fontFamily: T.mono, fontWeight: 700, color: pnlColor(unrealizedPnl) }}>
+          <div style={{
+            fontSize: 16, fontFamily: GLASS.displayFont, fontWeight: 700,
+            color: pnlColor(unrealizedPnl), letterSpacing: "-0.01em",
+          }}>
             {unrealizedPnl >= 0 ? "+" : ""}{fmtUsd(unrealizedPnl)}
           </div>
-          <div style={{ fontSize: 10, fontFamily: T.mono, color: pnlColor(roe) }}>
+          <div style={{ fontSize: 10, fontFamily: T.mono, color: pnlColor(roe), opacity: 0.85 }}>
             ROE {roe >= 0 ? "+" : ""}{roe.toFixed(2)}%
           </div>
         </div>
       </div>
 
-      {/* Row 2: Details */}
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <div>
-          <span style={S.label}>Entry </span>
-          <span style={S.value}>{fmtPrice(entryPx)}</span>
-        </div>
-        <div>
-          <span style={S.label}>Size </span>
-          <span style={S.value}>{Math.abs(szi).toFixed(4)}</span>
-        </div>
-        <div>
-          <span style={S.label}>Value </span>
-          <span style={S.value}>{fmtUsd(posValue)}</span>
-        </div>
-        <div>
-          <span style={S.label}>Margin </span>
-          <span style={S.value}>{fmtUsd(marginUsed)}</span>
-        </div>
-        {liqPx && (
-          <div>
-            <span style={S.label}>Liq </span>
-            <span style={{ ...S.value, color: liqDanger ? "#f87171" : T.text2 }}>{fmtPrice(liqPx)}</span>
+      {/* Row 2: Details — grid-like with subtle containers */}
+      <div style={{
+        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
+      }}>
+        {[
+          { label: "Entry", val: fmtPrice(entryPx) },
+          { label: "Size", val: Math.abs(szi).toFixed(4) },
+          { label: "Value", val: fmtUsd(posValue) },
+          { label: "Margin", val: fmtUsd(marginUsed) },
+          ...(liqPx ? [{ label: "Liq", val: fmtPrice(liqPx), color: liqDanger ? "#f87171" : undefined }] : []),
+          ...(fundingSinceOpen !== 0 ? [{ label: "Funding", val: `${fundingSinceOpen >= 0 ? "-" : "+"}${fmtUsd(Math.abs(fundingSinceOpen))}`, color: pnlColor(-fundingSinceOpen) }] : []),
+        ].map((d, i) => (
+          <div key={i} style={{
+            padding: "5px 10px", borderRadius: 7,
+            background: "rgba(255,255,255,0.02)",
+            border: `1px solid rgba(255,255,255,0.04)`,
+          }}>
+            <span style={{ ...S.label, fontSize: 9, letterSpacing: "0.06em" }}>{d.label} </span>
+            <span style={{ ...S.value, fontSize: 12, color: d.color || T.text1 }}>{d.val}</span>
           </div>
-        )}
-        {fundingSinceOpen !== 0 && (
-          <div>
-            <span style={S.label}>Funding </span>
-            <span style={{ ...S.value, color: pnlColor(-fundingSinceOpen) }}>
-              {fundingSinceOpen >= 0 ? "-" : "+"}{fmtUsd(Math.abs(fundingSinceOpen))}
-            </span>
-          </div>
-        )}
+        ))}
         <button
           onClick={() => onClose(coin, Math.abs(szi), isLong)}
           disabled={closing}
           style={{
             ...S.btn, ...S.btnDanger, marginLeft: "auto",
             opacity: closing ? 0.5 : 1, cursor: closing ? "not-allowed" : "pointer",
+            borderRadius: 8, padding: "7px 16px",
           }}
         >
           {closing ? "Closing..." : "Close"}
@@ -943,29 +1129,49 @@ export default function TradingPanel({ api }) {
   const totalFunding = funding.reduce((s, f) => s + parseNum(f.delta?.usdc), 0);
 
   return (
-    <div style={S.panel}>
+    <div style={{ ...S.panel, padding: "0 4px" }}>
 
       {/* ─── NOT CONNECTED ─── */}
       {!isConnected && (
-        <div style={{ ...S.section, padding: "40px 20px", textAlign: "center" }}>
-          <div style={{ fontSize: 12, fontFamily: T.mono, color: T.text3, marginBottom: 14 }}>
+        <div style={{
+          ...S.section, padding: "48px 24px", textAlign: "center",
+          position: "relative", overflow: "hidden",
+        }}>
+          {/* Decorative gradient */}
+          <div style={{
+            position: "absolute", top: "-50%", left: "50%", transform: "translateX(-50%)",
+            width: 300, height: 300, borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }} />
+          <div style={{
+            fontSize: 14, fontFamily: GLASS.displayFont, color: T.text3,
+            marginBottom: 18, fontWeight: 500, position: "relative",
+          }}>
             Connect your wallet to view portfolio
           </div>
           <button
             onClick={connect}
             style={{
-              padding: "10px 32px", borderRadius: 10,
+              padding: "12px 36px", borderRadius: 12,
               border: "1px solid rgba(139,92,246,0.3)",
-              background: "rgba(139,92,246,0.08)",
-              color: "#8b5cf6",
-              fontSize: 12, fontFamily: T.mono, fontWeight: 700,
-              cursor: "pointer", letterSpacing: "0.06em",
+              background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))",
+              backdropFilter: "blur(12px)",
+              color: "#a78bfa",
+              fontSize: 13, fontFamily: GLASS.displayFont, fontWeight: 700,
+              cursor: "pointer", letterSpacing: "0.04em",
+              boxShadow: "0 0 24px rgba(139,92,246,0.1), 0 2px 8px rgba(0,0,0,0.2)",
+              transition: "all 0.25s ease",
+              position: "relative",
             }}
           >
             Connect Wallet
           </button>
           {walletError && (
-            <div style={{ marginTop: 8, fontSize: 10, color: "#f87171", fontFamily: T.mono }}>
+            <div style={{
+              marginTop: 10, fontSize: 10, color: "#f87171",
+              fontFamily: T.mono, position: "relative",
+            }}>
               {walletError}
             </div>
           )}
@@ -974,19 +1180,37 @@ export default function TradingPanel({ api }) {
 
       {/* ─── ACCOUNT SUMMARY BAR ─── */}
       {isConnected && (
-        <div style={S.section}>
+        <div style={{ ...S.section, position: "relative", overflow: "hidden" }}>
+          {/* Subtle accent glow */}
+          <div style={{
+            position: "absolute", top: -20, right: -20, width: 180, height: 180,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(34,211,238,0.04) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }} />
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={S.title}>Hyperliquid Portfolio</span>
-              <span style={S.badge("rgba(52,211,153,0.12)", "#34d399", "rgba(52,211,153,0.3)")}>LIVE</span>
+              <span style={{
+                ...S.badge("rgba(52,211,153,0.1)", "#34d399", "rgba(52,211,153,0.25)"),
+                boxShadow: "0 0 10px rgba(52,211,153,0.1)",
+              }}>
+                LIVE
+              </span>
             </div>
-            <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text4 }}>
+            <span style={{
+              fontSize: 10, fontFamily: T.mono, color: T.text4,
+              padding: "3px 8px", borderRadius: 5,
+              background: "rgba(255,255,255,0.03)",
+              border: `1px solid rgba(255,255,255,0.05)`,
+            }}>
               {address?.slice(0, 6)}...{address?.slice(-4)}
             </span>
           </div>
           <div style={{
             display: "flex", justifyContent: "space-around",
-            padding: "16px 20px", gap: 16, flexWrap: "wrap",
+            padding: "18px 20px", gap: 12, flexWrap: "wrap",
+            position: "relative",
           }}>
             <StatBox label="ACCOUNT VALUE"  value={fmtUsd(accountValue)} />
             <StatBox label="UNREALIZED PnL" value={`${totalUnrealizedPnl >= 0 ? "+" : ""}${fmtUsd(totalUnrealizedPnl)}`} color={pnlColor(totalUnrealizedPnl)} />
@@ -1011,8 +1235,13 @@ export default function TradingPanel({ api }) {
       {/* ─── SECTION TAB BAR ─── */}
       {isConnected && (
         <div style={{
-          display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap",
-          padding: "0 2px",
+          display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap",
+          padding: "12px 16px",
+          background: "rgba(255,255,255,0.015)",
+          backdropFilter: "blur(16px)",
+          borderRadius: 12,
+          border: `1px solid ${GLASS.border}`,
+          boxShadow: GLASS.shadowSubtle,
         }}>
           {SECTION_TABS.map(tab => (
             <button
@@ -1020,7 +1249,8 @@ export default function TradingPanel({ api }) {
               onClick={() => setActiveSection(tab.key)}
               style={{
                 ...S.pillBtn(activeSection === tab.key),
-                padding: "6px 14px", fontSize: 11,
+                padding: "8px 16px", fontSize: 11,
+                fontFamily: GLASS.displayFont,
               }}
             >
               {tab.label}
@@ -1254,7 +1484,7 @@ export default function TradingPanel({ api }) {
           </div>
           <div style={{
             display: "flex", justifyContent: "space-around",
-            padding: "16px 20px", gap: 16, flexWrap: "wrap",
+            padding: "18px 20px", gap: 12, flexWrap: "wrap",
           }}>
             <StatBox label="TAKER RATE" value={fmtBps(takerRate)} small />
             <StatBox label="MAKER RATE" value={fmtBps(makerRate)} small />
