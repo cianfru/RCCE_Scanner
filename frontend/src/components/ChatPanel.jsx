@@ -406,8 +406,8 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
               src="/Reflex_AI_logo_transparent.png"
               alt="Reflex AI"
               style={{
-                width: isMobile ? 220 : 300,
-                marginBottom: 16,
+                width: isMobile ? 280 : 400,
+                marginBottom: 20,
               }}
             />
             <div style={{
