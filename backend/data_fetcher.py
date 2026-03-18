@@ -63,7 +63,7 @@ FULL_SYMBOLS: List[str] = [
     # AI / Compute
     "FET/USDT", "RNDR/USDT", "TAO/USDT",
     # DeFi
-    "AAVE/USDT", "MKR/USDT", "LDO/USDT", "CRV/USDT", "SNX/USDT",
+    "AAVE/USDT", "SKY/USDT", "LDO/USDT", "CRV/USDT", "SNX/USDT",
     "COMP/USDT", "RUNE/USDT",
     # Infrastructure / Misc
     "STX/USDT", "ICP/USDT", "HBAR/USDT", "VET/USDT", "ALGO/USDT",
@@ -171,7 +171,6 @@ _HL_COIN_MAP: Dict[str, str] = {
     "FLOKI": "kFLOKI",    # HL uses kFLOKI
     "RNDR":  "RENDER",    # Render rebrand
     "FTM":   "S",         # Sonic rebrand
-    "MKR":   "SKY",       # MakerDAO → Sky rebrand
 }
 
 
