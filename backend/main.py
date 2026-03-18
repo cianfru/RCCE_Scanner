@@ -2050,7 +2050,7 @@ async def exhaustion_opportunities(address: Optional[str] = Query(None)):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/notifications/market-setups")
-async def market_setups(address: Optional[str] = Query(None)):
+async def market_setups(address: Optional[str] = Query(None), min_score: int = Query(2)):
     """Detect OI/price divergence setups on coins the user does NOT hold.
 
     OI trend semantics (from positioning engine):
@@ -2216,11 +2216,53 @@ async def market_setups(address: Optional[str] = Query(None)):
                     "oi_trend": oi_trend,
                 })
 
-        # Sort: high first, then medium, then low
-        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-        setups.sort(key=lambda s: sev_order.get(s.get("severity", "low"), 3))
+        # Compute confluence score per setup (0–5)
+        # Each independent confirming factor adds 1 point:
+        #   1. RCCE conditions ≥ 60%  2. OI confirms  3. Heat zone correct
+        #   4. Exhaustion confirms     5. Priority score ≥ 60
+        def _confluence(s: dict, r: dict) -> int:
+            pos    = r.get("positioning") or {}
+            oi     = pos.get("oi_trend", "")
+            fr     = pos.get("funding_regime", "NEUTRAL")
+            met    = r.get("conditions_met", 0)
+            total  = max(r.get("conditions_total", 10), 1)
+            h      = r.get("heat", 50)
+            score  = 0
+            is_exit_setup = s.get("type") == "capitulation_watch"
+            # 1. RCCE conditions strength
+            if met / total >= 0.6: score += 1
+            # 2. OI confirms
+            if not is_exit_setup:
+                if oi in ("BUILDING", "STABLE") or fr == "CROWDED_SHORT": score += 1
+            else:
+                if oi in ("LIQUIDATING", "SQUEEZE"): score += 1
+            # 3. Heat zone
+            if is_exit_setup:
+                if h < 35: score += 1  # extremely depressed = near capitulation
+            else:
+                if h < 60: score += 1
+            # 4. Exhaustion confirmation
+            if r.get("floor_confirmed") or r.get("is_absorption"): score += 1
+            # 5. Priority score
+            if r.get("priority_score", 0) >= 60: score += 1
+            return score
 
-        return {"setups": setups, "count": len(setups)}
+        # Attach confluence and apply min_score filter
+        sym_map = {r.get("symbol", ""): r for tf in ("4h", "1d")
+                   for r in cache.results.get(tf, [])}
+        scored = []
+        for s in setups:
+            raw = sym_map.get(s["symbol"], {})
+            c = _confluence(s, raw)
+            s["confluence_score"] = c
+            if c >= min_score:
+                scored.append(s)
+
+        # Sort: high severity first, then confluence desc
+        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        scored.sort(key=lambda s: (sev_order.get(s.get("severity", "low"), 3), -s.get("confluence_score", 0)))
+
+        return {"setups": scored, "count": len(scored), "filtered_out": len(setups) - len(scored)}
 
     except Exception as e:
         logger.warning("Market setups failed: %s", e)

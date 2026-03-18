@@ -94,17 +94,20 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress]);
 
+  const [setupFilter, setSetupFilter] = useState("MED"); // HIGH | MED | ALL
+
   const fetchMarketSetups = useCallback(async () => {
     try {
+      const score = setupFilter === "HIGH" ? 3 : setupFilter === "MED" ? 2 : 0;
       const url = walletAddress
-        ? `${API_BASE}/api/notifications/market-setups?address=${walletAddress}`
-        : `${API_BASE}/api/notifications/market-setups`;
+        ? `${API_BASE}/api/notifications/market-setups?address=${walletAddress}&min_score=${score}`
+        : `${API_BASE}/api/notifications/market-setups?min_score=${score}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
       setMarketSetups(data.setups || []);
     } catch (_) {}
-  }, [walletAddress]);
+  }, [walletAddress, setupFilter]);
 
   // Poll every 60s
   useEffect(() => {
@@ -324,24 +327,48 @@ export default function NotificationBell() {
           )}
 
           {/* OI / Price Divergence — Market Setups */}
-          {marketSetups.length > 0 && (
+          {(marketSetups.length > 0 || true) && (
             <>
               <div style={{
-                padding: "10px 14px",
+                padding: "8px 14px",
                 borderBottom: `1px solid ${T.border}`,
-                display: "flex", alignItems: "center", justifyContent: "space-between",
+                display: "flex", alignItems: "center", gap: 8,
                 background: "rgba(167,139,250,0.04)",
               }}>
                 <span style={{
                   fontSize: 11, fontFamily: T.mono, fontWeight: 700,
-                  color: "#a78bfa", letterSpacing: "0.08em",
+                  color: "#a78bfa", letterSpacing: "0.08em", flex: 1,
                 }}>
                   MARKET SETUPS
                 </span>
+                {/* Confluence filter */}
+                {["HIGH","MED","ALL"].map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setSetupFilter(opt)}
+                    style={{
+                      padding: "1px 6px", borderRadius: 8,
+                      border: `1px solid ${setupFilter === opt ? "#a78bfa" : T.border}`,
+                      background: setupFilter === opt ? "rgba(167,139,250,0.15)" : "transparent",
+                      color: setupFilter === opt ? "#a78bfa" : T.text4,
+                      fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {opt === "HIGH" ? "★★★" : opt === "MED" ? "★★" : "ALL"}
+                  </button>
+                ))}
                 <span style={{ fontSize: 10, fontFamily: T.mono, color: "#a78bfa", fontWeight: 600 }}>
                   {marketSetups.length}
                 </span>
               </div>
+              {marketSetups.length === 0 && (
+                <div style={{ padding: "8px 14px", borderBottom: `1px solid ${T.border}` }}>
+                  <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
+                    No setups at this threshold
+                  </span>
+                </div>
+              )}
               {marketSetups.map((s, i) => {
                 const SETUP_COLORS = {
                   squeeze_setup:      "#a78bfa",
@@ -380,6 +407,12 @@ export default function NotificationBell() {
                       <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1, flex: 1 }}>
                         {s.title}
                       </span>
+                      {/* Confluence dots */}
+                      {s.confluence_score != null && (
+                        <span style={{ fontSize: 8, color, opacity: 0.8, letterSpacing: "-1px" }}>
+                          {"●".repeat(s.confluence_score)}{"○".repeat(5 - (s.confluence_score || 0))}
+                        </span>
+                      )}
                       <span style={{
                         fontSize: 9, fontFamily: T.mono, fontWeight: 700,
                         padding: "1px 5px", borderRadius: 4,
