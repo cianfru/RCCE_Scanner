@@ -421,11 +421,27 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                 position: "absolute",
                 bottom: isMobile ? 10 : 20,
                 left: 0, right: 0,
-                color: T.text4, fontSize: m(T.textSm, isMobile), fontFamily: T.font,
-                lineHeight: 1.8, textAlign: "center",
+                textAlign: "center",
               }}>
-                Ask about any signal, symbol, or market condition.
-                {walletAddress ? " Position-aware context is active." : ""}
+                <div style={{
+                  color: T.text1, fontSize: m(16, isMobile), fontFamily: T.font,
+                  fontWeight: 500, lineHeight: 1.6,
+                }}>
+                  Ask about any signal, symbol, or market condition.
+                </div>
+                {walletAddress && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    marginTop: 8, padding: "4px 12px", borderRadius: 20,
+                    background: "rgba(34, 197, 94, 0.12)",
+                    border: "1px solid rgba(34, 197, 94, 0.25)",
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+                    <span style={{ color: "#22c55e", fontSize: m(11, isMobile), fontFamily: T.font, fontWeight: 600, letterSpacing: "0.04em" }}>
+                      Position-aware context is active
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
