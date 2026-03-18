@@ -24,6 +24,7 @@ const SEVERITY_COLORS = {
   high:     "#f59e0b",
   medium:   "#eab308",
   low:      "#6b7280",
+  positive: "#34d399",
 };
 
 const SEVERITY_ICONS = {
@@ -31,6 +32,7 @@ const SEVERITY_ICONS = {
   high:     "\u26a0",
   medium:   "\u25cb",  // ○
   low:      "\u00b7",  // ·
+  positive: "\u25b2",  // ▲ entry setup
 };
 
 function timeAgo(ts) {
@@ -49,6 +51,8 @@ export default function NotificationBell() {
   const { address: walletAddress } = useWallet();
   const [events, setEvents] = useState([]);
   const [warnings, setWarnings] = useState([]);
+  const [exhaustionOpps, setExhaustionOpps] = useState([]);
+  const [marketSetups, setMarketSetups] = useState([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState(() => {
     const stored = localStorage.getItem("rcce-notif-lastseen");
@@ -78,13 +82,41 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress]);
 
+  const fetchExhaustionOpps = useCallback(async () => {
+    try {
+      const url = walletAddress
+        ? `${API_BASE}/api/notifications/exhaustion-opportunities?address=${walletAddress}`
+        : `${API_BASE}/api/notifications/exhaustion-opportunities`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setExhaustionOpps(data.opportunities || []);
+    } catch (_) {}
+  }, [walletAddress]);
+
+  const fetchMarketSetups = useCallback(async () => {
+    try {
+      const url = walletAddress
+        ? `${API_BASE}/api/notifications/market-setups?address=${walletAddress}`
+        : `${API_BASE}/api/notifications/market-setups`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setMarketSetups(data.setups || []);
+    } catch (_) {}
+  }, [walletAddress]);
+
   // Poll every 60s
   useEffect(() => {
     fetchNotifs();
     fetchWarnings();
-    const iv = setInterval(() => { fetchNotifs(); fetchWarnings(); }, 60_000);
+    fetchExhaustionOpps();
+    fetchMarketSetups();
+    const iv = setInterval(() => {
+      fetchNotifs(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
+    }, 60_000);
     return () => clearInterval(iv);
-  }, [fetchNotifs, fetchWarnings]);
+  }, [fetchNotifs, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
   // Close on outside click
   useEffect(() => {
@@ -101,6 +133,9 @@ export default function NotificationBell() {
   const unseen = events.filter((e) => e.timestamp > lastSeen).length;
   const hasWarnings = warnings.length > 0;
   const hasCritical = warnings.some(w => w.severity === "critical" || w.severity === "high");
+  const hasOpps = exhaustionOpps.length > 0;
+  const hasSetups = marketSetups.length > 0;
+  const hasHighSetup = marketSetups.some(s => s.severity === "high");
 
   const markSeen = () => {
     if (events.length > 0) {
@@ -138,11 +173,15 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(unseen > 0 || hasWarnings) && (
+        {(unseen > 0 || hasWarnings || hasOpps || hasSetups) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
-            background: hasCritical ? "#ef4444" : hasWarnings ? "#f59e0b" : "#ef4444",
+            background: hasCritical ? "#ef4444"
+                       : hasWarnings ? "#f59e0b"
+                       : hasHighSetup ? "#a78bfa"
+                       : hasOpps || hasSetups ? "#34d399"
+                       : "#ef4444",
             animation: "livePulse 2s ease-in-out infinite",
           }} />
         )}
@@ -226,6 +265,139 @@ export default function NotificationBell() {
             </>
           )}
 
+          {/* Exhaustion Opportunities Section */}
+          {exhaustionOpps.length > 0 && (
+            <>
+              <div style={{
+                padding: "10px 14px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(52, 211, 153, 0.04)",
+              }}>
+                <span style={{
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  color: "#34d399", letterSpacing: "0.08em",
+                }}>
+                  EXHAUSTION SETUPS
+                </span>
+                <span style={{
+                  fontSize: 10, fontFamily: T.mono, color: "#34d399", fontWeight: 600,
+                }}>
+                  {exhaustionOpps.length}
+                </span>
+              </div>
+              {exhaustionOpps.map((opp, i) => {
+                const color = SEVERITY_COLORS[opp.severity] || "#34d399";
+                const icon  = opp.type === "exhaustion_floor" ? "\u25c6"   // ◆ confirmed
+                            : opp.type === "climax_reversal"  ? "\u26a1"   // ⚡ climax
+                            : "\u25aa";                                      // ▪ absorbing
+                return (
+                  <div
+                    key={`opp-${opp.type}-${opp.symbol}-${i}`}
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: `1px solid ${T.border}`,
+                      background: opp.type === "exhaustion_floor" ? "rgba(52,211,153,0.04)" : "transparent",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
+                      <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1, flex: 1 }}>
+                        {opp.title}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: color + "18", color,
+                        textTransform: "uppercase",
+                      }}>
+                        {opp.type === "exhaustion_floor" ? "FLOOR" : opp.type === "climax_reversal" ? "CLIMAX" : "EARLY"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, paddingLeft: 19, lineHeight: 1.5 }}>
+                      {opp.detail}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* OI / Price Divergence — Market Setups */}
+          {marketSetups.length > 0 && (
+            <>
+              <div style={{
+                padding: "10px 14px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(167,139,250,0.04)",
+              }}>
+                <span style={{
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  color: "#a78bfa", letterSpacing: "0.08em",
+                }}>
+                  MARKET SETUPS
+                </span>
+                <span style={{ fontSize: 10, fontFamily: T.mono, color: "#a78bfa", fontWeight: 600 }}>
+                  {marketSetups.length}
+                </span>
+              </div>
+              {marketSetups.map((s, i) => {
+                const SETUP_COLORS = {
+                  squeeze_setup:      "#a78bfa",
+                  crowded_short_entry:"#34d399",
+                  oi_front_run:       "#22d3ee",
+                  shorts_into_floor:  "#f59e0b",
+                  capitulation_watch: "#6b7280",
+                };
+                const SETUP_ICONS = {
+                  squeeze_setup:      "\u{1F300}",  // 🌀
+                  crowded_short_entry:"\u{1F525}",  // 🔥
+                  oi_front_run:       "\u{1F4C8}",  // 📈
+                  shorts_into_floor:  "\u26a1",     // ⚡
+                  capitulation_watch: "\u{1F6A8}",  // 🚨
+                };
+                const color = SETUP_COLORS[s.type] || "#a78bfa";
+                const icon  = SETUP_ICONS[s.type]  || "\u25c6";
+                const SETUP_LABELS = {
+                  squeeze_setup:       "SQUEEZE",
+                  crowded_short_entry: "SHORT TRAP",
+                  oi_front_run:        "OI FRONT-RUN",
+                  shorts_into_floor:   "FLOOR",
+                  capitulation_watch:  "CAPITULATION",
+                };
+                return (
+                  <div
+                    key={`setup-${s.type}-${s.symbol}-${i}`}
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: `1px solid ${T.border}`,
+                      background: s.severity === "high" ? color + "06" : "transparent",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
+                      <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1, flex: 1 }}>
+                        {s.title}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: color + "18", color,
+                        textTransform: "uppercase", whiteSpace: "nowrap",
+                      }}>
+                        {SETUP_LABELS[s.type] || s.type}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, paddingLeft: 19, lineHeight: 1.5 }}>
+                      {s.detail}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
           {/* Signal Events Section */}
           <div style={{
             padding: "10px 14px",
@@ -247,7 +419,7 @@ export default function NotificationBell() {
             )}
           </div>
 
-          {events.length === 0 && warnings.length === 0 ? (
+          {events.length === 0 && warnings.length === 0 && exhaustionOpps.length === 0 && marketSetups.length === 0 ? (
             <div style={{
               padding: "40px 14px", textAlign: "center",
               color: T.text4, fontFamily: T.mono, fontSize: 11,

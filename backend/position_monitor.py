@@ -370,6 +370,52 @@ class PositionMonitor:
                     f"Consider taking profits or tightening stops"
                 )
 
+        # -- 2b. Exhaustion confirmation on HELD positions (positive reinforcement) --
+        for pos in positions:
+            sym = pos["symbol"]
+            scan = results_by_symbol.get(sym)
+            if not scan:
+                continue
+
+            coin = pos["coin"]
+            side = pos["side"]
+            key_base = f"{watcher.chat_id}:{sym}"
+
+            def _should_warn_pos(warn_type: str) -> bool:
+                wkey = f"{key_base}:{warn_type}"
+                last = self._last_warned.get(wkey, 0)
+                if time.time() - last < self._WARNING_COOLDOWN:
+                    return False
+                self._last_warned[wkey] = time.time()
+                return True
+
+            exh_state = scan.get("exhaustion_state", "")
+            floor_confirmed = scan.get("floor_confirmed", False)
+            is_absorption = scan.get("is_absorption", False)
+
+            # Floor confirmed while holding LONG → validates the thesis
+            if side == "LONG" and floor_confirmed and _should_warn_pos("floor_confirm_long"):
+                pnl = pos["unrealized_pnl"]
+                pnl_sign = "+" if pnl >= 0 else ""
+                notifications.append(
+                    f"\U0001f7e2 FLOOR CONFIRMED \u2014 {coin}\n"
+                    f"Absorption cluster + volume dry-up confirmed below weekly BMSB\n"
+                    f"Sellers appear exhausted \u2014 your LONG thesis is supported\n"
+                    f"You hold: LONG ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"PnL: {pnl_sign}${pnl:,.2f}\n"
+                    f"Action: Hold position \u2014 watch for signal upgrade"
+                )
+
+            # Absorbing while in BEAR_ZONE holding LONG → early positive signal
+            elif side == "LONG" and is_absorption and exh_state == "BEAR_ZONE" and _should_warn_pos("absorbing_long"):
+                notifications.append(
+                    f"\U0001f4a7 ABSORPTION FORMING \u2014 {coin}\n"
+                    f"Early absorption cluster detected below weekly BMSB\n"
+                    f"Volume effort is high but candle range is contracting \u2014 sellers tiring\n"
+                    f"You hold: LONG ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"Not yet confirmed \u2014 wait for floor_confirmed or signal upgrade"
+                )
+
         # -- 3. Check for new opportunities (not already held) --
         if watcher.notify_opportunities:
             for sym, scan in results_by_symbol.items():
@@ -379,9 +425,87 @@ class PositionMonitor:
                 key = f"{watcher.chat_id}:{sym}"
                 prev = self._last_notified_signal.get(key)
 
+                # Standard signal-based opportunity (STRONG_LONG, LIGHT_LONG)
                 if signal in _OPPORTUNITY_SIGNALS and prev != signal:
                     notifications.append(self._fmt_opportunity(scan))
                     self._last_notified_signal[key] = signal
+                    continue
+
+                # --- Exhaustion-based entry opportunities ---
+                exh_state   = scan.get("exhaustion_state", "")
+                floor_conf  = scan.get("floor_confirmed", False)
+                is_climax   = scan.get("is_climax", False)
+                is_absorb   = scan.get("is_absorption", False)
+                regime      = scan.get("regime", "")
+
+                # EXHAUSTED_FLOOR — strongest entry signal: confirmed absorption cluster + volume drying up
+                if floor_conf and signal not in _ADVERSE_SIGNALS:
+                    wkey = f"{key}:exh_floor"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_exhaustion_entry(scan, "FLOOR"))
+
+                # CLIMAX — downside capitulation bar on a coin not in full downtrend
+                elif is_climax and regime not in ("MARKDOWN", "CAP"):
+                    wkey = f"{key}:exh_climax_entry"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_exhaustion_entry(scan, "CLIMAX"))
+
+                # ABSORBING — early stage, only when signal is constructive
+                elif is_absorb and signal in ("ACCUMULATE", "REVIVAL_SEED", "LIGHT_LONG", "STRONG_LONG"):
+                    wkey = f"{key}:exh_absorb"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN * 2:  # 2h cooldown, less urgent
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_exhaustion_entry(scan, "ABSORBING"))
+
+                # --- OI / Price divergence setups ---
+                positioning   = scan.get("positioning") or {}
+                oi_trend      = positioning.get("oi_trend", "UNKNOWN")
+                funding_regime = positioning.get("funding_regime", "NEUTRAL")
+                funding_rate  = positioning.get("funding_rate", 0.0)
+                oi_change_pct = positioning.get("oi_change_pct", 0.0)
+
+                _bullish_regimes = {"MARKUP", "REACC", "ACCUM"}
+
+                # SHORTING into bullish regime → squeeze setup
+                if (oi_trend == "SHORTING"
+                        and regime in _bullish_regimes
+                        and signal not in _ADVERSE_SIGNALS
+                        and heat < 70):
+                    wkey = f"{key}:oi_squeeze"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_oi_setup(scan, "SQUEEZE_SETUP"))
+
+                # Crowded short + entry signal → textbook squeeze
+                elif (funding_regime == "CROWDED_SHORT"
+                          and signal in _OPPORTUNITY_SIGNALS
+                          and regime not in ("MARKDOWN", "CAP")):
+                    wkey = f"{key}:crowded_short"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_oi_setup(scan, "CROWDED_SHORT"))
+
+                # OI front-run: BUILDING + pre-signal (smart money loading)
+                elif (oi_trend == "BUILDING"
+                          and oi_change_pct >= 5.0
+                          and signal in ("ACCUMULATE", "REVIVAL_SEED", "WAIT")
+                          and heat < 50
+                          and regime not in ("MARKDOWN", "CAP")):
+                    wkey = f"{key}:oi_frontrun"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_oi_setup(scan, "OI_FRONT_RUN"))
+
+                # Shorts into exhaustion floor → highest conviction contrarian setup
+                elif (oi_trend == "SHORTING"
+                          and (scan.get("floor_confirmed") or scan.get("is_climax"))
+                          and signal not in _ADVERSE_SIGNALS):
+                    wkey = f"{key}:shorts_floor"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        notifications.append(self._fmt_oi_setup(scan, "SHORTS_INTO_FLOOR"))
 
         # -- 3. Rate-limit and send --
         if notifications:
@@ -455,6 +579,101 @@ class PositionMonitor:
             f"PnL: {pnl_sign}${pnl:,.2f}{conditions}"
             f"{action}"
         )
+
+    def _fmt_oi_setup(self, scan: dict, setup_type: str) -> str:
+        """Format an OI/price divergence setup notification."""
+        sym  = scan.get("symbol", "?")
+        base = sym.split("/")[0]
+        signal = scan.get("signal", "?")
+        regime = scan.get("regime", "?")
+        heat   = scan.get("heat", 0)
+        price  = scan.get("price", 0)
+        met    = scan.get("conditions_met")
+        total  = scan.get("conditions_total")
+        positioning = scan.get("positioning") or {}
+        oi_trend    = positioning.get("oi_trend", "?")
+        funding_regime = positioning.get("funding_regime", "NEUTRAL")
+        funding_rate   = positioning.get("funding_rate", 0.0)
+        oi_change_pct  = positioning.get("oi_change_pct", 0.0)
+        cond_str = f" | Conditions: {met}/{total}" if met is not None else ""
+        fund_str = f"\nFunding: {funding_rate*100:.4f}%/8h ({funding_regime})" if funding_regime != "NEUTRAL" else ""
+
+        if setup_type == "SQUEEZE_SETUP":
+            return (
+                f"\U0001f300 OI DIVERGENCE \u2014 {base}\n"
+                f"OI \u2191 + price \u2193 (SHORTING) into a {regime} regime\n"
+                f"Crowd is shorting against the trend \u2014 squeeze risk if price holds\n"
+                f"Price: ${price:.4g} | Signal: {signal} | Heat: {heat}/100{fund_str}\n"
+                f"{cond_str}\n"
+                f"Action: Monitor for reversal confirmation \u2014 do NOT chase short"
+            )
+        elif setup_type == "CROWDED_SHORT":
+            return (
+                f"\U0001f525 CROWDED SHORT + ENTRY \u2014 {base}\n"
+                f"Extreme short funding ({funding_rate*100:.4f}%/8h) \u2014 shorts paying premium\n"
+                f"Signal: {signal} | Regime: {regime} | Heat: {heat}/100\n"
+                f"Textbook squeeze setup: shorts trapped with bullish confirmation{cond_str}\n"
+                f"Action: Watch for entry on any upside confirmation"
+            )
+        elif setup_type == "OI_FRONT_RUN":
+            return (
+                f"\U0001f4c8 OI FRONT-RUN \u2014 {base}\n"
+                f"OI +{oi_change_pct:.1f}% (BUILDING) but signal still {signal}\n"
+                f"Smart money loading positions before signal upgrade\n"
+                f"Price: ${price:.4g} | Regime: {regime} | Heat: {heat}/100{cond_str}\n"
+                f"Action: Watch for signal upgrade to LIGHT/STRONG LONG as confirmation"
+            )
+        elif setup_type == "SHORTS_INTO_FLOOR":
+            floor = "floor confirmed" if scan.get("floor_confirmed") else "downside climax"
+            return (
+                f"\u26a1 SHORTS INTO FLOOR \u2014 {base}\n"
+                f"OI rising (crowd shorting) while exhaustion engine shows {floor}\n"
+                f"Sellers exhausted + shorts loading = high-conviction reversal setup\n"
+                f"Price: ${price:.4g} | Signal: {signal} | Regime: {regime}\n"
+                f"Heat: {heat}/100{cond_str}\n"
+                f"Action: Highest-conviction contrarian long \u2014 wait for signal confirmation"
+            )
+        return f"\U0001f4ca OI SETUP \u2014 {base}: {setup_type} | {signal} | {regime}"
+
+    def _fmt_exhaustion_entry(self, scan: dict, exh_type: str) -> str:
+        """Format an exhaustion-based entry opportunity notification."""
+        sym = scan.get("symbol", "?")
+        base = sym.split("/")[0]
+        signal = scan.get("signal", "?")
+        regime = scan.get("regime", "?")
+        heat   = scan.get("heat", 0)
+        price  = scan.get("price", 0)
+        met    = scan.get("conditions_met")
+        total  = scan.get("conditions_total")
+        cond_str = f" | Conditions: {met}/{total}" if met is not None else ""
+
+        if exh_type == "FLOOR":
+            return (
+                f"\U0001f7e2 EXHAUSTION FLOOR \u2014 {base}\n"
+                f"Absorption cluster confirmed + volume drying up below weekly BMSB\n"
+                f"Sellers appear exhausted \u2014 potential reversal / long entry zone\n"
+                f"Price: ${price:.4g} | Regime: {regime} | Signal: {signal}\n"
+                f"Heat: {heat}/100{cond_str}\n"
+                f"Action: Watch for signal upgrade to ACCUMULATE or LONG to confirm"
+            )
+        elif exh_type == "CLIMAX":
+            return (
+                f"\u26a1 DOWNSIDE CLIMAX \u2014 {base}\n"
+                f"Capitulation bar: wide range, strong lower wick, high effort\n"
+                f"Below weekly BMSB \u2014 panic selling may be exhausting\n"
+                f"Price: ${price:.4g} | Regime: {regime} | Signal: {signal}\n"
+                f"Heat: {heat}/100{cond_str}\n"
+                f"Action: Do NOT chase immediately \u2014 wait for absorption or signal confirmation"
+            )
+        else:  # ABSORBING
+            return (
+                f"\U0001f4a7 ABSORPTION CLUSTER \u2014 {base}\n"
+                f"Early absorption signals forming below weekly BMSB\n"
+                f"High effort + narrow candle range \u2014 sellers may be tiring\n"
+                f"Price: ${price:.4g} | Regime: {regime} | Signal: {signal}\n"
+                f"Heat: {heat}/100{cond_str}\n"
+                f"Early stage \u2014 not yet confirmed. Watch for floor_confirmed or ACCUMULATE signal"
+            )
 
     def _fmt_opportunity(self, scan: dict) -> str:
         sym = scan.get("symbol", "?")
