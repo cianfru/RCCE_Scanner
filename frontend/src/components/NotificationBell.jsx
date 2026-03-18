@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme";
+import { useWallet } from "../WalletContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -18,6 +19,20 @@ const TRANSITION_ICONS = {
   regime:    "\u25c6",  // ◆
 };
 
+const SEVERITY_COLORS = {
+  critical: "#ef4444",
+  high:     "#f59e0b",
+  medium:   "#eab308",
+  low:      "#6b7280",
+};
+
+const SEVERITY_ICONS = {
+  critical: "\u26a0",  // ⚠
+  high:     "\u26a0",
+  medium:   "\u25cb",  // ○
+  low:      "\u00b7",  // ·
+};
+
 function timeAgo(ts) {
   const diff = Math.floor(Date.now() / 1000) - ts;
   if (diff < 60) return "now";
@@ -31,7 +46,9 @@ function coinName(symbol) {
 }
 
 export default function NotificationBell() {
+  const { address: walletAddress } = useWallet();
   const [events, setEvents] = useState([]);
+  const [warnings, setWarnings] = useState([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState(() => {
     const stored = localStorage.getItem("rcce-notif-lastseen");
@@ -48,12 +65,26 @@ export default function NotificationBell() {
     } catch (_) {}
   }, []);
 
+  const fetchWarnings = useCallback(async () => {
+    if (!walletAddress) {
+      setWarnings([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/notifications/position-warnings?address=${walletAddress}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setWarnings(data.warnings || []);
+    } catch (_) {}
+  }, [walletAddress]);
+
   // Poll every 60s
   useEffect(() => {
     fetchNotifs();
-    const iv = setInterval(fetchNotifs, 60_000);
+    fetchWarnings();
+    const iv = setInterval(() => { fetchNotifs(); fetchWarnings(); }, 60_000);
     return () => clearInterval(iv);
-  }, [fetchNotifs]);
+  }, [fetchNotifs, fetchWarnings]);
 
   // Close on outside click
   useEffect(() => {
@@ -68,6 +99,8 @@ export default function NotificationBell() {
   }, [open]);
 
   const unseen = events.filter((e) => e.timestamp > lastSeen).length;
+  const hasWarnings = warnings.length > 0;
+  const hasCritical = warnings.some(w => w.severity === "critical" || w.severity === "high");
 
   const markSeen = () => {
     if (events.length > 0) {
@@ -94,22 +127,22 @@ export default function NotificationBell() {
           width: 28, height: 28,
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: 0, border: "none", background: "transparent",
-          color: open ? T.accent : T.text3,
+          color: hasCritical ? "#f59e0b" : open ? T.accent : T.text3,
           cursor: "pointer", position: "relative",
           transition: "color 0.15s ease",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = T.accent; }}
-        onMouseLeave={(e) => { if (!open) e.currentTarget.style.color = T.text3; }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = hasCritical ? "#f59e0b" : T.accent; }}
+        onMouseLeave={(e) => { if (!open) e.currentTarget.style.color = hasCritical ? "#f59e0b" : T.text3; }}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {unseen > 0 && (
+        {(unseen > 0 || hasWarnings) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
-            background: "#ef4444",
+            background: hasCritical ? "#ef4444" : hasWarnings ? "#f59e0b" : "#ef4444",
             animation: "livePulse 2s ease-in-out infinite",
           }} />
         )}
@@ -119,7 +152,7 @@ export default function NotificationBell() {
       {open && (
         <div style={{
           position: "fixed", top: 56, right: 10,
-          width: 320, maxWidth: "calc(100vw - 20px)", maxHeight: 420,
+          width: 340, maxWidth: "calc(100vw - 20px)", maxHeight: 500,
           background: T.popoverBg,
           border: `1px solid ${T.border}`,
           borderRadius: T.radiusSm,
@@ -127,7 +160,73 @@ export default function NotificationBell() {
           zIndex: 9999,
           overflowY: "auto",
         }}>
-          {/* Header */}
+          {/* Position Warnings Section */}
+          {warnings.length > 0 && (
+            <>
+              <div style={{
+                padding: "10px 14px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(245, 158, 11, 0.05)",
+              }}>
+                <span style={{
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  color: "#f59e0b", letterSpacing: "0.08em",
+                }}>
+                  POSITION ALERTS
+                </span>
+                <span style={{
+                  fontSize: 10, fontFamily: T.mono, color: "#f59e0b",
+                  fontWeight: 600,
+                }}>
+                  {warnings.length}
+                </span>
+              </div>
+              {warnings.map((w, i) => {
+                const color = SEVERITY_COLORS[w.severity] || T.text3;
+                const icon = SEVERITY_ICONS[w.severity] || "\u2022";
+                return (
+                  <div
+                    key={`warn-${w.type}-${w.symbol}-${i}`}
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: `1px solid ${T.border}`,
+                      background: w.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : "transparent",
+                    }}
+                  >
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      marginBottom: 3,
+                    }}>
+                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
+                      <span style={{
+                        fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                        color: T.text1, flex: 1,
+                      }}>
+                        {w.title}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: color + "18", color,
+                        textTransform: "uppercase",
+                      }}>
+                        {w.severity}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 10, fontFamily: T.mono, color: T.text4,
+                      paddingLeft: 19, lineHeight: 1.5,
+                    }}>
+                      {w.detail}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* Signal Events Section */}
           <div style={{
             padding: "10px 14px",
             borderBottom: `1px solid ${T.border}`,
@@ -137,19 +236,18 @@ export default function NotificationBell() {
               fontSize: 11, fontFamily: T.mono, fontWeight: 600,
               color: T.text2, letterSpacing: "0.08em",
             }}>
-              NOTIFICATIONS
+              SIGNAL EVENTS
             </span>
             {events.length > 0 && (
               <span style={{
                 fontSize: 10, fontFamily: T.mono, color: T.text4,
               }}>
-                {events.length} events
+                {events.length}
               </span>
             )}
           </div>
 
-          {/* Events */}
-          {events.length === 0 ? (
+          {events.length === 0 && warnings.length === 0 ? (
             <div style={{
               padding: "40px 14px", textAlign: "center",
               color: T.text4, fontFamily: T.mono, fontSize: 11,
@@ -201,7 +299,7 @@ export default function NotificationBell() {
                   }}>
                     {isSignal ? (
                       <>
-                        <span style={{ color: T.text4 }}>{ev.prev_label || "—"}</span>
+                        <span style={{ color: T.text4 }}>{ev.prev_label || "\u2014"}</span>
                         {" \u2192 "}
                         <span style={{ color, fontWeight: 600 }}>{ev.label}</span>
                         {ev.transition_type && (
@@ -217,7 +315,7 @@ export default function NotificationBell() {
                       </>
                     ) : (
                       <>
-                        <span style={{ color: T.text4 }}>{ev.prev_label || "—"}</span>
+                        <span style={{ color: T.text4 }}>{ev.prev_label || "\u2014"}</span>
                         {" \u2192 "}
                         <span style={{ color: T.accent, fontWeight: 600 }}>{ev.label}</span>
                         <span style={{

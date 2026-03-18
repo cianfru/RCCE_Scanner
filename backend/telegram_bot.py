@@ -229,11 +229,18 @@ class TelegramBot:
         if not self._check_auth(update.effective_chat.id):
             return
         from assistant import get_assistant
+        from position_monitor import PositionMonitor
+
+        # Get wallet address if registered via /watch
+        monitor = PositionMonitor.get()
+        watcher = monitor.get_watcher(update.effective_chat.id)
+        wallet = watcher.address if watcher else None
 
         assistant = get_assistant()
         reply, _ = await assistant.chat(
             session_id=f"tg-{update.effective_chat.id}",
             user_message=update.message.text,
+            wallet_address=wallet,
         )
         await self._send(update, reply)
 

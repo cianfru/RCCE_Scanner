@@ -52,6 +52,12 @@ _SIGNAL_RANK = {
     "LIGHT_LONG": 5, "STRONG_LONG": 6,
 }
 
+# Thresholds for position-aware warnings
+_HEAT_WARNING_THRESHOLD = 70
+_HEAT_DANGER_THRESHOLD = 85
+_LIQ_WARNING_PCT = 15            # warn if price within 15% of liq
+_OI_TREND_ADVERSE = {"SQUEEZE", "LIQUIDATING"}
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -109,6 +115,10 @@ class PositionMonitor:
         # Track last-notified signal/regime per (chat_id, symbol) to avoid spam
         self._last_notified_signal: Dict[str, str] = {}   # "chatid:symbol" -> signal
         self._last_notified_regime: Dict[str, str] = {}   # "chatid:symbol" -> regime
+        # Track last-notified warnings to avoid repeating the same alert
+        # Key: "chatid:symbol:warning_type" -> timestamp of last alert
+        self._last_warned: Dict[str, float] = {}
+        self._WARNING_COOLDOWN = 3600  # don't repeat same warning within 1 hour
         self._load()
 
     @classmethod
@@ -251,7 +261,116 @@ class PositionMonitor:
             self._last_notified_signal[key] = current_signal
             self._last_notified_regime[key] = current_regime
 
-        # -- 2. Check for new opportunities (not already held) --
+        # -- 2. Position-aware warnings (heat, divergence, OI, liq) --
+        for pos in positions:
+            sym = pos["symbol"]
+            scan = results_by_symbol.get(sym)
+            if not scan:
+                continue
+
+            coin = pos["coin"]
+            side = pos["side"]
+            key_base = f"{watcher.chat_id}:{sym}"
+
+            # Helper: check warning cooldown
+            def _should_warn(warn_type: str) -> bool:
+                wkey = f"{key_base}:{warn_type}"
+                last = self._last_warned.get(wkey, 0)
+                if time.time() - last < self._WARNING_COOLDOWN:
+                    return False
+                self._last_warned[wkey] = time.time()
+                return True
+
+            # -- Heat warning --
+            heat = scan.get("heat", 0)
+            if side == "LONG" and heat >= _HEAT_DANGER_THRESHOLD and _should_warn("heat_danger"):
+                notifications.append(
+                    f"\U0001f525 HEAT DANGER \u2014 {coin}\n"
+                    f"Heat: {heat}/100 (danger zone)\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"PnL: ${pos['unrealized_pnl']:+,.2f}\n"
+                    f"Action: Strongly consider trimming \u2014 blow-off risk is high"
+                )
+            elif side == "LONG" and heat >= _HEAT_WARNING_THRESHOLD and _should_warn("heat_warn"):
+                notifications.append(
+                    f"\u26a0\ufe0f HEAT RISING \u2014 {coin}\n"
+                    f"Heat: {heat}/100 \u2014 approaching overextension\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"Watch for trim signals"
+                )
+
+            # -- Divergence warning --
+            divergence = scan.get("divergence")
+            if divergence and _should_warn("divergence"):
+                if side == "LONG" and "BEAR" in str(divergence).upper():
+                    notifications.append(
+                        f"\u26a0\ufe0f BEAR DIVERGENCE \u2014 {coin}\n"
+                        f"{coin} is in {scan.get('regime', '?')} but BTC is bearish\n"
+                        f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                        f"PnL: ${pos['unrealized_pnl']:+,.2f}\n"
+                        f"Risk: divergence from BTC often resolves downward"
+                    )
+                elif side == "SHORT" and "BULL" in str(divergence).upper():
+                    notifications.append(
+                        f"\u26a0\ufe0f BULL DIVERGENCE \u2014 {coin}\n"
+                        f"{coin} is bearish but BTC is in MARKUP\n"
+                        f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                        f"Risk: bull divergence may squeeze shorts"
+                    )
+
+            # -- OI trend warning (the case you saw yesterday) --
+            positioning = scan.get("positioning") or {}
+            oi_trend = positioning.get("oi_trend", "")
+            if side == "LONG" and oi_trend in ("SQUEEZE", "LIQUIDATING") and _should_warn("oi_adverse"):
+                notifications.append(
+                    f"\u26a0\ufe0f OI WARNING \u2014 {coin}\n"
+                    f"OI Trend: {oi_trend} (positions closing while you're {side})\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"PnL: ${pos['unrealized_pnl']:+,.2f}\n"
+                    f"Risk: declining OI suggests conviction weakening"
+                )
+            elif side == "LONG" and oi_trend == "DECLINING" and heat >= 60 and _should_warn("oi_declining_hot"):
+                notifications.append(
+                    f"\u26a0\ufe0f OI DECLINING + HEAT \u2014 {coin}\n"
+                    f"OI dropping + Heat at {heat} \u2014 possible exhaustion\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"Watch for reversal confirmation"
+                )
+
+            # -- Funding crowding warning --
+            funding_regime = positioning.get("funding_regime", "")
+            if side == "LONG" and funding_regime == "CROWDED_LONG" and _should_warn("crowded"):
+                notifications.append(
+                    f"\u26a0\ufe0f CROWDED LONG \u2014 {coin}\n"
+                    f"Funding is extreme ({positioning.get('funding_rate', 0)*100:.4f}%)\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"Risk: crowded funding = squeeze risk"
+                )
+
+            # -- Liquidation proximity warning --
+            liq = pos.get("liq_px", 0)
+            current_price = scan.get("price", 0)
+            if liq > 0 and current_price > 0:
+                liq_dist = abs(current_price - liq) / current_price * 100
+                if liq_dist < _LIQ_WARNING_PCT and _should_warn("liq_proximity"):
+                    notifications.append(
+                        f"\U0001f6a8 LIQUIDATION RISK \u2014 {coin}\n"
+                        f"Current: ${current_price:.6g} | Liq: ${liq:.6g} ({liq_dist:.1f}% away)\n"
+                        f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                        f"ACTION REQUIRED: Add margin or reduce position"
+                    )
+
+            # -- Exhaustion state warning --
+            exh_state = scan.get("exhaustion_state", "")
+            if side == "LONG" and exh_state == "CLIMAX" and _should_warn("climax"):
+                notifications.append(
+                    f"\u26a0\ufe0f EXHAUSTION CLIMAX \u2014 {coin}\n"
+                    f"Volume climax detected \u2014 entries should be blocked\n"
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"Consider taking profits or tightening stops"
+                )
+
+        # -- 3. Check for new opportunities (not already held) --
         if watcher.notify_opportunities:
             for sym, scan in results_by_symbol.items():
                 if sym in held_symbols:

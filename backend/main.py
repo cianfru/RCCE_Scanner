@@ -1775,6 +1775,157 @@ async def notifications_feed(
     return {"events": events, "count": len(events)}
 
 
+@app.get("/api/notifications/position-warnings")
+async def position_warnings(address: Optional[str] = Query(None)):
+    """Real-time position warnings for the notification bell.
+
+    Cross-references the user's HL positions against scanner data and
+    generates warnings for: heat, divergence, OI trend, crowded funding,
+    liquidation proximity, exhaustion, and signal conflicts.
+    """
+    if not address:
+        return {"warnings": [], "count": 0}
+
+    try:
+        from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
+
+        state = await fetch_clearinghouse_state(address)
+        if not state:
+            return {"warnings": [], "count": 0}
+
+        positions = parse_open_positions(state)
+        if not positions:
+            return {"warnings": [], "count": 0}
+
+        # Build lookup from scan cache
+        results_by_symbol = {}
+        for tf in ("4h", "1d"):
+            for r in cache.results.get(tf, []):
+                sym = r.get("symbol", "")
+                if sym not in results_by_symbol:
+                    results_by_symbol[sym] = r
+
+        warnings = []
+        now = int(time.time())
+
+        for pos in positions:
+            sym = pos["symbol"]
+            scan = results_by_symbol.get(sym)
+            if not scan:
+                continue
+
+            coin = pos["coin"]
+            side = pos["side"]
+            pnl = pos["unrealized_pnl"]
+            heat = scan.get("heat", 0)
+            signal = scan.get("signal", "WAIT")
+            regime = scan.get("regime", "?")
+            divergence = scan.get("divergence")
+            positioning = scan.get("positioning") or {}
+            oi_trend = positioning.get("oi_trend", "")
+            funding_regime = positioning.get("funding_regime", "")
+            exh_state = scan.get("exhaustion_state", "")
+            price = scan.get("price", 0)
+            liq = pos.get("liq_px", 0)
+
+            base_info = {
+                "coin": coin, "side": side, "size_usd": pos["size_usd"],
+                "leverage": pos["leverage"], "pnl": pnl,
+                "signal": signal, "regime": regime,
+            }
+
+            # Signal conflict
+            if side == "LONG" and signal in ("TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"):
+                warnings.append({
+                    "type": "signal_conflict", "severity": "high",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: {signal} signal on your LONG",
+                    "detail": f"Scanner says {signal} but you're LONG ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x. PnL: ${pnl:+,.2f}",
+                    **base_info,
+                })
+
+            # Heat danger
+            if side == "LONG" and heat >= 85:
+                warnings.append({
+                    "type": "heat_danger", "severity": "high",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Heat {heat}/100 — blow-off risk",
+                    "detail": f"Extreme heat on your LONG. Consider trimming. PnL: ${pnl:+,.2f}",
+                    **base_info,
+                })
+            elif side == "LONG" and heat >= 70:
+                warnings.append({
+                    "type": "heat_warning", "severity": "medium",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Heat {heat}/100 — watch for trim",
+                    "detail": f"Heat rising on your LONG position",
+                    **base_info,
+                })
+
+            # OI adverse trend
+            if side == "LONG" and oi_trend in ("SQUEEZE", "LIQUIDATING", "DECLINING"):
+                sev = "high" if oi_trend in ("SQUEEZE", "LIQUIDATING") else "medium"
+                warnings.append({
+                    "type": "oi_warning", "severity": sev,
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: OI {oi_trend} — conviction weakening",
+                    "detail": f"Open interest declining while you hold LONG. Possible reversal risk",
+                    **base_info,
+                })
+
+            # Divergence
+            if divergence and side == "LONG" and "BEAR" in str(divergence).upper():
+                warnings.append({
+                    "type": "divergence", "severity": "high",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Bear divergence from BTC",
+                    "detail": f"{coin} in {regime} but BTC bearish. Your LONG is against the tide",
+                    **base_info,
+                })
+
+            # Crowded funding
+            if side == "LONG" and funding_regime == "CROWDED_LONG":
+                warnings.append({
+                    "type": "crowded", "severity": "medium",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Crowded long funding",
+                    "detail": f"Extreme bullish funding = squeeze risk on your LONG",
+                    **base_info,
+                })
+
+            # Liquidation proximity
+            if liq > 0 and price > 0:
+                liq_dist = abs(price - liq) / price * 100
+                if liq_dist < 15:
+                    warnings.append({
+                        "type": "liquidation", "severity": "critical",
+                        "symbol": sym, "timestamp": now,
+                        "title": f"{coin}: Liquidation {liq_dist:.1f}% away!",
+                        "detail": f"Price: ${price:.6g} | Liq: ${liq:.6g}. Add margin or reduce!",
+                        **base_info,
+                    })
+
+            # Exhaustion climax
+            if side == "LONG" and exh_state == "CLIMAX":
+                warnings.append({
+                    "type": "exhaustion", "severity": "high",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Exhaustion climax detected",
+                    "detail": f"Volume climax on your LONG — consider taking profits",
+                    **base_info,
+                })
+
+        # Sort: critical > high > medium
+        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        warnings.sort(key=lambda w: sev_order.get(w.get("severity", "low"), 3))
+
+        return {"warnings": warnings, "count": len(warnings)}
+
+    except Exception as e:
+        logger.warning("Position warnings failed: %s", e)
+        return {"warnings": [], "count": 0}
+
+
 # ---------------------------------------------------------------------------
 # AIXBT Entry Confirmation
 # ---------------------------------------------------------------------------
