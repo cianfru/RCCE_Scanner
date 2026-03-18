@@ -10,7 +10,7 @@ function MdText({ text, isMobile }) {
   const lines = text.split("\n");
   const elements = [];
   let key = 0;
-  const baseFz = isMobile ? 15 : 14;
+  const baseFz = m(T.textBase, isMobile);
 
   for (const raw of lines) {
     const line = raw;
