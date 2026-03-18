@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T, m } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
+import { useTheme } from "../ThemeContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -118,6 +119,7 @@ const QUICK_ACTIONS = [
 
 export default function ChatPanel({ isMobile, selectedSymbol }) {
   const { address: walletAddress } = useWallet();
+  const { mode: themeMode } = useTheme();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -400,22 +402,34 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             alignItems: "center", justifyContent: "center",
             height: "100%", padding: "40px 20px", textAlign: "center",
           }}>
+            <img
+              src="/logo.png"
+              alt="Reflex"
+              style={{
+                width: isMobile ? 140 : 180,
+                marginBottom: 20,
+                opacity: 0.85,
+                ...(themeMode === "light" && { filter: "invert(1) hue-rotate(180deg)" }),
+              }}
+            />
             <div style={{
-              fontSize: isMobile ? 40 : 48, marginBottom: 16, opacity: 0.15,
+              fontSize: m(11, isMobile),
+              fontFamily: T.mono,
+              fontWeight: 700,
+              color: T.accent,
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              marginBottom: 12,
+              opacity: 0.7,
             }}>
-              {"\u2728"}
+              AI ASSISTANT
             </div>
             <div style={{
-              color: T.text3, fontSize: m(T.textLg, isMobile), fontFamily: T.font,
-              fontWeight: 600, marginBottom: 8,
-            }}>
-              Reflex Assistant
-            </div>
-            <div style={{
-              color: T.text4, fontSize: m(T.textBase, isMobile), fontFamily: T.font,
-              lineHeight: 1.8, maxWidth: 360,
+              color: T.text4, fontSize: m(T.textSm, isMobile), fontFamily: T.font,
+              lineHeight: 1.8, maxWidth: 340,
             }}>
               Ask about any signal, symbol, or market condition.
+              {walletAddress ? " Position-aware context is active." : ""}
             </div>
 
             {/* Quick actions */}
