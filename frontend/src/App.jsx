@@ -7,8 +7,7 @@ import SummaryBar from "./components/SummaryBar.jsx";
 import StatCards from "./components/StatCards.jsx";
 import ConsensusBar from "./components/ConsensusBar.jsx";
 import MarketContext from "./components/MarketContext.jsx";
-import NotableSignals from "./components/NotableSignals.jsx";
-import WarmingUp from "./components/WarmingUp.jsx";
+import SignalBar from "./components/SignalBar.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
@@ -350,9 +349,6 @@ export default function App() {
   const display1d = applyStatFilter(sorted1d);
   const displayTradfi = applyStatFilter(sortedTradfi);
 
-  const SIGNALS_NOTABLE = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "TRIM", "RISK_OFF"];
-  const notable4h = sorted4h.filter(r => SIGNALS_NOTABLE.includes(r.signal));
-  const notable1d = sorted1d.filter(r => SIGNALS_NOTABLE.includes(r.signal));
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
   const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat" && activeTab !== "tradfi";
@@ -675,9 +671,7 @@ export default function App() {
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} isMobile={isMobile} />
         )}
 
-        {showDashboard && <NotableSignals notable4h={notable4h} notable1d={notable1d} onSelect={setSelected} isMobile={isMobile} />}
-
-        {showDashboard && <WarmingUp data={activeTab === "1d" ? sorted1d : sorted4h} onSelect={setSelected} isMobile={isMobile} />}
+        {showDashboard && <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={setSelected} isMobile={isMobile} />}
 
         {showDashboard && (
           <div style={{
