@@ -302,7 +302,7 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
       height: 280,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: T.text3,
+        textColor: "#98989f",
         fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 10,
         attributionLogo: false,
