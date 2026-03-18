@@ -58,6 +58,70 @@ _HEAT_DANGER_THRESHOLD = 85
 _LIQ_WARNING_PCT = 15            # warn if price within 15% of liq
 _OI_TREND_ADVERSE = {"SQUEEZE", "LIQUIDATING"}
 
+# Minimum confluence score before a non-held opportunity fires on TG.
+# Matches the default frontend filter (MED = ≥2).
+# Held-position alerts (heat, OI, liq, regime) are NEVER gated by this.
+_TG_MIN_CONFLUENCE = 2
+
+# Exit signals — always pass the gate regardless of confluence score,
+# because we never want to miss a de-risk signal.
+_EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+
+
+def _tg_confluence(scan: dict) -> int:
+    """Compute a 0–5 confluence score for a non-held opportunity alert.
+
+    Mirrors the frontend computeConfluence() logic so both surfaces agree:
+      +1  RCCE conditions ≥ 60% satisfied
+      +1  OI trend confirms direction (BUILDING/STABLE for entries; CROWDED_SHORT bonus)
+      +1  Heat in valid zone (< 60 for entries; > 70 for exits)
+      +1  Exhaustion engine confirms (floor_confirmed / is_absorption for entries)
+      +1  Priority score ≥ 60 (multi-factor strength already computed by scanner)
+    """
+    sig  = scan.get("signal", "WAIT")
+    is_exit = sig in _EXIT_SIGNALS
+    pos  = scan.get("positioning") or {}
+    oi   = pos.get("oi_trend", "")
+    fr   = pos.get("funding_regime", "NEUTRAL")
+    met  = scan.get("conditions_met", 0)
+    tot  = max(scan.get("conditions_total", 10), 1)
+    heat = scan.get("heat", 50)
+    score = 0
+
+    # 1. RCCE conditions strength
+    if met / tot >= 0.6:
+        score += 1
+
+    # 2. OI trend confirms direction
+    if is_exit:
+        if oi in ("LIQUIDATING", "SQUEEZE") or fr == "CROWDED_LONG":
+            score += 1
+    else:
+        if oi in ("BUILDING", "STABLE") or fr == "CROWDED_SHORT":
+            score += 1
+
+    # 3. Heat zone
+    if is_exit:
+        if heat > 70:
+            score += 1
+    else:
+        if heat < 60:
+            score += 1
+
+    # 4. Exhaustion engine confirmation
+    if not is_exit:
+        if scan.get("floor_confirmed") or scan.get("is_absorption"):
+            score += 1
+    else:
+        if scan.get("is_climax"):
+            score += 1
+
+    # 5. Priority score (0-100 multi-factor composite from scanner)
+    if scan.get("priority_score", 0) >= 60:
+        score += 1
+
+    return score
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -425,10 +489,21 @@ class PositionMonitor:
                 key = f"{watcher.chat_id}:{sym}"
                 prev = self._last_notified_signal.get(key)
 
+                # Compute confluence score — non-held alerts require ≥ _TG_MIN_CONFLUENCE
+                # (exit signals bypass the gate; held-position alerts are never gated)
+                c_score = _tg_confluence(scan)
+                passes_gate = (c_score >= _TG_MIN_CONFLUENCE) or (signal in _EXIT_SIGNALS)
+
                 # Standard signal-based opportunity (STRONG_LONG, LIGHT_LONG)
-                if signal in _OPPORTUNITY_SIGNALS and prev != signal:
-                    notifications.append(self._fmt_opportunity(scan))
+                if signal in _OPPORTUNITY_SIGNALS and prev != signal and passes_gate:
                     self._last_notified_signal[key] = signal
+                    notifications.append(
+                        self._fmt_opportunity(scan) + f"\n{'●' * c_score}{'○' * (5 - c_score)} Confluence: {c_score}/5"
+                    )
+                    continue
+
+                # Skip exhaustion/OI setups for low-confluence coins
+                if not passes_gate:
                     continue
 
                 # --- Exhaustion-based entry opportunities ---
@@ -460,6 +535,7 @@ class PositionMonitor:
                         notifications.append(self._fmt_exhaustion_entry(scan, "ABSORBING"))
 
                 # --- OI / Price divergence setups ---
+                # (passes_gate already checked above — all OI setups require ≥ _TG_MIN_CONFLUENCE)
                 positioning   = scan.get("positioning") or {}
                 oi_trend      = positioning.get("oi_trend", "UNKNOWN")
                 funding_regime = positioning.get("funding_regime", "NEUTRAL")
@@ -467,6 +543,7 @@ class PositionMonitor:
                 oi_change_pct = positioning.get("oi_change_pct", 0.0)
 
                 _bullish_regimes = {"MARKUP", "REACC", "ACCUM"}
+                _conf_suffix = f"\n{'●' * c_score}{'○' * (5 - c_score)} Confluence: {c_score}/5"
 
                 # SHORTING into bullish regime → squeeze setup
                 if (oi_trend == "SHORTING"
@@ -476,7 +553,7 @@ class PositionMonitor:
                     wkey = f"{key}:oi_squeeze"
                     if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
                         self._last_warned[wkey] = time.time()
-                        notifications.append(self._fmt_oi_setup(scan, "SQUEEZE_SETUP"))
+                        notifications.append(self._fmt_oi_setup(scan, "SQUEEZE_SETUP") + _conf_suffix)
 
                 # Crowded short + entry signal → textbook squeeze
                 elif (funding_regime == "CROWDED_SHORT"
@@ -485,7 +562,7 @@ class PositionMonitor:
                     wkey = f"{key}:crowded_short"
                     if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
                         self._last_warned[wkey] = time.time()
-                        notifications.append(self._fmt_oi_setup(scan, "CROWDED_SHORT"))
+                        notifications.append(self._fmt_oi_setup(scan, "CROWDED_SHORT") + _conf_suffix)
 
                 # OI front-run: BUILDING + pre-signal (smart money loading)
                 elif (oi_trend == "BUILDING"
@@ -496,7 +573,7 @@ class PositionMonitor:
                     wkey = f"{key}:oi_frontrun"
                     if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
                         self._last_warned[wkey] = time.time()
-                        notifications.append(self._fmt_oi_setup(scan, "OI_FRONT_RUN"))
+                        notifications.append(self._fmt_oi_setup(scan, "OI_FRONT_RUN") + _conf_suffix)
 
                 # Shorts into exhaustion floor → highest conviction contrarian setup
                 elif (oi_trend == "SHORTING"
@@ -505,7 +582,7 @@ class PositionMonitor:
                     wkey = f"{key}:shorts_floor"
                     if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
                         self._last_warned[wkey] = time.time()
-                        notifications.append(self._fmt_oi_setup(scan, "SHORTS_INTO_FLOOR"))
+                        notifications.append(self._fmt_oi_setup(scan, "SHORTS_INTO_FLOOR") + _conf_suffix)
 
         # -- 3. Rate-limit and send --
         if notifications:
