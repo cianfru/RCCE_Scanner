@@ -1905,7 +1905,7 @@ async def position_warnings(address: Optional[str] = Query(None)):
                         **base_info,
                     })
 
-            # Exhaustion climax
+            # Exhaustion climax (exit warning for LONG holders)
             if side == "LONG" and exh_state == "CLIMAX":
                 warnings.append({
                     "type": "exhaustion", "severity": "high",
@@ -1915,8 +1915,30 @@ async def position_warnings(address: Optional[str] = Query(None)):
                     **base_info,
                 })
 
-        # Sort: critical > high > medium
-        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+            # Floor confirmed on LONG → positive: your thesis is supported
+            floor_conf = scan.get("floor_confirmed", False)
+            if side == "LONG" and floor_conf:
+                warnings.append({
+                    "type": "floor_confirmed", "severity": "positive",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Exhaustion floor confirmed",
+                    "detail": f"Absorption cluster + volume dry-up below BMSB. Sellers exhausted — LONG thesis supported",
+                    **base_info,
+                })
+
+            # Absorption forming on LONG in bear zone → early positive signal
+            is_absorb = scan.get("is_absorption", False)
+            if side == "LONG" and is_absorb and exh_state == "BEAR_ZONE":
+                warnings.append({
+                    "type": "absorbing", "severity": "positive",
+                    "symbol": sym, "timestamp": now,
+                    "title": f"{coin}: Absorption forming",
+                    "detail": f"Early absorption signals below BMSB. Not yet confirmed — watch for floor confirmation",
+                    **base_info,
+                })
+
+        # Sort: critical > high > medium > low > positive
+        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "positive": 4}
         warnings.sort(key=lambda w: sev_order.get(w.get("severity", "low"), 3))
 
         return {"warnings": warnings, "count": len(warnings)}
@@ -1924,6 +1946,285 @@ async def position_warnings(address: Optional[str] = Query(None)):
     except Exception as e:
         logger.warning("Position warnings failed: %s", e)
         return {"warnings": [], "count": 0}
+
+
+@app.get("/api/notifications/exhaustion-opportunities")
+async def exhaustion_opportunities(address: Optional[str] = Query(None)):
+    """Return coins with exhaustion-based entry signals NOT currently held.
+
+    Fires for:
+    - EXHAUSTED_FLOOR (floor_confirmed): absorption cluster + volume dry-up
+    - CLIMAX on coins NOT in markdown/cap regime (capitulation reversal)
+    - ABSORBING when signal is also constructive (ACCUMULATE or better)
+    """
+    try:
+        held_syms: set = set()
+        if address:
+            from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
+            state = await fetch_clearinghouse_state(address)
+            if state:
+                positions = parse_open_positions(state)
+                held_syms = {p["symbol"] for p in positions}
+
+        results_by_symbol: dict = {}
+        for tf in ("4h", "1d"):
+            for r in cache.results.get(tf, []):
+                sym = r.get("symbol", "")
+                if sym not in results_by_symbol:
+                    results_by_symbol[sym] = r
+
+        opportunities = []
+        now = int(time.time())
+
+        for sym, scan in results_by_symbol.items():
+            if sym in held_syms:
+                continue  # already covered by position-warnings
+
+            exh_state    = scan.get("exhaustion_state", "")
+            floor_conf   = scan.get("floor_confirmed", False)
+            is_climax    = scan.get("is_climax", False)
+            is_absorb    = scan.get("is_absorption", False)
+            signal       = scan.get("signal", "WAIT")
+            regime       = scan.get("regime", "")
+            heat         = scan.get("heat", 0)
+            price        = scan.get("price", 0)
+            met          = scan.get("conditions_met", 0)
+            total        = scan.get("conditions_total", 10)
+            base_coin    = sym.split("/")[0]
+
+            adverse_signals = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+
+            if floor_conf and signal not in adverse_signals:
+                opportunities.append({
+                    "type": "exhaustion_floor",
+                    "severity": "positive",
+                    "symbol": sym, "coin": base_coin,
+                    "timestamp": now,
+                    "title": f"{base_coin}: Exhaustion floor confirmed",
+                    "detail": (
+                        f"Absorption cluster + volume dry-up below weekly BMSB. "
+                        f"Signal: {signal} | Heat: {heat} | Conditions: {met}/{total}"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat, "price": price,
+                })
+            elif is_climax and regime not in ("MARKDOWN", "CAP"):
+                opportunities.append({
+                    "type": "climax_reversal",
+                    "severity": "low",
+                    "symbol": sym, "coin": base_coin,
+                    "timestamp": now,
+                    "title": f"{base_coin}: Downside climax bar",
+                    "detail": (
+                        f"Capitulation candle: wide range + long lower wick. "
+                        f"Regime: {regime} | Signal: {signal} — wait for confirmation"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat, "price": price,
+                })
+            elif is_absorb and signal in ("ACCUMULATE", "REVIVAL_SEED", "LIGHT_LONG", "STRONG_LONG"):
+                opportunities.append({
+                    "type": "absorbing",
+                    "severity": "low",
+                    "symbol": sym, "coin": base_coin,
+                    "timestamp": now,
+                    "title": f"{base_coin}: Absorption forming",
+                    "detail": (
+                        f"Early exhaustion absorptions below BMSB. "
+                        f"Signal: {signal} | Regime: {regime} | Not yet confirmed floor"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat, "price": price,
+                })
+
+        # Sort: floor_confirmed first (strongest), then climax, then absorbing
+        type_order = {"exhaustion_floor": 0, "climax_reversal": 1, "absorbing": 2}
+        opportunities.sort(key=lambda o: type_order.get(o["type"], 9))
+
+        return {"opportunities": opportunities, "count": len(opportunities)}
+
+    except Exception as e:
+        logger.warning("Exhaustion opportunities failed: %s", e)
+        return {"opportunities": [], "count": 0}
+
+
+# ---------------------------------------------------------------------------
+# OI / Price Divergence — Market Setups (coins NOT held)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/notifications/market-setups")
+async def market_setups(address: Optional[str] = Query(None)):
+    """Detect OI/price divergence setups on coins the user does NOT hold.
+
+    OI trend semantics (from positioning engine):
+      BUILDING   — OI ↑ + price ↑  (momentum confirmation)
+      SQUEEZE    — OI ↓ + price ↑  (shorts forced out)
+      LIQUIDATING— OI ↓ + price ↓  (long capitulation)
+      SHORTING   — OI ↑ + price ↓  (shorts piling in / distribution)
+      STABLE     — minimal movement
+
+    Alpha patterns:
+      1. SQUEEZE SETUP   — SHORTING + constructive regime → shorts piling against trend
+      2. CROWDED_SHORT   — extreme negative funding + bullish signal → squeeze incoming
+      3. OI FRONT-RUN    — BUILDING + pre-signal (WAIT/ACCUM, heat < 50) → smart money loading
+      4. CAPITULATION    — LIQUIDATING + low heat + ACCUM/REACC regime → near washout bottom
+      5. SHORTS INTO FLOOR — SHORTING + floor_confirmed → shorts loading into exhausted sellers
+    """
+    try:
+        held_syms: set = set()
+        if address:
+            from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
+            state = await fetch_clearinghouse_state(address)
+            if state:
+                positions = parse_open_positions(state)
+                held_syms = {p["symbol"] for p in positions}
+
+        results_by_symbol: dict = {}
+        for tf in ("4h", "1d"):
+            for r in cache.results.get(tf, []):
+                sym = r.get("symbol", "")
+                if sym not in results_by_symbol:
+                    results_by_symbol[sym] = r
+
+        setups = []
+        now = int(time.time())
+
+        _adverse   = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+        _entry     = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED"}
+        _pre_entry = {"ACCUMULATE", "REVIVAL_SEED", "WAIT"}
+        _bullish_regimes = {"MARKUP", "REACC", "ACCUM"}
+
+        for sym, scan in results_by_symbol.items():
+            if sym in held_syms:
+                continue
+
+            positioning    = scan.get("positioning") or {}
+            if not positioning:
+                continue  # no OI data for this coin
+
+            oi_trend       = positioning.get("oi_trend", "UNKNOWN")
+            funding_regime = positioning.get("funding_regime", "NEUTRAL")
+            funding_rate   = positioning.get("funding_rate", 0.0)
+            oi_change_pct  = positioning.get("oi_change_pct", 0.0)
+
+            signal         = scan.get("signal", "WAIT")
+            regime         = scan.get("regime", "")
+            heat           = scan.get("heat", 0)
+            price          = scan.get("price", 0)
+            met            = scan.get("conditions_met", 0)
+            total          = scan.get("conditions_total", 10)
+            floor_conf     = scan.get("floor_confirmed", False)
+            is_climax      = scan.get("is_climax", False)
+            base_coin      = sym.split("/")[0]
+
+            # ── 1. SQUEEZE SETUP: shorts loading into a bullish regime ──────────
+            # OI rising while price falls (SHORTING), but regime is still constructive
+            # → crowd is wrong, the dip is being absorbed, potential squeeze
+            if (oi_trend == "SHORTING"
+                    and regime in _bullish_regimes
+                    and signal not in _adverse
+                    and heat < 70):
+                intensity = "high" if funding_regime == "CROWDED_SHORT" else "medium"
+                funding_str = f" | Funding: {funding_rate*100:.4f}%/8h" if funding_rate != 0 else ""
+                setups.append({
+                    "type": "squeeze_setup",
+                    "severity": intensity,
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: Shorts piling into {regime} regime",
+                    "detail": (
+                        f"OI ↑ + price ↓ (SHORTING) but regime is {regime} and signal is {signal}. "
+                        f"Crowd shorting against the trend{funding_str}. "
+                        f"Any bounce = forced covering | Conditions: {met}/{total}"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "oi_trend": oi_trend, "funding_regime": funding_regime,
+                })
+
+            # ── 2. CROWDED SHORT + ENTRY SIGNAL: textbook squeeze ───────────────
+            elif (funding_regime == "CROWDED_SHORT"
+                      and signal in _entry
+                      and regime not in ("MARKDOWN", "CAP")):
+                setups.append({
+                    "type": "crowded_short_entry",
+                    "severity": "high",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: Crowded short + entry signal",
+                    "detail": (
+                        f"Funding: {funding_rate*100:.4f}%/8h (shorts paying premium). "
+                        f"Signal: {signal} | Regime: {regime}. "
+                        f"Shorts trapped — squeeze setup with bullish confirmation"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "oi_trend": oi_trend, "funding_regime": funding_regime,
+                })
+
+            # ── 3. OI FRONT-RUN: smart money building before signal confirms ────
+            # OI confirming (BUILDING, decent change) but signal not at entry yet
+            # Heat must be low — this is accumulation, not chase
+            elif (oi_trend == "BUILDING"
+                      and oi_change_pct >= 5.0
+                      and signal in _pre_entry
+                      and heat < 50
+                      and regime not in ("MARKDOWN", "CAP")):
+                setups.append({
+                    "type": "oi_front_run",
+                    "severity": "medium",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: OI building before signal confirms",
+                    "detail": (
+                        f"OI +{oi_change_pct:.1f}% with price (BUILDING) but signal still {signal}. "
+                        f"Regime: {regime} | Heat: {heat}/100. "
+                        f"Smart money positioning ahead of signal upgrade — watch for entry"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "oi_trend": oi_trend, "oi_change_pct": oi_change_pct,
+                })
+
+            # ── 4. SHORTS INTO EXHAUSTION FLOOR: ultimate contrarian long setup ─
+            # OI rising + price falling, but the exhaustion engine says floor is in
+            # Crowd is shorting into exhausted sellers — extremely asymmetric setup
+            elif (oi_trend == "SHORTING"
+                      and (floor_conf or is_climax)
+                      and signal not in _adverse):
+                label = "floor confirmed" if floor_conf else "downside climax"
+                setups.append({
+                    "type": "shorts_into_floor",
+                    "severity": "high",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: Shorts into exhaustion {label}",
+                    "detail": (
+                        f"OI rising (shorts loading) while exhaustion engine shows {label}. "
+                        f"Sellers exhausted + crowd shorting = high-conviction reversal setup. "
+                        f"Signal: {signal} | Regime: {regime} | Heat: {heat}"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "oi_trend": oi_trend, "floor_confirmed": floor_conf,
+                })
+
+            # ── 5. CAPITULATION WATCH: longs getting washed out, near bottom ───
+            elif (oi_trend == "LIQUIDATING"
+                      and heat < 35
+                      and regime in ("MARKDOWN", "ACCUM", "CAP")):
+                setups.append({
+                    "type": "capitulation_watch",
+                    "severity": "low",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: Long liquidations underway",
+                    "detail": (
+                        f"OI ↓ + price ↓ (LIQUIDATING) | Regime: {regime} | Heat: {heat}/100. "
+                        f"Forced selling in progress — watch for exhaustion floor + signal upgrade before entry. "
+                        f"Do NOT catch falling knife"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "oi_trend": oi_trend,
+                })
+
+        # Sort: high first, then medium, then low
+        sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        setups.sort(key=lambda s: sev_order.get(s.get("severity", "low"), 3))
+
+        return {"setups": setups, "count": len(setups)}
+
+    except Exception as e:
+        logger.warning("Market setups failed: %s", e)
+        return {"setups": [], "count": 0}
 
 
 # ---------------------------------------------------------------------------

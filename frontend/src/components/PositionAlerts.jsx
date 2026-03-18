@@ -6,10 +6,11 @@ import GlassCard from "./GlassCard.jsx";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const SEVERITY_STYLES = {
-  critical: { bg: "rgba(239, 68, 68, 0.08)", border: "rgba(239, 68, 68, 0.25)", color: "#ef4444", label: "CRITICAL" },
-  high:     { bg: "rgba(245, 158, 11, 0.08)", border: "rgba(245, 158, 11, 0.25)", color: "#f59e0b", label: "HIGH" },
-  medium:   { bg: "rgba(234, 179, 8, 0.06)",  border: "rgba(234, 179, 8, 0.20)",  color: "#eab308", label: "MEDIUM" },
+  critical: { bg: "rgba(239, 68, 68, 0.08)",   border: "rgba(239, 68, 68, 0.25)",  color: "#ef4444", label: "CRITICAL" },
+  high:     { bg: "rgba(245, 158, 11, 0.08)",  border: "rgba(245, 158, 11, 0.25)", color: "#f59e0b", label: "HIGH" },
+  medium:   { bg: "rgba(234, 179, 8, 0.06)",   border: "rgba(234, 179, 8, 0.20)",  color: "#eab308", label: "MEDIUM" },
   low:      { bg: "rgba(107, 114, 128, 0.06)", border: "rgba(107, 114, 128, 0.2)", color: "#6b7280", label: "LOW" },
+  positive: { bg: "rgba(52, 211, 153, 0.07)",  border: "rgba(52, 211, 153, 0.22)", color: "#34d399", label: "SETUP" },
 };
 
 const DISMISSED_KEY = "rcce-dismissed-alerts";
