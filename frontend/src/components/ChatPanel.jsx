@@ -407,12 +407,11 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             height: "100%",
             padding: isMobile ? "20px 20px 0" : "40px 20px", textAlign: "center",
           }}>
-            <div style={{ position: "relative", display: "inline-block", marginBottom: isMobile ? 8 : 20 }}>
+            <div style={{ position: "relative", width: "min(90%, 550px)", margin: "0 auto", marginBottom: isMobile ? 8 : 20 }}>
               <img
                 src={themeMode === "light" ? "/AI_Agent_white.png" : "/AI_Agent_dark.png"}
                 alt="Reflex AI"
                 style={{
-                  maxWidth: "min(90%, 550px)",
                   width: "100%",
                   borderRadius: 16,
                   display: "block",
