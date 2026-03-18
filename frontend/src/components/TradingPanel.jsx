@@ -68,6 +68,65 @@ function parseNum(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Scanner context helpers
+// ---------------------------------------------------------------------------
+
+const ENTRY_SIGNALS = new Set(["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED"]);
+const EXIT_SIGNALS  = new Set(["TRIM", "TRIM_HARD", "RISK_OFF"]);
+
+const SIGNAL_COMPACT = {
+  STRONG_LONG:  "STRONG",
+  LIGHT_LONG:   "LIGHT",
+  ACCUMULATE:   "ACCUM",
+  REVIVAL_SEED: "SEED",
+  TRIM:         "TRIM",
+  TRIM_HARD:    "TRIM!",
+  RISK_OFF:     "RISK OFF",
+  NO_LONG:      "NO LONG",
+  WAIT:         "WAIT",
+};
+
+const SIGNAL_COLOR = {
+  STRONG_LONG:  "#34d399",
+  LIGHT_LONG:   "#6ee7b7",
+  ACCUMULATE:   "#22d3ee",
+  REVIVAL_SEED: "#a78bfa",
+  TRIM:         "#fbbf24",
+  TRIM_HARD:    "#f97316",
+  RISK_OFF:     "#f87171",
+  NO_LONG:      "#9ca3af",
+  WAIT:         "#6b7280",
+};
+
+const REGIME_COLOR = {
+  MARKUP:   "#34d399",
+  BLOWOFF:  "#fbbf24",
+  REACC:    "#22d3ee",
+  MARKDOWN: "#f87171",
+  CAP:      "#f87171",
+  ACCUM:    "#a78bfa",
+};
+
+const ALIGN_STYLE = {
+  ALIGNED:     { color: "#34d399", bg: "rgba(52,211,153,0.12)",   border: "rgba(52,211,153,0.3)" },
+  CONFLICTING: { color: "#f87171", bg: "rgba(248,113,113,0.12)",  border: "rgba(248,113,113,0.3)" },
+  NEUTRAL:     { color: "#9ca3af", bg: "rgba(156,163,175,0.08)",  border: "rgba(156,163,175,0.18)" },
+};
+
+function computeAlignment(signal, isLong) {
+  if (ENTRY_SIGNALS.has(signal)) return isLong ? "ALIGNED" : "CONFLICTING";
+  if (EXIT_SIGNALS.has(signal))  return isLong ? "CONFLICTING" : "ALIGNED";
+  return "NEUTRAL";
+}
+
+function heatColor(heat) {
+  if (heat >= 80) return "#f87171";
+  if (heat >= 60) return "#fbbf24";
+  if (heat >= 40) return "#22d3ee";
+  return "#6b7280";
+}
+
+// ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
@@ -281,9 +340,302 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
   );
 }
 
+// ─── Scanner Context Strip ───────────────────────────────────────────────────
+
+function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
+  const ctx4h = scanMap4h[coin];
+  const ctx1d  = scanMap1d[coin];
+  if (!ctx4h) return null;
+
+  const alignment  = computeAlignment(ctx4h.signal, isLong);
+  const alignStyle = ALIGN_STYLE[alignment];
+  const sigColor   = SIGNAL_COLOR[ctx4h.signal] || T.text3;
+  const regColor   = REGIME_COLOR[ctx4h.regime]  || T.text3;
+  const hc         = heatColor(ctx4h.heat);
+
+  return (
+    <div style={{
+      marginTop: 10,
+      padding: "8px 12px",
+      background: "rgba(255,255,255,0.018)",
+      borderRadius: 6,
+      border: `1px solid ${T.overlay08}`,
+    }}>
+      {/* Top row: badges */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span style={{
+          fontSize: 9, fontFamily: T.mono, color: T.text4,
+          letterSpacing: "0.1em", fontWeight: 700,
+        }}>
+          SCANNER
+        </span>
+
+        {/* 4H Signal */}
+        <span style={{
+          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+          padding: "2px 6px", borderRadius: 3,
+          background: sigColor + "1a", color: sigColor,
+          letterSpacing: "0.04em",
+        }}>
+          {SIGNAL_COMPACT[ctx4h.signal] || ctx4h.signal} · 4H
+        </span>
+
+        {/* Regime */}
+        <span style={{
+          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+          padding: "2px 6px", borderRadius: 3,
+          background: regColor + "15", color: regColor,
+        }}>
+          {ctx4h.regime}
+        </span>
+
+        {/* Heat */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>HEAT</span>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: T.overlay08 }}>
+            <div style={{
+              width: `${ctx4h.heat}%`, height: "100%",
+              borderRadius: 2, background: hc, transition: "width 0.3s",
+            }} />
+          </div>
+          <span style={{ fontSize: 9, fontFamily: T.mono, color: hc, fontWeight: 700 }}>
+            {ctx4h.heat}
+          </span>
+        </div>
+
+        {/* 1D signal if different */}
+        {ctx1d && ctx1d.signal !== ctx4h.signal && (
+          <span style={{
+            fontSize: 9, fontFamily: T.mono, fontWeight: 600,
+            padding: "2px 6px", borderRadius: 3,
+            background: (SIGNAL_COLOR[ctx1d.signal] || T.text4) + "15",
+            color: SIGNAL_COLOR[ctx1d.signal] || T.text4,
+          }}>
+            {SIGNAL_COMPACT[ctx1d.signal] || ctx1d.signal} · 1D
+          </span>
+        )}
+
+        {/* Alignment badge — pinned right */}
+        <span style={{
+          marginLeft: "auto",
+          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+          padding: "2px 8px", borderRadius: 3,
+          background: alignStyle.bg, color: alignStyle.color,
+          border: `1px solid ${alignStyle.border}`,
+          letterSpacing: "0.06em", flexShrink: 0,
+        }}>
+          {alignment}
+        </span>
+      </div>
+
+      {/* Warnings for this coin */}
+      {posWarnings.length > 0 && (
+        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+          {posWarnings.map((w, i) => {
+            const wc = w.severity === "critical" ? "#f87171" : w.severity === "high" ? "#fbbf24" : "#eab308";
+            return (
+              <div key={i} style={{
+                display: "flex", alignItems: "flex-start", gap: 5,
+                fontSize: 9, fontFamily: T.mono, color: wc,
+              }}>
+                <span style={{ flexShrink: 0 }}>&#9650;</span>
+                <span style={{ lineHeight: 1.5 }}>{w.detail}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Portfolio Health Card ───────────────────────────────────────────────────
+
+function PortfolioHealthCard({ positions, scanMap4h, warnings }) {
+  if (positions.length === 0) return null;
+
+  // Per-position health scoring
+  const positionScores = positions.map(ap => {
+    const p      = ap.position || ap;
+    const coin   = p.coin;
+    const szi    = parseNum(ap.position?.szi ?? ap.szi);
+    const isLong = szi > 0;
+    const ctx    = scanMap4h[coin];
+    const entryPx = parseNum(p.entryPx);
+    const liqPx  = p.liquidationPx ? parseNum(p.liquidationPx) : null;
+
+    let health = 65; // base
+
+    if (ctx) {
+      const alignment = computeAlignment(ctx.signal, isLong);
+      if (alignment === "ALIGNED")     health += 20;
+      if (alignment === "CONFLICTING") health -= 30;
+
+      if (ctx.heat >= 85)      health -= 20;
+      else if (ctx.heat >= 70) health -= 10;
+
+      if (ctx.is_climax)         health -= 15;
+      if (ctx.floor_confirmed && !isLong) health -= 10;
+    }
+
+    if (liqPx && entryPx) {
+      const currentPrice = ctx?.price || entryPx;
+      const liqDist = Math.abs(currentPrice - liqPx) / currentPrice * 100;
+      if (liqDist < 8)       health -= 30;
+      else if (liqDist < 15) health -= 15;
+      else if (liqDist < 25) health -= 5;
+    }
+
+    // Penalise for active critical/high warnings
+    const coinWarnings = warnings.filter(w => w.symbol === coin || w.symbol === `${coin}/USDT`);
+    coinWarnings.forEach(w => {
+      if (w.severity === "critical") health -= 15;
+      else if (w.severity === "high") health -= 8;
+    });
+
+    return { coin, isLong, health: Math.max(0, Math.min(100, health)), ctx };
+  });
+
+  const avgHealth = positionScores.reduce((s, v) => s + v.health, 0) / positionScores.length;
+
+  // Categorise
+  const aligned     = positionScores.filter(ps => ps.ctx && computeAlignment(ps.ctx.signal, ps.isLong) === "ALIGNED").length;
+  const conflicting = positionScores.filter(ps => ps.ctx && computeAlignment(ps.ctx.signal, ps.isLong) === "CONFLICTING").length;
+  const neutral     = positionScores.length - aligned - conflicting;
+
+  const hc    = avgHealth >= 68 ? "#34d399" : avgHealth >= 45 ? "#fbbf24" : "#f87171";
+  const label = avgHealth >= 68 ? "HEALTHY"  : avgHealth >= 45 ? "MODERATE" : "AT RISK";
+
+  // Suggested actions from scanner signals
+  const actions = positionScores
+    .filter(ps => ps.ctx)
+    .map(ps => {
+      const sig = ps.ctx.signal;
+      const side = ps.isLong ? "LONG" : "SHORT";
+      if (sig === "TRIM" || sig === "TRIM_HARD") return { coin: ps.coin, text: `TRIM ${ps.coin} ${side} — scanner says ${sig}`, color: "#fbbf24" };
+      if (sig === "RISK_OFF") return { coin: ps.coin, text: `CLOSE ${ps.coin} — RISK OFF signal`, color: "#f87171" };
+      if ((sig === "STRONG_LONG" || sig === "LIGHT_LONG") && !ps.isLong) return { coin: ps.coin, text: `COVER ${ps.coin} SHORT — bullish signal`, color: "#f97316" };
+      if (sig === "STRONG_LONG" && ps.isLong && ps.ctx.heat < 70) return { coin: ps.coin, text: `HOLD / ADD ${ps.coin} — strong regime`, color: "#34d399" };
+      return null;
+    })
+    .filter(Boolean);
+
+  return (
+    <div style={{
+      ...S.section,
+      marginBottom: 16,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "10px 20px",
+        borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 12,
+      }}>
+        <span style={S.title}>Portfolio Health</span>
+        <span style={{
+          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+          padding: "2px 8px", borderRadius: 3,
+          background: hc + "1a", color: hc,
+        }}>
+          {label}
+        </span>
+      </div>
+
+      {/* Score + breakdowns */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 24,
+        padding: "14px 20px", flexWrap: "wrap",
+        borderBottom: actions.length > 0 ? `1px solid ${T.border}` : "none",
+      }}>
+        {/* Score */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 30, fontFamily: T.mono, fontWeight: 700, color: hc, lineHeight: 1 }}>
+            {Math.round(avgHealth)}
+          </span>
+          <div>
+            <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 4 }}>/100</div>
+            <div style={{ width: 64, height: 5, borderRadius: 3, background: T.overlay08 }}>
+              <div style={{
+                width: `${avgHealth}%`, height: "100%",
+                borderRadius: 3, background: hc, transition: "width 0.4s",
+              }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 36, background: T.overlay08 }} />
+
+        {/* Stats */}
+        <div style={{ display: "flex", gap: 20 }}>
+          {aligned > 0 && (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: "#34d399" }}>{aligned}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>ALIGNED</div>
+            </div>
+          )}
+          {neutral > 0 && (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: T.text3 }}>{neutral}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>NEUTRAL</div>
+            </div>
+          )}
+          {conflicting > 0 && (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 18, fontFamily: T.mono, fontWeight: 700, color: "#f87171" }}>{conflicting}</div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>CONFLICTING</div>
+            </div>
+          )}
+        </div>
+
+        {/* Per-position mini bars */}
+        {positionScores.length > 1 && (
+          <>
+            <div style={{ width: 1, height: 36, background: T.overlay08 }} />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {positionScores.map(ps => {
+                const phc = ps.health >= 68 ? "#34d399" : ps.health >= 45 ? "#fbbf24" : "#f87171";
+                return (
+                  <div key={ps.coin} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginBottom: 3 }}>{ps.coin}</div>
+                    <div style={{ width: 36, height: 4, borderRadius: 2, background: T.overlay08 }}>
+                      <div style={{ width: `${ps.health}%`, height: "100%", borderRadius: 2, background: phc }} />
+                    </div>
+                    <div style={{ fontSize: 9, fontFamily: T.mono, color: phc, fontWeight: 700, marginTop: 2 }}>
+                      {Math.round(ps.health)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Suggested actions */}
+      {actions.length > 0 && (
+        <div style={{ padding: "10px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, marginBottom: 2 }}>
+            SUGGESTED ACTIONS
+          </div>
+          {actions.map((a, i) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 8,
+              fontSize: 11, fontFamily: T.mono, color: a.color,
+            }}>
+              <span style={{ fontSize: 8, opacity: 0.7 }}>&#9654;</span>
+              <span>{a.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Position Card ──────────────────────────────────────────────────────────
 
-function PositionCard({ pos, onClose, closing }) {
+function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings }) {
   const szi = parseNum(pos.position?.szi ?? pos.szi);
   const isLong = szi > 0;
   const side = isLong ? "LONG" : "SHORT";
@@ -303,6 +655,18 @@ function PositionCard({ pos, onClose, closing }) {
   const marginUsed = parseNum(p.marginUsed);
   const fundingSinceOpen = parseNum(p.cumFunding?.sinceOpen);
 
+  // Liquidation proximity
+  const ctx4h = scanMap4h[coin];
+  const liqDistPct = liqPx && ctx4h?.price
+    ? Math.abs(ctx4h.price - liqPx) / ctx4h.price * 100
+    : null;
+  const liqDanger = liqDistPct !== null && liqDistPct < 15;
+
+  // Warnings for this coin
+  const coinWarnings = (posWarnings || []).filter(
+    w => w.symbol === coin || w.symbol === `${coin}/USDT`
+  );
+
   return (
     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}` }}>
       {/* Row 1: Coin + badges + PnL */}
@@ -312,6 +676,11 @@ function PositionCard({ pos, onClose, closing }) {
         <span style={S.badge("rgba(139,92,246,0.12)", "#8b5cf6", "rgba(139,92,246,0.3)")}>
           {leverage}x {leverageType}
         </span>
+        {liqDanger && (
+          <span style={S.badge("rgba(239,68,68,0.12)", "#f87171", "rgba(239,68,68,0.3)")}>
+            LIQ {liqDistPct.toFixed(1)}%
+          </span>
+        )}
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
           <div style={{ fontSize: 14, fontFamily: T.mono, fontWeight: 700, color: pnlColor(unrealizedPnl) }}>
             {unrealizedPnl >= 0 ? "+" : ""}{fmtUsd(unrealizedPnl)}
@@ -343,7 +712,7 @@ function PositionCard({ pos, onClose, closing }) {
         {liqPx && (
           <div>
             <span style={S.label}>Liq </span>
-            <span style={{ ...S.value, color: "#f87171" }}>{fmtPrice(liqPx)}</span>
+            <span style={{ ...S.value, color: liqDanger ? "#f87171" : T.text2 }}>{fmtPrice(liqPx)}</span>
           </div>
         )}
         {fundingSinceOpen !== 0 && (
@@ -365,6 +734,15 @@ function PositionCard({ pos, onClose, closing }) {
           {closing ? "Closing..." : "Close"}
         </button>
       </div>
+
+      {/* Scanner context strip */}
+      <ScannerContext
+        coin={coin}
+        scanMap4h={scanMap4h}
+        scanMap1d={scanMap1d}
+        isLong={isLong}
+        posWarnings={coinWarnings}
+      />
     </div>
   );
 }
@@ -375,10 +753,10 @@ function PositionCard({ pos, onClose, closing }) {
 
 const SECTION_TABS = [
   { key: "positions", label: "POSITIONS" },
-  { key: "orders", label: "ORDERS" },
-  { key: "fills", label: "FILLS" },
-  { key: "funding", label: "FUNDING" },
-  { key: "fees", label: "FEES" },
+  { key: "orders",   label: "ORDERS" },
+  { key: "fills",    label: "FILLS" },
+  { key: "funding",  label: "FUNDING" },
+  { key: "fees",     label: "FEES" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -389,19 +767,24 @@ export default function TradingPanel({ api }) {
   const { address, isConnected, walletClient, connect, error: walletError } = useWallet();
 
   // Core data
-  const [chState, setChState] = useState(null);
+  const [chState, setChState]     = useState(null);
   const [portfolio, setPortfolio] = useState(null);
   const [openOrders, setOpenOrders] = useState([]);
-  const [fills, setFills] = useState([]);
-  const [funding, setFunding] = useState([]);
-  const [fees, setFees] = useState(null);
-  const [history, setHistory] = useState({ trades: [], stats: {} });
+  const [fills, setFills]         = useState([]);
+  const [funding, setFunding]     = useState([]);
+  const [fees, setFees]           = useState(null);
+  const [history, setHistory]     = useState({ trades: [], stats: {} });
+
+  // Scanner context
+  const [scanMap4h, setScanMap4h] = useState({});
+  const [scanMap1d, setScanMap1d] = useState({});
+  const [posWarnings, setPosWarnings] = useState([]);
 
   // UI state
   const [chartPeriod, setChartPeriod] = useState("ALL");
-  const [chartMode, setChartMode] = useState("value");
+  const [chartMode, setChartMode]     = useState("value");
   const [activeSection, setActiveSection] = useState("positions");
-  const [closing, setClosing] = useState(null);
+  const [closing, setClosing]     = useState(null);
   const [cancelling, setCancelling] = useState(null);
 
   // --- Data fetching ---
@@ -442,15 +825,62 @@ export default function TradingPanel({ api }) {
     } catch (e) { console.error("Portfolio slow fetch:", e); }
   }, [address, isConnected, api]);
 
+  // Fetch scanner context + position warnings
+  const fetchScannerContext = useCallback(async () => {
+    try {
+      const [res4h, res1d] = await Promise.all([
+        fetch(`${api}/api/scan?timeframe=4h`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`${api}/api/scan?timeframe=1d`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+      if (res4h?.results) {
+        const map = {};
+        res4h.results.forEach(r => {
+          const coin = r.symbol.replace("/USDT", "").replace("/USD", "");
+          map[coin] = r;
+        });
+        setScanMap4h(map);
+      }
+      if (res1d?.results) {
+        const map = {};
+        res1d.results.forEach(r => {
+          const coin = r.symbol.replace("/USDT", "").replace("/USD", "");
+          map[coin] = r;
+        });
+        setScanMap1d(map);
+      }
+    } catch (e) { console.error("Scanner fetch:", e); }
+  }, [api]);
+
+  const fetchWarnings = useCallback(async () => {
+    if (!address) { setPosWarnings([]); return; }
+    try {
+      const res = await fetch(`${api}/api/notifications/position-warnings?address=${address}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPosWarnings(data.warnings || []);
+    } catch (_) {}
+  }, [address, api]);
+
   useEffect(() => {
     if (!isConnected || !address) return;
     fetchFast();
     fetchMedium();
     fetchSlow();
-    const fastInterval = setInterval(fetchFast, 15_000);
-    const medInterval = setInterval(fetchMedium, 30_000);
-    return () => { clearInterval(fastInterval); clearInterval(medInterval); };
-  }, [fetchFast, fetchMedium, fetchSlow, isConnected, address]);
+    fetchScannerContext();
+    fetchWarnings();
+
+    const fastInterval   = setInterval(fetchFast, 15_000);
+    const medInterval    = setInterval(fetchMedium, 30_000);
+    const scanInterval   = setInterval(fetchScannerContext, 60_000);
+    const warnInterval   = setInterval(fetchWarnings, 60_000);
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(medInterval);
+      clearInterval(scanInterval);
+      clearInterval(warnInterval);
+    };
+  }, [fetchFast, fetchMedium, fetchSlow, fetchScannerContext, fetchWarnings, isConnected, address]);
 
   // --- Actions ---
 
@@ -493,20 +923,20 @@ export default function TradingPanel({ api }) {
   // --- Derived data ---
 
   const marginSummary = chState?.crossMarginSummary || chState?.marginSummary;
-  const accountValue = parseNum(marginSummary?.accountValue);
-  const marginUsed = parseNum(marginSummary?.totalMarginUsed);
-  const withdrawable = parseNum(chState?.withdrawable);
-  const positions = (chState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0);
+  const accountValue  = parseNum(marginSummary?.accountValue);
+  const marginUsedVal = parseNum(marginSummary?.totalMarginUsed);
+  const withdrawable  = parseNum(chState?.withdrawable);
+  const positions     = (chState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0);
   const totalUnrealizedPnl = positions.reduce((sum, ap) => sum + parseNum(ap.position?.unrealizedPnl), 0);
 
   // All-time total PnL from portfolio
   const allTimePnl = portfolio?.perpAllTime?.pnlHistory;
-  const totalPnl = allTimePnl?.length > 0 ? allTimePnl[allTimePnl.length - 1].value : null;
+  const totalPnl   = allTimePnl?.length > 0 ? allTimePnl[allTimePnl.length - 1].value : null;
 
   // Fee rates
   const takerRate = fees?.userCrossRate;
   const makerRate = fees?.userAddRate;
-  const dailyVlm = fees?.dailyUserVlm || [];
+  const dailyVlm  = fees?.dailyUserVlm || [];
   const volume30d = dailyVlm.slice(-30).reduce((s, d) => s + parseNum(d.userCross) + parseNum(d.userAdd), 0);
 
   // Funding summary
@@ -558,11 +988,11 @@ export default function TradingPanel({ api }) {
             display: "flex", justifyContent: "space-around",
             padding: "16px 20px", gap: 16, flexWrap: "wrap",
           }}>
-            <StatBox label="ACCOUNT VALUE" value={fmtUsd(accountValue)} />
+            <StatBox label="ACCOUNT VALUE"  value={fmtUsd(accountValue)} />
             <StatBox label="UNREALIZED PnL" value={`${totalUnrealizedPnl >= 0 ? "+" : ""}${fmtUsd(totalUnrealizedPnl)}`} color={pnlColor(totalUnrealizedPnl)} />
-            <StatBox label="TOTAL PnL" value={totalPnl != null ? `${totalPnl >= 0 ? "+" : ""}${fmtUsd(totalPnl)}` : "\u2014"} color={pnlColor(totalPnl)} />
-            <StatBox label="AVAILABLE" value={fmtUsd(withdrawable)} />
-            <StatBox label="MARGIN USED" value={fmtUsd(marginUsed)} color={marginUsed > 0 ? "#fbbf24" : T.text3} />
+            <StatBox label="TOTAL PnL"      value={totalPnl != null ? `${totalPnl >= 0 ? "+" : ""}${fmtUsd(totalPnl)}` : "\u2014"} color={pnlColor(totalPnl)} />
+            <StatBox label="AVAILABLE"      value={fmtUsd(withdrawable)} />
+            <StatBox label="MARGIN USED"    value={fmtUsd(marginUsedVal)} color={marginUsedVal > 0 ? "#fbbf24" : T.text3} />
           </div>
         </div>
       )}
@@ -578,7 +1008,7 @@ export default function TradingPanel({ api }) {
         />
       )}
 
-      {/* ─── SECTION TAB BAR (acts as filter for sections below) ─── */}
+      {/* ─── SECTION TAB BAR ─── */}
       {isConnected && (
         <div style={{
           display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap",
@@ -595,7 +1025,7 @@ export default function TradingPanel({ api }) {
             >
               {tab.label}
               {tab.key === "positions" && positions.length > 0 && ` (${positions.length})`}
-              {tab.key === "orders" && openOrders.length > 0 && ` (${openOrders.length})`}
+              {tab.key === "orders"    && openOrders.length > 0 && ` (${openOrders.length})`}
             </button>
           ))}
         </div>
@@ -603,25 +1033,39 @@ export default function TradingPanel({ api }) {
 
       {/* ─── OPEN POSITIONS ─── */}
       {isConnected && activeSection === "positions" && (
-        <div style={S.section}>
-          <div style={S.sectionHeader}>
-            <span style={S.title}>
-              Open Positions {positions.length > 0 && `(${positions.length})`}
-            </span>
-          </div>
-          {positions.length === 0 ? (
-            <div style={S.empty}>No open positions</div>
-          ) : (
-            positions.map(ap => (
-              <PositionCard
-                key={ap.position?.coin || ap.coin}
-                pos={ap}
-                onClose={closePosition}
-                closing={closing === (ap.position?.coin || ap.coin)}
-              />
-            ))
+        <>
+          {/* Portfolio health card — only when there are positions + scanner data */}
+          {positions.length > 0 && Object.keys(scanMap4h).length > 0 && (
+            <PortfolioHealthCard
+              positions={positions}
+              scanMap4h={scanMap4h}
+              warnings={posWarnings}
+            />
           )}
-        </div>
+
+          <div style={S.section}>
+            <div style={S.sectionHeader}>
+              <span style={S.title}>
+                Open Positions {positions.length > 0 && `(${positions.length})`}
+              </span>
+            </div>
+            {positions.length === 0 ? (
+              <div style={S.empty}>No open positions</div>
+            ) : (
+              positions.map(ap => (
+                <PositionCard
+                  key={ap.position?.coin || ap.coin}
+                  pos={ap}
+                  onClose={closePosition}
+                  closing={closing === (ap.position?.coin || ap.coin)}
+                  scanMap4h={scanMap4h}
+                  scanMap1d={scanMap1d}
+                  posWarnings={posWarnings}
+                />
+              ))
+            )}
+          </div>
+        </>
       )}
 
       {/* ─── OPEN ORDERS ─── */}
@@ -780,7 +1224,7 @@ export default function TradingPanel({ api }) {
                 </thead>
                 <tbody>
                   {funding.slice(0, 50).map((f, i) => {
-                    const amt = parseNum(f.delta?.usdc);
+                    const amt  = parseNum(f.delta?.usdc);
                     const rate = parseNum(f.delta?.fundingRate);
                     return (
                       <tr key={f.hash || i}>

@@ -252,7 +252,7 @@ _SYMBOL_MAP = {
     "MANA": "decentraland",
     "AXS":  "axie-infinity",
     "CRV":  "curve-dao",
-    "MKR":  "maker",
+    "SKY":  "sky",
     "COMP": "compound",
     "SNX":  "synthetix",
     "LDO":  "lido-dao",
