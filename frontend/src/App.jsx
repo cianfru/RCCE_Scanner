@@ -8,6 +8,7 @@ import StatCards from "./components/StatCards.jsx";
 import ConsensusBar from "./components/ConsensusBar.jsx";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
+import PositionAlerts from "./components/PositionAlerts.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
@@ -672,6 +673,8 @@ export default function App() {
         )}
 
         {showDashboard && <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={setSelected} isMobile={isMobile} />}
+
+        {showDashboard && <PositionAlerts isMobile={isMobile} />}
 
         {showDashboard && (
           <div style={{
