@@ -622,7 +622,13 @@ export default function App() {
 
       {/* ── ERROR ── */}
       {error && (
-        <div style={{ padding: `0 ${hPad}px`, marginTop: 16 }}>
+        <div style={{
+          padding: `0 ${hPad}px`, marginTop: 16,
+          ...(isMobile && {
+            position: "fixed", top: 70, left: 0, right: 0,
+            zIndex: 200, padding: "0 12px",
+          }),
+        }}>
           <GlassCard style={{
             padding: "12px 18px",
             border: "1px solid rgba(248,113,113,0.15)",

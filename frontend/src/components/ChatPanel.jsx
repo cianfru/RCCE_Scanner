@@ -264,14 +264,17 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   return (
     <div style={{
       display: "flex", flexDirection: "column",
-      height: isMobile ? "calc(100vh - 100px)" : "calc(100vh - 120px)",
-      maxWidth: 860, margin: "0 auto",
+      ...(isMobile
+        ? { position: "fixed", top: 65, left: 0, right: 0, bottom: 0, zIndex: 10 }
+        : { height: "calc(100vh - 120px)" }),
+      maxWidth: isMobile ? "100%" : 860, margin: "0 auto", width: "100%",
       padding: 0,
+      background: T.bg,
     }}>
       {/* ── Top bar: model + clear ── */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: isMobile ? "10px 4px" : "10px 0",
+        padding: isMobile ? "4px 4px" : "10px 0",
         flexShrink: 0,
         position: "relative", zIndex: modelPickerOpen ? 999 : "auto",
       }}>
@@ -399,41 +402,37 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         {messages.length === 0 && (
           <div style={{
             display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            height: "100%", padding: "40px 20px", textAlign: "center",
+            alignItems: "center",
+            justifyContent: isMobile ? "flex-start" : "center",
+            height: "100%",
+            padding: isMobile ? "20px 20px 0" : "40px 20px", textAlign: "center",
           }}>
-            <img
-              src={themeMode === "light" ? "/Reflex_AI_logo_light.png" : "/Reflex_AI_logo_transparent.png"}
-              alt="Reflex AI"
-              style={{
-                width: isMobile ? 280 : 400,
-                marginBottom: 20,
-                borderRadius: 16,
-              }}
-            />
-            <div style={{
-              fontSize: m(11, isMobile),
-              fontFamily: T.mono,
-              fontWeight: 700,
-              color: T.accent,
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              marginBottom: 12,
-              opacity: 0.7,
-            }}>
-              AI ASSISTANT
-            </div>
-            <div style={{
-              color: T.text4, fontSize: m(T.textSm, isMobile), fontFamily: T.font,
-              lineHeight: 1.8, maxWidth: 340,
-            }}>
-              Ask about any signal, symbol, or market condition.
-              {walletAddress ? " Position-aware context is active." : ""}
+            <div style={{ position: "relative", display: "inline-block", marginBottom: isMobile ? 8 : 20 }}>
+              <img
+                src={themeMode === "light" ? "/AI_Agent_white.png" : "/AI_Agent_dark.png"}
+                alt="Reflex AI"
+                style={{
+                  maxWidth: "min(90%, 550px)",
+                  width: "100%",
+                  borderRadius: 16,
+                  display: "block",
+                }}
+              />
+              <div style={{
+                position: "absolute",
+                bottom: isMobile ? 10 : 20,
+                left: 0, right: 0,
+                color: T.text4, fontSize: m(T.textSm, isMobile), fontFamily: T.font,
+                lineHeight: 1.8, textAlign: "center",
+              }}>
+                Ask about any signal, symbol, or market condition.
+                {walletAddress ? " Position-aware context is active." : ""}
+              </div>
             </div>
 
             {/* Quick actions */}
             <div style={{
-              display: "flex", gap: isMobile ? 8 : 10, marginTop: 24,
+              display: "flex", gap: isMobile ? 8 : 10, marginTop: isMobile ? 8 : 24,
               flexWrap: "wrap", justifyContent: "center",
             }}>
               {QUICK_ACTIONS.map((qa, i) => (
@@ -516,7 +515,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
 
       {/* ── Input bar (pinned to bottom) ── */}
       <div style={{
-        padding: isMobile ? "10px 4px 6px" : "12px 0 4px",
+        padding: isMobile ? "10px 8px 12px" : "12px 0 4px",
         borderTop: `1px solid ${T.border}`,
         display: "flex", gap: isMobile ? 8 : 10, alignItems: "flex-end",
         flexShrink: 0,
