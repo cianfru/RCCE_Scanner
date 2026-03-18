@@ -253,6 +253,29 @@ Use historical events to:
 - Reference recent signal changes when explaining current state ("recently upgraded from...")
 - Warn when a symbol has been rapidly cycling between signals (instability)
 
+## User Positions (Hyperliquid)
+
+When position data is provided, you are aware of the user's actual live trades.
+Use this to give **personalized, actionable context**:
+
+- State each position clearly: coin, side (LONG/SHORT), size, entry price,
+  current PnL, leverage, and liquidation price.
+- Cross-reference each position against the scanner data:
+  - Is the position aligned with the current signal? (e.g. LONG + STRONG_LONG = good)
+  - Is the position fighting the regime? (e.g. LONG + MARKDOWN = concerning)
+  - Is heat building toward a trim zone? Warn proactively.
+  - Is there a divergence (BEAR-DIV/BULL-DIV) on their held coin?
+- Calculate approximate PnL % from entry: ((current_price - entry) / entry) * 100
+  for longs, inverse for shorts.
+- Flag liquidation risk: if current price is within 15% of liq price, warn clearly.
+- When the user asks "how are my positions" or similar, give a structured breakdown
+  of every open position with scanner context for each.
+- Suggest specific actions per position based on scanner signals:
+  - TRIM/TRIM_HARD signal on held coin → suggest partial or full exit
+  - STRONG_LONG on held coin → hold or add
+  - RISK_OFF → suggest reducing exposure
+  - Heat > 80 on held coin → warn about overextension
+
 ## Response Style
 - Walk through which conditions pass/fail when explaining signals.
 - Use the actual numbers from the data provided.
@@ -260,6 +283,7 @@ Use historical events to:
 - Keep responses focused and under 300 words unless more detail is needed.
 - For position sizing, suggest conservative percentages based on signal strength \
 (STRONG_LONG: full size, LIGHT_LONG: 50-60%, ACCUMULATE: 25-30% DCA).
+- When positions are available, always contextualize advice relative to held positions.
 """
 
 
@@ -419,6 +443,7 @@ class AssistantManager:
         self,
         symbol: Optional[str] = None,
         include_market: bool = True,
+        wallet_address: Optional[str] = None,
     ) -> str:
         """Build a compact data snapshot from live ScanCache + signal log history."""
         from scanner import cache
@@ -529,12 +554,151 @@ class AssistantManager:
                 if wait_count > 0:
                     parts.append(f"({wait_count} symbols on WAIT)")
 
+        # -- User positions from Hyperliquid ---------------------------------
+        if wallet_address:
+            pos_section = await self._build_positions_context(wallet_address, cache)
+            if pos_section:
+                parts.append(pos_section)
+
         # -- Historical signal log context ----------------------------------
         history_section = await self._build_history_context(symbol)
         if history_section:
             parts.append(history_section)
 
         return "\n\n".join(parts)
+
+    async def _build_positions_context(
+        self,
+        wallet_address: str,
+        cache,
+    ) -> Optional[str]:
+        """Fetch user's HL positions and cross-reference with scanner data."""
+        try:
+            from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
+
+            state = await fetch_clearinghouse_state(wallet_address)
+            if not state:
+                return None
+
+            positions = parse_open_positions(state)
+            if not positions:
+                return None
+
+            # Account summary
+            summary = state.get("marginSummary", {})
+            account_value = float(summary.get("accountValue", 0))
+            margin_used = float(summary.get("totalMarginUsed", 0))
+            withdrawable = float(state.get("withdrawable", 0))
+
+            lines: List[str] = [
+                "## Your Hyperliquid Positions",
+                f"Account Value: ${account_value:,.2f} | "
+                f"Margin Used: ${margin_used:,.2f} | "
+                f"Free: ${withdrawable:,.2f}",
+                "",
+            ]
+
+            total_pnl = 0.0
+            for p in positions:
+                coin = p["coin"]
+                symbol = p["symbol"]
+                side = p["side"]
+                entry = p["entry_px"]
+                pnl = p["unrealized_pnl"]
+                lev = p["leverage"]
+                liq = p["liq_px"]
+                size_usd = p["size_usd"]
+                total_pnl += pnl
+
+                # Get current price from scanner cache
+                current_price = None
+                scanner_signal = None
+                scanner_regime = None
+                scanner_heat = None
+                scanner_zscore = None
+                scanner_divergence = None
+
+                for tf in ("4h", "1d"):
+                    results = cache.get_results(tf)
+                    match = next((r for r in results if r.get("symbol") == symbol), None)
+                    if match:
+                        if tf == "4h":  # prefer 4h data
+                            current_price = match.get("price", 0)
+                            scanner_signal = match.get("signal", "N/A")
+                            scanner_regime = match.get("regime", "N/A")
+                            scanner_heat = match.get("heat", 0)
+                            scanner_zscore = match.get("zscore", 0)
+                            scanner_divergence = match.get("divergence")
+
+                # PnL %
+                if entry > 0 and current_price:
+                    if side == "LONG":
+                        pnl_pct = ((current_price - entry) / entry) * 100
+                    else:
+                        pnl_pct = ((entry - current_price) / entry) * 100
+                else:
+                    pnl_pct = 0
+
+                # Liquidation distance
+                liq_warning = ""
+                if liq > 0 and current_price:
+                    liq_dist = abs(current_price - liq) / current_price * 100
+                    if liq_dist < 10:
+                        liq_warning = f" ⚠ LIQ RISK ({liq_dist:.1f}% away)"
+                    elif liq_dist < 20:
+                        liq_warning = f" (liq {liq_dist:.1f}% away)"
+
+                # Scanner alignment
+                alignment = ""
+                if scanner_signal:
+                    if side == "LONG":
+                        if scanner_signal in ("STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"):
+                            alignment = "ALIGNED"
+                        elif scanner_signal in ("TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"):
+                            alignment = "CONFLICTING"
+                        elif scanner_regime == "MARKDOWN":
+                            alignment = "AGAINST REGIME"
+                        else:
+                            alignment = "NEUTRAL"
+                    else:  # SHORT
+                        if scanner_signal in ("TRIM", "TRIM_HARD", "RISK_OFF"):
+                            alignment = "ALIGNED"
+                        elif scanner_signal in ("STRONG_LONG", "LIGHT_LONG"):
+                            alignment = "CONFLICTING"
+                        elif scanner_regime in ("MARKUP", "ACCUM"):
+                            alignment = "AGAINST REGIME"
+                        else:
+                            alignment = "NEUTRAL"
+
+                price_str = f"${current_price:.6g}" if current_price else "N/A"
+                lines.append(
+                    f"### {coin} — {side} {lev}x"
+                )
+                lines.append(
+                    f"Size: ${size_usd:,.0f} | Entry: ${entry:.6g} | "
+                    f"Current: {price_str}"
+                )
+                lines.append(
+                    f"PnL: ${pnl:+,.2f} ({pnl_pct:+.2f}%){liq_warning}"
+                )
+                if liq > 0:
+                    lines.append(f"Liquidation: ${liq:.6g}")
+                if scanner_signal:
+                    div_str = f" | Div: {scanner_divergence}" if scanner_divergence else ""
+                    lines.append(
+                        f"Scanner: {scanner_signal} ({scanner_regime}) | "
+                        f"Heat: {scanner_heat} | Z: {scanner_zscore:.2f}{div_str}"
+                    )
+                    lines.append(f"Position vs Signal: **{alignment}**")
+                lines.append("")
+
+            lines.append(f"**Total Unrealized PnL: ${total_pnl:+,.2f}**")
+
+            return "\n".join(lines)
+
+        except Exception as exc:
+            logger.warning("Failed to build positions context: %s", exc)
+            return None
 
     async def _build_trend_summary(
         self,
@@ -774,6 +938,7 @@ class AssistantManager:
         session_id: str,
         user_message: str,
         symbol: Optional[str] = None,
+        wallet_address: Optional[str] = None,
     ) -> tuple[str, Optional[str]]:
         """Process a user message and return (reply, detected_symbol)."""
         session = self.get_or_create_session(session_id)
@@ -787,8 +952,12 @@ class AssistantManager:
         if detected and "/" not in detected:
             detected = f"{detected}/USDT"
 
-        # Build context (async — queries signal log history)
-        context = await self.build_context(symbol=detected, include_market=True)
+        # Build context (async — queries signal log history + user positions)
+        context = await self.build_context(
+            symbol=detected,
+            include_market=True,
+            wallet_address=wallet_address,
+        )
 
         # Append user message
         session.messages.append(ChatMessage(role="user", content=user_message))

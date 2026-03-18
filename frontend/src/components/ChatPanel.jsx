@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T, m } from "../theme.js";
+import { useWallet } from "../WalletContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -110,12 +111,13 @@ function getSessionId() {
 
 const QUICK_ACTIONS = [
   { label: "Briefing", msg: "Give me a daily market briefing." },
+  { label: "My Positions", msg: "How are my positions doing? Give me a full breakdown with scanner context." },
   { label: "Top Signals", msg: "What are the strongest signals right now?" },
   { label: "Risk Check", msg: "Are there any risk warnings I should know about?" },
-  { label: "Warming Up", msg: "Which symbols are closest to upgrading their signal?" },
 ];
 
 export default function ChatPanel({ isMobile, selectedSymbol }) {
+  const { address: walletAddress } = useWallet();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -225,6 +227,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           message: text,
           session_id: sessionId.current,
           symbol: selectedSymbol || null,
+          wallet_address: walletAddress || null,
         }),
       });
       if (!res.ok) {
@@ -238,7 +241,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedSymbol, loading]);
+  }, [selectedSymbol, walletAddress, loading]);
 
   const handleKey = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {

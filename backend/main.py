@@ -2057,6 +2057,7 @@ async def chat_endpoint(req: ChatRequest):
             session_id=req.session_id,
             user_message=req.message,
             symbol=req.symbol,
+            wallet_address=req.wallet_address,
         )
         return ChatResponse(
             reply=reply,

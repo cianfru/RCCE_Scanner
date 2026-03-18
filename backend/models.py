@@ -362,6 +362,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
     symbol: Optional[str] = None
+    wallet_address: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
