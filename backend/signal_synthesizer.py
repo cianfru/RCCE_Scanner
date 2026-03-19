@@ -31,6 +31,7 @@ Z_TRIM = 3.0
 Z_TRIM_HARD = 3.5
 
 # Heat thresholds
+HEAT_ENTRY_ZONE = 70    # Accumulate only when heat < 70
 HEAT_WARNING = 80       # Include warning when heat >= 80
 HEAT_BLOCK_STRONG = 85  # Block STRONG_LONG when heat >= 85
 HEAT_FORCE_TRIM = 95    # Force TRIM when heat >= 95
@@ -47,6 +48,11 @@ FNG_FEAR = 40           # Below this = Fear territory (entries allowed for ACCUM
 FNG_GREED = 70          # Above this = Greed (dampens entries)
 FNG_EXTREME_GREED = 80  # Above this = aggressive TRIM
 
+# CoinGlass condition weight (0.75 = confirmation, not primary)
+CG_CONDITION_WEIGHT = 0.75
+# Smart money LSR threshold — pros not heavily short
+SMART_MONEY_LSR_OK = 0.85
+
 # ---------------------------------------------------------------------------
 # Output container
 # ---------------------------------------------------------------------------
@@ -59,8 +65,8 @@ class SynthesizedSignal:
     reason: str = ""
     warnings: list = field(default_factory=list)
     conditions_met: int = 0
-    effective_conditions: int = 0   # Post-boost/penalty (may differ from conditions_met)
-    conditions_total: int = 10  # Max conditions for STRONG_LONG (expanded)
+    effective_conditions: float = 0.0  # Weighted score post-boost/penalty
+    conditions_total: int = 10  # Raw condition count (10 for HL-native, 14 for CEX)
     conditions_detail: list = field(default_factory=list)  # [{name, label, desc, met}]
     vol_scale: float = 1.0
 
@@ -132,18 +138,14 @@ def _apply_cvd_modifiers(
         signal = "ACCUMULATE" if signal == "WAIT" else signal
         cvd_reasons.append(f"liq_washout+cvd_bull(${liquidation_24h_usd/1e6:.0f}M)")
 
-    # 6. Smart money LSR — top-trader positioning (CoinGlass top account ratio)
-    # Fires only when we have a real reading (1.0 is the neutral default)
+    # 6. Smart money LSR — extreme short positioning only (< 0.7)
+    # Mild short skew (< 0.85) is now handled by condition #13.
+    # This modifier only fires for *extreme* pro short bias → hard downgrade.
     if top_trader_lsr != 1.0:
         if top_trader_lsr < 0.7 and signal in ("STRONG_LONG", "LIGHT_LONG"):
-            # Pros clearly skewing short — downgrade entry one step
             signal = "LIGHT_LONG" if signal == "STRONG_LONG" else "ACCUMULATE"
             extra_warnings.append(f"smart_money_heavy_short(lsr={top_trader_lsr:.2f})→downgrade")
-        elif top_trader_lsr < 0.8 and signal == "STRONG_LONG":
-            # Mild short skew — warn but hold signal
-            extra_warnings.append(f"smart_money_short(lsr={top_trader_lsr:.2f})→caution")
         if top_trader_lsr > 1.5 and signal not in _adverse:
-            # Pros heavily long — reinforces entry signals
             extra_warnings.append(f"smart_money_long(lsr={top_trader_lsr:.2f})")
 
     # Informational warnings (no signal change)
@@ -179,6 +181,10 @@ def synthesize_signal(
     spot_dominance: str = "NEUTRAL",
     long_short_ratio: float = 1.0,
     liquidation_24h_usd: float = 0.0,
+    # Macro data (CoinGlass)
+    etf_flow_usd: float = 0.0,
+    cb_premium: float = 0.0,
+    has_coinglass: bool = False,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -254,10 +260,17 @@ def synthesize_signal(
 
     # -----------------------------------------------------------------------
     # CONDITION CHECKLIST (computed for ALL symbols before exit/entry rules)
-    # These 10 booleans determine STRONG_LONG eligibility.  We compute them
-    # early so every symbol — even those that exit in Step 1 — gets a
-    # conditions_detail array for the Warming-Up ranking in the dashboard.
+    #
+    # Core conditions (weight 1.0 each, max 10 pts):
+    #   10 engine + macro booleans that determine STRONG_LONG eligibility.
+    #
+    # CoinGlass conditions (weight 0.75 each, max 3 pts):
+    #   4 confirmation signals from CoinGlass.  Only scored when the symbol
+    #   has CoinGlass data (CEX-listed); HL-native tokens are scored out
+    #   of 10 only, keeping the comparison fair.
     # -----------------------------------------------------------------------
+
+    # -- Core conditions (weight 1.0) --
     cond_bullish_regime = regime in ("MARKUP", "ACCUM")
     cond_confidence = confidence > CONF_STRONG
     cond_consensus = mkt_consensus in ("RISK-ON", "ACCUMULATION")
@@ -269,34 +282,79 @@ def synthesize_signal(
     cond_not_greedy = fear_greed < FNG_GREED
     cond_liquidity_ok = stable_trend != "CONTRACTING"
 
-    conditions = [
+    core_conditions = [
         cond_bullish_regime, cond_confidence, cond_consensus, cond_z_range,
         cond_no_bear_div, cond_heat_ok, cond_no_climax,
         cond_funding_ok, cond_not_greedy, cond_liquidity_ok,
     ]
-    conditions_met = sum(conditions)
-    out.conditions_met = conditions_met
-    out.conditions_total = len(conditions)
+    core_met = sum(core_conditions)
 
-    _COND_NAMES = [
-        ("bullish_regime", "Regime",      "MARKUP or ACCUM"),
-        ("confidence",     "Confidence",  f"> {CONF_STRONG*100:.0f}%"),
-        ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION"),
-        ("z_range",        "Z-Score",     "-0.5 to 2.5"),
-        ("no_bear_div",    "No Bear Div", "No bearish divergence"),
-        ("heat_ok",        "Heat OK",     f"< {heat_block}"),
-        ("no_climax",      "No Climax",   "No exhaustion climax"),
-        ("funding_ok",     "Funding OK",  "Not crowded long"),
-        ("not_greedy",     "Not Greedy",  f"F&G < {FNG_GREED}"),
-        ("liquidity_ok",   "Liquidity",   "Stables not contracting"),
+    _CORE_NAMES = [
+        ("bullish_regime", "Regime",      "MARKUP or ACCUM",         "core"),
+        ("confidence",     "Confidence",  f"> {CONF_STRONG*100:.0f}%", "core"),
+        ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION", "core"),
+        ("z_range",        "Z-Score",     "-0.5 to 2.5",             "core"),
+        ("no_bear_div",    "No Bear Div", "No bearish divergence",   "core"),
+        ("heat_ok",        "Heat OK",     f"< {heat_block}",         "core"),
+        ("no_climax",      "No Climax",   "No exhaustion climax",    "core"),
+        ("funding_ok",     "Funding OK",  "Not crowded long",        "core"),
+        ("not_greedy",     "Not Greedy",  f"F&G < {FNG_GREED}",     "core"),
+        ("liquidity_ok",   "Liquidity",   "Stables not contracting", "core"),
     ]
+
+    # -- CoinGlass conditions (weight 0.75, only when data available) --
+    cond_oi_confirms = oi_trend in ("BUILDING", "STABLE") if regime in ("MARKUP", "ACCUM", "REACC") else oi_trend in ("LIQUIDATING", "SQUEEZE")
+    cond_cvd_confirms = cvd_trend == "BULLISH"
+    cond_smart_money = top_trader_lsr >= SMART_MONEY_LSR_OK or top_trader_lsr == 1.0  # 1.0 = no data → neutral pass
+    cond_macro_tailwind = etf_flow_usd > 0 or cb_premium > 0
+
+    cg_conditions = [cond_oi_confirms, cond_cvd_confirms, cond_smart_money, cond_macro_tailwind]
+    cg_met = sum(cg_conditions)
+
+    _CG_NAMES = [
+        ("oi_confirms",      "OI Confirms",     f"OI {oi_trend}",                        "coinglass"),
+        ("cvd_confirms",     "CVD Confirms",    f"CVD {cvd_trend}",                      "coinglass"),
+        ("smart_money_ok",   "Smart Money",     f"LSR {top_trader_lsr:.2f} >= {SMART_MONEY_LSR_OK}", "coinglass"),
+        ("macro_tailwind",   "Macro Tailwind",  f"ETF ${etf_flow_usd/1e6:+.0f}M CB {cb_premium*100:+.2f}%", "coinglass"),
+    ]
+
+    # Weighted scoring: core (1.0) + CoinGlass (0.75 each, only if data available)
+    core_score = float(core_met)  # max 10.0
+    if has_coinglass:
+        cg_score = float(cg_met) * CG_CONDITION_WEIGHT  # max 3.0
+        total_max = 10.0 + 4 * CG_CONDITION_WEIGHT       # 13.0
+    else:
+        cg_score = 0.0
+        total_max = 10.0
+
+    weighted_score = core_score + cg_score
+    score_pct = weighted_score / total_max if total_max > 0 else 0.0
+
+    # For backward compat: conditions_met / conditions_total as integers
+    # Use raw counts (core only for HL-native, core+cg for CEX coins)
+    if has_coinglass:
+        conditions_met = core_met + cg_met
+        conditions_total = 14
+    else:
+        conditions_met = core_met
+        conditions_total = 10
+
+    out.conditions_met = conditions_met
+    out.conditions_total = conditions_total
+
+    # Build conditions_detail with group tag
     out.conditions_detail = [
-        {"name": n, "label": l, "desc": d, "met": bool(c)}
-        for (n, l, d), c in zip(_COND_NAMES, conditions)
+        {"name": n, "label": l, "desc": d, "met": bool(c), "group": g}
+        for (n, l, d, g), c in zip(_CORE_NAMES, core_conditions)
     ]
+    if has_coinglass:
+        out.conditions_detail += [
+            {"name": n, "label": l, "desc": d, "met": bool(c), "group": g}
+            for (n, l, d, g), c in zip(_CG_NAMES, cg_conditions)
+        ]
 
     # ── Feature B: Regime-specific boosters & penalties ──
-    effective = conditions_met
+    effective = weighted_score
     boost_reasons: list = []
 
     # Exhaustion engine boosters — floor/absorption are strong bottom signals
@@ -472,24 +530,26 @@ def synthesize_signal(
             long_short_ratio, liquidation_24h_usd, top_trader_lsr,
         )
 
-    # --- STRONG_LONG: effective conditions >= total (raw + boosts) + no BEAR-DIV ---
-    if effective >= len(conditions) and divergence != "BEAR-DIV":
+    # --- STRONG_LONG: effective score >= total_max (all conditions + boosts) + no BEAR-DIV ---
+    # Use percentage: >= 75% weighted score for STRONG_LONG
+    eff_pct = effective / total_max if total_max > 0 else 0.0
+    if eff_pct >= 0.75 and divergence != "BEAR-DIV":
         # MARKUP with full confirmation
         if regime == "MARKUP" and z > -0.5 and z < 1.0:
-            _tag = f"[{conditions_met}/{len(conditions)} raw, {effective} effective]"
+            _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
             out.signal = "STRONG_LONG"
             out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
             return _cvd_return()
         # ACCUM with full confirmation (boosts help here)
         if regime in ("ACCUM", "CAP"):
-            _tag = f"[{conditions_met}/{len(conditions)} raw, {effective} effective]"
+            _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
             out.signal = "STRONG_LONG"
             out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
             return _cvd_return()
-    # STRONG_LONG with 7+ effective conditions but blocked by funding/greed/liquidity
-    elif effective >= 7 and not cond_funding_ok:
+    # STRONG_LONG with 55%+ effective but blocked by funding
+    elif eff_pct >= 0.55 and not cond_funding_ok:
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
         if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
             out.signal = "LIGHT_LONG"
@@ -505,7 +565,7 @@ def synthesize_signal(
         and vol_low
         and confidence > CONF_ACCUM
         and mkt_consensus != "RISK-OFF"
-        and heat < 70
+        and heat < HEAT_ENTRY_ZONE
     ):
         if fear_greed <= FNG_FEAR:
             out.signal = "ACCUMULATE"
@@ -527,7 +587,7 @@ def synthesize_signal(
         and regime in ("ACCUM", "REACC")
         and mkt_consensus != "RISK-OFF"
         and confidence > CONF_ACCUM      # 0.40
-        and heat < 70
+        and heat < HEAT_ENTRY_ZONE
     ):
         out.signal = "ACCUMULATE"
         out.reason = " + ".join(_reason_parts()) + " [absorption in " + regime + "]"
@@ -556,8 +616,8 @@ def synthesize_signal(
         out.warnings = warnings
         return _cvd_return()
 
-    # --- LIGHT_LONG: 5+ effective conditions + supportive regime ---
-    if effective >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
+    # --- LIGHT_LONG: >= 40% effective weighted score + supportive regime ---
+    if eff_pct >= 0.40 and regime in ("MARKUP", "REACC", "ACCUM"):
         # MARKUP LIGHT_LONG: extended z (1.0-2.0) with decent confidence
         if (regime == "MARKUP" and 1.0 < z < z_blowoff
                 and confidence > CONF_LIGHT
@@ -603,7 +663,7 @@ def synthesize_signal(
     # -----------------------------------------------------------------------
 
     out.signal = "WAIT"
-    out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective — insufficient]"
+    out.reason = " + ".join(_reason_parts()) + f" [{effective:.1f}/{total_max:.0f} effective ({eff_pct:.0%}) — insufficient]"
     out.warnings = warnings
     return _apply_cvd_modifiers(
         out, cvd_trend, cvd_divergence, spot_dominance,

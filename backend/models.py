@@ -28,6 +28,7 @@ class PositioningResponse(BaseModel):
     spot_volume_usd: float = 0.0
     spot_futures_ratio: float = 0.0
     spot_dominance: str = "NEUTRAL"
+    source_map: Dict[str, str] = {}   # tracks data provenance per field
 
 
 class SentimentResponse(BaseModel):
@@ -59,6 +60,7 @@ class ConditionDetail(BaseModel):
     label: str
     desc: str = ""
     met: bool
+    group: str = "core"  # "core" or "coinglass"
 
 
 class ScanResult(BaseModel):

@@ -52,9 +52,10 @@ _SIGNAL_RANK = {
     "LIGHT_LONG": 5, "STRONG_LONG": 6,
 }
 
-# Thresholds for position-aware warnings
-_HEAT_WARNING_THRESHOLD = 70
-_HEAT_DANGER_THRESHOLD = 85
+# Thresholds for position-aware warnings (shared with signal_synthesizer)
+from signal_synthesizer import HEAT_ENTRY_ZONE, HEAT_BLOCK_STRONG
+_HEAT_WARNING_THRESHOLD = HEAT_ENTRY_ZONE   # 70 — matches entry zone
+_HEAT_DANGER_THRESHOLD = HEAT_BLOCK_STRONG  # 85 — matches strong block
 _LIQ_WARNING_PCT = 15            # warn if price within 15% of liq
 _OI_TREND_ADVERSE = {"SQUEEZE", "LIQUIDATING"}
 
