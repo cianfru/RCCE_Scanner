@@ -642,26 +642,44 @@ async def _scan_timeframe(
     )
 
     # 6. Fetch external data in parallel
-    #    Binance (primary positioning) + Hyperliquid + globals
+    #    Binance (primary positioning) + Hyperliquid + globals + CoinGlass
     from binance_futures_data import fetch_binance_futures_metrics
     from bybit_futures_data import fetch_bybit_futures_metrics
+    from coinglass_data import fetch_coinglass_metrics, fetch_spot_metrics
 
     gm: Optional[GlobalMetrics] = None
     hl_metrics = {}
     binance_metrics = {}
     sentiment_data = None
     stablecoin_data = None
+    cg_metrics: dict = {}
+    cg_spot: dict = {}
 
     try:
-        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data = await asyncio.gather(
+        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, cg_spot = await asyncio.gather(
             fetch_global_metrics(),
             fetch_hyperliquid_metrics(symbols),
             fetch_binance_futures_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
+            fetch_coinglass_metrics(symbols),
+            fetch_spot_metrics(symbols),
         )
     except Exception:
         logger.warning("Some external data fetches failed — proceeding with available data")
+        # Individually catch CoinGlass failures to not block core data
+        if not cg_metrics:
+            try:
+                cg_metrics = await asyncio.wait_for(fetch_coinglass_metrics(symbols), timeout=15.0)
+            except Exception as exc:
+                logger.warning("CoinGlass metrics fetch failed: %s", exc)
+                cg_metrics = {}
+        if not cg_spot:
+            try:
+                cg_spot = await asyncio.wait_for(fetch_spot_metrics(symbols), timeout=15.0)
+            except Exception as exc:
+                logger.warning("CoinGlass spot fetch failed: %s", exc)
+                cg_spot = {}
 
     if gm:
         logger.info(
@@ -676,6 +694,10 @@ async def _scan_timeframe(
         logger.info("Fear & Greed: %d (%s)", sentiment_data.fear_greed_value, sentiment_data.fear_greed_label)
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
+    if cg_metrics:
+        logger.info("CoinGlass coins-markets: %d coins", len(cg_metrics))
+    if cg_spot:
+        logger.info("CoinGlass spot: %d coins", len(cg_spot))
 
     # 6b. Fetch Bybit for symbols not covered by Binance or HL
     covered_symbols = set()
@@ -799,15 +821,94 @@ async def _scan_timeframe(
                 "volume_24h": pos.volume_24h,
                 "source": source,
                 "source_map": source_map,
+                # CoinGlass supplemental fields (defaults; overwritten below if available)
+                "liquidation_24h_usd": 0.0,
+                "long_liq_usd": 0.0,
+                "short_liq_usd": 0.0,
+                "long_short_ratio": 1.0,
+                "oi_market_cap_ratio": 0.0,
+                "spot_volume_usd": 0.0,
+                "spot_futures_ratio": 0.0,
+                "spot_dominance": "NEUTRAL",
             }
             # Store OI for next scan's trend calculation
             cache.prev_oi[symbol] = open_interest
+
+            # Enhance positioning with CoinGlass aggregated data (multi-exchange)
+            cg = cg_metrics.get(symbol) if cg_metrics else None
+            if cg is not None:
+                # Override OI change with CoinGlass multi-exchange aggregated value
+                if cg.oi_change_pct_4h != 0:
+                    r["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
+                r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
+                r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
+                r["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h
+                r["positioning"]["long_short_ratio"] = cg.long_short_ratio_4h
+                r["positioning"]["oi_market_cap_ratio"] = cg.oi_market_cap_ratio
+                r["positioning"]["source_map"]["oi_change"] = "coinglass"
+                r["positioning"]["source_map"]["liq"] = "coinglass"
+
+            # Add spot dominance data
+            cg_sp = cg_spot.get(symbol) if cg_spot else None
+            if cg_sp is not None:
+                r["positioning"]["spot_volume_usd"] = cg_sp.spot_volume_usd
+                r["positioning"]["spot_futures_ratio"] = cg_sp.spot_futures_ratio
+                r["positioning"]["spot_dominance"] = cg_sp.spot_dominance
+                r["positioning"]["source_map"]["spot"] = "coinglass"
 
     logger.info(
         "Positioning: %d Binance, %d Hyperliquid, %d Bybit (%d total)",
         binance_pos_count, hl_pos_count, bybit_pos_count,
         binance_pos_count + hl_pos_count + bybit_pos_count,
     )
+
+    # 7b. CVD batch fetch (async, non-blocking — wrap in try/except with timeout)
+    cvd_by_coin: dict = {}
+    try:
+        from coinglass_data import fetch_cvd_batch
+
+        # Build price_changes dict from sparkline data for divergence detection
+        price_changes_dict: dict = {}
+        for r in results:
+            sym = r.get("symbol", "")
+            base_coin = sym.split("/")[0] if "/" in sym else sym
+            sparkline = r.get("sparkline", [])
+            if len(sparkline) >= 2 and sparkline[0] > 0:
+                price_changes_dict[base_coin] = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+        # Use top 50 coins by OI from cg_metrics, fallback to all symbols
+        if cg_metrics:
+            sorted_by_oi = sorted(
+                cg_metrics.values(),
+                key=lambda m: m.open_interest_usd,
+                reverse=True,
+            )
+            top_coins = [m.coin for m in sorted_by_oi[:50]]
+        else:
+            top_coins = [s.split("/")[0] for s in symbols if "/" in s]
+
+        cvd_by_coin = await asyncio.wait_for(
+            fetch_cvd_batch(top_coins, price_changes=price_changes_dict),
+            timeout=10.0,
+        )
+
+        # Attach CVD data to result rows
+        for r in results:
+            sym = r.get("symbol", "")
+            base_coin = sym.split("/")[0] if "/" in sym else sym
+            cvd = cvd_by_coin.get(base_coin)
+            if cvd is not None:
+                r["cvd_trend"] = cvd.cvd_trend
+                r["cvd_divergence"] = cvd.cvd_divergence
+                r["cvd_value"] = cvd.cvd_value
+                r["buy_sell_ratio"] = cvd.buy_sell_ratio
+
+        logger.info("CVD batch: %d coins fetched", len(cvd_by_coin))
+
+    except asyncio.TimeoutError:
+        logger.warning("CVD batch fetch timed out — skipping CVD data this scan")
+    except Exception as exc:
+        logger.warning("CVD batch fetch failed: %s", exc)
 
     # 8. Detect divergences
     btc_regime = next(

@@ -46,6 +46,7 @@ const COLUMNS = [
   [null,         "EXHAUST",    768],
   [null,         "FUNDING",    1024],
   [null,         "OI",         1024],
+  [null,         "CVD",        1024],
   [null,         "CONF",       1024],
   [null,         "ENERGY",     1200],
   [null,         "PHASE",      1200],
