@@ -1,217 +1,186 @@
+/**
+ * PositioningPanel — Signal-forward market structure display.
+ *
+ * Layout:
+ *   Row 1  (badges):  FUNDING REGIME | OI TREND
+ *   Row 2  (badges):  CVD SIGNAL     | SPOT DOMINANCE
+ *   Row 3  (badges):  SMART MONEY    | LIQ INTENSITY
+ *   ─────────────────────────────────────────
+ *   Numbers strip:    Rate · OI · LSR · 24h Liq  (secondary detail)
+ *
+ * Props:
+ *   positioning — PositioningResponse (Binance/HL native data + CoinGlass enrich)
+ *   cvdTrend    — "BULLISH" | "BEARISH" | "NEUTRAL"
+ *   cvdDiv      — bool
+ *   bsr         — number (buy/sell ratio)
+ */
 import { T } from "../theme.js";
 
-function fundingColor(rate) {
-  if (rate == null) return T.text4;
-  if (rate < 0) return "#34d399";       // Negative = bullish (shorts paying longs)
-  if (rate > 0.01) return "#f87171";    // High positive = bearish
-  if (rate > 0.005) return "#fbbf24";   // Elevated
-  return T.text2;                        // Normal
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt(v) {
+  if (v == null) return "—";
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
 }
 
-function oiTrendMeta(trend) {
-  switch (trend) {
-    case "BUILDING":
-      return { color: "#34d399", arrow: "\u2191", label: "BUILDING" };
-    case "SQUEEZE":
-      return { color: "#fbbf24", arrow: "\u26a1", label: "SQUEEZE" };
-    case "LIQUIDATING":
-      return { color: "#f87171", arrow: "\u2193\u2193", label: "LIQUIDATING" };
-    case "SHORTING":
-      return { color: "#c084fc", arrow: "\u2193", label: "SHORTING" };
-    default:
-      return { color: T.text4, arrow: "\u2014", label: trend || "\u2014" };
+// ─── Signal badge cell ────────────────────────────────────────────────────────
+
+function Badge({ icon, label, sub, color, bg, empty }) {
+  if (empty) {
+    return (
+      <div style={{
+        flex: "1 1 48%", padding: "10px 12px", borderRadius: 6,
+        background: "transparent", border: `1px solid ${T.border}`,
+        display: "flex", flexDirection: "column", gap: 2, minWidth: 0,
+      }}>
+        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>—</span>
+      </div>
+    );
   }
-}
-
-function leverageColor(risk) {
-  switch (risk) {
-    case "HIGH":   return "#f87171";
-    case "MEDIUM": return "#fbbf24";
-    case "LOW":    return "#34d399";
-    default:       return T.text4;
-  }
-}
-
-function fundingRegimeColor(regime) {
-  switch (regime) {
-    case "NEGATIVE":  return "#34d399";
-    case "NEUTRAL":   return T.text3;
-    case "ELEVATED":  return "#fbbf24";
-    case "EXTREME":   return "#f87171";
-    default:          return T.text4;
-  }
-}
-
-function formatVolume(vol) {
-  if (vol == null) return "\u2014";
-  if (vol >= 1e9) return `$${(vol / 1e9).toFixed(2)}B`;
-  if (vol >= 1e6) return `$${(vol / 1e6).toFixed(1)}M`;
-  if (vol >= 1e3) return `$${(vol / 1e3).toFixed(0)}K`;
-  return `$${vol.toFixed(0)}`;
-}
-
-const SOURCE_COLORS = {
-  binance: { bg: "#f0b90b18", color: "#f0b90b", label: "BIN" },
-  hyperliquid: { bg: "#4ade8018", color: "#4ade80", label: "HL" },
-  bybit: { bg: "#f6851b18", color: "#f6851b", label: "BBT" },
-};
-
-function SourceTag({ src }) {
-  if (!src) return null;
-  const sc = SOURCE_COLORS[src] || { bg: "#06b6d418", color: "#22d3ee", label: src.slice(0, 3).toUpperCase() };
+  const c = color || T.text2;
+  const bg_ = bg || `${c}14`;
   return (
-    <span style={{
-      padding: "2px 5px",
-      borderRadius: "3px",
-      background: sc.bg,
-      color: sc.color,
-      fontSize: 9,
-      fontFamily: T.mono,
-      fontWeight: 700,
-      letterSpacing: "0.06em",
-      marginLeft: 8,
-      border: `1px solid ${sc.color}30`,
+    <div style={{
+      flex: "1 1 48%", padding: "10px 12px", borderRadius: 6,
+      background: bg_, border: `1px solid ${c}28`,
+      display: "flex", flexDirection: "column", gap: 3, minWidth: 0,
     }}>
-      {sc.label}
-    </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        {icon && <span style={{ fontSize: 11 }}>{icon}</span>}
+        <span style={{ fontSize: 10, color: c, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1.2 }}>
+          {label}
+        </span>
+      </div>
+      {sub && (
+        <span style={{ fontSize: 9, color: `${c}99`, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>
+          {sub}
+        </span>
+      )}
+    </div>
   );
 }
 
-export default function PositioningPanel({ positioning }) {
+// ─── Signal factories ─────────────────────────────────────────────────────────
+
+function fundingBadge(regime, rate) {
+  const rateStr = rate != null ? `${(rate * 100).toFixed(4)}% per 8h` : null;
+  switch (regime) {
+    case "CROWDED_LONG":
+      return { icon: "⚠️", label: "LONGS CROWDED", sub: rateStr, color: "#f87171" };
+    case "CROWDED_SHORT":
+      return { icon: "🎯", label: "SHORTS CROWDED", sub: rateStr, color: "#34d399" };
+    default: {
+      if (rate == null) return { icon: null, label: "FUNDING", sub: "—", color: T.text4 };
+      const c = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text3;
+      return { icon: rate < 0 ? "↓" : "↑", label: "FUNDING OK", sub: rateStr, color: c };
+    }
+  }
+}
+
+function oiBadge(trend, oiValue, oiChangePct) {
+  const sub = oiValue ? `${fmt(oiValue)}${oiChangePct ? ` · ${oiChangePct >= 0 ? "+" : ""}${oiChangePct.toFixed(1)}%` : ""}` : null;
+  switch (trend) {
+    case "BUILDING":    return { icon: "↑", label: "OI BUILDING",    sub, color: "#34d399" };
+    case "SQUEEZE":     return { icon: "⚡", label: "OI SQUEEZE",    sub, color: "#fbbf24" };
+    case "LIQUIDATING": return { icon: "↓↓", label: "LIQUIDATING",   sub, color: "#f87171" };
+    case "SHORTING":    return { icon: "↓", label: "SHORTING INTO",  sub, color: "#c084fc" };
+    default:            return { icon: "→", label: trend || "OI STABLE", sub, color: T.text4 };
+  }
+}
+
+function cvdBadge(cvdTrend, cvdDiv, bsr) {
+  const divTag = cvdDiv ? " ⚡DIV" : "";
+  const sub = bsr != null && bsr !== 1 ? `BSR ${bsr.toFixed(3)}x` : null;
+  switch (cvdTrend) {
+    case "BULLISH": return { icon: "▲", label: `TAKERS BUYING${divTag}`, sub, color: "#34d399" };
+    case "BEARISH": return { icon: "▼", label: `TAKERS SELLING${divTag}`, sub, color: "#f87171" };
+    default:        return { icon: "→", label: "CVD NEUTRAL", sub, color: T.text4 };
+  }
+}
+
+function spotBadge(spotDom, spotRatio) {
+  const pct = spotRatio > 0 ? `${(spotRatio * 100).toFixed(0)}% spot vol` : null;
+  switch (spotDom) {
+    case "SPOT_LED":    return { icon: "🟢", label: "SPOT-LED",      sub: pct || "organic demand",   color: "#34d399" };
+    case "FUTURES_LED": return { icon: "⚡", label: "FUTURES-LED",   sub: pct || "leverage driven",  color: "#f87171" };
+    default:            return { icon: "◎",  label: "MIXED FLOW",    sub: pct,                       color: T.text4 };
+  }
+}
+
+function smartMoneyBadge(topLsr, retailLsr) {
+  if (!topLsr || topLsr === 1) return { icon: null, label: "LSR NEUTRAL", sub: retailLsr ? `Retail ${retailLsr.toFixed(2)}` : null, color: T.text4 };
+  const lsrSub = retailLsr ? `Retail ${retailLsr.toFixed(2)} · Pro ${topLsr.toFixed(2)}` : `Pro ${topLsr.toFixed(2)}`;
+  if (topLsr > 1.3)  return { icon: "↑", label: "TOP LONGS HEAVY", sub: lsrSub, color: "#fbbf24" };
+  if (topLsr < 0.8)  return { icon: "↓", label: "TOP SHORTS HEAVY", sub: lsrSub, color: "#c084fc" };
+  return { icon: "→", label: "TOP BALANCED", sub: lsrSub, color: T.text3 };
+}
+
+function liqBadge(liq24h, longLiq, shortLiq) {
+  if (!liq24h) return { icon: null, label: "NO LIQ DATA", sub: null, color: T.text4 };
+  const total = liq24h;
+  const longPct = longLiq && total ? Math.round((longLiq / total) * 100) : null;
+  const intensity = total >= 100e6 ? "HIGH" : total >= 10e6 ? "MED" : "LOW";
+  const intColor = intensity === "HIGH" ? "#f87171" : intensity === "MED" ? "#fbbf24" : T.text4;
+
+  if (longPct != null && longPct >= 70) {
+    return { icon: "🔴", label: "LONGS FLUSHED", sub: `${fmt(total)} · ${longPct}% long liq`, color: "#34d399" }; // potential bottom
+  }
+  if (longPct != null && longPct <= 30) {
+    return { icon: "🟢", label: "SHORTS SQUEEZED", sub: `${fmt(total)} · ${100-longPct}% short liq`, color: "#f87171" }; // potential top
+  }
+  return { icon: "⚖️", label: `${intensity} LIQ`, sub: `${fmt(total)} 24h`, color: intColor };
+}
+
+// ─── Numbers strip ────────────────────────────────────────────────────────────
+
+function Stat({ label, value, color }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+      <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ fontSize: 12, color: color || T.text2, fontFamily: T.mono, fontWeight: 700, whiteSpace: "nowrap" }}>{value}</span>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr }) {
   if (!positioning) return null;
 
   const {
-    funding_regime,
-    funding_rate,
-    oi_trend,
-    oi_value,
+    funding_regime, funding_rate,
+    oi_trend, oi_value, oi_change_pct,
     leverage_risk,
-    predicted_funding,
     volume_24h,
+    long_short_ratio, top_trader_lsr,
+    liquidation_24h_usd, long_liq_usd, short_liq_usd,
+    liquidation_4h_usd, liquidation_1h_usd,
+    spot_dominance, spot_futures_ratio,
     source,
-    source_map,
   } = positioning;
 
-  // Build source map — use provided map, or fallback: derive from primary source
-  const sm = (source_map && Object.keys(source_map).length > 0)
-    ? source_map
-    : {
-        funding: source || "",
-        oi: source || "",
-        volume: source === "binance" ? "hyperliquid" : (source || ""),
-        pred_funding: source === "binance" ? "hyperliquid" : (source || ""),
-      };
-  const oiMeta = oiTrendMeta(oi_trend);
+  // ── Badge data ──────────────────────────────────────────────────────────────
+  const b1 = fundingBadge(funding_regime, funding_rate);
+  const b2 = oiBadge(oi_trend, oi_value, oi_change_pct);
+  const b3 = cvdBadge(cvdTrend, cvdDiv, bsr);
+  const b4 = spotBadge(spot_dominance, spot_futures_ratio);
+  const b5 = smartMoneyBadge(top_trader_lsr, long_short_ratio);
+  const b6 = liqBadge(liquidation_24h_usd, long_liq_usd, short_liq_usd);
 
-  const rows = [
-    {
-      label: "Funding Rate",
-      src: sm.funding,
-      value: (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            fontFamily: T.mono,
-            fontSize: 13,
-            fontWeight: 700,
-            color: fundingColor(funding_rate),
-          }}>
-            {funding_rate != null ? `${(funding_rate * 100).toFixed(4)}%` : "\u2014"}
-          </span>
-          {funding_regime && (
-            <span style={{
-              padding: "3px 8px",
-              borderRadius: "20px",
-              background: `${fundingRegimeColor(funding_regime)}14`,
-              color: fundingRegimeColor(funding_regime),
-              fontSize: 10,
-              fontFamily: T.mono,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              border: `1px solid ${fundingRegimeColor(funding_regime)}25`,
-            }}>
-              {funding_regime}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      label: "OI Trend",
-      src: sm.oi,
-      value: (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            padding: "3px 10px",
-            borderRadius: "20px",
-            background: `${oiMeta.color}14`,
-            color: oiMeta.color,
-            fontSize: 11,
-            fontFamily: T.mono,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            border: `1px solid ${oiMeta.color}25`,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          }}>
-            <span style={{ fontSize: 11 }}>{oiMeta.arrow}</span>
-            {oiMeta.label}
-          </span>
-          {oi_value != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text2, fontWeight: 500 }}>
-              {formatVolume(oi_value)}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      label: "Leverage Risk",
-      value: (
-        <span style={{
-          padding: "3px 10px",
-          borderRadius: "20px",
-          background: `${leverageColor(leverage_risk)}14`,
-          color: leverageColor(leverage_risk),
-          fontSize: 11,
-          fontFamily: T.mono,
-          fontWeight: 700,
-          letterSpacing: "0.04em",
-          border: `1px solid ${leverageColor(leverage_risk)}25`,
-        }}>
-          {leverage_risk || "\u2014"}
-        </span>
-      ),
-    },
-    {
-      label: "Pred. Funding",
-      src: sm.pred_funding,
-      value: (
-        <span style={{
-          fontFamily: T.mono,
-          fontSize: 13,
-          fontWeight: 600,
-          color: fundingColor(predicted_funding),
-        }}>
-          {predicted_funding != null ? `${(predicted_funding * 100).toFixed(4)}%` : "\u2014"}
-        </span>
-      ),
-    },
-    ...(volume_24h != null && volume_24h > 0 ? [{
-      label: "Volume 24h",
-      src: sm.volume,
-      value: (
-        <span style={{
-          fontFamily: T.mono,
-          fontSize: 13,
-          fontWeight: 600,
-          color: T.text2,
-        }}>
-          {formatVolume(volume_24h)}
-        </span>
-      ),
-    }] : []),
-  ];
+  // ── Secondary stats ─────────────────────────────────────────────────────────
+  const stats = [
+    funding_rate != null && { label: "RATE /8H", value: `${(funding_rate * 100).toFixed(4)}%`, color: funding_rate < 0 ? "#34d399" : funding_rate > 0.01 ? "#f87171" : T.text2 },
+    oi_value > 0 && { label: "OPEN INT", value: fmt(oi_value), color: T.text2 },
+    long_short_ratio > 0 && { label: "LSR", value: long_short_ratio.toFixed(2), color: long_short_ratio > 1.3 ? "#f87171" : long_short_ratio < 0.8 ? "#34d399" : T.text2 },
+    liquidation_24h_usd > 0 && { label: "LIQ 24H", value: fmt(liquidation_24h_usd), color: T.text3 },
+    liquidation_4h_usd > 0 && { label: "LIQ 4H", value: fmt(liquidation_4h_usd), color: T.text3 },
+    liquidation_1h_usd > 0 && { label: "LIQ 1H", value: fmt(liquidation_1h_usd), color: T.text3 },
+    volume_24h > 0 && { label: "VOL 24H", value: fmt(volume_24h), color: T.text3 },
+    leverage_risk && leverage_risk !== "UNKNOWN" && { label: "LEV RISK", value: leverage_risk, color: leverage_risk === "HIGH" ? "#f87171" : leverage_risk === "MEDIUM" ? "#fbbf24" : "#34d399" },
+  ].filter(Boolean);
 
   return (
     <div style={{
@@ -223,43 +192,39 @@ export default function PositioningPanel({ positioning }) {
       backdropFilter: "blur(12px)",
       WebkitBackdropFilter: "blur(12px)",
     }}>
+      {/* Header */}
       <div style={{
-        fontSize: 10,
-        color: T.text3,
-        letterSpacing: "0.12em",
-        fontFamily: T.font,
-        fontWeight: 700,
-        marginBottom: 12,
-        textTransform: "uppercase",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
+        fontSize: 10, color: T.text4, letterSpacing: "0.12em",
+        fontFamily: T.font, fontWeight: 700, marginBottom: 10,
+        textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <span>Positioning</span>
-      </div>
-      {rows.map((row, i) => (
-        <div key={row.label} style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "8px 0",
-          borderTop: i > 0 ? `1px solid ${T.border}` : "none",
-        }}>
-          <span style={{
-            fontSize: 11,
-            color: T.text3,
-            fontFamily: T.font,
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            display: "inline-flex",
-            alignItems: "center",
-          }}>
-            {row.label}
-            {row.src && <SourceTag src={row.src} />}
+        <span>MARKET STRUCTURE</span>
+        {source && (
+          <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>
+            {source.slice(0, 3).toUpperCase()}
           </span>
-          {row.value}
+        )}
+      </div>
+
+      {/* Badge grid — 2 columns × 3 rows */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+        <Badge {...b1} />
+        <Badge {...b2} />
+        <Badge {...b3} />
+        <Badge {...b4} />
+        <Badge {...b5} />
+        <Badge {...b6} />
+      </div>
+
+      {/* Numbers strip */}
+      {stats.length > 0 && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: "8px 16px",
+          paddingTop: 10, borderTop: `1px solid ${T.border}`,
+        }}>
+          {stats.map(s => <Stat key={s.label} {...s} />)}
         </div>
-      ))}
+      )}
     </div>
   );
 }

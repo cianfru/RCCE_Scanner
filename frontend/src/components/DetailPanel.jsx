@@ -490,80 +490,13 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Confluence Panel */}
         <ConfluencePanel confluence={selected.confluence} />
 
-        {/* Positioning Panel */}
-        <PositioningPanel positioning={selected.positioning} />
-
-        {/* CoinGlass enriched data (CVD + spot + liquidations + LSR) */}
-        {(selected.cvd_trend || selected.positioning?.spot_dominance || selected.positioning?.liquidation_24h_usd > 0 || selected.positioning?.funding_regime) && (() => {
-          const pos       = selected.positioning || {};
-          const cvdTrend  = selected.cvd_trend;
-          const cvdDiv    = selected.cvd_divergence;
-          const bsr       = selected.buy_sell_ratio;
-          const spotDom   = pos.spot_dominance;
-          const spotRatio = pos.spot_futures_ratio;
-          const lsr       = pos.long_short_ratio;
-          const topLsr    = pos.top_trader_lsr;
-          const liq24h    = pos.liquidation_24h_usd;
-          const liq4h     = pos.liquidation_4h_usd;
-          const liq1h     = pos.liquidation_1h_usd;
-          const longLiq   = pos.long_liq_usd;
-          const shortLiq  = pos.short_liq_usd;
-          const regime    = pos.funding_regime;
-          const fundRate  = pos.funding_rate;
-
-          const CVD_COLOR = { BULLISH: "#34d399", BEARISH: "#f87171", NEUTRAL: T.text4 };
-          const SPOT_COLOR = { SPOT_LED: "#34d399", FUTURES_LED: "#f87171", NEUTRAL: T.text4 };
-          const REGIME_COLOR = { CROWDED_LONG: "#f87171", CROWDED_SHORT: "#34d399", NEUTRAL: T.text4 };
-          const fmtM = v => !v ? null : v >= 1e9 ? `$${(v/1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1000 ? `$${(v/1000).toFixed(0)}K` : null;
-
-          // LSR label: >1.2 = longs heavy (bearish contrarian), <0.85 = shorts heavy (bullish contrarian)
-          const lsrColor = v => v > 1.3 ? "#f87171" : v < 0.8 ? "#34d399" : T.text2;
-          const lsrLabel = v => `${v.toFixed(2)} ${v > 1.3 ? "(longs crowded)" : v < 0.8 ? "(shorts crowded)" : ""}`;
-
-          const rows = [
-            // Funding regime
-            regime && regime !== "NEUTRAL" && ["Funding Regime", regime.replace("_", " "), REGIME_COLOR[regime]],
-            fundRate && fundRate !== 0 && ["  └ Rate /8h", `${(fundRate * 100 * 8).toFixed(4)}%`, fundRate > 0 ? "#f87171" : "#34d399"],
-            // CVD
-            cvdTrend && cvdTrend !== "NEUTRAL" && ["CVD (futures)", cvdTrend + (cvdDiv ? " ⚡DIV" : ""), CVD_COLOR[cvdTrend]],
-            bsr != null && bsr !== 1 && ["  └ Buy/Sell Ratio", bsr.toFixed(3) + "x", bsr > 1 ? "#34d399" : "#f87171"],
-            // Spot dominance
-            spotDom && spotDom !== "NEUTRAL" && ["Spot Dominance", spotDom.replace("_", "-"), SPOT_COLOR[spotDom]],
-            spotRatio > 0 && ["  └ Spot/Total Vol", `${(spotRatio * 100).toFixed(0)}%`, T.text2],
-            // LSR
-            lsr > 0 && lsr !== 1 && ["LSR (retail)", lsrLabel(lsr), lsrColor(lsr)],
-            topLsr > 0 && topLsr !== 1 && ["LSR (top traders)", lsrLabel(topLsr), lsrColor(topLsr)],
-            // Liquidations
-            fmtM(liq24h) && ["Liq 24h", fmtM(liq24h), "#f59e0b"],
-            fmtM(longLiq) && ["  └ Long liq", fmtM(longLiq), "#f87171"],
-            fmtM(shortLiq) && ["  └ Short liq", fmtM(shortLiq), "#34d399"],
-            fmtM(liq4h) && ["Liq 4h", fmtM(liq4h), T.text3],
-            fmtM(liq1h) && ["Liq 1h", fmtM(liq1h), T.text3],
-          ].filter(Boolean);
-
-          if (!rows.length) return null;
-
-          return (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{
-                fontSize: 10, fontFamily: T.mono, fontWeight: 700, color: T.text4,
-                letterSpacing: "0.1em", textTransform: "uppercase",
-                marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${T.border}`,
-              }}>
-                COINGLASS
-              </div>
-              {rows.map(([label, value, color], i) => (
-                <div key={i} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "5px 0",
-                }}>
-                  <span style={{ fontSize: 11, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-                  <span style={{ fontFamily: T.mono, fontSize: 12, color: color || T.text1, fontWeight: 600 }}>{value}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {/* Market Structure — Positioning + CoinGlass signals unified */}
+        <PositioningPanel
+          positioning={selected.positioning}
+          cvdTrend={selected.cvd_trend}
+          cvdDiv={selected.cvd_divergence}
+          bsr={selected.buy_sell_ratio}
+        />
 
         {/* Z-Score Bar */}
         <div style={{ marginBottom: 16 }}>
