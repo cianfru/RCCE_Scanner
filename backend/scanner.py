@@ -659,7 +659,7 @@ async def _scan_timeframe(
     #    Binance (primary positioning) + Hyperliquid + globals + CoinGlass
     from binance_futures_data import fetch_binance_futures_metrics
     from bybit_futures_data import fetch_bybit_futures_metrics
-    from coinglass_data import fetch_coinglass_metrics
+    from coinglass_data import fetch_coinglass_metrics, fetch_macro_signals
 
     gm: Optional[GlobalMetrics] = None
     hl_metrics = {}
@@ -667,15 +667,17 @@ async def _scan_timeframe(
     sentiment_data = None
     stablecoin_data = None
     cg_metrics: dict = {}
+    macro_data = None
 
     try:
-        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics = await asyncio.gather(
+        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, macro_data = await asyncio.gather(
             fetch_global_metrics(),
             fetch_hyperliquid_metrics(symbols),
             fetch_binance_futures_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
             fetch_coinglass_metrics(symbols),
+            fetch_macro_signals(),
         )
     except Exception:
         logger.warning("Some external data fetches failed — proceeding with available data")
@@ -709,6 +711,15 @@ async def _scan_timeframe(
             (btc_cg.open_interest_usd / 1e9) if btc_cg else 0,
             (btc_cg.liquidation_usd_24h / 1e6) if btc_cg else 0,
             btc_cg.spot_dominance if btc_cg else "N/A",
+        )
+
+    if macro_data:
+        logger.info(
+            "Macro: ETF 7d=$%.0fM 1d=$%.0fM CB premium=%.4f%% signal=%s",
+            macro_data.etf_flow_usd_7d / 1e6,
+            macro_data.etf_flow_usd_1d / 1e6,
+            macro_data.coinbase_premium_rate * 100,
+            macro_data.etf_signal,
         )
 
     # 6b. Fetch Bybit for symbols not covered by Binance or HL
@@ -855,6 +866,7 @@ async def _scan_timeframe(
                 # Override OI change with CoinGlass multi-exchange aggregated value
                 # and re-derive oi_trend (same thresholds as positioning_engine.py)
                 if cg.oi_change_pct_4h != 0:
+                    _prev_trend = r["positioning"].get("oi_trend", "UNKNOWN")
                     r["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
                     _chg  = cg.oi_change_pct_4h
                     _p_up = price_change_pct > 0
@@ -864,6 +876,9 @@ async def _scan_timeframe(
                     elif _chg >  OI_CHANGE_THRESHOLD and not _p_up:   r["positioning"]["oi_trend"] = "SHORTING"
                     else:                                              r["positioning"]["oi_trend"] = "STABLE"
                     r["positioning"]["source_map"]["oi_trend"] = "coinglass"
+                    _new_trend = r["positioning"]["oi_trend"]
+                    if _prev_trend != _new_trend:
+                        logger.debug("%s OI trend: %s→%s (CoinGlass override, chg=%.2f%%)", symbol, _prev_trend, _new_trend, _chg)
                 r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
                 r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
                 r["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h
@@ -932,9 +947,13 @@ async def _scan_timeframe(
         logger.info("CVD batch: %d coins fetched", len(cvd_by_coin))
 
     except asyncio.TimeoutError:
-        logger.warning("CVD batch fetch timed out — skipping CVD data this scan")
+        logger.warning("CVD batch fetch timed out — marking CVD as UNAVAILABLE")
+        for r in results:
+            r["cvd_trend"] = "UNAVAILABLE"
     except Exception as exc:
-        logger.warning("CVD batch fetch failed: %s", exc)
+        logger.warning("CVD batch fetch failed: %s — marking CVD as UNAVAILABLE", exc)
+        for r in results:
+            r["cvd_trend"] = "UNAVAILABLE"
 
     # 8. Detect divergences
     btc_regime = next(
@@ -978,6 +997,13 @@ async def _scan_timeframe(
         cache.prev_heat = {}
     prev_heat_snapshot = dict(cache.prev_heat)
 
+    # Macro data for condition #14 (ETF flows + CB premium)
+    _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
+    _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
+
+    # Which symbols have CoinGlass data (for weighted scoring)
+    _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
+
     def _synth_one(r):
         """Run synthesize_signal for a single result (CPU-bound, thread-safe)."""
         heat_direction = r.get("heat_direction", 0)
@@ -1000,6 +1026,9 @@ async def _scan_timeframe(
             spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
             long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
             liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
+            etf_flow_usd=_etf_flow,
+            cb_premium=_cb_premium,
+            has_coinglass=symbol in _cg_symbols,
         )
 
     synth_futures = [

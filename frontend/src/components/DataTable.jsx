@@ -105,11 +105,12 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
     case "COND": {
       const cm = row.conditions_met ?? 0;
       const ct = row.conditions_total ?? 10;
+      const pct = ct > 0 ? cm / ct : 0;
       return (
         <td style={{ padding: cellPad }}>
           <span style={{
             fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
-            color: cm >= 8 ? T.green : cm >= 5 ? T.yellow : T.text4,
+            color: pct >= 0.75 ? T.green : pct >= 0.5 ? T.yellow : T.text4,
           }}>
             {cm}/{ct}
           </span>

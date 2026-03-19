@@ -227,6 +227,12 @@ export function OITrendBadge({ trend }) {
 
 export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   if (!trend || trend === "NEUTRAL") return null;
+  if (trend === "UNAVAILABLE") return (
+    <span style={{
+      fontFamily: T.mono, fontSize: isMobile ? 10 : 11,
+      color: T.text4, opacity: 0.5,
+    }}>{"\u2014"}</span>
+  );
 
   const COLORS = {
     BULLISH: T.green,
