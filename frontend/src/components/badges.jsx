@@ -121,24 +121,37 @@ export function DivergencePill({ div }) {
   );
 }
 
-export function HeatCell({ heat, isMobile }) {
+const PHASE_ABBR = { Entry: "ENTR", Extension: "EXT", Exhaustion: "EXHS", Fading: "FADE" };
+
+export function HeatCell({ heat, phase, isMobile }) {
   if (heat == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = heatColor(heat);
   const pct = Math.min(heat, 100);
+  const abbr = phase && phase !== "Neutral" ? PHASE_ABBR[phase] || phase.slice(0, 4).toUpperCase() : null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
-      <div style={{
-        width: 32, height: isMobile ? 5 : 4, background: T.overlay06,
-        borderRadius: 2, overflow: "hidden",
-      }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
         <div style={{
-          width: `${pct}%`, height: "100%", background: color, borderRadius: 2,
-          boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
-        }} />
+          width: 32, height: isMobile ? 5 : 4, background: T.overlay06,
+          borderRadius: 2, overflow: "hidden",
+        }}>
+          <div style={{
+            width: `${pct}%`, height: "100%", background: color, borderRadius: 2,
+            boxShadow: pct > 60 ? `0 0 6px ${color}40` : "none",
+          }} />
+        </div>
+        <span style={{ fontFamily: T.mono, fontSize: m(12, isMobile), color, fontWeight: 600 }}>
+          {Math.round(heat)}
+        </span>
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: m(12, isMobile), color, fontWeight: 600 }}>
-        {Math.round(heat)}
-      </span>
+      {abbr && (
+        <span style={{
+          fontFamily: T.mono, fontSize: 8, color: phaseColor(phase),
+          fontWeight: 700, letterSpacing: "0.06em", opacity: 0.75, lineHeight: 1,
+        }}>
+          {abbr}
+        </span>
+      )}
     </div>
   );
 }
@@ -152,17 +165,22 @@ export function PhaseCell({ phase }) {
   );
 }
 
-export function ExhaustBadge({ state }) {
+export function ExhaustBadge({ state, floorConfirmed }) {
   const meta = exhaustMeta(state);
   if (meta.text === "\u2014") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  // "FLOOR ✓" when confirmed, "FLOOR" when forming-but-unconfirmed
+  const label = state === "FLOOR"
+    ? (floorConfirmed ? "FLOOR \u2713" : "FLOOR")
+    : meta.text;
+  const glowColor = state === "FLOOR" && floorConfirmed ? "#34d399" : meta.color;
   return (
     <span style={{
       padding: "3px 9px", borderRadius: "20px",
-      background: `${meta.color}14`, color: meta.color,
+      background: `${glowColor}14`, color: glowColor,
       fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
+      letterSpacing: "0.04em", border: `1px solid ${glowColor}25`,
     }}>
-      {meta.text}
+      {label}
     </span>
   );
 }
