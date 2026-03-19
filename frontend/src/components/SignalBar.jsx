@@ -28,7 +28,7 @@ const SIGNAL_SHORT = {
 };
 
 /**
- * Compute a confluence score (0–5) for a scan result.
+ * Compute a confluence score (0–7) for a scan result.
  *
  * Each independent engine / factor that agrees with the signal adds +1:
  *   1. Strong RCCE conditions (≥ 60% met)
@@ -36,6 +36,8 @@ const SIGNAL_SHORT = {
  *   3. Heat in the right zone
  *   4. Exhaustion engine confirms
  *   5. Cross-timeframe agreement (4H + 1D same direction) — set externally
+ *   6. CVD confirms direction (taker buy flow)
+ *   7. Spot dominance confirms (organic demand)
  */
 export function computeConfluence(r, crossTfMatch = false) {
   let score = 0;
@@ -74,6 +76,16 @@ export function computeConfluence(r, crossTfMatch = false) {
 
   // 5. Cross-timeframe agreement (caller sets this)
   if (crossTfMatch) score++;
+
+  // 6. CVD confirms direction (taker buy/sell flow)
+  if (isExit) {
+    if (r.cvd_trend === "BEARISH") score++;
+  } else {
+    if (r.cvd_trend === "BULLISH") score++;
+  }
+
+  // 7. Spot dominance confirms (organic demand, not leverage-driven)
+  if (positioning.spot_dominance === "SPOT_LED") score++;
 
   return score;
 }
@@ -229,7 +241,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
               <span
                 key={`${r.symbol}-${r.tf}`}
                 onClick={() => onSelect(r)}
-                title={`Confluence: ${r.confluence}/5 | Priority: ${r.priority_score}`}
+                title={`Confluence: ${r.confluence}/7 | Priority: ${r.priority_score}`}
                 style={{
                   padding: isMobile ? "5px 10px" : "3px 9px",
                   borderRadius: "20px",
@@ -277,7 +289,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
 
                 {/* Confluence dots */}
                 <span style={{ fontSize: 8, opacity: 0.65, letterSpacing: "-1px" }}>
-                  {"●".repeat(r.confluence)}{"○".repeat(5 - r.confluence)}
+                  {"●".repeat(r.confluence)}{"○".repeat(7 - r.confluence)}
                 </span>
 
                 {/* Timeframe tag */}

@@ -376,6 +376,8 @@ export default function NotificationBell() {
                   oi_front_run:       "#22d3ee",
                   shorts_into_floor:  "#f59e0b",
                   capitulation_watch: "#6b7280",
+                  cvd_bullish_div:    "#34d399",
+                  spot_led_breakout:  "#22d3ee",
                 };
                 const SETUP_ICONS = {
                   squeeze_setup:      "\u{1F300}",  // 🌀
@@ -383,6 +385,8 @@ export default function NotificationBell() {
                   oi_front_run:       "\u{1F4C8}",  // 📈
                   shorts_into_floor:  "\u26a1",     // ⚡
                   capitulation_watch: "\u{1F6A8}",  // 🚨
+                  cvd_bullish_div:    "\u{1F4CA}",  // 📊
+                  spot_led_breakout:  "\u{1F30A}",  // 🌊
                 };
                 const color = SETUP_COLORS[s.type] || "#a78bfa";
                 const icon  = SETUP_ICONS[s.type]  || "\u25c6";
@@ -392,6 +396,8 @@ export default function NotificationBell() {
                   oi_front_run:        "OI FRONT-RUN",
                   shorts_into_floor:   "FLOOR",
                   capitulation_watch:  "CAPITULATION",
+                  cvd_bullish_div:     "CVD DIV",
+                  spot_led_breakout:   "SPOT-LED",
                 };
                 return (
                   <div
@@ -410,7 +416,7 @@ export default function NotificationBell() {
                       {/* Confluence dots */}
                       {s.confluence_score != null && (
                         <span style={{ fontSize: 8, color, opacity: 0.8, letterSpacing: "-1px" }}>
-                          {"●".repeat(s.confluence_score)}{"○".repeat(5 - (s.confluence_score || 0))}
+                          {"●".repeat(s.confluence_score)}{"○".repeat(7 - (s.confluence_score || 0))}
                         </span>
                       )}
                       <span style={{

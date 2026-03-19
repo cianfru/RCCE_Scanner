@@ -66,6 +66,86 @@ class SynthesizedSignal:
 
 
 # ---------------------------------------------------------------------------
+# CVD + Spot modifier helper
+# ---------------------------------------------------------------------------
+
+def _apply_cvd_modifiers(
+    out: "SynthesizedSignal",
+    cvd_trend: str,
+    cvd_divergence: bool,
+    spot_dominance: str,
+    long_short_ratio: float,
+    liquidation_24h_usd: float,
+) -> "SynthesizedSignal":
+    """Apply CVD and spot data modifiers to an already-determined signal.
+
+    These are supplemental and additive — they upgrade or downgrade signals
+    that were computed by the main decision logic.  Hard exit signals
+    (TRIM, TRIM_HARD, RISK_OFF, NO_LONG, LIGHT_SHORT) are never touched.
+    """
+    _hard_exits = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG", "LIGHT_SHORT"}
+    _adverse    = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    signal = out.signal
+
+    # Never modify hard exits or WAIT coming from a blocked/climax path
+    if signal in _hard_exits:
+        return out
+
+    cvd_reasons: list = []
+    extra_warnings: list = []
+
+    # 1. ACCUMULATE → LIGHT_LONG upgrade when CVD confirms + spot-led demand
+    if (signal == "ACCUMULATE"
+            and cvd_trend == "BULLISH"
+            and spot_dominance == "SPOT_LED"):
+        signal = "LIGHT_LONG"
+        cvd_reasons.append("cvd_bullish+spot_led→upgrade")
+
+    # 2. WAIT → ACCUMULATE when CVD is bullish + LSR shows crowded shorts (squeeze setup)
+    elif (signal == "WAIT"
+            and cvd_trend == "BULLISH"
+            and long_short_ratio < 0.85):   # more shorts than longs
+        signal = "ACCUMULATE"
+        cvd_reasons.append("cvd_bullish+crowded_short→accum")
+
+    # 3. LIGHT_LONG → STRONG_LONG when CVD confirms + spot dominance confirms
+    elif (signal == "LIGHT_LONG"
+            and cvd_trend == "BULLISH"
+            and spot_dominance == "SPOT_LED"):
+        signal = "STRONG_LONG"
+        cvd_reasons.append("cvd+spot_led→strong")
+
+    # 4. CVD BEARISH divergence → downgrade entry signals
+    if (cvd_divergence
+            and cvd_trend == "BEARISH"
+            and signal in ("STRONG_LONG", "LIGHT_LONG")):
+        # CVD diverging bearishly — distribution happening under the hood
+        signal = "TRIM" if signal == "STRONG_LONG" else "WAIT"
+        extra_warnings.append("cvd_bearish_divergence→downgrade")
+
+    # 5. Extreme liquidations + entry signal = high conviction (capitulation complete)
+    # If liq > $50M in 24h and we have a bullish signal, that's a washout floor
+    if (liquidation_24h_usd > 50_000_000
+            and signal in ("ACCUMULATE", "REVIVAL_SEED", "WAIT")
+            and cvd_trend == "BULLISH"):
+        signal = "ACCUMULATE" if signal == "WAIT" else signal
+        cvd_reasons.append(f"liq_washout+cvd_bull(${liquidation_24h_usd/1e6:.0f}M)")
+
+    # Informational warnings (no signal change)
+    if spot_dominance == "SPOT_LED" and signal not in _adverse:
+        extra_warnings.append("spot_led_demand")
+    if long_short_ratio < 0.8:
+        extra_warnings.append(f"crowded_short(lsr={long_short_ratio:.2f})")
+
+    if cvd_reasons:
+        out.reason = out.reason + " [cvd:" + ", ".join(cvd_reasons) + "]"
+
+    out.signal = signal
+    out.warnings = out.warnings + extra_warnings
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Main synthesis function
 # ---------------------------------------------------------------------------
 
@@ -79,6 +159,11 @@ def synthesize_signal(
     macro_blocked: bool = False,
     prev_heat: int = 0,
     bmsb_valid: bool = True,
+    cvd_trend: str = "NEUTRAL",
+    cvd_divergence: bool = False,
+    spot_dominance: str = "NEUTRAL",
+    long_short_ratio: float = 1.0,
+    liquidation_24h_usd: float = 0.0,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -364,6 +449,13 @@ def synthesize_signal(
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
 
+    def _cvd_return():
+        """Shorthand: apply CVD modifiers and return out."""
+        return _apply_cvd_modifiers(
+            out, cvd_trend, cvd_divergence, spot_dominance,
+            long_short_ratio, liquidation_24h_usd,
+        )
+
     # --- STRONG_LONG: effective conditions >= total (raw + boosts) + no BEAR-DIV ---
     if effective >= len(conditions) and divergence != "BEAR-DIV":
         # MARKUP with full confirmation
@@ -372,14 +464,14 @@ def synthesize_signal(
             out.signal = "STRONG_LONG"
             out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
-            return out
+            return _cvd_return()
         # ACCUM with full confirmation (boosts help here)
         if regime in ("ACCUM", "CAP"):
             _tag = f"[{conditions_met}/{len(conditions)} raw, {effective} effective]"
             out.signal = "STRONG_LONG"
             out.reason = " + ".join(_reason_parts()) + f" {_tag}"
             out.warnings = warnings
-            return out
+            return _cvd_return()
     # STRONG_LONG with 7+ effective conditions but blocked by funding/greed/liquidity
     elif effective >= 7 and not cond_funding_ok:
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
@@ -387,7 +479,7 @@ def synthesize_signal(
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [downgraded: crowded funding]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
 
     # --- ACCUMULATE: specific ACCUM regime conditions ---
     # Gated by Fear & Greed: only accumulate in Fear territory
@@ -403,7 +495,7 @@ def synthesize_signal(
             out.signal = "ACCUMULATE"
             out.reason = " + ".join(_reason_parts()) + f" [ACCUM + F&G={fear_greed}]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
         else:
             # Not fearful enough — signal as WAIT with note
             warnings.append(f"ACCUM conditions met but F&G={fear_greed} > {FNG_FEAR} — waiting for fear")
@@ -424,7 +516,7 @@ def synthesize_signal(
         out.signal = "ACCUMULATE"
         out.reason = " + ".join(_reason_parts()) + " [absorption in " + regime + "]"
         out.warnings = warnings
-        return out
+        return _cvd_return()
 
     # --- REVIVAL_SEED: CAP with strong bottom signals ---
     # Gated by Fear & Greed: revival seeds only in Fear territory
@@ -446,7 +538,7 @@ def synthesize_signal(
         out.signal = signal
         out.reason = " + ".join(_reason_parts()) + f" [CAP revival + F&G={fear_greed}]"
         out.warnings = warnings
-        return out
+        return _cvd_return()
 
     # --- LIGHT_LONG: 5+ effective conditions + supportive regime ---
     if effective >= 5 and regime in ("MARKUP", "REACC", "ACCUM"):
@@ -459,7 +551,7 @@ def synthesize_signal(
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [MARKUP extended]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
 
         # MARKUP LIGHT_LONG: moderate z with conditions support
         if (regime == "MARKUP" and 0 < z < z_blowoff
@@ -470,7 +562,7 @@ def synthesize_signal(
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
 
         # REACC LIGHT_LONG: needs supportive consensus + decent confidence
         if (regime == "REACC" and z < 0.5
@@ -480,7 +572,7 @@ def synthesize_signal(
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [REACC + RISK-ON]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
 
     # --- CAP without strong revival conditions ---
     if regime == "CAP" and z < -1.0 and confidence > CONF_REVIVAL:
@@ -488,7 +580,7 @@ def synthesize_signal(
             out.signal = "ACCUMULATE"
             out.reason = " + ".join(_reason_parts()) + " [CAP absorption]"
             out.warnings = warnings
-            return out
+            return _cvd_return()
 
     # -----------------------------------------------------------------------
     # STEP 3: DEFAULT — WAIT
@@ -497,4 +589,7 @@ def synthesize_signal(
     out.signal = "WAIT"
     out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective — insufficient]"
     out.warnings = warnings
-    return out
+    return _apply_cvd_modifiers(
+        out, cvd_trend, cvd_divergence, spot_dominance,
+        long_short_ratio, liquidation_24h_usd,
+    )
