@@ -32,13 +32,16 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // Core scannable columns — detail drawer holds everything else.
 // Rule: if it needs a click to understand, it belongs in the drawer.
+// Core scannable columns — detail drawer holds everything else.
+// Rule: if it needs a click to understand, it belongs in the drawer.
 const COLUMNS = [
   [null,         "#",          0],
   ["symbol",     "SYMBOL",     0],    // includes ⭐ star + price sub-label
   ["regime",     "REGIME",     0],
   [null,         "SIGNAL",     0],
   [null,         "SPARK",      480],
-  ["heat",       "HEAT",       480],
+  ["zscore",     "Z-SCORE",    480],  // back by popular demand — at-a-glance momentum
+  ["heat",       "HEAT",       768],
   [null,         "CVD",        768],  // net buyer pressure — high-signal
   [null,         "CONF",       768],  // confluence /7
   [null,         "DIV",        1024], // BTC divergence — contextual
