@@ -132,6 +132,14 @@ const COLUMN_INFO = {
     title: "Floor Confirmed",
     desc: "Boolean flag from the exhaustion engine. When true (checkmark), a downside floor has been confirmed \u2014 selling pressure has dried up and a base is forming.",
   },
+  FORMING: {
+    title: "Floor Forming",
+    desc: "Downside floor detection from the exhaustion engine. A checkmark means selling pressure has dried up and the engine has confirmed a base is forming — often precedes a reversal.",
+  },
+  PRICE: {
+    title: "Current Price",
+    desc: "Latest price from the exchange. Updates each scan cycle (~5 minutes).",
+  },
 };
 
 function InfoPopover({ info, anchor, onClose }) {

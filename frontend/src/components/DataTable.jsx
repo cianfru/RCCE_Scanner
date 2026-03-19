@@ -74,6 +74,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
     case "EXHAUST":
       return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
     case "FLOOR":
+    case "FORMING":
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
     case "FUNDING":
       return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
