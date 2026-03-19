@@ -358,11 +358,11 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
       <div style={{
         position: "fixed", right: 0, top: 0, bottom: 0,
         left: isMobile ? 0 : undefined,
-        width: isMobile ? "100%" : isTablet ? 520 : 700,
+        width: isMobile ? "100%" : isTablet ? 580 : 820,
         background: T.drawerBg,
         backdropFilter: "blur(32px) saturate(1.4)", WebkitBackdropFilter: "blur(32px) saturate(1.4)",
         borderLeft: isMobile ? "none" : `1px solid ${T.border}`,
-        padding: isMobile ? "20px 16px" : "24px 22px",
+        padding: isMobile ? "20px 16px" : "28px 32px",
         overflowY: "auto", zIndex: 200,
         transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
         boxShadow: isMobile ? "none" : `-8px 0 40px ${T.shadowDeep}`,
