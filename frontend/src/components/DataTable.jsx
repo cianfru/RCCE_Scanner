@@ -19,16 +19,24 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       );
     case "SYMBOL": {
       const isFav = favorites?.has(row.symbol);
+      const priceStr = row.price
+        ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
+        : null;
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
             onClick={e => { e.stopPropagation(); onToggleFavorite?.(row.symbol); }}
-            style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 16 : 18, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
+            style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 14 : 16, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
             title={isFav ? "Remove from favorites" : "Add to favorites"}
           >{isFav ? "\u2605" : "\u2606"}</span>
-          {getBaseSymbol(row.symbol)}
+          <span style={{ verticalAlign: "middle" }}>{getBaseSymbol(row.symbol)}</span>
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
+          )}
+          {priceStr && !isMobile && (
+            <div style={{ fontSize: 10, fontWeight: 400, color: T.text4, letterSpacing: "0.01em", marginTop: 1 }}>
+              {priceStr}
+            </div>
           )}
         </td>
       );
