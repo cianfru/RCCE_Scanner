@@ -83,6 +83,9 @@ export default function App() {
   const [sentiment, setSentiment] = useState(null);
   const [stablecoin, setStablecoin] = useState(null);
 
+  // CoinGlass macro (ETF flows + Coinbase premium)
+  const [macro, setMacro] = useState(null);
+
   // Portfolio groups
   const [groups, setGroups] = useState([]);
   const [activeGroupId, setActiveGroupId] = useState(null);
@@ -160,13 +163,14 @@ export default function App() {
       setLastRefresh(new Date());
 
       try {
-        const [gm, as, sent, stable, tf4h, tf1d] = await Promise.all([
+        const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/stablecoin`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/coinglass/macro`).then(r => r.json()).catch(() => null),
         ]);
         if (gm) setGlobalMetrics(gm);
         if (as) setAltSeason(as);
@@ -174,6 +178,7 @@ export default function App() {
         if (stable) setStablecoin(stable);
         if (tf4h) setDataTradfi4h(tf4h.results || []);
         if (tf1d) setDataTradfi1d(tf1d.results || []);
+        if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
       setError(e.message);
@@ -692,7 +697,7 @@ export default function App() {
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && (
-          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} isMobile={isMobile} />
+          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile} />
         )}
 
         {showDashboard && <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={setSelected} isMobile={isMobile} />}
