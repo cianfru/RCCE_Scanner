@@ -169,10 +169,9 @@ volume on dips (institutional accumulation). is_climax = extreme volume event.
 - Macro blocked (below BMSB): LIGHT_SHORT if conditions met, else WAIT
 
 ### ENTRY RULES (Step 2):
-- **STRONG_LONG**: ALL 10 conditions met (effective >= 10 with boosts) + \
-no BEAR-DIV. MARKUP also requires z between -0.5 and 1.0. \
-If z > 1.0, it downgrades to LIGHT_LONG ("MARKUP extended").
-- **LIGHT_LONG**: 5+ effective conditions + regime MARKUP/REACC/ACCUM:
+- **STRONG_LONG**: >= 75% weighted score + no BEAR-DIV. MARKUP also requires \
+z between -0.5 and 1.0. If z > 1.0, it downgrades to LIGHT_LONG ("MARKUP extended").
+- **LIGHT_LONG**: >= 40% weighted score + regime MARKUP/REACC/ACCUM:
   - MARKUP extended: z between 1.0 and 2.0×vol_scale, conf > 50%, heat < 80
   - MARKUP moderate: z between 0 and 2.0×vol_scale, conf > 50%, consensus RISK-ON/MIXED
   - REACC: z < 0.5, conf > 50%, consensus RISK-ON/MIXED, heat < 80
@@ -182,7 +181,9 @@ If z > 1.0, it downgrades to LIGHT_LONG ("MARKUP extended").
   (REVIVAL_SEED_CONFIRMED if floor_confirmed)
 - Default: **WAIT**
 
-### The 10 STRONG_LONG Conditions:
+### The 14 Weighted Conditions (STRONG_LONG requires >= 75% weighted score):
+
+**Core Conditions (weight 1.0 each, max 10 pts):**
 1. Bullish Regime: MARKUP or ACCUM
 2. Confidence: > 60%
 3. Consensus: RISK-ON or ACCUMULATION
@@ -194,14 +195,43 @@ If z > 1.0, it downgrades to LIGHT_LONG ("MARKUP extended").
 9. Not Greedy: Fear & Greed < 70
 10. Liquidity OK: stablecoins not contracting
 
+**CoinGlass Conditions (weight 0.75 each, max 3 pts — CEX coins only):**
+11. OI Confirms: OI trend aligns with signal direction (BUILDING/STABLE for longs)
+12. CVD Confirms: taker buy volume dominant (cvd_trend == BULLISH)
+13. Smart Money Aligned: top trader LSR >= 0.85 (pros not heavily short)
+14. Macro Tailwind: ETF 7d net inflow > 0 OR Coinbase premium > 0
+
+**Scoring**: Total max is 13.0 for CEX coins, 10.0 for HL-native tokens. \
+STRONG_LONG requires >= 75% of weighted max. LIGHT_LONG requires >= 40%. \
+HL-native tokens (not on CoinGlass) are scored out of 10 only — the 4 \
+CoinGlass conditions are excluded entirely, not penalized.
+
 ### Regime Boosts & Penalties:
-- CAP/ACCUM: floor_confirmed = +2, absorption = +1 to effective conditions
+- CAP/ACCUM: floor_confirmed = +2, absorption = +1 to effective weighted score
 - MARKUP + heat phase Fading/Exhaustion: -1 penalty
+
+### CoinGlass Data Layer:
+- **CVD (Cumulative Volume Delta)**: net taker buy minus sell volume. \
+BULLISH = buy pressure dominant. BEARISH = distribution. UNAVAILABLE = fetch failed.
+- **Spot Dominance**: SPOT_LED = organic demand (spot > futures taker volume). \
+FUTURES_LED = speculative/leverage driven.
+- **Smart Money LSR**: top-trader long/short ratio. < 0.85 = pros skewing short \
+(condition #13 fails). < 0.7 = extreme short bias (hard downgrade modifier). \
+> 1.5 = pros heavily long (reinforcement).
+- **Macro**: ETF 7-day flows + Coinbase premium rate. Positive = institutional demand.
+
+### Post-Condition CVD Modifiers:
+After conditions are scored, these combo modifiers can upgrade/downgrade signals:
+- CVD BULLISH + SPOT_LED: ACCUMULATE → LIGHT_LONG; LIGHT_LONG → STRONG_LONG
+- CVD BULLISH + crowded shorts (LSR < 0.85): WAIT → ACCUMULATE
+- CVD BEARISH divergence: STRONG_LONG → TRIM; LIGHT_LONG → WAIT
+- Liq washout ($50M+) + CVD BULLISH: WAIT → ACCUMULATE
+- Smart Money LSR < 0.7: hard downgrade one step
 
 ### Positioning Layer:
 - Funding regimes: NEUTRAL, CROWDED_LONG (squeeze risk), CROWDED_SHORT (rally fuel)
-- OI trends: STABLE, RISING, DECLINING, SQUEEZE (OI down + price up), \
-LIQUIDATING (OI down + price down)
+- OI trends: STABLE, BUILDING (new longs), SQUEEZE (OI down + price up), \
+LIQUIDATING (OI down + price down), SHORTING (OI up + price down)
 
 ### Consensus:
 - >55% MARKUP = RISK-ON, >55% BLOWOFF = EUPHORIA, >55% MARKDOWN = RISK-OFF, \
@@ -485,13 +515,24 @@ class AssistantManager:
                     continue
 
                 conds = match.get("conditions_detail", [])
-                cond_lines = "\n".join(
+                core_conds = [c for c in conds if c.get("group") != "coinglass"]
+                cg_conds = [c for c in conds if c.get("group") == "coinglass"]
+                core_lines = "\n".join(
                     f"  {'PASS' if c['met'] else 'FAIL'}: "
                     f"{c['label']} — {c['desc']}"
-                    for c in conds
+                    for c in core_conds
                 )
+                cg_lines = "\n".join(
+                    f"  {'PASS' if c['met'] else 'FAIL'}: "
+                    f"{c['label']} — {c['desc']}"
+                    for c in cg_conds
+                ) if cg_conds else ""
                 pos = match.get("positioning") or {}
                 conf = match.get("confluence") or {}
+
+                cond_section = f"Core Conditions ({sum(1 for c in core_conds if c['met'])}/{len(core_conds)}):\n{core_lines}"
+                if cg_lines:
+                    cond_section += f"\nCoinGlass Conditions ({sum(1 for c in cg_conds if c['met'])}/{len(cg_conds)}):\n{cg_lines}"
 
                 parts.append(
                     f"## {symbol} ({tf.upper()})\n"
@@ -518,9 +559,18 @@ class AssistantManager:
                     f"Conditions: {match.get('conditions_met', 0)}/"
                     f"{match.get('conditions_total', 10)} "
                     f"(effective: {match.get('effective_conditions', 'N/A')})\n"
-                    f"{cond_lines}\n"
+                    f"{cond_section}\n"
                     f"Funding: {pos.get('funding_regime', 'N/A')} | "
-                    f"OI: {pos.get('oi_trend', 'N/A')}\n"
+                    f"OI: {pos.get('oi_trend', 'N/A')} | "
+                    f"OI Change: {pos.get('oi_change_pct', 0):.2f}%\n"
+                    f"CVD: {match.get('cvd_trend', 'N/A')} | "
+                    f"BSR: {match.get('buy_sell_ratio', 'N/A')} | "
+                    f"Divergence: {match.get('cvd_divergence', False)}\n"
+                    f"Spot Dominance: {pos.get('spot_dominance', 'N/A')} | "
+                    f"Smart Money LSR: {pos.get('top_trader_lsr', 'N/A')} | "
+                    f"Retail LSR: {pos.get('long_short_ratio', 'N/A')}\n"
+                    f"Liq 24H: ${pos.get('liquidation_24h_usd', 0)/1e6:.1f}M | "
+                    f"Liq 4H: ${pos.get('liquidation_4h_usd', 0)/1e6:.1f}M\n"
                     f"Confluence: {conf.get('label', 'N/A')} "
                     f"(score {conf.get('score', 0)})\n"
                     f"Priority: {match.get('priority_score', 0):.1f}"
@@ -1023,9 +1073,10 @@ class AssistantManager:
             session_id=f"explain-{symbol}-{int(time.time())}",
             user_message=(
                 f"Explain why {symbol} has its current signal on the {timeframe} "
-                f"timeframe. Walk through each of the 10 conditions, explain which "
-                f"pass and fail, and explain the specific reason the signal is what "
-                f"it is (not a higher or lower signal). Be precise with numbers."
+                f"timeframe. Walk through the 14 conditions (10 core + 4 CoinGlass), "
+                f"explain which pass and fail, show the weighted score, and explain "
+                f"the specific reason the signal is what it is. Include how CVD, "
+                f"smart money LSR, and macro data influenced the outcome. Be precise with numbers."
             ),
             symbol=symbol,
         )
