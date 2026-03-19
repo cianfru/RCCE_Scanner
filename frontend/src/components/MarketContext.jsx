@@ -4,8 +4,8 @@ import FadeIn from "./FadeIn.jsx";
 import FearGreedGauge from "./FearGreedGauge.jsx";
 import StablecoinWidget from "./StablecoinWidget.jsx";
 
-export default function MarketContext({ globalMetrics, altSeason, sentiment, stablecoin, isMobile }) {
-  if (!globalMetrics?.btc_dominance && !altSeason && !sentiment && !stablecoin) return null;
+export default function MarketContext({ globalMetrics, altSeason, sentiment, stablecoin, macro, isMobile }) {
+  if (!globalMetrics?.btc_dominance && !altSeason && !sentiment && !stablecoin && !macro) return null;
 
   return (
     <FadeIn delay={380}>
@@ -97,6 +97,42 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
               changePct={stablecoin.change_7d_pct}
               totalCap={stablecoin.total_cap}
             />
+          </GlassCard>
+        )}
+
+        {/* BTC ETF Flows (CoinGlass) */}
+        {macro?.etf_flow_usd_7d != null && (
+          <GlassCard style={{
+            padding: isMobile ? "10px 14px" : "10px 16px",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
+            border: `1px solid ${macro.etf_signal === "INFLOW" ? "#34d39920" : macro.etf_signal === "OUTFLOW" ? "#f8717120" : T.border}`,
+          }}>
+            <span style={{ fontSize: m(11, isMobile), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+              ETF 7d
+            </span>
+            <span style={{
+              fontFamily: T.mono, fontSize: m(13, isMobile), fontWeight: 700,
+              color: macro.etf_flow_usd_7d > 0 ? "#34d399" : macro.etf_flow_usd_7d < 0 ? "#f87171" : T.text3,
+            }}>
+              {macro.etf_flow_usd_7d >= 0 ? "+" : ""}
+              {Math.abs(macro.etf_flow_usd_7d) >= 1e9
+                ? `$${(macro.etf_flow_usd_7d / 1e9).toFixed(2)}B`
+                : `$${(macro.etf_flow_usd_7d / 1e6).toFixed(0)}M`}
+            </span>
+            {macro.coinbase_premium_rate != null && Math.abs(macro.coinbase_premium_rate) > 0.0001 && (
+              <>
+                <div style={{ width: 1, height: 14, background: T.border }} />
+                <span style={{ fontSize: m(10, isMobile), color: T.text4, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 500 }}>CB</span>
+                <span style={{
+                  fontFamily: T.mono, fontSize: m(12, isMobile), fontWeight: 600,
+                  color: macro.coinbase_premium_rate > 0 ? "#34d399" : "#f87171",
+                }}>
+                  {macro.coinbase_premium_rate > 0 ? "+" : ""}
+                  {(macro.coinbase_premium_rate * 100).toFixed(3)}%
+                </span>
+              </>
+            )}
           </GlassCard>
         )}
       </div>

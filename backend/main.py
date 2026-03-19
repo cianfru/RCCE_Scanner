@@ -672,6 +672,30 @@ async def coinglass_status():
     }
 
 
+@app.get("/api/coinglass/macro")
+async def coinglass_macro():
+    """Return global macro signals: BTC ETF flows + Coinbase premium index.
+
+    Cached 1 hour.  Returns null values when CoinGlass key not set.
+    """
+    from coinglass_data import get_cached_macro, fetch_macro_signals
+    macro = get_cached_macro()
+    if macro is None:
+        try:
+            macro = await asyncio.wait_for(fetch_macro_signals(), timeout=10.0)
+        except Exception:
+            from coinglass_data import CoinglassMacro
+            macro = CoinglassMacro()
+    return {
+        "coinbase_premium_rate": macro.coinbase_premium_rate,
+        "coinbase_premium":      macro.coinbase_premium,
+        "etf_flow_usd_7d":       macro.etf_flow_usd_7d,
+        "etf_flow_usd_1d":       macro.etf_flow_usd_1d,
+        "etf_signal":            macro.etf_signal,
+        "timestamp":             macro.timestamp,
+    }
+
+
 @app.get("/api/confluence/{symbol}")
 async def confluence_for_symbol(symbol: str):
     """Return multi-TF confluence for a symbol."""

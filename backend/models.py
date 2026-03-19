@@ -20,7 +20,10 @@ class PositioningResponse(BaseModel):
     liquidation_24h_usd: float = 0.0
     long_liq_usd: float = 0.0
     short_liq_usd: float = 0.0
+    liquidation_4h_usd: float = 0.0
+    liquidation_1h_usd: float = 0.0
     long_short_ratio: float = 1.0
+    top_trader_lsr: float = 1.0     # smart-money long/short ratio (top traders)
     oi_market_cap_ratio: float = 0.0
     spot_volume_usd: float = 0.0
     spot_futures_ratio: float = 0.0
@@ -97,6 +100,10 @@ class ScanResult(BaseModel):
     priority_score: float = 0.0
     # Sparkline data (last 24 close prices)
     sparkline: List[float] = []
+    # CoinGlass CVD (populated when taker volume data available)
+    cvd_trend: str = "NEUTRAL"       # BULLISH | BEARISH | NEUTRAL
+    cvd_divergence: bool = False     # price direction ≠ CVD direction
+    buy_sell_ratio: float = 1.0      # taker buy / sell volume ratio
 
 
 class ScanResponse(BaseModel):
