@@ -49,14 +49,14 @@ function InfoTip({ title, text }) {
         }}>
           {title && (
             <div style={{
-              fontSize: 10, color: T.text1, fontFamily: T.mono,
+              fontSize: T.textSm, color: T.text1, fontFamily: T.mono,
               fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em",
             }}>
               {title}
             </div>
           )}
           <div style={{
-            fontSize: 10, color: T.text3, fontFamily: T.font,
+            fontSize: T.textSm, color: T.text3, fontFamily: T.font,
             fontWeight: 400, lineHeight: 1.55,
           }}>
             {text}
@@ -101,13 +101,13 @@ function Badge({ icon, label, sub, color, bg, empty, info }) {
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         {icon && <span style={{ fontSize: 11 }}>{icon}</span>}
-        <span style={{ fontSize: 10, color: c, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1.2 }}>
+        <span style={{ fontSize: T.textSm, color: c, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1.2 }}>
           {label}
         </span>
         {info && <InfoTip title={info.title} text={info.text} />}
       </div>
       {sub && (
-        <span style={{ fontSize: 9, color: `${c}99`, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>
+        <span style={{ fontSize: T.textXs, color: `${c}99`, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>
           {sub}
         </span>
       )}
@@ -231,7 +231,7 @@ function Stat({ label, value, color }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{label}</span>
         {infoText && <InfoTip text={infoText} />}
       </div>
       <span style={{ fontSize: 12, color: color || T.text2, fontFamily: T.mono, fontWeight: 700, whiteSpace: "nowrap" }}>{value}</span>
@@ -288,13 +288,13 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr })
     }}>
       {/* Header */}
       <div style={{
-        fontSize: 10, color: T.text4, letterSpacing: "0.12em",
+        fontSize: T.textXs, color: T.text4, letterSpacing: "0.12em",
         fontFamily: T.font, fontWeight: 700, marginBottom: 10,
         textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <span>MARKET STRUCTURE</span>
         {source && (
-          <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>
+          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>
             {source.slice(0, 3).toUpperCase()}
           </span>
         )}

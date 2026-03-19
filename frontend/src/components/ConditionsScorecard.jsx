@@ -25,13 +25,13 @@ function ConditionPill({ c }) {
       }}
     >
       <span style={{
-        fontSize: 10, fontWeight: 700, flexShrink: 0,
+        fontSize: T.textSm, fontWeight: 700, flexShrink: 0,
         color: c.met ? MET_COLOR : UNMET_COLOR,
       }}>
         {c.met ? "\u2713" : "\u2717"}
       </span>
       <span style={{
-        fontSize: 9, fontFamily: T.mono, fontWeight: 500,
+        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 500,
         color: c.met ? T.text2 : T.text4,
         whiteSpace: "nowrap",
         flexShrink: 0,
@@ -39,7 +39,7 @@ function ConditionPill({ c }) {
         {c.label}
       </span>
       <span style={{
-        fontSize: 8, fontFamily: T.mono, fontWeight: 400,
+        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 400,
         color: T.text4, marginLeft: "auto",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         minWidth: 0,
@@ -104,7 +104,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
 
       {/* Core conditions section */}
       <div style={{
-        fontSize: 8, color: T.text4, letterSpacing: "0.08em",
+        fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em",
         fontFamily: T.mono, fontWeight: 600, textTransform: "uppercase",
         marginBottom: 6, display: "flex", justifyContent: "space-between",
       }}>
@@ -126,7 +126,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
       {cg.length > 0 && (
         <>
           <div style={{
-            fontSize: 8, color: T.text4, letterSpacing: "0.08em",
+            fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em",
             fontFamily: T.mono, fontWeight: 600, textTransform: "uppercase",
             marginBottom: 6, display: "flex", justifyContent: "space-between",
           }}>
