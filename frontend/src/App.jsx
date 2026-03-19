@@ -39,8 +39,8 @@ const COLUMNS = [
   ["symbol",         "SYMBOL",  0],     // includes price sub-label on desktop
   ["regime",         "REGIME",  0],
   [null,             "SIGNAL",  0],
-  [null,             "SPARK",   480],
   ["zscore",         "Z-SCORE", 480],
+  [null,             "SPARK",   640],   // moved after Z-SCORE, hidden on small mobile
   [null,             "COND",    640],   // conditions met — entry quality
   ["heat",           "HEAT",    640],   // bar + phase sub-label
   [null,             "CVD",     768],   // net taker pressure

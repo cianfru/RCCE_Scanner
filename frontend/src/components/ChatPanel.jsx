@@ -545,13 +545,15 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             ? `Ask about ${selectedSymbol}...`
             : "Ask anything..."}
           rows={1}
+          inputMode="text"
+          enterKeyHint="send"
           style={{
             flex: 1, resize: "none",
             padding: isMobile ? "12px 16px" : "10px 16px",
             borderRadius: isMobile ? 20 : 12,
             border: `1px solid ${T.border}`,
             background: T.overlay04, color: T.text1,
-            fontFamily: T.font, fontSize: m(T.textBase, isMobile), lineHeight: 1.5,
+            fontFamily: T.font, fontSize: isMobile ? 16 : T.textBase, lineHeight: 1.5,
             outline: "none",
             transition: "border-color 0.15s ease",
           }}

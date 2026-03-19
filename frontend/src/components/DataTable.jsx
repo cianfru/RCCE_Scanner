@@ -9,7 +9,7 @@ import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
 function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
-  const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
+  const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
   switch (colLabel) {
     case "#":
       return (
@@ -33,8 +33,8 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
-          {priceStr && !isMobile && (
-            <div style={{ fontSize: 11, fontWeight: 500, color: T.text1, letterSpacing: "0.01em", marginTop: 2 }}>
+          {priceStr && (
+            <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 500, color: T.text1, letterSpacing: "0.01em", marginTop: 1 }}>
               {priceStr}
             </div>
           )}
