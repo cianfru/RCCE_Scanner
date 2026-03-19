@@ -30,8 +30,8 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "4h", label: "4H", limit: 500 },
-  { key: "1d", label: "1D", limit: 365 },
+  { key: "4h", label: "4H", limit: 120 },  // ~20 days — starts zoomed into actionable range
+  { key: "1d", label: "1D", limit: 180 },  // ~6 months
 ];
 
 export default function BMSBChart({
@@ -98,9 +98,9 @@ export default function BMSBChart({
         borderColor: "rgba(255,255,255,0.06)",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 5,
-        barSpacing: tf === "4h" ? 3 : 4,
-        minBarSpacing: 1,
+        rightOffset: 8,
+        barSpacing: tf === "4h" ? 7 : 6,  // wider = readable without zooming in
+        minBarSpacing: 2,
       },
       rightPriceScale: {
         borderColor: "rgba(255,255,255,0.06)",

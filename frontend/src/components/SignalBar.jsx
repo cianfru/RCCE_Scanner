@@ -99,7 +99,7 @@ export function computeConfluence(r, crossTfMatch = false) {
  * - Sorted: exits first, then by confluence desc, then priority_score desc.
  */
 export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
-  const [filter, setFilter] = useState("MED"); // HIGH | MED | ALL
+  const [filter, setFilter] = useState("HIGH"); // HIGH | MED | ALL
 
   // Build merged chip list
   const { chips, hiddenCount } = useMemo(() => {
@@ -157,7 +157,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
     const visible = rawChips.filter(c => c.confluence >= minScore);
     const hidden  = rawChips.length - visible.length;
 
-    return { chips: visible.slice(0, 20), hiddenCount: hidden };
+    return { chips: visible.slice(0, 12), hiddenCount: hidden };
   }, [data4h, data1d, filter]);
 
   if (chips.length === 0 && hiddenCount === 0) return null;

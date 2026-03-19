@@ -62,7 +62,7 @@ export default function NotificationBell() {
 
   const fetchNotifs = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/notifications?limit=30`);
+      const res = await fetch(`${API_BASE}/api/notifications?limit=10`);
       if (!res.ok) return;
       const data = await res.json();
       setEvents(data.events || []);
@@ -94,7 +94,7 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress]);
 
-  const [setupFilter, setSetupFilter] = useState("MED"); // HIGH | MED | ALL
+  const [setupFilter, setSetupFilter] = useState("HIGH"); // HIGH | MED | ALL
 
   const fetchMarketSetups = useCallback(async () => {
     try {
