@@ -34,18 +34,27 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // Rule: if it needs a click to understand, it belongs in the drawer.
 // Core scannable columns — detail drawer holds everything else.
 // Rule: if it needs a click to understand, it belongs in the drawer.
+// [sortKey, label, minViewportWidth]
+// Staggered so progressively more columns appear on wider screens.
+// All detail still available in the drawer — table is for scanning.
 const COLUMNS = [
-  [null,         "#",          0],
-  ["symbol",     "SYMBOL",     0],    // includes ⭐ star + price sub-label
-  ["regime",     "REGIME",     0],
-  [null,         "SIGNAL",     0],
-  [null,         "SPARK",      480],
-  ["zscore",     "Z-SCORE",    480],  // back by popular demand — at-a-glance momentum
-  ["heat",       "HEAT",       768],
-  [null,         "CVD",        768],  // net buyer pressure — high-signal
-  [null,         "CONF",       768],  // confluence /7
-  [null,         "DIV",        1024], // BTC divergence — contextual
-  [null,         "OI",         1280], // OI trend — power users only
+  [null,         "#",       0],
+  ["symbol",     "SYMBOL",  0],
+  ["regime",     "REGIME",  0],
+  [null,         "SIGNAL",  0],
+  [null,         "SPARK",   480],
+  ["zscore",     "Z-SCORE", 480],
+  [null,         "COND",    640],   // conditions met — entry quality
+  ["heat",       "HEAT",    640],
+  [null,         "CVD",     768],   // net taker pressure
+  [null,         "CONF",    768],   // multi-TF confluence
+  ["price",      "PRICE",   900],
+  [null,         "DIV",     900],
+  [null,         "EXHAUST", 1024],  // exhaustion state
+  ["energy",     "ENERGY",  1024],
+  [null,         "PHASE",   1200],  // heat phase
+  [null,         "FORMING", 1200],  // downside floor forming
+  [null,         "OI",      1440],  // OI trend — wide monitors only
 ];
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────

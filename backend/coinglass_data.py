@@ -624,7 +624,19 @@ async def fetch_coinglass_metrics(
     if per_coin is None:
         per_coin = {}
 
-        target_syms = (symbols or list(bulk.keys()))[:_PER_COIN_LIMIT]
+        # Only attempt per-coin detail for symbols that have bulk (futures) data.
+        # HL-native tokens with no CEX futures (e.g. ZRO) won't appear in bulk
+        # and CoinGlass has no data for them — skip rather than waste requests.
+        if symbols:
+            target_syms = [s for s in symbols if s in bulk][:_PER_COIN_LIMIT]
+            skipped = [s for s in symbols if s not in bulk]
+            if skipped:
+                logger.debug(
+                    "CoinGlass per-coin: skipping %d symbols not in futures data: %s",
+                    len(skipped), skipped[:10],
+                )
+        else:
+            target_syms = list(bulk.keys())[:_PER_COIN_LIMIT]
         price_changes = price_changes or {}
 
         try:
