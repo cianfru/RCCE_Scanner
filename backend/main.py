@@ -639,6 +639,36 @@ async def positioning(symbol: str):
     return PositioningResponse()
 
 
+@app.get("/api/coinglass/status")
+async def coinglass_status():
+    """Return current CoinGlass cache status (for debugging)."""
+    from coinglass_data import get_cached_metrics, get_cached_cvd, get_cached_spot
+    metrics = get_cached_metrics()
+    btc = metrics.get("BTC/USDT") if metrics else None
+    btc_cvd = get_cached_cvd("BTC")
+    btc_spot = get_cached_spot("BTC/USDT")
+    return {
+        "coins_markets": {
+            "cached": metrics is not None,
+            "count": len(metrics) if metrics else 0,
+            "btc_funding_pct": round(btc.funding_rate * 100 * 8, 4) if btc else None,
+            "btc_oi_usd_b": round(btc.open_interest_usd / 1e9, 2) if btc else None,
+            "btc_oi_change_4h_pct": btc.oi_change_pct_4h if btc else None,
+            "btc_liq_24h_usd_m": round(btc.liquidation_usd_24h / 1e6, 1) if btc else None,
+            "btc_lsr_4h": btc.long_short_ratio_4h if btc else None,
+        },
+        "cvd": {
+            "btc_trend": btc_cvd.cvd_trend if btc_cvd else None,
+            "btc_bsr": round(btc_cvd.buy_sell_ratio, 3) if btc_cvd else None,
+        },
+        "spot": {
+            "btc_spot_vol_usd_b": round(btc_spot.spot_volume_usd / 1e9, 2) if btc_spot else None,
+            "btc_dominance": btc_spot.spot_dominance if btc_spot else None,
+        },
+        "api_key_set": bool(os.environ.get("COINGLASS_API_KEY")),
+    }
+
+
 @app.get("/api/confluence/{symbol}")
 async def confluence_for_symbol(symbol: str):
     """Return multi-TF confluence for a symbol."""

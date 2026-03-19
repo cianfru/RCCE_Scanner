@@ -16,6 +16,15 @@ class PositioningResponse(BaseModel):
     mark_price: float = 0.0
     volume_24h: float = 0.0
     source: str = ""                # "binance" or "hyperliquid"
+    # CoinGlass aggregated fields (multi-exchange)
+    liquidation_24h_usd: float = 0.0
+    long_liq_usd: float = 0.0
+    short_liq_usd: float = 0.0
+    long_short_ratio: float = 1.0
+    oi_market_cap_ratio: float = 0.0
+    spot_volume_usd: float = 0.0
+    spot_futures_ratio: float = 0.0
+    spot_dominance: str = "NEUTRAL"
 
 
 class SentimentResponse(BaseModel):

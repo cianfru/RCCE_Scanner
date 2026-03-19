@@ -2,7 +2,7 @@ import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
 import {
   ZScoreBar, RegimeBadge, SignalDot, DivergencePill,
   HeatCell, PhaseCell, ExhaustBadge, FloorCell,
-  FundingCell, OITrendBadge, ConfluenceBadge,
+  FundingCell, OITrendBadge, ConfluenceBadge, CVDBadge,
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import InfoButton from "./InfoPopover.jsx";
@@ -71,6 +71,12 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
     case "OI":
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
+    case "CVD":
+      return (
+        <td style={{ padding: cellPad }}>
+          <CVDBadge trend={row.cvd_trend} divergence={row.cvd_divergence} bsr={row.buy_sell_ratio} isMobile={isMobile} />
+        </td>
+      );
     case "CONF":
       return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
     case "PRI": {

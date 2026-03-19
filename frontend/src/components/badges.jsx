@@ -207,6 +207,42 @@ export function OITrendBadge({ trend }) {
   );
 }
 
+export function CVDBadge({ trend, divergence, bsr, isMobile }) {
+  if (!trend || trend === "NEUTRAL") return null;
+
+  const COLORS = {
+    BULLISH: T.green,
+    BEARISH: T.red,
+  };
+  const ICONS = {
+    BULLISH: "\u25b2",
+    BEARISH: "\u25bc",
+  };
+
+  const color = COLORS[trend] || T.text4;
+  const icon = ICONS[trend] || "\u25cf";
+
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 3,
+      padding: "1px 6px", borderRadius: 4,
+      background: color + "18",
+      border: `1px solid ${color}30`,
+      fontFamily: T.mono, fontSize: isMobile ? 10 : 11,
+      color,
+      fontWeight: 600,
+    }}>
+      {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
+      {divergence && (
+        <span style={{ fontSize: 9, color: "#f59e0b", marginLeft: 2 }} title="CVD/Price divergence">{"\u26a1"}</span>
+      )}
+      {bsr != null && (
+        <span style={{ fontSize: 9, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>
+      )}
+    </span>
+  );
+}
+
 export function ConfluenceBadge({ score, label }) {
   if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";
