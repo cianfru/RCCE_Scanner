@@ -68,11 +68,11 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         </td>
       );
     case "HEAT":
-      return <td style={{ padding: cellPad }}><HeatCell heat={row.heat} /></td>;
+      return <td style={{ padding: cellPad }}><HeatCell heat={row.heat} phase={row.heat_phase} /></td>;
     case "PHASE":
       return <td style={{ padding: cellPad }}><PhaseCell phase={row.heat_phase} /></td>;
     case "EXHAUST":
-      return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} /></td>;
+      return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} floorConfirmed={row.floor_confirmed} /></td>;
     case "FLOOR":
     case "FORMING":
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
