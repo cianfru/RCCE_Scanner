@@ -853,8 +853,17 @@ async def _scan_timeframe(
             cg = cg_metrics.get(symbol) if cg_metrics else None
             if cg is not None:
                 # Override OI change with CoinGlass multi-exchange aggregated value
+                # and re-derive oi_trend (same thresholds as positioning_engine.py)
                 if cg.oi_change_pct_4h != 0:
                     r["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
+                    _chg  = cg.oi_change_pct_4h
+                    _p_up = price_change_pct > 0
+                    if   _chg >  2.0 and _p_up:   r["positioning"]["oi_trend"] = "BUILDING"
+                    elif _chg < -2.0 and _p_up:   r["positioning"]["oi_trend"] = "SQUEEZE"
+                    elif _chg < -2.0 and not _p_up: r["positioning"]["oi_trend"] = "LIQUIDATING"
+                    elif _chg >  2.0 and not _p_up: r["positioning"]["oi_trend"] = "SHORTING"
+                    else:                           r["positioning"]["oi_trend"] = "STABLE"
+                    r["positioning"]["source_map"]["oi_trend"] = "coinglass"
                 r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
                 r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
                 r["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h

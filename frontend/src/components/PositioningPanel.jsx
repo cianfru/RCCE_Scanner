@@ -124,7 +124,7 @@ const BADGE_INFO = {
   },
   oi: {
     title: "Open Interest Trend",
-    text: "Direction of futures open interest. BUILDING = new money entering alongside price (confirms move). SQUEEZE/LIQUIDATING = forced closures in progress. OI context helps distinguish real breakouts from short squeezes.",
+    text: "Direction of futures open interest — sourced from CoinGlass multi-exchange aggregated 4h change (more accurate than single-exchange). BUILDING = new money entering with price (confirmed move). SQUEEZE = OI falling as price rises (shorts closing, not new longs). LIQUIDATING = OI falling with price (long cascade). SHORTING = OI rising as price falls (aggressive shorts opening).",
   },
   cvd: {
     title: "Cumulative Volume Delta",
@@ -136,7 +136,7 @@ const BADGE_INFO = {
   },
   smartMoney: {
     title: "Smart Money LSR",
-    text: "Long/Short Ratio split by account tier. 'Pro' = top traders (CoinGlass top account ratio). 'Retail' = overall LSR. When professionals are heavily long and retail is short, squeeze potential is high. When professionals are short, treat rallies with caution.",
+    text: "Long/Short Ratio split by account tier (CoinGlass). 'Pro' = top-tier trader accounts. 'Retail' = overall market LSR. Wired into signal decisions: Pro LSR < 0.7 downgrades STRONG_LONG → LIGHT_LONG. Pro LSR < 0.8 adds caution warning. Pro LSR > 1.5 reinforces entry signals.",
   },
   liq: {
     title: "Liquidation Intensity",

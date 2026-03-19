@@ -76,6 +76,7 @@ def _apply_cvd_modifiers(
     spot_dominance: str,
     long_short_ratio: float,
     liquidation_24h_usd: float,
+    top_trader_lsr: float = 1.0,
 ) -> "SynthesizedSignal":
     """Apply CVD and spot data modifiers to an already-determined signal.
 
@@ -130,6 +131,20 @@ def _apply_cvd_modifiers(
             and cvd_trend == "BULLISH"):
         signal = "ACCUMULATE" if signal == "WAIT" else signal
         cvd_reasons.append(f"liq_washout+cvd_bull(${liquidation_24h_usd/1e6:.0f}M)")
+
+    # 6. Smart money LSR — top-trader positioning (CoinGlass top account ratio)
+    # Fires only when we have a real reading (1.0 is the neutral default)
+    if top_trader_lsr != 1.0:
+        if top_trader_lsr < 0.7 and signal in ("STRONG_LONG", "LIGHT_LONG"):
+            # Pros clearly skewing short — downgrade entry one step
+            signal = "LIGHT_LONG" if signal == "STRONG_LONG" else "ACCUMULATE"
+            extra_warnings.append(f"smart_money_heavy_short(lsr={top_trader_lsr:.2f})→downgrade")
+        elif top_trader_lsr < 0.8 and signal == "STRONG_LONG":
+            # Mild short skew — warn but hold signal
+            extra_warnings.append(f"smart_money_short(lsr={top_trader_lsr:.2f})→caution")
+        if top_trader_lsr > 1.5 and signal not in _adverse:
+            # Pros heavily long — reinforces entry signals
+            extra_warnings.append(f"smart_money_long(lsr={top_trader_lsr:.2f})")
 
     # Informational warnings (no signal change)
     if spot_dominance == "SPOT_LED" and signal not in _adverse:
@@ -208,6 +223,7 @@ def synthesize_signal(
     funding_regime = (positioning or {}).get("funding_regime", "NEUTRAL")
     oi_trend = (positioning or {}).get("oi_trend", "UNKNOWN")
     funding_rate = (positioning or {}).get("funding_rate", 0.0)
+    top_trader_lsr = (positioning or {}).get("top_trader_lsr", 1.0)
 
     fear_greed = (sentiment or {}).get("fear_greed_value", 50)
 
@@ -453,7 +469,7 @@ def synthesize_signal(
         """Shorthand: apply CVD modifiers and return out."""
         return _apply_cvd_modifiers(
             out, cvd_trend, cvd_divergence, spot_dominance,
-            long_short_ratio, liquidation_24h_usd,
+            long_short_ratio, liquidation_24h_usd, top_trader_lsr,
         )
 
     # --- STRONG_LONG: effective conditions >= total (raw + boosts) + no BEAR-DIV ---
