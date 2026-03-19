@@ -45,7 +45,7 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
-from engines.positioning_engine import compute_positioning
+from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD
 from signal_synthesizer import synthesize_signal
 from market_data import (
     fetch_global_metrics, GlobalMetrics,
@@ -858,11 +858,11 @@ async def _scan_timeframe(
                     r["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
                     _chg  = cg.oi_change_pct_4h
                     _p_up = price_change_pct > 0
-                    if   _chg >  2.0 and _p_up:   r["positioning"]["oi_trend"] = "BUILDING"
-                    elif _chg < -2.0 and _p_up:   r["positioning"]["oi_trend"] = "SQUEEZE"
-                    elif _chg < -2.0 and not _p_up: r["positioning"]["oi_trend"] = "LIQUIDATING"
-                    elif _chg >  2.0 and not _p_up: r["positioning"]["oi_trend"] = "SHORTING"
-                    else:                           r["positioning"]["oi_trend"] = "STABLE"
+                    if   _chg >  OI_CHANGE_THRESHOLD and _p_up:       r["positioning"]["oi_trend"] = "BUILDING"
+                    elif _chg < -OI_CHANGE_THRESHOLD and _p_up:       r["positioning"]["oi_trend"] = "SQUEEZE"
+                    elif _chg < -OI_CHANGE_THRESHOLD and not _p_up:   r["positioning"]["oi_trend"] = "LIQUIDATING"
+                    elif _chg >  OI_CHANGE_THRESHOLD and not _p_up:   r["positioning"]["oi_trend"] = "SHORTING"
+                    else:                                              r["positioning"]["oi_trend"] = "STABLE"
                     r["positioning"]["source_map"]["oi_trend"] = "coinglass"
                 r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
                 r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
