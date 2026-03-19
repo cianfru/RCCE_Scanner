@@ -659,7 +659,7 @@ async def _scan_timeframe(
     #    Binance (primary positioning) + Hyperliquid + globals + CoinGlass
     from binance_futures_data import fetch_binance_futures_metrics
     from bybit_futures_data import fetch_bybit_futures_metrics
-    from coinglass_data import fetch_coinglass_metrics, fetch_spot_metrics
+    from coinglass_data import fetch_coinglass_metrics
 
     gm: Optional[GlobalMetrics] = None
     hl_metrics = {}
@@ -667,33 +667,25 @@ async def _scan_timeframe(
     sentiment_data = None
     stablecoin_data = None
     cg_metrics: dict = {}
-    cg_spot: dict = {}
 
     try:
-        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, cg_spot = await asyncio.gather(
+        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics = await asyncio.gather(
             fetch_global_metrics(),
             fetch_hyperliquid_metrics(symbols),
             fetch_binance_futures_metrics(symbols),
             fetch_fear_greed(),
             fetch_stablecoin_supply(),
             fetch_coinglass_metrics(symbols),
-            fetch_spot_metrics(symbols),
         )
     except Exception:
         logger.warning("Some external data fetches failed — proceeding with available data")
         # Individually catch CoinGlass failures to not block core data
         if not cg_metrics:
             try:
-                cg_metrics = await asyncio.wait_for(fetch_coinglass_metrics(symbols), timeout=15.0)
+                cg_metrics = await asyncio.wait_for(fetch_coinglass_metrics(symbols), timeout=20.0)
             except Exception as exc:
                 logger.warning("CoinGlass metrics fetch failed: %s", exc)
                 cg_metrics = {}
-        if not cg_spot:
-            try:
-                cg_spot = await asyncio.wait_for(fetch_spot_metrics(symbols), timeout=15.0)
-            except Exception as exc:
-                logger.warning("CoinGlass spot fetch failed: %s", exc)
-                cg_spot = {}
 
     if gm:
         logger.info(
@@ -709,9 +701,15 @@ async def _scan_timeframe(
     if stablecoin_data:
         logger.info("Stablecoin: $%.1fB (%s)", stablecoin_data.total_stablecoin_cap / 1e9, stablecoin_data.trend)
     if cg_metrics:
-        logger.info("CoinGlass coins-markets: %d coins", len(cg_metrics))
-    if cg_spot:
-        logger.info("CoinGlass spot: %d coins", len(cg_spot))
+        btc_cg = cg_metrics.get("BTC/USDT")
+        logger.info(
+            "CoinGlass: %d coins (BTC fund=%.3f%%/8h OI=$%.1fB liq24h=$%.0fM dom=%s)",
+            len(cg_metrics),
+            (btc_cg.funding_rate * 100 * 8) if btc_cg else 0,
+            (btc_cg.open_interest_usd / 1e9) if btc_cg else 0,
+            (btc_cg.liquidation_usd_24h / 1e6) if btc_cg else 0,
+            btc_cg.spot_dominance if btc_cg else "N/A",
+        )
 
     # 6b. Fetch Bybit for symbols not covered by Binance or HL
     covered_symbols = set()
@@ -839,7 +837,10 @@ async def _scan_timeframe(
                 "liquidation_24h_usd": 0.0,
                 "long_liq_usd": 0.0,
                 "short_liq_usd": 0.0,
+                "liquidation_4h_usd": 0.0,
+                "liquidation_1h_usd": 0.0,
                 "long_short_ratio": 1.0,
+                "top_trader_lsr": 1.0,
                 "oi_market_cap_ratio": 0.0,
                 "spot_volume_usd": 0.0,
                 "spot_futures_ratio": 0.0,
@@ -857,18 +858,20 @@ async def _scan_timeframe(
                 r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
                 r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
                 r["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h
+                r["positioning"]["liquidation_4h_usd"] = cg.liquidation_usd_4h
+                r["positioning"]["liquidation_1h_usd"] = cg.liquidation_usd_1h
                 r["positioning"]["long_short_ratio"] = cg.long_short_ratio_4h
+                r["positioning"]["top_trader_lsr"] = cg.top_trader_lsr
                 r["positioning"]["oi_market_cap_ratio"] = cg.oi_market_cap_ratio
                 r["positioning"]["source_map"]["oi_change"] = "coinglass"
                 r["positioning"]["source_map"]["liq"] = "coinglass"
 
-            # Add spot dominance data
-            cg_sp = cg_spot.get(symbol) if cg_spot else None
-            if cg_sp is not None:
-                r["positioning"]["spot_volume_usd"] = cg_sp.spot_volume_usd
-                r["positioning"]["spot_futures_ratio"] = cg_sp.spot_futures_ratio
-                r["positioning"]["spot_dominance"] = cg_sp.spot_dominance
-                r["positioning"]["source_map"]["spot"] = "coinglass"
+                # Spot dominance is now embedded in CoinglassMetrics
+                if cg.spot_dominance != "NEUTRAL" or cg.spot_volume_usd > 0:
+                    r["positioning"]["spot_volume_usd"] = cg.spot_volume_usd
+                    r["positioning"]["spot_futures_ratio"] = cg.spot_futures_ratio
+                    r["positioning"]["spot_dominance"] = cg.spot_dominance
+                    r["positioning"]["source_map"]["spot"] = "coinglass"
 
     logger.info(
         "Positioning: %d Binance, %d Hyperliquid, %d Bybit (%d total)",
