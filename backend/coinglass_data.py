@@ -1,19 +1,32 @@
 """
 coinglass_data.py
 ~~~~~~~~~~~~~~~~~
-Fetches aggregated positioning data (OI, funding rates, liquidations,
-long/short ratios) from the CoinGlass API v4.
+Fetches aggregated positioning data from CoinGlass API v4 (Hobbyist plan).
 
-Endpoint: GET https://open-api-v4.coinglass.com/api/futures/coins-markets
-Auth:     Header ``CG-API-KEY``
+Available endpoints (empirically verified):
+  BULK (1 call each, ~1000 coins):
+    GET /api/futures/funding-rate/exchange-list  → per-exchange funding rates
+    GET /api/futures/liquidation/coin-list       → 24h/12h/4h/1h liquidations
 
-CoinGlass aggregates data across all major exchanges (Binance, OKX, Bybit,
-etc.) so we get a *single* cross-exchange view of each coin's positioning
-instead of stitching together Kraken + Hyperliquid data.
+  PER-COIN (top N scanned coins, cached 30 min):
+    GET /api/futures/open-interest/aggregated-history   → OI OHLC
+    GET /api/futures/aggregated-taker-buy-sell-volume/history  → futures CVD
+    GET /api/spot/aggregated-taker-buy-sell-volume/history     → spot CVD
+    GET /api/futures/global-long-short-account-ratio/history   → retail LSR
+    GET /api/futures/top-long-short-account-ratio/history      → smart-money LSR
 
-Key advantage: the API returns pre-computed OI change percentages at
-multiple timeframes (5m, 15m, 30m, 1h, 4h, 24h), which eliminates the
-cold-start problem where ``prev_oi`` was empty on every deploy.
+  MACRO (global, cached 1 hr):
+    GET /api/coinbase-premium-index              → institutional buy pressure
+    GET /api/etf/bitcoin/flow-history            → BTC ETF net flows
+
+Auth: Header ``CG-API-KEY``
+
+Not available on Hobbyist:
+  /api/futures/coins-markets          (bulk aggregate — requires higher plan)
+  /api/futures/cvd/history            (use taker buy-sell instead)
+  /api/hyperliquid/whale-alert        (Pro+)
+  /api/futures/netflow-list           (Pro+)
+  /api/spot/coins-markets             (Pro+)
 """
 
 from __future__ import annotations
@@ -23,7 +36,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -33,388 +46,659 @@ logger = logging.getLogger(__name__)
 # API config
 # ---------------------------------------------------------------------------
 
-_BASE_URL = "https://open-api-v4.coinglass.com"
-_COINS_MARKETS_PATH = "/api/futures/coins-markets"
+_BASE_URL      = "https://open-api-v4.coinglass.com"
+_AUTH_HEADER   = "CG-API-KEY"
 
-_CACHE_TTL = 5 * 60          # 5 minutes (matches scan interval)
-_REQUEST_TIMEOUT_S = 20
-_MAX_RETRIES = 2
-_RETRY_DELAY_S = 3.0
-_PER_PAGE = 100               # max results per page
+# Bulk endpoints (all coins in one call)
+_PATH_FUNDING_BULK = "/api/futures/funding-rate/exchange-list"
+_PATH_LIQ_BULK     = "/api/futures/liquidation/coin-list"
+
+# Per-coin endpoints
+_PATH_OI_HIST        = "/api/futures/open-interest/aggregated-history"
+_PATH_FUT_TAKER      = "/api/futures/aggregated-taker-buy-sell-volume/history"
+_PATH_SPOT_TAKER     = "/api/spot/aggregated-taker-buy-sell-volume/history"
+_PATH_LSR_GLOBAL     = "/api/futures/global-long-short-account-ratio/history"
+_PATH_LSR_TOP        = "/api/futures/top-long-short-account-ratio/history"
+
+# Macro endpoints
+_PATH_CB_PREMIUM     = "/api/coinbase-premium-index"
+_PATH_ETF_FLOWS      = "/api/etf/bitcoin/flow-history"
+
+# Timing
+_BULK_CACHE_TTL      = 5 * 60        # 5 min  (matches scan interval)
+_PER_COIN_CACHE_TTL  = 30 * 60       # 30 min (data changes slowly)
+_MACRO_CACHE_TTL     = 60 * 60       # 1 hour
+
+# Concurrency
+_REQUEST_SEMAPHORE   = 8             # max simultaneous HTTP requests
+_REQUEST_TIMEOUT_S   = 25
+_MAX_RETRIES         = 2
+_RETRY_DELAY_S       = 3.0
+
+# Per-coin fetch limits
+_PER_COIN_LIMIT      = 30            # max coins for detailed OI/CVD/LSR
+
+# Taker volume exchange lists
+_FUTURES_EXCHANGES   = "Binance,OKX,Bybit"
+_SPOT_EXCHANGE       = "Binance"
 
 
 def _get_api_key() -> str:
-    """Read API key from environment variable."""
     key = os.environ.get("COINGLASS_API_KEY", "")
     if not key:
-        logger.warning("COINGLASS_API_KEY not set -- CoinGlass data will be unavailable")
+        logger.warning("COINGLASS_API_KEY not set — CoinGlass data will be unavailable")
     return key
 
 
 # ---------------------------------------------------------------------------
-# Data container
+# Symbol normalisation
+# ---------------------------------------------------------------------------
+
+_CG_PREFIX_MAP = {
+    "1000PEPE":   "PEPE",
+    "1000BONK":   "BONK",
+    "1000FLOKI":  "FLOKI",
+    "1000SHIB":   "SHIB",
+    "1MBABYDOGE": "BABYDOGE",
+}
+
+def _scanner_to_coin(scanner_sym: str) -> str:
+    """'BTC/USDT' → 'BTC'"""
+    return scanner_sym.split("/")[0]
+
+def _coin_to_pair(coin: str) -> str:
+    """'BTC' → 'BTCUSDT'  (needed for LSR endpoints)"""
+    return f"{coin}USDT"
+
+
+# ---------------------------------------------------------------------------
+# Data containers
 # ---------------------------------------------------------------------------
 
 @dataclass
 class CoinglassMetrics:
     """Per-coin aggregated positioning data from CoinGlass."""
-    coin: str = ""                          # e.g. "BTC"
+    coin: str = ""
     current_price: float = 0.0
 
-    # Funding rate (OI-weighted average across exchanges)
-    funding_rate: float = 0.0               # avg_funding_rate_by_oi (per-period)
+    # Funding rate — Binance preferred, else cross-exchange mean; hourly
+    funding_rate: float = 0.0
 
-    # Open interest
-    open_interest_usd: float = 0.0          # aggregated across exchanges
-    oi_change_pct_1h: float = 0.0
-    oi_change_pct_4h: float = 0.0
-    oi_change_pct_24h: float = 0.0
+    # Open interest (aggregated close value from OI history)
+    open_interest_usd: float = 0.0
+    oi_change_pct_1h: float = 0.0   # estimated from recent bars
+    oi_change_pct_4h: float = 0.0   # last 4h bar change
+    oi_change_pct_24h: float = 0.0  # 6-bar × 4h window
 
-    # Price changes
+    # Price changes (populated from CCXT by scanner — not from CoinGlass)
     price_change_pct_1h: float = 0.0
     price_change_pct_4h: float = 0.0
     price_change_pct_24h: float = 0.0
 
-    # Long/short ratios
-    long_short_ratio_4h: float = 1.0
-    long_short_ratio_24h: float = 1.0
+    # Long/short ratios (global account ratio from Binance)
+    long_short_ratio_4h: float = 1.0    # most recent bar
+    top_trader_lsr: float = 1.0         # smart-money LSR
 
-    # Liquidation data
+    # Liquidations (bulk endpoint — all timeframes)
     liquidation_usd_24h: float = 0.0
     long_liquidation_usd_24h: float = 0.0
     short_liquidation_usd_24h: float = 0.0
+    liquidation_usd_4h: float = 0.0
+    liquidation_usd_1h: float = 0.0
 
-    # Volume
-    volume_24h: float = 0.0                 # 24h notional volume
+    # Spot dominance (from spot vs futures taker volume)
+    spot_volume_usd: float = 0.0
+    futures_volume_usd: float = 0.0
+    spot_futures_ratio: float = 0.0   # spot / (spot + futures)
+    spot_dominance: str = "NEUTRAL"   # SPOT_LED | FUTURES_LED | NEUTRAL
 
-    # OI/market cap ratio (leverage proxy)
+    # OI/market-cap ratio — not available on Hobbyist; kept for compat
     oi_market_cap_ratio: float = 0.0
 
     timestamp: float = 0.0
 
 
+@dataclass
+class CoinglassCVD:
+    """Per-coin CVD derived from taker buy/sell volume history."""
+    coin: str = ""
+    cvd_trend: str = "NEUTRAL"       # BULLISH | BEARISH | NEUTRAL
+    cvd_value: float = 0.0           # net (buy - sell) USD over lookback
+    cvd_divergence: bool = False     # price dir ≠ CVD dir
+    buy_volume_usd: float = 0.0
+    sell_volume_usd: float = 0.0
+    buy_sell_ratio: float = 1.0      # buy / sell
+    timestamp: float = 0.0
+
+
+@dataclass
+class CoinglassSpot:
+    """Per-coin spot dominance (derived from taker volume comparison)."""
+    coin: str = ""
+    spot_volume_usd: float = 0.0
+    spot_price_change_24h: float = 0.0
+    futures_volume_usd: float = 0.0
+    spot_futures_ratio: float = 0.0
+    spot_dominance: str = "NEUTRAL"  # SPOT_LED | FUTURES_LED | NEUTRAL
+    timestamp: float = 0.0
+
+
+@dataclass
+class CoinglassMacro:
+    """Global macro signals (BTC ETF flows, Coinbase premium)."""
+    coinbase_premium_rate: float = 0.0   # positive = premium (institutional buying)
+    coinbase_premium: float = 0.0        # raw premium USD
+    etf_flow_usd_7d: float = 0.0        # sum of last 7 daily ETF flows
+    etf_flow_usd_1d: float = 0.0        # latest daily flow
+    etf_signal: str = "NEUTRAL"          # INFLOW | OUTFLOW | NEUTRAL
+    timestamp: float = 0.0
+
+
 # ---------------------------------------------------------------------------
-# Cache
+# TTL caches
 # ---------------------------------------------------------------------------
 
 @dataclass
-class _CGCache:
-    """TTL cache for CoinGlass metrics."""
-    data: Optional[Dict[str, CoinglassMetrics]] = None
+class _TTLCache:
+    data: Any = None
     expires_at: float = 0.0
 
-    def get(self) -> Optional[Dict[str, CoinglassMetrics]]:
-        if self.data and time.monotonic() < self.expires_at:
+    def get(self) -> Any:
+        if self.data is not None and time.monotonic() < self.expires_at:
             return self.data
         return None
 
-    def put(self, data: Dict[str, CoinglassMetrics]) -> None:
+    def put(self, data: Any, ttl: float) -> None:
         self.data = data
-        self.expires_at = time.monotonic() + _CACHE_TTL
+        self.expires_at = time.monotonic() + ttl
 
-    def get_fallback(self) -> Optional[Dict[str, CoinglassMetrics]]:
-        """Return stale data as fallback."""
+    def get_fallback(self) -> Any:
         return self.data
 
 
-_cache = _CGCache()
+@dataclass
+class _PerCoinCacheEntry:
+    data: dict = field(default_factory=dict)  # coin → raw per-coin results
+    expires_at: float = 0.0
+
+
+_bulk_cache      = _TTLCache()   # Dict[str, CoinglassMetrics] (funding + liq)
+_per_coin_cache  = _TTLCache()   # Dict[str, dict]             (CVD, OI, LSR)
+_macro_cache     = _TTLCache()   # CoinglassMacro
 
 
 # ---------------------------------------------------------------------------
-# Fetch
+# Low-level HTTP helper
+# ---------------------------------------------------------------------------
+
+async def _get_data(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+    path: str,
+    params: dict,
+) -> Any:
+    """GET a CoinGlass v4 endpoint; returns ``data`` field or [] on failure."""
+    async with sem:
+        try:
+            url = f"{_BASE_URL}{path}"
+            headers = {_AUTH_HEADER: api_key, "Accept": "application/json"}
+            async with session.get(url, params=params, headers=headers) as resp:
+                resp.raise_for_status()
+                body = await resp.json()
+
+            code = str(body.get("code", ""))
+            if code not in ("0", "200"):
+                logger.debug(
+                    "CoinGlass %s returned code=%s msg=%s",
+                    path, code, body.get("msg", "")[:80],
+                )
+                return []
+            return body.get("data") or []
+        except Exception as exc:
+            logger.debug("CoinGlass request %s error: %s", path, exc)
+            return []
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Bulk funding fetch  (1 call → all coins)
+# ---------------------------------------------------------------------------
+
+async def _fetch_bulk_funding(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+) -> Dict[str, CoinglassMetrics]:
+    """Build a CoinglassMetrics stub for every coin from the funding bulk call."""
+    data = await _get_data(session, sem, api_key, _PATH_FUNDING_BULK, {})
+    if not data:
+        return {}
+
+    result: Dict[str, CoinglassMetrics] = {}
+    for item in data:
+        raw_sym = item.get("symbol", "")
+        if not raw_sym:
+            continue
+        coin = _CG_PREFIX_MAP.get(raw_sym, raw_sym)
+        scanner_sym = f"{coin}/USDT"
+
+        # Compute hourly funding rate (Binance preferred, else cross-exchange mean)
+        rates_hourly: list[float] = []
+        binance_hourly: Optional[float] = None
+
+        for ex in item.get("stablecoin_margin_list") or []:
+            rate = ex.get("funding_rate")
+            if rate is None:
+                continue
+            interval = float(ex.get("funding_rate_interval") or 8)
+            hourly = float(rate) / interval
+            rates_hourly.append(hourly)
+            if ex.get("exchange", "").lower() == "binance":
+                binance_hourly = hourly
+
+        funding_rate = (
+            binance_hourly if binance_hourly is not None
+            else (sum(rates_hourly) / len(rates_hourly) if rates_hourly else 0.0)
+        )
+
+        result[scanner_sym] = CoinglassMetrics(
+            coin=coin,
+            funding_rate=funding_rate,
+            timestamp=time.time(),
+        )
+
+    logger.info("CoinGlass funding: %d coins loaded", len(result))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Bulk liquidation merge  (1 call → all coins)
+# ---------------------------------------------------------------------------
+
+async def _fetch_bulk_liquidations(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+    metrics: Dict[str, CoinglassMetrics],
+) -> None:
+    """Merge 24h/4h/1h liquidation data into existing metrics dict in-place."""
+    data = await _get_data(session, sem, api_key, _PATH_LIQ_BULK, {})
+    if not data:
+        return
+
+    for item in data:
+        raw_sym = item.get("symbol", "")
+        if not raw_sym:
+            continue
+        coin = _CG_PREFIX_MAP.get(raw_sym, raw_sym)
+        scanner_sym = f"{coin}/USDT"
+        if scanner_sym not in metrics:
+            continue
+
+        m = metrics[scanner_sym]
+        m.liquidation_usd_24h       = float(item.get("liquidation_usd_24h") or 0.0)
+        m.long_liquidation_usd_24h  = float(item.get("long_liquidation_usd_24h") or 0.0)
+        m.short_liquidation_usd_24h = float(item.get("short_liquidation_usd_24h") or 0.0)
+        m.liquidation_usd_4h        = float(item.get("liquidation_usd_4h") or 0.0)
+        m.liquidation_usd_1h        = float(item.get("liquidation_usd_1h") or 0.0)
+
+    liq_count = sum(1 for m in metrics.values() if m.liquidation_usd_24h > 0)
+    btc = metrics.get("BTC/USDT")
+    logger.info(
+        "CoinGlass liquidations: %d coins (BTC 24h liq=$%.1fM long=$%.1fM short=$%.1fM)",
+        liq_count,
+        (btc.liquidation_usd_24h / 1e6) if btc else 0,
+        (btc.long_liquidation_usd_24h / 1e6) if btc else 0,
+        (btc.short_liquidation_usd_24h / 1e6) if btc else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Per-coin detail fetch (OI + CVD + LSR + spot dominance)
+# ---------------------------------------------------------------------------
+
+async def _fetch_single_coin_detail(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+    scanner_sym: str,
+    price_change_pct: Optional[float] = None,
+) -> Tuple[str, dict]:
+    """Fetch OI history, futures taker vol, spot taker vol, and LSR for one coin.
+
+    Returns ``(scanner_sym, detail_dict)`` where detail_dict has keys:
+    ``oi``, ``fut_taker``, ``spot_taker``, ``lsr_global``, ``lsr_top``.
+    """
+    coin = _scanner_to_coin(scanner_sym)
+    pair = _coin_to_pair(coin)
+
+    oi_task   = _get_data(session, sem, api_key, _PATH_OI_HIST, {
+        "symbol": coin, "interval": "h4", "limit": 7,
+    })
+    fut_task  = _get_data(session, sem, api_key, _PATH_FUT_TAKER, {
+        "symbol": coin, "exchange_list": _FUTURES_EXCHANGES,
+        "interval": "h4", "limit": 6,
+    })
+    spot_task = _get_data(session, sem, api_key, _PATH_SPOT_TAKER, {
+        "symbol": coin, "exchange_list": _SPOT_EXCHANGE,
+        "interval": "h4", "limit": 6,
+    })
+    lsr_task  = _get_data(session, sem, api_key, _PATH_LSR_GLOBAL, {
+        "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
+    })
+    top_lsr_task = _get_data(session, sem, api_key, _PATH_LSR_TOP, {
+        "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
+    })
+
+    oi, fut, spot, lsr, top_lsr = await asyncio.gather(
+        oi_task, fut_task, spot_task, lsr_task, top_lsr_task,
+        return_exceptions=True,
+    )
+
+    def _safe(v: Any) -> list:
+        return v if isinstance(v, list) else []
+
+    return scanner_sym, {
+        "oi":        _safe(oi),
+        "fut_taker": _safe(fut),
+        "spot_taker": _safe(spot),
+        "lsr_global": _safe(lsr),
+        "lsr_top":    _safe(top_lsr),
+        "price_change_pct": price_change_pct,
+    }
+
+
+def _parse_detail(coin: str, detail: dict) -> Tuple[
+    Optional[float], Optional[float], Optional[float],  # OI, oi_4h, oi_24h
+    Optional["CoinglassCVD"], Optional["CoinglassSpot"],
+    float, float,  # lsr_global, lsr_top
+]:
+    """Parse raw per-coin detail into structured values."""
+
+    # --- OI ---
+    oi_bars = detail.get("oi") or []
+    oi_usd: Optional[float] = None
+    oi_chg_4h: Optional[float] = None
+    oi_chg_24h: Optional[float] = None
+    if len(oi_bars) >= 2:
+        closes = [float(b.get("close") or 0) for b in oi_bars]
+        oi_usd = closes[-1]
+        oi_chg_4h = ((closes[-1] - closes[-2]) / closes[-2]) * 100 if closes[-2] else 0.0
+        if len(closes) >= 7:
+            oi_chg_24h = ((closes[-1] - closes[-7]) / closes[-7]) * 100 if closes[-7] else 0.0
+
+    # --- Futures CVD ---
+    fut_bars = detail.get("fut_taker") or []
+    cvd: Optional[CoinglassCVD] = None
+    if fut_bars:
+        total_buy  = sum(float(b.get("aggregated_buy_volume_usd") or 0) for b in fut_bars)
+        total_sell = sum(float(b.get("aggregated_sell_volume_usd") or 0) for b in fut_bars)
+        cvd_value  = total_buy - total_sell
+        bsr = total_buy / total_sell if total_sell > 0 else 1.0
+
+        if cvd_value > 0 and bsr > 1.05:
+            cvd_trend = "BULLISH"
+        elif cvd_value < 0 and bsr < 0.95:
+            cvd_trend = "BEARISH"
+        else:
+            cvd_trend = "NEUTRAL"
+
+        price_chg = detail.get("price_change_pct")
+        divergence = False
+        if price_chg is not None:
+            if (price_chg > 0 and cvd_trend == "BEARISH") or \
+               (price_chg < 0 and cvd_trend == "BULLISH"):
+                divergence = True
+
+        cvd = CoinglassCVD(
+            coin=coin,
+            cvd_trend=cvd_trend,
+            cvd_value=cvd_value,
+            cvd_divergence=divergence,
+            buy_volume_usd=total_buy,
+            sell_volume_usd=total_sell,
+            buy_sell_ratio=round(bsr, 3),
+            timestamp=time.time(),
+        )
+
+    # --- Spot dominance ---
+    spot_bars  = detail.get("spot_taker") or []
+    spot_entry: Optional[CoinglassSpot] = None
+    if spot_bars or fut_bars:
+        spot_vol    = sum(float(b.get("aggregated_buy_volume_usd") or 0) +
+                         float(b.get("aggregated_sell_volume_usd") or 0) for b in spot_bars)
+        futures_vol = sum(float(b.get("aggregated_buy_volume_usd") or 0) +
+                         float(b.get("aggregated_sell_volume_usd") or 0) for b in fut_bars)
+        total_vol = spot_vol + futures_vol
+        ratio = spot_vol / total_vol if total_vol > 0 else 0.0
+        if ratio > 0.55:
+            dominance = "SPOT_LED"
+        elif futures_vol > 0 and ratio < 0.35:
+            dominance = "FUTURES_LED"
+        else:
+            dominance = "NEUTRAL"
+
+        spot_entry = CoinglassSpot(
+            coin=coin,
+            spot_volume_usd=spot_vol,
+            futures_volume_usd=futures_vol,
+            spot_futures_ratio=round(ratio, 4),
+            spot_dominance=dominance,
+            timestamp=time.time(),
+        )
+
+    # --- LSR ---
+    lsr_global = 1.0
+    lsr_rows = detail.get("lsr_global") or []
+    if lsr_rows:
+        lsr_global = float(lsr_rows[-1].get("global_account_long_short_ratio") or 1.0)
+
+    top_lsr = 1.0
+    top_rows = detail.get("lsr_top") or []
+    if top_rows:
+        top_lsr = float(top_rows[-1].get("top_account_long_short_ratio") or 1.0)
+
+    return oi_usd, oi_chg_4h, oi_chg_24h, cvd, spot_entry, lsr_global, top_lsr
+
+
+# ---------------------------------------------------------------------------
+# Macro signals
+# ---------------------------------------------------------------------------
+
+async def _fetch_macro(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+) -> CoinglassMacro:
+    """Fetch Coinbase premium index and BTC ETF flows."""
+    cb_task  = _get_data(session, sem, api_key, _PATH_CB_PREMIUM, {
+        "symbol": "BTC", "interval": "h4", "limit": 1,
+    })
+    # Note: ETF endpoint ignores limit param — returns all data since launch.
+    # We slice the last 7 rows after receiving.
+    etf_task = _get_data(session, sem, api_key, _PATH_ETF_FLOWS, {
+        "interval": "daily",
+    })
+    cb_data, etf_data = await asyncio.gather(cb_task, etf_task, return_exceptions=True)
+
+    macro = CoinglassMacro(timestamp=time.time())
+
+    # Coinbase premium
+    if isinstance(cb_data, list) and cb_data:
+        row = cb_data[-1]
+        macro.coinbase_premium_rate = float(row.get("premium_rate") or 0.0)
+        macro.coinbase_premium      = float(row.get("premium") or 0.0)
+
+    # ETF flows — endpoint ignores limit; slice last 7 trading days
+    if isinstance(etf_data, list) and etf_data:
+        recent = etf_data[-7:]
+        flows = [float(r.get("flow_usd") or 0) for r in recent]
+        macro.etf_flow_usd_7d = sum(flows)
+        macro.etf_flow_usd_1d = flows[-1] if flows else 0.0
+        if macro.etf_flow_usd_7d > 50_000_000:
+            macro.etf_signal = "INFLOW"
+        elif macro.etf_flow_usd_7d < -50_000_000:
+            macro.etf_signal = "OUTFLOW"
+
+    logger.info(
+        "CoinGlass macro: CB premium=%.4f%% ETF_7d=$%.0fM signal=%s",
+        macro.coinbase_premium_rate * 100,
+        macro.etf_flow_usd_7d / 1e6,
+        macro.etf_signal,
+    )
+    return macro
+
+
+# ---------------------------------------------------------------------------
+# Internal caches for per-coin CVD / Spot / macro
+# ---------------------------------------------------------------------------
+
+_cvd_store:   Dict[str, CoinglassCVD]   = {}   # coin → latest CVD
+_spot_store:  Dict[str, CoinglassSpot]  = {}   # scanner_sym → latest spot
+
+
+# ---------------------------------------------------------------------------
+# Main public fetch function
 # ---------------------------------------------------------------------------
 
 async def fetch_coinglass_metrics(
     symbols: Optional[List[str]] = None,
+    price_changes: Optional[Dict[str, float]] = None,
 ) -> Dict[str, CoinglassMetrics]:
-    """Fetch aggregated OI, funding, and positioning from CoinGlass.
+    """Fetch comprehensive positioning data from CoinGlass.
 
-    Returns a dict keyed by scanner symbol (e.g. ``'BTC/USDT'``).
+    Two-phase approach:
+    1. Bulk calls (all coins, 5 min TTL): funding rates + liquidations.
+    2. Per-coin calls (top N, 30 min TTL): OI history, futures/spot CVD, LSR.
 
     Parameters
     ----------
     symbols : list[str] or None
-        If provided, filter results to these scanner symbols.
-        If None, return all available coins.
+        Scanner symbols to filter to (e.g. ['BTC/USDT', 'ETH/USDT']).
+    price_changes : dict[str, float] or None
+        Recent price change % per scanner symbol — used for CVD divergence.
+
+    Returns
+    -------
+    dict keyed by scanner symbol (e.g. 'BTC/USDT').
     """
     api_key = _get_api_key()
     if not api_key:
         return {}
 
-    # Check cache
-    cached = _cache.get()
-    if cached is not None:
-        if symbols:
-            return {s: cached[s] for s in symbols if s in cached}
-        return cached
-
-    last_error: Optional[Exception] = None
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    sem = asyncio.Semaphore(_REQUEST_SEMAPHORE)
 
-    for attempt in range(_MAX_RETRIES + 1):
+    # --- Check bulk cache ---
+    bulk = _bulk_cache.get()
+    if bulk is None:
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    # Phase 1: funding (bulk, all coins)
+                    bulk = await _fetch_bulk_funding(session, sem, api_key)
+                    if not bulk:
+                        raise RuntimeError("Empty funding response")
+
+                    # Phase 2: liquidations (bulk, all coins)
+                    await _fetch_bulk_liquidations(session, sem, api_key, bulk)
+
+                _bulk_cache.put(bulk, _BULK_CACHE_TTL)
+                break
+
+            except Exception as exc:
+                logger.warning("CoinGlass bulk fetch attempt %d/%d failed: %s",
+                               attempt + 1, _MAX_RETRIES + 1, exc)
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(_RETRY_DELAY_S)
+        else:
+            bulk = _bulk_cache.get_fallback() or {}
+            if bulk:
+                logger.warning("Using stale CoinGlass bulk data")
+
+    if not bulk:
+        return {}
+
+    # --- Per-coin detail fetch ---
+    per_coin = _per_coin_cache.get()
+    if per_coin is None:
+        per_coin = {}
+
+        target_syms = (symbols or list(bulk.keys()))[:_PER_COIN_LIMIT]
+        price_changes = price_changes or {}
+
         try:
-            all_metrics: Dict[str, CoinglassMetrics] = {}
-
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                # Paginate to get all coins
-                page = 1
-                while True:
-                    url = f"{_BASE_URL}{_COINS_MARKETS_PATH}"
-                    params = {
-                        "per_page": _PER_PAGE,
-                        "page": page,
-                    }
-                    headers = {
-                        "CG-API-KEY": api_key,
-                        "Accept": "application/json",
-                    }
+                tasks = [
+                    _fetch_single_coin_detail(
+                        session, sem, api_key, sym,
+                        price_changes.get(sym),
+                    )
+                    for sym in target_syms
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    async with session.get(url, params=params, headers=headers) as resp:
-                        resp.raise_for_status()
-                        body = await resp.json()
+            for outcome in results:
+                if isinstance(outcome, Exception):
+                    logger.debug("Per-coin task raised: %s", outcome)
+                    continue
+                sym, detail = outcome
+                per_coin[sym] = detail
 
-                    if body.get("code") != "0":
-                        logger.warning(
-                            "CoinGlass API error: code=%s msg=%s",
-                            body.get("code"), body.get("msg"),
-                        )
-                        break
+            _per_coin_cache.put(per_coin, _PER_COIN_CACHE_TTL)
 
-                    items = body.get("data", [])
-                    if not items:
-                        break
+            # Parse and store CVD/spot into side caches
+            cvd_bullish = cvd_bearish = 0
+            for sym, detail in per_coin.items():
+                coin = _scanner_to_coin(sym)
+                oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
 
-                    for item in items:
-                        m = _parse_item(item)
-                        if m is not None:
-                            scanner_sym = f"{m.coin}/USDT"
-                            all_metrics[scanner_sym] = m
+                if cvd is not None:
+                    _cvd_store[coin] = cvd
+                    if cvd.cvd_trend == "BULLISH":
+                        cvd_bullish += 1
+                    elif cvd.cvd_trend == "BEARISH":
+                        cvd_bearish += 1
 
-                    # If we got fewer than per_page, we've reached the end
-                    if len(items) < _PER_PAGE:
-                        break
-                    page += 1
+                if spot is not None:
+                    _spot_store[sym] = spot
 
-                    # Safety: don't paginate forever
-                    if page > 10:
-                        break
+                # Merge into bulk metrics
+                if sym in bulk:
+                    m = bulk[sym]
+                    if oi_usd is not None:
+                        m.open_interest_usd = oi_usd
+                    if oi_4h is not None:
+                        m.oi_change_pct_4h = round(oi_4h, 2)
+                    if oi_24h is not None:
+                        m.oi_change_pct_24h = round(oi_24h, 2)
+                    m.long_short_ratio_4h = lsr
+                    m.top_trader_lsr = top_lsr
+                    if spot is not None:
+                        m.spot_volume_usd    = spot.spot_volume_usd
+                        m.futures_volume_usd = spot.futures_volume_usd
+                        m.spot_futures_ratio = spot.spot_futures_ratio
+                        m.spot_dominance     = spot.spot_dominance
 
-            # Cache
-            _cache.put(all_metrics)
-
-            # Log summary
-            btc = all_metrics.get("BTC/USDT")
             logger.info(
-                "Fetched CoinGlass metrics for %d coins "
-                "(BTC: funding=%.4f%%, OI=$%.1fB, OI_chg_4h=%.2f%%)",
-                len(all_metrics),
-                (btc.funding_rate * 100) if btc else 0.0,
-                (btc.open_interest_usd / 1e9) if btc else 0.0,
-                btc.oi_change_pct_4h if btc else 0.0,
-            )
-
-            if symbols:
-                return {s: all_metrics[s] for s in symbols if s in all_metrics}
-            return all_metrics
-
-        except aiohttp.ClientError as exc:
-            last_error = exc
-            logger.warning(
-                "CoinGlass request failed (attempt %d/%d): %s",
-                attempt + 1, _MAX_RETRIES + 1, exc,
-            )
-        except Exception as exc:
-            last_error = exc
-            logger.error(
-                "Unexpected error fetching CoinGlass data (attempt %d/%d): %s",
-                attempt + 1, _MAX_RETRIES + 1, exc,
-            )
-
-        if attempt < _MAX_RETRIES:
-            await asyncio.sleep(_RETRY_DELAY_S)
-
-    # Fallback to stale cache
-    fallback = _cache.get_fallback()
-    if fallback is not None:
-        logger.warning("Using stale CoinGlass data after fetch failure: %s", last_error)
-        if symbols:
-            return {s: fallback[s] for s in symbols if s in fallback}
-        return fallback
-
-    logger.error("CoinGlass data unavailable: %s", last_error)
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# Parser
-# ---------------------------------------------------------------------------
-
-# CoinGlass uses "1000PEPE", "1000BONK" etc. for meme tokens.
-# Our scanner uses plain "PEPE", "BONK" — strip the prefix.
-_CG_PREFIX_MAP = {
-    "1000PEPE": "PEPE",
-    "1000BONK": "BONK",
-    "1000FLOKI": "FLOKI",
-    "1000SHIB": "SHIB",
-    "1MBABYDOGE": "BABYDOGE",
-}
-
-
-def _parse_item(item: dict) -> Optional[CoinglassMetrics]:
-    """Parse a single item from the coins-markets response."""
-    try:
-        raw_symbol = item.get("symbol", "")
-        if not raw_symbol:
-            return None
-
-        # Map CoinGlass symbol to scanner symbol
-        coin = _CG_PREFIX_MAP.get(raw_symbol, raw_symbol)
-
-        now = time.time()
-        return CoinglassMetrics(
-            coin=coin,
-            current_price=_f(item, "current_price"),
-            # avg_funding_rate_by_oi is in decimal form per 8h period
-            # (e.g. 0.00196 = 0.196%/8h).  Normalise to hourly for
-            # the positioning engine thresholds.
-            funding_rate=_f(item, "avg_funding_rate_by_oi") / 8.0,
-            open_interest_usd=_f(item, "open_interest_usd"),
-            oi_change_pct_1h=_f(item, "open_interest_change_percent_1h"),
-            oi_change_pct_4h=_f(item, "open_interest_change_percent_4h"),
-            oi_change_pct_24h=_f(item, "open_interest_change_percent_24h"),
-            price_change_pct_1h=_f(item, "price_change_percent_1h"),
-            price_change_pct_4h=_f(item, "price_change_percent_4h"),
-            price_change_pct_24h=_f(item, "price_change_percent_24h"),
-            long_short_ratio_4h=_f(item, "long_short_ratio_4h", 1.0),
-            long_short_ratio_24h=_f(item, "long_short_ratio_24h", 1.0),
-            liquidation_usd_24h=_f(item, "liquidation_usd_24h"),
-            long_liquidation_usd_24h=_f(item, "long_liquidation_usd_24h"),
-            short_liquidation_usd_24h=_f(item, "short_liquidation_usd_24h"),
-            volume_24h=_f(item, "volume_change_usd_24h"),
-            oi_market_cap_ratio=_f(item, "open_interest_market_cap_ratio"),
-            timestamp=now,
-        )
-    except (ValueError, TypeError, KeyError) as exc:
-        logger.debug("Failed to parse CoinGlass item %s: %s", item.get("symbol"), exc)
-        return None
-
-
-def _f(d: dict, key: str, default: float = 0.0) -> float:
-    """Safely extract a float from a dict."""
-    v = d.get(key)
-    if v is None:
-        return default
-    return float(v)
-
-
-# ---------------------------------------------------------------------------
-# Public helpers
-# ---------------------------------------------------------------------------
-
-def get_cached_metrics() -> Optional[Dict[str, CoinglassMetrics]]:
-    """Return cached CoinGlass metrics (even if expired)."""
-    return _cache.get_fallback()
-
-
-# ---------------------------------------------------------------------------
-# CVD (Cumulative Volume Delta)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class CoinglassCVD:
-    """Per-coin CVD data from CoinGlass taker buy/sell volume history."""
-    coin: str = ""
-    cvd_trend: str = "NEUTRAL"       # "BULLISH" | "BEARISH" | "NEUTRAL"
-    cvd_value: float = 0.0           # net (buy - sell) USD over lookback bars
-    cvd_divergence: bool = False     # price dir != CVD dir
-    buy_volume_usd: float = 0.0     # total buy vol (last N bars)
-    sell_volume_usd: float = 0.0    # total sell vol (last N bars)
-    buy_sell_ratio: float = 1.0     # buy / sell
-    timestamp: float = 0.0
-
-
-@dataclass
-class _CVDCacheEntry:
-    """TTL cache entry for a single coin's CVD data."""
-    data: CoinglassCVD = field(default_factory=CoinglassCVD)
-    expires_at: float = 0.0
-
-
-_CVD_CACHE_TTL = 4 * 60 * 60   # 4-hour TTL (CVD is slow-moving)
-_cvd_cache: Dict[str, _CVDCacheEntry] = {}
-_CVD_SEMAPHORE_LIMIT = 8
-_CVD_PATH = "/api/futures/taker-buy-sell-volume/history"
-
-
-def _get_cached_cvd_entry(coin: str) -> Optional[_CVDCacheEntry]:
-    entry = _cvd_cache.get(coin)
-    if entry and time.monotonic() < entry.expires_at:
-        return entry
-    return None
-
-
-async def _fetch_single_cvd(
-    session: aiohttp.ClientSession,
-    sem: asyncio.Semaphore,
-    api_key: str,
-    coin: str,
-    time_type: str,
-    limit: int,
-    price_change_pct: Optional[float],
-) -> Tuple[str, CoinglassCVD]:
-    """Fetch CVD for a single coin, returning (coin, CoinglassCVD)."""
-    async with sem:
-        url = f"{_BASE_URL}{_CVD_PATH}"
-        params = {"symbol": coin, "time_type": time_type, "limit": limit}
-        headers = {"CG-API-KEY": api_key, "Accept": "application/json"}
-        try:
-            async with session.get(url, params=params, headers=headers) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
-
-            if body.get("code") != "0":
-                logger.debug("CVD fetch for %s returned code %s", coin, body.get("code"))
-                return coin, CoinglassCVD(coin=coin, timestamp=time.time())
-
-            bars = body.get("data", [])
-            if not bars:
-                return coin, CoinglassCVD(coin=coin, timestamp=time.time())
-
-            total_buy = sum(float(b.get("buy", 0) or 0) for b in bars)
-            total_sell = sum(float(b.get("sell", 0) or 0) for b in bars)
-            cvd_value = total_buy - total_sell
-            buy_sell_ratio = total_buy / total_sell if total_sell > 0 else 1.0
-
-            if cvd_value > 0 and buy_sell_ratio > 1.05:
-                cvd_trend = "BULLISH"
-            elif cvd_value < 0 and buy_sell_ratio < 0.95:
-                cvd_trend = "BEARISH"
-            else:
-                cvd_trend = "NEUTRAL"
-
-            # Divergence: price and CVD moving in opposite directions
-            cvd_divergence = False
-            if price_change_pct is not None:
-                price_up = price_change_pct > 0
-                price_down = price_change_pct < 0
-                if (price_up and cvd_trend == "BEARISH") or (price_down and cvd_trend == "BULLISH"):
-                    cvd_divergence = True
-
-            return coin, CoinglassCVD(
-                coin=coin,
-                cvd_trend=cvd_trend,
-                cvd_value=cvd_value,
-                cvd_divergence=cvd_divergence,
-                buy_volume_usd=total_buy,
-                sell_volume_usd=total_sell,
-                buy_sell_ratio=buy_sell_ratio,
-                timestamp=time.time(),
+                "CoinGlass per-coin: %d coins — CVD %d BULLISH / %d BEARISH / %d NEUTRAL",
+                len(per_coin), cvd_bullish, cvd_bearish,
+                len(per_coin) - cvd_bullish - cvd_bearish,
             )
 
         except Exception as exc:
-            logger.debug("CVD fetch error for %s: %s", coin, exc)
-            return coin, CoinglassCVD(coin=coin, timestamp=time.time())
+            logger.error("CoinGlass per-coin fetch failed: %s", exc)
+            per_coin = _per_coin_cache.get_fallback() or {}
 
+    # --- Filter and return ---
+    if symbols:
+        return {s: bulk[s] for s in symbols if s in bulk}
+    return bulk
+
+
+# ---------------------------------------------------------------------------
+# CVD helpers (public API — same interface as before)
+# ---------------------------------------------------------------------------
 
 async def fetch_cvd_batch(
     coins: List[str],
@@ -422,259 +706,121 @@ async def fetch_cvd_batch(
     limit: int = 6,
     price_changes: Optional[Dict[str, float]] = None,
 ) -> Dict[str, CoinglassCVD]:
-    """Fetch CVD for a batch of coins concurrently (max 8 concurrent).
+    """Return CVD data for requested coins.
 
-    Parameters
-    ----------
-    coins : list[str]
-        Base coin names, e.g. ["BTC", "ETH"].
-    time_type : str
-        Bar timeframe to request from CoinGlass (e.g. "4h").
-    limit : int
-        Number of bars to sum over (default 6).
-    price_changes : dict[str, float] or None
-        Coin -> recent price change pct for divergence detection.
-
-    Returns
-    -------
-    dict[str, CoinglassCVD]
-        Keyed by base coin name (e.g. "BTC").
+    CVD is populated as a side-effect of ``fetch_coinglass_metrics``.
+    This function returns the latest cached values; if a coin hasn't been
+    fetched yet it triggers a fresh fetch for that coin.
     """
-    api_key = _get_api_key()
-    if not api_key:
-        return {}
+    result: Dict[str, CoinglassCVD] = {}
+    missing: List[str] = []
 
-    results: Dict[str, CoinglassCVD] = {}
-    coins_to_fetch: List[str] = []
-
-    # Check cache first
     for coin in coins:
-        entry = _get_cached_cvd_entry(coin)
-        if entry is not None:
-            results[coin] = entry.data
+        if coin in _cvd_store:
+            cvd = _cvd_store[coin]
+            # Apply divergence from latest price change if provided
+            if price_changes and coin in price_changes and cvd.cvd_trend != "NEUTRAL":
+                pct = price_changes[coin]
+                cvd.cvd_divergence = (
+                    (pct > 0 and cvd.cvd_trend == "BEARISH") or
+                    (pct < 0 and cvd.cvd_trend == "BULLISH")
+                )
+            result[coin] = cvd
         else:
-            coins_to_fetch.append(coin)
+            missing.append(coin)
 
-    if not coins_to_fetch:
-        return results
+    if missing:
+        api_key = _get_api_key()
+        if api_key:
+            sem = asyncio.Semaphore(_REQUEST_SEMAPHORE)
+            timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    tasks = [
+                        _fetch_single_coin_detail(
+                            session, sem, api_key, f"{c}/USDT",
+                            price_changes.get(c) if price_changes else None,
+                        )
+                        for c in missing[:_PER_COIN_LIMIT]
+                    ]
+                    fetched = await asyncio.gather(*tasks, return_exceptions=True)
 
-    sem = asyncio.Semaphore(_CVD_SEMAPHORE_LIMIT)
-    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+                for outcome in fetched:
+                    if isinstance(outcome, Exception):
+                        continue
+                    sym, detail = outcome
+                    coin = _scanner_to_coin(sym)
+                    _, _, _, cvd, spot, _, _ = _parse_detail(coin, detail)
+                    if cvd is not None:
+                        _cvd_store[coin] = cvd
+                        result[coin] = cvd
+                    if spot is not None:
+                        _spot_store[sym] = spot
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        tasks = [
-            _fetch_single_cvd(
-                session, sem, api_key, coin, time_type, limit,
-                price_changes.get(coin) if price_changes else None,
-            )
-            for coin in coins_to_fetch
-        ]
-        fetched = await asyncio.gather(*tasks, return_exceptions=True)
+            except Exception as exc:
+                logger.error("CVD batch fetch error: %s", exc)
 
-    for outcome in fetched:
-        if isinstance(outcome, Exception):
-            logger.debug("CVD batch task raised: %s", outcome)
-            continue
-        coin, cvd = outcome
-        results[coin] = cvd
-        # Cache the result
-        _cvd_cache[coin] = _CVDCacheEntry(
-            data=cvd,
-            expires_at=time.monotonic() + _CVD_CACHE_TTL,
-        )
-
-    bullish_count = sum(1 for v in results.values() if v.cvd_trend == "BULLISH")
-    bearish_count = sum(1 for v in results.values() if v.cvd_trend == "BEARISH")
-    logger.info(
-        "CVD batch: %d coins — %d BULLISH, %d BEARISH, %d NEUTRAL",
-        len(results), bullish_count, bearish_count,
-        len(results) - bullish_count - bearish_count,
-    )
-    return results
+    return result
 
 
 def get_cached_cvd(coin: str) -> Optional[CoinglassCVD]:
-    """Return cached CVD for a coin (even if expired)."""
-    entry = _cvd_cache.get(coin)
-    return entry.data if entry else None
+    """Return latest cached CVD for a base coin (e.g. 'BTC')."""
+    return _cvd_store.get(coin)
 
 
 # ---------------------------------------------------------------------------
-# Spot Market Data
+# Spot helpers (public API — same interface as before)
 # ---------------------------------------------------------------------------
-
-@dataclass
-class CoinglassSpot:
-    """Per-coin spot market data from CoinGlass."""
-    coin: str = ""
-    spot_volume_usd: float = 0.0         # 24h spot volume in USD
-    spot_price_change_24h: float = 0.0
-    futures_volume_usd: float = 0.0      # from coins-markets for comparison
-    spot_futures_ratio: float = 0.0      # spot_vol / (spot_vol + futures_vol)
-    spot_dominance: str = "NEUTRAL"      # "SPOT_LED" | "FUTURES_LED" | "NEUTRAL"
-    timestamp: float = 0.0
-
-
-_SPOT_CACHE_TTL = 5 * 60              # 5 minutes (matches scan interval)
-_SPOT_PATH = "/api/spot/coins-markets"
-_spot_cache = _CGCache()              # reuse same cache class, typed loosely
-
 
 async def fetch_spot_metrics(
     symbols: Optional[List[str]] = None,
 ) -> Dict[str, CoinglassSpot]:
-    """Fetch spot market data from CoinGlass.
-
-    Returns a dict keyed by scanner symbol (e.g. ``'BTC/USDT'``).
-
-    Parameters
-    ----------
-    symbols : list[str] or None
-        If provided, filter results to these scanner symbols.
-        If None, return all available coins.
-    """
-    api_key = _get_api_key()
-    if not api_key:
-        return {}
-
-    # Check cache
-    cached_raw = _spot_cache.get()
-    if cached_raw is not None:
-        # _spot_cache stores Dict[str, CoinglassSpot] in .data
-        cached: Dict[str, CoinglassSpot] = cached_raw  # type: ignore[assignment]
-        if symbols:
-            return {s: cached[s] for s in symbols if s in cached}
-        return cached
-
-    last_error: Optional[Exception] = None
-    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
-
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            all_spot: Dict[str, CoinglassSpot] = {}
-
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                page = 1
-                while True:
-                    url = f"{_BASE_URL}{_SPOT_PATH}"
-                    params = {"per_page": _PER_PAGE, "page": page}
-                    headers = {"CG-API-KEY": api_key, "Accept": "application/json"}
-
-                    async with session.get(url, params=params, headers=headers) as resp:
-                        resp.raise_for_status()
-                        body = await resp.json()
-
-                    if body.get("code") != "0":
-                        logger.warning(
-                            "CoinGlass spot API error: code=%s msg=%s",
-                            body.get("code"), body.get("msg"),
-                        )
-                        break
-
-                    items = body.get("data", [])
-                    if not items:
-                        break
-
-                    # Retrieve futures volume from coins-markets cache for cross-ref
-                    futures_cache = _cache.get_fallback() or {}
-
-                    for item in items:
-                        try:
-                            raw_symbol = item.get("symbol", "")
-                            if not raw_symbol:
-                                continue
-                            coin = _CG_PREFIX_MAP.get(raw_symbol, raw_symbol)
-                            scanner_sym = f"{coin}/USDT"
-
-                            spot_vol = _f(item, "volume_usd_24h")
-                            price_chg = _f(item, "price_change_percent_24h")
-
-                            # Cross-reference with futures cache
-                            futures_vol = 0.0
-                            cg_m = futures_cache.get(scanner_sym)
-                            if cg_m is not None:
-                                futures_vol = cg_m.volume_24h
-
-                            total_vol = spot_vol + futures_vol
-                            ratio = spot_vol / total_vol if total_vol > 0 else 0.0
-                            if ratio > 0.6:
-                                dominance = "SPOT_LED"
-                            elif ratio < 0.3 and futures_vol > 0:
-                                dominance = "FUTURES_LED"
-                            else:
-                                dominance = "NEUTRAL"
-
-                            all_spot[scanner_sym] = CoinglassSpot(
-                                coin=coin,
-                                spot_volume_usd=spot_vol,
-                                spot_price_change_24h=price_chg,
-                                futures_volume_usd=futures_vol,
-                                spot_futures_ratio=round(ratio, 4),
-                                spot_dominance=dominance,
-                                timestamp=time.time(),
-                            )
-                        except (ValueError, TypeError, KeyError) as exc:
-                            logger.debug(
-                                "Failed to parse spot item %s: %s",
-                                item.get("symbol"), exc,
-                            )
-                            continue
-
-                    if len(items) < _PER_PAGE:
-                        break
-                    page += 1
-                    if page > 10:
-                        break
-
-            # Cache using the same _CGCache (data field is generic)
-            _spot_cache.data = all_spot  # type: ignore[assignment]
-            _spot_cache.expires_at = time.monotonic() + _SPOT_CACHE_TTL
-
-            btc_sp = all_spot.get("BTC/USDT")
-            logger.info(
-                "Fetched CoinGlass spot metrics for %d coins "
-                "(BTC: spot_vol=$%.1fB, dominance=%s)",
-                len(all_spot),
-                (btc_sp.spot_volume_usd / 1e9) if btc_sp else 0.0,
-                btc_sp.spot_dominance if btc_sp else "N/A",
-            )
-
-            if symbols:
-                return {s: all_spot[s] for s in symbols if s in all_spot}
-            return all_spot
-
-        except aiohttp.ClientError as exc:
-            last_error = exc
-            logger.warning(
-                "CoinGlass spot request failed (attempt %d/%d): %s",
-                attempt + 1, _MAX_RETRIES + 1, exc,
-            )
-        except Exception as exc:
-            last_error = exc
-            logger.error(
-                "Unexpected error fetching CoinGlass spot data (attempt %d/%d): %s",
-                attempt + 1, _MAX_RETRIES + 1, exc,
-            )
-
-        if attempt < _MAX_RETRIES:
-            await asyncio.sleep(_RETRY_DELAY_S)
-
-    # Fallback to stale data
-    fallback_raw = _spot_cache.get_fallback()
-    if fallback_raw is not None:
-        fallback: Dict[str, CoinglassSpot] = fallback_raw  # type: ignore[assignment]
-        logger.warning("Using stale CoinGlass spot data after fetch failure: %s", last_error)
-        if symbols:
-            return {s: fallback[s] for s in symbols if s in fallback}
-        return fallback
-
-    logger.error("CoinGlass spot data unavailable: %s", last_error)
-    return {}
+    """Return spot dominance data populated by ``fetch_coinglass_metrics``."""
+    if symbols:
+        return {s: _spot_store[s] for s in symbols if s in _spot_store}
+    return dict(_spot_store)
 
 
 def get_cached_spot(sym: str) -> Optional[CoinglassSpot]:
-    """Return cached spot data for a scanner symbol (e.g. 'BTC/USDT'), even if expired."""
-    data = _spot_cache.get_fallback()
-    if data is None:
-        return None
-    return data.get(sym)  # type: ignore[return-value]
+    """Return latest cached spot dominance for a scanner symbol (e.g. 'BTC/USDT')."""
+    return _spot_store.get(sym)
+
+
+# ---------------------------------------------------------------------------
+# Macro helpers
+# ---------------------------------------------------------------------------
+
+async def fetch_macro_signals() -> CoinglassMacro:
+    """Fetch or return cached Coinbase premium + BTC ETF flow signals."""
+    cached = _macro_cache.get()
+    if cached is not None:
+        return cached
+
+    api_key = _get_api_key()
+    if not api_key:
+        return CoinglassMacro()
+
+    sem = asyncio.Semaphore(_REQUEST_SEMAPHORE)
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            macro = await _fetch_macro(session, sem, api_key)
+        _macro_cache.put(macro, _MACRO_CACHE_TTL)
+        return macro
+    except Exception as exc:
+        logger.error("CoinGlass macro fetch error: %s", exc)
+        return _macro_cache.get_fallback() or CoinglassMacro()
+
+
+def get_cached_macro() -> Optional[CoinglassMacro]:
+    """Return latest cached macro signals."""
+    return _macro_cache.get_fallback()
+
+
+# ---------------------------------------------------------------------------
+# General helpers
+# ---------------------------------------------------------------------------
+
+def get_cached_metrics() -> Optional[Dict[str, CoinglassMetrics]]:
+    """Return cached CoinGlass metrics (even if expired)."""
+    return _bulk_cache.get_fallback()
