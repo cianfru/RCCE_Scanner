@@ -69,13 +69,18 @@ const COLUMN_INFO = {
   },
   HEAT: {
     title: "BMSB Heat Score",
-    desc: "Heatmap engine output (0-100) measuring deviation from the BMSB bands. Higher heat means price is stretched further from equilibrium.",
+    desc: "Heatmap engine output (0-100) measuring deviation from the BMSB bands. Higher heat means price is stretched further from equilibrium. The sub-label shows the current structural phase.",
     values: [
-      ["0\u201320", "Cool \u2014 price near bands, low deviation"],
+      ["0\u201320", "Cool \u2014 price near bands, no phase label shown"],
       ["20\u201340", "Warm \u2014 moderate stretch"],
       ["40\u201360", "Hot \u2014 significant deviation building"],
       ["60\u201380", "Very hot \u2014 extended, caution warranted"],
       ["80\u2013100", "Extreme \u2014 likely reversal zone"],
+      ["\u2500\u2500\u2500", "\u2500\u2500\u2500 Phase Sub-Labels \u2500\u2500\u2500"],
+      ["ENTR", "Entry \u2014 heat just crossed 80 upward, blow-off breakout zone"],
+      ["EXT", "Extension \u2014 price trending away from bands, normal stretch"],
+      ["EXHS", "Exhaustion \u2014 heat peaked and rolling over, likely reversal"],
+      ["FADE", "Fading \u2014 heat declining from 40+, mean reversion underway"],
     ],
   },
   DIV: {
