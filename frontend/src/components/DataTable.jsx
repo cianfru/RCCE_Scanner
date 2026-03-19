@@ -34,7 +34,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
           {priceStr && !isMobile && (
-            <div style={{ fontSize: 10, fontWeight: 400, color: T.text4, letterSpacing: "0.01em", marginTop: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: T.text1, letterSpacing: "0.01em", marginTop: 2 }}>
               {priceStr}
             </div>
           )}
@@ -168,7 +168,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     onClick={() => key && onSort(key)}
                     style={{
                       padding: isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`,
-                      textAlign: "left",
+                      textAlign: colLabel === "CVD" ? "center" : "left",
                       fontFamily: T.font, fontSize: m(isMobile ? T.textSm : T.textBase, isMobile), fontWeight: 700,
                       color: sortKey === key ? T.accent : T.text3,
                       letterSpacing: "0.08em", cursor: key ? "pointer" : "default",

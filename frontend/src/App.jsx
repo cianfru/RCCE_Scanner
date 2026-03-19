@@ -35,7 +35,8 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // EXHAUST absorbs FORMING — shows "FLOOR ✓" when floor is confirmed.
 const COLUMNS = [
   [null,             "#",       0],
-  ["symbol",         "SYMBOL",  0],
+  ["priority_score", "PRI",     0],     // composite ranking 0-100 — always visible
+  ["symbol",         "SYMBOL",  0],     // includes price sub-label on desktop
   ["regime",         "REGIME",  0],
   [null,             "SIGNAL",  0],
   [null,             "SPARK",   480],
@@ -44,11 +45,9 @@ const COLUMNS = [
   ["heat",           "HEAT",    640],   // bar + phase sub-label
   [null,             "CVD",     768],   // net taker pressure
   [null,             "CONF",    768],   // multi-TF confluence
-  ["price",          "PRICE",   900],
   [null,             "DIV",     900],
   [null,             "EXHAUST", 1024],  // state + ✓ when floor confirmed
   ["energy",         "ENERGY",  1024],
-  ["priority_score", "PRI",     1200],  // composite ranking 0-100
   [null,             "OI",      1440],  // OI trend — wide monitors only
 ];
 

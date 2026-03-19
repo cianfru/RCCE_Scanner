@@ -445,10 +445,10 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
             background: T.surface, border: `1px solid ${T.border}`,
             marginBottom: 12,
           }}>
-            <div style={{ fontSize: 8, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, marginBottom: 4, textTransform: "uppercase" }}>
+            <div style={{ fontSize: T.textXs, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, marginBottom: 4, textTransform: "uppercase" }}>
               Signal Reason
             </div>
-            <div style={{ fontSize: 10, color: T.text2, fontFamily: T.mono, lineHeight: 1.5 }}>
+            <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.mono, lineHeight: 1.5 }}>
               {selected.signal_reason}
             </div>
           </div>
@@ -463,7 +463,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           }}>
             {selected.signal_warnings.map((w, i) => (
               <div key={i} style={{
-                fontSize: 9, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6,
+                fontSize: T.textXs, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6,
                 display: "flex", gap: 6, alignItems: "flex-start",
               }}>
                 <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
@@ -477,7 +477,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {selected.raw_signal && selected.raw_signal !== selected.signal && (
           <div style={{
             display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-            fontSize: 9, color: T.text4, fontFamily: T.mono,
+            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
           }}>
             <span>Raw: </span>
             <SignalDot signal={selected.raw_signal} />

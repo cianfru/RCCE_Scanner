@@ -163,11 +163,11 @@ export const T = {
   sp10: 40,
 
   // ─── TYPE SCALE ───────────────────────────────────────────────────────────
-  textXs:   10,   // smallest allowed (no 8-9px)
-  textSm:   11,   // secondary labels, captions
-  textBase: 12,   // body text, table cells, badges
-  textMd:   13,   // emphasized data values
-  textLg:   14,   // primary text, nav items
+  textXs:   11,   // smallest allowed
+  textSm:   12,   // secondary labels, captions
+  textBase: 13,   // body text, table cells, badges
+  textMd:   14,   // emphasized data values
+  textLg:   15,   // primary text, nav items
   textXl:   18,   // section titles
   text2xl:  24,   // stat card numbers
   text3xl:  32,   // hero display (if needed)
