@@ -607,5 +607,5 @@ def synthesize_signal(
     out.warnings = warnings
     return _apply_cvd_modifiers(
         out, cvd_trend, cvd_divergence, spot_dominance,
-        long_short_ratio, liquidation_24h_usd,
+        long_short_ratio, liquidation_24h_usd, top_trader_lsr,
     )

@@ -25,7 +25,7 @@ FUNDING_CROWDED_LONG = 0.0001    # > 0.01%/hr → longs paying shorts
 FUNDING_CROWDED_SHORT = -0.0001  # < -0.01%/hr → shorts paying longs
 
 # OI change thresholds (percentage change between scans)
-OI_CHANGE_THRESHOLD = 2.0        # > 2% change considered significant
+OI_CHANGE_THRESHOLD = 1.0        # > 1% change considered significant (lowered from 2% for CoinGlass multi-exchange data)
 
 
 # ---------------------------------------------------------------------------
