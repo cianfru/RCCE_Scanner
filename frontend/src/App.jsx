@@ -30,27 +30,19 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // ─── COLUMN DEFINITIONS ─────────────────────────────────────────────────────
 // [sortKey, label, minViewportWidth]
 
+// Core scannable columns — detail drawer holds everything else.
+// Rule: if it needs a click to understand, it belongs in the drawer.
 const COLUMNS = [
   [null,         "#",          0],
-  ["priority_score", "PRI",    0],
-  ["symbol",     "SYMBOL",     0],
+  ["symbol",     "SYMBOL",     0],    // includes ⭐ star + price sub-label
   ["regime",     "REGIME",     0],
   [null,         "SIGNAL",     0],
-  ["conditions", "COND",       480],
   [null,         "SPARK",      480],
-  ["zscore",     "Z-SCORE",    480],
-  ["momentum",   "MOM",        480],
-  [null,         "PRICE",      480],
-  ["heat",       "HEAT",       768],
-  [null,         "DIV",        768],
-  [null,         "EXHAUST",    768],
-  [null,         "FUNDING",    1024],
-  [null,         "OI",         1024],
-  [null,         "CVD",        1024],
-  [null,         "CONF",       1024],
-  [null,         "ENERGY",     1200],
-  [null,         "PHASE",      1200],
-  [null,         "FLOOR",      1200],
+  ["heat",       "HEAT",       480],
+  [null,         "CVD",        768],  // net buyer pressure — high-signal
+  [null,         "CONF",       768],  // confluence /7
+  [null,         "DIV",        1024], // BTC divergence — contextual
+  [null,         "OI",         1280], // OI trend — power users only
 ];
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────

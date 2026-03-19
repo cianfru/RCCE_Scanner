@@ -493,6 +493,54 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Positioning Panel */}
         <PositioningPanel positioning={selected.positioning} />
 
+        {/* CoinGlass enriched data (CVD + spot + liquidations) */}
+        {(selected.cvd_trend || selected.positioning?.spot_dominance || selected.positioning?.liquidation_24h_usd > 0) && (() => {
+          const pos = selected.positioning || {};
+          const cvdTrend = selected.cvd_trend;
+          const cvdDiv   = selected.cvd_divergence;
+          const bsr      = selected.buy_sell_ratio;
+          const spotDom  = pos.spot_dominance;
+          const spotRatio = pos.spot_futures_ratio;
+          const lsr      = pos.long_short_ratio;
+          const liq24h   = pos.liquidation_24h_usd;
+          const longLiq  = pos.long_liq_usd;
+          const shortLiq = pos.short_liq_usd;
+
+          const CVD_COLOR = { BULLISH: "#34d399", BEARISH: "#f87171", NEUTRAL: T.text4 };
+          const SPOT_COLOR = { SPOT_LED: "#34d399", FUTURES_LED: "#f87171", NEUTRAL: T.text4 };
+          const fmtM = v => v >= 1e9 ? `$${(v/1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${v.toFixed(0)}`;
+
+          return (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{
+                fontSize: 10, fontFamily: T.mono, fontWeight: 700, color: T.text4,
+                letterSpacing: "0.1em", textTransform: "uppercase",
+                marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${T.border}`,
+              }}>
+                COINGLASS DATA
+              </div>
+              {[
+                cvdTrend && cvdTrend !== "NEUTRAL" && ["CVD Trend", cvdTrend + (cvdDiv ? " ⚡DIV" : ""), CVD_COLOR[cvdTrend]],
+                bsr != null && bsr !== 1 && ["Buy/Sell Ratio", bsr.toFixed(3) + "x", bsr > 1 ? "#34d399" : "#f87171"],
+                spotDom && spotDom !== "NEUTRAL" && ["Spot Dominance", spotDom.replace("_", "-"), SPOT_COLOR[spotDom]],
+                spotRatio > 0 && ["Spot/Total Vol", `${(spotRatio * 100).toFixed(0)}%`, T.text2],
+                lsr > 0 && ["Long/Short Ratio", lsr.toFixed(3), lsr > 1.2 ? "#f87171" : lsr < 0.85 ? "#34d399" : T.text2],
+                liq24h > 0 && ["Liq 24h (total)", fmtM(liq24h), "#f59e0b"],
+                longLiq > 0 && ["  └ Long liq", fmtM(longLiq), "#f87171"],
+                shortLiq > 0 && ["  └ Short liq", fmtM(shortLiq), "#34d399"],
+              ].filter(Boolean).map(([label, value, color], i) => (
+                <div key={i} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "6px 0",
+                }}>
+                  <span style={{ fontSize: 11, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
+                  <span style={{ fontFamily: T.mono, fontSize: 12, color: color || T.text1, fontWeight: 600 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Z-Score Bar */}
         <div style={{ marginBottom: 16 }}>
           <ZScoreBar z={selected.zscore} isMobile={isMobile} />
