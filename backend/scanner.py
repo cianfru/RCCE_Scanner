@@ -414,6 +414,20 @@ def _compute_priority(r: dict) -> float:
     if r.get("is_absorption", False):
         score += 5
 
+    # 7. CVD confirms direction: 0 or 5 pts
+    signal_val = r.get("signal", "WAIT")
+    _exit_sigs = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    cvd_trend_val = r.get("cvd_trend", "NEUTRAL")
+    if signal_val not in _exit_sigs and cvd_trend_val == "BULLISH":
+        score += 5
+    elif signal_val in _exit_sigs and cvd_trend_val == "BEARISH":
+        score += 5
+
+    # 8. Spot dominance confirms organic demand: 0 or 5 pts
+    positioning_val = r.get("positioning") or {}
+    if positioning_val.get("spot_dominance") == "SPOT_LED":
+        score += 5
+
     return round(min(100.0, max(0.0, score)), 1)
 
 
@@ -969,6 +983,11 @@ async def _scan_timeframe(
             macro_blocked=macro_blocked,
             prev_heat=prev_heat,
             bmsb_valid=bmsb_valid,
+            cvd_trend=r.get("cvd_trend", "NEUTRAL"),
+            cvd_divergence=r.get("cvd_divergence", False),
+            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
+            long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
+            liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
         )
 
     synth_futures = [

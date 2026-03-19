@@ -2273,10 +2273,55 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "oi_trend": oi_trend,
                 })
 
-        # Compute confluence score per setup (0–5)
+            # ── 6. CVD BULLISH DIVERGENCE: price falling but buyers dominating taker flow ──
+            # = smart money absorbing — not showing in price yet
+            elif (scan.get("cvd_trend") == "BULLISH"
+                      and scan.get("cvd_divergence")       # price going DOWN but CVD BULLISH
+                      and signal not in _adverse
+                      and regime not in ("CAP",)
+                      and heat < 65):
+                bsr = scan.get("buy_sell_ratio", 1.0)
+                setups.append({
+                    "type": "cvd_bullish_div",
+                    "severity": "high",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: CVD/price bullish divergence",
+                    "detail": (
+                        f"Price falling but taker buy flow dominant (BSR: {bsr:.2f}x). "
+                        f"Smart money absorbing into weakness. "
+                        f"Signal: {signal} | Regime: {regime} | Heat: {heat}/100. "
+                        f"Watch for reversal — buyers not visible in price yet"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "cvd_trend": "BULLISH", "buy_sell_ratio": bsr,
+                })
+
+            # ── 7. SPOT-LED DEMAND + constructive signal: organic buying ────────
+            elif (positioning.get("spot_dominance") == "SPOT_LED"
+                      and signal in _entry
+                      and regime in _bullish_regimes
+                      and heat < 70):
+                ratio = positioning.get("spot_futures_ratio", 0)
+                setups.append({
+                    "type": "spot_led_breakout",
+                    "severity": "medium",
+                    "symbol": sym, "coin": base_coin, "timestamp": now,
+                    "title": f"{base_coin}: Spot-led demand + entry signal",
+                    "detail": (
+                        f"Spot volume dominating ({ratio*100:.0f}% of total). "
+                        f"Organic demand — not leverage-driven. "
+                        f"Signal: {signal} | Regime: {regime}. "
+                        f"Spot-led moves are more sustainable than futures-led"
+                    ),
+                    "signal": signal, "regime": regime, "heat": heat,
+                    "spot_futures_ratio": ratio,
+                })
+
+        # Compute confluence score per setup (0–7)
         # Each independent confirming factor adds 1 point:
         #   1. RCCE conditions ≥ 60%  2. OI confirms  3. Heat zone correct
         #   4. Exhaustion confirms     5. Priority score ≥ 60
+        #   6. CVD confirms direction  7. Spot dominance confirms
         def _confluence(s: dict, r: dict) -> int:
             pos    = r.get("positioning") or {}
             oi     = pos.get("oi_trend", "")
@@ -2302,6 +2347,15 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
             if r.get("floor_confirmed") or r.get("is_absorption"): score += 1
             # 5. Priority score
             if r.get("priority_score", 0) >= 60: score += 1
+            # 6. CVD confirms direction
+            cvd_t = r.get("cvd_trend", "NEUTRAL")
+            if not is_exit_setup:
+                if cvd_t == "BULLISH": score += 1
+            else:
+                if cvd_t == "BEARISH": score += 1
+            # 7. Spot dominance confirms (organic demand)
+            pos_r = r.get("positioning") or {}
+            if pos_r.get("spot_dominance") == "SPOT_LED": score += 1
             return score
 
         # Attach confluence and apply min_score filter

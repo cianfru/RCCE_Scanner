@@ -69,7 +69,7 @@ _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
 
 
 def _tg_confluence(scan: dict) -> int:
-    """Compute a 0–5 confluence score for a non-held opportunity alert.
+    """Compute a 0–7 confluence score for a non-held opportunity alert.
 
     Mirrors the frontend computeConfluence() logic so both surfaces agree:
       +1  RCCE conditions ≥ 60% satisfied
@@ -77,6 +77,9 @@ def _tg_confluence(scan: dict) -> int:
       +1  Heat in valid zone (< 60 for entries; > 70 for exits)
       +1  Exhaustion engine confirms (floor_confirmed / is_absorption for entries)
       +1  Priority score ≥ 60 (multi-factor strength already computed by scanner)
+      +1  CVD confirms direction (taker buy flow)
+      +1  Spot dominance confirms (organic demand, not leverage-driven)
+    Max score: 7
     """
     sig  = scan.get("signal", "WAIT")
     is_exit = sig in _EXIT_SIGNALS
@@ -118,6 +121,18 @@ def _tg_confluence(scan: dict) -> int:
 
     # 5. Priority score (0-100 multi-factor composite from scanner)
     if scan.get("priority_score", 0) >= 60:
+        score += 1
+
+    # 6. CVD confirms direction
+    if not is_exit:
+        if scan.get("cvd_trend") == "BULLISH":
+            score += 1
+    else:
+        if scan.get("cvd_trend") == "BEARISH":
+            score += 1
+
+    # 7. Spot dominance confirms (organic demand)
+    if pos.get("spot_dominance") == "SPOT_LED":
         score += 1
 
     return score
@@ -508,7 +523,7 @@ class PositionMonitor:
                 if signal in _OPPORTUNITY_SIGNALS and prev != signal and passes_gate:
                     self._last_notified_signal[key] = signal
                     notifications.append(
-                        self._fmt_opportunity(scan) + f"\n{'●' * c_score}{'○' * (5 - c_score)} Confluence: {c_score}/5"
+                        self._fmt_opportunity(scan) + f"\n{'●' * c_score}{'○' * (7 - c_score)} Confluence: {c_score}/7"
                     )
                     continue
 
@@ -553,7 +568,7 @@ class PositionMonitor:
                 oi_change_pct = positioning.get("oi_change_pct", 0.0)
 
                 _bullish_regimes = {"MARKUP", "REACC", "ACCUM"}
-                _conf_suffix = f"\n{'●' * c_score}{'○' * (5 - c_score)} Confluence: {c_score}/5"
+                _conf_suffix = f"\n{'●' * c_score}{'○' * (7 - c_score)} Confluence: {c_score}/7"
 
                 # SHORTING into bullish regime → squeeze setup
                 if (oi_trend == "SHORTING"
@@ -593,6 +608,43 @@ class PositionMonitor:
                     if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
                         self._last_warned[wkey] = time.time()
                         notifications.append(self._fmt_oi_setup(scan, "SHORTS_INTO_FLOOR") + _conf_suffix)
+
+                # CVD bullish divergence: price falling but buyers dominating taker flow
+                cvd_trend_val = scan.get("cvd_trend", "NEUTRAL")
+                cvd_div = scan.get("cvd_divergence", False)
+                bsr = scan.get("buy_sell_ratio", 1.0)
+
+                if (cvd_trend_val == "BULLISH"
+                        and cvd_div
+                        and signal not in _ADVERSE_SIGNALS
+                        and heat < 65):
+                    wkey = f"{key}:cvd_div"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        base_coin = sym.split("/")[0]
+                        notifications.append(
+                            f"📊 CVD DIVERGENCE — {base_coin}\n"
+                            f"Price falling but buy flow dominant (BSR: {bsr:.2f}x)\n"
+                            f"Smart money absorbing — reversal watch\n"
+                            f"Signal: {signal} | Regime: {regime} | Heat: {heat}/100"
+                        )
+
+                # Spot-led demand + entry signal
+                spot_dom = (scan.get("positioning") or {}).get("spot_dominance", "NEUTRAL")
+                if (spot_dom == "SPOT_LED"
+                        and signal in _OPPORTUNITY_SIGNALS
+                        and heat < 70):
+                    wkey = f"{key}:spot_led"
+                    if time.time() - self._last_warned.get(wkey, 0) > self._WARNING_COOLDOWN:
+                        self._last_warned[wkey] = time.time()
+                        base_coin = sym.split("/")[0]
+                        spot_ratio = (scan.get("positioning") or {}).get("spot_futures_ratio", 0)
+                        notifications.append(
+                            f"🌊 SPOT-LED DEMAND — {base_coin}\n"
+                            f"Spot volume {spot_ratio*100:.0f}% of total — organic buying, not leverage\n"
+                            f"Signal: {signal} | Regime: {regime}\n"
+                            f"Spot-led moves more sustainable — high conviction"
+                        )
 
         # -- 3. Rate-limit and send --
         if notifications:
