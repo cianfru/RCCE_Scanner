@@ -60,13 +60,17 @@ _LIQ_WARNING_PCT = 15            # warn if price within 15% of liq
 _OI_TREND_ADVERSE = {"SQUEEZE", "LIQUIDATING"}
 
 # Minimum confluence score before a non-held opportunity fires on TG.
-# Matches the default frontend filter (MED = ≥2).
+# Raised from 2 to 4 — only HIGH conviction alerts pass through.
 # Held-position alerts (heat, OI, liq, regime) are NEVER gated by this.
-_TG_MIN_CONFLUENCE = 2
+_TG_MIN_CONFLUENCE = 4
 
 # Exit signals — always pass the gate regardless of confluence score,
 # because we never want to miss a de-risk signal.
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+
+# Sentinel symbols — market proxies that always generate signal/regime alerts.
+# These give you market direction without noise from 200+ alts.
+_SENTINEL_SYMBOLS = {"BTC/USDT", "ETH/USDT", "SOL/USDT", "HYPE/USDT"}
 
 
 def _tg_confluence(scan: dict) -> int:
@@ -199,6 +203,8 @@ class PositionMonitor:
         # Key: "chatid:symbol:warning_type" -> timestamp of last alert
         self._last_warned: Dict[str, float] = {}
         self._WARNING_COOLDOWN = 3600  # don't repeat same warning within 1 hour
+        # Consensus change tracking — fires once per transition (e.g. RISK-ON → RISK-OFF)
+        self._last_consensus: Optional[str] = None
         self._load()
 
     @classmethod
@@ -287,6 +293,31 @@ class PositionMonitor:
                 sym = r.get("symbol", "")
                 if sym not in results_by_symbol:
                     results_by_symbol[sym] = r
+
+        # --- Consensus change detection (market-wide, fires for all watchers) ---
+        from scanner import cache as scan_cache
+        current_consensus = (scan_cache.consensus.get("4h") or {}).get("consensus", "MIXED")
+        consensus_changed = (
+            self._last_consensus is not None
+            and current_consensus != self._last_consensus
+        )
+        if consensus_changed:
+            prev_c = self._last_consensus
+            logger.info("Consensus changed: %s → %s", prev_c, current_consensus)
+            for watcher in self.watchers:
+                try:
+                    from telegram_bot import get_bot
+                    bot = get_bot()
+                    if bot:
+                        await bot.send_message(
+                            watcher.chat_id,
+                            f"🌐 MARKET CONSENSUS SHIFT\n"
+                            f"{prev_c} → {current_consensus}\n\n"
+                            f"This affects all signals — check dashboard for updated positions."
+                        )
+                except Exception:
+                    pass
+        self._last_consensus = current_consensus
 
         for watcher in self.watchers:
             try:
@@ -497,19 +528,18 @@ class PositionMonitor:
                 )
 
         # -- 3. Check for new opportunities (not already held) --
-        # Only alert on starred (favorited) pairs — held positions always fire.
-        # If the favorites list is empty we fall back to all symbols so new
-        # users don't get silence on day 1.
+        # "Market Pulse" mode: only sentinel coins (BTC/ETH/SOL/HYPE) and
+        # held positions generate real-time alerts.  Everything else is
+        # filtered unless it passes the HIGH confluence gate (≥4/7).
         if watcher.notify_opportunities:
-            import favorites as fav_store
-            starred = fav_store.get()
-            _alert_universe = starred if starred else set(results_by_symbol.keys())
+            _alert_universe = _SENTINEL_SYMBOLS | held_symbols
 
             for sym, scan in results_by_symbol.items():
                 if sym in held_symbols:
                     continue
-                # Skip if not in the allowed universe (starred or all-if-empty)
-                if sym not in _alert_universe:
+                # Non-sentinel, non-held: only pass if HIGH confluence
+                is_sentinel = sym in _SENTINEL_SYMBOLS
+                if not is_sentinel and sym not in _alert_universe:
                     continue
                 signal = scan.get("signal", "WAIT")
                 key = f"{watcher.chat_id}:{sym}"
@@ -529,7 +559,9 @@ class PositionMonitor:
                     continue
 
                 # Skip exhaustion/OI setups for low-confluence coins
-                if not passes_gate:
+                # AND skip all setup-type alerts for non-sentinel coins
+                # (these are the main noise source — OI squeeze, CVD div, etc.)
+                if not passes_gate or not is_sentinel:
                     continue
 
                 # --- Exhaustion-based entry opportunities ---
