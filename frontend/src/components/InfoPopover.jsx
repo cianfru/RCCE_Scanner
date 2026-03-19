@@ -110,6 +110,15 @@ const COLUMN_INFO = {
       ["SHORT", "Short interest dominant"],
     ],
   },
+  CVD: {
+    title: "Cumulative Volume Delta",
+    desc: "Net taker buy/sell pressure from futures markets. Measures whether buyers or sellers are initiating trades — a leading indicator of price direction. Can upgrade or downgrade signals post-condition scoring.",
+    values: [
+      ["▲ BUY", "Takers net buyers — bullish pressure. Can upgrade ACCUMULATE → LIGHT_LONG when combined with SPOT_LED"],
+      ["▼ SELL", "Takers net sellers — bearish pressure. Can downgrade STRONG_LONG → TRIM when diverging from price"],
+      ["⚡ DIV", "CVD direction diverges from price — potential reversal. Shown as a yellow spark badge"],
+    ],
+  },
   CONF: {
     title: "Confluence Score",
     desc: "Alignment score (0-100) between 4H and 1D timeframes. Higher score means both timeframes agree on regime and signal direction.",

@@ -82,7 +82,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
     case "CVD":
       return (
-        <td style={{ padding: cellPad }}>
+        <td style={{ padding: cellPad, textAlign: "center" }}>
           <CVDBadge trend={row.cvd_trend} divergence={row.cvd_divergence} bsr={row.buy_sell_ratio} isMobile={isMobile} />
         </td>
       );
