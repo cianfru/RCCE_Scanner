@@ -481,9 +481,19 @@ class PositionMonitor:
                 )
 
         # -- 3. Check for new opportunities (not already held) --
+        # Only alert on starred (favorited) pairs — held positions always fire.
+        # If the favorites list is empty we fall back to all symbols so new
+        # users don't get silence on day 1.
         if watcher.notify_opportunities:
+            import favorites as fav_store
+            starred = fav_store.get()
+            _alert_universe = starred if starred else set(results_by_symbol.keys())
+
             for sym, scan in results_by_symbol.items():
                 if sym in held_symbols:
+                    continue
+                # Skip if not in the allowed universe (starred or all-if-empty)
+                if sym not in _alert_universe:
                     continue
                 signal = scan.get("signal", "WAIT")
                 key = f"{watcher.chat_id}:{sym}"

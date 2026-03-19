@@ -101,11 +101,32 @@ export default function App() {
   const [favorites, setFavorites] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("reflex_favorites") || "[]")); } catch { return new Set(); }
   });
+
+  // Hydrate favorites from backend on mount (backend is the source of truth for TG)
+  useEffect(() => {
+    fetch(`${API_BASE}/api/favorites`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.symbols) && data.symbols.length > 0) {
+          setFavorites(prev => {
+            const merged = new Set([...prev, ...data.symbols]);
+            localStorage.setItem("reflex_favorites", JSON.stringify([...merged]));
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleFavorite = useCallback((symbol) => {
     setFavorites(prev => {
       const next = new Set(prev);
-      next.has(symbol) ? next.delete(symbol) : next.add(symbol);
+      const wasFav = next.has(symbol);
+      wasFav ? next.delete(symbol) : next.add(symbol);
       localStorage.setItem("reflex_favorites", JSON.stringify([...next]));
+      // Sync to backend — TG bot reads from here
+      const enc = encodeURIComponent(symbol);
+      fetch(`${API_BASE}/api/favorites/${enc}`, { method: wasFav ? "DELETE" : "POST" }).catch(() => {});
       return next;
     });
   }, []);

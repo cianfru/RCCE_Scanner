@@ -384,6 +384,33 @@ async def trigger_scan():
 
 
 # ---------------------------------------------------------------------------
+# Starred Favorites — TG alert filter (separate from scanner watchlist)
+# ---------------------------------------------------------------------------
+
+import favorites as fav_store  # noqa: E402 (after env/logging setup)
+
+
+@app.get("/api/favorites")
+async def get_favorites_endpoint():
+    """Return the user's starred pairs (used to filter TG alerts)."""
+    return {"symbols": sorted(fav_store.get())}
+
+
+@app.post("/api/favorites/{symbol:path}")
+async def add_favorite_endpoint(symbol: str):
+    """Star a symbol — TG will alert on it even when not held."""
+    fav_store.add(symbol)
+    return {"ok": True, "symbols": sorted(fav_store.get())}
+
+
+@app.delete("/api/favorites/{symbol:path}")
+async def remove_favorite_endpoint(symbol: str):
+    """Un-star a symbol."""
+    fav_store.remove(symbol)
+    return {"ok": True, "symbols": sorted(fav_store.get())}
+
+
+# ---------------------------------------------------------------------------
 # Watchlist / custom ticker endpoints
 # ---------------------------------------------------------------------------
 
