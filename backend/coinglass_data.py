@@ -81,6 +81,9 @@ _PER_COIN_LIMIT      = 30            # max coins for one-shot fetch (legacy, use
 _DRIP_INTERVAL_S     = 1.5           # seconds between per-coin fetches in drip mode
 _DRIP_CYCLE_PAUSE_S  = 30            # pause after completing a full rotation
 
+# Rate limiting — Hobbyist plan allows ~30 req/min
+_MIN_REQUEST_GAP_S   = 2.2           # min seconds between API calls (~27 req/min)
+
 # Taker volume exchange lists
 _FUTURES_EXCHANGES   = "Binance,OKX,Bybit"
 _SPOT_EXCHANGE       = "Binance"
@@ -360,6 +363,30 @@ async def _fetch_bulk_liquidations(
 # Phase 3 — Per-coin detail fetch (OI + CVD + LSR + spot dominance)
 # ---------------------------------------------------------------------------
 
+async def _rate_limited_get(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    api_key: str,
+    path: str,
+    params: dict,
+) -> Any:
+    """Rate-limited wrapper around _get_data.
+
+    Enforces a minimum gap of _MIN_REQUEST_GAP_S between consecutive API calls
+    to stay within the Hobbyist plan rate limit (~30 req/min).
+    """
+    # Use a module-level list as mutable container for last-request timestamp
+    global _last_req_ts
+    now = time.monotonic()
+    gap = _MIN_REQUEST_GAP_S - (now - _last_req_ts)
+    if gap > 0:
+        await asyncio.sleep(gap)
+    _last_req_ts = time.monotonic()
+    return await _get_data(session, sem, api_key, path, params)
+
+_last_req_ts: float = 0.0
+
+
 async def _fetch_single_coin_detail(
     session: aiohttp.ClientSession,
     sem: asyncio.Semaphore,
@@ -369,37 +396,33 @@ async def _fetch_single_coin_detail(
 ) -> Tuple[str, dict]:
     """Fetch OI history, futures taker vol, spot taker vol, and LSR for one coin.
 
+    Calls are serialized (not parallel) to respect the API rate limit.
     Returns ``(scanner_sym, detail_dict)`` where detail_dict has keys:
     ``oi``, ``fut_taker``, ``spot_taker``, ``lsr_global``, ``lsr_top``.
     """
     coin = _scanner_to_coin(scanner_sym)
     pair = _coin_to_pair(coin)
 
-    oi_task   = _get_data(session, sem, api_key, _PATH_OI_HIST, {
+    def _safe(v: Any) -> list:
+        return v if isinstance(v, list) else []
+
+    oi = await _rate_limited_get(session, sem, api_key, _PATH_OI_HIST, {
         "symbol": coin, "interval": "h4", "limit": 7,
     })
-    fut_task  = _get_data(session, sem, api_key, _PATH_FUT_TAKER, {
+    fut = await _rate_limited_get(session, sem, api_key, _PATH_FUT_TAKER, {
         "symbol": coin, "exchange_list": _FUTURES_EXCHANGES,
         "interval": "h4", "limit": 6,
     })
-    spot_task = _get_data(session, sem, api_key, _PATH_SPOT_TAKER, {
+    spot = await _rate_limited_get(session, sem, api_key, _PATH_SPOT_TAKER, {
         "symbol": coin, "exchange_list": _SPOT_EXCHANGE,
         "interval": "h4", "limit": 6,
     })
-    lsr_task  = _get_data(session, sem, api_key, _PATH_LSR_GLOBAL, {
+    lsr = await _rate_limited_get(session, sem, api_key, _PATH_LSR_GLOBAL, {
         "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
     })
-    top_lsr_task = _get_data(session, sem, api_key, _PATH_LSR_TOP, {
+    top_lsr = await _rate_limited_get(session, sem, api_key, _PATH_LSR_TOP, {
         "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
     })
-
-    oi, fut, spot, lsr, top_lsr = await asyncio.gather(
-        oi_task, fut_task, spot_task, lsr_task, top_lsr_task,
-        return_exceptions=True,
-    )
-
-    def _safe(v: Any) -> list:
-        return v if isinstance(v, list) else []
 
     return scanner_sym, {
         "oi":        _safe(oi),
@@ -570,9 +593,10 @@ _per_coin_detail: Dict[str, dict] = {}         # scanner_sym → raw detail dict
 async def run_coinglass_drip() -> None:
     """Continuously drip-feed per-coin CoinGlass data (OI, CVD, LSR, spot).
 
-    Fetches one coin every ~1.5s.  A full rotation of all CEX symbols
-    takes len(symbols) * 1.5s (e.g. 150 coins ≈ 3.75 min).  After a
-    full rotation, pauses briefly then starts over.
+    Fetches one coin at a time, with each API call rate-limited to
+    ~27 req/min.  Each coin requires 5 calls (~11s per coin).  A full
+    rotation of 200 coins takes ~37 min.  After a full rotation,
+    pauses briefly then starts over.
 
     Results are merged into the bulk CoinglassMetrics store so the
     scanner always has the latest available data.
@@ -656,8 +680,6 @@ async def run_coinglass_drip() -> None:
 
                     except Exception as exc:
                         logger.debug("Drip fetch %s failed: %s", sym, exc)
-
-                    await asyncio.sleep(_DRIP_INTERVAL_S)
 
             logger.info(
                 "CoinGlass drip cycle %d complete: %d/%d coins fetched",
