@@ -108,15 +108,18 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
 
 export function DivergencePill({ div }) {
   if (!div) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = div.includes("BULL") ? "#34d399" : "#f87171";
+  const isBull = div.includes("BULL");
+  const color = isBull ? "#34d399" : "#f87171";
+  const glyph = isBull ? "\u25b2" : "\u25bc";
   return (
     <span style={{
-      padding: "3px 10px", borderRadius: "20px",
+      padding: "3px 8px", borderRadius: "20px",
       background: `${color}14`, color,
-      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.06em", border: `1px solid ${color}28`,
+      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      letterSpacing: "0.04em", border: `1px solid ${color}28`,
+      whiteSpace: "nowrap",
     }}>
-      {div}
+      {glyph} DIV
     </span>
   );
 }
