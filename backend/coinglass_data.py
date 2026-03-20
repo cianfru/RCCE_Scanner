@@ -726,12 +726,39 @@ async def fetch_coinglass_metrics(
     if not bulk:
         return {}
 
-    # --- Per-coin detail: handled by drip loop (run_coinglass_drip) ---
-    # The drip loop continuously fetches 1 coin/1.5s and merges into bulk.
-    # No burst fetch needed here — just log how much drip data is available.
+    # --- Merge drip-loop data into bulk ---
+    # The drip loop fetches 1 coin/1.5s and stores parsed data in _per_coin_detail.
+    # When the bulk cache is refreshed (new dict), the drip loop's old reference is stale.
+    # Re-merge here so the scanner always sees the latest drip-fetched LSR/OI/CVD/spot.
     drip_count = len(_per_coin_detail)
     if drip_count > 0:
-        logger.debug("CoinGlass per-coin: drip loop has %d coins cached", drip_count)
+        merged = 0
+        for sym, detail in _per_coin_detail.items():
+            if sym not in bulk:
+                continue
+            coin = _scanner_to_coin(sym)
+            oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
+            m = bulk[sym]
+            if oi_usd is not None:
+                m.open_interest_usd = oi_usd
+            if oi_4h is not None:
+                m.oi_change_pct_4h = round(oi_4h, 2)
+            if oi_24h is not None:
+                m.oi_change_pct_24h = round(oi_24h, 2)
+            if lsr != 1.0:
+                m.long_short_ratio_4h = lsr
+            if top_lsr != 1.0:
+                m.top_trader_lsr = top_lsr
+            if cvd is not None:
+                _cvd_store[coin] = cvd
+            if spot is not None:
+                _spot_store[sym] = spot
+                m.spot_volume_usd    = spot.spot_volume_usd
+                m.futures_volume_usd = spot.futures_volume_usd
+                m.spot_futures_ratio = spot.spot_futures_ratio
+                m.spot_dominance     = spot.spot_dominance
+            merged += 1
+        logger.info("CoinGlass per-coin: merged drip data for %d/%d coins into bulk", merged, drip_count)
     else:
         logger.info("CoinGlass per-coin: drip loop not yet populated (first cycle)")
 
