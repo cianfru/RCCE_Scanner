@@ -1,20 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { T, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
+import { T, SIGNAL_META, TRANSITION_META } from "../theme.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function fmtPct(pct) {
-  if (pct == null) return "\u2014";
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
-}
-
-function pctColor(pct) {
-  if (pct == null) return T.text4;
-  return pct >= 0 ? "#34d399" : "#f87171";
-}
 
 function signalColor(sig) {
   return (SIGNAL_META[sig] || SIGNAL_META.WAIT).color;
@@ -24,19 +13,8 @@ function signalLabel(sig) {
   return (SIGNAL_META[sig] || { label: sig }).label;
 }
 
-function regimeColor(reg) {
-  return (REGIME_META[reg] || REGIME_META.FLAT).color;
-}
-
 function transitionMeta(tt) {
   return TRANSITION_META[tt] || TRANSITION_META.LATERAL;
-}
-
-function fmtDuration(seconds) {
-  if (!seconds) return "\u2014";
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
-  return `${(seconds / 86400).toFixed(1)}d`;
 }
 
 function stripSymbol(sym) {
@@ -56,26 +34,15 @@ const SIGNAL_SHORT = {
 
 const S = {
   section: {
-    background: T.glassBg,
-    border: `1px solid ${T.border}`,
-    borderRadius: 14,
-    padding: "20px 24px",
-    marginBottom: 16,
-    boxShadow: T.glassShadow,
+    background: T.glassBg, border: `1px solid ${T.border}`,
+    borderRadius: 14, padding: "20px 24px",
+    marginBottom: 16, boxShadow: T.glassShadow,
   },
   sectionTitle: {
     fontSize: 11, fontWeight: 700, color: T.text3,
     letterSpacing: "0.1em", textTransform: "uppercase",
     marginBottom: 16, fontFamily: T.mono,
   },
-  viewTab: (active) => ({
-    background: active ? "rgba(34,211,238,0.12)" : "transparent",
-    color: active ? T.accent : T.text3,
-    border: `1px solid ${active ? "rgba(34,211,238,0.4)" : "rgba(255,255,255,0.08)"}`,
-    borderRadius: 6, padding: "5px 14px",
-    fontSize: 10, fontWeight: 700, fontFamily: T.mono,
-    cursor: "pointer", letterSpacing: "0.08em", transition: "all 0.15s",
-  }),
   pillBtn: (active) => ({
     background: active ? T.accent : T.surface,
     color: active ? "#000" : T.text3,
@@ -84,17 +51,6 @@ const S = {
     fontSize: 11, fontWeight: 600, fontFamily: T.mono,
     cursor: "pointer", letterSpacing: "0.06em", transition: "all 0.15s",
   }),
-  card: (borderColor) => ({
-    flex: "1 1 180px", minWidth: 160, maxWidth: 260,
-    background: T.surface, border: `1px solid ${borderColor}30`,
-    borderRadius: 10, padding: "14px 16px",
-    display: "flex", flexDirection: "column", gap: 6,
-  }),
-  cardSignal: (color) => ({
-    fontSize: 11, fontWeight: 700, color, letterSpacing: "0.06em", fontFamily: T.mono,
-  }),
-  cardStat: { fontSize: 22, fontWeight: 700, color: T.text1, fontFamily: T.font },
-  cardLabel: { fontSize: 10, color: T.text4, letterSpacing: "0.06em", fontFamily: T.mono },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: T.mono },
   th: {
     textAlign: "left", padding: "8px 10px",
@@ -106,11 +62,6 @@ const S = {
     padding: "7px 10px", borderBottom: `1px solid ${T.overlay04}`,
     color: T.text2, whiteSpace: "nowrap",
   },
-  badge: (bg, color, border) => ({
-    display: "inline-block", padding: "2px 8px", borderRadius: 6,
-    fontSize: 10, fontWeight: 600, letterSpacing: "0.04em",
-    background: bg, color, border: `1px solid ${border}`,
-  }),
   empty: {
     textAlign: "center", padding: "40px 20px",
     color: T.text4, fontSize: 13, fontFamily: T.mono,
@@ -221,189 +172,30 @@ function SignalHeatmap({ data, isMobile }) {
 }
 
 // ---------------------------------------------------------------------------
-// Scorecard (signal performance)
-// ---------------------------------------------------------------------------
-
-function Scorecard({ cards }) {
-  if (!cards || cards.length === 0) {
-    return <div style={S.empty}>No signal data yet. Signals will appear after scan cycles detect transitions.</div>;
-  }
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-      {cards.map((c) => {
-        const color = signalColor(c.signal);
-        const borderColor = c.win_rate != null
-          ? (c.win_rate >= 60 ? "#34d399" : c.win_rate < 40 ? "#f87171" : T.text4)
-          : T.text4;
-
-        return (
-          <div key={c.signal} style={S.card(borderColor)}>
-            <div style={S.cardSignal(color)}>{signalLabel(c.signal)}</div>
-            <div style={S.cardStat}>{c.win_rate != null ? `${c.win_rate}%` : "\u2014"}</div>
-            <div style={S.cardLabel}>{c.win_rate != null ? "WIN RATE (7D)" : "PENDING"}</div>
-            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>COUNT</div>
-                <div style={{ fontSize: 13, color: T.text2, fontWeight: 600 }}>{c.count}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>AVG 1D</div>
-                <div style={{ fontSize: 13, color: pctColor(c.avg_1d), fontWeight: 600 }}>{fmtPct(c.avg_1d)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>AVG 7D</div>
-                <div style={{ fontSize: 13, color: pctColor(c.avg_7d), fontWeight: 600 }}>{fmtPct(c.avg_7d)}</div>
-              </div>
-            </div>
-            {c.has_outcomes > 0 && (
-              <div style={{ fontSize: 9, color: T.text4, marginTop: 2 }}>
-                {c.wins}/{c.has_outcomes} wins &bull; {c.direction}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Upgrade scorecard
-// ---------------------------------------------------------------------------
-
-function UpgradeScorecard({ data }) {
-  if (!data?.cards || data.cards.length === 0) {
-    return <div style={S.empty}>No transition data yet.</div>;
-  }
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-      {data.cards.map((c) => {
-        const m = transitionMeta(c.transition_type);
-        const borderColor = c.win_rate != null
-          ? (c.win_rate >= 60 ? "#34d399" : c.win_rate < 40 ? "#f87171" : T.text4)
-          : T.text4;
-
-        return (
-          <div key={c.transition_type} style={S.card(borderColor)}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 14, color: m.color }}>{m.glyph}</span>
-              <span style={S.cardSignal(m.color)}>{m.label}</span>
-            </div>
-            <div style={S.cardStat}>{c.win_rate != null ? `${c.win_rate}%` : "\u2014"}</div>
-            <div style={S.cardLabel}>{c.win_rate != null ? "WIN RATE (7D)" : "PENDING"}</div>
-            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>COUNT</div>
-                <div style={{ fontSize: 13, color: T.text2, fontWeight: 600 }}>{c.count}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>AVG 1D</div>
-                <div style={{ fontSize: 13, color: pctColor(c.avg_1d), fontWeight: 600 }}>{fmtPct(c.avg_1d)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: T.text4 }}>AVG 7D</div>
-                <div style={{ fontSize: 13, color: pctColor(c.avg_7d), fontWeight: 600 }}>{fmtPct(c.avg_7d)}</div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Regime durations
-// ---------------------------------------------------------------------------
-
-function RegimeDurations({ durations }) {
-  if (!durations || durations.length === 0) return null;
-
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={S.table}>
-        <thead>
-          <tr>
-            <th style={S.th}>REGIME</th>
-            <th style={S.th}>COUNT</th>
-            <th style={{ ...S.th, textAlign: "right" }}>AVG DURATION</th>
-            <th style={{ ...S.th, textAlign: "right" }}>MIN</th>
-            <th style={{ ...S.th, textAlign: "right" }}>MAX</th>
-          </tr>
-        </thead>
-        <tbody>
-          {durations.map((d, i) => {
-            const color = regimeColor(d.regime);
-            return (
-              <tr key={d.regime}
-                  style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = T.overlay04}
-                  onMouseLeave={(e) => e.currentTarget.style.background = i % 2 === 1 ? T.overlay02 : "transparent"}>
-                <td style={S.td}>
-                  <span style={S.badge(`${color}18`, color, `${color}40`)}>{d.regime}</span>
-                </td>
-                <td style={{ ...S.td, color: T.text2, fontWeight: 600 }}>{d.count}</td>
-                <td style={{ ...S.td, textAlign: "right", color: T.text1, fontWeight: 600 }}>
-                  {d.avg_duration_label || "\u2014"}
-                </td>
-                <td style={{ ...S.td, textAlign: "right", color: T.text3 }}>{fmtDuration(d.min_duration_seconds)}</td>
-                <td style={{ ...S.td, textAlign: "right", color: T.text3 }}>{fmtDuration(d.max_duration_seconds)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main Panel
 // ---------------------------------------------------------------------------
 
 export default function SignalLogPanel({ api, isMobile }) {
-  const [activeView, setActiveView] = useState("heatmap");
   const [timeframe, setTimeframe] = useState("4h");
-
-  // Heatmap data
   const [heatmap, setHeatmap] = useState(null);
-
-  // Scorecard data
-  const [scorecard, setScorecard] = useState([]);
-  const [upgradeScorecard, setUpgradeScorecard] = useState(null);
-  const [regimeDurations, setRegimeDurations] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   // Raw log (lazy loaded)
   const [rawExpanded, setRawExpanded] = useState(false);
   const [rawEvents, setRawEvents] = useState([]);
 
-  const [loading, setLoading] = useState(false);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      if (activeView === "heatmap") {
-        const res = await fetch(`${api}/api/signals/heatmap?timeframe=${timeframe}&days=14&limit=30`);
-        const data = await res.json();
-        setHeatmap(data);
-      } else if (activeView === "scorecard") {
-        const [sc, usc, rd] = await Promise.all([
-          fetch(`${api}/api/signals/scorecard?timeframe=${timeframe}`).then(r => r.json()),
-          fetch(`${api}/api/signals/upgrade-scorecard?timeframe=${timeframe}`).then(r => r.json()),
-          fetch(`${api}/api/signals/regime-durations?timeframe=${timeframe}`).then(r => r.json()),
-        ]);
-        setScorecard(sc.cards || []);
-        setUpgradeScorecard(usc);
-        setRegimeDurations(rd || []);
-      }
+      const res = await fetch(`${api}/api/signals/heatmap?timeframe=${timeframe}&days=14&limit=30`);
+      const data = await res.json();
+      setHeatmap(data);
     } catch (e) {
       console.error("SignalLogPanel fetch error:", e);
     } finally {
       setLoading(false);
     }
-  }, [api, activeView, timeframe]);
+  }, [api, timeframe]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -416,25 +208,13 @@ export default function SignalLogPanel({ api, isMobile }) {
       .catch(() => {});
   }, [rawExpanded, timeframe, api]);
 
-  const VIEWS = [
-    ["heatmap", "HEATMAP"],
-    ["scorecard", "SCORECARD"],
-  ];
-
   return (
     <div style={{ padding: 0 }}>
-      {/* Header: view tabs + TF toggle */}
+      {/* Header: TF toggle only */}
       <div style={{
-        display: "flex", justifyContent: "space-between",
-        alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10,
+        display: "flex", justifyContent: "flex-end",
+        alignItems: "center", marginBottom: 16,
       }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {VIEWS.map(([key, label]) => (
-            <button key={key} onClick={() => setActiveView(key)} style={S.viewTab(activeView === key)}>
-              {label}
-            </button>
-          ))}
-        </div>
         <div style={{ display: "flex", gap: 4 }}>
           {["4h", "1d"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)} style={S.pillBtn(timeframe === tf)}>
@@ -444,12 +224,10 @@ export default function SignalLogPanel({ api, isMobile }) {
         </div>
       </div>
 
-      {loading && (
-        <div style={S.empty}>Loading...</div>
-      )}
+      {loading && <div style={S.empty}>Loading...</div>}
 
-      {/* HEATMAP VIEW */}
-      {!loading && activeView === "heatmap" && (
+      {/* HEATMAP */}
+      {!loading && (
         <div style={S.section}>
           <div style={S.sectionTitle}>Signal Evolution — Last 14 Days</div>
           <SignalHeatmap data={heatmap} isMobile={isMobile} />
@@ -478,24 +256,6 @@ export default function SignalLogPanel({ api, isMobile }) {
             })}
           </div>
         </div>
-      )}
-
-      {/* SCORECARD VIEW */}
-      {!loading && activeView === "scorecard" && (
-        <>
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Signal Performance</div>
-            <Scorecard cards={scorecard} />
-          </div>
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Transition Performance</div>
-            <UpgradeScorecard data={upgradeScorecard} />
-          </div>
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Regime Durations</div>
-            <RegimeDurations durations={regimeDurations} />
-          </div>
-        </>
       )}
 
       {/* RAW LOG (collapsible) */}
@@ -549,7 +309,7 @@ export default function SignalLogPanel({ api, isMobile }) {
                         <td style={S.td}>
                           <span style={{ color: tt.color, fontWeight: 600 }}>{tt.glyph} {tt.label}</span>
                         </td>
-                        <td style={{ ...S.td, color: regimeColor(ev.regime), fontWeight: 600 }}>{ev.regime}</td>
+                        <td style={{ ...S.td, color: signalColor(ev.regime), fontWeight: 600 }}>{ev.regime}</td>
                       </tr>
                     );
                   })}
