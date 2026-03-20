@@ -726,94 +726,14 @@ async def fetch_coinglass_metrics(
     if not bulk:
         return {}
 
-    # --- Per-coin detail fetch ---
-    per_coin = _per_coin_cache.get()
-    if per_coin is None:
-        per_coin = {}
-
-        # Only attempt per-coin detail for symbols that have bulk (futures) data.
-        # HL-native tokens with no CEX futures (e.g. ZRO) won't appear in bulk
-        # and CoinGlass has no data for them — skip rather than waste requests.
-        if symbols:
-            target_syms = [s for s in symbols if s in bulk][:_PER_COIN_LIMIT]
-            skipped = [s for s in symbols if s not in bulk]
-            if skipped:
-                logger.debug(
-                    "CoinGlass per-coin: skipping %d symbols not in futures data: %s",
-                    len(skipped), skipped[:10],
-                )
-        else:
-            target_syms = list(bulk.keys())[:_PER_COIN_LIMIT]
-        price_changes = price_changes or {}
-
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                tasks = [
-                    _fetch_single_coin_detail(
-                        session, sem, api_key, sym,
-                        price_changes.get(sym),
-                    )
-                    for sym in target_syms
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for outcome in results:
-                if isinstance(outcome, Exception):
-                    logger.debug("Per-coin task raised: %s", outcome)
-                    continue
-                sym, detail = outcome
-                per_coin[sym] = detail
-
-            _per_coin_cache.put(per_coin, _PER_COIN_CACHE_TTL)
-
-            # Parse and store CVD/spot into side caches
-            cvd_bullish = cvd_bearish = 0
-            for sym, detail in per_coin.items():
-                coin = _scanner_to_coin(sym)
-                oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
-
-                if cvd is not None:
-                    _cvd_store[coin] = cvd
-                    if cvd.cvd_trend == "BULLISH":
-                        cvd_bullish += 1
-                    elif cvd.cvd_trend == "BEARISH":
-                        cvd_bearish += 1
-
-                if spot is not None:
-                    _spot_store[sym] = spot
-
-                # Merge into bulk metrics
-                if sym in bulk:
-                    m = bulk[sym]
-                    if oi_usd is not None:
-                        m.open_interest_usd = oi_usd
-                    if oi_4h is not None:
-                        m.oi_change_pct_4h = round(oi_4h, 2)
-                    if oi_24h is not None:
-                        m.oi_change_pct_24h = round(oi_24h, 2)
-                    # Only overwrite LSR if we got real data (not the 1.0 default
-                    # from a failed/rate-limited fetch)
-                    if lsr != 1.0:
-                        m.long_short_ratio_4h = lsr
-                    if top_lsr != 1.0:
-                        m.top_trader_lsr = top_lsr
-                    if lsr != 1.0 or top_lsr != 1.0:
-                        logger.info("LSR merge %s: retail=%.3f top=%.3f", sym, lsr, top_lsr)
-                    if spot is not None:
-                        m.spot_volume_usd    = spot.spot_volume_usd
-                        m.futures_volume_usd = spot.futures_volume_usd
-                        m.spot_futures_ratio = spot.spot_futures_ratio
-                        m.spot_dominance     = spot.spot_dominance
-
-            logger.info(
-                "CoinGlass per-coin: %d coins — CVD %d BULLISH / %d BEARISH / %d NEUTRAL",
-                len(per_coin), cvd_bullish, cvd_bearish,
-                len(per_coin) - cvd_bullish - cvd_bearish,
-            )
-
-        except Exception as exc:
-            logger.error("CoinGlass per-coin fetch failed: %s", exc)
-            per_coin = _per_coin_cache.get_fallback() or {}
+    # --- Per-coin detail: handled by drip loop (run_coinglass_drip) ---
+    # The drip loop continuously fetches 1 coin/1.5s and merges into bulk.
+    # No burst fetch needed here — just log how much drip data is available.
+    drip_count = len(_per_coin_detail)
+    if drip_count > 0:
+        logger.debug("CoinGlass per-coin: drip loop has %d coins cached", drip_count)
+    else:
+        logger.info("CoinGlass per-coin: drip loop not yet populated (first cycle)")
 
     # --- Filter and return ---
     if symbols:
