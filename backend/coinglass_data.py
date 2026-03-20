@@ -493,18 +493,11 @@ def _parse_detail(coin: str, detail: dict) -> Tuple[
     lsr_rows = detail.get("lsr_global") or []
     if lsr_rows:
         lsr_global = float(lsr_rows[-1].get("global_account_long_short_ratio") or 1.0)
-    else:
-        logger.warning("LSR global: no data for %s — raw=%s", coin, type(detail.get("lsr_global")))
 
     top_lsr = 1.0
     top_rows = detail.get("lsr_top") or []
     if top_rows:
         top_lsr = float(top_rows[-1].get("top_account_long_short_ratio") or 1.0)
-    else:
-        logger.warning("LSR top: no data for %s — raw=%s", coin, type(detail.get("lsr_top")))
-
-    if lsr_global != 1.0 or top_lsr != 1.0:
-        logger.info("LSR %s: retail=%.2f top=%.2f", coin, lsr_global, top_lsr)
 
     return oi_usd, oi_chg_4h, oi_chg_24h, cvd, spot_entry, lsr_global, top_lsr
 
@@ -692,8 +685,12 @@ async def fetch_coinglass_metrics(
                         m.oi_change_pct_4h = round(oi_4h, 2)
                     if oi_24h is not None:
                         m.oi_change_pct_24h = round(oi_24h, 2)
-                    m.long_short_ratio_4h = lsr
-                    m.top_trader_lsr = top_lsr
+                    # Only overwrite LSR if we got real data (not the 1.0 default
+                    # from a failed/rate-limited fetch)
+                    if lsr != 1.0:
+                        m.long_short_ratio_4h = lsr
+                    if top_lsr != 1.0:
+                        m.top_trader_lsr = top_lsr
                     if lsr != 1.0 or top_lsr != 1.0:
                         logger.info("LSR merge %s: retail=%.3f top=%.3f", sym, lsr, top_lsr)
                     if spot is not None:

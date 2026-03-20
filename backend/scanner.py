@@ -886,8 +886,6 @@ async def _scan_timeframe(
                 r["positioning"]["liquidation_1h_usd"] = cg.liquidation_usd_1h
                 r["positioning"]["long_short_ratio"] = cg.long_short_ratio_4h
                 r["positioning"]["top_trader_lsr"] = cg.top_trader_lsr
-                if symbol in ("BTC/USDT", "ETH/USDT", "WIF/USDT"):
-                    logger.info("Scanner LSR %s: retail=%.3f top=%.3f", symbol, cg.long_short_ratio_4h, cg.top_trader_lsr)
                 r["positioning"]["oi_market_cap_ratio"] = cg.oi_market_cap_ratio
                 r["positioning"]["source_map"]["oi_change"] = "coinglass"
                 r["positioning"]["source_map"]["liq"] = "coinglass"
