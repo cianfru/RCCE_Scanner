@@ -396,7 +396,7 @@ export default function SignalLogPanel({ api, isMobile }) {
         ]);
         setScorecard(sc.cards || []);
         setUpgradeScorecard(usc);
-        setRegimeDurations(rd || []);
+        setRegimeDurations(rd?.durations || []);
       }
     } catch (e) {
       console.error("SignalLogPanel fetch error:", e);
