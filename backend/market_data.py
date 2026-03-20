@@ -212,7 +212,8 @@ class _SentimentCache:
 
     def put(self, data: SentimentData) -> None:
         self.data = data
-        self.expires_at = time.monotonic() + _CACHE_TTL
+        # F&G updates once daily — cache for 4 hours to avoid hammering CoinGlass
+        self.expires_at = time.monotonic() + 4 * 3600
 
     def get_fallback(self) -> Optional[SentimentData]:
         return self.data
