@@ -694,6 +694,8 @@ async def fetch_coinglass_metrics(
                         m.oi_change_pct_24h = round(oi_24h, 2)
                     m.long_short_ratio_4h = lsr
                     m.top_trader_lsr = top_lsr
+                    if lsr != 1.0 or top_lsr != 1.0:
+                        logger.info("LSR merge %s: retail=%.3f top=%.3f", sym, lsr, top_lsr)
                     if spot is not None:
                         m.spot_volume_usd    = spot.spot_volume_usd
                         m.futures_volume_usd = spot.futures_volume_usd
