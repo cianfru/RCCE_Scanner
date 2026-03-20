@@ -122,13 +122,14 @@ def _apply_cvd_modifiers(
         signal = "STRONG_LONG"
         cvd_reasons.append("cvd+spot_led→strong")
 
-    # 4. CVD BEARISH divergence → downgrade entry signals
+    # 4. CVD BEARISH divergence → warning only (no signal downgrade)
+    #    Previously hard-downgraded STRONG→TRIM and LIGHT→WAIT, but a single
+    #    CVD reading shouldn't override 10+ confirming conditions.  The warning
+    #    surfaces in the UI so the user can decide.
     if (cvd_divergence
             and cvd_trend == "BEARISH"
             and signal in ("STRONG_LONG", "LIGHT_LONG")):
-        # CVD diverging bearishly — distribution happening under the hood
-        signal = "TRIM" if signal == "STRONG_LONG" else "WAIT"
-        extra_warnings.append("cvd_bearish_divergence→downgrade")
+        extra_warnings.append("CVD bearish divergence — monitor for distribution")
 
     # 5. Extreme liquidations + entry signal = high conviction (capitulation complete)
     # If liq > $50M in 24h and we have a bullish signal, that's a washout floor
