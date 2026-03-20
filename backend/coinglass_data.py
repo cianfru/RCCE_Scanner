@@ -77,7 +77,9 @@ _MAX_RETRIES         = 2
 _RETRY_DELAY_S       = 3.0
 
 # Per-coin fetch limits
-_PER_COIN_LIMIT      = 30            # max coins for detailed OI/CVD/LSR
+_PER_COIN_LIMIT      = 30            # max coins for one-shot fetch (legacy, used as fallback)
+_DRIP_INTERVAL_S     = 1.5           # seconds between per-coin fetches in drip mode
+_DRIP_CYCLE_PAUSE_S  = 30            # pause after completing a full rotation
 
 # Taker volume exchange lists
 _FUTURES_EXCHANGES   = "Binance,OKX,Bybit"
@@ -556,6 +558,110 @@ async def _fetch_macro(
 
 _cvd_store:   Dict[str, CoinglassCVD]   = {}   # coin → latest CVD
 _spot_store:  Dict[str, CoinglassSpot]  = {}   # scanner_sym → latest spot
+
+# Persistent per-coin detail store (drip-fed, never expires — drip loop keeps it fresh)
+_per_coin_detail: Dict[str, dict] = {}         # scanner_sym → raw detail dict
+
+
+# ---------------------------------------------------------------------------
+# Background drip loop — fetches 1 coin every _DRIP_INTERVAL_S
+# ---------------------------------------------------------------------------
+
+async def run_coinglass_drip() -> None:
+    """Continuously drip-feed per-coin CoinGlass data (OI, CVD, LSR, spot).
+
+    Fetches one coin every ~1.5s.  A full rotation of all CEX symbols
+    takes len(symbols) * 1.5s (e.g. 150 coins ≈ 3.75 min).  After a
+    full rotation, pauses briefly then starts over.
+
+    Results are merged into the bulk CoinglassMetrics store so the
+    scanner always has the latest available data.
+    """
+    logger.info("CoinGlass drip loop starting ...")
+    api_key = _get_api_key()
+    if not api_key:
+        logger.warning("CoinGlass drip loop: no API key — exiting")
+        return
+
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    sem = asyncio.Semaphore(3)  # low concurrency for drip
+
+    # Wait for first bulk fetch to populate the symbol list
+    while _bulk_cache.data is None:
+        await asyncio.sleep(5)
+
+    cycle = 0
+    while True:
+        try:
+            bulk = _bulk_cache.get_fallback()
+            if not bulk:
+                await asyncio.sleep(10)
+                continue
+
+            target_syms = list(bulk.keys())
+            cycle += 1
+            fetched = 0
+
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                for sym in target_syms:
+                    try:
+                        result = await _fetch_single_coin_detail(
+                            session, sem, api_key, sym,
+                        )
+                        if isinstance(result, Exception):
+                            continue
+
+                        sym_out, detail = result
+                        _per_coin_detail[sym_out] = detail
+
+                        # Parse and merge immediately
+                        coin = _scanner_to_coin(sym_out)
+                        oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
+
+                        if cvd is not None:
+                            _cvd_store[coin] = cvd
+                        if spot is not None:
+                            _spot_store[sym_out] = spot
+
+                        if sym_out in bulk:
+                            m = bulk[sym_out]
+                            if oi_usd is not None:
+                                m.open_interest_usd = oi_usd
+                            if oi_4h is not None:
+                                m.oi_change_pct_4h = round(oi_4h, 2)
+                            if oi_24h is not None:
+                                m.oi_change_pct_24h = round(oi_24h, 2)
+                            if lsr != 1.0:
+                                m.long_short_ratio_4h = lsr
+                            if top_lsr != 1.0:
+                                m.top_trader_lsr = top_lsr
+                            if spot is not None:
+                                m.spot_volume_usd    = spot.spot_volume_usd
+                                m.futures_volume_usd = spot.futures_volume_usd
+                                m.spot_futures_ratio = spot.spot_futures_ratio
+                                m.spot_dominance     = spot.spot_dominance
+
+                        fetched += 1
+
+                    except Exception as exc:
+                        logger.debug("Drip fetch %s failed: %s", sym, exc)
+
+                    await asyncio.sleep(_DRIP_INTERVAL_S)
+
+            logger.info(
+                "CoinGlass drip cycle %d complete: %d/%d coins fetched",
+                cycle, fetched, len(target_syms),
+            )
+
+            # Also update the per-coin cache so fetch_coinglass_metrics
+            # doesn't re-fetch in burst mode
+            _per_coin_cache.put(_per_coin_detail, _PER_COIN_CACHE_TTL * 10)
+
+            await asyncio.sleep(_DRIP_CYCLE_PAUSE_S)
+
+        except Exception as exc:
+            logger.error("CoinGlass drip loop error: %s", exc)
+            await asyncio.sleep(30)
 
 
 # ---------------------------------------------------------------------------

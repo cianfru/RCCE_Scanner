@@ -173,6 +173,14 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_periodic_scan())
     asyncio.create_task(_periodic_whale_poll())
+
+    # Start CoinGlass drip loop (1 coin every 1.5s instead of 150 calls at once)
+    try:
+        from coinglass_data import run_coinglass_drip
+        asyncio.create_task(run_coinglass_drip())
+    except Exception as e:
+        logger.warning("CoinGlass drip loop init failed (non-fatal): %s", e)
+
     yield
 
     # Shutdown Telegram bot
