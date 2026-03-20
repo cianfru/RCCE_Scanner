@@ -18,6 +18,7 @@ Available endpoints (empirically verified):
   MACRO (global, cached 1 hr):
     GET /api/coinbase-premium-index              → institutional buy pressure
     GET /api/etf/bitcoin/flow-history            → BTC ETF net flows
+    GET /api/index/fear-greed-history            → Fear & Greed Index (in market_data.py)
 
 Auth: Header ``CG-API-KEY``
 

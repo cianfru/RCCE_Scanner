@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -181,10 +182,14 @@ def get_cached_metrics() -> Optional[GlobalMetrics]:
 
 
 # ---------------------------------------------------------------------------
-# Fear & Greed Index (Alternative.me)
+# Fear & Greed Index (CoinGlass v4)
 # ---------------------------------------------------------------------------
 
-_FNG_URL = "https://api.alternative.me/fng/"
+_FNG_URL = "https://open-api-v4.coinglass.com/api/index/fear-greed-history"
+
+
+def _get_cg_api_key() -> str:
+    return os.environ.get("COINGLASS_API_KEY", "")
 
 
 @dataclass
@@ -216,38 +221,70 @@ class _SentimentCache:
 _sentiment_cache = _SentimentCache()
 
 
-async def fetch_fear_greed() -> Optional[SentimentData]:
-    """Fetch the current Fear & Greed Index from Alternative.me.
+def _fng_label(value: int) -> str:
+    """Convert 0-100 F&G value to human label."""
+    if value <= 20:
+        return "Extreme Fear"
+    elif value <= 40:
+        return "Fear"
+    elif value <= 60:
+        return "Neutral"
+    elif value <= 80:
+        return "Greed"
+    return "Extreme Greed"
 
-    Free API, no key required, ~60 req/min.
+
+async def fetch_fear_greed() -> Optional[SentimentData]:
+    """Fetch the current Fear & Greed Index from CoinGlass v4.
+
+    Uses /api/index/fear-greed-history — returns parallel arrays of
+    data_list (values), price_list (BTC prices), time_list (timestamps).
+    We take the most recent entry.
     """
     cached = _sentiment_cache.get()
     if cached is not None:
         return cached
 
+    api_key = _get_cg_api_key()
+    if not api_key:
+        logger.warning("COINGLASS_API_KEY not set — F&G unavailable")
+        return _sentiment_cache.get_fallback()
+
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    headers = {"CG-API-KEY": api_key}
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(_FNG_URL) as resp:
+            async with session.get(_FNG_URL, headers=headers) as resp:
                 resp.raise_for_status()
                 payload = await resp.json()
 
-        data_list = payload.get("data", [])
-        if not data_list:
+        if payload.get("code") != "0":
+            logger.warning("CoinGlass F&G error: %s", payload.get("msg"))
             return _sentiment_cache.get_fallback()
 
-        entry = data_list[0]
+        data = payload.get("data", [])
+        if not data:
+            return _sentiment_cache.get_fallback()
+
+        # Response is [{data_list: [...], price_list: [...], time_list: [...]}]
+        entry = data[0] if isinstance(data, list) else data
+        values = entry.get("data_list") or entry.get("dataList") or []
+        if not values:
+            return _sentiment_cache.get_fallback()
+
+        # Most recent value is last in the array
+        fng_value = int(values[-1])
         result = SentimentData(
-            fear_greed_value=int(entry.get("value", 50)),
-            fear_greed_label=entry.get("value_classification", "Neutral"),
+            fear_greed_value=fng_value,
+            fear_greed_label=_fng_label(fng_value),
             timestamp=time.time(),
         )
         _sentiment_cache.put(result)
-        logger.info("Fear & Greed Index: %d (%s)", result.fear_greed_value, result.fear_greed_label)
+        logger.info("Fear & Greed Index (CoinGlass): %d (%s)", result.fear_greed_value, result.fear_greed_label)
         return result
 
     except Exception as exc:
-        logger.warning("Failed to fetch Fear & Greed: %s", exc)
+        logger.warning("Failed to fetch Fear & Greed from CoinGlass: %s", exc)
         return _sentiment_cache.get_fallback()
 
 

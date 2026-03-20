@@ -2,7 +2,7 @@
 data_loader.py
 ~~~~~~~~~~~~~~
 Fetches historical OHLCV data from CCXT with pagination support,
-plus historical Fear & Greed Index from Alternative.me.
+plus historical Fear & Greed Index from CoinGlass v4.
 
 Designed for backtesting — fetches large date ranges in chunks
 and returns full numpy arrays matching the engine input format.
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -237,7 +238,10 @@ async def fetch_historical_batch(
 # ---------------------------------------------------------------------------
 
 async def fetch_historical_fear_greed(days: int = 365) -> Dict[str, int]:
-    """Fetch historical Fear & Greed Index from Alternative.me.
+    """Fetch historical Fear & Greed Index from CoinGlass v4.
+
+    Uses /api/index/fear-greed-history which returns parallel arrays:
+    data_list (values), time_list (unix-ms timestamps).
 
     Returns
     -------
@@ -245,28 +249,43 @@ async def fetch_historical_fear_greed(days: int = 365) -> Dict[str, int]:
         {date_str: fear_greed_value} for lookup during replay.
         Date format: "YYYY-MM-DD".
     """
-    url = f"https://api.alternative.me/fng/?limit={days}"
+    api_key = os.environ.get("COINGLASS_API_KEY", "")
+    if not api_key:
+        logger.warning("COINGLASS_API_KEY not set — F&G history unavailable")
+        return {}
+
+    url = "https://open-api-v4.coinglass.com/api/index/fear-greed-history"
+    headers = {"CG-API-KEY": api_key}
     timeout = aiohttp.ClientTimeout(total=15)
 
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
+            async with session.get(url, headers=headers) as resp:
                 resp.raise_for_status()
                 payload = await resp.json()
 
-        data_list = payload.get("data", [])
+        if payload.get("code") != "0":
+            logger.warning("CoinGlass F&G history error: %s", payload.get("msg"))
+            return {}
+
+        data = payload.get("data", [])
+        if not data:
+            return {}
+
+        entry = data[0] if isinstance(data, list) else data
+        values = entry.get("data_list") or entry.get("dataList") or []
+        times = entry.get("time_list") or entry.get("timeList") or []
+
         result: Dict[str, int] = {}
+        for ts, val in zip(times, values):
+            # CoinGlass timestamps are in milliseconds
+            ts_sec = ts / 1000 if ts > 1e12 else ts
+            date_str = datetime.fromtimestamp(ts_sec, tz=timezone.utc).strftime("%Y-%m-%d")
+            result[date_str] = int(val)
 
-        for entry in data_list:
-            ts = int(entry.get("timestamp", 0))
-            value = int(entry.get("value", 50))
-            if ts > 0:
-                date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-                result[date_str] = value
-
-        logger.info("Fetched %d days of Fear & Greed history", len(result))
+        logger.info("Fetched %d days of Fear & Greed history (CoinGlass)", len(result))
         return result
 
     except Exception as exc:
-        logger.warning("Failed to fetch F&G history: %s", exc)
+        logger.warning("Failed to fetch F&G history from CoinGlass: %s", exc)
         return {}
