@@ -91,9 +91,6 @@ export default function App() {
   // CoinGlass macro (ETF flows + Coinbase premium)
   const [macro, setMacro] = useState(null);
 
-  // Market pulse (narrative + regime distribution)
-  const [pulse, setPulse] = useState(null);
-
   // Portfolio groups
   const [groups, setGroups] = useState([]);
   const [activeGroupId, setActiveGroupId] = useState(null);
@@ -171,7 +168,7 @@ export default function App() {
       setLastRefresh(new Date());
 
       try {
-        const [gm, as, sent, stable, tf4h, tf1d, macroData, pulseData] = await Promise.all([
+        const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
@@ -179,7 +176,6 @@ export default function App() {
           fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/coinglass/macro`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/market-pulse?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
         ]);
         if (gm) setGlobalMetrics(gm);
         if (as) setAltSeason(as);
@@ -188,7 +184,6 @@ export default function App() {
         if (tf4h) setDataTradfi4h(tf4h.results || []);
         if (tf1d) setDataTradfi1d(tf1d.results || []);
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
-        if (pulseData?.narrative) setPulse(pulseData);
       } catch (_) {}
     } catch (e) {
       setError(e.message);
@@ -704,7 +699,7 @@ export default function App() {
           </FadeIn>
         )}
 
-        {showDashboard && <ConsensusBar consensus={activeConsensus} pulse={pulse} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
+        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && <HitRateStrip timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} />}
 
