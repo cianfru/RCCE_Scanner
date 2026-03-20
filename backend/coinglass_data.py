@@ -618,6 +618,17 @@ async def run_coinglass_drip() -> None:
                         coin = _scanner_to_coin(sym_out)
                         oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
 
+                        # Debug: trace LSR for BTC
+                        if coin == "BTC":
+                            raw_g = detail.get("lsr_global") or []
+                            raw_t = detail.get("lsr_top") or []
+                            logger.info(
+                                "DRIP LSR BTC: raw_global=%s raw_top=%s lsr=%.4f top=%.4f",
+                                raw_g[:1] if raw_g else "EMPTY",
+                                raw_t[:1] if raw_t else "EMPTY",
+                                lsr, top_lsr,
+                            )
+
                         if cvd is not None:
                             _cvd_store[coin] = cvd
                         if spot is not None:
@@ -733,11 +744,24 @@ async def fetch_coinglass_metrics(
     drip_count = len(_per_coin_detail)
     if drip_count > 0:
         merged = 0
+        lsr_populated = 0
         for sym, detail in _per_coin_detail.items():
             if sym not in bulk:
                 continue
             coin = _scanner_to_coin(sym)
             oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
+
+            # Debug: log raw LSR data for BTC to trace the pipeline
+            if coin == "BTC":
+                raw_lsr_global = detail.get("lsr_global") or []
+                raw_lsr_top = detail.get("lsr_top") or []
+                logger.info(
+                    "DEBUG LSR BTC: raw_global=%s raw_top=%s parsed_lsr=%.4f parsed_top=%.4f",
+                    raw_lsr_global[:1] if raw_lsr_global else "EMPTY",
+                    raw_lsr_top[:1] if raw_lsr_top else "EMPTY",
+                    lsr, top_lsr,
+                )
+
             m = bulk[sym]
             if oi_usd is not None:
                 m.open_interest_usd = oi_usd
@@ -747,6 +771,7 @@ async def fetch_coinglass_metrics(
                 m.oi_change_pct_24h = round(oi_24h, 2)
             if lsr != 1.0:
                 m.long_short_ratio_4h = lsr
+                lsr_populated += 1
             if top_lsr != 1.0:
                 m.top_trader_lsr = top_lsr
             if cvd is not None:
@@ -758,7 +783,7 @@ async def fetch_coinglass_metrics(
                 m.spot_futures_ratio = spot.spot_futures_ratio
                 m.spot_dominance     = spot.spot_dominance
             merged += 1
-        logger.info("CoinGlass per-coin: merged drip data for %d/%d coins into bulk", merged, drip_count)
+        logger.info("CoinGlass per-coin: merged drip data for %d/%d coins into bulk (%d with LSR != 1.0)", merged, drip_count, lsr_populated)
     else:
         logger.info("CoinGlass per-coin: drip loop not yet populated (first cycle)")
 
