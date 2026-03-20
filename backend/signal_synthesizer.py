@@ -305,7 +305,7 @@ def synthesize_signal(
 
     # -- CoinGlass conditions (weight 0.75, only when data available) --
     cond_oi_confirms = oi_trend in ("BUILDING", "STABLE") if regime in ("MARKUP", "ACCUM", "REACC") else oi_trend in ("LIQUIDATING", "SQUEEZE")
-    cond_cvd_confirms = cvd_trend == "BULLISH"
+    cond_cvd_confirms = cvd_trend in ("BULLISH", "NEUTRAL")  # NEUTRAL = no bias, not counter-evidence
     cond_smart_money = top_trader_lsr >= SMART_MONEY_LSR_OK or top_trader_lsr == 1.0  # 1.0 = no data → neutral pass
     cond_macro_tailwind = etf_flow_usd > 0 or cb_premium > 0
 
