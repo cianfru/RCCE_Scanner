@@ -493,11 +493,18 @@ def _parse_detail(coin: str, detail: dict) -> Tuple[
     lsr_rows = detail.get("lsr_global") or []
     if lsr_rows:
         lsr_global = float(lsr_rows[-1].get("global_account_long_short_ratio") or 1.0)
+    else:
+        logger.warning("LSR global: no data for %s — raw=%s", coin, type(detail.get("lsr_global")))
 
     top_lsr = 1.0
     top_rows = detail.get("lsr_top") or []
     if top_rows:
         top_lsr = float(top_rows[-1].get("top_account_long_short_ratio") or 1.0)
+    else:
+        logger.warning("LSR top: no data for %s — raw=%s", coin, type(detail.get("lsr_top")))
+
+    if lsr_global != 1.0 or top_lsr != 1.0:
+        logger.info("LSR %s: retail=%.2f top=%.2f", coin, lsr_global, top_lsr)
 
     return oi_usd, oi_chg_4h, oi_chg_24h, cvd, spot_entry, lsr_global, top_lsr
 
