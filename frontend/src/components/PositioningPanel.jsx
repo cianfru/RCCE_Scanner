@@ -28,12 +28,13 @@ function InfoTip({ title, text }) {
       onMouseLeave={() => setShow(false)}
     >
       <span style={{
-        fontSize: 8, color: T.text4, cursor: "help",
+        fontSize: 7, color: T.text4, cursor: "help",
         fontFamily: T.mono, fontWeight: 700,
-        width: 11, height: 11, borderRadius: "50%",
+        width: 12, height: 12, borderRadius: "50%",
         border: `1px solid ${T.border}`,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         lineHeight: 1, userSelect: "none",
+        transition: "all 0.15s",
       }}>
         i
       </span>
@@ -41,11 +42,12 @@ function InfoTip({ title, text }) {
         <div style={{
           position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
           transform: "translateX(-50%)",
-          background: "#16161a",
+          background: "rgba(16,16,20,0.95)",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
           border: `1px solid ${T.border}`,
-          borderRadius: 6, padding: "8px 10px",
-          zIndex: 9999, width: 210, pointerEvents: "none",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.6)",
+          borderRadius: 8, padding: "10px 12px",
+          zIndex: 9999, width: 220, pointerEvents: "none",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
         }}>
           {title && (
             <div style={{
@@ -56,7 +58,7 @@ function InfoTip({ title, text }) {
             </div>
           )}
           <div style={{
-            fontSize: T.textSm, color: T.text3, fontFamily: T.font,
+            fontSize: T.textXs, color: T.text3, fontFamily: T.font,
             fontWeight: 400, lineHeight: 1.55,
           }}>
             {text}
@@ -70,7 +72,7 @@ function InfoTip({ title, text }) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(v) {
-  if (v == null) return "—";
+  if (v == null) return "\u2014";
   if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
   if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
@@ -83,31 +85,39 @@ function Badge({ icon, label, sub, color, bg, empty, info }) {
   if (empty) {
     return (
       <div style={{
-        flex: "1 1 48%", padding: "10px 12px", borderRadius: 6,
-        background: "transparent", border: `1px solid ${T.border}`,
+        flex: "1 1 48%", padding: "10px 12px", borderRadius: 10,
+        background: T.overlay02,
+        border: `1px solid ${T.border}`,
         display: "flex", flexDirection: "column", gap: 2, minWidth: 0,
       }}>
-        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>—</span>
+        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>{"\u2014"}</span>
       </div>
     );
   }
   const c = color || T.text2;
-  const bg_ = bg || `${c}14`;
   return (
     <div style={{
-      flex: "1 1 48%", padding: "10px 12px", borderRadius: 6,
-      background: bg_, border: `1px solid ${c}28`,
-      display: "flex", flexDirection: "column", gap: 3, minWidth: 0,
+      flex: "1 1 48%", padding: "10px 12px", borderRadius: 10,
+      background: `${c}08`,
+      border: `1px solid ${c}18`,
+      display: "flex", flexDirection: "column", gap: 4, minWidth: 0,
+      transition: "all 0.2s ease",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        {icon && <span style={{ fontSize: 11 }}>{icon}</span>}
-        <span style={{ fontSize: T.textSm, color: c, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1.2 }}>
+        {icon && <span style={{ fontSize: 10, lineHeight: 1 }}>{icon}</span>}
+        <span style={{
+          fontSize: T.textSm, color: c, fontFamily: T.mono,
+          fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1.2,
+        }}>
           {label}
         </span>
         {info && <InfoTip title={info.title} text={info.text} />}
       </div>
       {sub && (
-        <span style={{ fontSize: T.textXs, color: `${c}99`, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>
+        <span style={{
+          fontSize: T.textXs, color: T.text4, fontFamily: T.font,
+          fontWeight: 500, letterSpacing: "0.03em",
+        }}>
           {sub}
         </span>
       )}
@@ -120,15 +130,15 @@ function Badge({ icon, label, sub, color, bg, empty, info }) {
 const BADGE_INFO = {
   funding: {
     title: "Funding Regime",
-    text: "Perpetual futures funding rate direction. Positive = longs pay shorts (crowded longs). Negative = shorts pay longs (crowded shorts). CROWDED_LONG is a caution signal — condition 8 in the conviction score.",
+    text: "Perpetual futures funding rate direction. Positive = longs pay shorts (crowded longs). Negative = shorts pay longs (crowded shorts). CROWDED_LONG is a caution signal \u2014 condition 8 in the conviction score.",
   },
   oi: {
     title: "Open Interest Trend",
-    text: "Direction of futures open interest — sourced from CoinGlass multi-exchange aggregated 4h change (more accurate than single-exchange). BUILDING = new money entering with price (confirmed move). SQUEEZE = OI falling as price rises (shorts closing, not new longs). LIQUIDATING = OI falling with price (long cascade). SHORTING = OI rising as price falls (aggressive shorts opening).",
+    text: "Direction of futures open interest \u2014 sourced from CoinGlass multi-exchange aggregated 4h change (more accurate than single-exchange). BUILDING = new money entering with price (confirmed move). SQUEEZE = OI falling as price rises (shorts closing, not new longs). LIQUIDATING = OI falling with price (long cascade). SHORTING = OI rising as price falls (aggressive shorts opening).",
   },
   cvd: {
     title: "Cumulative Volume Delta",
-    text: "Net taker buy/sell pressure from CoinGlass futures data. TAKERS BUYING = aggressive buyers initiating trades. ⚡DIV = CVD diverges from price (potential reversal). CVD can upgrade ACCUMULATE → LIGHT_LONG or downgrade STRONG_LONG → TRIM.",
+    text: "Net taker buy/sell pressure from CoinGlass futures data. TAKERS BUYING = aggressive buyers initiating trades. \u26a1DIV = CVD diverges from price (potential reversal). CVD can upgrade ACCUMULATE \u2192 LIGHT_LONG or downgrade STRONG_LONG \u2192 TRIM.",
   },
   spot: {
     title: "Spot Dominance",
@@ -136,11 +146,11 @@ const BADGE_INFO = {
   },
   smartMoney: {
     title: "Smart Money LSR",
-    text: "Long/Short Ratio split by account tier (CoinGlass). 'Pro' = top-tier trader accounts. 'Retail' = overall market LSR. Wired into signal decisions: Pro LSR < 0.7 downgrades STRONG_LONG → LIGHT_LONG. Pro LSR < 0.8 adds caution warning. Pro LSR > 1.5 reinforces entry signals.",
+    text: "Long/Short Ratio split by account tier (CoinGlass). 'Pro' = top-tier trader accounts. 'Retail' = overall market LSR. Wired into signal decisions: Pro LSR < 0.7 downgrades STRONG_LONG \u2192 LIGHT_LONG. Pro LSR < 0.8 adds caution warning. Pro LSR > 1.5 reinforces entry signals.",
   },
   liq: {
     title: "Liquidation Intensity",
-    text: "Total liquidated positions in 24h. LONGS FLUSHED (≥70% long liquidations) often marks capitulation — a contrarian buy signal. SHORTS SQUEEZED (≥70% short liquidations) may mark a local top. HIGH LIQ without directional skew = general deleveraging.",
+    text: "Total liquidated positions in 24h. LONGS FLUSHED (\u226570% long liquidations) often marks capitulation \u2014 a contrarian buy signal. SHORTS SQUEEZED (\u226570% short liquidations) may mark a local top. HIGH LIQ without directional skew = general deleveraging.",
   },
 };
 
@@ -148,53 +158,53 @@ function fundingBadge(regime, rate) {
   const rateStr = rate != null ? `${(rate * 100).toFixed(4)}% per 8h` : null;
   switch (regime) {
     case "CROWDED_LONG":
-      return { icon: "⚠️", label: "LONGS CROWDED", sub: rateStr, color: "#f87171", info: BADGE_INFO.funding };
+      return { icon: "\u26a0\ufe0f", label: "LONGS CROWDED", sub: rateStr, color: "#f87171", info: BADGE_INFO.funding };
     case "CROWDED_SHORT":
-      return { icon: "🎯", label: "SHORTS CROWDED", sub: rateStr, color: "#34d399", info: BADGE_INFO.funding };
+      return { icon: "\ud83c\udfaf", label: "SHORTS CROWDED", sub: rateStr, color: "#34d399", info: BADGE_INFO.funding };
     default: {
-      if (rate == null) return { icon: null, label: "FUNDING", sub: "—", color: T.text4, info: BADGE_INFO.funding };
+      if (rate == null) return { icon: null, label: "FUNDING", sub: "\u2014", color: T.text4, info: BADGE_INFO.funding };
       const c = rate < 0 ? "#34d399" : rate > 0.01 ? "#f87171" : rate > 0.005 ? "#fbbf24" : T.text3;
-      return { icon: rate < 0 ? "↓" : "↑", label: "FUNDING OK", sub: rateStr, color: c, info: BADGE_INFO.funding };
+      return { icon: rate < 0 ? "\u2193" : "\u2191", label: "FUNDING OK", sub: rateStr, color: c, info: BADGE_INFO.funding };
     }
   }
 }
 
 function oiBadge(trend, oiValue, oiChangePct) {
-  const sub = oiValue ? `${fmt(oiValue)}${oiChangePct ? ` · ${oiChangePct >= 0 ? "+" : ""}${oiChangePct.toFixed(1)}%` : ""}` : null;
+  const sub = oiValue ? `${fmt(oiValue)}${oiChangePct ? ` \u00b7 ${oiChangePct >= 0 ? "+" : ""}${oiChangePct.toFixed(1)}%` : ""}` : null;
   switch (trend) {
-    case "BUILDING":    return { icon: "↑",  label: "OI BUILDING",    sub, color: "#34d399", info: BADGE_INFO.oi };
-    case "SQUEEZE":     return { icon: "⚡", label: "OI SQUEEZE",     sub, color: "#fbbf24", info: BADGE_INFO.oi };
-    case "LIQUIDATING": return { icon: "↓↓", label: "LIQUIDATING",   sub, color: "#f87171", info: BADGE_INFO.oi };
-    case "SHORTING":    return { icon: "↓",  label: "SHORTING INTO",  sub, color: "#c084fc", info: BADGE_INFO.oi };
-    default:            return { icon: "→",  label: trend || "OI STABLE", sub, color: T.text4, info: BADGE_INFO.oi };
+    case "BUILDING":    return { icon: "\u2191",  label: "OI BUILDING",    sub, color: "#34d399", info: BADGE_INFO.oi };
+    case "SQUEEZE":     return { icon: "\u26a1", label: "OI SQUEEZE",     sub, color: "#fbbf24", info: BADGE_INFO.oi };
+    case "LIQUIDATING": return { icon: "\u2193\u2193", label: "LIQUIDATING",   sub, color: "#f87171", info: BADGE_INFO.oi };
+    case "SHORTING":    return { icon: "\u2193",  label: "SHORTING INTO",  sub, color: "#c084fc", info: BADGE_INFO.oi };
+    default:            return { icon: "\u2192",  label: trend || "OI STABLE", sub, color: T.text4, info: BADGE_INFO.oi };
   }
 }
 
 function cvdBadge(cvdTrend, cvdDiv, bsr) {
-  const divTag = cvdDiv ? " ⚡DIV" : "";
+  const divTag = cvdDiv ? " \u26a1DIV" : "";
   const sub = bsr != null && bsr !== 1 ? `BSR ${bsr.toFixed(3)}x` : null;
   switch (cvdTrend) {
-    case "BULLISH": return { icon: "▲", label: `TAKERS BUYING${divTag}`,  sub, color: "#34d399", info: BADGE_INFO.cvd };
-    case "BEARISH": return { icon: "▼", label: `TAKERS SELLING${divTag}`, sub, color: "#f87171", info: BADGE_INFO.cvd };
-    default:        return { icon: "→", label: "CVD NEUTRAL",             sub, color: T.text4,   info: BADGE_INFO.cvd };
+    case "BULLISH": return { icon: "\u25b2", label: `TAKERS BUYING${divTag}`,  sub, color: "#34d399", info: BADGE_INFO.cvd };
+    case "BEARISH": return { icon: "\u25bc", label: `TAKERS SELLING${divTag}`, sub, color: "#f87171", info: BADGE_INFO.cvd };
+    default:        return { icon: "\u2192", label: "CVD NEUTRAL",             sub, color: T.text4,   info: BADGE_INFO.cvd };
   }
 }
 
 function spotBadge(spotDom, spotRatio) {
   const pct = spotRatio > 0 ? `${(spotRatio * 100).toFixed(0)}% spot vol` : null;
   switch (spotDom) {
-    case "SPOT_LED":    return { icon: "🟢", label: "SPOT-LED",    sub: pct || "organic demand",  color: "#34d399", info: BADGE_INFO.spot };
-    case "FUTURES_LED": return { icon: "⚡", label: "FUTURES-LED", sub: pct || "leverage driven", color: "#f87171", info: BADGE_INFO.spot };
-    default:            return { icon: "◎",  label: "MIXED FLOW",  sub: pct,                      color: T.text4,   info: BADGE_INFO.spot };
+    case "SPOT_LED":    return { icon: "\ud83d\udfe2", label: "SPOT-LED",    sub: pct || "organic demand",  color: "#34d399", info: BADGE_INFO.spot };
+    case "FUTURES_LED": return { icon: "\u26a1", label: "FUTURES-LED", sub: pct || "leverage driven", color: "#f87171", info: BADGE_INFO.spot };
+    default:            return { icon: "\u25ce",  label: "MIXED FLOW",  sub: pct,                      color: T.text4,   info: BADGE_INFO.spot };
   }
 }
 
 function smartMoneyBadge(topLsr, retailLsr) {
   if (!topLsr || topLsr === 1) return { icon: null, label: "LSR NEUTRAL", sub: retailLsr ? `Retail ${retailLsr.toFixed(2)}` : null, color: T.text4, info: BADGE_INFO.smartMoney };
-  const lsrSub = retailLsr ? `Retail ${retailLsr.toFixed(2)} · Pro ${topLsr.toFixed(2)}` : `Pro ${topLsr.toFixed(2)}`;
-  if (topLsr > 1.3)  return { icon: "↑", label: "TOP LONGS HEAVY",  sub: lsrSub, color: "#fbbf24", info: BADGE_INFO.smartMoney };
-  if (topLsr < 0.8)  return { icon: "↓", label: "TOP SHORTS HEAVY", sub: lsrSub, color: "#c084fc", info: BADGE_INFO.smartMoney };
-  return { icon: "→", label: "TOP BALANCED", sub: lsrSub, color: T.text3, info: BADGE_INFO.smartMoney };
+  const lsrSub = retailLsr ? `Retail ${retailLsr.toFixed(2)} \u00b7 Pro ${topLsr.toFixed(2)}` : `Pro ${topLsr.toFixed(2)}`;
+  if (topLsr > 1.3)  return { icon: "\u2191", label: "TOP LONGS HEAVY",  sub: lsrSub, color: "#fbbf24", info: BADGE_INFO.smartMoney };
+  if (topLsr < 0.8)  return { icon: "\u2193", label: "TOP SHORTS HEAVY", sub: lsrSub, color: "#c084fc", info: BADGE_INFO.smartMoney };
+  return { icon: "\u2192", label: "TOP BALANCED", sub: lsrSub, color: T.text3, info: BADGE_INFO.smartMoney };
 }
 
 function liqBadge(liq24h, longLiq, shortLiq) {
@@ -205,23 +215,23 @@ function liqBadge(liq24h, longLiq, shortLiq) {
   const intColor = intensity === "HIGH" ? "#f87171" : intensity === "MED" ? "#fbbf24" : T.text4;
 
   if (longPct != null && longPct >= 70) {
-    return { icon: "🔴", label: "LONGS FLUSHED",   sub: `${fmt(total)} · ${longPct}% long liq`,      color: "#34d399", info: BADGE_INFO.liq };
+    return { icon: "\ud83d\udd34", label: "LONGS FLUSHED",   sub: `${fmt(total)} \u00b7 ${longPct}% long liq`,      color: "#34d399", info: BADGE_INFO.liq };
   }
   if (longPct != null && longPct <= 30) {
-    return { icon: "🟢", label: "SHORTS SQUEEZED", sub: `${fmt(total)} · ${100-longPct}% short liq`, color: "#f87171", info: BADGE_INFO.liq };
+    return { icon: "\ud83d\udfe2", label: "SHORTS SQUEEZED", sub: `${fmt(total)} \u00b7 ${100-longPct}% short liq`, color: "#f87171", info: BADGE_INFO.liq };
   }
-  return { icon: "⚖️", label: `${intensity} LIQ`, sub: `${fmt(total)} 24h`, color: intColor, info: BADGE_INFO.liq };
+  return { icon: "\u2696\ufe0f", label: `${intensity} LIQ`, sub: `${fmt(total)} 24h`, color: intColor, info: BADGE_INFO.liq };
 }
 
-// ─── Numbers strip ────────────────────────────────────────────────────────────
+// ─── Stat pill ───────────────────────────────────────────────────────────────
 
 const STAT_INFO = {
   "RATE /8H": "Funding rate per 8-hour settlement window. Positive = longs pay shorts (bullish crowding). Above 0.01% = crowded longs (caution). Negative = shorts pay longs (bearish crowding).",
   "OPEN INT": "Total USD value of all open perpetual futures positions. Rising OI alongside price confirms a real move. Falling OI during a rally suggests a short squeeze.",
-  "LSR":      "Long/Short Ratio — ratio of accounts holding long vs short positions. >1 = more longs. >1.3 = crowded long (increases liquidation risk). <0.8 = crowded short (squeeze potential).",
+  "LSR":      "Long/Short Ratio \u2014 ratio of accounts holding long vs short positions. >1 = more longs. >1.3 = crowded long (increases liquidation risk). <0.8 = crowded short (squeeze potential).",
   "LIQ 24H":  "Total USD value of liquidated futures positions in the last 24 hours. High liquidations indicate forced deleveraging.",
-  "LIQ 4H":   "Liquidations in the last 4 hours — a more recent read on deleveraging pressure. Spike here = active flush in progress.",
-  "LIQ 1H":   "Liquidations in the last 1 hour — real-time stress indicator. Elevated 1H liq relative to 4H suggests an active cascade.",
+  "LIQ 4H":   "Liquidations in the last 4 hours \u2014 a more recent read on deleveraging pressure. Spike here = active flush in progress.",
+  "LIQ 1H":   "Liquidations in the last 1 hour \u2014 real-time stress indicator. Elevated 1H liq relative to 4H suggests an active cascade.",
   "VOL 24H":  "Total 24-hour trading volume (spot + futures combined). High volume during a breakout adds conviction. Low volume = weak move.",
   "LEV RISK": "Composite leverage risk score based on OI/volume ratio and funding extremes. HIGH = market is over-leveraged, sharp moves likely. LOW = clean positioning.",
 };
@@ -229,12 +239,25 @@ const STAT_INFO = {
 function Stat({ label, value, color }) {
   const infoText = STAT_INFO[label];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 3,
+      padding: "6px 10px", borderRadius: 8,
+      background: T.overlay02,
+      border: `1px solid ${T.overlay06}`,
+      minWidth: 0,
+    }}>
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-        <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{
+          fontSize: T.textXs, color: T.text4, fontFamily: T.font,
+          fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em",
+          whiteSpace: "nowrap",
+        }}>{label}</span>
         {infoText && <InfoTip text={infoText} />}
       </div>
-      <span style={{ fontSize: 12, color: color || T.text2, fontFamily: T.mono, fontWeight: 700, whiteSpace: "nowrap" }}>{value}</span>
+      <span style={{
+        fontSize: T.textSm, color: color || T.text2, fontFamily: T.mono,
+        fontWeight: 700, whiteSpace: "nowrap",
+      }}>{value}</span>
     </div>
   );
 }
@@ -278,30 +301,49 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr })
 
   return (
     <div style={{
-      background: T.surface,
+      background: T.glassBg,
       border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm,
-      padding: "14px",
-      marginBottom: 12,
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
+      borderRadius: T.radius,
+      padding: 16,
+      marginBottom: 14,
+      backdropFilter: "blur(20px) saturate(1.3)",
+      WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       {/* Header */}
       <div style={{
-        fontSize: T.textXs, color: T.text4, letterSpacing: "0.12em",
-        fontFamily: T.font, fontWeight: 700, marginBottom: 10,
-        textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "space-between",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 12, paddingBottom: 10,
+        borderBottom: `1px solid ${T.overlay06}`,
       }}>
-        <span>MARKET STRUCTURE</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 3, height: 14, borderRadius: 2,
+            background: T.accent, flexShrink: 0,
+          }} />
+          <span style={{
+            fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
+            fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+          }}>
+            Market Structure
+          </span>
+        </div>
         {source && (
-          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>
+          <span style={{
+            fontSize: T.textXs, color: T.accent,
+            fontFamily: T.mono, fontWeight: 600,
+            padding: "2px 8px", borderRadius: 6,
+            background: `${T.accent}12`,
+            border: `1px solid ${T.accent}20`,
+            letterSpacing: "0.06em",
+          }}>
             {source.slice(0, 3).toUpperCase()}
           </span>
         )}
       </div>
 
-      {/* Badge grid — 2 columns × 3 rows */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+      {/* Badge grid — 2 columns \u00d7 3 rows */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
         <Badge {...b1} />
         <Badge {...b2} />
         <Badge {...b3} />
@@ -312,12 +354,16 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr })
 
       {/* Numbers strip */}
       {stats.length > 0 && (
-        <div style={{
-          display: "flex", flexWrap: "wrap", gap: "8px 16px",
-          paddingTop: 10, borderTop: `1px solid ${T.border}`,
-        }}>
-          {stats.map(s => <Stat key={s.label} {...s} />)}
-        </div>
+        <>
+          <div style={{
+            height: 1, background: T.overlay06, marginBottom: 12,
+          }} />
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 6,
+          }}>
+            {stats.map(s => <Stat key={s.label} {...s} />)}
+          </div>
+        </>
       )}
     </div>
   );

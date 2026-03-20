@@ -441,14 +441,21 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Signal reason */}
         {selected.signal_reason && (
           <div style={{
-            padding: "8px 12px", borderRadius: T.radiusXs,
-            background: T.surface, border: `1px solid ${T.border}`,
-            marginBottom: 12,
+            padding: "12px 14px", borderRadius: T.radiusSm,
+            background: T.glassBg,
+            border: `1px solid ${T.border}`,
+            marginBottom: 14,
+            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
           }}>
-            <div style={{ fontSize: T.textXs, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 500, marginBottom: 4, textTransform: "uppercase" }}>
-              Signal Reason
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 6,
+            }}>
+              <div style={{ width: 3, height: 12, borderRadius: 2, background: T.text3, flexShrink: 0 }} />
+              <span style={{ fontSize: T.textXs, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+                Signal Reason
+              </span>
             </div>
-            <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.mono, lineHeight: 1.5 }}>
+            <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.mono, lineHeight: 1.6, paddingLeft: 11 }}>
               {selected.signal_reason}
             </div>
           </div>
@@ -457,13 +464,15 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Signal warnings */}
         {selected.signal_warnings && selected.signal_warnings.length > 0 && (
           <div style={{
-            padding: "8px 12px", borderRadius: T.radiusXs,
-            background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)",
-            marginBottom: 12,
+            padding: "12px 14px", borderRadius: T.radiusSm,
+            background: "rgba(251,191,36,0.03)",
+            border: "1px solid rgba(251,191,36,0.12)",
+            marginBottom: 14,
+            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
           }}>
             {selected.signal_warnings.map((w, i) => (
               <div key={i} style={{
-                fontSize: T.textXs, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6,
+                fontSize: T.textXs, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.7,
                 display: "flex", gap: 6, alignItems: "flex-start",
               }}>
                 <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
@@ -504,36 +513,60 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         </div>
 
         {/* Detailed Metrics */}
-        {[
-          ["Z-Score", fmt(selected.zscore, 3), zBar(selected.zscore)?.color],
-          ["Energy", fmt(selected.energy, 3), null],
-          ["Momentum", `${selected.momentum >= 0 ? "+" : ""}${fmt(selected.momentum, 2)}%`, selected.momentum >= 0 ? "#34d399" : "#f87171"],
-          ["Price", selected.price ? `$${selected.price < 1 ? fmt(selected.price, 5) : fmt(selected.price, 2)}` : "\u2014", null],
-          ["Divergence", selected.divergence || "None", selected.divergence ? "#fbbf24" : null],
-          [null],
-          ["Heat", selected.heat != null ? Math.round(selected.heat) : "\u2014", heatColor(selected.heat)],
-          ["Phase", selected.heat_phase || "\u2014", phaseColor(selected.heat_phase)],
-          ["ATR Regime", selected.atr_regime || "\u2014", null],
-          ["Deviation", selected.deviation_pct != null ? `${fmt(selected.deviation_pct, 2)}%` : "\u2014", null],
-          [null],
-          ["Exhaustion", selected.exhaustion_state || "\u2014", exhaustMeta(selected.exhaustion_state).color],
-          ["Floor", selected.floor_confirmed ? "Confirmed" : "No", selected.floor_confirmed ? "#34d399" : null],
-          ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#67e8f9" : null],
-          ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
-          ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
-          ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
-        ].map(([label, value, valColor], i) => {
-          if (!label) return <div key={i} style={{ height: 1, background: T.border, margin: "8px 0" }} />;
-          return (
-            <div key={label} style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "8px 0",
+        <div style={{
+          background: T.glassBg,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.radius,
+          padding: "14px 16px",
+          marginBottom: 14,
+          backdropFilter: "blur(20px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+          boxShadow: `0 2px 12px ${T.shadow}`,
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            marginBottom: 12, paddingBottom: 10,
+            borderBottom: `1px solid ${T.overlay06}`,
+          }}>
+            <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+            <span style={{
+              fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
+              fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
             }}>
-              <span style={{ fontSize: 11, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-              <span style={{ fontFamily: T.mono, fontSize: isMobile ? 12 : 13, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
-            </div>
-          );
-        })}
+              Engine Metrics
+            </span>
+          </div>
+          {[
+            ["Z-Score", fmt(selected.zscore, 3), zBar(selected.zscore)?.color],
+            ["Energy", fmt(selected.energy, 3), null],
+            ["Momentum", `${selected.momentum >= 0 ? "+" : ""}${fmt(selected.momentum, 2)}%`, selected.momentum >= 0 ? "#34d399" : "#f87171"],
+            ["Price", selected.price ? `$${selected.price < 1 ? fmt(selected.price, 5) : fmt(selected.price, 2)}` : "\u2014", null],
+            ["Divergence", selected.divergence || "None", selected.divergence ? "#fbbf24" : null],
+            [null],
+            ["Heat", selected.heat != null ? Math.round(selected.heat) : "\u2014", heatColor(selected.heat)],
+            ["Phase", selected.heat_phase || "\u2014", phaseColor(selected.heat_phase)],
+            ["ATR Regime", selected.atr_regime || "\u2014", null],
+            ["Deviation", selected.deviation_pct != null ? `${fmt(selected.deviation_pct, 2)}%` : "\u2014", null],
+            [null],
+            ["Exhaustion", selected.exhaustion_state || "\u2014", exhaustMeta(selected.exhaustion_state).color],
+            ["Floor", selected.floor_confirmed ? "Confirmed" : "No", selected.floor_confirmed ? "#34d399" : null],
+            ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#67e8f9" : null],
+            ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
+            ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
+            ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],
+          ].map(([label, value, valColor], i) => {
+            if (!label) return <div key={i} style={{ height: 1, background: T.overlay06, margin: "4px 0" }} />;
+            return (
+              <div key={label} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "7px 0",
+              }}>
+                <span style={{ fontSize: T.textXs, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
+                <span style={{ fontFamily: T.mono, fontSize: isMobile ? T.textSm : T.textBase, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
+              </div>
+            );
+          })}
+        </div>
 
         {/* Manual Trade Form */}
         {api && <TradeForm selected={selected} api={api} isMobile={isMobile} />}

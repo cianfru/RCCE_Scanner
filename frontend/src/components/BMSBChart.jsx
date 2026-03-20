@@ -99,8 +99,8 @@ export default function BMSBChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
-        barSpacing: tf === "4h" ? 7 : 6,  // wider = readable without zooming in
-        minBarSpacing: 2,
+        barSpacing: tf === "4h" ? 10 : 8,
+        minBarSpacing: 3,
       },
       rightPriceScale: {
         borderColor: "rgba(255,255,255,0.06)",
