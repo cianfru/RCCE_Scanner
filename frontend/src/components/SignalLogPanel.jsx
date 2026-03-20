@@ -77,12 +77,12 @@ function SignalHeatmap({ data, isMobile }) {
     return <div style={S.empty}>No signal history yet. Data will appear after a few scan cycles.</div>;
   }
 
-  const cellSize = isMobile ? 28 : 32;
+  const cellMinSize = isMobile ? 28 : 36;
   const labelW = isMobile ? 54 : 70;
 
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
-      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: isMobile ? 9 : 10 }}>
+      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: isMobile ? 9 : 10, width: "100%", tableLayout: "fixed" }}>
         <thead>
           <tr>
             <th style={{
@@ -134,7 +134,7 @@ function SignalHeatmap({ data, isMobile }) {
                       borderBottom: `1px solid ${T.overlay04}`,
                     }}>
                       <div style={{
-                        width: cellSize, height: cellSize,
+                        minWidth: cellMinSize, height: cellMinSize,
                         borderRadius: 4,
                         background: isWait ? T.overlay04 : `${color}20`,
                         border: `1px solid ${isWait ? "transparent" : `${color}35`}`,
