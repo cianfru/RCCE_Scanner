@@ -692,6 +692,47 @@ class SignalLog:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+    # == Query: recent unified (for dashboard ticker) ==========================
+
+    async def get_recent_unified(
+        self,
+        timeframe: str = "4h",
+        limit: int = 15,
+    ) -> List[Dict[str, Any]]:
+        """Recent signal + regime changes merged, sorted by time desc.
+
+        Returns lightweight events for the dashboard 'What Changed' ticker.
+        Each event has ``event_type`` ('signal' or 'regime'), ``symbol``,
+        ``prev``/``current`` values, ``transition_type``, and ``timestamp``.
+        """
+        db = self._ensure_db()
+        # Fetch recent signal transitions
+        sig_cursor = await db.execute(
+            """SELECT symbol, signal AS current, prev_signal AS prev,
+                      transition_type, timestamp, 'signal' AS event_type
+               FROM signal_events
+               WHERE timeframe = ?
+               ORDER BY timestamp DESC LIMIT ?""",
+            (timeframe, limit),
+        )
+        sig_rows = [dict(r) for r in await sig_cursor.fetchall()]
+
+        # Fetch recent regime transitions
+        reg_cursor = await db.execute(
+            """SELECT symbol, regime AS current, prev_regime AS prev,
+                      'REGIME_CHANGE' AS transition_type, timestamp,
+                      'regime' AS event_type
+               FROM regime_events
+               WHERE timeframe = ?
+               ORDER BY timestamp DESC LIMIT ?""",
+            (timeframe, limit),
+        )
+        reg_rows = [dict(r) for r in await reg_cursor.fetchall()]
+
+        # Merge, sort by timestamp desc, take top N
+        merged = sorted(sig_rows + reg_rows, key=lambda e: e["timestamp"], reverse=True)
+        return merged[:limit]
+
     # == Query: unified timeline ===============================================
 
     async def get_timeline(

@@ -696,6 +696,83 @@ async def coinglass_macro():
     }
 
 
+@app.get("/api/market-pulse")
+async def market_pulse(timeframe: str = Query("4h")):
+    """One-glance market narrative: consensus + BTC regime + funding mood + ETF direction.
+
+    Aggregates from scan cache, CoinGlass bulk metrics, and macro cache into
+    a single object with a human-readable ``narrative`` string.
+    """
+    from coinglass_data import get_cached_macro, get_cached_metrics
+
+    # Consensus
+    cons = cache.consensus.get(timeframe, {"consensus": "MIXED", "strength": 0, "counts": {}})
+    counts = cons.get("counts", {})
+    total = counts.get("total", 0)
+    bullish = counts.get("markup", 0) + counts.get("accum", 0)
+
+    # BTC regime + z-score from scan results
+    btc_regime, btc_zscore = "UNKNOWN", None
+    for r in cache.results.get(timeframe, []):
+        if r.get("symbol") in ("BTC/USDT", "BTC/USD"):
+            btc_regime = r.get("regime", "UNKNOWN")
+            btc_zscore = r.get("zscore")
+            break
+
+    # Funding mood: most common regime from CoinGlass bulk
+    funding_mood = "UNKNOWN"
+    cg_metrics = get_cached_metrics()
+    if cg_metrics:
+        regimes = {}
+        for m in cg_metrics.values():
+            fr = getattr(m, "funding_regime", None) or "NEUTRAL"
+            regimes[fr] = regimes.get(fr, 0) + 1
+        if regimes:
+            funding_mood = max(regimes, key=regimes.get)
+
+    # ETF + CB premium from macro cache
+    macro = get_cached_macro()
+    etf_7d = macro.etf_flow_usd_7d if macro else None
+    cb_premium = macro.coinbase_premium_rate if macro else None
+
+    # Build narrative parts
+    parts = []
+    if total > 0:
+        parts.append(f"{bullish}/{total} bullish")
+    if btc_regime != "UNKNOWN":
+        z_str = f" z={btc_zscore:.1f}" if btc_zscore is not None else ""
+        parts.append(f"BTC {btc_regime}{z_str}")
+    if funding_mood != "UNKNOWN":
+        parts.append(f"Funding {funding_mood.replace('_', ' ').lower()}")
+    if etf_7d is not None:
+        sign = "+" if etf_7d >= 0 else ""
+        parts.append(f"ETF {sign}${abs(etf_7d) / 1e6:.0f}M 7d")
+
+    return {
+        "consensus": cons.get("consensus", "MIXED"),
+        "strength": cons.get("strength", 0),
+        "narrative": " · ".join(parts) if parts else "No data",
+        "btc_regime": btc_regime,
+        "btc_zscore": round(btc_zscore, 2) if btc_zscore is not None else None,
+        "regime_counts": counts,
+        "funding_mood": funding_mood,
+        "etf_7d_net": etf_7d,
+        "cb_premium": round(cb_premium, 4) if cb_premium is not None else None,
+    }
+
+
+@app.get("/api/signals/recent-unified")
+async def signal_recent_unified(
+    timeframe: str = Query("4h"),
+    limit: int = Query(15, ge=1, le=50),
+):
+    """Unified recent changes: signal transitions + regime changes interleaved."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+    events = await sig_log.get_recent_unified(timeframe=timeframe, limit=limit)
+    return {"events": events, "timeframe": timeframe}
+
+
 @app.get("/api/confluence/{symbol}")
 async def confluence_for_symbol(symbol: str):
     """Return multi-TF confluence for a symbol."""
