@@ -773,6 +773,37 @@ async def signal_recent_unified(
     return {"events": events, "timeframe": timeframe}
 
 
+@app.get("/api/signals/heatmap")
+async def signal_heatmap(
+    timeframe: str = Query("4h"),
+    days: int = Query(14, ge=1, le=30),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """14-day signal heatmap grid: signal state + conditions per symbol per day."""
+    from signal_log import SignalLog
+    sig_log = SignalLog.get()
+
+    # Get top N symbols by priority from current scan cache
+    results = cache.results.get(timeframe, [])
+    top_symbols = [
+        r["symbol"]
+        for r in sorted(results, key=lambda x: x.get("priority_score", 0), reverse=True)
+        if r.get("symbol")
+    ][:limit]
+
+    data = await sig_log.get_signal_heatmap(
+        timeframe=timeframe, days=days,
+        symbols=top_symbols if top_symbols else None,
+    )
+
+    # Re-sort grid symbols by the priority order
+    if top_symbols:
+        ordered = [s for s in top_symbols if s in data["grid"]]
+        data["symbols"] = ordered
+
+    return data
+
+
 @app.get("/api/confluence/{symbol}")
 async def confluence_for_symbol(symbol: str):
     """Return multi-TF confluence for a symbol."""
