@@ -384,10 +384,10 @@ async def _fetch_single_coin_detail(
         "interval": "h4", "limit": 6,
     })
     lsr_task  = _get_data(session, sem, api_key, _PATH_LSR_GLOBAL, {
-        "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
+        "symbol": pair, "interval": "h4", "limit": 1,
     })
     top_lsr_task = _get_data(session, sem, api_key, _PATH_LSR_TOP, {
-        "symbol": pair, "exchange": "Binance", "interval": "h4", "limit": 1,
+        "symbol": pair, "interval": "h4", "limit": 1,
     })
 
     oi, fut, spot, lsr, top_lsr = await asyncio.gather(
