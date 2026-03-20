@@ -3,7 +3,7 @@ import { T, m, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
-const API_BASE = "";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 function timeAgo(ts) {
   if (!ts) return "";

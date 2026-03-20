@@ -3,7 +3,7 @@ import { T, m, SIGNAL_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
-const API_BASE = "";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Signals worth showing (skip WAIT, REVIVAL_SEED variants)
 const DISPLAY_ORDER = ["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "TRIM", "TRIM_HARD", "RISK_OFF"];
