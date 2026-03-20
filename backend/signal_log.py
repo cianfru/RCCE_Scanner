@@ -692,6 +692,92 @@ class SignalLog:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+    # == Query: signal heatmap (14-day grid) ====================================
+
+    async def get_signal_heatmap(
+        self,
+        timeframe: str = "4h",
+        days: int = 14,
+        symbols: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Reconstruct signal state per symbol per day over the last N days.
+
+        For each day boundary (end-of-day UTC), finds the last signal event
+        before that point for each symbol.  Returns a grid suitable for a
+        heatmap visualisation.
+
+        Parameters
+        ----------
+        timeframe : str
+            "4h" or "1d"
+        days : int
+            Lookback window (default 14, max 30)
+        symbols : list[str] | None
+            If provided, restrict to these symbols.  Otherwise returns all
+            symbols that have at least one event in the window.
+        """
+        import datetime as _dt
+
+        db = self._ensure_db()
+        days = min(days, 30)
+
+        now = _dt.datetime.utcnow()
+        today_end = _dt.datetime(now.year, now.month, now.day, 23, 59, 59)
+        day_boundaries = []
+        day_labels = []
+        for i in range(days - 1, -1, -1):  # oldest first
+            d = today_end - _dt.timedelta(days=i)
+            day_boundaries.append(int(d.timestamp()))
+            day_labels.append((d - _dt.timedelta(hours=23, minutes=59, seconds=59)).strftime("%b %d"))
+
+        # Build per-day snapshot: last signal+conditions before each boundary
+        grid: Dict[str, list] = {}   # symbol -> [{"signal":..,"cond":..}, ...]
+
+        for boundary_ts in day_boundaries:
+            params: list = [timeframe, boundary_ts]
+            sym_filter = ""
+            if symbols:
+                placeholders = ",".join("?" for _ in symbols)
+                sym_filter = f" AND symbol IN ({placeholders})"
+                params.extend(symbols)
+
+            cursor = await db.execute(
+                f"""SELECT symbol, signal, conditions_met, conditions_total
+                    FROM signal_events
+                    WHERE timeframe = ? AND timestamp <= ?{sym_filter}
+                      AND id IN (
+                          SELECT MAX(id) FROM signal_events
+                          WHERE timeframe = ? AND timestamp <= ?{sym_filter}
+                          GROUP BY symbol
+                      )""",
+                params + params,  # duplicated for subquery
+            )
+            rows = await cursor.fetchall()
+            day_data = {r["symbol"]: {
+                "signal": r["signal"],
+                "cond": f"{r['conditions_met'] or 0}/{r['conditions_total'] or 14}",
+            } for r in rows}
+
+            for sym, val in day_data.items():
+                grid.setdefault(sym, [None] * len(day_boundaries))
+                idx = day_boundaries.index(boundary_ts)
+                grid[sym][idx] = val
+
+        # Fill None gaps: if a symbol has no event before a day, carry forward
+        for sym in grid:
+            last_known = None
+            for i in range(len(grid[sym])):
+                if grid[sym][i] is not None:
+                    last_known = grid[sym][i]
+                elif last_known is not None:
+                    grid[sym][i] = last_known
+
+        return {
+            "days": day_labels,
+            "symbols": sorted(grid.keys()),
+            "grid": grid,
+        }
+
     # == Query: recent unified (for dashboard ticker) ==========================
 
     async def get_recent_unified(
