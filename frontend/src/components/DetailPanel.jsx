@@ -344,16 +344,14 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
 
   return (
     <>
-      {/* Mobile overlay */}
-      {isMobile && (
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed", inset: 0, zIndex: 199,
-            background: T.shadowDeep,
-          }}
-        />
-      )}
+      {/* Click-outside overlay (mobile: opaque, desktop: transparent) */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 199,
+          background: isMobile ? T.shadowDeep : "transparent",
+        }}
+      />
 
       <div style={{
         position: "fixed", right: 0, top: 0, bottom: 0,

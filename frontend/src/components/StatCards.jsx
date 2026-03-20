@@ -27,10 +27,14 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               glow={c.value > 0 ? `${c.color}08` : null}
               style={{
                 padding: isMobile ? "12px 14px" : "12px 16px",
-                border: `1px solid ${isActive ? c.color + "60" : c.value > 0 ? c.color + "22" : T.border}`,
-                transition: "border-color 0.3s, box-shadow 0.3s",
+                border: `1.5px solid ${isActive ? c.color : c.value > 0 ? c.color + "22" : T.border}`,
+                transition: "all 0.25s ease",
                 cursor: c.value > 0 ? "pointer" : "default",
-                boxShadow: isActive ? `0 0 16px ${c.color}20, inset 0 0 0 1px ${c.color}30` : "none",
+                boxShadow: isActive
+                  ? `0 0 24px ${c.color}35, 0 0 8px ${c.color}25, inset 0 0 0 1px ${c.color}50`
+                  : "none",
+                background: isActive ? `${c.color}12` : undefined,
+                transform: isActive ? "scale(1.04)" : undefined,
               }}
               onClick={() => {
                 if (c.value === 0) return;
