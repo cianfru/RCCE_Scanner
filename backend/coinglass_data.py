@@ -81,8 +81,17 @@ _PER_COIN_LIMIT      = 30            # max coins for one-shot fetch (legacy, use
 _DRIP_INTERVAL_S     = 1.5           # seconds between per-coin fetches in drip mode
 _DRIP_CYCLE_PAUSE_S  = 30            # pause after completing a full rotation
 
-# Rate limiting — Hobbyist plan allows ~30 req/min
-_MIN_REQUEST_GAP_S   = 2.2           # min seconds between API calls (~27 req/min)
+# Rate limiting — Hobbyist plan allows ~30 req/min but empirically
+# needs wider gap to avoid 429s across 5 endpoints per coin
+_MIN_REQUEST_GAP_S   = 4.5           # ~13 req/min (conservative, avoids 429s)
+
+# Priority symbols — fetched first in drip loop so majors always have data
+_PRIORITY_COINS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+    "ADA/USDT", "DOGE/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
+    "MATIC/USDT", "UNI/USDT", "ATOM/USDT", "LTC/USDT", "NEAR/USDT",
+    "ARB/USDT", "OP/USDT", "SUI/USDT", "APT/USDT", "HYPE/USDT",
+]
 
 # Taker volume exchange lists
 _FUTURES_EXCHANGES   = "Binance,OKX,Bybit"
@@ -594,9 +603,10 @@ async def run_coinglass_drip() -> None:
     """Continuously drip-feed per-coin CoinGlass data (OI, CVD, LSR, spot).
 
     Fetches one coin at a time, with each API call rate-limited to
-    ~27 req/min.  Each coin requires 5 calls (~11s per coin).  A full
-    rotation of 200 coins takes ~37 min.  After a full rotation,
-    pauses briefly then starts over.
+    ~13 req/min.  Each coin requires 5 calls (~23s per coin).
+    Priority coins (BTC, ETH, SOL, etc.) are fetched first.
+    A full rotation takes ~75 min but LSR data updates every 4h
+    anyway, so this is fine.
 
     Results are merged into the bulk CoinglassMetrics store so the
     scanner always has the latest available data.
@@ -622,7 +632,11 @@ async def run_coinglass_drip() -> None:
                 await asyncio.sleep(10)
                 continue
 
-            target_syms = list(bulk.keys())
+            # Sort: priority coins first, then the rest
+            all_syms = set(bulk.keys())
+            priority = [s for s in _PRIORITY_COINS if s in all_syms]
+            rest = sorted(all_syms - set(priority))
+            target_syms = priority + rest
             cycle += 1
             fetched = 0
 
