@@ -27,6 +27,9 @@ export default function TradFiPanel({
   const [addForm, setAddForm] = useState({ coin: "", name: "", category: "Equities", yf: "" });
   const [addError, setAddError] = useState("");
 
+  // Clean coin input: strip common pair suffixes the user might add
+  const cleanCoin = (raw) => raw.toUpperCase().replace(/[/-](USDC?|USDT|USD)$/i, "");
+
   const loadSymbols = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/tradfi/symbols`);
@@ -187,13 +190,13 @@ export default function TradFiPanel({
             display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12,
           }}>
             <input
-              placeholder="Coin (e.g. META)"
+              placeholder="HL ticker (e.g. META)"
               value={addForm.coin}
-              onChange={e => setAddForm(f => ({ ...f, coin: e.target.value.toUpperCase() }))}
+              onChange={e => setAddForm(f => ({ ...f, coin: cleanCoin(e.target.value) }))}
               style={{
                 fontFamily: T.mono, fontSize: m(T.textSm, isMobile), padding: "6px 10px",
                 borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface,
-                color: T.text1, width: 110, outline: "none",
+                color: T.text1, width: 130, outline: "none",
               }}
             />
             <input
@@ -236,6 +239,14 @@ export default function TradFiPanel({
               Add
             </button>
           </div>
+          {addForm.coin && (
+            <div style={{
+              fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4,
+              marginBottom: 8, paddingLeft: 2,
+            }}>
+              Symbol will be: <span style={{ color: T.accent, fontWeight: 600 }}>{addForm.coin}/USD</span>
+            </div>
+          )}
           {addError && (
             <div style={{
               fontFamily: T.mono, fontSize: T.textXs, color: T.red, marginBottom: 10,

@@ -930,7 +930,8 @@ TRADFI_SYMBOL_TO_YF: Dict[str, str] = {s["symbol"]: s["yf"] for s in TRADFI_SYMB
 
 def add_tradfi_symbol(coin: str, name: str, category: str, yf_ticker: str) -> dict:
     """Add a TradFi symbol and persist. Returns the new entry."""
-    coin = coin.upper()
+    import re
+    coin = re.sub(r'[/-](?:USDC?|USDT|USD)$', '', coin.strip(), flags=re.IGNORECASE).upper()
     if any(s["coin"] == coin for s in TRADFI_SYMBOLS):
         raise ValueError(f"{coin} already exists")
     entry = {
