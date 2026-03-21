@@ -211,11 +211,11 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/groups`);
       const data = await res.json();
       setGroups(data || []);
-      if (!activeGroupId && data.length > 0) setActiveGroupId(data[0].id);
+      setActiveGroupId(prev => (!prev && data.length > 0) ? data[0].id : prev);
     } catch (_) {}
-  }, [activeGroupId]);
+  }, []);
 
-  useEffect(() => { loadGroups(); }, []);
+  useEffect(() => { loadGroups(); }, [loadGroups]);
 
   const createGroup = async (name, symbols = [], color = "#22d3ee") => {
     try {
