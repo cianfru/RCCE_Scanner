@@ -5,15 +5,100 @@ import { useTheme } from "../ThemeContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+/** Parse markdown table lines into { headers, alignments, rows } or null */
+function parseTable(lines, startIdx) {
+  if (startIdx + 1 >= lines.length) return null;
+  const headerLine = lines[startIdx];
+  const sepLine = lines[startIdx + 1];
+  // Header must have pipes and separator must be |---|---|
+  if (!headerLine.includes("|") || !/^\|?[\s:]*-{2,}/.test(sepLine)) return null;
+  const parseCells = (line) =>
+    line.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  const headers = parseCells(headerLine);
+  const sepCells = parseCells(sepLine);
+  // Validate separator row
+  if (!sepCells.every((c) => /^:?-{2,}:?$/.test(c))) return null;
+  const alignments = sepCells.map((c) => {
+    if (c.startsWith(":") && c.endsWith(":")) return "center";
+    if (c.endsWith(":")) return "right";
+    return "left";
+  });
+  const rows = [];
+  let i = startIdx + 2;
+  while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+    rows.push(parseCells(lines[i]));
+    i++;
+  }
+  return { headers, alignments, rows, endIdx: i };
+}
+
 /** Lightweight markdown→JSX for assistant messages (no deps). */
 function MdText({ text, isMobile }) {
   const lines = text.split("\n");
   const elements = [];
   let key = 0;
   const baseFz = m(T.textBase, isMobile);
+  let i = 0;
 
-  for (const raw of lines) {
-    const line = raw;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // ── Table detection ──
+    const table = parseTable(lines, i);
+    if (table) {
+      const cellPad = isMobile ? "6px 8px" : "7px 12px";
+      const cellFz = isMobile ? baseFz - 1 : baseFz;
+      elements.push(
+        <div key={key++} style={{
+          overflowX: "auto", margin: "10px 0",
+          WebkitOverflowScrolling: "touch",
+          borderRadius: 8,
+          border: `1px solid ${T.border}`,
+        }}>
+          <table style={{
+            width: "100%", borderCollapse: "collapse",
+            fontFamily: T.mono, fontSize: cellFz,
+          }}>
+            <thead>
+              <tr>
+                {table.headers.map((h, ci) => (
+                  <th key={ci} style={{
+                    padding: cellPad, textAlign: table.alignments[ci] || "left",
+                    fontWeight: 700, color: T.accent,
+                    borderBottom: `2px solid ${T.border}`,
+                    background: T.overlay06,
+                    whiteSpace: "nowrap",
+                  }}>
+                    {renderInline(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{
+                      padding: cellPad,
+                      textAlign: (table.alignments[ci] || "left"),
+                      color: T.text1,
+                      borderBottom: `1px solid ${T.overlay08}`,
+                      whiteSpace: isMobile ? "normal" : "nowrap",
+                    }}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      i = table.endIdx;
+      continue;
+    }
+
+    // ── Headings ──
     if (/^#{1,3}\s/.test(line)) {
       const level = line.match(/^(#+)/)[1].length;
       const content = line.replace(/^#+\s*/, "");
@@ -64,6 +149,7 @@ function MdText({ text, isMobile }) {
     } else {
       elements.push(<div key={key++} style={{ fontSize: baseFz }}>{renderInline(line)}</div>);
     }
+    i++;
   }
   return <>{elements}</>;
 }
@@ -270,6 +356,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
       maxWidth: isMobile ? "100%" : 860, margin: "0 auto", width: "100%",
       padding: 0,
       background: T.bg,
+      overflow: "hidden",
     }}>
       {/* ── Top bar: model + clear ── */}
       <div style={{
@@ -398,6 +485,8 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         padding: isMobile ? "8px 2px" : "12px 0",
         scrollbarWidth: "thin",
         scrollbarColor: `${T.scrollThumb} transparent`,
+        WebkitOverflowScrolling: "touch",
+        overscrollBehavior: "contain",
       }}>
         {messages.length === 0 && (
           <div style={{
