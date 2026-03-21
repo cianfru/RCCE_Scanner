@@ -229,6 +229,152 @@ _cache = DataCache()
 
 
 # ---------------------------------------------------------------------------
+# OHLCVStore -- persistent OHLCV cache (append-only, no TTL expiration)
+# ---------------------------------------------------------------------------
+
+# Maximum age before forcing a full refetch (handles restarts / gaps)
+_STALENESS_LIMIT: Dict[str, float] = {
+    "4h": 24 * 3600,     # 24 hours
+    "1d": 7 * 86400,     # 7 days
+    "1w": 30 * 86400,    # 30 days
+}
+
+
+class OHLCVStore:
+    """Persistent in-memory OHLCV cache. Stores full history arrays and
+    updates them incrementally by appending new bars.
+
+    Unlike DataCache (TTL-based), this store never expires. On each scan:
+    - If no cache exists: full fetch (cold start)
+    - If cache exists: fetch only 2 latest bars, merge into cached array
+    """
+
+    def __init__(self) -> None:
+        self._store: Dict[str, dict] = {}       # key: "SYMBOL|TF" → OHLCV dict
+        self._updated_at: Dict[str, float] = {}  # key → monotonic time
+
+    @staticmethod
+    def _key(symbol: str, timeframe: str) -> str:
+        return f"{symbol}|{timeframe}"
+
+    def get(self, symbol: str, timeframe: str) -> Optional[dict]:
+        """Return cached OHLCV arrays or None if not stored."""
+        return self._store.get(self._key(symbol, timeframe))
+
+    def needs_full_fetch(self, symbol: str, timeframe: str) -> bool:
+        """True if no cache or cache is stale (too old for incremental update)."""
+        key = self._key(symbol, timeframe)
+        if key not in self._store:
+            return True
+        updated = self._updated_at.get(key, 0.0)
+        max_age = _STALENESS_LIMIT.get(timeframe, 24 * 3600)
+        if time.monotonic() - updated > max_age:
+            return True
+        # Also check minimum bar count
+        cached = self._store[key]
+        bar_count = len(cached.get("close", []))
+        min_bars = _MIN_BARS.get(timeframe, 100)
+        return bar_count < min_bars
+
+    def update(self, symbol: str, timeframe: str, new_data: dict,
+               max_bars: Optional[int] = None) -> dict:
+        """Merge new bars into cached array. Returns the full updated array.
+
+        Logic:
+        1. No cache → store as-is (cold start)
+        2. New latest timestamp == cached latest → update last bar in-place
+        3. New latest timestamp > cached latest → append new closed bars
+        """
+        key = self._key(symbol, timeframe)
+        if max_bars is None:
+            max_bars = _DEFAULT_LIMIT.get(timeframe, 500)
+
+        new_ts = new_data.get("timestamp")
+        if new_ts is None or len(new_ts) == 0:
+            # Empty new data — return existing cache or None
+            return self._store.get(key, new_data)
+
+        cached = self._store.get(key)
+
+        if cached is None or len(cached.get("timestamp", [])) == 0:
+            # Cold start — store full array
+            self._store[key] = new_data
+            self._updated_at[key] = time.monotonic()
+            return new_data
+
+        cached_ts = cached["timestamp"]
+        new_latest_ts = float(new_ts[-1])
+        cached_latest_ts = float(cached_ts[-1])
+
+        fields = ["timestamp", "open", "high", "low", "close", "volume"]
+
+        if new_latest_ts == cached_latest_ts:
+            # Same candle — update last bar in-place (live candle update)
+            for f in fields:
+                if f in new_data and f in cached:
+                    cached[f][-1] = new_data[f][-1]
+            self._updated_at[key] = time.monotonic()
+            return cached
+
+        if new_latest_ts > cached_latest_ts:
+            # New bar(s) have closed — find which bars to append
+            # Filter new_data to only bars newer than cached latest
+            mask = new_ts > cached_latest_ts
+            if not np.any(mask):
+                # Edge case: timestamps don't overlap as expected
+                # Update last bar and return
+                for f in fields:
+                    if f in new_data and f in cached:
+                        cached[f][-1] = new_data[f][-1]
+                self._updated_at[key] = time.monotonic()
+                return cached
+
+            # First, update the last cached bar with the matching bar from new_data
+            # (in case the previously-live candle has now closed with final values)
+            match_mask = new_ts == cached_latest_ts
+            if np.any(match_mask):
+                idx = np.where(match_mask)[0][0]
+                for f in fields:
+                    if f in new_data and f in cached:
+                        cached[f][-1] = new_data[f][idx]
+
+            # Append truly new bars
+            new_bars_mask = new_ts > cached_latest_ts
+            for f in fields:
+                if f in new_data and f in cached:
+                    new_slice = new_data[f][new_bars_mask]
+                    cached[f] = np.concatenate([cached[f], new_slice])
+
+            # Trim to max_bars (drop oldest)
+            total = len(cached["timestamp"])
+            if total > max_bars:
+                trim = total - max_bars
+                for f in fields:
+                    if f in cached:
+                        cached[f] = cached[f][trim:]
+
+            self._store[key] = cached
+            self._updated_at[key] = time.monotonic()
+            return cached
+
+        # new_latest_ts < cached_latest_ts — stale fetch, ignore
+        return cached
+
+    def count(self) -> int:
+        """Number of cached symbol/timeframe pairs."""
+        return len(self._store)
+
+    def symbols_cached(self, timeframe: str) -> List[str]:
+        """Return list of symbols that have cache for this timeframe."""
+        suffix = f"|{timeframe}"
+        return [k.split("|")[0] for k in self._store if k.endswith(suffix)]
+
+
+# Module-level persistent OHLCV store
+_ohlcv_store = OHLCVStore()
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -417,36 +563,48 @@ async def fetch_ohlcv(
 ) -> Optional[dict]:
     """Fetch OHLCV data for a single *symbol*.
 
+    Uses OHLCVStore for incremental updates:
+    - Cold start: full fetch (500 bars)
+    - Subsequent: fetch 2 bars, merge into cached array
+
     Tries Hyperliquid first (primary), then CCXT exchanges as fallback.
     """
     if timeframe not in SUPPORTED_TIMEFRAMES:
         logger.error("Unsupported timeframe '%s'. Use one of %s", timeframe, SUPPORTED_TIMEFRAMES)
         return None
 
-    if limit is None:
-        limit = _DEFAULT_LIMIT.get(timeframe, 500)
+    # Determine fetch limit: full history or incremental update
+    is_incremental = not _ohlcv_store.needs_full_fetch(symbol, timeframe)
+    fetch_limit = 2 if is_incremental else (limit or _DEFAULT_LIMIT.get(timeframe, 500))
 
-    # Check cache first
+    # Check TTL cache for very recent fetches (avoids redundant calls within same cycle)
     cached = _cache.get(symbol, timeframe)
     if cached is not None:
         return cached
 
-    # Known CCXT-only symbol → skip HL
+    # Fetch from source
+    data = None
     if symbol in _ccxt_only:
-        return await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, limit)
+        data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
+    else:
+        data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, fetch_limit)
+        if data is None:
+            data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
+            if data is not None:
+                _ccxt_only.add(symbol)
+                logger.info("Learned CCXT-only: %s (total %d)", symbol, len(_ccxt_only))
 
-    # Primary: Hyperliquid
-    hl_data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, limit)
-    if hl_data is not None:
-        _cache.put(symbol, timeframe, hl_data)
-        return hl_data
+    if data is None:
+        # Return stale OHLCVStore data if available
+        return _ohlcv_store.get(symbol, timeframe)
 
-    # Fallback: CCXT exchanges
-    data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, limit)
-    if data is not None:
-        _ccxt_only.add(symbol)  # Remember for next time
-        logger.info("Learned CCXT-only: %s (total %d)", symbol, len(_ccxt_only))
-    return data
+    # Merge into persistent store
+    merged = _ohlcv_store.update(symbol, timeframe, data)
+
+    # Also put in TTL cache to prevent re-fetching within same scan cycle
+    _cache.put(symbol, timeframe, merged)
+
+    return merged
 
 
 async def _fetch_ohlcv_ccxt(
@@ -511,24 +669,31 @@ async def fetch_batch(
 
     results: Dict[str, Optional[dict]] = {}
 
-    # ── Phase 1: Check cache ──
+    # ── Phase 1: Check TTL cache + partition into full vs incremental ──
     uncached: List[str] = []
+    full_fetch_syms: List[str] = []
+    incr_fetch_syms: List[str] = []
+
     for sym in symbols:
         cached = _cache.get(sym, timeframe)
         if cached is not None:
             results[sym] = cached
         else:
             uncached.append(sym)
+            if _ohlcv_store.needs_full_fetch(sym, timeframe):
+                full_fetch_syms.append(sym)
+            else:
+                incr_fetch_syms.append(sym)
 
     logger.info(
-        "Batch fetch %s: %d total, %d cached, %d to fetch from HL",
-        timeframe, len(symbols), len(results), len(uncached),
+        "Batch fetch %s: %d total, %d TTL-cached, %d full-fetch, %d incremental (2 bars)",
+        timeframe, len(symbols), len(results), len(full_fetch_syms), len(incr_fetch_syms),
     )
 
     if not uncached:
         return results
 
-    # ── Phase 2: Fetch all from HL in waves of 20 ──
+    # ── Phase 2: Fetch from HL in waves ──
     _WAVE_SIZE = 20
     _WAVE_PAUSE_S = 1.5  # 1.5s between waves — conservative for Railway
     hl_failures: List[str] = []
@@ -536,33 +701,47 @@ async def fetch_batch(
     timeout = aiohttp.ClientTimeout(total=180)
     connector = aiohttp.TCPConnector(limit=_MAX_CONCURRENT_FETCHES, keepalive_timeout=30)
 
-    async def _hl_fetch(session: aiohttp.ClientSession, sym: str) -> str:
+    async def _hl_fetch(session: aiohttp.ClientSession, sym: str, limit: int) -> str:
         """Returns sym on success, raises on failure."""
         coin = _hl_coin_name(sym)
-        data = await _fetch_hl_candles(session, coin, timeframe)
+        data = await _fetch_hl_candles(session, coin, timeframe, limit=limit)
         if data is not None:
-            _cache.put(sym, timeframe, data)
-            results[sym] = data
+            # Merge into persistent store
+            merged = _ohlcv_store.update(sym, timeframe, data)
+            _cache.put(sym, timeframe, merged)
+            results[sym] = merged
             return sym
         raise ValueError(f"HL returned no data for {sym}")
 
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-        for i in range(0, len(uncached), _WAVE_SIZE):
-            wave = uncached[i : i + _WAVE_SIZE]
-            tasks = [asyncio.create_task(_hl_fetch(session, s)) for s in wave]
+        # Fetch incremental symbols first (fast — only 2 bars each)
+        if incr_fetch_syms:
+            for i in range(0, len(incr_fetch_syms), _WAVE_SIZE):
+                wave = incr_fetch_syms[i : i + _WAVE_SIZE]
+                tasks = [asyncio.create_task(_hl_fetch(session, s, limit=2)) for s in wave]
+                outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+                for sym, outcome in zip(wave, outcomes):
+                    if isinstance(outcome, Exception):
+                        hl_failures.append(sym)
+                if i + _WAVE_SIZE < len(incr_fetch_syms):
+                    await asyncio.sleep(_WAVE_PAUSE_S * 0.5)  # Faster for small fetches
+
+        # Then full-fetch symbols (cold start — 500 bars each)
+        for i in range(0, len(full_fetch_syms), _WAVE_SIZE):
+            wave = full_fetch_syms[i : i + _WAVE_SIZE]
+            tasks = [asyncio.create_task(_hl_fetch(session, s, limit=_DEFAULT_LIMIT.get(timeframe, 500))) for s in wave]
             outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-            # Track failures explicitly — exceptions from gather are captured here
             for sym, outcome in zip(wave, outcomes):
                 if isinstance(outcome, Exception):
                     hl_failures.append(sym)
             wave_ok = sum(1 for s in wave if s in results)
             logger.info(
-                "HL wave %d/%d: %d/%d OK",
+                "HL full-fetch wave %d/%d: %d/%d OK",
                 i // _WAVE_SIZE + 1,
-                (len(uncached) + _WAVE_SIZE - 1) // _WAVE_SIZE,
+                (len(full_fetch_syms) + _WAVE_SIZE - 1) // _WAVE_SIZE,
                 wave_ok, len(wave),
             )
-            if i + _WAVE_SIZE < len(uncached):
+            if i + _WAVE_SIZE < len(full_fetch_syms):
                 await asyncio.sleep(_WAVE_PAUSE_S)
 
     # ── Phase 3: Retry HL failures after cooldown ──
@@ -580,10 +759,13 @@ async def fetch_batch(
 
                 async def _rt_fetch(s: aiohttp.ClientSession, sym: str) -> str:
                     coin = _hl_coin_name(sym)
-                    data = await _fetch_hl_candles(s, coin, timeframe)
+                    # Retry with appropriate limit
+                    rt_limit = 2 if not _ohlcv_store.needs_full_fetch(sym, timeframe) else _DEFAULT_LIMIT.get(timeframe, 500)
+                    data = await _fetch_hl_candles(s, coin, timeframe, limit=rt_limit)
                     if data is not None:
-                        _cache.put(sym, timeframe, data)
-                        results[sym] = data
+                        merged = _ohlcv_store.update(sym, timeframe, data)
+                        _cache.put(sym, timeframe, merged)
+                        results[sym] = merged
                         return sym
                     raise ValueError(f"HL retry failed for {sym}")
 
@@ -627,8 +809,9 @@ async def fetch_batch(
                     ccxt_count = len(data.get("close", []))
                     # Only replace if CCXT has more data
                     if ccxt_count > hl_count:
-                        results[sym] = data
-                        _cache.put(sym, timeframe, data)
+                        merged = _ohlcv_store.update(sym, timeframe, data)
+                        _cache.put(sym, timeframe, merged)
+                        results[sym] = merged
                         logger.info("CCXT deepened %s: %d → %d bars", sym, hl_count, ccxt_count)
 
     # Fill None for any remaining
@@ -660,6 +843,7 @@ def get_data_source_info() -> dict:
         "ccxt_only_count": len(_ccxt_only),
         "ccxt_only_symbols": sorted(list(_ccxt_only))[:20],
         "cache_entries": len(_cache),
+        "ohlcv_store_entries": _ohlcv_store.count(),
     }
 
 
