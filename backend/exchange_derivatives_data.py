@@ -50,6 +50,12 @@ _BYBIT_BASE = "https://api.bybit.com"
 # OKX base
 _OKX_BASE = "https://www.okx.com"
 
+# Data period — 15m for near-real-time updates (Binance supports 5m/15m/30m/1h/2h/4h)
+_DATA_PERIOD = "15m"
+_CVD_LOOKBACK = 6     # 6 × 15m = 90 min of CVD context
+_OI_LOOKBACK = 7      # 7 × 15m = 105 min for OI change (4h-equivalent window)
+_LSR_LOOKBACK = 1     # Latest bar only
+
 # CVD trend thresholds (same as coinglass_data.py)
 _CVD_BULLISH_RATIO = 1.05
 _CVD_BEARISH_RATIO = 0.95
@@ -182,11 +188,11 @@ async def _fetch_binance_taker_ratio(
     session: aiohttp.ClientSession,
     coin: str,
     sem: asyncio.Semaphore,
-    limit: int = 6,
+    limit: int = _CVD_LOOKBACK,
 ) -> Optional[dict]:
     """Fetch taker buy/sell ratio for CVD computation."""
     url = f"{_BINANCE_FAPI_BASE}/futures/data/takerlongshortRatio"
-    params = {"symbol": _coin_to_binance(coin), "period": "4h", "limit": limit}
+    params = {"symbol": _coin_to_binance(coin), "period": _DATA_PERIOD, "limit": limit}
     async with sem:
         try:
             async with session.get(url, params=params) as resp:
@@ -206,7 +212,7 @@ async def _fetch_binance_retail_lsr(
 ) -> Optional[dict]:
     """Fetch retail (global) long/short account ratio."""
     url = f"{_BINANCE_FAPI_BASE}/futures/data/globalLongShortAccountRatio"
-    params = {"symbol": _coin_to_binance(coin), "period": "4h", "limit": 1}
+    params = {"symbol": _coin_to_binance(coin), "period": _DATA_PERIOD, "limit": _LSR_LOOKBACK}
     async with sem:
         try:
             async with session.get(url, params=params) as resp:
@@ -228,7 +234,7 @@ async def _fetch_binance_top_lsr(
 ) -> Optional[dict]:
     """Fetch top trader (smart money) long/short position ratio."""
     url = f"{_BINANCE_FAPI_BASE}/futures/data/topLongShortPositionRatio"
-    params = {"symbol": _coin_to_binance(coin), "period": "4h", "limit": 1}
+    params = {"symbol": _coin_to_binance(coin), "period": _DATA_PERIOD, "limit": _LSR_LOOKBACK}
     async with sem:
         try:
             async with session.get(url, params=params) as resp:
@@ -248,9 +254,9 @@ async def _fetch_binance_oi_history(
     coin: str,
     sem: asyncio.Semaphore,
 ) -> Optional[dict]:
-    """Fetch OI history (4h bars) for OI change computation."""
+    """Fetch OI history (15m bars) for OI change computation."""
     url = f"{_BINANCE_FAPI_BASE}/futures/data/openInterestHist"
-    params = {"symbol": _coin_to_binance(coin), "period": "4h", "limit": 7}
+    params = {"symbol": _coin_to_binance(coin), "period": _DATA_PERIOD, "limit": _OI_LOOKBACK}
     async with sem:
         try:
             async with session.get(url, params=params) as resp:
@@ -319,7 +325,8 @@ async def _fetch_bybit_oi(
 ) -> Optional[dict]:
     """Fetch current OI from Bybit v5."""
     url = f"{_BYBIT_BASE}/v5/market/open-interest"
-    params = {"category": "linear", "symbol": f"{coin}USDT", "intervalTime": "4h", "limit": 1}
+    # Bybit uses "5min"/"15min"/"30min" format, not "5m"/"15m"/"30m"
+    params = {"category": "linear", "symbol": f"{coin}USDT", "intervalTime": "5min", "limit": 1}
     async with sem:
         try:
             async with session.get(url, params=params) as resp:
@@ -426,7 +433,11 @@ def _compute_cvd(
 def _compute_oi_change(bars: list) -> tuple:
     """Compute OI change % from Binance openInterestHist bars.
 
-    Returns (oi_usd, change_4h, change_24h).
+    Returns (oi_usd, change_recent, change_window).
+
+    With 15m bars and limit=7:
+      - change_recent: last bar vs previous bar (~15m change)
+      - change_window: first vs last bar (~105m / ~1.75h window)
 
     Binance ``openInterestHist`` returns:
       - sumOpenInterest: str (OI in base currency)
@@ -439,17 +450,16 @@ def _compute_oi_change(bars: list) -> tuple:
     oi_values = [float(b.get("sumOpenInterestValue", 0)) for b in bars]
     oi_usd = oi_values[-1]
 
-    # 4h change (last 2 bars)
+    # Recent change (last vs previous bar)
     prev = oi_values[-2]
-    chg_4h = ((oi_usd - prev) / prev * 100) if prev > 0 else 0.0
+    chg_recent = ((oi_usd - prev) / prev * 100) if prev > 0 else 0.0
 
-    # 24h change (first vs last bar, assuming 7 bars × 4h = 28h window)
-    chg_24h = 0.0
-    if len(oi_values) >= 7:
-        first = oi_values[0]
-        chg_24h = ((oi_usd - first) / first * 100) if first > 0 else 0.0
+    # Window change (first vs last — full lookback)
+    chg_window = 0.0
+    first = oi_values[0]
+    chg_window = ((oi_usd - first) / first * 100) if first > 0 else 0.0
 
-    return oi_usd, chg_4h, chg_24h
+    return oi_usd, chg_window, chg_recent
 
 
 # ---------------------------------------------------------------------------
