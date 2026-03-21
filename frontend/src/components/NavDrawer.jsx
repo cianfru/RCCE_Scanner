@@ -191,6 +191,19 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
               <span>Scanner</span>
+              <button
+                onClick={() => { onGroupCreate?.(); onClose(); }}
+                style={{
+                  background: T.surface, border: `1px solid ${T.border}`,
+                  borderRadius: 8, color: T.text3,
+                  cursor: "pointer", fontSize: 20, fontWeight: 500,
+                  width: 32, height: 32,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent + "40"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; e.currentTarget.style.borderColor = T.border; }}
+              >+</button>
             </div>
 
             {/* All Assets */}
