@@ -481,6 +481,29 @@ class PositionMonitor:
                     f"Consider taking profits or tightening stops"
                 )
 
+            # -- Agent layer warnings on held positions --
+            agent_warnings = scan.get("agent_warnings", [])
+            agent_signal = scan.get("agent_signal")
+            if agent_warnings and _should_warn("agent"):
+                filters_str = ", ".join(scan.get("agent_filters_fired", []))
+                original_signal = scan.get("signal", "WAIT")
+                header = (
+                    f"\U0001f916 AGENT OVERRIDE \u2014 {coin}\n"
+                    if agent_signal and agent_signal != original_signal
+                    else f"\U0001f916 AGENT WARNING \u2014 {coin}\n"
+                )
+                lines = [header]
+                if agent_signal and agent_signal != original_signal:
+                    lines.append(f"Signal adjusted: {original_signal} \u2192 {agent_signal}\n")
+                for aw in agent_warnings[:3]:  # cap at 3 to avoid TG message bloat
+                    lines.append(f"  \u2022 {aw}\n")
+                lines.append(f"Filters: {filters_str}\n")
+                lines.append(
+                    f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
+                    f"PnL: ${pos['unrealized_pnl']:+,.2f}"
+                )
+                notifications.append("".join(lines))
+
         # -- 2b. Exhaustion confirmation on HELD positions (positive reinforcement) --
         for pos in positions:
             sym = pos["symbol"]
