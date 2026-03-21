@@ -673,19 +673,38 @@ export default function App() {
       {activeTab !== "chat" && (
         <div style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
-          fontSize: m(T.textXl, isMobile),
-          fontWeight: 700,
-          color: T.text1,
-          fontFamily: T.font,
-          letterSpacing: "-0.02em",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          {activeTab === "backtest" ? "Backtest" :
-           activeTab === "executor" ? "Executor" :
-           activeTab === "trading" ? "Portfolio" :
-           activeTab === "signals" ? "Signal Log" :
-           activeTab === "onchain" ? "On-Chain" :
-           activeTab === "tradfi" ? "TradFi" :
-           "Scanner"}
+          <span style={{
+            fontSize: m(T.textXl, isMobile),
+            fontWeight: 700,
+            color: T.text1,
+            fontFamily: T.font,
+            letterSpacing: "-0.02em",
+          }}>
+            {activeTab === "backtest" ? "Backtest" :
+             activeTab === "executor" ? "Executor" :
+             activeTab === "trading" ? "Portfolio" :
+             activeTab === "signals" ? "Signal Log" :
+             activeTab === "onchain" ? "On-Chain" :
+             activeTab === "tradfi" ? "TradFi" :
+             activeGroup ? activeGroup.name : "Scanner"}
+          </span>
+          {showDashboard && (
+            <button
+              onClick={() => { setEditingGroup(activeGroup || null); setShowGroupModal(true); }}
+              style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+                padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
+                border: `1px solid ${T.border}`,
+                background: "transparent",
+                color: T.text4,
+                transition: "all 0.15s ease",
+              }}
+            >
+              + Manage
+            </button>
+          )}
         </div>
       )}
 
