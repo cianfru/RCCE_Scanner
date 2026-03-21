@@ -21,6 +21,7 @@ except ImportError:
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status
 from models import (
@@ -372,6 +373,42 @@ async def tradfi_scan(
         "scan_running": cache.is_scanning,
         "cache_age_seconds": cache.get_cache_age(),
     }
+
+
+# ── TradFi symbol management ──────────────────────────────────────────────
+
+@app.get("/api/tradfi/symbols")
+async def list_tradfi_symbols():
+    """Return the current TradFi symbol list."""
+    from data_fetcher import get_tradfi_symbols
+    return {"symbols": get_tradfi_symbols()}
+
+
+@app.post("/api/tradfi/symbols")
+async def add_tradfi_sym(body: dict):
+    """Add a TradFi symbol. Body: {coin, name, category, yf}"""
+    from data_fetcher import add_tradfi_symbol
+    coin = body.get("coin", "").strip()
+    name = body.get("name", "").strip()
+    category = body.get("category", "Equities").strip()
+    yf = body.get("yf", "").strip()
+    if not coin or not name or not yf:
+        return JSONResponse({"error": "coin, name, and yf are required"}, status_code=400)
+    try:
+        entry = add_tradfi_symbol(coin, name, category, yf)
+        return {"ok": True, "entry": entry}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+
+
+@app.delete("/api/tradfi/symbols/{coin}")
+async def remove_tradfi_sym(coin: str):
+    """Remove a TradFi symbol by coin ticker."""
+    from data_fetcher import remove_tradfi_symbol
+    removed = remove_tradfi_symbol(coin)
+    if not removed:
+        return JSONResponse({"error": f"{coin} not found"}, status_code=404)
+    return {"ok": True}
 
 
 @app.get("/api/consensus")

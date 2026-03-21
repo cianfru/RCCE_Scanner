@@ -14,9 +14,11 @@ daily candles).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import aiohttp
@@ -851,7 +853,7 @@ def get_data_source_info() -> dict:
 # TradFi / HIP-3 symbols (trade.xyz on Hyperliquid)
 # ---------------------------------------------------------------------------
 
-TRADFI_SYMBOLS: List[dict] = [
+_DEFAULT_TRADFI_SYMBOLS: List[dict] = [
     # Commodities — Precious Metals
     {"coin": "GOLD",      "symbol": "GOLD/USD",      "name": "Gold",              "category": "Commodities",  "yf": "GC=F"},
     {"coin": "SILVER",    "symbol": "SILVER/USD",     "name": "Silver",            "category": "Commodities",  "yf": "SI=F"},
@@ -883,12 +885,82 @@ TRADFI_SYMBOLS: List[dict] = [
     {"coin": "EWJ",       "symbol": "EWJ/USD",        "name": "iShares Japan ETF", "category": "ETFs",         "yf": "EWJ"},
 ]
 
+_TRADFI_JSON = Path(__file__).parent / "tradfi_symbols.json"
+
+
+def _load_tradfi_symbols() -> List[dict]:
+    """Load TradFi symbols from JSON file, falling back to defaults."""
+    if _TRADFI_JSON.exists():
+        try:
+            with open(_TRADFI_JSON) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return list(_DEFAULT_TRADFI_SYMBOLS)
+
+
+def _save_tradfi_symbols(symbols: List[dict]) -> None:
+    """Persist TradFi symbols to JSON (atomic write)."""
+    tmp = _TRADFI_JSON.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(symbols, f, indent=2)
+    tmp.rename(_TRADFI_JSON)
+
+
+def _rebuild_tradfi_lookups() -> None:
+    """Rebuild all module-level lookup dicts from current TRADFI_SYMBOLS."""
+    global TRADFI_COIN_MAP, TRADFI_SYMBOL_LIST, TRADFI_COIN_TO_SYMBOL
+    global TRADFI_SYMBOL_TO_COIN, TRADFI_SYMBOL_TO_YF
+    TRADFI_COIN_MAP = {s["coin"]: s for s in TRADFI_SYMBOLS}
+    TRADFI_SYMBOL_LIST = [s["symbol"] for s in TRADFI_SYMBOLS]
+    TRADFI_COIN_TO_SYMBOL = {s["coin"]: s["symbol"] for s in TRADFI_SYMBOLS}
+    TRADFI_SYMBOL_TO_COIN = {s["symbol"]: s["coin"] for s in TRADFI_SYMBOLS}
+    TRADFI_SYMBOL_TO_YF = {s["symbol"]: s["yf"] for s in TRADFI_SYMBOLS}
+
+
+TRADFI_SYMBOLS: List[dict] = _load_tradfi_symbols()
+
 # Quick lookups
 TRADFI_COIN_MAP: Dict[str, dict] = {s["coin"]: s for s in TRADFI_SYMBOLS}
 TRADFI_SYMBOL_LIST: List[str] = [s["symbol"] for s in TRADFI_SYMBOLS]
 TRADFI_COIN_TO_SYMBOL: Dict[str, str] = {s["coin"]: s["symbol"] for s in TRADFI_SYMBOLS}
 TRADFI_SYMBOL_TO_COIN: Dict[str, str] = {s["symbol"]: s["coin"] for s in TRADFI_SYMBOLS}
 TRADFI_SYMBOL_TO_YF: Dict[str, str] = {s["symbol"]: s["yf"] for s in TRADFI_SYMBOLS}
+
+
+def add_tradfi_symbol(coin: str, name: str, category: str, yf_ticker: str) -> dict:
+    """Add a TradFi symbol and persist. Returns the new entry."""
+    coin = coin.upper()
+    if any(s["coin"] == coin for s in TRADFI_SYMBOLS):
+        raise ValueError(f"{coin} already exists")
+    entry = {
+        "coin": coin,
+        "symbol": f"{coin}/USD",
+        "name": name,
+        "category": category,
+        "yf": yf_ticker,
+    }
+    TRADFI_SYMBOLS.append(entry)
+    _save_tradfi_symbols(TRADFI_SYMBOLS)
+    _rebuild_tradfi_lookups()
+    return entry
+
+
+def remove_tradfi_symbol(coin: str) -> bool:
+    """Remove a TradFi symbol by coin ticker. Returns True if removed."""
+    coin = coin.upper()
+    before = len(TRADFI_SYMBOLS)
+    TRADFI_SYMBOLS[:] = [s for s in TRADFI_SYMBOLS if s["coin"] != coin]
+    if len(TRADFI_SYMBOLS) == before:
+        return False
+    _save_tradfi_symbols(TRADFI_SYMBOLS)
+    _rebuild_tradfi_lookups()
+    return True
+
+
+def get_tradfi_symbols() -> List[dict]:
+    """Return the current TradFi symbol list."""
+    return list(TRADFI_SYMBOLS)
 
 
 # ---------------------------------------------------------------------------

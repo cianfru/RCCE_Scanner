@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { T, m, fmt } from "../theme.js";
 import {
   RegimeBadge, SignalDot, ZScoreBar, HeatCell, ConfluenceBadge,
@@ -6,7 +6,9 @@ import {
 import SparklineCell from "./SparklineCell.jsx";
 import GlassCard from "./GlassCard.jsx";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const CATEGORIES = ["ALL", "Commodities", "Indices", "Equities", "ETFs"];
+const ADD_CATEGORIES = ["Equities", "Commodities", "Indices", "ETFs"];
 
 const TF_OPTIONS = [
   ["1d", "DAILY"],
@@ -20,6 +22,46 @@ export default function TradFiPanel({
 }) {
   const [category, setCategory] = useState("ALL");
   const [tfView, setTfView] = useState("1d");
+  const [managing, setManaging] = useState(false);
+  const [symbols, setSymbols] = useState([]);
+  const [addForm, setAddForm] = useState({ coin: "", name: "", category: "Equities", yf: "" });
+  const [addError, setAddError] = useState("");
+
+  const loadSymbols = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/tradfi/symbols`);
+      const data = await res.json();
+      setSymbols(data.symbols || []);
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => { if (managing) loadSymbols(); }, [managing, loadSymbols]);
+
+  const handleAdd = async () => {
+    setAddError("");
+    const { coin, name, yf } = addForm;
+    if (!coin.trim() || !name.trim() || !yf.trim()) {
+      setAddError("All fields required"); return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/tradfi/symbols`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addForm),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAddError(data.error || "Failed"); return; }
+      setAddForm({ coin: "", name: "", category: "Equities", yf: "" });
+      await loadSymbols();
+    } catch (_) { setAddError("Network error"); }
+  };
+
+  const handleRemove = async (coin) => {
+    try {
+      await fetch(`${API_BASE}/api/tradfi/symbols/${encodeURIComponent(coin)}`, { method: "DELETE" });
+      await loadSymbols();
+    } catch (_) {}
+  };
 
   // Pick the right dataset based on timeframe toggle
   const activeData = tfView === "4h" ? data4h : data1d;
@@ -86,20 +128,32 @@ export default function TradFiPanel({
           </span>
         </div>
 
-        {/* Timeframe toggle */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {TF_OPTIONS.map(([val, label]) => (
-            <button key={val} onClick={() => setTfView(val)} style={{
-              fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
-              padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
-              border: `1px solid ${tfView === val ? T.cyan : T.border}`,
-              background: tfView === val ? `${T.cyan}18` : "transparent",
-              color: tfView === val ? T.cyan : T.text3,
-              transition: "all 0.15s ease",
-            }}>
-              {label}
-            </button>
-          ))}
+        {/* Timeframe toggle + Manage button */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {TF_OPTIONS.map(([val, label]) => (
+              <button key={val} onClick={() => setTfView(val)} style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+                padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
+                border: `1px solid ${tfView === val ? T.cyan : T.border}`,
+                background: tfView === val ? `${T.cyan}18` : "transparent",
+                color: tfView === val ? T.cyan : T.text3,
+                transition: "all 0.15s ease",
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setManaging(!managing)} style={{
+            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+            padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
+            border: `1px solid ${managing ? T.cyan : T.border}`,
+            background: managing ? `${T.cyan}18` : "transparent",
+            color: managing ? T.cyan : T.text4,
+            transition: "all 0.15s ease",
+          }}>
+            {managing ? "Done" : "+ Manage"}
+          </button>
         </div>
       </div>
 
@@ -118,6 +172,118 @@ export default function TradFiPanel({
           </button>
         ))}
       </div>
+
+      {/* Manage panel */}
+      {managing && (
+        <GlassCard style={{ marginBottom: 14, padding: isMobile ? 14 : 16 }}>
+          {/* Add form */}
+          <div style={{
+            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+            color: T.text2, marginBottom: 10,
+          }}>
+            Add Market
+          </div>
+          <div style={{
+            display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12,
+          }}>
+            <input
+              placeholder="Coin (e.g. META)"
+              value={addForm.coin}
+              onChange={e => setAddForm(f => ({ ...f, coin: e.target.value.toUpperCase() }))}
+              style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), padding: "6px 10px",
+                borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface,
+                color: T.text1, width: 110, outline: "none",
+              }}
+            />
+            <input
+              placeholder="Name (e.g. Meta Platforms)"
+              value={addForm.name}
+              onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+              style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), padding: "6px 10px",
+                borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface,
+                color: T.text1, flex: 1, minWidth: 140, outline: "none",
+              }}
+            />
+            <input
+              placeholder="YF Ticker (e.g. META)"
+              value={addForm.yf}
+              onChange={e => setAddForm(f => ({ ...f, yf: e.target.value }))}
+              style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), padding: "6px 10px",
+                borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface,
+                color: T.text1, width: 130, outline: "none",
+              }}
+            />
+            <select
+              value={addForm.category}
+              onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))}
+              style={{
+                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), padding: "6px 10px",
+                borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface,
+                color: T.text1, outline: "none",
+              }}
+            >
+              {ADD_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button onClick={handleAdd} style={{
+              fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+              padding: "6px 16px", borderRadius: 6, cursor: "pointer",
+              border: `1px solid ${T.green}60`, background: `${T.green}18`,
+              color: T.green, transition: "all 0.15s ease",
+            }}>
+              Add
+            </button>
+          </div>
+          {addError && (
+            <div style={{
+              fontFamily: T.mono, fontSize: T.textXs, color: T.red, marginBottom: 10,
+            }}>
+              {addError}
+            </div>
+          )}
+
+          {/* Current symbols list */}
+          <div style={{
+            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
+            color: T.text2, marginBottom: 8,
+          }}>
+            Current Markets ({symbols.length})
+          </div>
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 6,
+          }}>
+            {symbols.map(s => (
+              <div key={s.coin} style={{
+                display: "flex", alignItems: "center", gap: 6,
+                fontFamily: T.mono, fontSize: m(T.textXs, isMobile),
+                padding: "4px 10px", borderRadius: 20,
+                border: `1px solid ${T.border}`, background: T.surface,
+                color: T.text2,
+              }}>
+                <span style={{ fontWeight: 600 }}>{s.coin}</span>
+                <span style={{ color: T.text4 }}>{s.name}</span>
+                <span style={{ color: T.text4, fontSize: T.textXs }}>({s.category})</span>
+                <button
+                  onClick={() => handleRemove(s.coin)}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: T.red, fontFamily: T.mono, fontWeight: 700,
+                    fontSize: 14, padding: "0 2px", lineHeight: 1,
+                    opacity: 0.6, transition: "opacity 0.15s",
+                  }}
+                  onMouseEnter={e => e.target.style.opacity = 1}
+                  onMouseLeave={e => e.target.style.opacity = 0.6}
+                  title={`Remove ${s.coin}`}
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
 
       {/* Regime summary bar */}
       {Object.keys(regimeSummary).length > 0 && (
