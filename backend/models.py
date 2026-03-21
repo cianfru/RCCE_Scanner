@@ -106,6 +106,10 @@ class ScanResult(BaseModel):
     cvd_trend: str = "NEUTRAL"       # BULLISH | BEARISH | NEUTRAL
     cvd_divergence: bool = False     # price direction ≠ CVD direction
     buy_sell_ratio: float = 1.0      # taker buy / sell volume ratio
+    # Agent layer outputs (post-synthesis overrides)
+    agent_signal: Optional[str] = None          # overridden signal (None = no change)
+    agent_warnings: List[str] = []              # agent filter alerts
+    agent_filters_fired: List[str] = []         # which filters fired
 
 
 class ScanResponse(BaseModel):

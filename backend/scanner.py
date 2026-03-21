@@ -903,35 +903,69 @@ async def _scan_timeframe(
         binance_pos_count + hl_pos_count + bybit_pos_count,
     )
 
-    # 7b. CVD batch fetch (async, non-blocking — wrap in try/except with timeout)
+    # 7b. CVD batch fetch — dual-source strategy:
+    #   Primary:  CoinGlass fetch_cvd_batch (multi-exchange: Binance+OKX+Bybit)
+    #   Fallback: exchange_derivatives_data (free Binance API, no key required)
+    #   Both run concurrently; CoinGlass result wins per-coin when available.
+
+    # Build price_changes dict once — used by both sources
+    price_changes_dict: dict = {}
+    for r in results:
+        sym = r.get("symbol", "")
+        base_coin = sym.split("/")[0] if "/" in sym else sym
+        sparkline = r.get("sparkline", [])
+        if len(sparkline) >= 2 and sparkline[0] > 0:
+            price_changes_dict[base_coin] = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+    # Use top 50 coins by OI from cg_metrics, fallback to watchlist
+    if cg_metrics:
+        sorted_by_oi = sorted(
+            cg_metrics.values(),
+            key=lambda m: m.open_interest_usd,
+            reverse=True,
+        )
+        top_coins = [m.coin for m in sorted_by_oi[:50]]
+    else:
+        top_coins = [s.split("/")[0] for s in symbols if "/" in s]
+
     cvd_by_coin: dict = {}
+
+    # --- source A: CoinGlass (multi-exchange, requires API key) ---
+    cg_cvd: dict = {}
     try:
         from coinglass_data import fetch_cvd_batch
-
-        # Build price_changes dict from sparkline data for divergence detection
-        price_changes_dict: dict = {}
-        for r in results:
-            sym = r.get("symbol", "")
-            base_coin = sym.split("/")[0] if "/" in sym else sym
-            sparkline = r.get("sparkline", [])
-            if len(sparkline) >= 2 and sparkline[0] > 0:
-                price_changes_dict[base_coin] = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
-
-        # Use top 50 coins by OI from cg_metrics, fallback to all symbols
-        if cg_metrics:
-            sorted_by_oi = sorted(
-                cg_metrics.values(),
-                key=lambda m: m.open_interest_usd,
-                reverse=True,
-            )
-            top_coins = [m.coin for m in sorted_by_oi[:50]]
-        else:
-            top_coins = [s.split("/")[0] for s in symbols if "/" in s]
-
-        cvd_by_coin = await asyncio.wait_for(
+        cg_cvd = await asyncio.wait_for(
             fetch_cvd_batch(top_coins, price_changes=price_changes_dict),
             timeout=10.0,
         )
+        logger.info("CVD CoinGlass: %d coins", len(cg_cvd))
+    except asyncio.TimeoutError:
+        logger.warning("CVD CoinGlass timed out — will use exchange fallback")
+    except Exception as exc:
+        logger.warning("CVD CoinGlass failed (%s) — will use exchange fallback", exc)
+
+    # --- source B: exchange_derivatives_data (Binance free API) ---
+    ex_cvd: dict = {}
+    try:
+        from exchange_derivatives_data import fetch_exchange_derivatives
+        _, ex_cvd_raw, _ = await asyncio.wait_for(
+            fetch_exchange_derivatives(symbols, price_changes_dict),
+            timeout=12.0,
+        )
+        # ex_cvd_raw is keyed by coin base (e.g. "BTC"), same as cg_cvd
+        ex_cvd = ex_cvd_raw or {}
+        logger.info("CVD exchange (Binance/Bybit/OKX): %d coins", len(ex_cvd))
+    except asyncio.TimeoutError:
+        logger.warning("CVD exchange fetch timed out")
+    except Exception as exc:
+        logger.warning("CVD exchange fetch failed: %s", exc)
+
+    # --- merge: CoinGlass wins per-coin, exchange fills gaps ---
+    if cg_cvd or ex_cvd:
+        # Start with exchange data (broader coin coverage at lower latency)
+        cvd_by_coin.update(ex_cvd)
+        # Override with CoinGlass where available (multi-exchange aggregation)
+        cvd_by_coin.update(cg_cvd)
 
         # Attach CVD data to result rows
         for r in results:
@@ -941,17 +975,16 @@ async def _scan_timeframe(
             if cvd is not None:
                 r["cvd_trend"] = cvd.cvd_trend
                 r["cvd_divergence"] = cvd.cvd_divergence
-                r["cvd_value"] = cvd.cvd_value
+                r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
                 r["buy_sell_ratio"] = cvd.buy_sell_ratio
+                r["cvd_source"] = "coinglass" if base_coin in cg_cvd else "exchange"
 
-        logger.info("CVD batch: %d coins fetched", len(cvd_by_coin))
-
-    except asyncio.TimeoutError:
-        logger.warning("CVD batch fetch timed out — marking CVD as UNAVAILABLE")
-        for r in results:
-            r["cvd_trend"] = "UNAVAILABLE"
-    except Exception as exc:
-        logger.warning("CVD batch fetch failed: %s — marking CVD as UNAVAILABLE", exc)
+        logger.info(
+            "CVD merged: %d total (%d CoinGlass, %d exchange)",
+            len(cvd_by_coin), len(cg_cvd), len(ex_cvd),
+        )
+    else:
+        logger.warning("CVD: all sources failed — marking as UNAVAILABLE")
         for r in results:
             r["cvd_trend"] = "UNAVAILABLE"
 
@@ -1061,6 +1094,23 @@ async def _scan_timeframe(
             r["vol_scale"] = synth.vol_scale
             # Update prev_heat for next scan
             cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
+
+    # 9b. Agent layer — post-synthesis filters (cooldown, div-flapping, conf
+    #     stability, heat/z divergence, cross-TF tiebreaker, margin safety).
+    #     Pure transformer: modifies each result dict in-place and persists
+    #     per-symbol history on the cache object for next scan.
+    try:
+        from agent_layer import process as _agent_process
+        # Positions list is empty here (live positions come from executor/monitor).
+        # The margin safety filter is a no-op until positions are plumbed in.
+        _open_positions: list = []
+        for r in results:
+            try:
+                _agent_process(r, _open_positions, cache)
+            except Exception as _ae:
+                logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
+    except ImportError:
+        pass  # agent_layer not available in minimal deployments
 
     # Compute priority score for each result
     for r in results:
