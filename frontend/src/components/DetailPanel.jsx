@@ -494,6 +494,24 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           </div>
         )}
 
+        {/* Agent layer override indicator */}
+        {selected.agent_signal && selected.agent_signal !== selected.signal && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+            fontSize: T.textXs, color: "#a78bfa", fontFamily: T.mono,
+          }}>
+            <span>{"\U0001f916"} Agent: </span>
+            <SignalDot signal={selected.signal} />
+            <span style={{ color: T.text4 }}>{"\u2192"}</span>
+            <SignalDot signal={selected.agent_signal} />
+            {selected.agent_filters_fired && selected.agent_filters_fired.length > 0 && (
+              <span style={{ color: T.text4, fontSize: T.textXs }}>
+                ({selected.agent_filters_fired.join(", ")})
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Confluence Panel */}
         <ConfluencePanel confluence={selected.confluence} />
 

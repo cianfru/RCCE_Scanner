@@ -1104,11 +1104,23 @@ async def _scan_timeframe(
         # Positions list is empty here (live positions come from executor/monitor).
         # The margin safety filter is a no-op until positions are plumbed in.
         _open_positions: list = []
+        agent_override_count = 0
         for r in results:
             try:
-                _agent_process(r, _open_positions, cache)
+                ao = _agent_process(r, _open_positions, cache)
+                # Merge agent warnings into signal_warnings so the frontend
+                # shows them in the existing warning UI without changes.
+                if ao.alerts:
+                    existing = r.get("signal_warnings", [])
+                    r["signal_warnings"] = existing + [f"[Agent] {a}" for a in ao.alerts]
+                # If agent overrode the signal, update the effective signal
+                if ao.adjusted_signal != ao.original_signal:
+                    r["signal"] = ao.adjusted_signal
+                    agent_override_count += 1
             except Exception as _ae:
                 logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
+        if agent_override_count:
+            logger.info("Agent layer: %d signal overrides on %s", agent_override_count, tf)
     except ImportError:
         pass  # agent_layer not available in minimal deployments
 
