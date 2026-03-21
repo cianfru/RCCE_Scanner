@@ -181,6 +181,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("CoinGlass drip loop init failed (non-fatal): %s", e)
 
+    # Start exchange derivatives shadow fetch (runs alongside CoinGlass for comparison)
+    asyncio.create_task(_shadow_derivatives_loop())
+
     yield
 
     # Shutdown Telegram bot
@@ -193,6 +196,25 @@ async def lifespan(app: FastAPI):
 
 
 _backtest_running = False  # Flag to pause scans during backtest
+
+
+async def _shadow_derivatives_loop():
+    """Shadow fetch exchange derivatives every 5 min (alongside CoinGlass).
+
+    Logs comparison data for validation before switching from CoinGlass.
+    """
+    await asyncio.sleep(30)  # Wait for initial scan to populate price data
+    while True:
+        try:
+            from exchange_derivatives_data import fetch_exchange_derivatives
+            metrics, cvd, _ = await fetch_exchange_derivatives()
+            logger.info(
+                "Shadow derivatives: fetched %d coins, %d CVD entries",
+                len(metrics), len(cvd),
+            )
+        except Exception as exc:
+            logger.warning("Shadow derivatives fetch failed: %s", exc)
+        await asyncio.sleep(5 * 60)  # Every 5 minutes
 
 
 async def _periodic_scan():
@@ -2942,3 +2964,60 @@ async def geo_test():
 
     b, by, cg = await asyncio.gather(test_binance(), test_bybit(), test_coinglass())
     return {"binance": b, "bybit": by, "coinglass": cg}
+
+
+# ---------------------------------------------------------------------------
+# Exchange Derivatives Shadow Module
+# ---------------------------------------------------------------------------
+
+@app.get("/api/test-binance-derivatives")
+async def test_binance_derivatives():
+    """Test if Binance /futures/data/ analytics endpoints are reachable."""
+    from exchange_derivatives_data import test_binance_connectivity
+    return await test_binance_connectivity()
+
+
+@app.get("/api/derivatives-shadow")
+async def derivatives_shadow():
+    """Run the shadow exchange derivatives fetch and return results."""
+    from exchange_derivatives_data import fetch_exchange_derivatives
+    metrics, cvd, cb = await fetch_exchange_derivatives()
+    # Return summary for top 20 coins
+    summary = []
+    for sym, m in sorted(metrics.items(), key=lambda x: x[1].oi_total_usd, reverse=True)[:20]:
+        entry = {
+            "symbol": sym,
+            "oi_total": round(m.oi_total_usd / 1e6, 1),
+            "oi_binance": round(m.oi_binance_usd / 1e6, 1),
+            "oi_bybit": round(m.oi_bybit_usd / 1e6, 1),
+            "oi_okx": round(m.oi_okx_usd / 1e6, 1),
+            "oi_chg_4h": m.oi_change_pct_4h,
+            "retail_lsr": m.long_short_ratio_4h,
+            "top_lsr": m.top_trader_lsr,
+            "spot_dominance": m.spot_dominance,
+        }
+        coin_cvd = cvd.get(m.coin)
+        if coin_cvd:
+            entry["cvd_trend"] = coin_cvd.cvd_trend
+            entry["cvd_bsr"] = coin_cvd.buy_sell_ratio
+        summary.append(entry)
+    return {"count": len(metrics), "top_20": summary}
+
+
+@app.get("/api/derivatives-comparison")
+async def derivatives_comparison():
+    """Compare exchange derivatives data with CoinGlass side-by-side."""
+    from exchange_derivatives_data import fetch_exchange_derivatives, compare_with_coinglass
+    from coinglass_data import fetch_coinglass_metrics, _cvd_store
+
+    # Fetch both in parallel
+    ex_task = fetch_exchange_derivatives()
+    cg_task = fetch_coinglass_metrics()
+    (ex_metrics, ex_cvd, _), cg_metrics = await asyncio.gather(ex_task, cg_task)
+
+    comparisons = compare_with_coinglass(ex_metrics, ex_cvd, cg_metrics, _cvd_store)
+
+    # Sort by OI for readability
+    comparisons.sort(key=lambda x: x.get("oi_total_usd", 0), reverse=True)
+
+    return {"count": len(comparisons), "comparisons": comparisons[:30]}
