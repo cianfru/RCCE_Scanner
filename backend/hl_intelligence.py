@@ -37,15 +37,17 @@ _POSITION_HISTORY_LEN = 288               # 24h of 5-min snapshots
 
 # Filtering thresholds
 _MIN_ACCOUNT_VALUE = 500_000               # $500k minimum
-_MIN_ROI_PCT = 50.0                        # 50% ROI minimum
-_ROSTER_SIZE = 250                         # Top 250 qualifying wallets
+_MIN_ROI_PCT = 30.0                        # 30% monthly ROI minimum
+_ROSTER_SIZE = 100                         # Top 100 qualifying wallets
+_MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
+_ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
 # Consensus thresholds
 _BULLISH_THRESHOLD = 0.15                  # net_ratio > 15% = BULLISH
 _BEARISH_THRESHOLD = -0.15                 # net_ratio < -15% = BEARISH
 
 # Rate limiting
-_CONCURRENCY = 10                          # Max concurrent HL API calls
+_CONCURRENCY = 20                          # Max concurrent HL API calls
 _REQUEST_TIMEOUT = 15
 
 # ---------------------------------------------------------------------------
@@ -167,20 +169,22 @@ async def refresh_leaderboard() -> int:
             account_value = float(entry.get("accountValue", 0) or 0)
             display_name = entry.get("displayName", "") or ""
 
-            # Extract PnL and ROI from windowPerformances or top-level
+            # Extract PnL and ROI from windowPerformances
             pnl = 0.0
             roi = 0.0
+            monthly_vlm = 0.0
             window_perfs = entry.get("windowPerformances", [])
 
             if window_perfs and isinstance(window_perfs, list):
-                # windowPerformances is a list of [window_name, {pnl, roi, ...}]
+                # windowPerformances is a list of [window_name, {pnl, roi, vlm}]
                 for wp in window_perfs:
                     if isinstance(wp, list) and len(wp) >= 2:
                         window_name = wp[0]
                         metrics = wp[1] if isinstance(wp[1], dict) else {}
-                        if window_name == "allTime":
+                        if window_name == _ROI_WINDOW:
                             pnl = float(metrics.get("pnl", 0) or 0)
-                            roi = float(metrics.get("roi", 0) or 0) * 100  # Convert to %
+                            roi = float(metrics.get("roi", 0) or 0) * 100
+                            monthly_vlm = float(metrics.get("vlm", 0) or 0)
             else:
                 pnl = float(entry.get("pnl", 0) or 0)
                 roi = float(entry.get("roi", 0) or 0) * 100
@@ -191,7 +195,11 @@ async def refresh_leaderboard() -> int:
             if roi < _MIN_ROI_PCT:
                 continue
 
-            # Compute ranking score: roi * log(accountValue)
+            # Market maker filter: vlm/AV ratio > 100 = likely MM/vault
+            if account_value > 0 and monthly_vlm / account_value > _MM_VLM_RATIO:
+                continue
+
+            # Compute ranking score: monthly_roi * log(accountValue)
             score = roi * math.log(max(account_value, 1))
 
             candidates.append(TrackedWallet(
@@ -345,9 +353,8 @@ def _recompute_consensus() -> None:
     """Aggregate latest positions across all wallets into per-symbol consensus."""
     global _consensus
 
-    # Build a score lookup for weighting
+    # Build a score lookup for weighting (consensus weighted by notional * score)
     score_map = {w.address: w.score for w in _roster}
-    max_total_score = sum(w.score for w in _roster) or 1.0
 
     # Collect per-symbol data
     sym_data: Dict[str, dict] = {}
@@ -373,15 +380,19 @@ def _recompute_consensus() -> None:
             d = sym_data[coin]
             w_score = score_map.get(wallet.address, 1.0)
 
+            # Weight consensus by notional size * wallet score
+            # so a $5M position from a top trader counts more than a $50k one
+            notional_weight = pos.size_usd * w_score
+
             if pos.side == "LONG":
                 d["long_count"] += 1
                 d["long_notional"] += pos.size_usd
-                d["weighted_sum"] += w_score
+                d["weighted_sum"] += notional_weight
                 d["top_longs"].append(wallet.address)
             else:
                 d["short_count"] += 1
                 d["short_notional"] += pos.size_usd
-                d["weighted_sum"] -= w_score
+                d["weighted_sum"] -= notional_weight
                 d["top_shorts"].append(wallet.address)
 
             coins_seen.add(coin)
@@ -393,8 +404,9 @@ def _recompute_consensus() -> None:
     for coin, d in sym_data.items():
         total_positioned = d["long_count"] + d["short_count"]
         net_ratio = (d["long_count"] - d["short_count"]) / max(total_positioned, 1)
-        net_score = d["weighted_sum"]
-        norm_score = net_score / max_total_score  # -1 to +1
+        # Notional-weighted score: positive = net long conviction, negative = short
+        total_notional = d["long_notional"] + d["short_notional"]
+        norm_score = d["weighted_sum"] / max(total_notional, 1.0)  # normalized by total exposure
 
         if net_ratio > _BULLISH_THRESHOLD:
             trend = "BULLISH"
@@ -547,7 +559,8 @@ def get_position_changes(symbol: str, window_minutes: int = 30) -> dict:
 
         latest = snaps[-1]
 
-        # Find the snapshot closest to the cutoff
+        # Walk backwards (newest→oldest) to find the most recent snapshot
+        # at or before the cutoff timestamp — first match is the closest one.
         prev = None
         for snap in reversed(snaps):
             if snap.timestamp <= cutoff:
