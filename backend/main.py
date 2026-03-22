@@ -3211,3 +3211,14 @@ async def hyperlens_smart_orders(symbol: Optional[str] = Query(None)):
         return {"orders": get_smart_money_orders(sym)}
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/hyperlens/wallet/{address}/equity")
+async def hyperlens_wallet_equity(
+    address: str,
+    days: int = Query(7, ge=1, le=30, description="Days of equity history"),
+):
+    """Get extended equity curve from DB (up to 30 days)."""
+    from hl_persistence import load_equity_history
+    history = load_equity_history(address.lower(), days=days)
+    return {"address": address.lower(), "days": days, "points": len(history), "history": history}

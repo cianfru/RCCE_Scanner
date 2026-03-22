@@ -23,6 +23,19 @@ from typing import Dict, List, Optional
 
 import aiohttp
 
+from hl_persistence import (
+    save_snapshots as _db_save_snapshots,
+    save_trade_events as _db_save_trades,
+    save_position_first_seen as _db_save_first_seen,
+    load_snapshots as _db_load_snapshots,
+    load_trade_log as _db_load_trades,
+    load_position_first_seen as _db_load_first_seen,
+    load_equity_history as _db_load_equity,
+    load_full_trade_history as _db_load_full_trades,
+    cleanup_old_data as _db_cleanup,
+    get_db_stats as _db_stats,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -198,6 +211,83 @@ _pressure_cache: Dict[str, dict] = {}         # coin -> computed pressure data
 _ORDER_BOOK_POLL_INTERVAL = 30                # seconds
 _ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
+
+
+# ---------------------------------------------------------------------------
+# Persistence — restore from SQLite on startup
+# ---------------------------------------------------------------------------
+
+def _restore_from_db() -> None:
+    """Load persisted snapshots, trade log, and first-seen data from SQLite.
+
+    Called once on startup before the first poll to restore state across
+    Railway redeploys.
+    """
+    global _snapshots, _trade_log, _position_first_seen, _last_positions
+
+    # 1. Restore snapshots (last 24h into in-memory deque)
+    raw_snaps = _db_load_snapshots(max_age_hours=24)
+    restored_snap_count = 0
+    for address, snap_list in raw_snaps.items():
+        dq = deque(maxlen=_POSITION_HISTORY_LEN)
+        for s in snap_list:
+            positions = []
+            for p in s["positions"]:
+                try:
+                    positions.append(WalletPosition(
+                        coin=p["coin"],
+                        side=p["side"],
+                        size=p.get("size", 0),
+                        size_usd=p.get("size_usd", 0),
+                        entry_px=p.get("entry_px", 0),
+                        unrealized_pnl=p.get("unrealized_pnl", 0),
+                        leverage=p.get("leverage", 1),
+                        liq_px=p.get("liq_px", 0),
+                        margin_used=p.get("margin_used", 0),
+                        return_on_equity=p.get("return_on_equity", 0),
+                        liq_distance_pct=p.get("liq_distance_pct", 0),
+                        leverage_type=p.get("leverage_type", "cross"),
+                        asset_class=p.get("asset_class", "crypto"),
+                        dex=p.get("dex", ""),
+                    ))
+                except Exception:
+                    continue
+
+            dq.append(PositionSnapshot(
+                timestamp=s["timestamp"],
+                positions=positions,
+                account_value=s["account_value"],
+            ))
+            restored_snap_count += 1
+        _snapshots[address] = dq
+
+        # Rebuild _last_positions from latest snapshot (needed for trade reconstruction diffs)
+        if dq:
+            latest = dq[-1]
+            _last_positions[address] = {
+                pos.coin: {
+                    "side": pos.side,
+                    "size": pos.size,
+                    "size_usd": pos.size_usd,
+                    "entry_px": pos.entry_px,
+                    "unrealized_pnl": pos.unrealized_pnl,
+                    "leverage": pos.leverage,
+                }
+                for pos in latest.positions
+            }
+
+    # 2. Restore trade log
+    _trade_log.update(_db_load_trades())
+
+    # 3. Restore position first-seen
+    _position_first_seen.update(_db_load_first_seen())
+
+    logger.info(
+        "HyperLens DB restore: %d snapshots for %d wallets, %d trades, %d first-seen entries",
+        restored_snap_count, len(raw_snaps),
+        sum(len(v) for v in _trade_log.values()),
+        sum(len(v) for v in _position_first_seen.values()),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +605,14 @@ async def poll_positions() -> int:
     # Recompute consensus
     _recompute_consensus()
     _consensus_updated_at = time.time()
+
+    # Persist to SQLite (non-blocking — runs in background thread)
+    try:
+        _db_save_snapshots(_snapshots)
+        _db_save_trades(_trade_log, since_timestamp=_last_poll_at - _POLL_INTERVAL)
+        _db_save_first_seen(_position_first_seen)
+    except Exception as exc:
+        logger.warning("HyperLens DB: save error: %s", exc)
 
     logger.info(
         "HyperLens poll #%d: %d/%d wallets, %d symbols with consensus",
@@ -1023,10 +1121,17 @@ def _reconstruct_trades() -> None:
 
 
 def get_wallet_trades(address: str, limit: int = 50) -> List[dict]:
-    """Get reconstructed trade history for a wallet."""
+    """Get reconstructed trade history for a wallet.
+
+    Pulls from DB for extended history (500 trades) with in-memory fallback.
+    """
     address = address.lower()
+    # Try DB first for richer history
+    db_trades = _db_load_full_trades(address, limit=limit)
+    if db_trades:
+        return db_trades  # Already sorted most-recent-first by DB query
+    # Fallback to in-memory
     trades = _trade_log.get(address, [])
-    # Return most recent first
     return list(reversed(trades[-limit:]))
 
 
@@ -1045,8 +1150,8 @@ def get_wallet_profile(address: str) -> Optional[dict]:
     snaps = _snapshots.get(address)
     latest = snaps[-1] if snaps else None
 
-    # Trade stats from log
-    trades = _trade_log.get(address, [])
+    # Trade stats — prefer DB (full history) over in-memory (200 cap)
+    trades = _db_load_full_trades(address, limit=500) or _trade_log.get(address, [])
     closed_trades = [t for t in trades if t["status"] in ("CLOSED", "FLIPPED")]
 
     wins = sum(1 for t in closed_trades if t["pnl"] > 0)
@@ -1077,9 +1182,10 @@ def get_wallet_profile(address: str) -> Optional[dict]:
         key=lambda x: x["trades"], reverse=True,
     )
 
-    # Account value history from snapshots
-    av_history = []
-    if snaps:
+    # Account value history — prefer DB (up to 30 days) over in-memory deque (24h)
+    av_history = _db_load_equity(address, days=30)
+    if not av_history and snaps:
+        # Fallback to in-memory if DB is empty (first run)
         for snap in snaps:
             if snap.account_value > 0:
                 av_history.append({
@@ -1666,6 +1772,8 @@ def get_status() -> dict:
         "xyz_positions": xyz_position_count,
         "xyz_wallets": len(xyz_wallets),
         "tradfi_symbols": sorted(tradfi_symbols),
+        # Persistence stats
+        "db": _db_stats(),
     }
 
 
@@ -1689,6 +1797,12 @@ async def run_hyperlens_loop() -> None:
 
     logger.info("HyperLens: starting background loop...")
 
+    # Restore persisted data from SQLite before anything else
+    try:
+        _restore_from_db()
+    except Exception as exc:
+        logger.warning("HyperLens: DB restore failed (starting fresh): %s", exc)
+
     # Initial delay — let the main scan warm up first
     await asyncio.sleep(15)
 
@@ -1699,6 +1813,7 @@ async def run_hyperlens_loop() -> None:
 
     _initialized = True
     last_roster_refresh = time.time()
+    last_cleanup = time.time()
 
     # Launch order book polling as an independent concurrent task
     asyncio.create_task(_order_book_loop())
@@ -1713,6 +1828,14 @@ async def run_hyperlens_loop() -> None:
             # Poll positions (also fetches open orders per wallet)
             if _roster:
                 await poll_positions()
+
+            # DB cleanup every 6 hours
+            if time.time() - last_cleanup > 6 * 3600:
+                try:
+                    _db_cleanup()
+                except Exception as exc:
+                    logger.warning("HyperLens DB cleanup error: %s", exc)
+                last_cleanup = time.time()
 
         except Exception as exc:
             logger.warning("HyperLens loop error: %s", exc)
