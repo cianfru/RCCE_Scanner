@@ -30,6 +30,8 @@ Filter state lives in ScanCache attributes added on first use:
     cache.confidence_history: Dict[str, List[float]]          — last 3 conf/symbol
     cache.divergence_history: Dict[str, List[Optional[str]]]  — last 3 div/symbol
     cache.prev_zscore:        Dict[str, float]                — previous z-score
+    cache.prev_heat:          Dict[str, int]                  — previous heat score
+    cache.conf_freeze_state:  Dict[str, Dict]                 — per-symbol freeze state
 """
 
 from __future__ import annotations
@@ -64,10 +66,14 @@ _FLIP_CONFIRM_BARS = 2           # bars required to re-enter after a hard exit
 # Filter 3: confidence stability
 _CONF_SWING_THRESHOLD = 20.0     # % swing that marks an unstable confidence
 _CONF_HISTORY_LEN = 3            # bars of confidence to keep
+_CONF_STABLE_RANGE = 10.0        # ±range within which confidence is "stable"
+_CONF_STABLE_BARS = 2            # consecutive stable bars needed to auto-release freeze
 
 # Filter 4: heat/z divergence
-_HEAT_RISE_MIN = 5               # heat must climb at least this many points
-_Z_DROP_MIN = 0.15               # z must fall at least this much concurrently
+_HEAT_RISE_MIN = 5               # heat must climb at least this many points (strict path)
+_Z_DROP_MIN = 0.15               # z must fall at least this much (strict path)
+_Z_SOLO_DROP_MIN = 0.50          # z-drop alone triggers at lower heat threshold (fallback)
+_HEAT_RISE_SOFT = 2              # softer heat threshold for z-solo fallback path
 
 # Filter 6: margin safety
 _MARGIN_BLOCK_PCT = 0.80         # block new entries when margin > 80 %
@@ -106,6 +112,10 @@ def _ensure_history(cache: Any) -> None:
         cache.divergence_history: Dict[str, List[Optional[str]]] = {}
     if not hasattr(cache, "prev_zscore"):
         cache.prev_zscore: Dict[str, float] = {}
+    if not hasattr(cache, "prev_heat"):
+        cache.prev_heat: Dict[str, int] = {}
+    if not hasattr(cache, "conf_freeze_state"):
+        cache.conf_freeze_state: Dict[str, Dict] = {}
 
 
 def _push(hist: Dict[str, list], key: str, value: Any, maxlen: int) -> None:
@@ -124,6 +134,7 @@ def _push(hist: Dict[str, list], key: str, value: Any, maxlen: int) -> None:
 def _filter_cooldown(
     signal: str,
     symbol: str,
+    is_positioned: bool,
     cache: Any,
     out: AgentOutput,
 ) -> str:
@@ -133,9 +144,18 @@ def _filter_cooldown(
     - Same entry signal must not repeat within _COOLDOWN_BARS bars.
     - After a hard exit signal, re-entry requires _FLIP_CONFIRM_BARS bars
       of the same entry signal before it is allowed through.
+
+    Both rules are skipped when no open position exists for this symbol.
+    Without a position there is nothing to protect — applying cooldown would
+    only add phantom friction to a legitimate re-entry after a stop-loss or
+    manual close.
     """
     if signal in _HARD_EXIT_SIGNALS:
         return signal  # exits always pass
+
+    # No position — cooldown rules don't apply
+    if not is_positioned:
+        return signal
 
     history: List[str] = cache.signal_history.get(symbol, [])
     if not history:
@@ -180,6 +200,7 @@ def _filter_cooldown(
 def _filter_bear_div_flapping(
     signal: str,
     divergence: Optional[str],
+    regime: str,
     symbol: str,
     cache: Any,
     out: AgentOutput,
@@ -189,8 +210,19 @@ def _filter_bear_div_flapping(
     A single bar of BEAR-DIV is unreliable.  Require 2 consecutive BEAR-DIV
     bars before allowing it to block entry signals.  If only 1 bar detected,
     add a warning but let the signal through.
+
+    Regime context modulates severity:
+    - MARKDOWN: BEAR-DIV is the regime, not a divergence — filter skipped entirely.
+    - REACC:    Bearish divergence is structurally expected during a reaccumulation
+                dip.  Even 2 consecutive bars produce a warning only, not a block.
+                The signal passes through unchanged.
+    - MARKUP / BLOWOFF / other: full filter applies.
     """
     if signal in _HARD_EXIT_SIGNALS:
+        return signal
+
+    # In MARKDOWN the price is already declining — BEAR-DIV is the regime, not a warning
+    if regime == "MARKDOWN":
         return signal
 
     div_history: List[Optional[str]] = cache.divergence_history.get(symbol, [])
@@ -204,21 +236,30 @@ def _filter_bear_div_flapping(
     consecutive_bear = all(d == "BEAR-DIV" for d in prev_divs) if prev_divs else False
 
     if not consecutive_bear:
-        # Only 1 bar of BEAR-DIV — warn but don't block
+        # Only 1 bar of BEAR-DIV — warn but don't block regardless of regime
         out.alerts.append(
             "[bear-div] Single-bar BEAR-DIV detected — warning only, "
             "not blocking (requires 2 consecutive bars)"
         )
         out.filters_fired.append("bear_div:warn_only")
         return signal
-    else:
-        # 2+ consecutive BEAR-DIV — block entry signals
-        if signal in _ENTRY_SIGNALS:
-            out.alerts.append(
-                "[bear-div] 2+ consecutive BEAR-DIV bars — blocking entry signal"
-            )
-            out.filters_fired.append("bear_div:blocked")
-            return "WAIT"
+
+    # 2+ consecutive BEAR-DIV bars
+    if regime == "REACC":
+        # Divergence is expected during reaccumulation dip — elevated warning, no block
+        out.alerts.append(
+            "[bear-div] 2-bar BEAR-DIV in REACC regime — elevated warning, "
+            "not blocking (divergence expected during reaccumulation dip)"
+        )
+        out.filters_fired.append("bear_div:reacc_warn")
+        return signal
+
+    if signal in _ENTRY_SIGNALS:
+        out.alerts.append(
+            "[bear-div] 2+ consecutive BEAR-DIV bars — blocking entry signal"
+        )
+        out.filters_fired.append("bear_div:blocked")
+        return "WAIT"
 
     return signal
 
@@ -235,6 +276,11 @@ def _filter_confidence_stability(
     If confidence has swung by more than _CONF_SWING_THRESHOLD in the last
     3 bars, the regime read is noisy — freeze any signal upgrade to WAIT.
     Downgrades and exits are not affected.
+
+    Auto-release: once confidence holds within ±_CONF_STABLE_RANGE for
+    _CONF_STABLE_BARS consecutive bars after a freeze, the block is lifted.
+    This prevents indefinite freezes in oscillating-but-structurally-sound
+    markets (e.g. 60→75→62→78 which looks volatile but is actually range-bound).
     """
     if signal in _HARD_EXIT_SIGNALS:
         return signal
@@ -244,7 +290,40 @@ def _filter_confidence_stability(
         return signal
 
     swing = max(conf_hist) - min(conf_hist)
-    if swing > _CONF_SWING_THRESHOLD and signal in _ENTRY_SIGNALS:
+    recent_stable = (max(conf_hist[-2:]) - min(conf_hist[-2:])) <= _CONF_STABLE_RANGE
+
+    freeze = cache.conf_freeze_state.get(symbol, {"frozen": False, "stable_count": 0})
+
+    if freeze["frozen"]:
+        if recent_stable:
+            new_count = freeze["stable_count"] + 1
+            if new_count >= _CONF_STABLE_BARS:
+                # Auto-release
+                cache.conf_freeze_state[symbol] = {"frozen": False, "stable_count": 0}
+                out.alerts.append(
+                    f"[conf-stability] Confidence stabilized ({_CONF_STABLE_BARS} bars "
+                    f"within ±{_CONF_STABLE_RANGE:.0f}%) — freeze released"
+                )
+                out.filters_fired.append("conf_stability:released")
+                return signal
+            else:
+                cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": new_count}
+        else:
+            cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": 0}
+
+        # Still frozen — block entries
+        if signal in _ENTRY_SIGNALS:
+            out.alerts.append(
+                f"[conf-stability] Confidence frozen (swing {swing:.1f}%, "
+                f"stable for {freeze['stable_count']} bar(s) — "
+                f"need {_CONF_STABLE_BARS}) — entry frozen at WAIT"
+            )
+            out.filters_fired.append("conf_stability:frozen")
+            return "WAIT"
+
+    elif swing > _CONF_SWING_THRESHOLD and signal in _ENTRY_SIGNALS:
+        # Enter frozen state
+        cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": 0}
         out.alerts.append(
             f"[conf-stability] Confidence swinging {swing:.1f}% over last "
             f"{len(conf_hist)} bars — entry frozen at WAIT"
@@ -265,26 +344,46 @@ def _filter_heat_z_divergence(
 ) -> str:
     """Filter 4: Heat / Z structural divergence.
 
-    When heat is rising while z-score is falling (distribution forming), or
-    when heat is falling while z is spiking (momentum without structural support),
-    we warn and downgrade STRONG_LONG → LIGHT_LONG.
+    Strict path: heat rising while z-score is falling (classic distribution).
+    Fallback path: z falling sharply on its own with any meaningful heat uptick
+                   (momentum loss without requiring full heat surge).
+
+    Both paths downgrade STRONG_LONG → LIGHT_LONG only.  Never blocks outright.
     """
     if signal in _HARD_EXIT_SIGNALS:
         return signal
 
-    prev_heat: int = getattr(cache, "prev_heat", {}).get(symbol, current_heat)
+    if signal not in _ENTRY_SIGNALS:
+        return signal
+
+    prev_heat: int = cache.prev_heat.get(symbol, current_heat)
     prev_z: float = cache.prev_zscore.get(symbol, current_z)
 
-    heat_rising = (current_heat - prev_heat) >= _HEAT_RISE_MIN
-    z_falling = (prev_z - current_z) >= _Z_DROP_MIN
+    heat_delta = current_heat - prev_heat
+    z_delta = prev_z - current_z  # positive = z fell
 
-    if heat_rising and z_falling and signal in _ENTRY_SIGNALS:
+    heat_rising = heat_delta >= _HEAT_RISE_MIN
+    z_falling = z_delta >= _Z_DROP_MIN
+
+    # Strict path: both heat and z moving together
+    if heat_rising and z_falling:
         out.alerts.append(
             f"[heat-z-div] Heat rising ({prev_heat}→{current_heat}) "
             f"while Z falling ({prev_z:.2f}→{current_z:.2f}) — "
             "structural divergence, downgrading STRONG_LONG→LIGHT_LONG"
         )
         out.filters_fired.append("heat_z_div:downgrade")
+        if signal == "STRONG_LONG":
+            return "LIGHT_LONG"
+
+    # Fallback path: steep z-drop with even a modest heat uptick
+    elif z_delta >= _Z_SOLO_DROP_MIN and heat_delta >= _HEAT_RISE_SOFT:
+        out.alerts.append(
+            f"[heat-z-div] Steep Z-drop ({prev_z:.2f}→{current_z:.2f}, "
+            f"Δ{z_delta:.2f}) with heat uptick ({prev_heat}→{current_heat}) — "
+            "momentum loss, downgrading STRONG_LONG→LIGHT_LONG"
+        )
+        out.filters_fired.append("heat_z_div:z_solo_downgrade")
         if signal == "STRONG_LONG":
             return "LIGHT_LONG"
 
@@ -305,12 +404,28 @@ def _filter_cross_tf_tiebreaker(
       the 4H urgency takes precedence (imminent exit).
 
     This filter only runs on the 4H timeframe scan since 1D is the authority.
+
+    Special case (runs regardless of confluence label):
+    - If 1D regime is BLOWOFF, cap any bullish 4H entry signal to WAIT.
+      Distribution phase on the daily makes new entries unwarranted even if
+      the synthesizer missed the cross-TF conflict.
     """
     if signal in _HARD_EXIT_SIGNALS:
         return signal
 
     if not confluence:
         return signal
+
+    regime_1d = confluence.get("regime_1d", "")
+
+    # Unconditional 1D BLOWOFF cap — runs before the CONFLICTING label check
+    if regime_1d == "BLOWOFF" and timeframe == "4h" and signal in _ENTRY_SIGNALS:
+        out.alerts.append(
+            "[cross-tf] 1D regime is BLOWOFF — capping bullish 4H signal to WAIT "
+            "(distribution phase, new entries not warranted)"
+        )
+        out.filters_fired.append("cross_tf:1d_blowoff_cap")
+        return "WAIT"
 
     label = confluence.get("label", "")
     if label != "CONFLICTING":
@@ -322,7 +437,6 @@ def _filter_cross_tf_tiebreaker(
 
     signal_1d = confluence.get("signal_1d", "")
     regime_4h = confluence.get("regime_4h", "")
-    regime_1d = confluence.get("regime_1d", "")
 
     # BLOWOFF exception: 4H showing exit urgency while 1D is still bullish
     if regime_4h == "BLOWOFF" and regime_1d in ("MARKUP", "REACC"):
@@ -397,12 +511,14 @@ def _update_history(
     confidence: float,
     divergence: Optional[str],
     current_z: float,
+    current_heat: int,
     cache: Any,
 ) -> None:
     _push(cache.signal_history, symbol, adjusted_signal, _SIGNAL_HISTORY_LEN)
     _push(cache.confidence_history, symbol, confidence, _CONF_HISTORY_LEN)
     _push(cache.divergence_history, symbol, divergence, _DIV_HISTORY_LEN)
     cache.prev_zscore[symbol] = current_z
+    cache.prev_heat[symbol] = current_heat
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +537,7 @@ def process(
     scan_result : dict
         A single result dict from the scanner pipeline (mutated in-place).
     positions : list
-        Open positions for margin safety check.  May be empty.
+        Open positions for margin safety check and cooldown context.  May be empty.
     cache : ScanCache
         The module-level ScanCache instance (for persistent history).
 
@@ -438,6 +554,7 @@ def process(
     original_signal = scan_result.get("signal", "WAIT")
     confidence = float(scan_result.get("confidence", 0.0))
     divergence = scan_result.get("divergence")
+    regime = scan_result.get("regime", "")
     current_heat = int(scan_result.get("heat", 0))
     current_z = float(scan_result.get("zscore", 0.0))
     confluence = scan_result.get("confluence")
@@ -447,6 +564,14 @@ def process(
             confluence = confluence.model_dump()
         except AttributeError:
             confluence = vars(confluence)
+
+    # Determine if this symbol has an open position (used by cooldown filter)
+    symbol_base = symbol.split("/")[0]
+    is_positioned = any(
+        (getattr(p, "symbol", None) or (p.get("symbol") if isinstance(p, dict) else "")
+         or "").split("/")[0] == symbol_base
+        for p in positions
+    )
 
     out = AgentOutput(
         adjusted_signal=original_signal,
@@ -458,10 +583,10 @@ def process(
     # ---------- apply filters in priority order ----------
 
     # F1: Cooldown / trailing (catches flip-flop before anything else)
-    signal = _filter_cooldown(signal, symbol, cache, out)
+    signal = _filter_cooldown(signal, symbol, is_positioned, cache, out)
 
     # F2: BEAR-DIV flapping (single-bar divergence should not block entries)
-    signal = _filter_bear_div_flapping(signal, divergence, symbol, cache, out)
+    signal = _filter_bear_div_flapping(signal, divergence, regime, symbol, cache, out)
 
     # F3: Confidence stability (noisy regimes should not drive upgrades)
     signal = _filter_confidence_stability(signal, confidence, symbol, cache, out)
@@ -487,7 +612,7 @@ def process(
             (p.get("symbol") if isinstance(p, dict) else None) or
             ""
         )
-        if p_symbol.split("/")[0] == symbol.split("/")[0]:
+        if p_symbol.split("/")[0] == symbol_base:
             action: Dict[str, Any] = {"symbol": p_symbol, "signal": signal}
             if signal in _HARD_EXIT_SIGNALS:
                 action["action"] = "EXIT"
@@ -498,6 +623,14 @@ def process(
             else:
                 action["action"] = "MONITOR"
                 action["reason"] = f"Signal weakened to {signal}"
+
+            # F2 gap: if BEAR-DIV confirmed on a held position, attach a warning
+            # even though no signal change occurred (position was opened before divergence)
+            if "bear_div:blocked" in out.filters_fired or "bear_div:reacc_warn" in out.filters_fired:
+                action["bear_div_warning"] = (
+                    "Confirmed BEAR-DIV on held position — monitor for structural breakdown"
+                )
+
             out.position_actions.append(action)
 
     # Mutate scan_result in-place (additive fields only)
@@ -506,7 +639,7 @@ def process(
     scan_result["agent_filters_fired"] = out.filters_fired
 
     # Update persistent history with the ADJUSTED signal
-    _update_history(symbol, signal, confidence, divergence, current_z, cache)
+    _update_history(symbol, signal, confidence, divergence, current_z, current_heat, cache)
 
     if out.filters_fired:
         logger.debug(
