@@ -856,6 +856,7 @@ def get_wallet_profile(address: str) -> Optional[dict]:
 
 
 
+def get_status() -> dict:
     """Module status for API endpoint."""
     return {
         "tracked_wallets": len(_roster),
