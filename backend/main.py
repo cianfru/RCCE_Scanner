@@ -3079,52 +3079,62 @@ async def hyperlens_status():
 
 
 @app.get("/api/hyperlens/roster")
-async def hyperlens_roster():
-    """Current tracked wallet roster with stats."""
+async def hyperlens_roster(cohort: Optional[str] = Query(None)):
+    """Current tracked wallet roster with stats.
+    Optional ?cohort=money_printers|smart_money|elite to filter by cohort."""
     from hl_intelligence import get_roster
-    roster = get_roster()
+    roster = get_roster(cohort=cohort)
     return {"count": len(roster), "wallets": roster}
 
 
 @app.get("/api/hyperlens/consensus")
-async def hyperlens_consensus(symbol: Optional[str] = Query(None)):
+async def hyperlens_consensus(
+    symbol: Optional[str] = Query(None),
+    cohort: Optional[str] = Query(None),
+):
     """Per-symbol smart-money consensus.
 
     Optional ?symbol=BTC filter, otherwise returns all symbols sorted by
     number of positioned wallets.
+    Optional ?cohort=money_printers|smart_money|elite to filter by cohort.
     """
     from hl_intelligence import get_consensus, get_all_consensus
+
+    def _consensus_to_dict(c):
+        d = {
+            "symbol": c.symbol,
+            "trend": c.trend,
+            "confidence": round(c.confidence, 3),
+            "long_count": c.long_count,
+            "short_count": c.short_count,
+            "net_ratio": round(c.net_ratio, 3),
+            "long_notional": round(c.long_notional, 2),
+            "short_notional": round(c.short_notional, 2),
+            "total_tracked": c.total_tracked,
+            # Per-cohort consensus
+            "money_printer": {
+                "trend": c.money_printer_trend,
+                "net_ratio": c.money_printer_net_ratio,
+                "long_count": c.money_printer_long_count,
+                "short_count": c.money_printer_short_count,
+            },
+            "smart_money": {
+                "trend": c.smart_money_trend,
+                "net_ratio": c.smart_money_net_ratio,
+                "long_count": c.smart_money_long_count,
+                "short_count": c.smart_money_short_count,
+            },
+        }
+        return d
 
     if symbol:
         c = get_consensus(symbol.upper())
         if c is None:
             return {"symbol": symbol.upper(), "trend": "NO_DATA", "wallets": 0}
-        return {
-            "symbol": c.symbol,
-            "trend": c.trend,
-            "confidence": round(c.confidence, 3),
-            "long_count": c.long_count,
-            "short_count": c.short_count,
-            "net_ratio": round(c.net_ratio, 3),
-            "long_notional": round(c.long_notional, 2),
-            "short_notional": round(c.short_notional, 2),
-            "total_tracked": c.total_tracked,
-        }
+        return _consensus_to_dict(c)
 
     all_c = get_all_consensus()
-    results = []
-    for c in all_c.values():
-        results.append({
-            "symbol": c.symbol,
-            "trend": c.trend,
-            "confidence": round(c.confidence, 3),
-            "long_count": c.long_count,
-            "short_count": c.short_count,
-            "net_ratio": round(c.net_ratio, 3),
-            "long_notional": round(c.long_notional, 2),
-            "short_notional": round(c.short_notional, 2),
-            "total_tracked": c.total_tracked,
-        })
+    results = [_consensus_to_dict(c) for c in all_c.values()]
     # Sort by total positioned wallets
     results.sort(key=lambda x: x["long_count"] + x["short_count"], reverse=True)
     return {"count": len(results), "consensus": results}

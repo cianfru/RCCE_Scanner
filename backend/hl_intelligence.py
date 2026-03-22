@@ -42,12 +42,19 @@ _POSITION_HISTORY_LEN = 300
 _SNAPSHOT_MAX_AGE_S = 15 * 60              # 15 minutes (3 missed polls)
 
 # Filtering thresholds
-_MIN_ACCOUNT_VALUE = 500_000               # $500k minimum
-_MIN_ROI_PCT = 30.0                        # 30% monthly ROI minimum
-_ROSTER_SIZE = 150                         # Top 150 qualifying wallets
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
+
+# Cohort definitions
+_ROSTER_COHORTS = {
+    "money_printers": 200,  # top performers by ROI
+    "smart_money": 200,      # largest wallets by AV
+}
+_MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
+_MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
+_SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
+_POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
 # Consensus thresholds
 _BULLISH_THRESHOLD = 0.15                  # net_ratio > 15% = BULLISH
@@ -115,13 +122,25 @@ class SymbolConsensus:
     avg_leverage: float = 0.0     # Average leverage across all positioned wallets
     top_longs: List[str] = field(default_factory=list)    # Top wallet addresses
     top_shorts: List[str] = field(default_factory=list)
+    # Per-cohort consensus
+    money_printer_trend: str = "NEUTRAL"
+    money_printer_net_ratio: float = 0.0
+    money_printer_long_count: int = 0
+    money_printer_short_count: int = 0
+    smart_money_trend: str = "NEUTRAL"
+    smart_money_net_ratio: float = 0.0
+    smart_money_long_count: int = 0
+    smart_money_short_count: int = 0
 
 
 # ---------------------------------------------------------------------------
 # In-memory stores
 # ---------------------------------------------------------------------------
 
-_roster: List[TrackedWallet] = []
+_roster: List[TrackedWallet] = []                       # merged & deduplicated (all unique wallets)
+_roster_money_printers: List[TrackedWallet] = []         # top 200 by ROI
+_roster_smart_money: List[TrackedWallet] = []            # top 200 by AV
+_wallet_cohorts: Dict[str, set] = {}                     # address -> {"money_printer", "smart_money", "elite"}
 _roster_updated_at: float = 0.0
 
 # Per-wallet position history: address -> deque of snapshots
@@ -150,13 +169,19 @@ _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "
 # ---------------------------------------------------------------------------
 
 async def refresh_leaderboard() -> int:
-    """Fetch HL leaderboard and rebuild the tracking roster.
+    """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
 
-    Returns the number of wallets in the roster.
+    Two independent cohorts are built from the same leaderboard data:
+    - Money Printers: top 200 by ROI (>= 30%, AV >= $50k)
+    - Smart Money: top 200 by AV (>= $1M)
+    - Elite: wallets in BOTH cohorts (auto-tagged)
+
+    Returns the number of wallets in the merged roster.
     """
-    global _roster, _roster_updated_at
+    global _roster, _roster_money_printers, _roster_smart_money
+    global _wallet_cohorts, _roster_updated_at
 
-    logger.info("HyperLens: refreshing leaderboard roster...")
+    logger.info("HyperLens: refreshing leaderboard roster (cohort mode)...")
 
     timeout = aiohttp.ClientTimeout(total=45)  # Large response
     try:
@@ -176,8 +201,8 @@ async def refresh_leaderboard() -> int:
         logger.warning("Leaderboard empty or unexpected format: %s", type(raw))
         return len(_roster)
 
-    # Parse and filter
-    candidates: List[TrackedWallet] = []
+    # Parse all wallets (filter out market makers only)
+    all_wallets: List[TrackedWallet] = []
     for entry in rows:
         try:
             # Handle different field naming conventions
@@ -208,12 +233,6 @@ async def refresh_leaderboard() -> int:
                 pnl = float(entry.get("pnl", 0) or 0)
                 roi = float(entry.get("roi", 0) or 0) * 100
 
-            # Apply filters
-            if account_value < _MIN_ACCOUNT_VALUE:
-                continue
-            if roi < _MIN_ROI_PCT:
-                continue
-
             # Market maker filter: vlm/AV ratio > 100 = likely MM/vault
             if account_value > 0 and monthly_vlm / account_value > _MM_VLM_RATIO:
                 continue
@@ -221,7 +240,7 @@ async def refresh_leaderboard() -> int:
             # Compute ranking score: monthly_roi * log(accountValue)
             score = roi * math.log(max(account_value, 1))
 
-            candidates.append(TrackedWallet(
+            all_wallets.append(TrackedWallet(
                 address=address.lower(),
                 display_name=display_name,
                 account_value=account_value,
@@ -232,19 +251,59 @@ async def refresh_leaderboard() -> int:
         except Exception:
             continue  # Skip malformed entries
 
-    # Sort by score descending, take top N
-    candidates.sort(key=lambda w: w.score, reverse=True)
-    _roster = candidates[:_ROSTER_SIZE]
+    # --- Build Money Printers cohort ---
+    mp_candidates = [
+        w for w in all_wallets
+        if w.roi >= _MP_MIN_ROI_PCT and w.account_value >= _MP_MIN_ACCOUNT_VALUE
+    ]
+    mp_candidates.sort(key=lambda w: w.roi, reverse=True)
+    _roster_money_printers = mp_candidates[:_ROSTER_COHORTS["money_printers"]]
+    mp_addresses = {w.address for w in _roster_money_printers}
+
+    # --- Build Smart Money cohort ---
+    sm_candidates = [
+        w for w in all_wallets
+        if w.account_value >= _SM_MIN_ACCOUNT_VALUE
+    ]
+    sm_candidates.sort(key=lambda w: w.account_value, reverse=True)
+    _roster_smart_money = sm_candidates[:_ROSTER_COHORTS["smart_money"]]
+    sm_addresses = {w.address for w in _roster_smart_money}
+
+    # --- Build cohort tags ---
+    _wallet_cohorts.clear()
+    for addr in mp_addresses:
+        _wallet_cohorts.setdefault(addr, set()).add("money_printer")
+    for addr in sm_addresses:
+        _wallet_cohorts.setdefault(addr, set()).add("smart_money")
+    # Elite = in both cohorts
+    elite_addresses = mp_addresses & sm_addresses
+    for addr in elite_addresses:
+        _wallet_cohorts[addr].add("elite")
+
+    # --- Merge into deduplicated _roster ---
+    seen: set = set()
+    merged: List[TrackedWallet] = []
+    # Add money printers first (preserves MP rank ordering), then smart money
+    for w in _roster_money_printers:
+        if w.address not in seen:
+            seen.add(w.address)
+            merged.append(w)
+    for w in _roster_smart_money:
+        if w.address not in seen:
+            seen.add(w.address)
+            merged.append(w)
+    _roster = merged
     _roster_updated_at = time.time()
 
     logger.info(
-        "HyperLens: roster built — %d wallets from %d candidates (filtered from %d total). "
-        "Top score: %.1f, min AV: $%.0fk",
+        "HyperLens: cohort roster built — %d total (%d money_printers, %d smart_money, "
+        "%d elite) from %d parsed (%d raw rows).",
         len(_roster),
-        len(candidates),
+        len(_roster_money_printers),
+        len(_roster_smart_money),
+        len(elite_addresses),
+        len(all_wallets),
         len(rows),
-        _roster[0].score if _roster else 0,
-        _roster[-1].account_value / 1000 if _roster else 0,
     )
     return len(_roster)
 
@@ -397,17 +456,39 @@ async def poll_positions() -> int:
 # Consensus computation
 # ---------------------------------------------------------------------------
 
+def _compute_cohort_trend(long_count: int, short_count: int) -> tuple:
+    """Compute trend and net_ratio for a cohort subset.
+
+    Returns (trend, net_ratio).
+    """
+    total = long_count + short_count
+    if total == 0:
+        return ("NEUTRAL", 0.0)
+    net_ratio = (long_count - short_count) / total
+    if net_ratio > _BULLISH_THRESHOLD:
+        trend = "BULLISH"
+    elif net_ratio < _BEARISH_THRESHOLD:
+        trend = "BEARISH"
+    else:
+        trend = "NEUTRAL"
+    return (trend, net_ratio)
+
+
 def _recompute_consensus() -> None:
     """Aggregate latest positions across all wallets into per-symbol consensus.
 
     Trend is derived from notional-weighted net_score (not raw wallet count)
     so a single whale with $10M has more influence than ten $50k wallets.
     Stale snapshots (>15min old) are excluded to prevent ghost data.
+
+    Also computes per-cohort consensus (money_printer / smart_money).
     """
     global _consensus
 
     now = time.time()
     score_map = {w.address: w.score for w in _roster}
+    mp_addresses = {w.address for w in _roster_money_printers}
+    sm_addresses = {w.address for w in _roster_smart_money}
 
     # Collect per-symbol data (skip stale + MM-like wallets)
     sym_data: Dict[str, dict] = {}
@@ -430,6 +511,9 @@ def _recompute_consensus() -> None:
             continue
 
         fresh_wallet_count += 1
+        addr = wallet.address
+        is_mp = addr in mp_addresses
+        is_sm = addr in sm_addresses
 
         for pos in latest.positions:
             coin = pos.coin
@@ -440,6 +524,9 @@ def _recompute_consensus() -> None:
                     "weighted_sum": 0.0,
                     "leverages": [],
                     "top_longs": [], "top_shorts": [],
+                    # Per-cohort counters
+                    "mp_long": 0, "mp_short": 0,
+                    "sm_long": 0, "sm_short": 0,
                 }
 
             d = sym_data[coin]
@@ -455,11 +542,19 @@ def _recompute_consensus() -> None:
                 d["long_notional"] += pos.size_usd
                 d["weighted_sum"] += notional_weight
                 d["top_longs"].append(wallet.address)
+                if is_mp:
+                    d["mp_long"] += 1
+                if is_sm:
+                    d["sm_long"] += 1
             else:
                 d["short_count"] += 1
                 d["short_notional"] += pos.size_usd
                 d["weighted_sum"] -= notional_weight
                 d["top_shorts"].append(wallet.address)
+                if is_mp:
+                    d["mp_short"] += 1
+                if is_sm:
+                    d["sm_short"] += 1
 
     # Build consensus objects
     new_consensus: Dict[str, SymbolConsensus] = {}
@@ -498,6 +593,10 @@ def _recompute_consensus() -> None:
         sym_leverages = d["leverages"]
         sym_avg_lev = sum(sym_leverages) / len(sym_leverages) if sym_leverages else 0.0
 
+        # Per-cohort trend computation
+        mp_trend, mp_net_ratio = _compute_cohort_trend(d["mp_long"], d["mp_short"])
+        sm_trend, sm_net_ratio = _compute_cohort_trend(d["sm_long"], d["sm_short"])
+
         new_consensus[coin] = SymbolConsensus(
             symbol=coin,
             long_count=d["long_count"],
@@ -513,6 +612,15 @@ def _recompute_consensus() -> None:
             avg_leverage=round(sym_avg_lev, 2),
             top_longs=d["top_longs"][:5],
             top_shorts=d["top_shorts"][:5],
+            # Per-cohort consensus
+            money_printer_trend=mp_trend,
+            money_printer_net_ratio=round(mp_net_ratio, 4),
+            money_printer_long_count=d["mp_long"],
+            money_printer_short_count=d["mp_short"],
+            smart_money_trend=sm_trend,
+            smart_money_net_ratio=round(sm_net_ratio, 4),
+            smart_money_long_count=d["sm_long"],
+            smart_money_short_count=d["sm_short"],
         )
 
     _consensus = new_consensus
@@ -548,15 +656,35 @@ def get_all_consensus() -> Dict[str, SymbolConsensus]:
     return dict(_consensus)
 
 
-def get_roster() -> List[dict]:
-    """Get current roster as serializable dicts."""
+def get_roster(cohort: Optional[str] = None) -> List[dict]:
+    """Get current roster as serializable dicts.
+
+    Args:
+        cohort: Optional filter — "money_printers", "smart_money", or None for all.
+
+    Each wallet includes cohort tags and cohort-specific rank.
+    """
+    # Select source list based on cohort filter
+    if cohort == "money_printers":
+        source = _roster_money_printers
+    elif cohort == "smart_money":
+        source = _roster_smart_money
+    else:
+        source = _roster
+
+    # Pre-build cohort rank lookups
+    mp_rank = {w.address: i + 1 for i, w in enumerate(_roster_money_printers)}
+    sm_rank = {w.address: i + 1 for i, w in enumerate(_roster_smart_money)}
+
     result = []
-    for i, w in enumerate(_roster):
+    for i, w in enumerate(source):
         # Get latest position count
         snaps = _snapshots.get(w.address)
         pos_count = len(snaps[-1].positions) if snaps else 0
 
-        result.append({
+        cohorts_list = sorted(_wallet_cohorts.get(w.address, set()))
+
+        entry = {
             "rank": i + 1,
             "address": w.address,
             "display_name": w.display_name,
@@ -565,7 +693,16 @@ def get_roster() -> List[dict]:
             "roi": w.roi,
             "score": round(w.score, 1),
             "position_count": pos_count,
-        })
+            "cohorts": cohorts_list,
+        }
+
+        # Add cohort-specific ranks when available
+        if w.address in mp_rank:
+            entry["mp_rank"] = mp_rank[w.address]
+        if w.address in sm_rank:
+            entry["sm_rank"] = sm_rank[w.address]
+
+        result.append(entry)
     return result
 
 
@@ -626,6 +763,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                     "entry_px": pos.entry_px,
                     "unrealized_pnl": round(pos.unrealized_pnl, 2),
                     "leverage": pos.leverage,
+                    "cohorts": sorted(_wallet_cohorts.get(wallet.address, set())),
                 })
     # Sort by wallet score descending
     result.sort(key=lambda x: x["wallet_score"], reverse=True)
@@ -930,6 +1068,11 @@ def get_wallet_profile(address: str) -> Optional[dict]:
     conc_risk = concentration * 30                          # 0-30 pts (100% in one = max)
     risk_score = round(min(lev_risk + liq_risk + conc_risk, 100.0), 1)
 
+    # Cohort info
+    cohorts_list = sorted(_wallet_cohorts.get(address, set()))
+    mp_rank_val = next((i + 1 for i, w in enumerate(_roster_money_printers) if w.address == address), None)
+    sm_rank_val = next((i + 1 for i, w in enumerate(_roster_smart_money) if w.address == address), None)
+
     return {
         "address": address,
         "display_name": wallet.display_name,
@@ -938,6 +1081,9 @@ def get_wallet_profile(address: str) -> Optional[dict]:
         "monthly_roi": wallet.roi,
         "monthly_pnl": wallet.pnl,
         "score": round(wallet.score, 1),
+        "cohorts": cohorts_list,
+        "mp_rank": mp_rank_val,
+        "sm_rank": sm_rank_val,
         # Performance stats
         "stats": {
             "total_trades": total_closed,
@@ -1405,8 +1551,14 @@ def get_smart_money_orders(symbol: str = None) -> list:
 
 def get_status() -> dict:
     """Module status for API endpoint."""
+    mp_addrs = {w.address for w in _roster_money_printers}
+    sm_addrs = {w.address for w in _roster_smart_money}
+    elite_count = len(mp_addrs & sm_addrs)
     return {
         "tracked_wallets": len(_roster),
+        "money_printer_count": len(_roster_money_printers),
+        "smart_money_count": len(_roster_smart_money),
+        "elite_count": elite_count,
         "wallets_with_data": len(_snapshots),
         "consensus_symbols": len(_consensus),
         "last_poll": _last_poll_at or None,

@@ -311,9 +311,23 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w })
 
 // ─── STATUS STRIP ────────────────────────────────────────────────────────────
 
-function StatusStrip({ status }) {
+function StatusStrip({ status, cohort, roster }) {
+  // Compute cohort counts from roster data
+  const mpCount = roster.filter(w => (w.cohorts || []).includes("money_printer")).length;
+  const smCount = roster.filter(w => (w.cohorts || []).includes("smart_money")).length;
+  const eliteCount = roster.filter(w =>
+    (w.cohorts || []).includes("money_printer") && (w.cohorts || []).includes("smart_money")
+  ).length;
+
+  const walletLabel = cohort === "all"
+    ? (status.tracked_wallets || 0)
+    : cohort === "money_printers" ? mpCount
+    : cohort === "smart_money" ? smCount
+    : cohort === "elite" ? eliteCount
+    : (status.tracked_wallets || 0);
+
   const items = [
-    { label: "WALLETS", value: status.tracked_wallets || 0 },
+    { label: "WALLETS", value: walletLabel },
     { label: "WITH DATA", value: status.wallets_with_data || 0 },
     { label: "SYMBOLS", value: status.consensus_symbols || 0 },
     { label: "POLLS", value: status.poll_count || 0 },
@@ -336,6 +350,30 @@ function StatusStrip({ status }) {
           <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text1 }}>{value}</span>
         </div>
       ))}
+      {/* Cohort breakdown counts */}
+      {cohort === "all" && (mpCount > 0 || smCount > 0 || eliteCount > 0) && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 4,
+          padding: "3px 9px", borderRadius: 6,
+          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+        }}>
+          {mpCount > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.green }}>{mpCount} MP</span>
+          )}
+          {mpCount > 0 && smCount > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>|</span>
+          )}
+          {smCount > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.accent }}>{smCount} SM</span>
+          )}
+          {smCount > 0 && eliteCount > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>|</span>
+          )}
+          {eliteCount > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.yellow }}>{eliteCount} Elite</span>
+          )}
+        </div>
+      )}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{
           width: 6, height: 6, borderRadius: "50%",
@@ -384,7 +422,34 @@ function ConsensusBar({ long_count, short_count }) {
 
 // ─── CONSENSUS TABLE (enhanced) ─────────────────────────────────────────────
 
-function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
+// Helper to extract cohort-specific fields from a consensus entry
+function getCohortFields(c, cohort) {
+  if (cohort === "money_printers") {
+    return {
+      long_count: c.money_printer_long_count ?? c.long_count,
+      short_count: c.money_printer_short_count ?? c.short_count,
+      net_ratio: c.money_printer_net_ratio ?? c.net_ratio,
+      trend: c.money_printer_trend ?? c.trend,
+    };
+  }
+  if (cohort === "smart_money") {
+    return {
+      long_count: c.smart_money_long_count ?? c.long_count,
+      short_count: c.smart_money_short_count ?? c.short_count,
+      net_ratio: c.smart_money_net_ratio ?? c.net_ratio,
+      trend: c.smart_money_trend ?? c.trend,
+    };
+  }
+  // "all" or "elite" — use aggregate fields
+  return {
+    long_count: c.long_count,
+    short_count: c.short_count,
+    net_ratio: c.net_ratio,
+    trend: c.trend,
+  };
+}
+
+function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) {
   const [sortKey, setSortKey] = useState("positioned");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -399,22 +464,24 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
       items = items.filter(c => c.symbol.includes(q));
     }
     items.sort((a, b) => {
+      const aF = getCohortFields(a, cohort);
+      const bF = getCohortFields(b, cohort);
       let va, vb;
       switch (sortKey) {
         case "symbol": va = a.symbol; vb = b.symbol; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-        case "trend": va = a.trend; vb = b.trend; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-        case "long": va = a.long_count; vb = b.long_count; break;
-        case "short": va = a.short_count; vb = b.short_count; break;
+        case "trend": va = aF.trend; vb = bF.trend; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        case "long": va = aF.long_count; vb = bF.long_count; break;
+        case "short": va = aF.short_count; vb = bF.short_count; break;
         case "notional": va = (a.long_notional || 0) + (a.short_notional || 0); vb = (b.long_notional || 0) + (b.short_notional || 0); break;
-        case "net": va = a.net_ratio; vb = b.net_ratio; break;
+        case "net": va = aF.net_ratio; vb = bF.net_ratio; break;
         case "confidence": va = a.confidence || 0; vb = b.confidence || 0; break;
         case "leverage": va = a.avg_leverage || 0; vb = b.avg_leverage || 0; break;
-        default: va = a.long_count + a.short_count; vb = b.long_count + b.short_count;
+        default: va = aF.long_count + aF.short_count; vb = bF.long_count + bF.short_count;
       }
       return sortAsc ? va - vb : vb - va;
     });
     return items;
-  }, [consensus, filter, sortKey, sortAsc]);
+  }, [consensus, filter, sortKey, sortAsc, cohort]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -442,7 +509,8 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
         </thead>
         <tbody>
           {filtered.map((c) => {
-            const positioned = c.long_count + c.short_count;
+            const cf = getCohortFields(c, cohort);
+            const positioned = cf.long_count + cf.short_count;
             return (
               <tr
                 key={c.symbol}
@@ -455,31 +523,31 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
                   <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                     {c.symbol}
                   </div>
-                  <ConfidenceBar confidence={c.confidence} trend={c.trend} />
+                  <ConfidenceBar confidence={c.confidence} trend={cf.trend} />
                 </td>
                 <td style={{ padding: "6px 10px", textAlign: "center" }}>
                   <span style={{
                     fontFamily: T.mono, fontSize: 12, fontWeight: 700,
                     padding: "2px 8px", borderRadius: 4,
-                    color: trendColor(c.trend),
-                    background: `${trendColor(c.trend)}15`,
-                    border: `1px solid ${trendColor(c.trend)}25`,
+                    color: trendColor(cf.trend),
+                    background: `${trendColor(cf.trend)}15`,
+                    border: `1px solid ${trendColor(cf.trend)}25`,
                   }}>
-                    {c.trend}
+                    {cf.trend}
                   </span>
                 </td>
                 <td style={{ padding: "6px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text2 }}>
                   {positioned}
                 </td>
                 <td style={{ padding: "6px 10px" }}>
-                  <ConsensusBar long_count={c.long_count} short_count={c.short_count} />
+                  <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
                 </td>
                 <td style={{
                   padding: "6px 10px", textAlign: "center",
                   fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-                  color: c.net_ratio > 0.1 ? T.green : c.net_ratio < -0.1 ? T.red : T.text3,
+                  color: cf.net_ratio > 0.1 ? T.green : cf.net_ratio < -0.1 ? T.red : T.text3,
                 }}>
-                  {c.net_ratio > 0 ? "+" : ""}{(c.net_ratio * 100).toFixed(0)}%
+                  {cf.net_ratio > 0 ? "+" : ""}{(cf.net_ratio * 100).toFixed(0)}%
                 </td>
                 <td style={{
                   padding: "6px 10px", textAlign: "center",
@@ -517,10 +585,14 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
 
 // ─── HEATMAP TAB ────────────────────────────────────────────────────────────
 
-function HeatmapGrid({ consensus, onSymbolClick }) {
+function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
   const sorted = useMemo(() => {
-    return [...consensus].sort((a, b) => (b.long_count + b.short_count) - (a.long_count + a.short_count));
-  }, [consensus]);
+    return [...consensus].sort((a, b) => {
+      const aF = getCohortFields(a, cohort);
+      const bF = getCohortFields(b, cohort);
+      return (bF.long_count + bF.short_count) - (aF.long_count + aF.short_count);
+    });
+  }, [consensus, cohort]);
 
   if (sorted.length === 0) {
     return (
@@ -561,7 +633,8 @@ function HeatmapGrid({ consensus, onSymbolClick }) {
 
       {/* Symbol rows */}
       {sorted.map((c) => {
-        const ratio = c.net_ratio || 0;
+        const cf = getCohortFields(c, cohort);
+        const ratio = cf.net_ratio || 0;
         return (
           <div
             key={c.symbol}
@@ -615,7 +688,7 @@ function HeatmapGrid({ consensus, onSymbolClick }) {
 
 // ─── ROSTER TABLE (enhanced) ────────────────────────────────────────────────
 
-function RosterTable({ wallets, consensus, onWalletClick, isMobile }) {
+function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
   const [sortKey, setSortKey] = useState("rank");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -636,7 +709,17 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile }) {
   }, [consensus]);
 
   const sorted = useMemo(() => {
-    const items = [...wallets];
+    let items = [...wallets];
+    // Client-side cohort filtering
+    if (cohort === "money_printers") {
+      items = items.filter(w => (w.cohorts || []).includes("money_printer"));
+    } else if (cohort === "smart_money") {
+      items = items.filter(w => (w.cohorts || []).includes("smart_money"));
+    } else if (cohort === "elite") {
+      items = items.filter(w =>
+        (w.cohorts || []).includes("money_printer") && (w.cohorts || []).includes("smart_money")
+      );
+    }
     items.sort((a, b) => {
       let va, vb;
       switch (sortKey) {
@@ -650,7 +733,7 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile }) {
       return sortAsc ? va - vb : vb - va;
     });
     return items;
-  }, [wallets, sortKey, sortAsc]);
+  }, [wallets, sortKey, sortAsc, cohort]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -710,6 +793,25 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile }) {
                   {w.display_name && (
                     <span style={{ fontFamily: T.font, fontSize: 12, color: T.text4, marginLeft: 6 }}>
                       {w.display_name.length > 12 ? w.display_name.slice(0, 12) + "..." : w.display_name}
+                    </span>
+                  )}
+                  {/* Cohort badges */}
+                  {(w.cohorts || []).length > 0 && (
+                    <span style={{ marginLeft: 6, display: "inline-flex", gap: 3 }}>
+                      {(w.cohorts || []).includes("money_printer") && (
+                        <span style={{
+                          fontSize: 10, padding: "1px 4px", borderRadius: 4,
+                          color: T.green, background: `${T.green}15`,
+                          fontFamily: T.mono, fontWeight: 600,
+                        }}>{"\uD83D\uDCB0"}</span>
+                      )}
+                      {(w.cohorts || []).includes("smart_money") && (
+                        <span style={{
+                          fontSize: 10, padding: "1px 4px", borderRadius: 4,
+                          color: T.accent, background: `${T.accent}15`,
+                          fontFamily: T.mono, fontWeight: 600,
+                        }}>{"\uD83D\uDC0B"}</span>
+                      )}
                     </span>
                   )}
                 </td>
@@ -2317,6 +2419,45 @@ function TabSwitcher({ active, onChange }) {
   );
 }
 
+// ─── COHORT FILTER ──────────────────────────────────────────────────────────
+
+const COHORT_OPTIONS = [
+  { key: "all", label: "ALL", color: T.text1 },
+  { key: "money_printers", label: "Money Printers", color: T.green, emoji: "\uD83D\uDCB0" },
+  { key: "smart_money", label: "Smart Money", color: T.accent, emoji: "\uD83D\uDC0B" },
+  { key: "elite", label: "Elite", color: T.yellow, emoji: "\u2B50" },
+];
+
+function CohortFilter({ active, onChange }) {
+  return (
+    <div style={{
+      display: "flex", gap: 4, flexWrap: "wrap",
+    }}>
+      {COHORT_OPTIONS.map(({ key, label, color, emoji }) => {
+        const isActive = active === key;
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            style={{
+              padding: "3px 10px", borderRadius: 12,
+              fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+              color: isActive ? color : T.text4,
+              background: isActive ? `${color}18` : T.overlay04,
+              border: isActive ? `1px solid ${color}30` : `1px solid ${T.overlay06}`,
+              cursor: "pointer", transition: "all 0.2s ease",
+              letterSpacing: "0.03em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {emoji ? `${emoji} ${label}` : label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2324,6 +2465,7 @@ function TabSwitcher({ active, onChange }) {
 export default function HyperLensPanel({ isMobile }) {
   const [tab, setTab] = useState("consensus");
   const [filter, setFilter] = useState("");
+  const [cohort, setCohort] = useState("all");
   const [status, setStatus] = useState({});
   const [consensus, setConsensus] = useState([]);
   const [roster, setRoster] = useState([]);
@@ -2333,10 +2475,11 @@ export default function HyperLensPanel({ isMobile }) {
 
   const loadData = useCallback(async () => {
     try {
+      const cohortParam = cohort !== "all" ? `?cohort=${cohort}` : "";
       const [statusRes, consensusRes, rosterRes] = await Promise.all([
         fetch(`${API}/api/hyperlens/status`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/consensus`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/roster`).then(r => r.json()),
+        fetch(`${API}/api/hyperlens/consensus${cohortParam}`).then(r => r.json()),
+        fetch(`${API}/api/hyperlens/roster${cohortParam}`).then(r => r.json()),
       ]);
       setStatus(statusRes);
       setConsensus(consensusRes.consensus || []);
@@ -2346,7 +2489,7 @@ export default function HyperLensPanel({ isMobile }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cohort]);
 
   useEffect(() => {
     loadData();
@@ -2354,9 +2497,9 @@ export default function HyperLensPanel({ isMobile }) {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  const bullish = consensus.filter(c => c.trend === "BULLISH").length;
-  const bearish = consensus.filter(c => c.trend === "BEARISH").length;
-  const neutral = consensus.filter(c => c.trend === "NEUTRAL").length;
+  const bullish = consensus.filter(c => getCohortFields(c, cohort).trend === "BULLISH").length;
+  const bearish = consensus.filter(c => getCohortFields(c, cohort).trend === "BEARISH").length;
+  const neutral = consensus.filter(c => getCohortFields(c, cohort).trend === "NEUTRAL").length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2409,7 +2552,7 @@ export default function HyperLensPanel({ isMobile }) {
           )}
         </div>
 
-        <StatusStrip status={status} />
+        <StatusStrip status={status} cohort={cohort} roster={roster} />
 
         {/* Controls bar */}
         <div style={{
@@ -2417,6 +2560,7 @@ export default function HyperLensPanel({ isMobile }) {
           display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
+          <CohortFilter active={cohort} onChange={setCohort} />
 
           {tab === "consensus" && (
             <input
@@ -2469,12 +2613,14 @@ export default function HyperLensPanel({ isMobile }) {
               filter={filter}
               onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
               isMobile={isMobile}
+              cohort={cohort}
             />
           )}
           {tab === "heatmap" && (
             <HeatmapGrid
               consensus={consensus}
               onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
+              cohort={cohort}
             />
           )}
           {tab === "roster" && (
@@ -2483,6 +2629,7 @@ export default function HyperLensPanel({ isMobile }) {
               consensus={consensus}
               onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
               isMobile={isMobile}
+              cohort={cohort}
             />
           )}
           {tab === "pressure" && (
