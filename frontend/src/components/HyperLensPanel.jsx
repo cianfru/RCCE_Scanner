@@ -981,13 +981,7 @@ export default function HyperLensPanel({ isMobile }) {
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
-              fontFamily: T.font, fontSize: 18, fontWeight: 700,
-              color: T.text1, letterSpacing: "-0.02em",
-            }}>
-              HyperLens
-            </span>
-            <span style={{
-              fontFamily: T.mono, fontSize: 12, color: T.text4,
+              fontFamily: T.mono, fontSize: 13, color: T.text4,
               padding: "2px 8px", borderRadius: 4,
               background: T.overlay06,
             }}>
