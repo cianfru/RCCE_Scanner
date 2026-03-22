@@ -115,7 +115,7 @@ function ModalOverlay({ children, onClose }) {
       }}
     >
       <div style={{
-        width: "100%", maxWidth: 780, maxHeight: "88vh",
+        width: "100%", maxWidth: 900, maxHeight: "88vh",
         overflowY: "auto",
         borderRadius: 12,
         border: `1px solid ${T.border}`,
@@ -786,6 +786,168 @@ function StatPill({ label, value, color }) {
 
 // ─── WALLET PROFILE MODAL (major upgrade) ───────────────────────────────────
 
+// ─── EQUITY CHART (full-width SVG like HyperTracker) ───────────────────────
+
+function EquityChart({ data, width = 500, height = 120 }) {
+  const containerRef = useRef(null);
+  const [cw, setCw] = useState(width);
+  useEffect(() => {
+    if (containerRef.current) setCw(containerRef.current.offsetWidth);
+  }, []);
+
+  if (!data || data.length < 2) {
+    return (
+      <div ref={containerRef} style={{ width: "100%", height, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Collecting equity data...</span>
+      </div>
+    );
+  }
+
+  const values = data.map(d => d.value ?? d);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+  const pad = { top: 8, right: 8, bottom: 20, left: 50 };
+  const chartW = cw - pad.left - pad.right;
+  const chartH = height - pad.top - pad.bottom;
+  const isUp = values[values.length - 1] >= values[0];
+  const lineColor = isUp ? T.green : T.red;
+
+  const points = values.map((v, i) => ({
+    x: pad.left + (i / (values.length - 1)) * chartW,
+    y: pad.top + chartH - ((v - minV) / range) * chartH,
+  }));
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${(pad.left + chartW).toFixed(1)},${(pad.top + chartH).toFixed(1)} L${pad.left},${(pad.top + chartH).toFixed(1)} Z`;
+  const gradId = `eq-${Math.random().toString(36).slice(2, 8)}`;
+
+  // Y-axis labels
+  const yLabels = [maxV, (maxV + minV) / 2, minV];
+
+  return (
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <svg width={cw} height={height} viewBox={`0 0 ${cw} ${height}`} style={{ display: "block" }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {/* Grid lines */}
+        {yLabels.map((v, i) => {
+          const y = pad.top + chartH - ((v - minV) / range) * chartH;
+          return (
+            <g key={i}>
+              <line x1={pad.left} y1={y} x2={cw - pad.right} y2={y}
+                stroke={T.border} strokeWidth="0.5" strokeDasharray="3,3" />
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" fill={T.text4}
+                fontFamily={T.mono} fontSize="9">{fmt$(v)}</text>
+            </g>
+          );
+        })}
+        <path d={areaPath} fill={`url(#${gradId})`} />
+        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
+        {/* Endpoint dot */}
+        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="3" fill={lineColor} />
+        {/* Latest value label */}
+        <text x={points[points.length - 1].x} y={points[points.length - 1].y - 8}
+          textAnchor="end" fill={lineColor} fontFamily={T.mono} fontSize="10" fontWeight="700">
+          {fmt$(values[values.length - 1])}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// ─── BIAS GAUGE (like HyperTracker "Perp Bias") ────────────────────────────
+
+function BiasGauge({ positions }) {
+  if (!positions || positions.length === 0) return null;
+  const longVal = positions.filter(p => p.side === "LONG").reduce((s, p) => s + (p.size_usd || 0), 0);
+  const shortVal = positions.filter(p => p.side === "SHORT").reduce((s, p) => s + (p.size_usd || 0), 0);
+  const total = longVal + shortVal;
+  if (total === 0) return null;
+  const ratio = (longVal - shortVal) / total; // -1 to +1
+
+  const biasLabel = ratio > 0.6 ? "Very Bullish" : ratio > 0.2 ? "Bullish" :
+    ratio < -0.6 ? "Very Bearish" : ratio < -0.2 ? "Bearish" : "Neutral";
+  const biasColor = ratio > 0.2 ? T.green : ratio < -0.2 ? T.red : T.text4;
+
+  return (
+    <div style={{
+      padding: "10px 14px", borderRadius: 8,
+      background: T.overlay04, border: `1px solid ${T.overlay06}`,
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+      minWidth: 110,
+    }}>
+      <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>PERP BIAS</span>
+      <span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700, color: biasColor, fontStyle: "italic" }}>
+        {biasLabel}
+      </span>
+      {/* Mini long/short bar */}
+      <div style={{ width: 90, height: 4, borderRadius: 2, background: T.overlay06, overflow: "hidden", display: "flex" }}>
+        <div style={{ width: `${(longVal / total) * 100}%`, height: "100%", background: T.green }} />
+        <div style={{ width: `${(shortVal / total) * 100}%`, height: "100%", background: T.red }} />
+      </div>
+      <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+        L {fmt$(longVal)} / S {fmt$(shortVal)}
+      </span>
+    </div>
+  );
+}
+
+// ─── DIST TO LIQ BAR (colored progress bar like HyperTracker) ──────────────
+
+function LiqDistBar({ pct }) {
+  if (pct == null || pct <= 0) return <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text4 }}>--</span>;
+  const clamped = Math.min(pct, 100);
+  const color = clamped > 50 ? T.green : clamped > 25 ? T.yellow : T.red;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 80 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color, minWidth: 32, textAlign: "right" }}>
+        {clamped.toFixed(0)}%
+      </span>
+      <div style={{ flex: 1, height: 4, borderRadius: 2, background: T.overlay06, overflow: "hidden", minWidth: 40 }}>
+        <div style={{
+          width: `${clamped}%`, height: "100%", borderRadius: 2,
+          background: color, transition: "width 0.3s",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── WALLET TAG BADGES (derived like HyperTracker's Leviathan/Money Printer) ─
+
+function WalletTags({ data }) {
+  const tags = [];
+  const av = data.account_value || 0;
+  const roi = data.monthly_roi || 0;
+  if (av >= 10e6) tags.push({ label: "Leviathan", color: "#a78bfa", emoji: "\ud83d\udc0b" });
+  else if (av >= 1e6) tags.push({ label: "Whale", color: "#60a5fa", emoji: "\ud83d\udc33" });
+  else if (av >= 100e3) tags.push({ label: "Dolphin", color: "#67e8f9", emoji: "\ud83d\udc2c" });
+  if (roi >= 100) tags.push({ label: "Money Printer", color: T.green, emoji: "\ud83d\udcb0" });
+  else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow, emoji: "\u2b50" });
+  if (tags.length === 0) return null;
+  return (
+    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+      {tags.map(t => (
+        <span key={t.label} style={{
+          fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+          padding: "2px 8px", borderRadius: 12,
+          color: t.color, background: `${t.color}15`,
+          border: `1px solid ${t.color}30`,
+        }}>
+          {t.emoji} {t.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── WALLET PROFILE MODAL (HyperTracker-style layout) ──────────────────────
+
 function WalletDetail({ address, onClose }) {
   const [data, setData] = useState(null);
   const [trades, setTrades] = useState([]);
@@ -828,32 +990,35 @@ function WalletDetail({ address, onClose }) {
   const avHistory = data.av_history || [];
   const levStats = data.leverage_stats || {};
 
+  // Compute aggregates like HyperTracker
+  const longValue = positions.filter(p => p.side === "LONG").reduce((s, p) => s + (p.size_usd || 0), 0);
+  const shortValue = positions.filter(p => p.side === "SHORT").reduce((s, p) => s + (p.size_usd || 0), 0);
+  const totalValue = longValue + shortValue;
+  const sumPnl = positions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
+
   const sections = [
-    { key: "positions", label: `Positions (${positions.length})` },
+    { key: "positions", label: `Perps (${positions.length})` },
     { key: "trades", label: `Trades (${trades.length})` },
     { key: "coins", label: "Coin Stats" },
   ];
 
   return (
     <GlassCard style={{ padding: 0 }}>
-      {/* Header */}
+      {/* ── HEADER ROW ── */}
       <div style={{
-        padding: "14px 16px",
+        padding: "14px 16px 10px",
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.accent }}>
+            <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
               {truncAddr(address)}
             </span>
-            {data.display_name && (
-              <span style={{ fontFamily: T.font, fontSize: 13, color: T.text3 }}>{data.display_name}</span>
-            )}
             {data.rank && (
               <span style={{
                 fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                padding: "2px 6px", borderRadius: 4,
+                padding: "2px 7px", borderRadius: 4,
                 color: T.accent, background: `${T.accent}15`, border: `1px solid ${T.accent}25`,
               }}>
                 #{data.rank}
@@ -861,10 +1026,14 @@ function WalletDetail({ address, onClose }) {
             )}
             <RiskBadge score={data.risk_score} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+          {/* Full address + copy + snaps */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>
+              {data.snapshot_count} snaps
+            </span>
             <span
               style={{
-                fontFamily: T.mono, fontSize: 11, color: T.text4,
+                fontFamily: T.mono, fontSize: 10, color: T.text4,
                 cursor: "pointer", userSelect: "all", wordBreak: "break-all",
               }}
               title="Click to copy"
@@ -872,16 +1041,16 @@ function WalletDetail({ address, onClose }) {
                 e.stopPropagation();
                 navigator.clipboard.writeText(address);
                 const el = e.currentTarget;
-                const orig = el.style.color;
                 el.style.color = T.green;
-                setTimeout(() => el.style.color = orig, 1200);
+                setTimeout(() => el.style.color = T.text4, 1200);
               }}
             >
-              {address}
+              {address} \u2398
             </span>
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>
-              {data.snapshot_count} snaps
-            </span>
+          </div>
+          {/* Tags */}
+          <div style={{ marginTop: 6 }}>
+            <WalletTags data={data} />
           </div>
         </div>
         <button
@@ -898,83 +1067,117 @@ function WalletDetail({ address, onClose }) {
         </button>
       </div>
 
-      {/* Equity sparkline + Leverage gauge row */}
+      {/* ── TWO-PANEL: LEFT (equity + gauges) + RIGHT (chart) ── */}
       <div style={{
-        padding: "12px 16px",
-        borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
-      }}>
-        {/* Sparkline */}
-        <div style={{ flex: 1, minWidth: 160 }}>
-          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", marginBottom: 4 }}>
-            EQUITY CURVE
-          </div>
-          <MiniSparkline
-            data={avHistory}
-            width={280}
-            height={60}
-            color={avHistory.length >= 2 && (avHistory[avHistory.length - 1]?.value ?? avHistory[avHistory.length - 1]) >= (avHistory[0]?.value ?? avHistory[0]) ? T.green : T.red}
-          />
-        </div>
-        {/* Leverage gauge */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", marginBottom: 2 }}>
-            AVG LEVERAGE
-          </div>
-          <LeverageGauge value={levStats.avg_leverage} size={70} />
-        </div>
-      </div>
-
-      {/* Stat pills */}
-      <div style={{
-        padding: "10px 16px",
-        display: "flex", flexWrap: "wrap", gap: 6,
+        display: "flex", flexWrap: "wrap",
         borderBottom: `1px solid ${T.border}`,
       }}>
-        <StatPill label="ACCT VALUE" value={fmt$(data.account_value || 0)} />
-        <StatPill label="MONTHLY ROI" value={fmtPct(data.monthly_roi || 0)} color={T.green} />
-        <StatPill label="SCORE" value={(data.score || 0).toFixed(0)} />
-        <StatPill
-          label="WIN RATE"
-          value={s.total_trades > 0 ? `${s.win_rate}%` : "--"}
-          color={s.win_rate > 50 ? T.green : s.win_rate > 0 ? T.red : T.text4}
-        />
-        <StatPill label="TRADES" value={s.total_trades || 0} />
-        <StatPill
-          label="AVG PNL"
-          value={s.total_trades > 0 ? `${s.avg_pnl_pct > 0 ? "+" : ""}${s.avg_pnl_pct}%` : "--"}
-          color={s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4}
-        />
-      </div>
-
-      {/* Leverage stats strip */}
-      {(levStats.avg_leverage || levStats.max_leverage) && (
+        {/* LEFT PANEL — Equity + Gauges */}
         <div style={{
-          padding: "8px 16px",
-          display: "flex", gap: 12, flexWrap: "wrap",
-          borderBottom: `1px solid ${T.border}`,
-          alignItems: "center",
+          flex: "0 0 240px", padding: "14px 16px",
+          borderRight: `1px solid ${T.border}`,
+          display: "flex", flexDirection: "column", gap: 10,
         }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>LEVERAGE:</span>
-          {levStats.avg_leverage != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: levColor(levStats.avg_leverage) }}>
-              avg {fmtLev(levStats.avg_leverage)}
-            </span>
-          )}
-          {levStats.max_leverage != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: levColor(levStats.max_leverage) }}>
-              max {fmtLev(levStats.max_leverage)}
-            </span>
-          )}
-          {levStats.total_margin_used != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-              margin {fmt$(levStats.total_margin_used)}
-            </span>
-          )}
-        </div>
-      )}
+          {/* Total Equity */}
+          <div>
+            <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700, color: T.text1 }}>
+              {fmt$(data.account_value || 0)}
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.05em" }}>
+              Total Equity
+            </div>
+          </div>
 
-      {/* Best/Worst trade badges */}
+          {/* Bias + Leverage gauges side by side */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <BiasGauge positions={positions} />
+            <div style={{
+              padding: "10px 14px", borderRadius: 8,
+              background: T.overlay04, border: `1px solid ${T.overlay06}`,
+              display: "flex", flexDirection: "column", alignItems: "center",
+              minWidth: 80,
+            }}>
+              <LeverageGauge value={levStats.avg_leverage} size={72} />
+              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", marginTop: -2 }}>
+                Leverage
+              </span>
+            </div>
+          </div>
+
+          {/* PNL + ROI stats */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Monthly ROI</span>
+              <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.green }}>
+                +{fmtPct(data.monthly_roi || 0)}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Monthly PnL</span>
+              <span style={{
+                fontFamily: T.mono, fontSize: 13, fontWeight: 700,
+                color: (data.monthly_pnl || 0) >= 0 ? T.green : T.red,
+              }}>
+                {(data.monthly_pnl || 0) >= 0 ? "+" : ""}{fmt$(data.monthly_pnl || 0)}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Score</span>
+              <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
+                {(data.score || 0).toFixed(0)}
+              </span>
+            </div>
+            {s.total_trades > 0 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Win Rate</span>
+                  <span style={{
+                    fontFamily: T.mono, fontSize: 13, fontWeight: 600,
+                    color: s.win_rate > 50 ? T.green : T.red,
+                  }}>
+                    {s.win_rate}% ({s.wins}/{s.total_trades})
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Avg PnL</span>
+                  <span style={{
+                    fontFamily: T.mono, fontSize: 13, fontWeight: 600,
+                    color: s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4,
+                  }}>
+                    {s.avg_pnl_pct > 0 ? "+" : ""}{s.avg_pnl_pct}%
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT PANEL — Full equity chart */}
+        <div style={{ flex: 1, minWidth: 280, padding: "10px 8px 6px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 4px", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>
+              EQUITY CURVE
+            </span>
+            {avHistory.length >= 2 && (() => {
+              const first = avHistory[0]?.value ?? avHistory[0];
+              const last = avHistory[avHistory.length - 1]?.value ?? avHistory[avHistory.length - 1];
+              const pnl = last - first;
+              const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
+              return (
+                <span style={{
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+                  color: pnl >= 0 ? T.green : T.red,
+                }}>
+                  {pnl >= 0 ? "+" : ""}{fmt$(pnl)} ({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)
+                </span>
+              );
+            })()}
+          </div>
+          <EquityChart data={avHistory} height={130} />
+        </div>
+      </div>
+
+      {/* ── BEST/WORST TRADES ── */}
       {(s.best_trade || s.worst_trade) && (
         <div style={{
           padding: "8px 16px",
@@ -1002,7 +1205,7 @@ function WalletDetail({ address, onClose }) {
         </div>
       )}
 
-      {/* Section tabs */}
+      {/* ── SECTION TABS (like HyperTracker: Perps / Trades / Coin Stats) ── */}
       <div style={{
         padding: "8px 16px",
         display: "flex", gap: 2,
@@ -1013,8 +1216,8 @@ function WalletDetail({ address, onClose }) {
             key={key}
             onClick={() => setActiveSection(key)}
             style={{
-              padding: "5px 12px", borderRadius: 5, border: "none",
-              fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+              padding: "6px 14px", borderRadius: 6, border: "none",
+              fontFamily: T.mono, fontSize: 13, fontWeight: 600,
               color: activeSection === key ? T.text1 : T.text4,
               background: activeSection === key ? T.overlay10 : "transparent",
               cursor: "pointer", transition: "all 0.15s",
@@ -1025,9 +1228,40 @@ function WalletDetail({ address, onClose }) {
         ))}
       </div>
 
-      {/* Section content */}
+      {/* ── POSITION SUMMARY STRIP (like HyperTracker) ── */}
+      {activeSection === "positions" && positions.length > 0 && (
+        <div style={{
+          padding: "8px 16px",
+          display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
+          borderBottom: `1px solid ${T.border}`,
+          background: T.overlay04,
+        }}>
+          <span style={{ fontFamily: T.mono, fontSize: 12 }}>
+            <span style={{ color: T.text4 }}>Long Value: </span>
+            <span style={{ color: T.green, fontWeight: 600 }}>{fmt$(longValue)}</span>
+          </span>
+          <span style={{ color: T.text4 }}>|</span>
+          <span style={{ fontFamily: T.mono, fontSize: 12 }}>
+            <span style={{ color: T.text4 }}>Short Value: </span>
+            <span style={{ color: T.red, fontWeight: 600 }}>{fmt$(shortValue)}</span>
+          </span>
+          <span style={{ color: T.text4 }}>|</span>
+          <span style={{ fontFamily: T.mono, fontSize: 12 }}>
+            <span style={{ color: T.text4 }}>Total: </span>
+            <span style={{ color: T.text1, fontWeight: 600 }}>{fmt$(totalValue)}</span>
+          </span>
+          <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
+            <span style={{ color: T.text4 }}>Sum PNL: </span>
+            <span style={{ color: sumPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>
+              {sumPnl >= 0 ? "+" : ""}{fmt$(Math.abs(sumPnl))}
+            </span>
+          </span>
+        </div>
+      )}
+
+      {/* ── SECTION CONTENT ── */}
       <div style={{ overflowX: "auto" }}>
-        {/* POSITIONS (enhanced with LIQ DIST, AGE, ROE) */}
+        {/* POSITIONS (HyperTracker layout: Token, Amount, Value, Avg Entry, PNL/ROE, Lev, Dist. to Liq, Age) */}
         {activeSection === "positions" && (
           <>
             {positions.length === 0 ? (
@@ -1038,13 +1272,13 @@ function WalletDetail({ address, onClose }) {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "LEV", "LIQ DIST", "AGE", "ROE"].map(h => (
+                    {["TOKEN", "SIDE", "VALUE", "AVG ENTRY", "PNL/ROE", "LEV", "DIST. TO LIQ", "AGE"].map(h => (
                       <th key={h} style={{
                         padding: "8px 8px",
                         fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-                        color: T.text4, letterSpacing: "0.06em",
+                        color: T.text4, letterSpacing: "0.05em",
                         borderBottom: `1px solid ${T.border}`,
-                        textAlign: h === "COIN" || h === "SIDE" ? "left" : "right",
+                        textAlign: h === "TOKEN" || h === "SIDE" ? "left" : h === "DIST. TO LIQ" ? "left" : "right",
                         whiteSpace: "nowrap",
                       }}>
                         {h}
@@ -1053,56 +1287,78 @@ function WalletDetail({ address, onClose }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((p, i) => (
-                    <tr key={i}>
-                      <td style={{ padding: "7px 8px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
-                        {p.coin}
-                      </td>
-                      <td style={{ padding: "7px 8px" }}>
-                        <span style={{
-                          fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                          padding: "2px 6px", borderRadius: 3,
-                          color: p.side === "LONG" ? T.green : T.red,
-                          background: `${p.side === "LONG" ? T.green : T.red}15`,
-                        }}>
-                          {p.side}
-                        </span>
-                      </td>
-                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
-                        {fmt$(p.size_usd)}
-                      </td>
-                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-                        ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </td>
-                      <td style={{
-                        padding: "7px 8px", textAlign: "right",
-                        fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-                        color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red,
-                      }}>
-                        {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
-                      </td>
-                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: levColor(p.leverage) }}>
-                        {p.leverage}x
-                      </td>
-                      <td style={{
-                        padding: "7px 8px", textAlign: "right",
-                        fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                        color: pctColor(p.liq_distance_pct),
-                      }}>
-                        {p.liq_distance_pct != null ? `${p.liq_distance_pct.toFixed(1)}%` : "--"}
-                      </td>
-                      <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-                        {fmtAge(p.position_age_s)}
-                      </td>
-                      <td style={{
-                        padding: "7px 8px", textAlign: "right",
-                        fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                        color: (p.return_on_equity || 0) >= 0 ? T.green : T.red,
-                      }}>
-                        {p.return_on_equity != null ? `${p.return_on_equity > 0 ? "+" : ""}${(p.return_on_equity * 100).toFixed(1)}%` : "--"}
-                      </td>
-                    </tr>
-                  ))}
+                  {positions.map((p, i) => {
+                    const roe = p.return_on_equity;
+                    const pnl = p.unrealized_pnl || 0;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.overlay06}` }}>
+                        {/* TOKEN — coin name + leverage type */}
+                        <td style={{ padding: "8px 8px" }}>
+                          <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+                            {p.coin}
+                          </div>
+                          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+                            {p.leverage}x {p.leverage_type || "Cross"}
+                          </div>
+                        </td>
+                        {/* SIDE */}
+                        <td style={{ padding: "8px 8px" }}>
+                          <span style={{
+                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+                            padding: "2px 7px", borderRadius: 3,
+                            color: p.side === "LONG" ? T.green : T.red,
+                            background: `${p.side === "LONG" ? T.green : T.red}15`,
+                          }}>
+                            {p.side}
+                          </span>
+                        </td>
+                        {/* VALUE */}
+                        <td style={{ padding: "8px 8px", textAlign: "right" }}>
+                          <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
+                            {fmt$(p.size_usd)}
+                          </div>
+                          {p.size != null && (
+                            <div style={{ fontFamily: T.mono, fontSize: 10, color: p.side === "LONG" ? T.green : T.red }}>
+                              {p.side === "LONG" ? "+" : "-"}{Number(p.size).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                            </div>
+                          )}
+                        </td>
+                        {/* AVG ENTRY */}
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
+                          ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                        {/* PNL/ROE */}
+                        <td style={{ padding: "8px 8px", textAlign: "right" }}>
+                          <div style={{
+                            fontFamily: T.mono, fontSize: 13, fontWeight: 700,
+                            color: pnl >= 0 ? T.green : T.red,
+                          }}>
+                            {pnl >= 0 ? "+" : ""}{fmt$(Math.abs(pnl))}
+                          </div>
+                          {roe != null && (
+                            <div style={{
+                              fontFamily: T.mono, fontSize: 10,
+                              color: roe >= 0 ? T.green : T.red,
+                            }}>
+                              {(roe * 100).toFixed(2)}%
+                            </div>
+                          )}
+                        </td>
+                        {/* LEV */}
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: levColor(p.leverage) }}>
+                          {p.leverage}x
+                        </td>
+                        {/* DIST. TO LIQ (progress bar) */}
+                        <td style={{ padding: "8px 8px" }}>
+                          <LiqDistBar pct={p.liq_distance_pct} />
+                        </td>
+                        {/* AGE */}
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
+                          {fmtAge(p.position_age_s)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
