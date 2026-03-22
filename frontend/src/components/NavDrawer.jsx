@@ -25,6 +25,13 @@ const NAV_ICONS = {
       <path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   ),
+  hyperlens: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M12 4l2-2M4 12l-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
   backtest: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
@@ -64,6 +71,7 @@ const NAV_SECTIONS = [
     items: [
       { key: "chat", label: "AI Assist", desc: "Ask about any asset" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
+      { key: "hyperlens", label: "HyperLens", desc: "Smart-money wallet tracking" },
       { key: "onchain", label: "On-Chain", desc: "On-chain analytics" },
     ],
   },

@@ -38,7 +38,7 @@ _POSITION_HISTORY_LEN = 288               # 24h of 5-min snapshots
 # Filtering thresholds
 _MIN_ACCOUNT_VALUE = 500_000               # $500k minimum
 _MIN_ROI_PCT = 50.0                        # 50% ROI minimum
-_ROSTER_SIZE = 100                         # Top 100 qualifying wallets
+_ROSTER_SIZE = 250                         # Top 250 qualifying wallets
 
 # Consensus thresholds
 _BULLISH_THRESHOLD = 0.15                  # net_ratio > 15% = BULLISH

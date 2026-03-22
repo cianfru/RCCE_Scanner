@@ -22,6 +22,7 @@ import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import TradFiPanel from "./components/TradFiPanel.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
+import HyperLensPanel from "./components/HyperLensPanel.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
 import ChangesTicker from "./components/ChangesTicker.jsx";
 
@@ -379,7 +380,7 @@ export default function App() {
 
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat" && activeTab !== "tradfi";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
   const tabOptions = isMobile
     ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
@@ -688,6 +689,7 @@ export default function App() {
              activeTab === "signals" ? "Signal Log" :
              activeTab === "onchain" ? "On-Chain" :
              activeTab === "tradfi" ? "TradFi" :
+             activeTab === "hyperlens" ? "HyperLens" :
              activeGroup ? activeGroup.name : "Scanner"}
           </span>
           {showDashboard && (
@@ -808,6 +810,12 @@ export default function App() {
 
         {activeTab === "chat" && (
           <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
+        )}
+
+        {activeTab === "hyperlens" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <HyperLensPanel isMobile={isMobile} />
+          </FadeIn>
         )}
       </div>
 
