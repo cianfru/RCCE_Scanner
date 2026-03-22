@@ -44,7 +44,7 @@ _SNAPSHOT_MAX_AGE_S = 15 * 60              # 15 minutes (3 missed polls)
 # Filtering thresholds
 _MIN_ACCOUNT_VALUE = 500_000               # $500k minimum
 _MIN_ROI_PCT = 30.0                        # 30% monthly ROI minimum
-_ROSTER_SIZE = 100                         # Top 100 qualifying wallets
+_ROSTER_SIZE = 150                         # Top 150 qualifying wallets
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
@@ -84,6 +84,10 @@ class WalletPosition:
     unrealized_pnl: float
     leverage: float
     liq_px: float = 0.0
+    margin_used: float = 0.0
+    return_on_equity: float = 0.0
+    liq_distance_pct: float = 0.0   # abs(entry_px - liq_px) / entry_px * 100
+    leverage_type: str = "cross"    # "cross" or "isolated"
 
 
 @dataclass
@@ -108,6 +112,7 @@ class SymbolConsensus:
     net_ratio: float = 0.0        # (long - short) / total, -1 to +1
     trend: str = "NEUTRAL"        # BULLISH / BEARISH / NEUTRAL
     confidence: float = 0.0       # 0-1 strength of consensus
+    avg_leverage: float = 0.0     # Average leverage across all positioned wallets
     top_longs: List[str] = field(default_factory=list)    # Top wallet addresses
     top_shorts: List[str] = field(default_factory=list)
 
@@ -273,6 +278,16 @@ async def _fetch_wallet_positions(
         coin = pos.get("coin", "")
         lev_val = pos.get("leverage", {})
         lev = float(lev_val.get("value", 1)) if isinstance(lev_val, dict) else float(lev_val or 1)
+        lev_type = lev_val.get("type", "cross") if isinstance(lev_val, dict) else "cross"
+
+        liq_px = float(pos.get("liquidationPx", 0) or 0)
+        margin_used = float(pos.get("marginUsed", 0) or 0)
+        roe = float(pos.get("returnOnEquity", 0) or 0)
+
+        # Calculate liquidation distance percentage
+        liq_dist_pct = 0.0
+        if entry_px > 0 and liq_px > 0:
+            liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
 
         positions.append(WalletPosition(
             coin=coin,
@@ -282,7 +297,11 @@ async def _fetch_wallet_positions(
             entry_px=entry_px,
             unrealized_pnl=float(pos.get("unrealizedPnl", 0)),
             leverage=lev,
-            liq_px=float(pos.get("liquidationPx", 0) or 0),
+            liq_px=liq_px,
+            margin_used=margin_used,
+            return_on_equity=roe,
+            liq_distance_pct=round(liq_dist_pct, 2),
+            leverage_type=lev_type,
         ))
 
     # Extract account value
@@ -395,11 +414,13 @@ def _recompute_consensus() -> None:
                     "long_count": 0, "short_count": 0,
                     "long_notional": 0.0, "short_notional": 0.0,
                     "weighted_sum": 0.0,
+                    "leverages": [],
                     "top_longs": [], "top_shorts": [],
                 }
 
             d = sym_data[coin]
             w_score = score_map.get(wallet.address, 1.0)
+            d["leverages"].append(pos.leverage)
 
             # Weight consensus by notional size * wallet score
             # so a $5M position from a top trader counts more than a $50k one
@@ -449,6 +470,10 @@ def _recompute_consensus() -> None:
         participation = total_positioned / max(fresh_wallet_count, 1)
         confidence = min(abs(blended) * math.sqrt(participation), 1.0)
 
+        # Average leverage across all positioned wallets for this symbol
+        sym_leverages = d["leverages"]
+        sym_avg_lev = sum(sym_leverages) / len(sym_leverages) if sym_leverages else 0.0
+
         new_consensus[coin] = SymbolConsensus(
             symbol=coin,
             long_count=d["long_count"],
@@ -461,6 +486,7 @@ def _recompute_consensus() -> None:
             net_ratio=net_ratio,
             trend=trend,
             confidence=confidence,
+            avg_leverage=round(sym_avg_lev, 2),
             top_longs=d["top_longs"][:5],
             top_shorts=d["top_shorts"][:5],
         )
@@ -527,6 +553,7 @@ def get_wallet_positions(address: str) -> Optional[dict]:
         return None
 
     latest = snaps[-1]
+    now = time.time()
     return {
         "address": address,
         "timestamp": latest.timestamp,
@@ -541,6 +568,11 @@ def get_wallet_positions(address: str) -> Optional[dict]:
                 "unrealized_pnl": round(p.unrealized_pnl, 2),
                 "leverage": p.leverage,
                 "liq_px": p.liq_px,
+                "margin_used": round(p.margin_used, 2),
+                "return_on_equity": round(p.return_on_equity, 4),
+                "liq_distance_pct": p.liq_distance_pct,
+                "leverage_type": p.leverage_type,
+                "position_age_s": round(now - fs, 0) if (fs := _position_first_seen.get(address, {}).get(p.coin)) else None,
             }
             for p in latest.positions
         ],
@@ -650,6 +682,9 @@ _trade_log: Dict[str, List[dict]] = {}
 # Track "last known positions" per wallet for diff detection
 _last_positions: Dict[str, Dict[str, dict]] = {}  # addr -> {coin: {side, size, entry_px, ...}}
 
+# Track when a position was first seen (for position age): addr -> {coin: timestamp}
+_position_first_seen: Dict[str, Dict[str, float]] = {}
+
 
 def _reconstruct_trades() -> None:
     """Compare consecutive snapshots to detect position opens/closes.
@@ -683,6 +718,10 @@ def _reconstruct_trades() -> None:
         if addr not in _trade_log:
             _trade_log[addr] = []
 
+        # Initialize first-seen tracker for this wallet (needed for closed cleanup)
+        if addr not in _position_first_seen:
+            _position_first_seen[addr] = {}
+
         # Closed positions: in prev but not in curr
         for coin, prev_pos in prev_map.items():
             if coin not in curr_map:
@@ -694,10 +733,12 @@ def _reconstruct_trades() -> None:
                     "leverage": prev_pos["leverage"],
                     "pnl": prev_pos["unrealized_pnl"],  # Last known unrealized = approximate realized
                     "pnl_pct": (prev_pos["unrealized_pnl"] / max(prev_pos["size_usd"], 1)) * 100,
-                    "opened_at": None,   # We don't know exact open time
+                    "opened_at": _position_first_seen.get(addr, {}).get(coin),
                     "closed_at": latest.timestamp,
                     "status": "CLOSED",
                 })
+                # Clean up first-seen entry for closed position
+                _position_first_seen.get(addr, {}).pop(coin, None)
 
             # Flipped side: closed one direction, opened opposite
             elif curr_map[coin]["side"] != prev_pos["side"]:
@@ -709,14 +750,18 @@ def _reconstruct_trades() -> None:
                     "leverage": prev_pos["leverage"],
                     "pnl": prev_pos["unrealized_pnl"],
                     "pnl_pct": (prev_pos["unrealized_pnl"] / max(prev_pos["size_usd"], 1)) * 100,
-                    "opened_at": None,
+                    "opened_at": _position_first_seen.get(addr, {}).get(coin),
                     "closed_at": latest.timestamp,
                     "status": "FLIPPED",
                 })
+                # Reset first-seen for flipped position (new direction)
+                _position_first_seen[addr][coin] = latest.timestamp
 
         # New positions: in curr but not in prev (logged as "OPEN" events)
         for coin in curr_map:
             if coin not in prev_map:
+                # Record first-seen timestamp for position age tracking
+                _position_first_seen[addr][coin] = latest.timestamp
                 _trade_log[addr].append({
                     "coin": coin,
                     "side": curr_map[coin]["side"],
@@ -803,10 +848,21 @@ def get_wallet_profile(address: str) -> Optional[dict]:
                     "value": round(snap.account_value, 2),
                 })
 
-    # Current positions
+    # Current positions (with age and new fields)
+    now = time.time()
     current_positions = []
+    total_margin_used = 0.0
+    leverages = []
+    liq_distances = []
+    total_notional = 0.0
+    max_position_usd = 0.0
+
     if latest:
         for p in sorted(latest.positions, key=lambda x: x.size_usd, reverse=True):
+            # Position age: seconds since first seen
+            first_seen = _position_first_seen.get(address, {}).get(p.coin)
+            age_s = round(now - first_seen, 0) if first_seen else None
+
             current_positions.append({
                 "coin": p.coin,
                 "side": p.side,
@@ -816,7 +872,39 @@ def get_wallet_profile(address: str) -> Optional[dict]:
                 "unrealized_pnl": round(p.unrealized_pnl, 2),
                 "leverage": p.leverage,
                 "liq_px": p.liq_px,
+                "margin_used": round(p.margin_used, 2),
+                "return_on_equity": round(p.return_on_equity, 4),
+                "liq_distance_pct": p.liq_distance_pct,
+                "leverage_type": p.leverage_type,
+                "position_age_s": age_s,
             })
+
+            # Accumulate stats for leverage_stats and risk_score
+            total_margin_used += p.margin_used
+            leverages.append(p.leverage)
+            if p.liq_distance_pct > 0:
+                liq_distances.append(p.liq_distance_pct)
+            total_notional += p.size_usd
+            if p.size_usd > max_position_usd:
+                max_position_usd = p.size_usd
+
+    # Leverage stats
+    avg_leverage = sum(leverages) / len(leverages) if leverages else 0.0
+    max_leverage = max(leverages) if leverages else 0.0
+    leverage_stats = {
+        "avg_leverage": round(avg_leverage, 2),
+        "max_leverage": round(max_leverage, 2),
+        "total_margin_used": round(total_margin_used, 2),
+    }
+
+    # Risk score (0-100): blend of leverage risk, liq proximity, and concentration
+    # Higher = riskier
+    lev_risk = min(avg_leverage / 20.0, 1.0) * 40          # 0-40 pts (20x = max)
+    avg_liq_dist = sum(liq_distances) / len(liq_distances) if liq_distances else 100.0
+    liq_risk = max(0, (1.0 - avg_liq_dist / 50.0)) * 30   # 0-30 pts (closer liq = higher)
+    concentration = (max_position_usd / total_notional) if total_notional > 0 else 0.0
+    conc_risk = concentration * 30                          # 0-30 pts (100% in one = max)
+    risk_score = round(min(lev_risk + liq_risk + conc_risk, 100.0), 1)
 
     return {
         "address": address,
@@ -849,6 +937,8 @@ def get_wallet_profile(address: str) -> Optional[dict]:
         },
         "coin_breakdown": coin_breakdown[:10],
         "current_positions": current_positions,
+        "leverage_stats": leverage_stats,
+        "risk_score": risk_score,
         "av_history": av_history,
         "trade_count_since_tracking": len(trades),
         "snapshot_count": len(snaps) if snaps else 0,
