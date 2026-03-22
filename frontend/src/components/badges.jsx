@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
 
 export function ZScoreBar({ z, isMobile }) {
@@ -54,13 +55,27 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
   const sm = SIGNAL_META[signal] || SIGNAL_META.WAIT;
   const [showTip, setShowTip] = useState(false);
   const hasInfo = reason || (warnings && warnings.length > 0);
+  const anchorRef = useRef(null);
+  const [tipPos, setTipPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!showTip || !anchorRef.current) return;
+    const r = anchorRef.current.getBoundingClientRect();
+    const tipW = 320;
+    let top = r.top - 8; // above the element
+    let left = r.left;
+    if (left + tipW > window.innerWidth - 12) left = window.innerWidth - tipW - 12;
+    if (left < 12) left = 12;
+    setTipPos({ top, left });
+  }, [showTip]);
 
   return (
     <span
+      ref={anchorRef}
       style={{
         display: "inline-flex", alignItems: "center", gap: 5,
         color: sm.color, fontFamily: T.mono, fontSize: m(12, isMobile), whiteSpace: "nowrap",
-        fontWeight: 600, position: "relative", cursor: hasInfo ? "help" : "default",
+        fontWeight: 600, cursor: hasInfo ? "help" : "default",
       }}
       onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
       onMouseLeave={() => setShowTip(false)}
@@ -74,33 +89,30 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       {warnings && warnings.length > 0 && (
         <span style={{ fontSize: 20, color: "#fbbf24", marginLeft: 3, verticalAlign: "middle", lineHeight: 1 }}>{"\u26a0"}</span>
       )}
-      {showTip && hasInfo && (
+      {showTip && hasInfo && createPortal(
         <div
           ref={el => {
             if (!el) return;
-            const rect = el.getBoundingClientRect();
-            // Flip below if clipped at top
-            if (rect.top < 8) {
-              el.style.bottom = "auto";
-              el.style.top = "calc(100% + 8px)";
+            // Measure actual height, position above anchor, flip below if no room
+            const tipH = el.offsetHeight;
+            let top = tipPos.top - tipH;
+            if (top < 8) {
+              const r = anchorRef.current?.getBoundingClientRect();
+              top = r ? r.bottom + 8 : 8;
             }
-            // Clamp horizontally
-            if (rect.right > window.innerWidth - 8) {
-              el.style.left = "auto";
-              el.style.right = "0";
-            }
+            el.style.top = `${top}px`;
+            el.style.left = `${tipPos.left}px`;
           }}
           style={{
-            position: "absolute", bottom: "calc(100% + 8px)", left: 0,
-            zIndex: 9999,
+            position: "fixed", zIndex: 99999,
             background: T.popoverBg, border: `1px solid ${T.borderH}`,
             borderRadius: T.radiusSm, padding: isMobile ? "12px 14px" : "10px 12px",
-            minWidth: 220, maxWidth: 340, width: "max-content",
+            width: 320,
             boxShadow: `0 8px 32px ${T.shadowDeep}`,
             backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
             whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "break-word",
+            pointerEvents: "none",
           }}
-          onClick={e => e.stopPropagation()}
         >
           {reason && (
             <div style={{ fontSize: m(10, isMobile), color: T.text2, fontFamily: T.mono, lineHeight: 1.6, marginBottom: warnings?.length ? 8 : 0 }}>
@@ -117,7 +129,8 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
