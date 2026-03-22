@@ -3167,3 +3167,37 @@ async def hyperlens_changes(
     """Detect position changes for a symbol over recent window."""
     from hl_intelligence import get_position_changes
     return get_position_changes(symbol.upper(), window_minutes=window)
+
+
+@app.get("/api/hyperlens/pressure")
+async def hyperlens_pressure(symbol: Optional[str] = Query(None)):
+    """Get pressure map — stops, TPs, limits, book walls, liq clusters.
+    Pass ?symbol=BTC for a specific coin, or omit for all with significant smart money activity."""
+    try:
+        from hl_intelligence import get_pressure
+        sym = symbol.upper() if symbol else None
+        return get_pressure(sym)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/hyperlens/orderbook/{symbol}")
+async def hyperlens_orderbook(symbol: str):
+    """Get order book walls for a symbol."""
+    try:
+        from hl_intelligence import get_order_book_walls
+        return get_order_book_walls(symbol.upper())
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/hyperlens/smart-orders")
+async def hyperlens_smart_orders(symbol: Optional[str] = Query(None)):
+    """Get aggregated smart money orders (stops/TPs/limits).
+    Pass ?symbol=BTC to filter by coin, or omit for all."""
+    try:
+        from hl_intelligence import get_smart_money_orders
+        sym = symbol.upper() if symbol else None
+        return {"orders": get_smart_money_orders(sym)}
+    except Exception as e:
+        return {"error": str(e)}

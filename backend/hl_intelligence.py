@@ -136,6 +136,14 @@ _initialized = False
 _last_poll_at: float = 0.0
 _poll_count: int = 0
 
+# Pressure Map stores
+_wallet_orders: Dict[str, list] = {}          # address -> list of raw order dicts
+_order_books: Dict[str, dict] = {}            # coin -> {"levels": ..., "timestamp": float}
+_pressure_cache: Dict[str, dict] = {}         # coin -> computed pressure data
+_ORDER_BOOK_POLL_INTERVAL = 30                # seconds
+_ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
+_WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
+
 
 # ---------------------------------------------------------------------------
 # Leaderboard fetch & roster building
@@ -250,7 +258,7 @@ async def _fetch_wallet_positions(
     semaphore: asyncio.Semaphore,
     wallet: TrackedWallet,
 ) -> Optional[PositionSnapshot]:
-    """Fetch open positions for a single wallet."""
+    """Fetch open positions and open orders for a single wallet."""
     async with semaphore:
         try:
             async with session.post(
@@ -262,6 +270,22 @@ async def _fetch_wallet_positions(
                 data = await resp.json(content_type=None)
         except Exception:
             return None
+
+        # Fetch open orders (stops, TPs, limits) — second call under same semaphore
+        try:
+            async with session.post(
+                _HL_INFO_URL,
+                json={"type": "frontendOpenOrders", "user": wallet.address},
+            ) as resp:
+                if resp.status == 200:
+                    orders_raw = await resp.json(content_type=None)
+                    if isinstance(orders_raw, list):
+                        _wallet_orders[wallet.address] = orders_raw
+                    else:
+                        _wallet_orders[wallet.address] = []
+                # On non-200 we just keep previous orders (or empty)
+        except Exception:
+            pass  # Non-critical — positions are the priority
 
     if not data:
         return None
@@ -946,6 +970,439 @@ def get_wallet_profile(address: str) -> Optional[dict]:
 
 
 
+# ---------------------------------------------------------------------------
+# Order Book Polling
+# ---------------------------------------------------------------------------
+
+async def _poll_order_books() -> None:
+    """Fetch L2 order book for top symbols by wallet count.
+
+    Runs every 30 seconds independently of the position poll.
+    """
+    # Determine top symbols from consensus (by total positioned wallets)
+    if not _consensus:
+        return
+
+    ranked = sorted(
+        _consensus.values(),
+        key=lambda c: c.long_count + c.short_count,
+        reverse=True,
+    )
+    top_symbols = [c.symbol for c in ranked[:_ORDER_BOOK_TOP_N]]
+
+    if not top_symbols:
+        return
+
+    semaphore = asyncio.Semaphore(_CONCURRENCY)
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
+
+    async def _fetch_book(session: aiohttp.ClientSession, coin: str) -> None:
+        async with semaphore:
+            try:
+                async with session.post(
+                    _HL_INFO_URL,
+                    json={"type": "l2Book", "coin": coin, "nSigFigs": 3},
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        _order_books[coin] = {
+                            "levels": data.get("levels", [[], []]),
+                            "timestamp": time.time(),
+                        }
+            except Exception:
+                pass  # Non-critical
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = [_fetch_book(session, coin) for coin in top_symbols]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    logger.debug("HyperLens: order books fetched for %d symbols", len(top_symbols))
+
+
+# ---------------------------------------------------------------------------
+# Price Clustering Helpers
+# ---------------------------------------------------------------------------
+
+def _cluster_precision(price: float) -> float:
+    """Return the rounding step for clustering based on price magnitude."""
+    if price >= 1000:
+        return 100.0
+    elif price >= 10:
+        return 1.0
+    else:
+        return 0.01
+
+
+def _round_to_cluster(price: float, step: float) -> float:
+    """Round a price to the nearest cluster step."""
+    if step <= 0:
+        return price
+    return round(round(price / step) * step, 8)
+
+
+# ---------------------------------------------------------------------------
+# Pressure Computation
+# ---------------------------------------------------------------------------
+
+def _compute_pressure(symbol: str) -> dict:
+    """Compute aggregated pressure data for a symbol.
+
+    Combines smart money orders, order book walls, and liquidation clusters.
+    """
+    coin = _normalize_coin(symbol)
+
+    # ---- (a) Smart Money Orders ----
+    stops: Dict[float, dict] = {}     # price -> {total_size_usd, wallet_count, side}
+    take_profits: Dict[float, dict] = {}
+    limits: Dict[float, dict] = {}
+
+    for addr, orders in _wallet_orders.items():
+        for order in orders:
+            order_coin = order.get("coin", "")
+            if order_coin != coin:
+                continue
+
+            is_trigger = order.get("isTrigger", False)
+            is_tpsl = order.get("isPositionTpsl", False)
+            trigger_cond = order.get("triggerCondition", "")
+            raw_side = order.get("side", "")
+            side = "BUY" if raw_side == "B" else "SELL" if raw_side == "A" else raw_side
+
+            # Determine order price
+            if is_trigger:
+                px_str = order.get("triggerPx") or order.get("limitPx", "0")
+            else:
+                px_str = order.get("limitPx", "0")
+            try:
+                px = float(px_str)
+            except (ValueError, TypeError):
+                continue
+
+            sz_str = order.get("sz", "0")
+            try:
+                sz = float(sz_str)
+            except (ValueError, TypeError):
+                continue
+
+            size_usd = sz * px
+            step = _cluster_precision(px)
+            clustered_px = _round_to_cluster(px, step)
+
+            # Classify order
+            if is_trigger and is_tpsl and trigger_cond == "lt":
+                # Stop loss
+                bucket = stops
+            elif is_trigger and is_tpsl and trigger_cond == "gt":
+                # Take profit
+                bucket = take_profits
+            elif not is_trigger:
+                # Resting limit order
+                bucket = limits
+            else:
+                # Other trigger orders (e.g. stop market entry) — put in limits
+                bucket = limits
+
+            if clustered_px not in bucket:
+                bucket[clustered_px] = {
+                    "price": clustered_px,
+                    "total_size_usd": 0.0,
+                    "wallet_count": 0,
+                    "side": side,
+                    "wallets": set(),
+                }
+            entry = bucket[clustered_px]
+            entry["total_size_usd"] += size_usd
+            entry["wallets"].add(addr)
+            entry["wallet_count"] = len(entry["wallets"])
+            # Side: if mixed, keep first seen (unlikely for stops/TPs)
+            if not entry["side"]:
+                entry["side"] = side
+
+    def _serialize_order_levels(bucket: Dict[float, dict]) -> list:
+        """Convert order bucket to sorted serializable list."""
+        result = []
+        for px, data in bucket.items():
+            result.append({
+                "price": data["price"],
+                "total_size_usd": round(data["total_size_usd"], 2),
+                "wallet_count": data["wallet_count"],
+                "side": data["side"],
+            })
+        result.sort(key=lambda x: x["price"])
+        return result
+
+    smart_money_orders = {
+        "stops": _serialize_order_levels(stops),
+        "take_profits": _serialize_order_levels(take_profits),
+        "limits": _serialize_order_levels(limits),
+    }
+
+    # ---- (b) Order Book Walls ----
+    bid_walls = []
+    ask_walls = []
+
+    book = _order_books.get(coin)
+    if book and book.get("levels"):
+        levels = book["levels"]
+        bids = levels[0] if len(levels) > 0 else []
+        asks = levels[1] if len(levels) > 1 else []
+
+        for lvl in bids:
+            try:
+                px = float(lvl.get("px", 0))
+                sz = float(lvl.get("sz", 0))
+                n = int(lvl.get("n", 0))
+            except (ValueError, TypeError):
+                continue
+            notional = px * sz
+            if notional >= _WALL_THRESHOLD_USD:
+                bid_walls.append({
+                    "price": px,
+                    "size_usd": round(notional, 2),
+                    "order_count": n,
+                })
+
+        for lvl in asks:
+            try:
+                px = float(lvl.get("px", 0))
+                sz = float(lvl.get("sz", 0))
+                n = int(lvl.get("n", 0))
+            except (ValueError, TypeError):
+                continue
+            notional = px * sz
+            if notional >= _WALL_THRESHOLD_USD:
+                ask_walls.append({
+                    "price": px,
+                    "size_usd": round(notional, 2),
+                    "order_count": n,
+                })
+
+    # Sort by size descending, take top 5
+    bid_walls.sort(key=lambda x: x["size_usd"], reverse=True)
+    ask_walls.sort(key=lambda x: x["size_usd"], reverse=True)
+
+    order_book_walls = {
+        "bid_walls": bid_walls[:5],
+        "ask_walls": ask_walls[:5],
+        "book_timestamp": book["timestamp"] if book else None,
+    }
+
+    # ---- (c) Liquidation Clusters ----
+    liq_prices: List[dict] = []
+
+    for wallet in _roster:
+        snaps = _snapshots.get(wallet.address)
+        if not snaps:
+            continue
+        latest = snaps[-1]
+        for pos in latest.positions:
+            if pos.coin == coin and pos.liq_px > 0:
+                liq_prices.append({
+                    "liq_px": pos.liq_px,
+                    "side": pos.side,
+                    "size_usd": pos.size_usd,
+                    "address": wallet.address,
+                })
+
+    # Cluster liq prices within 1% of each other
+    liq_clusters = []
+    if liq_prices:
+        # Sort by liq_px
+        liq_prices.sort(key=lambda x: x["liq_px"])
+        current_cluster = [liq_prices[0]]
+
+        for i in range(1, len(liq_prices)):
+            cluster_avg = sum(lp["liq_px"] for lp in current_cluster) / len(current_cluster)
+            if abs(liq_prices[i]["liq_px"] - cluster_avg) / max(cluster_avg, 0.001) <= 0.01:
+                current_cluster.append(liq_prices[i])
+            else:
+                if len(current_cluster) >= 2:
+                    liq_clusters.append(_summarize_liq_cluster(current_cluster))
+                current_cluster = [liq_prices[i]]
+
+        # Don't forget last cluster
+        if len(current_cluster) >= 2:
+            liq_clusters.append(_summarize_liq_cluster(current_cluster))
+
+    liq_clusters.sort(key=lambda x: x["total_size_usd"], reverse=True)
+
+    return {
+        "symbol": coin,
+        "smart_money_orders": smart_money_orders,
+        "order_book_walls": order_book_walls,
+        "liquidation_clusters": liq_clusters,
+        "computed_at": time.time(),
+    }
+
+
+def _summarize_liq_cluster(entries: List[dict]) -> dict:
+    """Summarize a cluster of nearby liquidation prices."""
+    avg_px = sum(e["liq_px"] for e in entries) / len(entries)
+    total_usd = sum(e["size_usd"] for e in entries)
+    sides = {}
+    for e in entries:
+        sides[e["side"]] = sides.get(e["side"], 0) + 1
+    dominant_side = max(sides, key=sides.get) if sides else "UNKNOWN"
+    wallets = list({e["address"] for e in entries})
+
+    return {
+        "avg_price": round(avg_px, 4),
+        "min_price": round(min(e["liq_px"] for e in entries), 4),
+        "max_price": round(max(e["liq_px"] for e in entries), 4),
+        "wallet_count": len(wallets),
+        "total_size_usd": round(total_usd, 2),
+        "dominant_side": dominant_side,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pressure Map Public API
+# ---------------------------------------------------------------------------
+
+def get_pressure(symbol: str = None) -> dict:
+    """Get pressure map for a symbol or all symbols.
+
+    If symbol is None, returns pressure for all symbols that have consensus.
+    """
+    if symbol:
+        return _compute_pressure(symbol)
+
+    result = {}
+    for coin in _consensus:
+        result[coin] = _compute_pressure(coin)
+    return result
+
+
+def get_order_book_walls(symbol: str) -> dict:
+    """Get significant order book walls for a symbol."""
+    coin = _normalize_coin(symbol)
+    book = _order_books.get(coin)
+    if not book or not book.get("levels"):
+        return {"bid_walls": [], "ask_walls": [], "book_timestamp": None}
+
+    bid_walls = []
+    ask_walls = []
+    levels = book["levels"]
+    bids = levels[0] if len(levels) > 0 else []
+    asks = levels[1] if len(levels) > 1 else []
+
+    for lvl in bids:
+        try:
+            px = float(lvl.get("px", 0))
+            sz = float(lvl.get("sz", 0))
+            n = int(lvl.get("n", 0))
+        except (ValueError, TypeError):
+            continue
+        notional = px * sz
+        if notional >= _WALL_THRESHOLD_USD:
+            bid_walls.append({"price": px, "size_usd": round(notional, 2), "order_count": n})
+
+    for lvl in asks:
+        try:
+            px = float(lvl.get("px", 0))
+            sz = float(lvl.get("sz", 0))
+            n = int(lvl.get("n", 0))
+        except (ValueError, TypeError):
+            continue
+        notional = px * sz
+        if notional >= _WALL_THRESHOLD_USD:
+            ask_walls.append({"price": px, "size_usd": round(notional, 2), "order_count": n})
+
+    bid_walls.sort(key=lambda x: x["size_usd"], reverse=True)
+    ask_walls.sort(key=lambda x: x["size_usd"], reverse=True)
+
+    return {
+        "bid_walls": bid_walls[:5],
+        "ask_walls": ask_walls[:5],
+        "book_timestamp": book.get("timestamp"),
+    }
+
+
+def get_smart_money_orders(symbol: str = None) -> list:
+    """Get aggregated smart money orders (stops/TPs/limits).
+
+    If symbol is None, returns orders across all symbols.
+    """
+    target_coin = _normalize_coin(symbol) if symbol else None
+
+    aggregated: Dict[str, Dict[str, Dict[float, dict]]] = {}  # coin -> type -> price -> data
+
+    for addr, orders in _wallet_orders.items():
+        for order in orders:
+            order_coin = order.get("coin", "")
+            if target_coin and order_coin != target_coin:
+                continue
+
+            is_trigger = order.get("isTrigger", False)
+            is_tpsl = order.get("isPositionTpsl", False)
+            trigger_cond = order.get("triggerCondition", "")
+            raw_side = order.get("side", "")
+            side = "BUY" if raw_side == "B" else "SELL" if raw_side == "A" else raw_side
+
+            if is_trigger:
+                px_str = order.get("triggerPx") or order.get("limitPx", "0")
+            else:
+                px_str = order.get("limitPx", "0")
+            try:
+                px = float(px_str)
+            except (ValueError, TypeError):
+                continue
+
+            try:
+                sz = float(order.get("sz", "0"))
+            except (ValueError, TypeError):
+                continue
+
+            size_usd = sz * px
+
+            # Classify
+            if is_trigger and is_tpsl and trigger_cond == "lt":
+                order_type = "stop"
+            elif is_trigger and is_tpsl and trigger_cond == "gt":
+                order_type = "take_profit"
+            else:
+                order_type = "limit"
+
+            step = _cluster_precision(px)
+            clustered_px = _round_to_cluster(px, step)
+
+            if order_coin not in aggregated:
+                aggregated[order_coin] = {"stop": {}, "take_profit": {}, "limit": {}}
+            bucket = aggregated[order_coin][order_type]
+
+            if clustered_px not in bucket:
+                bucket[clustered_px] = {
+                    "coin": order_coin,
+                    "type": order_type,
+                    "price": clustered_px,
+                    "total_size_usd": 0.0,
+                    "wallet_count": 0,
+                    "side": side,
+                    "wallets": set(),
+                }
+            entry = bucket[clustered_px]
+            entry["total_size_usd"] += size_usd
+            entry["wallets"].add(addr)
+            entry["wallet_count"] = len(entry["wallets"])
+
+    # Flatten to list
+    result = []
+    for coin_data in aggregated.values():
+        for type_bucket in coin_data.values():
+            for data in type_bucket.values():
+                result.append({
+                    "coin": data["coin"],
+                    "type": data["type"],
+                    "price": data["price"],
+                    "total_size_usd": round(data["total_size_usd"], 2),
+                    "wallet_count": data["wallet_count"],
+                    "side": data["side"],
+                })
+
+    result.sort(key=lambda x: x["total_size_usd"], reverse=True)
+    return result
+
+
 def get_status() -> dict:
     """Module status for API endpoint."""
     return {
@@ -958,12 +1415,24 @@ def get_status() -> dict:
         "poll_interval_sec": _POLL_INTERVAL,
         "roster_refresh_interval_sec": _ROSTER_REFRESH_INTERVAL,
         "initialized": _initialized,
+        "wallets_with_orders": sum(1 for v in _wallet_orders.values() if v),
+        "order_books_cached": len(_order_books),
     }
 
 
 # ---------------------------------------------------------------------------
 # Background loop
 # ---------------------------------------------------------------------------
+
+async def _order_book_loop() -> None:
+    """Independent loop that polls order books every 30 seconds."""
+    while True:
+        try:
+            await _poll_order_books()
+        except Exception as exc:
+            logger.warning("HyperLens order book poll error: %s", exc)
+        await asyncio.sleep(_ORDER_BOOK_POLL_INTERVAL)
+
 
 async def run_hyperlens_loop() -> None:
     """Main background loop: refresh roster daily, poll positions every 5 min."""
@@ -982,6 +1451,9 @@ async def run_hyperlens_loop() -> None:
     _initialized = True
     last_roster_refresh = time.time()
 
+    # Launch order book polling as an independent concurrent task
+    asyncio.create_task(_order_book_loop())
+
     while True:
         try:
             # Refresh roster daily
@@ -989,7 +1461,7 @@ async def run_hyperlens_loop() -> None:
                 await refresh_leaderboard()
                 last_roster_refresh = time.time()
 
-            # Poll positions
+            # Poll positions (also fetches open orders per wallet)
             if _roster:
                 await poll_positions()
 

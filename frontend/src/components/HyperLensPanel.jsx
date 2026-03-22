@@ -1713,11 +1713,582 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
 
 // ─── TAB SWITCHER ────────────────────────────────────────────────────────────
 
+// ─── PRESSURE MAP ────────────────────────────────────────────────────────────
+
+function PressureOverviewTable({ data, onSymbolSelect }) {
+  const [sortKey, setSortKey] = useState("total_notional");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const sorted = useMemo(() => {
+    if (!data?.symbols) return [];
+    const items = data.symbols.filter(s =>
+      (s.stop_count || 0) + (s.tp_count || 0) + (s.limit_count || 0) > 0
+    );
+    items.sort((a, b) => {
+      const av = a[sortKey] || 0;
+      const bv = b[sortKey] || 0;
+      return sortAsc ? av - bv : bv - av;
+    });
+    return items;
+  }, [data, sortKey, sortAsc]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortAsc(!sortAsc);
+    else { setSortKey(key); setSortAsc(false); }
+  };
+
+  if (sorted.length === 0) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+        No pressure data available
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
+            <SortTh label="STOPS" sortKey="stop_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+            <SortTh label="TPs" sortKey="tp_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+            <SortTh label="LIMITS" sortKey="limit_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+            <SortTh label="TOTAL NOTIONAL" sortKey="total_notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(s => (
+            <tr
+              key={s.symbol}
+              onClick={() => onSymbolSelect(s.symbol)}
+              style={{ cursor: "pointer", transition: "background 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
+                {s.symbol}
+              </td>
+              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.red, textAlign: "right" }}>
+                {s.stop_count || 0}
+              </td>
+              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.green, textAlign: "right" }}>
+                {s.tp_count || 0}
+              </td>
+              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.accent, textAlign: "right" }}>
+                {s.limit_count || 0}
+              </td>
+              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
+                {fmt$(s.total_notional)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PressureSummaryStrip({ data }) {
+  const items = [
+    { label: "STOP ORDERS", count: data.smart_money_stops?.length || 0, total: data.total_stop_notional, color: T.red },
+    { label: "TAKE PROFITS", count: data.smart_money_tps?.length || 0, total: data.total_tp_notional, color: T.green },
+    { label: "LIMIT ORDERS", count: data.smart_money_limits?.length || 0, total: data.total_limit_notional, color: T.accent },
+  ];
+
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
+      {items.map(({ label, count, total, color }) => (
+        <div key={label} style={{
+          flex: "1 1 120px", display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 12px", borderRadius: 8,
+          background: `${color}08`, border: `1px solid ${color}20`,
+        }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: color, flexShrink: 0,
+          }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>{label}</span>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color }}>{count}</span>
+              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text3 }}>{fmt$(total)}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PriceLevelMap({ data }) {
+  const SVG_W = 600;
+  const SVG_H = 320;
+  const PAD_TOP = 20;
+  const PAD_BOTTOM = 20;
+  const PAD_LEFT = 70;
+  const PAD_RIGHT = 70;
+  const CENTER_X = SVG_W / 2;
+  const BAR_MAX_W = (SVG_W - PAD_LEFT - PAD_RIGHT) / 2 - 10;
+
+  const allLevels = useMemo(() => {
+    const levels = [];
+    (data.smart_money_stops || []).forEach(o => levels.push({ ...o, type: "SL", price: o.price, size: o.total_size_usd, side: o.side }));
+    (data.smart_money_tps || []).forEach(o => levels.push({ ...o, type: "TP", price: o.price, size: o.total_size_usd, side: o.side }));
+    (data.smart_money_limits || []).forEach(o => levels.push({ ...o, type: "LIMIT", price: o.price, size: o.total_size_usd, side: o.side }));
+    (data.book_walls?.bids || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "BUY", wallet_count: o.order_count }));
+    (data.book_walls?.asks || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "SELL", wallet_count: o.order_count }));
+    (data.liq_clusters || []).forEach(o => levels.push({ type: "LIQ", price: o.price_center, size: o.total_notional, side: o.side === "LONG" ? "BUY" : "SELL", wallet_count: o.wallet_count }));
+    return levels;
+  }, [data]);
+
+  if (allLevels.length === 0) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+        No price levels to display
+      </div>
+    );
+  }
+
+  const prices = allLevels.map(l => l.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const rangeP = maxP - minP || 1;
+  const maxSize = Math.max(...allLevels.map(l => l.size || 0), 1);
+
+  const priceToY = (p) => PAD_TOP + (1 - (p - minP) / rangeP) * (SVG_H - PAD_TOP - PAD_BOTTOM);
+
+  const typeColor = (type, side) => {
+    if (type === "SL") return T.red;
+    if (type === "TP") return T.green;
+    if (type === "LIMIT") return T.accent;
+    if (type === "WALL") return T.text3;
+    if (type === "LIQ") return T.yellow;
+    return T.text4;
+  };
+
+  const typeLabel = (type) => {
+    if (type === "SL") return "SL";
+    if (type === "TP") return "TP";
+    if (type === "LIMIT") return "LMT";
+    if (type === "WALL") return "WALL";
+    if (type === "LIQ") return "\u26A1";
+    return "";
+  };
+
+  const gradId = "pressure-grad";
+
+  return (
+    <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, marginBottom: 8, letterSpacing: "0.06em" }}>
+        PRICE LEVEL MAP
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <svg width="100%" viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ maxWidth: SVG_W }}>
+          {/* Center axis */}
+          <line x1={CENTER_X} y1={PAD_TOP} x2={CENTER_X} y2={SVG_H - PAD_BOTTOM}
+            stroke={T.border} strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />
+          {/* BUY label */}
+          <text x={CENTER_X - 20} y={PAD_TOP - 6} textAnchor="end" fill={T.green}
+            fontFamily={T.mono} fontSize="10" fontWeight="600" opacity="0.7">BUY</text>
+          {/* SELL label */}
+          <text x={CENTER_X + 20} y={PAD_TOP - 6} textAnchor="start" fill={T.red}
+            fontFamily={T.mono} fontSize="10" fontWeight="600" opacity="0.7">SELL</text>
+
+          {allLevels.map((level, i) => {
+            const y = priceToY(level.price);
+            const barW = Math.max(8, (level.size / maxSize) * BAR_MAX_W);
+            const color = typeColor(level.type, level.side);
+            const isBuy = level.side === "BUY";
+            const barH = Math.max(6, Math.min(16, (SVG_H - PAD_TOP - PAD_BOTTOM) / allLevels.length * 0.7));
+            const opacity = level.type === "WALL" ? 0.4 : level.type === "LIQ" ? 0.85 : 0.7;
+            const strokeDash = level.type === "TP" ? "4,3" : "none";
+
+            return (
+              <g key={i}>
+                {/* Bar */}
+                <rect
+                  x={isBuy ? CENTER_X - barW - 2 : CENTER_X + 2}
+                  y={y - barH / 2}
+                  width={barW}
+                  height={barH}
+                  rx={3}
+                  fill={color}
+                  opacity={opacity}
+                  stroke={level.type === "WALL" ? color : "none"}
+                  strokeWidth={level.type === "WALL" ? 1 : 0}
+                  strokeDasharray={strokeDash}
+                />
+                {/* Type label */}
+                <text
+                  x={isBuy ? CENTER_X - barW - 8 : CENTER_X + barW + 8}
+                  y={y + 3.5}
+                  textAnchor={isBuy ? "end" : "start"}
+                  fill={color}
+                  fontFamily={T.mono}
+                  fontSize="9"
+                  fontWeight="700"
+                >
+                  {typeLabel(level.type)}
+                </text>
+                {/* Price label */}
+                <text
+                  x={isBuy ? PAD_LEFT - 4 : SVG_W - PAD_RIGHT + 4}
+                  y={y + 3.5}
+                  textAnchor={isBuy ? "end" : "start"}
+                  fill={T.text3}
+                  fontFamily={T.mono}
+                  fontSize="9"
+                >
+                  ${level.price?.toLocaleString()}
+                </text>
+                {/* Size label on bar */}
+                {barW > 30 && (
+                  <text
+                    x={isBuy ? CENTER_X - barW / 2 - 2 : CENTER_X + barW / 2 + 2}
+                    y={y + 3}
+                    textAnchor="middle"
+                    fill={T.text1}
+                    fontFamily={T.mono}
+                    fontSize="8"
+                    fontWeight="600"
+                  >
+                    {fmt$(level.size)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+        {[
+          { label: "SL Stop", color: T.red },
+          { label: "TP Take Profit", color: T.green },
+          { label: "LMT Limit", color: T.accent },
+          { label: "WALL Book", color: T.text3 },
+          { label: "\u26A1 Liq Cluster", color: T.yellow },
+        ].map(l => (
+          <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 10, height: 4, borderRadius: 2, background: l.color }} />
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>{l.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PressureOrderTable({ data }) {
+  const [sortKey, setSortKey] = useState("size");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const orders = useMemo(() => {
+    const rows = [];
+    (data.smart_money_stops || []).forEach(o => rows.push({ type: "SL", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    (data.smart_money_tps || []).forEach(o => rows.push({ type: "TP", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    (data.smart_money_limits || []).forEach(o => rows.push({ type: "LIMIT", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    rows.sort((a, b) => {
+      const av = a[sortKey] || 0;
+      const bv = b[sortKey] || 0;
+      if (typeof av === "string") return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortAsc ? av - bv : bv - av;
+    });
+    return rows;
+  }, [data, sortKey, sortAsc]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortAsc(!sortAsc);
+    else { setSortKey(key); setSortAsc(false); }
+  };
+
+  const typeBadge = (type) => {
+    const color = type === "SL" ? T.red : type === "TP" ? T.green : T.accent;
+    return (
+      <span style={{
+        fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+        padding: "2px 6px", borderRadius: 4,
+        color, background: `${color}15`, border: `1px solid ${color}25`,
+        letterSpacing: "0.04em",
+      }}>
+        {type}
+      </span>
+    );
+  };
+
+  if (orders.length === 0) return null;
+
+  return (
+    <div style={{ borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ padding: "10px 16px 4px", fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
+        ORDER DETAILS
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <SortTh label="TYPE" sortKey="type" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
+              <SortTh label="SIDE" sortKey="side" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
+              <SortTh label="PRICE" sortKey="price" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+              <SortTh label="SIZE" sortKey="size" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+              <SortTh label="WALLETS" sortKey="wallets" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o, i) => (
+              <tr key={i}>
+                <td style={{ padding: "6px 10px" }}>{typeBadge(o.type)}</td>
+                <td style={{
+                  padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+                  color: o.side === "BUY" ? T.green : T.red,
+                }}>
+                  {o.side}
+                </td>
+                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right" }}>
+                  ${o.price?.toLocaleString()}
+                </td>
+                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
+                  {fmt$(o.size)}
+                </td>
+                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
+                  {o.wallets}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PressureBookWalls({ walls }) {
+  if (!walls || (!walls.bids?.length && !walls.asks?.length)) return null;
+
+  const allWalls = [
+    ...(walls.bids || []).map(w => ({ ...w, side: "BID" })),
+    ...(walls.asks || []).map(w => ({ ...w, side: "ASK" })),
+  ];
+  const maxSize = Math.max(...allWalls.map(w => w.size_usd || 0), 1);
+
+  return (
+    <div style={{ borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ padding: "10px 16px 4px", fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
+        BOOK WALLS
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}>SIDE</th>
+              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>PRICE</th>
+              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>SIZE</th>
+              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>ORDERS</th>
+              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}`, minWidth: 80 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {allWalls.map((w, i) => {
+              const pct = Math.min((w.size_usd / maxSize) * 100, 100);
+              const color = w.side === "BID" ? T.green : T.red;
+              return (
+                <tr key={i}>
+                  <td style={{
+                    padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+                    color,
+                  }}>
+                    {w.side}
+                  </td>
+                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right" }}>
+                    ${w.price?.toLocaleString()}
+                  </td>
+                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
+                    {fmt$(w.size_usd)}
+                  </td>
+                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
+                    {w.order_count}
+                  </td>
+                  <td style={{ padding: "6px 10px" }}>
+                    <div style={{
+                      height: 4, borderRadius: 2, background: T.overlay06,
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${pct}%`, height: "100%", borderRadius: 2,
+                        background: color, opacity: 0.6,
+                        transition: "width 0.3s",
+                      }} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PressureLiqClusters({ clusters }) {
+  if (!clusters?.length) return null;
+
+  return (
+    <div style={{ padding: "12px 16px" }}>
+      <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em", marginBottom: 8 }}>
+        LIQUIDATION CLUSTERS
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {clusters.map((c, i) => (
+          <div key={i} style={{
+            padding: "10px 14px", borderRadius: 8,
+            background: `${T.yellow}08`,
+            border: `1px solid ${T.yellow}20`,
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 16 }}>{"\u26A1"}</span>
+            <div style={{ flex: 1, fontFamily: T.mono, fontSize: 12, color: T.text2, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 700, color: T.yellow }}>{c.wallet_count} wallets</span>
+              {" with "}
+              <span style={{ fontWeight: 700, color: T.red }}>{fmt$(c.total_notional)}</span>
+              {" "}
+              <span style={{ color: c.side === "LONG" ? T.green : T.red, fontWeight: 600 }}>{c.side}</span>
+              {" positions have liquidation near "}
+              <span style={{ fontWeight: 700, color: T.text1 }}>${c.price_center?.toLocaleString()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PressureMap({ consensus, isMobile }) {
+  const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [pressureData, setPressureData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPressure = useCallback(async () => {
+    try {
+      const url = selectedSymbol
+        ? `${API}/api/hyperlens/pressure?symbol=${selectedSymbol}`
+        : `${API}/api/hyperlens/pressure`;
+      const res = await fetch(url).then(r => r.json());
+      setPressureData(res);
+    } catch (err) {
+      console.warn("Pressure fetch failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedSymbol]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchPressure();
+    const interval = setInterval(fetchPressure, 15_000);
+    return () => clearInterval(interval);
+  }, [fetchPressure]);
+
+  // Symbol chips from consensus data
+  const symbols = useMemo(() => {
+    if (!consensus?.length) return [];
+    return [...new Set(consensus.map(c => c.symbol))].sort();
+  }, [consensus]);
+
+  return (
+    <div>
+      {/* Symbol selector */}
+      <div style={{
+        padding: "10px 16px",
+        borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+      }}>
+        <button
+          onClick={() => setSelectedSymbol(null)}
+          style={{
+            padding: "4px 10px", borderRadius: 6, border: "none",
+            fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+            color: !selectedSymbol ? T.text1 : T.text4,
+            background: !selectedSymbol ? T.overlay10 : T.overlay04,
+            cursor: "pointer", transition: "all 0.15s",
+          }}
+        >
+          ALL
+        </button>
+        {symbols.map(sym => (
+          <button
+            key={sym}
+            onClick={() => setSelectedSymbol(sym)}
+            style={{
+              padding: "4px 8px", borderRadius: 6, border: "none",
+              fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+              color: selectedSymbol === sym ? T.text1 : T.text4,
+              background: selectedSymbol === sym ? T.overlay10 : "transparent",
+              cursor: "pointer", transition: "all 0.15s",
+            }}
+          >
+            {sym}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+          Loading pressure data...
+        </div>
+      ) : !selectedSymbol ? (
+        <PressureOverviewTable data={pressureData} onSymbolSelect={setSelectedSymbol} />
+      ) : (
+        <div>
+          {/* Back button */}
+          <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.border}` }}>
+            <button
+              onClick={() => setSelectedSymbol(null)}
+              style={{
+                padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`,
+                fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+                color: T.text3, background: "transparent",
+                cursor: "pointer", transition: "all 0.15s",
+              }}
+            >
+              {"\u2190"} All Symbols
+            </button>
+            <span style={{
+              marginLeft: 10, fontFamily: T.mono, fontSize: 14, fontWeight: 700,
+              color: T.text1,
+            }}>
+              {selectedSymbol}
+            </span>
+          </div>
+
+          {pressureData?.symbol ? (
+            <>
+              <PressureSummaryStrip data={pressureData} />
+              <PriceLevelMap data={pressureData} />
+              <PressureOrderTable data={pressureData} />
+              <PressureBookWalls walls={pressureData.book_walls} />
+              <PressureLiqClusters clusters={pressureData.liq_clusters} />
+            </>
+          ) : (
+            <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+              No pressure data for {selectedSymbol}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TAB SWITCHER ────────────────────────────────────────────────────────────
+
 function TabSwitcher({ active, onChange }) {
   const tabs = [
     { key: "consensus", label: "Consensus" },
     { key: "heatmap", label: "Heatmap" },
     { key: "roster", label: "Roster" },
+    { key: "pressure", label: "Pressure" },
   ];
 
   return (
@@ -1911,6 +2482,12 @@ export default function HyperLensPanel({ isMobile }) {
               wallets={roster}
               consensus={consensus}
               onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+              isMobile={isMobile}
+            />
+          )}
+          {tab === "pressure" && (
+            <PressureMap
+              consensus={consensus}
               isMobile={isMobile}
             />
           )}
