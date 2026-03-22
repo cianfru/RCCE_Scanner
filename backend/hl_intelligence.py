@@ -48,8 +48,8 @@ _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
 # Cohort definitions
 _ROSTER_COHORTS = {
-    "money_printers": 200,  # top performers by ROI
-    "smart_money": 200,      # largest wallets by AV
+    "money_printers": 300,  # top performers by ROI
+    "smart_money": 300,      # largest wallets by AV
 }
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
