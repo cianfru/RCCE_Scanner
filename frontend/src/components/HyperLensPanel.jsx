@@ -1,8 +1,37 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+// ─── MODAL OVERLAY ───────────────────────────────────────────────────────────
+
+function ModalOverlay({ children, onClose }) {
+  return createPortal(
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div style={{
+        width: "100%", maxWidth: 720, maxHeight: "85vh",
+        overflowY: "auto",
+        borderRadius: 12,
+        border: `1px solid ${T.border}`,
+        background: T.bg,
+        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+      }}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -1077,16 +1106,20 @@ export default function HyperLensPanel({ isMobile }) {
         </div>
       </GlassCard>
 
-      {/* Detail drawer (wallet or symbol) */}
+      {/* Detail modal (wallet or symbol) */}
       {selectedWallet && (
-        <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} />
+        <ModalOverlay onClose={() => setSelectedWallet(null)}>
+          <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} />
+        </ModalOverlay>
       )}
       {selectedSymbol && (
-        <SymbolDetail
-          symbol={selectedSymbol}
-          onClose={() => setSelectedSymbol(null)}
-          onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
-        />
+        <ModalOverlay onClose={() => setSelectedSymbol(null)}>
+          <SymbolDetail
+            symbol={selectedSymbol}
+            onClose={() => setSelectedSymbol(null)}
+            onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+          />
+        </ModalOverlay>
       )}
 
       {/* Main content */}
