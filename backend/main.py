@@ -185,6 +185,13 @@ async def lifespan(app: FastAPI):
     # Start exchange derivatives shadow fetch (runs alongside CoinGlass for comparison)
     asyncio.create_task(_shadow_derivatives_loop())
 
+    # Start HyperLens smart-money tracking loop
+    try:
+        from hl_intelligence import run_hyperlens_loop
+        asyncio.create_task(run_hyperlens_loop())
+    except Exception as e:
+        logger.warning("HyperLens init failed (non-fatal): %s", e)
+
     yield
 
     # Shutdown Telegram bot
@@ -3058,3 +3065,94 @@ async def derivatives_comparison():
     comparisons.sort(key=lambda x: x.get("oi_total_usd", 0), reverse=True)
 
     return {"count": len(comparisons), "comparisons": comparisons[:30]}
+
+
+# ---------------------------------------------------------------------------
+# HyperLens endpoints — smart-money wallet tracking
+# ---------------------------------------------------------------------------
+
+@app.get("/api/hyperlens/status")
+async def hyperlens_status():
+    """HyperLens module status."""
+    from hl_intelligence import get_status
+    return get_status()
+
+
+@app.get("/api/hyperlens/roster")
+async def hyperlens_roster():
+    """Current tracked wallet roster with stats."""
+    from hl_intelligence import get_roster
+    roster = get_roster()
+    return {"count": len(roster), "wallets": roster}
+
+
+@app.get("/api/hyperlens/consensus")
+async def hyperlens_consensus(symbol: Optional[str] = Query(None)):
+    """Per-symbol smart-money consensus.
+
+    Optional ?symbol=BTC filter, otherwise returns all symbols sorted by
+    number of positioned wallets.
+    """
+    from hl_intelligence import get_consensus, get_all_consensus
+
+    if symbol:
+        c = get_consensus(symbol.upper())
+        if c is None:
+            return {"symbol": symbol.upper(), "trend": "NO_DATA", "wallets": 0}
+        return {
+            "symbol": c.symbol,
+            "trend": c.trend,
+            "confidence": round(c.confidence, 3),
+            "long_count": c.long_count,
+            "short_count": c.short_count,
+            "net_ratio": round(c.net_ratio, 3),
+            "long_notional": round(c.long_notional, 2),
+            "short_notional": round(c.short_notional, 2),
+            "total_tracked": c.total_tracked,
+        }
+
+    all_c = get_all_consensus()
+    results = []
+    for c in all_c.values():
+        results.append({
+            "symbol": c.symbol,
+            "trend": c.trend,
+            "confidence": round(c.confidence, 3),
+            "long_count": c.long_count,
+            "short_count": c.short_count,
+            "net_ratio": round(c.net_ratio, 3),
+            "long_notional": round(c.long_notional, 2),
+            "short_notional": round(c.short_notional, 2),
+            "total_tracked": c.total_tracked,
+        })
+    # Sort by total positioned wallets
+    results.sort(key=lambda x: x["long_count"] + x["short_count"], reverse=True)
+    return {"count": len(results), "consensus": results}
+
+
+@app.get("/api/hyperlens/positions/{symbol}")
+async def hyperlens_symbol_positions(symbol: str):
+    """Per-wallet position breakdown for a symbol."""
+    from hl_intelligence import get_symbol_positions
+    positions = get_symbol_positions(symbol.upper())
+    return {"symbol": symbol.upper(), "count": len(positions), "positions": positions}
+
+
+@app.get("/api/hyperlens/wallet/{address}")
+async def hyperlens_wallet(address: str):
+    """Get positions for a specific tracked wallet."""
+    from hl_intelligence import get_wallet_positions
+    result = get_wallet_positions(address)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Wallet not tracked or no data yet")
+    return result
+
+
+@app.get("/api/hyperlens/changes/{symbol}")
+async def hyperlens_changes(
+    symbol: str,
+    window: int = Query(30, ge=5, le=1440, description="Window in minutes"),
+):
+    """Detect position changes for a symbol over recent window."""
+    from hl_intelligence import get_position_changes
+    return get_position_changes(symbol.upper(), window_minutes=window)
