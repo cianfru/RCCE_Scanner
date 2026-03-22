@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -33,13 +34,19 @@ _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 _POLL_INTERVAL = 5 * 60                    # 5 minutes (aligned with scan cycle)
-_POSITION_HISTORY_LEN = 288               # 24h of 5-min snapshots
+# ~24h of 5-min snapshots (actual count may drift slightly due to
+# network delays and retries, so treat as approximate)
+_POSITION_HISTORY_LEN = 300
+
+# Staleness: skip snapshots older than this when computing consensus
+_SNAPSHOT_MAX_AGE_S = 15 * 60              # 15 minutes (3 missed polls)
 
 # Filtering thresholds
 _MIN_ACCOUNT_VALUE = 500_000               # $500k minimum
 _MIN_ROI_PCT = 30.0                        # 30% monthly ROI minimum
 _ROSTER_SIZE = 100                         # Top 100 qualifying wallets
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
+_MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
 # Consensus thresholds
@@ -62,9 +69,8 @@ class TrackedWallet:
     display_name: str = ""
     account_value: float = 0.0
     pnl: float = 0.0
-    roi: float = 0.0              # Percentage ROI
-    score: float = 0.0            # roi * log(accountValue) ranking
-    window_performances: dict = field(default_factory=dict)
+    roi: float = 0.0              # Monthly percentage ROI
+    score: float = 0.0            # monthly_roi * log(accountValue) ranking
 
 
 @dataclass
@@ -209,10 +215,6 @@ async def refresh_leaderboard() -> int:
                 pnl=pnl,
                 roi=roi,
                 score=score,
-                window_performances={
-                    wp[0]: wp[1] for wp in window_perfs
-                    if isinstance(wp, list) and len(wp) >= 2
-                } if isinstance(window_perfs, list) else {},
             ))
         except Exception:
             continue  # Skip malformed entries
@@ -350,14 +352,20 @@ async def poll_positions() -> int:
 # ---------------------------------------------------------------------------
 
 def _recompute_consensus() -> None:
-    """Aggregate latest positions across all wallets into per-symbol consensus."""
+    """Aggregate latest positions across all wallets into per-symbol consensus.
+
+    Trend is derived from notional-weighted net_score (not raw wallet count)
+    so a single whale with $10M has more influence than ten $50k wallets.
+    Stale snapshots (>15min old) are excluded to prevent ghost data.
+    """
     global _consensus
 
-    # Build a score lookup for weighting (consensus weighted by notional * score)
+    now = time.time()
     score_map = {w.address: w.score for w in _roster}
 
-    # Collect per-symbol data
+    # Collect per-symbol data (skip stale + MM-like wallets)
     sym_data: Dict[str, dict] = {}
+    fresh_wallet_count = 0
 
     for wallet in _roster:
         snapshots = _snapshots.get(wallet.address)
@@ -365,7 +373,17 @@ def _recompute_consensus() -> None:
             continue
 
         latest = snapshots[-1]
-        coins_seen = set()
+
+        # Staleness check: skip wallets whose last snapshot is too old
+        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+            continue
+
+        # Position-count MM filter: wallets with >25 positions are likely
+        # market makers or vaults — skip from consensus
+        if len(latest.positions) > _MM_MAX_POSITIONS:
+            continue
+
+        fresh_wallet_count += 1
 
         for pos in latest.positions:
             coin = pos.coin
@@ -395,41 +413,52 @@ def _recompute_consensus() -> None:
                 d["weighted_sum"] -= notional_weight
                 d["top_shorts"].append(wallet.address)
 
-            coins_seen.add(coin)
-
     # Build consensus objects
     new_consensus: Dict[str, SymbolConsensus] = {}
-    total_tracked = len([w for w in _roster if w.address in _snapshots])
 
     for coin, d in sym_data.items():
         total_positioned = d["long_count"] + d["short_count"]
-        net_ratio = (d["long_count"] - d["short_count"]) / max(total_positioned, 1)
-        # Notional-weighted score: positive = net long conviction, negative = short
-        total_notional = d["long_notional"] + d["short_notional"]
-        norm_score = d["weighted_sum"] / max(total_notional, 1.0)  # normalized by total exposure
 
-        if net_ratio > _BULLISH_THRESHOLD:
+        # Count-based ratio (kept for API consumers)
+        net_ratio = (d["long_count"] - d["short_count"]) / max(total_positioned, 1)
+
+        # Notional-weighted directional ratio in [-1, +1]
+        # (long$ - short$) / (long$ + short$) — pure dollars, no score multiplication
+        total_notional = d["long_notional"] + d["short_notional"]
+        notional_ratio = (d["long_notional"] - d["short_notional"]) / max(total_notional, 1.0)
+
+        # Blend count ratio and notional ratio (60% notional, 40% count)
+        # so a $10M whale outweighs ten $50k wallets, but pure count
+        # still has some voice to prevent single-whale domination
+        blended = 0.6 * notional_ratio + 0.4 * net_ratio
+
+        # Derive trend from blended score
+        if blended > _BULLISH_THRESHOLD:
             trend = "BULLISH"
-        elif net_ratio < _BEARISH_THRESHOLD:
+        elif blended < _BEARISH_THRESHOLD:
             trend = "BEARISH"
         else:
             trend = "NEUTRAL"
 
-        confidence = min(abs(net_ratio), 1.0)
+        # Confidence = directional conviction * participation rate
+        # 3L/1S with 4/100 wallets positioned = much weaker than
+        # 30L/10S with 40/100 wallets positioned
+        participation = total_positioned / max(fresh_wallet_count, 1)
+        confidence = min(abs(blended) * math.sqrt(participation), 1.0)
 
         new_consensus[coin] = SymbolConsensus(
             symbol=coin,
             long_count=d["long_count"],
             short_count=d["short_count"],
-            neutral_count=total_tracked - total_positioned,
-            total_tracked=total_tracked,
+            neutral_count=fresh_wallet_count - total_positioned,
+            total_tracked=fresh_wallet_count,
             long_notional=d["long_notional"],
             short_notional=d["short_notional"],
-            net_score=norm_score,
+            net_score=blended,
             net_ratio=net_ratio,
             trend=trend,
             confidence=confidence,
-            top_longs=d["top_longs"][:5],    # Top 5 only
+            top_longs=d["top_longs"][:5],
             top_shorts=d["top_shorts"][:5],
         )
 
@@ -440,17 +469,25 @@ def _recompute_consensus() -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _normalize_coin(symbol: str) -> str:
+    """Normalize any symbol format to bare coin name.
+
+    Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT"
+    Uses anchored regex to avoid mangling coins that contain USDT/USDC substrings.
+    """
+    coin = symbol.split("/")[0].split(":")[0]
+    coin = re.sub(r"(USDT|USDC|USD)$", "", coin)
+    if coin.startswith("1000"):
+        coin = coin[4:]
+    return coin
+
+
 def get_consensus(symbol: str) -> Optional[SymbolConsensus]:
     """Get consensus for a symbol (used by signal synthesizer).
 
     Accepts formats: "BTC", "BTC/USDT:USDT", "BTCUSDT"
     """
-    # Normalize to bare coin
-    coin = symbol.split("/")[0].split(":")[0].replace("USDT", "").replace("USDC", "")
-    # Handle 1000-prefix coins
-    if coin.startswith("1000"):
-        coin = coin[4:]
-    return _consensus.get(coin)
+    return _consensus.get(_normalize_coin(symbol))
 
 
 def get_all_consensus() -> Dict[str, SymbolConsensus]:
@@ -509,9 +546,7 @@ def get_wallet_positions(address: str) -> Optional[dict]:
 
 def get_symbol_positions(symbol: str) -> List[dict]:
     """Get all wallet positions for a specific symbol."""
-    coin = symbol.split("/")[0].split(":")[0].replace("USDT", "").replace("USDC", "")
-    if coin.startswith("1000"):
-        coin = coin[4:]
+    coin = _normalize_coin(symbol)
 
     result = []
     for wallet in _roster:
@@ -543,9 +578,7 @@ def get_position_changes(symbol: str, window_minutes: int = 30) -> dict:
 
     Returns: {opened: int, closed: int, flipped: int, net_change: str}
     """
-    coin = symbol.split("/")[0].split(":")[0].replace("USDT", "").replace("USDC", "")
-    if coin.startswith("1000"):
-        coin = coin[4:]
+    coin = _normalize_coin(symbol)
 
     cutoff = time.time() - (window_minutes * 60)
     opened = 0
@@ -567,7 +600,13 @@ def get_position_changes(symbol: str, window_minutes: int = 30) -> dict:
                 prev = snap
                 break
         if not prev:
-            prev = snaps[0]
+            # Fallback to oldest snapshot, but only if it's meaningfully
+            # older than latest (at least half the window). Otherwise this
+            # wallet was just added and we'd undercount changes.
+            if latest.timestamp - snaps[0].timestamp >= (window_minutes * 60) / 2:
+                prev = snaps[0]
+            else:
+                continue  # Not enough history for this wallet
 
         # Compare positions for this coin
         prev_pos = next((p for p in prev.positions if p.coin == coin), None)
