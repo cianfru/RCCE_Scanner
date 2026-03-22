@@ -76,13 +76,29 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       )}
       {showTip && hasInfo && (
         <div style={{
-          position: "absolute", bottom: "calc(100% + 8px)", left: 0,
+          position: "fixed", zIndex: 9999,
           background: T.popoverBg, border: `1px solid ${T.borderH}`,
           borderRadius: T.radiusSm, padding: isMobile ? "12px 14px" : "10px 12px",
-          minWidth: 220, maxWidth: 300, zIndex: 300,
+          minWidth: 220, maxWidth: 340, width: "max-content",
           boxShadow: `0 8px 32px ${T.shadowDeep}`,
-          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+          wordBreak: "break-word", overflowWrap: "break-word",
         }}
+          ref={el => {
+            if (!el) return;
+            const parent = el.parentElement?.getBoundingClientRect();
+            if (!parent) return;
+            const tipH = el.offsetHeight;
+            const tipW = el.offsetWidth;
+            // Position above the signal cell, clamped to viewport
+            let top = parent.top - tipH - 8;
+            let left = parent.left;
+            if (top < 8) top = parent.bottom + 8; // flip below if clipped at top
+            if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+            if (left < 8) left = 8;
+            el.style.top = `${top}px`;
+            el.style.left = `${left}px`;
+          }}
           onClick={e => e.stopPropagation()}
         >
           {reason && (
