@@ -3140,12 +3140,23 @@ async def hyperlens_symbol_positions(symbol: str):
 
 @app.get("/api/hyperlens/wallet/{address}")
 async def hyperlens_wallet(address: str):
-    """Get positions for a specific tracked wallet."""
-    from hl_intelligence import get_wallet_positions
-    result = get_wallet_positions(address)
+    """Get comprehensive wallet profile with positions, trades, and stats."""
+    from hl_intelligence import get_wallet_profile
+    result = get_wallet_profile(address)
     if result is None:
         raise HTTPException(status_code=404, detail="Wallet not tracked or no data yet")
     return result
+
+
+@app.get("/api/hyperlens/wallet/{address}/trades")
+async def hyperlens_wallet_trades(
+    address: str,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get reconstructed trade history for a wallet."""
+    from hl_intelligence import get_wallet_trades
+    trades = get_wallet_trades(address, limit=limit)
+    return {"address": address.lower(), "count": len(trades), "trades": trades}
 
 
 @app.get("/api/hyperlens/changes/{symbol}")

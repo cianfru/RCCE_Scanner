@@ -360,50 +360,106 @@ function RosterTable({ wallets, onWalletClick, isMobile }) {
   );
 }
 
-// ─── WALLET DETAIL DRAWER ────────────────────────────────────────────────────
+// ─── STAT PILL ───────────────────────────────────────────────────────────────
+
+function StatPill({ label, value, color }) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      padding: "8px 14px", borderRadius: 8,
+      background: T.overlay04, border: `1px solid ${T.overlay06}`,
+      minWidth: 70,
+    }}>
+      <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em", marginBottom: 3 }}>
+        {label}
+      </span>
+      <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: color || T.text1 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ─── WALLET PROFILE DRAWER ──────────────────────────────────────────────────
 
 function WalletDetail({ address, onClose }) {
   const [data, setData] = useState(null);
+  const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState("positions");
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API}/api/hyperlens/wallet/${address}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
+    Promise.all([
+      fetch(`${API}/api/hyperlens/wallet/${address}`).then(r => r.json()),
+      fetch(`${API}/api/hyperlens/wallet/${address}/trades?limit=100`).then(r => r.json()),
+    ])
+      .then(([profile, tradeRes]) => {
+        setData(profile);
+        setTrades(tradeRes.trades || []);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [address]);
 
   if (loading) {
     return (
       <GlassCard style={{ padding: 20 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Loading...</div>
+        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Loading wallet profile...</div>
       </GlassCard>
     );
   }
 
-  if (!data || !data.positions) {
+  if (!data) {
     return (
       <GlassCard style={{ padding: 20 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>No position data</div>
+        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Wallet not found</div>
       </GlassCard>
     );
   }
+
+  const s = data.stats || {};
+  const positions = data.current_positions || [];
+  const coinBreakdown = data.coin_breakdown || [];
+
+  const sections = [
+    { key: "positions", label: `Positions (${positions.length})` },
+    { key: "trades", label: `Trades (${trades.length})` },
+    { key: "coins", label: "Coin Stats" },
+  ];
 
   return (
     <GlassCard style={{ padding: 0 }}>
+      {/* Header */}
       <div style={{
-        padding: "12px 16px",
+        padding: "14px 16px",
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.accent }}>
-            {truncAddr(address)}
-          </span>
-          <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text3, marginLeft: 10 }}>
-            {fmt$(data.account_value || 0)}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.accent }}>
+              {truncAddr(address)}
+            </span>
+            {data.display_name && (
+              <span style={{ fontFamily: T.font, fontSize: 11, color: T.text3 }}>
+                {data.display_name}
+              </span>
+            )}
+            {data.rank && (
+              <span style={{
+                fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                padding: "2px 6px", borderRadius: 4,
+                color: T.accent, background: `${T.accent}15`,
+                border: `1px solid ${T.accent}25`,
+              }}>
+                #{data.rank}
+              </span>
+            )}
+          </div>
+          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, marginTop: 3 }}>
+            {data.snapshot_count} snapshots tracked
+          </div>
         </div>
         <button
           onClick={onClose}
@@ -418,59 +474,293 @@ function WalletDetail({ address, onClose }) {
           {"\u2715"}
         </button>
       </div>
+
+      {/* Stat pills */}
+      <div style={{
+        padding: "12px 16px",
+        display: "flex", flexWrap: "wrap", gap: 6,
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        <StatPill label="ACCT VALUE" value={fmt$(data.account_value || 0)} />
+        <StatPill label="MONTHLY ROI" value={fmtPct(data.monthly_roi || 0)} color={T.green} />
+        <StatPill label="SCORE" value={(data.score || 0).toFixed(0)} />
+        <StatPill
+          label="WIN RATE"
+          value={s.total_trades > 0 ? `${s.win_rate}%` : "--"}
+          color={s.win_rate > 50 ? T.green : s.win_rate > 0 ? T.red : T.text4}
+        />
+        <StatPill
+          label="TRADES"
+          value={s.total_trades || 0}
+        />
+        <StatPill
+          label="AVG PNL"
+          value={s.total_trades > 0 ? `${s.avg_pnl_pct > 0 ? "+" : ""}${s.avg_pnl_pct}%` : "--"}
+          color={s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4}
+        />
+      </div>
+
+      {/* Best/Worst trade badges */}
+      {(s.best_trade || s.worst_trade) && (
+        <div style={{
+          padding: "8px 16px",
+          display: "flex", gap: 8, flexWrap: "wrap",
+          borderBottom: `1px solid ${T.border}`,
+        }}>
+          {s.best_trade && (
+            <span style={{
+              fontFamily: T.mono, fontSize: 10,
+              padding: "3px 8px", borderRadius: 4,
+              color: T.green, background: `${T.green}12`,
+              border: `1px solid ${T.green}20`,
+            }}>
+              Best: {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
+            </span>
+          )}
+          {s.worst_trade && (
+            <span style={{
+              fontFamily: T.mono, fontSize: 10,
+              padding: "3px 8px", borderRadius: 4,
+              color: T.red, background: `${T.red}12`,
+              border: `1px solid ${T.red}20`,
+            }}>
+              Worst: {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Section tabs */}
+      <div style={{
+        padding: "8px 16px",
+        display: "flex", gap: 2,
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        {sections.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveSection(key)}
+            style={{
+              padding: "5px 12px", borderRadius: 5,
+              border: "none",
+              fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+              color: activeSection === key ? T.text1 : T.text4,
+              background: activeSection === key ? T.overlay10 : "transparent",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Section content */}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "LEV"].map(h => (
-                <th key={h} style={{
-                  padding: "8px 10px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
-                  color: T.text4, letterSpacing: "0.06em",
-                  borderBottom: `1px solid ${T.border}`,
-                  textAlign: h === "COIN" || h === "SIDE" ? "left" : "right",
-                }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.positions.sort((a, b) => b.size_usd - a.size_usd).map((p, i) => (
-              <tr key={i}>
-                <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
-                  {p.coin}
-                </td>
-                <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 10, fontWeight: 700 }}>
-                  <span style={{
-                    padding: "2px 6px", borderRadius: 3,
-                    color: p.side === "LONG" ? T.green : T.red,
-                    background: `${p.side === "LONG" ? T.green : T.red}15`,
+        {/* POSITIONS */}
+        {activeSection === "positions" && (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "LEV"].map(h => (
+                  <th key={h} style={{
+                    padding: "8px 10px",
+                    fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                    color: T.text4, letterSpacing: "0.06em",
+                    borderBottom: `1px solid ${T.border}`,
+                    textAlign: h === "COIN" || h === "SIDE" ? "left" : "right",
                   }}>
-                    {p.side}
-                  </span>
-                </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
-                  {fmt$(p.size_usd)}
-                </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
-                  ${p.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </td>
-                <td style={{
-                  padding: "7px 10px", textAlign: "right",
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-                  color: p.unrealized_pnl >= 0 ? T.green : T.red,
-                }}>
-                  {p.unrealized_pnl >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl))}
-                </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
-                  {p.leverage}x
-                </td>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {data.positions.length === 0 && (
+            </thead>
+            <tbody>
+              {positions.map((p, i) => (
+                <tr key={i}>
+                  <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                    {p.coin}
+                  </td>
+                  <td style={{ padding: "7px 10px" }}>
+                    <span style={{
+                      fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                      padding: "2px 6px", borderRadius: 3,
+                      color: p.side === "LONG" ? T.green : T.red,
+                      background: `${p.side === "LONG" ? T.green : T.red}15`,
+                    }}>
+                      {p.side}
+                    </span>
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
+                    {fmt$(p.size_usd)}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                    ${p.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </td>
+                  <td style={{
+                    padding: "7px 10px", textAlign: "right",
+                    fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                    color: p.unrealized_pnl >= 0 ? T.green : T.red,
+                  }}>
+                    {p.unrealized_pnl >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl))}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+                    {p.leverage}x
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {/* TRADES */}
+        {activeSection === "trades" && (
+          <>
+            {trades.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+                No trades detected yet — trades appear as positions open and close over time.
+                <br />
+                <span style={{ fontSize: 10, marginTop: 4, display: "block" }}>
+                  Tracking since {data.snapshot_count} snapshots ago
+                </span>
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "STATUS"].map(h => (
+                      <th key={h} style={{
+                        padding: "8px 10px",
+                        fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                        color: T.text4, letterSpacing: "0.06em",
+                        borderBottom: `1px solid ${T.border}`,
+                        textAlign: h === "COIN" || h === "SIDE" || h === "STATUS" ? "left" : "right",
+                      }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.map((t, i) => {
+                    const statusColor =
+                      t.status === "OPENED" ? T.accent :
+                      t.status === "CLOSED" ? T.text3 :
+                      t.status === "FLIPPED" ? T.yellow : T.text4;
+                    return (
+                      <tr key={i}>
+                        <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                          {t.coin}
+                        </td>
+                        <td style={{ padding: "7px 10px" }}>
+                          <span style={{
+                            fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                            padding: "2px 6px", borderRadius: 3,
+                            color: t.side === "LONG" ? T.green : T.red,
+                            background: `${t.side === "LONG" ? T.green : T.red}15`,
+                          }}>
+                            {t.side}
+                          </span>
+                        </td>
+                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
+                          {fmt$(t.size_usd)}
+                        </td>
+                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                          ${t.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{
+                          padding: "7px 10px", textAlign: "right",
+                          fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                          color: t.pnl >= 0 ? T.green : T.red,
+                        }}>
+                          {t.status !== "OPENED" ? (
+                            <>{t.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(t.pnl))} <span style={{ fontSize: 9, color: T.text4 }}>({t.pnl_pct > 0 ? "+" : ""}{t.pnl_pct.toFixed(1)}%)</span></>
+                          ) : (
+                            <span style={{ color: T.text4 }}>--</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "7px 10px" }}>
+                          <span style={{
+                            fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                            padding: "2px 6px", borderRadius: 3,
+                            color: statusColor,
+                            background: `${statusColor}15`,
+                          }}>
+                            {t.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+
+        {/* COIN BREAKDOWN */}
+        {activeSection === "coins" && (
+          <>
+            {coinBreakdown.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+                No coin stats yet — builds as trades are detected
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["COIN", "TRADES", "WINS", "WIN RATE", "PNL"].map(h => (
+                      <th key={h} style={{
+                        padding: "8px 10px",
+                        fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                        color: T.text4, letterSpacing: "0.06em",
+                        borderBottom: `1px solid ${T.border}`,
+                        textAlign: h === "COIN" ? "left" : "right",
+                      }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {coinBreakdown.map((c, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                        {c.coin}
+                      </td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text2 }}>
+                        {c.trades}
+                      </td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.green }}>
+                        {c.wins}
+                      </td>
+                      <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                        <span style={{
+                          fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                          padding: "2px 6px", borderRadius: 3,
+                          color: c.win_rate > 50 ? T.green : T.red,
+                          background: `${c.win_rate > 50 ? T.green : T.red}15`,
+                        }}>
+                          {c.win_rate}%
+                        </span>
+                      </td>
+                      <td style={{
+                        padding: "7px 10px", textAlign: "right",
+                        fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                        color: c.pnl >= 0 ? T.green : T.red,
+                      }}>
+                        {c.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(c.pnl))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+
+        {/* Empty state for positions */}
+        {activeSection === "positions" && positions.length === 0 && (
           <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
             No open positions
           </div>

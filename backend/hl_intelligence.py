@@ -336,6 +336,9 @@ async def poll_positions() -> int:
     _last_poll_at = time.time()
     _poll_count += 1
 
+    # Reconstruct trades from snapshot diffs (must run before consensus)
+    _reconstruct_trades()
+
     # Recompute consensus
     _recompute_consensus()
     _consensus_updated_at = time.time()
@@ -637,7 +640,222 @@ def get_position_changes(symbol: str, window_minutes: int = 30) -> dict:
     }
 
 
-def get_status() -> dict:
+# ---------------------------------------------------------------------------
+# Trade reconstruction — detect opens/closes from snapshot diffs
+# ---------------------------------------------------------------------------
+
+# Persistent trade log per wallet: address -> list of completed trades
+_trade_log: Dict[str, List[dict]] = {}
+
+# Track "last known positions" per wallet for diff detection
+_last_positions: Dict[str, Dict[str, dict]] = {}  # addr -> {coin: {side, size, entry_px, ...}}
+
+
+def _reconstruct_trades() -> None:
+    """Compare consecutive snapshots to detect position opens/closes.
+
+    Called after each poll. Builds a persistent trade log that survives
+    across the session (but not across restarts — in-memory only).
+    """
+    for wallet in _roster:
+        snaps = _snapshots.get(wallet.address)
+        if not snaps or len(snaps) < 2:
+            continue
+
+        latest = snaps[-1]
+        addr = wallet.address
+
+        # Build current position map: coin -> position dict
+        curr_map: Dict[str, dict] = {}
+        for pos in latest.positions:
+            curr_map[pos.coin] = {
+                "side": pos.side,
+                "size": pos.size,
+                "size_usd": pos.size_usd,
+                "entry_px": pos.entry_px,
+                "unrealized_pnl": pos.unrealized_pnl,
+                "leverage": pos.leverage,
+            }
+
+        prev_map = _last_positions.get(addr, {})
+
+        # Detect changes
+        if addr not in _trade_log:
+            _trade_log[addr] = []
+
+        # Closed positions: in prev but not in curr
+        for coin, prev_pos in prev_map.items():
+            if coin not in curr_map:
+                _trade_log[addr].append({
+                    "coin": coin,
+                    "side": prev_pos["side"],
+                    "size_usd": prev_pos["size_usd"],
+                    "entry_px": prev_pos["entry_px"],
+                    "leverage": prev_pos["leverage"],
+                    "pnl": prev_pos["unrealized_pnl"],  # Last known unrealized = approximate realized
+                    "pnl_pct": (prev_pos["unrealized_pnl"] / max(prev_pos["size_usd"], 1)) * 100,
+                    "opened_at": None,   # We don't know exact open time
+                    "closed_at": latest.timestamp,
+                    "status": "CLOSED",
+                })
+
+            # Flipped side: closed one direction, opened opposite
+            elif curr_map[coin]["side"] != prev_pos["side"]:
+                _trade_log[addr].append({
+                    "coin": coin,
+                    "side": prev_pos["side"],
+                    "size_usd": prev_pos["size_usd"],
+                    "entry_px": prev_pos["entry_px"],
+                    "leverage": prev_pos["leverage"],
+                    "pnl": prev_pos["unrealized_pnl"],
+                    "pnl_pct": (prev_pos["unrealized_pnl"] / max(prev_pos["size_usd"], 1)) * 100,
+                    "opened_at": None,
+                    "closed_at": latest.timestamp,
+                    "status": "FLIPPED",
+                })
+
+        # New positions: in curr but not in prev (logged as "OPEN" events)
+        for coin in curr_map:
+            if coin not in prev_map:
+                _trade_log[addr].append({
+                    "coin": coin,
+                    "side": curr_map[coin]["side"],
+                    "size_usd": curr_map[coin]["size_usd"],
+                    "entry_px": curr_map[coin]["entry_px"],
+                    "leverage": curr_map[coin]["leverage"],
+                    "pnl": 0.0,
+                    "pnl_pct": 0.0,
+                    "opened_at": latest.timestamp,
+                    "closed_at": None,
+                    "status": "OPENED",
+                })
+
+        # Keep only last 200 trade events per wallet
+        if len(_trade_log[addr]) > 200:
+            _trade_log[addr] = _trade_log[addr][-200:]
+
+        # Update last known positions
+        _last_positions[addr] = curr_map
+
+
+def get_wallet_trades(address: str, limit: int = 50) -> List[dict]:
+    """Get reconstructed trade history for a wallet."""
+    address = address.lower()
+    trades = _trade_log.get(address, [])
+    # Return most recent first
+    return list(reversed(trades[-limit:]))
+
+
+def get_wallet_profile(address: str) -> Optional[dict]:
+    """Get comprehensive wallet profile with performance stats.
+
+    Returns: current positions, trade history, win rate, avg PnL, etc.
+    """
+    address = address.lower()
+
+    # Find wallet in roster
+    wallet = next((w for w in _roster if w.address == address), None)
+    if not wallet:
+        return None
+
+    snaps = _snapshots.get(address)
+    latest = snaps[-1] if snaps else None
+
+    # Trade stats from log
+    trades = _trade_log.get(address, [])
+    closed_trades = [t for t in trades if t["status"] in ("CLOSED", "FLIPPED")]
+
+    wins = sum(1 for t in closed_trades if t["pnl"] > 0)
+    losses = sum(1 for t in closed_trades if t["pnl"] <= 0)
+    total_closed = len(closed_trades)
+    win_rate = (wins / total_closed * 100) if total_closed > 0 else 0
+
+    total_pnl = sum(t["pnl"] for t in closed_trades)
+    avg_pnl_pct = sum(t["pnl_pct"] for t in closed_trades) / max(total_closed, 1)
+
+    # Biggest win/loss
+    best_trade = max(closed_trades, key=lambda t: t["pnl"]) if closed_trades else None
+    worst_trade = min(closed_trades, key=lambda t: t["pnl"]) if closed_trades else None
+
+    # Coin breakdown: which coins does this wallet trade most?
+    coin_stats: Dict[str, dict] = {}
+    for t in closed_trades:
+        coin = t["coin"]
+        if coin not in coin_stats:
+            coin_stats[coin] = {"trades": 0, "wins": 0, "pnl": 0.0}
+        coin_stats[coin]["trades"] += 1
+        coin_stats[coin]["pnl"] += t["pnl"]
+        if t["pnl"] > 0:
+            coin_stats[coin]["wins"] += 1
+    coin_breakdown = sorted(
+        [{"coin": k, **v, "win_rate": round(v["wins"] / max(v["trades"], 1) * 100, 1)}
+         for k, v in coin_stats.items()],
+        key=lambda x: x["trades"], reverse=True,
+    )
+
+    # Account value history from snapshots
+    av_history = []
+    if snaps:
+        for snap in snaps:
+            if snap.account_value > 0:
+                av_history.append({
+                    "timestamp": snap.timestamp,
+                    "value": round(snap.account_value, 2),
+                })
+
+    # Current positions
+    current_positions = []
+    if latest:
+        for p in sorted(latest.positions, key=lambda x: x.size_usd, reverse=True):
+            current_positions.append({
+                "coin": p.coin,
+                "side": p.side,
+                "size": p.size,
+                "size_usd": round(p.size_usd, 2),
+                "entry_px": p.entry_px,
+                "unrealized_pnl": round(p.unrealized_pnl, 2),
+                "leverage": p.leverage,
+                "liq_px": p.liq_px,
+            })
+
+    return {
+        "address": address,
+        "display_name": wallet.display_name,
+        "rank": next((i + 1 for i, w in enumerate(_roster) if w.address == address), None),
+        "account_value": wallet.account_value,
+        "monthly_roi": wallet.roi,
+        "monthly_pnl": wallet.pnl,
+        "score": round(wallet.score, 1),
+        # Performance stats
+        "stats": {
+            "total_trades": total_closed,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 1),
+            "total_pnl": round(total_pnl, 2),
+            "avg_pnl_pct": round(avg_pnl_pct, 2),
+            "best_trade": {
+                "coin": best_trade["coin"],
+                "side": best_trade["side"],
+                "pnl": round(best_trade["pnl"], 2),
+                "pnl_pct": round(best_trade["pnl_pct"], 2),
+            } if best_trade else None,
+            "worst_trade": {
+                "coin": worst_trade["coin"],
+                "side": worst_trade["side"],
+                "pnl": round(worst_trade["pnl"], 2),
+                "pnl_pct": round(worst_trade["pnl_pct"], 2),
+            } if worst_trade else None,
+        },
+        "coin_breakdown": coin_breakdown[:10],
+        "current_positions": current_positions,
+        "av_history": av_history,
+        "trade_count_since_tracking": len(trades),
+        "snapshot_count": len(snaps) if snaps else 0,
+    }
+
+
+
     """Module status for API endpoint."""
     return {
         "tracked_wallets": len(_roster),
