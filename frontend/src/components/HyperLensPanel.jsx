@@ -778,7 +778,7 @@ function WalletDetail({ address, onClose }) {
 
 // ─── SYMBOL DETAIL DRAWER ────────────────────────────────────────────────────
 
-function SymbolDetail({ symbol, onClose }) {
+function SymbolDetail({ symbol, onClose, onWalletClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -845,10 +845,22 @@ function SymbolDetail({ symbol, onClose }) {
           </thead>
           <tbody>
             {positions.map((p, i) => (
-              <tr key={i}>
+              <tr
+                key={i}
+                onClick={() => onWalletClick?.(p.address)}
+                style={{ cursor: onWalletClick ? "pointer" : "default", transition: "background 0.15s" }}
+                onMouseEnter={e => { if (onWalletClick) e.currentTarget.style.background = T.overlay06; }}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              >
                 <td style={{ padding: "7px 10px" }}>
-                  <span style={{ fontFamily: T.mono, fontSize: 13, color: T.accent }}>
-                    {truncAddr(p.address)}
+                  <span
+                    style={{
+                      fontFamily: T.mono, fontSize: 13, color: T.accent,
+                      textDecoration: "underline", textDecorationColor: "rgba(99,179,237,0.35)",
+                      textUnderlineOffset: 3, cursor: "pointer",
+                    }}
+                  >
+                    {truncAddr(p.address)} →
                   </span>
                   <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, marginLeft: 4 }}>
                     {p.wallet_roi > 0 ? fmtPct(p.wallet_roi) : ""}
@@ -1070,7 +1082,11 @@ export default function HyperLensPanel({ isMobile }) {
         <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} />
       )}
       {selectedSymbol && (
-        <SymbolDetail symbol={selectedSymbol} onClose={() => setSelectedSymbol(null)} />
+        <SymbolDetail
+          symbol={selectedSymbol}
+          onClose={() => setSelectedSymbol(null)}
+          onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+        />
       )}
 
       {/* Main content */}
