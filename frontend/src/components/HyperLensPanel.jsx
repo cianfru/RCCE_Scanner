@@ -58,10 +58,10 @@ function StatusStrip({ status }) {
           background: T.overlay04,
           border: `1px solid ${T.overlay06}`,
         }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.05em" }}>
+          <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, letterSpacing: "0.05em" }}>
             {label}
           </span>
-          <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+          <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
             {value}
           </span>
         </div>
@@ -73,7 +73,7 @@ function StatusStrip({ status }) {
           background: status.initialized ? T.green : T.yellow,
           animation: status.initialized ? "pulse 2s ease-in-out infinite" : "none",
         }} />
-        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+        <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text4 }}>
           {status.initialized ? "LIVE" : "WARMING UP"}
         </span>
       </div>
@@ -110,7 +110,7 @@ function ConsensusBar({ long_count, short_count, total_tracked }) {
           transition: "width 0.4s ease",
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, whiteSpace: "nowrap", minWidth: 38, textAlign: "right" }}>
+      <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, whiteSpace: "nowrap", minWidth: 38, textAlign: "right" }}>
         {long_count}/{short_count}
       </span>
     </div>
@@ -171,7 +171,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
                 style={{
                   padding: "8px 10px",
                   textAlign: label === "SYMBOL" ? "left" : "center",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   color: sortKey === key ? T.accent : T.text4,
                   letterSpacing: "0.06em",
                   cursor: key ? "pointer" : "default",
@@ -201,12 +201,12 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
-                <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text1 }}>
+                <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                   {c.symbol}
                 </td>
                 <td style={{ padding: "8px 10px", textAlign: "center" }}>
                   <span style={{
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                    fontFamily: T.mono, fontSize: 12, fontWeight: 700,
                     padding: "2px 8px", borderRadius: 4,
                     color: trendColor(c.trend),
                     background: `${trendColor(c.trend)}15`,
@@ -215,7 +215,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
                     {c.trend}
                   </span>
                 </td>
-                <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text2 }}>
+                <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text2 }}>
                   {positioned}
                 </td>
                 <td style={{ padding: "8px 10px" }}>
@@ -223,13 +223,13 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
                 </td>
                 <td style={{
                   padding: "8px 10px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                   color: c.net_ratio > 0.1 ? T.green : c.net_ratio < -0.1 ? T.red : T.text3,
                 }}>
                   {c.net_ratio > 0 ? "+" : ""}{(c.net_ratio * 100).toFixed(0)}%
                 </td>
                 {!isMobile && (
-                  <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                  <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
                     {fmt$(c.long_notional + c.short_notional)}
                   </td>
                 )}
@@ -239,7 +239,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile }) {
         </tbody>
       </table>
       {filtered.length === 0 && (
-        <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+        <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
           {filter ? "No matching symbols" : "Waiting for first poll..."}
         </div>
       )}
@@ -298,7 +298,7 @@ function RosterTable({ wallets, onWalletClick, isMobile }) {
                 style={{
                   padding: "8px 10px",
                   textAlign: label === "WALLET" || label === "#" ? "left" : "right",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   color: sortKey === key ? T.accent : T.text4,
                   letterSpacing: "0.06em",
                   cursor: key ? "pointer" : "default",
@@ -323,31 +323,31 @@ function RosterTable({ wallets, onWalletClick, isMobile }) {
               onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "left" }}>
+              <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "left" }}>
                 {w.rank}
               </td>
               <td style={{ padding: "7px 10px", textAlign: "left" }}>
-                <span style={{ fontFamily: T.mono, fontSize: 11, color: T.accent }}>
+                <span style={{ fontFamily: T.mono, fontSize: 13, color: T.accent }}>
                   {truncAddr(w.address)}
                 </span>
                 {w.display_name && (
-                  <span style={{ fontFamily: T.font, fontSize: 10, color: T.text4, marginLeft: 6 }}>
+                  <span style={{ fontFamily: T.font, fontSize: 12, color: T.text4, marginLeft: 6 }}>
                     {w.display_name.length > 12 ? w.display_name.slice(0, 12) + "..." : w.display_name}
                   </span>
                 )}
               </td>
-              <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, fontWeight: 500, color: T.text1 }}>
+              <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, fontWeight: 500, color: T.text1 }}>
                 {fmt$(w.account_value)}
               </td>
-              <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.green }}>
+              <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.green }}>
                 {fmtPct(w.roi)}
               </td>
               {!isMobile && (
                 <>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
                     {w.score.toFixed(0)}
                   </td>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: w.position_count > 0 ? T.text1 : T.text4 }}>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: w.position_count > 0 ? T.text1 : T.text4 }}>
                     {w.position_count}
                   </td>
                 </>
@@ -370,10 +370,10 @@ function StatPill({ label, value, color }) {
       background: T.overlay04, border: `1px solid ${T.overlay06}`,
       minWidth: 70,
     }}>
-      <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em", marginBottom: 3 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em", marginBottom: 3 }}>
         {label}
       </span>
-      <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: color || T.text1 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: color || T.text1 }}>
         {value}
       </span>
     </div>
@@ -405,7 +405,7 @@ function WalletDetail({ address, onClose }) {
   if (loading) {
     return (
       <GlassCard style={{ padding: 20 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Loading wallet profile...</div>
+        <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "center" }}>Loading wallet profile...</div>
       </GlassCard>
     );
   }
@@ -413,7 +413,7 @@ function WalletDetail({ address, onClose }) {
   if (!data) {
     return (
       <GlassCard style={{ padding: 20 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Wallet not found</div>
+        <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "center" }}>Wallet not found</div>
       </GlassCard>
     );
   }
@@ -438,17 +438,17 @@ function WalletDetail({ address, onClose }) {
       }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.accent }}>
+            <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.accent }}>
               {truncAddr(address)}
             </span>
             {data.display_name && (
-              <span style={{ fontFamily: T.font, fontSize: 11, color: T.text3 }}>
+              <span style={{ fontFamily: T.font, fontSize: 13, color: T.text3 }}>
                 {data.display_name}
               </span>
             )}
             {data.rank && (
               <span style={{
-                fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                fontFamily: T.mono, fontSize: 11, fontWeight: 700,
                 padding: "2px 6px", borderRadius: 4,
                 color: T.accent, background: `${T.accent}15`,
                 border: `1px solid ${T.accent}25`,
@@ -457,7 +457,7 @@ function WalletDetail({ address, onClose }) {
               </span>
             )}
           </div>
-          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, marginTop: 3 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, marginTop: 3 }}>
             {data.snapshot_count} snapshots tracked
           </div>
         </div>
@@ -467,7 +467,7 @@ function WalletDetail({ address, onClose }) {
             width: 28, height: 28, borderRadius: 6,
             border: `1px solid ${T.border}`,
             background: T.surface, color: T.text3,
-            fontSize: 14, cursor: "pointer",
+            fontSize: 15, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
@@ -509,7 +509,7 @@ function WalletDetail({ address, onClose }) {
         }}>
           {s.best_trade && (
             <span style={{
-              fontFamily: T.mono, fontSize: 10,
+              fontFamily: T.mono, fontSize: 12,
               padding: "3px 8px", borderRadius: 4,
               color: T.green, background: `${T.green}12`,
               border: `1px solid ${T.green}20`,
@@ -519,7 +519,7 @@ function WalletDetail({ address, onClose }) {
           )}
           {s.worst_trade && (
             <span style={{
-              fontFamily: T.mono, fontSize: 10,
+              fontFamily: T.mono, fontSize: 12,
               padding: "3px 8px", borderRadius: 4,
               color: T.red, background: `${T.red}12`,
               border: `1px solid ${T.red}20`,
@@ -543,7 +543,7 @@ function WalletDetail({ address, onClose }) {
             style={{
               padding: "5px 12px", borderRadius: 5,
               border: "none",
-              fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+              fontFamily: T.mono, fontSize: 12, fontWeight: 600,
               color: activeSection === key ? T.text1 : T.text4,
               background: activeSection === key ? T.overlay10 : "transparent",
               cursor: "pointer",
@@ -565,7 +565,7 @@ function WalletDetail({ address, onClose }) {
                 {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "LEV"].map(h => (
                   <th key={h} style={{
                     padding: "8px 10px",
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                    fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                     color: T.text4, letterSpacing: "0.06em",
                     borderBottom: `1px solid ${T.border}`,
                     textAlign: h === "COIN" || h === "SIDE" ? "left" : "right",
@@ -578,12 +578,12 @@ function WalletDetail({ address, onClose }) {
             <tbody>
               {positions.map((p, i) => (
                 <tr key={i}>
-                  <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                  <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                     {p.coin}
                   </td>
                   <td style={{ padding: "7px 10px" }}>
                     <span style={{
-                      fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                      fontFamily: T.mono, fontSize: 12, fontWeight: 700,
                       padding: "2px 6px", borderRadius: 3,
                       color: p.side === "LONG" ? T.green : T.red,
                       background: `${p.side === "LONG" ? T.green : T.red}15`,
@@ -591,20 +591,20 @@ function WalletDetail({ address, onClose }) {
                       {p.side}
                     </span>
                   </td>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
                     {fmt$(p.size_usd)}
                   </td>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
                     ${p.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td style={{
                     padding: "7px 10px", textAlign: "right",
-                    fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                    fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                     color: p.unrealized_pnl >= 0 ? T.green : T.red,
                   }}>
                     {p.unrealized_pnl >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl))}
                   </td>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                     {p.leverage}x
                   </td>
                 </tr>
@@ -617,10 +617,10 @@ function WalletDetail({ address, onClose }) {
         {activeSection === "trades" && (
           <>
             {trades.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                 No trades detected yet — trades appear as positions open and close over time.
                 <br />
-                <span style={{ fontSize: 10, marginTop: 4, display: "block" }}>
+                <span style={{ fontSize: 12, marginTop: 4, display: "block" }}>
                   Tracking since {data.snapshot_count} snapshots ago
                 </span>
               </div>
@@ -631,7 +631,7 @@ function WalletDetail({ address, onClose }) {
                     {["COIN", "SIDE", "SIZE", "ENTRY", "PNL", "STATUS"].map(h => (
                       <th key={h} style={{
                         padding: "8px 10px",
-                        fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                        fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                         color: T.text4, letterSpacing: "0.06em",
                         borderBottom: `1px solid ${T.border}`,
                         textAlign: h === "COIN" || h === "SIDE" || h === "STATUS" ? "left" : "right",
@@ -649,12 +649,12 @@ function WalletDetail({ address, onClose }) {
                       t.status === "FLIPPED" ? T.yellow : T.text4;
                     return (
                       <tr key={i}>
-                        <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                        <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                           {t.coin}
                         </td>
                         <td style={{ padding: "7px 10px" }}>
                           <span style={{
-                            fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
                             padding: "2px 6px", borderRadius: 3,
                             color: t.side === "LONG" ? T.green : T.red,
                             background: `${t.side === "LONG" ? T.green : T.red}15`,
@@ -662,26 +662,26 @@ function WalletDetail({ address, onClose }) {
                             {t.side}
                           </span>
                         </td>
-                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
+                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
                           {fmt$(t.size_usd)}
                         </td>
-                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                        <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
                           ${t.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </td>
                         <td style={{
                           padding: "7px 10px", textAlign: "right",
-                          fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                          fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                           color: t.pnl >= 0 ? T.green : T.red,
                         }}>
                           {t.status !== "OPENED" ? (
-                            <>{t.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(t.pnl))} <span style={{ fontSize: 9, color: T.text4 }}>({t.pnl_pct > 0 ? "+" : ""}{t.pnl_pct.toFixed(1)}%)</span></>
+                            <>{t.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(t.pnl))} <span style={{ fontSize: 11, color: T.text4 }}>({t.pnl_pct > 0 ? "+" : ""}{t.pnl_pct.toFixed(1)}%)</span></>
                           ) : (
                             <span style={{ color: T.text4 }}>--</span>
                           )}
                         </td>
                         <td style={{ padding: "7px 10px" }}>
                           <span style={{
-                            fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
                             padding: "2px 6px", borderRadius: 3,
                             color: statusColor,
                             background: `${statusColor}15`,
@@ -702,7 +702,7 @@ function WalletDetail({ address, onClose }) {
         {activeSection === "coins" && (
           <>
             {coinBreakdown.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+              <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                 No coin stats yet — builds as trades are detected
               </div>
             ) : (
@@ -712,7 +712,7 @@ function WalletDetail({ address, onClose }) {
                     {["COIN", "TRADES", "WINS", "WIN RATE", "PNL"].map(h => (
                       <th key={h} style={{
                         padding: "8px 10px",
-                        fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                        fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                         color: T.text4, letterSpacing: "0.06em",
                         borderBottom: `1px solid ${T.border}`,
                         textAlign: h === "COIN" ? "left" : "right",
@@ -725,18 +725,18 @@ function WalletDetail({ address, onClose }) {
                 <tbody>
                   {coinBreakdown.map((c, i) => (
                     <tr key={i}>
-                      <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text1 }}>
+                      <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                         {c.coin}
                       </td>
-                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text2 }}>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text2 }}>
                         {c.trades}
                       </td>
-                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.green }}>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.green }}>
                         {c.wins}
                       </td>
                       <td style={{ padding: "7px 10px", textAlign: "right" }}>
                         <span style={{
-                          fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                          fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                           padding: "2px 6px", borderRadius: 3,
                           color: c.win_rate > 50 ? T.green : T.red,
                           background: `${c.win_rate > 50 ? T.green : T.red}15`,
@@ -746,7 +746,7 @@ function WalletDetail({ address, onClose }) {
                       </td>
                       <td style={{
                         padding: "7px 10px", textAlign: "right",
-                        fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                        fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                         color: c.pnl >= 0 ? T.green : T.red,
                       }}>
                         {c.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(c.pnl))}
@@ -761,7 +761,7 @@ function WalletDetail({ address, onClose }) {
 
         {/* Empty state for positions */}
         {activeSection === "positions" && positions.length === 0 && (
-          <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+          <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
             No open positions
           </div>
         )}
@@ -787,7 +787,7 @@ function SymbolDetail({ symbol, onClose }) {
   if (loading) {
     return (
       <GlassCard style={{ padding: 20 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, textAlign: "center" }}>Loading...</div>
+        <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "center" }}>Loading...</div>
       </GlassCard>
     );
   }
@@ -801,7 +801,7 @@ function SymbolDetail({ symbol, onClose }) {
         borderBottom: `1px solid ${T.border}`,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+        <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.text1 }}>
           {symbol}
           <span style={{ color: T.text4, fontWeight: 400, marginLeft: 8, fontSize: 11 }}>
             {positions.length} wallet{positions.length !== 1 ? "s" : ""}
@@ -813,7 +813,7 @@ function SymbolDetail({ symbol, onClose }) {
             width: 28, height: 28, borderRadius: 6,
             border: `1px solid ${T.border}`,
             background: T.surface, color: T.text3,
-            fontSize: 14, cursor: "pointer",
+            fontSize: 15, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
@@ -827,7 +827,7 @@ function SymbolDetail({ symbol, onClose }) {
               {["WALLET", "SIDE", "SIZE", "ENTRY", "PNL", "LEV"].map(h => (
                 <th key={h} style={{
                   padding: "8px 10px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   color: T.text4, letterSpacing: "0.06em",
                   borderBottom: `1px solid ${T.border}`,
                   textAlign: h === "WALLET" || h === "SIDE" ? "left" : "right",
@@ -841,16 +841,16 @@ function SymbolDetail({ symbol, onClose }) {
             {positions.map((p, i) => (
               <tr key={i}>
                 <td style={{ padding: "7px 10px" }}>
-                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.accent }}>
+                  <span style={{ fontFamily: T.mono, fontSize: 13, color: T.accent }}>
                     {truncAddr(p.address)}
                   </span>
-                  <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, marginLeft: 4 }}>
+                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, marginLeft: 4 }}>
                     {p.wallet_roi > 0 ? fmtPct(p.wallet_roi) : ""}
                   </span>
                 </td>
                 <td style={{ padding: "7px 10px" }}>
                   <span style={{
-                    fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                    fontFamily: T.mono, fontSize: 12, fontWeight: 700,
                     padding: "2px 6px", borderRadius: 3,
                     color: p.side === "LONG" ? T.green : T.red,
                     background: `${p.side === "LONG" ? T.green : T.red}15`,
@@ -858,20 +858,20 @@ function SymbolDetail({ symbol, onClose }) {
                     {p.side}
                   </span>
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text1 }}>
+                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
                   {fmt$(p.size_usd)}
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text3 }}>
+                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
                   ${p.entry_px.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </td>
                 <td style={{
                   padding: "7px 10px", textAlign: "right",
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                   color: p.unrealized_pnl >= 0 ? T.green : T.red,
                 }}>
                   {p.unrealized_pnl >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl))}
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                   {p.leverage}x
                 </td>
               </tr>
@@ -879,7 +879,7 @@ function SymbolDetail({ symbol, onClose }) {
           </tbody>
         </table>
         {positions.length === 0 && (
-          <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+          <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
             No positions found for {symbol}
           </div>
         )}
@@ -913,7 +913,7 @@ function TabSwitcher({ active, onChange }) {
             padding: "6px 14px",
             borderRadius: 6,
             border: "none",
-            fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+            fontFamily: T.mono, fontSize: 13, fontWeight: 600,
             color: active === key ? T.text1 : T.text4,
             background: active === key ? T.overlay10 : "transparent",
             cursor: "pointer",
@@ -981,13 +981,13 @@ export default function HyperLensPanel({ isMobile }) {
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
-              fontFamily: T.font, fontSize: 16, fontWeight: 700,
+              fontFamily: T.font, fontSize: 18, fontWeight: 700,
               color: T.text1, letterSpacing: "-0.02em",
             }}>
               HyperLens
             </span>
             <span style={{
-              fontFamily: T.mono, fontSize: 10, color: T.text4,
+              fontFamily: T.mono, fontSize: 12, color: T.text4,
               padding: "2px 8px", borderRadius: 4,
               background: T.overlay06,
             }}>
@@ -1000,7 +1000,7 @@ export default function HyperLensPanel({ isMobile }) {
             <div style={{ display: "flex", gap: 6 }}>
               {bullish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   padding: "3px 8px", borderRadius: 4,
                   color: T.green, background: `${T.green}15`,
                   border: `1px solid ${T.green}25`,
@@ -1010,7 +1010,7 @@ export default function HyperLensPanel({ isMobile }) {
               )}
               {bearish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   padding: "3px 8px", borderRadius: 4,
                   color: T.red, background: `${T.red}15`,
                   border: `1px solid ${T.red}25`,
@@ -1020,7 +1020,7 @@ export default function HyperLensPanel({ isMobile }) {
               )}
               {neutral > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                   padding: "3px 8px", borderRadius: 4,
                   color: T.text4, background: T.overlay06,
                   border: `1px solid ${T.overlay10}`,
@@ -1049,7 +1049,7 @@ export default function HyperLensPanel({ isMobile }) {
               value={filter}
               onChange={e => setFilter(e.target.value)}
               style={{
-                fontFamily: T.mono, fontSize: 11,
+                fontFamily: T.mono, fontSize: 13,
                 padding: "6px 12px", borderRadius: 6,
                 border: `1px solid ${T.border}`,
                 background: T.overlay04,
@@ -1076,7 +1076,7 @@ export default function HyperLensPanel({ isMobile }) {
       {/* Main content */}
       {loading ? (
         <GlassCard style={{ padding: 40, textAlign: "center" }}>
-          <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Loading HyperLens...</div>
+          <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4 }}>Loading HyperLens...</div>
         </GlassCard>
       ) : (
         <GlassCard style={{ padding: 0 }}>
