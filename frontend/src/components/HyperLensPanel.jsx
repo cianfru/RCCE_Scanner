@@ -327,8 +327,14 @@ function RosterTable({ wallets, onWalletClick, isMobile }) {
                 {w.rank}
               </td>
               <td style={{ padding: "7px 10px", textAlign: "left" }}>
-                <span style={{ fontFamily: T.mono, fontSize: 13, color: T.accent }}>
-                  {truncAddr(w.address)}
+                <span
+                  style={{
+                    fontFamily: T.mono, fontSize: 13, color: T.accent,
+                    textDecoration: "underline", textDecorationColor: "rgba(99,179,237,0.35)",
+                    textUnderlineOffset: 3, cursor: "pointer",
+                  }}
+                >
+                  {truncAddr(w.address)} →
                 </span>
                 {w.display_name && (
                   <span style={{ fontFamily: T.font, fontSize: 12, color: T.text4, marginLeft: 6 }}>
