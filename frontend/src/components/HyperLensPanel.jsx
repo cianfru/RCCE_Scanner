@@ -841,16 +841,27 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                     </td>
                     <td style={{ padding: "7px 10px", textAlign: "center" }}>
                       {w.position_count > 0 ? (
-                        <span style={{
-                          fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          width: 22, height: 22, borderRadius: "50%",
-                          color: T.text1,
-                          background: w.position_count >= 5 ? `${T.accent}20` : T.overlay08,
-                          border: `1px solid ${w.position_count >= 5 ? T.accent : T.border}40`,
-                        }}>
-                          {w.position_count}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                          <span style={{
+                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+                            display: "inline-flex", alignItems: "center", justifyContent: "center",
+                            width: 22, height: 22, borderRadius: "50%",
+                            color: T.text1,
+                            background: w.position_count >= 5 ? `${T.accent}20` : T.overlay08,
+                            border: `1px solid ${w.position_count >= 5 ? T.accent : T.border}40`,
+                          }}>
+                            {w.position_count}
+                          </span>
+                          {w.tradfi_position_count > 0 && (
+                            <span style={{
+                              fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                              padding: "1px 3px", borderRadius: 3,
+                              color: "#F59E0B", background: "#F59E0B18",
+                            }}>
+                              +{w.tradfi_position_count} TF
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ color: T.text4, fontFamily: T.mono, fontSize: 12 }}>0</span>
                       )}
@@ -1093,13 +1104,19 @@ function WalletDetail({ address, onClose }) {
   const levStats = data.leverage_stats || {};
 
   // Compute aggregates like HyperTracker
+  const cryptoPositions = positions.filter(p => !p.asset_class || p.asset_class === "crypto");
+  const tradfiPositions = positions.filter(p => p.asset_class && p.asset_class !== "crypto");
   const longValue = positions.filter(p => p.side === "LONG").reduce((s, p) => s + (p.size_usd || 0), 0);
   const shortValue = positions.filter(p => p.side === "SHORT").reduce((s, p) => s + (p.size_usd || 0), 0);
   const totalValue = longValue + shortValue;
   const sumPnl = positions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
 
+  const perpsLabel = tradfiPositions.length > 0
+    ? `Positions (${cryptoPositions.length} crypto + ${tradfiPositions.length} tradfi)`
+    : `Perps (${positions.length})`;
+
   const sections = [
-    { key: "positions", label: `Perps (${positions.length})` },
+    { key: "positions", label: perpsLabel },
     { key: "trades", label: `Trades (${trades.length})` },
     { key: "coins", label: "Coin Stats" },
   ];
@@ -1394,13 +1411,26 @@ function WalletDetail({ address, onClose }) {
                     const pnl = p.unrealized_pnl || 0;
                     return (
                       <tr key={i} style={{ borderBottom: `1px solid ${T.overlay06}` }}>
-                        {/* TOKEN — coin name + leverage type */}
+                        {/* TOKEN — coin name + leverage type + asset class badge */}
                         <td style={{ padding: "8px 8px" }}>
-                          <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
-                            {p.coin}
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+                              {p.coin}
+                            </span>
+                            {p.asset_class && p.asset_class !== "crypto" && (
+                              <span style={{
+                                fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                                padding: "1px 4px", borderRadius: 3,
+                                color: ({ commodity: "#F59E0B", equity: "#3B82F6", index: "#8B5CF6", fx: "#10B981", tradfi: "#6B7280" })[p.asset_class] || T.text4,
+                                background: ({ commodity: "#F59E0B18", equity: "#3B82F618", index: "#8B5CF618", fx: "#10B98118", tradfi: "#6B728018" })[p.asset_class] || `${T.text4}15`,
+                                textTransform: "uppercase", letterSpacing: 0.5,
+                              }}>
+                                {p.asset_class}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
-                            {p.leverage}x {p.leverage_type || "Cross"}
+                            {p.leverage}x {p.leverage_type || "Cross"}{p.dex ? ` · ${p.dex}` : ""}
                           </div>
                         </td>
                         {/* SIDE */}

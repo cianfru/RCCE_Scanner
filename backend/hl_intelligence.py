@@ -65,6 +65,40 @@ _CONCURRENCY = 20                          # Max concurrent HL API calls
 _REQUEST_TIMEOUT = 15
 
 # ---------------------------------------------------------------------------
+# HIP-3 DEX (xyz) — TradFi / Commodity / FX perps on Hyperliquid
+# ---------------------------------------------------------------------------
+_XYZ_DEX = "xyz"
+
+# Asset class lookup for xyz DEX instruments
+_XYZ_ASSET_CLASS: Dict[str, str] = {
+    # Commodities
+    "GOLD": "commodity", "SILVER": "commodity", "COPPER": "commodity",
+    "WTIOIL": "commodity", "BRENTOIL": "commodity", "NATGAS": "commodity",
+    "PLATINUM": "commodity", "PALLADIUM": "commodity", "SOYBEAN": "commodity",
+    "WHEAT": "commodity", "CORN": "commodity", "COTTON": "commodity",
+    "SUGAR": "commodity", "COFFEE": "commodity", "COCOA": "commodity",
+    "LUMBER": "commodity",
+    # Equities
+    "AAPL": "equity", "MSFT": "equity", "AMZN": "equity", "GOOGL": "equity",
+    "META": "equity", "TSLA": "equity", "NVDA": "equity", "AMD": "equity",
+    "NFLX": "equity", "COIN": "equity", "MSTR": "equity", "GME": "equity",
+    "AMC": "equity", "PLTR": "equity", "SQ": "equity", "SHOP": "equity",
+    "ABNB": "equity", "UBER": "equity", "RIVN": "equity", "LCID": "equity",
+    # Indices
+    "SP500": "index", "NDX100": "index", "DJI30": "index", "FTSE100": "index",
+    "DAX40": "index", "NIK225": "index", "HSI": "index", "VIX": "index",
+    "XYZ100": "index", "RUSSELL": "index",
+    # FX pairs
+    "EUR": "fx", "JPY": "fx", "GBP": "fx", "AUD": "fx", "CAD": "fx",
+    "CHF": "fx", "NZD": "fx", "SEK": "fx", "NOK": "fx", "CNH": "fx",
+    "MXN": "fx", "BRL": "fx", "TRY": "fx", "ZAR": "fx", "INR": "fx",
+}
+
+def _classify_xyz_asset(coin: str) -> str:
+    """Return asset class for an xyz DEX instrument."""
+    return _XYZ_ASSET_CLASS.get(coin.upper(), "tradfi")
+
+# ---------------------------------------------------------------------------
 # Data containers
 # ---------------------------------------------------------------------------
 
@@ -95,6 +129,8 @@ class WalletPosition:
     return_on_equity: float = 0.0
     liq_distance_pct: float = 0.0   # abs(entry_px - liq_px) / entry_px * 100
     leverage_type: str = "cross"    # "cross" or "isolated"
+    asset_class: str = "crypto"    # "crypto" | "commodity" | "equity" | "fx" | "index"
+    dex: str = ""                  # "" = native HL, "xyz" = HIP-3 TradFi DEX
 
 
 @dataclass
@@ -346,50 +382,85 @@ async def _fetch_wallet_positions(
         except Exception:
             pass  # Non-critical — positions are the priority
 
+        # Fetch xyz DEX (HIP-3 TradFi) positions — third call under same semaphore
+        xyz_data = None
+        try:
+            async with session.post(
+                _HL_INFO_URL,
+                json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
+            ) as resp:
+                if resp.status == 200:
+                    xyz_data = await resp.json(content_type=None)
+        except Exception:
+            pass  # Non-critical — crypto positions are the priority
+
     if not data:
         return None
 
-    # Parse positions
-    positions: List[WalletPosition] = []
-    for ap in data.get("assetPositions", []):
-        pos = ap.get("position", {})
-        szi = float(pos.get("szi", 0))
-        if szi == 0:
-            continue
+    # Parse positions helper
+    def _parse_positions(raw: dict, dex: str = "", asset_class: str = "crypto") -> List[WalletPosition]:
+        result: List[WalletPosition] = []
+        for ap in raw.get("assetPositions", []):
+            pos = ap.get("position", {})
+            szi = float(pos.get("szi", 0))
+            if szi == 0:
+                continue
 
-        entry_px = float(pos.get("entryPx", 0))
-        coin = pos.get("coin", "")
-        lev_val = pos.get("leverage", {})
-        lev = float(lev_val.get("value", 1)) if isinstance(lev_val, dict) else float(lev_val or 1)
-        lev_type = lev_val.get("type", "cross") if isinstance(lev_val, dict) else "cross"
+            entry_px = float(pos.get("entryPx", 0))
+            coin = pos.get("coin", "")
+            lev_val = pos.get("leverage", {})
+            lev = float(lev_val.get("value", 1)) if isinstance(lev_val, dict) else float(lev_val or 1)
+            lev_type = lev_val.get("type", "cross") if isinstance(lev_val, dict) else "cross"
 
-        liq_px = float(pos.get("liquidationPx", 0) or 0)
-        margin_used = float(pos.get("marginUsed", 0) or 0)
-        roe = float(pos.get("returnOnEquity", 0) or 0)
+            liq_px = float(pos.get("liquidationPx", 0) or 0)
+            margin_used = float(pos.get("marginUsed", 0) or 0)
+            roe = float(pos.get("returnOnEquity", 0) or 0)
 
-        # Calculate liquidation distance percentage
-        liq_dist_pct = 0.0
-        if entry_px > 0 and liq_px > 0:
-            liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
+            # Calculate liquidation distance percentage
+            liq_dist_pct = 0.0
+            if entry_px > 0 and liq_px > 0:
+                liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
 
-        positions.append(WalletPosition(
-            coin=coin,
-            side="LONG" if szi > 0 else "SHORT",
-            size=abs(szi),
-            size_usd=abs(szi) * entry_px,
-            entry_px=entry_px,
-            unrealized_pnl=float(pos.get("unrealizedPnl", 0)),
-            leverage=lev,
-            liq_px=liq_px,
-            margin_used=margin_used,
-            return_on_equity=roe,
-            liq_distance_pct=round(liq_dist_pct, 2),
-            leverage_type=lev_type,
-        ))
+            # Determine asset class for xyz DEX instruments
+            ac = _classify_xyz_asset(coin) if dex == _XYZ_DEX else asset_class
 
-    # Extract account value
+            result.append(WalletPosition(
+                coin=coin,
+                side="LONG" if szi > 0 else "SHORT",
+                size=abs(szi),
+                size_usd=abs(szi) * entry_px,
+                entry_px=entry_px,
+                unrealized_pnl=float(pos.get("unrealizedPnl", 0)),
+                leverage=lev,
+                liq_px=liq_px,
+                margin_used=margin_used,
+                return_on_equity=roe,
+                liq_distance_pct=round(liq_dist_pct, 2),
+                leverage_type=lev_type,
+                asset_class=ac,
+                dex=dex,
+            ))
+        return result
+
+    # Parse crypto positions (native HL)
+    positions = _parse_positions(data)
+
+    # Parse TradFi positions (xyz DEX)
+    if xyz_data:
+        xyz_positions = _parse_positions(xyz_data, dex=_XYZ_DEX)
+        if xyz_positions:
+            positions.extend(xyz_positions)
+            logger.debug("HyperLens: %s has %d xyz DEX positions", wallet.address[:8], len(xyz_positions))
+
+    # Extract account value (from native HL — xyz has separate margin)
     margin = data.get("marginSummary", {})
     av = float(margin.get("accountValue", 0) or 0)
+
+    # Add xyz account value if available
+    if xyz_data:
+        xyz_margin = xyz_data.get("marginSummary", {})
+        xyz_av = float(xyz_margin.get("accountValue", 0) or 0)
+        av += xyz_av
 
     return PositionSnapshot(
         timestamp=time.time(),
@@ -678,9 +749,10 @@ def get_roster(cohort: Optional[str] = None) -> List[dict]:
 
     result = []
     for i, w in enumerate(source):
-        # Get latest position count
+        # Get latest position count (crypto + tradfi)
         snaps = _snapshots.get(w.address)
         pos_count = len(snaps[-1].positions) if snaps else 0
+        xyz_count = sum(1 for p in snaps[-1].positions if p.dex == _XYZ_DEX) if snaps else 0
 
         cohorts_list = sorted(_wallet_cohorts.get(w.address, set()))
 
@@ -693,6 +765,7 @@ def get_roster(cohort: Optional[str] = None) -> List[dict]:
             "roi": w.roi,
             "score": round(w.score, 1),
             "position_count": pos_count,
+            "tradfi_position_count": xyz_count,
             "cohorts": cohorts_list,
         }
 
@@ -734,6 +807,8 @@ def get_wallet_positions(address: str) -> Optional[dict]:
                 "liq_distance_pct": p.liq_distance_pct,
                 "leverage_type": p.leverage_type,
                 "position_age_s": round(now - fs, 0) if (fs := _position_first_seen.get(address, {}).get(p.coin)) else None,
+                "asset_class": p.asset_class,
+                "dex": p.dex,
             }
             for p in latest.positions
         ],
@@ -764,6 +839,8 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                     "unrealized_pnl": round(pos.unrealized_pnl, 2),
                     "leverage": pos.leverage,
                     "cohorts": sorted(_wallet_cohorts.get(wallet.address, set())),
+                    "asset_class": pos.asset_class,
+                    "dex": pos.dex,
                 })
     # Sort by wallet score descending
     result.sort(key=lambda x: x["wallet_score"], reverse=True)
@@ -1039,6 +1116,8 @@ def get_wallet_profile(address: str) -> Optional[dict]:
                 "liq_distance_pct": p.liq_distance_pct,
                 "leverage_type": p.leverage_type,
                 "position_age_s": age_s,
+                "asset_class": p.asset_class,
+                "dex": p.dex,
             })
 
             # Accumulate stats for leverage_stats and risk_score
@@ -1554,6 +1633,20 @@ def get_status() -> dict:
     mp_addrs = {w.address for w in _roster_money_printers}
     sm_addrs = {w.address for w in _roster_smart_money}
     elite_count = len(mp_addrs & sm_addrs)
+
+    # Count xyz DEX positions across all snapshots
+    xyz_position_count = 0
+    xyz_wallets = set()
+    tradfi_symbols = set()
+    for addr, snaps in _snapshots.items():
+        if snaps:
+            latest = snaps[-1]
+            for p in latest.positions:
+                if p.dex == _XYZ_DEX:
+                    xyz_position_count += 1
+                    xyz_wallets.add(addr)
+                    tradfi_symbols.add(p.coin)
+
     return {
         "tracked_wallets": len(_roster),
         "money_printer_count": len(_roster_money_printers),
@@ -1569,6 +1662,10 @@ def get_status() -> dict:
         "initialized": _initialized,
         "wallets_with_orders": sum(1 for v in _wallet_orders.values() if v),
         "order_books_cached": len(_order_books),
+        # HIP-3 xyz DEX stats
+        "xyz_positions": xyz_position_count,
+        "xyz_wallets": len(xyz_wallets),
+        "tradfi_symbols": sorted(tradfi_symbols),
     }
 
 
