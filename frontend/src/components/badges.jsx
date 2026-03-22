@@ -98,7 +98,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
             minWidth: 220, maxWidth: 340, width: "max-content",
             boxShadow: `0 8px 32px ${T.shadowDeep}`,
             backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-            wordBreak: "break-word", overflowWrap: "break-word",
+            whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "break-word",
           }}
           onClick={e => e.stopPropagation()}
         >
