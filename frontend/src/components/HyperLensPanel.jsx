@@ -472,7 +472,7 @@ function WalletDetail({ address, onClose }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.accent }}>
               {truncAddr(address)}
             </span>
@@ -492,8 +492,28 @@ function WalletDetail({ address, onClose }) {
               </span>
             )}
           </div>
-          <div style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, marginTop: 3 }}>
-            {data.snapshot_count} snapshots tracked
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+            <span
+              style={{
+                fontFamily: T.mono, fontSize: 11, color: T.text4,
+                cursor: "pointer", userSelect: "all",
+                wordBreak: "break-all",
+              }}
+              title="Click to copy"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(address);
+                const el = e.currentTarget;
+                const orig = el.style.color;
+                el.style.color = T.green;
+                setTimeout(() => el.style.color = orig, 1200);
+              }}
+            >
+              {address}
+            </span>
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>
+              {data.snapshot_count} snaps
+            </span>
           </div>
         </div>
         <button
