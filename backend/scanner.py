@@ -1432,10 +1432,10 @@ async def _run_synthesis_pass(
                         "sm_trend": sc.smart_money_trend,
                     }
                     hl_attached += 1
-            if hl_attached:
-                logger.debug("HyperLens consensus attached to %d symbols", hl_attached)
-        except Exception:
-            pass  # HyperLens not available or not initialized
+            logger.info("HyperLens SM: %d/%d symbols attached (%d consensus available)",
+                        hl_attached, len(results), len(hl_consensus))
+        except Exception as exc:
+            logger.warning("HyperLens consensus attachment failed: %s", exc)
 
         # Compute consensus
         consensus = compute_consensus(results)
