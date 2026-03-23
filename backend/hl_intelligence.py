@@ -698,8 +698,14 @@ def _recompute_consensus() -> None:
         is_sm = addr in sm_addresses
 
         for pos in latest.positions:
-            # Normalize coin name: kPEPE→PEPE, add xyz: prefix for DEX coins
-            coin = f"xyz:{pos.coin}" if pos.dex == _XYZ_DEX else _HL_REVERSE_MAP.get(pos.coin, pos.coin)
+            # Normalize coin name: kPEPE→PEPE, preserve existing xyz: prefix
+            raw = pos.coin
+            if raw.startswith("xyz:") or pos.dex == _XYZ_DEX:
+                # xyz DEX coins — ensure exactly one xyz: prefix
+                bare = raw.split(":", 1)[1] if ":" in raw else raw
+                coin = f"xyz:{bare}"
+            else:
+                coin = _HL_REVERSE_MAP.get(raw, raw)
             if coin not in sym_data:
                 sym_data[coin] = {
                     "long_count": 0, "short_count": 0,
@@ -962,8 +968,13 @@ def get_symbol_positions(symbol: str) -> List[dict]:
             continue
         latest = snaps[-1]
         for pos in latest.positions:
-            # Normalize pos.coin the same way as consensus: kPEPE→PEPE, xyz prefix
-            pos_coin = f"xyz:{pos.coin}" if pos.dex == _XYZ_DEX else _HL_REVERSE_MAP.get(pos.coin, pos.coin)
+            # Normalize pos.coin the same way as consensus
+            raw = pos.coin
+            if raw.startswith("xyz:") or pos.dex == _XYZ_DEX:
+                bare = raw.split(":", 1)[1] if ":" in raw else raw
+                pos_coin = f"xyz:{bare}"
+            else:
+                pos_coin = _HL_REVERSE_MAP.get(raw, raw)
             if pos_coin == coin:
                 # PnL % = unrealized_pnl / margin_used (ROE)
                 pnl_pct = round(pos.return_on_equity * 100, 2) if pos.return_on_equity else (
