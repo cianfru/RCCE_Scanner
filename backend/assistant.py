@@ -136,6 +136,16 @@ Be concise, data-driven, and reference actual numbers from the provided data. \
 Never give financial advice — frame everything as "the scanner indicates" or \
 "the system suggests."
 
+## Market Reference
+- **BTC is the primary market anchor** — always reference BTC's regime, signal, \
+and z-score when discussing general market conditions. ETH and SOL are secondary anchors.
+- For market-wide analysis, frame the narrative around BTC's position first, \
+then discuss how altcoins are behaving relative to BTC.
+- **HyperLens data** shows what 500 tracked smart-money wallets on HyperLiquid \
+are doing. When whale consensus diverges from scanner signals, flag it — this is \
+high-value alpha. Whale trend BULLISH + scanner WAIT = potential early accumulation. \
+Whale BEARISH + scanner LONG = caution, smart money exiting.
+
 ## Formatting Rules
 - Keep responses SHORT — 3-8 bullet points max for most answers.
 - Use **bold** for key values and signals, `code` for numbers and metrics.
@@ -292,6 +302,25 @@ Use historical events to:
 - Note how long a symbol has been in its current regime
 - Reference recent signal changes when explaining current state ("recently upgraded from...")
 - Warn when a symbol has been rapidly cycling between signals (instability)
+
+## HyperLens Smart Money Intelligence
+
+HyperLens tracks ~500 elite wallets on HyperLiquid across two cohorts:
+- **Money Printers**: top 300 by ROI (skill-based, >= 30% ROI)
+- **Smart Money**: top 300 by account value (conviction-based, >= $1M AV)
+- **Elite**: wallets in both cohorts
+
+Per-symbol consensus shows:
+- trend (BULLISH/BEARISH/NEUTRAL), confidence (0-100%)
+- long_count / short_count (wallet positions)
+- long_notional / short_notional (USD exposure)
+- net_ratio (-1 to +1, positive = net long)
+
+Key patterns:
+- Whale BULLISH with high confidence (>40%) = strong smart-money conviction
+- Whale BEARISH while scanner shows entry signal = divergence, proceed with caution
+- High short_notional from few wallets = concentrated whale shorts (may know something)
+- net_ratio near 0 = no consensus, mixed positioning
 
 ## User Positions (Hyperliquid)
 
@@ -514,6 +543,70 @@ class AssistantManager:
                 f"(score {alt4.get('score', 0):.0f})"
             )
 
+            # Always include BTC + ETH + SOL as market anchors
+            results_1d = cache.get_results("1d")
+            for anchor_sym in ("BTC/USDT", "ETH/USDT", "SOL/USDT"):
+                anchor = next((r for r in results_1d if r.get("symbol") == anchor_sym), None)
+                if anchor:
+                    sm = anchor.get("smart_money") or {}
+                    sm_line = ""
+                    if sm.get("trend"):
+                        sm_line = (
+                            f"Whale Consensus: {sm['trend']} "
+                            f"({sm.get('confidence', 0):.0%} conf, "
+                            f"L:{sm.get('long_count', 0)}/S:{sm.get('short_count', 0)})\n"
+                        )
+                    parts.append(
+                        f"### {anchor_sym.replace('/USDT', '')} (1D anchor)\n"
+                        f"Price: ${anchor.get('price', 0):.6g} | "
+                        f"Regime: {anchor.get('regime', '?')} | "
+                        f"Signal: {anchor.get('signal', '?')}\n"
+                        f"Z-score: {anchor.get('zscore', 0):.3f} | "
+                        f"Heat: {anchor.get('heat', 0)}/100 | "
+                        f"Conditions: {anchor.get('conditions_met', 0)}/{anchor.get('conditions_total', 10)}\n"
+                        f"CVD: {anchor.get('cvd_trend', 'N/A')} | "
+                        f"Divergence: {anchor.get('divergence') or 'none'}\n"
+                        f"{sm_line}"
+                        f"Reason: {anchor.get('signal_reason', '')}"
+                    )
+
+            # HyperLens whale consensus summary (top movers)
+            try:
+                from hl_intelligence import get_all_consensus as _hl_all
+                hl_consensus = _hl_all()
+                if hl_consensus:
+                    # Sort by confidence, show top bullish and bearish
+                    bullish = sorted(
+                        [c for c in hl_consensus.values() if c.trend == "BULLISH" and c.confidence >= 0.20],
+                        key=lambda c: c.confidence, reverse=True
+                    )[:5]
+                    bearish = sorted(
+                        [c for c in hl_consensus.values() if c.trend == "BEARISH" and c.confidence >= 0.20],
+                        key=lambda c: c.confidence, reverse=True
+                    )[:5]
+                    hl_lines = ["## HyperLens Whale Consensus (500 tracked wallets)"]
+                    if bullish:
+                        hl_lines.append("Bullish:")
+                        for c in bullish:
+                            hl_lines.append(
+                                f"  - {c.symbol}: {c.confidence:.0%} conf, "
+                                f"L:{c.long_count}/S:{c.short_count}, "
+                                f"ratio={c.net_ratio:+.2f}"
+                            )
+                    if bearish:
+                        hl_lines.append("Bearish:")
+                        for c in bearish:
+                            hl_lines.append(
+                                f"  - {c.symbol}: {c.confidence:.0%} conf, "
+                                f"L:{c.long_count}/S:{c.short_count}, "
+                                f"ratio={c.net_ratio:+.2f}"
+                            )
+                    if not bullish and not bearish:
+                        hl_lines.append("No strong whale consensus (all < 20% confidence)")
+                    parts.append("\n".join(hl_lines))
+            except Exception:
+                pass
+
         # Symbol-specific data
         if symbol:
             for tf in ("4h", "1d"):
@@ -585,6 +678,20 @@ class AssistantManager:
                     f"(score {conf.get('score', 0)})\n"
                     f"Priority: {match.get('priority_score', 0):.1f}"
                 )
+
+                # Add HyperLens whale consensus for this symbol
+                sm = match.get("smart_money")
+                if sm and sm.get("trend"):
+                    parts.append(
+                        f"### Whale Consensus ({symbol}, {tf.upper()})\n"
+                        f"Trend: {sm['trend']} | "
+                        f"Confidence: {sm.get('confidence', 0):.0%}\n"
+                        f"Wallets Long: {sm.get('long_count', 0)} | "
+                        f"Short: {sm.get('short_count', 0)}\n"
+                        f"Long Notional: ${sm.get('long_notional', 0)/1e6:.1f}M | "
+                        f"Short Notional: ${sm.get('short_notional', 0)/1e6:.1f}M\n"
+                        f"Net Ratio: {sm.get('net_ratio', 0):+.2f}"
+                    )
         else:
             # No symbol: show active signals summary
             for tf in ("4h",):
