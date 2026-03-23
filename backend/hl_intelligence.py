@@ -625,22 +625,35 @@ async def poll_positions() -> int:
 # Consensus computation
 # ---------------------------------------------------------------------------
 
-def _compute_cohort_trend(long_count: int, short_count: int) -> tuple:
+def _compute_cohort_trend(
+    long_count: int, short_count: int,
+    long_notional: float = 0.0, short_notional: float = 0.0,
+) -> tuple:
     """Compute trend and net_ratio for a cohort subset.
 
+    Uses same adaptive notional+count blend as aggregate consensus
+    so cohort trends match the overall methodology.
     Returns (trend, net_ratio).
     """
     total = long_count + short_count
     if total == 0:
         return ("NEUTRAL", 0.0)
-    net_ratio = (long_count - short_count) / total
-    if net_ratio > _BULLISH_THRESHOLD:
+    count_ratio = (long_count - short_count) / total
+    total_notional = long_notional + short_notional
+    if total_notional > 0:
+        notional_ratio = (long_notional - short_notional) / total_notional
+        skew = abs(notional_ratio)
+        nw = 0.85 if skew > 0.5 else 0.70
+        blended = nw * notional_ratio + (1.0 - nw) * count_ratio
+    else:
+        blended = count_ratio
+    if blended > _BULLISH_THRESHOLD:
         trend = "BULLISH"
-    elif net_ratio < _BEARISH_THRESHOLD:
+    elif blended < _BEARISH_THRESHOLD:
         trend = "BEARISH"
     else:
         trend = "NEUTRAL"
-    return (trend, net_ratio)
+    return (trend, blended)
 
 
 def _recompute_consensus() -> None:
@@ -685,7 +698,8 @@ def _recompute_consensus() -> None:
         is_sm = addr in sm_addresses
 
         for pos in latest.positions:
-            coin = pos.coin
+            # Normalize coin name: kPEPE→PEPE, add xyz: prefix for DEX coins
+            coin = f"xyz:{pos.coin}" if pos.dex == _XYZ_DEX else _HL_REVERSE_MAP.get(pos.coin, pos.coin)
             if coin not in sym_data:
                 sym_data[coin] = {
                     "long_count": 0, "short_count": 0,
@@ -693,9 +707,11 @@ def _recompute_consensus() -> None:
                     "weighted_sum": 0.0,
                     "leverages": [],
                     "top_longs": [], "top_shorts": [],
-                    # Per-cohort counters
+                    # Per-cohort counters + notional
                     "mp_long": 0, "mp_short": 0,
+                    "mp_long_notional": 0.0, "mp_short_notional": 0.0,
                     "sm_long": 0, "sm_short": 0,
+                    "sm_long_notional": 0.0, "sm_short_notional": 0.0,
                 }
 
             d = sym_data[coin]
@@ -713,8 +729,10 @@ def _recompute_consensus() -> None:
                 d["top_longs"].append(wallet.address)
                 if is_mp:
                     d["mp_long"] += 1
+                    d["mp_long_notional"] += pos.size_usd
                 if is_sm:
                     d["sm_long"] += 1
+                    d["sm_long_notional"] += pos.size_usd
             else:
                 d["short_count"] += 1
                 d["short_notional"] += pos.size_usd
@@ -722,8 +740,10 @@ def _recompute_consensus() -> None:
                 d["top_shorts"].append(wallet.address)
                 if is_mp:
                     d["mp_short"] += 1
+                    d["mp_short_notional"] += pos.size_usd
                 if is_sm:
                     d["sm_short"] += 1
+                    d["sm_short_notional"] += pos.size_usd
 
     # Build consensus objects
     new_consensus: Dict[str, SymbolConsensus] = {}
@@ -764,9 +784,11 @@ def _recompute_consensus() -> None:
         sym_leverages = d["leverages"]
         sym_avg_lev = sum(sym_leverages) / len(sym_leverages) if sym_leverages else 0.0
 
-        # Per-cohort trend computation
-        mp_trend, mp_net_ratio = _compute_cohort_trend(d["mp_long"], d["mp_short"])
-        sm_trend, sm_net_ratio = _compute_cohort_trend(d["sm_long"], d["sm_short"])
+        # Per-cohort trend computation (same adaptive blend as aggregate)
+        mp_trend, mp_net_ratio = _compute_cohort_trend(
+            d["mp_long"], d["mp_short"], d["mp_long_notional"], d["mp_short_notional"])
+        sm_trend, sm_net_ratio = _compute_cohort_trend(
+            d["sm_long"], d["sm_short"], d["sm_long_notional"], d["sm_short_notional"])
 
         new_consensus[coin] = SymbolConsensus(
             symbol=coin,
@@ -940,7 +962,9 @@ def get_symbol_positions(symbol: str) -> List[dict]:
             continue
         latest = snaps[-1]
         for pos in latest.positions:
-            if pos.coin == coin:
+            # Normalize pos.coin the same way as consensus: kPEPE→PEPE, xyz prefix
+            pos_coin = f"xyz:{pos.coin}" if pos.dex == _XYZ_DEX else _HL_REVERSE_MAP.get(pos.coin, pos.coin)
+            if pos_coin == coin:
                 # PnL % = unrealized_pnl / margin_used (ROE)
                 pnl_pct = round(pos.return_on_equity * 100, 2) if pos.return_on_equity else (
                     round(pos.unrealized_pnl / max(pos.margin_used, 1) * 100, 2) if pos.margin_used > 0 else 0
