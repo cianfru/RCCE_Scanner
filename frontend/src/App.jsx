@@ -782,7 +782,7 @@ export default function App() {
 
         {activeTab === "signals" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
+            <SignalLogPanel api={API_BASE} isMobile={isMobile} />
           </FadeIn>
         )}
 
