@@ -11,15 +11,15 @@ export default function GlassCard({ children, style = {}, glow = null, hoverable
       onMouseLeave={() => hoverable && setHovered(false)}
       style={{
         background: T.glassBg,
-        border: `1px solid ${T.border}`,
+        border: hovered ? `1px solid ${T.borderH}` : `1px solid ${T.border}`,
         borderRadius: T.radius,
-        backdropFilter: "blur(16px) saturate(1.2)",
-        WebkitBackdropFilter: "blur(16px) saturate(1.2)",
+        backdropFilter: "blur(20px) saturate(1.3)",
+        WebkitBackdropFilter: "blur(20px) saturate(1.3)",
         boxShadow: glow
-          ? `0 0 30px ${glow}, ${T.glassInset}`
-          : `${T.glassShadow}, ${T.glassInset}`,
-        transform: hovered ? "scale(1.01)" : "scale(1)",
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+          ? `0 0 30px ${glow}, 0 0 0 1px rgba(255,255,255,0.03) inset, 0 1px 0 0 rgba(255,255,255,0.04) inset`
+          : `${T.glassShadow}, 0 0 0 1px rgba(255,255,255,0.03) inset, 0 1px 0 0 rgba(255,255,255,0.04) inset`,
+        transform: hovered ? "translateY(-1px)" : "translateY(0)",
+        transition: "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
         ...style,
       }}
     >

@@ -282,12 +282,13 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 3,
-      padding: "1px 6px", borderRadius: 4,
-      background: color + "18",
-      border: `1px solid ${color}30`,
+      padding: "3px 8px", borderRadius: 20,
+      background: color + "14",
+      border: `1px solid ${color}25`,
       fontFamily: T.mono, fontSize: isMobile ? 10 : 11,
       color,
       fontWeight: 600,
+      letterSpacing: "0.04em",
     }}>
       {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
       {divergence && (
@@ -316,11 +317,12 @@ export function SmartMoneyBadge({ sm }) {
       title={`Smart Money: ${trend} (${long_count}L / ${short_count}S, conf ${Math.round((confidence || 0) * 100)}%)`}
       style={{
         display: "inline-flex", alignItems: "center", gap: 3,
-        padding: "1px 5px", borderRadius: 4,
+        padding: "3px 7px", borderRadius: 20,
         background: color + "14",
         border: `1px solid ${color}25`,
         fontFamily: T.mono, fontSize: 10,
         color, fontWeight: 600,
+        letterSpacing: "0.04em",
       }}
     >
       {icon}

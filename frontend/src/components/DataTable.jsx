@@ -1,4 +1,5 @@
 import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
+import { TableSkeleton } from "./Skeleton.jsx";
 import {
   ZScoreBar, RegimeBadge, SignalDot, DivergencePill,
   HeatCell, PhaseCell, ExhaustBadge, FloorCell,
@@ -190,17 +191,16 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
               </tr>
             </thead>
             <tbody>
-              {results.length === 0 ? (
+              {loading && results.length === 0 ? (
+                <tr><td colSpan={visibleColumns.length} style={{ padding: 0 }}>
+                  <TableSkeleton rows={12} cols={Math.min(visibleColumns.length, 8)} />
+                </td></tr>
+              ) : results.length === 0 ? (
                 <tr><td colSpan={visibleColumns.length} style={{
                   padding: "60px 14px", textAlign: "center",
                   color: T.text4, fontFamily: T.mono, fontSize: T.textBase,
                 }}>
-                  {loading ? (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ animation: "spin 1.5s linear infinite", display: "inline-block" }}>{"\u25e0"}</span>
-                      LOADING...
-                    </span>
-                  ) : "NO DATA"}
+                  NO DATA
                 </td></tr>
               ) : (
                 results.map((row, idx) => (

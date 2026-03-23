@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
+import { TableSkeleton } from "./Skeleton.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -519,16 +520,17 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
           </tr>
         </thead>
         <tbody>
-          {filtered.map((c) => {
+          {filtered.map((c, idx) => {
             const cf = getCohortFields(c, cohort);
             const positioned = cf.long_count + cf.short_count;
+            const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
             return (
               <tr
                 key={c.symbol}
                 onClick={() => onSymbolClick?.(c.symbol)}
-                style={{ cursor: "pointer", transition: "background 0.2s ease", borderBottom: `1px solid ${T.overlay04}` }}
+                style={{ cursor: "pointer", transition: "background 0.2s ease", borderBottom: `1px solid ${T.overlay04}`, background: stripeBg }}
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                onMouseLeave={e => e.currentTarget.style.background = stripeBg}
               >
                 <td style={{ padding: "8px 10px" }}>
                   <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
@@ -782,16 +784,17 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((w) => {
+          {sorted.map((w, idx) => {
             const bias = getBias(w.address);
             const biasColor = bias === "LONG" ? T.green : bias === "SHORT" ? T.red : bias === "MIXED" ? T.yellow : T.text4;
+            const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
             return (
               <tr
                 key={w.address}
                 onClick={() => onWalletClick?.(w.address)}
-                style={{ cursor: "pointer", transition: "background 0.15s" }}
+                style={{ cursor: "pointer", transition: "background 0.15s", background: stripeBg }}
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                onMouseLeave={e => e.currentTarget.style.background = stripeBg}
               >
                 <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "left" }}>
                   {w.rank}
@@ -1153,8 +1156,8 @@ function WalletDetail({ address, onClose }) {
             {data.rank && (
               <span style={{
                 fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                padding: "2px 7px", borderRadius: 4,
-                color: T.accent, background: `${T.accent}15`, border: `1px solid ${T.accent}25`,
+                padding: "3px 8px", borderRadius: 20,
+                color: T.accent, background: `${T.accent}12`, border: `1px solid ${T.accent}25`,
               }}>
                 #{data.rank}
               </span>
@@ -1349,18 +1352,20 @@ function WalletDetail({ address, onClose }) {
         }}>
           {s.best_trade && (
             <span style={{
-              fontFamily: T.mono, fontSize: 12,
-              padding: "3px 8px", borderRadius: 4,
-              color: T.green, background: `${T.green}12`, border: `1px solid ${T.green}20`,
+              fontFamily: T.mono, fontSize: 11,
+              padding: "3px 10px", borderRadius: 20,
+              color: T.green, background: `${T.green}12`, border: `1px solid ${T.green}25`,
+              fontWeight: 600, letterSpacing: "0.03em",
             }}>
               Best: {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
             </span>
           )}
           {s.worst_trade && (
             <span style={{
-              fontFamily: T.mono, fontSize: 12,
-              padding: "3px 8px", borderRadius: 4,
-              color: T.red, background: `${T.red}12`, border: `1px solid ${T.red}20`,
+              fontFamily: T.mono, fontSize: 11,
+              padding: "3px 10px", borderRadius: 20,
+              color: T.red, background: `${T.red}12`, border: `1px solid ${T.red}25`,
+              fontWeight: 600, letterSpacing: "0.03em",
             }}>
               Worst: {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
             </span>
@@ -1459,8 +1464,9 @@ function WalletDetail({ address, onClose }) {
                   {positions.map((p, i) => {
                     const roe = p.return_on_equity;
                     const pnl = p.unrealized_pnl || 0;
+                    const stripeBg = i % 2 === 1 ? T.overlay02 : "transparent";
                     return (
-                      <tr key={i} style={{ borderBottom: `1px solid ${T.overlay06}` }}>
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.overlay06}`, background: stripeBg }}>
                         {/* TOKEN — coin name + leverage type + asset class badge */}
                         <td style={{ padding: "8px 8px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -2069,13 +2075,15 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map(s => (
+              {sorted.map((s, idx) => {
+                const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
+                return (
                 <tr
                   key={s.symbol}
                   onClick={() => onSymbolSelect(s.symbol)}
-                  style={{ cursor: "pointer", transition: "background 0.15s" }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  style={{ cursor: "pointer", transition: "background 0.15s", background: stripeBg }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
+                  onMouseLeave={e => e.currentTarget.style.background = stripeBg}
                 >
                   <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
                     {s.symbol}
@@ -2099,7 +2107,8 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
                     {biasLabel(s.net_bias)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2919,8 +2928,8 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Main content */}
       {loading ? (
-        <GlassCard style={{ padding: 40, textAlign: "center" }}>
-          <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4 }}>Loading HyperLens...</div>
+        <GlassCard style={{ padding: 0, overflow: "hidden" }}>
+          <TableSkeleton rows={10} cols={6} />
         </GlassCard>
       ) : (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>

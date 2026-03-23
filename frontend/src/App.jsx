@@ -459,11 +459,11 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; font-feature-settings: "tnum"; }
         table, th, td, span, div, button, select, input, textarea, p, label { font-family: inherit; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 6px; }
+        ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--t-scrollHover); }
         tr:hover td { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -471,6 +471,15 @@ export default function App() {
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
         @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .fade-in-up { animation: fadeInUp 0.4s ease-out both; }
+        .shimmer-loading {
+          background: linear-gradient(90deg, var(--t-overlay04) 25%, var(--t-overlay10) 50%, var(--t-overlay04) 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+          border-radius: 6px;
+        }
         select { outline: none; appearance: none; -webkit-appearance: none; }
         select option { background: var(--t-selectBg); color: var(--t-text3); }
         .notable-scroll::-webkit-scrollbar { display: none; }
@@ -710,6 +719,15 @@ export default function App() {
         </div>
       </div>
 
+      {/* Header aura line — 1px gradient separator */}
+      <div style={{
+        height: 1, width: "100%",
+        background: mode === "dark"
+          ? "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.15) 25%, rgba(34,211,238,0.25) 50%, rgba(34,211,238,0.15) 75%, transparent 100%)"
+          : "linear-gradient(90deg, transparent 0%, rgba(14,116,144,0.12) 25%, rgba(14,116,144,0.18) 50%, rgba(14,116,144,0.12) 75%, transparent 100%)",
+        position: "sticky", top: isMobile ? 56 : 56, zIndex: 99,
+      }} />
+
       {/* Controls bar removed — timeframe toggle moved into ConsensusBar,
           regime/signal dropdowns removed (stat cards + column sort cover the need) */}
 
@@ -879,7 +897,9 @@ export default function App() {
         )}
 
         {activeTab === "chat" && (
-          <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
+          <FadeIn delay={200}>
+            <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
+          </FadeIn>
         )}
 
         {activeTab === "hyperlens" && (
