@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
@@ -57,10 +58,33 @@ const COLUMNS = [
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
+// Route → activeTab key mapping
+const ROUTE_TO_TAB = {
+  "/signal-log": "signals",
+  "/ai-agent": "chat",
+  "/backtest": "backtest",
+  "/executor": "executor",
+  "/portfolio": "trading",
+  "/onchain": "onchain",
+};
+const TAB_TO_ROUTE = {
+  signals: "/signal-log",
+  chat: "/ai-agent",
+  backtest: "/backtest",
+  executor: "/executor",
+  trading: "/portfolio",
+  onchain: "/onchain",
+  "4h": "/scanner?tf=4h",
+  "1d": "/scanner",
+  split: "/scanner?tf=split",
+};
+
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
   const { mode, toggle } = useTheme();
   const hPad = isMobile ? 16 : isTablet ? 20 : 24;
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -75,7 +99,23 @@ export default function App() {
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
   const [statCardFilter, setStatCardFilter] = useState(null);
-  const [activeTab, setActiveTab] = useState("1d");
+  // Derive activeTab from URL
+  const activeTab = useMemo(() => {
+    const p = location.pathname.replace(/\/$/, "") || "/scanner";
+    for (const [route, tab] of Object.entries(ROUTE_TO_TAB)) {
+      if (p === route || p.startsWith(route + "/")) return tab;
+    }
+    // Scanner with optional tf query param
+    const sp = new URLSearchParams(location.search);
+    const tf = sp.get("tf");
+    if (tf === "4h") return "4h";
+    if (tf === "split" && !isMobile) return "split";
+    return "1d";
+  }, [location, isMobile]);
+
+  const setActiveTab = useCallback((tab) => {
+    navigate(TAB_TO_ROUTE[tab] || "/scanner");
+  }, [navigate]);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // TradFi (HIP-3) data
@@ -143,7 +183,7 @@ export default function App() {
   // Force off split view on mobile
   useEffect(() => {
     if (isMobile && activeTab === "split") setActiveTab("4h");
-  }, [isMobile, activeTab]);
+  }, [isMobile, activeTab, setActiveTab]);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -832,6 +872,62 @@ export default function App() {
 
       {/* ── DETAIL PANEL ── */}
       <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
+
+      {/* ── MOBILE BOTTOM NAV ── */}
+      {isMobile && (
+        <nav style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 150,
+          background: mode === "dark" ? "rgba(10,10,14,0.96)" : "rgba(255,255,255,0.96)",
+          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+          borderTop: `1px solid ${T.border}`,
+          display: "flex",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}>
+          {[
+            { tab: "1d", icon: (
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M2 12L5 7L8 9L14 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            ), label: "Scanner" },
+            { tab: "signals", icon: (
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M3 13V8M6 13V5M9 13V7M12 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            ), label: "Signals" },
+            { tab: "chat", icon: (
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 3V4a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+            ), label: "AI" },
+            { tab: "onchain", icon: (
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/><path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            ), label: "On-Chain" },
+            { tab: "trading", icon: (
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 2 10 2-5h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            ), label: "Portfolio" },
+          ].map(({ tab, icon, label }) => {
+            const isActive = tab === "signals" ? activeTab === "signals"
+              : tab === "chat" ? activeTab === "chat"
+              : tab === "onchain" ? activeTab === "onchain"
+              : tab === "trading" ? activeTab === "trading"
+              : (activeTab === "4h" || activeTab === "1d" || activeTab === "split");
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center",
+                  gap: 3, padding: "8px 4px 10px",
+                  border: "none", background: "transparent",
+                  cursor: "pointer",
+                  color: isActive ? T.accent : T.text3,
+                  transition: "color 0.15s",
+                }}
+              >
+                {icon}
+                <span style={{ fontSize: 9, fontWeight: isActive ? 700 : 500, letterSpacing: "0.04em", fontFamily: T.font }}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

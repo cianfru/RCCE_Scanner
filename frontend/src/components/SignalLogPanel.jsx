@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { T, SIGNAL_META, TRANSITION_META } from "../theme.js";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { T, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,6 +19,17 @@ function transitionMeta(tt) {
 
 function stripSymbol(sym) {
   return (sym || "").replace("/USDT", "").replace("/USD", "");
+}
+
+function regimeColor(reg) {
+  return (REGIME_META[reg] || REGIME_META.FLAT).color;
+}
+
+function fmtPrice(p) {
+  if (!p && p !== 0) return "—";
+  if (p >= 1000) return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (p >= 1)    return `$${p.toFixed(4)}`;
+  return `$${p.toFixed(6)}`;
 }
 
 // Signal short labels for heatmap cells
@@ -67,6 +78,113 @@ const S = {
     color: T.text4, fontSize: 13, fontFamily: T.mono,
   },
 };
+
+// ---------------------------------------------------------------------------
+// Pairs Matrix — all pairs, current state, no pagination
+// ---------------------------------------------------------------------------
+
+function PairsMatrix({ api, timeframe, isMobile }) {
+  const [pairs, setPairs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("priority");
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${api}/api/scan?timeframe=${timeframe}`)
+      .then(r => r.json())
+      .then(d => { setPairs(d.results || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [api, timeframe]);
+
+  const filtered = useMemo(() => {
+    let out = pairs;
+    if (search) {
+      const q = search.toUpperCase();
+      out = out.filter(p => stripSymbol(p.symbol).includes(q));
+    }
+    if (sortBy === "priority") return [...out].sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0));
+    if (sortBy === "signal")   return [...out].sort((a, b) => (a.signal || "").localeCompare(b.signal || ""));
+    if (sortBy === "regime")   return [...out].sort((a, b) => (a.regime || "").localeCompare(b.regime || ""));
+    if (sortBy === "zscore")   return [...out].sort((a, b) => Math.abs(b.zscore || 0) - Math.abs(a.zscore || 0));
+    return out;
+  }, [pairs, search, sortBy]);
+
+  const badge = (bg, color, border, text) => (
+    <span style={{
+      display: "inline-block", padding: "2px 7px", borderRadius: 6,
+      fontSize: 9, fontWeight: 700, letterSpacing: "0.04em",
+      background: bg, color, border: `1px solid ${border}`, alignSelf: "flex-start",
+    }}>{text}</span>
+  );
+
+  if (loading) return <div style={S.empty}>Loading pairs...</div>;
+  if (filtered.length === 0) return <div style={S.empty}>No pairs found.</div>;
+
+  const cols = isMobile ? "1fr 1fr" : "repeat(auto-fill, minmax(160px, 1fr))";
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          style={{
+            background: T.surface, color: T.text2, border: `1px solid ${T.border}`,
+            borderRadius: 8, padding: "6px 10px", fontSize: 12, fontFamily: T.mono,
+            flex: "1 1 120px", minWidth: 100, outline: "none",
+          }}
+          type="text" placeholder="SEARCH..." value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <select
+          style={{
+            background: T.surface, color: T.text2, border: `1px solid ${T.border}`,
+            borderRadius: 8, padding: "6px 10px", fontSize: 12, fontFamily: T.mono, cursor: "pointer",
+          }}
+          value={sortBy} onChange={e => setSortBy(e.target.value)}
+        >
+          <option value="priority">PRIORITY</option>
+          <option value="signal">SIGNAL</option>
+          <option value="regime">REGIME</option>
+          <option value="zscore">Z-SCORE</option>
+        </select>
+        <span style={{ fontSize: 10, color: T.text4, fontFamily: T.mono, whiteSpace: "nowrap" }}>
+          {filtered.length} pairs
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8 }}>
+        {filtered.map(p => {
+          const sigColor = signalColor(p.signal);
+          const regColor = regimeColor(p.regime);
+          return (
+            <div key={p.symbol} style={{
+              background: T.surface,
+              border: `1px solid ${sigColor}25`,
+              borderRadius: 10, padding: "10px 12px",
+              display: "flex", flexDirection: "column", gap: 4,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text1, fontFamily: T.mono, letterSpacing: "0.02em" }}>
+                {stripSymbol(p.symbol)}
+              </div>
+              {badge(`${sigColor}18`, sigColor, `${sigColor}40`, signalLabel(p.signal))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: regColor, fontFamily: T.mono, letterSpacing: "0.06em" }}>
+                  {p.regime}
+                </span>
+                <span style={{ fontSize: 9, color: T.text3, fontFamily: T.mono }}>
+                  Z: {p.zscore != null ? Number(p.zscore).toFixed(1) : "—"}
+                </span>
+              </div>
+              {p.price != null && (
+                <div style={{ fontSize: 9, color: T.text4, fontFamily: T.mono }}>{fmtPrice(p.price)}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Signal Heatmap Grid
@@ -176,6 +294,7 @@ function SignalHeatmap({ data, isMobile }) {
 // ---------------------------------------------------------------------------
 
 export default function SignalLogPanel({ api, isMobile }) {
+  const [activeView, setActiveView] = useState("pairs");
   const [timeframe, setTimeframe] = useState("4h");
   const [heatmap, setHeatmap] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -208,14 +327,28 @@ export default function SignalLogPanel({ api, isMobile }) {
       .catch(() => {});
   }, [rawExpanded, timeframe, api]);
 
+  const VIEWS = [
+    { key: "pairs",   label: "PAIRS" },
+    { key: "heatmap", label: "HEATMAP" },
+    { key: "log",     label: "LOG" },
+  ];
+
   return (
     <div style={{ padding: 0 }}>
-      {/* Header: TF toggle only */}
+      {/* Header: view tabs + TF toggle */}
       <div style={{
-        display: "flex", justifyContent: "flex-end",
-        alignItems: "center", marginBottom: 16,
+        display: "flex", justifyContent: "space-between",
+        alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8,
       }}>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          {VIEWS.map(v => (
+            <button key={v.key} onClick={() => setActiveView(v.key)}
+              style={{ ...S.pillBtn(activeView === v.key), flexShrink: 0 }}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           {["4h", "1d"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)} style={S.pillBtn(timeframe === tf)}>
               {tf.toUpperCase()}
@@ -224,10 +357,18 @@ export default function SignalLogPanel({ api, isMobile }) {
         </div>
       </div>
 
-      {loading && <div style={S.empty}>Loading...</div>}
+      {/* PAIRS VIEW */}
+      {activeView === "pairs" && (
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Current State — All Pairs</div>
+          <PairsMatrix api={api} timeframe={timeframe} isMobile={isMobile} />
+        </div>
+      )}
+
+      {activeView === "heatmap" && loading && <div style={S.empty}>Loading...</div>}
 
       {/* HEATMAP */}
-      {!loading && (
+      {activeView === "heatmap" && !loading && (
         <div style={S.section}>
           <div style={S.sectionTitle}>Signal Evolution — Last 14 Days</div>
           <SignalHeatmap data={heatmap} isMobile={isMobile} />
@@ -258,8 +399,8 @@ export default function SignalLogPanel({ api, isMobile }) {
         </div>
       )}
 
-      {/* RAW LOG (collapsible) */}
-      <div style={{ marginTop: 16 }}>
+      {/* RAW LOG — shown in LOG view */}
+      {activeView === "log" && <div style={{ marginTop: 16 }}>
         <button
           onClick={() => setRawExpanded(!rawExpanded)}
           style={{
@@ -318,7 +459,7 @@ export default function SignalLogPanel({ api, isMobile }) {
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
