@@ -799,12 +799,19 @@ def _recompute_consensus() -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+# Reverse map: HL coin names → scanner base names (kPEPE→PEPE, POL→MATIC, etc.)
+_HL_REVERSE_MAP: Dict[str, str] = {
+    "kPEPE": "PEPE", "kSHIB": "SHIB", "kBONK": "BONK", "kFLOKI": "FLOKI",
+    "POL": "MATIC", "RENDER": "RNDR", "S": "FTM",
+}
+
+
 def _normalize_coin(symbol: str) -> str:
     """Normalize any symbol format to bare coin name.
 
-    Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT"
+    Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT",
+    HL names like "kPEPE", "POL", "RENDER", "S".
     Also preserves xyz DEX prefix: "xyz:GOLD" stays "xyz:GOLD".
-    Uses anchored regex to avoid mangling coins that contain USDT/USDC substrings.
     """
     # Preserve xyz DEX prefix (HIP-3 TradFi instruments)
     if symbol.lower().startswith("xyz:"):
@@ -814,6 +821,8 @@ def _normalize_coin(symbol: str) -> str:
     coin = re.sub(r"(USDT|USDC|USD)$", "", coin)
     if coin.startswith("1000"):
         coin = coin[4:]
+    # Map HL-specific names back to scanner base names
+    coin = _HL_REVERSE_MAP.get(coin, coin)
     return coin
 
 
