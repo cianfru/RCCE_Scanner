@@ -803,8 +803,13 @@ def _normalize_coin(symbol: str) -> str:
     """Normalize any symbol format to bare coin name.
 
     Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT"
+    Also preserves xyz DEX prefix: "xyz:GOLD" stays "xyz:GOLD".
     Uses anchored regex to avoid mangling coins that contain USDT/USDC substrings.
     """
+    # Preserve xyz DEX prefix (HIP-3 TradFi instruments)
+    if symbol.lower().startswith("xyz:"):
+        return f"xyz:{symbol.split(':',1)[1].upper()}"
+
     coin = symbol.split("/")[0].split(":")[0]
     coin = re.sub(r"(USDT|USDC|USD)$", "", coin)
     if coin.startswith("1000"):
@@ -1395,7 +1400,7 @@ def _compute_pressure(symbol: str) -> dict:
 
             is_trigger = order.get("isTrigger", False)
             is_tpsl = order.get("isPositionTpsl", False)
-            trigger_cond = order.get("triggerCondition", "")
+            order_type = (order.get("orderType") or "").lower()
             raw_side = order.get("side", "")
             side = "BUY" if raw_side == "B" else "SELL" if raw_side == "A" else raw_side
 
@@ -1415,16 +1420,25 @@ def _compute_pressure(symbol: str) -> dict:
             except (ValueError, TypeError):
                 continue
 
+            # sz can be 0 for fully-filled partial orders — use origSz as fallback
+            if sz == 0:
+                orig_sz_str = order.get("origSz", "0")
+                try:
+                    sz = float(orig_sz_str)
+                except (ValueError, TypeError):
+                    pass
+            if sz == 0:
+                continue
+
             size_usd = sz * px
             step = _cluster_precision(px)
             clustered_px = _round_to_cluster(px, step)
 
-            # Classify order
-            if is_trigger and is_tpsl and trigger_cond == "lt":
-                # Stop loss
+            # Classify order using orderType (HL returns human-readable strings
+            # like "Stop Market", "Take Profit Limit", etc.)
+            if is_tpsl and "stop" in order_type:
                 bucket = stops
-            elif is_trigger and is_tpsl and trigger_cond == "gt":
-                # Take profit
+            elif is_tpsl and "take profit" in order_type:
                 bucket = take_profits
             elif not is_trigger:
                 # Resting limit order
@@ -1593,15 +1607,104 @@ def _summarize_liq_cluster(entries: List[dict]) -> dict:
 def get_pressure(symbol: str = None) -> dict:
     """Get pressure map for a symbol or all symbols.
 
-    If symbol is None, returns pressure for all symbols that have consensus.
+    If symbol is None, returns an overview with per-symbol summary stats.
+    If symbol is given, returns full pressure detail for that symbol.
     """
     if symbol:
-        return _compute_pressure(symbol)
+        coin = _normalize_coin(symbol)
+        return _compute_pressure(coin)
 
-    result = {}
-    for coin in _consensus:
-        result[coin] = _compute_pressure(coin)
-    return result
+    # Build overview: aggregate per-symbol stats from _wallet_orders
+    sym_stats: Dict[str, dict] = {}
+
+    for addr, orders in _wallet_orders.items():
+        for order in orders:
+            order_coin = order.get("coin", "")
+            if not order_coin:
+                continue
+
+            is_tpsl = order.get("isPositionTpsl", False)
+            hl_order_type = (order.get("orderType") or "").lower()
+            is_trigger = order.get("isTrigger", False)
+
+            # Classify
+            if is_tpsl and "stop" in hl_order_type:
+                otype = "stop"
+            elif is_tpsl and "take profit" in hl_order_type:
+                otype = "tp"
+            else:
+                otype = "limit"
+
+            # Price
+            px_str = order.get("triggerPx") or order.get("limitPx", "0") if is_trigger else order.get("limitPx", "0")
+            try:
+                px = float(px_str)
+            except (ValueError, TypeError):
+                continue
+
+            # Size
+            try:
+                sz = float(order.get("sz", "0"))
+            except (ValueError, TypeError):
+                continue
+            if sz == 0:
+                try:
+                    sz = float(order.get("origSz", "0"))
+                except (ValueError, TypeError):
+                    pass
+            if sz == 0:
+                continue
+
+            notional = sz * px
+            raw_side = order.get("side", "")
+            side = "BUY" if raw_side == "B" else "SELL" if raw_side == "A" else raw_side
+
+            if order_coin not in sym_stats:
+                sym_stats[order_coin] = {
+                    "symbol": order_coin,
+                    "stop_count": 0, "tp_count": 0, "limit_count": 0,
+                    "stop_notional": 0.0, "tp_notional": 0.0, "limit_notional": 0.0,
+                    "total_notional": 0.0,
+                    "buy_notional": 0.0, "sell_notional": 0.0,
+                    "wallet_addrs": set(),
+                }
+
+            s = sym_stats[order_coin]
+            s[f"{otype}_count"] += 1
+            s[f"{otype}_notional"] += notional
+            s["total_notional"] += notional
+            s["wallet_addrs"].add(addr)
+            if side == "BUY":
+                s["buy_notional"] += notional
+            else:
+                s["sell_notional"] += notional
+
+    # Serialize
+    symbols = []
+    for coin, s in sym_stats.items():
+        net = s["buy_notional"] - s["sell_notional"]
+        total = s["buy_notional"] + s["sell_notional"]
+        bias = net / total if total > 0 else 0.0
+        symbols.append({
+            "symbol": s["symbol"],
+            "stop_count": s["stop_count"],
+            "tp_count": s["tp_count"],
+            "limit_count": s["limit_count"],
+            "stop_notional": round(s["stop_notional"], 2),
+            "tp_notional": round(s["tp_notional"], 2),
+            "limit_notional": round(s["limit_notional"], 2),
+            "total_notional": round(s["total_notional"], 2),
+            "wallet_count": len(s["wallet_addrs"]),
+            "net_bias": round(bias, 3),  # +1 = all buy, -1 = all sell
+        })
+
+    symbols.sort(key=lambda x: x["total_notional"], reverse=True)
+
+    return {
+        "count": len(symbols),
+        "total_wallets_with_orders": sum(1 for v in _wallet_orders.values() if v),
+        "symbols": symbols,
+    }
 
 
 def get_order_book_walls(symbol: str) -> dict:
@@ -1666,7 +1769,7 @@ def get_smart_money_orders(symbol: str = None) -> list:
 
             is_trigger = order.get("isTrigger", False)
             is_tpsl = order.get("isPositionTpsl", False)
-            trigger_cond = order.get("triggerCondition", "")
+            hl_order_type = (order.get("orderType") or "").lower()
             raw_side = order.get("side", "")
             side = "BUY" if raw_side == "B" else "SELL" if raw_side == "A" else raw_side
 
@@ -1684,12 +1787,21 @@ def get_smart_money_orders(symbol: str = None) -> list:
             except (ValueError, TypeError):
                 continue
 
+            # sz can be 0 for partially-filled — use origSz as fallback
+            if sz == 0:
+                try:
+                    sz = float(order.get("origSz", "0"))
+                except (ValueError, TypeError):
+                    pass
+            if sz == 0:
+                continue
+
             size_usd = sz * px
 
-            # Classify
-            if is_trigger and is_tpsl and trigger_cond == "lt":
+            # Classify using orderType string
+            if is_tpsl and "stop" in hl_order_type:
                 order_type = "stop"
-            elif is_trigger and is_tpsl and trigger_cond == "gt":
+            elif is_tpsl and "take profit" in hl_order_type:
                 order_type = "take_profit"
             else:
                 order_type = "limit"

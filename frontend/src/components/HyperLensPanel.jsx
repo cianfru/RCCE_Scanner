@@ -1853,10 +1853,11 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
 
   const sorted = useMemo(() => {
     if (!data?.symbols) return [];
-    const items = data.symbols.filter(s =>
-      (s.stop_count || 0) + (s.tp_count || 0) + (s.limit_count || 0) > 0
-    );
+    const items = [...data.symbols];
     items.sort((a, b) => {
+      if (sortKey === "symbol") {
+        return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol);
+      }
       const av = a[sortKey] || 0;
       const bv = b[sortKey] || 0;
       return sortAsc ? av - bv : bv - av;
@@ -1869,63 +1870,121 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
     else { setSortKey(key); setSortAsc(false); }
   };
 
-  if (sorted.length === 0) {
-    return (
-      <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-        No pressure data available
-      </div>
-    );
-  }
+  const biasColor = (bias) => {
+    if (bias > 0.3) return T.green;
+    if (bias < -0.3) return T.red;
+    return T.text4;
+  };
+
+  const biasLabel = (bias) => {
+    if (bias > 0.5) return "STRONG BUY";
+    if (bias > 0.2) return "BUY";
+    if (bias < -0.5) return "STRONG SELL";
+    if (bias < -0.2) return "SELL";
+    return "NEUTRAL";
+  };
+
+  // Summary strip at top
+  const totals = useMemo(() => {
+    if (!data?.symbols) return { stops: 0, tps: 0, limits: 0, notional: 0, wallets: 0 };
+    return data.symbols.reduce((acc, s) => ({
+      stops: acc.stops + (s.stop_count || 0),
+      tps: acc.tps + (s.tp_count || 0),
+      limits: acc.limits + (s.limit_count || 0),
+      notional: acc.notional + (s.total_notional || 0),
+      wallets: data.total_wallets_with_orders || 0,
+    }), { stops: 0, tps: 0, limits: 0, notional: 0, wallets: 0 });
+  }, [data]);
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
-            <SortTh label="STOPS" sortKey="stop_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-            <SortTh label="TPs" sortKey="tp_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-            <SortTh label="LIMITS" sortKey="limit_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-            <SortTh label="TOTAL NOTIONAL" sortKey="total_notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(s => (
-            <tr
-              key={s.symbol}
-              onClick={() => onSymbolSelect(s.symbol)}
-              style={{ cursor: "pointer", transition: "background 0.15s" }}
-              onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            >
-              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
-                {s.symbol}
-              </td>
-              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.red, textAlign: "right" }}>
-                {s.stop_count || 0}
-              </td>
-              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.green, textAlign: "right" }}>
-                {s.tp_count || 0}
-              </td>
-              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.accent, textAlign: "right" }}>
-                {s.limit_count || 0}
-              </td>
-              <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
-                {fmt$(s.total_notional)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      {/* Summary strip */}
+      <div style={{
+        display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px",
+        borderBottom: `1px solid ${T.border}`,
+      }}>
+        {[
+          { label: "WALLETS W/ ORDERS", value: totals.wallets, color: T.text1 },
+          { label: "SYMBOLS", value: sorted.length, color: T.accent },
+          { label: "STOP LOSSES", value: totals.stops, color: T.red },
+          { label: "TAKE PROFITS", value: totals.tps, color: T.green },
+          { label: "LIMIT ORDERS", value: totals.limits, color: T.accent },
+          { label: "TOTAL NOTIONAL", value: fmt$(totals.notional), color: T.text1, isText: true },
+        ].map(({ label, value, color, isText }) => (
+          <div key={label} style={{
+            flex: "1 1 100px", padding: "6px 10px", borderRadius: 8,
+            background: `${color}08`, border: `1px solid ${color}20`,
+          }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em" }}>{label}</div>
+            <div style={{ fontFamily: T.mono, fontSize: isText ? 13 : 16, fontWeight: 700, color }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {sorted.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+          No pressure data available
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
+                <SortTh label="STOPS" sortKey="stop_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+                <SortTh label="TPs" sortKey="tp_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+                <SortTh label="LIMITS" sortKey="limit_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+                <SortTh label="WALLETS" sortKey="wallet_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+                <SortTh label="NOTIONAL" sortKey="total_notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+                <SortTh label="BIAS" sortKey="net_bias" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(s => (
+                <tr
+                  key={s.symbol}
+                  onClick={() => onSymbolSelect(s.symbol)}
+                  style={{ cursor: "pointer", transition: "background 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
+                    {s.symbol}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.stop_count ? T.red : T.text4, textAlign: "right" }}>
+                    {s.stop_count || "-"}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.tp_count ? T.green : T.text4, textAlign: "right" }}>
+                    {s.tp_count || "-"}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.limit_count ? T.accent : T.text4, textAlign: "right" }}>
+                    {s.limit_count || "-"}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
+                    {s.wallet_count || 0}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
+                    {fmt$(s.total_notional)}
+                  </td>
+                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, textAlign: "right", color: biasColor(s.net_bias) }}>
+                    {biasLabel(s.net_bias)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
 function PressureSummaryStrip({ data }) {
+  const orders = data?.smart_money_orders || {};
   const items = [
-    { label: "STOP ORDERS", count: data.smart_money_stops?.length || 0, total: data.total_stop_notional, color: T.red },
-    { label: "TAKE PROFITS", count: data.smart_money_tps?.length || 0, total: data.total_tp_notional, color: T.green },
-    { label: "LIMIT ORDERS", count: data.smart_money_limits?.length || 0, total: data.total_limit_notional, color: T.accent },
+    { label: "STOP ORDERS", count: orders.stops?.length || 0, total: (orders.stops || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.red },
+    { label: "TAKE PROFITS", count: orders.take_profits?.length || 0, total: (orders.take_profits || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.green },
+    { label: "LIMIT ORDERS", count: orders.limits?.length || 0, total: (orders.limits || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.accent },
   ];
 
   return (
@@ -1965,12 +2024,14 @@ function PriceLevelMap({ data }) {
 
   const allLevels = useMemo(() => {
     const levels = [];
-    (data.smart_money_stops || []).forEach(o => levels.push({ ...o, type: "SL", price: o.price, size: o.total_size_usd, side: o.side }));
-    (data.smart_money_tps || []).forEach(o => levels.push({ ...o, type: "TP", price: o.price, size: o.total_size_usd, side: o.side }));
-    (data.smart_money_limits || []).forEach(o => levels.push({ ...o, type: "LIMIT", price: o.price, size: o.total_size_usd, side: o.side }));
-    (data.book_walls?.bids || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "BUY", wallet_count: o.order_count }));
-    (data.book_walls?.asks || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "SELL", wallet_count: o.order_count }));
-    (data.liq_clusters || []).forEach(o => levels.push({ type: "LIQ", price: o.price_center, size: o.total_notional, side: o.side === "LONG" ? "BUY" : "SELL", wallet_count: o.wallet_count }));
+    const orders = data?.smart_money_orders || {};
+    (orders.stops || []).forEach(o => levels.push({ ...o, type: "SL", price: o.price, size: o.total_size_usd, side: o.side }));
+    (orders.take_profits || []).forEach(o => levels.push({ ...o, type: "TP", price: o.price, size: o.total_size_usd, side: o.side }));
+    (orders.limits || []).forEach(o => levels.push({ ...o, type: "LIMIT", price: o.price, size: o.total_size_usd, side: o.side }));
+    const walls = data?.order_book_walls || {};
+    (walls.bid_walls || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "BUY", wallet_count: o.order_count }));
+    (walls.ask_walls || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "SELL", wallet_count: o.order_count }));
+    (data?.liquidation_clusters || []).forEach(o => levels.push({ type: "LIQ", price: o.avg_price, size: o.total_size_usd, side: o.dominant_side === "LONG" ? "BUY" : "SELL", wallet_count: o.wallet_count }));
     return levels;
   }, [data]);
 
@@ -2118,9 +2179,10 @@ function PressureOrderTable({ data }) {
 
   const orders = useMemo(() => {
     const rows = [];
-    (data.smart_money_stops || []).forEach(o => rows.push({ type: "SL", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
-    (data.smart_money_tps || []).forEach(o => rows.push({ type: "TP", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
-    (data.smart_money_limits || []).forEach(o => rows.push({ type: "LIMIT", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    const orders = data?.smart_money_orders || {};
+    (orders.stops || []).forEach(o => rows.push({ type: "SL", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    (orders.take_profits || []).forEach(o => rows.push({ type: "TP", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
+    (orders.limits || []).forEach(o => rows.push({ type: "LIMIT", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
     rows.sort((a, b) => {
       const av = a[sortKey] || 0;
       const bv = b[sortKey] || 0;
@@ -2196,11 +2258,11 @@ function PressureOrderTable({ data }) {
 }
 
 function PressureBookWalls({ walls }) {
-  if (!walls || (!walls.bids?.length && !walls.asks?.length)) return null;
+  if (!walls || (!walls.bid_walls?.length && !walls.ask_walls?.length)) return null;
 
   const allWalls = [
-    ...(walls.bids || []).map(w => ({ ...w, side: "BID" })),
-    ...(walls.asks || []).map(w => ({ ...w, side: "ASK" })),
+    ...(walls.bid_walls || []).map(w => ({ ...w, side: "BID" })),
+    ...(walls.ask_walls || []).map(w => ({ ...w, side: "ASK" })),
   ];
   const maxSize = Math.max(...allWalls.map(w => w.size_usd || 0), 1);
 
@@ -2283,11 +2345,11 @@ function PressureLiqClusters({ clusters }) {
             <div style={{ flex: 1, fontFamily: T.mono, fontSize: 12, color: T.text2, lineHeight: 1.5 }}>
               <span style={{ fontWeight: 700, color: T.yellow }}>{c.wallet_count} wallets</span>
               {" with "}
-              <span style={{ fontWeight: 700, color: T.red }}>{fmt$(c.total_notional)}</span>
+              <span style={{ fontWeight: 700, color: T.red }}>{fmt$(c.total_size_usd)}</span>
               {" "}
-              <span style={{ color: c.side === "LONG" ? T.green : T.red, fontWeight: 600 }}>{c.side}</span>
+              <span style={{ color: c.dominant_side === "LONG" ? T.green : T.red, fontWeight: 600 }}>{c.dominant_side}</span>
               {" positions have liquidation near "}
-              <span style={{ fontWeight: 700, color: T.text1 }}>${c.price_center?.toLocaleString()}</span>
+              <span style={{ fontWeight: 700, color: T.text1 }}>${c.avg_price?.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
             </div>
           </div>
         ))}
@@ -2322,48 +2384,8 @@ function PressureMap({ consensus, isMobile }) {
     return () => clearInterval(interval);
   }, [fetchPressure]);
 
-  // Symbol chips from consensus data
-  const symbols = useMemo(() => {
-    if (!consensus?.length) return [];
-    return [...new Set(consensus.map(c => c.symbol))].sort();
-  }, [consensus]);
-
   return (
     <div>
-      {/* Symbol selector */}
-      <div style={{
-        padding: "10px 16px",
-        borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-      }}>
-        <button
-          onClick={() => setSelectedSymbol(null)}
-          style={{
-            padding: "4px 10px", borderRadius: 6, border: "none",
-            fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-            color: !selectedSymbol ? T.text1 : T.text4,
-            background: !selectedSymbol ? T.overlay10 : T.overlay04,
-            cursor: "pointer", transition: "all 0.15s",
-          }}
-        >
-          ALL
-        </button>
-        {symbols.map(sym => (
-          <button
-            key={sym}
-            onClick={() => setSelectedSymbol(sym)}
-            style={{
-              padding: "4px 8px", borderRadius: 6, border: "none",
-              fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-              color: selectedSymbol === sym ? T.text1 : T.text4,
-              background: selectedSymbol === sym ? T.overlay10 : "transparent",
-              cursor: "pointer", transition: "all 0.15s",
-            }}
-          >
-            {sym}
-          </button>
-        ))}
-      </div>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
@@ -2399,8 +2421,8 @@ function PressureMap({ consensus, isMobile }) {
               <PressureSummaryStrip data={pressureData} />
               <PriceLevelMap data={pressureData} />
               <PressureOrderTable data={pressureData} />
-              <PressureBookWalls walls={pressureData.book_walls} />
-              <PressureLiqClusters clusters={pressureData.liq_clusters} />
+              <PressureBookWalls walls={pressureData.order_book_walls} />
+              <PressureLiqClusters clusters={pressureData.liquidation_clusters} />
             </>
           ) : (
             <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
