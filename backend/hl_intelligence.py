@@ -739,10 +739,12 @@ def _recompute_consensus() -> None:
         total_notional = d["long_notional"] + d["short_notional"]
         notional_ratio = (d["long_notional"] - d["short_notional"]) / max(total_notional, 1.0)
 
-        # Blend count ratio and notional ratio (60% notional, 40% count)
-        # so a $10M whale outweighs ten $50k wallets, but pure count
-        # still has some voice to prevent single-whale domination
-        blended = 0.6 * notional_ratio + 0.4 * net_ratio
+        # Adaptive blend: notional weight increases when dollar imbalance is extreme.
+        # Base: 70% notional, 30% count.  When notional ratio > 0.5 (3:1+ dollar skew),
+        # boost to 85/15 so whales can't be drowned out by many small counter-positions.
+        notional_skew = abs(notional_ratio)
+        nw = 0.85 if notional_skew > 0.5 else 0.70
+        blended = nw * notional_ratio + (1.0 - nw) * net_ratio
 
         # Derive trend from blended score
         if blended > _BULLISH_THRESHOLD:
@@ -939,6 +941,11 @@ def get_symbol_positions(symbol: str) -> List[dict]:
         latest = snaps[-1]
         for pos in latest.positions:
             if pos.coin == coin:
+                # PnL % = unrealized_pnl / margin_used (ROE)
+                pnl_pct = round(pos.return_on_equity * 100, 2) if pos.return_on_equity else (
+                    round(pos.unrealized_pnl / max(pos.margin_used, 1) * 100, 2) if pos.margin_used > 0 else 0
+                )
+                now = time.time()
                 result.append({
                     "address": wallet.address,
                     "display_name": wallet.display_name,
@@ -949,7 +956,10 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                     "size_usd": round(pos.size_usd, 2),
                     "entry_px": pos.entry_px,
                     "unrealized_pnl": round(pos.unrealized_pnl, 2),
+                    "pnl_pct": pnl_pct,
                     "leverage": pos.leverage,
+                    "liq_distance_pct": pos.liq_distance_pct,
+                    "position_age_s": round(now - fs, 0) if (fs := _position_first_seen.get(wallet.address, {}).get(pos.coin)) else None,
                     "cohorts": sorted(_wallet_cohorts.get(wallet.address, set())),
                     "asset_class": pos.asset_class,
                     "dex": pos.dex,

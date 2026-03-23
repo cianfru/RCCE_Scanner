@@ -1775,8 +1775,17 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
             fontFamily: T.mono, fontSize: 11, fontWeight: 600,
             color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red,
           }}>
-            {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
+            {p.pnl_pct != null ? (
+              <>{p.pnl_pct >= 0 ? "+" : ""}{p.pnl_pct.toFixed(1)}%</>
+            ) : (
+              <>{(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}</>
+            )}
           </span>
+          {p.pnl_pct != null && p.unrealized_pnl != null && (
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+              {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
+            </span>
+          )}
           <span style={{ fontFamily: T.mono, fontSize: 10, color: levColor(p.leverage) }}>
             {p.leverage}x
           </span>
