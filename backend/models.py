@@ -110,6 +110,8 @@ class ScanResult(BaseModel):
     agent_signal: Optional[str] = None          # overridden signal (None = no change)
     agent_warnings: List[str] = []              # agent filter alerts
     agent_filters_fired: List[str] = []         # which filters fired
+    # HyperLens smart money consensus (display-only)
+    smart_money: Optional[dict] = None          # {trend, confidence, long_count, short_count, ...}
 
 
 class ScanResponse(BaseModel):
