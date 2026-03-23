@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 
@@ -2073,165 +2074,230 @@ function PressureSummaryStrip({ data }) {
   );
 }
 
-function PriceLevelMap({ data }) {
-  const SVG_W = 600;
-  const SVG_H = 320;
-  const PAD_TOP = 20;
-  const PAD_BOTTOM = 20;
-  const PAD_LEFT = 70;
-  const PAD_RIGHT = 70;
-  const CENTER_X = SVG_W / 2;
-  const BAR_MAX_W = (SVG_W - PAD_LEFT - PAD_RIGHT) / 2 - 10;
+function PressureChart({ symbol, data }) {
+  const chartRef = useRef(null);
+  const containerRef = useRef(null);
+  const [candles, setCandles] = useState(null);
+  const [chartError, setChartError] = useState(false);
 
-  const allLevels = useMemo(() => {
-    const levels = [];
-    const orders = data?.smart_money_orders || {};
-    (orders.stops || []).forEach(o => levels.push({ ...o, type: "SL", price: o.price, size: o.total_size_usd, side: o.side }));
-    (orders.take_profits || []).forEach(o => levels.push({ ...o, type: "TP", price: o.price, size: o.total_size_usd, side: o.side }));
-    (orders.limits || []).forEach(o => levels.push({ ...o, type: "LIMIT", price: o.price, size: o.total_size_usd, side: o.side }));
-    const walls = data?.order_book_walls || {};
-    (walls.bid_walls || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "BUY", wallet_count: o.order_count }));
-    (walls.ask_walls || []).forEach(o => levels.push({ type: "WALL", price: o.price, size: o.size_usd, side: "SELL", wallet_count: o.order_count }));
-    (data?.liquidation_clusters || []).forEach(o => levels.push({ type: "LIQ", price: o.avg_price, size: o.total_size_usd, side: o.dominant_side === "LONG" ? "BUY" : "SELL", wallet_count: o.wallet_count }));
-    return levels;
+  const [volume, setVolume] = useState(null);
+
+  // Fetch OHLCV candles for the symbol
+  useEffect(() => {
+    if (!symbol) return;
+    // For HL-native symbols, use the CCXT format the chart API expects
+    const chartSymbol = symbol.includes(":") ? symbol : `${symbol}/USDT:USDT`;
+    fetch(`${API}/api/chart/${encodeURIComponent(chartSymbol)}?timeframe=4h&limit=200`)
+      .then(r => r.json())
+      .then(d => {
+        if (d?.candles?.length) {
+          setCandles(d.candles);
+          setVolume(d.volume || null);
+        } else {
+          setChartError(true);
+        }
+      })
+      .catch(() => setChartError(true));
+  }, [symbol]);
+
+  // Build pressure levels from data
+  const levels = useMemo(() => {
+    if (!data) return [];
+    const result = [];
+    const orders = data.smart_money_orders || {};
+    const maxLimits = 20; // Only show top N limits by size to avoid clutter
+
+    (orders.stops || []).forEach(o => result.push({
+      price: o.price, type: "SL", label: `SL ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
+      color: "#F87171", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
+    }));
+    (orders.take_profits || []).forEach(o => result.push({
+      price: o.price, type: "TP", label: `TP ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
+      color: "#34D399", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
+    }));
+
+    // Top limits only (sorted by size)
+    const sortedLimits = [...(orders.limits || [])].sort((a, b) => b.total_size_usd - a.total_size_usd);
+    sortedLimits.slice(0, maxLimits).forEach(o => result.push({
+      price: o.price, type: "LMT", label: `LMT ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
+      color: "#60A5FA", lineWidth: 1, lineStyle: 2, size: o.total_size_usd,
+    }));
+
+    // Book walls
+    const walls = data.order_book_walls || {};
+    (walls.bid_walls || []).forEach(o => result.push({
+      price: o.price, type: "WALL", label: `BID WALL ${fmt$(o.size_usd)} (${o.order_count})`,
+      color: "#6B7280", lineWidth: 1, lineStyle: 1, size: o.size_usd,
+    }));
+    (walls.ask_walls || []).forEach(o => result.push({
+      price: o.price, type: "WALL", label: `ASK WALL ${fmt$(o.size_usd)} (${o.order_count})`,
+      color: "#6B7280", lineWidth: 1, lineStyle: 1, size: o.size_usd,
+    }));
+
+    // Liq clusters
+    (data.liquidation_clusters || []).forEach(o => result.push({
+      price: o.avg_price, type: "LIQ", label: `LIQ ${fmt$(o.total_size_usd)} ${o.dominant_side} (${o.wallet_count}w)`,
+      color: "#FBBF24", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
+    }));
+
+    return result;
   }, [data]);
 
-  if (allLevels.length === 0) {
+  // Create / update chart
+  useEffect(() => {
+    if (!candles || !containerRef.current) return;
+
+    renderPressureChart(candles, volume, levels, containerRef, chartRef);
+
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, [candles, volume, levels]);
+
+  if (chartError) {
     return (
-      <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-        No price levels to display
+      <div style={{ padding: 30, textAlign: "center", fontFamily: T.mono, fontSize: 12, color: T.text4 }}>
+        Chart not available for {symbol}
       </div>
     );
   }
 
-  const prices = allLevels.map(l => l.price);
-  const minP = Math.min(...prices);
-  const maxP = Math.max(...prices);
-  const rangeP = maxP - minP || 1;
-  const maxSize = Math.max(...allLevels.map(l => l.size || 0), 1);
-
-  const priceToY = (p) => PAD_TOP + (1 - (p - minP) / rangeP) * (SVG_H - PAD_TOP - PAD_BOTTOM);
-
-  const typeColor = (type, side) => {
-    if (type === "SL") return T.red;
-    if (type === "TP") return T.green;
-    if (type === "LIMIT") return T.accent;
-    if (type === "WALL") return T.text3;
-    if (type === "LIQ") return T.yellow;
-    return T.text4;
-  };
-
-  const typeLabel = (type) => {
-    if (type === "SL") return "SL";
-    if (type === "TP") return "TP";
-    if (type === "LIMIT") return "LMT";
-    if (type === "WALL") return "WALL";
-    if (type === "LIQ") return "\u26A1";
-    return "";
-  };
-
-  const gradId = "pressure-grad";
+  if (!candles) {
+    return (
+      <div style={{ padding: 30, textAlign: "center", fontFamily: T.mono, fontSize: 12, color: T.text4 }}>
+        Loading chart...
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, marginBottom: 8, letterSpacing: "0.06em" }}>
-        PRICE LEVEL MAP
+    <div style={{ borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ padding: "10px 16px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
+          {symbol} — PRESSURE MAP
+        </span>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {[
+            { label: "SL", color: "#F87171" },
+            { label: "TP", color: "#34D399" },
+            { label: "LMT", color: "#60A5FA" },
+            { label: "WALL", color: "#6B7280" },
+            { label: "LIQ", color: "#FBBF24" },
+          ].map(l => (
+            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <div style={{ width: 8, height: 3, borderRadius: 1, background: l.color }} />
+              <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>{l.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <div style={{ overflowX: "auto" }}>
-        <svg width="100%" viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ maxWidth: SVG_W }}>
-          {/* Center axis */}
-          <line x1={CENTER_X} y1={PAD_TOP} x2={CENTER_X} y2={SVG_H - PAD_BOTTOM}
-            stroke={T.border} strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />
-          {/* BUY label */}
-          <text x={CENTER_X - 20} y={PAD_TOP - 6} textAnchor="end" fill={T.green}
-            fontFamily={T.mono} fontSize="10" fontWeight="600" opacity="0.7">BUY</text>
-          {/* SELL label */}
-          <text x={CENTER_X + 20} y={PAD_TOP - 6} textAnchor="start" fill={T.red}
-            fontFamily={T.mono} fontSize="10" fontWeight="600" opacity="0.7">SELL</text>
-
-          {allLevels.map((level, i) => {
-            const y = priceToY(level.price);
-            const barW = Math.max(8, (level.size / maxSize) * BAR_MAX_W);
-            const color = typeColor(level.type, level.side);
-            const isBuy = level.side === "BUY";
-            const barH = Math.max(6, Math.min(16, (SVG_H - PAD_TOP - PAD_BOTTOM) / allLevels.length * 0.7));
-            const opacity = level.type === "WALL" ? 0.4 : level.type === "LIQ" ? 0.85 : 0.7;
-            const strokeDash = level.type === "TP" ? "4,3" : "none";
-
-            return (
-              <g key={i}>
-                {/* Bar */}
-                <rect
-                  x={isBuy ? CENTER_X - barW - 2 : CENTER_X + 2}
-                  y={y - barH / 2}
-                  width={barW}
-                  height={barH}
-                  rx={3}
-                  fill={color}
-                  opacity={opacity}
-                  stroke={level.type === "WALL" ? color : "none"}
-                  strokeWidth={level.type === "WALL" ? 1 : 0}
-                  strokeDasharray={strokeDash}
-                />
-                {/* Type label */}
-                <text
-                  x={isBuy ? CENTER_X - barW - 8 : CENTER_X + barW + 8}
-                  y={y + 3.5}
-                  textAnchor={isBuy ? "end" : "start"}
-                  fill={color}
-                  fontFamily={T.mono}
-                  fontSize="9"
-                  fontWeight="700"
-                >
-                  {typeLabel(level.type)}
-                </text>
-                {/* Price label */}
-                <text
-                  x={isBuy ? PAD_LEFT - 4 : SVG_W - PAD_RIGHT + 4}
-                  y={y + 3.5}
-                  textAnchor={isBuy ? "end" : "start"}
-                  fill={T.text3}
-                  fontFamily={T.mono}
-                  fontSize="9"
-                >
-                  ${level.price?.toLocaleString()}
-                </text>
-                {/* Size label on bar */}
-                {barW > 30 && (
-                  <text
-                    x={isBuy ? CENTER_X - barW / 2 - 2 : CENTER_X + barW / 2 + 2}
-                    y={y + 3}
-                    textAnchor="middle"
-                    fill={T.text1}
-                    fontFamily={T.mono}
-                    fontSize="8"
-                    fontWeight="600"
-                  >
-                    {fmt$(level.size)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
-        {[
-          { label: "SL Stop", color: T.red },
-          { label: "TP Take Profit", color: T.green },
-          { label: "LMT Limit", color: T.accent },
-          { label: "WALL Book", color: T.text3 },
-          { label: "\u26A1 Liq Cluster", color: T.yellow },
-        ].map(l => (
-          <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <div style={{ width: 10, height: 4, borderRadius: 2, background: l.color }} />
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>{l.label}</span>
-          </div>
-        ))}
-      </div>
+      <div ref={containerRef} style={{ width: "100%", height: 400 }} />
     </div>
   );
+}
+
+function renderPressureChart(candles, volumeData, levels, containerRef, chartRef) {
+  // Clean up previous chart
+  if (chartRef.current) {
+    chartRef.current.remove();
+    chartRef.current = null;
+  }
+
+  const container = containerRef.current;
+  if (!container) return;
+
+  const chart = createChart(container, {
+    width: container.clientWidth,
+    height: 400,
+    layout: {
+      background: { type: "solid", color: "transparent" },
+      textColor: "#9CA3AF",
+      fontFamily: "'IBM Plex Mono', monospace",
+      fontSize: 11,
+    },
+    grid: {
+      vertLines: { color: "rgba(255,255,255,0.03)" },
+      horzLines: { color: "rgba(255,255,255,0.03)" },
+    },
+    crosshair: {
+      mode: 0,
+      vertLine: { color: "rgba(255,255,255,0.15)", labelBackgroundColor: "#1F2937" },
+      horzLine: { color: "rgba(255,255,255,0.15)", labelBackgroundColor: "#1F2937" },
+    },
+    rightPriceScale: {
+      borderColor: "rgba(255,255,255,0.06)",
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    },
+    timeScale: {
+      borderColor: "rgba(255,255,255,0.06)",
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    handleScale: { axisPressedMouseMove: true },
+    handleScroll: { vertTouchDrag: false },
+  });
+
+  // Candlestick series (v5 API)
+  const candleSeries = chart.addSeries(CandlestickSeries, {
+    upColor: "#34D399",
+    downColor: "#F87171",
+    borderUpColor: "#34D399",
+    borderDownColor: "#F87171",
+    wickUpColor: "#34D39980",
+    wickDownColor: "#F8717180",
+  });
+  candleSeries.setData(candles);
+
+  // Volume (v5 API)
+  const volSeries = chart.addSeries(HistogramSeries, {
+    priceFormat: { type: "volume" },
+    priceScaleId: "vol",
+  });
+  chart.priceScale("vol").applyOptions({
+    scaleMargins: { top: 0.85, bottom: 0 },
+  });
+  if (volumeData?.length) {
+    volSeries.setData(volumeData);
+  }
+
+  // Add pressure levels as price lines
+  // lineStyle: 0=Solid, 1=Dotted, 2=Dashed, 3=LargeDashed
+  levels.forEach(level => {
+    candleSeries.createPriceLine({
+      price: level.price,
+      color: level.color,
+      lineWidth: level.lineWidth,
+      lineStyle: level.lineStyle,
+      axisLabelVisible: true,
+      title: level.label,
+      axisLabelColor: level.color,
+      axisLabelTextColor: "#ffffff",
+    });
+  });
+
+  // Fit content
+  chart.timeScale().fitContent();
+
+  // Resize observer
+  const ro = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      chart.applyOptions({ width: entry.contentRect.width });
+    }
+  });
+  ro.observe(container);
+
+  chartRef.current = chart;
+  chartRef.current._ro = ro;
+
+  // Override remove to also disconnect observer
+  const origRemove = chart.remove.bind(chart);
+  chart.remove = () => {
+    ro.disconnect();
+    origRemove();
+  };
 }
 
 function PressureOrderTable({ data }) {
@@ -2480,7 +2546,7 @@ function PressureMap({ consensus, isMobile }) {
           {pressureData?.symbol ? (
             <>
               <PressureSummaryStrip data={pressureData} />
-              <PriceLevelMap data={pressureData} />
+              <PressureChart symbol={selectedSymbol} data={pressureData} />
               <PressureOrderTable data={pressureData} />
               <PressureBookWalls walls={pressureData.order_book_walls} />
               <PressureLiqClusters clusters={pressureData.liquidation_clusters} />
