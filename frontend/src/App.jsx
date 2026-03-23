@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
@@ -57,10 +58,57 @@ const COLUMNS = [
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
+// ─── ROUTE MAPS ──────────────────────────────────────────────────────────────
+const ROUTE_TO_TAB = {
+  "/scanner": "1d",
+  "/signals": "signals",
+  "/hyperlens": "hyperlens",
+  "/tradfi": "tradfi",
+  "/ai": "chat",
+  "/backtest": "backtest",
+  "/executor": "executor",
+  "/portfolio": "trading",
+  "/onchain": "onchain",
+};
+const TAB_TO_ROUTE = {
+  "1d": "/scanner",
+  "4h": "/scanner?tf=4h",
+  split: "/scanner?tf=split",
+  signals: "/signals",
+  hyperlens: "/hyperlens",
+  tradfi: "/tradfi",
+  chat: "/ai",
+  backtest: "/backtest",
+  executor: "/executor",
+  trading: "/portfolio",
+  onchain: "/onchain",
+};
+
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
   const { mode, toggle } = useTheme();
   const hPad = isMobile ? 16 : isTablet ? 20 : 24;
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive activeTab from URL
+  const activeTab = useMemo(() => {
+    const p = location.pathname.replace(/\/$/, "") || "/scanner";
+    // Check known routes
+    for (const [route, tab] of Object.entries(ROUTE_TO_TAB)) {
+      if (p === route || p.startsWith(route + "/")) return tab;
+    }
+    // Scanner with optional tf query param
+    const sp = new URLSearchParams(location.search);
+    const tf = sp.get("tf");
+    if (tf === "4h") return "4h";
+    if (tf === "split" && !isMobile) return "split";
+    return "1d";
+  }, [location.pathname, location.search, isMobile]);
+
+  const setActiveTab = useCallback((tab) => {
+    navigate(TAB_TO_ROUTE[tab] || "/scanner");
+  }, [navigate]);
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -75,7 +123,6 @@ export default function App() {
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
   const [statCardFilter, setStatCardFilter] = useState(null);
-  const [activeTab, setActiveTab] = useState("1d");
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // TradFi (HIP-3) data
@@ -143,7 +190,7 @@ export default function App() {
   // Force off split view on mobile
   useEffect(() => {
     if (isMobile && activeTab === "split") setActiveTab("4h");
-  }, [isMobile, activeTab]);
+  }, [isMobile, activeTab, setActiveTab]);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -172,7 +219,7 @@ export default function App() {
       try {
         const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/alt-season?timeframe=${activeTab === "1d" ? "1d" : "4h"}`).then(r => r.json()).catch(() => null),
+          fetch(`${API_BASE}/api/alt-season?timeframe=1d`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/stablecoin`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
@@ -192,7 +239,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [fetchData, activeTab]);
+  }, [fetchData]);
 
   useEffect(() => {
     loadAll();
@@ -564,7 +611,7 @@ export default function App() {
           <img
             src="/logo.png"
             alt="Reflex"
-            onClick={() => { setActiveTab("1d"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
+            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
             style={{
               height: isMobile ? 32 : 40,
               width: "auto",
