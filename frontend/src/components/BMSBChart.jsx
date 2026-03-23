@@ -364,47 +364,51 @@ export default function BMSBChart({
 
         // Build levels from pressure data
         const levels = [];
-        const fmtUsd = (v) => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v/1e3).toFixed(0)}K` : `$${v.toFixed(0)}`;
+        const fmtSize = (v) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}K` : `${v.toFixed(0)}`;
 
-        // Stops
+        // Stops — red solid
         (data.smart_money_orders?.stops || []).forEach(o => {
           levels.push({
             price: o.price, color: "#f87171", style: LineStyle.Solid, width: 2,
-            title: `SL ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+            title: `STOP $${fmtSize(o.total_size_usd)}`,
           });
         });
-        // Take Profits
+        // Take Profits — green solid
         (data.smart_money_orders?.take_profits || []).forEach(o => {
           levels.push({
             price: o.price, color: "#34d399", style: LineStyle.Solid, width: 2,
-            title: `TP ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+            title: `TP $${fmtSize(o.total_size_usd)}`,
           });
         });
-        // Limits
+        // Limits — blue dashed, differentiate BUY/SELL
         (data.smart_money_orders?.limits || []).forEach(o => {
+          const isBuy = (o.side || "").toUpperCase() === "BUY";
           levels.push({
-            price: o.price, color: "#60a5fa", style: LineStyle.Dashed, width: 1,
-            title: `LMT ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+            price: o.price,
+            color: isBuy ? "#60a5fa" : "#c084fc",
+            style: LineStyle.Dashed,
+            width: 1,
+            title: `${isBuy ? "BUY" : "SELL"} LMT $${fmtSize(o.total_size_usd)}`,
           });
         });
-        // Book walls
+        // Book walls — dotted, subtle
         (data.order_book_walls?.bid_walls || []).forEach(w => {
           levels.push({
-            price: w.price, color: "#34d39960", style: LineStyle.Dotted, width: 1,
-            title: `BID ${fmtUsd(w.size_usd)}`,
+            price: w.price, color: "#34d39950", style: LineStyle.Dotted, width: 1,
+            title: `BID WALL $${fmtSize(w.size_usd)}`,
           });
         });
         (data.order_book_walls?.ask_walls || []).forEach(w => {
           levels.push({
-            price: w.price, color: "#f8717160", style: LineStyle.Dotted, width: 1,
-            title: `ASK ${fmtUsd(w.size_usd)}`,
+            price: w.price, color: "#f8717150", style: LineStyle.Dotted, width: 1,
+            title: `ASK WALL $${fmtSize(w.size_usd)}`,
           });
         });
-        // Liquidation clusters
+        // Liquidation clusters — yellow dashed
         (data.liquidation_clusters || []).forEach(c => {
           levels.push({
             price: c.avg_price, color: "#fbbf24", style: LineStyle.Dashed, width: 1,
-            title: `LIQ ${fmtUsd(c.total_size_usd)} ${c.dominant_side}`,
+            title: `LIQ ${c.dominant_side} $${fmtSize(c.total_size_usd)}`,
           });
         });
 
