@@ -1197,13 +1197,33 @@ function WalletDetail({ address, onClose }) {
           borderRight: `1px solid ${T.border}`,
           display: "flex", flexDirection: "column", gap: 10,
         }}>
-          {/* Total Equity */}
+          {/* Total Equity + PnL */}
           <div>
             <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700, color: T.text1 }}>
               {fmt$(data.account_value || 0)}
             </div>
-            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.05em" }}>
+            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.05em", marginBottom: 4 }}>
               Total Equity
+            </div>
+            {/* Unrealized PnL */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{
+                fontFamily: T.mono, fontSize: 15, fontWeight: 700,
+                color: sumPnl >= 0 ? T.green : T.red,
+              }}>
+                {sumPnl >= 0 ? "+" : ""}{fmt$(sumPnl)}
+              </span>
+              {data.account_value > 0 && (
+                <span style={{
+                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+                  color: sumPnl >= 0 ? T.green : T.red, opacity: 0.7,
+                }}>
+                  {sumPnl >= 0 ? "+" : ""}{((sumPnl / data.account_value) * 100).toFixed(2)}%
+                </span>
+              )}
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.05em" }}>
+              Unrealized PnL
             </div>
           </div>
 
@@ -1273,7 +1293,7 @@ function WalletDetail({ address, onClose }) {
 
         {/* RIGHT PANEL — Full equity chart */}
         <div style={{ flex: 1, minWidth: 280, padding: "10px 8px 6px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 4px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "0 8px 4px", flexWrap: "wrap" }}>
             <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>
               EQUITY CURVE
             </span>
@@ -1282,13 +1302,19 @@ function WalletDetail({ address, onClose }) {
               const last = avHistory[avHistory.length - 1]?.value ?? avHistory[avHistory.length - 1];
               const pnl = last - first;
               const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
+              const color = pnl >= 0 ? T.green : T.red;
               return (
-                <span style={{
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                  color: pnl >= 0 ? T.green : T.red,
-                }}>
-                  {pnl >= 0 ? "+" : ""}{fmt$(pnl)} ({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)
-                </span>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color }}>
+                    {pctChg >= 0 ? "+" : ""}{pctChg.toFixed(2)}%
+                  </div>
+                  <div style={{ fontFamily: T.mono, fontSize: 11, color, opacity: 0.7 }}>
+                    {pnl >= 0 ? "+" : ""}{fmt$(pnl)}
+                  </div>
+                  <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+                    since tracking
+                  </div>
+                </div>
               );
             })()}
           </div>
