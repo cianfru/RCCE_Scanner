@@ -3,6 +3,7 @@ import {
   ZScoreBar, RegimeBadge, SignalDot, DivergencePill,
   HeatCell, PhaseCell, ExhaustBadge, FloorCell,
   FundingCell, OITrendBadge, ConfluenceBadge, CVDBadge,
+  SmartMoneyBadge,
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import InfoButton from "./InfoPopover.jsx";
@@ -78,6 +79,8 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       return <td style={{ padding: cellPad }}><FloorCell confirmed={row.floor_confirmed} /></td>;
     case "FUNDING":
       return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
+    case "SM":
+      return <td style={{ padding: cellPad, textAlign: "center" }}><SmartMoneyBadge sm={row.smart_money} /></td>;
     case "OI":
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
     case "CVD":

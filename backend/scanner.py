@@ -1412,6 +1412,31 @@ async def _run_synthesis_pass(
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
                 r["buy_sell_ratio"] = cvd.buy_sell_ratio
 
+        # Attach HyperLens smart money consensus (display-only, not in signal scoring)
+        try:
+            from hl_intelligence import get_all_consensus
+            hl_consensus = get_all_consensus()
+            hl_attached = 0
+            for r in results:
+                sym = r.get("symbol", "")
+                base = sym.split("/")[0] if "/" in sym else sym
+                sc = hl_consensus.get(base)
+                if sc and sc.total_tracked > 0:
+                    r["smart_money"] = {
+                        "trend": sc.trend,
+                        "confidence": round(sc.confidence, 2),
+                        "long_count": sc.long_count,
+                        "short_count": sc.short_count,
+                        "net_ratio": round(sc.net_ratio, 2),
+                        "mp_trend": sc.money_printer_trend,
+                        "sm_trend": sc.smart_money_trend,
+                    }
+                    hl_attached += 1
+            if hl_attached:
+                logger.debug("HyperLens consensus attached to %d symbols", hl_attached)
+        except Exception:
+            pass  # HyperLens not available or not initialized
+
         # Compute consensus
         consensus = compute_consensus(results)
 

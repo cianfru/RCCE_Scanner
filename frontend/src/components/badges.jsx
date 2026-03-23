@@ -300,6 +300,36 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   );
 }
 
+export function SmartMoneyBadge({ sm }) {
+  if (!sm) return null;
+  const { trend, long_count, short_count, confidence } = sm;
+  if (!trend || trend === "NEUTRAL") return (
+    <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>{"\u2014"}</span>
+  );
+
+  const color = trend === "BULLISH" ? T.green : T.red;
+  const icon = trend === "BULLISH" ? "\u25b2" : "\u25bc";
+  const count = long_count + short_count;
+
+  return (
+    <span
+      title={`Smart Money: ${trend} (${long_count}L / ${short_count}S, conf ${Math.round((confidence || 0) * 100)}%)`}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 3,
+        padding: "1px 5px", borderRadius: 4,
+        background: color + "14",
+        border: `1px solid ${color}25`,
+        fontFamily: T.mono, fontSize: 10,
+        color, fontWeight: 600,
+      }}
+    >
+      {icon}
+      <span style={{ fontSize: 9, opacity: 0.7 }}>{count}</span>
+    </span>
+  );
+}
+
+
 export function ConfluenceBadge({ score, label }) {
   if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";

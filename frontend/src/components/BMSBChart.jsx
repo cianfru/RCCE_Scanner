@@ -50,9 +50,14 @@ export default function BMSBChart({
 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
+  const candleSeriesRef = useRef(null);
+  const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
+  const [showPressure, setShowPressure] = useState(false);
+  const [pressureData, setPressureData] = useState(null);
+  const [pressureLoading, setPressureLoading] = useState(false);
 
   const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
@@ -146,6 +151,8 @@ export default function BMSBChart({
     });
 
     // ── Candlestick series ──
+    candleSeriesRef.current = null;
+    pressureLinesRef.current = [];
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
@@ -237,6 +244,7 @@ export default function BMSBChart({
           }
 
           candleSeries.setData(data.candles);
+          candleSeriesRef.current = candleSeries;
 
           // ── Volume data ──
           if (data.volume?.length > 0) {
@@ -330,6 +338,102 @@ export default function BMSBChart({
     const cleanup = buildChart(activeTimeframe);
     return cleanup;
   }, [activeTimeframe, buildChart]);
+
+  // Pressure levels overlay — fetch + render price lines
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    // Remove existing pressure lines
+    pressureLinesRef.current.forEach(pl => {
+      try { series?.removePriceLine(pl); } catch (_) {}
+    });
+    pressureLinesRef.current = [];
+
+    if (!showPressure || !series) return;
+
+    const coin = getBaseSymbol(symbol);
+    let cancelled = false;
+
+    const fetchAndRender = async () => {
+      setPressureLoading(true);
+      try {
+        const resp = await fetch(`${API_BASE}/api/hyperlens/pressure?symbol=${coin}`);
+        if (!resp.ok || cancelled) return;
+        const data = await resp.json();
+        if (cancelled) return;
+        setPressureData(data);
+
+        // Build levels from pressure data
+        const levels = [];
+        const fmtUsd = (v) => v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v/1e3).toFixed(0)}K` : `$${v.toFixed(0)}`;
+
+        // Stops
+        (data.smart_money_orders?.stops || []).forEach(o => {
+          levels.push({
+            price: o.price, color: "#f87171", style: LineStyle.Solid, width: 2,
+            title: `SL ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+          });
+        });
+        // Take Profits
+        (data.smart_money_orders?.take_profits || []).forEach(o => {
+          levels.push({
+            price: o.price, color: "#34d399", style: LineStyle.Solid, width: 2,
+            title: `TP ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+          });
+        });
+        // Limits
+        (data.smart_money_orders?.limits || []).forEach(o => {
+          levels.push({
+            price: o.price, color: "#60a5fa", style: LineStyle.Dashed, width: 1,
+            title: `LMT ${fmtUsd(o.total_size_usd)} (${o.wallet_count}w)`,
+          });
+        });
+        // Book walls
+        (data.order_book_walls?.bid_walls || []).forEach(w => {
+          levels.push({
+            price: w.price, color: "#34d39960", style: LineStyle.Dotted, width: 1,
+            title: `BID ${fmtUsd(w.size_usd)}`,
+          });
+        });
+        (data.order_book_walls?.ask_walls || []).forEach(w => {
+          levels.push({
+            price: w.price, color: "#f8717160", style: LineStyle.Dotted, width: 1,
+            title: `ASK ${fmtUsd(w.size_usd)}`,
+          });
+        });
+        // Liquidation clusters
+        (data.liquidation_clusters || []).forEach(c => {
+          levels.push({
+            price: c.avg_price, color: "#fbbf24", style: LineStyle.Dashed, width: 1,
+            title: `LIQ ${fmtUsd(c.total_size_usd)} ${c.dominant_side}`,
+          });
+        });
+
+        // Render price lines on the candle series
+        const s = candleSeriesRef.current;
+        if (!s || cancelled) return;
+        levels.forEach(level => {
+          try {
+            const pl = s.createPriceLine({
+              price: level.price,
+              color: level.color,
+              lineWidth: level.width,
+              lineStyle: level.style,
+              title: level.title,
+              axisLabelVisible: true,
+            });
+            pressureLinesRef.current.push(pl);
+          } catch (_) {}
+        });
+      } catch (err) {
+        if (!cancelled) console.warn("Pressure fetch failed:", err);
+      } finally {
+        if (!cancelled) setPressureLoading(false);
+      }
+    };
+
+    fetchAndRender();
+    return () => { cancelled = true; };
+  }, [showPressure, symbol, activeTimeframe]);
 
   // ── Info strip data ──
   const rm = regime ? REGIME_META[regime] || REGIME_META.FLAT : null;
@@ -429,37 +533,62 @@ export default function BMSBChart({
           )}
         </div>
 
-        {/* Right: timeframe toggle */}
-        <div style={{
-          display: "flex", gap: 2,
-          background: "rgba(255,255,255,0.04)",
-          borderRadius: 6, padding: 2,
-        }}>
-          {TIMEFRAMES.map(tf => (
-            <button
-              key={tf.key}
-              onClick={() => setActiveTimeframe(tf.key)}
-              style={{
-                padding: "3px 10px",
-                borderRadius: 4,
-                border: "none",
-                cursor: "pointer",
-                fontFamily: T.mono,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                transition: "all 0.15s ease",
-                background: activeTimeframe === tf.key
-                  ? "rgba(34,211,238,0.15)"
-                  : "transparent",
-                color: activeTimeframe === tf.key
-                  ? "#22d3ee"
-                  : "rgba(255,255,255,0.3)",
-              }}
-            >
-              {tf.label}
-            </button>
-          ))}
+        {/* Right: pressure toggle + timeframe toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {/* Pressure levels toggle */}
+          <button
+            onClick={() => setShowPressure(p => !p)}
+            title={showPressure ? "Hide smart money levels" : "Show smart money stops/TPs/limits"}
+            style={{
+              padding: "3px 8px",
+              borderRadius: 4,
+              border: `1px solid ${showPressure ? "rgba(251,191,36,0.3)" : "rgba(255,255,255,0.08)"}`,
+              cursor: "pointer",
+              fontFamily: T.mono,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              transition: "all 0.15s ease",
+              background: showPressure ? "rgba(251,191,36,0.12)" : "transparent",
+              color: showPressure ? "#fbbf24" : "rgba(255,255,255,0.3)",
+              display: "flex", alignItems: "center", gap: 3,
+            }}
+          >
+            {pressureLoading ? "⏳" : "⚡"} SM
+          </button>
+
+          {/* Timeframe toggle */}
+          <div style={{
+            display: "flex", gap: 2,
+            background: "rgba(255,255,255,0.04)",
+            borderRadius: 6, padding: 2,
+          }}>
+            {TIMEFRAMES.map(tf => (
+              <button
+                key={tf.key}
+                onClick={() => setActiveTimeframe(tf.key)}
+                style={{
+                  padding: "3px 10px",
+                  borderRadius: 4,
+                  border: "none",
+                  cursor: "pointer",
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  transition: "all 0.15s ease",
+                  background: activeTimeframe === tf.key
+                    ? "rgba(34,211,238,0.15)"
+                    : "transparent",
+                  color: activeTimeframe === tf.key
+                    ? "#22d3ee"
+                    : "rgba(255,255,255,0.3)",
+                }}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

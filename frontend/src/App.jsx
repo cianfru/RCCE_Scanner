@@ -51,6 +51,7 @@ const COLUMNS = [
   [null,             "DIV",     900],
   [null,             "EXHAUST", 1024],  // state + ✓ when floor confirmed
   ["energy",         "ENERGY",  1024],
+  [null,             "SM",      1200],  // HyperLens smart money consensus
   [null,             "OI",      1440],  // OI trend — wide monitors only
 ];
 

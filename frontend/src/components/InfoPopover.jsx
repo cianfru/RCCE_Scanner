@@ -105,6 +105,10 @@ const COLUMN_INFO = {
     title: "Funding Rate",
     desc: "Perpetual futures funding rate from the exchange. Positive means longs pay shorts (bullish crowding), negative means shorts pay longs (bearish crowding).",
   },
+  SM: {
+    title: "Smart Money Consensus",
+    desc: "HyperLens whale tracking — directional consensus of 500+ top Hyperliquid wallets (Money Printers + Smart Money cohorts). Display-only indicator, not wired into signal scoring.",
+  },
   OI: {
     title: "Open Interest Trend",
     desc: "Direction and behavior of open interest in perpetual futures. Reveals positioning dynamics.",
