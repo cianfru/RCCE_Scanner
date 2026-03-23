@@ -194,6 +194,13 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Force-save OHLCV cache on shutdown (survives redeploys)
+    try:
+        from data_fetcher import _ohlcv_store
+        _ohlcv_store.save_to_disk(force=True)
+    except Exception:
+        logger.debug("OHLCV cache shutdown save failed")
+
     # Shutdown Telegram bot
     try:
         from telegram_bot import get_telegram_bot
@@ -296,6 +303,13 @@ async def _periodic_scan():
             if not _executor_auto_started:
                 _executor_auto_started = True
                 await _auto_init_executor()
+
+            # Persist OHLCV cache to disk (debounced — saves at most every 2 min)
+            try:
+                from data_fetcher import _ohlcv_store
+                _ohlcv_store.save_to_disk()
+            except Exception:
+                logger.debug("OHLCV cache save failed (non-fatal)")
         except Exception as e:
             logger.error("Rolling scan cycle %d failed: %s", _cycle, e)
         await asyncio.sleep(60)  # 1 minute between cycles
@@ -446,6 +460,43 @@ async def alt_season(timeframe: str = Query("4h")):
 @app.get("/api/status")
 async def status():
     return get_scan_status()
+
+
+@app.get("/api/ohlcv-cache/status")
+async def ohlcv_cache_status():
+    """Return OHLCVStore status: entries per timeframe, disk file info."""
+    from data_fetcher import _ohlcv_store, _OHLCV_CACHE_PATH
+    import os
+
+    disk_info = {}
+    if _OHLCV_CACHE_PATH.exists():
+        stat = _OHLCV_CACHE_PATH.stat()
+        disk_info = {
+            "path": str(_OHLCV_CACHE_PATH),
+            "size_kb": round(stat.st_size / 1024, 1),
+            "age_min": round((time.time() - stat.st_mtime) / 60, 1),
+        }
+
+    tf_counts = {}
+    for tf in ("4h", "1d", "1w"):
+        syms = _ohlcv_store.symbols_cached(tf)
+        if syms:
+            # Sample bar counts
+            bars = []
+            for s in syms[:5]:
+                cached = _ohlcv_store.get(s, tf)
+                if cached:
+                    bars.append(len(cached.get("close", [])))
+            tf_counts[tf] = {
+                "symbols": len(syms),
+                "sample_bars": bars,
+            }
+
+    return {
+        "total_entries": _ohlcv_store.count(),
+        "timeframes": tf_counts,
+        "disk": disk_info,
+    }
 
 
 @app.post("/api/scan/refresh")
@@ -899,7 +950,7 @@ async def chart_data(
     limit: int = Query(365, description="Number of candles"),
 ):
     """Return OHLCV + BMSB overlay data for charting."""
-    from data_fetcher import fetch_ohlcv
+    from data_fetcher import fetch_ohlcv, _ohlcv_store, _cache
     from engines.heatmap_engine import compute_bmsb_series
     from engines.cto_engine import compute_cto_series
     import numpy as np
@@ -909,6 +960,19 @@ async def chart_data(
     # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
     effective_limit = min(limit, 500)
     ohlcv = await fetch_ohlcv(symbol, timeframe, limit=effective_limit)
+
+    # If cache returned too few candles (e.g. cold-start with sparse data),
+    # invalidate both caches and force a full refetch
+    min_chart_bars = 50  # Chart needs at least 50 candles to be useful
+    if ohlcv is not None and len(ohlcv.get("timestamp", [])) < min_chart_bars:
+        logger.warning(
+            "Chart %s/%s: only %d candles (need %d), forcing full refetch",
+            symbol, timeframe, len(ohlcv.get("timestamp", [])), min_chart_bars,
+        )
+        _ohlcv_store.invalidate(symbol, timeframe)
+        _cache.invalidate(symbol, timeframe)
+        ohlcv = await fetch_ohlcv(symbol, timeframe, limit=effective_limit)
+
     if ohlcv is None:
         raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 

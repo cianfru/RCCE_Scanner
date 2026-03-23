@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import pickle
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -241,6 +243,16 @@ _STALENESS_LIMIT: Dict[str, float] = {
     "1w": 30 * 86400,    # 30 days
 }
 
+# Persistence path — Railway persistent volume at /data, local fallback
+_DATA_DIR = Path("/data") if Path("/data").is_dir() else Path(__file__).parent
+_OHLCV_CACHE_PATH = Path(os.environ.get(
+    "OHLCV_CACHE_PATH",
+    str(_DATA_DIR / "ohlcv_cache.pkl"),
+))
+
+# Minimum interval between disk saves (seconds) — debounce rapid cycles
+_SAVE_DEBOUNCE_SECS = 120
+
 
 class OHLCVStore:
     """Persistent in-memory OHLCV cache. Stores full history arrays and
@@ -262,6 +274,12 @@ class OHLCVStore:
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
         """Return cached OHLCV arrays or None if not stored."""
         return self._store.get(self._key(symbol, timeframe))
+
+    def invalidate(self, symbol: str, timeframe: str) -> None:
+        """Remove a single entry, forcing a full refetch next call."""
+        key = self._key(symbol, timeframe)
+        self._store.pop(key, None)
+        self._updated_at.pop(key, None)
 
     def needs_full_fetch(self, symbol: str, timeframe: str) -> bool:
         """True if no cache or cache is stale (too old for incremental update)."""
@@ -371,9 +389,124 @@ class OHLCVStore:
         suffix = f"|{timeframe}"
         return [k.split("|")[0] for k in self._store if k.endswith(suffix)]
 
+    # --- Persistence (pickle) ---
 
-# Module-level persistent OHLCV store
+    def save_to_disk(self, path: Optional[Path] = None, force: bool = False) -> bool:
+        """Serialize store to disk as pickle. Returns True if saved.
+
+        Debounces saves to avoid I/O on every scan cycle (every 60s).
+        Use force=True to bypass debounce (e.g., on shutdown).
+        """
+        path = path or _OHLCV_CACHE_PATH
+        if not force and hasattr(self, "_last_save_ts"):
+            elapsed = time.monotonic() - self._last_save_ts
+            if elapsed < _SAVE_DEBOUNCE_SECS:
+                return False
+
+        if not self._store:
+            return False
+
+        try:
+            # Convert numpy arrays to lists for safe pickling across numpy versions
+            serializable = {}
+            for key, ohlcv in self._store.items():
+                serializable[key] = {
+                    field: arr.tolist() if hasattr(arr, "tolist") else arr
+                    for field, arr in ohlcv.items()
+                }
+
+            # Atomic write: write to temp file then rename
+            tmp_path = path.with_suffix(".pkl.tmp")
+            with open(tmp_path, "wb") as f:
+                pickle.dump({
+                    "version": 1,
+                    "store": serializable,
+                    "saved_at": time.time(),  # wall clock for staleness checks
+                }, f, protocol=pickle.HIGHEST_PROTOCOL)
+            tmp_path.rename(path)
+
+            self._last_save_ts = time.monotonic()
+            logger.info(
+                "OHLCVStore saved to disk: %d entries, %.1f KB",
+                len(self._store),
+                path.stat().st_size / 1024,
+            )
+            return True
+        except Exception:
+            logger.warning("OHLCVStore save failed", exc_info=True)
+            return False
+
+    def load_from_disk(self, path: Optional[Path] = None) -> bool:
+        """Load store from pickle file on disk. Returns True if loaded.
+
+        Applies staleness checks: entries older than _STALENESS_LIMIT
+        are discarded (they'll trigger a full refetch on next scan).
+        """
+        path = path or _OHLCV_CACHE_PATH
+        if not path.exists():
+            logger.info("OHLCVStore: no cache file at %s (cold start)", path)
+            return False
+
+        try:
+            with open(path, "rb") as f:
+                payload = pickle.load(f)
+
+            if not isinstance(payload, dict) or "store" not in payload:
+                logger.warning("OHLCVStore: invalid cache file format, ignoring")
+                return False
+
+            version = payload.get("version", 0)
+            saved_at = payload.get("saved_at", 0)
+            store_data = payload["store"]
+            age_secs = time.time() - saved_at
+
+            loaded = 0
+            skipped = 0
+            for key, ohlcv_lists in store_data.items():
+                # Determine timeframe from key ("SYMBOL|TF")
+                parts = key.split("|")
+                if len(parts) != 2:
+                    skipped += 1
+                    continue
+                tf = parts[1]
+
+                # Skip if entire cache file is too old for this timeframe
+                max_age = _STALENESS_LIMIT.get(tf, 24 * 3600)
+                if age_secs > max_age:
+                    skipped += 1
+                    continue
+
+                # Convert lists back to numpy arrays
+                ohlcv = {
+                    field: np.array(values, dtype=np.float64)
+                    for field, values in ohlcv_lists.items()
+                }
+
+                # Validate minimum bar count
+                bar_count = len(ohlcv.get("close", []))
+                min_bars = _MIN_BARS.get(tf, 100)
+                if bar_count < min_bars:
+                    skipped += 1
+                    continue
+
+                self._store[key] = ohlcv
+                self._updated_at[key] = time.monotonic()
+                loaded += 1
+
+            logger.info(
+                "OHLCVStore loaded from disk: %d entries restored, %d skipped "
+                "(stale/invalid), file age %.1f min",
+                loaded, skipped, age_secs / 60,
+            )
+            return loaded > 0
+        except Exception:
+            logger.warning("OHLCVStore load failed (will cold start)", exc_info=True)
+            return False
+
+
+# Module-level persistent OHLCV store — load from disk on startup
 _ohlcv_store = OHLCVStore()
+_ohlcv_store.load_from_disk()
 
 
 # ---------------------------------------------------------------------------
