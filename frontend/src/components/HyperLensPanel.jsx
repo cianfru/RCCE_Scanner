@@ -236,8 +236,8 @@ function RiskBadge({ score }) {
   const color = riskColor(score);
   return (
     <span style={{
-      fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-      padding: "3px 8px", borderRadius: 6,
+      fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+      padding: "4px 10px", borderRadius: 20,
       color, background: `${color}12`,
       border: `1px solid ${color}25`,
       letterSpacing: "0.04em",
@@ -300,13 +300,12 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w })
     <th
       onClick={sortKey ? () => onSort(sortKey) : undefined}
       style={{
-        padding: "10px 10px", textAlign: align,
-        fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-        color: active ? T.accent : T.text4,
+        padding: "12px 12px", textAlign: align,
+        fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
+        color: active ? T.accent : T.text3,
         letterSpacing: "0.08em", textTransform: "uppercase",
         cursor: sortKey ? "pointer" : "default",
-        borderBottom: `1px solid ${T.overlay10}`,
-        background: T.overlay02,
+        borderBottom: `2px solid ${T.border}`,
         whiteSpace: "nowrap", minWidth: w,
         userSelect: "none",
         transition: "color 0.2s",
@@ -357,8 +356,8 @@ function StatusStrip({ status, cohort, roster }) {
           border: `1px solid ${T.overlay06}`,
           backdropFilter: "blur(8px)",
         }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", fontWeight: 600 }}>{label}</span>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: T.text1 }}>{value}</span>
+          <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+          <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{value}</span>
         </div>
       ))}
       {/* Cohort breakdown counts */}
@@ -369,19 +368,19 @@ function StatusStrip({ status, cohort, roster }) {
           background: T.overlay04, border: `1px solid ${T.overlay06}`,
         }}>
           {mpCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.green }}>{mpCount} MP</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.green }}>{mpCount} MP</span>
           )}
           {mpCount > 0 && smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>·</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
           )}
           {smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.accent }}>{smCount} SM</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.accent }}>{smCount} SM</span>
           )}
           {smCount > 0 && eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>·</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
           )}
           {eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.yellow }}>{eliteCount} Elite</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.yellow }}>{eliteCount} Elite</span>
           )}
         </div>
       )}
@@ -392,7 +391,7 @@ function StatusStrip({ status, cohort, roster }) {
           boxShadow: status.initialized ? `0 0 8px ${T.green}60` : `0 0 8px ${T.yellow}60`,
           animation: status.initialized ? "pulse 2s ease-in-out infinite" : "none",
         }} />
-        <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text4 }}>
+        <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.text3, letterSpacing: "0.06em" }}>
           {status.initialized ? "LIVE" : "WARMING UP"}
         </span>
       </div>
@@ -508,7 +507,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
             <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={70} />
             <SortTh label="TREND" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={72} />
             <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-            <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: isMobile ? 90 : 130 }}>L / S</th>
+            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }}>L / S</th>
             <SortTh label="NET" sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             {!isMobile && (
@@ -532,52 +531,54 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                 onMouseLeave={e => e.currentTarget.style.background = stripeBg}
               >
-                <td style={{ padding: "8px 10px" }}>
-                  <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+                <td style={{ padding: "10px 12px" }}>
+                  <div style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
                     {c.symbol}
                   </div>
                   <ConfidenceBar confidence={c.confidence} trend={cf.trend} />
                 </td>
-                <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                <td style={{ padding: "10px 12px", textAlign: "center" }}>
                   <span style={{
-                    fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                    padding: "3px 8px", borderRadius: 6,
+                    fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
+                    padding: "4px 12px", borderRadius: 20,
                     color: trendColor(cf.trend),
-                    background: `${trendColor(cf.trend)}12`,
+                    background: `${trendColor(cf.trend)}10`,
                     border: `1px solid ${trendColor(cf.trend)}25`,
+                    boxShadow: `0 0 12px ${trendColor(cf.trend)}10`,
+                    letterSpacing: "0.06em",
                   }}>
                     {cf.trend}
                   </span>
                 </td>
-                <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text2 }}>
+                <td style={{ padding: "10px 12px", textAlign: "center", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
                   {positioned}
                 </td>
-                <td style={{ padding: "8px 10px" }}>
+                <td style={{ padding: "10px 12px" }}>
                   <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
                 </td>
                 <td style={{
-                  padding: "8px 10px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: 13, fontWeight: 700,
+                  padding: "10px 12px", textAlign: "center",
+                  fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
                   color: cf.net_ratio > 0.1 ? T.green : cf.net_ratio < -0.1 ? T.red : T.text3,
                 }}>
                   {cf.net_ratio > 0 ? "+" : ""}{(cf.net_ratio * 100).toFixed(0)}%
                 </td>
                 <td style={{
-                  padding: "8px 10px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: 12, color: T.text3,
+                  padding: "10px 12px", textAlign: "center",
+                  fontFamily: T.mono, fontSize: T.textBase, color: T.text3,
                 }}>
                   {c.confidence != null ? `${(c.confidence * 100).toFixed(0)}%` : "--"}
                 </td>
                 {!isMobile && (
                   <>
                     <td style={{
-                      padding: "8px 10px", textAlign: "center",
-                      fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+                      padding: "10px 12px", textAlign: "center",
+                      fontFamily: T.mono, fontSize: T.textBase, fontWeight: 600,
                       color: levColor(c.avg_leverage),
                     }}>
                       {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
                     </td>
-                    <td style={{ padding: "8px 10px" }}>
+                    <td style={{ padding: "10px 12px" }}>
                       <NotionalBar long_notional={c.long_notional} short_notional={c.short_notional} maxNotional={maxNotional} />
                     </td>
                   </>
@@ -635,9 +636,9 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
         <div />
         {categories.map(cat => (
           <div key={cat.key} style={{
-            fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-            color: T.text4, textAlign: "center",
-            letterSpacing: "0.08em", padding: "6px 2px",
+            fontFamily: T.font, fontSize: T.textXs, fontWeight: 700,
+            color: T.text3, textAlign: "center",
+            letterSpacing: "0.08em", padding: "8px 2px",
             textTransform: "uppercase",
           }}>
             {cat.label}
@@ -666,8 +667,8 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
           >
             {/* Symbol label */}
             <div style={{
-              fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-              color: T.text1, padding: "7px 4px",
+              fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
+              color: T.text1, padding: "8px 4px",
               display: "flex", alignItems: "center",
             }}>
               {c.symbol}
@@ -686,7 +687,7 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
                 }}>
                   {isActive && (
                     <span style={{
-                      fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+                      fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
                       color: heatmapTextColor(ratio),
                     }}>
                       {ratio > 0 ? "+" : ""}{(ratio * 100).toFixed(0)}%
@@ -771,13 +772,13 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
         <thead>
           <tr>
             <SortTh label="#" sortKey="rank" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={36} />
-            <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: 100, textAlign: "left" }}>WALLET</th>
+            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 100, textAlign: "left" }}>WALLET</th>
             <SortTh label="ACCT VALUE" sortKey="av" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={90} />
             <SortTh label="ROI" sortKey="roi" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={70} />
             {!isMobile && (
               <>
                 <SortTh label="SCORE" sortKey="score" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={56} />
-                <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: 50, textAlign: "center" }}>BIAS</th>
+                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 50, textAlign: "center" }}>BIAS</th>
                 <SortTh label="POS" sortKey="positions" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={44} />
               </>
             )}
@@ -796,19 +797,19 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                 onMouseLeave={e => e.currentTarget.style.background = stripeBg}
               >
-                <td style={{ padding: "7px 10px", fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "left" }}>
+                <td style={{ padding: "10px 12px", fontFamily: T.mono, fontSize: T.textBase, color: T.text4, textAlign: "left" }}>
                   {w.rank}
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "left" }}>
+                <td style={{ padding: "10px 12px", textAlign: "left" }}>
                   <span style={{
-                    fontFamily: T.mono, fontSize: 13, color: T.accent,
+                    fontFamily: T.mono, fontSize: T.textMd, color: T.accent,
                     textDecoration: "underline", textDecorationColor: "rgba(99,179,237,0.35)",
-                    textUnderlineOffset: 3, cursor: "pointer",
+                    textUnderlineOffset: 3, cursor: "pointer", fontWeight: 600,
                   }}>
                     {truncAddr(w.address)} {"\u2192"}
                   </span>
                   {w.display_name && (
-                    <span style={{ fontFamily: T.font, fontSize: 12, color: T.text4, marginLeft: 6 }}>
+                    <span style={{ fontFamily: T.font, fontSize: T.textBase, color: T.text4, marginLeft: 6 }}>
                       {w.display_name.length > 12 ? w.display_name.slice(0, 12) + "..." : w.display_name}
                     </span>
                   )}
@@ -817,25 +818,25 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                     <span style={{ marginLeft: 6, display: "inline-flex", gap: 3 }}>
                       {(w.cohorts || []).includes("money_printer") && (
                         <span style={{
-                          fontSize: 10, padding: "1px 4px", borderRadius: 4,
-                          color: T.green, background: `${T.green}15`,
+                          fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
+                          color: T.green, background: `${T.green}12`,
                           fontFamily: T.mono, fontWeight: 600,
                         }}>{"\uD83D\uDCB0"}</span>
                       )}
                       {(w.cohorts || []).includes("smart_money") && (
                         <span style={{
-                          fontSize: 10, padding: "1px 4px", borderRadius: 4,
-                          color: T.accent, background: `${T.accent}15`,
+                          fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
+                          color: T.accent, background: `${T.accent}12`,
                           fontFamily: T.mono, fontWeight: 600,
                         }}>{"\uD83D\uDC0B"}</span>
                       )}
                     </span>
                   )}
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, fontWeight: 500, color: T.text1 }}>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 600, color: T.text1 }}>
                   {fmt$(w.account_value)}
                 </td>
-                <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.green }}>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.green }}>
                   {fmtPct(w.roi)}
                 </td>
                 {!isMobile && (
@@ -846,17 +847,18 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                     <td style={{ padding: "7px 10px", textAlign: "center" }}>
                       {bias ? (
                         <span style={{
-                          fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                          padding: "2px 6px", borderRadius: 3,
-                          color: biasColor, background: `${biasColor}15`,
+                          fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+                          padding: "3px 10px", borderRadius: 20,
+                          color: biasColor, background: `${biasColor}12`,
+                          border: `1px solid ${biasColor}25`,
                         }}>
                           {bias}
                         </span>
                       ) : (
-                        <span style={{ color: T.text4, fontFamily: T.mono, fontSize: 11 }}>--</span>
+                        <span style={{ color: T.text4, fontFamily: T.mono, fontSize: T.textBase }}>--</span>
                       )}
                     </td>
-                    <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
                       {w.position_count > 0 ? (
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
                           <span style={{
@@ -2050,8 +2052,8 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
             background: `${color}08`, border: `1px solid ${color}18`,
             backdropFilter: "blur(8px)",
           }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.text4, letterSpacing: "0.08em" }}>{label}</div>
-            <div style={{ fontFamily: T.mono, fontSize: isText ? 13 : 16, fontWeight: 700, color }}>{value}</div>
+            <div style={{ fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
+            <div style={{ fontFamily: T.mono, fontSize: isText ? T.textMd : T.textXl, fontWeight: 700, color }}>{value}</div>
           </div>
         ))}
       </div>
