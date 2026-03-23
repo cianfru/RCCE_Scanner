@@ -95,15 +95,18 @@ export default function App() {
   // Derive activeTab from URL
   const activeTab = useMemo(() => {
     const p = location.pathname.replace(/\/$/, "") || "/scanner";
-    // Check known routes
+    // Scanner route — check tf query param first
+    if (p === "/scanner") {
+      const sp = new URLSearchParams(location.search);
+      const tf = sp.get("tf");
+      if (tf === "4h") return "4h";
+      if (tf === "split" && !isMobile) return "split";
+      return "1d";
+    }
+    // Check known routes (non-scanner)
     for (const [route, tab] of Object.entries(ROUTE_TO_TAB)) {
       if (p === route || p.startsWith(route + "/")) return tab;
     }
-    // Scanner with optional tf query param
-    const sp = new URLSearchParams(location.search);
-    const tf = sp.get("tf");
-    if (tf === "4h") return "4h";
-    if (tf === "split" && !isMobile) return "split";
     return "1d";
   }, [location.pathname, location.search, isMobile]);
 
