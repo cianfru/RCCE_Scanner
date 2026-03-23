@@ -514,6 +514,31 @@ async def ohlcv_cache_status():
     }
 
 
+@app.get("/api/debug/sm-test")
+async def debug_sm_test():
+    """Debug: test HyperLens consensus attachment."""
+    try:
+        from hl_intelligence import get_all_consensus
+        hl = get_all_consensus()
+        # Check BTC
+        btc = hl.get("BTC")
+        # Check what scan results have
+        results_4h = cache.results.get("4h", [])
+        btc_result = next((r for r in results_4h if r.get("symbol") == "BTC/USDT"), None)
+        return {
+            "consensus_count": len(hl),
+            "consensus_keys_sample": list(hl.keys())[:10],
+            "btc_consensus": {
+                "trend": btc.trend if btc else None,
+                "total_tracked": btc.total_tracked if btc else 0,
+            } if btc else None,
+            "btc_result_has_sm": "smart_money" in btc_result if btc_result else False,
+            "btc_result_keys": sorted(btc_result.keys())[:10] if btc_result else [],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/api/scan/refresh")
 async def trigger_scan():
     """Trigger a manual scan."""
