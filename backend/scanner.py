@@ -742,6 +742,13 @@ async def _synthesize_and_enrich(
     _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
     _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
 
+    # Fetch HyperLens whale consensus (thread-safe read of in-memory dict)
+    try:
+        from hl_intelligence import get_all_consensus as _hl_get_all, _normalize_coin as _hl_norm
+        _hl_consensus = _hl_get_all()  # Dict[str, SymbolConsensus]
+    except Exception:
+        _hl_consensus = {}
+
     def _synth_one(r):
         heat_direction = r.get("heat_direction", 0)
         deviation_pct = r.get("deviation_pct", 0.0)
@@ -750,6 +757,11 @@ async def _synthesize_and_enrich(
         macro_blocked = True if not bmsb_valid else heat_direction < 0
         symbol = r.get("symbol", "")
         prev_heat = prev_heat_snapshot.get(symbol, 0)
+
+        # Look up HyperLens consensus for this symbol
+        hl_coin = _hl_norm(symbol) if _hl_consensus else None
+        hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
+
         return synthesize_signal(
             r, consensus, gm_dict,
             positioning=r.get("positioning"),
@@ -766,6 +778,10 @@ async def _synthesize_and_enrich(
             etf_flow_usd=_etf_flow,
             cb_premium=_cb_premium,
             has_coinglass=symbol in _cg_symbols,
+            hl_consensus_trend=hl_data.trend if hl_data else "NEUTRAL",
+            hl_consensus_confidence=hl_data.confidence if hl_data else 0.0,
+            hl_consensus_net_ratio=hl_data.net_ratio if hl_data else 0.0,
+            has_hyperlens=hl_data is not None,
         )
 
     synth_futures = [
@@ -797,6 +813,21 @@ async def _synthesize_and_enrich(
             r["effective_conditions"] = synth.effective_conditions
             r["vol_scale"] = synth.vol_scale
             scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
+
+            # Attach HyperLens smart money data for frontend divergence display
+            symbol = r.get("symbol", "")
+            hl_coin = _hl_norm(symbol) if _hl_consensus else None
+            hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
+            if hl_data:
+                r["smart_money"] = {
+                    "trend": hl_data.trend,
+                    "confidence": round(hl_data.confidence, 2),
+                    "net_ratio": round(hl_data.net_ratio, 2),
+                    "long_count": hl_data.long_count,
+                    "short_count": hl_data.short_count,
+                    "long_notional": round(hl_data.long_notional),
+                    "short_notional": round(hl_data.short_notional),
+                }
 
     # Agent layer
     try:

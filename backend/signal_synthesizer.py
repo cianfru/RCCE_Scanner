@@ -53,6 +53,11 @@ CG_CONDITION_WEIGHT = 0.75
 # Smart money LSR threshold — pros not heavily short
 SMART_MONEY_LSR_OK = 0.85
 
+# HyperLens smart money consensus weight (0.5 = supplemental signal)
+HL_CONDITION_WEIGHT = 0.5
+# Minimum confidence for HL consensus to count as a condition
+HL_CONFIDENCE_THRESHOLD = 0.15
+
 # ---------------------------------------------------------------------------
 # Output container
 # ---------------------------------------------------------------------------
@@ -186,6 +191,11 @@ def synthesize_signal(
     etf_flow_usd: float = 0.0,
     cb_premium: float = 0.0,
     has_coinglass: bool = False,
+    # HyperLens smart money consensus
+    hl_consensus_trend: str = "NEUTRAL",
+    hl_consensus_confidence: float = 0.0,
+    hl_consensus_net_ratio: float = 0.0,
+    has_hyperlens: bool = False,
 ) -> SynthesizedSignal:
     """Produce the final trading signal from all available data.
 
@@ -319,7 +329,24 @@ def synthesize_signal(
         ("macro_tailwind",   "Macro Tailwind",  f"ETF ${etf_flow_usd/1e6:+.0f}M CB {cb_premium*100:+.2f}%", "coinglass"),
     ]
 
-    # Weighted scoring: core (1.0) + CoinGlass (0.75 each, only if data available)
+    # -- HyperLens conditions (weight 0.5, only when data available) --
+    # HL whale consensus: are the tracked 500 wallets aligned with this signal?
+    cond_hl_aligned = (
+        hl_consensus_trend == "BULLISH" and hl_consensus_confidence >= HL_CONFIDENCE_THRESHOLD
+    ) if has_hyperlens else False
+    cond_hl_not_counter = (
+        hl_consensus_trend != "BEARISH" or hl_consensus_confidence < HL_CONFIDENCE_THRESHOLD
+    ) if has_hyperlens else True
+
+    hl_conditions = [cond_hl_aligned, cond_hl_not_counter]
+    hl_met = sum(hl_conditions)
+
+    _HL_NAMES = [
+        ("hl_whale_aligned",  "Whale Aligned",   f"HL {hl_consensus_trend} ({hl_consensus_confidence:.0%})", "hyperlens"),
+        ("hl_not_counter",    "No Whale Counter", f"HL not bearish (ratio={hl_consensus_net_ratio:+.2f})",   "hyperlens"),
+    ]
+
+    # Weighted scoring: core (1.0) + CoinGlass (0.75 each) + HyperLens (0.5 each)
     core_score = float(core_met)  # max 10.0
     if has_coinglass:
         cg_score = float(cg_met) * CG_CONDITION_WEIGHT  # max 3.0
@@ -328,14 +355,25 @@ def synthesize_signal(
         cg_score = 0.0
         total_max = 10.0
 
-    weighted_score = core_score + cg_score
+    if has_hyperlens:
+        hl_score = float(hl_met) * HL_CONDITION_WEIGHT  # max 1.0
+        total_max += 2 * HL_CONDITION_WEIGHT             # +1.0
+    else:
+        hl_score = 0.0
+
+    weighted_score = core_score + cg_score + hl_score
     score_pct = weighted_score / total_max if total_max > 0 else 0.0
 
     # For backward compat: conditions_met / conditions_total as integers
-    # Use raw counts (core only for HL-native, core+cg for CEX coins)
-    if has_coinglass:
+    if has_coinglass and has_hyperlens:
+        conditions_met = core_met + cg_met + hl_met
+        conditions_total = 16
+    elif has_coinglass:
         conditions_met = core_met + cg_met
         conditions_total = 14
+    elif has_hyperlens:
+        conditions_met = core_met + hl_met
+        conditions_total = 12
     else:
         conditions_met = core_met
         conditions_total = 10
@@ -352,6 +390,11 @@ def synthesize_signal(
         out.conditions_detail += [
             {"name": n, "label": l, "desc": d, "met": bool(c), "group": g}
             for (n, l, d, g), c in zip(_CG_NAMES, cg_conditions)
+        ]
+    if has_hyperlens:
+        out.conditions_detail += [
+            {"name": n, "label": l, "desc": d, "met": bool(c), "group": g}
+            for (n, l, d, g), c in zip(_HL_NAMES, hl_conditions)
         ]
 
     # ── Feature B: Regime-specific boosters & penalties ──
@@ -391,6 +434,8 @@ def synthesize_signal(
             parts.append(f"OI={oi_trend}")
         if vs != 1.0:
             parts.append(f"vs={vs:.2f}")
+        if has_hyperlens and hl_consensus_trend != "NEUTRAL":
+            parts.append(f"whales={hl_consensus_trend}({hl_consensus_confidence:.0%})")
         if boost_reasons:
             parts.append("[" + ", ".join(boost_reasons) + "]")
         return parts
@@ -523,13 +568,49 @@ def synthesize_signal(
     # Stablecoin warnings
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
+    # HyperLens warnings
+    if has_hyperlens and hl_consensus_confidence >= HL_CONFIDENCE_THRESHOLD:
+        if hl_consensus_trend == "BULLISH":
+            warnings.append(f"Whale consensus BULLISH ({hl_consensus_confidence:.0%}, ratio={hl_consensus_net_ratio:+.2f})")
+        elif hl_consensus_trend == "BEARISH":
+            warnings.append(f"Whale consensus BEARISH ({hl_consensus_confidence:.0%}, ratio={hl_consensus_net_ratio:+.2f})")
+
+    def _apply_hl_modifiers(out):
+        """Apply HyperLens whale consensus modifiers after CVD modifiers."""
+        if not has_hyperlens or hl_consensus_confidence < HL_CONFIDENCE_THRESHOLD:
+            return out
+
+        _hard_exits = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG", "LIGHT_SHORT"}
+        if out.signal in _hard_exits:
+            return out
+
+        # Whale BULLISH + entry signal → upgrade one step
+        if (hl_consensus_trend == "BULLISH"
+                and hl_consensus_confidence >= 0.30
+                and hl_consensus_net_ratio > 0.2):
+            if out.signal == "ACCUMULATE":
+                out.signal = "LIGHT_LONG"
+                out.reason += " [whales_bullish→upgrade]"
+            elif out.signal == "WAIT" and hl_consensus_confidence >= 0.40:
+                out.signal = "ACCUMULATE"
+                out.reason += " [whales_loading→accum]"
+
+        # Whale BEARISH + entry signal → add warning (don't hard downgrade,
+        # same philosophy as CVD bearish divergence)
+        if (hl_consensus_trend == "BEARISH"
+                and hl_consensus_confidence >= 0.30
+                and out.signal in ("STRONG_LONG", "LIGHT_LONG")):
+            out.warnings = out.warnings + [f"WHALE DIVERGENCE: signal {out.signal} but whales BEARISH ({hl_consensus_confidence:.0%})"]
+
+        return out
 
     def _cvd_return():
-        """Shorthand: apply CVD modifiers and return out."""
-        return _apply_cvd_modifiers(
+        """Shorthand: apply CVD + HL modifiers and return out."""
+        result = _apply_cvd_modifiers(
             out, cvd_trend, cvd_divergence, spot_dominance,
             long_short_ratio, liquidation_24h_usd, top_trader_lsr,
         )
+        return _apply_hl_modifiers(result)
 
     # --- STRONG_LONG: effective score >= total_max (all conditions + boosts) + no BEAR-DIV ---
     # Use percentage: >= 75% weighted score for STRONG_LONG
