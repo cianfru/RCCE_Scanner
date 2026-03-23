@@ -26,6 +26,7 @@ import NavDrawer from "./components/NavDrawer.jsx";
 import HyperLensPanel from "./components/HyperLensPanel.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
 import ChangesTicker from "./components/ChangesTicker.jsx";
+import CoinPage from "./pages/CoinPage.jsx";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,22 @@ export default function App() {
     if (tf === "split" && !isMobile) return "split";
     return "1d";
   }, [location.pathname, location.search, isMobile]);
+
+  // Detect /scanner/:symbol route for dedicated coin page
+  const coinPageSymbol = useMemo(() => {
+    const m = location.pathname.match(/^\/scanner\/([^/]+)$/);
+    return m ? m[1] : null;
+  }, [location.pathname]);
+
+  // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
+  const handleSelectCoin = useCallback((row, event) => {
+    if (event?.shiftKey) {
+      setSelected(row);
+    } else {
+      const base = (row.symbol || "").replace("/USDT", "").replace("/USD", "");
+      navigate(`/scanner/${base}`);
+    }
+  }, [navigate]);
 
   const setActiveTab = useCallback((tab) => {
     navigate(TAB_TO_ROUTE[tab] || "/scanner");
@@ -718,8 +735,13 @@ export default function App() {
         </div>
       )}
 
-      {/* ── SECTION TITLE (hidden for chat — full-immersion mode) ── */}
-      {activeTab !== "chat" && (
+      {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
+      {coinPageSymbol && (
+        <CoinPage scanData4h={data4h} scanData1d={data1d} />
+      )}
+
+      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}
+      {!coinPageSymbol && activeTab !== "chat" && (
         <div style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -758,8 +780,8 @@ export default function App() {
         </div>
       )}
 
-      {/* ── MAIN CONTENT ── */}
-      <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
+      {/* ── MAIN CONTENT (hidden when on coin page) ── */}
+      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
         {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
           <FadeIn>
@@ -776,7 +798,7 @@ export default function App() {
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile} />
         )}
 
-        {showDashboard && <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={setSelected} isMobile={isMobile} />}
+        {showDashboard && <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile} />}
 
         {showDashboard && <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh} />}
 
@@ -790,7 +812,7 @@ export default function App() {
             {(activeTab === "4h" || activeTab === "split") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
+                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} />
               </FadeIn>
@@ -801,7 +823,7 @@ export default function App() {
             {(activeTab === "1d" || activeTab === "split") && (
               <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={setSelected}
+                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} />
               </FadeIn>
@@ -865,7 +887,7 @@ export default function App() {
             <HyperLensPanel isMobile={isMobile} />
           </FadeIn>
         )}
-      </div>
+      </div>}
 
       {/* ── GROUP MODAL ── */}
       {showGroupModal && (

@@ -133,7 +133,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
 
   return (
     <tr
-      onClick={() => onSelect(row)}
+      onClick={(e) => onSelect(row, e)}
       style={{
         cursor: "pointer",
         borderBottom: `1px solid ${T.border}`,
