@@ -2143,19 +2143,51 @@ function PressureChart({ symbol, data }) {
     return result;
   }, [data]);
 
-  // Create / update chart
+  const candleSeriesRef = useRef(null);
+  const priceLinesRef = useRef([]);
+
+  // Create chart once when candles load (don't recreate on level updates)
   useEffect(() => {
     if (!candles || !containerRef.current) return;
 
-    renderPressureChart(candles, volume, levels, containerRef, chartRef);
+    renderPressureChart(candles, volume, levels, containerRef, chartRef, candleSeriesRef, priceLinesRef);
 
     return () => {
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
+        candleSeriesRef.current = null;
+        priceLinesRef.current = [];
       }
     };
-  }, [candles, volume, levels]);
+  }, [candles, volume]); // Only recreate on candle/volume changes
+
+  // Update price lines when levels change (without recreating chart)
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    // Remove old price lines
+    priceLinesRef.current.forEach(pl => {
+      try { series.removePriceLine(pl); } catch {}
+    });
+    priceLinesRef.current = [];
+
+    // Add new price lines
+    levels.forEach(level => {
+      const pl = series.createPriceLine({
+        price: level.price,
+        color: level.color,
+        lineWidth: level.lineWidth,
+        lineStyle: level.lineStyle,
+        axisLabelVisible: true,
+        title: level.label,
+        axisLabelColor: level.color,
+        axisLabelTextColor: "#ffffff",
+      });
+      priceLinesRef.current.push(pl);
+    });
+  }, [levels]);
 
   if (chartError) {
     return (
@@ -2199,7 +2231,7 @@ function PressureChart({ symbol, data }) {
   );
 }
 
-function renderPressureChart(candles, volumeData, levels, containerRef, chartRef) {
+function renderPressureChart(candles, volumeData, levels, containerRef, chartRef, candleSeriesRef, priceLinesRef) {
   // Clean up previous chart
   if (chartRef.current) {
     chartRef.current.remove();
@@ -2272,10 +2304,14 @@ function renderPressureChart(candles, volumeData, levels, containerRef, chartRef
     volSeries.setData(volumeData);
   }
 
-  // Add pressure levels as price lines
+  // Save series ref for price line updates
+  if (candleSeriesRef) candleSeriesRef.current = candleSeries;
+  if (priceLinesRef) priceLinesRef.current = [];
+
+  // Add initial pressure levels as price lines
   // lineStyle: 0=Solid, 1=Dotted, 2=Dashed, 3=LargeDashed
   levels.forEach(level => {
-    candleSeries.createPriceLine({
+    const pl = candleSeries.createPriceLine({
       price: level.price,
       color: level.color,
       lineWidth: level.lineWidth,
@@ -2285,6 +2321,7 @@ function renderPressureChart(candles, volumeData, levels, containerRef, chartRef
       axisLabelColor: level.color,
       axisLabelTextColor: "#ffffff",
     });
+    if (priceLinesRef) priceLinesRef.current.push(pl);
   });
 
   // Fit content
