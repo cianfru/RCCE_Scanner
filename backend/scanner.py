@@ -41,7 +41,8 @@ _engine_pool = concurrent.futures.ThreadPoolExecutor(
 )
 
 from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
-    fetch_batch_hip3, fetch_batch_yfinance, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP
+    fetch_batch_hip3, fetch_batch_yfinance, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP, \
+    _ohlcv_store
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
@@ -531,6 +532,307 @@ def _process_symbol(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Extracted helpers -- shared by _scan_timeframe and drip scan
+# ---------------------------------------------------------------------------
+
+def _attach_positioning(
+    result: dict,
+    hl_metrics: dict,
+    binance_metrics: dict,
+    bybit_metrics: dict,
+    cg_metrics: dict,
+    scan_cache: "ScanCache",
+) -> str:
+    """Attach positioning data to a scan result (mutates in-place).
+
+    Priority: Binance → Hyperliquid → Bybit.
+    CoinGlass overlays (liq, LSR, spot) applied when available.
+    Returns the source string ("binance", "hyperliquid", "bybit", or "").
+    """
+    symbol = result["symbol"]
+    bn = binance_metrics.get(symbol) if binance_metrics else None
+    hl = hl_metrics.get(symbol) if hl_metrics else None
+    by = bybit_metrics.get(symbol) if bybit_metrics else None
+
+    funding_rate = 0.0
+    open_interest = 0.0
+    predicted_funding = 0.0
+    mark_price = 0.0
+    oracle_price = 0.0
+    volume_24h = 0.0
+    source = ""
+
+    if bn is not None and bn.open_interest > 0:
+        funding_rate = bn.funding_rate
+        open_interest = bn.open_interest
+        mark_price = bn.mark_price
+        source = "binance"
+        if hl is not None:
+            volume_24h = hl.volume_24h
+            predicted_funding = hl.predicted_funding
+            oracle_price = hl.oracle_price
+    elif hl is not None and hl.open_interest > 0:
+        funding_rate = hl.funding_rate
+        open_interest = hl.open_interest
+        predicted_funding = hl.predicted_funding
+        mark_price = hl.mark_price
+        oracle_price = hl.oracle_price
+        volume_24h = hl.volume_24h
+        source = "hyperliquid"
+    elif by is not None and by.open_interest > 0:
+        funding_rate = by.funding_rate
+        open_interest = by.open_interest
+        mark_price = by.mark_price
+        source = "bybit"
+
+    if not source:
+        return ""
+
+    sparkline = result.get("sparkline", [])
+    price_change_pct = 0.0
+    if len(sparkline) >= 2 and sparkline[0] > 0:
+        price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+    prev_oi = scan_cache.prev_oi.get(symbol)
+    if prev_oi is None and open_interest > 0:
+        scan_cache.prev_oi[symbol] = open_interest
+        prev_oi = open_interest
+
+    pos = compute_positioning(
+        funding_rate=funding_rate,
+        open_interest=open_interest,
+        price_change_pct=price_change_pct,
+        prev_oi=prev_oi,
+        predicted_funding=predicted_funding,
+        mark_price=mark_price,
+        oracle_price=oracle_price,
+        volume_24h=volume_24h,
+    )
+
+    source_map = {}
+    if source == "binance":
+        source_map["funding"] = "binance"
+        source_map["oi"] = "binance"
+        source_map["volume"] = "hyperliquid" if (hl is not None and hl.volume_24h > 0) else ""
+        source_map["pred_funding"] = "hyperliquid" if (hl is not None and hl.predicted_funding != 0) else ""
+    elif source == "hyperliquid":
+        source_map["funding"] = "hyperliquid"
+        source_map["oi"] = "hyperliquid"
+        source_map["volume"] = "hyperliquid"
+        source_map["pred_funding"] = "hyperliquid"
+    elif source == "bybit":
+        source_map["funding"] = "bybit"
+        source_map["oi"] = "bybit"
+        source_map["volume"] = ""
+        source_map["pred_funding"] = ""
+
+    result["positioning"] = {
+        "funding_regime": pos.funding_regime,
+        "funding_rate": pos.funding_rate,
+        "oi_trend": pos.oi_trend,
+        "oi_value": pos.oi_value,
+        "oi_change_pct": pos.oi_change_pct,
+        "leverage_risk": pos.leverage_risk,
+        "predicted_funding": pos.predicted_funding,
+        "mark_price": pos.mark_price,
+        "volume_24h": pos.volume_24h,
+        "source": source,
+        "source_map": source_map,
+        "liquidation_24h_usd": 0.0,
+        "long_liq_usd": 0.0,
+        "short_liq_usd": 0.0,
+        "liquidation_4h_usd": 0.0,
+        "liquidation_1h_usd": 0.0,
+        "long_short_ratio": 1.0,
+        "top_trader_lsr": 1.0,
+        "oi_market_cap_ratio": 0.0,
+        "spot_volume_usd": 0.0,
+        "spot_futures_ratio": 0.0,
+        "spot_dominance": "NEUTRAL",
+    }
+    scan_cache.prev_oi[symbol] = open_interest
+
+    cg = cg_metrics.get(symbol) if cg_metrics else None
+    if cg is not None:
+        if cg.oi_change_pct_4h != 0:
+            result["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
+            _chg = cg.oi_change_pct_4h
+            _p_up = price_change_pct > 0
+            if   _chg >  OI_CHANGE_THRESHOLD and _p_up:       result["positioning"]["oi_trend"] = "BUILDING"
+            elif _chg < -OI_CHANGE_THRESHOLD and _p_up:       result["positioning"]["oi_trend"] = "SQUEEZE"
+            elif _chg < -OI_CHANGE_THRESHOLD and not _p_up:   result["positioning"]["oi_trend"] = "LIQUIDATING"
+            elif _chg >  OI_CHANGE_THRESHOLD and not _p_up:   result["positioning"]["oi_trend"] = "SHORTING"
+            else:                                              result["positioning"]["oi_trend"] = "STABLE"
+            result["positioning"]["source_map"]["oi_trend"] = "coinglass"
+        result["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
+        result["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
+        result["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h
+        result["positioning"]["liquidation_4h_usd"] = cg.liquidation_usd_4h
+        result["positioning"]["liquidation_1h_usd"] = cg.liquidation_usd_1h
+        result["positioning"]["long_short_ratio"] = cg.long_short_ratio_4h
+        result["positioning"]["top_trader_lsr"] = cg.top_trader_lsr
+        result["positioning"]["oi_market_cap_ratio"] = cg.oi_market_cap_ratio
+        result["positioning"]["source_map"]["oi_change"] = "coinglass"
+        result["positioning"]["source_map"]["liq"] = "coinglass"
+        if cg.spot_dominance != "NEUTRAL" or cg.spot_volume_usd > 0:
+            result["positioning"]["spot_volume_usd"] = cg.spot_volume_usd
+            result["positioning"]["spot_futures_ratio"] = cg.spot_futures_ratio
+            result["positioning"]["spot_dominance"] = cg.spot_dominance
+            result["positioning"]["source_map"]["spot"] = "coinglass"
+
+    return source
+
+
+async def _synthesize_and_enrich(
+    results: List[dict],
+    tf: str,
+    consensus: dict,
+    gm: Optional[GlobalMetrics],
+    sentiment_data,
+    stablecoin_data,
+    macro_data,
+    cg_metrics: dict,
+    scan_cache: "ScanCache",
+) -> dict:
+    """Run divergence detection, signal synthesis, agent layer, and priority scoring.
+
+    Mutates results in-place. Returns alt_gauge dict.
+    """
+    loop = asyncio.get_running_loop()
+
+    # Divergences
+    btc_regime = next(
+        (r["regime"] for r in results if r["symbol"] == "BTC/USDT"),
+        "FLAT",
+    )
+    for r in results:
+        r["divergence"] = detect_divergence(r["regime"], btc_regime)
+
+    # Prepare shared data for synthesis
+    gm_dict = None
+    if gm is not None:
+        gm_dict = {
+            "btc_dominance": gm.btc_dominance,
+            "eth_dominance": gm.eth_dominance,
+            "total_market_cap": gm.total_market_cap,
+            "alt_market_cap": gm.alt_market_cap,
+        }
+
+    sentiment_dict = None
+    if sentiment_data is not None:
+        sentiment_dict = {
+            "fear_greed_value": sentiment_data.fear_greed_value,
+            "fear_greed_label": sentiment_data.fear_greed_label,
+        }
+
+    stablecoin_dict = None
+    if stablecoin_data is not None:
+        stablecoin_dict = {
+            "trend": stablecoin_data.trend,
+            "change_7d_pct": stablecoin_data.change_7d_pct,
+            "total_cap": stablecoin_data.total_stablecoin_cap,
+        }
+
+    if not hasattr(scan_cache, 'prev_heat'):
+        scan_cache.prev_heat = {}
+    prev_heat_snapshot = dict(scan_cache.prev_heat)
+
+    _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
+    _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
+    _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
+
+    def _synth_one(r):
+        heat_direction = r.get("heat_direction", 0)
+        deviation_pct = r.get("deviation_pct", 0.0)
+        heat_val = r.get("heat", 0)
+        bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
+        macro_blocked = True if not bmsb_valid else heat_direction < 0
+        symbol = r.get("symbol", "")
+        prev_heat = prev_heat_snapshot.get(symbol, 0)
+        return synthesize_signal(
+            r, consensus, gm_dict,
+            positioning=r.get("positioning"),
+            sentiment=sentiment_dict,
+            stablecoin=stablecoin_dict,
+            macro_blocked=macro_blocked,
+            prev_heat=prev_heat,
+            bmsb_valid=bmsb_valid,
+            cvd_trend=r.get("cvd_trend", "NEUTRAL"),
+            cvd_divergence=r.get("cvd_divergence", False),
+            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
+            long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
+            liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
+            etf_flow_usd=_etf_flow,
+            cb_premium=_cb_premium,
+            has_coinglass=symbol in _cg_symbols,
+        )
+
+    synth_futures = [
+        loop.run_in_executor(_engine_pool, _synth_one, r)
+        for r in results
+    ]
+    synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
+
+    for r, synth in zip(results, synth_results):
+        if isinstance(synth, Exception):
+            logger.exception("Signal synthesis failed for %s: %s", r.get("symbol"), synth)
+            r["signal"] = r.get("raw_signal", "WAIT")
+            r["signal_reason"] = "synthesis error — using raw signal"
+            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
+            r["conditions_detail"] = []
+            r["conditions_met"] = 0
+            r["conditions_total"] = 10
+        else:
+            r["signal"] = synth.signal
+            r["signal_reason"] = synth.reason
+            r["signal_warnings"] = synth.warnings
+            r["signal_confidence"] = (
+                round(synth.conditions_met / synth.conditions_total * 100)
+                if synth.conditions_total > 0 else 0
+            )
+            r["conditions_detail"] = synth.conditions_detail
+            r["conditions_met"] = synth.conditions_met
+            r["conditions_total"] = synth.conditions_total
+            r["effective_conditions"] = synth.effective_conditions
+            r["vol_scale"] = synth.vol_scale
+            scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
+
+    # Agent layer
+    try:
+        from agent_layer import process as _agent_process
+        _open_positions: list = []
+        agent_override_count = 0
+        for r in results:
+            try:
+                ao = _agent_process(r, _open_positions, scan_cache)
+                if ao.alerts:
+                    existing = r.get("signal_warnings", [])
+                    r["signal_warnings"] = existing + [f"[Agent] {a}" for a in ao.alerts]
+                if ao.adjusted_signal != ao.original_signal:
+                    r["signal"] = ao.adjusted_signal
+                    agent_override_count += 1
+            except Exception as _ae:
+                logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
+        if agent_override_count:
+            logger.info("Agent layer: %d signal overrides on %s", agent_override_count, tf)
+    except ImportError:
+        pass
+
+    # Priority scores
+    for r in results:
+        r["priority_score"] = _compute_priority(r)
+
+    signal_summary = {}
+    for r in results:
+        sig = r["signal"]
+        signal_summary[sig] = signal_summary.get(sig, 0) + 1
+    logger.info("Signal distribution for %s: %s", tf, signal_summary)
+
+    alt_gauge = compute_alt_season_gauge(results, gm)
+    return alt_gauge
+
+
 async def _scan_timeframe(
     symbols: List[str],
     tf: str,
@@ -739,168 +1041,17 @@ async def _scan_timeframe(
         except Exception as exc:
             logger.warning("Bybit fallback fetch failed: %s", exc)
 
-    # 7. Compute positioning per symbol
-    #    Priority: Binance (deepest liquidity) → Hyperliquid → Bybit (fallback)
-    binance_pos_count = 0
-    hl_pos_count = 0
-    bybit_pos_count = 0
-
+    # 7. Compute positioning per symbol (using extracted helper)
+    pos_counts = {"binance": 0, "hyperliquid": 0, "bybit": 0}
     for r in results:
-        symbol = r["symbol"]
-        bn = binance_metrics.get(symbol) if binance_metrics else None
-        hl = hl_metrics.get(symbol) if hl_metrics else None
-        by = bybit_metrics.get(symbol) if bybit_metrics else None
-
-        funding_rate = 0.0
-        open_interest = 0.0
-        predicted_funding = 0.0
-        mark_price = 0.0
-        oracle_price = 0.0
-        volume_24h = 0.0
-        source = ""
-
-        # Priority 1: Binance (largest OI, most reliable)
-        if bn is not None and bn.open_interest > 0:
-            funding_rate = bn.funding_rate
-            open_interest = bn.open_interest
-            mark_price = bn.mark_price
-            source = "binance"
-            binance_pos_count += 1
-            # Supplement with HL data (volume, predicted funding, oracle)
-            if hl is not None:
-                volume_24h = hl.volume_24h
-                predicted_funding = hl.predicted_funding
-                oracle_price = hl.oracle_price
-        # Priority 2: Hyperliquid
-        elif hl is not None and hl.open_interest > 0:
-            funding_rate = hl.funding_rate
-            open_interest = hl.open_interest
-            predicted_funding = hl.predicted_funding
-            mark_price = hl.mark_price
-            oracle_price = hl.oracle_price
-            volume_24h = hl.volume_24h
-            source = "hyperliquid"
-            hl_pos_count += 1
-        # Priority 3: Bybit (fallback for gaps)
-        elif by is not None and by.open_interest > 0:
-            funding_rate = by.funding_rate
-            open_interest = by.open_interest
-            mark_price = by.mark_price
-            source = "bybit"
-            bybit_pos_count += 1
-
-        if source:
-            # Get price change from sparkline data
-            sparkline = r.get("sparkline", [])
-            price_change_pct = 0.0
-            if len(sparkline) >= 2 and sparkline[0] > 0:
-                price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
-
-            # Cold-start fix: if no prev_oi exists, seed it and report STABLE
-            # instead of UNKNOWN.  Real OI trend computes from the second scan.
-            prev_oi = cache.prev_oi.get(symbol)
-            if prev_oi is None and open_interest > 0:
-                # First time seeing this symbol — seed and assume stable
-                cache.prev_oi[symbol] = open_interest
-                prev_oi = open_interest  # OI change will be 0% → STABLE
-
-            pos = compute_positioning(
-                funding_rate=funding_rate,
-                open_interest=open_interest,
-                price_change_pct=price_change_pct,
-                prev_oi=prev_oi,
-                predicted_funding=predicted_funding,
-                mark_price=mark_price,
-                oracle_price=oracle_price,
-                volume_24h=volume_24h,
-            )
-            # Build per-metric source map so frontend knows where each field comes from
-            source_map = {}
-            if source == "binance":
-                source_map["funding"] = "binance"
-                source_map["oi"] = "binance"
-                source_map["volume"] = "hyperliquid" if (hl is not None and hl.volume_24h > 0) else ""
-                source_map["pred_funding"] = "hyperliquid" if (hl is not None and hl.predicted_funding != 0) else ""
-            elif source == "hyperliquid":
-                source_map["funding"] = "hyperliquid"
-                source_map["oi"] = "hyperliquid"
-                source_map["volume"] = "hyperliquid"
-                source_map["pred_funding"] = "hyperliquid"
-            elif source == "bybit":
-                source_map["funding"] = "bybit"
-                source_map["oi"] = "bybit"
-                source_map["volume"] = ""
-                source_map["pred_funding"] = ""
-
-            r["positioning"] = {
-                "funding_regime": pos.funding_regime,
-                "funding_rate": pos.funding_rate,
-                "oi_trend": pos.oi_trend,
-                "oi_value": pos.oi_value,
-                "oi_change_pct": pos.oi_change_pct,
-                "leverage_risk": pos.leverage_risk,
-                "predicted_funding": pos.predicted_funding,
-                "mark_price": pos.mark_price,
-                "volume_24h": pos.volume_24h,
-                "source": source,
-                "source_map": source_map,
-                # CoinGlass supplemental fields (defaults; overwritten below if available)
-                "liquidation_24h_usd": 0.0,
-                "long_liq_usd": 0.0,
-                "short_liq_usd": 0.0,
-                "liquidation_4h_usd": 0.0,
-                "liquidation_1h_usd": 0.0,
-                "long_short_ratio": 1.0,
-                "top_trader_lsr": 1.0,
-                "oi_market_cap_ratio": 0.0,
-                "spot_volume_usd": 0.0,
-                "spot_futures_ratio": 0.0,
-                "spot_dominance": "NEUTRAL",
-            }
-            # Store OI for next scan's trend calculation
-            cache.prev_oi[symbol] = open_interest
-
-            # Enhance positioning with CoinGlass aggregated data (multi-exchange)
-            cg = cg_metrics.get(symbol) if cg_metrics else None
-            if cg is not None:
-                # Override OI change with CoinGlass multi-exchange aggregated value
-                # and re-derive oi_trend (same thresholds as positioning_engine.py)
-                if cg.oi_change_pct_4h != 0:
-                    _prev_trend = r["positioning"].get("oi_trend", "UNKNOWN")
-                    r["positioning"]["oi_change_pct"] = cg.oi_change_pct_4h
-                    _chg  = cg.oi_change_pct_4h
-                    _p_up = price_change_pct > 0
-                    if   _chg >  OI_CHANGE_THRESHOLD and _p_up:       r["positioning"]["oi_trend"] = "BUILDING"
-                    elif _chg < -OI_CHANGE_THRESHOLD and _p_up:       r["positioning"]["oi_trend"] = "SQUEEZE"
-                    elif _chg < -OI_CHANGE_THRESHOLD and not _p_up:   r["positioning"]["oi_trend"] = "LIQUIDATING"
-                    elif _chg >  OI_CHANGE_THRESHOLD and not _p_up:   r["positioning"]["oi_trend"] = "SHORTING"
-                    else:                                              r["positioning"]["oi_trend"] = "STABLE"
-                    r["positioning"]["source_map"]["oi_trend"] = "coinglass"
-                    _new_trend = r["positioning"]["oi_trend"]
-                    if _prev_trend != _new_trend:
-                        logger.debug("%s OI trend: %s→%s (CoinGlass override, chg=%.2f%%)", symbol, _prev_trend, _new_trend, _chg)
-                r["positioning"]["liquidation_24h_usd"] = cg.liquidation_usd_24h
-                r["positioning"]["long_liq_usd"] = cg.long_liquidation_usd_24h
-                r["positioning"]["short_liq_usd"] = cg.short_liquidation_usd_24h
-                r["positioning"]["liquidation_4h_usd"] = cg.liquidation_usd_4h
-                r["positioning"]["liquidation_1h_usd"] = cg.liquidation_usd_1h
-                r["positioning"]["long_short_ratio"] = cg.long_short_ratio_4h
-                r["positioning"]["top_trader_lsr"] = cg.top_trader_lsr
-                r["positioning"]["oi_market_cap_ratio"] = cg.oi_market_cap_ratio
-                r["positioning"]["source_map"]["oi_change"] = "coinglass"
-                r["positioning"]["source_map"]["liq"] = "coinglass"
-
-                # Spot dominance is now embedded in CoinglassMetrics
-                if cg.spot_dominance != "NEUTRAL" or cg.spot_volume_usd > 0:
-                    r["positioning"]["spot_volume_usd"] = cg.spot_volume_usd
-                    r["positioning"]["spot_futures_ratio"] = cg.spot_futures_ratio
-                    r["positioning"]["spot_dominance"] = cg.spot_dominance
-                    r["positioning"]["source_map"]["spot"] = "coinglass"
+        src = _attach_positioning(r, hl_metrics, binance_metrics, bybit_metrics, cg_metrics, cache)
+        if src:
+            pos_counts[src] = pos_counts.get(src, 0) + 1
 
     logger.info(
         "Positioning: %d Binance, %d Hyperliquid, %d Bybit (%d total)",
-        binance_pos_count, hl_pos_count, bybit_pos_count,
-        binance_pos_count + hl_pos_count + bybit_pos_count,
+        pos_counts.get("binance", 0), pos_counts.get("hyperliquid", 0),
+        pos_counts.get("bybit", 0), sum(pos_counts.values()),
     )
 
     # 7b. CVD batch fetch — dual-source strategy:
@@ -988,154 +1139,12 @@ async def _scan_timeframe(
         for r in results:
             r["cvd_trend"] = "UNAVAILABLE"
 
-    # 8. Detect divergences
-    btc_regime = next(
-        (r["regime"] for r in results if r["symbol"] == "BTC/USDT"),
-        "FLAT",
+    # 8-9. Divergence + Signal synthesis + Agent layer + Priority (extracted helper)
+    alt_gauge = await _synthesize_and_enrich(
+        results, tf, consensus, gm,
+        sentiment_data, stablecoin_data, macro_data,
+        cg_metrics, cache,
     )
-    for r in results:
-        r["divergence"] = detect_divergence(r["regime"], btc_regime)
-
-    divergence_count = sum(1 for r in results if r["divergence"] is not None)
-    if divergence_count:
-        logger.info("Detected %d divergences on %s", divergence_count, tf)
-
-    # 9. Synthesize final signals (cross-engine Decision Matrix + positioning + sentiment)
-    gm_dict = None
-    if gm is not None:
-        gm_dict = {
-            "btc_dominance": gm.btc_dominance,
-            "eth_dominance": gm.eth_dominance,
-            "total_market_cap": gm.total_market_cap,
-            "alt_market_cap": gm.alt_market_cap,
-        }
-
-    sentiment_dict = None
-    if sentiment_data is not None:
-        sentiment_dict = {
-            "fear_greed_value": sentiment_data.fear_greed_value,
-            "fear_greed_label": sentiment_data.fear_greed_label,
-        }
-
-    stablecoin_dict = None
-    if stablecoin_data is not None:
-        stablecoin_dict = {
-            "trend": stablecoin_data.trend,
-            "change_7d_pct": stablecoin_data.change_7d_pct,
-            "total_cap": stablecoin_data.total_stablecoin_cap,
-        }
-
-    # Build prev_heat snapshot once (thread-safe read)
-    if not hasattr(cache, 'prev_heat'):
-        cache.prev_heat = {}
-    prev_heat_snapshot = dict(cache.prev_heat)
-
-    # Macro data for condition #14 (ETF flows + CB premium)
-    _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
-    _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
-
-    # Which symbols have CoinGlass data (for weighted scoring)
-    _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
-
-    def _synth_one(r):
-        """Run synthesize_signal for a single result (CPU-bound, thread-safe)."""
-        heat_direction = r.get("heat_direction", 0)
-        deviation_pct = r.get("deviation_pct", 0.0)
-        heat_val = r.get("heat", 0)
-        bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
-        macro_blocked = True if not bmsb_valid else heat_direction < 0
-        symbol = r.get("symbol", "")
-        prev_heat = prev_heat_snapshot.get(symbol, 0)
-        return synthesize_signal(
-            r, consensus, gm_dict,
-            positioning=r.get("positioning"),
-            sentiment=sentiment_dict,
-            stablecoin=stablecoin_dict,
-            macro_blocked=macro_blocked,
-            prev_heat=prev_heat,
-            bmsb_valid=bmsb_valid,
-            cvd_trend=r.get("cvd_trend", "NEUTRAL"),
-            cvd_divergence=r.get("cvd_divergence", False),
-            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
-            long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
-            liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
-            etf_flow_usd=_etf_flow,
-            cb_premium=_cb_premium,
-            has_coinglass=symbol in _cg_symbols,
-        )
-
-    synth_futures = [
-        loop.run_in_executor(_engine_pool, _synth_one, r)
-        for r in results
-    ]
-    synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
-
-    for r, synth in zip(results, synth_results):
-        if isinstance(synth, Exception):
-            logger.exception("Signal synthesis failed for %s: %s", r.get("symbol"), synth)
-            r["signal"] = r.get("raw_signal", "WAIT")
-            r["signal_reason"] = "synthesis error — using raw signal"
-            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
-            r["conditions_detail"] = []
-            r["conditions_met"] = 0
-            r["conditions_total"] = 10
-        else:
-            r["signal"] = synth.signal
-            r["signal_reason"] = synth.reason
-            r["signal_warnings"] = synth.warnings
-            r["signal_confidence"] = (
-                round(synth.conditions_met / synth.conditions_total * 100)
-                if synth.conditions_total > 0 else 0
-            )
-            r["conditions_detail"] = synth.conditions_detail
-            r["conditions_met"] = synth.conditions_met
-            r["conditions_total"] = synth.conditions_total
-            r["effective_conditions"] = synth.effective_conditions
-            r["vol_scale"] = synth.vol_scale
-            # Update prev_heat for next scan
-            cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
-
-    # 9b. Agent layer — post-synthesis filters (cooldown, div-flapping, conf
-    #     stability, heat/z divergence, cross-TF tiebreaker, margin safety).
-    #     Pure transformer: modifies each result dict in-place and persists
-    #     per-symbol history on the cache object for next scan.
-    try:
-        from agent_layer import process as _agent_process
-        # Positions list is empty here (live positions come from executor/monitor).
-        # The margin safety filter is a no-op until positions are plumbed in.
-        _open_positions: list = []
-        agent_override_count = 0
-        for r in results:
-            try:
-                ao = _agent_process(r, _open_positions, cache)
-                # Merge agent warnings into signal_warnings so the frontend
-                # shows them in the existing warning UI without changes.
-                if ao.alerts:
-                    existing = r.get("signal_warnings", [])
-                    r["signal_warnings"] = existing + [f"[Agent] {a}" for a in ao.alerts]
-                # If agent overrode the signal, update the effective signal
-                if ao.adjusted_signal != ao.original_signal:
-                    r["signal"] = ao.adjusted_signal
-                    agent_override_count += 1
-            except Exception as _ae:
-                logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
-        if agent_override_count:
-            logger.info("Agent layer: %d signal overrides on %s", agent_override_count, tf)
-    except ImportError:
-        pass  # agent_layer not available in minimal deployments
-
-    # Compute priority score for each result
-    for r in results:
-        r["priority_score"] = _compute_priority(r)
-
-    signal_summary = {}
-    for r in results:
-        sig = r["signal"]
-        signal_summary[sig] = signal_summary.get(sig, 0) + 1
-    logger.info("Signal distribution for %s: %s", tf, signal_summary)
-
-    # 9. Alt-season gauge (using global metrics when available)
-    alt_gauge = compute_alt_season_gauge(results, gm)
     logger.info(
         "Alt-season gauge for %s: score=%.1f label=%s btc_dom=%s",
         tf, alt_gauge["score"], alt_gauge["label"],
@@ -1144,6 +1153,367 @@ async def _scan_timeframe(
 
     return results, consensus, alt_gauge, gm
 
+
+# ---------------------------------------------------------------------------
+# Drip scan — continuous per-symbol processing (PR2)
+# ---------------------------------------------------------------------------
+
+_drip_rotation_count: int = 0
+_backtest_running_ref = None  # set by main.py to share the flag
+
+
+async def _drip_one_symbol(
+    symbol: str,
+    scan_cache: ScanCache,
+) -> int:
+    """Fetch OHLCV + run engines for one symbol on both timeframes.
+
+    Stores raw engine results (no signal) into scan_cache._results_by_sym.
+    Returns number of timeframes actually processed (0, 1, or 2).
+    """
+    loop = asyncio.get_running_loop()
+    processed = 0
+
+    # Fetch weekly data once (shared by both TFs for heatmap/exhaustion)
+    weekly = await fetch_ohlcv(symbol, "1w")
+
+    for tf in ("4h", "1d"):
+        ohlcv = await fetch_ohlcv(symbol, tf)
+        if ohlcv is None:
+            continue
+
+        # Engine cache check — skip recomputation if candle unchanged
+        timestamps = ohlcv.get("timestamp", [])
+        last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
+        cache_key = (symbol, tf)
+        cached_entry = scan_cache._engine_cache.get(cache_key)
+
+        if cached_entry and cached_entry["last_candle_ts"] == last_closed_ts:
+            # No new candle — reuse cached result, update live price
+            result = cached_entry["result"].copy()
+            result["price"] = float(ohlcv["close"][-1])
+        else:
+            # New candle — run engines
+            btc_data = _ohlcv_store.get("BTC/USDT", tf)
+            eth_data = _ohlcv_store.get("ETH/USDT", tf)
+            result = await loop.run_in_executor(
+                _engine_pool,
+                partial(
+                    _process_symbol,
+                    symbol=symbol,
+                    timeframe=tf,
+                    ohlcv=ohlcv,
+                    weekly=weekly,
+                    btc_data=btc_data,
+                    eth_data=eth_data,
+                ),
+            )
+            scan_cache._engine_cache[cache_key] = {
+                "last_candle_ts": last_closed_ts,
+                "result": result.copy(),
+            }
+
+        scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
+        processed += 1
+
+    return processed
+
+
+async def run_drip_scan(
+    scan_cache: Optional[ScanCache] = None,
+) -> None:
+    """Continuous drip scan: process 1 symbol every ~1.0s through both TFs.
+
+    Runs as a long-lived background task. Never returns.
+    Stores raw engine results into scan_cache._results_by_sym.
+    The synthesis pass (_run_synthesis_pass) runs separately every 60s.
+    """
+    global _drip_rotation_count
+
+    if scan_cache is None:
+        scan_cache = cache
+
+    DRIP_INTERVAL = 1.0  # seconds between symbols
+
+    # Wait briefly for initial data to be available
+    await asyncio.sleep(5)
+
+    while True:
+        symbols = list(scan_cache.symbols)
+        if not symbols:
+            await asyncio.sleep(5)
+            continue
+
+        # Check backtest flag (accessed via scan_cache to avoid circular import)
+        if getattr(scan_cache, '_backtest_running', False):
+            logger.debug("Drip scan paused — backtest in progress")
+            await asyncio.sleep(10)
+            continue
+
+        # Ensure BTC and ETH are processed first (needed for beta)
+        priority = ["BTC/USDT", "ETH/USDT"]
+        ordered = [s for s in priority if s in symbols]
+        ordered += [s for s in symbols if s not in priority]
+
+        rotation_start = time.time()
+        total_processed = 0
+        cache_hits = 0
+
+        for symbol in ordered:
+            t0 = time.monotonic()
+
+            try:
+                n = await _drip_one_symbol(symbol, scan_cache)
+                total_processed += n
+            except Exception:
+                logger.warning("Drip failed for %s", symbol, exc_info=True)
+
+            # Pace to ~1.0s per symbol
+            elapsed = time.monotonic() - t0
+            if elapsed < DRIP_INTERVAL:
+                await asyncio.sleep(DRIP_INTERVAL - elapsed)
+
+        _drip_rotation_count += 1
+        elapsed_total = time.time() - rotation_start
+        logger.info(
+            "=== Drip rotation #%d: %d symbols, %d TF results in %.1fs ===",
+            _drip_rotation_count, len(ordered), total_processed, elapsed_total,
+        )
+
+
+async def _run_synthesis_pass(
+    scan_cache: Optional[ScanCache] = None,
+) -> None:
+    """Cross-symbol synthesis: positioning, consensus, signals, confluences.
+
+    Reads raw results from _results_by_sym (populated by drip loop),
+    applies positioning from cached exchange metrics, synthesizes signals,
+    and publishes to cache.results.
+
+    Designed to run every 60s from _periodic_scan.
+    """
+    if scan_cache is None:
+        scan_cache = cache
+
+    # Need at least some results before we can synthesize
+    if not scan_cache._results_by_sym:
+        logger.info("Synthesis pass skipped — no results yet")
+        return
+
+    t0 = time.time()
+
+    # Fetch external data (reads from 5-min caches, refreshes if stale)
+    from binance_futures_data import fetch_binance_futures_metrics
+    from bybit_futures_data import fetch_bybit_futures_metrics
+    from coinglass_data import fetch_coinglass_metrics, fetch_macro_signals
+
+    all_symbols = list(scan_cache._results_by_sym.keys())
+
+    gm: Optional[GlobalMetrics] = None
+    hl_metrics = {}
+    binance_metrics = {}
+    sentiment_data = None
+    stablecoin_data = None
+    cg_metrics: dict = {}
+    macro_data = None
+
+    try:
+        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, macro_data = await asyncio.gather(
+            fetch_global_metrics(),
+            fetch_hyperliquid_metrics(all_symbols),
+            fetch_binance_futures_metrics(all_symbols),
+            fetch_fear_greed(),
+            fetch_stablecoin_supply(),
+            fetch_coinglass_metrics(all_symbols),
+            fetch_macro_signals(),
+        )
+    except Exception:
+        logger.warning("Synthesis pass: some external data fetches failed")
+
+    # Bybit for gaps
+    covered_symbols = set()
+    if binance_metrics:
+        covered_symbols.update(binance_metrics.keys())
+    if hl_metrics:
+        covered_symbols.update(s for s, m in hl_metrics.items() if m.open_interest > 0)
+    gap_symbols = [s for s in all_symbols if s not in covered_symbols]
+
+    bybit_metrics = {}
+    if gap_symbols:
+        try:
+            bybit_metrics = await fetch_bybit_futures_metrics(gap_symbols)
+        except Exception:
+            pass
+
+    # CVD batch fetch (dual-source)
+    price_changes_dict: dict = {}
+    for tf in ("4h", "1d"):
+        for entry in scan_cache._results_by_sym.values():
+            r = entry.get(tf)
+            if r:
+                sym = r.get("symbol", "")
+                base_coin = sym.split("/")[0] if "/" in sym else sym
+                sparkline = r.get("sparkline", [])
+                if len(sparkline) >= 2 and sparkline[0] > 0:
+                    price_changes_dict[base_coin] = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+    # CVD from CoinGlass + exchange fallback
+    cvd_by_coin: dict = {}
+    try:
+        from coinglass_data import fetch_cvd_batch
+        cg_cvd = await asyncio.wait_for(
+            fetch_cvd_batch(list(price_changes_dict.keys())[:50], price_changes=price_changes_dict),
+            timeout=10.0,
+        )
+        cvd_by_coin.update(cg_cvd)
+    except Exception:
+        pass
+
+    try:
+        from exchange_derivatives_data import fetch_exchange_derivatives
+        _, ex_cvd_raw, _ = await asyncio.wait_for(
+            fetch_exchange_derivatives(all_symbols, price_changes_dict),
+            timeout=12.0,
+        )
+        if ex_cvd_raw:
+            # Exchange fills gaps, CoinGlass wins where both exist
+            merged = dict(ex_cvd_raw)
+            merged.update(cvd_by_coin)
+            cvd_by_coin = merged
+    except Exception:
+        pass
+
+    # Process each timeframe
+    for tf in ("4h", "1d"):
+        results = []
+        for entry in scan_cache._results_by_sym.values():
+            r = entry.get(tf)
+            if r:
+                results.append(r)
+
+        if not results:
+            continue
+
+        # Attach positioning
+        pos_counts = {"binance": 0, "hyperliquid": 0, "bybit": 0}
+        for r in results:
+            src = _attach_positioning(r, hl_metrics, binance_metrics, bybit_metrics, cg_metrics, scan_cache)
+            if src:
+                pos_counts[src] = pos_counts.get(src, 0) + 1
+
+        # Attach CVD
+        for r in results:
+            sym = r.get("symbol", "")
+            base_coin = sym.split("/")[0] if "/" in sym else sym
+            cvd = cvd_by_coin.get(base_coin)
+            if cvd is not None:
+                r["cvd_trend"] = cvd.cvd_trend
+                r["cvd_divergence"] = cvd.cvd_divergence
+                r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
+                r["buy_sell_ratio"] = cvd.buy_sell_ratio
+
+        # Compute consensus
+        consensus = compute_consensus(results)
+
+        # Synthesize signals, divergences, agent, priority
+        alt_gauge = await _synthesize_and_enrich(
+            results, tf, consensus, gm,
+            sentiment_data, stablecoin_data, macro_data,
+            cg_metrics, scan_cache,
+        )
+
+        # Publish
+        scan_cache.results[tf] = results
+        scan_cache.consensus[tf] = consensus
+        scan_cache.alt_season[tf] = alt_gauge
+
+        # Signal logging
+        try:
+            from signal_log import SignalLog
+            sig_log = SignalLog.get()
+            await sig_log.log_signals(results, tf, consensus.get("consensus", "MIXED"))
+        except Exception:
+            pass
+
+        if gm is not None:
+            scan_cache.global_metrics = {
+                "btc_dominance": gm.btc_dominance,
+                "eth_dominance": gm.eth_dominance,
+                "total_market_cap": gm.total_market_cap,
+                "alt_market_cap": gm.alt_market_cap,
+                "btc_market_cap": gm.btc_market_cap,
+                "timestamp": gm.timestamp,
+            }
+
+    # Sentiment + stablecoin cache update
+    from market_data import get_cached_sentiment, get_cached_stablecoin
+    s = get_cached_sentiment()
+    if s:
+        scan_cache.sentiment = {
+            "fear_greed_value": s.fear_greed_value,
+            "fear_greed_label": s.fear_greed_label,
+        }
+    sc = get_cached_stablecoin()
+    if sc:
+        scan_cache.stablecoin = {
+            "usdt_market_cap": sc.usdt_market_cap,
+            "usdc_market_cap": sc.usdc_market_cap,
+            "total_cap": sc.total_stablecoin_cap,
+            "trend": sc.trend,
+            "change_7d_pct": sc.change_7d_pct,
+        }
+
+    # Confluences
+    if "4h" in scan_cache.results and "1d" in scan_cache.results:
+        try:
+            confluences = compute_all_confluences(
+                scan_cache.results["4h"],
+                scan_cache.results["1d"],
+            )
+            scan_cache.confluence = {
+                sym: {
+                    "score": c.score,
+                    "label": c.label,
+                    "regime_aligned": c.regime_aligned,
+                    "signal_aligned": c.signal_aligned,
+                    "regime_4h": c.regime_4h,
+                    "regime_1d": c.regime_1d,
+                    "signal_4h": c.signal_4h,
+                    "signal_1d": c.signal_1d,
+                }
+                for sym, c in confluences.items()
+            }
+            for tf_key in ("4h", "1d"):
+                for r in scan_cache.results.get(tf_key, []):
+                    sym = r.get("symbol", "")
+                    if sym in scan_cache.confluence:
+                        r["confluence"] = scan_cache.confluence[sym]
+        except Exception:
+            logger.exception("Confluence computation failed")
+
+    # Executor
+    try:
+        from executor import get_executor
+        executor = get_executor()
+        if executor and executor.enabled:
+            exec_results = scan_cache.results.get("4h", [])
+            if exec_results:
+                await executor.process_scan_results(exec_results)
+    except (ImportError, Exception):
+        pass
+
+    scan_cache.last_scan_time = time.time()
+    elapsed = time.time() - t0
+    n_syms = len(scan_cache._results_by_sym)
+    logger.info(
+        "=== Synthesis pass complete: %d symbols in %.1fs (rotation #%d) ===",
+        n_syms, elapsed, _drip_rotation_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Batch scan (preserved for backtester / manual refresh)
+# ---------------------------------------------------------------------------
 
 async def run_scan(
     scan_cache: Optional[ScanCache] = None,
@@ -1668,15 +2038,12 @@ def get_all_results() -> dict:
 
 def get_scan_status() -> dict:
     """Return lightweight scan metadata."""
-    tier2_total = len([s for s in cache.symbols if s not in TIER1_SYMBOLS])
     return {
         "is_scanning": cache.is_scanning,
         "last_scan_time": cache.last_scan_time,
         "symbols_count": len(cache.symbols),
         "cache_age_seconds": cache.get_cache_age(),
-        "mode": "rolling",
-        "tier1_count": len([s for s in TIER1_SYMBOLS if s in cache.symbols]),
-        "tier2_count": tier2_total,
-        "rotation_offset": cache._rotation_offset,
+        "mode": "drip",
+        "drip_rotation": _drip_rotation_count,
         "symbols_scanned": len(cache._results_by_sym),
     }

@@ -23,7 +23,8 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status
+from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status, \
+    run_drip_scan, _run_synthesis_pass
 from models import (
     ScanResponse,
     ConsensusResponse,
@@ -172,6 +173,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Position monitor init failed (non-fatal): %s", e)
 
+    # Start drip scan loop (1 symbol/1s continuous) + synthesis pass (every 60s)
+    asyncio.create_task(run_drip_scan(cache))
     asyncio.create_task(_periodic_scan())
     asyncio.create_task(_periodic_whale_poll())
 
@@ -213,6 +216,13 @@ async def lifespan(app: FastAPI):
 _backtest_running = False  # Flag to pause scans during backtest
 
 
+def _set_backtest_running(val: bool):
+    """Set backtest flag + mirror on cache for drip loop access."""
+    global _backtest_running
+    _backtest_running = val
+    cache._backtest_running = val
+
+
 async def _shadow_derivatives_loop():
     """Shadow fetch exchange derivatives every 5 min (alongside CoinGlass).
 
@@ -233,17 +243,22 @@ async def _shadow_derivatives_loop():
 
 
 async def _periodic_scan():
-    """Rolling scan every 60s + TradFi every 5 min.
+    """Synthesis pass every 60s + TradFi + housekeeping.
 
-    Crypto: tier-1 (25 majors) refreshed every cycle, tier-2 rotates
-    in chunks of 40 — full rotation every ~5 cycles (~5 min).
-    TradFi: runs every 5th cycle (~5 min) since prices change slowly.
+    The drip loop (run_drip_scan) continuously populates _results_by_sym
+    with raw engine results. This loop runs every 60s to:
+    1. Synthesize signals (positioning, consensus, divergence, agent layer)
+    2. Run TradFi scans (every 15th cycle)
+    3. Update signal outcomes, position monitor, OHLCV cache
     """
     global _backtest_running
     _executor_auto_started = False
     _backtest_defer_count = 0
     _cycle = 0
-    _TRADFI_EVERY = 15  # run TradFi every 15th cycle (= every 15 min)
+    _TRADFI_EVERY = 15
+
+    # Wait for drip loop to populate some results
+    await asyncio.sleep(15)
 
     while True:
         if _backtest_running:
@@ -256,7 +271,7 @@ async def _periodic_scan():
                 )
                 if not active:
                     logger.warning("_backtest_running stuck (no active backtest) — force resetting")
-                    _backtest_running = False
+                    _set_backtest_running(False)
                     _backtest_defer_count = 0
                     continue
             logger.info("Scan deferred — backtest in progress (defer #%d)", _backtest_defer_count)
@@ -266,11 +281,11 @@ async def _periodic_scan():
         _cycle += 1
 
         try:
-            # Rolling crypto scan (every cycle)
-            logger.info("Rolling scan cycle %d ...", _cycle)
-            await run_rolling_scan(cache)
+            # Synthesis pass — cross-symbol signals from drip results
+            logger.info("Synthesis pass #%d ...", _cycle)
+            await _run_synthesis_pass(cache)
 
-            # TradFi scan (first cycle + every 5th cycle)
+            # TradFi scan (first cycle + every 15th cycle)
             if _cycle == 1 or _cycle % _TRADFI_EVERY == 0:
                 try:
                     await run_tradfi_scan(cache)
@@ -311,8 +326,8 @@ async def _periodic_scan():
             except Exception:
                 logger.debug("OHLCV cache save failed (non-fatal)")
         except Exception as e:
-            logger.error("Rolling scan cycle %d failed: %s", _cycle, e)
-        await asyncio.sleep(60)  # 1 minute between cycles
+            logger.error("Synthesis pass #%d failed: %s", _cycle, e)
+        await asyncio.sleep(60)
 
 
 async def _auto_init_executor():
@@ -1075,8 +1090,7 @@ async def start_backtest(body: BacktestRequest):
     )
 
     # Pause live scanner during backtest to avoid event loop contention
-    global _backtest_running
-    _backtest_running = True
+    _set_backtest_running(True)
 
     # Wait for any in-progress scan to finish before starting
     wait_count = 0
@@ -1087,13 +1101,12 @@ async def start_backtest(body: BacktestRequest):
     try:
         bt_id = await run_backtest(config)
     except Exception as exc:
-        _backtest_running = False
+        _set_backtest_running(False)
         logger.error("Failed to start backtest: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
     # Monitor and re-enable scanner when backtest finishes
     async def _wait_for_completion():
-        global _backtest_running
         try:
             timeout_count = 0
             while timeout_count < 720:  # 720 × 5s = 60 min max
@@ -1107,7 +1120,7 @@ async def start_backtest(body: BacktestRequest):
         except Exception as exc:
             logger.error("Backtest %s: monitor error: %s", bt_id, exc)
         finally:
-            _backtest_running = False
+            _set_backtest_running(False)
             logger.info("Backtest %s: scanner resumed", bt_id)
 
     asyncio.create_task(_wait_for_completion())
@@ -1326,8 +1339,7 @@ async def start_walkforward(body: WalkForwardRequest):
     )
 
     # Pause live scanner
-    global _backtest_running
-    _backtest_running = True
+    _set_backtest_running(True)
 
     wait_count = 0
     while cache.is_scanning and wait_count < 300:
@@ -1337,13 +1349,12 @@ async def start_walkforward(body: WalkForwardRequest):
     try:
         wf_id = await run_walkforward(config)
     except Exception as exc:
-        _backtest_running = False
+        _set_backtest_running(False)
         logger.error("Failed to start walk-forward: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
     # Monitor and re-enable scanner when done
     async def _wait_for_completion():
-        global _backtest_running
         try:
             timeout_count = 0
             while timeout_count < 720:  # 60 min max
@@ -1357,7 +1368,7 @@ async def start_walkforward(body: WalkForwardRequest):
         except Exception as exc:
             logger.error("Walk-forward %s: monitor error: %s", wf_id, exc)
         finally:
-            _backtest_running = False
+            _set_backtest_running(False)
             logger.info("Walk-forward %s: scanner resumed", wf_id)
 
     asyncio.create_task(_wait_for_completion())
