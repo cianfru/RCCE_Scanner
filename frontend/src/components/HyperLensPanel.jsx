@@ -109,7 +109,8 @@ function ModalOverlay({ children, onClose }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
-        background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
+        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 20,
       }}
@@ -117,10 +118,12 @@ function ModalOverlay({ children, onClose }) {
       <div style={{
         width: "100%", maxWidth: 900, maxHeight: "88vh",
         overflowY: "auto",
-        borderRadius: 12,
-        border: `1px solid ${T.border}`,
-        background: T.bg,
-        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+        borderRadius: T.radius,
+        border: `1px solid ${T.borderH}`,
+        background: T.glassBg,
+        backdropFilter: "blur(24px) saturate(1.3)",
+        WebkitBackdropFilter: "blur(24px) saturate(1.3)",
+        boxShadow: `0 24px 80px rgba(0,0,0,0.5), ${T.glassInset}`,
       }}>
         {children}
       </div>
@@ -231,11 +234,12 @@ function RiskBadge({ score }) {
   const color = riskColor(score);
   return (
     <span style={{
-      fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-      padding: "2px 7px", borderRadius: 4,
-      color, background: `${color}18`,
-      border: `1px solid ${color}30`,
-      letterSpacing: "0.03em",
+      fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+      padding: "3px 8px", borderRadius: 6,
+      color, background: `${color}12`,
+      border: `1px solid ${color}25`,
+      letterSpacing: "0.04em",
+      boxShadow: `0 0 8px ${color}10`,
     }}>
       RISK {Math.round(score)}
     </span>
@@ -294,14 +298,16 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w })
     <th
       onClick={sortKey ? () => onSort(sortKey) : undefined}
       style={{
-        padding: "8px 10px", textAlign: align,
-        fontFamily: T.mono, fontSize: 12, fontWeight: 600,
+        padding: "10px 10px", textAlign: align,
+        fontFamily: T.mono, fontSize: 11, fontWeight: 700,
         color: active ? T.accent : T.text4,
-        letterSpacing: "0.06em",
+        letterSpacing: "0.08em", textTransform: "uppercase",
         cursor: sortKey ? "pointer" : "default",
-        borderBottom: `1px solid ${T.border}`,
+        borderBottom: `1px solid ${T.overlay10}`,
+        background: T.overlay02,
         whiteSpace: "nowrap", minWidth: w,
         userSelect: "none",
+        transition: "color 0.2s",
       }}
     >
       {label}{active && (asc ? " \u25B2" : " \u25BC")}
@@ -338,39 +344,42 @@ function StatusStrip({ status, cohort, roster }) {
     <div style={{
       display: "flex", flexWrap: "wrap", gap: 6,
       padding: "10px 16px",
-      borderBottom: `1px solid ${T.border}`,
+      borderBottom: `1px solid ${T.overlay08}`,
+      background: T.overlay02,
     }}>
       {items.map(({ label, value }) => (
         <div key={label} style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "3px 9px", borderRadius: 6,
-          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+          display: "flex", alignItems: "center", gap: 5,
+          padding: "4px 10px", borderRadius: 8,
+          background: T.overlay04,
+          border: `1px solid ${T.overlay06}`,
+          backdropFilter: "blur(8px)",
         }}>
-          <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.05em" }}>{label}</span>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text1 }}>{value}</span>
+          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", fontWeight: 600 }}>{label}</span>
+          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: T.text1 }}>{value}</span>
         </div>
       ))}
       {/* Cohort breakdown counts */}
       {cohort === "all" && (mpCount > 0 || smCount > 0 || eliteCount > 0) && (
         <div style={{
-          display: "flex", alignItems: "center", gap: 4,
-          padding: "3px 9px", borderRadius: 6,
+          display: "flex", alignItems: "center", gap: 5,
+          padding: "4px 10px", borderRadius: 8,
           background: T.overlay04, border: `1px solid ${T.overlay06}`,
         }}>
           {mpCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.green }}>{mpCount} MP</span>
+            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.green }}>{mpCount} MP</span>
           )}
           {mpCount > 0 && smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>|</span>
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>·</span>
           )}
           {smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.accent }}>{smCount} SM</span>
+            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.accent }}>{smCount} SM</span>
           )}
           {smCount > 0 && eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>|</span>
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>·</span>
           )}
           {eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.yellow }}>{eliteCount} Elite</span>
+            <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.yellow }}>{eliteCount} Elite</span>
           )}
         </div>
       )}
@@ -378,9 +387,10 @@ function StatusStrip({ status, cohort, roster }) {
         <span style={{
           width: 6, height: 6, borderRadius: "50%",
           background: status.initialized ? T.green : T.yellow,
+          boxShadow: status.initialized ? `0 0 8px ${T.green}60` : `0 0 8px ${T.yellow}60`,
           animation: status.initialized ? "pulse 2s ease-in-out infinite" : "none",
         }} />
-        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+        <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.text4 }}>
           {status.initialized ? "LIVE" : "WARMING UP"}
         </span>
       </div>
@@ -496,7 +506,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
             <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={70} />
             <SortTh label="TREND" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={72} />
             <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-            <th style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, letterSpacing: "0.06em", borderBottom: `1px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }}>L / S</th>
+            <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: isMobile ? 90 : 130 }}>L / S</th>
             <SortTh label="NET" sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             {!isMobile && (
@@ -515,42 +525,42 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
               <tr
                 key={c.symbol}
                 onClick={() => onSymbolClick?.(c.symbol)}
-                style={{ cursor: "pointer", transition: "background 0.15s" }}
+                style={{ cursor: "pointer", transition: "background 0.2s ease", borderBottom: `1px solid ${T.overlay04}` }}
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
-                <td style={{ padding: "6px 10px" }}>
-                  <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
+                <td style={{ padding: "8px 10px" }}>
+                  <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
                     {c.symbol}
                   </div>
                   <ConfidenceBar confidence={c.confidence} trend={cf.trend} />
                 </td>
-                <td style={{ padding: "6px 10px", textAlign: "center" }}>
+                <td style={{ padding: "8px 10px", textAlign: "center" }}>
                   <span style={{
-                    fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                    padding: "2px 8px", borderRadius: 4,
+                    fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+                    padding: "3px 8px", borderRadius: 6,
                     color: trendColor(cf.trend),
-                    background: `${trendColor(cf.trend)}15`,
+                    background: `${trendColor(cf.trend)}12`,
                     border: `1px solid ${trendColor(cf.trend)}25`,
                   }}>
                     {cf.trend}
                   </span>
                 </td>
-                <td style={{ padding: "6px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text2 }}>
+                <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text2 }}>
                   {positioned}
                 </td>
-                <td style={{ padding: "6px 10px" }}>
+                <td style={{ padding: "8px 10px" }}>
                   <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
                 </td>
                 <td style={{
-                  padding: "6px 10px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: 13, fontWeight: 600,
+                  padding: "8px 10px", textAlign: "center",
+                  fontFamily: T.mono, fontSize: 13, fontWeight: 700,
                   color: cf.net_ratio > 0.1 ? T.green : cf.net_ratio < -0.1 ? T.red : T.text3,
                 }}>
                   {cf.net_ratio > 0 ? "+" : ""}{(cf.net_ratio * 100).toFixed(0)}%
                 </td>
                 <td style={{
-                  padding: "6px 10px", textAlign: "center",
+                  padding: "8px 10px", textAlign: "center",
                   fontFamily: T.mono, fontSize: 12, color: T.text3,
                 }}>
                   {c.confidence != null ? `${(c.confidence * 100).toFixed(0)}%` : "--"}
@@ -558,13 +568,13 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                 {!isMobile && (
                   <>
                     <td style={{
-                      padding: "6px 10px", textAlign: "center",
-                      fontFamily: T.mono, fontSize: 12,
+                      padding: "8px 10px", textAlign: "center",
+                      fontFamily: T.mono, fontSize: 12, fontWeight: 600,
                       color: levColor(c.avg_leverage),
                     }}>
                       {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
                     </td>
-                    <td style={{ padding: "6px 10px" }}>
+                    <td style={{ padding: "8px 10px" }}>
                       <NotionalBar long_notional={c.long_notional} short_notional={c.short_notional} maxNotional={maxNotional} />
                     </td>
                   </>
@@ -612,19 +622,20 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
   ];
 
   return (
-    <div style={{ overflowX: "auto", padding: "8px 0" }}>
+    <div style={{ overflowX: "auto", padding: "10px 0" }}>
       {/* Column headers */}
       <div style={{
         display: "grid",
         gridTemplateColumns: `80px repeat(${categories.length}, 1fr)`,
-        gap: 2, padding: "0 12px", marginBottom: 4,
+        gap: 3, padding: "0 12px", marginBottom: 6,
       }}>
         <div />
         {categories.map(cat => (
           <div key={cat.key} style={{
-            fontFamily: T.mono, fontSize: 10, fontWeight: 600,
+            fontFamily: T.mono, fontSize: 10, fontWeight: 700,
             color: T.text4, textAlign: "center",
-            letterSpacing: "0.06em", padding: "4px 2px",
+            letterSpacing: "0.08em", padding: "6px 2px",
+            textTransform: "uppercase",
           }}>
             {cat.label}
           </div>
@@ -642,17 +653,18 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
             style={{
               display: "grid",
               gridTemplateColumns: `80px repeat(${categories.length}, 1fr)`,
-              gap: 2, padding: "1px 12px",
+              gap: 3, padding: "2px 12px",
               cursor: "pointer",
               transition: "background 0.15s",
+              borderRadius: 6,
             }}
             onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >
             {/* Symbol label */}
             <div style={{
-              fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-              color: T.text1, padding: "6px 4px",
+              fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+              color: T.text1, padding: "7px 4px",
               display: "flex", alignItems: "center",
             }}>
               {c.symbol}
@@ -662,11 +674,12 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
               const isActive = cat.test(ratio);
               return (
                 <div key={cat.key} style={{
-                  background: isActive ? heatmapColor(ratio) : T.overlay03,
-                  borderRadius: 4, padding: "6px 4px",
+                  background: isActive ? heatmapColor(ratio) : T.overlay02,
+                  borderRadius: 6, padding: "7px 4px",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "background 0.3s",
-                  border: isActive ? `1px solid ${heatmapTextColor(ratio)}20` : "1px solid transparent",
+                  transition: "all 0.3s ease",
+                  border: isActive ? `1px solid ${heatmapTextColor(ratio)}25` : `1px solid ${T.overlay04}`,
+                  boxShadow: isActive ? `inset 0 1px 0 ${heatmapTextColor(ratio)}08` : "none",
                 }}>
                   {isActive && (
                     <span style={{
@@ -755,13 +768,13 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
         <thead>
           <tr>
             <SortTh label="#" sortKey="rank" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={36} />
-            <th style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, letterSpacing: "0.06em", borderBottom: `1px solid ${T.border}`, minWidth: 100, textAlign: "left" }}>WALLET</th>
+            <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: 100, textAlign: "left" }}>WALLET</th>
             <SortTh label="ACCT VALUE" sortKey="av" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={90} />
             <SortTh label="ROI" sortKey="roi" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={70} />
             {!isMobile && (
               <>
                 <SortTh label="SCORE" sortKey="score" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={56} />
-                <th style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, letterSpacing: "0.06em", borderBottom: `1px solid ${T.border}`, minWidth: 50, textAlign: "center" }}>BIAS</th>
+                <th style={{ padding: "10px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `1px solid ${T.overlay10}`, background: T.overlay02, minWidth: 50, textAlign: "center" }}>BIAS</th>
                 <SortTh label="POS" sortKey="positions" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={44} />
               </>
             )}
@@ -1122,15 +1135,17 @@ function WalletDetail({ address, onClose }) {
   ];
 
   return (
-    <GlassCard style={{ padding: 0 }}>
+    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
       {/* ── HEADER ROW ── */}
       <div style={{
-        padding: "14px 16px 10px",
-        borderBottom: `1px solid ${T.border}`,
+        padding: "16px 16px 12px",
+        borderBottom: `1px solid ${T.overlay08}`,
+        background: T.overlay02,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
             <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
               {truncAddr(address)}
             </span>
@@ -1175,12 +1190,14 @@ function WalletDetail({ address, onClose }) {
         <button
           onClick={onClose}
           style={{
-            width: 28, height: 28, borderRadius: 6,
-            border: `1px solid ${T.border}`, background: T.surface, color: T.text3,
-            fontSize: 15, cursor: "pointer",
+            width: 30, height: 30, borderRadius: 8,
+            border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
+            fontSize: 14, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
+            flexShrink: 0, transition: "all 0.15s",
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
+          onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
         >
           {"\u2715"}
         </button>
@@ -1189,12 +1206,12 @@ function WalletDetail({ address, onClose }) {
       {/* ── TWO-PANEL: LEFT (equity + gauges) + RIGHT (chart) ── */}
       <div style={{
         display: "flex", flexWrap: "wrap",
-        borderBottom: `1px solid ${T.border}`,
+        borderBottom: `1px solid ${T.overlay08}`,
       }}>
         {/* LEFT PANEL — Equity + Gauges */}
         <div style={{
           flex: "0 0 240px", padding: "14px 16px",
-          borderRight: `1px solid ${T.border}`,
+          borderRight: `1px solid ${T.overlay08}`,
           display: "flex", flexDirection: "column", gap: 10,
         }}>
           {/* Total Equity + PnL */}
@@ -1354,32 +1371,38 @@ function WalletDetail({ address, onClose }) {
       <div style={{
         padding: "8px 16px",
         display: "flex", gap: 2,
-        borderBottom: `1px solid ${T.border}`,
+        borderBottom: `1px solid ${T.overlay08}`,
+        background: T.overlay02,
       }}>
-        {sections.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveSection(key)}
-            style={{
-              padding: "6px 14px", borderRadius: 6, border: "none",
-              fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-              color: activeSection === key ? T.text1 : T.text4,
-              background: activeSection === key ? T.overlay10 : "transparent",
-              cursor: "pointer", transition: "all 0.15s",
-            }}
-          >
-            {label}
-          </button>
-        ))}
+        {sections.map(({ key, label }) => {
+          const isActive = activeSection === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setActiveSection(key)}
+              style={{
+                padding: "7px 14px", borderRadius: 8,
+                border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
+                fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+                color: isActive ? T.accent : T.text4,
+                background: isActive ? `${T.accent}12` : "transparent",
+                cursor: "pointer", transition: "all 0.2s ease",
+                letterSpacing: "0.03em",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── POSITION SUMMARY STRIP (like HyperTracker) ── */}
       {activeSection === "positions" && positions.length > 0 && (
         <div style={{
-          padding: "8px 16px",
+          padding: "10px 16px",
           display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
-          borderBottom: `1px solid ${T.border}`,
-          background: T.overlay04,
+          borderBottom: `1px solid ${T.overlay08}`,
+          background: T.overlay02,
         }}>
           <span style={{ fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Long Value: </span>
@@ -1703,27 +1726,32 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
   const netBias = totalNotional > 0 ? ((totalLongNotional - totalShortNotional) / totalNotional * 100) : 0;
 
   return (
-    <GlassCard style={{ padding: 0 }}>
+    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
       {/* Header */}
       <div style={{
-        padding: "12px 16px",
-        borderBottom: `1px solid ${T.border}`,
+        padding: "14px 16px",
+        borderBottom: `1px solid ${T.overlay08}`,
+        background: T.overlay02,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
           <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.text1 }}>
             {symbol}
           </span>
-          <span style={{ color: T.text4, fontWeight: 400, marginLeft: 8, fontSize: 11 }}>
+          <span style={{
+            fontFamily: T.mono, fontSize: 11, color: T.text4, fontWeight: 600,
+            padding: "2px 8px", borderRadius: 6, background: T.overlay06,
+          }}>
             {positions.length} wallet{positions.length !== 1 ? "s" : ""}
           </span>
           {cData.trend && (
             <span style={{
-              marginLeft: 8,
               fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-              padding: "2px 6px", borderRadius: 3,
+              padding: "3px 8px", borderRadius: 6,
               color: trendColor(cData.trend),
-              background: `${trendColor(cData.trend)}15`,
+              background: `${trendColor(cData.trend)}12`,
+              border: `1px solid ${trendColor(cData.trend)}25`,
             }}>
               {cData.trend}
             </span>
@@ -1732,11 +1760,14 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
         <button
           onClick={onClose}
           style={{
-            width: 28, height: 28, borderRadius: 6,
-            border: `1px solid ${T.border}`, background: T.surface, color: T.text3,
-            fontSize: 15, cursor: "pointer",
+            width: 30, height: 30, borderRadius: 8,
+            border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
+            fontSize: 14, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.15s",
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
+          onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
         >
           {"\u2715"}
         </button>
@@ -1744,9 +1775,9 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
 
       {/* Summary strip */}
       <div style={{
-        padding: "8px 16px",
-        borderBottom: `1px solid ${T.border}`,
-        display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
+        padding: "10px 16px",
+        borderBottom: `1px solid ${T.overlay08}`,
+        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>LONG</span>
@@ -1784,10 +1815,12 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
             <tr>
               {["WALLET", "SIDE", "SIZE", "ENTRY", "PNL", "LEV", "LIQ DIST", "AGE"].map(h => (
                 <th key={h} style={{
-                  padding: "8px 8px",
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-                  color: T.text4, letterSpacing: "0.06em",
-                  borderBottom: `1px solid ${T.border}`,
+                  padding: "10px 8px",
+                  fontFamily: T.mono, fontSize: 10, fontWeight: 700,
+                  color: T.text4, letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  borderBottom: `1px solid ${T.overlay10}`,
+                  background: T.overlay02,
                   textAlign: h === "WALLET" || h === "SIDE" ? "left" : "right",
                   whiteSpace: "nowrap",
                 }}>
@@ -1927,7 +1960,8 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
       {/* Summary strip */}
       <div style={{
         display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px",
-        borderBottom: `1px solid ${T.border}`,
+        borderBottom: `1px solid ${T.overlay08}`,
+        background: T.overlay02,
       }}>
         {[
           { label: "WALLETS W/ ORDERS", value: totals.wallets, color: T.text1 },
@@ -1938,10 +1972,11 @@ function PressureOverviewTable({ data, onSymbolSelect }) {
           { label: "TOTAL NOTIONAL", value: fmt$(totals.notional), color: T.text1, isText: true },
         ].map(({ label, value, color, isText }) => (
           <div key={label} style={{
-            flex: "1 1 100px", padding: "6px 10px", borderRadius: 8,
-            background: `${color}08`, border: `1px solid ${color}20`,
+            flex: "1 1 100px", padding: "8px 12px", borderRadius: 10,
+            background: `${color}08`, border: `1px solid ${color}18`,
+            backdropFilter: "blur(8px)",
           }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em" }}>{label}</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.text4, letterSpacing: "0.08em" }}>{label}</div>
             <div style={{ fontFamily: T.mono, fontSize: isText ? 13 : 16, fontWeight: 700, color }}>{value}</div>
           </div>
         ))}
@@ -2422,13 +2457,13 @@ function PressureMap({ consensus, isMobile }) {
       ) : (
         <div>
           {/* Back button */}
-          <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.border}` }}>
+          <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.overlay08}`, background: T.overlay02 }}>
             <button
               onClick={() => setSelectedSymbol(null)}
               style={{
-                padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`,
+                padding: "5px 12px", borderRadius: 8, border: `1px solid ${T.overlay10}`,
                 fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                color: T.text3, background: "transparent",
+                color: T.accent, background: `${T.accent}08`,
                 cursor: "pointer", transition: "all 0.15s",
               }}
             >
@@ -2473,26 +2508,31 @@ function TabSwitcher({ active, onChange }) {
 
   return (
     <div style={{
-      display: "flex", gap: 2, padding: "4px",
-      borderRadius: 8, background: T.overlay04,
+      display: "flex", gap: 2, padding: "3px",
+      borderRadius: 10, background: T.overlay04,
       border: `1px solid ${T.overlay06}`,
     }}>
-      {tabs.map(({ key, label }) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          style={{
-            flex: 1, padding: "6px 14px", borderRadius: 6, border: "none",
-            fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-            color: active === key ? T.text1 : T.text4,
-            background: active === key ? T.overlay10 : "transparent",
-            cursor: "pointer", transition: "all 0.2s ease",
-            letterSpacing: "0.03em",
-          }}
-        >
-          {label}
-        </button>
-      ))}
+      {tabs.map(({ key, label }) => {
+        const isActive = active === key;
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            style={{
+              flex: 1, padding: "7px 14px", borderRadius: 8,
+              border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
+              fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+              color: isActive ? T.accent : T.text4,
+              background: isActive ? `${T.accent}12` : "transparent",
+              boxShadow: isActive ? `0 0 12px ${T.accent}15, inset 0 1px 0 ${T.accent}10` : "none",
+              cursor: "pointer", transition: "all 0.2s ease",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2518,13 +2558,14 @@ function CohortFilter({ active, onChange }) {
             key={key}
             onClick={() => onChange(key)}
             style={{
-              padding: "3px 10px", borderRadius: 12,
-              fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+              padding: "4px 12px", borderRadius: 20,
+              fontFamily: T.mono, fontSize: 11, fontWeight: 700,
               color: isActive ? color : T.text4,
-              background: isActive ? `${color}18` : T.overlay04,
-              border: isActive ? `1px solid ${color}30` : `1px solid ${T.overlay06}`,
+              background: isActive ? `${color}15` : T.overlay04,
+              border: isActive ? `1px solid ${color}35` : `1px solid ${T.overlay06}`,
+              boxShadow: isActive ? `0 0 10px ${color}12` : "none",
               cursor: "pointer", transition: "all 0.2s ease",
-              letterSpacing: "0.03em",
+              letterSpacing: "0.04em",
               whiteSpace: "nowrap",
             }}
           >
@@ -2582,18 +2623,31 @@ export default function HyperLensPanel({ isMobile }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Header card */}
-      <GlassCard style={{ padding: 0 }}>
+      <GlassCard style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
-          padding: "16px 16px 12px",
+          padding: "14px 16px 12px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
           flexWrap: "wrap", gap: 10,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 3, height: 14, borderRadius: 2,
+              background: T.accent, flexShrink: 0,
+            }} />
             <span style={{
-              fontFamily: T.mono, fontSize: 13, color: T.text4,
-              padding: "2px 8px", borderRadius: 4, background: T.overlay06,
+              fontSize: 11, color: T.text2, letterSpacing: "0.1em",
+              fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
             }}>
-              Top {status.tracked_wallets || 0} wallets
+              HyperLens
+            </span>
+            <span style={{
+              fontFamily: T.mono, fontSize: 11, color: T.accent,
+              padding: "2px 8px", borderRadius: 6,
+              background: `${T.accent}12`,
+              border: `1px solid ${T.accent}20`,
+              fontWeight: 600, letterSpacing: "0.04em",
+            }}>
+              {status.tracked_wallets || 0} wallets
             </span>
           </div>
 
@@ -2601,27 +2655,32 @@ export default function HyperLensPanel({ isMobile }) {
             <div style={{ display: "flex", gap: 6 }}>
               {bullish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  padding: "3px 8px", borderRadius: 4,
-                  color: T.green, background: `${T.green}15`, border: `1px solid ${T.green}25`,
+                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+                  padding: "3px 10px", borderRadius: 6,
+                  color: T.green, background: `${T.green}12`,
+                  border: `1px solid ${T.green}25`,
+                  boxShadow: `0 0 8px ${T.green}10`,
                 }}>
                   {bullish} BULL
                 </span>
               )}
               {bearish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  padding: "3px 8px", borderRadius: 4,
-                  color: T.red, background: `${T.red}15`, border: `1px solid ${T.red}25`,
+                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+                  padding: "3px 10px", borderRadius: 6,
+                  color: T.red, background: `${T.red}12`,
+                  border: `1px solid ${T.red}25`,
+                  boxShadow: `0 0 8px ${T.red}10`,
                 }}>
                   {bearish} BEAR
                 </span>
               )}
               {neutral > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  padding: "3px 8px", borderRadius: 4,
-                  color: T.text4, background: T.overlay06, border: `1px solid ${T.overlay10}`,
+                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+                  padding: "3px 10px", borderRadius: 6,
+                  color: T.text4, background: T.overlay04,
+                  border: `1px solid ${T.overlay10}`,
                 }}>
                   {neutral} FLAT
                 </span>
@@ -2647,15 +2706,16 @@ export default function HyperLensPanel({ isMobile }) {
               value={filter}
               onChange={e => setFilter(e.target.value)}
               style={{
-                fontFamily: T.mono, fontSize: 13,
-                padding: "6px 12px", borderRadius: 6,
-                border: `1px solid ${T.border}`,
+                fontFamily: T.mono, fontSize: 12, fontWeight: 500,
+                padding: "7px 12px", borderRadius: 8,
+                border: `1px solid ${T.overlay10}`,
                 background: T.overlay04, color: T.text1,
                 outline: "none", width: 140,
-                transition: "border-color 0.2s",
+                transition: "all 0.2s ease",
+                letterSpacing: "0.03em",
               }}
-              onFocus={e => e.target.style.borderColor = T.accent}
-              onBlur={e => e.target.style.borderColor = T.border}
+              onFocus={e => { e.target.style.borderColor = T.accent; e.target.style.boxShadow = `0 0 0 2px ${T.accent}15`; }}
+              onBlur={e => { e.target.style.borderColor = T.overlay10; e.target.style.boxShadow = "none"; }}
             />
           )}
         </div>
@@ -2684,7 +2744,7 @@ export default function HyperLensPanel({ isMobile }) {
           <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4 }}>Loading HyperLens...</div>
         </GlassCard>
       ) : (
-        <GlassCard style={{ padding: 0 }}>
+        <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           {tab === "consensus" && (
             <ConsensusTable
               consensus={consensus}
