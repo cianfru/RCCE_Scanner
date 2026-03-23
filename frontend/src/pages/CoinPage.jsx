@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol } from "../theme.js";
 import { ZScoreBar, RegimeBadge, SignalDot } from "../components/badges.jsx";
-import { useTheme } from "../ThemeContext.jsx";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
@@ -10,35 +9,6 @@ import ConfluencePanel from "../components/ConfluencePanel.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-// ---------------------------------------------------------------------------
-// TradingView Widget (full chart with drawing tools)
-// ---------------------------------------------------------------------------
-
-function TVChart({ symbol, height = 600 }) {
-  const { mode } = useTheme();
-  const coin = getBaseSymbol(symbol).replace("/", "");
-  const tvSymbol = `BINANCE:${coin}USDT`;
-  const bgColor = mode === "dark" ? "000000" : "ffffff";
-
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=240&theme=${mode}&style=1&hide_top_toolbar=0&hide_legend=0&save_image=1&hide_volume=0&allow_symbol_change=1&backgroundColor=${bgColor}&studies=MAExp%407%7C25%7C99`;
-
-  return (
-    <div style={{
-      width: "100%", height, borderRadius: 12,
-      overflow: "hidden", border: `1px solid ${T.border}`,
-      background: T.surface,
-    }}>
-      <iframe
-        key={`${tvSymbol}-${mode}`}
-        src={src}
-        title={`TradingView - ${symbol}`}
-        style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-        loading="lazy"
-      />
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Engine Metrics Grid (extracted from DetailPanel)
@@ -248,9 +218,40 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         flexDirection: isWide ? "row" : "column",
         gap: 16,
       }}>
-        {/* Left: TradingView Chart */}
+        {/* Left: BMSB + CTO Chart (primary) */}
         <div style={{ flex: isWide ? "7 1 0" : "none", minWidth: 0 }}>
-          <TVChart symbol={data.symbol} height={isWide ? 600 : isMobile ? 380 : 480} />
+          <BMSBChart
+            symbol={data.symbol}
+            timeframe={timeframe}
+            height={isWide ? 600 : isMobile ? 380 : 480}
+            signal={data.signal}
+            regime={data.regime}
+            heat={data.heat}
+            conditions={data.conditions_met}
+            conditionsTotal={data.conditions_total}
+            exhaustionState={data.exhaustion_state}
+            floorConfirmed={data.floor_confirmed}
+            signalConfidence={data.signal_confidence}
+            momentum={data.momentum}
+          />
+          {/* Open in TradingView link */}
+          <a
+            href={`https://www.tradingview.com/chart/?symbol=BINANCE:${coin.replace("/", "")}USDT`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              marginTop: 8, padding: "4px 10px", borderRadius: 6,
+              fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+              color: T.text4, textDecoration: "none",
+              border: `1px solid ${T.border}`, background: "transparent",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
+          >
+            Open in TradingView {"\u2197"}
+          </a>
         </div>
 
         {/* Right: Info Panel */}
@@ -297,6 +298,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             </div>
           )}
 
+          {/* Confluence */}
+          <ConfluencePanel confluence={data.confluence} />
+
           {/* Positioning */}
           <PositioningPanel
             positioning={data.positioning}
@@ -314,36 +318,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           {/* Engine Metrics */}
           <EngineMetrics data={data} isMobile={isMobile} />
         </div>
-      </div>
-
-      {/* Below: BMSB Chart (our custom overlay, full width) */}
-      <div style={{ marginTop: 20 }}>
-        <div style={{
-          fontSize: 11, fontWeight: 700, color: T.text3,
-          letterSpacing: "0.1em", textTransform: "uppercase",
-          fontFamily: T.mono, marginBottom: 10,
-        }}>
-          BMSB + CTO Analysis
-        </div>
-        <BMSBChart
-          symbol={data.symbol}
-          timeframe={timeframe}
-          height={isMobile ? 300 : 420}
-          signal={data.signal}
-          regime={data.regime}
-          heat={data.heat}
-          conditions={data.conditions_met}
-          conditionsTotal={data.conditions_total}
-          exhaustionState={data.exhaustion_state}
-          floorConfirmed={data.floor_confirmed}
-          signalConfidence={data.signal_confidence}
-          momentum={data.momentum}
-        />
-      </div>
-
-      {/* Confluence */}
-      <div style={{ marginTop: 16 }}>
-        <ConfluencePanel confluence={data.confluence} />
       </div>
     </div>
   );
