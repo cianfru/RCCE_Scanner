@@ -2087,7 +2087,7 @@ function PressureChart({ symbol, data }) {
     if (!symbol) return;
     // For HL-native symbols, use the CCXT format the chart API expects
     const chartSymbol = symbol.includes(":") ? symbol : `${symbol}/USDT:USDT`;
-    fetch(`${API}/api/chart/${encodeURIComponent(chartSymbol)}?timeframe=4h&limit=200`)
+    fetch(`${API}/api/chart/${encodeURIComponent(chartSymbol)}?timeframe=4h&limit=500`)
       .then(r => r.json())
       .then(d => {
         if (d?.candles?.length) {
@@ -2194,7 +2194,7 @@ function PressureChart({ symbol, data }) {
           ))}
         </div>
       </div>
-      <div ref={containerRef} style={{ width: "100%", height: 400 }} />
+      <div ref={containerRef} style={{ width: "100%", height: 500 }} />
     </div>
   );
 }
@@ -2211,7 +2211,7 @@ function renderPressureChart(candles, volumeData, levels, containerRef, chartRef
 
   const chart = createChart(container, {
     width: container.clientWidth,
-    height: 400,
+    height: 500,
     layout: {
       background: { type: "solid", color: "transparent" },
       textColor: "#9CA3AF",
@@ -2236,8 +2236,17 @@ function renderPressureChart(candles, volumeData, levels, containerRef, chartRef
       timeVisible: true,
       secondsVisible: false,
     },
-    handleScale: { axisPressedMouseMove: true },
-    handleScroll: { vertTouchDrag: false },
+    handleScale: {
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      pinch: true,
+    },
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: false,
+    },
   });
 
   // Candlestick series (v5 API)
