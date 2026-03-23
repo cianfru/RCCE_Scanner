@@ -1707,27 +1707,153 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
       .catch(() => setLoading(false));
   }, [symbol]);
 
-  // Find consensus data for summary strip
   const cData = useMemo(() => {
     return (consensus || []).find(c => c.symbol === symbol) || {};
   }, [consensus, symbol]);
 
   if (loading) {
     return (
-      <GlassCard style={{ padding: 20 }}>
+      <GlassCard style={{ padding: 40 }}>
         <div style={{ fontFamily: T.mono, fontSize: 13, color: T.text4, textAlign: "center" }}>Loading...</div>
       </GlassCard>
     );
   }
 
   const positions = data?.positions || [];
-  const totalLongNotional = positions.filter(p => p.side === "LONG").reduce((s, p) => s + (p.size_usd || 0), 0);
-  const totalShortNotional = positions.filter(p => p.side === "SHORT").reduce((s, p) => s + (p.size_usd || 0), 0);
-  const totalNotional = totalLongNotional + totalShortNotional;
-  const netBias = totalNotional > 0 ? ((totalLongNotional - totalShortNotional) / totalNotional * 100) : 0;
+  const longs = positions.filter(p => p.side === "LONG").sort((a, b) => (b.size_usd || 0) - (a.size_usd || 0));
+  const shorts = positions.filter(p => p.side === "SHORT").sort((a, b) => (b.size_usd || 0) - (a.size_usd || 0));
+  const totalLong = longs.reduce((s, p) => s + (p.size_usd || 0), 0);
+  const totalShort = shorts.reduce((s, p) => s + (p.size_usd || 0), 0);
+  const totalNotional = totalLong + totalShort;
+  const longPct = totalNotional > 0 ? (totalLong / totalNotional * 100) : 50;
+  const totalLongPnl = longs.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
+  const totalShortPnl = shorts.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
+  const avgLongLev = longs.length > 0 ? longs.reduce((s, p) => s + (p.leverage || 0), 0) / longs.length : 0;
+  const avgShortLev = shorts.length > 0 ? shorts.reduce((s, p) => s + (p.leverage || 0), 0) / shorts.length : 0;
+
+  // Wallet row renderer — shared between long/short columns
+  const WalletRow = ({ p, compact }) => (
+    <div
+      onClick={() => onWalletClick?.(p.address)}
+      style={{
+        padding: "8px 10px",
+        borderBottom: `1px solid ${T.overlay06}`,
+        cursor: onWalletClick ? "pointer" : "default",
+        transition: "background 0.12s",
+        display: "flex", flexDirection: "column", gap: 3,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >
+      {/* Row 1: address + size */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{
+          fontFamily: T.mono, fontSize: 11, color: T.accent,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+        }}>
+          {truncAddr(p.address)}
+          {p.wallet_roi > 0 && (
+            <span style={{
+              fontSize: 9, color: T.green, fontWeight: 600,
+              padding: "1px 4px", borderRadius: 3, background: `${T.green}12`,
+            }}>
+              {fmtPct(p.wallet_roi)} ROI
+            </span>
+          )}
+        </span>
+        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+          {fmt$(p.size_usd)}
+        </span>
+      </div>
+      {/* Row 2: entry + pnl + leverage + age */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+          @ ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{
+            fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+            color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red,
+          }}>
+            {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
+          </span>
+          <span style={{ fontFamily: T.mono, fontSize: 10, color: levColor(p.leverage) }}>
+            {p.leverage}x
+          </span>
+          {p.liq_distance_pct != null && (
+            <span style={{
+              fontFamily: T.mono, fontSize: 9, color: pctColor(p.liq_distance_pct),
+              padding: "1px 3px", borderRadius: 2, background: T.overlay04,
+            }}>
+              LIQ {p.liq_distance_pct.toFixed(0)}%
+            </span>
+          )}
+          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+            {fmtAge(p.position_age_s)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Side column — longs or shorts
+  const SideColumn = ({ side, wallets, total, totalPnl, avgLev, color }) => (
+    <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column" }}>
+      {/* Column header */}
+      <div style={{
+        padding: "12px 12px 10px",
+        borderBottom: `2px solid ${color}30`,
+        background: `${color}06`,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{
+              fontFamily: T.mono, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em",
+              color, textTransform: "uppercase",
+            }}>
+              {side}
+            </span>
+            <span style={{
+              fontFamily: T.mono, fontSize: 10, color: T.text4,
+              padding: "1px 5px", borderRadius: 4, background: T.overlay06,
+            }}>
+              {wallets.length}
+            </span>
+          </div>
+          <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color }}>
+            {fmt$(total)}
+          </span>
+        </div>
+        {/* PnL + avg leverage */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{
+            fontFamily: T.mono, fontSize: 10, color: T.text4, display: "flex", alignItems: "center", gap: 4,
+          }}>
+            PNL
+            <span style={{ fontWeight: 600, color: totalPnl >= 0 ? T.green : T.red }}>
+              {totalPnl >= 0 ? "+" : ""}{fmt$(Math.abs(totalPnl))}
+            </span>
+          </span>
+          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, display: "flex", alignItems: "center", gap: 4 }}>
+            AVG LEV
+            <span style={{ fontWeight: 600, color: levColor(avgLev) }}>{avgLev.toFixed(1)}x</span>
+          </span>
+        </div>
+      </div>
+      {/* Wallet list */}
+      <div style={{ overflowY: "auto", maxHeight: 420 }}>
+        {wallets.map((p, i) => <WalletRow key={i} p={p} />)}
+        {wallets.length === 0 && (
+          <div style={{ padding: 20, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+            No {side.toLowerCase()} positions
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
+    <GlassCard style={{ padding: 0, overflow: "hidden", maxWidth: 820 }}>
       {/* Header */}
       <div style={{
         padding: "14px 16px",
@@ -1736,8 +1862,8 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-          <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.text1 }}>
+          <div style={{ width: 3, height: 18, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+          <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.text1 }}>
             {symbol}
           </span>
           <span style={{
@@ -1749,12 +1875,17 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
           {cData.trend && (
             <span style={{
               fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-              padding: "3px 8px", borderRadius: 6,
+              padding: "3px 10px", borderRadius: 6,
               color: trendColor(cData.trend),
               background: `${trendColor(cData.trend)}12`,
               border: `1px solid ${trendColor(cData.trend)}25`,
             }}>
               {cData.trend}
+            </span>
+          )}
+          {cData.confidence > 0 && (
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+              {Math.round(cData.confidence * 100)}% conf
             </span>
           )}
         </div>
@@ -1774,131 +1905,58 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
         </button>
       </div>
 
-      {/* Summary strip */}
-      <div style={{
-        padding: "10px 16px",
-        borderBottom: `1px solid ${T.overlay08}`,
-        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>LONG</span>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.green }}>{fmt$(totalLongNotional)}</span>
+      {/* Tug-of-war bar — visual long vs short dominance */}
+      <div style={{ padding: "10px 16px 8px", borderBottom: `1px solid ${T.overlay08}` }}>
+        <div style={{
+          height: 6, borderRadius: 3, overflow: "hidden",
+          background: T.overlay06, display: "flex",
+        }}>
+          <div style={{
+            width: `${longPct}%`, height: "100%",
+            background: `linear-gradient(90deg, ${T.green}90, ${T.green}60)`,
+            borderRadius: "3px 0 0 3px",
+            transition: "width 0.4s ease",
+          }} />
+          <div style={{
+            width: `${100 - longPct}%`, height: "100%",
+            background: `linear-gradient(90deg, ${T.red}60, ${T.red}90)`,
+            borderRadius: "0 3px 3px 0",
+            transition: "width 0.4s ease",
+          }} />
         </div>
-        <div style={{ width: 1, height: 14, background: T.border }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>SHORT</span>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.red }}>{fmt$(totalShortNotional)}</span>
-        </div>
-        <div style={{ width: 1, height: 14, background: T.border }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>NET BIAS</span>
-          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, color: netBias > 5 ? T.green : netBias < -5 ? T.red : T.text3 }}>
-            {netBias > 0 ? "+" : ""}{netBias.toFixed(0)}%
+        <div style={{
+          display: "flex", justifyContent: "space-between", marginTop: 4,
+        }}>
+          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.green, fontWeight: 600 }}>
+            {longPct.toFixed(0)}% LONG
+          </span>
+          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.red, fontWeight: 600 }}>
+            {(100 - longPct).toFixed(0)}% SHORT
           </span>
         </div>
-        {cData.avg_leverage != null && (
-          <>
-            <div style={{ width: 1, height: 14, background: T.border }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>AVG LEV</span>
-              <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: levColor(cData.avg_leverage) }}>
-                {fmtLev(cData.avg_leverage)}
-              </span>
-            </div>
-          </>
-        )}
       </div>
 
-      {/* Positions table */}
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["WALLET", "SIDE", "SIZE", "ENTRY", "PNL", "LEV", "LIQ DIST", "AGE"].map(h => (
-                <th key={h} style={{
-                  padding: "10px 8px",
-                  fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-                  color: T.text4, letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  borderBottom: `1px solid ${T.overlay10}`,
-                  background: T.overlay02,
-                  textAlign: h === "WALLET" || h === "SIDE" ? "left" : "right",
-                  whiteSpace: "nowrap",
-                }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {positions.map((p, i) => (
-              <tr
-                key={i}
-                onClick={() => onWalletClick?.(p.address)}
-                style={{ cursor: onWalletClick ? "pointer" : "default", transition: "background 0.15s" }}
-                onMouseEnter={e => { if (onWalletClick) e.currentTarget.style.background = T.overlay06; }}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-              >
-                <td style={{ padding: "7px 8px" }}>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: 13, color: T.accent,
-                    textDecoration: "underline", textDecorationColor: "rgba(99,179,237,0.35)",
-                    textUnderlineOffset: 3, cursor: "pointer",
-                  }}>
-                    {truncAddr(p.address)} {"\u2192"}
-                  </span>
-                  {p.wallet_roi > 0 && (
-                    <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, marginLeft: 4 }}>
-                      {fmtPct(p.wallet_roi)}
-                    </span>
-                  )}
-                </td>
-                <td style={{ padding: "7px 8px" }}>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                    padding: "2px 6px", borderRadius: 3,
-                    color: p.side === "LONG" ? T.green : T.red,
-                    background: `${p.side === "LONG" ? T.green : T.red}15`,
-                  }}>
-                    {p.side}
-                  </span>
-                </td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
-                  {fmt$(p.size_usd)}
-                </td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-                  ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </td>
-                <td style={{
-                  padding: "7px 8px", textAlign: "right",
-                  fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-                  color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red,
-                }}>
-                  {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
-                </td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: levColor(p.leverage) }}>
-                  {p.leverage}x
-                </td>
-                <td style={{
-                  padding: "7px 8px", textAlign: "right",
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  color: pctColor(p.liq_distance_pct),
-                }}>
-                  {p.liq_distance_pct != null ? `${p.liq_distance_pct.toFixed(1)}%` : "--"}
-                </td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-                  {fmtAge(p.position_age_s)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {positions.length === 0 && (
-          <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-            No positions found for {symbol}
-          </div>
-        )}
+      {/* Two-column layout: Longs | Shorts */}
+      <div style={{
+        display: "flex",
+        borderTop: `1px solid ${T.overlay06}`,
+      }}>
+        <SideColumn
+          side="LONG" wallets={longs} total={totalLong}
+          totalPnl={totalLongPnl} avgLev={avgLongLev} color={T.green}
+        />
+        <div style={{ width: 1, background: T.overlay10, flexShrink: 0 }} />
+        <SideColumn
+          side="SHORT" wallets={shorts} total={totalShort}
+          totalPnl={totalShortPnl} avgLev={avgShortLev} color={T.red}
+        />
       </div>
+
+      {positions.length === 0 && (
+        <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
+          No positions found for {symbol}
+        </div>
+      )}
     </GlassCard>
   );
 }
