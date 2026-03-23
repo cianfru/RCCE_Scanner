@@ -737,7 +737,7 @@ export default function App() {
 
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
-        <CoinPage scanData4h={data4h} scanData1d={data1d} />
+        <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
       )}
 
       {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}

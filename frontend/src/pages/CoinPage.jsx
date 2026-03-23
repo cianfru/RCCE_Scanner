@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol } from "../theme.js";
 import { ZScoreBar, RegimeBadge, SignalDot } from "../components/badges.jsx";
 import { useTheme } from "../ThemeContext.jsx";
@@ -159,8 +159,7 @@ function SmartMoneyPanel({ data }) {
 // CoinPage — full analysis page for a single symbol
 // ---------------------------------------------------------------------------
 
-export default function CoinPage({ scanData4h, scanData1d }) {
-  const { symbol: urlSymbol } = useParams();
+export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
   const [timeframe, setTimeframe] = useState("1d");
