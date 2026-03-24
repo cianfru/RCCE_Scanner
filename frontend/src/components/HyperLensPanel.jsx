@@ -2688,7 +2688,7 @@ function PressureMap({ consensus, isMobile }) {
 
 // ─── TAB SWITCHER ────────────────────────────────────────────────────────────
 
-function TabSwitcher({ active, onChange }) {
+function TabSwitcher({ active, onChange, isMobile }) {
   const tabs = [
     { key: "consensus", label: "Consensus" },
     { key: "heatmap", label: "Heatmap" },
@@ -2698,9 +2698,9 @@ function TabSwitcher({ active, onChange }) {
 
   return (
     <div style={{
-      display: "flex", gap: 2, padding: "3px",
-      borderRadius: 10, background: T.overlay04,
-      border: `1px solid ${T.overlay06}`,
+      display: "flex", borderRadius: 8,
+      border: `1px solid ${T.border}`,
+      overflow: "hidden", flexShrink: 0,
     }}>
       {tabs.map(({ key, label }) => {
         const isActive = active === key;
@@ -2709,14 +2709,12 @@ function TabSwitcher({ active, onChange }) {
             key={key}
             onClick={() => onChange(key)}
             style={{
-              flex: 1, padding: "7px 14px", borderRadius: 8,
-              border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
-              fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-              color: isActive ? T.accent : T.text4,
-              background: isActive ? `${T.accent}12` : "transparent",
-              boxShadow: isActive ? `0 0 12px ${T.accent}15, inset 0 1px 0 ${T.accent}10` : "none",
-              cursor: "pointer", transition: "all 0.2s ease",
-              letterSpacing: "0.04em",
+              padding: isMobile ? "8px 12px" : "7px 16px", border: "none",
+              background: isActive ? T.accent : "transparent",
+              color: isActive ? T.bg : T.text3,
+              fontFamily: T.font, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: isActive ? 700 : 500,
+              cursor: "pointer", letterSpacing: "0.04em",
+              transition: "all 0.15s ease",
             }}
           >
             {label}
@@ -2736,7 +2734,7 @@ const COHORT_OPTIONS = [
   { key: "elite", label: "Elite", color: T.yellow, emoji: "\u2B50" },
 ];
 
-function CohortFilter({ active, onChange }) {
+function CohortFilter({ active, onChange, isMobile }) {
   return (
     <div style={{
       display: "flex", gap: 4, flexWrap: "wrap",
@@ -2748,12 +2746,12 @@ function CohortFilter({ active, onChange }) {
             key={key}
             onClick={() => onChange(key)}
             style={{
-              padding: "4px 12px", borderRadius: 20,
-              fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+              padding: isMobile ? "6px 12px" : "5px 14px", borderRadius: 20,
+              fontFamily: T.font, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: 600,
               color: isActive ? color : T.text4,
               background: isActive ? `${color}15` : T.overlay04,
               border: isActive ? `1px solid ${color}35` : `1px solid ${T.overlay06}`,
-              boxShadow: isActive ? `0 0 10px ${color}12` : "none",
+              boxShadow: isActive ? `0 0 12px ${color}15` : "none",
               cursor: "pointer", transition: "all 0.2s ease",
               letterSpacing: "0.04em",
               whiteSpace: "nowrap",
@@ -2815,9 +2813,9 @@ export default function HyperLensPanel({ isMobile }) {
       {/* Header card */}
       <GlassCard style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
-          padding: "14px 16px 12px",
+          padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          flexWrap: "wrap", gap: 10,
+          flexWrap: "wrap", gap: isMobile ? 8 : 10,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{
@@ -2825,14 +2823,14 @@ export default function HyperLensPanel({ isMobile }) {
               background: T.accent, flexShrink: 0,
             }} />
             <span style={{
-              fontSize: 11, color: T.text2, letterSpacing: "0.1em",
+              fontSize: isMobile ? T.textBase : T.textSm, color: T.text2, letterSpacing: "0.1em",
               fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
             }}>
               HyperLens
             </span>
             <span style={{
-              fontFamily: T.mono, fontSize: 11, color: T.accent,
-              padding: "2px 8px", borderRadius: 6,
+              fontFamily: T.mono, fontSize: isMobile ? T.textSm : T.textXs, color: T.accent,
+              padding: "3px 10px", borderRadius: 20,
               background: `${T.accent}12`,
               border: `1px solid ${T.accent}20`,
               fontWeight: 600, letterSpacing: "0.04em",
@@ -2845,32 +2843,35 @@ export default function HyperLensPanel({ isMobile }) {
             <div style={{ display: "flex", gap: 6 }}>
               {bullish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                  padding: "3px 10px", borderRadius: 6,
-                  color: T.green, background: `${T.green}12`,
-                  border: `1px solid ${T.green}25`,
-                  boxShadow: `0 0 8px ${T.green}10`,
+                  fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+                  padding: "5px 14px", borderRadius: 20,
+                  color: T.green, background: `${T.green}15`,
+                  border: `1px solid ${T.green}28`,
+                  boxShadow: `0 0 12px ${T.green}12`,
+                  letterSpacing: "0.06em",
                 }}>
                   {bullish} BULL
                 </span>
               )}
               {bearish > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                  padding: "3px 10px", borderRadius: 6,
-                  color: T.red, background: `${T.red}12`,
-                  border: `1px solid ${T.red}25`,
-                  boxShadow: `0 0 8px ${T.red}10`,
+                  fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+                  padding: "5px 14px", borderRadius: 20,
+                  color: T.red, background: `${T.red}15`,
+                  border: `1px solid ${T.red}28`,
+                  boxShadow: `0 0 12px ${T.red}12`,
+                  letterSpacing: "0.06em",
                 }}>
                   {bearish} BEAR
                 </span>
               )}
               {neutral > 0 && (
                 <span style={{
-                  fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                  padding: "3px 10px", borderRadius: 6,
+                  fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+                  padding: "5px 14px", borderRadius: 20,
                   color: T.text4, background: T.overlay04,
                   border: `1px solid ${T.overlay10}`,
+                  letterSpacing: "0.06em",
                 }}>
                   {neutral} FLAT
                 </span>
@@ -2883,11 +2884,13 @@ export default function HyperLensPanel({ isMobile }) {
 
         {/* Controls bar */}
         <div style={{
-          padding: "12px 16px",
-          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          padding: isMobile ? "10px 12px" : "12px 16px",
+          display: "flex", alignItems: isMobile ? "stretch" : "center",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
-          <TabSwitcher active={tab} onChange={setTab} />
-          <CohortFilter active={cohort} onChange={setCohort} />
+          <TabSwitcher active={tab} onChange={setTab} isMobile={isMobile} />
+          <CohortFilter active={cohort} onChange={setCohort} isMobile={isMobile} />
 
           {tab === "consensus" && (
             <input
@@ -2896,11 +2899,11 @@ export default function HyperLensPanel({ isMobile }) {
               value={filter}
               onChange={e => setFilter(e.target.value)}
               style={{
-                fontFamily: T.mono, fontSize: 12, fontWeight: 500,
-                padding: "7px 12px", borderRadius: 8,
+                fontFamily: T.mono, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: 500,
+                padding: isMobile ? "9px 12px" : "7px 12px", borderRadius: 8,
                 border: `1px solid ${T.overlay10}`,
                 background: T.overlay04, color: T.text1,
-                outline: "none", width: 140,
+                outline: "none", width: isMobile ? "100%" : 140,
                 transition: "all 0.2s ease",
                 letterSpacing: "0.03em",
               }}
