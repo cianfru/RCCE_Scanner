@@ -105,7 +105,7 @@ export default function ChangesTicker({ timeframe = "4h", isMobile, refreshKey }
                 <span style={{ color: T.text4 }}>
                   {formatValue(ev.prev, ev.event_type)}
                 </span>
-                <span style={{ color: T.text4, fontSize: "0.8em" }}>\u2192</span>
+                <span style={{ color: T.text4, fontSize: "0.8em" }}>{"\u2192"}</span>
                 <span style={{ color, fontWeight: 600 }}>
                   {formatValue(ev.current, ev.event_type)}
                 </span>
