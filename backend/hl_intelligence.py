@@ -995,8 +995,12 @@ def get_wallet_positions(address: str) -> Optional[dict]:
 
 
 def get_symbol_positions(symbol: str) -> List[dict]:
-    """Get all wallet positions for a specific symbol."""
+    """Get all wallet positions for a specific symbol.
+
+    Uses the same staleness + MM filters as consensus so counts match.
+    """
     coin = _normalize_coin(symbol)
+    now = time.time()
 
     result = []
     for wallet in _roster:
@@ -1004,6 +1008,12 @@ def get_symbol_positions(symbol: str) -> List[dict]:
         if not snaps:
             continue
         latest = snaps[-1]
+        # Staleness check — same as consensus
+        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+            continue
+        # MM filter — same as consensus
+        if len(latest.positions) > _MM_MAX_POSITIONS:
+            continue
         for pos in latest.positions:
             # Normalize pos.coin the same way as consensus
             raw = pos.coin
