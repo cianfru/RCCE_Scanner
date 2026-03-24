@@ -11,6 +11,77 @@ import PositioningPanel from "../components/PositioningPanel.jsx";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
+// Confidence Sparkline — shows confidence history as a mini chart
+// ---------------------------------------------------------------------------
+
+function ConfidenceSparkline({ history, current }) {
+  if (!history || history.length < 2) return null;
+
+  const w = 140, h = 44, pad = 2;
+  const vals = history;
+  const n = vals.length;
+  const min = 0, max = 100;
+  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
+
+  const points = vals.map((v, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+    return `${x},${y}`;
+  }).join(" ");
+
+  // Color based on current value
+  const color = current >= 60 ? "#34d399" : current >= 40 ? "#fbbf24" : "#f87171";
+
+  // Threshold lines at 40% and 60%
+  const y60 = h - pad - (60 / 100) * (h - pad * 2);
+  const y40 = h - pad - (40 / 100) * (h - pad * 2);
+
+  return (
+    <div style={{
+      background: T.glassBg, border: `1px solid ${T.border}`,
+      borderRadius: 12, padding: "14px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 10, paddingBottom: 8,
+        borderBottom: `1px solid ${T.overlay06}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 3, height: 14, borderRadius: 2, background: color, flexShrink: 0 }} />
+          <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+            Confidence
+          </span>
+        </div>
+        <span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700, color }}>
+          {current != null ? `${Math.round(current)}%` : "\u2014"}
+        </span>
+      </div>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", width: "100%" }}>
+        {/* Threshold lines */}
+        <line x1={pad} y1={y60} x2={w - pad} y2={y60} stroke={T.overlay06} strokeWidth="0.5" strokeDasharray="3,3" />
+        <line x1={pad} y1={y40} x2={w - pad} y2={y40} stroke={T.overlay06} strokeWidth="0.5" strokeDasharray="3,3" />
+        {/* Sparkline */}
+        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Current value dot */}
+        {n > 0 && (() => {
+          const lastX = pad + (n - 1) * xStep;
+          const lastY = h - pad - ((vals[n - 1] - min) / (max - min)) * (h - pad * 2);
+          return <circle cx={lastX} cy={lastY} r="2.5" fill={color} />;
+        })()}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+        <span style={{ fontSize: 8, color: T.text4, fontFamily: T.mono }}>{n} ticks</span>
+        <span style={{ fontSize: 8, color: T.text4, fontFamily: T.mono }}>
+          {vals.length > 1 ? `${Math.round(Math.min(...vals))}-${Math.round(Math.max(...vals))}%` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Engine Metrics Grid (extracted from DetailPanel)
 // ---------------------------------------------------------------------------
 
@@ -323,6 +394,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
         {/* Whale Consensus */}
         <SmartMoneyPanel data={data} />
+
+        {/* Confidence Sparkline */}
+        <ConfidenceSparkline history={data.confidence_history} current={data.confidence} />
 
         {/* Engine Metrics (includes Z-Score) */}
         <EngineMetrics data={data} isMobile={isMobile} />

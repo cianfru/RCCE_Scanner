@@ -15,10 +15,10 @@ The layer applies 6 independent filters in priority order:
 
     1. Cooldown / trailing     — prevents rapid flip/flop on the same signal
     2. BEAR-DIV flapping       — requires 2 consecutive BEAR-DIV bars before blocking
-    3. Confidence stability    — freezes upgrades when confidence is swinging
-    4. Heat / Z divergence     — warns + downgrades when heat and z move opposite
-    5. Cross-TF tiebreaker     — resolves CONFLICTING confluence toward 1D
-    6. Margin safety           — blocks new entries when margin utilisation is high
+    3. Heat / Z divergence     — warns + downgrades when heat and z move opposite
+    4. Cross-TF tiebreaker     — resolves CONFLICTING confluence toward 1D
+    5. Margin safety           — blocks new entries when margin utilisation is high
+    6. Signal inertia          — holds entry signals through brief downgrades (2-bar confirm)
 
 Filters are *additive* — each may inject warnings or override the signal but
 hard exit signals (TRIM, TRIM_HARD, NO_LONG, RISK_OFF) are always preserved.
@@ -27,11 +27,11 @@ History storage
 ---------------
 Filter state lives in ScanCache attributes added on first use:
     cache.signal_history:     Dict[str, List[str]]            — last 5 signals/symbol
-    cache.confidence_history: Dict[str, List[float]]          — last 3 conf/symbol
-    cache.divergence_history: Dict[str, List[Optional[str]]]  — last 3 div/symbol
+    cache.confidence_history: Dict[str, List[float]]          — last 48 conf/symbol
+    cache.divergence_history: Dict[str, List[Optional[str]]]  — last 2 div/symbol
     cache.prev_zscore:        Dict[str, float]                — previous z-score
     cache.prev_heat:          Dict[str, int]                  — previous heat score
-    cache.conf_freeze_state:  Dict[str, Dict]                 — per-symbol freeze state
+    cache.signal_inertia:     Dict[str, Dict]                 — per-symbol inertia state
 """
 
 from __future__ import annotations
@@ -63,11 +63,11 @@ _SIGNAL_RANK: Dict[str, int] = {
 _COOLDOWN_BARS = 2               # min bars before repeating same entry signal
 _FLIP_CONFIRM_BARS = 2           # bars required to re-enter after a hard exit
 
-# Filter 3: confidence stability
-_CONF_SWING_THRESHOLD = 20.0     # % swing that marks an unstable confidence
-_CONF_HISTORY_LEN = 3            # bars of confidence to keep
-_CONF_STABLE_RANGE = 10.0        # ±range within which confidence is "stable"
-_CONF_STABLE_BARS = 2            # consecutive stable bars needed to auto-release freeze
+# Confidence history (kept for charting, no longer used for filtering)
+_CONF_HISTORY_LEN = 48           # bars of confidence to keep (for sparkline chart)
+
+# Filter 6: signal inertia
+_DOWNGRADE_CONFIRM_BARS = 2      # consecutive bars needed to confirm a voluntary downgrade
 
 # Filter 4: heat/z divergence
 _HEAT_RISE_MIN = 5               # heat must climb at least this many points (strict path)
@@ -114,8 +114,8 @@ def _ensure_history(cache: Any) -> None:
         cache.prev_zscore: Dict[str, float] = {}
     if not hasattr(cache, "prev_heat"):
         cache.prev_heat: Dict[str, int] = {}
-    if not hasattr(cache, "conf_freeze_state"):
-        cache.conf_freeze_state: Dict[str, Dict] = {}
+    if not hasattr(cache, "signal_inertia"):
+        cache.signal_inertia: Dict[str, Dict] = {}
 
 
 def _push(hist: Dict[str, list], key: str, value: Any, maxlen: int) -> None:
@@ -264,74 +264,64 @@ def _filter_bear_div_flapping(
     return signal
 
 
-def _filter_confidence_stability(
+def _filter_signal_inertia(
     signal: str,
-    confidence: float,
     symbol: str,
     cache: Any,
     out: AgentOutput,
 ) -> str:
-    """Filter 3: Confidence stability.
+    """Filter 6: Signal-level inertia.
 
-    If confidence has swung by more than _CONF_SWING_THRESHOLD in the last
-    3 bars, the regime read is noisy — freeze any signal upgrade to WAIT.
-    Downgrades and exits are not affected.
+    Once an entry signal fires, it holds through brief deterioration.
+    Voluntary downgrades (STRONG→LIGHT→WAIT) require _DOWNGRADE_CONFIRM_BARS
+    consecutive bars at the lower signal before confirming.
 
-    Auto-release: once confidence holds within ±_CONF_STABLE_RANGE for
-    _CONF_STABLE_BARS consecutive bars after a freeze, the block is lifted.
-    This prevents indefinite freezes in oscillating-but-structurally-sound
-    markets (e.g. 60→75→62→78 which looks volatile but is actually range-bound).
+    Rules:
+    - Hard exits (TRIM, RISK_OFF, etc.): always immediate, no inertia
+    - Entries from WAIT: always immediate, no delay
+    - Upgrades (LIGHT→STRONG): always immediate
+    - Downgrades (STRONG→LIGHT, LIGHT→WAIT): require 2 consecutive bars
     """
     if signal in _HARD_EXIT_SIGNALS:
+        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
         return signal
 
-    conf_hist: List[float] = cache.confidence_history.get(symbol, [])
-    if len(conf_hist) < 2:
+    prev = cache.signal_inertia.get(symbol, {"signal": "WAIT", "downgrade_count": 0})
+    prev_sig = prev["signal"]
+
+    # No inertia from WAIT or non-entry previous signals — new entries fire immediately
+    if prev_sig not in _ENTRY_SIGNALS:
+        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
         return signal
 
-    swing = max(conf_hist) - min(conf_hist)
-    recent_stable = (max(conf_hist[-2:]) - min(conf_hist[-2:])) <= _CONF_STABLE_RANGE
+    # Previous was an entry signal — check rank change
+    prev_rank = _SIGNAL_RANK.get(prev_sig, 4)
+    curr_rank = _SIGNAL_RANK.get(signal, 4)
 
-    freeze = cache.conf_freeze_state.get(symbol, {"frozen": False, "stable_count": 0})
+    if curr_rank >= prev_rank:
+        # Upgrade or same level — immediate
+        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
+        return signal
 
-    if freeze["frozen"]:
-        if recent_stable:
-            new_count = freeze["stable_count"] + 1
-            if new_count >= _CONF_STABLE_BARS:
-                # Auto-release
-                cache.conf_freeze_state[symbol] = {"frozen": False, "stable_count": 0}
-                out.alerts.append(
-                    f"[conf-stability] Confidence stabilized ({_CONF_STABLE_BARS} bars "
-                    f"within ±{_CONF_STABLE_RANGE:.0f}%) — freeze released"
-                )
-                out.filters_fired.append("conf_stability:released")
-                return signal
-            else:
-                cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": new_count}
-        else:
-            cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": 0}
-
-        # Still frozen — block entries
-        if signal in _ENTRY_SIGNALS:
-            out.alerts.append(
-                f"[conf-stability] Confidence frozen (swing {swing:.1f}%, "
-                f"stable for {freeze['stable_count']} bar(s) — "
-                f"need {_CONF_STABLE_BARS}) — entry frozen at WAIT"
-            )
-            out.filters_fired.append("conf_stability:frozen")
-            return "WAIT"
-
-    elif swing > _CONF_SWING_THRESHOLD and signal in _ENTRY_SIGNALS:
-        # Enter frozen state
-        cache.conf_freeze_state[symbol] = {"frozen": True, "stable_count": 0}
+    # Downgrade detected — require confirmation
+    count = prev["downgrade_count"] + 1
+    if count >= _DOWNGRADE_CONFIRM_BARS:
+        # Confirmed downgrade after N consecutive bars
+        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
         out.alerts.append(
-            f"[conf-stability] Confidence swinging {swing:.1f}% over last "
-            f"{len(conf_hist)} bars — entry frozen at WAIT"
+            f"[inertia] Downgrade confirmed ({count} bars): {prev_sig} \u2192 {signal}"
         )
-        out.filters_fired.append("conf_stability:frozen")
-        return "WAIT"
-
-    return signal
+        out.filters_fired.append("inertia:confirmed_downgrade")
+        return signal
+    else:
+        # Hold previous signal — downgrade not yet confirmed
+        cache.signal_inertia[symbol] = {"signal": prev_sig, "downgrade_count": count}
+        out.alerts.append(
+            f"[inertia] Holding {prev_sig} (downgrade to {signal} needs "
+            f"{_DOWNGRADE_CONFIRM_BARS - count} more bar(s))"
+        )
+        out.filters_fired.append("inertia:holding")
+        return prev_sig
 
 
 def _filter_heat_z_divergence(
@@ -588,17 +578,17 @@ def process(
     # F2: BEAR-DIV flapping (single-bar divergence should not block entries)
     signal = _filter_bear_div_flapping(signal, divergence, regime, symbol, cache, out)
 
-    # F3: Confidence stability (noisy regimes should not drive upgrades)
-    signal = _filter_confidence_stability(signal, confidence, symbol, cache, out)
-
-    # F4: Heat / Z structural divergence (distribution forming)
+    # F3: Heat / Z structural divergence (distribution forming)
     signal = _filter_heat_z_divergence(signal, symbol, current_heat, current_z, cache, out)
 
-    # F5: Cross-TF tiebreaker (CONFLICTING confluence → defer to 1D)
+    # F4: Cross-TF tiebreaker (CONFLICTING confluence → defer to 1D)
     signal = _filter_cross_tf_tiebreaker(signal, timeframe, confluence, out)
 
-    # F6: Margin safety (no new entries when overextended)
+    # F5: Margin safety (no new entries when overextended)
     signal = _filter_margin_safety(signal, positions, out)
+
+    # F6: Signal inertia (LAST — holds entries through brief downgrades)
+    signal = _filter_signal_inertia(signal, symbol, cache, out)
 
     # ---------- finalise ----------
 

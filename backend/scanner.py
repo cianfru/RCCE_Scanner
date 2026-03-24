@@ -843,6 +843,11 @@ async def _synthesize_and_enrich(
                 if ao.adjusted_signal != ao.original_signal:
                     r["signal"] = ao.adjusted_signal
                     agent_override_count += 1
+                # Attach confidence history for frontend sparkline
+                sym = r.get("symbol", "")
+                conf_hist = scan_cache.confidence_history.get(sym, [])
+                if conf_hist:
+                    r["confidence_history"] = list(conf_hist)
             except Exception as _ae:
                 logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
         if agent_override_count:
