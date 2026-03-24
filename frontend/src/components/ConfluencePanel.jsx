@@ -41,113 +41,84 @@ export default function ConfluencePanel({ confluence }) {
 
   return (
     <div style={{
-      background: T.surface,
+      background: T.glassBg,
       border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm,
-      padding: "12px",
-      marginBottom: 12,
-      backdropFilter: "blur(12px)",
-      WebkitBackdropFilter: "blur(12px)",
+      borderRadius: 12,
+      padding: "16px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)",
+      WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       <div style={{
-        fontSize: 8,
-        color: T.text4,
-        letterSpacing: "0.12em",
-        fontFamily: T.font,
-        fontWeight: 600,
-        marginBottom: 10,
-        textTransform: "uppercase",
+        display: "flex", alignItems: "center", gap: 8,
+        marginBottom: 14, paddingBottom: 10,
+        borderBottom: `1px solid ${T.overlay06}`,
       }}>
-        Confluence
+        <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+        <span style={{
+          fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
+          fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+        }}>
+          Confluence
+        </span>
       </div>
 
       {/* Score bar */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        marginBottom: 10,
-      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{
-          flex: 1,
-          height: 4,
-          background: T.overlay04,
-          borderRadius: 2,
-          overflow: "hidden",
+          flex: 1, height: 5, background: T.overlay04,
+          borderRadius: 3, overflow: "hidden",
         }}>
           <div style={{
             width: `${Math.min(score ?? 0, 100)}%`,
             height: "100%",
             background: `linear-gradient(90deg, ${color}88, ${color})`,
-            borderRadius: 2,
+            borderRadius: 3,
             boxShadow: `0 0 8px ${color}30`,
             transition: "width 0.6s ease",
           }} />
         </div>
         <span style={{
-          fontFamily: T.mono,
-          fontSize: 12,
-          fontWeight: 700,
-          color,
-          minWidth: 28,
-          textAlign: "right",
+          fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
+          color, minWidth: 32, textAlign: "right",
         }}>
           {score != null ? Math.round(score) : "\u2014"}
         </span>
       </div>
 
-      {/* Label badge */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 10,
-      }}>
+      {/* Label badge + alignment */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{
-          padding: "3px 10px",
-          borderRadius: "20px",
-          background: `${lColor}10`,
-          color: lColor,
-          fontSize: 9,
-          fontFamily: T.mono,
-          fontWeight: 700,
-          letterSpacing: "0.06em",
-          border: `1px solid ${lColor}20`,
+          padding: "4px 12px", borderRadius: 20,
+          background: `${lColor}15`, color: lColor,
+          fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
+          letterSpacing: "0.06em", border: `1px solid ${lColor}25`,
         }}>
           {label || "\u2014"}
         </span>
 
-        {/* Alignment indicators */}
-        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+        <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
           <span style={{
-            fontSize: 9,
-            fontFamily: T.mono,
-            fontWeight: 500,
+            fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
             color: regime_aligned ? "#34d399" : "#f87171",
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
+            display: "flex", alignItems: "center", gap: 4,
           }}>
             {regime_aligned ? "\u2713" : "\u2717"}
-            <span style={{ fontSize: 8, color: T.text4 }}>Regime</span>
+            <span style={{ fontSize: T.textXs, color: T.text4 }}>Regime</span>
           </span>
           <span style={{
-            fontSize: 9,
-            fontFamily: T.mono,
-            fontWeight: 500,
+            fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
             color: signal_aligned ? "#34d399" : "#f87171",
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
+            display: "flex", alignItems: "center", gap: 4,
           }}>
             {signal_aligned ? "\u2713" : "\u2717"}
-            <span style={{ fontSize: 8, color: T.text4 }}>Signal</span>
+            <span style={{ fontSize: T.textXs, color: T.text4 }}>Signal</span>
           </span>
         </div>
       </div>
 
       {/* Divider */}
-      <div style={{ height: 1, background: T.border, margin: "8px 0" }} />
+      <div style={{ height: 1, background: T.overlay06, margin: "10px 0" }} />
 
       {/* Timeframe rows */}
       {[
@@ -155,49 +126,32 @@ export default function ConfluencePanel({ confluence }) {
         { tf: "1D", regime: regime_1d, regimeMeta: regime1dMeta, signal: signal_1d, signalMeta: signal1dMeta },
       ].map(row => (
         <div key={row.tf} style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "6px 0",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "8px 0",
         }}>
           <span style={{
-            fontSize: 9,
-            color: T.text4,
-            fontFamily: T.mono,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            minWidth: 24,
+            fontSize: T.textSm, color: T.text4, fontFamily: T.mono,
+            fontWeight: 600, letterSpacing: "0.08em", minWidth: 28,
           }}>
             {row.tf}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Regime badge */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{
-              padding: "2px 7px",
-              borderRadius: "20px",
-              background: row.regimeMeta.bg,
-              color: row.regimeMeta.color,
-              fontSize: 8,
-              fontFamily: T.mono,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              border: `1px solid ${row.regimeMeta.color}18`,
+              padding: "3px 10px", borderRadius: 20,
+              background: row.regimeMeta.bg, color: row.regimeMeta.color,
+              fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
+              letterSpacing: "0.04em", border: `1px solid ${row.regimeMeta.color}20`,
             }}>
               {row.regime || "\u2014"}
             </span>
-            <span style={{ color: T.text4, fontSize: 9 }}>{"\u2192"}</span>
-            {/* Signal */}
+            <span style={{ color: T.text4, fontSize: T.textSm }}>{"\u2192"}</span>
             <span style={{
-              fontSize: 9,
-              fontFamily: T.mono,
-              fontWeight: 500,
+              fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
               color: row.signalMeta.color,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
+              display: "inline-flex", alignItems: "center", gap: 4,
             }}>
               <span style={{
-                fontSize: 7,
+                fontSize: 9,
                 filter: row.signal !== "WAIT" ? `drop-shadow(0 0 3px ${row.signalMeta.color})` : "none",
               }}>
                 {row.signalMeta.dot}

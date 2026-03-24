@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol } from "../theme.js";
-import { ZScoreBar, RegimeBadge, SignalDot } from "../components/badges.jsx";
+import { RegimeBadge, SignalDot } from "../components/badges.jsx";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
@@ -324,29 +324,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         {/* Whale Consensus */}
         <SmartMoneyPanel data={data} />
 
-        {/* Engine Metrics */}
+        {/* Engine Metrics (includes Z-Score) */}
         <EngineMetrics data={data} isMobile={isMobile} />
-
-        {/* Z-Score — standalone card */}
-        <div style={{
-          background: T.glassBg, border: `1px solid ${T.border}`,
-          borderRadius: 12, padding: "16px 20px",
-          backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-          boxShadow: `0 2px 12px ${T.shadow}`,
-          display: "flex", flexDirection: "column", justifyContent: "center",
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            marginBottom: 14, paddingBottom: 10,
-            borderBottom: `1px solid ${T.overlay06}`,
-          }}>
-            <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-            <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
-              Z-Score
-            </span>
-          </div>
-          <ZScoreBar z={data.zscore} isMobile={isMobile} />
-        </div>
       </div>
     </div>
   );

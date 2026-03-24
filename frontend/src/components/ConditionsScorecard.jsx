@@ -14,8 +14,8 @@ function ConditionPill({ c }) {
     <div
       title={c.desc}
       style={{
-        display: "flex", alignItems: "center", gap: 5,
-        padding: "5px 8px", borderRadius: 6,
+        display: "flex", alignItems: "center", gap: 6,
+        padding: "6px 10px", borderRadius: 8,
         background: c.met ? "rgba(52,211,153,0.06)" : "rgba(248,113,113,0.04)",
         border: `1px solid ${c.met ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.10)"}`,
         cursor: "help",
@@ -25,16 +25,15 @@ function ConditionPill({ c }) {
       }}
     >
       <span style={{
-        fontSize: T.textSm, fontWeight: 700, flexShrink: 0,
+        fontSize: T.textBase, fontWeight: 700, flexShrink: 0,
         color: c.met ? MET_COLOR : UNMET_COLOR,
       }}>
         {c.met ? "\u2713" : "\u2717"}
       </span>
       <span style={{
-        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 500,
+        fontSize: T.textSm, fontFamily: T.mono, fontWeight: 500,
         color: c.met ? T.text2 : T.text4,
-        whiteSpace: "nowrap",
-        flexShrink: 0,
+        whiteSpace: "nowrap", flexShrink: 0,
       }}>
         {c.label}
       </span>
@@ -55,7 +54,6 @@ export default function ConditionsScorecard({ conditions, met, total }) {
   const pct = total > 0 ? (met / total) * 100 : 0;
   const color = scoreColor(pct);
 
-  // Split conditions by group (core vs coinglass)
   const core = conditions.filter(c => c.group !== "coinglass");
   const cg = conditions.filter(c => c.group === "coinglass");
   const coreMet = core.filter(c => c.met).length;
@@ -63,28 +61,32 @@ export default function ConditionsScorecard({ conditions, met, total }) {
 
   return (
     <div style={{
-      background: T.surface,
+      background: T.glassBg,
       border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm,
-      padding: "14px 16px",
-      marginBottom: 14,
+      borderRadius: 12,
+      padding: "16px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)",
+      WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       {/* Header */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 10,
+        marginBottom: 14, paddingBottom: 10,
+        borderBottom: `1px solid ${T.overlay06}`,
       }}>
-        <span style={{
-          fontSize: 9, color: T.text4, letterSpacing: "0.1em",
-          fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase",
-        }}>
-          Entry Conditions
-        </span>
-        <span style={{
-          fontFamily: T.mono, fontSize: 14, fontWeight: 700, color,
-        }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+          <span style={{
+            fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
+            fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+          }}>
+            Entry Conditions
+          </span>
+        </div>
+        <span style={{ fontFamily: T.mono, fontSize: T.textLg, fontWeight: 700, color }}>
           {met}/{total}
-          <span style={{ fontSize: 9, fontWeight: 400, color: T.text4, marginLeft: 6 }}>
+          <span style={{ fontSize: T.textSm, fontWeight: 400, color: T.text4, marginLeft: 6 }}>
             ({Math.round(pct)}%)
           </span>
         </span>
@@ -92,53 +94,51 @@ export default function ConditionsScorecard({ conditions, met, total }) {
 
       {/* Progress bar */}
       <div style={{
-        height: 4, background: T.overlay04,
-        borderRadius: 2, overflow: "hidden", marginBottom: 12,
+        height: 5, background: T.overlay04,
+        borderRadius: 3, overflow: "hidden", marginBottom: 14,
       }}>
         <div style={{
           width: `${pct}%`, height: "100%",
-          background: color,
-          borderRadius: 2, transition: "width 0.4s ease",
+          background: `linear-gradient(90deg, ${color}88, ${color})`,
+          borderRadius: 3, transition: "width 0.4s ease",
+          boxShadow: `0 0 8px ${color}30`,
         }} />
       </div>
 
-      {/* Core conditions section */}
+      {/* Core conditions */}
       <div style={{
-        fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em",
-        fontFamily: T.mono, fontWeight: 600, textTransform: "uppercase",
-        marginBottom: 6, display: "flex", justifyContent: "space-between",
+        fontSize: T.textSm, color: T.text4, letterSpacing: "0.08em",
+        fontFamily: T.font, fontWeight: 600, textTransform: "uppercase",
+        marginBottom: 8, display: "flex", justifyContent: "space-between",
       }}>
         <span>Core Engine</span>
-        <span style={{ color: coreMet >= 7 ? MET_COLOR : coreMet >= 5 ? "#fbbf24" : UNMET_COLOR }}>
+        <span style={{ color: coreMet >= 7 ? MET_COLOR : coreMet >= 5 ? "#fbbf24" : UNMET_COLOR, fontFamily: T.mono }}>
           {coreMet}/{core.length}
         </span>
       </div>
       <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, 1fr)",
-        gap: 4,
-        marginBottom: cg.length > 0 ? 12 : 0,
+        display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
+        gap: 5, marginBottom: cg.length > 0 ? 14 : 0,
       }}>
         {core.map(c => <ConditionPill key={c.name} c={c} />)}
       </div>
 
-      {/* CoinGlass conditions section (only if present) */}
+      {/* CoinGlass conditions */}
       {cg.length > 0 && (
         <>
           <div style={{
-            fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em",
-            fontFamily: T.mono, fontWeight: 600, textTransform: "uppercase",
-            marginBottom: 6, display: "flex", justifyContent: "space-between",
+            fontSize: T.textSm, color: T.text4, letterSpacing: "0.08em",
+            fontFamily: T.font, fontWeight: 600, textTransform: "uppercase",
+            marginBottom: 8, display: "flex", justifyContent: "space-between",
           }}>
             <span>Market Context</span>
-            <span style={{ color: cgMet >= 3 ? MET_COLOR : cgMet >= 2 ? "#fbbf24" : UNMET_COLOR }}>
+            <span style={{ color: cgMet >= 3 ? MET_COLOR : cgMet >= 2 ? "#fbbf24" : UNMET_COLOR, fontFamily: T.mono }}>
               {cgMet}/{cg.length}
             </span>
           </div>
           <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 4,
+            display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
+            gap: 5,
           }}>
             {cg.map(c => <ConditionPill key={c.name} c={c} />)}
           </div>
