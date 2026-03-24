@@ -120,12 +120,6 @@ function ModalOverlay({ children, onClose }) {
       <div style={{
         width: "100%", maxWidth: 900, maxHeight: "88vh",
         overflowY: "auto",
-        borderRadius: T.radius,
-        border: `1px solid ${T.borderH}`,
-        background: T.glassBg,
-        backdropFilter: "blur(24px) saturate(1.3)",
-        WebkitBackdropFilter: "blur(24px) saturate(1.3)",
-        boxShadow: `0 24px 80px rgba(0,0,0,0.5), ${T.glassInset}`,
       }}>
         {children}
       </div>
@@ -1860,38 +1854,39 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
   );
 
   return (
-    <GlassCard style={{ padding: 0, overflow: "hidden", maxWidth: 820 }}>
+    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
       {/* Header */}
       <div style={{
-        padding: "14px 16px",
+        padding: "16px 20px",
         borderBottom: `1px solid ${T.overlay08}`,
         background: T.overlay02,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ width: 3, height: 18, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-          <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.text1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ width: 3, height: 20, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+          <span style={{ fontFamily: T.mono, fontSize: T.textXl, fontWeight: 700, color: T.text1 }}>
             {symbol}
           </span>
           <span style={{
-            fontFamily: T.mono, fontSize: 11, color: T.text4, fontWeight: 600,
-            padding: "2px 8px", borderRadius: 6, background: T.overlay06,
+            fontFamily: T.mono, fontSize: T.textSm, color: T.text4, fontWeight: 600,
+            padding: "3px 10px", borderRadius: 20, background: T.overlay06,
           }}>
             {positions.length} wallet{positions.length !== 1 ? "s" : ""}
           </span>
           {cData.trend && (
             <span style={{
-              fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-              padding: "3px 10px", borderRadius: 6,
+              fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
+              padding: "4px 12px", borderRadius: 20,
               color: trendColor(cData.trend),
-              background: `${trendColor(cData.trend)}12`,
-              border: `1px solid ${trendColor(cData.trend)}25`,
+              background: `${trendColor(cData.trend)}15`,
+              border: `1px solid ${trendColor(cData.trend)}28`,
+              boxShadow: `0 0 10px ${trendColor(cData.trend)}12`,
             }}>
               {cData.trend}
             </span>
           )}
           {cData.confidence > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, color: T.text4 }}>
               {Math.round(cData.confidence * 100)}% conf
             </span>
           )}
