@@ -2807,18 +2807,6 @@ export default function HyperLensPanel({ isMobile }) {
           display: "flex", alignItems: "center", justifyContent: "space-between",
           flexWrap: "wrap", gap: isMobile ? 8 : 10,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              fontFamily: T.mono, fontSize: isMobile ? T.textSm : T.textXs, color: T.accent,
-              padding: "3px 10px", borderRadius: 20,
-              background: `${T.accent}12`,
-              border: `1px solid ${T.accent}20`,
-              fontWeight: 600, letterSpacing: "0.04em",
-            }}>
-              {status.tracked_wallets || 0} wallets
-            </span>
-          </div>
-
           {consensus.length > 0 && (
             <div style={{ display: "flex", gap: 6 }}>
               {bullish > 0 && (
