@@ -2688,9 +2688,9 @@ function TabSwitcher({ active, onChange, isMobile }) {
 
   return (
     <div style={{
-      display: "flex", borderRadius: 8,
+      display: "inline-flex", borderRadius: 8,
       border: `1px solid ${T.border}`,
-      overflow: "hidden", flexShrink: 0,
+      overflow: "hidden", flexShrink: 0, alignSelf: "flex-start",
     }}>
       {tabs.map(({ key, label }) => {
         const isActive = active === key;
