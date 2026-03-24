@@ -2818,16 +2818,6 @@ export default function HyperLensPanel({ isMobile }) {
           flexWrap: "wrap", gap: isMobile ? 8 : 10,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 3, height: 14, borderRadius: 2,
-              background: T.accent, flexShrink: 0,
-            }} />
-            <span style={{
-              fontSize: isMobile ? T.textBase : T.textSm, color: T.text2, letterSpacing: "0.1em",
-              fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
-            }}>
-              HyperLens
-            </span>
             <span style={{
               fontFamily: T.mono, fontSize: isMobile ? T.textSm : T.textXs, color: T.accent,
               padding: "3px 10px", borderRadius: 20,
