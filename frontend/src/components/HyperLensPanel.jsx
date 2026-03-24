@@ -384,17 +384,7 @@ function StatusStrip({ status, cohort, roster }) {
           )}
         </div>
       )}
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{
-          width: 6, height: 6, borderRadius: "50%",
-          background: status.initialized ? T.green : T.yellow,
-          boxShadow: status.initialized ? `0 0 8px ${T.green}60` : `0 0 8px ${T.yellow}60`,
-          animation: status.initialized ? "pulse 2s ease-in-out infinite" : "none",
-        }} />
-        <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.text3, letterSpacing: "0.06em" }}>
-          {status.initialized ? "LIVE" : "WARMING UP"}
-        </span>
-      </div>
+      {/* LIVE indicator removed — already shown in global header */}
     </div>
   );
 }
