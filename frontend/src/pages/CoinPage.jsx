@@ -38,26 +38,26 @@ function EngineMetrics({ data, isMobile }) {
   return (
     <div style={{
       background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "14px 16px",
+      borderRadius: 12, padding: isMobile ? "14px 14px" : "16px 20px",
       backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 12, paddingBottom: 10,
+        marginBottom: 14, paddingBottom: 10,
         borderBottom: `1px solid ${T.overlay06}`,
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
           Engine Metrics
         </span>
       </div>
       {rows.map(([label, value, valColor], i) => {
-        if (!label) return <div key={i} style={{ height: 1, background: T.overlay06, margin: "4px 0" }} />;
+        if (!label) return <div key={i} style={{ height: 1, background: T.overlay06, margin: "6px 0" }} />;
         return (
-          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
-            <span style={{ fontSize: 10, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ fontFamily: T.mono, fontSize: isMobile ? 11 : 12, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0" }}>
+            <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textBase, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
           </div>
         );
       })}
@@ -81,20 +81,24 @@ function SmartMoneyPanel({ data }) {
   return (
     <div style={{
       background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "14px 16px",
+      borderRadius: 12, padding: "16px 20px",
       backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 12, paddingBottom: 10,
+        marginBottom: 14, paddingBottom: 10,
         borderBottom: `1px solid ${T.overlay06}`,
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: "#a78bfa", flexShrink: 0 }} />
-        <span style={{ fontSize: 11, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
           Whale Consensus
         </span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: trendColor, fontFamily: T.mono, marginLeft: "auto" }}>
+        <span style={{
+          fontSize: T.textSm, fontWeight: 700, color: trendColor, fontFamily: T.mono,
+          marginLeft: "auto", padding: "3px 10px", borderRadius: 20,
+          background: `${trendColor}15`, border: `1px solid ${trendColor}28`,
+        }}>
           {sm.trend}
         </span>
       </div>
@@ -104,7 +108,7 @@ function SmartMoneyPanel({ data }) {
         <div style={{ width: `${longPct}%`, background: "#34d399", transition: "width 0.3s" }} />
         <div style={{ flex: 1, background: "#f87171" }} />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontFamily: T.mono, marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: T.textSm, fontFamily: T.mono, marginBottom: 10 }}>
         <span style={{ color: "#34d399" }}>{longPct}% LONG</span>
         <span style={{ color: "#f87171" }}>{100 - longPct}% SHORT</span>
       </div>
@@ -116,9 +120,9 @@ function SmartMoneyPanel({ data }) {
         ["Confidence", `${Math.round(sm.confidence * 100)}%`, trendColor],
         ["Net Ratio", sm.net_ratio > 0 ? `+${sm.net_ratio.toFixed(2)}` : sm.net_ratio.toFixed(2), sm.net_ratio > 0 ? "#34d399" : "#f87171"],
       ].map(([label, val, color]) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-          <span style={{ fontSize: 10, color: T.text3, fontFamily: T.font }}>{label}</span>
-          <span style={{ fontSize: 11, color, fontFamily: T.mono, fontWeight: 600 }}>{val}</span>
+        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+          <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.font }}>{label}</span>
+          <span style={{ fontSize: T.textBase, color, fontFamily: T.mono, fontWeight: 600 }}>{val}</span>
         </div>
       ))}
     </div>
@@ -177,146 +181,171 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     <div style={{ padding: isMobile ? 16 : 24 }}>
       {/* Header */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
       }}>
         <button
           onClick={() => navigate("/scanner")}
           className="apple-btn"
-          style={{ padding: "6px 14px", fontSize: 11, fontFamily: T.mono, borderRadius: 8, flexShrink: 0 }}
+          style={{ padding: "7px 16px", fontSize: T.textSm, fontFamily: T.font, fontWeight: 600, borderRadius: 8, flexShrink: 0 }}
         >
           {"\u2190"} Scanner
         </button>
-        <span style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
+        <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
         <RegimeBadge regime={data.regime} />
         <SignalDot signal={data.signal} />
         {data.signal_confidence != null && (
           <span style={{
-            padding: "3px 8px", borderRadius: 20,
+            padding: "4px 12px", borderRadius: 20,
             background: T.surface, border: `1px solid ${T.border}`,
-            fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+            fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
             color: data.signal_confidence >= 80 ? "#34d399" : data.signal_confidence >= 50 ? "#fbbf24" : T.text3,
           }}>
             {data.signal_confidence}%
           </span>
         )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+        <div style={{ marginLeft: "auto", display: "flex", borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
           {["4h", "1d"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)}
-              className={timeframe === tf ? "apple-btn apple-btn-accent" : "apple-btn"}
-              style={{ padding: "4px 12px", fontSize: 11, fontFamily: T.mono, borderRadius: 6 }}>
+              style={{
+                padding: isMobile ? "8px 14px" : "6px 14px", border: "none",
+                background: timeframe === tf ? T.accent : "transparent",
+                color: timeframe === tf ? T.bg : T.text3,
+                fontFamily: T.font, fontSize: T.textSm, fontWeight: timeframe === tf ? 700 : 500,
+                cursor: "pointer", letterSpacing: "0.04em", transition: "all 0.15s ease",
+              }}>
               {tf.toUpperCase()}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Main layout: chart + info panel */}
-      <div style={{
-        display: "flex",
-        flexDirection: isWide ? "row" : "column",
-        gap: 16,
-      }}>
-        {/* Left: BMSB + CTO Chart (primary) */}
-        <div style={{ flex: isWide ? "7 1 0" : "none", minWidth: 0 }}>
-          <BMSBChart
-            symbol={data.symbol}
-            timeframe={timeframe}
-            height={isWide ? 600 : isMobile ? 380 : 480}
-            signal={data.signal}
-            regime={data.regime}
-            heat={data.heat}
-            conditions={data.conditions_met}
-            conditionsTotal={data.conditions_total}
-            exhaustionState={data.exhaustion_state}
-            floorConfirmed={data.floor_confirmed}
-            signalConfidence={data.signal_confidence}
-            momentum={data.momentum}
-          />
-          {/* Open in TradingView link */}
-          <a
-            href={`https://www.tradingview.com/chart/?symbol=BINANCE:${coin.replace("/", "")}USDT`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              marginTop: 8, padding: "4px 10px", borderRadius: 6,
-              fontSize: 10, fontFamily: T.mono, fontWeight: 600,
-              color: T.text4, textDecoration: "none",
-              border: `1px solid ${T.border}`, background: "transparent",
-              transition: "color 0.15s, border-color 0.15s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
-          >
-            Open in TradingView {"\u2197"}
-          </a>
-        </div>
+      {/* Chart — full width */}
+      <div style={{ marginBottom: 20 }}>
+        <BMSBChart
+          symbol={data.symbol}
+          timeframe={timeframe}
+          height={isMobile ? 380 : 520}
+          signal={data.signal}
+          regime={data.regime}
+          heat={data.heat}
+          conditions={data.conditions_met}
+          conditionsTotal={data.conditions_total}
+          exhaustionState={data.exhaustion_state}
+          floorConfirmed={data.floor_confirmed}
+          signalConfidence={data.signal_confidence}
+          momentum={data.momentum}
+        />
+        <a
+          href={`https://www.tradingview.com/chart/?symbol=BINANCE:${coin.replace("/", "")}USDT`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            marginTop: 10, padding: "5px 12px", borderRadius: 8,
+            fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
+            color: T.text4, textDecoration: "none",
+            border: `1px solid ${T.border}`, background: "transparent",
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
+        >
+          Open in TradingView {"\u2197"}
+        </a>
+      </div>
 
-        {/* Right: Info Panel */}
+      {/* Signal Reason + Warnings — full width banner */}
+      {(data.signal_reason || (data.signal_warnings && data.signal_warnings.length > 0)) && (
         <div style={{
-          flex: isWide ? "3 1 0" : "none", minWidth: isWide ? 320 : undefined,
-          display: "flex", flexDirection: "column", gap: 14,
+          display: "flex", gap: 16, marginBottom: 20,
+          flexDirection: isMobile ? "column" : "row",
         }}>
-          {/* Conditions */}
-          <ConditionsScorecard
-            conditions={data.conditions_detail}
-            met={data.conditions_met}
-            total={data.conditions_total}
-          />
-
-          {/* Signal Reason */}
           {data.signal_reason && (
             <div style={{
-              padding: "12px 14px", borderRadius: 10,
+              flex: 1, padding: "14px 18px", borderRadius: 12,
               background: T.glassBg, border: `1px solid ${T.border}`,
               backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 3, height: 12, borderRadius: 2, background: T.text3, flexShrink: 0 }} />
-                <span style={{ fontSize: 10, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>Signal Reason</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: T.text3, flexShrink: 0 }} />
+                <span style={{ fontSize: T.textSm, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>Signal Reason</span>
               </div>
-              <div style={{ fontSize: 11, color: T.text2, fontFamily: T.mono, lineHeight: 1.6, paddingLeft: 11 }}>
+              <div style={{ fontSize: T.textBase, color: T.text2, fontFamily: T.mono, lineHeight: 1.7, paddingLeft: 11 }}>
                 {data.signal_reason}
               </div>
             </div>
           )}
-
-          {/* Warnings */}
           {data.signal_warnings && data.signal_warnings.length > 0 && (
             <div style={{
-              padding: "12px 14px", borderRadius: 10,
+              flex: 1, padding: "14px 18px", borderRadius: 12,
               background: "rgba(251,191,36,0.03)", border: "1px solid rgba(251,191,36,0.12)",
             }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: "#fbbf24", flexShrink: 0 }} />
+                <span style={{ fontSize: T.textSm, color: "#fbbf24", letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>Warnings</span>
+              </div>
               {data.signal_warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: 10, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.7, display: "flex", gap: 6, alignItems: "flex-start" }}>
+                <div key={i} style={{ fontSize: T.textBase, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.7, display: "flex", gap: 6, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
                   <span>{w}</span>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      )}
 
-          {/* Confluence */}
-          <ConfluencePanel confluence={data.confluence} />
+      {/* Data panels — responsive grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : isWide ? "1fr 1fr 1fr" : "1fr 1fr",
+        gap: 16,
+      }}>
+        {/* Conditions */}
+        <ConditionsScorecard
+          conditions={data.conditions_detail}
+          met={data.conditions_met}
+          total={data.conditions_total}
+        />
 
-          {/* Positioning */}
-          <PositioningPanel
-            positioning={data.positioning}
-            cvdTrend={data.cvd_trend}
-            cvdDiv={data.cvd_divergence}
-            bsr={data.buy_sell_ratio}
-          />
+        {/* Confluence */}
+        <ConfluencePanel confluence={data.confluence} />
 
-          {/* Whale Consensus */}
-          <SmartMoneyPanel data={data} />
+        {/* Positioning */}
+        <PositioningPanel
+          positioning={data.positioning}
+          cvdTrend={data.cvd_trend}
+          cvdDiv={data.cvd_divergence}
+          bsr={data.buy_sell_ratio}
+        />
 
-          {/* Z-Score */}
+        {/* Whale Consensus */}
+        <SmartMoneyPanel data={data} />
+
+        {/* Engine Metrics */}
+        <EngineMetrics data={data} isMobile={isMobile} />
+
+        {/* Z-Score — standalone card */}
+        <div style={{
+          background: T.glassBg, border: `1px solid ${T.border}`,
+          borderRadius: 12, padding: "16px 20px",
+          backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+          boxShadow: `0 2px 12px ${T.shadow}`,
+          display: "flex", flexDirection: "column", justifyContent: "center",
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            marginBottom: 14, paddingBottom: 10,
+            borderBottom: `1px solid ${T.overlay06}`,
+          }}>
+            <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+            <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+              Z-Score
+            </span>
+          </div>
           <ZScoreBar z={data.zscore} isMobile={isMobile} />
-
-          {/* Engine Metrics */}
-          <EngineMetrics data={data} isMobile={isMobile} />
         </div>
       </div>
     </div>
