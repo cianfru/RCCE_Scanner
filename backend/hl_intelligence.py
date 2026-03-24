@@ -204,6 +204,9 @@ _initialized = False
 _last_poll_at: float = 0.0
 _poll_count: int = 0
 
+# Asset index map: @index → name (e.g. @142 → "PENGU")
+_asset_index_map: Dict[str, str] = {}
+
 # Pressure Map stores
 _wallet_orders: Dict[str, list] = {}          # address -> list of raw order dicts
 _order_books: Dict[str, dict] = {}            # coin -> {"levels": ..., "timestamp": float}
@@ -566,6 +569,10 @@ async def poll_positions() -> int:
     """
     global _last_poll_at, _poll_count, _consensus_updated_at
 
+    # Refresh asset index map if empty (resolves @142 → PENGU etc.)
+    if not _asset_index_map:
+        await _refresh_asset_index_map()
+
     if not _roster:
         logger.debug("HyperLens: no roster — skipping poll")
         return 0
@@ -705,7 +712,7 @@ def _recompute_consensus() -> None:
                 bare = raw.split(":", 1)[1] if ":" in raw else raw
                 coin = f"xyz:{bare}"
             else:
-                coin = _HL_REVERSE_MAP.get(raw, raw)
+                coin = _normalize_coin(raw)
             if coin not in sym_data:
                 sym_data[coin] = {
                     "long_count": 0, "short_count": 0,
@@ -853,7 +860,37 @@ def _normalize_coin(symbol: str) -> str:
         coin = coin[4:]
     # Map HL-specific names back to scanner base names
     coin = _HL_REVERSE_MAP.get(coin, coin)
+    # Resolve @index IDs (e.g. @142 → PENGU)
+    if coin.startswith("@"):
+        coin = _asset_index_map.get(coin, coin)
     return coin
+
+
+async def _refresh_asset_index_map():
+    """Fetch HL perps universe and build @index → name map."""
+    global _asset_index_map
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _HL_INFO_URL,
+                json={"type": "meta"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    return
+                data = await resp.json(content_type=None)
+        universe = data.get("universe", [])
+        new_map = {}
+        for idx, asset in enumerate(universe):
+            name = asset.get("name") or asset.get("coin", "")
+            if name:
+                new_map[f"@{idx}"] = name
+        if new_map:
+            _asset_index_map = new_map
+            logger.info("Refreshed asset index map: %d entries", len(new_map))
+    except Exception as e:
+        logger.warning("Failed to refresh asset index map: %s", e)
 
 
 def get_consensus(symbol: str) -> Optional[SymbolConsensus]:
@@ -974,7 +1011,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                 bare = raw.split(":", 1)[1] if ":" in raw else raw
                 pos_coin = f"xyz:{bare}"
             else:
-                pos_coin = _HL_REVERSE_MAP.get(raw, raw)
+                pos_coin = _normalize_coin(raw)
             if pos_coin == coin:
                 # PnL % = unrealized_pnl / margin_used (ROE)
                 pnl_pct = round(pos.return_on_equity * 100, 2) if pos.return_on_equity else (
@@ -1673,7 +1710,7 @@ def get_pressure(symbol: str = None) -> dict:
 
     for addr, orders in _wallet_orders.items():
         for order in orders:
-            order_coin = order.get("coin", "")
+            order_coin = _normalize_coin(order.get("coin", ""))
             if not order_coin:
                 continue
 
