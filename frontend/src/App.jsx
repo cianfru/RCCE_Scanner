@@ -900,9 +900,7 @@ export default function App() {
         )}
 
         {activeTab === "chat" && (
-          <FadeIn delay={200}>
-            <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
-          </FadeIn>
+          <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
         )}
 
         {activeTab === "hyperlens" && (
