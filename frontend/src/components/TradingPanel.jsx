@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   createChart, AreaSeries, ColorType, LineStyle, CrosshairMode,
 } from "lightweight-charts";
@@ -954,6 +954,8 @@ export default function TradingPanel({ api }) {
 
   // Core data
   const [chState, setChState]     = useState(null);
+  const [xyzChState, setXyzChState] = useState(null);
+  const [spotState, setSpotState] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
   const [openOrders, setOpenOrders] = useState([]);
   const [fills, setFills]         = useState([]);
@@ -978,12 +980,16 @@ export default function TradingPanel({ api }) {
   const fetchFast = useCallback(async () => {
     if (!isConnected || !address) return;
     try {
-      const [state, orders] = await Promise.all([
+      const [state, orders, xyzState, spot] = await Promise.all([
         hlClient.getClearinghouseState(address).catch(() => null),
         hlClient.getOpenOrders(address).catch(() => null),
+        hlClient.getXyzClearinghouseState(address).catch(() => null),
+        hlClient.getSpotState(address).catch(() => null),
       ]);
       if (state) setChState(state);
       if (orders) setOpenOrders(orders);
+      if (xyzState) setXyzChState(xyzState);
+      if (spot) setSpotState(spot);
     } catch (e) { console.error("Portfolio fast fetch:", e); }
   }, [address, isConnected]);
 
@@ -1109,9 +1115,31 @@ export default function TradingPanel({ api }) {
   // --- Derived data ---
 
   const marginSummary = chState?.crossMarginSummary || chState?.marginSummary;
-  const accountValue  = parseNum(marginSummary?.accountValue);
+  const perpsAccountValue = parseNum(marginSummary?.accountValue);
   const marginUsedVal = parseNum(marginSummary?.totalMarginUsed);
   const withdrawable  = parseNum(chState?.withdrawable);
+
+  // xyz DEX (TradFi) account value
+  const xyzMarginSummary = xyzChState?.crossMarginSummary || xyzChState?.marginSummary;
+  const xyzAccountValue = parseNum(xyzMarginSummary?.accountValue);
+
+  // Spot balances — sum all token values using entryNtl (notional USD value)
+  // For USDC/USDT, total IS the USD value; for others, we need mid prices
+  const spotTotalValue = useMemo(() => {
+    if (!spotState?.balances) return 0;
+    return spotState.balances.reduce((sum, b) => {
+      const total = parseNum(b.total);
+      if (total === 0) return sum;
+      // USDC is 1:1 USD
+      if (b.coin === "USDC" || b.coin === "USDT") return sum + total;
+      // For other tokens, entryNtl gives us a notional estimate
+      const ntl = parseNum(b.entryNtl);
+      return sum + (ntl > 0 ? ntl : 0);
+    }, 0);
+  }, [spotState]);
+
+  // Combined account value across all venues
+  const accountValue = perpsAccountValue + xyzAccountValue + spotTotalValue;
   const positions     = (chState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0);
   const totalUnrealizedPnl = positions.reduce((sum, ap) => sum + parseNum(ap.position?.unrealizedPnl), 0);
 

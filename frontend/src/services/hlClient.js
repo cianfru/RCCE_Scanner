@@ -267,6 +267,20 @@ export async function getClearinghouseState(address) {
 }
 
 /**
+ * Get xyz DEX (HIP-3 TradFi) clearinghouse state.
+ */
+export async function getXyzClearinghouseState(address) {
+  return infoClient.clearinghouseState({ user: address, dex: "xyz" });
+}
+
+/**
+ * Get spot balances (token holdings).
+ */
+export async function getSpotState(address) {
+  return infoClient.spotClearinghouseState({ user: address });
+}
+
+/**
  * Get open orders with frontend display fields.
  */
 export async function getOpenOrders(address) {
