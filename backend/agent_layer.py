@@ -116,6 +116,25 @@ def _ensure_history(cache: Any) -> None:
         cache.prev_heat: Dict[str, int] = {}
     if not hasattr(cache, "signal_inertia"):
         cache.signal_inertia: Dict[str, Dict] = {}
+    if not hasattr(cache, "smoothed_confidence"):
+        cache.smoothed_confidence: Dict[str, float] = {}
+
+
+# EMA periods per timeframe (4h: 12h lookback, 1d: 2d lookback)
+_EMA_PERIOD: Dict[str, int] = {"4h": 3, "1d": 2}
+
+
+def _smooth_confidence(
+    raw_conf: float, symbol: str, timeframe: str, cache: Any,
+) -> float:
+    """Apply EMA smoothing to raw confidence. Prevents single-bar noise."""
+    key = f"{symbol}:{timeframe}"
+    prev = cache.smoothed_confidence.get(key, raw_conf)
+    period = _EMA_PERIOD.get(timeframe, 3)
+    alpha = 2.0 / (period + 1)
+    smoothed = alpha * raw_conf + (1.0 - alpha) * prev
+    cache.smoothed_confidence[key] = smoothed
+    return smoothed
 
 
 def _push(hist: Dict[str, list], key: str, value: Any, maxlen: int) -> None:
@@ -282,16 +301,19 @@ def _filter_signal_inertia(
     - Upgrades (LIGHT→STRONG): always immediate
     - Downgrades (STRONG→LIGHT, LIGHT→WAIT): require 2 consecutive bars
     """
+    # Use timeframe-scoped key so 4h and 1d don't interfere
+    tf_key = f"{symbol}:{cache._current_timeframe}" if hasattr(cache, "_current_timeframe") else symbol
+
     if signal in _HARD_EXIT_SIGNALS:
-        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
+        cache.signal_inertia[tf_key] = {"signal": signal, "downgrade_count": 0}
         return signal
 
-    prev = cache.signal_inertia.get(symbol, {"signal": "WAIT", "downgrade_count": 0})
+    prev = cache.signal_inertia.get(tf_key, {"signal": "WAIT", "downgrade_count": 0})
     prev_sig = prev["signal"]
 
     # No inertia from WAIT or non-entry previous signals — new entries fire immediately
     if prev_sig not in _ENTRY_SIGNALS:
-        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
+        cache.signal_inertia[tf_key] = {"signal": signal, "downgrade_count": 0}
         return signal
 
     # Previous was an entry signal — check rank change
@@ -300,14 +322,14 @@ def _filter_signal_inertia(
 
     if curr_rank >= prev_rank:
         # Upgrade or same level — immediate
-        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
+        cache.signal_inertia[tf_key] = {"signal": signal, "downgrade_count": 0}
         return signal
 
     # Downgrade detected — require confirmation
     count = prev["downgrade_count"] + 1
     if count >= _DOWNGRADE_CONFIRM_BARS:
         # Confirmed downgrade after N consecutive bars
-        cache.signal_inertia[symbol] = {"signal": signal, "downgrade_count": 0}
+        cache.signal_inertia[tf_key] = {"signal": signal, "downgrade_count": 0}
         out.alerts.append(
             f"[inertia] Downgrade confirmed ({count} bars): {prev_sig} \u2192 {signal}"
         )
@@ -315,7 +337,7 @@ def _filter_signal_inertia(
         return signal
     else:
         # Hold previous signal — downgrade not yet confirmed
-        cache.signal_inertia[symbol] = {"signal": prev_sig, "downgrade_count": count}
+        cache.signal_inertia[tf_key] = {"signal": prev_sig, "downgrade_count": count}
         out.alerts.append(
             f"[inertia] Holding {prev_sig} (downgrade to {signal} needs "
             f"{_DOWNGRADE_CONFIRM_BARS - count} more bar(s))"
@@ -497,6 +519,7 @@ def _filter_margin_safety(
 
 def _update_history(
     symbol: str,
+    timeframe: str,
     adjusted_signal: str,
     confidence: float,
     divergence: Optional[str],
@@ -504,9 +527,12 @@ def _update_history(
     current_heat: int,
     cache: Any,
 ) -> None:
-    _push(cache.signal_history, symbol, adjusted_signal, _SIGNAL_HISTORY_LEN)
-    _push(cache.confidence_history, symbol, confidence, _CONF_HISTORY_LEN)
-    _push(cache.divergence_history, symbol, divergence, _DIV_HISTORY_LEN)
+    tf_key = f"{symbol}:{timeframe}"
+    _push(cache.signal_history, tf_key, adjusted_signal, _SIGNAL_HISTORY_LEN)
+    # Push EMA-smoothed confidence (not raw) so sparkline is smooth
+    smoothed = _smooth_confidence(confidence, symbol, timeframe, cache)
+    _push(cache.confidence_history, tf_key, round(smoothed, 1), _CONF_HISTORY_LEN)
+    _push(cache.divergence_history, tf_key, divergence, _DIV_HISTORY_LEN)
     cache.prev_zscore[symbol] = current_z
     cache.prev_heat[symbol] = current_heat
 
@@ -541,6 +567,8 @@ def process(
 
     symbol = scan_result.get("symbol", "")
     timeframe = scan_result.get("timeframe", "")
+    # Stash current timeframe so filters can scope state per-TF
+    cache._current_timeframe = timeframe
     original_signal = scan_result.get("signal", "WAIT")
     confidence = float(scan_result.get("confidence", 0.0))
     divergence = scan_result.get("divergence")
@@ -629,7 +657,11 @@ def process(
     scan_result["agent_filters_fired"] = out.filters_fired
 
     # Update persistent history with the ADJUSTED signal
-    _update_history(symbol, signal, confidence, divergence, current_z, current_heat, cache)
+    _update_history(symbol, timeframe, signal, confidence, divergence, current_z, current_heat, cache)
+
+    # Attach smoothed confidence for downstream use
+    tf_key = f"{symbol}:{timeframe}"
+    scan_result["smoothed_confidence"] = cache.smoothed_confidence.get(tf_key, confidence)
 
     if out.filters_fired:
         logger.debug(

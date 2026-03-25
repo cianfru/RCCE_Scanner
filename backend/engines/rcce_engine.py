@@ -429,6 +429,15 @@ def _vol_scale_factor(atr_ratio: float) -> float:
 # Regime probability vectors (vectorised)
 # ---------------------------------------------------------------------------
 
+def _soft_gate(x: np.ndarray, center: float, width: float = 0.15) -> np.ndarray:
+    """Smooth sigmoid transition: 0→1 over ~2*width around center.
+
+    Replaces hard np.where cutoffs so regime probabilities transition
+    gradually instead of flipping 0↔1 at a single z-score value.
+    """
+    return 1.0 / (1.0 + np.exp(-(x - center) / max(width, 0.01)))
+
+
 def _calc_regime_probabilities(
     z: np.ndarray,
     energy: np.ndarray,
@@ -445,6 +454,10 @@ def _calc_regime_probabilities(
 
     ``vol_scale`` adjusts the Z-score thresholds used for regime boundaries
     (dynamic thresholds based on ATR regime).
+
+    Regime probabilities use smooth sigmoid transitions (``_soft_gate``)
+    instead of hard step functions, so confidence values change gradually
+    as z-score drifts across boundaries rather than flipping 0%↔100%.
     """
     # Dynamic Z-thresholds scaled by volatility regime
     z_blowoff = Z_BLOWOFF * vol_scale
@@ -459,12 +472,30 @@ def _calc_regime_probabilities(
     vl = np.asarray(vol_low, dtype=bool)
     vh = np.asarray(vol_high, dtype=bool)
 
-    p_markup = np.maximum(0.0, z_safe) * np.where(energy_safe > 1.0, 1.0, 0.5)
-    p_blowoff = np.maximum(0.0, z_safe - z_blowoff)
-    p_reacc = np.where((z_safe < 0) & (~vh), -z_safe, 0.0)
-    p_md = np.where((vh) & (z_safe < 0), vol_safe * 2.0, 0.0)
-    p_cap = np.where((vl) & (z_safe < z_cap), -z_safe, 0.0)
-    p_acc = np.where((vl) & (z_safe > -0.5) & (z_safe < 0.5), 1.0, 0.0)
+    # Vol-state as smooth float [0,1] for gating (avoids hard bool cutoffs)
+    vl_f = vl.astype(np.float64)
+    vh_f = vh.astype(np.float64)
+    not_vh_f = 1.0 - vh_f
+
+    # MARKUP: ramps up with positive z, energy > 1 boosts
+    energy_boost = 0.5 + 0.5 * _soft_gate(energy_safe, 1.0, 0.2)
+    p_markup = np.maximum(0.0, z_safe) * energy_boost
+
+    # BLOWOFF: ramps up beyond z_blowoff (smooth onset)
+    p_blowoff = np.maximum(0.0, z_safe - z_blowoff) * _soft_gate(z_safe, z_blowoff, 0.2)
+
+    # REACC: smooth ramp for z < 0, gated by NOT high-vol
+    p_reacc = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, 0.0, 0.2) * not_vh_f
+
+    # MARKDOWN: high-vol + z < 0, smooth gate
+    p_md = vol_safe * 2.0 * _soft_gate(-z_safe, 0.0, 0.2) * vh_f
+
+    # CAPITULATION: low-vol + z below cap threshold, smooth gate
+    p_cap = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, -z_cap, 0.3) * vl_f
+
+    # ACCUM: low-vol + z near zero — smooth bell shape around z=0
+    # Sigmoid at -0.5 (rising) × sigmoid at 0.5 (falling) = smooth window
+    p_acc = _soft_gate(z_safe, -0.5, 0.15) * (1.0 - _soft_gate(z_safe, 0.5, 0.15)) * vl_f
 
     sum_p = p_markup + p_blowoff + p_reacc + p_md + p_cap + p_acc + _EPS
 
