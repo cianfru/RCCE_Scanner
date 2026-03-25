@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol } from "../theme.js";
+import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { ZScoreBar, RegimeBadge, SignalDot } from "./badges.jsx";
 import BMSBChart from "./BMSBChart.jsx";
 import ConditionsScorecard from "./ConditionsScorecard.jsx";
@@ -340,7 +340,7 @@ function TradeForm({ selected, api, isMobile }) {
 export default function DetailPanel({ selected, isMobile, isTablet, onClose, api }) {
   if (!selected) return null;
 
-  const tvUrl = `https://www.tradingview.com/chart/?symbol=BINANCE:${getBaseSymbol(selected.symbol)}USDT`;
+  const tvUrl = `https://www.tradingview.com/chart/?symbol=${getTVSymbol(selected.symbol)}`;
 
   return (
     <>
