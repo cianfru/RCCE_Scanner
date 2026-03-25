@@ -4,7 +4,6 @@ import { BrowserRouter } from "react-router-dom";
 import { ThemeProvider } from "./ThemeContext";
 import { WalletProvider } from "./WalletContext";
 import AuthGate from "./components/AuthGate";
-import { ToastProvider } from "./components/ToastNotifications";
 import App from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -13,9 +12,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <ThemeProvider>
         <AuthGate>
           <WalletProvider>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
+            <App />
           </WalletProvider>
         </AuthGate>
       </ThemeProvider>

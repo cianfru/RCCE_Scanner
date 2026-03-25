@@ -1,0 +1,54 @@
+{
+  "tracked_tokens": [
+    {
+      "chain": "ethereum",
+      "contract": "0x289Ff00235D2b98b0145ff5D4435d3e92f9540a6",
+      "symbol": "BOOE",
+      "name": "Book of Ethereum",
+      "decimals": 18,
+      "total_supply": 100000000.0,
+      "added_at": 1773161608.466663
+    }
+  ],
+  "wallet_labels": {
+    "ethereum": {
+      "0x0000000000000000000000000000000000000000": "Burn Address",
+      "0xf977814e90da44bfa03b6295a0616a897441acec": "Binance Hot 8",
+      "0x28c6c06298d514db089934071355e5743bf21d60": "Binance Hot 14",
+      "0x21a31ee1afc51d94c2efccaa2092ad1028285549": "Binance Hot 15",
+      "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": "Binance Hot 16",
+      "0x56eddb7aa87536c09ccc2793473599fd21a8b17f": "Binance Hot 17",
+      "0x47ac0fb4f2d84898e4d9e7b4dab3c24507a6d503": "Binance Cold",
+      "0xbe0eb53f46cd790cd13851d5eff43d12404d33e8": "Binance Cold 2",
+      "0xd6216fc19db775df9774a6e33526131da7d19a2c": "KuCoin Hot",
+      "0xf89d7b9c864f589bbf53a82105107622b35eaa40": "Bybit Hot",
+      "0x1ab4973a48dc892cd9971ece8e01dcc7688f8f23": "Wintermute",
+      "0xdbf5e9c5206d0db70a90108bf936da60221dc080": "Wintermute 2",
+      "0x9507c04b10486547584c37bcbd931b5a4bf54a51": "Jump Trading",
+      "0xca8fa8f0b631ecdb18cda619c4fc9d197c8affca": "Jump Trading 2",
+      "0xe8c060f8052e07423f71d445277c61ac5138a2e5": "Cumberland",
+      "0x6cc5f688a315f3dc28a7781717a9a798a59fda7b": "Alameda Research",
+      "0x77134cbc06cb00b66f4c7e623d5fdbf6777635ec": "Galaxy Digital",
+      "0x7858e59e0c01ea06df3af3d20ac7b0003275d4bf": "Paradigm",
+      "0xa1d8d972560c2f8144af871db508f0b0b10a3fbf": "a16z"
+    },
+    "base": {
+      "0x0000000000000000000000000000000000000000": "Burn Address",
+      "0x3304e22ddaa22bcdc5fca2269b418046ae7b566a": "Coinbase Bridge",
+      "0x1ab4973a48dc892cd9971ece8e01dcc7688f8f23": "Wintermute"
+    },
+    "solana": {
+      "5tzFkiKscjHsFKhFJDbnTraKFjNcDjNQkSz1UhbR5M87": "Wintermute",
+      "CJqXEB5LuoSFmEYNMg1i2KHLZ68VHR1P7zMEHafmmnnM": "Jump Trading",
+      "2VfCkgJBrd5fRwdqKoMaWNFnFGRnZqEgTbfSKE3Kd8q4": "Alameda Research",
+      "DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK": "Binance",
+      "3yFwqXBfZY4jBVUafQ1YEXw189y2dN3V5KQq9uzBDy1E": "FTX Estate",
+      "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH": "Raydium"
+    }
+  },
+  "last_seen_blocks": {
+    "ethereum": {
+      "0x289ff00235d2b98b0145ff5d4435d3e92f9540a6": 24670760
+    }
+  }
+}

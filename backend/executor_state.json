@@ -1,0 +1,52 @@
+{
+  "mode": "paper",
+  "enabled": true,
+  "initial_balance": 10000.0,
+  "whitelist": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT",
+    "BNB/USDT",
+    "XRP/USDT",
+    "ADA/USDT",
+    "AVAX/USDT",
+    "DOGE/USDT",
+    "DOT/USDT",
+    "LINK/USDT"
+  ],
+  "positions": {},
+  "trade_log": [],
+  "pair_map": {
+    "BTC/USDT": "BTC",
+    "ETH/USDT": "ETH",
+    "SOL/USDT": "SOL",
+    "BNB/USDT": "BNB",
+    "XRP/USDT": "XRP",
+    "ADA/USDT": "ADA",
+    "AVAX/USDT": "AVAX",
+    "DOGE/USDT": "DOGE",
+    "DOT/USDT": "DOT",
+    "LINK/USDT": "LINK"
+  },
+  "last_scan_signals": {
+    "BTC/USDT": "WAIT",
+    "ETH/USDT": "WAIT",
+    "SOL/USDT": "WAIT",
+    "BNB/USDT": "WAIT",
+    "XRP/USDT": "WAIT",
+    "ADA/USDT": "WAIT",
+    "AVAX/USDT": "WAIT",
+    "DOGE/USDT": "WAIT",
+    "DOT/USDT": "WAIT",
+    "LINK/USDT": "WAIT"
+  },
+  "total_executions": 373,
+  "engine_state": {
+    "type": "paper",
+    "cash": 10000.0,
+    "holdings": {},
+    "order_counter": 0,
+    "initial_balance": 10000.0
+  },
+  "saved_at": 1773658667.368165
+}

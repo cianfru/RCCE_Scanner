@@ -15,7 +15,6 @@ import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
-import { ToastStack } from "./components/ToastNotifications.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
 import TradingPanel from "./components/TradingPanel.jsx";
@@ -924,9 +923,6 @@ export default function App() {
 
       {/* ── DETAIL PANEL ── */}
       <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
-
-      {/* ── TOAST NOTIFICATIONS ── */}
-      <ToastStack />
     </div>
   );
 }

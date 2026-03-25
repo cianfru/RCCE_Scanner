@@ -1,0 +1,31 @@
+{
+  "groups": [
+    {
+      "id": "26e387b0",
+      "name": "Main",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "SOL/USDT",
+        "BNB/USDT",
+        "XRP/USDT",
+        "ADA/USDT",
+        "AVAX/USDT",
+        "DOGE/USDT",
+        "DOT/USDT",
+        "LINK/USDT"
+      ],
+      "color": "#22d3ee",
+      "order": 0,
+      "pinned": true
+    },
+    {
+      "id": "b3fd11b5",
+      "name": "BTC",
+      "symbols": [],
+      "color": "#fb923c",
+      "order": 1,
+      "pinned": true
+    }
+  ]
+}
