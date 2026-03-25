@@ -110,7 +110,14 @@ _INTER_REQUEST_DELAY_S = 0.05  # 50 ms stagger
 
 # Symbols known to need CCXT (HL candleSnapshot fails).
 # Populated at runtime; most symbols work fine on HL.
-_ccxt_only: set = set()
+_ccxt_only: set = {"OMNI/USDT"}
+
+# Per-symbol preferred CCXT exchange + symbol override.
+# Used when the default fallback chain returns the wrong token (ticker collisions).
+# Key: scanner symbol, Value: (exchange_id, ccxt_symbol)
+_CCXT_SYMBOL_OVERRIDES: Dict[str, tuple] = {
+    "OMNI/USDT": ("coinbase", "OMNI/USD"),  # HL has no OMNI; Coinbase has Omni Network
+}
 
 # Minimum bar thresholds — if HL returns fewer than this, try CCXT for deeper history.
 # Based on engine requirements: heatmap needs 21 weekly bars, RCCE needs ~200 daily bars.
@@ -508,6 +515,12 @@ class OHLCVStore:
 _ohlcv_store = OHLCVStore()
 _ohlcv_store.load_from_disk()
 
+# Purge cached data for symbols with exchange overrides (prevents stale
+# wrong-token data from persisting across restarts).
+for _override_sym in _CCXT_SYMBOL_OVERRIDES:
+    for _tf in SUPPORTED_TIMEFRAMES:
+        _ohlcv_store.invalidate(_override_sym, _tf)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -751,6 +764,23 @@ async def _fetch_ohlcv_ccxt(
     """Fetch OHLCV via CCXT exchange fallback chain."""
     if limit is None:
         limit = _DEFAULT_LIMIT.get(timeframe, 500)
+
+    # Check for per-symbol exchange override (ticker collisions)
+    override = _CCXT_SYMBOL_OVERRIDES.get(symbol)
+    if override:
+        override_exch, override_sym = override
+        try:
+            exchange = await _get_exchange(override_exch)
+            if override_sym in exchange.markets:
+                raw = await exchange.fetch_ohlcv(override_sym, timeframe, limit=limit)
+                if raw:
+                    data = _parse_ohlcv(raw)
+                    _cache.put(symbol, timeframe, data)  # cache under original symbol
+                    logger.info("Fetched %d bars for %s (%s) from %s (override → %s)",
+                                len(raw), symbol, timeframe, override_exch, override_sym)
+                    return data
+        except Exception as exc:
+            logger.warning("Override exchange %s failed for %s: %s", override_exch, symbol, exc)
 
     exchanges_to_try = [exchange_id]
     # Fallback chain: Bybit/OKX/KuCoin/Gate have broad coverage and no geo-blocking
