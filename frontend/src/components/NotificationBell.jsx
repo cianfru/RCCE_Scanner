@@ -184,13 +184,32 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const unseen = events.filter((e) => e.timestamp > lastSeen).length;
+  const unseen = visibleEvents.filter((e) => e.timestamp > lastSeen).length;
   const hasWarnings = warnings.length > 0;
   const hasCritical = warnings.some(w => w.severity === "critical" || w.severity === "high");
   const hasOpps = exhaustionOpps.length > 0;
   const hasSetups = marketSetups.length > 0;
   const hasHighSetup = marketSetups.some(s => s.severity === "high");
-  const hasWhaleEvents = whaleEvents.length > 0;
+  const hasWhaleEvents = visibleWhale.length > 0;
+  const hasAnything = unseen > 0 || hasWarnings || hasOpps || hasSetups || hasWhaleEvents;
+
+  // Dismissed-at timestamp: anything older is hidden
+  const [dismissedAt, setDismissedAt] = useState(() => {
+    const stored = localStorage.getItem("rcce-notif-dismissed");
+    return stored ? parseFloat(stored) : 0;
+  });
+
+  const clearAll = () => {
+    const now = Math.floor(Date.now() / 1000);
+    setDismissedAt(now);
+    localStorage.setItem("rcce-notif-dismissed", String(now));
+    setLastSeen(now);
+    localStorage.setItem("rcce-notif-lastseen", String(now));
+  };
+
+  // Filter all sections by dismissedAt
+  const visibleEvents = events.filter(e => (e.timestamp || 0) > dismissedAt);
+  const visibleWhale = whaleEvents.filter(e => (e.timestamp || 0) > dismissedAt);
 
   const markSeen = () => {
     if (events.length > 0) {
@@ -228,7 +247,7 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(unseen > 0 || hasWarnings || hasOpps || hasSetups || hasWhaleEvents) && (
+        {hasAnything && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
@@ -253,9 +272,34 @@ export default function NotificationBell() {
           boxShadow: T.shadowHeavy,
           zIndex: 9999,
           overflowY: "auto",
+          display: "flex", flexDirection: "column",
         }}>
+          {/* Clear All header */}
+          <div style={{
+            padding: "8px 14px",
+            borderBottom: `1px solid ${T.border}`,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 700, color: T.text2, letterSpacing: "0.08em" }}>
+              NOTIFICATIONS
+            </span>
+            <button
+              onClick={clearAll}
+              style={{
+                background: "transparent", border: "none", cursor: "pointer",
+                fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+                color: T.text4, padding: "2px 6px", borderRadius: 4,
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = T.accent; }}
+              onMouseLeave={e => { e.currentTarget.style.color = T.text4; }}
+            >
+              CLEAR ALL
+            </button>
+          </div>
+
           {/* Whale Alerts Section */}
-          {whaleEvents.length > 0 && (
+          {visibleWhale.length > 0 && (
             <>
               <div style={{
                 padding: "10px 14px",
@@ -272,9 +316,9 @@ export default function NotificationBell() {
                 <span style={{
                   fontSize: 10, fontFamily: T.mono, color: "#c084fc",
                   fontWeight: 600,
-                }}>{whaleEvents.length}</span>
+                }}>{visibleWhale.length}</span>
               </div>
-              {whaleEvents.slice(0, 8).map((ev, i) => {
+              {visibleWhale.slice(0, 8).map((ev, i) => {
                 const addr = ev.wallet ? `${ev.wallet.slice(0, 6)}...${ev.wallet.slice(-4)}` : "?";
                 const actionColor = ev.status === "OPENED" ? "#34d399" : ev.status === "CLOSED" ? "#f87171" : "#fbbf24";
                 const sizeStr = ev.size_usd >= 1e6 ? `$${(ev.size_usd / 1e6).toFixed(1)}M` : `$${(ev.size_usd / 1e3).toFixed(0)}K`;
@@ -574,24 +618,24 @@ export default function NotificationBell() {
             }}>
               SIGNAL EVENTS
             </span>
-            {events.length > 0 && (
+            {visibleEvents.length > 0 && (
               <span style={{
                 fontSize: 10, fontFamily: T.mono, color: T.text4,
               }}>
-                {events.length}
+                {visibleEvents.length}
               </span>
             )}
           </div>
 
-          {events.length === 0 && warnings.length === 0 && exhaustionOpps.length === 0 && marketSetups.length === 0 ? (
+          {visibleEvents.length === 0 && warnings.length === 0 && visibleWhale.length === 0 ? (
             <div style={{
               padding: "40px 14px", textAlign: "center",
               color: T.text4, fontFamily: T.mono, fontSize: 11,
             }}>
-              No events yet
+              No new events
             </div>
           ) : (
-            events.map((ev, i) => {
+            visibleEvents.map((ev, i) => {
               const isSignal = ev.event_type === "signal";
               const color = isSignal
                 ? (TRANSITION_COLORS[ev.transition_type] || T.text3)
@@ -606,7 +650,7 @@ export default function NotificationBell() {
                   key={`${ev.event_type}-${ev.symbol}-${ev.timestamp}-${i}`}
                   style={{
                     padding: "8px 14px",
-                    borderBottom: i < events.length - 1 ? `1px solid ${T.border}` : "none",
+                    borderBottom: i < visibleEvents.length - 1 ? `1px solid ${T.border}` : "none",
                     background: isNew ? T.overlay03 : "transparent",
                     transition: "background 0.15s",
                   }}
