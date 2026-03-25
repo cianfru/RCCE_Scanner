@@ -7,6 +7,13 @@ import { T } from "../theme.js";
 
 const ToastContext = createContext(null);
 
+// Global event bus — allows firing toasts without importing useToast
+// (avoids circular import / TDZ issues in production builds)
+const _listeners = new Set();
+export function fireToast(opts) {
+  _listeners.forEach(fn => fn(opts));
+}
+
 const TOAST_COLORS = {
   entry:   "#34d399",
   exit:    "#f87171",
@@ -54,6 +61,12 @@ export function ToastProvider({ children }) {
 
     return id;
   }, [removeToast]);
+
+  // Register addToast on the global event bus
+  useEffect(() => {
+    _listeners.add(addToast);
+    return () => _listeners.delete(addToast);
+  }, [addToast]);
 
   // Cleanup on unmount
   useEffect(() => {

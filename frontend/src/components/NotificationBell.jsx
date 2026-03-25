@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme";
 import { useWallet } from "../WalletContext.jsx";
-import { useToast } from "./ToastNotifications.jsx";
+import { fireToast } from "./ToastNotifications.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -50,7 +50,7 @@ function coinName(symbol) {
 
 export default function NotificationBell() {
   const { address: walletAddress } = useWallet();
-  const { addToast } = useToast();
+  const addToast = fireToast;
   const [events, setEvents] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
