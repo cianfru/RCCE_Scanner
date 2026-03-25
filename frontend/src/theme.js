@@ -302,13 +302,13 @@ export function getBaseSymbol(sym) {
 // Coins where Binance's TradingView chart carries old/delisted ticker history
 // that would confuse the chart. Map to an exchange that only has the current token.
 const _TV_EXCHANGE_OVERRIDES = {
-  "OMNI": "BYBIT",   // Binance OMNIUSDT shows OmniLayer (2019-2021) + Omni Network (2024+)
+  "OMNI": "COINBASE",  // Binance OMNIUSDT shows OmniLayer (2019-2021) + Omni Network (2024+)
 };
 
 export function getTVSymbol(sym) {
   const base = getBaseSymbol(sym).replace("/\u20bf", ""); // strip /₿ if BTC-quoted
   const exchange = _TV_EXCHANGE_OVERRIDES[base] || "BINANCE";
-  const quote = sym.endsWith("/BTC") ? "BTC" : "USDT";
+  const quote = exchange === "COINBASE" ? "USD" : sym.endsWith("/BTC") ? "BTC" : "USDT";
   return `${exchange}:${base}${quote}`;
 }
 
