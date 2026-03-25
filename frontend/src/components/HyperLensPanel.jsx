@@ -1069,6 +1069,34 @@ function WalletDetail({ address, onClose }) {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState("positions");
+  const [isFollowed, setIsFollowed] = useState(() => {
+    try {
+      const list = JSON.parse(localStorage.getItem("rcce-followed-wallets") || "[]");
+      return list.includes(address.toLowerCase());
+    } catch { return false; }
+  });
+
+  const toggleFollow = useCallback(async () => {
+    const addr = address.toLowerCase();
+    try {
+      if (isFollowed) {
+        await fetch(`${API}/api/hyperlens/follow/${addr}`, { method: "DELETE" });
+        setIsFollowed(false);
+        const list = JSON.parse(localStorage.getItem("rcce-followed-wallets") || "[]");
+        localStorage.setItem("rcce-followed-wallets", JSON.stringify(list.filter(a => a !== addr)));
+      } else {
+        await fetch(`${API}/api/hyperlens/follow`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: addr }),
+        });
+        setIsFollowed(true);
+        const list = JSON.parse(localStorage.getItem("rcce-followed-wallets") || "[]");
+        if (!list.includes(addr)) list.push(addr);
+        localStorage.setItem("rcce-followed-wallets", JSON.stringify(list));
+      }
+    } catch {}
+  }, [address, isFollowed]);
 
   useEffect(() => {
     setLoading(true);
@@ -1177,20 +1205,41 @@ function WalletDetail({ address, onClose }) {
             <WalletTags data={data} />
           </div>
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            width: 30, height: 30, borderRadius: 8,
-            border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
-            fontSize: 14, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, transition: "all 0.15s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
-          onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
-        >
-          {"\u2715"}
-        </button>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          {/* Follow / Unfollow button */}
+          <button
+            onClick={toggleFollow}
+            title={isFollowed ? "Unfollow wallet" : "Follow wallet for trade alerts"}
+            style={{
+              width: 30, height: 30, borderRadius: 8,
+              border: `1px solid ${isFollowed ? "#c084fc40" : T.overlay10}`,
+              background: isFollowed ? "rgba(192,132,252,0.15)" : T.overlay04,
+              color: isFollowed ? "#c084fc" : T.text3,
+              fontSize: 14, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { if (!isFollowed) { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = "#c084fc"; } }}
+            onMouseLeave={e => { if (!isFollowed) { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; } }}
+          >
+            {isFollowed ? "\u2605" : "\u2606"}
+          </button>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            style={{
+              width: 30, height: 30, borderRadius: 8,
+              border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
+              fontSize: 14, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
+            onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
+          >
+            {"\u2715"}
+          </button>
+        </div>
       </div>
 
       {/* ── TWO-PANEL: LEFT (equity + gauges) + RIGHT (chart) ── */}

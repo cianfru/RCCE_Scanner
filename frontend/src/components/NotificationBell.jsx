@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme";
 import { useWallet } from "../WalletContext.jsx";
+import { useToast } from "./ToastNotifications.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -49,25 +50,47 @@ function coinName(symbol) {
 
 export default function NotificationBell() {
   const { address: walletAddress } = useWallet();
+  const { addToast } = useToast();
   const [events, setEvents] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
   const [marketSetups, setMarketSetups] = useState([]);
+  const [whaleEvents, setWhaleEvents] = useState([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState(() => {
     const stored = localStorage.getItem("rcce-notif-lastseen");
     return stored ? parseInt(stored, 10) : Math.floor(Date.now() / 1000);
   });
   const panelRef = useRef(null);
+  const lastWhaleTs = useRef(0);
+  const lastEventTs = useRef(0);
 
   const fetchNotifs = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/notifications?limit=10`);
+      const res = await fetch(`${API_BASE}/api/notifications?limit=15`);
       if (!res.ok) return;
       const data = await res.json();
-      setEvents(data.events || []);
+      const newEvents = data.events || [];
+      setEvents(newEvents);
+
+      // Toast for HIGH priority new events
+      for (const ev of newEvents) {
+        if (ev.priority !== "high") continue;
+        if (ev.timestamp <= lastEventTs.current) continue;
+        const isEntry = ev.transition_type === "ENTRY" || ev.transition_type === "UPGRADE";
+        addToast({
+          type: isEntry ? "entry" : "exit",
+          title: `${ev.transition_type} ${coinName(ev.symbol || "")}`,
+          body: `${ev.prev_label || "WAIT"} \u2192 ${ev.label}`,
+          symbol: coinName(ev.symbol || ""),
+          severity: ev.priority,
+        });
+      }
+      if (newEvents.length > 0) {
+        lastEventTs.current = Math.max(lastEventTs.current, ...newEvents.map(e => e.timestamp || 0));
+      }
     } catch (_) {}
-  }, []);
+  }, [addToast]);
 
   const fetchWarnings = useCallback(async () => {
     if (!walletAddress) {
@@ -109,17 +132,45 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress, setupFilter]);
 
-  // Poll every 60s
+  const fetchWhaleEvents = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/hyperlens/follow/events?limit=20`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const newWhaleEvents = data.events || [];
+      setWhaleEvents(newWhaleEvents);
+
+      // Toast for new whale trades
+      for (const ev of newWhaleEvents) {
+        if ((ev.timestamp || 0) <= lastWhaleTs.current) continue;
+        const addr = ev.wallet ? `${ev.wallet.slice(0, 6)}...${ev.wallet.slice(-4)}` : "Wallet";
+        const action = ev.status === "OPENED" ? "opened" : ev.status === "CLOSED" ? "closed" : "flipped";
+        const sizeStr = ev.size_usd >= 1e6 ? `$${(ev.size_usd / 1e6).toFixed(1)}M` : `$${(ev.size_usd / 1e3).toFixed(0)}K`;
+        addToast({
+          type: "whale",
+          title: `${(ev.cohort || "tracked").toUpperCase()} ${action} ${ev.side} ${ev.coin}`,
+          body: `${addr} \u00B7 ${sizeStr} \u00B7 ${ev.leverage || 1}x`,
+          symbol: ev.coin,
+        });
+      }
+      if (newWhaleEvents.length > 0) {
+        lastWhaleTs.current = Math.max(lastWhaleTs.current, ...newWhaleEvents.map(e => e.timestamp || 0));
+      }
+    } catch (_) {}
+  }, [addToast]);
+
+  // Poll every 30s (faster for whale alerts)
   useEffect(() => {
     fetchNotifs();
     fetchWarnings();
     fetchExhaustionOpps();
     fetchMarketSetups();
+    fetchWhaleEvents();
     const iv = setInterval(() => {
-      fetchNotifs(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
-    }, 60_000);
+      fetchNotifs(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups(); fetchWhaleEvents();
+    }, 30_000);
     return () => clearInterval(iv);
-  }, [fetchNotifs, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
+  }, [fetchNotifs, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups, fetchWhaleEvents]);
 
   // Close on outside click
   useEffect(() => {
@@ -139,6 +190,7 @@ export default function NotificationBell() {
   const hasOpps = exhaustionOpps.length > 0;
   const hasSetups = marketSetups.length > 0;
   const hasHighSetup = marketSetups.some(s => s.severity === "high");
+  const hasWhaleEvents = whaleEvents.length > 0;
 
   const markSeen = () => {
     if (events.length > 0) {
@@ -176,7 +228,7 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(unseen > 0 || hasWarnings || hasOpps || hasSetups) && (
+        {(unseen > 0 || hasWarnings || hasOpps || hasSetups || hasWhaleEvents) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
@@ -202,6 +254,79 @@ export default function NotificationBell() {
           zIndex: 9999,
           overflowY: "auto",
         }}>
+          {/* Whale Alerts Section */}
+          {whaleEvents.length > 0 && (
+            <>
+              <div style={{
+                padding: "10px 14px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(192, 132, 252, 0.05)",
+              }}>
+                <span style={{
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  color: "#c084fc", letterSpacing: "0.08em",
+                }}>
+                  WHALE ALERTS
+                </span>
+                <span style={{
+                  fontSize: 10, fontFamily: T.mono, color: "#c084fc",
+                  fontWeight: 600,
+                }}>{whaleEvents.length}</span>
+              </div>
+              {whaleEvents.slice(0, 8).map((ev, i) => {
+                const addr = ev.wallet ? `${ev.wallet.slice(0, 6)}...${ev.wallet.slice(-4)}` : "?";
+                const actionColor = ev.status === "OPENED" ? "#34d399" : ev.status === "CLOSED" ? "#f87171" : "#fbbf24";
+                const sizeStr = ev.size_usd >= 1e6 ? `$${(ev.size_usd / 1e6).toFixed(1)}M` : `$${(ev.size_usd / 1e3).toFixed(0)}K`;
+                return (
+                  <div key={`whale-${i}`} style={{
+                    padding: "8px 14px",
+                    borderBottom: `1px solid ${T.border}`,
+                    display: "flex", flexDirection: "column", gap: 2,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, fontFamily: T.mono,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: `${actionColor}18`, color: actionColor,
+                        border: `1px solid ${actionColor}40`,
+                      }}>
+                        {ev.status}
+                      </span>
+                      <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1 }}>
+                        {ev.side} {ev.coin}
+                      </span>
+                      <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text3, marginLeft: "auto" }}>
+                        {sizeStr} {ev.leverage}x
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, fontFamily: T.mono, color: T.text4 }}>
+                      <span>{addr}</span>
+                      {ev.cohort && (
+                        <span style={{
+                          padding: "0 4px", borderRadius: 3,
+                          background: ev.cohort === "elite" ? "rgba(251,191,36,0.15)" : "rgba(192,132,252,0.15)",
+                          color: ev.cohort === "elite" ? "#fbbf24" : "#c084fc",
+                          fontWeight: 600, fontSize: 8, letterSpacing: "0.04em",
+                        }}>
+                          {ev.cohort.toUpperCase()}
+                        </span>
+                      )}
+                      {ev.pnl != null && ev.pnl !== 0 && (
+                        <span style={{ color: ev.pnl > 0 ? "#34d399" : "#f87171" }}>
+                          {ev.pnl > 0 ? "+" : ""}{ev.pnl >= 1000 ? `$${(ev.pnl / 1000).toFixed(1)}K` : `$${ev.pnl.toFixed(0)}`}
+                        </span>
+                      )}
+                      <span style={{ marginLeft: "auto" }}>
+                        {ev.timestamp ? timeAgo(ev.timestamp) : ""}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
           {/* Position Warnings Section */}
           {warnings.length > 0 && (
             <>

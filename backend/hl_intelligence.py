@@ -1128,6 +1128,62 @@ _last_positions: Dict[str, Dict[str, dict]] = {}  # addr -> {coin: {side, size, 
 # Track when a position was first seen (for position age): addr -> {coin: timestamp}
 _position_first_seen: Dict[str, Dict[str, float]] = {}
 
+# Followed wallets + their events (for notification system)
+_followed_wallets: set = set()
+_followed_events: List[dict] = []  # capped at 200, newest first
+_FOLLOWED_EVENTS_MAX = 200
+
+
+def follow_wallet(address: str) -> bool:
+    """Add a wallet to the followed set. Returns True if newly added."""
+    addr = address.lower()
+    if addr in _followed_wallets:
+        return False
+    _followed_wallets.add(addr)
+    return True
+
+
+def unfollow_wallet(address: str) -> bool:
+    """Remove a wallet from the followed set. Returns True if was following."""
+    addr = address.lower()
+    if addr not in _followed_wallets:
+        return False
+    _followed_wallets.discard(addr)
+    return True
+
+
+def get_followed_wallets() -> List[str]:
+    """Return list of followed wallet addresses."""
+    return list(_followed_wallets)
+
+
+def get_followed_events(since: float = 0.0, limit: int = 50) -> List[dict]:
+    """Return recent trade events for followed wallets, optionally since a timestamp."""
+    if since > 0:
+        return [e for e in _followed_events if e.get("timestamp", 0) > since][:limit]
+    return _followed_events[:limit]
+
+
+def _emit_followed_event(addr: str, trade: dict) -> None:
+    """If this wallet is followed, add to the followed events feed."""
+    if addr.lower() not in _followed_wallets:
+        return
+    cohorts = _wallet_cohorts.get(addr, set())
+    cohort = "elite" if "elite" in cohorts else (
+        "money_printer" if "money_printer" in cohorts else (
+            "smart_money" if "smart_money" in cohorts else "tracked"
+        )
+    )
+    event = {
+        **trade,
+        "wallet": addr,
+        "cohort": cohort,
+        "timestamp": trade.get("closed_at") or trade.get("opened_at") or time.time(),
+    }
+    _followed_events.insert(0, event)
+    if len(_followed_events) > _FOLLOWED_EVENTS_MAX:
+        _followed_events[:] = _followed_events[:_FOLLOWED_EVENTS_MAX]
+
 
 def _reconstruct_trades() -> None:
     """Compare consecutive snapshots to detect position opens/closes.
@@ -1168,24 +1224,25 @@ def _reconstruct_trades() -> None:
         # Closed positions: in prev but not in curr
         for coin, prev_pos in prev_map.items():
             if coin not in curr_map:
-                _trade_log[addr].append({
+                trade = {
                     "coin": coin,
                     "side": prev_pos["side"],
                     "size_usd": prev_pos["size_usd"],
                     "entry_px": prev_pos["entry_px"],
                     "leverage": prev_pos["leverage"],
-                    "pnl": prev_pos["unrealized_pnl"],  # Last known unrealized = approximate realized
+                    "pnl": prev_pos["unrealized_pnl"],
                     "pnl_pct": (prev_pos["unrealized_pnl"] / max(prev_pos["size_usd"], 1)) * 100,
                     "opened_at": _position_first_seen.get(addr, {}).get(coin),
                     "closed_at": latest.timestamp,
                     "status": "CLOSED",
-                })
-                # Clean up first-seen entry for closed position
+                }
+                _trade_log[addr].append(trade)
+                _emit_followed_event(addr, trade)
                 _position_first_seen.get(addr, {}).pop(coin, None)
 
             # Flipped side: closed one direction, opened opposite
             elif curr_map[coin]["side"] != prev_pos["side"]:
-                _trade_log[addr].append({
+                trade = {
                     "coin": coin,
                     "side": prev_pos["side"],
                     "size_usd": prev_pos["size_usd"],
@@ -1196,16 +1253,16 @@ def _reconstruct_trades() -> None:
                     "opened_at": _position_first_seen.get(addr, {}).get(coin),
                     "closed_at": latest.timestamp,
                     "status": "FLIPPED",
-                })
-                # Reset first-seen for flipped position (new direction)
+                }
+                _trade_log[addr].append(trade)
+                _emit_followed_event(addr, trade)
                 _position_first_seen[addr][coin] = latest.timestamp
 
         # New positions: in curr but not in prev (logged as "OPEN" events)
         for coin in curr_map:
             if coin not in prev_map:
-                # Record first-seen timestamp for position age tracking
                 _position_first_seen[addr][coin] = latest.timestamp
-                _trade_log[addr].append({
+                trade = {
                     "coin": coin,
                     "side": curr_map[coin]["side"],
                     "size_usd": curr_map[coin]["size_usd"],
@@ -1216,7 +1273,9 @@ def _reconstruct_trades() -> None:
                     "opened_at": latest.timestamp,
                     "closed_at": None,
                     "status": "OPENED",
-                })
+                }
+                _trade_log[addr].append(trade)
+                _emit_followed_event(addr, trade)
 
         # Keep only last 200 trade events per wallet
         if len(_trade_log[addr]) > 200:

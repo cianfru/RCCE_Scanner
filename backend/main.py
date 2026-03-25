@@ -2087,10 +2087,56 @@ async def signal_regime_durations(
 # Notifications feed (frontend toast / bell)
 # ---------------------------------------------------------------------------
 
+_HIGH_ENTRY_SIGNALS = {"STRONG_LONG", "LIGHT_LONG"}
+_HIGH_EXIT_SIGNALS = {"TRIM_HARD", "RISK_OFF"}
+_ENTRY_SIGNALS_ALL = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
+
+
+def _classify_notification_priority(event: dict) -> str:
+    """Classify a notification event as 'high', 'medium', or 'low'.
+
+    HIGH (toast-worthy): strong entry/exit, upgrades
+    MEDIUM (bell dropdown): moderate entries, downgrades
+    LOW (filtered out): noise, laterals, bearish exhaustion floors
+    """
+    tt = event.get("transition_type")
+    label = event.get("label", "")
+    prev_label = event.get("prev_label", "")
+    event_type = event.get("event_type", "")
+
+    # Signal events
+    if event_type == "signal" and tt:
+        if tt == "ENTRY" and label in _HIGH_ENTRY_SIGNALS:
+            return "high"
+        if tt == "EXIT" and label in _HIGH_EXIT_SIGNALS:
+            return "high"
+        if tt == "UPGRADE":
+            return "high"
+        if tt == "ENTRY" and label in _ENTRY_SIGNALS_ALL:
+            return "medium"
+        if tt == "DOWNGRADE":
+            return "medium"
+        if tt == "EXIT":
+            return "medium"
+
+    # Regime events — only show major structural shifts
+    if event_type == "regime":
+        bullish = {"MARKUP", "ACCUM", "REACC"}
+        bearish = {"MARKDOWN", "CAP", "BLOWOFF"}
+        if label in bullish and prev_label in bearish:
+            return "high"  # bearish → bullish regime flip
+        if label in bearish and prev_label in bullish:
+            return "high"  # bullish → bearish regime flip
+        return "low"  # minor regime changes
+
+    return "low"
+
+
 @app.get("/api/notifications")
 async def notifications_feed(
     since: Optional[int] = Query(None),
     limit: int = Query(30, ge=1, le=100),
+    priority: Optional[str] = Query(None, description="Filter by priority: high, medium, or all"),
 ):
     """Recent signal + regime transitions for the notification bell.
 
@@ -2100,6 +2146,9 @@ async def notifications_feed(
         Unix timestamp (seconds).  Only return events newer than this.
     limit : int
         Max events to return (default 30).
+    priority : str, optional
+        Filter: 'high' (toast-worthy), 'medium' (bell only), 'all' (everything).
+        Default: returns high + medium (filters out noise).
     """
     from signal_log import SignalLog
     sig_log = SignalLog.get()
@@ -2111,8 +2160,9 @@ async def notifications_feed(
         since_filter = " AND timestamp > ?"
         params.append(since)
 
-    # Signal transitions (exclude INITIAL — first-ever scan noise)
-    sig_params = ["4h"] + params + ["4h"] + params + [limit]
+    # Fetch more than needed so we can filter by priority
+    fetch_limit = limit * 3
+    sig_params = ["4h"] + params + ["4h"] + params + [fetch_limit]
     cursor = await db.execute(
         f"""SELECT * FROM (
             SELECT 'signal' AS event_type, symbol, signal AS label,
@@ -2137,7 +2187,22 @@ async def notifications_feed(
         sig_params,
     )
     rows = await cursor.fetchall()
-    events = [dict(r) for r in rows]
+    events = []
+    for r in rows:
+        ev = dict(r)
+        ev["priority"] = _classify_notification_priority(ev)
+        events.append(ev)
+
+    # Filter by priority
+    if priority == "high":
+        events = [e for e in events if e["priority"] == "high"]
+    elif priority == "all":
+        pass  # no filter
+    else:
+        # Default: high + medium (filter out low/noise)
+        events = [e for e in events if e["priority"] in ("high", "medium")]
+
+    events = events[:limit]
     return {"events": events, "count": len(events)}
 
 
@@ -2955,6 +3020,47 @@ async def whale_address_history(
     await _ensure_whale_db()
     tracker = _get_whale_tracker()
     return await tracker.get_address_history(chain, contract, address, days)
+
+
+# ---------------------------------------------------------------------------
+# Wallet Follow endpoints (HyperLens notification tracking)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/hyperlens/follow")
+async def get_followed_wallets():
+    """List followed wallets."""
+    from hl_intelligence import get_followed_wallets
+    return {"wallets": get_followed_wallets()}
+
+
+@app.post("/api/hyperlens/follow")
+async def follow_wallet_endpoint(body: dict):
+    """Follow a wallet for trade notifications."""
+    address = body.get("address", "").strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="address required")
+    from hl_intelligence import follow_wallet
+    added = follow_wallet(address)
+    return {"ok": True, "added": added, "address": address}
+
+
+@app.delete("/api/hyperlens/follow/{address}")
+async def unfollow_wallet_endpoint(address: str):
+    """Unfollow a wallet."""
+    from hl_intelligence import unfollow_wallet
+    removed = unfollow_wallet(address)
+    return {"ok": True, "removed": removed, "address": address}
+
+
+@app.get("/api/hyperlens/follow/events")
+async def get_followed_events(
+    since: float = Query(0.0, description="Unix timestamp — return events after this time"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get recent trade events for followed wallets."""
+    from hl_intelligence import get_followed_events
+    events = get_followed_events(since=since, limit=limit)
+    return {"events": events, "count": len(events)}
 
 
 # ---------------------------------------------------------------------------
