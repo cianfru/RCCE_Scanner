@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol } from "../theme.js";
+import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { RegimeBadge, SignalDot } from "../components/badges.jsx";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
@@ -309,7 +309,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           momentum={data.momentum}
         />
         <a
-          href={`https://www.tradingview.com/chart/?symbol=BINANCE:${coin.replace("/", "")}USDT`}
+          href={`https://www.tradingview.com/chart/?symbol=${getTVSymbol(data.symbol)}`}
           target="_blank"
           rel="noopener noreferrer"
           style={{
