@@ -491,7 +491,8 @@ def _process_symbol(
         "price": float(ohlcv["close"][-1]),
         # RCCE fields
         "regime": rcce.get("regime", "FLAT"),
-        "confidence": round(rcce.get("confidence", 0), 1),
+        "confidence": round(rcce.get("confidence", 0), 1),  # RCCE regime probability (legacy name kept for compat)
+        "regime_probability": round(rcce.get("confidence", 0), 1),
         "raw_signal": rcce.get("raw_signal", "WAIT"),
         "signal": "WAIT",               # placeholder — synthesizer fills this
         "signal_reason": "",             # synthesizer fills

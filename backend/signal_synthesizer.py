@@ -282,8 +282,13 @@ def synthesize_signal(
     # -----------------------------------------------------------------------
 
     # -- Core conditions (weight 1.0) --
+    # NOTE: RCCE regime probability (formerly "confidence") is no longer a
+    # condition gate.  It measured HMM classification certainty, not trade
+    # conviction — a coin can have 14/16 conditions met but fail the gate
+    # because z-score sits near a regime boundary.  Trade conviction is now
+    # the weighted conditions score itself.  Regime probability is still used
+    # downstream for entry-specific gates (ACCUM > 40%, REVIVAL > 30%).
     cond_bullish_regime = regime in ("MARKUP", "ACCUM")
-    cond_confidence = confidence > CONF_STRONG
     cond_consensus = mkt_consensus in ("RISK-ON", "ACCUMULATION")
     cond_z_range = -0.5 <= z <= 2.5
     cond_no_bear_div = divergence != "BEAR-DIV"
@@ -294,7 +299,7 @@ def synthesize_signal(
     cond_liquidity_ok = stable_trend != "CONTRACTING"
 
     core_conditions = [
-        cond_bullish_regime, cond_confidence, cond_consensus, cond_z_range,
+        cond_bullish_regime, cond_consensus, cond_z_range,
         cond_no_bear_div, cond_heat_ok, cond_no_climax,
         cond_funding_ok, cond_not_greedy, cond_liquidity_ok,
     ]
@@ -302,7 +307,6 @@ def synthesize_signal(
 
     _CORE_NAMES = [
         ("bullish_regime", "Regime",      "MARKUP or ACCUM",         "core"),
-        ("confidence",     "Confidence",  f"> {CONF_STRONG*100:.0f}%", "core"),
         ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION", "core"),
         ("z_range",        "Z-Score",     "-0.5 to 2.5",             "core"),
         ("no_bear_div",    "No Bear Div", "No bearish divergence",   "core"),
@@ -347,13 +351,14 @@ def synthesize_signal(
     ]
 
     # Weighted scoring: core (1.0) + CoinGlass (0.75 each) + HyperLens (0.5 each)
-    core_score = float(core_met)  # max 10.0
+    # Core max is now 9 (confidence gate removed)
+    core_score = float(core_met)  # max 9.0
     if has_coinglass:
         cg_score = float(cg_met) * CG_CONDITION_WEIGHT  # max 3.0
-        total_max = 10.0 + 4 * CG_CONDITION_WEIGHT       # 13.0
+        total_max = 9.0 + 4 * CG_CONDITION_WEIGHT        # 12.0
     else:
         cg_score = 0.0
-        total_max = 10.0
+        total_max = 9.0
 
     if has_hyperlens:
         hl_score = float(hl_met) * HL_CONDITION_WEIGHT  # max 1.0
@@ -367,16 +372,16 @@ def synthesize_signal(
     # For backward compat: conditions_met / conditions_total as integers
     if has_coinglass and has_hyperlens:
         conditions_met = core_met + cg_met + hl_met
-        conditions_total = 16
+        conditions_total = 15
     elif has_coinglass:
         conditions_met = core_met + cg_met
-        conditions_total = 14
+        conditions_total = 13
     elif has_hyperlens:
         conditions_met = core_met + hl_met
-        conditions_total = 12
+        conditions_total = 11
     else:
         conditions_met = core_met
-        conditions_total = 10
+        conditions_total = 9
 
     out.conditions_met = conditions_met
     out.conditions_total = conditions_total

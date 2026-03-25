@@ -68,7 +68,8 @@ class ScanResult(BaseModel):
     timeframe: str
     price: float
     regime: str
-    confidence: float
+    confidence: float                    # RCCE regime probability (legacy, kept for compat)
+    regime_probability: float = 0.0     # same value, clearer name
     signal: str
     raw_signal: str = "WAIT"
     signal_reason: str = ""
