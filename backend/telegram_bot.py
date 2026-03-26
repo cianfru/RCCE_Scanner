@@ -56,6 +56,9 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("unwatch", self._cmd_unwatch))
         self.app.add_handler(CommandHandler("positions", self._cmd_positions))
         self.app.add_handler(CommandHandler("overview", self._cmd_overview))
+        self.app.add_handler(CommandHandler("follow", self._cmd_follow))
+        self.app.add_handler(CommandHandler("unfollow", self._cmd_unfollow))
+        self.app.add_handler(CommandHandler("following", self._cmd_following))
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
@@ -76,6 +79,9 @@ class TelegramBot:
                 BotCommand("unwatch", "Stop position monitoring"),
                 BotCommand("positions", "Show open positions with scanner context"),
                 BotCommand("overview", "Full portfolio overview + opportunities"),
+                BotCommand("follow", "Follow a whale wallet (e.g. /follow 0x...)"),
+                BotCommand("unfollow", "Stop following a wallet"),
+                BotCommand("following", "List followed whale wallets"),
                 BotCommand("help", "Show help message"),
             ])
         except Exception as e:
@@ -224,6 +230,91 @@ class TelegramBot:
 
         overview = await monitor.get_overview(watcher.address, results_by_symbol)
         await self._send(update, overview)
+
+    async def _cmd_follow(self, update, context):
+        """Follow a whale wallet for trade alerts."""
+        if not self._check_auth(update.effective_chat.id):
+            return
+        if not context.args:
+            await self._send(update, "Usage: /follow 0xADDRESS\n\nYou'll get alerts when this wallet opens/closes positions.")
+            return
+
+        address = context.args[0].lower()
+        if not address.startswith("0x") or len(address) < 10:
+            await self._send(update, "Invalid address. Must start with 0x.")
+            return
+
+        import whale_follows as wf
+        # Use chat_id as user key for TG (no connected wallet in TG context)
+        user_key = f"tg:{update.effective_chat.id}"
+        added = wf.add_follow(user_key, address)
+        wf.link_tg(user_key, update.effective_chat.id)
+
+        if added:
+            # Try to get wallet info
+            try:
+                from hl_intelligence import get_wallet_profile
+                profile = get_wallet_profile(address)
+                cohorts = profile.get("cohorts", [])
+                av = profile.get("account_value", 0)
+                roi = profile.get("roi", 0)
+                cohort_str = ", ".join(c.replace("_", " ").title() for c in cohorts) if cohorts else "Tracked"
+                pos_count = len(profile.get("positions", []))
+                await self._send(
+                    update,
+                    f"Now following {address[:8]}...{address[-4:]}\n"
+                    f"Cohort: {cohort_str}\n"
+                    f"AV: ${av / 1e6:.1f}M | ROI: {roi:.0f}% | {pos_count} positions\n\n"
+                    f"You'll be notified when this wallet trades."
+                )
+            except Exception:
+                await self._send(update, f"Now following {address[:8]}...{address[-4:]}")
+        else:
+            await self._send(update, f"Already following {address[:8]}...{address[-4:]}")
+
+    async def _cmd_unfollow(self, update, context):
+        """Stop following a whale wallet."""
+        if not self._check_auth(update.effective_chat.id):
+            return
+        if not context.args:
+            await self._send(update, "Usage: /unfollow 0xADDRESS")
+            return
+
+        address = context.args[0].lower()
+        import whale_follows as wf
+        user_key = f"tg:{update.effective_chat.id}"
+        removed = wf.remove_follow(user_key, address)
+
+        if removed:
+            await self._send(update, f"Unfollowed {address[:8]}...{address[-4:]}")
+        else:
+            await self._send(update, f"Not following {address[:8]}...{address[-4:]}")
+
+    async def _cmd_following(self, update, context):
+        """List followed whale wallets."""
+        if not self._check_auth(update.effective_chat.id):
+            return
+
+        import whale_follows as wf
+        user_key = f"tg:{update.effective_chat.id}"
+        follows = wf.get_follows(user_key)
+
+        if not follows:
+            await self._send(update, "Not following any wallets.\nUse /follow 0xADDRESS to start.")
+            return
+
+        lines = [f"Following {len(follows)} wallet(s):\n"]
+        for addr in follows:
+            try:
+                from hl_intelligence import get_wallet_profile
+                profile = get_wallet_profile(addr)
+                cohorts = profile.get("cohorts", [])
+                cohort_str = ", ".join(c.replace("_", " ").title() for c in cohorts) if cohorts else "Tracked"
+                av = profile.get("account_value", 0)
+                lines.append(f"• {addr[:8]}...{addr[-4:]} ({cohort_str}, ${av / 1e6:.1f}M)")
+            except Exception:
+                lines.append(f"• {addr[:8]}...{addr[-4:]}")
+        await self._send(update, "\n".join(lines))
 
     async def _handle_message(self, update, context):
         if not self._check_auth(update.effective_chat.id):

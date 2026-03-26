@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { T } from "../theme.js";
+import { useWallet } from "../WalletContext.jsx";
 import GlassCard from "./GlassCard.jsx";
 import { TableSkeleton } from "./Skeleton.jsx";
 
@@ -1064,11 +1065,38 @@ function WalletTags({ data }) {
 
 // ─── WALLET PROFILE MODAL (HyperTracker-style layout) ──────────────────────
 
-function WalletDetail({ address, onClose }) {
+function WalletDetail({ address, onClose, userWallet }) {
   const [data, setData] = useState(null);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState("positions");
+  const [isFollowing, setIsFollowing] = useState(false);
+
+  // Check follow state on mount
+  useEffect(() => {
+    if (!userWallet) return;
+    fetch(`${API}/api/hyperlens/follows/check/${address}?user=${userWallet}`)
+      .then(r => r.json())
+      .then(d => setIsFollowing(d.following || false))
+      .catch(() => {});
+  }, [address, userWallet]);
+
+  const toggleFollow = () => {
+    if (!userWallet) return;
+    if (isFollowing) {
+      fetch(`${API}/api/hyperlens/follows/${address}?user=${userWallet}`, { method: "DELETE" })
+        .then(() => setIsFollowing(false))
+        .catch(() => {});
+    } else {
+      fetch(`${API}/api/hyperlens/follows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: userWallet, address }),
+      })
+        .then(() => setIsFollowing(true))
+        .catch(() => {});
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -1177,20 +1205,41 @@ function WalletDetail({ address, onClose }) {
             <WalletTags data={data} />
           </div>
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            width: 30, height: 30, borderRadius: 8,
-            border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
-            fontSize: 14, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, transition: "all 0.15s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
-          onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
-        >
-          {"\u2715"}
-        </button>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          {userWallet && (
+            <button
+              onClick={toggleFollow}
+              title={isFollowing ? "Unfollow wallet" : "Follow wallet for trade alerts"}
+              style={{
+                width: 30, height: 30, borderRadius: 8,
+                border: `1px solid ${isFollowing ? "#fbbf2440" : T.overlay10}`,
+                background: isFollowing ? "#fbbf2418" : T.overlay04,
+                color: isFollowing ? "#fbbf24" : T.text3,
+                fontSize: 16, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { if (!isFollowing) { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = "#fbbf24"; } }}
+              onMouseLeave={e => { if (!isFollowing) { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; } }}
+            >
+              {isFollowing ? "\u2605" : "\u2606"}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            style={{
+              width: 30, height: 30, borderRadius: 8,
+              border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
+              fontSize: 14, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
+            onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
+          >
+            {"\u2715"}
+          </button>
+        </div>
       </div>
 
       {/* ── TWO-PANEL: LEFT (equity + gauges) + RIGHT (chart) ── */}
@@ -2755,6 +2804,7 @@ function CohortFilter({ active, onChange, isMobile }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function HyperLensPanel({ isMobile }) {
+  const { address: connectedWallet } = useWallet();
   const [tab, setTab] = useState("consensus");
   const [filter, setFilter] = useState("");
   const [cohort, setCohort] = useState("all");
@@ -2880,7 +2930,7 @@ export default function HyperLensPanel({ isMobile }) {
       {/* Modals */}
       {selectedWallet && (
         <ModalOverlay onClose={() => setSelectedWallet(null)}>
-          <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} />
+          <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} userWallet={connectedWallet} />
         </ModalOverlay>
       )}
       {selectedSymbol && (

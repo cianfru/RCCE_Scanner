@@ -1225,6 +1225,162 @@ def _reconstruct_trades() -> None:
         # Update last known positions
         _last_positions[addr] = curr_map
 
+    # --- Whale follow alerts ---
+    _process_followed_wallet_events()
+
+
+def _process_followed_wallet_events() -> None:
+    """Check recent trades against followed wallet lists and fire TG alerts."""
+    try:
+        import whale_follows as wf
+    except ImportError:
+        return
+
+    followed = wf.get_all_followed_addresses()
+    if not followed:
+        return
+
+    now = time.time()
+    tg_links = wf.get_all_tg_links()
+
+    for addr_lower in followed:
+        trades = _trade_log.get(addr_lower, [])
+        if not trades:
+            # Try original case
+            for k in _trade_log:
+                if k.lower() == addr_lower:
+                    trades = _trade_log[k]
+                    break
+        if not trades:
+            continue
+
+        # Only look at very recent trades (last 10 min = 2 poll cycles)
+        recent = [t for t in trades if t.get("closed_at") and t["closed_at"] > now - 600
+                  or t.get("opened_at") and t["opened_at"] > now - 600]
+
+        for trade in recent:
+            size_usd = trade.get("size_usd", 0)
+            if size_usd < wf.MIN_SIZE_USD:
+                continue
+
+            # Build event
+            cohorts = _wallet_cohorts.get(addr_lower, set())
+            if not cohorts:
+                for k, v in _wallet_cohorts.items():
+                    if k.lower() == addr_lower:
+                        cohorts = v
+                        break
+            cohort_label = "elite" if "elite" in cohorts else (
+                "money_printer" if "money_printer" in cohorts else (
+                    "smart_money" if "smart_money" in cohorts else "tracked"
+                )
+            )
+
+            event = {
+                "wallet": addr_lower,
+                "coin": trade.get("coin", "?"),
+                "action": trade.get("status", "?"),
+                "side": trade.get("side", "?"),
+                "size_usd": size_usd,
+                "entry_px": trade.get("entry_px", 0),
+                "leverage": trade.get("leverage", 1),
+                "pnl": trade.get("pnl", 0),
+                "pnl_pct": trade.get("pnl_pct", 0),
+                "timestamp": trade.get("closed_at") or trade.get("opened_at") or now,
+                "cohort": cohort_label,
+            }
+
+            # Deduplicate: don't push same event twice
+            existing = wf.get_events({addr_lower}, since=now - 600)
+            is_dup = any(
+                e.get("coin") == event["coin"]
+                and e.get("action") == event["action"]
+                and abs(e.get("timestamp", 0) - event["timestamp"]) < 60
+                for e in existing
+            )
+            if is_dup:
+                continue
+
+            wf.push_event(event)
+
+            # Fire TG alerts to all users following this wallet
+            users = wf.get_users_following(addr_lower)
+            for user in users:
+                chat_id = wf.get_tg_chat_id(user)
+                if chat_id:
+                    _fire_tg_whale_alert(chat_id, event)
+
+
+def _fire_tg_whale_alert(chat_id: int, event: dict) -> None:
+    """Send a whale trade alert via Telegram."""
+    import asyncio
+
+    action = event.get("action", "?")
+    side = event.get("side", "?")
+    coin = event.get("coin", "?")
+    size = event.get("size_usd", 0)
+    entry = event.get("entry_px", 0)
+    lev = event.get("leverage", 1)
+    cohort = event.get("cohort", "tracked").replace("_", " ").title()
+    wallet = event.get("wallet", "")
+    pnl = event.get("pnl", 0)
+    pnl_pct = event.get("pnl_pct", 0)
+
+    # Format size
+    if size >= 1e6:
+        size_str = f"${size / 1e6:.1f}M"
+    elif size >= 1e3:
+        size_str = f"${size / 1e3:.0f}K"
+    else:
+        size_str = f"${size:.0f}"
+
+    wallet_short = f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet
+
+    if action == "OPENED":
+        emoji = "🟢" if side == "LONG" else "🔴"
+        text = (
+            f"🐋 {cohort} wallet {action} {side} {coin}\n"
+            f"{emoji} {size_str} @ ${entry:,.2f} · {lev:.0f}x\n"
+            f"📊 {wallet_short}"
+        )
+    elif action == "CLOSED":
+        pnl_emoji = "✅" if pnl >= 0 else "❌"
+        pnl_sign = "+" if pnl >= 0 else ""
+        if abs(pnl) >= 1e3:
+            pnl_str = f"${pnl / 1e3:{pnl_sign}.1f}K"
+        else:
+            pnl_str = f"${pnl:{pnl_sign},.0f}"
+        text = (
+            f"🐋 {cohort} wallet {action} {side} {coin}\n"
+            f"{pnl_emoji} PnL: {pnl_str} ({pnl_pct:+.1f}%)\n"
+            f"📊 {wallet_short}"
+        )
+    elif action == "FLIPPED":
+        text = (
+            f"🐋 {cohort} wallet FLIPPED {coin}\n"
+            f"🔄 Was {side} → now {'SHORT' if side == 'LONG' else 'LONG'}\n"
+            f"💰 {size_str} @ ${entry:,.2f} · {lev:.0f}x\n"
+            f"📊 {wallet_short}"
+        )
+    else:
+        return
+
+    try:
+        from telegram_bot import get_telegram_bot
+        bot = get_telegram_bot()
+        if bot.app and bot._running:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(
+                    bot.app.bot.send_message(chat_id=chat_id, text=text)
+                )
+            else:
+                loop.run_until_complete(
+                    bot.app.bot.send_message(chat_id=chat_id, text=text)
+                )
+    except Exception as e:
+        logger.debug("TG whale alert failed for chat %s: %s", chat_id, e)
+
 
 def get_wallet_trades(address: str, limit: int = 50) -> List[dict]:
     """Get reconstructed trade history for a wallet.

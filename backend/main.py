@@ -3322,3 +3322,66 @@ async def hyperlens_wallet_equity(
     from hl_persistence import load_equity_history
     history = load_equity_history(address.lower(), days=days)
     return {"address": address.lower(), "days": days, "points": len(history), "history": history}
+
+
+# ── Whale Wallet Follow / Watchlist ──────────────────────────────────────────
+
+@app.get("/api/hyperlens/follows")
+async def get_follows(user: str = Query(..., description="Connected wallet address")):
+    """List followed whale wallets for a user."""
+    import whale_follows as wf
+    from hl_intelligence import get_wallet_profile
+    addresses = wf.get_follows(user)
+    wallets = []
+    for addr in addresses:
+        try:
+            profile = get_wallet_profile(addr)
+            wallets.append({
+                "address": addr,
+                "account_value": profile.get("account_value", 0),
+                "roi": profile.get("roi", 0),
+                "cohorts": profile.get("cohorts", []),
+                "positions_count": len(profile.get("positions", [])),
+            })
+        except Exception:
+            wallets.append({"address": addr, "account_value": 0, "roi": 0, "cohorts": [], "positions_count": 0})
+    return {"user": user.lower(), "count": len(wallets), "wallets": wallets}
+
+
+@app.post("/api/hyperlens/follows")
+async def add_follow(body: dict):
+    """Follow a whale wallet. Body: {user, address}"""
+    import whale_follows as wf
+    user = body.get("user", "")
+    address = body.get("address", "")
+    if not user or not address:
+        raise HTTPException(status_code=400, detail="user and address required")
+    added = wf.add_follow(user, address)
+    return {"ok": True, "added": added, "count": len(wf.get_follows(user))}
+
+
+@app.delete("/api/hyperlens/follows/{address}")
+async def remove_follow(address: str, user: str = Query(...)):
+    """Unfollow a whale wallet."""
+    import whale_follows as wf
+    removed = wf.remove_follow(user, address)
+    return {"ok": True, "removed": removed, "count": len(wf.get_follows(user))}
+
+
+@app.get("/api/hyperlens/follows/events")
+async def get_follow_events(
+    user: str = Query(..., description="Connected wallet address"),
+    since: float = Query(0, description="Unix timestamp — only return events after this"),
+):
+    """Get recent trade events from followed wallets."""
+    import whale_follows as wf
+    addresses = set(wf.get_follows(user))
+    events = wf.get_events(addresses, since=since)
+    return {"user": user.lower(), "count": len(events), "events": events}
+
+
+@app.get("/api/hyperlens/follows/check/{address}")
+async def check_follow(address: str, user: str = Query(...)):
+    """Check if a user follows a specific wallet."""
+    import whale_follows as wf
+    return {"following": wf.is_following(user, address)}
