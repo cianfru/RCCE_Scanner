@@ -115,6 +115,13 @@ class ScanResult(BaseModel):
     smart_money: Optional[dict] = None          # {trend, confidence, long_count, short_count, ...}
     # Confidence sparkline + synthesis internals (stripped by Pydantic without these)
     confidence_history: List[float] = []        # last 48 EMA-smoothed confidence values
+    # Positioning metric sparkline histories (48 ticks each)
+    funding_history: List[float] = []
+    oi_history: List[float] = []
+    oi_change_history: List[float] = []
+    lsr_history: List[float] = []
+    bsr_history: List[float] = []
+    spot_ratio_history: List[float] = []
     smoothed_confidence: Optional[float] = None  # current EMA-smoothed confidence
     effective_conditions: Optional[float] = None  # weighted score post-boost/penalty
     vol_scale: Optional[float] = None           # volatility scaling factor
