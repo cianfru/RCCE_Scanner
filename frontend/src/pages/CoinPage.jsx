@@ -390,6 +390,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           cvdTrend={data.cvd_trend}
           cvdDiv={data.cvd_divergence}
           bsr={data.buy_sell_ratio}
+          oiContext={data.oi_context}
         />
 
         {/* Whale Consensus */}

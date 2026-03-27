@@ -13,6 +13,7 @@
  *   cvdTrend    — "BULLISH" | "BEARISH" | "NEUTRAL"
  *   cvdDiv      — bool
  *   bsr         — number (buy/sell ratio)
+ *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
 import { useState } from "react";
 import { T } from "../theme.js";
@@ -81,7 +82,7 @@ function fmt(v) {
 
 // ─── Signal badge cell ────────────────────────────────────────────────────────
 
-function Badge({ icon, label, sub, color, bg, empty, info }) {
+function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor }) {
   if (empty) {
     return (
       <div style={{
@@ -119,6 +120,14 @@ function Badge({ icon, label, sub, color, bg, empty, info }) {
           fontWeight: 500, letterSpacing: "0.03em",
         }}>
           {sub}
+        </span>
+      )}
+      {context && (
+        <span style={{
+          fontSize: 9, color: contextColor || T.text4, fontFamily: T.mono,
+          fontWeight: 600, letterSpacing: "0.04em", opacity: 0.9,
+        }}>
+          {context}
         </span>
       )}
     </div>
@@ -264,7 +273,18 @@ function Stat({ label, value, color }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr }) {
+// OI context → color mapping
+const OI_CTX_COLOR = {
+  "confirms entry": "#34d399",
+  "confirms exit": "#34d399",
+  "short-cover rally": "#fbbf24",
+  "counter-trend OI": "#fbbf24",
+  "long cascade — caution": "#f87171",
+  "bears aggressive": "#f87171",
+  "capitulation": "#fbbf24",
+};
+
+export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, oiContext }) {
   if (!positioning) return null;
 
   const {
@@ -282,6 +302,10 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr })
   // ── Badge data ──────────────────────────────────────────────────────────────
   const b1 = fundingBadge(funding_regime, funding_rate);
   const b2 = oiBadge(oi_trend, oi_value, oi_change_pct);
+  if (oiContext) {
+    b2.context = oiContext;
+    b2.contextColor = OI_CTX_COLOR[oiContext] || T.text4;
+  }
   const b3 = cvdBadge(cvdTrend, cvdDiv, bsr);
   const b4 = spotBadge(spot_dominance, spot_futures_ratio);
   const b5 = smartMoneyBadge(top_trader_lsr, long_short_ratio);

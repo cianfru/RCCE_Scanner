@@ -46,7 +46,7 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
-from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD
+from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
 from signal_synthesizer import synthesize_signal
 from market_data import (
     fetch_global_metrics, GlobalMetrics,
@@ -813,6 +813,8 @@ async def _synthesize_and_enrich(
             r["conditions_total"] = synth.conditions_total
             r["effective_conditions"] = synth.effective_conditions
             r["vol_scale"] = synth.vol_scale
+            oi_trend = (r.get("positioning") or {}).get("oi_trend", "STABLE")
+            r["oi_context"] = interpret_oi_context(oi_trend, synth.signal)
             scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
 
             # Attach HyperLens smart money data for frontend divergence display

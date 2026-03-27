@@ -161,3 +161,36 @@ def compute_positioning(
             result.leverage_risk = "LOW"
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# OI context interpretation
+# ---------------------------------------------------------------------------
+
+_ENTRY_SIGNALS = frozenset({
+    "STRONG_LONG", "LIGHT_LONG", "ACCUMULATE",
+    "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED",
+})
+_EXIT_SIGNALS = frozenset({
+    "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG", "LIGHT_SHORT",
+})
+
+_OI_CONTEXT = {
+    #                  entry                    exit                neutral
+    "BUILDING":    ("confirms entry",       "counter-trend OI",  "new positioning"),
+    "SQUEEZE":     ("short-cover rally",    "confirms exit",     "shorts closing"),
+    "LIQUIDATING": ("long cascade — caution", "confirms exit",   "capitulation"),
+    "SHORTING":    ("bears aggressive",     "confirms exit",     "bears opening"),
+}
+
+
+def interpret_oi_context(oi_trend: str, signal: str) -> str:
+    """Return a short contextual label for the OI trend given the active signal."""
+    row = _OI_CONTEXT.get(oi_trend)
+    if not row:
+        return ""
+    if signal in _ENTRY_SIGNALS:
+        return row[0]
+    if signal in _EXIT_SIGNALS:
+        return row[1]
+    return row[2]
