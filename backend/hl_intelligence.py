@@ -47,9 +47,11 @@ _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 _POLL_INTERVAL = 5 * 60                    # 5 minutes (aligned with scan cycle)
-# ~24h of 5-min snapshots (actual count may drift slightly due to
-# network delays and retries, so treat as approximate)
-_POSITION_HISTORY_LEN = 300
+# In-memory snapshot depth per wallet.  Only recent snapshots are needed:
+# trade reconstruction uses last 2, consensus uses last 1,
+# get_position_changes() needs ~6 for its 30-min window.
+# Historical equity curves are served from SQLite (30-day retention).
+_POSITION_HISTORY_LEN = 20
 
 # Staleness: skip snapshots older than this when computing consensus
 _SNAPSHOT_MAX_AGE_S = 15 * 60              # 15 minutes (3 missed polls)
