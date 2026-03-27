@@ -82,6 +82,121 @@ function ConfidenceSparkline({ history, current }) {
 }
 
 // ---------------------------------------------------------------------------
+// Generic Metric Sparkline — auto-scaled, compact
+// ---------------------------------------------------------------------------
+
+function MetricSparkline({ label, history, current, unit, colorFn }) {
+  if (!history || history.length < 2) return null;
+
+  const w = 120, h = 32, pad = 2;
+  const vals = history;
+  const n = vals.length;
+  const dataMin = Math.min(...vals);
+  const dataMax = Math.max(...vals);
+  const range = dataMax - dataMin || 1;
+  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
+
+  const points = vals.map((v, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - ((v - dataMin) / range) * (h - pad * 2);
+    return `${x},${y}`;
+  }).join(" ");
+
+  const color = colorFn ? colorFn(current) : (current >= vals[0] ? "#34d399" : "#f87171");
+  const lastX = pad + (n - 1) * xStep;
+  const lastY = h - pad - ((vals[n - 1] - dataMin) / range) * (h - pad * 2);
+
+  const fmtVal = (v) => {
+    if (v == null) return "\u2014";
+    if (unit === "%") return `${v.toFixed(2)}%`;
+    if (unit === "$") return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`;
+    if (unit === "x") return `${v.toFixed(3)}x`;
+    return String(v);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          {label}
+        </span>
+        <span style={{ fontSize: 10, color, fontFamily: T.mono, fontWeight: 700 }}>
+          {fmtVal(current)}
+        </span>
+      </div>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", width: "100%" }}>
+        <polyline points={points} fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <circle cx={lastX} cy={lastY} r="2" fill={color} />
+      </svg>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metrics Panel — unified sparklines card
+// ---------------------------------------------------------------------------
+
+function MetricsPanel({ data }) {
+  const pos = data.positioning || {};
+
+  // Color functions for each metric
+  const confColor = (v) => v >= 60 ? "#34d399" : v >= 40 ? "#fbbf24" : "#f87171";
+  const fundColor = (v) => v < 0 ? "#34d399" : v > 0.01 ? "#f87171" : T.text3;
+  const oiChgColor = (v) => v > 0 ? "#34d399" : v < 0 ? "#f87171" : T.text3;
+  const lsrColor = (v) => v < 0.9 ? "#34d399" : v > 1.2 ? "#f87171" : T.text3;
+  const bsrColor = (v) => v > 1 ? "#34d399" : v < 1 ? "#f87171" : T.text3;
+  const spotColor = (v) => v > 0.5 ? "#34d399" : v < 0.3 ? "#f87171" : T.text3;
+
+  const metrics = [
+    { label: "Confidence", history: data.confidence_history, current: data.confidence, unit: "%", colorFn: confColor },
+    { label: "Funding", history: data.funding_history, current: pos.funding_rate != null ? pos.funding_rate * 100 : null, unit: "%", colorFn: fundColor },
+    { label: "Open Interest", history: data.oi_history, current: pos.oi_value, unit: "$", colorFn: null },
+    { label: "OI Change", history: data.oi_change_history, current: pos.oi_change_pct, unit: "%", colorFn: oiChgColor },
+    { label: "LSR", history: data.lsr_history, current: pos.long_short_ratio, unit: "x", colorFn: lsrColor },
+    { label: "Buy/Sell", history: data.bsr_history, current: data.buy_sell_ratio, unit: "x", colorFn: bsrColor },
+    { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
+  ].filter(m => m.history && m.history.length >= 2);
+
+  if (metrics.length === 0) return null;
+
+  // Determine accent color from confidence
+  const conf = data.confidence;
+  const accent = conf >= 60 ? "#34d399" : conf >= 40 ? "#fbbf24" : "#f87171";
+
+  return (
+    <div style={{
+      background: T.glassBg, border: `1px solid ${T.border}`,
+      borderRadius: 12, padding: "14px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${T.overlay06}`,
+      }}>
+        <div style={{ width: 3, height: 14, borderRadius: 2, background: accent, flexShrink: 0 }} />
+        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+          Metrics
+        </span>
+        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
+          {metrics[0].history.length} ticks
+        </span>
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "10px 16px",
+      }}>
+        {metrics.map(m => (
+          <MetricSparkline key={m.label} {...m} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Engine Metrics Grid (extracted from DetailPanel)
 // ---------------------------------------------------------------------------
 
@@ -396,8 +511,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         {/* Whale Consensus */}
         <SmartMoneyPanel data={data} />
 
-        {/* Confidence Sparkline */}
-        <ConfidenceSparkline history={data.confidence_history} current={data.confidence} />
+        {/* Metrics — unified sparklines panel */}
+        <MetricsPanel data={data} />
 
         {/* Engine Metrics (includes Z-Score) */}
         <EngineMetrics data={data} isMobile={isMobile} />

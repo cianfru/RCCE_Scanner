@@ -32,6 +32,12 @@ Filter state lives in ScanCache attributes added on first use:
     cache.prev_zscore:        Dict[str, float]                — previous z-score
     cache.prev_heat:          Dict[str, int]                  — previous heat score
     cache.signal_inertia:     Dict[str, Dict]                 — per-symbol inertia state
+    cache.funding_history:    Dict[str, List[float]]          — last 48 funding rates
+    cache.oi_history:         Dict[str, List[float]]          — last 48 OI values (USD)
+    cache.oi_change_history:  Dict[str, List[float]]          — last 48 OI change %
+    cache.lsr_history:        Dict[str, List[float]]          — last 48 retail LSR
+    cache.bsr_history:        Dict[str, List[float]]          — last 48 buy/sell ratios
+    cache.spot_ratio_history: Dict[str, List[float]]          — last 48 spot/futures ratios
 """
 
 from __future__ import annotations
@@ -65,6 +71,7 @@ _FLIP_CONFIRM_BARS = 2           # bars required to re-enter after a hard exit
 
 # Confidence history (kept for charting, no longer used for filtering)
 _CONF_HISTORY_LEN = 48           # bars of confidence to keep (for sparkline chart)
+_POS_HISTORY_LEN = 48            # bars of positioning metrics to keep
 
 # Filter 6: signal inertia
 _DOWNGRADE_CONFIRM_BARS = 2      # consecutive bars needed to confirm a voluntary downgrade
@@ -118,6 +125,11 @@ def _ensure_history(cache: Any) -> None:
         cache.signal_inertia: Dict[str, Dict] = {}
     if not hasattr(cache, "smoothed_confidence"):
         cache.smoothed_confidence: Dict[str, float] = {}
+    # Positioning metric histories (48 ticks each)
+    for attr in ("funding_history", "oi_history", "oi_change_history",
+                 "lsr_history", "bsr_history", "spot_ratio_history"):
+        if not hasattr(cache, attr):
+            setattr(cache, attr, {})
 
 
 # EMA periods per timeframe (4h: 12h lookback, 1d: 2d lookback)
@@ -526,6 +538,8 @@ def _update_history(
     current_z: float,
     current_heat: int,
     cache: Any,
+    positioning: Optional[Dict[str, Any]] = None,
+    bsr: float = 1.0,
 ) -> None:
     tf_key = f"{symbol}:{timeframe}"
     _push(cache.signal_history, tf_key, adjusted_signal, _SIGNAL_HISTORY_LEN)
@@ -535,6 +549,24 @@ def _update_history(
     _push(cache.divergence_history, tf_key, divergence, _DIV_HISTORY_LEN)
     cache.prev_zscore[symbol] = current_z
     cache.prev_heat[symbol] = current_heat
+
+    # Push positioning metric histories for sparklines
+    if positioning:
+        pos = positioning
+        if pos.get("funding_rate") is not None:
+            _push(cache.funding_history, tf_key, round(pos["funding_rate"] * 100, 4), _POS_HISTORY_LEN)
+        if pos.get("oi_value") and pos["oi_value"] > 0:
+            _push(cache.oi_history, tf_key, round(pos["oi_value"]), _POS_HISTORY_LEN)
+        if pos.get("oi_change_pct") is not None:
+            _push(cache.oi_change_history, tf_key, round(pos["oi_change_pct"], 2), _POS_HISTORY_LEN)
+        lsr = pos.get("long_short_ratio")
+        if lsr and lsr != 1.0:
+            _push(cache.lsr_history, tf_key, round(lsr, 3), _POS_HISTORY_LEN)
+        if bsr and bsr != 1.0:
+            _push(cache.bsr_history, tf_key, round(bsr, 3), _POS_HISTORY_LEN)
+        spot = pos.get("spot_futures_ratio")
+        if spot and spot > 0:
+            _push(cache.spot_ratio_history, tf_key, round(spot, 3), _POS_HISTORY_LEN)
 
 
 # ---------------------------------------------------------------------------
@@ -657,7 +689,11 @@ def process(
     scan_result["agent_filters_fired"] = out.filters_fired
 
     # Update persistent history with the ADJUSTED signal
-    _update_history(symbol, timeframe, signal, confidence, divergence, current_z, current_heat, cache)
+    _update_history(
+        symbol, timeframe, signal, confidence, divergence, current_z, current_heat, cache,
+        positioning=scan_result.get("positioning"),
+        bsr=scan_result.get("buy_sell_ratio", 1.0),
+    )
 
     # Attach smoothed confidence for downstream use
     tf_key = f"{symbol}:{timeframe}"
