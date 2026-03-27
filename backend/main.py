@@ -3350,13 +3350,27 @@ async def get_follows(user: str = Query(..., description="Connected wallet addre
 
 @app.post("/api/hyperlens/follows")
 async def add_follow(body: dict):
-    """Follow a whale wallet. Body: {user, address}"""
+    """Follow a whale wallet. Body: {user, address}. Auto-links TG if user has /watch registered."""
     import whale_follows as wf
     user = body.get("user", "")
     address = body.get("address", "")
     if not user or not address:
         raise HTTPException(status_code=400, detail="user and address required")
     added = wf.add_follow(user, address)
+
+    # Auto-link TG: find chat_id from position_monitor if user has /watch registered
+    if added:
+        try:
+            from position_monitor import PositionMonitor
+            monitor = PositionMonitor.get()
+            for w in monitor.watchers:
+                if w.address.lower() == user.lower():
+                    wf.link_tg(user, w.chat_id)
+                    logger.info("Auto-linked TG chat %d for whale follows (user %s)", w.chat_id, user[:10])
+                    break
+        except Exception:
+            pass
+
     return {"ok": True, "added": added, "count": len(wf.get_follows(user))}
 
 
