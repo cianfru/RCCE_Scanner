@@ -514,6 +514,28 @@ async def ohlcv_cache_status():
     }
 
 
+@app.get("/api/debug/positioning-histories")
+async def debug_positioning_histories():
+    """Temporary debug endpoint to inspect positioning history cache."""
+    from scanner import cache as scan_cache
+    attrs = ["confidence_history", "funding_history", "oi_history",
+             "oi_change_history", "lsr_history", "bsr_history", "spot_ratio_history"]
+    result = {}
+    for attr in attrs:
+        d = getattr(scan_cache, attr, None)
+        if d is None:
+            result[attr] = "NOT_SET"
+        elif isinstance(d, dict):
+            sample_keys = list(d.keys())[:3]
+            result[attr] = {
+                "total_keys": len(d),
+                "sample": {k: len(d[k]) for k in sample_keys},
+            }
+        else:
+            result[attr] = f"unexpected_type:{type(d).__name__}"
+    return result
+
+
 @app.get("/api/debug/sm-test")
 async def debug_sm_test():
     """Debug: test HyperLens consensus attachment."""
