@@ -855,6 +855,18 @@ async def _synthesize_and_enrich(
                 # Attach smoothed confidence
                 if hasattr(scan_cache, "smoothed_confidence"):
                     r["smoothed_confidence"] = scan_cache.smoothed_confidence.get(tf_key)
+                # Attach positioning metric histories for sparklines
+                for hist_attr, result_key in (
+                    ("funding_history",    "funding_history"),
+                    ("oi_history",         "oi_history"),
+                    ("oi_change_history",  "oi_change_history"),
+                    ("lsr_history",        "lsr_history"),
+                    ("bsr_history",        "bsr_history"),
+                    ("spot_ratio_history", "spot_ratio_history"),
+                ):
+                    hist = getattr(scan_cache, hist_attr, {}).get(tf_key, [])
+                    if hist:
+                        r[result_key] = list(hist)
             except Exception as _ae:
                 logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
         if agent_override_count:
