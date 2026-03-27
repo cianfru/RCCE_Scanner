@@ -521,6 +521,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           cvdTrend={selected.cvd_trend}
           cvdDiv={selected.cvd_divergence}
           bsr={selected.buy_sell_ratio}
+          oiContext={selected.oi_context}
         />
 
         {/* Z-Score Bar */}

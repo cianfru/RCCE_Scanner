@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from engines.positioning_engine import interpret_oi_context
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -665,7 +667,8 @@ class AssistantManager:
                     f"{cond_section}\n"
                     f"Funding: {pos.get('funding_regime', 'N/A')} | "
                     f"OI: {pos.get('oi_trend', 'N/A')} | "
-                    f"OI Change: {pos.get('oi_change_pct', 0):.2f}%\n"
+                    f"OI Change: {pos.get('oi_change_pct', 0):.2f}% | "
+                    f"OI Context: {interpret_oi_context(pos.get('oi_trend', 'STABLE'), match.get('signal', 'WAIT')) or 'n/a'}\n"
                     f"CVD: {match.get('cvd_trend', 'N/A')} | "
                     f"BSR: {match.get('buy_sell_ratio', 'N/A')} | "
                     f"Divergence: {match.get('cvd_divergence', False)}\n"
