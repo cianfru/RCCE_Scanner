@@ -472,10 +472,18 @@ def _calc_regime_probabilities(
     vl = np.asarray(vol_low, dtype=bool)
     vh = np.asarray(vol_high, dtype=bool)
 
-    # Vol-state as smooth float [0,1] for gating (avoids hard bool cutoffs)
+    # Vol-state as smooth float [0,1] for gating
     vl_f = vl.astype(np.float64)
     vh_f = vh.astype(np.float64)
     not_vh_f = 1.0 - vh_f
+
+    # Vol gates as *boosters* (base + boost), not hard gates.
+    # Without this, normal-vol bars only have MARKUP + REACC competing
+    # which always gives 100% confidence — no uncertainty.
+    _BASE = 0.15  # baseline probability weight even without vol confirmation
+    vl_boost = _BASE + (1.0 - _BASE) * vl_f   # 0.15 base, 1.0 when vol_low
+    vh_boost = _BASE + (1.0 - _BASE) * vh_f   # 0.15 base, 1.0 when vol_high
+    not_vh_boost = _BASE + (1.0 - _BASE) * not_vh_f
 
     # MARKUP: ramps up with positive z, energy > 1 boosts
     energy_boost = 0.5 + 0.5 * _soft_gate(energy_safe, 1.0, 0.2)
@@ -484,18 +492,17 @@ def _calc_regime_probabilities(
     # BLOWOFF: ramps up beyond z_blowoff (smooth onset)
     p_blowoff = np.maximum(0.0, z_safe - z_blowoff) * _soft_gate(z_safe, z_blowoff, 0.2)
 
-    # REACC: smooth ramp for z < 0, gated by NOT high-vol
-    p_reacc = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, 0.0, 0.2) * not_vh_f
+    # REACC: smooth ramp for z < 0, boosted by NOT high-vol
+    p_reacc = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, 0.0, 0.2) * not_vh_boost
 
-    # MARKDOWN: high-vol + z < 0, smooth gate
-    p_md = vol_safe * 2.0 * _soft_gate(-z_safe, 0.0, 0.2) * vh_f
+    # MARKDOWN: z < 0, boosted by high-vol
+    p_md = vol_safe * 2.0 * _soft_gate(-z_safe, 0.0, 0.2) * vh_boost
 
-    # CAPITULATION: low-vol + z below cap threshold, smooth gate
-    p_cap = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, -z_cap, 0.3) * vl_f
+    # CAPITULATION: z below cap threshold, boosted by low-vol
+    p_cap = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, -z_cap, 0.3) * vl_boost
 
-    # ACCUM: low-vol + z near zero — smooth bell shape around z=0
-    # Sigmoid at -0.5 (rising) × sigmoid at 0.5 (falling) = smooth window
-    p_acc = _soft_gate(z_safe, -0.5, 0.15) * (1.0 - _soft_gate(z_safe, 0.5, 0.15)) * vl_f
+    # ACCUM: z near zero — smooth bell shape, boosted by low-vol
+    p_acc = _soft_gate(z_safe, -0.5, 0.15) * (1.0 - _soft_gate(z_safe, 0.5, 0.15)) * vl_boost
 
     sum_p = p_markup + p_blowoff + p_reacc + p_md + p_cap + p_acc + _EPS
 
