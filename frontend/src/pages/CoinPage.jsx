@@ -108,7 +108,12 @@ function MetricSparkline({ label, history, current, unit, colorFn }) {
 
   const fmtVal = (v) => {
     if (v == null) return "\u2014";
-    if (unit === "%") return `${v.toFixed(2)}%`;
+    if (unit === "%") {
+      // Use more decimals for very small values (e.g. funding rates)
+      const abs = Math.abs(v);
+      const decimals = abs > 0 && abs < 0.01 ? 4 : 2;
+      return `${v.toFixed(decimals)}%`;
+    }
     if (unit === "$") return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`;
     if (unit === "x") return `${v.toFixed(3)}x`;
     return String(v);
@@ -184,9 +189,9 @@ function MetricsPanel({ data }) {
         </span>
       </div>
       <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: "10px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
       }}>
         {metrics.map(m => (
           <MetricSparkline key={m.label} {...m} />
