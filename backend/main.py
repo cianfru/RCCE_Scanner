@@ -2085,6 +2085,79 @@ async def signal_regime_durations(
 
 
 # ---------------------------------------------------------------------------
+# Analytics — Performance Attribution
+# ---------------------------------------------------------------------------
+
+@app.get("/api/analytics/attribution")
+async def analytics_attribution(timeframe: str = Query("4h")):
+    """Combined performance attribution (all 6 sections)."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.get_full_attribution(timeframe=timeframe)
+
+
+@app.get("/api/analytics/conditions")
+async def analytics_conditions(timeframe: str = Query("4h")):
+    """Per-condition predictive value."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.condition_predictive_value(timeframe=timeframe)
+
+
+@app.get("/api/analytics/combos")
+async def analytics_combos(
+    timeframe: str = Query("4h"),
+    combo_size: int = Query(3, ge=2, le=4),
+    min_samples: int = Query(5, ge=2),
+):
+    """Top condition combinations by win rate."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.condition_combo_attribution(
+        timeframe=timeframe, combo_size=combo_size, min_samples=min_samples,
+    )
+
+
+@app.get("/api/analytics/regime-scorecard")
+async def analytics_regime_scorecard(timeframe: str = Query("4h")):
+    """Signal performance stratified by regime."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.regime_stratified_scorecard(timeframe=timeframe)
+
+
+@app.get("/api/analytics/confluence-scorecard")
+async def analytics_confluence_scorecard(timeframe: str = Query("4h")):
+    """Signal performance stratified by conditions-met bucket."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.confluence_stratified_scorecard(timeframe=timeframe)
+
+
+@app.get("/api/analytics/edge-decay")
+async def analytics_edge_decay(timeframe: str = Query("4h")):
+    """Signal return distribution across time periods."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.signal_edge_decay(timeframe=timeframe)
+
+
+@app.get("/api/analytics/hyperlens")
+async def analytics_hyperlens(timeframe: str = Query("4h")):
+    """Whale-confirmed vs non-confirmed signal performance."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.hyperlens_attribution(timeframe=timeframe)
+
+
+# ---------------------------------------------------------------------------
 # Notifications feed (frontend toast / bell)
 # ---------------------------------------------------------------------------
 

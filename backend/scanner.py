@@ -1026,25 +1026,23 @@ async def _scan_timeframe(
     cg_metrics: dict = {}
     macro_data = None
 
-    try:
-        gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, macro_data = await asyncio.gather(
-            fetch_global_metrics(),
-            fetch_hyperliquid_metrics(symbols),
-            fetch_binance_futures_metrics(symbols),
-            fetch_fear_greed(),
-            fetch_stablecoin_supply(),
-            fetch_coinglass_metrics(symbols),
-            fetch_macro_signals(),
-        )
-    except Exception:
-        logger.warning("Some external data fetches failed — proceeding with available data")
-        # Individually catch CoinGlass failures to not block core data
-        if not cg_metrics:
-            try:
-                cg_metrics = await asyncio.wait_for(fetch_coinglass_metrics(symbols), timeout=20.0)
-            except Exception as exc:
-                logger.warning("CoinGlass metrics fetch failed: %s", exc)
-                cg_metrics = {}
+    results = await asyncio.gather(
+        fetch_global_metrics(),
+        fetch_hyperliquid_metrics(symbols),
+        fetch_binance_futures_metrics(symbols),
+        fetch_fear_greed(),
+        fetch_stablecoin_supply(),
+        fetch_coinglass_metrics(symbols),
+        fetch_macro_signals(),
+        return_exceptions=True,
+    )
+    _names = ["global_metrics", "hl_metrics", "binance_metrics", "sentiment", "stablecoin", "coinglass", "macro"]
+    _defaults = [None, {}, {}, None, None, {}, None]
+    for i, (name, res) in enumerate(zip(_names, results)):
+        if isinstance(res, Exception):
+            logger.warning("Fetch %s failed: %s", name, res)
+            results[i] = _defaults[i]
+    gm, hl_metrics, binance_metrics, sentiment_data, stablecoin_data, cg_metrics, macro_data = results
 
     if gm:
         logger.info(

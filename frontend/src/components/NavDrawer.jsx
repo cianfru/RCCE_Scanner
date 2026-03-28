@@ -71,6 +71,7 @@ const NAV_SECTIONS = [
     items: [
       { key: "chat", label: "AI Assist", desc: "Ask about any asset" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
+      { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
       { key: "hyperlens", label: "HyperLens", desc: "Smart-money wallet tracking" },
       { key: "onchain", label: "On-Chain", desc: "On-chain analytics" },
     ],

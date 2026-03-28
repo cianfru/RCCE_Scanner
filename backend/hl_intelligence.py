@@ -608,6 +608,12 @@ async def poll_positions() -> int:
     _last_poll_at = time.time()
     _poll_count += 1
 
+    # Prune stale wallet orders for addresses no longer in roster
+    roster_addrs = {w.address for w in _roster}
+    stale_order_keys = [a for a in _wallet_orders if a not in roster_addrs]
+    for a in stale_order_keys:
+        del _wallet_orders[a]
+
     # Reconstruct trades from snapshot diffs (must run before consensus)
     _reconstruct_trades()
 
@@ -1610,6 +1616,12 @@ async def _poll_order_books() -> None:
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [_fetch_book(session, coin) for coin in top_symbols]
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Prune order books for symbols no longer in top-N
+    top_set = set(top_symbols)
+    stale_books = [c for c in _order_books if c not in top_set]
+    for c in stale_books:
+        del _order_books[c]
 
     logger.debug("HyperLens: order books fetched for %d symbols", len(top_symbols))
 

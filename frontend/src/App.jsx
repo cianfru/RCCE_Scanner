@@ -20,6 +20,7 @@ import ExecutorPanel from "./components/ExecutorPanel.jsx";
 import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
+import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import TradFiPanel from "./components/TradFiPanel.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
@@ -63,6 +64,7 @@ const COLUMNS = [
 const ROUTE_TO_TAB = {
   "/scanner": "1d",
   "/signals": "signals",
+  "/analytics": "analytics",
   "/hyperlens": "hyperlens",
   "/tradfi": "tradfi",
   "/ai": "chat",
@@ -76,6 +78,7 @@ const TAB_TO_ROUTE = {
   "4h": "/scanner?tf=4h",
   split: "/scanner?tf=split",
   signals: "/signals",
+  analytics: "/analytics",
   hyperlens: "/hyperlens",
   tradfi: "/tradfi",
   chat: "/ai",
@@ -278,6 +281,7 @@ export default function App() {
   const loadGroups = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/groups`);
+      if (!res.ok) return;
       const data = await res.json();
       setGroups(data || []);
       setActiveGroupId(prev => (!prev && data.length > 0) ? data[0].id : prev);
@@ -345,6 +349,7 @@ export default function App() {
     if (!groupId) return;
     try {
       const res = await fetch(`${API_BASE}/api/perpetuals/hyperliquid`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.symbols && data.symbols.length > 0) {
         await fetch(`${API_BASE}/api/groups/${groupId}/symbols/batch`, {
@@ -448,7 +453,7 @@ export default function App() {
 
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
   const tabOptions = isMobile
     ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
@@ -778,6 +783,7 @@ export default function App() {
              activeTab === "executor" ? "Executor" :
              activeTab === "trading" ? "Portfolio" :
              activeTab === "signals" ? "Signal Log" :
+             activeTab === "analytics" ? "Analytics" :
              activeTab === "onchain" ? "On-Chain" :
              activeTab === "tradfi" ? "TradFi" :
              activeTab === "hyperlens" ? "HyperLens" :
@@ -873,6 +879,12 @@ export default function App() {
         {activeTab === "signals" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
+          </FadeIn>
+        )}
+
+        {activeTab === "analytics" && (
+          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+            <AnalyticsPanel isMobile={isMobile} />
           </FadeIn>
         )}
 

@@ -372,6 +372,10 @@ async def _fetch_bulk_liquidations(
 # Phase 3 — Per-coin detail fetch (OI + CVD + LSR + spot dominance)
 # ---------------------------------------------------------------------------
 
+_last_req_ts: float = 0.0
+_rate_limit_lock = asyncio.Lock()
+
+
 async def _rate_limited_get(
     session: aiohttp.ClientSession,
     sem: asyncio.Semaphore,
@@ -383,17 +387,16 @@ async def _rate_limited_get(
 
     Enforces a minimum gap of _MIN_REQUEST_GAP_S between consecutive API calls
     to stay within the Hobbyist plan rate limit (~30 req/min).
+    Serialized via lock to prevent concurrent coroutines from defeating the gap.
     """
-    # Use a module-level list as mutable container for last-request timestamp
     global _last_req_ts
-    now = time.monotonic()
-    gap = _MIN_REQUEST_GAP_S - (now - _last_req_ts)
-    if gap > 0:
-        await asyncio.sleep(gap)
-    _last_req_ts = time.monotonic()
+    async with _rate_limit_lock:
+        now = time.monotonic()
+        gap = _MIN_REQUEST_GAP_S - (now - _last_req_ts)
+        if gap > 0:
+            await asyncio.sleep(gap)
+        _last_req_ts = time.monotonic()
     return await _get_data(session, sem, api_key, path, params)
-
-_last_req_ts: float = 0.0
 
 
 async def _fetch_single_coin_detail(
@@ -591,8 +594,10 @@ async def _fetch_macro(
 _cvd_store:   Dict[str, CoinglassCVD]   = {}   # coin → latest CVD
 _spot_store:  Dict[str, CoinglassSpot]  = {}   # scanner_sym → latest spot
 
-# Persistent per-coin detail store (drip-fed, never expires — drip loop keeps it fresh)
+# Per-coin detail store (drip-fed, entries expire after 30 min of no update)
 _per_coin_detail: Dict[str, dict] = {}         # scanner_sym → raw detail dict
+_per_coin_detail_ts: Dict[str, float] = {}     # scanner_sym → last-updated monotonic ts
+_PER_COIN_DETAIL_TTL_S: float = 30 * 60        # 30 minutes
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +637,16 @@ async def run_coinglass_drip() -> None:
                 await asyncio.sleep(10)
                 continue
 
+            # Expire stale per-coin entries
+            now_mono = time.monotonic()
+            stale = [s for s, ts in _per_coin_detail_ts.items()
+                     if now_mono - ts > _PER_COIN_DETAIL_TTL_S]
+            for s in stale:
+                _per_coin_detail.pop(s, None)
+                _per_coin_detail_ts.pop(s, None)
+            if stale:
+                logger.info("CoinGlass drip: expired %d stale per-coin entries", len(stale))
+
             # Sort: priority coins first, then the rest
             all_syms = set(bulk.keys())
             priority = [s for s in _PRIORITY_COINS if s in all_syms]
@@ -651,6 +666,7 @@ async def run_coinglass_drip() -> None:
 
                         sym_out, detail = result
                         _per_coin_detail[sym_out] = detail
+                        _per_coin_detail_ts[sym_out] = time.monotonic()
 
                         # Parse and merge immediately
                         coin = _scanner_to_coin(sym_out)
