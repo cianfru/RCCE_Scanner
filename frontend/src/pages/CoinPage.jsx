@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
+import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { RegimeBadge, SignalDot } from "../components/badges.jsx";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
-import ConfluencePanel from "../components/ConfluencePanel.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -138,10 +137,10 @@ function MetricSparkline({ label, history, current, unit, colorFn }) {
 }
 
 // ---------------------------------------------------------------------------
-// Win Rate Card — per-symbol historical performance
+// Combined Confluence + Win Rate card
 // ---------------------------------------------------------------------------
 
-function WinRateCard({ symbol, timeframe }) {
+function ConfluenceWinRateCard({ confluence, symbol, timeframe }) {
   const [wr, setWr] = useState(null);
 
   useEffect(() => {
@@ -152,71 +151,164 @@ function WinRateCard({ symbol, timeframe }) {
       .catch(() => {});
   }, [symbol, timeframe]);
 
-  if (!wr || wr.total < 3) return null;
+  if (!confluence && (!wr || wr.total < 3)) return null;
 
+  return (
+    <div style={{
+      background: T.glassBg, border: `1px solid ${T.border}`,
+      borderRadius: 12, padding: "16px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
+    }}>
+      {/* Confluence section */}
+      {confluence && <ConfluenceSection confluence={confluence} />}
+
+      {/* Win Rate section */}
+      {wr && wr.total >= 3 && (
+        <>
+          {confluence && <div style={{ height: 1, background: T.overlay06, margin: "14px 0" }} />}
+          <WinRateSection wr={wr} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Confluence section (extracted from ConfluencePanel, no outer card wrapper)
+function ConfluenceSection({ confluence }) {
+  const { score, label, regime_aligned, signal_aligned,
+    regime_4h, regime_1d, signal_4h, signal_1d } = confluence;
+
+  const scoreColor = (s) => s >= 75 ? "#34d399" : s >= 50 ? "#facc15" : s >= 25 ? "#fb923c" : "#f87171";
+  const labelColor = (l) => ({ STRONG: "#34d399", MODERATE: "#facc15", WEAK: "#fb923c", CONFLICTING: "#f87171" }[l] || T.text4);
+  const color = scoreColor(score ?? 0);
+  const lColor = labelColor(label);
+  const r4h = REGIME_META[regime_4h] || REGIME_META.FLAT;
+  const r1d = REGIME_META[regime_1d] || REGIME_META.FLAT;
+  const s4h = SIGNAL_META[signal_4h] || SIGNAL_META.WAIT;
+  const s1d = SIGNAL_META[signal_1d] || SIGNAL_META.WAIT;
+
+  return (
+    <>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${T.overlay06}`,
+      }}>
+        <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+        <span style={{
+          fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
+          fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+        }}>Confluence</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{ flex: 1, height: 5, background: T.overlay04, borderRadius: 3, overflow: "hidden" }}>
+          <div style={{
+            width: `${Math.min(score ?? 0, 100)}%`, height: "100%",
+            background: `linear-gradient(90deg, ${color}88, ${color})`,
+            borderRadius: 3, boxShadow: `0 0 8px ${color}30`, transition: "width 0.6s ease",
+          }} />
+        </div>
+        <span style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color, minWidth: 32, textAlign: "right" }}>
+          {score != null ? Math.round(score) : "\u2014"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{
+          padding: "4px 12px", borderRadius: 20,
+          background: `${lColor}15`, color: lColor,
+          fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
+          letterSpacing: "0.06em", border: `1px solid ${lColor}25`,
+        }}>{label || "\u2014"}</span>
+        <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
+          {[["Regime", regime_aligned], ["Signal", signal_aligned]].map(([lbl, ok]) => (
+            <span key={lbl} style={{
+              fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
+              color: ok ? "#34d399" : "#f87171", display: "flex", alignItems: "center", gap: 4,
+            }}>
+              {ok ? "\u2713" : "\u2717"}
+              <span style={{ fontSize: T.textXs, color: T.text4 }}>{lbl}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {[
+        { tf: "4H", rm: r4h, regime: regime_4h, sm: s4h, signal: signal_4h },
+        { tf: "1D", rm: r1d, regime: regime_1d, sm: s1d, signal: signal_1d },
+      ].map(row => (
+        <div key={row.tf} style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0",
+        }}>
+          <span style={{ fontSize: T.textSm, color: T.text4, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.08em", minWidth: 28 }}>
+            {row.tf}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{
+              padding: "3px 10px", borderRadius: 20, background: row.rm.bg, color: row.rm.color,
+              fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.04em", border: `1px solid ${row.rm.color}20`,
+            }}>{row.regime || "\u2014"}</span>
+            <span style={{ color: T.text4, fontSize: T.textSm }}>{"\u2192"}</span>
+            <span style={{
+              fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600, color: row.sm.color,
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}>
+              <span style={{ fontSize: 9, filter: row.signal !== "WAIT" ? `drop-shadow(0 0 3px ${row.sm.color})` : "none" }}>
+                {row.sm.dot}
+              </span>
+              {row.sm.label}
+            </span>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// Win Rate section (table only, no outer card wrapper)
+function WinRateSection({ wr }) {
   const rc = (r) => r == null ? T.text4 : r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
-  const SIGNAL_LABELS = {
+  const LABELS = {
     STRONG_LONG: "Strong Long", LIGHT_LONG: "Light Long",
     ACCUMULATE: "Accumulate", REVIVAL_SEED: "Revival",
     REVIVAL_SEED_CONFIRMED: "Revival Conf", ALL: "All Signals",
   };
-
-  // Build rows: "ALL" first, then per-signal
   const allRow = wr.all;
   const sigRows = (wr.signals || []).filter(s => s.count >= 2);
   const rows = allRow ? [allRow, ...sigRows] : sigRows;
 
+  const thStyle = { padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" };
+
   function Cell({ data }) {
-    if (!data) return <td style={{ padding: "6px 10px", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: T.textXs }}>—</td>;
+    if (!data) return <td style={{ padding: "6px 10px", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: T.textXs }}>{"\u2014"}</td>;
     return (
       <td style={{ padding: "6px 10px", textAlign: "center" }}>
-        <div style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: rc(data.win_rate) }}>
-          {data.win_rate}%
-        </div>
-        <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
-          {data.avg > 0 ? "+" : ""}{data.avg}% avg · n={data.count}
-        </div>
+        <div style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: rc(data.win_rate) }}>{data.win_rate}%</div>
+        <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>{data.avg > 0 ? "+" : ""}{data.avg}% avg · n={data.count}</div>
       </td>
     );
   }
 
   return (
-    <div style={{
-      background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "14px 20px",
-      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-      boxShadow: `0 2px 12px ${T.shadow}`,
-    }}>
+    <>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${T.overlay06}`,
+        marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${T.overlay06}`,
       }}>
         <span style={{
           fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
           color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em",
-        }}>
-          Signal Win Rate
-        </span>
-        <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>
-          {wr.total} signals tracked (min 2h duration)
-        </span>
+        }}>Signal Win Rate</span>
+        <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>{wr.total} signals (min 2h)</span>
       </div>
-
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Signal
-            </th>
-            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              24H
-            </th>
-            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              72H
-            </th>
-            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              7D
-            </th>
+            <th style={{ ...thStyle, textAlign: "left" }}>Signal</th>
+            <th style={thStyle}>24H</th>
+            <th style={thStyle}>72H</th>
+            <th style={thStyle}>7D</th>
           </tr>
         </thead>
         <tbody>
@@ -226,11 +318,11 @@ function WinRateCard({ symbol, timeframe }) {
               background: row.signal === "ALL" ? "rgba(255,255,255,0.02)" : "transparent",
             }}>
               <td style={{
-                padding: "6px 10px", fontFamily: T.mono,
-                fontSize: T.textXs, fontWeight: row.signal === "ALL" ? 700 : 500,
+                padding: "6px 10px", fontFamily: T.mono, fontSize: T.textXs,
+                fontWeight: row.signal === "ALL" ? 700 : 500,
                 color: row.signal === "ALL" ? T.text2 : T.text3,
               }}>
-                {SIGNAL_LABELS[row.signal] || row.signal}
+                {LABELS[row.signal] || row.signal}
                 <span style={{ color: T.text4, marginLeft: 4 }}>({row.count})</span>
               </td>
               <Cell data={row["1d"]} />
@@ -240,7 +332,7 @@ function WinRateCard({ symbol, timeframe }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </>
   );
 }
 
@@ -608,11 +700,12 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           total={data.conditions_total}
         />
 
-        {/* Historical Win Rate */}
-        <WinRateCard symbol={data.symbol} timeframe={timeframe} />
-
-        {/* Confluence */}
-        <ConfluencePanel confluence={data.confluence} />
+        {/* Confluence + Win Rate (combined card) */}
+        <ConfluenceWinRateCard
+          confluence={data.confluence}
+          symbol={data.symbol}
+          timeframe={timeframe}
+        />
 
         {/* Positioning */}
         <PositioningPanel
