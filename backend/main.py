@@ -2157,6 +2157,15 @@ async def analytics_hyperlens(timeframe: str = Query("4h")):
     return await analytics.hyperlens_attribution(timeframe=timeframe)
 
 
+@app.get("/api/analytics/symbol/{symbol:path}")
+async def analytics_symbol(symbol: str, timeframe: str = Query("4h")):
+    """Per-symbol win rate and performance breakdown."""
+    from signal_analytics import SignalAnalytics
+    from signal_log import SignalLog
+    analytics = SignalAnalytics(SignalLog.get())
+    return await analytics.symbol_win_rate(symbol=symbol, timeframe=timeframe)
+
+
 # ---------------------------------------------------------------------------
 # Notifications feed (frontend toast / bell)
 # ---------------------------------------------------------------------------

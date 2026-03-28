@@ -138,6 +138,95 @@ function MetricSparkline({ label, history, current, unit, colorFn }) {
 }
 
 // ---------------------------------------------------------------------------
+// Win Rate Card — per-symbol historical performance
+// ---------------------------------------------------------------------------
+
+function WinRateCard({ symbol, timeframe }) {
+  const [wr, setWr] = useState(null);
+
+  useEffect(() => {
+    if (!symbol) return;
+    fetch(`${API_BASE}/api/analytics/symbol/${encodeURIComponent(symbol)}?timeframe=${timeframe || "4h"}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setWr(d))
+      .catch(() => {});
+  }, [symbol, timeframe]);
+
+  if (!wr || wr.total < 3) return null;
+
+  const rateColor = (r) => r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
+
+  return (
+    <div style={{
+      background: T.glassBg, border: `1px solid ${T.border}`,
+      borderRadius: 12, padding: "14px 20px",
+      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+      boxShadow: `0 2px 12px ${T.shadow}`,
+    }}>
+      <div style={{
+        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
+        color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em",
+        marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${T.overlay06}`,
+      }}>
+        Signal Win Rate
+      </div>
+
+      {/* Main WR stat */}
+      <div style={{
+        display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12,
+      }}>
+        <span style={{
+          fontSize: 28, fontFamily: T.mono, fontWeight: 700,
+          color: rateColor(wr.win_rate),
+        }}>
+          {wr.win_rate}%
+        </span>
+        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4 }}>
+          {wr.wins}/{wr.total} signals · avg {wr.avg_7d > 0 ? "+" : ""}{wr.avg_7d}% 7d
+        </span>
+      </div>
+
+      {/* Per-signal breakdown */}
+      {Object.keys(wr.by_signal || {}).length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {Object.entries(wr.by_signal).map(([sig, stats]) => (
+            <div key={sig} style={{
+              padding: "4px 10px", borderRadius: 6,
+              background: T.overlay02, border: `1px solid ${T.overlay06}`,
+              fontFamily: T.mono, fontSize: T.textXs,
+            }}>
+              <span style={{ color: T.text3, fontWeight: 500 }}>{sig.replace(/_/g, " ")}</span>
+              {" "}
+              <span style={{ color: rateColor(stats.win_rate), fontWeight: 700 }}>{stats.win_rate}%</span>
+              <span style={{ color: T.text4 }}> ({stats.count})</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Regime breakdown */}
+      {Object.keys(wr.by_regime || {}).length > 0 && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8,
+        }}>
+          {Object.entries(wr.by_regime).map(([regime, stats]) => (
+            <div key={regime} style={{
+              padding: "3px 8px", borderRadius: 5,
+              background: T.overlay02, fontFamily: T.mono, fontSize: T.textXs,
+            }}>
+              <span style={{ color: T.text4 }}>{regime}</span>
+              {" "}
+              <span style={{ color: rateColor(stats.win_rate), fontWeight: 600 }}>{stats.win_rate}%</span>
+              <span style={{ color: T.text4 }}> ({stats.count})</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Metrics Panel — unified sparklines card
 // ---------------------------------------------------------------------------
 
@@ -500,6 +589,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           met={data.conditions_met}
           total={data.conditions_total}
         />
+
+        {/* Historical Win Rate */}
+        <WinRateCard symbol={data.symbol} timeframe={timeframe} />
 
         {/* Confluence */}
         <ConfluencePanel confluence={data.confluence} />

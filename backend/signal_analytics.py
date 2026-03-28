@@ -208,13 +208,20 @@ class SignalAnalytics:
         combo_size: int = 3,
         min_samples: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Top condition combinations ranked by win rate."""
+        """Top condition combinations ranked by lift over baseline.
+
+        Only considers conditions that are FALSE at least 10% of the time
+        (always-true conditions don't differentiate). Ranks by lift
+        (combo WR minus baseline WR) to surface truly predictive combos.
+        Deduplicates combos that match the exact same set of rows.
+        """
 
         async def _compute():
             rows = await self._fetch_rows_with_outcomes(timeframe)
 
             # Pre-compute met-condition sets per row
             row_data: List[Tuple[frozenset, float, bool]] = []
+            total_wins = 0
             for r in rows:
                 conds = _extract_conditions(r["context"])
                 if not conds:
@@ -223,19 +230,48 @@ class SignalAnalytics:
                 outcome = r["outcome_7d_pct"]
                 win = _is_win(r["signal"], outcome)
                 row_data.append((met, outcome, win))
+                if win:
+                    total_wins += 1
 
             if not row_data:
                 return []
 
-            # Only consider conditions that appear in the data
-            present_conditions = set()
-            for met, _, _ in row_data:
-                present_conditions.update(met)
-            active_conditions = [c for c in _ALL_CONDITIONS if c in present_conditions]
+            baseline_wr = total_wins / len(row_data) * 100
+            baseline_avg = sum(o for _, o, _ in row_data) / len(row_data)
 
-            # Iterate all combos
+            # Count how often each condition is TRUE vs FALSE
+            cond_true_rate: Dict[str, float] = {}
+            for cond in _ALL_CONDITIONS:
+                true_count = sum(1 for met, _, _ in row_data if cond in met)
+                total_with_cond = sum(
+                    1 for met, _, _ in row_data
+                    # Only count rows where this condition was evaluated
+                    if any(c == cond for c in met) or True  # simplify: count all
+                )
+                cond_true_rate[cond] = true_count / len(row_data) if row_data else 0
+
+            # Filter: only use conditions that are FALSE >= 10% of the time
+            # (conditions that are always TRUE don't differentiate)
+            selective_conditions = [
+                c for c in _ALL_CONDITIONS
+                if cond_true_rate.get(c, 0) < 0.90 and cond_true_rate.get(c, 0) > 0.01
+            ]
+
+            # If too few selective conditions, relax to 95% threshold
+            if len(selective_conditions) < combo_size:
+                selective_conditions = [
+                    c for c in _ALL_CONDITIONS
+                    if cond_true_rate.get(c, 0) < 0.95 and cond_true_rate.get(c, 0) > 0.01
+                ]
+
+            if len(selective_conditions) < combo_size:
+                return []
+
+            # Iterate combos, dedup by matching row count
             combo_stats: Dict[frozenset, Dict] = {}
-            for combo in itertools.combinations(active_conditions, combo_size):
+            seen_counts: Dict[int, int] = {}  # match_count -> how many combos have it
+
+            for combo in itertools.combinations(selective_conditions, combo_size):
                 combo_set = frozenset(combo)
                 outcomes = []
                 wins = 0
@@ -245,24 +281,37 @@ class SignalAnalytics:
                         if win:
                             wins += 1
 
-                if len(outcomes) < min_samples:
+                n = len(outcomes)
+                if n < min_samples:
                     continue
+
+                # Dedup: skip combos that match the exact same row count
+                # (likely the same rows, just different always-true conditions swapped)
+                seen_counts[n] = seen_counts.get(n, 0) + 1
+                if seen_counts[n] > 3:
+                    continue  # max 3 combos per row-count bucket
+
+                wr = wins / n * 100
+                avg = sum(outcomes) / n
+                lift = round(wr - baseline_wr, 1)
 
                 combo_stats[combo_set] = {
                     "conditions": sorted(combo_set),
-                    "count": len(outcomes),
+                    "count": n,
                     "wins": wins,
-                    "win_rate": round(wins / len(outcomes) * 100, 1),
-                    "avg_7d": round(sum(outcomes) / len(outcomes), 2),
+                    "win_rate": round(wr, 1),
+                    "avg_7d": round(avg, 2),
+                    "lift": lift,
+                    "baseline_wr": round(baseline_wr, 1),
                 }
 
-            # Sort by win rate desc, then by count desc
+            # Sort by lift desc (how much better than baseline), then count desc
             ranked = sorted(
                 combo_stats.values(),
-                key=lambda x: (x["win_rate"], x["count"]),
+                key=lambda x: (x["lift"], x["count"]),
                 reverse=True,
             )
-            return ranked[:20]
+            return ranked[:15]
 
         return await self._cached(f"combo:{timeframe}:{combo_size}:{min_samples}", _compute)
 
@@ -484,6 +533,84 @@ class SignalAnalytics:
             }
 
         return await self._cached(f"hl:{timeframe}", _compute)
+
+    # ==================================================================
+    # 7. Per-Symbol Win Rate
+    # ==================================================================
+
+    async def symbol_win_rate(
+        self, symbol: str, timeframe: str = "4h",
+    ) -> Dict[str, Any]:
+        """Win rate and performance stats for a specific symbol."""
+
+        async def _compute():
+            db = self._log._ensure_db()
+            cursor = await db.execute(
+                """SELECT signal, regime, conditions_met, conditions_total,
+                          outcome_1d_pct, outcome_3d_pct, outcome_7d_pct
+                   FROM signal_events
+                   WHERE timeframe = ? AND symbol = ?
+                     AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT'
+                   ORDER BY timestamp DESC""",
+                (timeframe, symbol),
+            )
+            rows = await cursor.fetchall()
+            if not rows:
+                return {"symbol": symbol, "total": 0}
+
+            wins = 0
+            total = len(rows)
+            returns_7d = []
+            by_signal: Dict[str, list] = defaultdict(list)
+            by_regime: Dict[str, list] = defaultdict(list)
+
+            for r in rows:
+                sig = r["signal"]
+                regime = r["regime"]
+                outcome = r["outcome_7d_pct"]
+                win = _is_win(sig, outcome)
+                if win:
+                    wins += 1
+                returns_7d.append(outcome)
+                by_signal[sig].append((outcome, win))
+                by_regime[regime].append((outcome, win))
+
+            avg_7d = sum(returns_7d) / total
+
+            # Per-signal breakdown
+            signal_stats = {}
+            for sig, entries in by_signal.items():
+                n = len(entries)
+                w = sum(1 for _, win in entries if win)
+                avg = sum(o for o, _ in entries) / n
+                signal_stats[sig] = {
+                    "count": n,
+                    "win_rate": round(w / n * 100, 1),
+                    "avg_7d": round(avg, 2),
+                }
+
+            # Best/worst regime
+            regime_stats = {}
+            for reg, entries in by_regime.items():
+                n = len(entries)
+                if n >= 2:
+                    w = sum(1 for _, win in entries if win)
+                    regime_stats[reg] = {
+                        "count": n,
+                        "win_rate": round(w / n * 100, 1),
+                    }
+
+            return {
+                "symbol": symbol,
+                "total": total,
+                "wins": wins,
+                "win_rate": round(wins / total * 100, 1),
+                "avg_7d": round(avg_7d, 2),
+                "by_signal": signal_stats,
+                "by_regime": regime_stats,
+            }
+
+        return await self._cached(f"sym_wr:{symbol}:{timeframe}", _compute)
 
     # ==================================================================
     # Combined endpoint

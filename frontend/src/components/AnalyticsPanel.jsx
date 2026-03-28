@@ -271,6 +271,15 @@ function ComboCards({ combos, isMobile }) {
             }}>
               {combo.win_rate}%
             </span>
+            {combo.lift != null && (
+              <span style={{
+                fontSize: fs, fontFamily: T.mono,
+                color: combo.lift > 0 ? "#34d399" : combo.lift < -5 ? "#f87171" : T.text4,
+                fontWeight: 600,
+              }}>
+                {combo.lift > 0 ? "+" : ""}{combo.lift}% lift
+              </span>
+            )}
             <span style={{
               fontSize: fs, fontFamily: T.mono,
               color: edgeColor(combo.avg_7d),
@@ -600,7 +609,7 @@ export default function AnalyticsPanel({ isMobile }) {
           <GlassCard style={{ padding: pad }}>
             <SectionHeader
               title="Top Condition Combos"
-              subtitle="Best-performing combinations of 3 conditions. Shows win rate when ALL conditions in the combo are met simultaneously."
+              subtitle="Best-performing combinations of 3 conditions ranked by lift (WR above baseline). Only uses conditions that vary meaningfully — always-true conditions are excluded."
             />
             <ComboCards combos={data.combos} isMobile={isMobile} />
           </GlassCard>
