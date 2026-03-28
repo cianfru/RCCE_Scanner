@@ -19,7 +19,7 @@ import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 import aiohttp
 
@@ -46,7 +46,12 @@ _LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
-_POLL_INTERVAL = 5 * 60                    # 5 minutes (aligned with scan cycle)
+
+# Tiered polling — watchlist wallets get priority, rest of roster polled less often
+_WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
+_ROSTER_POLL_INTERVAL = 15 * 60            # 15 min for the rest of the roster
+_POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
+
 # In-memory snapshot depth per wallet.  Only recent snapshots are needed:
 # trade reconstruction uses last 2, consensus uses last 1,
 # get_position_changes() needs ~6 for its 30-min window.
@@ -54,7 +59,7 @@ _POLL_INTERVAL = 5 * 60                    # 5 minutes (aligned with scan cycle)
 _POSITION_HISTORY_LEN = 20
 
 # Staleness: skip snapshots older than this when computing consensus
-_SNAPSHOT_MAX_AGE_S = 15 * 60              # 15 minutes (3 missed polls)
+_SNAPSHOT_MAX_AGE_S = 20 * 60              # 20 minutes (covers roster interval)
 
 # Filtering thresholds
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
@@ -213,7 +218,11 @@ _asset_index_map: Dict[str, str] = {}
 _wallet_orders: Dict[str, list] = {}          # address -> list of raw order dicts
 _order_books: Dict[str, dict] = {}            # coin -> {"levels": ..., "timestamp": float}
 _pressure_cache: Dict[str, dict] = {}         # coin -> computed pressure data
-_ORDER_BOOK_POLL_INTERVAL = 30                # seconds
+_ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
+
+# Tiered polling state
+_xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
+_last_roster_poll_at: float = 0            # Last time full roster was polled
 _ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
@@ -447,8 +456,15 @@ async def _fetch_wallet_positions(
     session: aiohttp.ClientSession,
     semaphore: asyncio.Semaphore,
     wallet: TrackedWallet,
+    full: bool = True,
 ) -> Optional[PositionSnapshot]:
-    """Fetch open positions and open orders for a single wallet."""
+    """Fetch open positions for a single wallet.
+
+    Args:
+        full: If True (watchlist tier), fetch all 3 endpoints (positions +
+              orders + xyz DEX).  If False (roster tier), fetch positions
+              only — saves 2 API calls per wallet.
+    """
     async with semaphore:
         try:
             async with session.post(
@@ -461,33 +477,35 @@ async def _fetch_wallet_positions(
         except Exception:
             return None
 
-        # Fetch open orders (stops, TPs, limits) — second call under same semaphore
-        try:
-            async with session.post(
-                _HL_INFO_URL,
-                json={"type": "frontendOpenOrders", "user": wallet.address},
-            ) as resp:
-                if resp.status == 200:
-                    orders_raw = await resp.json(content_type=None)
-                    if isinstance(orders_raw, list):
-                        _wallet_orders[wallet.address] = orders_raw
-                    else:
-                        _wallet_orders[wallet.address] = []
-                # On non-200 we just keep previous orders (or empty)
-        except Exception:
-            pass  # Non-critical — positions are the priority
+        # Orders — only for watchlist tier (used by Pressure Map)
+        if full:
+            try:
+                async with session.post(
+                    _HL_INFO_URL,
+                    json={"type": "frontendOpenOrders", "user": wallet.address},
+                ) as resp:
+                    if resp.status == 200:
+                        orders_raw = await resp.json(content_type=None)
+                        if isinstance(orders_raw, list):
+                            _wallet_orders[wallet.address] = orders_raw
+                        else:
+                            _wallet_orders[wallet.address] = []
+            except Exception:
+                pass
 
-        # Fetch xyz DEX (HIP-3 TradFi) positions — third call under same semaphore
+        # xyz DEX — only for watchlist tier OR wallets known to have xyz positions
         xyz_data = None
-        try:
-            async with session.post(
-                _HL_INFO_URL,
-                json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
-            ) as resp:
-                if resp.status == 200:
-                    xyz_data = await resp.json(content_type=None)
-        except Exception:
-            pass  # Non-critical — crypto positions are the priority
+        fetch_xyz = full or wallet.address in _xyz_active_wallets
+        if fetch_xyz:
+            try:
+                async with session.post(
+                    _HL_INFO_URL,
+                    json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
+                ) as resp:
+                    if resp.status == 200:
+                        xyz_data = await resp.json(content_type=None)
+            except Exception:
+                pass
 
     if not data:
         return None
@@ -545,6 +563,7 @@ async def _fetch_wallet_positions(
         xyz_positions = _parse_positions(xyz_data, dex=_XYZ_DEX)
         if xyz_positions:
             positions.extend(xyz_positions)
+            _xyz_active_wallets.add(wallet.address)
             logger.debug("HyperLens: %s has %d xyz DEX positions", wallet.address[:8], len(xyz_positions))
 
     # Extract account value (from native HL — xyz has separate margin)
@@ -564,12 +583,40 @@ async def _fetch_wallet_positions(
     )
 
 
-async def poll_positions() -> int:
-    """Poll positions for all roster wallets.
+def _get_watchlist_addresses() -> Set[str]:
+    """Return the set of wallet addresses that should be polled at high frequency.
 
-    Returns number of wallets successfully polled.
+    Includes: wallets followed via whale_follows (starred on frontend) +
+    wallets monitored via position_monitor (/watch TG command).
     """
-    global _last_poll_at, _poll_count, _consensus_updated_at
+    addrs: Set[str] = set()
+    try:
+        import whale_follows as wf
+        addrs.update(wf.get_all_followed_addresses())
+    except ImportError:
+        pass
+    try:
+        from position_monitor import PositionMonitor
+        monitor = PositionMonitor.get()
+        for w in monitor.watchers:
+            addrs.add(w.address.lower())
+    except Exception:
+        pass
+    return addrs
+
+
+async def poll_positions() -> int:
+    """Poll positions using tiered strategy.
+
+    - **Watchlist tier** (every 5 min): followed/watched wallets get full
+      polling — positions + orders + xyz DEX (3 API calls).
+    - **Roster tier** (every 15 min): everyone else gets positions only
+      (1 API call), unless they have known xyz activity (2 calls).
+
+    This reduces API volume by ~75% vs polling all 500 wallets at 3 calls
+    each every 5 min.
+    """
+    global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
 
     # Refresh asset index map if empty (resolves @142 → PENGU etc.)
     if not _asset_index_map:
@@ -579,18 +626,39 @@ async def poll_positions() -> int:
         logger.debug("HyperLens: no roster — skipping poll")
         return 0
 
+    now = time.time()
+    watchlist_addrs = _get_watchlist_addresses()
+    roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
+
+    # Split roster into tiers
+    watchlist_wallets = []
+    roster_wallets = []
+    for w in _roster:
+        if w.address.lower() in watchlist_addrs:
+            watchlist_wallets.append(w)
+        elif roster_due:
+            roster_wallets.append(w)
+
+    wallets_to_poll = watchlist_wallets + roster_wallets
+    if not wallets_to_poll:
+        logger.debug("HyperLens: no wallets due for polling this cycle")
+        return 0
+
     semaphore = asyncio.Semaphore(_CONCURRENCY)
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
     success_count = 0
 
+    # Build tasks with tier-appropriate full/light polling
+    watchlist_set = {w.address for w in watchlist_wallets}
+
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
-            _fetch_wallet_positions(session, semaphore, w)
-            for w in _roster
+            _fetch_wallet_positions(session, semaphore, w, full=(w.address in watchlist_set))
+            for w in wallets_to_poll
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for wallet, result in zip(_roster, results):
+    for wallet, result in zip(wallets_to_poll, results):
         if isinstance(result, Exception) or result is None:
             continue
 
@@ -605,8 +673,10 @@ async def poll_positions() -> int:
 
         success_count += 1
 
-    _last_poll_at = time.time()
+    _last_poll_at = now
     _poll_count += 1
+    if roster_due:
+        _last_roster_poll_at = now
 
     # Prune stale wallet orders for addresses no longer in roster
     roster_addrs = {w.address for w in _roster}
@@ -629,9 +699,10 @@ async def poll_positions() -> int:
     except Exception as exc:
         logger.warning("HyperLens DB: save error: %s", exc)
 
+    tier_info = f"watchlist={len(watchlist_wallets)}" + (f", roster={len(roster_wallets)}" if roster_due else "")
     logger.info(
-        "HyperLens poll #%d: %d/%d wallets, %d symbols with consensus",
-        _poll_count, success_count, len(_roster), len(_consensus),
+        "HyperLens poll #%d: %d/%d wallets (%s), %d symbols with consensus",
+        _poll_count, success_count, len(wallets_to_poll), tier_info, len(_consensus),
     )
     return success_count
 
@@ -2175,7 +2246,7 @@ async def _order_book_loop() -> None:
 
 
 async def run_hyperlens_loop() -> None:
-    """Main background loop: refresh roster daily, poll positions every 5 min."""
+    """Main background loop: refresh roster daily, poll positions with tiered intervals."""
     global _initialized
 
     logger.info("HyperLens: starting background loop...")
