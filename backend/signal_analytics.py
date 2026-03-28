@@ -650,73 +650,45 @@ class SignalAnalytics:
             if not filtered_rows:
                 return {"symbol": symbol, "total": 0}
 
-            # Multi-horizon stats
-            horizons = {}
-            for label, col in [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]:
-                vals = [(r["signal"], r[col]) for r in filtered_rows
-                        if r[col] is not None]
+            total = len(filtered_rows)
+            horizon_cols = [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]
+
+            # Build signal × horizon matrix
+            # Group rows by signal type
+            sig_rows: Dict[str, list] = defaultdict(list)
+            for r in filtered_rows:
+                sig_rows[r["signal"]].append(r)
+
+            def _horizon_stats(rows_subset, col):
+                vals = [(r["signal"], r[col]) for r in rows_subset if r[col] is not None]
                 if not vals:
-                    horizons[label] = {"count": 0, "win_rate": None, "avg": None}
-                    continue
+                    return None
                 n = len(vals)
                 wins = sum(1 for sig, o in vals if _is_win(sig, o))
                 avg = sum(o for _, o in vals) / n
-                horizons[label] = {
-                    "count": n,
-                    "win_rate": round(wins / n * 100, 1),
-                    "avg": round(avg, 2),
-                }
+                return {"count": n, "win_rate": round(wins / n * 100, 1), "avg": round(avg, 2)}
 
-            # Use 7d as primary, fall back to 3d, then 1d
-            primary = horizons.get("7d", {})
-            if not primary.get("count"):
-                primary = horizons.get("3d", {})
-            if not primary.get("count"):
-                primary = horizons.get("1d", {})
-            total = primary.get("count", 0)
-            win_rate = primary.get("win_rate")
-
-            # Per-signal breakdown (use best available outcome)
-            by_signal: Dict[str, list] = defaultdict(list)
-            by_regime: Dict[str, list] = defaultdict(list)
-            for r in filtered_rows:
-                sig = r["signal"]
-                regime = r["regime"]
-                outcome = r["outcome_7d_pct"] or r["outcome_3d_pct"] or r["outcome_1d_pct"]
-                if outcome is None:
+            # Per-signal rows with horizon breakdown
+            signals = []
+            for sig in ["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"]:
+                sr = sig_rows.get(sig, [])
+                if not sr:
                     continue
-                win = _is_win(sig, outcome)
-                by_signal[sig].append((outcome, win))
-                by_regime[regime].append((outcome, win))
+                row = {"signal": sig, "count": len(sr)}
+                for label, col in horizon_cols:
+                    row[label] = _horizon_stats(sr, col)
+                signals.append(row)
 
-            signal_stats = {}
-            for sig, entries in by_signal.items():
-                n = len(entries)
-                w = sum(1 for _, win in entries if win)
-                avg = sum(o for o, _ in entries) / n
-                signal_stats[sig] = {
-                    "count": n,
-                    "win_rate": round(w / n * 100, 1),
-                    "avg": round(avg, 2),
-                }
-
-            regime_stats = {}
-            for reg, entries in by_regime.items():
-                n = len(entries)
-                if n >= 2:
-                    w = sum(1 for _, win in entries if win)
-                    regime_stats[reg] = {
-                        "count": n,
-                        "win_rate": round(w / n * 100, 1),
-                    }
+            # Overall "ALL" row
+            all_row = {"signal": "ALL", "count": total}
+            for label, col in horizon_cols:
+                all_row[label] = _horizon_stats(filtered_rows, col)
 
             return {
                 "symbol": symbol,
                 "total": total,
-                "win_rate": win_rate,
-                "horizons": horizons,
-                "by_signal": signal_stats,
-                "by_regime": regime_stats,
+                "signals": signals,
+                "all": all_row,
             }
 
         return await self._cached(f"sym_wr:{symbol}:{timeframe}", _compute)

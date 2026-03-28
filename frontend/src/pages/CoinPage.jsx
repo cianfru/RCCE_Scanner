@@ -155,7 +155,30 @@ function WinRateCard({ symbol, timeframe }) {
   if (!wr || wr.total < 3) return null;
 
   const rc = (r) => r == null ? T.text4 : r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
-  const horizons = wr.horizons || {};
+  const SIGNAL_LABELS = {
+    STRONG_LONG: "Strong Long", LIGHT_LONG: "Light Long",
+    ACCUMULATE: "Accumulate", REVIVAL_SEED: "Revival",
+    REVIVAL_SEED_CONFIRMED: "Revival Conf", ALL: "All Signals",
+  };
+
+  // Build rows: "ALL" first, then per-signal
+  const allRow = wr.all;
+  const sigRows = (wr.signals || []).filter(s => s.count >= 2);
+  const rows = allRow ? [allRow, ...sigRows] : sigRows;
+
+  function Cell({ data }) {
+    if (!data) return <td style={{ padding: "6px 10px", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: T.textXs }}>—</td>;
+    return (
+      <td style={{ padding: "6px 10px", textAlign: "center" }}>
+        <div style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: rc(data.win_rate) }}>
+          {data.win_rate}%
+        </div>
+        <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+          {data.avg > 0 ? "+" : ""}{data.avg}% avg · n={data.count}
+        </div>
+      </td>
+    );
+  }
 
   return (
     <div style={{
@@ -165,82 +188,58 @@ function WinRateCard({ symbol, timeframe }) {
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
       <div style={{
-        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
-        color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${T.overlay06}`,
       }}>
-        Signal Win Rate
-      </div>
-
-      {/* Multi-horizon WR cards */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {[["1d", "24H"], ["3d", "72H"], ["7d", "7D"]].map(([key, label]) => {
-          const h = horizons[key];
-          if (!h || !h.count) return (
-            <div key={key} style={{
-              flex: 1, textAlign: "center", padding: "10px 8px", borderRadius: 8,
-              background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
-            }}>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontWeight: 600 }}>{label}</div>
-              <div style={{ fontSize: 18, fontFamily: T.mono, color: T.text4, fontWeight: 700 }}>—</div>
-            </div>
-          );
-          return (
-            <div key={key} style={{
-              flex: 1, textAlign: "center", padding: "10px 8px", borderRadius: 8,
-              background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
-            }}>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontWeight: 600 }}>{label}</div>
-              <div style={{ fontSize: 20, fontFamily: T.mono, color: rc(h.win_rate), fontWeight: 700 }}>
-                {h.win_rate}%
-              </div>
-              <div style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>
-                avg {h.avg > 0 ? "+" : ""}{h.avg}%
-              </div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>
-                n={h.count}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Per-signal breakdown */}
-      {Object.keys(wr.by_signal || {}).length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {Object.entries(wr.by_signal).map(([sig, stats]) => (
-            <div key={sig} style={{
-              padding: "4px 10px", borderRadius: 6,
-              background: T.overlay02, border: `1px solid ${T.overlay06}`,
-              fontFamily: T.mono, fontSize: T.textXs,
-            }}>
-              <span style={{ color: T.text3, fontWeight: 500 }}>{sig.replace(/_/g, " ")}</span>
-              {" "}
-              <span style={{ color: rc(stats.win_rate), fontWeight: 700 }}>{stats.win_rate}%</span>
-              <span style={{ color: T.text4 }}> ({stats.count})</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Regime breakdown */}
-      {Object.keys(wr.by_regime || {}).length > 0 && (
-        <div style={{
-          display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8,
+        <span style={{
+          fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
+          color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em",
         }}>
-          {Object.entries(wr.by_regime).map(([regime, stats]) => (
-            <div key={regime} style={{
-              padding: "3px 8px", borderRadius: 5,
-              background: T.overlay02, fontFamily: T.mono, fontSize: T.textXs,
+          Signal Win Rate
+        </span>
+        <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>
+          {wr.total} signals tracked (min 2h duration)
+        </span>
+      </div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+            <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Signal
+            </th>
+            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              24H
+            </th>
+            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              72H
+            </th>
+            <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              7D
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={row.signal} style={{
+              borderBottom: `1px solid ${T.border}22`,
+              background: row.signal === "ALL" ? "rgba(255,255,255,0.02)" : "transparent",
             }}>
-              <span style={{ color: T.text4 }}>{regime}</span>
-              {" "}
-              <span style={{ color: rc(stats.win_rate), fontWeight: 600 }}>{stats.win_rate}%</span>
-              <span style={{ color: T.text4 }}> ({stats.count})</span>
-            </div>
+              <td style={{
+                padding: "6px 10px", fontFamily: T.mono,
+                fontSize: T.textXs, fontWeight: row.signal === "ALL" ? 700 : 500,
+                color: row.signal === "ALL" ? T.text2 : T.text3,
+              }}>
+                {SIGNAL_LABELS[row.signal] || row.signal}
+                <span style={{ color: T.text4, marginLeft: 4 }}>({row.count})</span>
+              </td>
+              <Cell data={row["1d"]} />
+              <Cell data={row["3d"]} />
+              <Cell data={row["7d"]} />
+            </tr>
           ))}
-        </div>
-      )}
+        </tbody>
+      </table>
     </div>
   );
 }
