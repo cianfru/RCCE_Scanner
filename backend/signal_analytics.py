@@ -658,14 +658,43 @@ class SignalAnalytics:
                             "exit_ts": None,
                             "exit_reason": None,
                             "_wait_since": None,
+                            "_wait_price": None,
                         }
                 else:
-                    # Span is open
+                    # Span is open — first check if a pending WAIT has timed out
+                    if span["_wait_since"] is not None and ts - span["_wait_since"] >= _WAIT_TIMEOUT_S:
+                        # WAIT lasted >4h before this event arrived → close span
+                        span["exit_price"] = span["_wait_price"]
+                        span["exit_ts"] = span["_wait_since"]
+                        span["exit_reason"] = "WAIT_TIMEOUT"
+                        all_spans.append(span)
+                        span = None
+                        # If this event is a new long, open a new span
+                        if is_long:
+                            span = {
+                                "symbol": sym,
+                                "entry_signal": sig,
+                                "best_signal": sig,
+                                "entry_price": price,
+                                "entry_ts": ts,
+                                "entry_regime": ev["regime"],
+                                "entry_conditions_met": ev["conditions_met"],
+                                "entry_conditions_total": ev["conditions_total"],
+                                "entry_context": ev["context"],
+                                "exit_price": None,
+                                "exit_ts": None,
+                                "exit_reason": None,
+                                "_wait_since": None,
+                                "_wait_price": None,
+                            }
+                        continue
+
                     if is_long:
-                        # Still in position — update best signal, clear any WAIT timer
+                        # Still in position — update best signal, clear WAIT
                         if _SIGNAL_RANK.get(sig, 0) > _SIGNAL_RANK.get(span["best_signal"], 0):
                             span["best_signal"] = sig
                         span["_wait_since"] = None
+                        span["_wait_price"] = None
 
                     elif is_exit:
                         # Real exit signal — close span
@@ -676,27 +705,23 @@ class SignalAnalytics:
                         span = None
 
                     elif sig == "WAIT":
+                        # Record when WAIT started (will be checked on next event)
                         if span["_wait_since"] is None:
                             span["_wait_since"] = ts
-                        # Check if WAIT has lasted > timeout
-                        if ts - span["_wait_since"] >= _WAIT_TIMEOUT_S:
-                            span["exit_price"] = price
-                            span["exit_ts"] = ts
-                            span["exit_reason"] = "WAIT_TIMEOUT"
-                            all_spans.append(span)
-                            span = None
+                            span["_wait_price"] = price
 
             # Handle still-open span at end of data
             if span is not None:
-                # Check if there's a pending WAIT timeout
+                now = int(time.time())
                 if span["_wait_since"] is not None:
-                    last_ts = events[-1]["timestamp"]
-                    if last_ts - span["_wait_since"] >= _WAIT_TIMEOUT_S:
-                        span["exit_price"] = events[-1]["price"]
-                        span["exit_ts"] = last_ts
+                    wait_dur = now - span["_wait_since"]
+                    if wait_dur >= _WAIT_TIMEOUT_S:
+                        # WAIT has persisted to present — close span
+                        span["exit_price"] = span["_wait_price"]
+                        span["exit_ts"] = span["_wait_since"]
                         span["exit_reason"] = "WAIT_TIMEOUT"
                         all_spans.append(span)
-                # else: span still open, don't include in analytics
+                # else: span still open (active position), don't include
 
         # Compute return and duration for closed spans
         result = []
