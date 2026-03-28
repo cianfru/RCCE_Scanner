@@ -523,6 +523,17 @@ export default function NotificationBell() {
                             {ev.transition_type}
                           </span>
                         )}
+                        {ev.win_rate != null && (
+                          <span style={{
+                            marginLeft: 4, fontSize: 9,
+                            padding: "1px 5px", borderRadius: 4,
+                            background: ev.win_rate >= 65 ? "#34d39918" : ev.win_rate >= 50 ? "#fbbf2418" : "#f8717118",
+                            color: ev.win_rate >= 65 ? "#34d399" : ev.win_rate >= 50 ? "#fbbf24" : "#f87171",
+                            fontWeight: 600,
+                          }}>
+                            {ev.regime_win_rate != null ? ev.regime_win_rate : ev.win_rate}% WR
+                          </span>
+                        )}
                       </>
                     ) : (
                       <>

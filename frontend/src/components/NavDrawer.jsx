@@ -57,6 +57,12 @@ const NAV_ICONS = {
       <rect x="11" y="5" width="3" height="8" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   ),
+  analytics: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M3 10v3M6 7v6M9 5v8M12 3v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
 };
 
 const NAV_SECTIONS = [

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Optional
+import time
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,170 @@ class TelegramBot:
             wallet_address=wallet,
         )
         await self._send(update, reply)
+
+    # -- Proactive trade alerts --------------------------------------------
+
+    _ALERT_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"}
+    _ALERT_TRANSITIONS = {"ENTRY", "UPGRADE"}
+    _MIN_CONDITIONS = 10
+    _MIN_WIN_RATE = 60.0
+    _DEDUP_WINDOW = 4 * 3600  # 4 hours
+    _MAX_ALERTS_PER_CYCLE = 5
+
+    _recent_alerts: Dict[str, float] = {}  # "SYM:SIGNAL" -> last_alert_ts
+
+    async def push_trade_alerts(self, transitions: List[dict]) -> int:
+        """Push high-conviction trade alerts to all registered Telegram chats.
+
+        Called after each scan cycle with the list of signal transitions.
+        Returns number of alerts sent.
+        """
+        if not self.app or not self._running:
+            return 0
+
+        # Filter to high-conviction entries
+        candidates = []
+        now = time.time()
+        for t in transitions:
+            sig = t.get("signal", "")
+            tt = t.get("transition_type", "")
+            cond_met = t.get("conditions_met", 0) or 0
+
+            if sig not in self._ALERT_SIGNALS:
+                continue
+            if tt not in self._ALERT_TRANSITIONS:
+                continue
+            if cond_met < self._MIN_CONDITIONS:
+                continue
+
+            # Dedup check
+            dedup_key = f"{t.get('symbol')}:{sig}"
+            last = self._recent_alerts.get(dedup_key, 0)
+            if now - last < self._DEDUP_WINDOW:
+                continue
+
+            candidates.append(t)
+
+        if not candidates:
+            return 0
+
+        # Enrich with win rate data
+        try:
+            from signal_analytics import SignalAnalytics
+            from signal_log import SignalLog
+            sig_log = SignalLog.get()
+            analytics = SignalAnalytics(sig_log)
+            scorecard = await sig_log.get_scorecard(timeframe="4h")
+            regime_sc = await analytics.regime_stratified_scorecard(timeframe="4h")
+
+            wr_by_signal = {c["signal"]: c for c in scorecard}
+            wr_by_sig_regime: Dict[tuple, dict] = {}
+            for sig, entries in regime_sc.items():
+                for e in entries:
+                    wr_by_sig_regime[(sig, e["regime"])] = e
+        except Exception:
+            wr_by_signal = {}
+            wr_by_sig_regime = {}
+
+        # Filter by win rate
+        qualified = []
+        for t in candidates:
+            sig = t.get("signal", "")
+            regime = t.get("regime", "")
+            regime_entry = wr_by_sig_regime.get((sig, regime))
+            signal_entry = wr_by_signal.get(sig, {})
+
+            wr = None
+            wr_n = 0
+            wr_label = ""
+            if regime_entry and regime_entry.get("win_rate") is not None:
+                wr = regime_entry["win_rate"]
+                wr_n = regime_entry.get("count", 0)
+                wr_label = f"in {regime}"
+            elif signal_entry.get("win_rate") is not None:
+                wr = signal_entry["win_rate"]
+                wr_n = signal_entry.get("has_outcomes", 0)
+                wr_label = "overall"
+
+            if wr is not None and wr < self._MIN_WIN_RATE:
+                continue
+
+            t["_wr"] = wr
+            t["_wr_n"] = wr_n
+            t["_wr_label"] = wr_label
+            qualified.append(t)
+
+        # Limit alerts per cycle
+        alerts = qualified[:self._MAX_ALERTS_PER_CYCLE]
+
+        # Format and send
+        sent = 0
+        for t in alerts:
+            symbol = t.get("symbol", "?")
+            sig = t.get("signal", "?")
+            regime = t.get("regime", "?")
+            price = t.get("price", 0)
+            cond_met = t.get("conditions_met", 0) or 0
+            cond_total = t.get("conditions_total", 14) or 14
+            heat = t.get("heat", 0) or 0
+            z = t.get("zscore", 0) or 0
+            tt = t.get("transition_type", "")
+            wr = t.get("_wr")
+            wr_n = t.get("_wr_n", 0)
+            wr_label = t.get("_wr_label", "")
+
+            conviction = "HIGH" if cond_met >= 12 else "MED" if cond_met >= 10 else "LOW"
+            coin = symbol.split("/")[0] if "/" in symbol else symbol
+
+            msg_lines = [
+                f"Trade Identified: {coin}",
+                "",
+                f"Signal: {sig} ({regime})",
+                f"Conditions: {cond_met}/{cond_total} (conviction: {conviction})",
+            ]
+            if wr is not None:
+                msg_lines.append(f"Win Rate: {wr}% (n={wr_n}) {wr_label}")
+            msg_lines.extend([
+                f"Price: ${price:.6g} | Heat: {heat} | Z: {z:.2f}",
+                "",
+                f"Transition: {tt}",
+            ])
+
+            # Add met conditions summary
+            ctx_str = t.get("context")
+            if ctx_str:
+                try:
+                    import json
+                    ctx = json.loads(ctx_str)
+                    details = ctx.get("synthesis", {}).get("conditions_detail", [])
+                    met_names = [d["label"] for d in details if d.get("met")]
+                    if met_names:
+                        msg_lines.append(f"Triggers: {', '.join(met_names[:6])}")
+                except Exception:
+                    pass
+
+            msg = "\n".join(msg_lines)
+
+            # Send to all allowed chats
+            for chat_id in ALLOWED_CHAT_IDS:
+                try:
+                    await self.app.bot.send_message(
+                        chat_id=int(chat_id), text=msg,
+                    )
+                    sent += 1
+                except Exception as exc:
+                    logger.debug("TG alert to %s failed: %s", chat_id, exc)
+
+            # Mark as sent for dedup
+            self._recent_alerts[f"{symbol}:{sig}"] = now
+
+        # Cleanup old dedup entries
+        cutoff = now - self._DEDUP_WINDOW
+        self._recent_alerts = {k: v for k, v in self._recent_alerts.items() if v > cutoff}
+
+        if sent > 0:
+            logger.info("Telegram: pushed %d trade alerts", sent)
+        return sent
 
 
 # Module-level singleton

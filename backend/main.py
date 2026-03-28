@@ -2212,6 +2212,32 @@ async def notifications_feed(
     )
     rows = await cursor.fetchall()
     events = [dict(r) for r in rows]
+
+    # Enrich signal events with historical win rate data
+    try:
+        from signal_analytics import SignalAnalytics
+        analytics = SignalAnalytics(sig_log)
+        scorecard = await sig_log.get_scorecard(timeframe="4h")
+        regime_data = await analytics.regime_stratified_scorecard(timeframe="4h")
+        confluence_data = await analytics.confluence_stratified_scorecard(timeframe="4h")
+
+        # Build lookup maps
+        wr_by_signal = {c["signal"]: c.get("win_rate") for c in scorecard}
+        wr_by_sig_regime = {}
+        for sig, entries in regime_data.items():
+            for e in entries:
+                wr_by_sig_regime[(sig, e["regime"])] = e.get("win_rate")
+        wr_by_bucket = {b["bucket"]: b.get("win_rate") for b in confluence_data}
+
+        for ev in events:
+            if ev.get("event_type") == "signal":
+                sig = ev.get("label")
+                regime = ev.get("regime")
+                ev["win_rate"] = wr_by_signal.get(sig)
+                ev["regime_win_rate"] = wr_by_sig_regime.get((sig, regime))
+    except Exception:
+        pass  # Analytics enrichment is best-effort
+
     return {"events": events, "count": len(events)}
 
 
@@ -2755,6 +2781,34 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
         # Sort: high severity first, then confluence desc
         sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         scored.sort(key=lambda s: (sev_order.get(s.get("severity", "low"), 3), -s.get("confluence_score", 0)))
+
+        # Enrich with historical win rate data
+        try:
+            from signal_analytics import SignalAnalytics
+            from signal_log import SignalLog
+            sig_log = SignalLog.get()
+            analytics = SignalAnalytics(sig_log)
+            scorecard = await sig_log.get_scorecard(timeframe="4h")
+            regime_sc = await analytics.regime_stratified_scorecard(timeframe="4h")
+            wr_by_signal = {c["signal"]: c.get("win_rate") for c in scorecard}
+            wr_by_sig_regime = {}
+            for sig, entries in regime_sc.items():
+                for e in entries:
+                    wr_by_sig_regime[(sig, e["regime"])] = e.get("win_rate")
+
+            for s in scored:
+                sig = s.get("signal")
+                regime = s.get("regime")
+                s["signal_win_rate"] = wr_by_signal.get(sig)
+                s["regime_win_rate"] = wr_by_sig_regime.get((sig, regime))
+                cond = s.get("conditions_met", 0) or 0
+                s["conviction_bucket"] = (
+                    "12+" if cond >= 12 else
+                    "10-11" if cond >= 10 else
+                    "8-9" if cond >= 8 else "<8"
+                )
+        except Exception:
+            pass  # Best-effort enrichment
 
         return {"setups": scored, "count": len(scored), "filtered_out": len(setups) - len(scored)}
 

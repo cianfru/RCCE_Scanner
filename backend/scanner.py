@@ -1505,11 +1505,36 @@ async def _run_synthesis_pass(
         scan_cache.consensus[tf] = consensus
         scan_cache.alt_season[tf] = alt_gauge
 
-        # Signal logging
+        # Signal logging + trade alerts
         try:
             from signal_log import SignalLog
             sig_log = SignalLog.get()
-            await sig_log.log_signals(results, tf, consensus.get("consensus", "MIXED"))
+            # Capture prev signals BEFORE logging (log_signals updates them)
+            prev_sigs = dict(sig_log._prev_signals.get(tf, {}))
+            logged = await sig_log.log_signals(results, tf, consensus.get("consensus", "MIXED"))
+
+            # Push trade alerts to Telegram for high-conviction entries
+            if logged > 0 and tf == "4h":
+                try:
+                    from telegram_bot import get_telegram_bot
+                    from signal_log import _classify_transition, _build_context
+                    bot = get_telegram_bot()
+                    transitions = []
+                    for r in results:
+                        sym = r.get("symbol", "")
+                        sig = r.get("signal", "WAIT")
+                        prev = prev_sigs.get(sym)
+                        if sig == prev:
+                            continue
+                        tt = _classify_transition(prev, sig)
+                        r_copy = dict(r)
+                        r_copy["transition_type"] = tt
+                        r_copy["context"] = _build_context(r, consensus.get("consensus", "MIXED"))
+                        transitions.append(r_copy)
+                    if transitions:
+                        await bot.push_trade_alerts(transitions)
+                except Exception as exc:
+                    logger.debug("TG trade alert push failed: %s", exc)
         except Exception:
             pass
 

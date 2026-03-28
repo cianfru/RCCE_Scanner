@@ -735,6 +735,11 @@ class AssistantManager:
         if history_section:
             parts.append(history_section)
 
+        # -- Performance analytics context ----------------------------------
+        analytics_section = await self._build_analytics_context()
+        if analytics_section:
+            parts.append(analytics_section)
+
         return "\n\n".join(parts)
 
     async def _build_positions_context(
@@ -1079,6 +1084,96 @@ class AssistantManager:
             return f"{h}h ago"
         d = delta // 86400
         return f"{d}d ago"
+
+    # -- Analytics context -------------------------------------------------
+
+    async def _build_analytics_context(self) -> Optional[str]:
+        """Fetch signal performance analytics and format as compact LLM context."""
+        try:
+            from signal_analytics import SignalAnalytics
+            from signal_log import SignalLog
+            slog = SignalLog.get()
+            if slog._db is None:
+                return None
+            analytics = SignalAnalytics(slog)
+            data = await analytics.get_full_attribution(timeframe="4h")
+        except Exception as exc:
+            logger.debug("Analytics context unavailable: %s", exc)
+            return None
+
+        lines: List[str] = ["## Signal Performance Analytics (Live)"]
+
+        # Top predictive conditions
+        conditions = data.get("conditions", [])
+        if conditions:
+            top = [c for c in conditions if c.get("edge") is not None]
+            top_pos = [c for c in top if (c["edge"] or 0) > 0][:3]
+            top_neg = [c for c in reversed(top) if (c["edge"] or 0) < 0][:2]
+            if top_pos:
+                parts = [f"{c['name']} (+{c['edge']}%)" for c in top_pos]
+                lines.append(f"Top predictors: {', '.join(parts)}")
+            if top_neg:
+                parts = [f"{c['name']} ({c['edge']}%)" for c in top_neg]
+                lines.append(f"Weakest: {', '.join(parts)}")
+
+        # Best combos
+        combos = data.get("combos", [])
+        if combos:
+            lines.append("Best condition combos:")
+            for i, combo in enumerate(combos[:3], 1):
+                conds = " + ".join(combo["conditions"])
+                lines.append(
+                    f"  {i}. {conds}: {combo['win_rate']}% WR (n={combo['count']})"
+                )
+
+        # Regime scorecard (compact: best/worst per signal)
+        regime_data = data.get("regime_scorecard", {})
+        if regime_data:
+            lines.append("Regime performance:")
+            for sig in ("STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"):
+                entries = regime_data.get(sig, [])
+                if len(entries) >= 2:
+                    best = max(entries, key=lambda e: e.get("win_rate", 0))
+                    worst = min(entries, key=lambda e: e.get("win_rate", 100))
+                    lines.append(
+                        f"  {sig}: best in {best['regime']} ({best['win_rate']}%), "
+                        f"worst in {worst['regime']} ({worst['win_rate']}%)"
+                    )
+
+        # Confluence scorecard
+        confluence = data.get("confluence_scorecard", [])
+        if confluence:
+            parts = []
+            for b in confluence:
+                if b.get("win_rate") is not None and b["count"] > 0:
+                    parts.append(f"{b['bucket']} cond -> {b['win_rate']}% WR")
+            if parts:
+                lines.append(f"Conviction: {', '.join(parts)}")
+
+        # HyperLens attribution
+        hl = data.get("hyperlens", {})
+        ww = hl.get("with_whale", {})
+        wo = hl.get("without_whale", {})
+        if ww.get("count", 0) > 0 and wo.get("count", 0) > 0:
+            edge = hl.get("edge_pct")
+            if edge is not None:
+                lines.append(
+                    f"Whale edge: {'+' if edge > 0 else ''}{edge}% avg 7d "
+                    f"(confirmed: {ww['win_rate']}% WR n={ww['count']}, "
+                    f"without: {wo['win_rate']}% WR n={wo['count']})"
+                )
+
+        # Edge decay
+        decay = data.get("edge_decay", [])
+        if decay and any(p.get("avg_return") is not None for p in decay):
+            parts = []
+            for p in decay:
+                if p.get("avg_return") is not None:
+                    label = {"0-24h": "Day 1", "24h-72h": "Days 2-3", "72h-7d": "Days 4-7"}.get(p["period"], p["period"])
+                    parts.append(f"{label}: {'+' if p['avg_return'] > 0 else ''}{p['avg_return']}%")
+            lines.append(f"Edge decay: {', '.join(parts)}")
+
+        return "\n".join(lines) if len(lines) > 1 else None
 
     # -- Symbol detection --------------------------------------------------
 
