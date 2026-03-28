@@ -459,10 +459,15 @@ class SignalLog:
             (_3D, "price_3d", "outcome_3d_pct"),
             (_7D, "price_7d", "outcome_7d_pct"),
         ]:
+            # Only back-fill signals within a 2-delta window of the target time.
+            # Signals older than 2x the horizon get stale — current price is no
+            # longer representative of what happened at signal+delta.
             cursor = await db.execute(
                 f"""SELECT id, symbol, price FROM signal_events
-                    WHERE {col_price} IS NULL AND timestamp <= ?""",
-                (now - delta,),
+                    WHERE {col_price} IS NULL
+                      AND timestamp <= ?
+                      AND timestamp >= ?""",
+                (now - delta, now - delta * 2),
             )
             rows = await cursor.fetchall()
             for r in rows:
@@ -555,12 +560,14 @@ class SignalLog:
         """
         db = self._ensure_db()
 
+        # Outlier caps: exclude extreme returns from averages
+        # (corrupted back-fills from micro-cap coins or timing issues)
         cursor = await db.execute(
             """SELECT signal,
                       COUNT(*) as total,
-                      AVG(outcome_1d_pct) as avg_1d,
-                      AVG(outcome_3d_pct) as avg_3d,
-                      AVG(outcome_7d_pct) as avg_7d,
+                      AVG(CASE WHEN abs(outcome_1d_pct) <= 30 THEN outcome_1d_pct END) as avg_1d,
+                      AVG(CASE WHEN abs(outcome_3d_pct) <= 50 THEN outcome_3d_pct END) as avg_3d,
+                      AVG(CASE WHEN abs(outcome_7d_pct) <= 80 THEN outcome_7d_pct END) as avg_7d,
                       COUNT(outcome_1d_pct) as has_1d,
                       COUNT(outcome_3d_pct) as has_3d,
                       COUNT(outcome_7d_pct) as has_7d
@@ -586,13 +593,23 @@ class SignalLog:
                 """SELECT COUNT(*) FROM signal_events
                    WHERE timeframe = ? AND signal = ?
                      AND outcome_7d_pct IS NOT NULL
+                     AND abs(outcome_7d_pct) <= 80
                      AND outcome_7d_pct {} 0""".format(">" if is_long else "<"),
                 (timeframe, sig),
             )
             wins_row = await wins_cursor.fetchone()
             wins = wins_row[0] if wins_row else 0
 
-            has_outcomes = r["has_7d"]
+            # Count outcomes excluding outliers (match wins query filter)
+            outcomes_cursor = await db.execute(
+                """SELECT COUNT(*) FROM signal_events
+                   WHERE timeframe = ? AND signal = ?
+                     AND outcome_7d_pct IS NOT NULL
+                     AND abs(outcome_7d_pct) <= 80""",
+                (timeframe, sig),
+            )
+            outcomes_row = await outcomes_cursor.fetchone()
+            has_outcomes = outcomes_row[0] if outcomes_row else 0
             win_rate = round(wins / has_outcomes * 100, 1) if has_outcomes > 0 else None
 
             cards.append({

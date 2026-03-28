@@ -78,16 +78,32 @@ def _extract_conditions(context_str: Optional[str]) -> Optional[Dict[str, bool]]
         return None
 
 
-def _is_win(signal: str, outcome_7d_pct: float) -> bool:
+def _is_win(signal: str, outcome_pct: float) -> bool:
     """Determine if a signal outcome was a 'win'.
 
     LONG signals win when price goes up; EXIT signals win when price goes down.
     """
     if signal in _LONG_SIGNALS:
-        return outcome_7d_pct > 0
+        return outcome_pct > 0
     if signal in _EXIT_SIGNALS:
-        return outcome_7d_pct < 0
+        return outcome_pct < 0
     return False
+
+
+# Outcome outlier caps — returns beyond these are likely data errors
+# (wrong back-fill timing, micro-cap coins, delistings)
+_MAX_RETURN_1D = 30.0   # ±30% in 24h
+_MAX_RETURN_3D = 50.0   # ±50% in 72h
+_MAX_RETURN_7D = 80.0   # ±80% in 7d
+
+
+def _cap_return(val: Optional[float], cap: float) -> Optional[float]:
+    """Clamp an outcome return to ±cap, or None if null."""
+    if val is None:
+        return None
+    if abs(val) > cap:
+        return None  # Treat as corrupted — exclude from averages
+    return val
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +138,15 @@ class SignalAnalytics:
     async def _fetch_rows_with_outcomes(
         self, timeframe: str, extra_where: str = "", extra_params: tuple = ()
     ) -> list:
-        """Fetch signal_events rows that have 7d outcomes."""
+        """Fetch signal_events rows that have 7d outcomes, excluding outliers."""
         db = self._log._ensure_db()
         sql = (
             "SELECT signal, regime, conditions_met, conditions_total, "
             "       outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, context "
             "FROM signal_events "
-            f"WHERE timeframe = ? AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT' {extra_where} "
+            f"WHERE timeframe = ? AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT' "
+            f"AND abs(outcome_7d_pct) <= {_MAX_RETURN_7D} "
+            f"{extra_where} "
             "ORDER BY timestamp DESC"
         )
         cursor = await db.execute(sql, (timeframe, *extra_params))
@@ -561,10 +579,13 @@ class SignalAnalytics:
             if not rows:
                 return {"symbol": symbol, "total": 0}
 
-            # Multi-horizon stats
+            # Multi-horizon stats (with outlier filtering)
+            caps = {"1d": _MAX_RETURN_1D, "3d": _MAX_RETURN_3D, "7d": _MAX_RETURN_7D}
             horizons = {}
             for label, col in [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]:
-                vals = [(r["signal"], r[col]) for r in rows if r[col] is not None]
+                cap = caps[label]
+                vals = [(r["signal"], r[col]) for r in rows
+                        if r[col] is not None and abs(r[col]) <= cap]
                 if not vals:
                     horizons[label] = {"count": 0, "win_rate": None, "avg": None}
                     continue
@@ -586,14 +607,18 @@ class SignalAnalytics:
             total = primary.get("count", 0)
             win_rate = primary.get("win_rate")
 
-            # Per-signal breakdown (use whichever horizon has data)
+            # Per-signal breakdown (use best available outcome, filter outliers)
             by_signal: Dict[str, list] = defaultdict(list)
             by_regime: Dict[str, list] = defaultdict(list)
             for r in rows:
                 sig = r["signal"]
                 regime = r["regime"]
-                # Use best available outcome
-                outcome = r["outcome_7d_pct"] or r["outcome_3d_pct"] or r["outcome_1d_pct"]
+                # Use best available capped outcome
+                outcome = (
+                    _cap_return(r["outcome_7d_pct"], _MAX_RETURN_7D)
+                    or _cap_return(r["outcome_3d_pct"], _MAX_RETURN_3D)
+                    or _cap_return(r["outcome_1d_pct"], _MAX_RETURN_1D)
+                )
                 if outcome is None:
                     continue
                 win = _is_win(sig, outcome)
