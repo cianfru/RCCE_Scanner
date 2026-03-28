@@ -136,43 +136,56 @@ class SignalAnalytics:
         Excludes corrupted back-fills (>500% return = data error, not real move)
         and very short-lived signals (<2h) that churned and don't represent
         real conviction.
+
+        Duration is measured as time until the NEXT signal event (including WAIT),
+        so a LIGHT_LONG → STRONG_LONG upgrade after 30min correctly filters the
+        short LIGHT_LONG while keeping the STRONG_LONG.
         """
         db = self._log._ensure_db()
+
+        # Step 1: fetch ALL signal events (including WAIT) for duration calculation
+        all_cursor = await db.execute(
+            "SELECT symbol, signal, timestamp FROM signal_events "
+            "WHERE timeframe = ? ORDER BY timestamp DESC",
+            (timeframe,),
+        )
+        all_rows = await all_cursor.fetchall()
+
+        # Build next-event timestamp map: (symbol, timestamp) → next_event_ts
+        next_event_ts: Dict[tuple, int] = {}
+        prev_by_sym: Dict[str, int] = {}  # symbol → most recent timestamp seen
+        for r in all_rows:
+            sym = r["symbol"]
+            ts = r["timestamp"]
+            if sym in prev_by_sym:
+                # prev_by_sym has the MORE RECENT event (we iterate DESC)
+                next_event_ts[(sym, ts)] = prev_by_sym[sym]
+            prev_by_sym[sym] = ts
+
+        # Step 2: fetch the actual analytics rows (non-WAIT, with outcomes)
         sql = (
-            "SELECT s.signal, s.regime, s.conditions_met, s.conditions_total, "
-            "       s.outcome_1d_pct, s.outcome_3d_pct, s.outcome_7d_pct, s.context, "
-            "       s.timestamp, s.symbol "
-            "FROM signal_events s "
-            f"WHERE s.timeframe = ? AND s.outcome_7d_pct IS NOT NULL AND s.signal != 'WAIT' "
-            f"AND abs(s.outcome_7d_pct) <= {_MAX_RETURN_CORRUPT} "
+            "SELECT signal, regime, conditions_met, conditions_total, "
+            "       outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, context, "
+            "       timestamp, symbol "
+            "FROM signal_events "
+            f"WHERE timeframe = ? AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT' "
+            f"AND abs(outcome_7d_pct) <= {_MAX_RETURN_CORRUPT} "
             f"{extra_where} "
-            "ORDER BY s.timestamp DESC"
+            "ORDER BY timestamp DESC"
         )
         cursor = await db.execute(sql, (timeframe, *extra_params))
         rows = await cursor.fetchall()
 
-        # Filter out short-lived signals: only keep signals that persisted
-        # for at least _MIN_SIGNAL_DURATION_S before the next transition
-        if not rows:
-            return rows
-
-        # Group by symbol to check duration
-        from collections import defaultdict
-        by_sym: Dict[str, list] = defaultdict(list)
-        for r in rows:
-            by_sym[r["symbol"]].append(r)
-
+        # Step 3: filter by signal duration
         filtered = []
-        for sym, sym_rows in by_sym.items():
-            # Rows are sorted DESC by timestamp; consecutive entries for same
-            # symbol let us compute how long each signal lasted
-            for i, r in enumerate(sym_rows):
-                if i == 0:
-                    # Most recent — no next event to measure duration, include it
-                    filtered.append(r)
-                    continue
-                # Duration = prev_row timestamp - this row timestamp
-                duration = sym_rows[i - 1]["timestamp"] - r["timestamp"]
+        for r in rows:
+            key = (r["symbol"], r["timestamp"])
+            next_ts = next_event_ts.get(key)
+            if next_ts is None:
+                # Most recent event for this symbol — include
+                filtered.append(r)
+            else:
+                duration = next_ts - r["timestamp"]
                 if duration >= _MIN_SIGNAL_DURATION_S:
                     filtered.append(r)
 
@@ -605,22 +618,33 @@ class SignalAnalytics:
             if not rows:
                 return {"symbol": symbol, "total": 0}
 
-            # Filter corrupted back-fills and short-lived signals
+            # Filter corrupted back-fills
             clean_rows = [r for r in rows if not (
                 (r["outcome_7d_pct"] is not None and abs(r["outcome_7d_pct"]) > _MAX_RETURN_CORRUPT) or
                 (r["outcome_3d_pct"] is not None and abs(r["outcome_3d_pct"]) > _MAX_RETURN_CORRUPT) or
                 (r["outcome_1d_pct"] is not None and abs(r["outcome_1d_pct"]) > _MAX_RETURN_CORRUPT)
             )]
 
+            # Get ALL events (including WAIT) for this symbol to measure duration
+            dur_cursor = await db.execute(
+                "SELECT signal, timestamp FROM signal_events "
+                "WHERE timeframe = ? AND symbol = ? ORDER BY timestamp DESC",
+                (timeframe, symbol),
+            )
+            dur_rows = await dur_cursor.fetchall()
+            # Build next-event map
+            next_ts_map: Dict[int, int] = {}
+            for i, dr in enumerate(dur_rows):
+                if i > 0:
+                    next_ts_map[dr["timestamp"]] = dur_rows[i - 1]["timestamp"]
+
             # Filter short-lived signals (< 2h duration)
             filtered_rows = []
-            for i, r in enumerate(clean_rows):
-                if i == 0:
-                    filtered_rows.append(r)
-                    continue
-                # Rows are DESC by timestamp — duration = prev row ts - this row ts
-                duration = clean_rows[i - 1]["timestamp"] - r["timestamp"]
-                if duration >= _MIN_SIGNAL_DURATION_S:
+            for r in clean_rows:
+                nxt = next_ts_map.get(r["timestamp"])
+                if nxt is None:
+                    filtered_rows.append(r)  # Most recent
+                elif nxt - r["timestamp"] >= _MIN_SIGNAL_DURATION_S:
                     filtered_rows.append(r)
 
             if not filtered_rows:
