@@ -90,20 +90,13 @@ def _is_win(signal: str, outcome_pct: float) -> bool:
     return False
 
 
-# Outcome outlier caps — returns beyond these are likely data errors
-# (wrong back-fill timing, micro-cap coins, delistings)
-_MAX_RETURN_1D = 30.0   # ±30% in 24h
-_MAX_RETURN_3D = 50.0   # ±50% in 72h
-_MAX_RETURN_7D = 80.0   # ±80% in 7d
+# Corruption filter — returns beyond this are back-fill errors, not real moves
+# (micro-cap coins, stale price back-fills producing 200,000%+ returns)
+_MAX_RETURN_CORRUPT = 500.0  # ±500% — anything beyond this is data error
 
-
-def _cap_return(val: Optional[float], cap: float) -> Optional[float]:
-    """Clamp an outcome return to ±cap, or None if null."""
-    if val is None:
-        return None
-    if abs(val) > cap:
-        return None  # Treat as corrupted — exclude from averages
-    return val
+# Minimum signal duration to count in analytics — signals that churn
+# (e.g., LIGHT_LONG for 19 minutes then back to WAIT) are noise
+_MIN_SIGNAL_DURATION_S = 2 * 3600  # 2 hours minimum
 
 
 # ---------------------------------------------------------------------------
@@ -138,19 +131,52 @@ class SignalAnalytics:
     async def _fetch_rows_with_outcomes(
         self, timeframe: str, extra_where: str = "", extra_params: tuple = ()
     ) -> list:
-        """Fetch signal_events rows that have 7d outcomes, excluding outliers."""
+        """Fetch signal_events rows that have 7d outcomes.
+
+        Excludes corrupted back-fills (>500% return = data error, not real move)
+        and very short-lived signals (<2h) that churned and don't represent
+        real conviction.
+        """
         db = self._log._ensure_db()
         sql = (
-            "SELECT signal, regime, conditions_met, conditions_total, "
-            "       outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, context "
-            "FROM signal_events "
-            f"WHERE timeframe = ? AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT' "
-            f"AND abs(outcome_7d_pct) <= {_MAX_RETURN_7D} "
+            "SELECT s.signal, s.regime, s.conditions_met, s.conditions_total, "
+            "       s.outcome_1d_pct, s.outcome_3d_pct, s.outcome_7d_pct, s.context, "
+            "       s.timestamp, s.symbol "
+            "FROM signal_events s "
+            f"WHERE s.timeframe = ? AND s.outcome_7d_pct IS NOT NULL AND s.signal != 'WAIT' "
+            f"AND abs(s.outcome_7d_pct) <= {_MAX_RETURN_CORRUPT} "
             f"{extra_where} "
-            "ORDER BY timestamp DESC"
+            "ORDER BY s.timestamp DESC"
         )
         cursor = await db.execute(sql, (timeframe, *extra_params))
-        return await cursor.fetchall()
+        rows = await cursor.fetchall()
+
+        # Filter out short-lived signals: only keep signals that persisted
+        # for at least _MIN_SIGNAL_DURATION_S before the next transition
+        if not rows:
+            return rows
+
+        # Group by symbol to check duration
+        from collections import defaultdict
+        by_sym: Dict[str, list] = defaultdict(list)
+        for r in rows:
+            by_sym[r["symbol"]].append(r)
+
+        filtered = []
+        for sym, sym_rows in by_sym.items():
+            # Rows are sorted DESC by timestamp; consecutive entries for same
+            # symbol let us compute how long each signal lasted
+            for i, r in enumerate(sym_rows):
+                if i == 0:
+                    # Most recent — no next event to measure duration, include it
+                    filtered.append(r)
+                    continue
+                # Duration = prev_row timestamp - this row timestamp
+                duration = sym_rows[i - 1]["timestamp"] - r["timestamp"]
+                if duration >= _MIN_SIGNAL_DURATION_S:
+                    filtered.append(r)
+
+        return filtered
 
     # ==================================================================
     # 1. Condition Predictive Value
@@ -565,7 +591,7 @@ class SignalAnalytics:
             db = self._log._ensure_db()
             cursor = await db.execute(
                 """SELECT signal, regime, conditions_met, conditions_total,
-                          outcome_1d_pct, outcome_3d_pct, outcome_7d_pct
+                          outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, timestamp
                    FROM signal_events
                    WHERE timeframe = ? AND symbol = ?
                      AND signal != 'WAIT'
@@ -579,13 +605,32 @@ class SignalAnalytics:
             if not rows:
                 return {"symbol": symbol, "total": 0}
 
-            # Multi-horizon stats (with outlier filtering)
-            caps = {"1d": _MAX_RETURN_1D, "3d": _MAX_RETURN_3D, "7d": _MAX_RETURN_7D}
+            # Filter corrupted back-fills and short-lived signals
+            clean_rows = [r for r in rows if not (
+                (r["outcome_7d_pct"] is not None and abs(r["outcome_7d_pct"]) > _MAX_RETURN_CORRUPT) or
+                (r["outcome_3d_pct"] is not None and abs(r["outcome_3d_pct"]) > _MAX_RETURN_CORRUPT) or
+                (r["outcome_1d_pct"] is not None and abs(r["outcome_1d_pct"]) > _MAX_RETURN_CORRUPT)
+            )]
+
+            # Filter short-lived signals (< 2h duration)
+            filtered_rows = []
+            for i, r in enumerate(clean_rows):
+                if i == 0:
+                    filtered_rows.append(r)
+                    continue
+                # Rows are DESC by timestamp — duration = prev row ts - this row ts
+                duration = clean_rows[i - 1]["timestamp"] - r["timestamp"]
+                if duration >= _MIN_SIGNAL_DURATION_S:
+                    filtered_rows.append(r)
+
+            if not filtered_rows:
+                return {"symbol": symbol, "total": 0}
+
+            # Multi-horizon stats
             horizons = {}
             for label, col in [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]:
-                cap = caps[label]
-                vals = [(r["signal"], r[col]) for r in rows
-                        if r[col] is not None and abs(r[col]) <= cap]
+                vals = [(r["signal"], r[col]) for r in filtered_rows
+                        if r[col] is not None]
                 if not vals:
                     horizons[label] = {"count": 0, "win_rate": None, "avg": None}
                     continue
@@ -607,18 +652,13 @@ class SignalAnalytics:
             total = primary.get("count", 0)
             win_rate = primary.get("win_rate")
 
-            # Per-signal breakdown (use best available outcome, filter outliers)
+            # Per-signal breakdown (use best available outcome)
             by_signal: Dict[str, list] = defaultdict(list)
             by_regime: Dict[str, list] = defaultdict(list)
-            for r in rows:
+            for r in filtered_rows:
                 sig = r["signal"]
                 regime = r["regime"]
-                # Use best available capped outcome
-                outcome = (
-                    _cap_return(r["outcome_7d_pct"], _MAX_RETURN_7D)
-                    or _cap_return(r["outcome_3d_pct"], _MAX_RETURN_3D)
-                    or _cap_return(r["outcome_1d_pct"], _MAX_RETURN_1D)
-                )
+                outcome = r["outcome_7d_pct"] or r["outcome_3d_pct"] or r["outcome_1d_pct"]
                 if outcome is None:
                     continue
                 win = _is_win(sig, outcome)

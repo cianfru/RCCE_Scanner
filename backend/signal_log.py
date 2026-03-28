@@ -560,17 +560,16 @@ class SignalLog:
         """
         db = self._ensure_db()
 
-        # Outlier caps: exclude extreme returns from averages
-        # (corrupted back-fills from micro-cap coins or timing issues)
+        # Exclude corrupted back-fills (>500% = data error) from averages
         cursor = await db.execute(
             """SELECT signal,
                       COUNT(*) as total,
-                      AVG(CASE WHEN abs(outcome_1d_pct) <= 30 THEN outcome_1d_pct END) as avg_1d,
-                      AVG(CASE WHEN abs(outcome_3d_pct) <= 50 THEN outcome_3d_pct END) as avg_3d,
-                      AVG(CASE WHEN abs(outcome_7d_pct) <= 80 THEN outcome_7d_pct END) as avg_7d,
-                      COUNT(outcome_1d_pct) as has_1d,
-                      COUNT(outcome_3d_pct) as has_3d,
-                      COUNT(outcome_7d_pct) as has_7d
+                      AVG(CASE WHEN abs(outcome_1d_pct) <= 500 THEN outcome_1d_pct END) as avg_1d,
+                      AVG(CASE WHEN abs(outcome_3d_pct) <= 500 THEN outcome_3d_pct END) as avg_3d,
+                      AVG(CASE WHEN abs(outcome_7d_pct) <= 500 THEN outcome_7d_pct END) as avg_7d,
+                      COUNT(CASE WHEN outcome_1d_pct IS NOT NULL AND abs(outcome_1d_pct) <= 500 THEN 1 END) as has_1d,
+                      COUNT(CASE WHEN outcome_3d_pct IS NOT NULL AND abs(outcome_3d_pct) <= 500 THEN 1 END) as has_3d,
+                      COUNT(CASE WHEN outcome_7d_pct IS NOT NULL AND abs(outcome_7d_pct) <= 500 THEN 1 END) as has_7d
                FROM signal_events
                WHERE timeframe = ?
                GROUP BY signal
@@ -593,19 +592,19 @@ class SignalLog:
                 """SELECT COUNT(*) FROM signal_events
                    WHERE timeframe = ? AND signal = ?
                      AND outcome_7d_pct IS NOT NULL
-                     AND abs(outcome_7d_pct) <= 80
+                     AND abs(outcome_7d_pct) <= 500
                      AND outcome_7d_pct {} 0""".format(">" if is_long else "<"),
                 (timeframe, sig),
             )
             wins_row = await wins_cursor.fetchone()
             wins = wins_row[0] if wins_row else 0
 
-            # Count outcomes excluding outliers (match wins query filter)
+            # Count outcomes excluding corrupted back-fills
             outcomes_cursor = await db.execute(
                 """SELECT COUNT(*) FROM signal_events
                    WHERE timeframe = ? AND signal = ?
                      AND outcome_7d_pct IS NOT NULL
-                     AND abs(outcome_7d_pct) <= 80""",
+                     AND abs(outcome_7d_pct) <= 500""",
                 (timeframe, sig),
             )
             outcomes_row = await outcomes_cursor.fetchone()
