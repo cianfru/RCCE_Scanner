@@ -269,26 +269,22 @@ function ConfluenceSection({ confluence }) {
 // Win Rate section (table only, no outer card wrapper)
 function WinRateSection({ wr }) {
   const rc = (r) => r == null ? T.text4 : r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
+  const retColor = (r) => r == null ? T.text4 : r > 0 ? "#34d399" : r < 0 ? "#f87171" : T.text3;
   const LABELS = {
     STRONG_LONG: "Strong Long", LIGHT_LONG: "Light Long",
     ACCUMULATE: "Accumulate", REVIVAL_SEED: "Revival",
-    REVIVAL_SEED_CONFIRMED: "Revival Conf", ALL: "All Signals",
+    REVIVAL_SEED_CONFIRMED: "Revival Conf",
   };
-  const allRow = wr.all;
-  const sigRows = (wr.signals || []).filter(s => s.count >= 2);
-  const rows = allRow ? [allRow, ...sigRows] : sigRows;
 
-  const thStyle = { padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" };
-
-  function Cell({ data }) {
-    if (!data) return <td style={{ padding: "6px 10px", textAlign: "center", color: T.text4, fontFamily: T.mono, fontSize: T.textXs }}>{"\u2014"}</td>;
-    return (
-      <td style={{ padding: "6px 10px", textAlign: "center" }}>
-        <div style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: rc(data.win_rate) }}>{data.win_rate}%</div>
-        <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>{data.avg > 0 ? "+" : ""}{data.avg}% avg · n={data.count}</div>
-      </td>
-    );
+  function fmtDur(h) {
+    if (h == null) return "\u2014";
+    if (h < 1) return `${Math.round(h * 60)}m`;
+    if (h < 24) return `${h.toFixed(1)}h`;
+    return `${(h / 24).toFixed(1)}d`;
   }
+
+  const sigRows = (wr.signals || []).filter(s => s.count >= 1);
+  const thStyle = { padding: "6px 10px", textAlign: "center", fontSize: 9, fontFamily: T.mono, color: T.text4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" };
 
   return (
     <>
@@ -299,39 +295,60 @@ function WinRateSection({ wr }) {
         <span style={{
           fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
           color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em",
-        }}>Signal Win Rate</span>
-        <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>{wr.total} signals (min 2h)</span>
+        }}>Position Win Rate</span>
+        <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>{wr.total} positions tracked</span>
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-            <th style={{ ...thStyle, textAlign: "left" }}>Signal</th>
-            <th style={thStyle}>24H</th>
-            <th style={thStyle}>72H</th>
-            <th style={thStyle}>7D</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => (
-            <tr key={row.signal} style={{
-              borderBottom: `1px solid ${T.border}22`,
-              background: row.signal === "ALL" ? "rgba(255,255,255,0.02)" : "transparent",
-            }}>
-              <td style={{
-                padding: "6px 10px", fontFamily: T.mono, fontSize: T.textXs,
-                fontWeight: row.signal === "ALL" ? 700 : 500,
-                color: row.signal === "ALL" ? T.text2 : T.text3,
-              }}>
-                {LABELS[row.signal] || row.signal}
-                <span style={{ color: T.text4, marginLeft: 4 }}>({row.count})</span>
-              </td>
-              <Cell data={row["1d"]} />
-              <Cell data={row["3d"]} />
-              <Cell data={row["7d"]} />
+
+      {/* Overall stats */}
+      <div style={{
+        display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14,
+      }}>
+        <span style={{ fontSize: 28, fontFamily: T.mono, fontWeight: 700, color: rc(wr.win_rate) }}>
+          {wr.win_rate}%
+        </span>
+        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4 }}>
+          {wr.wins}/{wr.total} wins
+        </span>
+        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: retColor(wr.avg_return) }}>
+          avg {wr.avg_return > 0 ? "+" : ""}{wr.avg_return}%
+        </span>
+        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4 }}>
+          avg hold {fmtDur(wr.avg_hold_hours)}
+        </span>
+      </div>
+
+      {/* Per-signal breakdown table */}
+      {sigRows.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+              <th style={{ ...thStyle, textAlign: "left" }}>Best Signal</th>
+              <th style={thStyle}>WR</th>
+              <th style={thStyle}>Avg Return</th>
+              <th style={thStyle}>Avg Hold</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sigRows.map(row => (
+              <tr key={row.signal} style={{ borderBottom: `1px solid ${T.border}22` }}>
+                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: T.textXs, fontWeight: 500, color: T.text3 }}>
+                  {LABELS[row.signal] || row.signal}
+                  <span style={{ color: T.text4, marginLeft: 4 }}>({row.count})</span>
+                </td>
+                <td style={{ padding: "6px 10px", textAlign: "center", fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: rc(row.win_rate) }}>
+                  {row.win_rate}%
+                </td>
+                <td style={{ padding: "6px 10px", textAlign: "center", fontFamily: T.mono, fontSize: T.textXs, color: retColor(row.avg_return) }}>
+                  {row.avg_return > 0 ? "+" : ""}{row.avg_return}%
+                </td>
+                <td style={{ padding: "6px 10px", textAlign: "center", fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
+                  {fmtDur(row.avg_hold_hours)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }

@@ -91,12 +91,16 @@ def _is_win(signal: str, outcome_pct: float) -> bool:
 
 
 # Corruption filter — returns beyond this are back-fill errors, not real moves
-# (micro-cap coins, stale price back-fills producing 200,000%+ returns)
 _MAX_RETURN_CORRUPT = 500.0  # ±500% — anything beyond this is data error
 
-# Minimum signal duration to count in analytics — signals that churn
-# (e.g., LIGHT_LONG for 19 minutes then back to WAIT) are noise
-_MIN_SIGNAL_DURATION_S = 2 * 3600  # 2 hours minimum
+# Position span constants
+_WAIT_TIMEOUT_S = 4 * 3600  # WAIT persisting >4h = real exit, not churn
+
+# Signal ranking for best-signal tracking within a span
+_SIGNAL_RANK = {
+    "REVIVAL_SEED": 1, "REVIVAL_SEED_CONFIRMED": 2,
+    "ACCUMULATE": 3, "LIGHT_LONG": 4, "STRONG_LONG": 5,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -592,103 +596,179 @@ class SignalAnalytics:
         return await self._cached(f"hl:{timeframe}", _compute)
 
     # ==================================================================
-    # 7. Per-Symbol Win Rate
+    # 7. Position Spans + Per-Symbol Win Rate
     # ==================================================================
+
+    async def _build_position_spans(
+        self, timeframe: str, symbol: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Build position spans from signal events.
+
+        A span = one continuous position from ENTRY to real EXIT.
+        WAIT gaps < 4h are bridged (treated as churn, not a real close).
+        Upgrades/downgrades within a span are tracked but don't create new spans.
+        """
+        db = self._log._ensure_db()
+
+        where = "WHERE timeframe = ?"
+        params: list = [timeframe]
+        if symbol:
+            where += " AND symbol = ?"
+            params.append(symbol)
+
+        cursor = await db.execute(
+            f"SELECT signal, symbol, price, timestamp, regime, "
+            f"       conditions_met, conditions_total, context "
+            f"FROM signal_events {where} ORDER BY timestamp ASC",
+            tuple(params),
+        )
+        rows = await cursor.fetchall()
+
+        # Group by symbol
+        by_sym: Dict[str, list] = defaultdict(list)
+        for r in rows:
+            by_sym[r["symbol"]].append(r)
+
+        all_spans: List[Dict[str, Any]] = []
+
+        for sym, events in by_sym.items():
+            span = None  # Current open span
+
+            for ev in events:
+                sig = ev["signal"]
+                ts = ev["timestamp"]
+                price = ev["price"]
+                is_long = sig in _LONG_SIGNALS
+                is_exit = sig in _EXIT_SIGNALS
+
+                if span is None:
+                    # No open span — open one if signal is long
+                    if is_long:
+                        span = {
+                            "symbol": sym,
+                            "entry_signal": sig,
+                            "best_signal": sig,
+                            "entry_price": price,
+                            "entry_ts": ts,
+                            "entry_regime": ev["regime"],
+                            "entry_conditions_met": ev["conditions_met"],
+                            "entry_conditions_total": ev["conditions_total"],
+                            "entry_context": ev["context"],
+                            "exit_price": None,
+                            "exit_ts": None,
+                            "exit_reason": None,
+                            "_wait_since": None,
+                        }
+                else:
+                    # Span is open
+                    if is_long:
+                        # Still in position — update best signal, clear any WAIT timer
+                        if _SIGNAL_RANK.get(sig, 0) > _SIGNAL_RANK.get(span["best_signal"], 0):
+                            span["best_signal"] = sig
+                        span["_wait_since"] = None
+
+                    elif is_exit:
+                        # Real exit signal — close span
+                        span["exit_price"] = price
+                        span["exit_ts"] = ts
+                        span["exit_reason"] = sig
+                        all_spans.append(span)
+                        span = None
+
+                    elif sig == "WAIT":
+                        if span["_wait_since"] is None:
+                            span["_wait_since"] = ts
+                        # Check if WAIT has lasted > timeout
+                        if ts - span["_wait_since"] >= _WAIT_TIMEOUT_S:
+                            span["exit_price"] = price
+                            span["exit_ts"] = ts
+                            span["exit_reason"] = "WAIT_TIMEOUT"
+                            all_spans.append(span)
+                            span = None
+
+            # Handle still-open span at end of data
+            if span is not None:
+                # Check if there's a pending WAIT timeout
+                if span["_wait_since"] is not None:
+                    last_ts = events[-1]["timestamp"]
+                    if last_ts - span["_wait_since"] >= _WAIT_TIMEOUT_S:
+                        span["exit_price"] = events[-1]["price"]
+                        span["exit_ts"] = last_ts
+                        span["exit_reason"] = "WAIT_TIMEOUT"
+                        all_spans.append(span)
+                # else: span still open, don't include in analytics
+
+        # Compute return and duration for closed spans
+        result = []
+        for s in all_spans:
+            if s["exit_price"] is None or s["entry_price"] is None or s["entry_price"] <= 0:
+                continue
+            ret = (s["exit_price"] - s["entry_price"]) / s["entry_price"] * 100
+            if abs(ret) > _MAX_RETURN_CORRUPT:
+                continue  # Corrupted data
+            dur_h = (s["exit_ts"] - s["entry_ts"]) / 3600
+            result.append({
+                "symbol": s["symbol"],
+                "entry_signal": s["entry_signal"],
+                "best_signal": s["best_signal"],
+                "entry_price": s["entry_price"],
+                "exit_price": s["exit_price"],
+                "return_pct": round(ret, 2),
+                "win": ret > 0,
+                "duration_hours": round(dur_h, 1),
+                "exit_reason": s["exit_reason"],
+                "regime": s["entry_regime"],
+                "conditions_met": s["entry_conditions_met"],
+                "conditions_total": s["entry_conditions_total"],
+                "context": s["entry_context"],
+            })
+
+        return result
 
     async def symbol_win_rate(
         self, symbol: str, timeframe: str = "4h",
     ) -> Dict[str, Any]:
-        """Win rate and performance stats for a specific symbol across 1d/3d/7d horizons."""
+        """Win rate from position spans for a specific symbol."""
 
         async def _compute():
-            db = self._log._ensure_db()
-            cursor = await db.execute(
-                """SELECT signal, regime, conditions_met, conditions_total,
-                          outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, timestamp
-                   FROM signal_events
-                   WHERE timeframe = ? AND symbol = ?
-                     AND signal != 'WAIT'
-                     AND (outcome_1d_pct IS NOT NULL
-                       OR outcome_3d_pct IS NOT NULL
-                       OR outcome_7d_pct IS NOT NULL)
-                   ORDER BY timestamp DESC""",
-                (timeframe, symbol),
-            )
-            rows = await cursor.fetchall()
-            if not rows:
+            spans = await self._build_position_spans(timeframe, symbol=symbol)
+            if not spans:
                 return {"symbol": symbol, "total": 0}
 
-            # Filter corrupted back-fills
-            clean_rows = [r for r in rows if not (
-                (r["outcome_7d_pct"] is not None and abs(r["outcome_7d_pct"]) > _MAX_RETURN_CORRUPT) or
-                (r["outcome_3d_pct"] is not None and abs(r["outcome_3d_pct"]) > _MAX_RETURN_CORRUPT) or
-                (r["outcome_1d_pct"] is not None and abs(r["outcome_1d_pct"]) > _MAX_RETURN_CORRUPT)
-            )]
+            total = len(spans)
+            wins = sum(1 for s in spans if s["win"])
+            avg_ret = sum(s["return_pct"] for s in spans) / total
+            avg_dur = sum(s["duration_hours"] for s in spans) / total
 
-            # Get ALL events (including WAIT) for this symbol to measure duration
-            dur_cursor = await db.execute(
-                "SELECT signal, timestamp FROM signal_events "
-                "WHERE timeframe = ? AND symbol = ? ORDER BY timestamp DESC",
-                (timeframe, symbol),
-            )
-            dur_rows = await dur_cursor.fetchall()
-            # Build next-event map
-            next_ts_map: Dict[int, int] = {}
-            for i, dr in enumerate(dur_rows):
-                if i > 0:
-                    next_ts_map[dr["timestamp"]] = dur_rows[i - 1]["timestamp"]
+            # Per-signal breakdown (by best_signal reached during span)
+            by_signal: Dict[str, list] = defaultdict(list)
+            for s in spans:
+                by_signal[s["best_signal"]].append(s)
 
-            # Filter short-lived signals (< 2h duration)
-            filtered_rows = []
-            for r in clean_rows:
-                nxt = next_ts_map.get(r["timestamp"])
-                if nxt is None:
-                    filtered_rows.append(r)  # Most recent
-                elif nxt - r["timestamp"] >= _MIN_SIGNAL_DURATION_S:
-                    filtered_rows.append(r)
-
-            if not filtered_rows:
-                return {"symbol": symbol, "total": 0}
-
-            total = len(filtered_rows)
-            horizon_cols = [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]
-
-            # Build signal × horizon matrix
-            # Group rows by signal type
-            sig_rows: Dict[str, list] = defaultdict(list)
-            for r in filtered_rows:
-                sig_rows[r["signal"]].append(r)
-
-            def _horizon_stats(rows_subset, col):
-                vals = [(r["signal"], r[col]) for r in rows_subset if r[col] is not None]
-                if not vals:
-                    return None
-                n = len(vals)
-                wins = sum(1 for sig, o in vals if _is_win(sig, o))
-                avg = sum(o for _, o in vals) / n
-                return {"count": n, "win_rate": round(wins / n * 100, 1), "avg": round(avg, 2)}
-
-            # Per-signal rows with horizon breakdown
             signals = []
             for sig in ["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"]:
-                sr = sig_rows.get(sig, [])
-                if not sr:
+                sg = by_signal.get(sig, [])
+                if not sg:
                     continue
-                row = {"signal": sig, "count": len(sr)}
-                for label, col in horizon_cols:
-                    row[label] = _horizon_stats(sr, col)
-                signals.append(row)
-
-            # Overall "ALL" row
-            all_row = {"signal": "ALL", "count": total}
-            for label, col in horizon_cols:
-                all_row[label] = _horizon_stats(filtered_rows, col)
+                n = len(sg)
+                w = sum(1 for s in sg if s["win"])
+                avg = sum(s["return_pct"] for s in sg) / n
+                dur = sum(s["duration_hours"] for s in sg) / n
+                signals.append({
+                    "signal": sig, "count": n,
+                    "win_rate": round(w / n * 100, 1),
+                    "avg_return": round(avg, 2),
+                    "avg_hold_hours": round(dur, 1),
+                })
 
             return {
                 "symbol": symbol,
                 "total": total,
+                "wins": wins,
+                "win_rate": round(wins / total * 100, 1),
+                "avg_return": round(avg_ret, 2),
+                "avg_hold_hours": round(avg_dur, 1),
                 "signals": signals,
-                "all": all_row,
             }
 
         return await self._cached(f"sym_wr:{symbol}:{timeframe}", _compute)
