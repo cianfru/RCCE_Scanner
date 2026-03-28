@@ -541,7 +541,7 @@ class SignalAnalytics:
     async def symbol_win_rate(
         self, symbol: str, timeframe: str = "4h",
     ) -> Dict[str, Any]:
-        """Win rate and performance stats for a specific symbol."""
+        """Win rate and performance stats for a specific symbol across 1d/3d/7d horizons."""
 
         async def _compute():
             db = self._log._ensure_db()
@@ -550,7 +550,10 @@ class SignalAnalytics:
                           outcome_1d_pct, outcome_3d_pct, outcome_7d_pct
                    FROM signal_events
                    WHERE timeframe = ? AND symbol = ?
-                     AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT'
+                     AND signal != 'WAIT'
+                     AND (outcome_1d_pct IS NOT NULL
+                       OR outcome_3d_pct IS NOT NULL
+                       OR outcome_7d_pct IS NOT NULL)
                    ORDER BY timestamp DESC""",
                 (timeframe, symbol),
             )
@@ -558,26 +561,45 @@ class SignalAnalytics:
             if not rows:
                 return {"symbol": symbol, "total": 0}
 
-            wins = 0
-            total = len(rows)
-            returns_7d = []
+            # Multi-horizon stats
+            horizons = {}
+            for label, col in [("1d", "outcome_1d_pct"), ("3d", "outcome_3d_pct"), ("7d", "outcome_7d_pct")]:
+                vals = [(r["signal"], r[col]) for r in rows if r[col] is not None]
+                if not vals:
+                    horizons[label] = {"count": 0, "win_rate": None, "avg": None}
+                    continue
+                n = len(vals)
+                wins = sum(1 for sig, o in vals if _is_win(sig, o))
+                avg = sum(o for _, o in vals) / n
+                horizons[label] = {
+                    "count": n,
+                    "win_rate": round(wins / n * 100, 1),
+                    "avg": round(avg, 2),
+                }
+
+            # Use 7d as primary, fall back to 3d, then 1d
+            primary = horizons.get("7d", {})
+            if not primary.get("count"):
+                primary = horizons.get("3d", {})
+            if not primary.get("count"):
+                primary = horizons.get("1d", {})
+            total = primary.get("count", 0)
+            win_rate = primary.get("win_rate")
+
+            # Per-signal breakdown (use whichever horizon has data)
             by_signal: Dict[str, list] = defaultdict(list)
             by_regime: Dict[str, list] = defaultdict(list)
-
             for r in rows:
                 sig = r["signal"]
                 regime = r["regime"]
-                outcome = r["outcome_7d_pct"]
+                # Use best available outcome
+                outcome = r["outcome_7d_pct"] or r["outcome_3d_pct"] or r["outcome_1d_pct"]
+                if outcome is None:
+                    continue
                 win = _is_win(sig, outcome)
-                if win:
-                    wins += 1
-                returns_7d.append(outcome)
                 by_signal[sig].append((outcome, win))
                 by_regime[regime].append((outcome, win))
 
-            avg_7d = sum(returns_7d) / total
-
-            # Per-signal breakdown
             signal_stats = {}
             for sig, entries in by_signal.items():
                 n = len(entries)
@@ -586,10 +608,9 @@ class SignalAnalytics:
                 signal_stats[sig] = {
                     "count": n,
                     "win_rate": round(w / n * 100, 1),
-                    "avg_7d": round(avg, 2),
+                    "avg": round(avg, 2),
                 }
 
-            # Best/worst regime
             regime_stats = {}
             for reg, entries in by_regime.items():
                 n = len(entries)
@@ -603,9 +624,8 @@ class SignalAnalytics:
             return {
                 "symbol": symbol,
                 "total": total,
-                "wins": wins,
-                "win_rate": round(wins / total * 100, 1),
-                "avg_7d": round(avg_7d, 2),
+                "win_rate": win_rate,
+                "horizons": horizons,
                 "by_signal": signal_stats,
                 "by_regime": regime_stats,
             }

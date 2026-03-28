@@ -154,7 +154,8 @@ function WinRateCard({ symbol, timeframe }) {
 
   if (!wr || wr.total < 3) return null;
 
-  const rateColor = (r) => r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
+  const rc = (r) => r == null ? T.text4 : r >= 65 ? "#34d399" : r >= 50 ? "#fbbf24" : "#f87171";
+  const horizons = wr.horizons || {};
 
   return (
     <div style={{
@@ -171,19 +172,37 @@ function WinRateCard({ symbol, timeframe }) {
         Signal Win Rate
       </div>
 
-      {/* Main WR stat */}
-      <div style={{
-        display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12,
-      }}>
-        <span style={{
-          fontSize: 28, fontFamily: T.mono, fontWeight: 700,
-          color: rateColor(wr.win_rate),
-        }}>
-          {wr.win_rate}%
-        </span>
-        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4 }}>
-          {wr.wins}/{wr.total} signals · avg {wr.avg_7d > 0 ? "+" : ""}{wr.avg_7d}% 7d
-        </span>
+      {/* Multi-horizon WR cards */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {[["1d", "24H"], ["3d", "72H"], ["7d", "7D"]].map(([key, label]) => {
+          const h = horizons[key];
+          if (!h || !h.count) return (
+            <div key={key} style={{
+              flex: 1, textAlign: "center", padding: "10px 8px", borderRadius: 8,
+              background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
+            }}>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: 18, fontFamily: T.mono, color: T.text4, fontWeight: 700 }}>—</div>
+            </div>
+          );
+          return (
+            <div key={key} style={{
+              flex: 1, textAlign: "center", padding: "10px 8px", borderRadius: 8,
+              background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
+            }}>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: 20, fontFamily: T.mono, color: rc(h.win_rate), fontWeight: 700 }}>
+                {h.win_rate}%
+              </div>
+              <div style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text4, marginTop: 2 }}>
+                avg {h.avg > 0 ? "+" : ""}{h.avg}%
+              </div>
+              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4 }}>
+                n={h.count}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Per-signal breakdown */}
@@ -197,7 +216,7 @@ function WinRateCard({ symbol, timeframe }) {
             }}>
               <span style={{ color: T.text3, fontWeight: 500 }}>{sig.replace(/_/g, " ")}</span>
               {" "}
-              <span style={{ color: rateColor(stats.win_rate), fontWeight: 700 }}>{stats.win_rate}%</span>
+              <span style={{ color: rc(stats.win_rate), fontWeight: 700 }}>{stats.win_rate}%</span>
               <span style={{ color: T.text4 }}> ({stats.count})</span>
             </div>
           ))}
@@ -216,7 +235,7 @@ function WinRateCard({ symbol, timeframe }) {
             }}>
               <span style={{ color: T.text4 }}>{regime}</span>
               {" "}
-              <span style={{ color: rateColor(stats.win_rate), fontWeight: 600 }}>{stats.win_rate}%</span>
+              <span style={{ color: rc(stats.win_rate), fontWeight: 600 }}>{stats.win_rate}%</span>
               <span style={{ color: T.text4 }}> ({stats.count})</span>
             </div>
           ))}
