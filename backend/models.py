@@ -125,6 +125,7 @@ class ScanResult(BaseModel):
     smoothed_confidence: Optional[float] = None  # current EMA-smoothed confidence
     effective_conditions: Optional[float] = None  # weighted score post-boost/penalty
     vol_scale: Optional[float] = None           # volatility scaling factor
+    unified_signal: Optional[str] = None        # cross-TF signal (WAIT if 4H/1D disagree)
 
 
 class ScanResponse(BaseModel):

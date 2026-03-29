@@ -444,8 +444,9 @@ export default function App() {
   // Apply stat card signal filter to table data
   const applyStatFilter = (data) => {
     if (!statCardFilter) return data;
-    if (statCardFilter === "TRIM") return data.filter(r => r.signal === "TRIM" || r.signal === "TRIM_HARD");
-    return data.filter(r => r.signal === statCardFilter);
+    const getSig = r => r.unified_signal || r.signal;
+    if (statCardFilter === "TRIM") return data.filter(r => { const s = getSig(r); return s === "TRIM" || s === "TRIM_HARD"; });
+    return data.filter(r => getSig(r) === statCardFilter);
   };
   const display4h = applyStatFilter(sorted4h);
   const display1d = applyStatFilter(sorted1d);

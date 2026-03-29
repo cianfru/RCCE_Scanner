@@ -1594,6 +1594,52 @@ async def _run_synthesis_pass(
         except Exception:
             logger.exception("Confluence computation failed")
 
+    # Unified cross-TF signal: no trade unless both TFs agree
+    _ENTRY_SIGS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
+    _EXIT_SIGS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    # Lower rank = weaker entry; higher rank = stronger exit
+    _ENTRY_RANK = {"REVIVAL_SEED": 0, "REVIVAL_SEED_CONFIRMED": 0, "ACCUMULATE": 1, "LIGHT_LONG": 2, "STRONG_LONG": 3}
+    _EXIT_RANK = {"NO_LONG": 0, "TRIM": 1, "TRIM_HARD": 2, "RISK_OFF": 3}
+
+    if "4h" in scan_cache.results and "1d" in scan_cache.results:
+        r1d_map = {r.get("symbol", ""): r for r in scan_cache.results["1d"]}
+        unified_count = {"entry": 0, "exit": 0, "wait": 0}
+
+        for r4 in scan_cache.results["4h"]:
+            sym = r4.get("symbol", "")
+            r1 = r1d_map.get(sym)
+            if not r1:
+                r4["unified_signal"] = r4["signal"]
+                continue
+
+            sig4 = r4["signal"]
+            sig1 = r1["signal"]
+
+            if sig4 in _ENTRY_SIGS and sig1 in _ENTRY_SIGS:
+                # Both entry → use the weaker of the two
+                rank4 = _ENTRY_RANK.get(sig4, 0)
+                rank1 = _ENTRY_RANK.get(sig1, 0)
+                unified = sig4 if rank4 <= rank1 else sig1
+                unified_count["entry"] += 1
+            elif sig4 in _EXIT_SIGS and sig1 in _EXIT_SIGS:
+                # Both exit → use the stronger exit (more urgent)
+                rank4 = _EXIT_RANK.get(sig4, 0)
+                rank1 = _EXIT_RANK.get(sig1, 0)
+                unified = sig4 if rank4 >= rank1 else sig1
+                unified_count["exit"] += 1
+            else:
+                # Disagree → WAIT
+                unified = "WAIT"
+                unified_count["wait"] += 1
+
+            r4["unified_signal"] = unified
+            r1["unified_signal"] = unified
+
+        logger.info(
+            "Unified signals: %d entry, %d exit, %d wait (disagree)",
+            unified_count["entry"], unified_count["exit"], unified_count["wait"],
+        )
+
     # Executor
     try:
         from executor import get_executor

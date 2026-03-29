@@ -46,7 +46,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
     case "REGIME":
       return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} isMobile={isMobile} /></td>;
     case "SIGNAL":
-      return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
+      return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
     case "SPARK":
       return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={72} height={22} /></td>;
     case "Z-SCORE":
@@ -128,7 +128,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
 
 function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
-  const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.signal);
+  const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.unified_signal || row.signal);
   const stripeBg = index % 2 === 1 ? T.overlay02 : "transparent";
   const restBg = selected ? "rgba(34,211,238,0.04)" : isHighlight ? rm.bg : stripeBg;
 

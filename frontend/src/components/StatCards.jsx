@@ -4,7 +4,10 @@ import FadeIn from "./FadeIn.jsx";
 
 export default function StatCards({ results, isMobile, isTablet, activeSignalFilter, onSignalFilter }) {
   const signals = { STRONG_LONG: 0, LIGHT_LONG: 0, ACCUMULATE: 0, TRIM: 0, TRIM_HARD: 0, RISK_OFF: 0 };
-  results.forEach(r => { if (signals[r.signal] !== undefined) signals[r.signal]++; });
+  results.forEach(r => {
+    const sig = r.unified_signal || r.signal;
+    if (signals[sig] !== undefined) signals[sig]++;
+  });
 
   const cards = [
     { label: "STRONG LONG", filterKey: "STRONG_LONG", value: signals.STRONG_LONG, color: T.green },
