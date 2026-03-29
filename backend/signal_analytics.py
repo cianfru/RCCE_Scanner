@@ -95,6 +95,7 @@ _MAX_RETURN_CORRUPT = 500.0  # ±500% — anything beyond this is data error
 
 # Position span constants
 _WAIT_TIMEOUT_S = 4 * 3600  # WAIT persisting >4h = real exit, not churn
+_MIN_SIGNAL_DURATION_S = 2 * 3600  # Exclude signals that lasted <2h (churn)
 
 # Signal ranking for best-signal tracking within a span
 _SIGNAL_RANK = {
