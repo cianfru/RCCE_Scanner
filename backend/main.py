@@ -1999,11 +1999,29 @@ async def signal_history(
 async def signal_scorecard(
     timeframe: str = Query("4h"),
 ):
-    """Per-signal-type win-rate scorecard."""
+    """Per-signal-type win-rate scorecard (legacy — per-TF)."""
     from signal_log import SignalLog
     sig_log = SignalLog.get()
     cards = await sig_log.get_scorecard(timeframe=timeframe)
     return {"cards": cards, "timeframe": timeframe}
+
+
+@app.get("/api/signals/outcomes")
+async def signal_outcomes(
+    days: int = Query(30, ge=1, le=90, description="Days of history"),
+):
+    """Unified cross-TF signal outcome stats (MFE/MAE, R:R hit rates)."""
+    from signal_outcomes import get_outcome_stats
+    return get_outcome_stats(days=days)
+
+
+@app.get("/api/signals/outcomes/recent")
+async def signal_outcomes_recent(
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Recent resolved unified signal outcomes."""
+    from signal_outcomes import get_recent_outcomes
+    return {"outcomes": get_recent_outcomes(limit=limit)}
 
 
 @app.get("/api/signals/recent")

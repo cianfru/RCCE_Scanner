@@ -1640,6 +1640,13 @@ async def _run_synthesis_pass(
             unified_count["entry"], unified_count["exit"], unified_count["wait"],
         )
 
+        # Track unified signal outcomes (MFE/MAE)
+        try:
+            from signal_outcomes import update_outcomes
+            update_outcomes(scan_cache.results["4h"])
+        except Exception as exc:
+            logger.debug("Signal outcome tracking error: %s", exc)
+
     # Executor
     try:
         from executor import get_executor

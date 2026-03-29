@@ -820,7 +820,7 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
-        {showDashboard && <HitRateStrip timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} />}
+        {/* HitRateStrip removed — replaced by unified signal outcome tracking */}
 
         {showDashboard && (
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile} />
