@@ -2109,19 +2109,32 @@ async def signal_regime_durations(
 @app.get("/api/analytics/attribution")
 async def analytics_attribution(timeframe: str = Query("4h")):
     """Combined performance attribution (all 6 sections)."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.get_full_attribution(timeframe=timeframe)
+    try:
+        from signal_analytics import SignalAnalytics
+        from signal_log import SignalLog
+        analytics = SignalAnalytics(SignalLog.get())
+        return await analytics.get_full_attribution(timeframe=timeframe)
+    except Exception as e:
+        logger.exception("Analytics attribution error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _run_analytics(method_name: str, timeframe: str, **kwargs):
+    """Shared helper for all analytics endpoints — catches and surfaces errors."""
+    try:
+        from signal_analytics import SignalAnalytics
+        from signal_log import SignalLog
+        analytics_engine = SignalAnalytics(SignalLog.get())
+        method = getattr(analytics_engine, method_name)
+        return await method(timeframe=timeframe, **kwargs)
+    except Exception as e:
+        logger.exception("Analytics %s error", method_name)
+        raise HTTPException(status_code=500, detail=f"{method_name}: {e}")
 
 
 @app.get("/api/analytics/conditions")
 async def analytics_conditions(timeframe: str = Query("4h")):
-    """Per-condition predictive value."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.condition_predictive_value(timeframe=timeframe)
+    return await _run_analytics("condition_predictive_value", timeframe)
 
 
 @app.get("/api/analytics/combos")
@@ -2130,49 +2143,28 @@ async def analytics_combos(
     combo_size: int = Query(3, ge=2, le=4),
     min_samples: int = Query(5, ge=2),
 ):
-    """Top condition combinations by win rate."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.condition_combo_attribution(
-        timeframe=timeframe, combo_size=combo_size, min_samples=min_samples,
-    )
+    return await _run_analytics("condition_combo_attribution", timeframe,
+                                combo_size=combo_size, min_samples=min_samples)
 
 
 @app.get("/api/analytics/regime-scorecard")
 async def analytics_regime_scorecard(timeframe: str = Query("4h")):
-    """Signal performance stratified by regime."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.regime_stratified_scorecard(timeframe=timeframe)
+    return await _run_analytics("regime_stratified_scorecard", timeframe)
 
 
 @app.get("/api/analytics/confluence-scorecard")
 async def analytics_confluence_scorecard(timeframe: str = Query("4h")):
-    """Signal performance stratified by conditions-met bucket."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.confluence_stratified_scorecard(timeframe=timeframe)
+    return await _run_analytics("confluence_stratified_scorecard", timeframe)
 
 
 @app.get("/api/analytics/edge-decay")
 async def analytics_edge_decay(timeframe: str = Query("4h")):
-    """Signal return distribution across time periods."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.signal_edge_decay(timeframe=timeframe)
+    return await _run_analytics("signal_edge_decay", timeframe)
 
 
 @app.get("/api/analytics/hyperlens")
 async def analytics_hyperlens(timeframe: str = Query("4h")):
-    """Whale-confirmed vs non-confirmed signal performance."""
-    from signal_analytics import SignalAnalytics
-    from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
-    return await analytics.hyperlens_attribution(timeframe=timeframe)
+    return await _run_analytics("hyperlens_attribution", timeframe)
 
 
 @app.get("/api/analytics/symbol/{symbol:path}")
