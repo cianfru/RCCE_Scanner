@@ -618,6 +618,8 @@ export default function App() {
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
         onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d" && activeTab !== "split") setActiveTab("1d"); }}
         scanData={activeTab === "1d" || activeTab === "split" ? data1d : data4h}
+        assetClassFilter={filterAssetClass}
+        onAssetClassFilter={setFilterAssetClass}
       />
 
       {/* ── HEADER ── */}
@@ -852,34 +854,23 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
-        {/* Asset class filter */}
-        {showDashboard && (
+        {/* Asset class filter indicator (selected from sidebar) */}
+        {showDashboard && filterAssetClass !== "ALL" && (
           <div style={{
-            display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center",
-            marginTop: 10, marginBottom: 4, padding: `0 ${hPad}px`,
+            display: "flex", alignItems: "center", gap: 8,
+            marginTop: 8, marginBottom: 0, padding: `0 ${hPad}px`,
           }}>
-            {[
-              { key: "ALL", label: "All Markets" },
-              { key: "CRYPTO", label: "Crypto" },
-              { key: "TRADFI", label: "TradFi" },
-              { key: "Commodities", label: "Commodities" },
-              { key: "Indices", label: "Indices" },
-              { key: "Equities", label: "Equities" },
-            ].map(f => (
-              <button key={f.key} onClick={() => setFilterAssetClass(f.key)}
-                style={{
-                  padding: "4px 12px", borderRadius: 6,
-                  border: `1px solid ${filterAssetClass === f.key ? T.accent : T.border}`,
-                  background: filterAssetClass === f.key ? T.accent : "transparent",
-                  color: filterAssetClass === f.key ? "#000" : T.text3,
-                  fontSize: 10, fontWeight: 600, fontFamily: T.mono,
-                  cursor: "pointer", letterSpacing: "0.06em",
-                  transition: "all 0.15s",
-                }}
-              >
-                {f.label}
-              </button>
-            ))}
+            <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.accent, letterSpacing: "0.06em" }}>
+              {filterAssetClass === "CRYPTO" ? "CRYPTO" : filterAssetClass === "TRADFI" ? "TRADFI" : filterAssetClass.toUpperCase()}
+            </span>
+            <button
+              onClick={() => setFilterAssetClass("ALL")}
+              style={{
+                background: "transparent", border: `1px solid ${T.border}`,
+                borderRadius: 6, padding: "2px 8px", fontSize: 9,
+                color: T.text4, cursor: "pointer", fontFamily: T.mono,
+              }}
+            >CLEAR</button>
           </div>
         )}
 
