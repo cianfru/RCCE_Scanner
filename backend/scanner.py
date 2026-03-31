@@ -2191,7 +2191,39 @@ async def run_tradfi_scan(
                 r["conditions_detail"] = synth.conditions_detail
                 r["effective_conditions"] = synth.effective_conditions
 
-        # 6. Compute priority scores
+        # 6a. Attach HyperLens smart money consensus (whales trade TradFi on xyz)
+        try:
+            from hl_intelligence import get_all_consensus, _normalize_coin
+            hl_consensus = get_all_consensus()
+            for r in results:
+                coin = r.get("tradfi_coin", r.get("symbol", "").split("/")[0])
+                # Try xyz: prefix lookup (HyperLens stores as "xyz:GOLD")
+                sc = hl_consensus.get(f"xyz:{coin}") or hl_consensus.get(coin)
+                if sc and sc.total_tracked > 0:
+                    r["smart_money"] = {
+                        "trend": sc.trend,
+                        "confidence": round(sc.confidence, 2),
+                        "net_ratio": round(sc.net_ratio, 2),
+                        "long_count": sc.long_count,
+                        "short_count": sc.short_count,
+                        "long_notional": round(sc.long_notional),
+                        "short_notional": round(sc.short_notional),
+                    }
+        except Exception:
+            pass
+
+        # 6b. Set defaults for fields that crypto has but TradFi doesn't
+        for r in results:
+            r.setdefault("cvd_trend", "UNAVAILABLE")
+            r.setdefault("cvd_divergence", False)
+            r.setdefault("buy_sell_ratio", 1.0)
+            r.setdefault("agent_signal", None)
+            r.setdefault("agent_warnings", [])
+            r.setdefault("agent_filters_fired", [])
+            r.setdefault("confidence_history", [])
+            r.setdefault("unified_signal", r.get("signal"))
+
+        # 7. Compute priority scores
         for r in results:
             r["priority_score"] = _compute_priority(r)
 
