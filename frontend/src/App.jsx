@@ -234,9 +234,9 @@ export default function App() {
       const [r4h, r1d] = await Promise.all([fetchData("4h"), fetchData("1d")]);
       const crypto4h = r4h.results || [];
       const crypto1d = r1d.results || [];
-      // Set crypto data immediately so the UI has something to show
-      setData4h(crypto4h);
-      setData1d(crypto1d);
+      // Only update if we got actual data — don't wipe existing with empty results
+      if (crypto4h.length > 0) setData4h(crypto4h);
+      if (crypto1d.length > 0) setData1d(crypto1d);
       setConsensus4h(r4h.consensus || null);
       setConsensus1d(r1d.consensus || null);
       setScanRunning(r4h.scan_running);
@@ -263,8 +263,18 @@ export default function App() {
         const tradfi1 = tf1d ? (tf1d.results || []).map(r => ({ ...r, _isTradFi: true })) : [];
         setDataTradfi4h(tradfi4);
         setDataTradfi1d(tradfi1);
-        if (tradfi4.length > 0) setData4h([...crypto4h, ...tradfi4]);
-        if (tradfi1.length > 0) setData1d([...crypto1d, ...tradfi1]);
+        if (tradfi4.length > 0) {
+          setData4h(prev => {
+            const base = crypto4h.length > 0 ? crypto4h : prev.filter(r => !r._isTradFi);
+            return [...base, ...tradfi4];
+          });
+        }
+        if (tradfi1.length > 0) {
+          setData1d(prev => {
+            const base = crypto1d.length > 0 ? crypto1d : prev.filter(r => !r._isTradFi);
+            return [...base, ...tradfi1];
+          });
+        }
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
