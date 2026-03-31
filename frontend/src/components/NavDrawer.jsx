@@ -65,16 +65,13 @@ const NAV_ICONS = {
   ),
 };
 
-const MARKET_FILTERS = [
-  { key: "ALL", label: "All Markets", icon: "\u25CE" },
-  { key: "CRYPTO", label: "Crypto", icon: "\u20BF" },
-  { key: "Commodities", label: "Commodities", icon: "\u2726" },
-  { key: "Indices", label: "Indices", icon: "\u25B4" },
-  { key: "Equities", label: "Equities", icon: "\u25A0" },
-  { key: "TRADFI", label: "All TradFi", icon: "\u2637" },
-];
-
 const NAV_SECTIONS = [
+  {
+    label: "Markets",
+    items: [
+      { key: "tradfi", label: "TradFi", desc: "Commodities, equities, indices (HIP-3)" },
+    ],
+  },
   {
     label: "Intelligence",
     items: [
@@ -95,7 +92,7 @@ const NAV_SECTIONS = [
   },
 ];
 
-export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData, assetClassFilter, onAssetClassFilter }) {
+export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
@@ -314,68 +311,6 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
                       fontSize: 11, color: T.text4, fontFamily: T.mono,
                     }}>{g.symbols?.length || 0}</span>
                   </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── Market Filters ── */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{
-              fontSize: 11, fontWeight: 700, color: T.text4,
-              fontFamily: T.font, letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "0 8px 8px",
-            }}>
-              Markets
-            </div>
-            {MARKET_FILTERS.map(f => {
-              const isActive = (assetClassFilter || "ALL") === f.key;
-              // Count items matching this filter
-              const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
-              let count = 0;
-              if (scanData) {
-                if (f.key === "ALL") count = scanData.length;
-                else if (f.key === "CRYPTO") count = scanData.filter(r => !r._isTradFi && !TRADFI_CLASSES.has(r.asset_class)).length;
-                else if (f.key === "TRADFI") count = scanData.filter(r => r._isTradFi || TRADFI_CLASSES.has(r.asset_class)).length;
-                else count = scanData.filter(r => r.asset_class === f.key).length;
-              }
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => {
-                    onAssetClassFilter?.(f.key);
-                    // Switch to scanner tab if not already
-                    if (!["4h", "1d", "split"].includes(activeTab)) onTabChange("1d");
-                    onClose();
-                  }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    width: "100%", textAlign: "left",
-                    padding: "9px 12px", borderRadius: 10,
-                    border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
-                    background: isActive ? T.accentDim : "transparent",
-                    cursor: "pointer", transition: "all 0.15s ease",
-                    marginBottom: 2,
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? T.accentDim : "transparent"; }}
-                >
-                  <span style={{
-                    fontSize: 14, width: 20, textAlign: "center",
-                    color: isActive ? T.accent : T.text3,
-                  }}>{f.icon}</span>
-                  <span style={{
-                    fontFamily: T.font, fontSize: 13,
-                    fontWeight: isActive ? 600 : 500,
-                    color: isActive ? T.accent : T.text1,
-                  }}>{f.label}</span>
-                  {count > 0 && (
-                    <span style={{
-                      fontSize: 10, color: T.text4, fontFamily: T.mono,
-                      marginLeft: "auto",
-                    }}>{count}</span>
-                  )}
                 </button>
               );
             })}

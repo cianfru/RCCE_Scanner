@@ -446,14 +446,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     const sym = (urlSymbol || "").toUpperCase();
     return scanData.find(r => {
       const base = getBaseSymbol(r.symbol).replace("/", "").toUpperCase();
-      return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT` || r.symbol?.toUpperCase() === `${sym}/USD`;
+      return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT`;
     });
   }, [scanData4h, scanData1d, urlSymbol, timeframe]);
-
-  // Scroll to top on mount / symbol change
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [urlSymbol]);
 
   // Set document title
   useEffect(() => {
@@ -482,14 +477,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
   const isWide = !isMobile && !isTablet;
   const coin = getBaseSymbol(data.symbol);
-  const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
-  const isTradFi = data._isTradFi || TRADFI_CLASSES.has(data.asset_class);
-
-  // Logo: CoinCap CDN for crypto, colored circle fallback for TradFi
-  const TRADFI_COLORS = {
-    commodity: "#fbbf24", index: "#38bdf8", equity: "#34d399",
-    fx: "#c084fc", bond: "#fb923c", tradfi: "#6b7280", etf: "#22d3ee",
-  };
 
   return (
     <div style={{ padding: isMobile ? 16 : 24 }}>
@@ -504,30 +491,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         >
           {"\u2190"} Scanner
         </button>
-        {isTradFi ? (
-          <div style={{
-            width: isMobile ? 32 : 40, height: isMobile ? 32 : 40, borderRadius: "50%",
-            background: `${TRADFI_COLORS[data.asset_class] || TRADFI_COLORS.tradfi}20`,
-            border: `2px solid ${TRADFI_COLORS[data.asset_class] || TRADFI_COLORS.tradfi}40`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: isMobile ? 14 : 18, fontWeight: 700, fontFamily: T.font,
-            color: TRADFI_COLORS[data.asset_class] || TRADFI_COLORS.tradfi,
-            flexShrink: 0,
-          }}>
-            {coin.charAt(0)}
-          </div>
-        ) : (
-          <img
-            src={`https://assets.coincap.io/assets/icons/${coin.toLowerCase()}@2x.png`}
-            alt={coin}
-            style={{
-              width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
-              borderRadius: "50%", flexShrink: 0,
-              background: T.overlay04,
-            }}
-            onError={e => { e.target.style.display = "none"; }}
-          />
-        )}
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>

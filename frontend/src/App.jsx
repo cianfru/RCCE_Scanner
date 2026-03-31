@@ -144,7 +144,6 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [filterAssetClass, setFilterAssetClass] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
   const [statCardFilter, setStatCardFilter] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -232,19 +231,14 @@ export default function App() {
     setError(null);
     try {
       const [r4h, r1d] = await Promise.all([fetchData("4h"), fetchData("1d")]);
-      const crypto4h = r4h.results || [];
-      const crypto1d = r1d.results || [];
-      // Only update if we got actual data — don't wipe existing with empty results
-      const gotData = crypto4h.length > 0 || crypto1d.length > 0;
-      if (crypto4h.length > 0) setData4h(crypto4h);
-      if (crypto1d.length > 0) setData1d(crypto1d);
+      setData4h(r4h.results || []);
+      setData1d(r1d.results || []);
       setConsensus4h(r4h.consensus || null);
       setConsensus1d(r1d.consensus || null);
       setScanRunning(r4h.scan_running);
       setCacheAge(r4h.cache_age_seconds);
-      if (gotData) setLastRefresh(new Date());
+      setLastRefresh(new Date());
 
-      // Fetch secondary data (TradFi, macro, sentiment) — merge on completion
       try {
         const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
@@ -259,23 +253,8 @@ export default function App() {
         if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
-        // Merge TradFi into main data — single setData call with crypto already loaded
-        const tradfi4 = tf4h ? (tf4h.results || []).map(r => ({ ...r, _isTradFi: true })) : [];
-        const tradfi1 = tf1d ? (tf1d.results || []).map(r => ({ ...r, _isTradFi: true })) : [];
-        setDataTradfi4h(tradfi4);
-        setDataTradfi1d(tradfi1);
-        if (tradfi4.length > 0) {
-          setData4h(prev => {
-            const base = crypto4h.length > 0 ? crypto4h : prev.filter(r => !r._isTradFi);
-            return [...base, ...tradfi4];
-          });
-        }
-        if (tradfi1.length > 0) {
-          setData1d(prev => {
-            const base = crypto1d.length > 0 ? crypto1d : prev.filter(r => !r._isTradFi);
-            return [...base, ...tradfi1];
-          });
-        }
+        if (tf4h) setDataTradfi4h(tf4h.results || []);
+        if (tf1d) setDataTradfi1d(tf1d.results || []);
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
@@ -404,31 +383,19 @@ export default function App() {
     return new Set(activeGroup.symbols);
   }, [activeGroup]);
 
-  // Asset class filter logic
-  const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
-  const matchesAssetClass = (r) => {
-    if (filterAssetClass === "ALL") return true;
-    if (filterAssetClass === "CRYPTO") return !r._isTradFi && !TRADFI_CLASSES.has(r.asset_class);
-    if (filterAssetClass === "TRADFI") return r._isTradFi || TRADFI_CLASSES.has(r.asset_class);
-    // Specific category: Commodities, Indices, Equities, etc
-    return r.asset_class === filterAssetClass;
-  };
-
   const filtered4h = useMemo(() => {
     let d = data4h;
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
-    d = d.filter(matchesAssetClass);
     return d;
-  }, [data4h, activeGroupSymbols, searchTerm, filterAssetClass]);
+  }, [data4h, activeGroupSymbols, searchTerm]);
 
   const filtered1d = useMemo(() => {
     let d = data1d;
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
-    d = d.filter(matchesAssetClass);
     return d;
-  }, [data1d, activeGroupSymbols, searchTerm, filterAssetClass]);
+  }, [data1d, activeGroupSymbols, searchTerm]);
 
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
@@ -619,8 +586,6 @@ export default function App() {
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
         onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d" && activeTab !== "split") setActiveTab("1d"); }}
         scanData={activeTab === "1d" || activeTab === "split" ? data1d : data4h}
-        assetClassFilter={filterAssetClass}
-        onAssetClassFilter={setFilterAssetClass}
       />
 
       {/* ── HEADER ── */}
@@ -681,7 +646,7 @@ export default function App() {
           <img
             src="/logo.png"
             alt="Reflex"
-            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); setFilterAssetClass("ALL"); }}
+            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
             style={{
               height: isMobile ? 32 : 40,
               width: "auto",
@@ -707,18 +672,11 @@ export default function App() {
           display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
           flexShrink: 0,
         }}>
-          {lastRefresh && (() => {
-            const ageS = (Date.now() - lastRefresh.getTime()) / 1000;
-            const staleColor = ageS > 180 ? "#f87171" : ageS > 90 ? "#fbbf24" : T.text4;
-            const label = isMobile
-              ? (ageS > 120 ? `${Math.round(ageS / 60)}m ago` : "")
-              : lastRefresh.toLocaleTimeString();
-            return label ? (
-              <span style={{ fontSize: 11, color: staleColor, letterSpacing: "0.04em", fontFamily: T.font }}>
-                {ageS > 180 && "\u26A0 "}{label}
-              </span>
-            ) : null;
-          })()}
+          {!isMobile && lastRefresh && (
+            <span style={{ fontSize: 11, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
+              {lastRefresh.toLocaleTimeString()}
+            </span>
+          )}
           <button
             onClick={triggerScan}
             title="Refresh scan"
@@ -862,25 +820,7 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
-        {/* Asset class filter indicator (selected from sidebar) */}
-        {showDashboard && filterAssetClass !== "ALL" && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            marginTop: 8, marginBottom: 0, padding: `0 ${hPad}px`,
-          }}>
-            <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.accent, letterSpacing: "0.06em" }}>
-              {filterAssetClass === "CRYPTO" ? "CRYPTO" : filterAssetClass === "TRADFI" ? "TRADFI" : filterAssetClass.toUpperCase()}
-            </span>
-            <button
-              onClick={() => setFilterAssetClass("ALL")}
-              style={{
-                background: "transparent", border: `1px solid ${T.border}`,
-                borderRadius: 6, padding: "2px 8px", fontSize: 9,
-                color: T.text4, cursor: "pointer", fontFamily: T.mono,
-              }}
-            >CLEAR</button>
-          </div>
-        )}
+        {/* HitRateStrip removed — replaced by unified signal outcome tracking */}
 
         {showDashboard && (
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile} />
