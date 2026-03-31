@@ -253,8 +253,23 @@ export default function App() {
         if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
-        if (tf4h) setDataTradfi4h(tf4h.results || []);
-        if (tf1d) setDataTradfi1d(tf1d.results || []);
+        // Merge TradFi into main data arrays so they share the same UI
+        if (tf4h) {
+          const tradfi4 = (tf4h.results || []).map(r => ({ ...r, asset_class: r.asset_class || "tradfi" }));
+          setDataTradfi4h(tradfi4);
+          setData4h(prev => {
+            const cryptoOnly = prev.filter(r => !r.asset_class || r.asset_class === "crypto");
+            return [...cryptoOnly, ...tradfi4];
+          });
+        }
+        if (tf1d) {
+          const tradfi1 = (tf1d.results || []).map(r => ({ ...r, asset_class: r.asset_class || "tradfi" }));
+          setDataTradfi1d(tradfi1);
+          setData1d(prev => {
+            const cryptoOnly = prev.filter(r => !r.asset_class || r.asset_class === "crypto");
+            return [...cryptoOnly, ...tradfi1];
+          });
+        }
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {

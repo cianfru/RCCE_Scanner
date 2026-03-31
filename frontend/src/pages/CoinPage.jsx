@@ -446,7 +446,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     const sym = (urlSymbol || "").toUpperCase();
     return scanData.find(r => {
       const base = getBaseSymbol(r.symbol).replace("/", "").toUpperCase();
-      return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT`;
+      return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT` || r.symbol?.toUpperCase() === `${sym}/USD`;
     });
   }, [scanData4h, scanData1d, urlSymbol, timeframe]);
 
