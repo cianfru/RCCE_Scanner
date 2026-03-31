@@ -384,3 +384,169 @@ def parse_open_positions(clearinghouse: dict) -> List[dict]:
             "margin_used": float(pos.get("marginUsed", 0)),
         })
     return positions
+
+
+# ---------------------------------------------------------------------------
+# Builder DEX (HIP-3) discovery + metrics
+# ---------------------------------------------------------------------------
+
+# Cache for perpDexs discovery (refreshed daily)
+_perp_dexs_cache: Optional[list] = None
+_perp_dexs_expires_at: float = 0
+_PERP_DEXS_TTL = 24 * 3600  # 24 hours
+
+# Per-dex metrics cache
+_dex_caches: Dict[str, _HLCache] = {}
+
+
+async def fetch_perp_dexs() -> List[str]:
+    """Discover all live builder-deployed DEXes on HyperLiquid.
+
+    Returns a list of dex name strings (e.g., ["xyz", "flx", "vntl", ...]).
+    Cached for 24 hours.
+    """
+    global _perp_dexs_cache, _perp_dexs_expires_at
+
+    now = time.monotonic()
+    if _perp_dexs_cache is not None and now < _perp_dexs_expires_at:
+        return _perp_dexs_cache
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            resp = await _post_info(session, {"type": "perpDexs"})
+
+        dexs = []
+        if isinstance(resp, list):
+            for entry in resp:
+                if entry is not None and isinstance(entry, dict):
+                    name = entry.get("name", "")
+                    if name:
+                        dexs.append(name)
+
+        _perp_dexs_cache = dexs
+        _perp_dexs_expires_at = now + _PERP_DEXS_TTL
+        logger.info("Discovered %d builder DEXes: %s", len(dexs), ", ".join(dexs))
+        return dexs
+
+    except Exception as exc:
+        logger.warning("Failed to fetch perpDexs: %s", exc)
+        return _perp_dexs_cache or []
+
+
+async def fetch_hyperliquid_dex_metrics(
+    dex: str = "xyz",
+) -> Dict[str, HyperliquidMetrics]:
+    """Fetch funding rates, OI, and prices for all instruments on a builder DEX.
+
+    Returns a dict keyed by scanner-format symbol (e.g. 'GOLD/USD').
+    """
+    # Per-dex cache
+    if dex not in _dex_caches:
+        _dex_caches[dex] = _HLCache()
+    cache = _dex_caches[dex]
+
+    cached = cache.get()
+    if cached is not None:
+        return cached
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            meta_resp = await _post_info(session, {"type": "metaAndAssetCtxs", "dex": dex})
+
+            # Try predicted fundings for this dex
+            try:
+                pred_resp = await _post_info(session, {"type": "predictedFundings", "dex": dex})
+            except Exception:
+                pred_resp = []
+
+        return _parse_dex_metrics(meta_resp, pred_resp, dex, cache)
+
+    except Exception as exc:
+        logger.warning("Failed to fetch %s DEX metrics: %s", dex, exc)
+        fallback = cache.get_fallback()
+        return fallback if fallback is not None else {}
+
+
+def _parse_dex_metrics(
+    meta_resp: list,
+    pred_resp: list,
+    dex: str,
+    cache: _HLCache,
+) -> Dict[str, HyperliquidMetrics]:
+    """Parse metaAndAssetCtxs for a builder DEX into HyperliquidMetrics dict."""
+    now = time.time()
+    result: Dict[str, HyperliquidMetrics] = {}
+
+    if not isinstance(meta_resp, list) or len(meta_resp) < 2:
+        logger.warning("Unexpected metaAndAssetCtxs format for dex=%s", dex)
+        return result
+
+    meta_info = meta_resp[0]
+    asset_ctxs = meta_resp[1]
+    universe = meta_info.get("universe", [])
+
+    # Predicted funding lookup (same format as crypto)
+    pred_lookup: Dict[str, float] = {}
+    if isinstance(pred_resp, list):
+        for item in pred_resp:
+            if isinstance(item, list) and len(item) >= 2:
+                coin_name = item[0]
+                venues = item[1]
+                if isinstance(venues, list):
+                    for venue in venues:
+                        if isinstance(venue, list) and len(venue) >= 2:
+                            if isinstance(venue[1], dict):
+                                pred_lookup[coin_name] = float(venue[1].get("fundingRate", 0.0))
+                            break
+                elif isinstance(venues, dict):
+                    pred_lookup[coin_name] = float(venues.get("fundingRate", 0.0))
+
+    for i, ctx in enumerate(asset_ctxs):
+        if i >= len(universe):
+            break
+
+        coin_info = universe[i]
+        raw_name = coin_info.get("name", "")  # e.g., "xyz:GOLD"
+        # Strip dex prefix if present
+        coin = raw_name.split(":", 1)[1] if ":" in raw_name else raw_name
+        # Use /USD suffix for TradFi symbols (not /USDT)
+        scanner_symbol = f"{coin}/USD"
+
+        try:
+            funding = float(ctx.get("funding", 0.0))
+            oi_raw = float(ctx.get("openInterest", 0.0))
+            mark = float(ctx.get("markPx", 0.0))
+            oracle = float(ctx.get("oraclePx", 0.0))
+            vol_24h = float(ctx.get("dayNtlVlm", 0.0))
+            oi_usd = oi_raw * mark if mark > 0 else 0.0
+
+            metrics = HyperliquidMetrics(
+                coin=coin,
+                funding_rate=funding,
+                open_interest=oi_usd,
+                mark_price=mark,
+                oracle_price=oracle,
+                volume_24h=vol_24h,
+                predicted_funding=pred_lookup.get(raw_name, 0.0),
+                timestamp=now,
+            )
+            result[scanner_symbol] = metrics
+
+        except (ValueError, TypeError) as exc:
+            logger.debug("Failed to parse %s DEX data for %s: %s", dex, raw_name, exc)
+            continue
+
+    cache.put(result)
+
+    # Log summary
+    if result:
+        sample = next(iter(result.values()))
+        logger.info(
+            "Fetched %s DEX metrics: %d instruments (sample: %s funding=%.6f%%, OI=$%.0fK)",
+            dex, len(result), sample.coin,
+            sample.funding_rate * 100, sample.open_interest / 1e3,
+        )
+
+    return result

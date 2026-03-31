@@ -1140,7 +1140,14 @@ export default function TradingPanel({ api }) {
 
   // Combined account value across all venues
   const accountValue = perpsAccountValue + xyzAccountValue + spotTotalValue;
-  const positions     = (chState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0);
+  // Merge crypto + xyz DEX positions into one list
+  const cryptoPositions = (chState?.assetPositions || [])
+    .filter(ap => parseNum(ap.position?.szi) !== 0)
+    .map(ap => ({ ...ap, _dex: "crypto" }));
+  const xyzPositions = (xyzChState?.assetPositions || [])
+    .filter(ap => parseNum(ap.position?.szi) !== 0)
+    .map(ap => ({ ...ap, _dex: "xyz", position: { ...ap.position, coin: (ap.position?.coin || "").replace(/^xyz:/, "") } }));
+  const positions = [...cryptoPositions, ...xyzPositions];
   const totalUnrealizedPnl = positions.reduce((sum, ap) => sum + parseNum(ap.position?.unrealizedPnl), 0);
 
   // All-time total PnL from portfolio

@@ -2001,18 +2001,55 @@ async def run_tradfi_scan(
     t0 = time.time()
     loop = asyncio.get_running_loop()
 
+    # Fetch xyz DEX metrics (funding, OI, mark price) — shared across both TFs
+    xyz_metrics: dict = {}
+    try:
+        from hyperliquid_data import fetch_hyperliquid_dex_metrics
+        xyz_metrics = await fetch_hyperliquid_dex_metrics("xyz")
+        logger.info("TradFi: fetched xyz DEX metrics for %d instruments", len(xyz_metrics))
+    except Exception as exc:
+        logger.warning("TradFi: xyz DEX metrics fetch failed: %s", exc)
+
     async def _tradfi_one_tf(tf):
-        # 1. Fetch OHLCV for all TradFi symbols (yfinance for deep history)
-        ohlcv_batch = await fetch_batch_yfinance(tf)
-        fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
-        logger.info("TradFi: fetched %d/%d for %s (yfinance)", fetched, len(TRADFI_SYMBOL_LIST), tf)
+        # 1. Fetch OHLCV — try HIP-3 native candles first, fallback to yfinance
+        try:
+            ohlcv_batch = await fetch_batch_hip3(tf)
+            fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
+            logger.info("TradFi: fetched %d/%d for %s (HIP-3 native)", fetched, len(TRADFI_SYMBOL_LIST), tf)
+        except Exception:
+            ohlcv_batch = {}
+            fetched = 0
+
+        # Fallback to yfinance for symbols that HIP-3 didn't return (deep history)
+        if fetched < len(TRADFI_SYMBOL_LIST):
+            try:
+                yf_batch = await fetch_batch_yfinance(tf)
+                yf_filled = 0
+                for sym, data in yf_batch.items():
+                    if data is not None and sym not in ohlcv_batch:
+                        ohlcv_batch[sym] = data
+                        yf_filled += 1
+                if yf_filled:
+                    logger.info("TradFi: yfinance fallback filled %d symbols for %s", yf_filled, tf)
+                fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
+            except Exception:
+                pass
 
         if fetched == 0:
             logger.warning("TradFi: no data for %s — skipping", tf)
             return
 
-        # 2. Fetch weekly data for heatmap + exhaustion (yfinance)
-        weekly_batch = await fetch_batch_yfinance("1w")
+        # 2. Fetch weekly data for heatmap + exhaustion
+        try:
+            weekly_batch = await fetch_batch_hip3("1w")
+        except Exception:
+            weekly_batch = {}
+        # Fallback weekly
+        if not weekly_batch:
+            try:
+                weekly_batch = await fetch_batch_yfinance("1w")
+            except Exception:
+                weekly_batch = {}
 
         # 3. Process each symbol through engines (parallel via thread pool)
         sym_info_map = {}
@@ -2054,10 +2091,67 @@ async def run_tradfi_scan(
         if not results:
             return
 
-        # 4. Compute TradFi-specific consensus
+        # 4. Attach positioning from xyz DEX metrics
+        for r in results:
+            symbol = r.get("symbol", "")
+            # Map scanner symbol to xyz metrics key (e.g., "GOLD/USD")
+            coin = symbol.split("/")[0] if "/" in symbol else symbol
+            xyz_key = f"{coin}/USD"
+            xyz = xyz_metrics.get(xyz_key)
+            if xyz and xyz.open_interest > 0:
+                sparkline = r.get("sparkline", [])
+                price_change_pct = 0.0
+                if len(sparkline) >= 2 and sparkline[0] > 0:
+                    price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+                prev_oi = scan_cache.prev_oi.get(symbol)
+                if prev_oi is None:
+                    scan_cache.prev_oi[symbol] = xyz.open_interest
+                    prev_oi = xyz.open_interest
+
+                pos = compute_positioning(
+                    funding_rate=xyz.funding_rate,
+                    open_interest=xyz.open_interest,
+                    price_change_pct=price_change_pct,
+                    prev_oi=prev_oi,
+                    predicted_funding=xyz.predicted_funding,
+                    mark_price=xyz.mark_price,
+                    oracle_price=xyz.oracle_price,
+                    volume_24h=xyz.volume_24h,
+                )
+                r["positioning"] = {
+                    "funding_regime": pos.funding_regime,
+                    "funding_rate": pos.funding_rate,
+                    "oi_trend": pos.oi_trend,
+                    "oi_value": pos.oi_value,
+                    "oi_change_pct": pos.oi_change_pct,
+                    "leverage_risk": pos.leverage_risk,
+                    "predicted_funding": pos.predicted_funding,
+                    "mark_price": pos.mark_price,
+                    "volume_24h": pos.volume_24h,
+                    "source": "hyperliquid_xyz",
+                    "source_map": {"funding": "xyz_dex", "oi": "xyz_dex", "volume": "xyz_dex"},
+                    "liquidation_24h_usd": 0.0,
+                    "long_liq_usd": 0.0,
+                    "short_liq_usd": 0.0,
+                    "liquidation_4h_usd": 0.0,
+                    "liquidation_1h_usd": 0.0,
+                    "long_short_ratio": 1.0,
+                    "top_trader_lsr": 1.0,
+                    "oi_market_cap_ratio": 0.0,
+                    "spot_volume_usd": 0.0,
+                    "spot_futures_ratio": 0.0,
+                    "spot_dominance": "NEUTRAL",
+                }
+                scan_cache.prev_oi[symbol] = xyz.open_interest
+
+        pos_count = sum(1 for r in results if r.get("positioning"))
+        logger.info("TradFi: %d/%d symbols with positioning data", pos_count, len(results))
+
+        # 5. Compute TradFi-specific consensus
         tradfi_consensus = compute_consensus(results)
 
-        # 5. Synthesize signals in parallel via thread pool
+        # 6. Synthesize signals in parallel via thread pool
         def _tradfi_synth_one(r):
             heat_direction = r.get("heat_direction", 0)
             deviation_pct = r.get("deviation_pct", 0.0)
@@ -2068,7 +2162,7 @@ async def run_tradfi_scan(
                 result=r,
                 consensus=tradfi_consensus,
                 global_metrics=None,
-                positioning=None,
+                positioning=r.get("positioning"),
                 sentiment=None,
                 stablecoin=None,
                 macro_blocked=macro_blocked,
