@@ -477,7 +477,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
   const isWide = !isMobile && !isTablet;
   const coin = getBaseSymbol(data.symbol);
-  const isTradFi = data.asset_class && data.asset_class !== "crypto";
+  const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
+  const isTradFi = data._isTradFi || TRADFI_CLASSES.has(data.asset_class);
 
   // Logo: CoinCap CDN for crypto, colored circle fallback for TradFi
   const TRADFI_COLORS = {
