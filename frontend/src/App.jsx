@@ -232,14 +232,18 @@ export default function App() {
     setError(null);
     try {
       const [r4h, r1d] = await Promise.all([fetchData("4h"), fetchData("1d")]);
-      setData4h(r4h.results || []);
-      setData1d(r1d.results || []);
+      const crypto4h = r4h.results || [];
+      const crypto1d = r1d.results || [];
+      // Set crypto data immediately so the UI has something to show
+      setData4h(crypto4h);
+      setData1d(crypto1d);
       setConsensus4h(r4h.consensus || null);
       setConsensus1d(r1d.consensus || null);
       setScanRunning(r4h.scan_running);
       setCacheAge(r4h.cache_age_seconds);
       setLastRefresh(new Date());
 
+      // Fetch secondary data (TradFi, macro, sentiment) — merge on completion
       try {
         const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
           fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
@@ -254,27 +258,13 @@ export default function App() {
         if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
-        // Merge TradFi into main data arrays so they share the same UI
-        // TradFi categories: Commodities, Indices, Equities, ETFs, FX, Bonds
-        // Crypto categories: BTC, ETH, ALT, MEME (or undefined)
-        const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
-        const isTradFiResult = (r) => TRADFI_CLASSES.has(r.asset_class) || r.tradfi_coin;
-        if (tf4h) {
-          const tradfi4 = (tf4h.results || []).map(r => ({ ...r, _isTradFi: true }));
-          setDataTradfi4h(tradfi4);
-          setData4h(prev => {
-            const cryptoOnly = prev.filter(r => !r._isTradFi && !isTradFiResult(r));
-            return [...cryptoOnly, ...tradfi4];
-          });
-        }
-        if (tf1d) {
-          const tradfi1 = (tf1d.results || []).map(r => ({ ...r, _isTradFi: true }));
-          setDataTradfi1d(tradfi1);
-          setData1d(prev => {
-            const cryptoOnly = prev.filter(r => !r._isTradFi && !isTradFiResult(r));
-            return [...cryptoOnly, ...tradfi1];
-          });
-        }
+        // Merge TradFi into main data — single setData call with crypto already loaded
+        const tradfi4 = tf4h ? (tf4h.results || []).map(r => ({ ...r, _isTradFi: true })) : [];
+        const tradfi1 = tf1d ? (tf1d.results || []).map(r => ({ ...r, _isTradFi: true })) : [];
+        setDataTradfi4h(tradfi4);
+        setDataTradfi1d(tradfi1);
+        if (tradfi4.length > 0) setData4h([...crypto4h, ...tradfi4]);
+        if (tradfi1.length > 0) setData1d([...crypto1d, ...tradfi1]);
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
