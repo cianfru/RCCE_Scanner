@@ -2001,6 +2001,15 @@ async def run_tradfi_scan(
     t0 = time.time()
     loop = asyncio.get_running_loop()
 
+    # Fetch xyz DEX metrics (funding, OI, volume) — shared across both TFs
+    xyz_metrics: dict = {}
+    try:
+        from hyperliquid_data import fetch_hyperliquid_dex_metrics
+        xyz_metrics = await fetch_hyperliquid_dex_metrics("xyz")
+        logger.info("TradFi: fetched xyz DEX metrics for %d instruments", len(xyz_metrics))
+    except Exception as exc:
+        logger.warning("TradFi: xyz DEX metrics fetch failed: %s", exc)
+
     async def _tradfi_one_tf(tf):
         # 1. Fetch OHLCV — HIP-3 native candles (primary), yfinance fallback
         ohlcv_batch = await fetch_batch_hip3(tf)
@@ -2077,10 +2086,59 @@ async def run_tradfi_scan(
         if not results:
             return
 
-        # 4. Compute TradFi-specific consensus
+        # 4. Attach positioning from xyz DEX metrics (OI, funding, volume)
+        for r in results:
+            coin = r.get("tradfi_coin", r.get("symbol", "").split("/")[0])
+            xyz_key = f"{coin}/USD"
+            xyz = xyz_metrics.get(xyz_key)
+            if xyz and xyz.open_interest > 0:
+                sparkline = r.get("sparkline", [])
+                price_change_pct = 0.0
+                if len(sparkline) >= 2 and sparkline[0] > 0:
+                    price_change_pct = ((sparkline[-1] - sparkline[0]) / sparkline[0]) * 100.0
+
+                prev_oi = scan_cache.prev_oi.get(r["symbol"])
+                if prev_oi is None:
+                    scan_cache.prev_oi[r["symbol"]] = xyz.open_interest
+                    prev_oi = xyz.open_interest
+
+                pos = compute_positioning(
+                    funding_rate=xyz.funding_rate,
+                    open_interest=xyz.open_interest,
+                    price_change_pct=price_change_pct,
+                    prev_oi=prev_oi,
+                    predicted_funding=xyz.predicted_funding,
+                    mark_price=xyz.mark_price,
+                    oracle_price=xyz.oracle_price,
+                    volume_24h=xyz.volume_24h,
+                )
+                r["positioning"] = {
+                    "funding_regime": pos.funding_regime,
+                    "funding_rate": pos.funding_rate,
+                    "oi_trend": pos.oi_trend,
+                    "oi_value": pos.oi_value,
+                    "oi_change_pct": pos.oi_change_pct,
+                    "leverage_risk": pos.leverage_risk,
+                    "predicted_funding": pos.predicted_funding,
+                    "mark_price": pos.mark_price,
+                    "volume_24h": pos.volume_24h,
+                    "source": "hyperliquid_xyz",
+                    "source_map": {"funding": "xyz_dex", "oi": "xyz_dex", "volume": "xyz_dex"},
+                    "liquidation_24h_usd": 0.0, "long_liq_usd": 0.0, "short_liq_usd": 0.0,
+                    "liquidation_4h_usd": 0.0, "liquidation_1h_usd": 0.0,
+                    "long_short_ratio": 1.0, "top_trader_lsr": 1.0,
+                    "oi_market_cap_ratio": 0.0, "spot_volume_usd": 0.0,
+                    "spot_futures_ratio": 0.0, "spot_dominance": "NEUTRAL",
+                }
+                scan_cache.prev_oi[r["symbol"]] = xyz.open_interest
+
+        pos_count = sum(1 for r in results if r.get("positioning"))
+        logger.info("TradFi: %d/%d with xyz positioning", pos_count, len(results))
+
+        # 5. Compute TradFi-specific consensus
         tradfi_consensus = compute_consensus(results)
 
-        # 5. Synthesize signals in parallel via thread pool
+        # 6. Synthesize signals in parallel via thread pool
         def _tradfi_synth_one(r):
             heat_direction = r.get("heat_direction", 0)
             deviation_pct = r.get("deviation_pct", 0.0)
@@ -2091,7 +2149,7 @@ async def run_tradfi_scan(
                 result=r,
                 consensus=tradfi_consensus,
                 global_metrics=None,
-                positioning=None,
+                positioning=r.get("positioning"),
                 sentiment=None,
                 stablecoin=None,
                 macro_blocked=macro_blocked,
