@@ -144,6 +144,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
+  const [filterAssetClass, setFilterAssetClass] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
   const [statCardFilter, setStatCardFilter] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -402,19 +403,31 @@ export default function App() {
     return new Set(activeGroup.symbols);
   }, [activeGroup]);
 
+  // Asset class filter logic
+  const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
+  const matchesAssetClass = (r) => {
+    if (filterAssetClass === "ALL") return true;
+    if (filterAssetClass === "CRYPTO") return !r._isTradFi && !TRADFI_CLASSES.has(r.asset_class);
+    if (filterAssetClass === "TRADFI") return r._isTradFi || TRADFI_CLASSES.has(r.asset_class);
+    // Specific category: Commodities, Indices, Equities, etc
+    return r.asset_class === filterAssetClass;
+  };
+
   const filtered4h = useMemo(() => {
     let d = data4h;
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
+    d = d.filter(matchesAssetClass);
     return d;
-  }, [data4h, activeGroupSymbols, searchTerm]);
+  }, [data4h, activeGroupSymbols, searchTerm, filterAssetClass]);
 
   const filtered1d = useMemo(() => {
     let d = data1d;
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
+    d = d.filter(matchesAssetClass);
     return d;
-  }, [data1d, activeGroupSymbols, searchTerm]);
+  }, [data1d, activeGroupSymbols, searchTerm, filterAssetClass]);
 
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
@@ -665,7 +678,7 @@ export default function App() {
           <img
             src="/logo.png"
             alt="Reflex"
-            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
+            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); setFilterAssetClass("ALL"); }}
             style={{
               height: isMobile ? 32 : 40,
               width: "auto",
@@ -839,7 +852,36 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
-        {/* HitRateStrip removed — replaced by unified signal outcome tracking */}
+        {/* Asset class filter */}
+        {showDashboard && (
+          <div style={{
+            display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center",
+            marginTop: 10, marginBottom: 4, padding: `0 ${hPad}px`,
+          }}>
+            {[
+              { key: "ALL", label: "All Markets" },
+              { key: "CRYPTO", label: "Crypto" },
+              { key: "TRADFI", label: "TradFi" },
+              { key: "Commodities", label: "Commodities" },
+              { key: "Indices", label: "Indices" },
+              { key: "Equities", label: "Equities" },
+            ].map(f => (
+              <button key={f.key} onClick={() => setFilterAssetClass(f.key)}
+                style={{
+                  padding: "4px 12px", borderRadius: 6,
+                  border: `1px solid ${filterAssetClass === f.key ? T.accent : T.border}`,
+                  background: filterAssetClass === f.key ? T.accent : "transparent",
+                  color: filterAssetClass === f.key ? "#000" : T.text3,
+                  fontSize: 10, fontWeight: 600, fontFamily: T.mono,
+                  cursor: "pointer", letterSpacing: "0.06em",
+                  transition: "all 0.15s",
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {showDashboard && (
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile} />
