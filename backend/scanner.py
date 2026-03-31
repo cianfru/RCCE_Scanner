@@ -2002,17 +2002,40 @@ async def run_tradfi_scan(
     loop = asyncio.get_running_loop()
 
     async def _tradfi_one_tf(tf):
-        # 1. Fetch OHLCV for all TradFi symbols (yfinance for deep history)
-        ohlcv_batch = await fetch_batch_yfinance(tf)
+        # 1. Fetch OHLCV — HIP-3 native candles (primary), yfinance fallback
+        ohlcv_batch = await fetch_batch_hip3(tf)
         fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
-        logger.info("TradFi: fetched %d/%d for %s (yfinance)", fetched, len(TRADFI_SYMBOL_LIST), tf)
+        logger.info("TradFi: fetched %d/%d for %s (HIP-3)", fetched, len(TRADFI_SYMBOL_LIST), tf)
+
+        # Fill gaps with yfinance for symbols that HIP-3 didn't return
+        if fetched < len(TRADFI_SYMBOL_LIST):
+            try:
+                yf_batch = await fetch_batch_yfinance(tf)
+                yf_filled = 0
+                for sym, data in yf_batch.items():
+                    if data is not None and ohlcv_batch.get(sym) is None:
+                        ohlcv_batch[sym] = data
+                        yf_filled += 1
+                if yf_filled:
+                    fetched += yf_filled
+                    logger.info("TradFi: yfinance fallback filled %d gaps for %s", yf_filled, tf)
+            except Exception:
+                pass
 
         if fetched == 0:
             logger.warning("TradFi: no data for %s — skipping", tf)
             return
 
-        # 2. Fetch weekly data for heatmap + exhaustion (yfinance)
-        weekly_batch = await fetch_batch_yfinance("1w")
+        # 2. Fetch weekly data for heatmap + exhaustion
+        weekly_batch = await fetch_batch_hip3("1w")
+        # Fill weekly gaps with yfinance
+        try:
+            yf_weekly = await fetch_batch_yfinance("1w")
+            for sym, data in yf_weekly.items():
+                if data is not None and weekly_batch.get(sym) is None:
+                    weekly_batch[sym] = data
+        except Exception:
+            pass
 
         # 3. Process each symbol through engines (parallel via thread pool)
         sym_info_map = {}
