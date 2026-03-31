@@ -219,7 +219,7 @@ export default function BMSBChart({
     });
 
     // ── Fetch data ──
-    const tfConfig = TIMEFRAMES[activeTfIdx] || TIMEFRAMES[2];
+    const tfConfig = TIMEFRAMES.find((t, i) => i === activeTfIdx) || TIMEFRAMES[2];
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setError(null);
