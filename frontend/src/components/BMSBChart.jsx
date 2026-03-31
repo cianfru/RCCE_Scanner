@@ -30,8 +30,10 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "4h", label: "4H", limit: 120 },  // ~20 days — starts zoomed into actionable range
-  { key: "1d", label: "1D", limit: 180 },  // ~6 months
+  { key: "4h", label: "4H", limit: 120, barSpacing: 10 },   // ~20 days
+  { key: "4h", label: "3M", limit: 500, barSpacing: 5 },    // ~83 days on 4h
+  { key: "1d", label: "1D", limit: 180, barSpacing: 8 },    // ~6 months
+  { key: "1d", label: "1Y", limit: 365, barSpacing: 4 },    // ~1 year
 ];
 
 export default function BMSBChart({
@@ -54,8 +56,10 @@ export default function BMSBChart({
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
+  const [activeTfIdx, setActiveTfIdx] = useState(initialTimeframe === "1d" ? 2 : 0);
+  const activeTimeframe = TIMEFRAMES[activeTfIdx]?.key || "4h";
   const [showPressure, setShowPressure] = useState(false);
+  const [showVolumeProfile, setShowVolumeProfile] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
 
@@ -104,7 +108,7 @@ export default function BMSBChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
-        barSpacing: tf === "4h" ? 10 : 8,
+        barSpacing: tfConfig.barSpacing || 8,
         minBarSpacing: 3,
       },
       rightPriceScale: {
@@ -215,7 +219,7 @@ export default function BMSBChart({
     });
 
     // ── Fetch data ──
-    const tfConfig = TIMEFRAMES.find(t => t.key === tf) || TIMEFRAMES[1];
+    const tfConfig = TIMEFRAMES[activeTfIdx] || TIMEFRAMES[2];
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setError(null);
@@ -251,40 +255,76 @@ export default function BMSBChart({
             volumeSeries.setData(data.volume);
           }
 
-          // ── Signal markers on latest candle ──
-          const markerDef = signal && SIGNAL_MARKER[signal];
-          if (markerDef) {
-            const last = data.candles[data.candles.length - 1];
-            const markers = [{
-              time: last.time,
-              position: markerDef.position,
-              color: markerDef.color,
-              shape: markerDef.shape,
-              text: markerDef.text,
-            }];
-
-            if (floorConfirmed) {
-              markers.push({
-                time: last.time,
-                position: "belowBar",
-                color: "#34d399",
-                shape: "circle",
-                text: "FLOOR",
-              });
+          // ── Historical signal markers ──
+          // Fetch past signal events and place arrows on the candles where they fired
+          const candleTimes = new Set(data.candles.map(c => c.time));
+          const snapToCandle = (ts) => {
+            // Find closest candle time <= timestamp
+            let best = data.candles[0]?.time || 0;
+            for (const c of data.candles) {
+              if (c.time <= ts) best = c.time;
+              else break;
             }
-            if (exhaustionState === "CLIMAX") {
-              markers.push({
-                time: last.time,
-                position: "aboveBar",
-                color: "#fbbf24",
-                shape: "circle",
-                text: "CLIMAX",
-              });
-            }
+            return best;
+          };
 
-            markers.sort((a, b) => a.time - b.time);
-            createSeriesMarkers(candleSeries, markers);
-          }
+          fetch(`${API_BASE}/api/signals/history?symbol=${encoded}&timeframe=${tf}&limit=200`)
+            .then(r => r.ok ? r.json() : [])
+            .then(events => {
+              if (cancelled) return;
+              const evts = Array.isArray(events) ? events : events.events || events.changes || [];
+              const markers = [];
+
+              for (const ev of evts) {
+                const sig = ev.signal || ev.label;
+                const mDef = SIGNAL_MARKER[sig];
+                if (!mDef) continue;
+                // Skip lateral/initial — only show meaningful transitions
+                const tt = ev.transition_type || "";
+                if (tt === "LATERAL" || tt === "INITIAL") continue;
+
+                const evTime = ev.timestamp;
+                if (!evTime) continue;
+                const candleTime = snapToCandle(evTime);
+                if (!candleTime) continue;
+
+                markers.push({
+                  time: candleTime,
+                  position: mDef.position,
+                  color: mDef.color,
+                  shape: mDef.shape,
+                  text: mDef.text,
+                });
+              }
+
+              // Also add current signal + floor/climax on latest candle
+              const last = data.candles[data.candles.length - 1];
+              if (signal && SIGNAL_MARKER[signal]) {
+                const m = SIGNAL_MARKER[signal];
+                markers.push({ time: last.time, position: m.position, color: m.color, shape: m.shape, text: m.text });
+              }
+              if (floorConfirmed) {
+                markers.push({ time: last.time, position: "belowBar", color: "#34d399", shape: "circle", text: "FLOOR" });
+              }
+              if (exhaustionState === "CLIMAX") {
+                markers.push({ time: last.time, position: "aboveBar", color: "#fbbf24", shape: "circle", text: "CLIMAX" });
+              }
+
+              // Deduplicate by time+signal (keep first occurrence)
+              const seen = new Set();
+              const unique = markers.filter(m => {
+                const key = `${m.time}:${m.text}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+
+              unique.sort((a, b) => a.time - b.time);
+              if (unique.length > 0) {
+                try { createSeriesMarkers(candleSeries, unique); } catch (_) {}
+              }
+            })
+            .catch(() => {});
 
           // ── Current price line ──
           const lastCandle = data.candles[data.candles.length - 1];
@@ -307,6 +347,88 @@ export default function BMSBChart({
         if (data.bmsb_mid?.length > 0) bmsbMidSeries.setData(data.bmsb_mid);
         if (data.bmsb_ema?.length > 0) bmsbEmaSeries.setData(data.bmsb_ema);
         if (data.bmsb_sma?.length > 0) bmsbSmaSeries.setData(data.bmsb_sma);
+
+        // ── Regime background strip (colored bar at top) ──
+        fetch(`${API_BASE}/api/signals/regime-history?symbol=${encoded}&timeframe=${tf}&limit=200`)
+          .then(r => r.ok ? r.json() : [])
+          .then(regimeEvents => {
+            if (cancelled) return;
+            const evts = Array.isArray(regimeEvents) ? regimeEvents : regimeEvents.events || [];
+            if (evts.length === 0 || !data.candles?.length) return;
+
+            const REGIME_COLORS = {
+              MARKUP: "rgba(52,211,153,0.08)", BLOWOFF: "rgba(248,113,113,0.08)",
+              REACC: "rgba(34,211,238,0.08)", MARKDOWN: "rgba(251,146,60,0.08)",
+              CAP: "rgba(192,132,252,0.08)", ACCUM: "rgba(110,231,183,0.08)",
+              ABSORBING: "rgba(216,180,254,0.08)", FLAT: "rgba(82,82,91,0.04)",
+            };
+
+            // Build regime at each candle time by replaying transitions
+            const transitions = evts
+              .filter(e => e.timestamp && e.regime)
+              .sort((a, b) => a.timestamp - b.timestamp);
+
+            if (transitions.length === 0) return;
+
+            // Create a regime strip series (thin histogram at top)
+            try {
+              const regimeStrip = chart.addSeries(HistogramSeries, {
+                priceFormat: { type: "volume" },
+                priceScaleId: "regime",
+                lastValueVisible: false,
+                priceLineVisible: false,
+              });
+              chart.priceScale("regime").applyOptions({
+                scaleMargins: { top: 0, bottom: 0.97 },
+                drawTicks: false,
+                borderVisible: false,
+              });
+
+              let currentRegime = transitions[0].prev_regime || transitions[0].regime || "FLAT";
+              let tIdx = 0;
+
+              const stripData = data.candles.map(c => {
+                // Advance regime to match candle time
+                while (tIdx < transitions.length && transitions[tIdx].timestamp <= c.time) {
+                  currentRegime = transitions[tIdx].regime;
+                  tIdx++;
+                }
+                return {
+                  time: c.time,
+                  value: 1,
+                  color: REGIME_COLORS[currentRegime] || REGIME_COLORS.FLAT,
+                };
+              });
+
+              regimeStrip.setData(stripData);
+            } catch (_) {}
+          })
+          .catch(() => {});
+
+        // ── Heat strip (colored bar below volume) ──
+        if (data.heat_series?.length > 0) {
+          try {
+            const heatStrip = chart.addSeries(HistogramSeries, {
+              priceFormat: { type: "volume" },
+              priceScaleId: "heat",
+              lastValueVisible: false,
+              priceLineVisible: false,
+            });
+            chart.priceScale("heat").applyOptions({
+              scaleMargins: { top: 0.92, bottom: 0.04 },
+              drawTicks: false,
+              borderVisible: false,
+            });
+            const heatData = data.heat_series.map(h => ({
+              time: h.time,
+              value: 1,
+              color: h.value > 70 ? "rgba(248,113,113,0.25)"
+                   : h.value > 40 ? "rgba(251,191,36,0.2)"
+                   : "rgba(52,211,153,0.15)",
+            }));
+            heatStrip.setData(heatData);
+          } catch (_) {}
+        }
 
         chart.timeScale().fitContent();
         setLoading(false);
@@ -331,13 +453,13 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed]);
+  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed, activeTfIdx]);
 
   // Build chart on mount and when dependencies change
   useEffect(() => {
     const cleanup = buildChart(activeTimeframe);
     return cleanup;
-  }, [activeTimeframe, buildChart]);
+  }, [activeTfIdx, buildChart]);
 
   // Pressure levels overlay — fetch + render price lines
   useEffect(() => {
@@ -561,16 +683,37 @@ export default function BMSBChart({
             {pressureLoading ? "⏳" : "⚡"} SM
           </button>
 
+          {/* Volume Profile toggle */}
+          <button
+            onClick={() => setShowVolumeProfile(p => !p)}
+            title={showVolumeProfile ? "Hide volume profile" : "Show volume at price levels"}
+            style={{
+              padding: "3px 8px",
+              borderRadius: 4,
+              border: `1px solid ${showVolumeProfile ? "rgba(34,211,238,0.3)" : "rgba(255,255,255,0.08)"}`,
+              cursor: "pointer",
+              fontFamily: T.mono,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              transition: "all 0.15s ease",
+              background: showVolumeProfile ? "rgba(34,211,238,0.12)" : "transparent",
+              color: showVolumeProfile ? "#22d3ee" : "rgba(255,255,255,0.3)",
+            }}
+          >
+            VP
+          </button>
+
           {/* Timeframe toggle */}
           <div style={{
             display: "flex", gap: 2,
             background: "rgba(255,255,255,0.04)",
             borderRadius: 6, padding: 2,
           }}>
-            {TIMEFRAMES.map(tf => (
+            {TIMEFRAMES.map((tf, idx) => (
               <button
-                key={tf.key}
-                onClick={() => setActiveTimeframe(tf.key)}
+                key={`${tf.label}-${idx}`}
+                onClick={() => setActiveTfIdx(idx)}
                 style={{
                   padding: "3px 10px",
                   borderRadius: 4,
@@ -581,10 +724,10 @@ export default function BMSBChart({
                   fontWeight: 700,
                   letterSpacing: "0.06em",
                   transition: "all 0.15s ease",
-                  background: activeTimeframe === tf.key
+                  background: activeTfIdx === idx
                     ? "rgba(34,211,238,0.15)"
                     : "transparent",
-                  color: activeTimeframe === tf.key
+                  color: activeTfIdx === idx
                     ? "#22d3ee"
                     : "rgba(255,255,255,0.3)",
                 }}
