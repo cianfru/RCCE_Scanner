@@ -235,13 +235,14 @@ export default function App() {
       const crypto4h = r4h.results || [];
       const crypto1d = r1d.results || [];
       // Only update if we got actual data — don't wipe existing with empty results
+      const gotData = crypto4h.length > 0 || crypto1d.length > 0;
       if (crypto4h.length > 0) setData4h(crypto4h);
       if (crypto1d.length > 0) setData1d(crypto1d);
       setConsensus4h(r4h.consensus || null);
       setConsensus1d(r1d.consensus || null);
       setScanRunning(r4h.scan_running);
       setCacheAge(r4h.cache_age_seconds);
-      setLastRefresh(new Date());
+      if (gotData) setLastRefresh(new Date());
 
       // Fetch secondary data (TradFi, macro, sentiment) — merge on completion
       try {
@@ -706,11 +707,18 @@ export default function App() {
           display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
           flexShrink: 0,
         }}>
-          {!isMobile && lastRefresh && (
-            <span style={{ fontSize: 11, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
-              {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
+          {lastRefresh && (() => {
+            const ageS = (Date.now() - lastRefresh.getTime()) / 1000;
+            const staleColor = ageS > 180 ? "#f87171" : ageS > 90 ? "#fbbf24" : T.text4;
+            const label = isMobile
+              ? (ageS > 120 ? `${Math.round(ageS / 60)}m ago` : "")
+              : lastRefresh.toLocaleTimeString();
+            return label ? (
+              <span style={{ fontSize: 11, color: staleColor, letterSpacing: "0.04em", fontFamily: T.font }}>
+                {ageS > 180 && "\u26A0 "}{label}
+              </span>
+            ) : null;
+          })()}
           <button
             onClick={triggerScan}
             title="Refresh scan"
