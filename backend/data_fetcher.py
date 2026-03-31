@@ -987,46 +987,95 @@ def get_data_source_info() -> dict:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_TRADFI_SYMBOLS: List[dict] = [
-    # Commodities — Precious Metals
+    # ── Commodities — Precious Metals ──
     {"coin": "GOLD",      "symbol": "GOLD/USD",      "name": "Gold",              "category": "Commodities",  "yf": "GC=F"},
     {"coin": "SILVER",    "symbol": "SILVER/USD",     "name": "Silver",            "category": "Commodities",  "yf": "SI=F"},
     {"coin": "PLATINUM",  "symbol": "PLATINUM/USD",   "name": "Platinum",          "category": "Commodities",  "yf": "PL=F"},
     {"coin": "PALLADIUM", "symbol": "PALLADIUM/USD",  "name": "Palladium",         "category": "Commodities",  "yf": "PA=F"},
-    # Commodities — Energy
+    # ── Commodities — Energy ──
     {"coin": "CL",        "symbol": "CL/USD",         "name": "WTI Crude Oil",     "category": "Commodities",  "yf": "CL=F"},
     {"coin": "BRENTOIL",  "symbol": "BRENTOIL/USD",   "name": "Brent Crude Oil",   "category": "Commodities",  "yf": "BZ=F"},
     {"coin": "NATGAS",    "symbol": "NATGAS/USD",     "name": "Natural Gas",       "category": "Commodities",  "yf": "NG=F"},
-    # Commodities — Industrial
+    {"coin": "URANIUM",   "symbol": "URANIUM/USD",    "name": "Uranium",           "category": "Commodities",  "yf": "URA"},
+    # ── Commodities — Industrial & Agri ──
     {"coin": "COPPER",    "symbol": "COPPER/USD",     "name": "Copper",            "category": "Commodities",  "yf": "HG=F"},
-    # Indices
+    {"coin": "ALUMINIUM", "symbol": "ALUMINIUM/USD",  "name": "Aluminium",         "category": "Commodities",  "yf": "ALI=F"},
+    {"coin": "CORN",      "symbol": "CORN/USD",       "name": "Corn",              "category": "Commodities",  "yf": "ZC=F"},
+    # ── Indices ──
     {"coin": "XYZ100",    "symbol": "XYZ100/USD",     "name": "US 100 Index",      "category": "Indices",      "yf": "NQ=F"},
-    # Equities — US
+    {"coin": "SP500",     "symbol": "SP500/USD",      "name": "S&P 500",           "category": "Indices",      "yf": "ES=F"},
+    {"coin": "JP225",     "symbol": "JP225/USD",      "name": "Nikkei 225",        "category": "Indices",      "yf": "^N225"},
+    {"coin": "KR200",     "symbol": "KR200/USD",      "name": "KOSPI 200",         "category": "Indices",      "yf": "^KS200"},
+    {"coin": "DXY",       "symbol": "DXY/USD",        "name": "US Dollar Index",   "category": "Indices",      "yf": "DX-Y.NYB"},
+    {"coin": "VIX",       "symbol": "VIX/USD",        "name": "Volatility Index",  "category": "Indices",      "yf": "^VIX"},
+    # ── Equities — US Tech ──
     {"coin": "TSLA",      "symbol": "TSLA/USD",       "name": "Tesla",             "category": "Equities",     "yf": "TSLA"},
     {"coin": "NVDA",      "symbol": "NVDA/USD",       "name": "NVIDIA",            "category": "Equities",     "yf": "NVDA"},
     {"coin": "GOOGL",     "symbol": "GOOGL/USD",      "name": "Alphabet",          "category": "Equities",     "yf": "GOOGL"},
     {"coin": "AMZN",      "symbol": "AMZN/USD",       "name": "Amazon",            "category": "Equities",     "yf": "AMZN"},
     {"coin": "AMD",       "symbol": "AMD/USD",        "name": "AMD",               "category": "Equities",     "yf": "AMD"},
     {"coin": "AAPL",      "symbol": "AAPL/USD",       "name": "Apple",             "category": "Equities",     "yf": "AAPL"},
+    {"coin": "META",      "symbol": "META/USD",       "name": "Meta Platforms",    "category": "Equities",     "yf": "META"},
+    {"coin": "MSFT",      "symbol": "MSFT/USD",       "name": "Microsoft",         "category": "Equities",     "yf": "MSFT"},
+    {"coin": "NFLX",      "symbol": "NFLX/USD",       "name": "Netflix",           "category": "Equities",     "yf": "NFLX"},
+    {"coin": "INTC",      "symbol": "INTC/USD",       "name": "Intel",             "category": "Equities",     "yf": "INTC"},
+    {"coin": "ORCL",      "symbol": "ORCL/USD",       "name": "Oracle",            "category": "Equities",     "yf": "ORCL"},
+    {"coin": "TSM",       "symbol": "TSM/USD",        "name": "TSMC",              "category": "Equities",     "yf": "TSM"},
+    {"coin": "MU",        "symbol": "MU/USD",         "name": "Micron",            "category": "Equities",     "yf": "MU"},
+    # ── Equities — US Other ──
+    {"coin": "COIN",      "symbol": "COIN/USD",       "name": "Coinbase",          "category": "Equities",     "yf": "COIN"},
+    {"coin": "MSTR",      "symbol": "MSTR/USD",       "name": "MicroStrategy",     "category": "Equities",     "yf": "MSTR"},
+    {"coin": "PLTR",      "symbol": "PLTR/USD",       "name": "Palantir",          "category": "Equities",     "yf": "PLTR"},
+    {"coin": "HOOD",      "symbol": "HOOD/USD",       "name": "Robinhood",         "category": "Equities",     "yf": "HOOD"},
+    {"coin": "GME",       "symbol": "GME/USD",        "name": "GameStop",          "category": "Equities",     "yf": "GME"},
+    {"coin": "RIVN",      "symbol": "RIVN/USD",       "name": "Rivian",            "category": "Equities",     "yf": "RIVN"},
+    {"coin": "DKNG",      "symbol": "DKNG/USD",       "name": "DraftKings",        "category": "Equities",     "yf": "DKNG"},
+    {"coin": "HIMS",      "symbol": "HIMS/USD",       "name": "Hims & Hers",       "category": "Equities",     "yf": "HIMS"},
+    {"coin": "COST",      "symbol": "COST/USD",       "name": "Costco",            "category": "Equities",     "yf": "COST"},
+    {"coin": "LLY",       "symbol": "LLY/USD",        "name": "Eli Lilly",         "category": "Equities",     "yf": "LLY"},
     {"coin": "BABA",      "symbol": "BABA/USD",       "name": "Alibaba",           "category": "Equities",     "yf": "BABA"},
     {"coin": "CRWV",      "symbol": "CRWV/USD",       "name": "CoreWeave",         "category": "Equities",     "yf": "CRWV"},
-    # Korea / International
+    {"coin": "CRCL",      "symbol": "CRCL/USD",       "name": "Circle",            "category": "Equities",     "yf": "CRCL"},
+    {"coin": "SNDK",      "symbol": "SNDK/USD",       "name": "SanDisk",           "category": "Equities",     "yf": "SNDK"},
+    # ── Equities — International ──
     {"coin": "SMSN",      "symbol": "SMSN/USD",       "name": "Samsung",           "category": "Equities",     "yf": "005930.KS"},
     {"coin": "SKHX",      "symbol": "SKHX/USD",       "name": "SK Hynix",          "category": "Equities",     "yf": "000660.KS"},
     {"coin": "HYUNDAI",   "symbol": "HYUNDAI/USD",    "name": "Hyundai Motor",     "category": "Equities",     "yf": "005380.KS"},
-    # ETFs
+    {"coin": "SOFTBANK",  "symbol": "SOFTBANK/USD",   "name": "SoftBank Group",    "category": "Equities",     "yf": "9984.T"},
+    {"coin": "KIOXIA",    "symbol": "KIOXIA/USD",     "name": "Kioxia",            "category": "Equities",     "yf": "285A.T"},
+    # ── ETFs & Nuclear ──
     {"coin": "EWY",       "symbol": "EWY/USD",        "name": "iShares Korea ETF", "category": "ETFs",         "yf": "EWY"},
     {"coin": "EWJ",       "symbol": "EWJ/USD",        "name": "iShares Japan ETF", "category": "ETFs",         "yf": "EWJ"},
+    {"coin": "URNM",      "symbol": "URNM/USD",       "name": "Uranium ETF",       "category": "ETFs",         "yf": "URNM"},
+    {"coin": "USAR",      "symbol": "USAR/USD",       "name": "US Uranium",        "category": "ETFs",         "yf": "USAR"},
+    # ── FX ──
+    {"coin": "EUR",       "symbol": "EUR/USD",        "name": "Euro",              "category": "FX",           "yf": "EURUSD=X"},
+    {"coin": "JPY",       "symbol": "JPY/USD",        "name": "Japanese Yen",      "category": "FX",           "yf": "JPYUSD=X"},
+    # ── Other ──
+    {"coin": "LITE",      "symbol": "LITE/USD",       "name": "Lite",              "category": "Equities",     "yf": "LITE"},
 ]
 
 _TRADFI_JSON = Path(__file__).parent / "tradfi_symbols.json"
 
 
 def _load_tradfi_symbols() -> List[dict]:
-    """Load TradFi symbols from JSON file, falling back to defaults."""
+    """Load TradFi symbols from JSON file, falling back to defaults.
+
+    If the JSON file has fewer symbols than defaults (e.g., after an update
+    that added new instruments), merge missing defaults into the loaded list.
+    """
     if _TRADFI_JSON.exists():
         try:
             with open(_TRADFI_JSON) as f:
-                return json.load(f)
+                loaded = json.load(f)
+            # Merge any new defaults that aren't in the saved file
+            existing_coins = {s["coin"] for s in loaded}
+            new_defaults = [s for s in _DEFAULT_TRADFI_SYMBOLS if s["coin"] not in existing_coins]
+            if new_defaults:
+                loaded.extend(new_defaults)
+                logger.info("TradFi: merged %d new default symbols into saved list", len(new_defaults))
+                _save_tradfi_symbols(loaded)
+            return loaded
         except Exception:
             pass
     return list(_DEFAULT_TRADFI_SYMBOLS)
