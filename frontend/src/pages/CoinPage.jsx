@@ -491,6 +491,15 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         >
           {"\u2190"} Scanner
         </button>
+        <img
+          src={`https://assets.coincap.io/assets/icons/${coin.toLowerCase()}@2x.png`}
+          alt=""
+          style={{
+            width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
+            borderRadius: "50%", flexShrink: 0, background: T.overlay04,
+          }}
+          onError={e => { e.target.style.display = "none"; }}
+        />
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
