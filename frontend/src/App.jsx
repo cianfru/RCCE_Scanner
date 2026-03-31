@@ -254,19 +254,23 @@ export default function App() {
         if (sent) setSentiment(sent);
         if (stable) setStablecoin(stable);
         // Merge TradFi into main data arrays so they share the same UI
+        // TradFi categories: Commodities, Indices, Equities, ETFs, FX, Bonds
+        // Crypto categories: BTC, ETH, ALT, MEME (or undefined)
+        const TRADFI_CLASSES = new Set(["Commodities", "Indices", "Equities", "ETFs", "FX", "Bonds", "tradfi", "commodity", "index", "equity", "fx", "bond", "etf"]);
+        const isTradFiResult = (r) => TRADFI_CLASSES.has(r.asset_class) || r.tradfi_coin;
         if (tf4h) {
-          const tradfi4 = (tf4h.results || []).map(r => ({ ...r, asset_class: r.asset_class || "tradfi" }));
+          const tradfi4 = (tf4h.results || []).map(r => ({ ...r, _isTradFi: true }));
           setDataTradfi4h(tradfi4);
           setData4h(prev => {
-            const cryptoOnly = prev.filter(r => !r.asset_class || r.asset_class === "crypto");
+            const cryptoOnly = prev.filter(r => !r._isTradFi && !isTradFiResult(r));
             return [...cryptoOnly, ...tradfi4];
           });
         }
         if (tf1d) {
-          const tradfi1 = (tf1d.results || []).map(r => ({ ...r, asset_class: r.asset_class || "tradfi" }));
+          const tradfi1 = (tf1d.results || []).map(r => ({ ...r, _isTradFi: true }));
           setDataTradfi1d(tradfi1);
           setData1d(prev => {
-            const cryptoOnly = prev.filter(r => !r.asset_class || r.asset_class === "crypto");
+            const cryptoOnly = prev.filter(r => !r._isTradFi && !isTradFiResult(r));
             return [...cryptoOnly, ...tradfi1];
           });
         }
