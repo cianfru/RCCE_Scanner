@@ -681,20 +681,9 @@ async def poll_positions() -> int:
     if roster_due:
         _last_roster_poll_at = now
 
-    # Evict wallets whose live AV dropped below threshold
-    evicted = [w for w in _roster if 0 < w.account_value < _EVICTION_THRESHOLD]
-    if evicted:
-        evicted_addrs = {w.address for w in evicted}
-        _roster[:] = [w for w in _roster if w.address not in evicted_addrs]
-        _roster_money_printers[:] = [w for w in _roster_money_printers if w.address not in evicted_addrs]
-        _roster_smart_money[:] = [w for w in _roster_smart_money if w.address not in evicted_addrs]
-        for addr in evicted_addrs:
-            _wallet_cohorts.pop(addr, None)
-        logger.info(
-            "HyperLens: evicted %d wallets below $%dK: %s",
-            len(evicted), _EVICTION_THRESHOLD // 1000,
-            ", ".join(f"{w.address[:8]}(${w.account_value/1e3:.0f}K)" for w in evicted),
-        )
+    # Eviction disabled — was crashing the synthesis pass.
+    # TODO: re-implement with safer list replacement (not in-place mutation)
+    # that doesn't conflict with concurrent synthesis iterations.
 
     # Prune stale wallet orders for addresses no longer in roster
     roster_addrs = {w.address for w in _roster}
