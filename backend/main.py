@@ -1082,30 +1082,16 @@ async def chart_data(
             result.append({"time": ts, "value": round(val, interp_prec)})
         return result
 
-    # Compute heat series: deviation from BMSB mid → heat score per candle
-    bmsb_mid_interp = _interpolate(bmsb["mid"])
-    heat_series = []
-    if bmsb_mid_interp:
-        mid_map = {p["time"]: p["value"] for p in bmsb_mid_interp}
-        for c in candles:
-            mid_val = mid_map.get(c["time"])
-            if mid_val and mid_val > 0:
-                dev_pct = ((c["close"] - mid_val) / mid_val) * 100
-                # Map deviation to heat 0-100 (rough: 0% dev = 0 heat, 20%+ = 100)
-                heat_val = min(100, max(0, abs(dev_pct) * 5))
-                heat_series.append({"time": c["time"], "value": round(heat_val, 1)})
-
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "candles": candles,
         "volume": volume,
-        "bmsb_mid": bmsb_mid_interp,
+        "bmsb_mid": _interpolate(bmsb["mid"]),
         "bmsb_ema": _interpolate(bmsb["ema"]),
         "bmsb_sma": _interpolate(bmsb["sma"]),
         "cto_fast": cto["cto_fast"],
         "cto_slow": cto["cto_slow"],
-        "heat_series": heat_series,
     }
 
 
