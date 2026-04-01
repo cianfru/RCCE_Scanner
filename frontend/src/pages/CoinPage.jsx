@@ -450,6 +450,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     });
   }, [scanData4h, scanData1d, urlSymbol, timeframe]);
 
+  // Scroll to top on open
+  useEffect(() => { window.scrollTo(0, 0); }, [urlSymbol]);
+
   // Set document title
   useEffect(() => {
     if (data) {
