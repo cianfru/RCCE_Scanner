@@ -50,6 +50,7 @@ _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 # Tiered polling — watchlist wallets get priority, rest of roster polled less often
 _WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
 _ROSTER_POLL_INTERVAL = 15 * 60            # 15 min for the rest of the roster
+_ROSTER_COLD_POLL_INTERVAL = 60 * 60       # 60 min for wallets holding only cold coins
 _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 
 # In-memory snapshot depth per wallet.  Only recent snapshots are needed:
@@ -226,6 +227,8 @@ _ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
 # Tiered polling state
 _xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
 _last_roster_poll_at: float = 0            # Last time full roster was polled
+_last_cold_roster_poll_at: float = 0       # Last time cold-roster wallets were polled
+_wallet_last_polled: Dict[str, float] = {} # address -> timestamp of last poll
 _ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
@@ -608,18 +611,71 @@ def _get_watchlist_addresses() -> Set[str]:
     return addrs
 
 
+def _wallet_holds_only_cold_coins(address: str) -> bool:
+    """Check if a wallet's last-known positions are all in cold/deep-cold coins.
+
+    Uses the scanner's cached BMSB direction (heat_direction) to determine
+    whether each held coin is above or below BMSB.  If every position is
+    in a below-BMSB coin, the wallet is "cold" — no urgency to track.
+
+    Returns False (= not cold) if no position data is available, to ensure
+    new wallets get polled at normal frequency.
+    """
+    snapshot_dq = _snapshots.get(address)
+    if not snapshot_dq:
+        return False
+
+    latest: PositionSnapshot = snapshot_dq[-1]
+    if not latest.positions:
+        return False
+
+    # Lazy import to avoid circular dependency
+    try:
+        from scanner import cache as scan_cache
+    except ImportError:
+        return False
+
+    results_by_sym = scan_cache._results_by_sym
+    if not results_by_sym:
+        return False  # No scan data yet — assume not cold
+
+    for pos in latest.positions:
+        coin = pos.coin
+        symbol = f"{coin}/USDT"
+        sym_results = results_by_sym.get(symbol, {})
+        if not sym_results:
+            # Unknown coin — assume active to be safe
+            return False
+        # Check 1d first, then 4h
+        for tf in ("1d", "4h"):
+            r = sym_results.get(tf)
+            if r is not None:
+                if r.get("heat_direction", 0) >= 0:
+                    # At least one position is above BMSB — wallet is active
+                    return False
+                break
+        else:
+            # No BMSB data for this coin — assume active
+            return False
+
+    return True
+
+
 async def poll_positions() -> int:
     """Poll positions using tiered strategy.
 
     - **Watchlist tier** (every 5 min): followed/watched wallets get full
       polling — positions + orders + xyz DEX (3 API calls).
-    - **Roster tier** (every 15 min): everyone else gets positions only
-      (1 API call), unless they have known xyz activity (2 calls).
+    - **Roster tier** (every 15 min): wallets holding at least one above-BMSB
+      coin — positions only (1 API call).
+    - **Cold roster tier** (every 60 min): wallets holding only below-BMSB
+      coins — these traders are bagholding; no urgency.
 
-    This reduces API volume by ~75% vs polling all 500 wallets at 3 calls
-    each every 5 min.
+    In a bear market most wallets hold only below-BMSB positions, reducing
+    roster polling from ~500 wallets/15min to ~50-100 wallets/15min.
     """
     global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
+    global _last_cold_roster_poll_at
 
     # Refresh asset index map if empty (resolves @142 → PENGU etc.)
     if not _asset_index_map:
@@ -632,17 +688,22 @@ async def poll_positions() -> int:
     now = time.time()
     watchlist_addrs = _get_watchlist_addresses()
     roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
+    cold_roster_due = (now - _last_cold_roster_poll_at) >= _ROSTER_COLD_POLL_INTERVAL
 
     # Split roster into tiers
     watchlist_wallets = []
     roster_wallets = []
+    cold_roster_wallets = []
     for w in _roster:
         if w.address.lower() in watchlist_addrs:
             watchlist_wallets.append(w)
+        elif _wallet_holds_only_cold_coins(w.address):
+            if cold_roster_due:
+                cold_roster_wallets.append(w)
         elif roster_due:
             roster_wallets.append(w)
 
-    wallets_to_poll = watchlist_wallets + roster_wallets
+    wallets_to_poll = watchlist_wallets + roster_wallets + cold_roster_wallets
     if not wallets_to_poll:
         logger.debug("HyperLens: no wallets due for polling this cycle")
         return 0
@@ -680,6 +741,8 @@ async def poll_positions() -> int:
     _poll_count += 1
     if roster_due:
         _last_roster_poll_at = now
+    if cold_roster_due:
+        _last_cold_roster_poll_at = now
 
     # Eviction disabled — was crashing the synthesis pass.
     # TODO: re-implement with safer list replacement (not in-place mutation)
@@ -706,7 +769,16 @@ async def poll_positions() -> int:
     except Exception as exc:
         logger.warning("HyperLens DB: save error: %s", exc)
 
-    tier_info = f"watchlist={len(watchlist_wallets)}" + (f", roster={len(roster_wallets)}" if roster_due else "")
+    tier_info = f"watchlist={len(watchlist_wallets)}"
+    if roster_due:
+        tier_info += f", roster={len(roster_wallets)}"
+    if cold_roster_due:
+        tier_info += f", cold_roster={len(cold_roster_wallets)}"
+    elif not roster_due:
+        # Count how many wallets were classified as cold (for logging)
+        cold_count = sum(1 for w in _roster if w.address.lower() not in watchlist_addrs and _wallet_holds_only_cold_coins(w.address))
+        if cold_count > 0:
+            tier_info += f", cold_skipped={cold_count}"
     logger.info(
         "HyperLens poll #%d: %d/%d wallets (%s), %d symbols with consensus",
         _poll_count, success_count, len(wallets_to_poll), tier_info, len(_consensus),
@@ -2225,6 +2297,8 @@ def get_status() -> dict:
         "last_roster_refresh": _roster_updated_at or None,
         "poll_count": _poll_count,
         "poll_interval_sec": _POLL_INTERVAL,
+        "cold_roster_poll_interval_sec": _ROSTER_COLD_POLL_INTERVAL,
+        "cold_wallets": sum(1 for w in _roster if _wallet_holds_only_cold_coins(w.address)),
         "roster_refresh_interval_sec": _ROSTER_REFRESH_INTERVAL,
         "initialized": _initialized,
         "wallets_with_orders": sum(1 for v in _wallet_orders.values() if v),
