@@ -50,7 +50,7 @@ _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 # Tiered polling — watchlist wallets get priority, rest of roster polled less often
 _WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
 _ROSTER_POLL_INTERVAL = 15 * 60            # 15 min for the rest of the roster
-_ROSTER_COLD_POLL_INTERVAL = 60 * 60       # 60 min for wallets holding only cold coins
+_ROSTER_IDLE_POLL_INTERVAL = 30 * 60       # 30 min for wallets with zero open positions
 _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 
 # In-memory snapshot depth per wallet.  Only recent snapshots are needed:
@@ -64,6 +64,7 @@ _SNAPSHOT_MAX_AGE_S = 20 * 60              # 20 minutes (covers roster interval)
 
 # Live eviction: remove wallets whose AV drops below this during polling
 _EVICTION_THRESHOLD = 25_000               # $25K — half of MP minimum ($50K)
+_DISPLAY_MIN_AV = 50_000                   # Only display wallets above $50K in roster/consensus
 
 # Filtering thresholds
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
@@ -227,8 +228,7 @@ _ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
 # Tiered polling state
 _xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
 _last_roster_poll_at: float = 0            # Last time full roster was polled
-_last_cold_roster_poll_at: float = 0       # Last time cold-roster wallets were polled
-_wallet_last_polled: Dict[str, float] = {} # address -> timestamp of last poll
+_last_idle_roster_poll_at: float = 0       # Last time idle-roster wallets were polled
 _ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
@@ -611,54 +611,16 @@ def _get_watchlist_addresses() -> Set[str]:
     return addrs
 
 
-def _wallet_holds_only_cold_coins(address: str) -> bool:
-    """Check if a wallet's last-known positions are all in cold/deep-cold coins.
+def _wallet_has_open_positions(address: str) -> bool:
+    """Check if wallet's last-known snapshot has any open positions.
 
-    Uses the scanner's cached BMSB direction (heat_direction) to determine
-    whether each held coin is above or below BMSB.  If every position is
-    in a below-BMSB coin, the wallet is "cold" — no urgency to track.
-
-    Returns False (= not cold) if no position data is available, to ensure
-    new wallets get polled at normal frequency.
+    Returns True (assume active) if no snapshot data exists yet, so
+    newly-added wallets get polled at normal frequency until we know.
     """
-    snapshot_dq = _snapshots.get(address)
-    if not snapshot_dq:
-        return False
-
-    latest: PositionSnapshot = snapshot_dq[-1]
-    if not latest.positions:
-        return False
-
-    # Lazy import to avoid circular dependency
-    try:
-        from scanner import cache as scan_cache
-    except ImportError:
-        return False
-
-    results_by_sym = scan_cache._results_by_sym
-    if not results_by_sym:
-        return False  # No scan data yet — assume not cold
-
-    for pos in latest.positions:
-        coin = pos.coin
-        symbol = f"{coin}/USDT"
-        sym_results = results_by_sym.get(symbol, {})
-        if not sym_results:
-            # Unknown coin — assume active to be safe
-            return False
-        # Check 1d first, then 4h
-        for tf in ("1d", "4h"):
-            r = sym_results.get(tf)
-            if r is not None:
-                if r.get("heat_direction", 0) >= 0:
-                    # At least one position is above BMSB — wallet is active
-                    return False
-                break
-        else:
-            # No BMSB data for this coin — assume active
-            return False
-
-    return True
+    dq = _snapshots.get(address)
+    if not dq:
+        return True  # No data yet — assume active
+    return len(dq[-1].positions) > 0
 
 
 async def poll_positions() -> int:
@@ -666,16 +628,17 @@ async def poll_positions() -> int:
 
     - **Watchlist tier** (every 5 min): followed/watched wallets get full
       polling — positions + orders + xyz DEX (3 API calls).
-    - **Roster tier** (every 15 min): wallets holding at least one above-BMSB
-      coin — positions only (1 API call).
-    - **Cold roster tier** (every 60 min): wallets holding only below-BMSB
-      coins — these traders are bagholding; no urgency.
+    - **Active roster** (every 15 min): wallets with ≥1 open position —
+      positions only (1 API call).
+    - **Idle roster** (every 30 min): wallets with zero open positions —
+      they might open one, but no urgency.
 
-    In a bear market most wallets hold only below-BMSB positions, reducing
-    roster polling from ~500 wallets/15min to ~50-100 wallets/15min.
+    In practice most wallets have zero positions at any given time, so
+    this reduces API volume significantly.
     """
     global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
-    global _last_cold_roster_poll_at
+    global _last_idle_roster_poll_at
+    global _roster, _roster_money_printers, _roster_smart_money
 
     # Refresh asset index map if empty (resolves @142 → PENGU etc.)
     if not _asset_index_map:
@@ -688,22 +651,23 @@ async def poll_positions() -> int:
     now = time.time()
     watchlist_addrs = _get_watchlist_addresses()
     roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
-    cold_roster_due = (now - _last_cold_roster_poll_at) >= _ROSTER_COLD_POLL_INTERVAL
+    idle_roster_due = (now - _last_idle_roster_poll_at) >= _ROSTER_IDLE_POLL_INTERVAL
 
-    # Split roster into tiers
+    # Split roster into tiers based on open positions
     watchlist_wallets = []
-    roster_wallets = []
-    cold_roster_wallets = []
+    active_roster_wallets = []
+    idle_roster_wallets = []
     for w in _roster:
         if w.address.lower() in watchlist_addrs:
             watchlist_wallets.append(w)
-        elif _wallet_holds_only_cold_coins(w.address):
-            if cold_roster_due:
-                cold_roster_wallets.append(w)
-        elif roster_due:
-            roster_wallets.append(w)
+        elif _wallet_has_open_positions(w.address):
+            if roster_due:
+                active_roster_wallets.append(w)
+        else:
+            if idle_roster_due:
+                idle_roster_wallets.append(w)
 
-    wallets_to_poll = watchlist_wallets + roster_wallets + cold_roster_wallets
+    wallets_to_poll = watchlist_wallets + active_roster_wallets + idle_roster_wallets
     if not wallets_to_poll:
         logger.debug("HyperLens: no wallets due for polling this cycle")
         return 0
@@ -741,12 +705,26 @@ async def poll_positions() -> int:
     _poll_count += 1
     if roster_due:
         _last_roster_poll_at = now
-    if cold_roster_due:
-        _last_cold_roster_poll_at = now
+    if idle_roster_due:
+        _last_idle_roster_poll_at = now
 
-    # Eviction disabled — was crashing the synthesis pass.
-    # TODO: re-implement with safer list replacement (not in-place mutation)
-    # that doesn't conflict with concurrent synthesis iterations.
+    # --- Safe eviction: remove wallets whose AV dropped below threshold ---
+    # Build new lists (atomic reference swap — safe for concurrent readers).
+    evicted_addrs: Set[str] = set()
+    for w in _roster:
+        if w.account_value > 0 and w.account_value < _EVICTION_THRESHOLD:
+            evicted_addrs.add(w.address)
+
+    if evicted_addrs:
+        _roster = [w for w in _roster if w.address not in evicted_addrs]
+        _roster_money_printers = [w for w in _roster_money_printers if w.address not in evicted_addrs]
+        _roster_smart_money = [w for w in _roster_smart_money if w.address not in evicted_addrs]
+        for addr in evicted_addrs:
+            _wallet_cohorts.pop(addr, None)
+        logger.info(
+            "HyperLens: evicted %d wallets below $%dk AV",
+            len(evicted_addrs), _EVICTION_THRESHOLD // 1000,
+        )
 
     # Prune stale wallet orders for addresses no longer in roster
     roster_addrs = {w.address for w in _roster}
@@ -769,16 +747,20 @@ async def poll_positions() -> int:
     except Exception as exc:
         logger.warning("HyperLens DB: save error: %s", exc)
 
+    # Logging
     tier_info = f"watchlist={len(watchlist_wallets)}"
     if roster_due:
-        tier_info += f", roster={len(roster_wallets)}"
-    if cold_roster_due:
-        tier_info += f", cold_roster={len(cold_roster_wallets)}"
-    elif not roster_due:
-        # Count how many wallets were classified as cold (for logging)
-        cold_count = sum(1 for w in _roster if w.address.lower() not in watchlist_addrs and _wallet_holds_only_cold_coins(w.address))
-        if cold_count > 0:
-            tier_info += f", cold_skipped={cold_count}"
+        tier_info += f", active={len(active_roster_wallets)}"
+    if idle_roster_due:
+        tier_info += f", idle={len(idle_roster_wallets)}"
+    else:
+        idle_count = sum(1 for w in _roster
+                         if w.address.lower() not in watchlist_addrs
+                         and not _wallet_has_open_positions(w.address))
+        if idle_count > 0:
+            tier_info += f", idle_skipped={idle_count}"
+    if evicted_addrs:
+        tier_info += f", evicted={len(evicted_addrs)}"
     logger.info(
         "HyperLens poll #%d: %d/%d wallets (%s), %d symbols with consensus",
         _poll_count, success_count, len(wallets_to_poll), tier_info, len(_consensus),
@@ -855,6 +837,10 @@ def _recompute_consensus() -> None:
         # Position-count MM filter: wallets with >25 positions are likely
         # market makers or vaults — skip from consensus
         if len(latest.positions) > _MM_MAX_POSITIONS:
+            continue
+
+        # AV filter: skip wallets below display threshold from consensus
+        if latest.account_value > 0 and latest.account_value < _DISPLAY_MIN_AV:
             continue
 
         fresh_wallet_count += 1
@@ -1064,11 +1050,13 @@ def get_all_consensus() -> Dict[str, SymbolConsensus]:
     return dict(_consensus)
 
 
-def get_roster(cohort: Optional[str] = None) -> List[dict]:
+def get_roster(cohort: Optional[str] = None, min_av: float = _DISPLAY_MIN_AV) -> List[dict]:
     """Get current roster as serializable dicts.
 
     Args:
         cohort: Optional filter — "money_printers", "smart_money", or None for all.
+        min_av: Minimum account value to display (default $50k).
+                Pass 0 to show all wallets (debug mode).
 
     Each wallet includes cohort tags and cohort-specific rank.
     """
@@ -1079,6 +1067,11 @@ def get_roster(cohort: Optional[str] = None) -> List[dict]:
         source = _roster_smart_money
     else:
         source = _roster
+
+    # Filter by minimum account value (keep wallets not yet polled)
+    if min_av > 0:
+        source = [w for w in source
+                  if w.account_value >= min_av or w.address not in _snapshots]
 
     # Pre-build cohort rank lookups
     mp_rank = {w.address: i + 1 for i, w in enumerate(_roster_money_printers)}
@@ -2297,8 +2290,9 @@ def get_status() -> dict:
         "last_roster_refresh": _roster_updated_at or None,
         "poll_count": _poll_count,
         "poll_interval_sec": _POLL_INTERVAL,
-        "cold_roster_poll_interval_sec": _ROSTER_COLD_POLL_INTERVAL,
-        "cold_wallets": sum(1 for w in _roster if _wallet_holds_only_cold_coins(w.address)),
+        "idle_roster_poll_interval_sec": _ROSTER_IDLE_POLL_INTERVAL,
+        "active_wallets": sum(1 for w in _roster if _wallet_has_open_positions(w.address)),
+        "idle_wallets": sum(1 for w in _roster if not _wallet_has_open_positions(w.address)),
         "roster_refresh_interval_sec": _ROSTER_REFRESH_INTERVAL,
         "initialized": _initialized,
         "wallets_with_orders": sum(1 for v in _wallet_orders.values() if v),
