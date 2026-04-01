@@ -24,10 +24,11 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const priceStr = row.price
         ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
         : null;
-      // Scan tier indicator: hot (fav), active (above BMSB), cold (below BMSB)
-      const scanTier = isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? "cold" : "active"));
-      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : "#64748b";
-      const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : "Cold — scanned every 5th rotation (below BMSB)";
+      // Scan tier indicator: hot (fav), active (above BMSB), cold / deep_cold (below BMSB)
+      const devPct = row.deviation_pct ?? 0;
+      const scanTier = isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? (devPct <= -10 ? "deep_cold" : "cold") : "active"));
+      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : scanTier === "cold" ? "#64748b" : "#3b1c32";
+      const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : scanTier === "cold" ? "Cold — scanned every ~7 min (below BMSB)" : "Deep cold — scanned every ~20 min (>10% below BMSB)";
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
@@ -45,7 +46,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
               backgroundColor: tierColor,
               marginLeft: 5,
               verticalAlign: "middle",
-              opacity: scanTier === "cold" ? 0.5 : 0.9,
+              opacity: scanTier === "deep_cold" ? 0.35 : scanTier === "cold" ? 0.5 : 0.9,
             }}
           />
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
