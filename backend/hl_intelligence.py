@@ -463,13 +463,16 @@ async def _fetch_wallet_positions(
     semaphore: asyncio.Semaphore,
     wallet: TrackedWallet,
     full: bool = True,
+    fetch_orders: bool = True,
 ) -> Optional[PositionSnapshot]:
     """Fetch open positions for a single wallet.
 
     Args:
         full: If True (watchlist tier), fetch all 3 endpoints (positions +
               orders + xyz DEX).  If False (roster tier), fetch positions
-              only — saves 2 API calls per wallet.
+              only — saves API calls per wallet.
+        fetch_orders: If True, fetch open orders (for Pressure Map).
+              Watchlist always fetches; roster fetches when roster_due.
     """
     async with semaphore:
         try:
@@ -483,8 +486,8 @@ async def _fetch_wallet_positions(
         except Exception:
             return None
 
-        # Orders — only for watchlist tier (used by Pressure Map)
-        if full:
+        # Orders — fetch for all wallets (needed by Pressure Map overview)
+        if fetch_orders:
             try:
                 async with session.post(
                     _HL_INFO_URL,
@@ -681,7 +684,11 @@ async def poll_positions() -> int:
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
-            _fetch_wallet_positions(session, semaphore, w, full=(w.address in watchlist_set))
+            _fetch_wallet_positions(
+                session, semaphore, w,
+                full=(w.address in watchlist_set),
+                fetch_orders=(w.address in watchlist_set) or roster_due,
+            )
             for w in wallets_to_poll
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
