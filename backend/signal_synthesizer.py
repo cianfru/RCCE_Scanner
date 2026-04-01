@@ -222,7 +222,7 @@ def synthesize_signal(
     regime = result.get("regime", "FLAT").upper()
     raw_signal = result.get("raw_signal", "WAIT")
     z = result.get("zscore", 0.0)
-    confidence = result.get("confidence", 0.0)  # Already 0-1 scale from HMM
+    confidence = result.get("confidence", 0.0) / 100.0  # HMM outputs 0-100, normalize to 0-1 for thresholds
     vol_state = result.get("vol_state", "MID")
     vol_low = vol_state == "LOW"
     vol_high = vol_state == "HIGH"
