@@ -183,8 +183,9 @@ function MiniSparkline({ data, width = 200, height = 60, color = T.green }) {
 function LeverageGauge({ value, size = 64 }) {
   const v = value ?? 0;
   const cx = size / 2;
-  const cy = size / 2 + 4;
+  const arcTop = 4;
   const r = size / 2 - 6;
+  const cy = arcTop + r;  // Center of the arc semicircle
   const startAngle = Math.PI;
   const maxAngle = Math.PI;
   const maxLev = 50;
@@ -192,7 +193,6 @@ function LeverageGauge({ value, size = 64 }) {
   const ratio = clamped / maxLev;
   const needleAngle = startAngle + ratio * maxAngle;
 
-  // Arc segments: green 0-5x, yellow 5-15x, red 15-50x
   const arcPath = (from, to) => {
     const a1 = startAngle + (from / maxLev) * maxAngle;
     const a2 = startAngle + (to / maxLev) * maxAngle;
@@ -204,20 +204,21 @@ function LeverageGauge({ value, size = 64 }) {
     return `M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${large} 1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
   };
 
-  const nx = cx + (r - 8) * Math.cos(needleAngle);
-  const ny = cy + (r - 8) * Math.sin(needleAngle);
+  const needleLen = r - 6;
+  const nx = cx + needleLen * Math.cos(needleAngle);
+  const ny = cy + needleLen * Math.sin(needleAngle);
+  const svgH = cy + 14;
 
   return (
-    <svg width={size} height={size / 2 + 12} viewBox={`0 0 ${size} ${size / 2 + 12}`}>
+    <svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
       <path d={arcPath(0, 5)} fill="none" stroke={T.green} strokeWidth="3" strokeLinecap="round" opacity="0.6" />
       <path d={arcPath(5, 15)} fill="none" stroke={T.yellow} strokeWidth="3" strokeLinecap="round" opacity="0.6" />
       <path d={arcPath(15, 50)} fill="none" stroke={T.red} strokeWidth="3" strokeLinecap="round" opacity="0.6" />
-      {/* Needle */}
       <line x1={cx} y1={cy} x2={nx.toFixed(1)} y2={ny.toFixed(1)}
-        stroke={levColor(v)} strokeWidth="2" strokeLinecap="round" />
-      <circle cx={cx} cy={cy} r="3" fill={levColor(v)} />
-      <text x={cx} y={cy + 10} textAnchor="middle" fill={T.text1}
-        fontFamily={T.mono} fontSize="11" fontWeight="700">
+        stroke={levColor(v)} strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r="2.5" fill={levColor(v)} />
+      <text x={cx} y={cy + 12} textAnchor="middle" fill={T.text1}
+        fontFamily={T.mono} fontSize="10" fontWeight="700">
         {fmtLev(v)}
       </text>
     </svg>
