@@ -910,6 +910,9 @@ function EquityChart({ data, width = 500, height = 120 }) {
   const [cw, setCw] = useState(width);
   useEffect(() => {
     if (containerRef.current) setCw(containerRef.current.offsetWidth);
+    const ro = new ResizeObserver(([e]) => setCw(e.contentRect.width));
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
   }, []);
 
   if (!data || data.length < 2) {
@@ -924,7 +927,7 @@ function EquityChart({ data, width = 500, height = 120 }) {
   const minV = Math.min(...values);
   const maxV = Math.max(...values);
   const range = maxV - minV || 1;
-  const pad = { top: 8, right: 8, bottom: 20, left: 50 };
+  const pad = { top: 6, right: 6, bottom: 6, left: 46 };
   const chartW = cw - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   const isUp = values[values.length - 1] >= values[0];
@@ -939,7 +942,7 @@ function EquityChart({ data, width = 500, height = 120 }) {
   const areaPath = `${linePath} L${(pad.left + chartW).toFixed(1)},${(pad.top + chartH).toFixed(1)} L${pad.left},${(pad.top + chartH).toFixed(1)} Z`;
   const gradId = `eq-${Math.random().toString(36).slice(2, 8)}`;
 
-  // Y-axis labels
+  // Y-axis: 3 labels
   const yLabels = [maxV, (maxV + minV) / 2, minV];
 
   return (
@@ -947,17 +950,16 @@ function EquityChart({ data, width = 500, height = 120 }) {
       <svg width={cw} height={height} viewBox={`0 0 ${cw} ${height}`} style={{ display: "block" }}>
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={lineColor} stopOpacity="0.2" />
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.18" />
             <stop offset="100%" stopColor={lineColor} stopOpacity="0.01" />
           </linearGradient>
         </defs>
-        {/* Grid lines */}
         {yLabels.map((v, i) => {
           const y = pad.top + chartH - ((v - minV) / range) * chartH;
           return (
             <g key={i}>
               <line x1={pad.left} y1={y} x2={cw - pad.right} y2={y}
-                stroke={T.border} strokeWidth="0.5" strokeDasharray="3,3" />
+                stroke={T.border} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.5" />
               <text x={pad.left - 4} y={y + 3} textAnchor="end" fill={T.text4}
                 fontFamily={T.mono} fontSize="9">{fmt$(v)}</text>
             </g>
@@ -965,10 +967,8 @@ function EquityChart({ data, width = 500, height = 120 }) {
         })}
         <path d={areaPath} fill={`url(#${gradId})`} />
         <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
-        {/* Endpoint dot */}
         <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="3" fill={lineColor} />
-        {/* Latest value label */}
-        <text x={points[points.length - 1].x} y={points[points.length - 1].y - 8}
+        <text x={cw - pad.right} y={points[points.length - 1].y - 6}
           textAnchor="end" fill={lineColor} fontFamily={T.mono} fontSize="10" fontWeight="700">
           {fmt$(values[values.length - 1])}
         </text>
@@ -1242,171 +1242,125 @@ function WalletDetail({ address, onClose, userWallet }) {
         </div>
       </div>
 
-      {/* ── TWO-PANEL: LEFT (equity + gauges) + RIGHT (chart) ── */}
+      {/* ── EQUITY CURVE (full width, tighter) ── */}
       <div style={{
-        display: "flex", flexWrap: "wrap",
+        padding: "8px 12px 4px",
         borderBottom: `1px solid ${T.overlay08}`,
       }}>
-        {/* LEFT PANEL — Equity + Gauges */}
-        <div style={{
-          flex: "0 0 240px", padding: "14px 16px",
-          borderRight: `1px solid ${T.overlay08}`,
-          display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          {/* Total Equity + PnL */}
-          <div>
-            <div style={{ fontFamily: T.mono, fontSize: 22, fontWeight: 700, color: T.text1 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 20, fontWeight: 700, color: T.text1 }}>
               {fmt$(data.account_value || 0)}
-            </div>
-            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.05em", marginBottom: 4 }}>
-              Total Equity
-            </div>
-            {/* Unrealized PnL */}
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{
-                fontFamily: T.mono, fontSize: 15, fontWeight: 700,
-                color: sumPnl >= 0 ? T.green : T.red,
-              }}>
-                {sumPnl >= 0 ? "+" : ""}{fmt$(sumPnl)}
-              </span>
+            </span>
+            <span style={{
+              fontFamily: T.mono, fontSize: 13, fontWeight: 700,
+              color: sumPnl >= 0 ? T.green : T.red,
+            }}>
+              {sumPnl >= 0 ? "+" : ""}{fmt$(sumPnl)}
               {data.account_value > 0 && (
-                <span style={{
-                  fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  color: sumPnl >= 0 ? T.green : T.red, opacity: 0.7,
-                }}>
-                  {sumPnl >= 0 ? "+" : ""}{((sumPnl / data.account_value) * 100).toFixed(2)}%
+                <span style={{ opacity: 0.7, marginLeft: 4 }}>
+                  ({sumPnl >= 0 ? "+" : ""}{((sumPnl / data.account_value) * 100).toFixed(2)}%)
                 </span>
               )}
-            </div>
-            <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.05em" }}>
-              Unrealized PnL
-            </div>
-          </div>
-
-          {/* Bias + Leverage gauges side by side */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <BiasGauge positions={positions} />
-            <div style={{
-              padding: "10px 14px", borderRadius: 8,
-              background: T.overlay04, border: `1px solid ${T.overlay06}`,
-              display: "flex", flexDirection: "column", alignItems: "center",
-              minWidth: 80,
-            }}>
-              <LeverageGauge value={levStats.avg_leverage} size={72} />
-              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", marginTop: -2 }}>
-                Leverage
-              </span>
-            </div>
-          </div>
-
-          {/* PNL + ROI stats */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Monthly ROI</span>
-              <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.green }}>
-                +{fmtPct(data.monthly_roi || 0)}
-              </span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Monthly PnL</span>
-              <span style={{
-                fontFamily: T.mono, fontSize: 13, fontWeight: 700,
-                color: (data.monthly_pnl || 0) >= 0 ? T.green : T.red,
-              }}>
-                {(data.monthly_pnl || 0) >= 0 ? "+" : ""}{fmt$(data.monthly_pnl || 0)}
-              </span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Score</span>
-              <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
-                {(data.score || 0).toFixed(0)}
-              </span>
-            </div>
-            {s.total_trades > 0 && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Win Rate</span>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-                    color: s.win_rate > 50 ? T.green : T.red,
-                  }}>
-                    {s.win_rate}% ({s.wins}/{s.total_trades})
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Avg PnL</span>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: 13, fontWeight: 600,
-                    color: s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4,
-                  }}>
-                    {s.avg_pnl_pct > 0 ? "+" : ""}{s.avg_pnl_pct}%
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT PANEL — Full equity chart */}
-        <div style={{ flex: 1, minWidth: 280, padding: "10px 8px 6px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "0 8px 4px", flexWrap: "wrap" }}>
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>
-              EQUITY CURVE
             </span>
-            {avHistory.length >= 2 && (() => {
-              const first = avHistory[0]?.value ?? avHistory[0];
-              const last = avHistory[avHistory.length - 1]?.value ?? avHistory[avHistory.length - 1];
-              const pnl = last - first;
-              const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
-              const color = pnl >= 0 ? T.green : T.red;
-              return (
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color }}>
-                    {pctChg >= 0 ? "+" : ""}{pctChg.toFixed(2)}%
-                  </div>
-                  <div style={{ fontFamily: T.mono, fontSize: 11, color, opacity: 0.7 }}>
-                    {pnl >= 0 ? "+" : ""}{fmt$(pnl)}
-                  </div>
-                  <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
-                    since tracking
-                  </div>
-                </div>
-              );
-            })()}
           </div>
-          <EquityChart data={avHistory} height={130} />
+          {avHistory.length >= 2 && (() => {
+            const first = avHistory[0]?.value ?? avHistory[0];
+            const last = avHistory[avHistory.length - 1]?.value ?? avHistory[avHistory.length - 1];
+            const pnl = last - first;
+            const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
+            const color = pnl >= 0 ? T.green : T.red;
+            return (
+              <div style={{ textAlign: "right" }}>
+                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color }}>
+                  {pctChg >= 0 ? "+" : ""}{pctChg.toFixed(2)}%
+                </span>
+                <span style={{ fontFamily: T.mono, fontSize: 11, color, opacity: 0.7, marginLeft: 4 }}>
+                  ({pnl >= 0 ? "+" : ""}{fmt$(pnl)})
+                </span>
+                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, marginLeft: 4 }}>
+                  tracked
+                </span>
+              </div>
+            );
+          })()}
         </div>
+        <EquityChart data={avHistory} height={100} />
       </div>
 
-      {/* ── BEST/WORST TRADES ── */}
-      {(s.best_trade || s.worst_trade) && (
+      {/* ── STATS ROW (compact horizontal strip) ── */}
+      <div style={{
+        padding: "8px 12px",
+        display: "flex", gap: 4, flexWrap: "wrap", alignItems: "stretch",
+        borderBottom: `1px solid ${T.overlay08}`,
+      }}>
+        {/* Bias gauge */}
+        <BiasGauge positions={positions} />
+
+        {/* Leverage */}
         <div style={{
-          padding: "8px 16px",
-          display: "flex", gap: 8, flexWrap: "wrap",
-          borderBottom: `1px solid ${T.border}`,
+          padding: "8px 12px", borderRadius: 8,
+          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         }}>
-          {s.best_trade && (
-            <span style={{
-              fontFamily: T.mono, fontSize: 11,
-              padding: "3px 10px", borderRadius: 20,
-              color: T.green, background: `${T.green}12`, border: `1px solid ${T.green}25`,
-              fontWeight: 600, letterSpacing: "0.03em",
-            }}>
-              Best: {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
-            </span>
-          )}
-          {s.worst_trade && (
-            <span style={{
-              fontFamily: T.mono, fontSize: 11,
-              padding: "3px 10px", borderRadius: 20,
-              color: T.red, background: `${T.red}12`, border: `1px solid ${T.red}25`,
-              fontWeight: 600, letterSpacing: "0.03em",
-            }}>
-              Worst: {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
-            </span>
-          )}
+          <LeverageGauge value={levStats.avg_leverage} size={56} />
+          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em", marginTop: -2 }}>
+            Leverage
+          </span>
         </div>
-      )}
+
+        {/* Stats grid */}
+        <div style={{
+          flex: 1, minWidth: 180,
+          padding: "6px 12px", borderRadius: 8,
+          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+          display: "grid", gridTemplateColumns: "1fr 1fr",
+          gap: "2px 16px", alignContent: "center",
+        }}>
+          {[
+            ["ROI", `+${fmtPct(data.monthly_roi || 0)}`, T.green],
+            ["PnL", `${(data.monthly_pnl || 0) >= 0 ? "+" : ""}${fmt$(data.monthly_pnl || 0)}`, (data.monthly_pnl || 0) >= 0 ? T.green : T.red],
+            ["Score", (data.score || 0).toFixed(0), T.text1],
+            ...(s.total_trades > 0 ? [
+              ["Win", `${s.win_rate}% (${s.wins}/${s.total_trades})`, s.win_rate > 50 ? T.green : T.red],
+              ["Avg", `${s.avg_pnl_pct > 0 ? "+" : ""}${s.avg_pnl_pct}%`, s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4],
+            ] : []),
+          ].map(([label, val, color]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>{label}</span>
+              <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 700, color }}>{val}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Best/Worst trades */}
+        {(s.best_trade || s.worst_trade) && (
+          <div style={{
+            display: "flex", flexDirection: "column", gap: 3, justifyContent: "center",
+          }}>
+            {s.best_trade && (
+              <span style={{
+                fontFamily: T.mono, fontSize: 10,
+                padding: "2px 8px", borderRadius: 12,
+                color: T.green, background: `${T.green}12`, border: `1px solid ${T.green}25`,
+                fontWeight: 600, whiteSpace: "nowrap",
+              }}>
+                {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
+              </span>
+            )}
+            {s.worst_trade && (
+              <span style={{
+                fontFamily: T.mono, fontSize: 10,
+                padding: "2px 8px", borderRadius: 12,
+                color: T.red, background: `${T.red}12`, border: `1px solid ${T.red}25`,
+                fontWeight: 600, whiteSpace: "nowrap",
+              }}>
+                {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── SECTION TABS (like HyperTracker: Perps / Trades / Coin Stats) ── */}
       <div style={{
