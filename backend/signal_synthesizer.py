@@ -565,11 +565,8 @@ def synthesize_signal(
         warnings.append("OI declining while price rising — short squeeze, may not sustain")
     elif oi_trend == "LIQUIDATING":
         warnings.append("OI declining with price — long liquidation cascade")
-    # Sentiment warnings
-    if fear_greed >= FNG_EXTREME_GREED:
-        warnings.append(f"Extreme Greed (F&G={fear_greed}) — trim signals more urgent")
-    elif fear_greed <= 20:
-        warnings.append(f"Extreme Fear (F&G={fear_greed}) — accumulation opportunity")
+    # F&G removed from per-coin warnings — it's market-wide, not per-coin.
+    # Shown in MarketContext strip instead. Still used as condition #9 (Not Greedy).
     # Stablecoin warnings
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
