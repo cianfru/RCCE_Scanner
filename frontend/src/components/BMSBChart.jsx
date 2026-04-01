@@ -58,17 +58,6 @@ export default function BMSBChart({
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
-  const [signalHistory, setSignalHistory] = useState([]);
-
-  // Fetch historical signal events for this symbol (separate from chart build)
-  useEffect(() => {
-    if (!symbol) return;
-    const encoded = encodeURIComponent(symbol);
-    fetch(`${API_BASE}/api/signals/history?symbol=${encoded}&timeframe=${activeTimeframe}&limit=200`)
-      .then(r => r.ok ? r.json() : { events: [] })
-      .then(d => setSignalHistory(d.events || d.changes || []))
-      .catch(() => setSignalHistory([]));
-  }, [symbol, activeTimeframe]);
 
   const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
@@ -262,58 +251,17 @@ export default function BMSBChart({
             volumeSeries.setData(data.volume);
           }
 
-          // ── Signal markers — historical + current ──
-          const markers = [];
-          const candleTimeSet = new Set(data.candles.map(c => c.time));
-
-          // Helper: snap a unix timestamp (seconds) to the nearest candle time
-          const snapToCandle = (ts) => {
-            let best = data.candles[0]?.time || 0;
-            for (const c of data.candles) {
-              if (c.time <= ts) best = c.time;
-              else break;
-            }
-            return candleTimeSet.has(best) ? best : 0;
-          };
-
-          // Historical markers from signalHistory state
-          const seenKeys = new Set();
-          for (const ev of signalHistory) {
-            const sig = ev.signal;
-            const mDef = SIGNAL_MARKER[sig];
-            if (!mDef) continue;
-            const tt = ev.transition_type || "";
-            if (tt === "LATERAL" || tt === "INITIAL") continue;
-            const evTime = ev.timestamp;
-            if (!evTime) continue;
-            const candleTime = snapToCandle(evTime);
-            if (!candleTime) continue;
-            const key = `${candleTime}:${sig}`;
-            if (seenKeys.has(key)) continue;
-            seenKeys.add(key);
-            markers.push({
-              time: candleTime,
-              position: mDef.position,
-              color: mDef.color,
-              shape: mDef.shape,
-              text: mDef.text,
-            });
-          }
-
-          // Current signal on latest candle
-          const last = data.candles[data.candles.length - 1];
+          // ── Signal markers on latest candle ──
           const markerDef = signal && SIGNAL_MARKER[signal];
           if (markerDef) {
-            const key = `${last.time}:${signal}`;
-            if (!seenKeys.has(key)) {
-              markers.push({
-                time: last.time,
-                position: markerDef.position,
-                color: markerDef.color,
-                shape: markerDef.shape,
-                text: markerDef.text,
-              });
-            }
+            const last = data.candles[data.candles.length - 1];
+            const markers = [{
+              time: last.time,
+              position: markerDef.position,
+              color: markerDef.color,
+              shape: markerDef.shape,
+              text: markerDef.text,
+            }];
 
             if (floorConfirmed) {
               markers.push({
@@ -383,7 +331,7 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed, signalHistory]);
+  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed]);
 
   // Build chart on mount and when dependencies change
   useEffect(() => {
