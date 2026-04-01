@@ -41,12 +41,13 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             title={tierLabel}
             style={{
               display: "inline-block",
-              width: 6, height: 6,
+              width: 7, height: 7,
               borderRadius: "50%",
               backgroundColor: tierColor,
               marginLeft: 5,
               verticalAlign: "middle",
-              opacity: scanTier === "deep_cold" ? 0.35 : scanTier === "cold" ? 0.5 : 0.9,
+              opacity: scanTier === "deep_cold" ? 0.4 : scanTier === "cold" ? 0.55 : 1,
+              boxShadow: `0 0 0 1px ${scanTier === "hot" ? "#facc1540" : scanTier === "active" ? "#22d3ee30" : "transparent"}`,
             }}
           />
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
