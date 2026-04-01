@@ -3326,11 +3326,18 @@ async def hyperlens_status():
 
 
 @app.get("/api/hyperlens/roster")
-async def hyperlens_roster(cohort: Optional[str] = Query(None)):
+async def hyperlens_roster(
+    cohort: Optional[str] = Query(None),
+    min_av: Optional[float] = Query(None, description="Min account value filter (default $50k, pass 0 for all)"),
+):
     """Current tracked wallet roster with stats.
-    Optional ?cohort=money_printers|smart_money|elite to filter by cohort."""
+    Optional ?cohort=money_printers|smart_money|elite to filter by cohort.
+    Optional ?min_av=0 to show all wallets (default filters to ≥$50k)."""
     from hl_intelligence import get_roster
-    roster = get_roster(cohort=cohort)
+    kwargs: dict = {"cohort": cohort}
+    if min_av is not None:
+        kwargs["min_av"] = min_av
+    roster = get_roster(**kwargs)
     return {"count": len(roster), "wallets": roster}
 
 
