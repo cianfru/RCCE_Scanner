@@ -30,8 +30,10 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "4h", label: "4H", limit: 120 },  // ~20 days — starts zoomed into actionable range
-  { key: "1d", label: "1D", limit: 180 },  // ~6 months
+  { key: "4h", label: "4H",  limit: 120, apiTf: "4h", barSpace: 10 },  // ~20 days
+  { key: "3m", label: "3M",  limit: 500, apiTf: "4h", barSpace: 5 },   // ~83 days on 4h
+  { key: "1d", label: "1D",  limit: 180, apiTf: "1d", barSpace: 8 },   // ~6 months
+  { key: "1y", label: "1Y",  limit: 365, apiTf: "1d", barSpace: 4 },   // ~1 year
 ];
 
 export default function BMSBChart({
@@ -104,7 +106,7 @@ export default function BMSBChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
-        barSpacing: tf === "4h" ? 10 : 8,
+        barSpacing: (TIMEFRAMES.find(t => t.key === tf) || {}).barSpace || 8,
         minBarSpacing: 3,
       },
       rightPriceScale: {
@@ -215,12 +217,13 @@ export default function BMSBChart({
     });
 
     // ── Fetch data ──
-    const tfConfig = TIMEFRAMES.find(t => t.key === tf) || TIMEFRAMES[1];
+    const tfConfig = TIMEFRAMES.find(t => t.key === tf) || TIMEFRAMES[2];
+    const apiTf = tfConfig.apiTf || tf;
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setError(null);
 
-    fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${tf}&limit=${tfConfig.limit}`)
+    fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${apiTf}&limit=${tfConfig.limit}`)
       .then(r => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
