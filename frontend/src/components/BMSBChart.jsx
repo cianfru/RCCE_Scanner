@@ -369,45 +369,93 @@ export default function BMSBChart({
         const levels = [];
         const fmtSize = (v) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}K` : `${v.toFixed(0)}`;
 
-        // Stops — red solid
-        (data.smart_money_orders?.stops || []).forEach(o => {
+        // Cluster nearby prices within X% of each other into one level
+        const clusterLevels = (items, pctThreshold = 0.5) => {
+          if (!items || items.length === 0) return [];
+          const sorted = [...items].sort((a, b) => a.price - b.price);
+          const clusters = [];
+          let cluster = { prices: [sorted[0].price], totalSize: sorted[0].total_size_usd || sorted[0].size_usd || 0, count: 1, items: [sorted[0]] };
+
+          for (let i = 1; i < sorted.length; i++) {
+            const item = sorted[i];
+            const avgPrice = cluster.prices.reduce((s, p) => s + p, 0) / cluster.prices.length;
+            const pctDiff = Math.abs(item.price - avgPrice) / avgPrice * 100;
+
+            if (pctDiff <= pctThreshold) {
+              // Merge into current cluster
+              cluster.prices.push(item.price);
+              cluster.totalSize += item.total_size_usd || item.size_usd || 0;
+              cluster.count++;
+              cluster.items.push(item);
+            } else {
+              // Close current cluster, start new one
+              clusters.push(cluster);
+              cluster = { prices: [item.price], totalSize: item.total_size_usd || item.size_usd || 0, count: 1, items: [item] };
+            }
+          }
+          clusters.push(cluster);
+
+          return clusters.map(c => ({
+            price: c.prices.reduce((s, p) => s + p, 0) / c.prices.length,  // weighted avg
+            totalSize: c.totalSize,
+            count: c.count,
+            items: c.items,
+          }));
+        };
+
+        // Cluster limits by BUY/SELL
+        const allLimits = data.smart_money_orders?.limits || [];
+        const buyLimits = allLimits.filter(o => (o.side || "").toUpperCase() === "BUY");
+        const sellLimits = allLimits.filter(o => (o.side || "").toUpperCase() !== "BUY");
+
+        clusterLevels(buyLimits, 0.8).forEach(c => {
           levels.push({
-            price: o.price, color: "#f87171", style: LineStyle.Solid, width: 2,
-            title: `STOP $${fmtSize(o.total_size_usd)}`,
+            price: c.price, color: "#60a5fa", style: LineStyle.Dashed,
+            width: c.totalSize > 100000 ? 2 : 1,
+            title: `BUY ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
           });
         });
-        // Take Profits — green solid
-        (data.smart_money_orders?.take_profits || []).forEach(o => {
+        clusterLevels(sellLimits, 0.8).forEach(c => {
           levels.push({
-            price: o.price, color: "#34d399", style: LineStyle.Solid, width: 2,
-            title: `TP $${fmtSize(o.total_size_usd)}`,
+            price: c.price, color: "#c084fc", style: LineStyle.Dashed,
+            width: c.totalSize > 100000 ? 2 : 1,
+            title: `SELL ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
           });
         });
-        // Limits — blue dashed, differentiate BUY/SELL
-        (data.smart_money_orders?.limits || []).forEach(o => {
-          const isBuy = (o.side || "").toUpperCase() === "BUY";
+
+        // Stops — cluster nearby
+        clusterLevels(data.smart_money_orders?.stops || [], 0.5).forEach(c => {
           levels.push({
-            price: o.price,
-            color: isBuy ? "#60a5fa" : "#c084fc",
-            style: LineStyle.Dashed,
-            width: 1,
-            title: `${isBuy ? "BUY" : "SELL"} LMT $${fmtSize(o.total_size_usd)}`,
+            price: c.price, color: "#f87171", style: LineStyle.Solid, width: 2,
+            title: `STOP ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
           });
         });
-        // Book walls — dotted, subtle
-        (data.order_book_walls?.bid_walls || []).forEach(w => {
+
+        // Take Profits — cluster nearby
+        clusterLevels(data.smart_money_orders?.take_profits || [], 0.5).forEach(c => {
           levels.push({
-            price: w.price, color: "#34d39950", style: LineStyle.Dotted, width: 1,
-            title: `BID WALL $${fmtSize(w.size_usd)}`,
+            price: c.price, color: "#34d399", style: LineStyle.Solid, width: 2,
+            title: `TP ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
           });
         });
-        (data.order_book_walls?.ask_walls || []).forEach(w => {
+
+        // Book walls — cluster bid and ask separately
+        clusterLevels(data.order_book_walls?.bid_walls || [], 0.3).forEach(c => {
           levels.push({
-            price: w.price, color: "#f8717150", style: LineStyle.Dotted, width: 1,
-            title: `ASK WALL $${fmtSize(w.size_usd)}`,
+            price: c.price, color: "#34d39950", style: LineStyle.Dotted,
+            width: c.totalSize > 10e6 ? 2 : 1,
+            title: `BID ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
           });
         });
-        // Liquidation clusters — yellow dashed
+        clusterLevels(data.order_book_walls?.ask_walls || [], 0.3).forEach(c => {
+          levels.push({
+            price: c.price, color: "#f8717150", style: LineStyle.Dotted,
+            width: c.totalSize > 10e6 ? 2 : 1,
+            title: `ASK ${c.count > 1 ? `${c.count}x ` : ""}$${fmtSize(c.totalSize)}`,
+          });
+        });
+
+        // Liquidation clusters — already pre-clustered by backend
         (data.liquidation_clusters || []).forEach(c => {
           levels.push({
             price: c.avg_price, color: "#fbbf24", style: LineStyle.Dashed, width: 1,
