@@ -24,6 +24,10 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const priceStr = row.price
         ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
         : null;
+      // Scan tier indicator: hot (fav), active (above BMSB), cold (below BMSB)
+      const scanTier = isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? "cold" : "active"));
+      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : "#64748b";
+      const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : "Cold — scanned every 5th rotation (below BMSB)";
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
@@ -32,6 +36,18 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             title={isFav ? "Remove from favorites" : "Add to favorites"}
           >{isFav ? "\u2605" : "\u2606"}</span>
           <span style={{ verticalAlign: "middle" }}>{getBaseSymbol(row.symbol)}</span>
+          <span
+            title={tierLabel}
+            style={{
+              display: "inline-block",
+              width: 6, height: 6,
+              borderRadius: "50%",
+              backgroundColor: tierColor,
+              marginLeft: 5,
+              verticalAlign: "middle",
+              opacity: scanTier === "cold" ? 0.5 : 0.9,
+            }}
+          />
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
