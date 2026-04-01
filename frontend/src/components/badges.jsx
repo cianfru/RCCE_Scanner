@@ -87,13 +87,7 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       }}>{sm.dot}</span>
       {sm.label}
       {warnings && warnings.length > 0 && (
-        <span style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 22, height: 22, borderRadius: 5, marginLeft: 4,
-          background: "#fbbf24", color: "#000",
-          fontSize: 14, fontWeight: 900, lineHeight: 1,
-          verticalAlign: "middle",
-        }}>{"\u26a0"}</span>
+        <span style={{ fontSize: 22, color: "#fbbf24", marginLeft: 4, verticalAlign: "middle", lineHeight: 1 }}>{"\u26a0"}</span>
       )}
       {showTip && hasInfo && createPortal(
         <div
