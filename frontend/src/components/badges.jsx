@@ -87,7 +87,12 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       }}>{sm.dot}</span>
       {sm.label}
       {warnings && warnings.length > 0 && (
-        <span style={{ fontSize: 22, color: "#fbbf24", marginLeft: 4, verticalAlign: "middle", lineHeight: 1 }}>{"\u26a0"}</span>
+        <svg width="22" height="22" viewBox="0 0 24 24" style={{ marginLeft: 4, verticalAlign: "middle", flexShrink: 0 }}>
+          <path d="M12 2L1 21h22L12 2z" fill="#fbbf24" stroke="#1a1a1e" strokeWidth="1.5" strokeLinejoin="round"/>
+          <path d="M12 2.8L2 20.5h20L12 2.8z" fill="#fbbf24"/>
+          <rect x="11" y="9" width="2.2" height="6.5" rx="1" fill="#1a1a1e"/>
+          <circle cx="12.1" cy="17.5" r="1.2" fill="#1a1a1e"/>
+        </svg>
       )}
       {showTip && hasInfo && createPortal(
         <div
