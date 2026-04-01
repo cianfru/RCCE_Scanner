@@ -229,7 +229,7 @@ _ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
 _xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
 _last_roster_poll_at: float = 0            # Last time full roster was polled
 _last_idle_roster_poll_at: float = 0       # Last time idle-roster wallets were polled
-_ORDER_BOOK_TOP_N = 15                        # top N symbols by wallet count
+_ORDER_BOOK_TOP_N = 50                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
 
