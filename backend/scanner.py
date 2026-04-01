@@ -1273,6 +1273,9 @@ async def _drip_one_symbol(
     return processed
 
 
+_DEEP_COLD_DEVIATION_PCT = -10.0   # >10% below BMSB → deep cold
+
+
 def _classify_drip_tier(
     symbol: str,
     scan_cache: "ScanCache",
@@ -1281,9 +1284,11 @@ def _classify_drip_tier(
 
     Tiers
     -----
-    - **hot**:    Favorited (starred) symbols — always scanned at full speed.
-    - **active**: Above BMSB (heat_direction == +1) — tradeable, signals matter.
-    - **cold**:   Below BMSB and not favorited — untradeable, scanned less often.
+    - **hot**:       Favorited (starred) — always scanned at full speed.
+    - **active**:    Above BMSB (heat_direction == +1) — tradeable, full speed.
+    - **cold**:      Below BMSB, within 10% — scanned every 20th rotation (~7 min).
+    - **deep_cold**: Below BMSB by >10% — scanned every 60th rotation (~20 min).
+                     These coins are deeply underwater and BMSB crossover is distant.
 
     On the first rotation (no cached results yet), all symbols default to
     "active" so they get an initial scan.
@@ -1306,6 +1311,9 @@ def _classify_drip_tier(
             if direction > 0:
                 return "active"
             if direction < 0:
+                deviation = r.get("deviation_pct", 0.0)
+                if deviation <= _DEEP_COLD_DEVIATION_PCT:
+                    return "deep_cold"
                 return "cold"
 
     # No valid BMSB data — treat as active
@@ -1315,16 +1323,17 @@ def _classify_drip_tier(
 async def run_drip_scan(
     scan_cache: Optional[ScanCache] = None,
 ) -> None:
-    """Continuous drip scan with three-tier adaptive frequency.
+    """Continuous drip scan with four-tier adaptive frequency.
 
     Tier behavior:
-    - **hot** (favorites): scanned every rotation at ~1.0s intervals
-    - **active** (above BMSB): scanned every rotation at ~1.0s intervals
-    - **cold** (below BMSB, not favorited): scanned every Nth rotation
+    - **hot** (favorites):      scanned every rotation (~1.0s per symbol)
+    - **active** (above BMSB):  scanned every rotation (~1.0s per symbol)
+    - **cold** (<10% below):    scanned every 20th rotation (~7 min)
+    - **deep_cold** (>10% below): scanned every 60th rotation (~20 min)
 
-    In a bear market with 90% of coins below BMSB, this cuts API calls
-    dramatically — only favorites + above-BMSB coins are scanned actively.
-    Cold coins still get periodic scans to catch BMSB crossovers.
+    In a bear market with 90% of coins below BMSB, this cuts per-rotation
+    API calls dramatically. Deep-cold coins (>10% below BMSB) are far from
+    a crossover and barely need checking.
 
     Runs as a long-lived background task. Never returns.
     Stores raw engine results into scan_cache._results_by_sym.
@@ -1335,8 +1344,9 @@ async def run_drip_scan(
     if scan_cache is None:
         scan_cache = cache
 
-    DRIP_INTERVAL = 1.0      # seconds between symbols (hot + active)
-    COLD_EVERY_N = 5          # scan cold symbols every Nth rotation
+    DRIP_INTERVAL = 1.0           # seconds between symbols (hot + active)
+    COLD_EVERY_N = 20             # cold symbols every 20th rotation (~7 min)
+    DEEP_COLD_EVERY_N = 60        # deep cold every 60th rotation (~20 min)
 
     # Wait briefly for initial data to be available
     await asyncio.sleep(5)
@@ -1357,6 +1367,7 @@ async def run_drip_scan(
         hot_syms: List[str] = []
         active_syms: List[str] = []
         cold_syms: List[str] = []
+        deep_cold_syms: List[str] = []
 
         for s in symbols:
             tier = _classify_drip_tier(s, scan_cache)
@@ -1364,13 +1375,16 @@ async def run_drip_scan(
                 hot_syms.append(s)
             elif tier == "active":
                 active_syms.append(s)
+            elif tier == "deep_cold":
+                deep_cold_syms.append(s)
             else:
                 cold_syms.append(s)
 
-        # Decide whether cold symbols are included this rotation
+        # Decide whether cold / deep-cold symbols are included this rotation
         include_cold = (_drip_rotation_count % COLD_EVERY_N == 0)
+        include_deep_cold = (_drip_rotation_count % DEEP_COLD_EVERY_N == 0)
 
-        # Build ordered list: BTC/ETH first, then hot, active, then cold if due
+        # Build ordered list: BTC/ETH first, then hot, active, then cold tiers if due
         priority = ["BTC/USDT", "ETH/USDT"]
         ordered: List[str] = []
 
@@ -1392,7 +1406,7 @@ async def run_drip_scan(
                 ordered.append(s)
                 seen.add(s)
 
-        # Cold symbols (only every Nth rotation)
+        # Cold symbols (every 20th rotation)
         cold_this_rotation = 0
         if include_cold:
             for s in cold_syms:
@@ -1400,6 +1414,15 @@ async def run_drip_scan(
                     ordered.append(s)
                     seen.add(s)
                     cold_this_rotation += 1
+
+        # Deep cold symbols (every 60th rotation)
+        deep_cold_this_rotation = 0
+        if include_deep_cold:
+            for s in deep_cold_syms:
+                if s not in seen:
+                    ordered.append(s)
+                    seen.add(s)
+                    deep_cold_this_rotation += 1
 
         rotation_start = time.time()
         total_processed = 0
@@ -1420,15 +1443,18 @@ async def run_drip_scan(
 
         _drip_rotation_count += 1
         elapsed_total = time.time() - rotation_start
+
+        cold_status = f"{cold_this_rotation} cold" if include_cold else "cold [skip]"
+        deep_status = f"{deep_cold_this_rotation} deep" if include_deep_cold else "deep [skip]"
         logger.info(
-            "=== Drip rotation #%d: %d symbols (%d hot, %d active, %d cold%s), "
+            "=== Drip rotation #%d: %d symbols (%d hot, %d active, %s, %s), "
             "%d TF results in %.1fs ===",
             _drip_rotation_count,
             len(ordered),
             len(hot_syms),
             len(active_syms),
-            cold_this_rotation,
-            "" if include_cold else " [skipped]",
+            cold_status,
+            deep_status,
             total_processed,
             elapsed_total,
         )
@@ -2376,14 +2402,15 @@ def get_all_results() -> dict:
 def get_scan_status() -> dict:
     """Return lightweight scan metadata."""
     # Compute tier breakdown
-    favs = fav_store.get()
-    hot = active = cold = 0
+    hot = active = cold = deep_cold = 0
     for s in cache.symbols:
         tier = _classify_drip_tier(s, cache)
         if tier == "hot":
             hot += 1
         elif tier == "active":
             active += 1
+        elif tier == "deep_cold":
+            deep_cold += 1
         else:
             cold += 1
     return {
@@ -2394,5 +2421,5 @@ def get_scan_status() -> dict:
         "mode": "drip",
         "drip_rotation": _drip_rotation_count,
         "symbols_scanned": len(cache._results_by_sym),
-        "drip_tiers": {"hot": hot, "active": active, "cold": cold},
+        "drip_tiers": {"hot": hot, "active": active, "cold": cold, "deep_cold": deep_cold},
     }
