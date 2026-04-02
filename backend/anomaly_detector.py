@@ -73,7 +73,7 @@ ABS_REL_VOL_CRITICAL = 12.0       # 12x normal → critical
 # and are excluded from both z-score distribution and anomaly detection.
 # ---------------------------------------------------------------------------
 
-MAX_SANE_OI_CHANGE = 50.0         # >50% OI change in 4h = cold-start garbage
+MAX_SANE_OI_CHANGE = 50.0         # >50% OI change in ~2h window = cold-start garbage
 MAX_SANE_REL_VOL = 100.0          # >100x volume = bad data
 MAX_SANE_FUNDING = 0.01           # >8760% annualized = bad data (hourly rate)
 

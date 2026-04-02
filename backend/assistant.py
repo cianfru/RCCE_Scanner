@@ -351,7 +351,7 @@ Use this to give **personalized, actionable context**:
 
 The scanner runs a statistical anomaly detector that flags unusual activity:
 - **EXTREME_FUNDING**: funding rate far outside normal range (e.g. -400% annualized)
-- **OI_SURGE**: open interest spiking or crashing abnormally in a 4h window
+- **OI_SURGE**: open interest spiking or crashing abnormally (rolling ~2h window, updates every 5 min)
 - **VOLUME_SPIKE**: trading volume multiples above normal
 - **LSR_EXTREME**: long/short ratio extremely one-sided (crowd positioning)
 - **CVD_EXTREME**: taker buy/sell ratio far from balanced
