@@ -11,14 +11,15 @@ Contract
     output = process(scan_result_dict, positions, cache)
     # scan_result_dict is modified in-place AND AgentOutput returned
 
-The layer applies 6 independent filters in priority order:
+The layer applies 7 independent filters in priority order:
 
     1. Cooldown / trailing     — prevents rapid flip/flop on the same signal
     2. BEAR-DIV flapping       — requires 2 consecutive BEAR-DIV bars before blocking
     3. Heat / Z divergence     — warns + downgrades when heat and z move opposite
     4. Cross-TF tiebreaker     — resolves CONFLICTING confluence toward 1D
     5. Margin safety           — blocks new entries when margin utilisation is high
-    6. Signal inertia          — holds entry signals through brief downgrades (2-bar confirm)
+    6. Anomaly context         — squeeze setups, crowded funding blocks, anomaly warnings
+    7. Signal inertia          — holds entry signals through brief downgrades (2-bar confirm)
 
 Filters are *additive* — each may inject warnings or override the signal but
 hard exit signals (TRIM, TRIM_HARD, NO_LONG, RISK_OFF) are always preserved.
@@ -573,6 +574,88 @@ def _update_history(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def _filter_anomaly_context(
+    signal: str,
+    symbol: str,
+    cache: Any,
+    out: AgentOutput,
+) -> str:
+    """F7: Anomaly context — adjust signals based on active anomalies.
+
+    Uses cache.anomalies (populated by anomaly_detector.py) to inform
+    signal decisions:
+
+    1. EXTREME_FUNDING SHORT + entry → downgrade (chaos, don't chase)
+    2. EXTREME_FUNDING SHORT + WAIT → upgrade to ACCUMULATE (squeeze setup)
+    3. Critical anomalies → always warn
+    4. OI/Volume/LSR anomalies → informational warnings
+    """
+    anomalies = getattr(cache, "anomalies", [])
+    if not anomalies:
+        return signal
+
+    sym_anomalies = [a for a in anomalies if a.get("symbol") == symbol]
+    if not sym_anomalies:
+        return signal
+
+    for a in sym_anomalies:
+        atype = a.get("anomaly_type", "")
+        severity = a.get("severity", "")
+        direction = a.get("direction", "")
+        context = a.get("context", "")
+
+        # --- Extreme funding: squeeze/chaos logic ---
+        if atype == "EXTREME_FUNDING":
+            if direction == "SHORT":
+                # Shorts paying extreme funding → squeeze potential
+                if signal == "WAIT":
+                    # Upgrade: extreme short crowding = squeeze opportunity
+                    signal = "ACCUMULATE"
+                    out.alerts.append(f"Anomaly squeeze setup: {context}")
+                    out.filters_fired.append("anomaly:funding_squeeze_upgrade")
+                elif signal in _ENTRY_SIGNALS:
+                    # Warn but don't downgrade — the squeeze is the opportunity
+                    out.alerts.append(f"Extreme short funding: {context}")
+                    out.filters_fired.append("anomaly:funding_squeeze_warn")
+            elif direction == "LONG":
+                # Longs paying extreme funding → overheated
+                if signal in _ENTRY_SIGNALS:
+                    # Downgrade: don't enter into crowded long w/ extreme funding
+                    prev = signal
+                    signal = "WAIT"
+                    out.alerts.append(f"Anomaly blocked entry: crowded long funding {context}")
+                    out.filters_fired.append("anomaly:funding_crowded_block")
+
+        # --- OI surge: leverage building ---
+        elif atype == "OI_SURGE":
+            if severity == "critical":
+                out.alerts.append(f"OI surge: {context}")
+                out.filters_fired.append("anomaly:oi_surge_warn")
+
+        # --- Volume spike ---
+        elif atype == "VOLUME_SPIKE":
+            if severity == "critical":
+                out.alerts.append(f"Volume spike: {context}")
+                out.filters_fired.append("anomaly:volume_spike_warn")
+
+        # --- LSR extreme: crowded positioning ---
+        elif atype == "LSR_EXTREME":
+            if direction == "LONG" and signal in _ENTRY_SIGNALS:
+                out.alerts.append(f"Crowd long warning: {context}")
+                out.filters_fired.append("anomaly:lsr_crowd_long_warn")
+            elif direction == "SHORT" and signal == "WAIT":
+                out.alerts.append(f"Crowd short — squeeze potential: {context}")
+                out.filters_fired.append("anomaly:lsr_squeeze_hint")
+
+        # --- CVD extreme ---
+        elif atype == "CVD_EXTREME":
+            if severity == "critical":
+                out.alerts.append(f"CVD extreme: {context}")
+                out.filters_fired.append("anomaly:cvd_extreme_warn")
+
+    return signal
+
+
 def process(
     scan_result: Dict[str, Any],
     positions: List[Any],
@@ -647,7 +730,10 @@ def process(
     # F5: Margin safety (no new entries when overextended)
     signal = _filter_margin_safety(signal, positions, out)
 
-    # F6: Signal inertia (LAST — holds entries through brief downgrades)
+    # F6: Anomaly context (squeeze setups, crowded funding blocks, warnings)
+    signal = _filter_anomaly_context(signal, symbol, cache, out)
+
+    # F7: Signal inertia (LAST — holds entries through brief downgrades)
     signal = _filter_signal_inertia(signal, symbol, cache, out)
 
     # ---------- finalise ----------
