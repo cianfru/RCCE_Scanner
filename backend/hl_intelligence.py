@@ -843,10 +843,6 @@ def _recompute_consensus() -> None:
         if len(latest.positions) > _MM_MAX_POSITIONS:
             continue
 
-        # AV filter: skip wallets below display threshold from consensus
-        if latest.account_value > 0 and latest.account_value < _DISPLAY_MIN_AV:
-            continue
-
         fresh_wallet_count += 1
         addr = wallet.address
         is_mp = addr in mp_addresses
