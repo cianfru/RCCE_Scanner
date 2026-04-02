@@ -28,67 +28,66 @@ logger = logging.getLogger(__name__)
 # Thresholds — statistical (relative to market)
 # ---------------------------------------------------------------------------
 
-# Cross-sectional z-score thresholds
-Z_HIGH = 4.0
-Z_CRITICAL = 6.0
+# Cross-sectional z-score thresholds (primary trigger)
+Z_HIGH = 5.0
+Z_CRITICAL = 8.0
 
-# Time-series (own-history) sigma thresholds
-SIGMA_HIGH = 4.0
-SIGMA_CRITICAL = 6.0
+# Time-series sigma can only AMPLIFY, never trigger alone.
+# Requires z >= Z_SIGMA_FLOOR before sigma is considered.
+SIGMA_HIGH = 5.0
+SIGMA_CRITICAL = 8.0
+Z_SIGMA_FLOOR = 3.0               # z must be at least this for sigma to help
 
 # Minimum history ticks before time-series check kicks in
-MIN_HISTORY_TICKS = 10
+MIN_HISTORY_TICKS = 12
 
-# Minimum std in history for sigma to be meaningful — prevents flat-history
-# inflation where any small change looks like 40 sigma
-MIN_HISTORY_STD_FUNDING = 1e-6     # ~0.88% annualized — any real funding has more variance
-MIN_HISTORY_STD_DEFAULT = 0.1      # for OI change %, LSR, BSR
+# Minimum std in history for sigma to be meaningful
+MIN_HISTORY_STD_FUNDING = 1e-6
+MIN_HISTORY_STD_DEFAULT = 0.1
 
-# Dedup cooldown (seconds) -- same anomaly won't re-fire within this window
+# Dedup cooldown (seconds)
 DEDUP_COOLDOWN = 30 * 60  # 30 min
 
 # How long to keep anomalies visible after last detection
-ANOMALY_TTL = 45 * 60  # 45 min
+ANOMALY_TTL = 15 * 60  # 15 min (shorter = stale anomalies clear faster)
 
 # ---------------------------------------------------------------------------
 # Thresholds — absolute floors (fire regardless of z-score)
-# These catch anomalies even when the whole market is volatile and z-scores
-# are compressed.  Values chosen so normal conditions never trigger.
+# Only for truly extreme situations. Z-score handles everything else.
 # ---------------------------------------------------------------------------
 
-# Funding: annualized % — ±20% is normal in calm markets, ±30-50% in bull trends
-# Z-score handles moderate cases; absolute floors catch extremes in volatile markets
-ABS_FUNDING_HIGH = 150.0          # ±150% annualized → high
-ABS_FUNDING_CRITICAL = 400.0      # ±400% annualized → critical
+# Funding: only flag genuine extremes like STABLE at -4500%
+ABS_FUNDING_HIGH = 300.0          # ±300% annualized → high
+ABS_FUNDING_CRITICAL = 800.0      # ±800% annualized → critical
 
-# OI change %: 4h window — ±2% is typical, ±10% is extreme
-ABS_OI_CHANGE_HIGH = 10.0         # ±10% in 4h → high
-ABS_OI_CHANGE_CRITICAL = 20.0     # ±20% in 4h → critical
+# OI change %: 4h window — real surges only
+ABS_OI_CHANGE_HIGH = 15.0         # ±15% in 4h → high
+ABS_OI_CHANGE_CRITICAL = 30.0     # ±30% in 4h → critical
 
-# Relative volume: 1.0 is normal — 4x+ is extreme
-ABS_REL_VOL_HIGH = 5.0            # 5x normal → high
-ABS_REL_VOL_CRITICAL = 10.0       # 10x normal → critical
+# Relative volume
+ABS_REL_VOL_HIGH = 6.0            # 6x normal → high
+ABS_REL_VOL_CRITICAL = 12.0       # 12x normal → critical
 
 # ---------------------------------------------------------------------------
 # Sanity bounds — values beyond these are bad data (cold-start, API errors)
 # and are excluded from both z-score distribution and anomaly detection.
 # ---------------------------------------------------------------------------
 
-MAX_SANE_OI_CHANGE = 100.0        # >100% OI change in 4h = cold-start garbage
-MAX_SANE_REL_VOL = 500.0          # >500x volume = division-by-near-zero
+MAX_SANE_OI_CHANGE = 50.0         # >50% OI change in 4h = cold-start garbage
+MAX_SANE_REL_VOL = 100.0          # >100x volume = bad data
 MAX_SANE_FUNDING = 0.01           # >8760% annualized = bad data (hourly rate)
 
-# LSR: 1.0 is balanced — extreme crowd lean
-ABS_LSR_HIGH = 2.5                # 2.5 (very one-sided) → high
-ABS_LSR_CRITICAL = 4.0            # 4.0 (extreme lean) → critical
-ABS_LSR_LOW_HIGH = 0.4            # <0.4 (crowd short) → high
-ABS_LSR_LOW_CRITICAL = 0.25       # <0.25 (extreme short lean) → critical
+# LSR: 1.0 is balanced — only flag truly extreme positioning
+ABS_LSR_HIGH = 4.0                # 4.0 → high
+ABS_LSR_CRITICAL = 6.0            # 6.0 → critical
+ABS_LSR_LOW_HIGH = 0.25           # <0.25 → high
+ABS_LSR_LOW_CRITICAL = 0.15       # <0.15 → critical
 
-# Buy/sell ratio: 1.0 is balanced
-ABS_BSR_HIGH = 2.0                # 2.0 (heavy buying) → high
-ABS_BSR_CRITICAL = 3.5            # 3.5 (extreme) → critical
-ABS_BSR_LOW_HIGH = 0.5            # <0.5 → high
-ABS_BSR_LOW_CRITICAL = 0.3        # <0.3 → critical
+# Buy/sell ratio: 1.0 is balanced — only flag extreme imbalances
+ABS_BSR_HIGH = 3.0                # 3.0 → high
+ABS_BSR_CRITICAL = 5.0            # 5.0 → critical
+ABS_BSR_LOW_HIGH = 0.33           # <0.33 → high
+ABS_BSR_LOW_CRITICAL = 0.2        # <0.2 → critical
 
 
 # ---------------------------------------------------------------------------
@@ -180,10 +179,10 @@ def _severity(z: float, sigma: float, abs_severity: Optional[str] = None) -> Opt
     if z_abs >= Z_HIGH:
         return "high"
 
-    # Sigma can upgrade, but only if z is at least somewhat elevated
-    if z_abs >= 2.0 and abs(sigma) >= SIGMA_CRITICAL:
+    # Sigma can upgrade, but only if z is already somewhat elevated
+    if z_abs >= Z_SIGMA_FLOOR and abs(sigma) >= SIGMA_CRITICAL:
         return "critical"
-    if z_abs >= 2.0 and abs(sigma) >= SIGMA_HIGH:
+    if z_abs >= Z_SIGMA_FLOOR and abs(sigma) >= SIGMA_HIGH:
         return "high"
 
     # Absolute threshold (independent)
