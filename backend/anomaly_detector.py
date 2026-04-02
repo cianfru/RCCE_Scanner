@@ -280,6 +280,7 @@ _METRIC_EXTRACTORS = {
         "exchange_field": "funding_rate",
         "max_sane": MAX_SANE_FUNDING,
         "min_hist_std": MIN_HISTORY_STD_FUNDING,
+        "min_notable": 0.000034,    # ~30% annualized — below this is normal market noise
     },
     "OI_SURGE": {
         "extract": lambda r: _get_positioning_field(r, "oi_change_pct"),
@@ -294,6 +295,7 @@ _METRIC_EXTRACTORS = {
         "exchange_field": "open_interest",
         "max_sane": MAX_SANE_OI_CHANGE,
         "min_hist_std": MIN_HISTORY_STD_DEFAULT,
+        "min_notable": 3.0,         # <3% OI change in 4h is normal
     },
     "VOLUME_SPIKE": {
         "extract": lambda r: r.get("rel_vol", 0.0) or 0.0,
@@ -305,7 +307,8 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_volume,
         "exchange_field": None,
-        "max_sane": MAX_SANE_REL_VOL,       # >500x = division by near-zero
+        "max_sane": MAX_SANE_REL_VOL,
+        "min_notable": 2.5,         # <2.5x volume is unremarkable
     },
     "LSR_EXTREME": {
         "extract": lambda r: _get_positioning_field(r, "long_short_ratio"),
@@ -319,6 +322,7 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_lsr,
         "exchange_field": None,
+        "min_notable": 2.0,         # LSR between 0.5-2.0 is normal range
     },
     "CVD_EXTREME": {
         "extract": lambda r: r.get("buy_sell_ratio", 0.0) or 0.0,
@@ -332,6 +336,7 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_bsr,
         "exchange_field": None,
+        "min_notable": 1.8,         # BSR between 0.55-1.8 is normal range
     },
 }
 
@@ -449,6 +454,19 @@ def detect_anomalies(
             sev = _severity(z, sigma, abs_sev)
             if sev is None:
                 continue
+
+            # Min notable: raw value must be noteworthy even if z-score is high.
+            # AIXBT at 1.2x volume with z=5.3 is statistically unusual but
+            # meaningless — 1.2x volume is normal market noise.
+            min_notable = cfg.get("min_notable")
+            if min_notable is not None and abs_sev is None:
+                # For ratio metrics (LSR, BSR): check distance from 1.0
+                if atype in ("LSR_EXTREME", "CVD_EXTREME"):
+                    if abs(val - 1.0) < (min_notable - 1.0):
+                        continue
+                # For other metrics: check absolute value
+                elif abs(val) < min_notable:
+                    continue
 
             direction = direction_fn(val)
             dedup_key = f"{sym}:{atype}:{direction}"
