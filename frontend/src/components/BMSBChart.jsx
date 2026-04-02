@@ -30,10 +30,10 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "4h", label: "4H",  limit: 120, apiTf: "4h", barSpace: 10 },  // ~20 days
-  { key: "3m", label: "3M",  limit: 500, apiTf: "4h", barSpace: 5 },   // ~83 days on 4h
-  { key: "1d", label: "1D",  limit: 180, apiTf: "1d", barSpace: 8 },   // ~6 months
-  { key: "1y", label: "1Y",  limit: 365, apiTf: "1d", barSpace: 4 },   // ~1 year
+  { key: "1m",  label: "1M",  limit: 180,  apiTf: "4h", barSpace: 8 },   // ~30 days of 4H candles
+  { key: "3m",  label: "3M",  limit: 500,  apiTf: "4h", barSpace: 4 },   // ~83 days of 4H candles
+  { key: "6m",  label: "6M",  limit: 180,  apiTf: "1d", barSpace: 8 },   // ~6 months of 1D candles
+  { key: "1y",  label: "1Y",  limit: 365,  apiTf: "1d", barSpace: 4 },   // ~1 year of 1D candles
 ];
 
 export default function BMSBChart({
@@ -56,7 +56,7 @@ export default function BMSBChart({
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
+  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "6m" : "1m");
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
