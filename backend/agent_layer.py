@@ -580,15 +580,14 @@ def _filter_anomaly_context(
     cache: Any,
     out: AgentOutput,
 ) -> str:
-    """F7: Anomaly context — adjust signals based on active anomalies.
+    """F6: Anomaly context — informational warnings from anomaly detector.
 
-    Uses cache.anomalies (populated by anomaly_detector.py) to inform
-    signal decisions:
+    Purely informational — never changes the signal. Attaches warnings so
+    the user and the LLM assistant are aware of unusual activity.
 
-    1. EXTREME_FUNDING SHORT + entry → downgrade (chaos, don't chase)
-    2. EXTREME_FUNDING SHORT + WAIT → upgrade to ACCUMULATE (squeeze setup)
-    3. Critical anomalies → always warn
-    4. OI/Volume/LSR anomalies → informational warnings
+    The only exception: EXTREME_FUNDING SHORT + WAIT → ACCUMULATE (squeeze
+    setup). This is the one case where an anomaly represents a tradeable
+    opportunity that the normal signal logic can't express.
     """
     anomalies = getattr(cache, "anomalies", [])
     if not anomalies:
@@ -604,39 +603,26 @@ def _filter_anomaly_context(
         direction = a.get("direction", "")
         context = a.get("context", "")
 
-        # --- Extreme funding: squeeze/chaos logic ---
+        # --- Extreme funding ---
         if atype == "EXTREME_FUNDING":
-            if direction == "SHORT":
-                # Shorts paying extreme funding → squeeze potential
-                if signal == "WAIT":
-                    # Upgrade: extreme short crowding = squeeze opportunity
-                    signal = "ACCUMULATE"
-                    out.alerts.append(f"Anomaly squeeze setup: {context}")
-                    out.filters_fired.append("anomaly:funding_squeeze_upgrade")
-                elif signal in _ENTRY_SIGNALS:
-                    # Warn but don't downgrade — the squeeze is the opportunity
-                    out.alerts.append(f"Extreme short funding: {context}")
-                    out.filters_fired.append("anomaly:funding_squeeze_warn")
-            elif direction == "LONG":
-                # Longs paying extreme funding → overheated
-                if signal in _ENTRY_SIGNALS:
-                    # Downgrade: don't enter into crowded long w/ extreme funding
-                    prev = signal
-                    signal = "WAIT"
-                    out.alerts.append(f"Anomaly blocked entry: crowded long funding {context}")
-                    out.filters_fired.append("anomaly:funding_crowded_block")
+            if direction == "SHORT" and signal == "WAIT":
+                # Only signal change: squeeze setup upgrade
+                signal = "ACCUMULATE"
+                out.alerts.append(f"Squeeze setup: {context}")
+                out.filters_fired.append("anomaly:funding_squeeze_upgrade")
+            else:
+                out.alerts.append(f"Extreme funding: {context}")
+                out.filters_fired.append("anomaly:extreme_funding_warn")
 
-        # --- OI surge: leverage building ---
+        # --- OI surge ---
         elif atype == "OI_SURGE":
-            if severity == "critical":
-                out.alerts.append(f"OI surge: {context}")
-                out.filters_fired.append("anomaly:oi_surge_warn")
+            out.alerts.append(f"OI surge: {context}")
+            out.filters_fired.append("anomaly:oi_surge_warn")
 
         # --- Volume spike ---
         elif atype == "VOLUME_SPIKE":
-            if severity == "critical":
-                out.alerts.append(f"Volume spike: {context}")
-                out.filters_fired.append("anomaly:volume_spike_warn")
+            out.alerts.append(f"Volume spike: {context}")
+            out.filters_fired.append("anomaly:volume_spike_warn")
 
         # --- LSR extreme: crowded positioning ---
         elif atype == "LSR_EXTREME":

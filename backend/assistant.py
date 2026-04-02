@@ -609,6 +609,20 @@ class AssistantManager:
             except Exception:
                 pass
 
+            # Active anomalies (statistical outliers across all coins)
+            active_anomalies = getattr(cache, "anomalies", [])
+            if active_anomalies:
+                anom_lines = ["## Active Anomalies (unusual activity detected)"]
+                for a in active_anomalies[:10]:  # cap at 10 for context window
+                    coin = a.get("symbol", "?").replace("/USDT", "")
+                    atype = a.get("anomaly_type", "?")
+                    sev = a.get("severity", "?")
+                    ctx = a.get("context", "")
+                    exchanges = a.get("exchanges_confirmed", [])
+                    ex_str = f" [{'+'.join(e[:2].upper() for e in exchanges)}]" if len(exchanges) >= 2 else ""
+                    anom_lines.append(f"  - {coin}: {atype} ({sev}){ex_str} — {ctx}")
+                parts.append("\n".join(anom_lines))
+
         # Symbol-specific data
         if symbol:
             for tf in ("4h", "1d"):
@@ -695,6 +709,33 @@ class AssistantManager:
                         f"Short Notional: ${sm.get('short_notional', 0)/1e6:.1f}M\n"
                         f"Net Ratio: {sm.get('net_ratio', 0):+.2f}"
                     )
+
+                # Anomalies specific to this symbol
+                sym_anomalies = [
+                    a for a in getattr(cache, "anomalies", [])
+                    if a.get("symbol") == symbol
+                ]
+                if sym_anomalies:
+                    anom_lines = [f"### Anomalies ({symbol}, {tf.upper()})"]
+                    for a in sym_anomalies:
+                        atype = a.get("anomaly_type", "?")
+                        sev = a.get("severity", "?")
+                        ctx = a.get("context", "")
+                        direction = a.get("direction", "")
+                        z = a.get("z_score", 0)
+                        sigma = a.get("historical_sigma", 0)
+                        exchanges = a.get("exchanges_confirmed", [])
+                        ex_vals = a.get("exchange_values", {})
+                        ex_str = ""
+                        if ex_vals:
+                            ex_str = " | Exchanges: " + ", ".join(
+                                f"{e}: {v}" for e, v in ex_vals.items()
+                            )
+                        anom_lines.append(
+                            f"  {atype} ({sev}, {direction}): {ctx}"
+                            f"\n  Z-score: {z:.1f} | History sigma: {sigma:.1f}{ex_str}"
+                        )
+                    parts.append("\n".join(anom_lines))
         else:
             # No symbol: show active signals summary
             for tf in ("4h",):
