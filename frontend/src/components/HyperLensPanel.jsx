@@ -2620,7 +2620,7 @@ function PressureMap({ consensus, isMobile }) {
   useEffect(() => {
     setLoading(true);
     fetchPressure();
-    const interval = setInterval(fetchPressure, 15_000);
+    const interval = setInterval(fetchPressure, 60_000);
     return () => clearInterval(interval);
   }, [fetchPressure]);
 

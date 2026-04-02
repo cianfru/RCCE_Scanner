@@ -22,6 +22,9 @@ except ImportError:
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status, \
     run_drip_scan, _run_synthesis_pass
@@ -360,6 +363,37 @@ async def _auto_init_executor():
 
 
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
+
+# --- GZip compression (biggest egress win — ~70-80% reduction) ---
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# --- Cache-Control headers for API responses ---
+_CACHE_RULES: list[tuple[str, str]] = [
+    ("/api/hyperlens/roster", "public, max-age=120"),
+    ("/api/hyperlens/consensus", "public, max-age=60"),
+    ("/api/hyperlens/pressure", "public, max-age=30"),
+    ("/api/chart/", "public, max-age=120"),
+    ("/api/tradfi", "public, max-age=60"),
+    ("/api/scan", "public, max-age=30"),
+    ("/api/global-metrics", "public, max-age=30"),
+    ("/api/alt-season", "public, max-age=30"),
+    ("/api/consensus", "public, max-age=30"),
+    ("/api/sentiment", "public, max-age=60"),
+    ("/api/stablecoin", "public, max-age=60"),
+    ("/api/status", "no-cache"),
+]
+
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        for prefix, value in _CACHE_RULES:
+            if path.startswith(prefix):
+                response.headers["Cache-Control"] = value
+                break
+        return response
+
+app.add_middleware(CacheControlMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
