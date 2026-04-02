@@ -266,8 +266,24 @@ export default function App() {
 
   useEffect(() => {
     loadAll();
-    const interval = setInterval(loadAll, 60 * 1000);
-    return () => clearInterval(interval);
+    // Adaptive polling: 60s when tab is visible, 5 min when in background
+    let interval = setInterval(loadAll, 60 * 1000);
+
+    const handleVisibility = () => {
+      clearInterval(interval);
+      if (document.hidden) {
+        interval = setInterval(loadAll, 5 * 60 * 1000); // 5 min in background
+      } else {
+        loadAll(); // Immediate refresh when tab becomes visible
+        interval = setInterval(loadAll, 60 * 1000);      // Back to 60s
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [loadAll]);
 
   const triggerScan = async () => {
