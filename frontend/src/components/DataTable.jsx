@@ -24,12 +24,13 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const priceStr = row.price
         ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
         : null;
-      // Scan tier indicator: anomaly (red pulse), hot (fav), active (above BMSB), cold / deep_cold (below BMSB)
+      // Scan tier indicator: hot (fav), active (above BMSB), cold / deep_cold (below BMSB)
+      // Anomaly dot shown separately so both are visible
       const devPct = row.deviation_pct ?? 0;
       const hasAnomaly = row.has_anomaly;
-      const scanTier = hasAnomaly ? "anomaly" : isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? (devPct <= -10 ? "deep_cold" : "cold") : "active"));
-      const tierColor = scanTier === "anomaly" ? "#ef4444" : scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : scanTier === "cold" ? "#64748b" : "#3b1c32";
-      const tierLabel = scanTier === "anomaly" ? "Anomaly — unusual activity detected, priority scanning" : scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : scanTier === "cold" ? "Cold — scanned every ~7 min (below BMSB)" : "Deep cold — scanned every ~20 min (>10% below BMSB)";
+      const scanTier = isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? (devPct <= -10 ? "deep_cold" : "cold") : "active"));
+      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : scanTier === "cold" ? "#64748b" : "#3b1c32";
+      const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : scanTier === "cold" ? "Cold — scanned every ~7 min (below BMSB)" : "Deep cold — scanned every ~20 min (>10% below BMSB)";
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
@@ -38,6 +39,23 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             title={isFav ? "Remove from favorites" : "Add to favorites"}
           >{isFav ? "\u2605" : "\u2606"}</span>
           <span style={{ verticalAlign: "middle" }}>{getBaseSymbol(row.symbol)}</span>
+          {/* Anomaly dot (pulsing red) — shown alongside tier dot */}
+          {hasAnomaly && (
+            <span
+              title="Anomaly — unusual activity detected, priority scanning"
+              style={{
+                display: "inline-block",
+                width: 7, height: 7,
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                marginLeft: 5,
+                verticalAlign: "middle",
+                boxShadow: "0 0 0 1px #ef444440",
+                animation: "anomalyDotPulse 1.5s ease-in-out infinite",
+              }}
+            />
+          )}
+          {/* Scan tier dot (yellow=fav, cyan=active, gray=cold) */}
           <span
             title={tierLabel}
             style={{
@@ -45,11 +63,10 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
               width: 7, height: 7,
               borderRadius: "50%",
               backgroundColor: tierColor,
-              marginLeft: 5,
+              marginLeft: hasAnomaly ? 3 : 5,
               verticalAlign: "middle",
               opacity: scanTier === "deep_cold" ? 0.4 : scanTier === "cold" ? 0.55 : 1,
-              boxShadow: `0 0 0 1px ${scanTier === "anomaly" ? "#ef444440" : scanTier === "hot" ? "#facc1540" : scanTier === "active" ? "#22d3ee30" : "transparent"}`,
-              animation: scanTier === "anomaly" ? "anomalyDotPulse 1.5s ease-in-out infinite" : "none",
+              boxShadow: `0 0 0 1px ${scanTier === "hot" ? "#facc1540" : scanTier === "active" ? "#22d3ee30" : "transparent"}`,
             }}
           />
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
