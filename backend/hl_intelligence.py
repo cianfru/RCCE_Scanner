@@ -843,6 +843,10 @@ def _recompute_consensus() -> None:
         if len(latest.positions) > _MM_MAX_POSITIONS:
             continue
 
+        # AV filter: consensus only counts quality wallets ($50k+)
+        if latest.account_value > 0 and latest.account_value < _DISPLAY_MIN_AV:
+            continue
+
         fresh_wallet_count += 1
         addr = wallet.address
         is_mp = addr in mp_addresses
@@ -1723,16 +1727,24 @@ async def _poll_order_books() -> None:
 
     Runs every 30 seconds independently of the position poll.
     """
-    # Determine top symbols from consensus (by total positioned wallets)
-    if not _consensus:
-        return
+    # Determine top symbols from ALL snapshots (not consensus, which is
+    # AV-filtered). This ensures the pressure map covers all symbols where
+    # any tracked wallet has a position, regardless of account value.
+    from collections import Counter
+    symbol_counts: Counter = Counter()
+    now = time.time()
+    for dq in _snapshots.values():
+        if not dq:
+            continue
+        latest = dq[-1]
+        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+            continue
+        for pos in latest.positions:
+            raw = pos.coin
+            coin = f"xyz:{raw.split(':', 1)[1]}" if (raw.startswith("xyz:") or pos.dex == _XYZ_DEX) else _normalize_coin(raw)
+            symbol_counts[coin] += 1
 
-    ranked = sorted(
-        _consensus.values(),
-        key=lambda c: c.long_count + c.short_count,
-        reverse=True,
-    )
-    top_symbols = [c.symbol for c in ranked[:_ORDER_BOOK_TOP_N]]
+    top_symbols = [sym for sym, _ in symbol_counts.most_common(_ORDER_BOOK_TOP_N)]
 
     if not top_symbols:
         return
