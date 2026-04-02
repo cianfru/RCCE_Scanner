@@ -60,9 +60,9 @@ ANOMALY_TTL = 15 * 60  # 15 min (shorter = stale anomalies clear faster)
 ABS_FUNDING_HIGH = 300.0          # ±300% annualized → high
 ABS_FUNDING_CRITICAL = 800.0      # ±800% annualized → critical
 
-# OI change %: 4h window — real surges only
-ABS_OI_CHANGE_HIGH = 15.0         # ±15% in 4h → high
-ABS_OI_CHANGE_CRITICAL = 30.0     # ±30% in 4h → critical
+# OI change %: 4h window — only truly extreme moves
+ABS_OI_CHANGE_HIGH = 30.0         # ±30% in 4h → high
+ABS_OI_CHANGE_CRITICAL = 50.0     # ±50% in 4h → critical (near sanity cap)
 
 # Relative volume
 ABS_REL_VOL_HIGH = 6.0            # 6x normal → high
