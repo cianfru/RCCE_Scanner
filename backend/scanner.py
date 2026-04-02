@@ -333,6 +333,13 @@ class ScanCache:
         # Engine result cache: skip recomputation when candle data hasn't changed
         # Key: (symbol, timeframe) → {"last_candle_ts": int, "result": dict}
         self._engine_cache: Dict[tuple, dict] = {}
+        # Anomaly detection results (served by /api/notifications/anomalies)
+        self.anomalies: List[dict] = []
+        # Symbols with active anomalies — promoted to "hot" tier in drip scan
+        self.anomaly_hot_symbols: set = set()
+        # Latest exchange metrics (for anomaly cross-exchange confirmation)
+        self._last_hl_metrics: dict = {}
+        self._last_binance_metrics: dict = {}
 
     # -- query helpers -----------------------------------------------------
 
@@ -374,7 +381,7 @@ cache = ScanCache()
 # Priority score (composite 0-100 ranking)
 # ---------------------------------------------------------------------------
 
-def _compute_priority(r: dict) -> float:
+def _compute_priority(r: dict, anomaly_symbols: set = None) -> float:
     """Compute a composite priority score (0-100) for ranking symbols.
 
     Factors (total = 100 pts):
@@ -384,6 +391,9 @@ def _compute_priority(r: dict) -> float:
         4. Momentum:           0-15 pts  (normalised -10% .. +10%)
         5. Heat headroom:      0-10 pts  (inverted — low heat = more room)
         6. Volume/absorption:  0-10 pts  (rel_vol + absorption bonus)
+
+    Active anomalies boost: +20 pts (ensures coins with unusual activity
+    surface near the top even if their signal score is low).
     """
     score = 0.0
 
@@ -429,6 +439,10 @@ def _compute_priority(r: dict) -> float:
     positioning_val = r.get("positioning") or {}
     if positioning_val.get("spot_dominance") == "SPOT_LED":
         score += 5
+
+    # 9. Active anomaly boost: +20 pts — unusual activity demands attention
+    if anomaly_symbols and r.get("symbol") in anomaly_symbols:
+        score += 20
 
     return round(min(100.0, max(0.0, score)), 1)
 
@@ -875,9 +889,13 @@ async def _synthesize_and_enrich(
     except ImportError:
         pass
 
-    # Priority scores
+    # Priority scores (anomaly symbols get a +20 boost)
+    _anom_syms = getattr(scan_cache, "anomaly_hot_symbols", set())
     for r in results:
-        r["priority_score"] = _compute_priority(r)
+        r["priority_score"] = _compute_priority(r, _anom_syms)
+        # Flag anomaly symbols so the frontend can show an anomaly tier dot
+        if r.get("symbol") in _anom_syms:
+            r["has_anomaly"] = True
 
     signal_summary = {}
     for r in results:
@@ -1297,6 +1315,10 @@ def _classify_drip_tier(
     if symbol in fav_store.get():
         return "hot"
 
+    # Symbols with active anomalies get promoted to hot tier
+    if symbol in scan_cache.anomaly_hot_symbols:
+        return "hot"
+
     # Check cached engine results for BMSB direction
     sym_results = scan_cache._results_by_sym.get(symbol, {})
     if not sym_results:
@@ -1509,6 +1531,12 @@ async def _run_synthesis_pass(
     except Exception:
         logger.warning("Synthesis pass: some external data fetches failed")
 
+    # Store exchange metrics for anomaly cross-exchange confirmation
+    if hl_metrics:
+        scan_cache._last_hl_metrics = hl_metrics
+    if binance_metrics:
+        scan_cache._last_binance_metrics = binance_metrics
+
     # Bybit for gaps
     covered_symbols = set()
     if binance_metrics:
@@ -1663,6 +1691,33 @@ async def _run_synthesis_pass(
                     logger.debug("TG trade alert push failed: %s", exc)
         except Exception:
             pass
+
+        # --- Anomaly detection (cross-sectional z-score + time-series spike) ---
+        try:
+            from anomaly_detector import detect_anomalies, get_active_anomalies
+            for tf_key in ("4h", "1d"):
+                tf_results = scan_cache.results.get(tf_key, [])
+                if tf_results:
+                    new_anomalies = detect_anomalies(tf_results, scan_cache, tf_key)
+                    if new_anomalies:
+                        # Promote anomaly symbols to hot tier for immediate scanning
+                        for a in new_anomalies:
+                            scan_cache.anomaly_hot_symbols.add(a.symbol)
+                        # Push critical anomalies to Telegram
+                        critical = [a for a in new_anomalies if a.is_critical]
+                        if critical and tf_key == "4h":
+                            try:
+                                from telegram_bot import get_telegram_bot
+                                bot = get_telegram_bot()
+                                await bot.push_anomaly_alerts(critical)
+                            except Exception as exc:
+                                logger.debug("TG anomaly alert failed: %s", exc)
+            scan_cache.anomalies = get_active_anomalies()
+            # Prune anomaly_hot_symbols that are no longer active
+            active_syms = {a["symbol"] for a in scan_cache.anomalies}
+            scan_cache.anomaly_hot_symbols &= active_syms
+        except Exception:
+            logger.debug("Anomaly detection skipped", exc_info=True)
 
         if gm is not None:
             scan_cache.global_metrics = {

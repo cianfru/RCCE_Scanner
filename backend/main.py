@@ -2536,6 +2536,20 @@ async def exhaustion_opportunities(address: Optional[str] = Query(None)):
 
 
 # ---------------------------------------------------------------------------
+# Anomaly Detection — Statistical Outliers (funding, OI, LSR, CVD, volume)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/notifications/anomalies")
+async def active_anomalies():
+    """Return currently active market anomalies (statistical outliers).
+
+    Detects extreme funding rates, OI surges, volume spikes, LSR extremes,
+    and CVD imbalances using cross-sectional z-scores and time-series sigma.
+    """
+    return {"anomalies": cache.anomalies, "count": len(cache.anomalies)}
+
+
+# ---------------------------------------------------------------------------
 # OI / Price Divergence — Market Setups (coins NOT held)
 # ---------------------------------------------------------------------------
 

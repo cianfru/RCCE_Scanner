@@ -10,6 +10,7 @@ import ConsensusBar from "./components/ConsensusBar.jsx";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
+import AnomalyBanner from "./components/AnomalyBanner.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
@@ -496,6 +497,7 @@ export default function App() {
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes anomalyDotPulse { 0%,100%{opacity:1; box-shadow: 0 0 4px rgba(239,68,68,0.6);} 50%{opacity:0.4; box-shadow: none;} }
         .fade-in-up { animation: fadeInUp 0.4s ease-out both; }
         .shimmer-loading {
           background: linear-gradient(90deg, var(--t-overlay04) 25%, var(--t-overlay10) 50%, var(--t-overlay04) 75%);
@@ -844,6 +846,7 @@ export default function App() {
 
         {showDashboard && <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh} />}
 
+        {showDashboard && <AnomalyBanner isMobile={isMobile} />}
         {showDashboard && <PositionAlerts isMobile={isMobile} />}
 
         {showDashboard && (

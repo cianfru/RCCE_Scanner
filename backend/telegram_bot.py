@@ -500,6 +500,80 @@ class TelegramBot:
             logger.info("Telegram: pushed %d trade alerts", sent)
         return sent
 
+    # -- Anomaly alerts --------------------------------------------------------
+
+    _ANOMALY_DEDUP_WINDOW = 30 * 60  # 30 min
+    _MAX_ANOMALY_ALERTS = 3
+    _recent_anomaly_alerts: Dict[str, float] = {}
+
+    _ANOMALY_TYPE_LABELS = {
+        "EXTREME_FUNDING": "EXTREME FUNDING",
+        "OI_SURGE": "OI SURGE",
+        "VOLUME_SPIKE": "VOLUME SPIKE",
+        "LSR_EXTREME": "LSR EXTREME",
+        "CVD_EXTREME": "CVD EXTREME",
+    }
+
+    async def push_anomaly_alerts(self, anomalies) -> int:
+        """Push critical anomaly alerts to Telegram.
+
+        Receives a list of Anomaly dataclass instances (critical severity only).
+        """
+        if not self.app or not self._running:
+            return 0
+
+        now = time.time()
+        candidates = []
+        for a in anomalies:
+            dedup_key = a.dedup_key
+            last = self._recent_anomaly_alerts.get(dedup_key, 0)
+            if now - last < self._ANOMALY_DEDUP_WINDOW:
+                continue
+            candidates.append(a)
+
+        if not candidates:
+            return 0
+
+        alerts = candidates[:self._MAX_ANOMALY_ALERTS]
+        sent = 0
+
+        for a in alerts:
+            coin = a.symbol.split("/")[0] if "/" in a.symbol else a.symbol
+            type_label = self._ANOMALY_TYPE_LABELS.get(a.anomaly_type, a.anomaly_type)
+
+            msg_lines = [
+                f"Anomaly: {coin}",
+                "",
+                f"Type: {type_label} ({a.direction})",
+                f"Severity: {a.severity.upper()}",
+                f"Detail: {a.context}",
+            ]
+            if a.z_score:
+                msg_lines.append(f"Z-score: {a.z_score:.1f}")
+            if a.historical_sigma:
+                msg_lines.append(f"History: {abs(a.historical_sigma):.1f} sigma vs own baseline")
+
+            msg = "\n".join(msg_lines)
+
+            for chat_id in ALLOWED_CHAT_IDS:
+                try:
+                    await self.app.bot.send_message(chat_id=int(chat_id), text=msg)
+                    sent += 1
+                except Exception as exc:
+                    logger.debug("TG anomaly alert to %s failed: %s", chat_id, exc)
+
+            self._recent_anomaly_alerts[dedup_key] = now
+
+        # Cleanup old dedup
+        cutoff = now - self._ANOMALY_DEDUP_WINDOW
+        self._recent_anomaly_alerts = {
+            k: v for k, v in self._recent_anomaly_alerts.items() if v > cutoff
+        }
+
+        if sent > 0:
+            logger.info("Telegram: pushed %d anomaly alerts", sent)
+        return sent
+
 
 # Module-level singleton
 _bot: Optional[TelegramBot] = None

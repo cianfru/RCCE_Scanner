@@ -50,6 +50,7 @@ function coinName(symbol) {
 export default function NotificationBell() {
   const { address: walletAddress } = useWallet();
   const [events, setEvents] = useState([]);
+  const [anomalies, setAnomalies] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
   const [marketSetups, setMarketSetups] = useState([]);
@@ -66,6 +67,15 @@ export default function NotificationBell() {
       if (!res.ok) return;
       const data = await res.json();
       setEvents(data.events || []);
+    } catch (_) {}
+  }, []);
+
+  const fetchAnomalies = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/notifications/anomalies`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setAnomalies(data.anomalies || []);
     } catch (_) {}
   }, []);
 
@@ -112,14 +122,15 @@ export default function NotificationBell() {
   // Poll every 60s
   useEffect(() => {
     fetchNotifs();
+    fetchAnomalies();
     fetchWarnings();
     fetchExhaustionOpps();
     fetchMarketSetups();
     const iv = setInterval(() => {
-      fetchNotifs(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
+      fetchNotifs(); fetchAnomalies(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
     }, 60_000);
     return () => clearInterval(iv);
-  }, [fetchNotifs, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
+  }, [fetchNotifs, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
   // Close on outside click
   useEffect(() => {
@@ -134,8 +145,9 @@ export default function NotificationBell() {
   }, [open]);
 
   const unseen = events.filter((e) => e.timestamp > lastSeen).length;
+  const hasAnomalies = anomalies.length > 0;
   const hasWarnings = warnings.length > 0;
-  const hasCritical = warnings.some(w => w.severity === "critical" || w.severity === "high");
+  const hasCritical = hasAnomalies || warnings.some(w => w.severity === "critical" || w.severity === "high");
   const hasOpps = exhaustionOpps.length > 0;
   const hasSetups = marketSetups.length > 0;
   const hasHighSetup = marketSetups.some(s => s.severity === "high");
@@ -176,11 +188,12 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(unseen > 0 || hasWarnings || hasOpps || hasSetups) && (
+        {(unseen > 0 || hasAnomalies || hasWarnings || hasOpps || hasSetups) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
-            background: hasCritical ? "#ef4444"
+            background: hasAnomalies ? "#ef4444"
+                       : hasCritical ? "#ef4444"
                        : hasWarnings ? "#f59e0b"
                        : hasHighSetup ? "#a78bfa"
                        : hasOpps || hasSetups ? "#34d399"
@@ -202,6 +215,86 @@ export default function NotificationBell() {
           zIndex: 9999,
           overflowY: "auto",
         }}>
+          {/* Anomalies Section */}
+          {anomalies.length > 0 && (
+            <>
+              <div style={{
+                padding: "10px 14px",
+                borderBottom: `1px solid ${T.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "rgba(239, 68, 68, 0.05)",
+              }}>
+                <span style={{
+                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  color: "#ef4444", letterSpacing: "0.08em",
+                }}>
+                  ANOMALIES
+                </span>
+                <span style={{
+                  fontSize: 10, fontFamily: T.mono, color: "#ef4444",
+                  fontWeight: 600,
+                }}>
+                  {anomalies.length}
+                </span>
+              </div>
+              {anomalies.map((a, i) => {
+                const color = a.severity === "critical" ? "#ef4444" : "#f59e0b";
+                const coin = (a.symbol || "").replace("/USDT", "").replace("/USD", "");
+                const typeMap = {
+                  EXTREME_FUNDING: "FUNDING",
+                  OI_SURGE: "OI",
+                  VOLUME_SPIKE: "VOL",
+                  LSR_EXTREME: "LSR",
+                  CVD_EXTREME: "CVD",
+                };
+                return (
+                  <div
+                    key={`anom-${a.dedup_key}-${i}`}
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: `1px solid ${T.border}`,
+                      background: a.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : "transparent",
+                    }}
+                  >
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      marginBottom: 3,
+                    }}>
+                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{"\u26a0"}</span>
+                      <span style={{
+                        fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                        color: T.text1,
+                      }}>
+                        {coin}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: color + "18", color,
+                      }}>
+                        {typeMap[a.anomaly_type] || a.anomaly_type}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                        padding: "1px 5px", borderRadius: 4,
+                        background: color + "18", color,
+                        textTransform: "uppercase",
+                      }}>
+                        {a.severity}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 10, fontFamily: T.mono, color: T.text4,
+                      paddingLeft: 19, lineHeight: 1.5,
+                    }}>
+                      {a.context}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
           {/* Position Warnings Section */}
           {warnings.length > 0 && (
             <>
