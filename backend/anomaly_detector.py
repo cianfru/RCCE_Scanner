@@ -60,9 +60,9 @@ ANOMALY_TTL = 15 * 60  # 15 min (shorter = stale anomalies clear faster)
 ABS_FUNDING_HIGH = 300.0          # ±300% annualized → high
 ABS_FUNDING_CRITICAL = 800.0      # ±800% annualized → critical
 
-# OI change %: 4h window — only truly extreme moves
-ABS_OI_CHANGE_HIGH = 30.0         # ±30% in 4h → high
-ABS_OI_CHANGE_CRITICAL = 50.0     # ±50% in 4h → critical (near sanity cap)
+# OI change %: z-score only — no absolute threshold. OI naturally fluctuates
+# 10-30% and absolute floors create too much noise. Only genuine statistical
+# outliers (one coin moving 5+ sigma vs all others) should trigger.
 
 # Relative volume
 ABS_REL_VOL_HIGH = 6.0            # 6x normal → high
@@ -286,16 +286,16 @@ _METRIC_EXTRACTORS = {
         "extract": lambda r: _get_positioning_field(r, "oi_change_pct"),
         "history_key": "oi_change_history",
         "context_fn": lambda sym, val, z, sig: (
-            f"OI {'+' if val > 0 else ''}{val:.1f}% change (4h) "
+            f"OI {'+' if val > 0 else ''}{val:.1f}% change "
             f"(z={z:.1f}, {abs(sig):.1f}\u03c3 vs history)"
         ),
         "direction_fn": _direction_from_value,
         "filter_zero": True,
-        "abs_fn": _abs_severity_oi,
+        "abs_fn": None,             # z-score only — no absolute threshold
         "exchange_field": "open_interest",
         "max_sane": MAX_SANE_OI_CHANGE,
         "min_hist_std": MIN_HISTORY_STD_DEFAULT,
-        "min_notable": 3.0,         # <3% OI change in 4h is normal
+        "min_notable": 5.0,         # <5% OI change is unremarkable
     },
     "VOLUME_SPIKE": {
         "extract": lambda r: r.get("rel_vol", 0.0) or 0.0,
