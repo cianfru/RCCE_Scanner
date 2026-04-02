@@ -1716,6 +1716,17 @@ async def _run_synthesis_pass(
             # Prune anomaly_hot_symbols that are no longer active
             active_syms = {a["symbol"] for a in scan_cache.anomalies}
             scan_cache.anomaly_hot_symbols &= active_syms
+            # Patch has_anomaly + priority onto already-published results
+            # (anomaly detection runs after results are published)
+            if scan_cache.anomaly_hot_symbols:
+                for tf_key2 in ("4h", "1d"):
+                    for r in scan_cache.results.get(tf_key2, []):
+                        sym = r.get("symbol", "")
+                        if sym in scan_cache.anomaly_hot_symbols:
+                            r["has_anomaly"] = True
+                            # Re-boost priority if not already boosted
+                            if r.get("priority_score", 0) < 100:
+                                r["priority_score"] = min(100.0, r.get("priority_score", 0) + 20)
         except Exception:
             logger.debug("Anomaly detection skipped", exc_info=True)
 
