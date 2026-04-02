@@ -371,9 +371,9 @@ def _check_exchange_confirmation(
         if val != 0:
             confirmed.append("hyperliquid")
             if exchange_field == "funding_rate":
-                values["hyperliquid"] = round(_annualized_funding(val), 1)
+                values["hyperliquid"] = f"{_annualized_funding(val):+.0f}%"
             elif exchange_field == "open_interest":
-                values["hyperliquid"] = round(val, 0)
+                values["hyperliquid"] = f"${val/1e6:.1f}M"
 
     # Check Binance
     bn = bn_store.get(symbol)
@@ -382,9 +382,9 @@ def _check_exchange_confirmation(
         if val != 0:
             confirmed.append("binance")
             if exchange_field == "funding_rate":
-                values["binance"] = round(_annualized_funding(val), 1)
+                values["binance"] = f"{_annualized_funding(val):+.0f}%"
             elif exchange_field == "open_interest":
-                values["binance"] = round(val, 0)
+                values["binance"] = f"${val/1e6:.1f}M"
 
     return confirmed, values
 
