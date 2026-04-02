@@ -362,7 +362,8 @@ async def _auto_init_executor():
 
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 
-# --- GZip compression (~70-80% egress reduction) ---
+# GZip responses > 500 bytes — reduces network egress ~70-80% for JSON payloads
+from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
