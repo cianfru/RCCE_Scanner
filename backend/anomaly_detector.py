@@ -37,7 +37,12 @@ SIGMA_HIGH = 4.0
 SIGMA_CRITICAL = 6.0
 
 # Minimum history ticks before time-series check kicks in
-MIN_HISTORY_TICKS = 5
+MIN_HISTORY_TICKS = 10
+
+# Minimum std in history for sigma to be meaningful — prevents flat-history
+# inflation where any small change looks like 40 sigma
+MIN_HISTORY_STD_FUNDING = 1e-6     # ~0.88% annualized — any real funding has more variance
+MIN_HISTORY_STD_DEFAULT = 0.1      # for OI change %, LSR, BSR
 
 # Dedup cooldown (seconds) -- same anomaly won't re-fire within this window
 DEDUP_COOLDOWN = 30 * 60  # 30 min
@@ -144,31 +149,49 @@ def _zscore_array(values: np.ndarray) -> np.ndarray:
     return (values - np.mean(values)) / std
 
 
-def _time_series_sigma(current: float, history: list) -> float:
-    """How many sigma is `current` from the mean of `history`."""
+def _time_series_sigma(current: float, history: list, min_std: float = 0.0) -> float:
+    """How many sigma is `current` from the mean of `history`.
+
+    Returns 0 if history is too short, std is near zero, or std is below
+    the minimum threshold (prevents flat-history inflation).
+    """
     if len(history) < MIN_HISTORY_TICKS:
         return 0.0
     arr = np.array(history, dtype=float)
     std = np.std(arr)
-    if std < 1e-12:
+    if std < 1e-12 or std < min_std:
         return 0.0
     return (current - np.mean(arr)) / std
 
 
 def _severity(z: float, sigma: float, abs_severity: Optional[str] = None) -> Optional[str]:
-    """Map z/sigma + absolute threshold to severity.  Returns None if below all thresholds."""
-    peak = max(abs(z), abs(sigma))
-    stat_sev = None
-    if peak >= Z_CRITICAL:
-        stat_sev = "critical"
-    elif peak >= Z_HIGH:
-        stat_sev = "high"
+    """Map z/sigma + absolute threshold to severity.
 
-    # Return the more severe of statistical vs absolute
-    if stat_sev == "critical" or abs_severity == "critical":
+    Rules:
+    - Cross-sectional z-score alone can trigger (the primary signal).
+    - Time-series sigma ALONE cannot trigger — it only upgrades severity
+      when z-score is already at least halfway to the threshold (z >= 2.0).
+    - Absolute thresholds always fire independently.
+    """
+    # Z-score alone
+    z_abs = abs(z)
+    if z_abs >= Z_CRITICAL:
         return "critical"
-    if stat_sev == "high" or abs_severity == "high":
+    if z_abs >= Z_HIGH:
         return "high"
+
+    # Sigma can upgrade, but only if z is at least somewhat elevated
+    if z_abs >= 2.0 and abs(sigma) >= SIGMA_CRITICAL:
+        return "critical"
+    if z_abs >= 2.0 and abs(sigma) >= SIGMA_HIGH:
+        return "high"
+
+    # Absolute threshold (independent)
+    if abs_severity == "critical":
+        return "critical"
+    if abs_severity == "high":
+        return "high"
+
     return None
 
 
@@ -256,7 +279,8 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_funding,
         "exchange_field": "funding_rate",
-        "max_sane": MAX_SANE_FUNDING,       # abs(hourly rate) > 0.01 = bad data
+        "max_sane": MAX_SANE_FUNDING,
+        "min_hist_std": MIN_HISTORY_STD_FUNDING,
     },
     "OI_SURGE": {
         "extract": lambda r: _get_positioning_field(r, "oi_change_pct"),
@@ -269,7 +293,8 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_oi,
         "exchange_field": "open_interest",
-        "max_sane": MAX_SANE_OI_CHANGE,     # >100% in 4h = cold-start garbage
+        "max_sane": MAX_SANE_OI_CHANGE,
+        "min_hist_std": MIN_HISTORY_STD_DEFAULT,
     },
     "VOLUME_SPIKE": {
         "extract": lambda r: r.get("rel_vol", 0.0) or 0.0,
@@ -416,7 +441,8 @@ def detect_anomalies(
                 tf_key = f"{sym}:{tf}"
                 hist = hist_store.get(tf_key, [])
                 if hist:
-                    sigma = _time_series_sigma(val, hist)
+                    min_std = cfg.get("min_hist_std", 0.0)
+                    sigma = _time_series_sigma(val, hist, min_std)
 
             # Absolute threshold check
             abs_sev = abs_fn(val) if abs_fn else None
