@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Cross-sectional z-score thresholds
-Z_HIGH = 3.0
-Z_CRITICAL = 5.0
+Z_HIGH = 4.0
+Z_CRITICAL = 6.0
 
 # Time-series (own-history) sigma thresholds
-SIGMA_HIGH = 3.0
-SIGMA_CRITICAL = 5.0
+SIGMA_HIGH = 4.0
+SIGMA_CRITICAL = 6.0
 
 # Minimum history ticks before time-series check kicks in
 MIN_HISTORY_TICKS = 5
@@ -52,16 +52,26 @@ ANOMALY_TTL = 45 * 60  # 45 min
 # ---------------------------------------------------------------------------
 
 # Funding: annualized % — ±20% is normal in calm markets, ±30-50% in bull trends
-ABS_FUNDING_HIGH = 60.0           # ±60% annualized → high
-ABS_FUNDING_CRITICAL = 200.0      # ±200% annualized → critical
+# Z-score handles moderate cases; absolute floors catch extremes in volatile markets
+ABS_FUNDING_HIGH = 150.0          # ±150% annualized → high
+ABS_FUNDING_CRITICAL = 400.0      # ±400% annualized → critical
 
 # OI change %: 4h window — ±2% is typical, ±10% is extreme
 ABS_OI_CHANGE_HIGH = 10.0         # ±10% in 4h → high
 ABS_OI_CHANGE_CRITICAL = 20.0     # ±20% in 4h → critical
 
 # Relative volume: 1.0 is normal — 4x+ is extreme
-ABS_REL_VOL_HIGH = 4.0            # 4x normal → high
-ABS_REL_VOL_CRITICAL = 8.0        # 8x normal → critical
+ABS_REL_VOL_HIGH = 5.0            # 5x normal → high
+ABS_REL_VOL_CRITICAL = 10.0       # 10x normal → critical
+
+# ---------------------------------------------------------------------------
+# Sanity bounds — values beyond these are bad data (cold-start, API errors)
+# and are excluded from both z-score distribution and anomaly detection.
+# ---------------------------------------------------------------------------
+
+MAX_SANE_OI_CHANGE = 100.0        # >100% OI change in 4h = cold-start garbage
+MAX_SANE_REL_VOL = 500.0          # >500x volume = division-by-near-zero
+MAX_SANE_FUNDING = 0.01           # >8760% annualized = bad data (hourly rate)
 
 # LSR: 1.0 is balanced — extreme crowd lean
 ABS_LSR_HIGH = 2.5                # 2.5 (very one-sided) → high
@@ -245,7 +255,8 @@ _METRIC_EXTRACTORS = {
         "direction_fn": lambda val: "SHORT" if val < 0 else "LONG",
         "filter_zero": True,
         "abs_fn": _abs_severity_funding,
-        "exchange_field": "funding_rate",  # field name on exchange metric objects
+        "exchange_field": "funding_rate",
+        "max_sane": MAX_SANE_FUNDING,       # abs(hourly rate) > 0.01 = bad data
     },
     "OI_SURGE": {
         "extract": lambda r: _get_positioning_field(r, "oi_change_pct"),
@@ -257,7 +268,8 @@ _METRIC_EXTRACTORS = {
         "direction_fn": _direction_from_value,
         "filter_zero": True,
         "abs_fn": _abs_severity_oi,
-        "exchange_field": "open_interest",  # for confirmation (existence check, not value)
+        "exchange_field": "open_interest",
+        "max_sane": MAX_SANE_OI_CHANGE,     # >100% in 4h = cold-start garbage
     },
     "VOLUME_SPIKE": {
         "extract": lambda r: r.get("rel_vol", 0.0) or 0.0,
@@ -269,6 +281,7 @@ _METRIC_EXTRACTORS = {
         "filter_zero": True,
         "abs_fn": _abs_severity_volume,
         "exchange_field": None,
+        "max_sane": MAX_SANE_REL_VOL,       # >500x = division by near-zero
     },
     "LSR_EXTREME": {
         "extract": lambda r: _get_positioning_field(r, "long_short_ratio"),
@@ -369,11 +382,16 @@ def detect_anomalies(
         context_fn = cfg["context_fn"]
         direction_fn = cfg["direction_fn"]
 
-        # 1. Build cross-sectional vector
+        max_sane = cfg.get("max_sane")
+
+        # 1. Build cross-sectional vector (skip zero and insane values)
         sym_vals = []
         for r in results:
             val = extract_fn(r)
             if cfg.get("filter_zero") and (val is None or val == 0):
+                continue
+            # Sanity guard: skip garbage data (cold-start, API errors)
+            if max_sane is not None and abs(val) > max_sane:
                 continue
             sym_vals.append((r.get("symbol", ""), val))
 
