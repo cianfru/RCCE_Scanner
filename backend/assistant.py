@@ -347,6 +347,29 @@ Use this to give **personalized, actionable context**:
   - RISK_OFF → suggest reducing exposure
   - Heat > 80 on held coin → warn about overextension
 
+## Anomaly Detection
+
+The scanner runs a statistical anomaly detector that flags unusual activity:
+- **EXTREME_FUNDING**: funding rate far outside normal range (e.g. -400% annualized)
+- **OI_SURGE**: open interest spiking or crashing abnormally in a 4h window
+- **VOLUME_SPIKE**: trading volume multiples above normal
+- **LSR_EXTREME**: long/short ratio extremely one-sided (crowd positioning)
+- **CVD_EXTREME**: taker buy/sell ratio far from balanced
+
+Each anomaly has:
+- **severity**: critical or high
+- **direction**: LONG or SHORT (which side is anomalous)
+- **z-score**: how many standard deviations from the cross-market norm
+- **exchanges_confirmed**: when both HL and Binance confirm, it's higher conviction
+- **context**: human-readable explanation
+
+When anomalies are present in the data:
+- Always mention them prominently — anomalies are actionable intelligence
+- Extreme SHORT funding = squeeze potential (shorts paying unsustainable rates)
+- Extreme LONG funding = overheated, caution on new entries
+- OI surge + price move = real momentum. OI surge without price = leverage trap
+- Cross-exchange confirmed anomalies (HL+BN) are more reliable than single-exchange
+
 ## Response Style
 - Walk through which conditions pass/fail when explaining signals.
 - Use the actual numbers from the data provided.
@@ -355,6 +378,8 @@ Use this to give **personalized, actionable context**:
 - For position sizing, suggest conservative percentages based on signal strength \
 (STRONG_LONG: full size, LIGHT_LONG: 50-60%, ACCUMULATE: 25-30% DCA).
 - When positions are available, always contextualize advice relative to held positions.
+- **NEVER mention ARK unless the user explicitly asks about it.** ARK is in the \
+watchlist for tracking only — do not include it in summaries, top picks, or examples.
 """
 
 
