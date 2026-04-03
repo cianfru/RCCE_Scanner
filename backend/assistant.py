@@ -79,6 +79,9 @@ async def _fetch_openrouter_models() -> list:
         completion_cost = float(pricing.get("completion", "0") or "0")
         is_free = (prompt_cost == 0 and completion_cost == 0)
 
+        # Created timestamp — newer models are generally more capable
+        created_at = m.get("created", 0) or 0
+
         models.append({
             "id": model_id,
             "label": f"{'[FREE] ' if is_free else ''}{name}",
@@ -86,14 +89,17 @@ async def _fetch_openrouter_models() -> list:
             "context_length": ctx,
             "is_free": is_free,
             "cost_per_1k": round((prompt_cost + completion_cost) * 1000, 4),
+            "created_at": created_at,
         })
 
-    # Sort: free models first (largest context = most capable), then paid by cost
+    # Sort: free first → biggest context → newest (best free model at top)
+    # Paid: cheapest first → biggest context → newest
     models.sort(key=lambda m: (
         0 if m["is_free"] else 1,           # free first
-        -m["context_length"] if m["is_free"] else 0,  # free: biggest context first
+        -m["context_length"],                # biggest context first
+        -m["created_at"],                    # newest first (tiebreaker)
         m["cost_per_1k"],                    # paid: cheapest first
-        m["label"].lower(),                  # alphabetical tiebreaker
+        m["label"].lower(),
     ))
 
     _openrouter_models_cache = models
