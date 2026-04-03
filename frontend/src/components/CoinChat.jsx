@@ -177,7 +177,7 @@ export default function CoinChat({ symbol, isMobile }) {
         style={{
           position: "fixed", bottom: 24, right: 24,
           width: 56, height: 56, borderRadius: "50%",
-          background: "rgba(10, 10, 20, 0.6)",
+          background: "rgba(10, 10, 20, 0.35)",
           backdropFilter: "blur(20px) saturate(1.5)",
           WebkitBackdropFilter: "blur(20px) saturate(1.5)",
           border: "2px solid rgba(34, 211, 238, 0.4)",
@@ -194,7 +194,7 @@ export default function CoinChat({ symbol, isMobile }) {
         }}
         onMouseLeave={(e) => {
           if (!open) {
-            e.currentTarget.style.background = "rgba(10, 10, 20, 0.6)";
+            e.currentTarget.style.background = "rgba(10, 10, 20, 0.35)";
             e.currentTarget.style.boxShadow = "0 2px 16px rgba(0,0,0,0.3)";
           }
         }}
@@ -205,7 +205,7 @@ export default function CoinChat({ symbol, isMobile }) {
           <img
             src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 66, height: 66, objectFit: "contain", marginTop: -8 }}
+            style={{ width: 66, height: 66, objectFit: "contain" }}
           />
         )}
       </button>
