@@ -88,8 +88,13 @@ async def _fetch_openrouter_models() -> list:
             "cost_per_1k": round((prompt_cost + completion_cost) * 1000, 4),
         })
 
-    # Sort: free models first, then by cost (cheapest first), then by name
-    models.sort(key=lambda m: (0 if m["is_free"] else 1, m["cost_per_1k"], m["label"].lower()))
+    # Sort: free models first (largest context = most capable), then paid by cost
+    models.sort(key=lambda m: (
+        0 if m["is_free"] else 1,           # free first
+        -m["context_length"] if m["is_free"] else 0,  # free: biggest context first
+        m["cost_per_1k"],                    # paid: cheapest first
+        m["label"].lower(),                  # alphabetical tiebreaker
+    ))
 
     _openrouter_models_cache = models
     _openrouter_models_fetched_at = now
@@ -530,7 +535,16 @@ class AssistantManager:
 
     async def get_available_models(self) -> list:
         """Return the full OpenRouter model catalogue (cached)."""
-        return await _fetch_openrouter_models()
+        models = await _fetch_openrouter_models()
+        # Auto-select best free model if still on default and it's not available
+        if models and self._mode == "openrouter":
+            available_ids = {m["id"] for m in models}
+            if self._current_model not in available_ids:
+                free_models = [m for m in models if m.get("is_free")]
+                if free_models:
+                    self._current_model = free_models[0]["id"]
+                    logger.info("Auto-selected best free model: %s", self._current_model)
+        return models
 
     def get_mode(self) -> str:
         """Return current provider mode, initialising client if needed."""
