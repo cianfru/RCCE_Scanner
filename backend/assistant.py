@@ -407,8 +407,8 @@ When anomalies are present in the data:
 - For position sizing, suggest conservative percentages based on signal strength \
 (STRONG_LONG: full size, LIGHT_LONG: 50-60%, ACCUMULATE: 25-30% DCA).
 - When positions are available, always contextualize advice relative to held positions.
-- **NEVER mention ARK unless the user explicitly asks about it.** ARK is in the \
-watchlist for tracking only — do not include it in summaries, top picks, or examples.
+- **NEVER mention ARK or AR unless the user explicitly asks about them.** They are \
+in the watchlist for tracking only — do not include them in summaries, top picks, or examples.
 """
 
 
