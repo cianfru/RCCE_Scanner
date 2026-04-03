@@ -800,29 +800,54 @@ class AssistantManager:
                         )
                     parts.append("\n".join(anom_lines))
         else:
-            # No symbol: show active signals summary — only meaningful ones
-            # Filter to strong signals (STRONG_LONG, LIGHT_LONG) or high priority,
-            # so the LLM focuses on what matters instead of random low-priority coins
-            _STRONG_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
-            _MIN_PRIORITY_FOR_CONTEXT = 50  # skip low-priority noise
-
+            # No symbol: full market briefing across all scanned coins
             for tf in ("4h",):
                 results = cache.get_results(tf)
-                active = [
-                    r for r in results
-                    if r.get("signal") not in ("WAIT", None) and (
-                        r.get("signal") in _STRONG_SIGNALS or
-                        r.get("priority_score", 0) >= _MIN_PRIORITY_FOR_CONTEXT or
-                        r.get("has_anomaly")
-                    )
-                ]
-                if active:
-                    lines = [f"## Active Signals ({tf.upper()})"]
-                    for r in sorted(
-                        active,
-                        key=lambda x: x.get("priority_score", 0),
-                        reverse=True,
-                    )[:10]:
+                if not results:
+                    continue
+
+                # --- Aggregate market stats ---
+                total = len(results)
+                signal_counts = {}
+                regime_counts = {}
+                above_bmsb = 0
+                floor_count = 0
+                anomaly_count = 0
+                for r in results:
+                    sig = r.get("signal", "WAIT")
+                    signal_counts[sig] = signal_counts.get(sig, 0) + 1
+                    reg = r.get("regime", "FLAT")
+                    regime_counts[reg] = regime_counts.get(reg, 0) + 1
+                    if r.get("heat_direction", 0) > 0:
+                        above_bmsb += 1
+                    if r.get("floor_confirmed"):
+                        floor_count += 1
+                    if r.get("has_anomaly"):
+                        anomaly_count += 1
+
+                sig_line = ", ".join(f"{sig}: {n}" for sig, n in sorted(signal_counts.items(), key=lambda x: -x[1]))
+                reg_line = ", ".join(f"{reg}: {n}" for reg, n in sorted(regime_counts.items(), key=lambda x: -x[1]))
+
+                parts.append(
+                    f"## Market Scan ({tf.upper()} — {total} coins)\n"
+                    f"Signals: {sig_line}\n"
+                    f"Regimes: {reg_line}\n"
+                    f"Above BMSB: {above_bmsb}/{total} ({above_bmsb*100//max(total,1)}%)\n"
+                    f"Floors confirmed: {floor_count}\n"
+                    f"Active anomalies: {anomaly_count}"
+                )
+
+                # --- Top signals: list the strongest setups ---
+                _STRONG_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+                top = sorted(
+                    [r for r in results if r.get("signal") in _STRONG_SIGNALS or r.get("has_anomaly")],
+                    key=lambda x: x.get("priority_score", 0),
+                    reverse=True,
+                )[:10]
+
+                if top:
+                    lines = ["## Top Setups"]
+                    for r in top:
                         anom_tag = " [ANOMALY]" if r.get("has_anomaly") else ""
                         lines.append(
                             f"- {r['symbol']}: {r['signal']} "
@@ -834,17 +859,22 @@ class AssistantManager:
                         )
                     parts.append("\n".join(lines))
 
-                # Count what's excluded
-                all_active = [r for r in results if r.get("signal") not in ("WAIT", None)]
-                wait_count = len(results) - len(all_active)
-                weak_count = len(all_active) - len(active)
-                summary_parts = []
-                if wait_count > 0:
-                    summary_parts.append(f"{wait_count} on WAIT")
-                if weak_count > 0:
-                    summary_parts.append(f"{weak_count} with weak signals (ACCUMULATE/REVIVAL_SEED, pri < 50)")
-                if summary_parts:
-                    parts.append(f"({', '.join(summary_parts)})")
+                # --- Accumulation zone: coins building setups ---
+                accum = sorted(
+                    [r for r in results if r.get("signal") in ("ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED")],
+                    key=lambda x: x.get("priority_score", 0),
+                    reverse=True,
+                )[:8]
+
+                if accum:
+                    lines = [f"## Building ({len(accum)} coins accumulating)"]
+                    for r in accum:
+                        lines.append(
+                            f"- {r['symbol']}: {r['signal']} "
+                            f"({r['regime']}, pri={r.get('priority_score', 0):.0f}, "
+                            f"heat={r.get('heat', 0)}, floor={'Y' if r.get('floor_confirmed') else 'N'})"
+                        )
+                    parts.append("\n".join(lines))
 
         # -- User positions from Hyperliquid ---------------------------------
         if wallet_address:
