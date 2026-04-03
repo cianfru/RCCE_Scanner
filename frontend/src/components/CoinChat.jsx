@@ -176,26 +176,36 @@ export default function CoinChat({ symbol, isMobile }) {
         onClick={() => setOpen(!open)}
         style={{
           position: "fixed", bottom: 24, right: 24,
-          width: 76, height: 76, borderRadius: "50%",
-          background: open ? T.overlay10 : "#22d3ee",
-          border: "none",
+          width: 56, height: 56, borderRadius: "50%",
+          background: "rgba(10, 10, 20, 0.6)",
+          backdropFilter: "blur(20px) saturate(1.5)",
+          WebkitBackdropFilter: "blur(20px) saturate(1.5)",
+          border: "2px solid rgba(34, 211, 238, 0.4)",
           cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: open
-            ? "none"
-            : "0 4px 20px rgba(34,211,238,0.4), 0 8px 32px rgba(34,211,238,0.2)",
+          boxShadow: "0 2px 16px rgba(0,0,0,0.3)",
           transition: "all 0.25s ease",
           zIndex: 1000,
-          overflow: "hidden",
+          overflow: "visible",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "#22d3ee";
+          e.currentTarget.style.boxShadow = "0 4px 24px rgba(34,211,238,0.4)";
+        }}
+        onMouseLeave={(e) => {
+          if (!open) {
+            e.currentTarget.style.background = "rgba(10, 10, 20, 0.6)";
+            e.currentTarget.style.boxShadow = "0 2px 16px rgba(0,0,0,0.3)";
+          }
         }}
       >
         {open ? (
-          <span style={{ color: T.text2, fontSize: 22, lineHeight: 1 }}>{"\u2715"}</span>
+          <span style={{ color: T.text2, fontSize: 20, lineHeight: 1 }}>{"\u2715"}</span>
         ) : (
           <img
             src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 66, height: 66, objectFit: "contain" }}
+            style={{ width: 66, height: 66, objectFit: "contain", marginTop: -8 }}
           />
         )}
       </button>
@@ -206,7 +216,7 @@ export default function CoinChat({ symbol, isMobile }) {
           ref={panelRef}
           style={{
             position: "fixed",
-            bottom: 100,
+            bottom: 92,
             right: 24,
             width: isMobile ? "calc(100vw - 32px)" : 400,
             height: isMobile ? "60vh" : 520,
