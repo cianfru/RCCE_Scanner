@@ -176,7 +176,7 @@ export default function CoinChat({ symbol, isMobile }) {
         onClick={() => setOpen(!open)}
         style={{
           position: "fixed", bottom: 24, right: 24,
-          width: 68, height: 68, borderRadius: "50%",
+          width: 76, height: 76, borderRadius: "50%",
           background: open ? T.overlay10 : "#22d3ee",
           border: "none",
           cursor: "pointer",
@@ -195,7 +195,7 @@ export default function CoinChat({ symbol, isMobile }) {
           <img
             src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 58, height: 58, objectFit: "contain" }}
+            style={{ width: 66, height: 66, objectFit: "contain" }}
           />
         )}
       </button>
