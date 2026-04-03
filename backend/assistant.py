@@ -1313,7 +1313,7 @@ class AssistantManager:
             openai_messages = [{"role": "system", "content": system}] + messages
             response = client.chat.completions.create(
                 model=self._current_model,
-                max_tokens=1024,
+                max_tokens=4096,
                 messages=openai_messages,
             )
             reply = response.choices[0].message.content
@@ -1321,7 +1321,7 @@ class AssistantManager:
             # Direct Anthropic SDK (fallback)
             response = client.messages.create(
                 model=ANTHROPIC_FALLBACK_MODEL,
-                max_tokens=1024,
+                max_tokens=4096,
                 system=system,
                 messages=messages,
             )
