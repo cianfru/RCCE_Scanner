@@ -341,6 +341,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
   if (!selected) return null;
 
   const tvUrl = `https://www.tradingview.com/chart/?symbol=${getTVSymbol(selected.symbol)}`;
+  const hlCoin = selected.symbol.split("/")[0];
+  const hlUrl = `https://app.hyperliquid.xyz/trade/${hlCoin}`;
 
   return (
     <>
@@ -588,21 +590,38 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Manual Trade Form */}
         {api && <TradeForm selected={selected} api={api} isMobile={isMobile} />}
 
-        {/* Open in TradingView — Prominent CTA */}
-        <a
-          href={tvUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="apple-btn apple-btn-accent"
-          style={{
-            display: "block", marginTop: 20, padding: isMobile ? "14px 16px" : "12px 16px",
-            borderRadius: 12, fontFamily: T.font,
-            fontSize: 12, textDecoration: "none", textAlign: "center",
-            letterSpacing: "0.06em", fontWeight: 700,
-          }}
-        >
-          Open in TradingView {"\u2197"}
-        </a>
+        {/* External links */}
+        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+          <a
+            href={hlUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="apple-btn apple-btn-accent"
+            style={{
+              flex: 1, display: "block", padding: isMobile ? "14px 16px" : "12px 16px",
+              borderRadius: 12, fontFamily: T.font,
+              fontSize: 12, textDecoration: "none", textAlign: "center",
+              letterSpacing: "0.06em", fontWeight: 700,
+            }}
+          >
+            Trade on Hyperliquid {"\u2197"}
+          </a>
+          <a
+            href={tvUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="apple-btn"
+            style={{
+              flex: 1, display: "block", padding: isMobile ? "14px 16px" : "12px 16px",
+              borderRadius: 12, fontFamily: T.font,
+              fontSize: 12, textDecoration: "none", textAlign: "center",
+              letterSpacing: "0.06em", fontWeight: 700,
+              border: `1px solid ${T.border}`, color: T.text2,
+            }}
+          >
+            Open in TradingView {"\u2197"}
+          </a>
+        </div>
       </div>
     </>
   );

@@ -550,23 +550,42 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           signalConfidence={data.signal_confidence}
           momentum={data.momentum}
         />
-        <a
-          href={`https://www.tradingview.com/chart/?symbol=${getTVSymbol(data.symbol)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            marginTop: 10, padding: "5px 12px", borderRadius: 8,
-            fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
-            color: T.text4, textDecoration: "none",
-            border: `1px solid ${T.border}`, background: "transparent",
-            transition: "color 0.15s, border-color 0.15s",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
-          onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
-        >
-          Open in TradingView {"\u2197"}
-        </a>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <a
+            href={`https://app.hyperliquid.xyz/trade/${data.symbol.split("/")[0]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 8,
+              fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
+              color: T.text4, textDecoration: "none",
+              border: `1px solid ${T.border}`, background: "transparent",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#22d3ee"; e.currentTarget.style.borderColor = "#22d3ee"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
+          >
+            Trade on Hyperliquid {"\u2197"}
+          </a>
+          <a
+            href={`https://www.tradingview.com/chart/?symbol=${getTVSymbol(data.symbol)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 8,
+              fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
+              color: T.text4, textDecoration: "none",
+              border: `1px solid ${T.border}`, background: "transparent",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
+          >
+            Open in TradingView {"\u2197"}
+          </a>
+        </div>
       </div>
 
       {/* Signal Reason + Warnings — full width banner */}
