@@ -53,8 +53,8 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
                 {c.value}
               </div>
               <div style={{
-                fontSize: m(T.textSm, isMobile), color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
-                fontFamily: T.font, fontWeight: 600,
+                fontSize: m(T.textBase, isMobile), color: isActive ? c.color : c.value > 0 ? T.text2 : T.text4,
+                fontFamily: T.mono, fontWeight: 600,
                 letterSpacing: "0.08em", marginTop: T.sp1,
                 textTransform: "uppercase",
               }}>
