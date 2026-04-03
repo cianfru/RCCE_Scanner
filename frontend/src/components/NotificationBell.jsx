@@ -32,7 +32,7 @@ const SEVERITY_ICONS = {
   high:     "\u26a0",
   medium:   "\u25cb",  // ○
   low:      "\u00b7",  // ·
-  positive: "\u25b2",  // ▲ entry setup
+  positive: "\u25b2",  // ▲
 };
 
 const DISMISSED_KEY = "rcce-bell-dismissed";
@@ -60,14 +60,14 @@ function coinName(symbol) {
   return symbol.replace("/USDT", "").replace("/USD", "");
 }
 
-/* Dismiss button (X) — reused across all sections */
+/* Dismiss button (X) */
 function DismissBtn({ onClick }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       style={{
-        fontSize: 12, color: T.text4, background: "transparent",
-        border: "none", cursor: "pointer", padding: "0 4px",
+        fontSize: T.textSm, color: T.text4, background: "transparent",
+        border: "none", cursor: "pointer", padding: "2px 6px",
         borderRadius: 4, lineHeight: 1, flexShrink: 0,
         transition: "color 0.15s",
       }}
@@ -78,32 +78,32 @@ function DismissBtn({ onClick }) {
   );
 }
 
-/* Section header with count + clear button */
+/* Section header */
 function SectionHeader({ label, count, color, bg, onClear }) {
   return (
     <div style={{
-      padding: "8px 14px",
+      padding: "10px 16px",
       borderBottom: `1px solid ${T.border}`,
       display: "flex", alignItems: "center", justifyContent: "space-between",
       background: bg,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{
-          fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+          fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
           color, letterSpacing: "0.08em",
         }}>
           {label}
         </span>
-        <span style={{ fontSize: 10, fontFamily: T.mono, color, fontWeight: 600 }}>
+        <span style={{ fontSize: T.textXs, fontFamily: T.mono, color, fontWeight: 600 }}>
           {count}
         </span>
       </div>
       <button
         onClick={onClear}
         style={{
-          fontSize: 9, fontFamily: T.font, fontWeight: 600,
+          fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
           color: T.text4, background: "transparent",
-          border: "none", cursor: "pointer", padding: "2px 6px",
+          border: "none", cursor: "pointer", padding: "3px 8px",
           borderRadius: 4, transition: "color 0.15s",
         }}
         onMouseEnter={(e) => e.currentTarget.style.color = T.text2}
@@ -111,6 +111,51 @@ function SectionHeader({ label, count, color, bg, onClear }) {
       >
         Clear
       </button>
+    </div>
+  );
+}
+
+/* Notification card row */
+function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss, bg, children }) {
+  return (
+    <div style={{
+      padding: "12px 16px",
+      borderBottom: `1px solid ${T.border}`,
+      background: bg || "transparent",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        marginBottom: 4,
+      }}>
+        <span style={{ color: iconColor, fontSize: T.textSm, lineHeight: 1 }}>{icon}</span>
+        <span style={{
+          fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
+          color: T.text1, flex: 1,
+        }}>
+          {title}
+        </span>
+        {children}
+        {badge && (
+          <span style={{
+            fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
+            padding: "2px 7px", borderRadius: 4,
+            background: (badgeColor || iconColor) + "18",
+            color: badgeColor || iconColor,
+            textTransform: "uppercase", whiteSpace: "nowrap",
+          }}>
+            {badge}
+          </span>
+        )}
+        <DismissBtn onClick={onDismiss} />
+      </div>
+      {detail && (
+        <div style={{
+          fontSize: T.textSm, fontFamily: T.mono, color: T.text4,
+          paddingLeft: 22, lineHeight: 1.6,
+        }}>
+          {detail}
+        </div>
+      )}
     </div>
   );
 }
@@ -201,7 +246,7 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress]);
 
-  const [setupFilter, setSetupFilter] = useState("HIGH"); // HIGH | MED | ALL
+  const [setupFilter, setSetupFilter] = useState("HIGH");
 
   const fetchMarketSetups = useCallback(async () => {
     try {
@@ -216,7 +261,6 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress, setupFilter]);
 
-  // Poll every 60s
   useEffect(() => {
     fetchNotifs();
     fetchAnomalies();
@@ -229,7 +273,6 @@ export default function NotificationBell() {
     return () => clearInterval(iv);
   }, [fetchNotifs, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
@@ -241,7 +284,7 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // --- Filtered lists (after dismiss) ---
+  // --- Filtered lists ---
   const visibleAnomalies = anomalies.filter(a => !isDismissed(`anom:${a.dedup_key}`));
   const visibleWarnings = warnings.filter(w => !isDismissed(`warn:${w.type}:${w.symbol}`));
   const visibleOpps = exhaustionOpps.filter(o => !isDismissed(`opp:${o.type}:${o.symbol}`));
@@ -250,7 +293,6 @@ export default function NotificationBell() {
 
   const totalVisible = visibleAnomalies.length + visibleWarnings.length + visibleOpps.length + visibleSetups.length + visibleEvents.length;
 
-  const unseen = visibleEvents.filter((e) => e.timestamp > lastSeen).length;
   const hasAnomalies = visibleAnomalies.length > 0;
   const hasWarnings = visibleWarnings.length > 0;
   const hasCritical = hasAnomalies || visibleWarnings.some(w => w.severity === "critical" || w.severity === "high");
@@ -267,9 +309,7 @@ export default function NotificationBell() {
   };
 
   const handleToggle = () => {
-    if (!open) {
-      markSeen();
-    }
+    if (!open) markSeen();
     setOpen(!open);
   };
 
@@ -294,7 +334,7 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(unseen > 0 || hasAnomalies || hasWarnings || hasOpps || hasSetups) && (
+        {(hasAnomalies || hasWarnings || hasOpps || hasSetups || visibleEvents.length > 0) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
@@ -313,7 +353,7 @@ export default function NotificationBell() {
       {open && (
         <div style={{
           position: "fixed", top: 56, right: 10,
-          width: 340, maxWidth: "calc(100vw - 20px)", maxHeight: 500,
+          width: 420, maxWidth: "calc(100vw - 20px)", maxHeight: "70vh",
           background: T.popoverBg,
           border: `1px solid ${T.border}`,
           borderRadius: T.radiusSm,
@@ -324,17 +364,16 @@ export default function NotificationBell() {
           {/* Global clear all */}
           {totalVisible > 0 && (
             <div style={{
-              padding: "6px 14px",
+              padding: "8px 16px",
               borderBottom: `1px solid ${T.border}`,
               display: "flex", alignItems: "center", justifyContent: "flex-end",
-              background: "transparent",
             }}>
               <button
                 onClick={clearAll}
                 style={{
-                  fontSize: 9, fontFamily: T.font, fontWeight: 600,
+                  fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
                   color: T.text4, background: "transparent",
-                  border: "none", cursor: "pointer", padding: "2px 8px",
+                  border: "none", cursor: "pointer", padding: "3px 8px",
                   borderRadius: 4, transition: "color 0.15s",
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.color = T.text2}
@@ -345,85 +384,53 @@ export default function NotificationBell() {
             </div>
           )}
 
-          {/* Anomalies Section */}
+          {/* Anomalies */}
           {visibleAnomalies.length > 0 && (
             <>
               <SectionHeader
-                label="ANOMALIES"
-                count={visibleAnomalies.length}
-                color="#ef4444"
-                bg="rgba(239, 68, 68, 0.05)"
+                label="ANOMALIES" count={visibleAnomalies.length}
+                color="#ef4444" bg="rgba(239, 68, 68, 0.05)"
                 onClear={() => dismissMany(anomalies.map(a => `anom:${a.dedup_key}`))}
               />
               {visibleAnomalies.map((a, i) => {
                 const color = a.severity === "critical" ? "#ef4444" : "#f59e0b";
-                const coin = (a.symbol || "").replace("/USDT", "").replace("/USD", "");
+                const coin = coinName(a.symbol || "");
                 const typeMap = {
-                  EXTREME_FUNDING: "FUNDING",
-                  OI_SURGE: "OI",
-                  VOLUME_SPIKE: "VOL",
-                  LSR_EXTREME: "LSR",
-                  CVD_EXTREME: "CVD",
+                  EXTREME_FUNDING: "FUNDING", OI_SURGE: "OI",
+                  VOLUME_SPIKE: "VOL", LSR_EXTREME: "LSR", CVD_EXTREME: "CVD",
                 };
                 const key = `anom:${a.dedup_key}`;
                 return (
-                  <div
+                  <CardRow
                     key={key + "-" + i}
-                    style={{
-                      padding: "8px 14px",
-                      borderBottom: `1px solid ${T.border}`,
-                      background: a.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : "transparent",
-                    }}
+                    icon={"\u26a0"} iconColor={color}
+                    title={coin}
+                    badge={typeMap[a.anomaly_type] || a.anomaly_type}
+                    badgeColor={color}
+                    detail={a.context}
+                    onDismiss={() => dismiss(key)}
+                    bg={a.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : undefined}
                   >
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      marginBottom: 3,
+                    <span style={{
+                      fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
+                      padding: "2px 7px", borderRadius: 4,
+                      background: color + "18", color,
+                      textTransform: "uppercase",
                     }}>
-                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{"\u26a0"}</span>
-                      <span style={{
-                        fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-                        color: T.text1,
-                      }}>
-                        {coin}
-                      </span>
-                      <span style={{
-                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-                        padding: "1px 5px", borderRadius: 4,
-                        background: color + "18", color,
-                      }}>
-                        {typeMap[a.anomaly_type] || a.anomaly_type}
-                      </span>
-                      <span style={{
-                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-                        padding: "1px 5px", borderRadius: 4,
-                        background: color + "18", color,
-                        textTransform: "uppercase",
-                      }}>
-                        {a.severity}
-                      </span>
-                      <span style={{ marginLeft: "auto" }} />
-                      <DismissBtn onClick={() => dismiss(key)} />
-                    </div>
-                    <div style={{
-                      fontSize: 10, fontFamily: T.mono, color: T.text4,
-                      paddingLeft: 19, lineHeight: 1.5,
-                    }}>
-                      {a.context}
-                    </div>
-                  </div>
+                      {a.severity}
+                    </span>
+                  </CardRow>
                 );
               })}
             </>
           )}
 
-          {/* Position Warnings Section */}
+          {/* Position Warnings */}
           {visibleWarnings.length > 0 && (
             <>
               <SectionHeader
-                label="POSITION ALERTS"
-                count={visibleWarnings.length}
-                color="#f59e0b"
-                bg="rgba(245, 158, 11, 0.05)"
+                label="POSITION ALERTS" count={visibleWarnings.length}
+                color="#f59e0b" bg="rgba(245, 158, 11, 0.05)"
                 onClear={() => dismissMany(warnings.map(w => `warn:${w.type}:${w.symbol}`))}
               />
               {visibleWarnings.map((w, i) => {
@@ -431,138 +438,91 @@ export default function NotificationBell() {
                 const icon = SEVERITY_ICONS[w.severity] || "\u2022";
                 const key = `warn:${w.type}:${w.symbol}`;
                 return (
-                  <div
+                  <CardRow
                     key={key + "-" + i}
-                    style={{
-                      padding: "8px 14px",
-                      borderBottom: `1px solid ${T.border}`,
-                      background: w.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : "transparent",
-                    }}
-                  >
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      marginBottom: 3,
-                    }}>
-                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
-                      <span style={{
-                        fontSize: 11, fontFamily: T.mono, fontWeight: 600,
-                        color: T.text1, flex: 1,
-                      }}>
-                        {w.title}
-                      </span>
-                      <span style={{
-                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-                        padding: "1px 5px", borderRadius: 4,
-                        background: color + "18", color,
-                        textTransform: "uppercase",
-                      }}>
-                        {w.severity}
-                      </span>
-                      <DismissBtn onClick={() => dismiss(key)} />
-                    </div>
-                    <div style={{
-                      fontSize: 10, fontFamily: T.mono, color: T.text4,
-                      paddingLeft: 19, lineHeight: 1.5,
-                    }}>
-                      {w.detail}
-                    </div>
-                  </div>
+                    icon={icon} iconColor={color}
+                    title={w.title}
+                    badge={w.severity} badgeColor={color}
+                    detail={w.detail}
+                    onDismiss={() => dismiss(key)}
+                    bg={w.severity === "critical" ? "rgba(239, 68, 68, 0.06)" : undefined}
+                  />
                 );
               })}
             </>
           )}
 
-          {/* Exhaustion Opportunities Section */}
+          {/* Exhaustion Opportunities */}
           {visibleOpps.length > 0 && (
             <>
               <SectionHeader
-                label="EXHAUSTION SETUPS"
-                count={visibleOpps.length}
-                color="#34d399"
-                bg="rgba(52, 211, 153, 0.04)"
+                label="EXHAUSTION SETUPS" count={visibleOpps.length}
+                color="#34d399" bg="rgba(52, 211, 153, 0.04)"
                 onClear={() => dismissMany(exhaustionOpps.map(o => `opp:${o.type}:${o.symbol}`))}
               />
               {visibleOpps.map((opp, i) => {
                 const color = SEVERITY_COLORS[opp.severity] || "#34d399";
-                const icon  = opp.type === "exhaustion_floor" ? "\u25c6"   // ◆ confirmed
-                            : opp.type === "climax_reversal"  ? "\u26a1"   // ⚡ climax
-                            : "\u25aa";                                      // ▪ absorbing
+                const icon = opp.type === "exhaustion_floor" ? "\u25c6"
+                           : opp.type === "climax_reversal" ? "\u26a1" : "\u25aa";
+                const badge = opp.type === "exhaustion_floor" ? "FLOOR"
+                            : opp.type === "climax_reversal" ? "CLIMAX" : "EARLY";
                 const key = `opp:${opp.type}:${opp.symbol}`;
                 return (
-                  <div
+                  <CardRow
                     key={key + "-" + i}
-                    style={{
-                      padding: "8px 14px",
-                      borderBottom: `1px solid ${T.border}`,
-                      background: opp.type === "exhaustion_floor" ? "rgba(52,211,153,0.04)" : "transparent",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
-                      <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1, flex: 1 }}>
-                        {opp.title}
-                      </span>
-                      <span style={{
-                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-                        padding: "1px 5px", borderRadius: 4,
-                        background: color + "18", color,
-                        textTransform: "uppercase",
-                      }}>
-                        {opp.type === "exhaustion_floor" ? "FLOOR" : opp.type === "climax_reversal" ? "CLIMAX" : "EARLY"}
-                      </span>
-                      <DismissBtn onClick={() => dismiss(key)} />
-                    </div>
-                    <div style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, paddingLeft: 19, lineHeight: 1.5 }}>
-                      {opp.detail}
-                    </div>
-                  </div>
+                    icon={icon} iconColor={color}
+                    title={opp.title}
+                    badge={badge} badgeColor={color}
+                    detail={opp.detail}
+                    onDismiss={() => dismiss(key)}
+                    bg={opp.type === "exhaustion_floor" ? "rgba(52,211,153,0.04)" : undefined}
+                  />
                 );
               })}
             </>
           )}
 
-          {/* OI / Price Divergence — Market Setups */}
+          {/* Market Setups */}
           {(visibleSetups.length > 0 || true) && (
             <>
               <div style={{
-                padding: "8px 14px",
+                padding: "10px 16px",
                 borderBottom: `1px solid ${T.border}`,
                 display: "flex", alignItems: "center", gap: 8,
                 background: "rgba(167,139,250,0.04)",
               }}>
                 <span style={{
-                  fontSize: 11, fontFamily: T.mono, fontWeight: 700,
+                  fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
                   color: "#a78bfa", letterSpacing: "0.08em", flex: 1,
                 }}>
                   MARKET SETUPS
                 </span>
-                {/* Confluence filter */}
                 {["HIGH","MED","ALL"].map(opt => (
                   <button
                     key={opt}
                     onClick={() => setSetupFilter(opt)}
                     style={{
-                      padding: "1px 6px", borderRadius: 8,
+                      padding: "2px 8px", borderRadius: 8,
                       border: `1px solid ${setupFilter === opt ? "#a78bfa" : T.border}`,
                       background: setupFilter === opt ? "rgba(167,139,250,0.15)" : "transparent",
                       color: setupFilter === opt ? "#a78bfa" : T.text4,
-                      fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                      fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
                       cursor: "pointer",
                     }}
                   >
                     {opt === "HIGH" ? "\u2605\u2605\u2605" : opt === "MED" ? "\u2605\u2605" : "ALL"}
                   </button>
                 ))}
-                <span style={{ fontSize: 10, fontFamily: T.mono, color: "#a78bfa", fontWeight: 600 }}>
+                <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: "#a78bfa", fontWeight: 600 }}>
                   {visibleSetups.length}
                 </span>
                 {visibleSetups.length > 0 && (
                   <button
                     onClick={() => dismissMany(marketSetups.map(s => `setup:${s.type}:${s.symbol}`))}
                     style={{
-                      fontSize: 9, fontFamily: T.font, fontWeight: 600,
+                      fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
                       color: T.text4, background: "transparent",
-                      border: "none", cursor: "pointer", padding: "2px 6px",
+                      border: "none", cursor: "pointer", padding: "3px 8px",
                       borderRadius: 4, transition: "color 0.15s",
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.color = T.text2}
@@ -573,90 +533,61 @@ export default function NotificationBell() {
                 )}
               </div>
               {visibleSetups.length === 0 && (
-                <div style={{ padding: "8px 14px", borderBottom: `1px solid ${T.border}` }}>
-                  <span style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
+                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
+                  <span style={{ fontSize: T.textSm, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
                     No setups at this threshold
                   </span>
                 </div>
               )}
               {visibleSetups.map((s, i) => {
                 const SETUP_COLORS = {
-                  squeeze_setup:      "#a78bfa",
-                  crowded_short_entry:"#34d399",
-                  oi_front_run:       "#22d3ee",
-                  shorts_into_floor:  "#f59e0b",
-                  capitulation_watch: "#6b7280",
-                  cvd_bullish_div:    "#34d399",
-                  spot_led_breakout:  "#22d3ee",
+                  squeeze_setup: "#a78bfa", crowded_short_entry: "#34d399",
+                  oi_front_run: "#22d3ee", shorts_into_floor: "#f59e0b",
+                  capitulation_watch: "#6b7280", cvd_bullish_div: "#34d399",
+                  spot_led_breakout: "#22d3ee",
                 };
                 const SETUP_ICONS = {
-                  squeeze_setup:      "\u{1F300}",  // 🌀
-                  crowded_short_entry:"\u{1F525}",  // 🔥
-                  oi_front_run:       "\u{1F4C8}",  // 📈
-                  shorts_into_floor:  "\u26a1",     // ⚡
-                  capitulation_watch: "\u{1F6A8}",  // 🚨
-                  cvd_bullish_div:    "\u{1F4CA}",  // 📊
-                  spot_led_breakout:  "\u{1F30A}",  // 🌊
+                  squeeze_setup: "\u{1F300}", crowded_short_entry: "\u{1F525}",
+                  oi_front_run: "\u{1F4C8}", shorts_into_floor: "\u26a1",
+                  capitulation_watch: "\u{1F6A8}", cvd_bullish_div: "\u{1F4CA}",
+                  spot_led_breakout: "\u{1F30A}",
+                };
+                const SETUP_LABELS = {
+                  squeeze_setup: "SQUEEZE", crowded_short_entry: "SHORT TRAP",
+                  oi_front_run: "OI FRONT-RUN", shorts_into_floor: "FLOOR",
+                  capitulation_watch: "CAPITULATION", cvd_bullish_div: "CVD DIV",
+                  spot_led_breakout: "SPOT-LED",
                 };
                 const color = SETUP_COLORS[s.type] || "#a78bfa";
-                const icon  = SETUP_ICONS[s.type]  || "\u25c6";
-                const SETUP_LABELS = {
-                  squeeze_setup:       "SQUEEZE",
-                  crowded_short_entry: "SHORT TRAP",
-                  oi_front_run:        "OI FRONT-RUN",
-                  shorts_into_floor:   "FLOOR",
-                  capitulation_watch:  "CAPITULATION",
-                  cvd_bullish_div:     "CVD DIV",
-                  spot_led_breakout:   "SPOT-LED",
-                };
+                const icon = SETUP_ICONS[s.type] || "\u25c6";
                 const key = `setup:${s.type}:${s.symbol}`;
                 return (
-                  <div
+                  <CardRow
                     key={key + "-" + i}
-                    style={{
-                      padding: "8px 14px",
-                      borderBottom: `1px solid ${T.border}`,
-                      background: s.severity === "high" ? color + "06" : "transparent",
-                    }}
+                    icon={icon} iconColor={color}
+                    title={s.title}
+                    badge={SETUP_LABELS[s.type] || s.type} badgeColor={color}
+                    detail={s.detail}
+                    onDismiss={() => dismiss(key)}
+                    bg={s.severity === "high" ? color + "06" : undefined}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                      <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
-                      <span style={{ fontSize: 11, fontFamily: T.mono, fontWeight: 600, color: T.text1, flex: 1 }}>
-                        {s.title}
+                    {s.confluence_score != null && (
+                      <span style={{ fontSize: T.textXs, color, opacity: 0.8, letterSpacing: "-1px" }}>
+                        {"\u25cf".repeat(s.confluence_score)}{"\u25cb".repeat(7 - (s.confluence_score || 0))}
                       </span>
-                      {/* Confluence dots */}
-                      {s.confluence_score != null && (
-                        <span style={{ fontSize: 8, color, opacity: 0.8, letterSpacing: "-1px" }}>
-                          {"\u25cf".repeat(s.confluence_score)}{"\u25cb".repeat(7 - (s.confluence_score || 0))}
-                        </span>
-                      )}
-                      <span style={{
-                        fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-                        padding: "1px 5px", borderRadius: 4,
-                        background: color + "18", color,
-                        textTransform: "uppercase", whiteSpace: "nowrap",
-                      }}>
-                        {SETUP_LABELS[s.type] || s.type}
-                      </span>
-                      <DismissBtn onClick={() => dismiss(key)} />
-                    </div>
-                    <div style={{ fontSize: 10, fontFamily: T.mono, color: T.text4, paddingLeft: 19, lineHeight: 1.5 }}>
-                      {s.detail}
-                    </div>
-                  </div>
+                    )}
+                  </CardRow>
                 );
               })}
             </>
           )}
 
-          {/* Signal Events Section */}
+          {/* Signal Events */}
           {visibleEvents.length > 0 && (
             <>
               <SectionHeader
-                label="SIGNAL EVENTS"
-                count={visibleEvents.length}
-                color={T.text2}
-                bg="transparent"
+                label="SIGNAL EVENTS" count={visibleEvents.length}
+                color={T.text2} bg="transparent"
                 onClear={() => dismissMany(events.map(e => `ev:${e.event_type}:${e.symbol}:${e.timestamp}`))}
               />
               {visibleEvents.map((ev, i) => {
@@ -674,7 +605,7 @@ export default function NotificationBell() {
                   <div
                     key={key + "-" + i}
                     style={{
-                      padding: "8px 14px",
+                      padding: "12px 16px",
                       borderBottom: i < visibleEvents.length - 1 ? `1px solid ${T.border}` : "none",
                       background: isNew ? T.overlay03 : "transparent",
                       transition: "background 0.15s",
@@ -682,17 +613,17 @@ export default function NotificationBell() {
                   >
                     <div style={{
                       display: "flex", alignItems: "center", gap: 8,
-                      marginBottom: 2,
+                      marginBottom: 4,
                     }}>
-                      <span style={{ color, fontSize: 10, lineHeight: 1 }}>{icon}</span>
+                      <span style={{ color, fontSize: T.textSm, lineHeight: 1 }}>{icon}</span>
                       <span style={{
-                        fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+                        fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
                         color: T.text1,
                       }}>
                         {coinName(ev.symbol)}
                       </span>
                       <span style={{
-                        fontSize: 10, fontFamily: T.mono, color: T.text4,
+                        fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
                         marginLeft: "auto",
                       }}>
                         {timeAgo(ev.timestamp)}
@@ -700,8 +631,8 @@ export default function NotificationBell() {
                       <DismissBtn onClick={() => dismiss(key)} />
                     </div>
                     <div style={{
-                      fontSize: 10, fontFamily: T.mono, color: T.text3,
-                      paddingLeft: 18,
+                      fontSize: T.textSm, fontFamily: T.mono, color: T.text3,
+                      paddingLeft: 22,
                     }}>
                       {isSignal ? (
                         <>
@@ -710,18 +641,17 @@ export default function NotificationBell() {
                           <span style={{ color, fontWeight: 600 }}>{ev.label}</span>
                           {ev.transition_type && (
                             <span style={{
-                              marginLeft: 6, fontSize: 9,
-                              padding: "1px 5px", borderRadius: 4,
-                              background: color + "18",
-                              color,
+                              marginLeft: 6, fontSize: T.textXs,
+                              padding: "2px 7px", borderRadius: 4,
+                              background: color + "18", color,
                             }}>
                               {ev.transition_type}
                             </span>
                           )}
                           {ev.win_rate != null && (
                             <span style={{
-                              marginLeft: 4, fontSize: 9,
-                              padding: "1px 5px", borderRadius: 4,
+                              marginLeft: 4, fontSize: T.textXs,
+                              padding: "2px 7px", borderRadius: 4,
                               background: ev.win_rate >= 65 ? "#34d39918" : ev.win_rate >= 50 ? "#fbbf2418" : "#f8717118",
                               color: ev.win_rate >= 65 ? "#34d399" : ev.win_rate >= 50 ? "#fbbf24" : "#f87171",
                               fontWeight: 600,
@@ -736,10 +666,9 @@ export default function NotificationBell() {
                           {" \u2192 "}
                           <span style={{ color: T.accent, fontWeight: 600 }}>{ev.label}</span>
                           <span style={{
-                            marginLeft: 6, fontSize: 9,
-                            padding: "1px 5px", borderRadius: 4,
-                            background: T.accentDim,
-                            color: T.accent,
+                            marginLeft: 6, fontSize: T.textXs,
+                            padding: "2px 7px", borderRadius: 4,
+                            background: T.accentDim, color: T.accent,
                           }}>
                             REGIME
                           </span>
@@ -755,8 +684,8 @@ export default function NotificationBell() {
           {/* Empty state */}
           {totalVisible === 0 && (
             <div style={{
-              padding: "40px 14px", textAlign: "center",
-              color: T.text4, fontFamily: T.mono, fontSize: 11,
+              padding: "48px 16px", textAlign: "center",
+              color: T.text4, fontFamily: T.mono, fontSize: T.textSm,
             }}>
               No notifications
             </div>

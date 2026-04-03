@@ -10,7 +10,6 @@ import ConsensusBar from "./components/ConsensusBar.jsx";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
-import AnomalyBanner from "./components/AnomalyBanner.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
@@ -846,7 +845,6 @@ export default function App() {
 
         {showDashboard && <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh} />}
 
-        {showDashboard && <AnomalyBanner isMobile={isMobile} />}
         {showDashboard && <PositionAlerts isMobile={isMobile} />}
 
         {showDashboard && (
