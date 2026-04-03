@@ -176,22 +176,25 @@ export default function CoinChat({ symbol, isMobile }) {
         onClick={() => setOpen(!open)}
         style={{
           position: "fixed", bottom: 24, right: 24,
-          width: 52, height: 52, borderRadius: "50%",
-          background: open ? T.overlay10 : "linear-gradient(135deg, #22d3ee 0%, #a78bfa 100%)",
-          border: "none", cursor: "pointer",
+          width: 64, height: 64, borderRadius: "50%",
+          background: open ? T.overlay10 : "radial-gradient(circle at 40% 40%, rgba(34,211,238,0.15), rgba(167,139,250,0.08) 70%, transparent)",
+          border: `1.5px solid ${open ? T.border : "rgba(34,211,238,0.25)"}`,
+          cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: open ? "none" : `0 4px 20px rgba(34,211,238,0.3), 0 0 0 1px rgba(34,211,238,0.15)`,
-          transition: "all 0.2s ease",
+          boxShadow: open
+            ? "none"
+            : "0 4px 24px rgba(34,211,238,0.25), 0 8px 32px rgba(167,139,250,0.15)",
+          transition: "all 0.25s ease",
           zIndex: 1000,
         }}
       >
         {open ? (
-          <span style={{ color: T.text2, fontSize: 20, lineHeight: 1 }}>{"\u2715"}</span>
+          <span style={{ color: T.text2, fontSize: 22, lineHeight: 1 }}>{"\u2715"}</span>
         ) : (
           <img
-            src="/AI_Agent_dark.png"
-            alt="AI"
-            style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }}
+            src="/robot.png"
+            alt="AI Assistant"
+            style={{ width: 48, height: 48, objectFit: "contain" }}
           />
         )}
       </button>
@@ -202,7 +205,7 @@ export default function CoinChat({ symbol, isMobile }) {
           ref={panelRef}
           style={{
             position: "fixed",
-            bottom: 88,
+            bottom: 100,
             right: 24,
             width: isMobile ? "calc(100vw - 32px)" : 400,
             height: isMobile ? "60vh" : 520,
@@ -224,9 +227,9 @@ export default function CoinChat({ symbol, isMobile }) {
             flexShrink: 0,
           }}>
             <img
-              src="/AI_Agent_dark.png"
+              src="/robot.png"
               alt="AI"
-              style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }}
+              style={{ width: 28, height: 28, objectFit: "contain" }}
             />
             <span style={{
               fontSize: T.textBase, fontFamily: T.mono, fontWeight: 700,
