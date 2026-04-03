@@ -240,7 +240,7 @@ export default function CoinChat({ symbol, isMobile }) {
             <img
               src="/Robot.png"
               alt="AI"
-              style={{ width: 28, height: 28, objectFit: "contain" }}
+              style={{ width: 84, height: 84, objectFit: "contain" }}
             />
             <span style={{
               fontSize: T.textBase, fontFamily: T.mono, fontWeight: 700,
