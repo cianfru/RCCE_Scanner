@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { T } from "../theme";
 import { useWallet } from "../WalletContext.jsx";
 
@@ -116,7 +117,7 @@ function SectionHeader({ label, count, color, bg, onClear }) {
 }
 
 /* Notification card row */
-function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss, bg, children }) {
+function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss, bg, children, onClickTitle }) {
   return (
     <div style={{
       padding: "12px 16px",
@@ -128,10 +129,17 @@ function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss,
         marginBottom: 4,
       }}>
         <span style={{ color: iconColor, fontSize: T.textSm, lineHeight: 1 }}>{icon}</span>
-        <span style={{
-          fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
-          color: T.text1, flex: 1,
-        }}>
+        <span
+          onClick={onClickTitle}
+          style={{
+            fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
+            color: T.text1, flex: 1,
+            cursor: onClickTitle ? "pointer" : "default",
+            transition: onClickTitle ? "color 0.15s" : "none",
+          }}
+          onMouseEnter={onClickTitle ? (e) => e.currentTarget.style.color = T.accent : undefined}
+          onMouseLeave={onClickTitle ? (e) => e.currentTarget.style.color = T.text1 : undefined}
+        >
           {title}
         </span>
         {children}
@@ -162,6 +170,7 @@ function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss,
 
 
 export default function NotificationBell() {
+  const navigate = useNavigate();
   const { address: walletAddress } = useWallet();
   const [events, setEvents] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
@@ -313,6 +322,14 @@ export default function NotificationBell() {
     setOpen(!open);
   };
 
+  const goToCoin = (symbol) => {
+    const coin = (symbol || "").replace("/USDT", "").replace("/USD", "");
+    if (coin) {
+      setOpen(false);
+      navigate(`/scanner/${coin}`);
+    }
+  };
+
   return (
     <div ref={panelRef} style={{ position: "relative" }}>
       {/* Bell icon */}
@@ -405,6 +422,7 @@ export default function NotificationBell() {
                     key={key + "-" + i}
                     icon={"\u26a0"} iconColor={color}
                     title={coin}
+                    onClickTitle={() => goToCoin(a.symbol)}
                     badge={typeMap[a.anomaly_type] || a.anomaly_type}
                     badgeColor={color}
                     detail={a.context}
@@ -442,6 +460,7 @@ export default function NotificationBell() {
                     key={key + "-" + i}
                     icon={icon} iconColor={color}
                     title={w.title}
+                    onClickTitle={() => goToCoin(w.symbol)}
                     badge={w.severity} badgeColor={color}
                     detail={w.detail}
                     onDismiss={() => dismiss(key)}
@@ -472,6 +491,7 @@ export default function NotificationBell() {
                     key={key + "-" + i}
                     icon={icon} iconColor={color}
                     title={opp.title}
+                    onClickTitle={() => goToCoin(opp.symbol)}
                     badge={badge} badgeColor={color}
                     detail={opp.detail}
                     onDismiss={() => dismiss(key)}
@@ -566,6 +586,7 @@ export default function NotificationBell() {
                     key={key + "-" + i}
                     icon={icon} iconColor={color}
                     title={s.title}
+                    onClickTitle={() => goToCoin(s.symbol)}
                     badge={SETUP_LABELS[s.type] || s.type} badgeColor={color}
                     detail={s.detail}
                     onDismiss={() => dismiss(key)}
@@ -616,10 +637,15 @@ export default function NotificationBell() {
                       marginBottom: 4,
                     }}>
                       <span style={{ color, fontSize: T.textSm, lineHeight: 1 }}>{icon}</span>
-                      <span style={{
-                        fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
-                        color: T.text1,
-                      }}>
+                      <span
+                        onClick={() => goToCoin(ev.symbol)}
+                        style={{
+                          fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
+                          color: T.text1, cursor: "pointer", transition: "color 0.15s",
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = T.accent}
+                        onMouseLeave={(e) => e.currentTarget.style.color = T.text1}
+                      >
                         {coinName(ev.symbol)}
                       </span>
                       <span style={{

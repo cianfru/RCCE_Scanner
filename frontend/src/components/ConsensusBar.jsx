@@ -68,13 +68,29 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
                 placeholder="Search..."
                 style={{
                   width: isMobile ? "100%" : 120, height: 28,
-                  padding: "0 8px 0 26px",
+                  padding: "0 28px 0 26px",
                   fontSize: 11, fontFamily: T.mono,
                   background: T.overlay04, color: T.text1,
                   border: `1px solid ${T.border}`, borderRadius: 8,
                   outline: "none",
                 }}
               />
+              {searchTerm && (
+                <button
+                  onClick={() => onSearchChange?.("")}
+                  style={{
+                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                    width: 16, height: 16, padding: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "transparent", border: "none",
+                    color: T.text4, cursor: "pointer", fontSize: 11,
+                    borderRadius: 4, transition: "color 0.15s",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = T.text2}
+                  onMouseLeave={(e) => e.currentTarget.style.color = T.text4}
+                  title="Clear search"
+                >{"\u2715"}</button>
+              )}
             </div>
           </div>
           {/* Row 2 on mobile: Consensus label + badge */}
