@@ -177,24 +177,25 @@ export default function CoinChat({ symbol, isMobile }) {
         style={{
           position: "fixed", bottom: 24, right: 24,
           width: 64, height: 64, borderRadius: "50%",
-          background: open ? T.overlay10 : "radial-gradient(circle at 40% 40%, rgba(34,211,238,0.15), rgba(167,139,250,0.08) 70%, transparent)",
-          border: `1.5px solid ${open ? T.border : "rgba(34,211,238,0.25)"}`,
+          background: open ? T.overlay10 : "#22d3ee",
+          border: "none",
           cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: open
             ? "none"
-            : "0 4px 24px rgba(34,211,238,0.25), 0 8px 32px rgba(167,139,250,0.15)",
+            : "0 4px 20px rgba(34,211,238,0.4), 0 8px 32px rgba(34,211,238,0.2)",
           transition: "all 0.25s ease",
           zIndex: 1000,
+          overflow: "hidden",
         }}
       >
         {open ? (
           <span style={{ color: T.text2, fontSize: 22, lineHeight: 1 }}>{"\u2715"}</span>
         ) : (
           <img
-            src="/robot.png"
+            src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 48, height: 48, objectFit: "contain" }}
+            style={{ width: 48, height: 48, objectFit: "contain", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }}
           />
         )}
       </button>
@@ -227,7 +228,7 @@ export default function CoinChat({ symbol, isMobile }) {
             flexShrink: 0,
           }}>
             <img
-              src="/robot.png"
+              src="/Robot.png"
               alt="AI"
               style={{ width: 28, height: 28, objectFit: "contain" }}
             />
