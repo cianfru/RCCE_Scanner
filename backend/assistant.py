@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 # Model catalogue & provider config
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
+# Default to a capable free model; override via OPENROUTER_MODEL env var
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3-235b-a22b:free")
 ANTHROPIC_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 MAX_HISTORY_MESSAGES = 20
 
@@ -72,15 +73,23 @@ async def _fetch_openrouter_models() -> list:
         # Derive provider from model ID (e.g. "anthropic/claude-3.5-haiku" -> "Anthropic")
         provider = model_id.split("/")[0].title() if "/" in model_id else "Unknown"
 
+        # Extract pricing — free models have prompt/completion = "0"
+        pricing = m.get("pricing", {})
+        prompt_cost = float(pricing.get("prompt", "0") or "0")
+        completion_cost = float(pricing.get("completion", "0") or "0")
+        is_free = (prompt_cost == 0 and completion_cost == 0)
+
         models.append({
             "id": model_id,
-            "label": name,
+            "label": f"{'[FREE] ' if is_free else ''}{name}",
             "provider": provider,
             "context_length": ctx,
+            "is_free": is_free,
+            "cost_per_1k": round((prompt_cost + completion_cost) * 1000, 4),
         })
 
-    # Sort: by provider name, then by model name
-    models.sort(key=lambda m: (m["provider"].lower(), m["label"].lower()))
+    # Sort: free models first, then by cost (cheapest first), then by name
+    models.sort(key=lambda m: (0 if m["is_free"] else 1, m["cost_per_1k"], m["label"].lower()))
 
     _openrouter_models_cache = models
     _openrouter_models_fetched_at = now
