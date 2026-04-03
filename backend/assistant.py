@@ -800,12 +800,21 @@ class AssistantManager:
                         )
                     parts.append("\n".join(anom_lines))
         else:
-            # No symbol: show active signals summary
+            # No symbol: show active signals summary — only meaningful ones
+            # Filter to strong signals (STRONG_LONG, LIGHT_LONG) or high priority,
+            # so the LLM focuses on what matters instead of random low-priority coins
+            _STRONG_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+            _MIN_PRIORITY_FOR_CONTEXT = 50  # skip low-priority noise
+
             for tf in ("4h",):
                 results = cache.get_results(tf)
                 active = [
                     r for r in results
-                    if r.get("signal") not in ("WAIT", None)
+                    if r.get("signal") not in ("WAIT", None) and (
+                        r.get("signal") in _STRONG_SIGNALS or
+                        r.get("priority_score", 0) >= _MIN_PRIORITY_FOR_CONTEXT or
+                        r.get("has_anomaly")
+                    )
                 ]
                 if active:
                     lines = [f"## Active Signals ({tf.upper()})"]
@@ -813,20 +822,29 @@ class AssistantManager:
                         active,
                         key=lambda x: x.get("priority_score", 0),
                         reverse=True,
-                    )[:15]:
+                    )[:10]:
+                        anom_tag = " [ANOMALY]" if r.get("has_anomaly") else ""
                         lines.append(
                             f"- {r['symbol']}: {r['signal']} "
                             f"({r['regime']}, z={r.get('zscore', 0):.2f}, "
                             f"heat={r.get('heat', 0)}, "
                             f"cond={r.get('conditions_met', 0)}/"
-                            f"{r.get('conditions_total', 10)})"
+                            f"{r.get('conditions_total', 10)}, "
+                            f"pri={r.get('priority_score', 0):.0f}){anom_tag}"
                         )
                     parts.append("\n".join(lines))
 
-                # Also list WAIT symbols count
-                wait_count = len(results) - len(active)
+                # Count what's excluded
+                all_active = [r for r in results if r.get("signal") not in ("WAIT", None)]
+                wait_count = len(results) - len(all_active)
+                weak_count = len(all_active) - len(active)
+                summary_parts = []
                 if wait_count > 0:
-                    parts.append(f"({wait_count} symbols on WAIT)")
+                    summary_parts.append(f"{wait_count} on WAIT")
+                if weak_count > 0:
+                    summary_parts.append(f"{weak_count} with weak signals (ACCUMULATE/REVIVAL_SEED, pri < 50)")
+                if summary_parts:
+                    parts.append(f"({', '.join(summary_parts)})")
 
         # -- User positions from Hyperliquid ---------------------------------
         if wallet_address:
