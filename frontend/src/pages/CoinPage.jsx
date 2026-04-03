@@ -6,6 +6,7 @@ import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
+import CoinChat from "../components/CoinChat.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -663,6 +664,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         {/* Engine Metrics (includes Z-Score) */}
         <EngineMetrics data={data} isMobile={isMobile} />
       </div>
+
+      {/* Per-coin AI chat popover */}
+      <CoinChat symbol={data.symbol} isMobile={isMobile} />
     </div>
   );
 }
