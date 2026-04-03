@@ -119,18 +119,18 @@ function MetricSparkline({ label, history, current, unit, colorFn }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
           {label}
         </span>
-        <span style={{ fontSize: 10, color, fontFamily: T.mono, fontWeight: 700 }}>
+        <span style={{ fontSize: T.textBase, color, fontFamily: T.mono, fontWeight: 700 }}>
           {fmtVal(current)}
         </span>
       </div>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", width: "100%" }}>
-        <polyline points={points} fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <circle cx={lastX} cy={lastY} r="2" fill={color} />
+        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <circle cx={lastX} cy={lastY} r="2.5" fill={color} />
       </svg>
     </div>
   );
@@ -291,17 +291,17 @@ function MetricsPanel({ data }) {
         borderBottom: `1px solid ${T.overlay06}`,
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: accent, flexShrink: 0 }} />
-        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+        <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
           Metrics
         </span>
-        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
+        <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
           {metrics[0].history.length} ticks
         </span>
       </div>
       <div style={{
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 14,
       }}>
         {metrics.map(m => (
           <MetricSparkline key={m.label} {...m} />
@@ -349,7 +349,7 @@ function EngineMetrics({ data, isMobile }) {
         borderBottom: `1px solid ${T.overlay06}`,
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
+        <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
           Engine Metrics
         </span>
       </div>
@@ -357,7 +357,7 @@ function EngineMetrics({ data, isMobile }) {
         if (!label) return <div key={i} style={{ height: 1, background: T.overlay06, margin: "6px 0" }} />;
         return (
           <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0" }}>
-            <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.font, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
+            <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
             <span style={{ fontFamily: T.mono, fontSize: T.textBase, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
           </div>
         );
