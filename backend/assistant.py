@@ -70,6 +70,11 @@ async def _fetch_openrouter_models() -> list:
         if ctx < _MIN_CONTEXT_LENGTH:
             continue
 
+        # Skip non-text models (music, image, video generators)
+        modality = (m.get("architecture", {}) or {}).get("modality", "")
+        if modality and "text" not in modality.split("->")[-1]:
+            continue
+
         # Derive provider from model ID (e.g. "anthropic/claude-3.5-haiku" -> "Anthropic")
         provider = model_id.split("/")[0].title() if "/" in model_id else "Unknown"
 
