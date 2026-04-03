@@ -177,17 +177,13 @@ export default function CoinChat({ symbol, isMobile }) {
         style={{
           position: "fixed", bottom: 24, right: 24,
           width: 68, height: 68, borderRadius: "50%",
-          background: open
-            ? T.overlay10
-            : "rgba(34, 211, 238, 0.15)",
-          backdropFilter: "blur(16px) saturate(1.4)",
-          WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-          border: `1.5px solid rgba(34, 211, 238, 0.3)`,
+          background: open ? T.overlay10 : "#22d3ee",
+          border: "none",
           cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: open
             ? "none"
-            : "0 4px 24px rgba(34,211,238,0.3), 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)",
+            : "0 4px 20px rgba(34,211,238,0.4), 0 8px 32px rgba(34,211,238,0.2)",
           transition: "all 0.25s ease",
           zIndex: 1000,
           overflow: "hidden",
@@ -199,7 +195,7 @@ export default function CoinChat({ symbol, isMobile }) {
           <img
             src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 62, height: 62, objectFit: "cover", filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.4))" }}
+            style={{ width: 58, height: 58, objectFit: "contain" }}
           />
         )}
       </button>
