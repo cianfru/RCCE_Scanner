@@ -205,7 +205,7 @@ export default function CoinChat({ symbol, isMobile }) {
           <img
             src="/Robot.png"
             alt="AI Assistant"
-            style={{ width: 66, height: 66, objectFit: "contain" }}
+            style={{ width: 66, height: 66, objectFit: "contain", opacity: 0.5 }}
           />
         )}
       </button>
