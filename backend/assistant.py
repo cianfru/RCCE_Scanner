@@ -71,9 +71,13 @@ async def _fetch_openrouter_models() -> list:
             continue
 
         # Skip non-text models (music, image, video generators)
+        # Modality format: "input->output" e.g. "text->text", "text+image->text+audio"
+        # Only keep models whose output is pure text (not text+audio, text+image etc)
         modality = (m.get("architecture", {}) or {}).get("modality", "")
-        if modality and "text" not in modality.split("->")[-1]:
-            continue
+        if modality:
+            output_modality = modality.split("->")[-1].strip()
+            if output_modality != "text":
+                continue
 
         # Derive provider from model ID (e.g. "anthropic/claude-3.5-haiku" -> "Anthropic")
         provider = model_id.split("/")[0].title() if "/" in model_id else "Unknown"
