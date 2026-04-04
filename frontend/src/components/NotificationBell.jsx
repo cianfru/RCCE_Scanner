@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { T } from "../theme";
 import { useWallet } from "../WalletContext.jsx";
 import { useSharedWorker } from "../hooks/useSharedWorker.js";
+import { useWebSocket } from "../hooks/useWebSocket.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -240,6 +241,41 @@ export default function NotificationBell() {
     setExhaustionOpps(d.exhaustionOpps || []);
     setMarketSetups(d.marketSetups || []);
   }, [sw.supported, sw.notifData]);
+
+  // ── WebSocket real-time signals (instant push, no polling delay) ───────────
+
+  const wsRef = useWebSocket();
+
+  // Merge WebSocket signal transitions into events as they arrive
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.transitions || wsRef.transitions.length === 0) return;
+    const wsEvents = wsRef.transitions.map((t) => ({
+      event_type: "signal",
+      symbol: t.symbol || "",
+      label: t.signal || t.unified_signal || "",
+      prev_label: "",
+      transition_type: t.transition_type || "",
+      win_rate: t.regime_win_rate ?? t.win_rate ?? null,
+      regime_win_rate: t.regime_win_rate ?? null,
+      timestamp: Math.floor(Date.now() / 1000),
+    }));
+    setEvents((prev) => {
+      // Prepend new WS events, dedup by symbol+type, cap at 20
+      const existing = new Set(prev.map((e) => `${e.symbol}:${e.event_type}:${e.transition_type}`));
+      const novel = wsEvents.filter((e) => !existing.has(`${e.symbol}:${e.event_type}:${e.transition_type}`));
+      return [...novel, ...prev].slice(0, 20);
+    });
+  }, [wsRef.connected, wsRef.transitions]);
+
+  // Merge WebSocket anomalies as they arrive
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.anomalies || wsRef.anomalies.length === 0) return;
+    setAnomalies((prev) => {
+      const existingKeys = new Set(prev.map((a) => a.dedup_key));
+      const novel = wsRef.anomalies.filter((a) => a.dedup_key && !existingKeys.has(a.dedup_key));
+      return [...novel, ...prev];
+    });
+  }, [wsRef.connected, wsRef.anomalies]);
 
   // ── Fallback data fetching (when SharedWorker unavailable) ────────────────
 

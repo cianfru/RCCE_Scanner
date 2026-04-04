@@ -4,6 +4,7 @@ import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
+import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
 import SummaryBar from "./components/SummaryBar.jsx";
 import StatCards from "./components/StatCards.jsx";
@@ -247,6 +248,24 @@ export default function App() {
     if (sw.supported) sw.setFilters(filterRegime, filterSignal);
   }, [sw.supported, sw.setFilters, filterRegime, filterSignal]);
 
+  // ── WebSocket integration (real-time push from backend) ───────────────────
+
+  const wsRef = useWebSocket();
+
+  // Apply WebSocket synthesis-complete updates (overrides SharedWorker/polling data)
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.synthesisData) return;
+    const d = wsRef.synthesisData;
+    setData4h(d.results_4h || []);
+    setData1d(d.results_1d || []);
+    setConsensus4h(d.consensus_4h || null);
+    setConsensus1d(d.consensus_1d || null);
+    setCacheAge(d.meta?.cache_age ?? null);
+    setLastRefresh(new Date((d.meta?.timestamp || Date.now() / 1000) * 1000));
+    setLoading(false);
+    setError(null);
+  }, [wsRef.connected, wsRef.synthesisData]);
+
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
 
   const fetchData = useCallback(async (tf) => {
@@ -321,7 +340,9 @@ export default function App() {
   const triggerScan = async () => {
     await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
     setScanRunning(true);
-    if (sw.supported) {
+    if (wsRef.connected) {
+      setTimeout(() => wsRef.refresh(), 3000);
+    } else if (sw.supported) {
       setTimeout(() => sw.refresh(), 3000);
     } else {
       setTimeout(loadAll, 3000);
