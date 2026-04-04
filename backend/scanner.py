@@ -1288,6 +1288,21 @@ async def _drip_one_symbol(
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
 
+    # Push to WebSocket clients (skip if nobody's listening)
+    if processed > 0:
+        try:
+            from ws_hub import WebSocketHub
+            hub = WebSocketHub.get()
+            if hub.client_count > 0:
+                entry = scan_cache._results_by_sym.get(symbol, {})
+                await hub.push_symbol_update(
+                    symbol,
+                    entry.get("4h"),
+                    entry.get("1d"),
+                )
+        except Exception:
+            pass
+
     return processed
 
 

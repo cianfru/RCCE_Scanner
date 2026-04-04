@@ -266,6 +266,29 @@ export default function App() {
     setError(null);
   }, [wsRef.connected, wsRef.synthesisData]);
 
+  // Delta merge: patch individual symbol updates from drip scan into state
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.symbolUpdate) return;
+    const { symbol, result_4h, result_1d } = wsRef.symbolUpdate;
+    if (!symbol) return;
+
+    const merge = (prev, update) => {
+      if (!update) return prev;
+      const idx = prev.findIndex((r) => r.symbol === symbol);
+      if (idx >= 0) {
+        const next = [...prev];
+        // Preserve synthesized fields (signal, unified_signal, etc.) and merge raw updates
+        next[idx] = { ...next[idx], ...update };
+        return next;
+      }
+      // New symbol — append
+      return [...prev, update];
+    };
+
+    if (result_4h) setData4h((prev) => merge(prev, result_4h));
+    if (result_1d) setData1d((prev) => merge(prev, result_1d));
+  }, [wsRef.connected, wsRef.symbolUpdate]);
+
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
 
   const fetchData = useCallback(async (tf) => {

@@ -131,6 +131,7 @@ if (typeof WebSocket !== "undefined") {
 export function useWebSocket() {
   const [connected, setConnected] = useState(wsConnected);
   const [synthesisData, setSynthesisData] = useState(null);
+  const [symbolUpdate, setSymbolUpdate] = useState(null);
   const [transitions, setTransitions] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const idRef = useRef(null);
@@ -146,6 +147,9 @@ export function useWebSocket() {
           break;
         case "synthesis-complete":
           setSynthesisData(msg.data);
+          break;
+        case "symbol-update":
+          setSymbolUpdate(msg.data);
           break;
         case "signal-transition":
           setTransitions(msg.data || []);
@@ -176,6 +180,7 @@ export function useWebSocket() {
   return {
     connected,
     synthesisData,
+    symbolUpdate,
     transitions,
     anomalies,
     refresh,
