@@ -799,10 +799,17 @@ export default function App() {
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 12px",
-            fontSize: 10, color: T.text3, letterSpacing: "0.08em",
+            fontSize: 10, letterSpacing: "0.08em",
             fontFamily: T.mono, fontWeight: 600,
-          }}>
-            <span style={{ color: "#22c55e", animation: "livePulse 2s ease-in-out infinite" }}>{"\u25cf"}</span> LIVE
+            color: wsRef.connected ? "#22c55e" : (sw.supported || !error) ? "#eab308" : "#ef4444",
+          }}
+            title={wsRef.connected ? "WebSocket real-time" : (sw.supported ? "SharedWorker polling" : (!error ? "REST polling" : "API unreachable"))}
+          >
+            <span style={{
+              color: wsRef.connected ? "#22c55e" : (sw.supported || !error) ? "#eab308" : "#ef4444",
+              animation: wsRef.connected ? "livePulse 2s ease-in-out infinite" : "none",
+            }}>{"\u25cf"}</span>
+            {wsRef.connected ? "LIVE" : (sw.supported || !error) ? "POLL" : "OFF"}
           </div>
         </div>
 
