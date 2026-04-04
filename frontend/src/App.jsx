@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "re
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
+import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import FadeIn from "./components/FadeIn.jsx";
 import SummaryBar from "./components/SummaryBar.jsx";
 import StatCards from "./components/StatCards.jsx";
@@ -215,7 +216,38 @@ export default function App() {
     if (isMobile && activeTab === "split") setActiveTab("4h");
   }, [isMobile, activeTab, setActiveTab]);
 
-  // ── Data fetching ─────────────────────────────────────────────────────────
+  // ── SharedWorker integration ───────────────────────────────────────────────
+
+  const sw = useSharedWorker();
+
+  // Apply worker main-data updates when supported
+  useEffect(() => {
+    if (!sw.supported || !sw.mainData) return;
+    const d = sw.mainData;
+    setData4h(d.r4h?.results || []);
+    setData1d(d.r1d?.results || []);
+    setConsensus4h(d.r4h?.consensus || null);
+    setConsensus1d(d.r1d?.consensus || null);
+    setScanRunning(d.r4h?.scan_running || false);
+    setCacheAge(d.r4h?.cache_age_seconds ?? null);
+    setLastRefresh(new Date(d.timestamp));
+    if (d.globalMetrics) setGlobalMetrics(d.globalMetrics);
+    if (d.altSeason) setAltSeason(d.altSeason);
+    if (d.sentiment) setSentiment(d.sentiment);
+    if (d.stablecoin) setStablecoin(d.stablecoin);
+    if (d.tradfi4h) setDataTradfi4h(d.tradfi4h.results || []);
+    if (d.tradfi1d) setDataTradfi1d(d.tradfi1d.results || []);
+    if (d.macro?.etf_flow_usd_7d != null) setMacro(d.macro);
+    setLoading(false);
+    setError(null);
+  }, [sw.supported, sw.mainData]);
+
+  // Forward filter changes to worker
+  useEffect(() => {
+    if (sw.supported) sw.setFilters(filterRegime, filterSignal);
+  }, [sw.supported, sw.setFilters, filterRegime, filterSignal]);
+
+  // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
 
   const fetchData = useCallback(async (tf) => {
     const params = new URLSearchParams({ timeframe: tf });
@@ -227,6 +259,7 @@ export default function App() {
   }, [filterRegime, filterSignal]);
 
   const loadAll = useCallback(async () => {
+    if (sw.supported) return; // Worker handles polling
     setLoading(true);
     setError(null);
     try {
@@ -262,13 +295,14 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [fetchData]);
+  }, [fetchData, sw.supported]);
 
+  // Fallback polling — only runs when SharedWorker is unavailable
   useEffect(() => {
+    if (sw.supported) return;
     loadAll();
     let interval = setInterval(loadAll, 60 * 1000);
 
-    // Freeze polling entirely when tab is hidden, resume on focus
     const handleVisibility = () => {
       clearInterval(interval);
       if (!document.hidden) {
@@ -282,12 +316,16 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [loadAll]);
+  }, [loadAll, sw.supported]);
 
   const triggerScan = async () => {
     await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
     setScanRunning(true);
-    setTimeout(loadAll, 3000);
+    if (sw.supported) {
+      setTimeout(() => sw.refresh(), 3000);
+    } else {
+      setTimeout(loadAll, 3000);
+    }
   };
 
   // ── Portfolio group management ───────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { T } from "../theme";
 import { useWallet } from "../WalletContext.jsx";
+import { useSharedWorker } from "../hooks/useSharedWorker.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -172,6 +173,7 @@ function CardRow({ icon, iconColor, title, badge, badgeColor, detail, onDismiss,
 export default function NotificationBell() {
   const navigate = useNavigate();
   const { address: walletAddress } = useWallet();
+  const sw = useSharedWorker();
   const [events, setEvents] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const [warnings, setWarnings] = useState([]);
@@ -211,26 +213,58 @@ export default function NotificationBell() {
 
   const isDismissed = (key) => dismissed.includes(key);
 
-  // --- Data fetching ---
+  const [setupFilter, setSetupFilter] = useState("HIGH");
+
+  // ── SharedWorker integration ──────────────────────────────────────────────
+
+  // Forward wallet address to worker
+  useEffect(() => {
+    if (sw.supported) sw.setWallet(walletAddress || "");
+  }, [sw.supported, sw.setWallet, walletAddress]);
+
+  // Forward setupFilter to worker
+  useEffect(() => {
+    if (sw.supported) {
+      const score = setupFilter === "HIGH" ? 3 : setupFilter === "MED" ? 2 : 0;
+      sw.setNotifParams(score);
+    }
+  }, [sw.supported, sw.setNotifParams, setupFilter]);
+
+  // Apply worker notif-data updates
+  useEffect(() => {
+    if (!sw.supported || !sw.notifData) return;
+    const d = sw.notifData;
+    setEvents(d.events || []);
+    setAnomalies(d.anomalies || []);
+    setWarnings(d.warnings || []);
+    setExhaustionOpps(d.exhaustionOpps || []);
+    setMarketSetups(d.marketSetups || []);
+  }, [sw.supported, sw.notifData]);
+
+  // ── Fallback data fetching (when SharedWorker unavailable) ────────────────
+
   const fetchNotifs = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API_BASE}/api/notifications?limit=10`);
       if (!res.ok) return;
       const data = await res.json();
       setEvents(data.events || []);
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
   const fetchAnomalies = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API_BASE}/api/notifications/anomalies`);
       if (!res.ok) return;
       const data = await res.json();
       setAnomalies(data.anomalies || []);
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
   const fetchWarnings = useCallback(async () => {
+    if (sw.supported) return;
     if (!walletAddress) {
       setWarnings([]);
       return;
@@ -241,9 +275,10 @@ export default function NotificationBell() {
       const data = await res.json();
       setWarnings(data.warnings || []);
     } catch (_) {}
-  }, [walletAddress]);
+  }, [walletAddress, sw.supported]);
 
   const fetchExhaustionOpps = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const url = walletAddress
         ? `${API_BASE}/api/notifications/exhaustion-opportunities?address=${walletAddress}`
@@ -253,11 +288,10 @@ export default function NotificationBell() {
       const data = await res.json();
       setExhaustionOpps(data.opportunities || []);
     } catch (_) {}
-  }, [walletAddress]);
-
-  const [setupFilter, setSetupFilter] = useState("HIGH");
+  }, [walletAddress, sw.supported]);
 
   const fetchMarketSetups = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const score = setupFilter === "HIGH" ? 3 : setupFilter === "MED" ? 2 : 0;
       const url = walletAddress
@@ -268,9 +302,11 @@ export default function NotificationBell() {
       const data = await res.json();
       setMarketSetups(data.setups || []);
     } catch (_) {}
-  }, [walletAddress, setupFilter]);
+  }, [walletAddress, setupFilter, sw.supported]);
 
+  // Fallback polling — only runs when SharedWorker unavailable
   useEffect(() => {
+    if (sw.supported) return;
     fetchNotifs();
     fetchAnomalies();
     fetchWarnings();
@@ -280,7 +316,7 @@ export default function NotificationBell() {
       fetchNotifs(); fetchAnomalies(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
     }, 60_000);
     return () => clearInterval(iv);
-  }, [fetchNotifs, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
+  }, [sw.supported, fetchNotifs, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
   useEffect(() => {
     if (!open) return;
