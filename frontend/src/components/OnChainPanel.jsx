@@ -9,6 +9,7 @@ import AlertsView from "./onchain/AlertsView.jsx";
 import WalletDrawer from "./onchain/WalletDrawer.jsx";
 import { ChainBadge } from "./onchain/badges.jsx";
 import { S, CHAIN_META } from "./onchain/styles.js";
+import { useSharedWorker } from "../hooks/useSharedWorker.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -82,6 +83,7 @@ function SetupMessage() {
 
 export default function OnChainPanel({ isMobile }) {
   const isTablet = !isMobile && window.innerWidth < 1024;
+  const sw = useSharedWorker();
 
   // ── State ──────────────────────────────────────────────────────────────
   const [status, setStatus] = useState(null);
@@ -102,25 +104,65 @@ export default function OnChainPanel({ isMobile }) {
   const [selectedWallet, setSelectedWallet] = useState(null);
   // { chain, address, sourceToken }
 
-  // ── Fetch helpers ─────────────────────────────────────────────────────
+  // ── Active token lookup ───────────────────────────────────────────────
+
+  const activeToken =
+    activeSubTab !== "add" &&
+    activeSubTab !== "trending" &&
+    activeSubTab !== "alerts"
+      ? tokens.find((t) => t.contract === activeSubTab)
+      : null;
+
+  // ── SharedWorker integration ──────────────────────────────────────────
+
+  // Forward active token to worker
+  useEffect(() => {
+    if (!sw.supported) return;
+    if (activeToken) {
+      sw.setOnchainToken({ chain: activeToken.chain, contract: activeToken.contract });
+    } else {
+      sw.setOnchainToken(null);
+    }
+  }, [sw.supported, sw.setOnchainToken, activeToken?.chain, activeToken?.contract]);
+
+  // Apply worker onchain-data updates
+  useEffect(() => {
+    if (!sw.supported || !sw.onchainData) return;
+    const d = sw.onchainData;
+    if (d.status) setStatus(d.status);
+    if (Array.isArray(d.tokens)) setTokens(d.tokens);
+    if (Array.isArray(d.alerts)) setAlerts(d.alerts);
+    if (Array.isArray(d.trending)) setTrending(d.trending);
+    // Only apply per-token data if it matches the current active token
+    if (activeToken && d.activeContract === activeToken.contract) {
+      if (d.holdersData) setHoldersData(d.holdersData);
+      if (Array.isArray(d.transfers)) setTransfers(d.transfers);
+      if (Array.isArray(d.tokenAlerts)) setTokenAlerts(d.tokenAlerts);
+    }
+  }, [sw.supported, sw.onchainData, activeToken?.contract]);
+
+  // ── Fallback fetch helpers (when SharedWorker unavailable) ────────────
 
   const fetchStatus = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API}/api/whales/status`);
       setStatus(await res.json());
     } catch (e) {
       setError(e.message);
     }
-  }, []);
+  }, [sw.supported]);
 
   const fetchTokens = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API}/api/whales/tokens`);
       setTokens(await res.json());
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
   const fetchTokenData = useCallback(async (token) => {
+    if (sw.supported) return;
     if (!token) return;
     try {
       const [holdersRes, transfersRes, alertsRes] = await Promise.all([
@@ -144,39 +186,33 @@ export default function OnChainPanel({ isMobile }) {
       setTransfers(await transfersRes.json());
       setTokenAlerts(await alertsRes.json());
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
   const fetchAlerts = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API}/api/whales/alerts?limit=30`);
       setAlerts(await res.json());
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
   const fetchTrending = useCallback(async () => {
+    if (sw.supported) return;
     try {
       const res = await fetch(`${API}/api/whales/trending`);
       setTrending(await res.json());
     } catch (_) {}
-  }, []);
+  }, [sw.supported]);
 
-  // ── Active token lookup ───────────────────────────────────────────────
-
-  const activeToken =
-    activeSubTab !== "add" &&
-    activeSubTab !== "trending" &&
-    activeSubTab !== "alerts"
-      ? tokens.find((t) => t.contract === activeSubTab)
-      : null;
-
-  // ── Initial load ──────────────────────────────────────────────────────
+  // ── Initial load (fallback only) ─────────────────────────────────────
 
   useEffect(() => {
+    if (sw.supported) return;
     fetchStatus();
     fetchTokens();
     fetchAlerts();
     fetchTrending();
-  }, [fetchStatus, fetchTokens, fetchAlerts, fetchTrending]);
+  }, [sw.supported, fetchStatus, fetchTokens, fetchAlerts, fetchTrending]);
 
   // When tokens loaded and no active sub-tab, select first token
   useEffect(() => {
@@ -185,8 +221,9 @@ export default function OnChainPanel({ isMobile }) {
     }
   }, [tokens]);
 
-  // When active token changes, fetch its data
+  // When active token changes, fetch its data (fallback only)
   useEffect(() => {
+    if (sw.supported) return;
     if (activeToken) {
       fetchTokenData(activeToken);
     } else {
@@ -194,10 +231,11 @@ export default function OnChainPanel({ isMobile }) {
       setTransfers([]);
       setTokenAlerts([]);
     }
-  }, [activeToken?.contract, fetchTokenData]);
+  }, [sw.supported, activeToken?.contract, fetchTokenData]);
 
-  // Polling (15s) — only active token + global status/alerts
+  // Fallback polling (15s) — only runs when SharedWorker unavailable
   useEffect(() => {
+    if (sw.supported) return;
     const interval = setInterval(async () => {
       await fetchStatus();
       if (activeToken) {
@@ -206,7 +244,7 @@ export default function OnChainPanel({ isMobile }) {
       await fetchAlerts();
     }, 15_000);
     return () => clearInterval(interval);
-  }, [activeToken?.contract, fetchStatus, fetchTokenData, fetchAlerts]);
+  }, [sw.supported, activeToken?.contract, fetchStatus, fetchTokenData, fetchAlerts]);
 
   // ── Actions ────────────────────────────────────────────────────────────
 

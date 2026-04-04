@@ -1288,6 +1288,21 @@ async def _drip_one_symbol(
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
 
+    # Push to WebSocket clients (skip if nobody's listening)
+    if processed > 0:
+        try:
+            from ws_hub import WebSocketHub
+            hub = WebSocketHub.get()
+            if hub.client_count > 0:
+                entry = scan_cache._results_by_sym.get(symbol, {})
+                await hub.push_symbol_update(
+                    symbol,
+                    entry.get("4h"),
+                    entry.get("1d"),
+                )
+        except Exception:
+            pass
+
     return processed
 
 
@@ -1687,6 +1702,12 @@ async def _run_synthesis_pass(
                         transitions.append(r_copy)
                     if transitions:
                         await bot.push_trade_alerts(transitions)
+                        # Push to WebSocket clients
+                        try:
+                            from ws_hub import WebSocketHub
+                            await WebSocketHub.get().push_signal_transition(transitions)
+                        except Exception:
+                            pass
                 except Exception as exc:
                     logger.debug("TG trade alert push failed: %s", exc)
         except Exception:
@@ -1712,6 +1733,12 @@ async def _run_synthesis_pass(
                                 await bot.push_anomaly_alerts(critical)
                             except Exception as exc:
                                 logger.debug("TG anomaly alert failed: %s", exc)
+                            # Push to WebSocket clients
+                            try:
+                                from ws_hub import WebSocketHub
+                                await WebSocketHub.get().push_anomaly(critical)
+                            except Exception:
+                                pass
             scan_cache.anomalies = get_active_anomalies()
             # Prune anomaly_hot_symbols that are no longer active
             active_syms = {a["symbol"] for a in scan_cache.anomalies}
@@ -1853,6 +1880,22 @@ async def _run_synthesis_pass(
     scan_cache.last_scan_time = time.time()
     elapsed = time.time() - t0
     n_syms = len(scan_cache._results_by_sym)
+
+    # Broadcast full state to WebSocket clients
+    try:
+        from ws_hub import WebSocketHub
+        hub = WebSocketHub.get()
+        if hub.client_count > 0:
+            await hub.push_synthesis(
+                scan_cache.results.get("4h", []),
+                scan_cache.results.get("1d", []),
+                scan_cache.consensus.get("4h"),
+                scan_cache.consensus.get("1d"),
+                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms},
+            )
+    except Exception:
+        pass
+
     logger.info(
         "=== Synthesis pass complete: %d symbols in %.1fs (rotation #%d) ===",
         n_syms, elapsed, _drip_rotation_count,

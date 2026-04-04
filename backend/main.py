@@ -19,13 +19,14 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status, \
     run_drip_scan, _run_synthesis_pass
+from ws_hub import WebSocketHub
 from models import (
     ScanResponse,
     ConsensusResponse,
@@ -195,6 +196,16 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(run_hyperlens_loop())
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
+
+    # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
+    asyncio.create_task(WebSocketHub.get().run_heartbeat())
+
+    # Start Binance price ticker relay (sub-second price updates)
+    try:
+        from price_ticker import PriceTicker
+        asyncio.create_task(PriceTicker.get().run())
+    except Exception as e:
+        logger.warning("Price ticker init failed (non-fatal): %s", e)
 
     yield
 
@@ -372,6 +383,57 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — real-time scan event streaming
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/scan")
+async def websocket_scan(websocket: WebSocket):
+    """Real-time scan data push. Runs alongside REST — additive, not a replacement.
+
+    Events sent: synthesis-complete, signal-transition, anomaly, symbol-update, heartbeat.
+    Client can send: {"type": "refresh"} to request immediate full state.
+    """
+    hub = WebSocketHub.get()
+    await hub.connect(websocket)
+    try:
+        # Send current cached state immediately on connect
+        await hub.send_to(websocket, {
+            "type": "synthesis-complete",
+            "data": {
+                "results_4h": cache.results.get("4h", []),
+                "results_1d": cache.results.get("1d", []),
+                "consensus_4h": cache.consensus.get("4h"),
+                "consensus_1d": cache.consensus.get("1d"),
+                "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
+            },
+            "ts": time.time(),
+        })
+        while True:
+            data = await websocket.receive_text()
+            try:
+                import json
+                msg = json.loads(data)
+                if msg.get("type") == "refresh":
+                    await hub.send_to(websocket, {
+                        "type": "synthesis-complete",
+                        "data": {
+                            "results_4h": cache.results.get("4h", []),
+                            "results_1d": cache.results.get("1d", []),
+                            "consensus_4h": cache.consensus.get("4h"),
+                            "consensus_1d": cache.consensus.get("1d"),
+                            "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
+                        },
+                        "ts": time.time(),
+                    })
+            except Exception:
+                pass  # Ignore malformed messages
+    except WebSocketDisconnect:
+        hub.disconnect(websocket)
+    except Exception:
+        hub.disconnect(websocket)
 
 
 # ---------------------------------------------------------------------------

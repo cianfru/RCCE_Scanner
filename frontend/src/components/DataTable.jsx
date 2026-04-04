@@ -10,7 +10,7 @@ import SparklineCell from "./SparklineCell.jsx";
 import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
-function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
+function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
   const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
   switch (colLabel) {
     case "#":
@@ -20,6 +20,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         </td>
       );
     case "SYMBOL": {
+      const flash = priceFlash?.get?.(row.symbol);
       const isFav = favorites?.has(row.symbol);
       const priceStr = row.price
         ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
@@ -73,7 +74,11 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
           {priceStr && (
-            <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 500, color: T.text1, letterSpacing: "0.01em", marginTop: 1 }}>
+            <div style={{
+              fontSize: isMobile ? 10 : 11, fontWeight: 500, letterSpacing: "0.01em", marginTop: 1,
+              color: flash === "up" ? T.green : flash === "down" ? T.red : T.text1,
+              transition: "color 0.3s ease",
+            }}>
               {priceStr}
             </div>
           )}
@@ -100,12 +105,18 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       );
     case "DIV":
       return <td style={{ padding: cellPad }}><DivergencePill div={row.divergence} /></td>;
-    case "PRICE":
+    case "PRICE": {
+      const pFlash = priceFlash?.get?.(row.symbol);
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), color: T.text1, fontWeight: 500 }}>
+        <td style={{
+          padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), fontWeight: 500,
+          color: pFlash === "up" ? T.green : pFlash === "down" ? T.red : T.text1,
+          transition: "color 0.3s ease",
+        }}>
           {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
         </td>
       );
+    }
     case "HEAT":
       return <td style={{ padding: cellPad }}><HeatCell heat={row.heat} phase={row.heat_phase} /></td>;
     case "PHASE":
@@ -163,7 +174,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite }) {
+function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.unified_signal || row.signal);
   const stripeBg = index % 2 === 1 ? T.overlay02 : "transparent";
@@ -182,13 +193,13 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = restBg; }}
     >
       {visibleColumns.map(([, label]) => (
-        <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} />
+        <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />
       ))}
     </tr>
   );
 }
 
-export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite }) {
+export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
@@ -252,6 +263,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     backtestSymbols={backtestSymbols}
                     favorites={favorites}
                     onToggleFavorite={onToggleFavorite}
+                    priceFlash={priceFlash}
                   />
                 ))
               )}

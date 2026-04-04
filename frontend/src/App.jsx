@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
+import { useSharedWorker } from "./hooks/useSharedWorker.js";
+import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
 import SummaryBar from "./components/SummaryBar.jsx";
 import StatCards from "./components/StatCards.jsx";
@@ -148,6 +150,10 @@ export default function App() {
   const [statCardFilter, setStatCardFilter] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // Price flash: symbol → "up" | "down" (cleared after 1.2s)
+  const [priceFlash, setPriceFlash] = useState(new Map());
+  const prevPricesRef = useRef(new Map());
+
   // TradFi (HIP-3) data
   const [dataTradfi4h, setDataTradfi4h] = useState([]);
   const [dataTradfi1d, setDataTradfi1d] = useState([]);
@@ -215,7 +221,117 @@ export default function App() {
     if (isMobile && activeTab === "split") setActiveTab("4h");
   }, [isMobile, activeTab, setActiveTab]);
 
-  // ── Data fetching ─────────────────────────────────────────────────────────
+  // ── SharedWorker integration ───────────────────────────────────────────────
+
+  const sw = useSharedWorker();
+
+  // Apply worker main-data updates when supported
+  useEffect(() => {
+    if (!sw.supported || !sw.mainData) return;
+    const d = sw.mainData;
+    setData4h(d.r4h?.results || []);
+    setData1d(d.r1d?.results || []);
+    setConsensus4h(d.r4h?.consensus || null);
+    setConsensus1d(d.r1d?.consensus || null);
+    setScanRunning(d.r4h?.scan_running || false);
+    setCacheAge(d.r4h?.cache_age_seconds ?? null);
+    setLastRefresh(new Date(d.timestamp));
+    if (d.globalMetrics) setGlobalMetrics(d.globalMetrics);
+    if (d.altSeason) setAltSeason(d.altSeason);
+    if (d.sentiment) setSentiment(d.sentiment);
+    if (d.stablecoin) setStablecoin(d.stablecoin);
+    if (d.tradfi4h) setDataTradfi4h(d.tradfi4h.results || []);
+    if (d.tradfi1d) setDataTradfi1d(d.tradfi1d.results || []);
+    if (d.macro?.etf_flow_usd_7d != null) setMacro(d.macro);
+    setLoading(false);
+    setError(null);
+  }, [sw.supported, sw.mainData]);
+
+  // Forward filter changes to worker
+  useEffect(() => {
+    if (sw.supported) sw.setFilters(filterRegime, filterSignal);
+  }, [sw.supported, sw.setFilters, filterRegime, filterSignal]);
+
+  // ── WebSocket integration (real-time push from backend) ───────────────────
+
+  const wsRef = useWebSocket();
+
+  // Apply WebSocket synthesis-complete updates (overrides SharedWorker/polling data)
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.synthesisData) return;
+    const d = wsRef.synthesisData;
+    setData4h(d.results_4h || []);
+    setData1d(d.results_1d || []);
+    setConsensus4h(d.consensus_4h || null);
+    setConsensus1d(d.consensus_1d || null);
+    setCacheAge(d.meta?.cache_age ?? null);
+    setLastRefresh(new Date((d.meta?.timestamp || Date.now() / 1000) * 1000));
+    setLoading(false);
+    setError(null);
+  }, [wsRef.connected, wsRef.synthesisData]);
+
+  // Delta merge: patch individual symbol updates from drip scan into state
+  useEffect(() => {
+    if (!wsRef.connected || !wsRef.symbolUpdate) return;
+    const { symbol, result_4h, result_1d } = wsRef.symbolUpdate;
+    if (!symbol) return;
+
+    const merge = (prev, update) => {
+      if (!update) return prev;
+      const idx = prev.findIndex((r) => r.symbol === symbol);
+      if (idx >= 0) {
+        const next = [...prev];
+        // Preserve synthesized fields (signal, unified_signal, etc.) and merge raw updates
+        next[idx] = { ...next[idx], ...update };
+        return next;
+      }
+      // New symbol — append
+      return [...prev, update];
+    };
+
+    if (result_4h) setData4h((prev) => merge(prev, result_4h));
+    if (result_1d) setData1d((prev) => merge(prev, result_1d));
+  }, [wsRef.connected, wsRef.symbolUpdate]);
+
+  // Sub-second price ticks — patch price + compute flash direction
+  useEffect(() => {
+    if (!wsRef.priceTicks) return;
+    const ticks = wsRef.priceTicks; // {symbol: price, ...}
+    const prev = prevPricesRef.current;
+    const flashes = new Map();
+
+    for (const [sym, price] of Object.entries(ticks)) {
+      const old = prev.get(sym);
+      if (old !== undefined && price !== old) {
+        flashes.set(sym, price > old ? "up" : "down");
+      }
+      prev.set(sym, price);
+    }
+
+    const patchPrices = (prevData) => {
+      let changed = false;
+      const next = prevData.map((r) => {
+        const newPrice = ticks[r.symbol];
+        if (newPrice !== undefined && newPrice !== r.price) {
+          changed = true;
+          return { ...r, price: newPrice };
+        }
+        return r;
+      });
+      return changed ? next : prevData;
+    };
+
+    setData4h(patchPrices);
+    setData1d(patchPrices);
+
+    if (flashes.size > 0) {
+      setPriceFlash(flashes);
+      // Clear flashes after animation completes
+      setTimeout(() => setPriceFlash(new Map()), 1200);
+    }
+  }, [wsRef.priceTicks]);
+
+  // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
 
   const fetchData = useCallback(async (tf) => {
     const params = new URLSearchParams({ timeframe: tf });
@@ -227,6 +343,7 @@ export default function App() {
   }, [filterRegime, filterSignal]);
 
   const loadAll = useCallback(async () => {
+    if (sw.supported) return; // Worker handles polling
     setLoading(true);
     setError(null);
     try {
@@ -262,13 +379,14 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [fetchData]);
+  }, [fetchData, sw.supported]);
 
+  // Fallback polling — only runs when SharedWorker is unavailable
   useEffect(() => {
+    if (sw.supported) return;
     loadAll();
     let interval = setInterval(loadAll, 60 * 1000);
 
-    // Freeze polling entirely when tab is hidden, resume on focus
     const handleVisibility = () => {
       clearInterval(interval);
       if (!document.hidden) {
@@ -282,12 +400,18 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [loadAll]);
+  }, [loadAll, sw.supported]);
 
   const triggerScan = async () => {
     await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
     setScanRunning(true);
-    setTimeout(loadAll, 3000);
+    if (wsRef.connected) {
+      setTimeout(() => wsRef.refresh(), 3000);
+    } else if (sw.supported) {
+      setTimeout(() => sw.refresh(), 3000);
+    } else {
+      setTimeout(loadAll, 3000);
+    }
   };
 
   // ── Portfolio group management ───────────────────────────────────────────
@@ -857,7 +981,7 @@ export default function App() {
                 <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
             )}
             {activeTab === "split" && (
@@ -868,7 +992,7 @@ export default function App() {
                 <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
             )}
           </div>
