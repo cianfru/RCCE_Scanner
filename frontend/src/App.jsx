@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
@@ -150,6 +150,10 @@ export default function App() {
   const [statCardFilter, setStatCardFilter] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // Price flash: symbol → "up" | "down" (cleared after 1.2s)
+  const [priceFlash, setPriceFlash] = useState(new Map());
+  const prevPricesRef = useRef(new Map());
+
   // TradFi (HIP-3) data
   const [dataTradfi4h, setDataTradfi4h] = useState([]);
   const [dataTradfi1d, setDataTradfi1d] = useState([]);
@@ -289,14 +293,24 @@ export default function App() {
     if (result_1d) setData1d((prev) => merge(prev, result_1d));
   }, [wsRef.connected, wsRef.symbolUpdate]);
 
-  // Sub-second price ticks — patch price field without re-creating arrays
+  // Sub-second price ticks — patch price + compute flash direction
   useEffect(() => {
     if (!wsRef.priceTicks) return;
     const ticks = wsRef.priceTicks; // {symbol: price, ...}
+    const prev = prevPricesRef.current;
+    const flashes = new Map();
 
-    const patchPrices = (prev) => {
+    for (const [sym, price] of Object.entries(ticks)) {
+      const old = prev.get(sym);
+      if (old !== undefined && price !== old) {
+        flashes.set(sym, price > old ? "up" : "down");
+      }
+      prev.set(sym, price);
+    }
+
+    const patchPrices = (prevData) => {
       let changed = false;
-      const next = prev.map((r) => {
+      const next = prevData.map((r) => {
         const newPrice = ticks[r.symbol];
         if (newPrice !== undefined && newPrice !== r.price) {
           changed = true;
@@ -304,11 +318,17 @@ export default function App() {
         }
         return r;
       });
-      return changed ? next : prev;
+      return changed ? next : prevData;
     };
 
     setData4h(patchPrices);
     setData1d(patchPrices);
+
+    if (flashes.size > 0) {
+      setPriceFlash(flashes);
+      // Clear flashes after animation completes
+      setTimeout(() => setPriceFlash(new Map()), 1200);
+    }
   }, [wsRef.priceTicks]);
 
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
@@ -961,7 +981,7 @@ export default function App() {
                 <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
             )}
             {activeTab === "split" && (
@@ -972,7 +992,7 @@ export default function App() {
                 <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
             )}
           </div>
