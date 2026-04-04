@@ -289,6 +289,28 @@ export default function App() {
     if (result_1d) setData1d((prev) => merge(prev, result_1d));
   }, [wsRef.connected, wsRef.symbolUpdate]);
 
+  // Sub-second price ticks — patch price field without re-creating arrays
+  useEffect(() => {
+    if (!wsRef.priceTicks) return;
+    const ticks = wsRef.priceTicks; // {symbol: price, ...}
+
+    const patchPrices = (prev) => {
+      let changed = false;
+      const next = prev.map((r) => {
+        const newPrice = ticks[r.symbol];
+        if (newPrice !== undefined && newPrice !== r.price) {
+          changed = true;
+          return { ...r, price: newPrice };
+        }
+        return r;
+      });
+      return changed ? next : prev;
+    };
+
+    setData4h(patchPrices);
+    setData1d(patchPrices);
+  }, [wsRef.priceTicks]);
+
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
 
   const fetchData = useCallback(async (tf) => {

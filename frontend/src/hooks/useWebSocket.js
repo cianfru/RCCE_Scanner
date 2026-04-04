@@ -132,6 +132,7 @@ export function useWebSocket() {
   const [connected, setConnected] = useState(wsConnected);
   const [synthesisData, setSynthesisData] = useState(null);
   const [symbolUpdate, setSymbolUpdate] = useState(null);
+  const [priceTicks, setPriceTicks] = useState(null);
   const [transitions, setTransitions] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const idRef = useRef(null);
@@ -150,6 +151,9 @@ export function useWebSocket() {
           break;
         case "symbol-update":
           setSymbolUpdate(msg.data);
+          break;
+        case "price-tick":
+          setPriceTicks(msg.data);
           break;
         case "signal-transition":
           setTransitions(msg.data || []);
@@ -181,6 +185,7 @@ export function useWebSocket() {
     connected,
     synthesisData,
     symbolUpdate,
+    priceTicks,
     transitions,
     anomalies,
     refresh,

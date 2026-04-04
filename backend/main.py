@@ -200,6 +200,13 @@ async def lifespan(app: FastAPI):
     # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
     asyncio.create_task(WebSocketHub.get().run_heartbeat())
 
+    # Start Binance price ticker relay (sub-second price updates)
+    try:
+        from price_ticker import PriceTicker
+        asyncio.create_task(PriceTicker.get().run())
+    except Exception as e:
+        logger.warning("Price ticker init failed (non-fatal): %s", e)
+
     yield
 
     # Force-save OHLCV cache on shutdown (survives redeploys)
