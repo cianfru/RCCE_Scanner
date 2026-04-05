@@ -422,7 +422,8 @@ export default function App() {
       if (!res.ok) return;
       const data = await res.json();
       setGroups(data || []);
-      setActiveGroupId(prev => (!prev && data.length > 0) ? data[0].id : prev);
+      // Keep activeGroupId as null (All Assets) by default — only preserve existing selection
+      setActiveGroupId(prev => prev);
     } catch (_) {}
   }, []);
 
