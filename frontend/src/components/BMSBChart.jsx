@@ -31,7 +31,7 @@ const SIGNAL_MARKER = {
 
 const TIMEFRAMES = [
   { key: "4h",  label: "4H",  limit: 500,  apiTf: "4h", barSpace: 8 },   // ~83 days of 4H candles
-  { key: "1d",  label: "1D",  limit: 365,  apiTf: "1d", barSpace: 10 },  // ~1 year of 1D candles
+  { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
 ];
 
 export default function BMSBChart({
@@ -181,6 +181,17 @@ export default function BMSBChart({
       title: "CTO",
     });
 
+    // ── 200-day MA ──
+    const ma200Series = chart.addSeries(LineSeries, {
+      color: "rgba(255,168,0,0.6)",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      crosshairMarkerVisible: false,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: "200 MA",
+    });
+
     // ── BMSB lines ──
     // EMA (upper band boundary)
     const bmsbEmaSeries = chart.addSeries(LineSeries, {
@@ -298,6 +309,24 @@ export default function BMSBChart({
             axisLabelVisible: true,
             title: "",
           });
+        }
+
+        // ── 200-day MA (computed from candle closes) ──
+        if (data.candles?.length > 0) {
+          // For 1D candles: 200-period MA = 200-day MA
+          // For 4H candles: 200-period MA ≈ 33-day MA (useful shorter-term trend)
+          const period = 200;
+          const closes = data.candles.map(c => c.close);
+          const maData = [];
+          let sum = 0;
+          for (let i = 0; i < closes.length; i++) {
+            sum += closes[i];
+            if (i >= period) sum -= closes[i - period];
+            if (i >= period - 1) {
+              maData.push({ time: data.candles[i].time, value: sum / period });
+            }
+          }
+          if (maData.length > 0) ma200Series.setData(maData);
         }
 
         // ── CTO Line overlay data ──
