@@ -410,6 +410,17 @@ When anomalies are present in the data:
 - **NEVER mention ARK or AR unless the user explicitly asks about them.** They are \
 in the watchlist for tracking only — do not include them in summaries, top picks, or examples.
 
+## Chart Structure
+When "Chart Structure" data is provided, you can see the last 10 daily candles \
+with OHLCV data, BMSB band levels, CTO crossover state, and price structure.
+Use this to:
+- Identify trend direction: higher lows = uptrend, lower highs = downtrend
+- Spot support/resistance: BMSB Mid is the key structural level
+- Note volume context: rising volume on green candles = healthy, declining = weak
+- CTO crossovers: fast crossing above slow = bullish momentum shift
+- Reference specific price levels: "price broke above BMSB Mid at $3,200"
+- Combine with scanner signals: "LIGHT_LONG with higher lows and CTO just crossed up"
+
 ## Memory & Continuity
 You have persistent memory across conversations. When "Past Conversations" or \
 "User Trading Profile" data appears in the context:
@@ -895,6 +906,12 @@ class AssistantManager:
             if pos_section:
                 parts.append(pos_section)
 
+        # -- Chart structure context (recent candles + BMSB levels) ----------
+        if symbol:
+            chart_section = await self._build_chart_context(symbol)
+            if chart_section:
+                parts.append(chart_section)
+
         # -- Historical signal log context ----------------------------------
         history_section = await self._build_history_context(symbol)
         if history_section:
@@ -906,6 +923,115 @@ class AssistantManager:
             parts.append(analytics_section)
 
         return "\n\n".join(parts)
+
+    async def _build_chart_context(self, symbol: str) -> Optional[str]:
+        """Build a text summary of recent price action from chart OHLCV data.
+
+        Gives the LLM structural awareness: candle patterns, BMSB band levels,
+        CTO crossover state, and support/resistance — without needing vision.
+        """
+        try:
+            from data_fetcher import fetch_ohlcv
+            from engines.heatmap_engine import compute_bmsb_series
+            from engines.cto_engine import compute_cto_series
+            import numpy as np
+
+            ohlcv = await fetch_ohlcv(symbol, "1d", limit=30)
+            if ohlcv is None or len(ohlcv.get("timestamp", [])) < 10:
+                return None
+
+            closes = [float(c) for c in ohlcv["close"]]
+            highs = [float(h) for h in ohlcv["high"]]
+            lows = [float(l) for l in ohlcv["low"]]
+            opens = [float(o) for o in ohlcv["open"]]
+            volumes = [float(v) for v in ohlcv["volume"]]
+
+            # Last 10 candles summary
+            n = min(10, len(closes))
+            recent = []
+            for i in range(-n, 0):
+                chg = ((closes[i] - opens[i]) / opens[i]) * 100 if opens[i] else 0
+                bar = "GREEN" if closes[i] >= opens[i] else "RED"
+                recent.append(
+                    f"  {bar} O={opens[i]:.6g} H={highs[i]:.6g} "
+                    f"L={lows[i]:.6g} C={closes[i]:.6g} ({chg:+.2f}%)"
+                )
+
+            lines = [f"## Chart Structure ({symbol}, 1D, last {n} candles)"]
+            lines.extend(recent)
+
+            # Price action summary
+            recent_closes = closes[-n:]
+            higher_lows = all(lows[i] >= lows[i-1] for i in range(-n+1, 0))
+            lower_highs = all(highs[i] <= highs[i-1] for i in range(-n+1, 0))
+            range_high = max(highs[-n:])
+            range_low = min(lows[-n:])
+            range_pct = ((range_high - range_low) / range_low) * 100 if range_low else 0
+
+            structure = "Higher lows (uptrend)" if higher_lows else \
+                        "Lower highs (downtrend)" if lower_highs else "Choppy/ranging"
+            lines.append(f"Structure: {structure}")
+            lines.append(f"Range: ${range_low:.6g} — ${range_high:.6g} ({range_pct:.1f}%)")
+
+            # Average volume comparison (last 5 vs prior 5)
+            if len(volumes) >= 10:
+                vol_recent = sum(volumes[-5:]) / 5
+                vol_prior = sum(volumes[-10:-5]) / 5
+                vol_ratio = vol_recent / vol_prior if vol_prior > 0 else 1
+                vol_label = "rising" if vol_ratio > 1.2 else "declining" if vol_ratio < 0.8 else "stable"
+                lines.append(f"Volume: {vol_label} ({vol_ratio:.1f}x vs prior 5d)")
+
+            # BMSB levels
+            try:
+                weekly = await fetch_ohlcv(symbol, "1w", limit=100)
+                if weekly and len(weekly.get("close", [])) >= 10:
+                    w_close = np.asarray(weekly["close"], dtype=np.float64)
+                    w_ts = np.asarray(weekly["timestamp"], dtype=np.float64)
+                    bmsb = compute_bmsb_series(w_close, w_ts)
+                    # Get latest BMSB values
+                    mid_val = bmsb["mid"][-1]["value"] if bmsb.get("mid") else None
+                    ema_val = bmsb["ema"][-1]["value"] if bmsb.get("ema") else None
+                    sma_val = bmsb["sma"][-1]["value"] if bmsb.get("sma") else None
+                    curr_price = closes[-1]
+                    if mid_val:
+                        dev = ((curr_price - mid_val) / mid_val) * 100
+                        above = "above" if curr_price > mid_val else "below"
+                        lines.append(
+                            f"BMSB Mid: ${mid_val:.6g} (price {above}, {abs(dev):.1f}% away)"
+                        )
+                    if ema_val:
+                        lines.append(f"BMSB EMA: ${ema_val:.6g}")
+                    if sma_val:
+                        lines.append(f"BMSB SMA: ${sma_val:.6g}")
+            except Exception:
+                pass
+
+            # CTO crossover state
+            try:
+                cto = compute_cto_series(
+                    ohlcv["high"], ohlcv["low"], ohlcv["close"], ohlcv["timestamp"],
+                )
+                fast = cto.get("cto_fast", [])
+                slow = cto.get("cto_slow", [])
+                if fast and slow and len(fast) >= 2 and len(slow) >= 2:
+                    f_now = fast[-1].get("value", 0)
+                    s_now = slow[-1].get("value", 0)
+                    f_prev = fast[-2].get("value", 0)
+                    s_prev = slow[-2].get("value", 0)
+                    cross = "above" if f_now > s_now else "below"
+                    just_crossed = (f_now > s_now) != (f_prev > s_prev)
+                    cross_label = f"CTO: fast {cross} slow"
+                    if just_crossed:
+                        cross_label += " (JUST CROSSED)"
+                    lines.append(cross_label)
+            except Exception:
+                pass
+
+            return "\n".join(lines)
+
+        except Exception as exc:
+            logger.debug("Chart context build failed for %s: %s", symbol, exc)
+            return None
 
     async def _build_positions_context(
         self,
