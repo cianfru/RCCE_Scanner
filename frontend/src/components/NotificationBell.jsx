@@ -7,21 +7,6 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-const TRANSITION_COLORS = {
-  ENTRY:     "#22c55e",
-  UPGRADE:   "#22c55e",
-  EXIT:      "#ef4444",
-  DOWNGRADE: "#ef4444",
-};
-
-const TRANSITION_ICONS = {
-  ENTRY:     "\u25b2",  // ▲
-  UPGRADE:   "\u25b2",
-  EXIT:      "\u25bc",  // ▼
-  DOWNGRADE: "\u25bc",
-  regime:    "\u25c6",  // ◆
-};
-
 const SEVERITY_COLORS = {
   critical: "#ef4444",
   high:     "#f59e0b",
@@ -39,16 +24,36 @@ const SEVERITY_ICONS = {
 };
 
 const DISMISSED_KEY = "rcce-bell-dismissed";
+const DISMISS_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 function getDismissed() {
   try {
-    const raw = sessionStorage.getItem(DISMISSED_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return [];
+    const entries = JSON.parse(raw);
+    // Prune expired entries
+    const now = Date.now();
+    const valid = entries.filter((e) => now - e.ts < DISMISS_TTL_MS);
+    if (valid.length !== entries.length) {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(valid));
+    }
+    return valid;
   } catch { return []; }
 }
 
 function saveDismissed(list) {
-  sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(list));
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify(list));
+}
+
+function isDismissedKey(dismissed, key) {
+  return dismissed.some((e) => e.key === key);
+}
+
+function addDismissKeys(prev, keys) {
+  const now = Date.now();
+  const existing = new Set(prev.map((e) => e.key));
+  const novel = keys.filter((k) => !existing.has(k)).map((k) => ({ key: k, ts: now }));
+  return [...prev, ...novel];
 }
 
 function timeAgo(ts) {
@@ -175,28 +180,23 @@ export default function NotificationBell() {
   const navigate = useNavigate();
   const { address: walletAddress } = useWallet();
   const sw = useSharedWorker();
-  const [events, setEvents] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
   const [marketSetups, setMarketSetups] = useState([]);
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissedState] = useState(getDismissed);
-  const [lastSeen, setLastSeen] = useState(() => {
-    const stored = localStorage.getItem("rcce-notif-lastseen");
-    return stored ? parseInt(stored, 10) : Math.floor(Date.now() / 1000);
-  });
   const panelRef = useRef(null);
 
-  // --- Dismiss helpers ---
+  // --- Dismiss helpers (localStorage with 4h TTL) ---
   const dismiss = (key) => {
-    const next = [...dismissed, key];
+    const next = addDismissKeys(dismissed, [key]);
     setDismissedState(next);
     saveDismissed(next);
   };
 
   const dismissMany = (keys) => {
-    const next = [...dismissed, ...keys];
+    const next = addDismissKeys(dismissed, keys);
     setDismissedState(next);
     saveDismissed(next);
   };
@@ -207,12 +207,11 @@ export default function NotificationBell() {
       ...warnings.map(w => `warn:${w.type}:${w.symbol}`),
       ...exhaustionOpps.map(o => `opp:${o.type}:${o.symbol}`),
       ...marketSetups.map(s => `setup:${s.type}:${s.symbol}`),
-      ...events.map(e => `ev:${e.event_type}:${e.symbol}:${e.timestamp}`),
     ];
     dismissMany(allKeys);
   };
 
-  const isDismissed = (key) => dismissed.includes(key);
+  const isDismissed = (key) => isDismissedKey(dismissed, key);
 
   const [setupFilter, setSetupFilter] = useState("HIGH");
 
@@ -235,37 +234,15 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!sw.supported || !sw.notifData) return;
     const d = sw.notifData;
-    setEvents(d.events || []);
     setAnomalies(d.anomalies || []);
     setWarnings(d.warnings || []);
     setExhaustionOpps(d.exhaustionOpps || []);
     setMarketSetups(d.marketSetups || []);
   }, [sw.supported, sw.notifData]);
 
-  // ── WebSocket real-time signals (instant push, no polling delay) ───────────
+  // ── WebSocket real-time anomalies (instant push, no polling delay) ──────────
 
   const wsRef = useWebSocket();
-
-  // Merge WebSocket signal transitions into events as they arrive
-  useEffect(() => {
-    if (!wsRef.connected || !wsRef.transitions || wsRef.transitions.length === 0) return;
-    const wsEvents = wsRef.transitions.map((t) => ({
-      event_type: "signal",
-      symbol: t.symbol || "",
-      label: t.signal || t.unified_signal || "",
-      prev_label: "",
-      transition_type: t.transition_type || "",
-      win_rate: t.regime_win_rate ?? t.win_rate ?? null,
-      regime_win_rate: t.regime_win_rate ?? null,
-      timestamp: Math.floor(Date.now() / 1000),
-    }));
-    setEvents((prev) => {
-      // Prepend new WS events, dedup by symbol+type, cap at 20
-      const existing = new Set(prev.map((e) => `${e.symbol}:${e.event_type}:${e.transition_type}`));
-      const novel = wsEvents.filter((e) => !existing.has(`${e.symbol}:${e.event_type}:${e.transition_type}`));
-      return [...novel, ...prev].slice(0, 20);
-    });
-  }, [wsRef.connected, wsRef.transitions]);
 
   // Merge WebSocket anomalies as they arrive
   useEffect(() => {
@@ -278,16 +255,6 @@ export default function NotificationBell() {
   }, [wsRef.connected, wsRef.anomalies]);
 
   // ── Fallback data fetching (when SharedWorker unavailable) ────────────────
-
-  const fetchNotifs = useCallback(async () => {
-    if (sw.supported) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/notifications?limit=10`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setEvents(data.events || []);
-    } catch (_) {}
-  }, [sw.supported]);
 
   const fetchAnomalies = useCallback(async () => {
     if (sw.supported) return;
@@ -343,16 +310,15 @@ export default function NotificationBell() {
   // Fallback polling — only runs when SharedWorker unavailable
   useEffect(() => {
     if (sw.supported) return;
-    fetchNotifs();
     fetchAnomalies();
     fetchWarnings();
     fetchExhaustionOpps();
     fetchMarketSetups();
     const iv = setInterval(() => {
-      fetchNotifs(); fetchAnomalies(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
+      fetchAnomalies(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
     }, 60_000);
     return () => clearInterval(iv);
-  }, [sw.supported, fetchNotifs, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
+  }, [sw.supported, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
   useEffect(() => {
     if (!open) return;
@@ -370,9 +336,7 @@ export default function NotificationBell() {
   const visibleWarnings = warnings.filter(w => !isDismissed(`warn:${w.type}:${w.symbol}`));
   const visibleOpps = exhaustionOpps.filter(o => !isDismissed(`opp:${o.type}:${o.symbol}`));
   const visibleSetups = marketSetups.filter(s => !isDismissed(`setup:${s.type}:${s.symbol}`));
-  const visibleEvents = events.filter(e => !isDismissed(`ev:${e.event_type}:${e.symbol}:${e.timestamp}`));
-
-  const totalVisible = visibleAnomalies.length + visibleWarnings.length + visibleOpps.length + visibleSetups.length + visibleEvents.length;
+  const totalVisible = visibleAnomalies.length + visibleWarnings.length + visibleOpps.length + visibleSetups.length;
 
   const hasAnomalies = visibleAnomalies.length > 0;
   const hasWarnings = visibleWarnings.length > 0;
@@ -381,16 +345,7 @@ export default function NotificationBell() {
   const hasSetups = visibleSetups.length > 0;
   const hasHighSetup = visibleSetups.some(s => s.severity === "high");
 
-  const markSeen = () => {
-    if (events.length > 0) {
-      const maxTs = Math.max(...events.map((e) => e.timestamp));
-      setLastSeen(maxTs);
-      localStorage.setItem("rcce-notif-lastseen", String(maxTs));
-    }
-  };
-
   const handleToggle = () => {
-    if (!open) markSeen();
     setOpen(!open);
   };
 
@@ -423,7 +378,7 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(hasAnomalies || hasWarnings || hasOpps || hasSetups || visibleEvents.length > 0) && (
+        {(hasAnomalies || hasWarnings || hasOpps || hasSetups) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
@@ -670,110 +625,6 @@ export default function NotificationBell() {
                       </span>
                     )}
                   </CardRow>
-                );
-              })}
-            </>
-          )}
-
-          {/* Signal Events */}
-          {visibleEvents.length > 0 && (
-            <>
-              <SectionHeader
-                label="SIGNAL EVENTS" count={visibleEvents.length}
-                color={T.text2} bg="transparent"
-                onClear={() => dismissMany(events.map(e => `ev:${e.event_type}:${e.symbol}:${e.timestamp}`))}
-              />
-              {visibleEvents.map((ev, i) => {
-                const isSignal = ev.event_type === "signal";
-                const color = isSignal
-                  ? (TRANSITION_COLORS[ev.transition_type] || T.text3)
-                  : T.accent;
-                const icon = isSignal
-                  ? (TRANSITION_ICONS[ev.transition_type] || "\u2022")
-                  : TRANSITION_ICONS.regime;
-                const isNew = ev.timestamp > lastSeen;
-                const key = `ev:${ev.event_type}:${ev.symbol}:${ev.timestamp}`;
-
-                return (
-                  <div
-                    key={key + "-" + i}
-                    style={{
-                      padding: "12px 16px",
-                      borderBottom: i < visibleEvents.length - 1 ? `1px solid ${T.border}` : "none",
-                      background: isNew ? T.overlay03 : "transparent",
-                      transition: "background 0.15s",
-                    }}
-                  >
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      marginBottom: 4,
-                    }}>
-                      <span style={{ color, fontSize: T.textSm, lineHeight: 1 }}>{icon}</span>
-                      <span
-                        onClick={() => goToCoin(ev.symbol)}
-                        style={{
-                          fontSize: T.textBase, fontFamily: T.mono, fontWeight: 600,
-                          color: T.text1, cursor: "pointer", transition: "color 0.15s",
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = T.accent}
-                        onMouseLeave={(e) => e.currentTarget.style.color = T.text1}
-                      >
-                        {coinName(ev.symbol)}
-                      </span>
-                      <span style={{
-                        fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
-                        marginLeft: "auto",
-                      }}>
-                        {timeAgo(ev.timestamp)}
-                      </span>
-                      <DismissBtn onClick={() => dismiss(key)} />
-                    </div>
-                    <div style={{
-                      fontSize: T.textSm, fontFamily: T.mono, color: T.text3,
-                      paddingLeft: 22,
-                    }}>
-                      {isSignal ? (
-                        <>
-                          <span style={{ color: T.text4 }}>{ev.prev_label || "\u2014"}</span>
-                          {" \u2192 "}
-                          <span style={{ color, fontWeight: 600 }}>{ev.label}</span>
-                          {ev.transition_type && (
-                            <span style={{
-                              marginLeft: 6, fontSize: T.textXs,
-                              padding: "2px 7px", borderRadius: 4,
-                              background: color + "18", color,
-                            }}>
-                              {ev.transition_type}
-                            </span>
-                          )}
-                          {ev.win_rate != null && (
-                            <span style={{
-                              marginLeft: 4, fontSize: T.textXs,
-                              padding: "2px 7px", borderRadius: 4,
-                              background: ev.win_rate >= 65 ? "#34d39918" : ev.win_rate >= 50 ? "#fbbf2418" : "#f8717118",
-                              color: ev.win_rate >= 65 ? "#34d399" : ev.win_rate >= 50 ? "#fbbf24" : "#f87171",
-                              fontWeight: 600,
-                            }}>
-                              {ev.regime_win_rate != null ? ev.regime_win_rate : ev.win_rate}% WR
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ color: T.text4 }}>{ev.prev_label || "\u2014"}</span>
-                          {" \u2192 "}
-                          <span style={{ color: T.accent, fontWeight: 600 }}>{ev.label}</span>
-                          <span style={{
-                            marginLeft: 6, fontSize: T.textXs,
-                            padding: "2px 7px", borderRadius: 4,
-                            background: T.accentDim, color: T.accent,
-                          }}>
-                            REGIME
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
                 );
               })}
             </>
