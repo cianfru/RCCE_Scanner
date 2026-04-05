@@ -1,10 +1,10 @@
 """
 news_feed.py
 ~~~~~~~~~~~~
-CryptoPanic news feed integration for the trading assistant.
+CryptoCompare news feed integration for the trading assistant.
 
-Fetches recent crypto news headlines with sentiment votes,
-cached to avoid hammering the free-tier API (5 req/min).
+Fetches recent crypto news headlines from CryptoCompare's free API
+(100K calls/month), cached at 5-minute intervals.
 """
 
 from __future__ import annotations
@@ -13,84 +13,72 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Optional
 
 import aiohttp
 
 logger = logging.getLogger(__name__)
 
-CRYPTOPANIC_API_KEY = os.environ.get("CRYPTOPANIC_API_KEY", "")
-CRYPTOPANIC_BASE = "https://cryptopanic.com/api/v1/posts/"
+CRYPTOCOMPARE_API_KEY = os.environ.get("CRYPTOCOMPARE_API_KEY", "")
+CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
 
 # Cache settings
-_CACHE_TTL = 300  # 5 minutes — well within free-tier rate limits
+_CACHE_TTL = 300  # 5 minutes
 _cache: Dict[str, tuple] = {}  # key -> (timestamp, data)
 
 
 @dataclass
 class NewsItem:
     title: str
+    body: str  # short snippet
     source: str
-    published: str
-    currencies: List[str]
-    sentiment: str  # "bullish", "bearish", "neutral"
-    votes_positive: int
-    votes_negative: int
-    votes_important: int
-    kind: str  # "news", "media", "analysis"
-
-
-def _extract_sentiment(votes: dict) -> str:
-    """Derive sentiment from community votes."""
-    pos = votes.get("positive", 0) + votes.get("liked", 0)
-    neg = votes.get("negative", 0) + votes.get("disliked", 0) + votes.get("toxic", 0)
-    if pos > neg + 2:
-        return "bullish"
-    elif neg > pos + 2:
-        return "bearish"
-    return "neutral"
+    published: str  # ISO-ish timestamp
+    categories: List[str]  # e.g. ["BTC", "ETH", "Trading"]
+    url: str
 
 
 def _parse_item(raw: dict) -> NewsItem:
-    """Parse a single CryptoPanic API result into a NewsItem."""
-    votes = raw.get("votes", {})
-    currencies = [c.get("code", "") for c in raw.get("currencies", []) if c.get("code")]
-    source = raw.get("source", {})
+    """Parse a single CryptoCompare news item."""
+    # published_on is a unix timestamp
+    ts = raw.get("published_on", 0)
+    published = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%S") if ts else ""
+
+    # Body — truncate to first ~200 chars for context
+    body = raw.get("body", "")
+    if len(body) > 200:
+        body = body[:200].rsplit(" ", 1)[0] + "..."
+
+    # Categories come as pipe-separated string: "BTC|Trading|Regulation"
+    cat_str = raw.get("categories", "")
+    categories = [c.strip() for c in cat_str.split("|") if c.strip()] if cat_str else []
+
     return NewsItem(
         title=raw.get("title", ""),
-        source=source.get("title", source.get("domain", "unknown")),
-        published=raw.get("published_at", raw.get("created_at", "")),
-        currencies=currencies,
-        sentiment=_extract_sentiment(votes),
-        votes_positive=votes.get("positive", 0),
-        votes_negative=votes.get("negative", 0),
-        votes_important=votes.get("important", 0),
-        kind=raw.get("kind", "news"),
+        body=body,
+        source=raw.get("source_info", {}).get("name", raw.get("source", "unknown")),
+        published=published,
+        categories=categories,
+        url=raw.get("url", ""),
     )
 
 
 async def fetch_news(
-    currencies: Optional[List[str]] = None,
-    filter_type: str = "hot",
+    categories: Optional[List[str]] = None,
     limit: int = 10,
 ) -> List[NewsItem]:
-    """Fetch recent crypto news from CryptoPanic.
+    """Fetch recent crypto news from CryptoCompare.
 
     Args:
-        currencies: Filter by coin codes, e.g. ["BTC", "ETH"]. None = all.
-        filter_type: "hot", "rising", "bullish", "bearish", "important"
+        categories: Filter by coin/topic codes, e.g. ["BTC", "ETH"]. None = all.
         limit: Max items to return.
 
     Returns:
         List of NewsItem, newest first.
     """
-    if not CRYPTOPANIC_API_KEY:
-        logger.debug("CRYPTOPANIC_API_KEY not set — news feed disabled")
-        return []
-
     # Build cache key
-    curr_key = ",".join(sorted(currencies)) if currencies else "ALL"
-    cache_key = f"{curr_key}:{filter_type}"
+    cat_key = ",".join(sorted(categories)) if categories else "ALL"
+    cache_key = f"cc:{cat_key}"
 
     # Check cache
     if cache_key in _cache:
@@ -99,31 +87,29 @@ async def fetch_news(
             return cached_data[:limit]
 
     # Build request
-    params = {
-        "auth_token": CRYPTOPANIC_API_KEY,
-        "filter": filter_type,
-        "regions": "en",
-        "kind": "news",
-    }
-    if currencies:
-        params["currencies"] = ",".join(currencies)
+    params: Dict[str, str] = {"lang": "EN"}
+    if categories:
+        params["categories"] = ",".join(categories)
+    if CRYPTOCOMPARE_API_KEY:
+        params["api_key"] = CRYPTOCOMPARE_API_KEY
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                CRYPTOPANIC_BASE,
+                CRYPTOCOMPARE_NEWS_URL,
                 params=params,
                 timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
                 if resp.status != 200:
-                    logger.warning("CryptoPanic API returned %d", resp.status)
+                    logger.warning("CryptoCompare news API returned %d", resp.status)
                     return _cache.get(cache_key, (0, []))[1][:limit]
                 data = await resp.json()
     except Exception as e:
-        logger.warning("CryptoPanic fetch failed: %s", e)
+        logger.warning("CryptoCompare news fetch failed: %s", e)
         return _cache.get(cache_key, (0, []))[1][:limit]
 
-    items = [_parse_item(r) for r in data.get("results", [])]
+    raw_items = data.get("Data", [])
+    items = [_parse_item(r) for r in raw_items]
     _cache[cache_key] = (time.time(), items)
     return items[:limit]
 
@@ -131,46 +117,30 @@ async def fetch_news(
 async def fetch_news_for_symbol(symbol: str, limit: int = 5) -> List[NewsItem]:
     """Fetch news for a specific trading pair like 'BTC/USDT'."""
     base = symbol.replace("/USDT", "").replace("/USD", "").upper()
-    return await fetch_news(currencies=[base], filter_type="hot", limit=limit)
+    return await fetch_news(categories=[base], limit=limit)
 
 
 def format_news_context(items: List[NewsItem], max_items: int = 8) -> str:
-    """Format news items into a context block for the LLM system prompt.
-
-    Returns a compact string suitable for injection into the assistant context.
-    """
+    """Format news items into a context block for the LLM system prompt."""
     if not items:
         return ""
 
-    lines = ["## Recent Crypto News (CryptoPanic)"]
+    lines = ["## Recent Crypto News"]
     for item in items[:max_items]:
-        # Sentiment indicator
-        if item.sentiment == "bullish":
-            sent = "▲"
-        elif item.sentiment == "bearish":
-            sent = "▼"
-        else:
-            sent = "—"
-
-        # Coins mentioned
-        coins = f" [{', '.join(item.currencies)}]" if item.currencies else ""
-
-        # Votes summary (only if notable)
-        vote_parts = []
-        if item.votes_important > 0:
-            vote_parts.append(f"!{item.votes_important}")
-        if item.votes_positive > 0:
-            vote_parts.append(f"+{item.votes_positive}")
-        if item.votes_negative > 0:
-            vote_parts.append(f"-{item.votes_negative}")
-        votes_str = f" ({', '.join(vote_parts)})" if vote_parts else ""
+        # Coins/topics mentioned
+        coin_tags = [c for c in item.categories if len(c) <= 5 and c.isupper()]
+        coins = f" [{', '.join(coin_tags)}]" if coin_tags else ""
 
         # Timestamp — just the time portion
         time_str = ""
         if "T" in item.published:
             time_str = f" {item.published.split('T')[1][:5]}"
 
-        lines.append(f"- {sent} **{item.title}**{coins}{votes_str} — {item.source}{time_str}")
+        lines.append(f"- **{item.title}**{coins} — {item.source}{time_str}")
+
+        # Add body snippet if it adds useful context
+        if item.body and len(item.body) > 30:
+            lines.append(f"  _{item.body}_")
 
     lines.append("")
     lines.append(
