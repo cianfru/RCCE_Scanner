@@ -463,6 +463,39 @@ ETH you asked about 3 days ago has now resolved").
 - Don't repeat information the user already knows from prior chats.
 - If the user has a conservative profile, lean toward caution. If aggressive, \
 acknowledge higher risk tolerance while noting dangers.
+
+## Fear & Greed Trend
+When "Fear & Greed Trend (7d)" data is provided, use the directional trend — \
+not just the current value. A move from 72→45 over 3 days signals rapid sentiment \
+shift even if 45 is "neutral". Key patterns:
+- Rapid drop (>15 pts in 7d): market fear building, potential dip-buy zone if structure holds
+- Rapid rise: greed building, tighten stops and watch for blow-off conditions
+- Divergence from price: price making highs but F&G falling = distribution signal
+
+## Signal Backtest Stats
+When "Signal Backtest Stats" data appears, use historical win rates to calibrate \
+conviction. A STRONG_LONG with 78% historical win rate over n=50 events carries \
+more statistical weight than one with n=5. Reference specific numbers: "STRONG_LONG \
+has averaged +4.2% over 7d historically (n=42, 76% win rate)."
+
+## Convergence Rankings
+When "Top Convergence Setups" data appears, these are the highest-quality setups \
+ranked by multi-factor convergence. Use this to answer "what should I be looking at?" \
+or "best setups right now?" Explain WHY the top-ranked setup has edge — which \
+factors converge (signal + whales + structure + no divergence).
+
+## Comparative Analysis
+When comparing multiple symbols, break down factor-by-factor where each has an edge. \
+Don't just list data — synthesize: "ETH has the cleaner setup: higher conditions ratio, \
+whale alignment, and no divergence. SOL scores higher on raw z-score but whale \
+positioning is neutral and there's a BEAR-DIV flag."
+
+## Liquidation Context
+When "Liquidation Pressure" data appears, use it to assess crowding risk:
+- Long-heavy liquidations = bearish flush in progress, potential capitulation
+- Short-heavy = squeeze dynamics, can fuel rapid upside
+- Accelerating liquidations on your position's side = immediate risk flag
+- Cross-reference with funding regime: CROWDED_LONG + long liquidations = cascade risk
 """
 
 
@@ -951,6 +984,33 @@ class AssistantManager:
         analytics_section = await self._build_analytics_context()
         if analytics_section:
             parts.append(analytics_section)
+
+        # -- Extended context (Fear & Greed trend, backtest, convergence, liqs)
+        try:
+            from assistant_context import (
+                build_fng_trend_context,
+                build_backtest_context,
+                build_convergence_context,
+                build_liquidation_context,
+            )
+            fng_trend = await build_fng_trend_context()
+            if fng_trend:
+                parts.append(fng_trend)
+
+            backtest = await build_backtest_context(symbol=symbol)
+            if backtest:
+                parts.append(backtest)
+
+            if include_market:
+                convergence = build_convergence_context(cache)
+                if convergence:
+                    parts.append(convergence)
+
+            liq = build_liquidation_context(cache, symbol=symbol)
+            if liq:
+                parts.append(liq)
+        except Exception:
+            pass
 
         return "\n\n".join(parts)
 
@@ -1517,6 +1577,41 @@ class AssistantManager:
 
         return best_match
 
+    def _detect_all_symbols(self, text: str) -> List[str]:
+        """Extract all mentioned symbols from user text for comparison queries."""
+        from scanner import cache
+        import re
+
+        text_upper = text.upper()
+        found: List[str] = []
+        seen_bases: set = set()
+
+        # Collect all known base symbols
+        all_bases: List[tuple] = []
+        for tf_key, tf_results in cache.results.items():
+            for r in tf_results:
+                sym = r.get("symbol", "")
+                base = sym.split("/")[0]
+                if base not in seen_bases:
+                    all_bases.append((base, sym))
+                    seen_bases.add(base)
+
+        # Sort by length descending to match longest first
+        all_bases.sort(key=lambda x: -len(x[0]))
+
+        matched_positions: set = set()
+        for base, sym in all_bases:
+            # Use word boundary to avoid partial matches
+            pattern = rf'\b{re.escape(base)}\b'
+            for m in re.finditer(pattern, text_upper):
+                pos = m.start()
+                if pos not in matched_positions:
+                    matched_positions.add(pos)
+                    if sym not in found:
+                        found.append(sym)
+
+        return found
+
     # -- Chat --------------------------------------------------------------
 
     async def chat(
@@ -1548,6 +1643,18 @@ class AssistantManager:
             include_market=True,
             wallet_address=wallet_address,
         )
+
+        # Comparative analysis: detect if user mentions multiple symbols
+        try:
+            all_symbols = self._detect_all_symbols(user_message)
+            if len(all_symbols) >= 2:
+                from assistant_context import build_comparison_context
+                from scanner import cache
+                comparison = build_comparison_context(cache, all_symbols[:4])
+                if comparison:
+                    context += "\n\n" + comparison
+        except Exception:
+            pass
 
         # Build memory context (past conversations + user profile)
         memory_context = ""
