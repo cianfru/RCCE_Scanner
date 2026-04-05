@@ -184,6 +184,7 @@ export default function NotificationBell() {
   const [warnings, setWarnings] = useState([]);
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
   const [marketSetups, setMarketSetups] = useState([]);
+  const [insights, setInsights] = useState([]);
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissedState] = useState(getDismissed);
   const panelRef = useRef(null);
@@ -207,6 +208,7 @@ export default function NotificationBell() {
       ...warnings.map(w => `warn:${w.type}:${w.symbol}`),
       ...exhaustionOpps.map(o => `opp:${o.type}:${o.symbol}`),
       ...marketSetups.map(s => `setup:${s.type}:${s.symbol}`),
+      ...insights.map(i => i.key),
     ];
     dismissMany(allKeys);
   };
@@ -253,6 +255,16 @@ export default function NotificationBell() {
       return [...novel, ...prev];
     });
   }, [wsRef.connected, wsRef.anomalies]);
+
+  // Capture proactive assistant insights
+  useEffect(() => {
+    if (!wsRef.insight) return;
+    const key = `insight:${Math.floor(wsRef.insight.timestamp)}`;
+    setInsights((prev) => {
+      if (prev.some((i) => i.key === key)) return prev;
+      return [{ ...wsRef.insight, key }, ...prev].slice(0, 10);
+    });
+  }, [wsRef.insight]);
 
   // ── Fallback data fetching (when SharedWorker unavailable) ────────────────
 
@@ -336,7 +348,8 @@ export default function NotificationBell() {
   const visibleWarnings = warnings.filter(w => !isDismissed(`warn:${w.type}:${w.symbol}`));
   const visibleOpps = exhaustionOpps.filter(o => !isDismissed(`opp:${o.type}:${o.symbol}`));
   const visibleSetups = marketSetups.filter(s => !isDismissed(`setup:${s.type}:${s.symbol}`));
-  const totalVisible = visibleAnomalies.length + visibleWarnings.length + visibleOpps.length + visibleSetups.length;
+  const visibleInsights = insights.filter(i => !isDismissed(i.key));
+  const totalVisible = visibleAnomalies.length + visibleWarnings.length + visibleOpps.length + visibleSetups.length + visibleInsights.length;
 
   const hasAnomalies = visibleAnomalies.length > 0;
   const hasWarnings = visibleWarnings.length > 0;
@@ -344,6 +357,7 @@ export default function NotificationBell() {
   const hasOpps = visibleOpps.length > 0;
   const hasSetups = visibleSetups.length > 0;
   const hasHighSetup = visibleSetups.some(s => s.severity === "high");
+  const hasInsights = visibleInsights.length > 0;
 
   const handleToggle = () => {
     setOpen(!open);
@@ -378,7 +392,7 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {(hasAnomalies || hasWarnings || hasOpps || hasSetups) && (
+        {(hasAnomalies || hasWarnings || hasOpps || hasSetups || hasInsights) && (
           <span style={{
             position: "absolute", top: 1, right: 1,
             width: 8, height: 8, borderRadius: "50%",
@@ -627,6 +641,53 @@ export default function NotificationBell() {
                   </CardRow>
                 );
               })}
+            </>
+          )}
+
+          {/* Assistant Insights */}
+          {visibleInsights.length > 0 && (
+            <>
+              <SectionHeader
+                label="MARKET INSIGHTS" count={visibleInsights.length}
+                color="#818cf8" bg="rgba(129,140,248,0.06)"
+                onClear={() => dismissMany(insights.map(i => i.key))}
+              />
+              {visibleInsights.map((ins) => (
+                <div
+                  key={ins.key}
+                  style={{
+                    padding: "12px 16px",
+                    borderBottom: `1px solid ${T.border}`,
+                    background: "rgba(129,140,248,0.04)",
+                  }}
+                >
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    marginBottom: 6,
+                  }}>
+                    <span style={{ color: "#818cf8", fontSize: T.textSm, lineHeight: 1 }}>{"\u2726"}</span>
+                    <span style={{
+                      fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
+                      color: "#818cf8", letterSpacing: "0.05em",
+                    }}>
+                      ASSISTANT
+                    </span>
+                    <span style={{
+                      fontSize: T.textXs, fontFamily: T.mono, color: T.text4,
+                      marginLeft: "auto",
+                    }}>
+                      {timeAgo(Math.floor(ins.timestamp))}
+                    </span>
+                    <DismissBtn onClick={() => dismiss(ins.key)} />
+                  </div>
+                  <div style={{
+                    fontSize: T.textSm, fontFamily: T.mono, color: T.text2,
+                    paddingLeft: 22, lineHeight: 1.6, whiteSpace: "pre-line",
+                  }}>
+                    {ins.message}
+                  </div>
+                </div>
+              ))}
             </>
           )}
 

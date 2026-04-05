@@ -409,6 +409,19 @@ When anomalies are present in the data:
 - When positions are available, always contextualize advice relative to held positions.
 - **NEVER mention ARK or AR unless the user explicitly asks about them.** They are \
 in the watchlist for tracking only — do not include them in summaries, top picks, or examples.
+
+## Memory & Continuity
+You have persistent memory across conversations. When "Past Conversations" or \
+"User Trading Profile" data appears in the context:
+- Reference past discussions naturally ("last time you asked about ETH...", \
+"you've been watching SOL closely").
+- Use the user's trading profile to personalize advice (risk preference, \
+exit style, favorite symbols).
+- Connect current conditions to past conversations ("the squeeze setup on \
+ETH you asked about 3 days ago has now resolved").
+- Don't repeat information the user already knows from prior chats.
+- If the user has a conservative profile, lean toward caution. If aggressive, \
+acknowledge higher risk tolerance while noting dangers.
 """
 
 
@@ -1376,6 +1389,18 @@ class AssistantManager:
             wallet_address=wallet_address,
         )
 
+        # Build memory context (past conversations + user profile)
+        memory_context = ""
+        try:
+            from assistant_memory import ConversationMemory
+            mem = ConversationMemory.get()
+            memory_context = await mem.build_memory_context(
+                current_symbol=detected,
+                user_message=user_message,
+            )
+        except Exception:
+            pass
+
         # Append user message
         session.messages.append(ChatMessage(role="user", content=user_message))
 
@@ -1389,8 +1414,11 @@ class AssistantManager:
             for m in session.messages
         ]
 
-        # System prompt + live data context
-        system = SYSTEM_PROMPT + "\n\n## Current Scanner Data\n\n" + context
+        # System prompt + memory + live data context
+        system = SYSTEM_PROMPT
+        if memory_context:
+            system += "\n\n" + memory_context
+        system += "\n\n## Current Scanner Data\n\n" + context
 
         client = self._get_client()
 
@@ -1414,6 +1442,15 @@ class AssistantManager:
             reply = response.content[0].text
 
         session.messages.append(ChatMessage(role="assistant", content=reply))
+
+        # Persist to memory + extract profile (fire-and-forget)
+        try:
+            from assistant_memory import ConversationMemory
+            mem = ConversationMemory.get()
+            await mem.store_exchange(session_id, user_message, reply, detected)
+            await mem.extract_profile_from_conversation(user_message, reply, detected)
+        except Exception:
+            pass
 
         return reply, detected
 
