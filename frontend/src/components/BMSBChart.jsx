@@ -30,7 +30,7 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "4h",  label: "4H",  limit: 500,  apiTf: "4h", barSpace: 8 },   // ~83 days of 4H candles
+  { key: "4h",  label: "4H",  limit: 1500, apiTf: "4h", barSpace: 8 },   // ~250 days — enough for 200-day MA (1200 bars)
   { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
 ];
 
@@ -313,9 +313,8 @@ export default function BMSBChart({
 
         // ── 200-day MA (computed from candle closes) ──
         if (data.candles?.length > 0) {
-          // For 1D candles: 200-period MA = 200-day MA
-          // For 4H candles: 200-period MA ≈ 33-day MA (useful shorter-term trend)
-          const period = 200;
+          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day)
+          const period = tf === "4h" ? 1200 : 200;
           const closes = data.candles.map(c => c.close);
           const maData = [];
           let sum = 0;
