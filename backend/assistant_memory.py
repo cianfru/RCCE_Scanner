@@ -54,6 +54,7 @@ class ConversationMemory:
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
+                wallet TEXT NOT NULL DEFAULT '',
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 symbol TEXT,
@@ -62,15 +63,19 @@ class ConversationMemory:
 
             CREATE INDEX IF NOT EXISTS idx_conv_session
                 ON conversations(session_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_wallet
+                ON conversations(wallet);
             CREATE INDEX IF NOT EXISTS idx_conv_symbol
                 ON conversations(symbol);
             CREATE INDEX IF NOT EXISTS idx_conv_ts
                 ON conversations(timestamp);
 
             CREATE TABLE IF NOT EXISTS user_profile (
-                key TEXT PRIMARY KEY,
+                wallet TEXT NOT NULL DEFAULT '',
+                key TEXT NOT NULL,
                 value TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (wallet, key)
             );
 
             CREATE TABLE IF NOT EXISTS market_snapshots (
@@ -108,15 +113,16 @@ class ConversationMemory:
         role: str,
         content: str,
         symbol: Optional[str] = None,
+        wallet: str = "",
     ) -> None:
-        """Persist a single message."""
+        """Persist a single message, scoped to wallet."""
         if not self._db:
             return
         ts = int(time.time())
         cursor = await self._db.execute(
-            "INSERT INTO conversations (session_id, role, content, symbol, timestamp) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (session_id, role, content, symbol, ts),
+            "INSERT INTO conversations (session_id, wallet, role, content, symbol, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, wallet, role, content, symbol, ts),
         )
         # Update FTS index
         try:
@@ -134,30 +140,30 @@ class ConversationMemory:
         user_msg: str,
         assistant_reply: str,
         symbol: Optional[str] = None,
+        wallet: str = "",
     ) -> None:
-        """Store a full user→assistant exchange."""
-        await self.store_message(session_id, "user", user_msg, symbol)
-        await self.store_message(session_id, "assistant", assistant_reply, symbol)
+        """Store a full user→assistant exchange, scoped to wallet."""
+        await self.store_message(session_id, "user", user_msg, symbol, wallet)
+        await self.store_message(session_id, "assistant", assistant_reply, symbol, wallet)
 
     # ── Recall ────────────────────────────────────────────────────────────
 
-    async def recall_by_symbol(self, symbol: str, limit: int = 10) -> List[Dict]:
-        """Get recent conversations about a specific symbol."""
+    async def recall_by_symbol(self, symbol: str, wallet: str = "", limit: int = 10) -> List[Dict]:
+        """Get recent conversations about a specific symbol for this wallet."""
         if not self._db:
             return []
         rows = await self._db.execute_fetchall(
             "SELECT role, content, timestamp FROM conversations "
-            "WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?",
-            (symbol, limit),
+            "WHERE symbol = ? AND wallet = ? ORDER BY timestamp DESC LIMIT ?",
+            (symbol, wallet, limit),
         )
         return [dict(r) for r in rows]
 
-    async def recall_by_query(self, query: str, limit: int = 8) -> List[Dict]:
-        """FTS5 search across all conversations."""
+    async def recall_by_query(self, query: str, wallet: str = "", limit: int = 8) -> List[Dict]:
+        """FTS5 search across conversations for this wallet."""
         if not self._db:
             return []
         try:
-            # Sanitize query for FTS5
             safe_query = " ".join(
                 w for w in query.split()
                 if w.isalnum() or w in ("AND", "OR", "NOT")
@@ -168,22 +174,22 @@ class ConversationMemory:
                 "SELECT c.role, c.content, c.symbol, c.timestamp "
                 "FROM conversations_fts f "
                 "JOIN conversations c ON c.id = f.rowid "
-                "WHERE conversations_fts MATCH ? "
+                "WHERE conversations_fts MATCH ? AND c.wallet = ? "
                 "ORDER BY rank LIMIT ?",
-                (safe_query, limit),
+                (safe_query, wallet, limit),
             )
             return [dict(r) for r in rows]
         except Exception:
             return []
 
-    async def recall_recent(self, limit: int = 20) -> List[Dict]:
-        """Get most recent conversations (for context/profile building)."""
+    async def recall_recent(self, wallet: str = "", limit: int = 20) -> List[Dict]:
+        """Get most recent conversations for this wallet."""
         if not self._db:
             return []
         rows = await self._db.execute_fetchall(
             "SELECT role, content, symbol, timestamp FROM conversations "
-            "ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
+            "WHERE wallet = ? ORDER BY timestamp DESC LIMIT ?",
+            (wallet, limit),
         )
         return [dict(r) for r in rows]
 
@@ -193,19 +199,20 @@ class ConversationMemory:
         self,
         current_symbol: Optional[str] = None,
         user_message: str = "",
+        wallet: str = "",
     ) -> str:
         """Build a memory block to inject into the system prompt.
 
         Combines:
-        - Recent conversations about the same symbol
-        - FTS search hits from the current question
-        - User profile preferences
+        - Recent conversations about the same symbol (for this wallet)
+        - FTS search hits from the current question (for this wallet)
+        - User profile preferences (for this wallet)
         """
         parts: List[str] = []
 
         # Symbol-specific recall
         if current_symbol:
-            symbol_history = await self.recall_by_symbol(current_symbol, limit=6)
+            symbol_history = await self.recall_by_symbol(current_symbol, wallet=wallet, limit=6)
             if symbol_history:
                 lines = []
                 for msg in reversed(symbol_history):  # chronological
@@ -221,7 +228,7 @@ class ConversationMemory:
 
         # FTS recall from current question
         if user_message and len(user_message) > 10:
-            search_hits = await self.recall_by_query(user_message, limit=4)
+            search_hits = await self.recall_by_query(user_message, wallet=wallet, limit=4)
             # Filter out hits already shown in symbol recall
             if search_hits:
                 lines = []
@@ -238,7 +245,7 @@ class ConversationMemory:
                     )
 
         # User profile
-        profile = await self.get_profile()
+        profile = await self.get_profile(wallet=wallet)
         if profile:
             profile_lines = []
             for k, v in profile.items():
@@ -253,39 +260,42 @@ class ConversationMemory:
     # 2. User Profile
     # ══════════════════════════════════════════════════════════════════════
 
-    async def get_profile(self) -> Dict[str, str]:
-        """Get all user profile entries."""
+    async def get_profile(self, wallet: str = "") -> Dict[str, str]:
+        """Get all profile entries for this wallet."""
         if not self._db:
             return {}
         rows = await self._db.execute_fetchall(
-            "SELECT key, value FROM user_profile ORDER BY key"
+            "SELECT key, value FROM user_profile WHERE wallet = ? ORDER BY key",
+            (wallet,),
         )
         return {r["key"]: r["value"] for r in rows}
 
-    async def update_profile(self, key: str, value: str) -> None:
-        """Upsert a profile entry."""
+    async def update_profile(self, key: str, value: str, wallet: str = "") -> None:
+        """Upsert a profile entry for this wallet."""
         if not self._db:
             return
         await self._db.execute(
-            "INSERT INTO user_profile (key, value, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-            (key, value, int(time.time())),
+            "INSERT INTO user_profile (wallet, key, value, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(wallet, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (wallet, key, value, int(time.time())),
         )
         await self._db.commit()
 
     async def extract_profile_from_conversation(
-        self, user_message: str, assistant_reply: str, symbol: Optional[str] = None,
+        self, user_message: str, assistant_reply: str,
+        symbol: Optional[str] = None, wallet: str = "",
     ) -> None:
         """Extract trading preferences from a conversation exchange.
 
         Lightweight extraction — no LLM call, just pattern matching.
+        Scoped to wallet.
         """
         msg_lower = user_message.lower()
 
         # Track asked-about symbols (frequency = interest)
         if symbol:
             counts = {}
-            profile = await self.get_profile()
+            profile = await self.get_profile(wallet=wallet)
             if "symbol_interest" in profile:
                 try:
                     counts = json.loads(profile["symbol_interest"])
@@ -293,24 +303,23 @@ class ConversationMemory:
                     pass
             base = symbol.replace("/USDT", "").replace("/USD", "")
             counts[base] = counts.get(base, 0) + 1
-            # Keep top 20
             top = dict(sorted(counts.items(), key=lambda x: -x[1])[:20])
-            await self.update_profile("symbol_interest", json.dumps(top))
+            await self.update_profile("symbol_interest", json.dumps(top), wallet=wallet)
 
         # Detect risk preferences from language
         if any(w in msg_lower for w in ("conservative", "safe", "careful", "low risk")):
-            await self.update_profile("risk_preference", "conservative")
+            await self.update_profile("risk_preference", "conservative", wallet=wallet)
         elif any(w in msg_lower for w in ("aggressive", "degen", "yolo", "high risk", "leverage")):
-            await self.update_profile("risk_preference", "aggressive")
+            await self.update_profile("risk_preference", "aggressive", wallet=wallet)
 
         # Detect position sizing mentions
         if any(w in msg_lower for w in ("trim", "partial", "scale out", "take profit")):
-            await self.update_profile("exit_style", "gradual (trims/scales)")
+            await self.update_profile("exit_style", "gradual (trims/scales)", wallet=wallet)
         elif any(w in msg_lower for w in ("all in", "full exit", "close everything")):
-            await self.update_profile("exit_style", "binary (all-or-nothing)")
+            await self.update_profile("exit_style", "binary (all-or-nothing)", wallet=wallet)
 
         # Track last interaction
-        await self.update_profile("last_active", str(int(time.time())))
+        await self.update_profile("last_active", str(int(time.time())), wallet=wallet)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

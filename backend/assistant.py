@@ -1497,7 +1497,11 @@ class AssistantManager:
         wallet_address: Optional[str] = None,
     ) -> tuple[str, Optional[str]]:
         """Process a user message and return (reply, detected_symbol)."""
-        session = self.get_or_create_session(session_id)
+        # Scope session by wallet so different users don't share history
+        scoped_session_id = (
+            f"{wallet_address}:{session_id}" if wallet_address else session_id
+        )
+        session = self.get_or_create_session(scoped_session_id)
 
         # Detect symbol from message if not provided
         detected = symbol
@@ -1523,6 +1527,7 @@ class AssistantManager:
             memory_context = await mem.build_memory_context(
                 current_symbol=detected,
                 user_message=user_message,
+                wallet=wallet_address,
             )
         except Exception:
             pass
@@ -1573,8 +1578,8 @@ class AssistantManager:
         try:
             from assistant_memory import ConversationMemory
             mem = ConversationMemory.get()
-            await mem.store_exchange(session_id, user_message, reply, detected)
-            await mem.extract_profile_from_conversation(user_message, reply, detected)
+            await mem.store_exchange(session_id, user_message, reply, detected, wallet=wallet_address)
+            await mem.extract_profile_from_conversation(user_message, reply, detected, wallet=wallet_address)
         except Exception:
             pass
 
