@@ -135,6 +135,7 @@ export function useWebSocket() {
   const [priceTicks, setPriceTicks] = useState(null);
   const [transitions, setTransitions] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
+  const [insight, setInsight] = useState(null);
   const idRef = useRef(null);
 
   useEffect(() => {
@@ -157,6 +158,9 @@ export function useWebSocket() {
           break;
         case "signal-transition":
           setTransitions(msg.data || []);
+          break;
+        case "assistant-insight":
+          setInsight(msg.data);
           break;
         case "anomaly":
           setAnomalies(msg.data || []);
@@ -188,6 +192,7 @@ export function useWebSocket() {
     priceTicks,
     transitions,
     anomalies,
+    insight,
     refresh,
   };
 }

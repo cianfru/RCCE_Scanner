@@ -207,6 +207,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Price ticker init failed (non-fatal): %s", e)
 
+    # Initialize assistant memory + start proactive market monitor
+    try:
+        from assistant_memory import ConversationMemory, run_market_monitor
+        await ConversationMemory.get().init()
+        asyncio.create_task(run_market_monitor(interval=300))  # every 5 min
+    except Exception as e:
+        logger.warning("Assistant memory init failed (non-fatal): %s", e)
+
     yield
 
     # Force-save OHLCV cache on shutdown (survives redeploys)
