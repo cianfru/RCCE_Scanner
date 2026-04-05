@@ -30,10 +30,8 @@ const SIGNAL_MARKER = {
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
-  { key: "1m",  label: "1M",  limit: 180,  apiTf: "4h", barSpace: 8 },   // ~30 days of 4H candles
-  { key: "3m",  label: "3M",  limit: 500,  apiTf: "4h", barSpace: 4 },   // ~83 days of 4H candles
-  { key: "6m",  label: "6M",  limit: 180,  apiTf: "1d", barSpace: 8 },   // ~6 months of 1D candles
-  { key: "1y",  label: "1Y",  limit: 365,  apiTf: "1d", barSpace: 4 },   // ~1 year of 1D candles
+  { key: "4h",  label: "4H",  limit: 1500, apiTf: "4h", barSpace: 8 },   // ~250 days — enough for 200-day MA (1200 bars)
+  { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
 ];
 
 export default function BMSBChart({
@@ -56,7 +54,7 @@ export default function BMSBChart({
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "6m" : "1m");
+  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
@@ -183,6 +181,17 @@ export default function BMSBChart({
       title: "CTO",
     });
 
+    // ── 200-day MA ──
+    const ma200Series = chart.addSeries(LineSeries, {
+      color: "rgba(255,168,0,0.6)",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      crosshairMarkerVisible: false,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: "200 MA",
+    });
+
     // ── BMSB lines ──
     // EMA (upper band boundary)
     const bmsbEmaSeries = chart.addSeries(LineSeries, {
@@ -302,6 +311,23 @@ export default function BMSBChart({
           });
         }
 
+        // ── 200-day MA (computed from candle closes) ──
+        if (data.candles?.length > 0) {
+          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day)
+          const period = tf === "4h" ? 1200 : 200;
+          const closes = data.candles.map(c => c.close);
+          const maData = [];
+          let sum = 0;
+          for (let i = 0; i < closes.length; i++) {
+            sum += closes[i];
+            if (i >= period) sum -= closes[i - period];
+            if (i >= period - 1) {
+              maData.push({ time: data.candles[i].time, value: sum / period });
+            }
+          }
+          if (maData.length > 0) ma200Series.setData(maData);
+        }
+
         // ── CTO Line overlay data ──
         if (data.cto_fast?.length > 0) ctoFastSeries.setData(data.cto_fast);
         if (data.cto_slow?.length > 0) ctoSlowSeries.setData(data.cto_slow);
@@ -311,7 +337,17 @@ export default function BMSBChart({
         if (data.bmsb_ema?.length > 0) bmsbEmaSeries.setData(data.bmsb_ema);
         if (data.bmsb_sma?.length > 0) bmsbSmaSeries.setData(data.bmsb_sma);
 
-        chart.timeScale().fitContent();
+        // Show most recent candles at comfortable zoom, not all crammed in
+        const candleCount = data.candles?.length || 0;
+        const visibleBars = tf === "1d" ? 90 : 120; // ~3 months for 1D, ~20 days for 4H
+        if (candleCount > visibleBars) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: candleCount - visibleBars,
+            to: candleCount + 5,
+          });
+        } else {
+          chart.timeScale().fitContent();
+        }
         setLoading(false);
       })
       .catch(err => {
