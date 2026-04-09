@@ -384,65 +384,78 @@ cache = ScanCache()
 def _compute_priority(r: dict, anomaly_symbols: set = None) -> float:
     """Compute a composite priority score (0-100) for ranking symbols.
 
-    Factors (total = 100 pts):
-        1. Conditions met:     0-25 pts  (% of conditions satisfied)
-        2. BMSB proximity:     0-25 pts  (how close to / above BMSB mid)
-        3. Floor confirmed:    0 or 15   (binary bonus)
-        4. Momentum:           0-15 pts  (normalised -10% .. +10%)
-        5. Heat headroom:      0-10 pts  (inverted — low heat = more room)
-        6. Volume/absorption:  0-10 pts  (rel_vol + absorption bonus)
+    Signal strength is the primary driver — STRONG_LONG and LIGHT_LONG
+    coins should always rank above WAIT/neutral coins regardless of
+    anomaly status. Anomalies still surface in the alert system.
 
-    Active anomalies boost: +20 pts (ensures coins with unusual activity
-    surface near the top even if their signal score is low).
+    Factors (total = 100 pts):
+        1. Signal tier:        0-40 pts  (STRONG_LONG=40, LIGHT_LONG=30, ACCUMULATE=20, etc.)
+        2. Conditions met:     0-20 pts  (% of conditions satisfied)
+        3. BMSB proximity:     0-10 pts  (above BMSB = positive structure)
+        4. Floor confirmed:    0 or  8   (binary bonus for ACCUM/CAP)
+        5. Momentum:           0- 7 pts  (normalised)
+        6. Heat headroom:      0- 5 pts  (low heat = more room to run)
+        7. CVD / spot confirm: 0- 5 pts  (directional confirmation)
+        8. Volume/absorption:  0- 5 pts  (rel_vol + absorption)
     """
     score = 0.0
 
-    # 1. Conditions met: 0-25 pts
+    # 1. Signal tier: 0-40 pts — this is the dominant factor
+    signal = r.get("signal", "WAIT")
+    _SIGNAL_TIER = {
+        "STRONG_LONG": 40,
+        "LIGHT_LONG": 30,
+        "ACCUMULATE": 22,
+        "REVIVAL_SEED_CONFIRMED": 20,
+        "REVIVAL_SEED": 18,
+        "LIGHT_SHORT": 15,
+        "TRIM": 10,
+        "TRIM_HARD": 10,
+        "RISK_OFF": 8,
+        "NO_LONG": 5,
+        "WAIT": 0,
+    }
+    score += _SIGNAL_TIER.get(signal, 0)
+
+    # 2. Conditions met: 0-20 pts
     cond = r.get("conditions_met", 0)
     cond_total = max(r.get("conditions_total", 10), 1)
-    score += (cond / cond_total) * 25
+    score += (cond / cond_total) * 20
 
-    # 2. BMSB proximity: 0-25 pts
+    # 3. BMSB proximity: 0-10 pts (above BMSB = bullish structure)
     dev = r.get("deviation_pct", -50)
     dev_clamped = max(-50.0, min(50.0, dev))
-    score += ((dev_clamped + 50) / 100) * 25
+    score += ((dev_clamped + 50) / 100) * 10
 
-    # 3. Floor confirmed: 0 or 15 pts
+    # 4. Floor confirmed: 0 or 8 pts
     if r.get("floor_confirmed", False):
-        score += 15
+        score += 8
 
-    # 4. Momentum: 0-15 pts
+    # 5. Momentum: 0-7 pts
     mom = r.get("momentum", -10)
     mom_clamped = max(-10.0, min(10.0, mom))
-    score += ((mom_clamped + 10) / 20) * 15
+    score += ((mom_clamped + 10) / 20) * 7
 
-    # 5. Heat inverted: 0-10 pts (low heat = more upside room)
+    # 6. Heat inverted: 0-5 pts (low heat = more upside room)
     heat = r.get("heat", 50)
-    score += ((100 - min(heat, 100)) / 100) * 10
+    score += ((100 - min(heat, 100)) / 100) * 5
 
-    # 6. Volume / absorption: 0-10 pts
-    rel_vol = min(r.get("rel_vol", 1.0), 5.0)
-    score += (rel_vol / 5.0) * 5
-    if r.get("is_absorption", False):
-        score += 5
-
-    # 7. CVD confirms direction: 0 or 5 pts
-    signal_val = r.get("signal", "WAIT")
-    _exit_sigs = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    # 7. CVD / spot dominance confirmation: 0-5 pts
     cvd_trend_val = r.get("cvd_trend", "NEUTRAL")
-    if signal_val not in _exit_sigs and cvd_trend_val == "BULLISH":
-        score += 5
-    elif signal_val in _exit_sigs and cvd_trend_val == "BEARISH":
-        score += 5
-
-    # 8. Spot dominance confirms organic demand: 0 or 5 pts
     positioning_val = r.get("positioning") or {}
+    _exit_sigs = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    if signal not in _exit_sigs and cvd_trend_val == "BULLISH":
+        score += 3
+    elif signal in _exit_sigs and cvd_trend_val == "BEARISH":
+        score += 3
     if positioning_val.get("spot_dominance") == "SPOT_LED":
-        score += 5
+        score += 2
 
-    # 9. Active anomaly boost: +20 pts — unusual activity demands attention
-    if anomaly_symbols and r.get("symbol") in anomaly_symbols:
-        score += 20
+    # 8. Volume / absorption: 0-5 pts
+    rel_vol = min(r.get("rel_vol", 1.0), 5.0)
+    score += (rel_vol / 5.0) * 2.5
+    if r.get("is_absorption", False):
+        score += 2.5
 
     return round(min(100.0, max(0.0, score)), 1)
 
@@ -889,10 +902,10 @@ async def _synthesize_and_enrich(
     except ImportError:
         pass
 
-    # Priority scores (anomaly symbols get a +20 boost)
+    # Priority scores (signal strength is the primary factor)
     _anom_syms = getattr(scan_cache, "anomaly_hot_symbols", set())
     for r in results:
-        r["priority_score"] = _compute_priority(r, _anom_syms)
+        r["priority_score"] = _compute_priority(r)
         # Flag anomaly symbols so the frontend can show an anomaly tier dot
         if r.get("symbol") in _anom_syms:
             r["has_anomaly"] = True
@@ -1751,9 +1764,6 @@ async def _run_synthesis_pass(
                         sym = r.get("symbol", "")
                         if sym in scan_cache.anomaly_hot_symbols:
                             r["has_anomaly"] = True
-                            # Re-boost priority if not already boosted
-                            if r.get("priority_score", 0) < 100:
-                                r["priority_score"] = min(100.0, r.get("priority_score", 0) + 20)
         except Exception:
             logger.debug("Anomaly detection skipped", exc_info=True)
 
