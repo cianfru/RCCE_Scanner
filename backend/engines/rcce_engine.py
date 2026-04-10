@@ -485,15 +485,25 @@ def _calc_regime_probabilities(
     vh_boost = _BASE + (1.0 - _BASE) * vh_f   # 0.15 base, 1.0 when vol_high
     not_vh_boost = _BASE + (1.0 - _BASE) * not_vh_f
 
-    # MARKUP: ramps up with positive z, energy > 1 boosts
-    energy_boost = 0.5 + 0.5 * _soft_gate(energy_safe, 1.0, 0.2)
-    p_markup = np.maximum(0.0, z_safe) * energy_boost
+    # Dynamic MARKUP/REACC deadband — prevents regime whiplash on small z moves
+    # and adapts to market energy. In strong trending markets the deadband widens
+    # so mild pullbacks stay labelled MARKUP (not flipped to REACC on every dip).
+    #   - Base deadband: 0.3 * vol_scale (0.25 compressed → 0.38 high vol)
+    #   - Energy bonus: accelerating markets (energy > 1.1) add (e-1.1)*0.3
+    # Shift z-view so MARKUP and REACC have a gap between them around zero.
+    z_deadband = 0.3 * vol_scale + np.maximum(0.0, energy_safe - 1.1) * 0.3
+    z_markup_view = z_safe + z_deadband  # MARKUP activates when z > -deadband
+    z_reacc_view = z_safe - z_deadband   # REACC activates when z < -deadband
 
-    # BLOWOFF: ramps up beyond z_blowoff (smooth onset)
+    # MARKUP: ramps up with positive shifted z, energy > 1 boosts
+    energy_boost = 0.5 + 0.5 * _soft_gate(energy_safe, 1.0, 0.2)
+    p_markup = np.maximum(0.0, z_markup_view) * energy_boost
+
+    # BLOWOFF: ramps up beyond z_blowoff (smooth onset) — unchanged, uses raw z
     p_blowoff = np.maximum(0.0, z_safe - z_blowoff) * _soft_gate(z_safe, z_blowoff, 0.2)
 
-    # REACC: smooth ramp for z < 0, boosted by NOT high-vol
-    p_reacc = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, 0.0, 0.2) * not_vh_boost
+    # REACC: smooth ramp for shifted z < 0, boosted by NOT high-vol
+    p_reacc = np.maximum(0.0, -z_reacc_view) * _soft_gate(-z_reacc_view, 0.0, 0.2) * not_vh_boost
 
     # MARKDOWN: z < 0, boosted by high-vol
     p_md = vol_safe * 2.0 * _soft_gate(-z_safe, 0.0, 0.2) * vh_boost
@@ -523,11 +533,20 @@ def _calc_regime_probabilities(
 def _resolve_regime_with_persistence(
     prob_stack: np.ndarray,  # shape (6, N)
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Simulate Pine-style regime persistence.
+    """Simulate Pine-style regime persistence with hysteresis.
 
     The dominant regime is the one with the highest probability.
     A new regime must persist for ``MIN_REGIME_BARS`` consecutive bars before
     the label actually switches.
+
+    **Hysteresis** (asymmetric transitions within bullish family):
+    When current regime is MARKUP/REACC/ACCUM and the candidate is another
+    bullish regime, require the candidate's probability to exceed the current
+    regime's probability by ``_HYSTERESIS_RATIO`` before accepting the switch.
+    This prevents regime whiplash on small z-score fluctuations.
+    Exit transitions (to BLOWOFF/MARKDOWN/CAP) are NOT hysteresis-protected
+    for safety — if a bearish regime becomes dominant, switch immediately
+    (subject to persistence).
 
     Returns
     -------
@@ -538,17 +557,34 @@ def _resolve_regime_with_persistence(
     if n == 0:
         return np.array([], dtype=np.int64), np.array([], dtype=np.float64)
 
-    raw_dominant = np.argmax(prob_stack, axis=0)  # (N,)
+    # Regime indices: 0=MARKUP, 1=BLOWOFF, 2=REACC, 3=MARKDOWN, 4=CAP, 5=ACCUM
+    BULLISH_FAMILY = {0, 2, 5}  # MARKUP, REACC, ACCUM
+    _HYSTERESIS_RATIO = 1.25    # candidate must have 25% more prob to switch
+
+    def _pick_candidate(current: int, probs: np.ndarray) -> int:
+        """Apply hysteresis: within bullish family, current regime gets a boost."""
+        if current not in BULLISH_FAMILY:
+            return int(np.argmax(probs))
+        # Boost current regime's probability within bullish family only
+        adjusted = probs.copy()
+        for idx in BULLISH_FAMILY:
+            if idx == current:
+                continue
+            # Candidate must beat current by the hysteresis ratio
+            adjusted[idx] = probs[idx] / _HYSTERESIS_RATIO
+        return int(np.argmax(adjusted))
 
     regimes = np.empty(n, dtype=np.int64)
     confidences = np.empty(n, dtype=np.float64)
 
-    current_regime: int = int(raw_dominant[0])
+    current_regime: int = int(np.argmax(prob_stack[:, 0]))
     pending_regime: int = current_regime
     pending_count: int = 1
 
     for i in range(n):
-        candidate = int(raw_dominant[i])
+        col = prob_stack[:, i]
+        candidate = _pick_candidate(current_regime, col)
+
         if candidate == current_regime:
             pending_regime = current_regime
             pending_count = 0
