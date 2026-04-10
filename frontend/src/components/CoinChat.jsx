@@ -232,31 +232,63 @@ export default function CoinChat({ symbol, isMobile }) {
         >
           {/* Header */}
           <div style={{
-            padding: "12px 16px",
+            padding: "14px 16px",
             borderBottom: `1px solid ${T.border}`,
-            display: "flex", alignItems: "center", gap: 10,
+            display: "flex", alignItems: "center", gap: 12,
             flexShrink: 0,
+            background: "linear-gradient(180deg, rgba(34,211,238,0.04) 0%, transparent 100%)",
           }}>
-            <img
-              src="/Robot.png"
-              alt="AI"
-              style={{ width: 32, height: 32, objectFit: "contain" }}
-            />
-            <span style={{
-              fontSize: T.textBase, fontFamily: T.mono, fontWeight: 700,
-              color: T.text1, flex: 1, letterSpacing: "0.04em",
+            <div style={{
+              width: 44, height: 44, borderRadius: 10,
+              background: "rgba(34,211,238,0.08)",
+              border: "1px solid rgba(34,211,238,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 0 16px rgba(34,211,238,0.15)",
             }}>
-              {coin} AI
-            </span>
+              <img
+                src="/Robot.png"
+                alt="AI"
+                style={{ width: 36, height: 36, objectFit: "contain" }}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{
+                fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+                color: T.text4, letterSpacing: "0.12em", textTransform: "uppercase",
+                lineHeight: 1,
+              }}>
+                CoinChat
+              </span>
+              <span style={{
+                fontSize: 16, fontFamily: T.font, fontWeight: 700,
+                color: T.text1, letterSpacing: "-0.01em", lineHeight: 1.2,
+              }}>
+                {coin}
+              </span>
+            </div>
             <button
               onClick={() => setOpen(false)}
+              aria-label="Close chat"
               style={{
-                fontSize: T.textSm, color: T.text4, background: "transparent",
-                border: "none", cursor: "pointer", padding: "4px 6px",
-                borderRadius: 4, transition: "color 0.15s",
+                width: 28, height: 28,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14, color: T.text4,
+                background: T.overlay04,
+                border: `1px solid ${T.border}`,
+                borderRadius: 8, cursor: "pointer",
+                transition: "all 0.15s", flexShrink: 0,
               }}
-              onMouseEnter={(e) => e.currentTarget.style.color = T.text2}
-              onMouseLeave={(e) => e.currentTarget.style.color = T.text4}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = T.text1;
+                e.currentTarget.style.background = T.overlay08;
+                e.currentTarget.style.borderColor = T.overlay12 || T.border;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = T.text4;
+                e.currentTarget.style.background = T.overlay04;
+                e.currentTarget.style.borderColor = T.border;
+              }}
             >{"\u2715"}</button>
           </div>
 
