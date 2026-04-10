@@ -26,8 +26,11 @@ logger = logging.getLogger(__name__)
 # Model catalogue & provider config
 # ---------------------------------------------------------------------------
 
-# Default to a capable free model; override via OPENROUTER_MODEL env var
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3-235b-a22b:free")
+# Default to a capable, reliable free model; override via OPENROUTER_MODEL env var.
+# openai/gpt-oss-120b:free gives consistent analysis and isn't currently rate-limited
+# (as of 2026-04-10). Nemotron was flaky with empty-response errors; Gemma3/4 are
+# rate-limited on the free tier. gpt-oss-120b has 131K context which fits our prompt.
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 ANTHROPIC_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 MAX_HISTORY_MESSAGES = 20
 
