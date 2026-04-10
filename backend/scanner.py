@@ -1823,9 +1823,19 @@ async def _run_synthesis_pass(
         except Exception:
             logger.exception("Confluence computation failed")
 
-    # Unified cross-TF signal: no trade unless both TFs agree
+    # Unified cross-TF signal — regime-aware confluence
+    # Rules (priority order):
+    #   1. Either TF firing exit → use stronger exit (safety override)
+    #   2. Both regimes bullish family (MARKUP/REACC/ACCUM):
+    #      - Both entry → use weaker
+    #      - One entry, other WAIT → use the entry (trust the TF that fired)
+    #      - Both WAIT → WAIT
+    #   3. Either regime bearish family (MARKDOWN/CAP/BLOWOFF) → WAIT
+    #   4. FLAT/unknown → strict confluence (both must fire entry)
     _ENTRY_SIGS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
     _EXIT_SIGS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+    _BULLISH_REGIMES = {"MARKUP", "REACC", "ACCUM"}
+    _BEARISH_REGIMES = {"MARKDOWN", "CAP", "BLOWOFF"}
     # Lower rank = weaker entry; higher rank = stronger exit
     _ENTRY_RANK = {"REVIVAL_SEED": 0, "REVIVAL_SEED_CONFIRMED": 0, "ACCUMULATE": 1, "LIGHT_LONG": 2, "STRONG_LONG": 3}
     _EXIT_RANK = {"NO_LONG": 0, "TRIM": 1, "TRIM_HARD": 2, "RISK_OFF": 3}
@@ -1843,29 +1853,58 @@ async def _run_synthesis_pass(
 
             sig4 = r4["signal"]
             sig1 = r1["signal"]
+            regime4 = r4.get("regime", "")
+            regime1 = r1.get("regime", "")
 
-            if sig4 in _ENTRY_SIGS and sig1 in _ENTRY_SIGS:
-                # Both entry → use the weaker of the two
-                rank4 = _ENTRY_RANK.get(sig4, 0)
-                rank1 = _ENTRY_RANK.get(sig1, 0)
-                unified = sig4 if rank4 <= rank1 else sig1
-                unified_count["entry"] += 1
-            elif sig4 in _EXIT_SIGS and sig1 in _EXIT_SIGS:
-                # Both exit → use the stronger exit (more urgent)
-                rank4 = _EXIT_RANK.get(sig4, 0)
-                rank1 = _EXIT_RANK.get(sig1, 0)
-                unified = sig4 if rank4 >= rank1 else sig1
+            # Priority 1: Safety override — either TF firing exit signal
+            if sig4 in _EXIT_SIGS or sig1 in _EXIT_SIGS:
+                # Use the stronger exit signal (most urgent)
+                candidates = [s for s in (sig4, sig1) if s in _EXIT_SIGS]
+                unified = max(candidates, key=lambda s: _EXIT_RANK.get(s, 0))
                 unified_count["exit"] += 1
-            else:
-                # Disagree → WAIT
+
+            # Priority 2: Both regimes in bullish family → trust any entry signal
+            elif regime4 in _BULLISH_REGIMES and regime1 in _BULLISH_REGIMES:
+                has4 = sig4 in _ENTRY_SIGS
+                has1 = sig1 in _ENTRY_SIGS
+                if has4 and has1:
+                    # Both fire entry → weaker wins
+                    rank4 = _ENTRY_RANK.get(sig4, 0)
+                    rank1 = _ENTRY_RANK.get(sig1, 0)
+                    unified = sig4 if rank4 <= rank1 else sig1
+                    unified_count["entry"] += 1
+                elif has4:
+                    unified = sig4
+                    unified_count["entry"] += 1
+                elif has1:
+                    unified = sig1
+                    unified_count["entry"] += 1
+                else:
+                    # Both WAIT in bullish structure → nothing to trade yet
+                    unified = "WAIT"
+                    unified_count["wait"] += 1
+
+            # Priority 3: Either regime bearish → WAIT (block entries)
+            elif regime4 in _BEARISH_REGIMES or regime1 in _BEARISH_REGIMES:
                 unified = "WAIT"
                 unified_count["wait"] += 1
+
+            # Priority 4: FLAT or unknown regime → strict confluence
+            else:
+                if sig4 in _ENTRY_SIGS and sig1 in _ENTRY_SIGS:
+                    rank4 = _ENTRY_RANK.get(sig4, 0)
+                    rank1 = _ENTRY_RANK.get(sig1, 0)
+                    unified = sig4 if rank4 <= rank1 else sig1
+                    unified_count["entry"] += 1
+                else:
+                    unified = "WAIT"
+                    unified_count["wait"] += 1
 
             r4["unified_signal"] = unified
             r1["unified_signal"] = unified
 
         logger.info(
-            "Unified signals: %d entry, %d exit, %d wait (disagree)",
+            "Unified signals (regime-aware): %d entry, %d exit, %d wait",
             unified_count["entry"], unified_count["exit"], unified_count["wait"],
         )
 
