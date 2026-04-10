@@ -1723,7 +1723,37 @@ class AssistantManager:
                 max_tokens=4096,
                 messages=openai_messages,
             )
-            reply = response.choices[0].message.content
+            # Defensive parsing — some free OpenRouter models return empty/null
+            # choices when the upstream provider has issues. Surface a readable
+            # error instead of crashing with 'NoneType is not subscriptable'.
+            choices = getattr(response, "choices", None)
+            if not choices:
+                raw = getattr(response, "model_dump", lambda: {})() or str(response)
+                logger.warning("OpenRouter returned no choices for model %s. Raw: %s",
+                               self._current_model, str(raw)[:500])
+                reply = (
+                    f"The model ({self._current_model}) returned an empty response. "
+                    f"This usually means the upstream provider is rate-limited or "
+                    f"had an error. Try again in a few seconds, or switch to a "
+                    f"different model in Settings."
+                )
+            else:
+                first = choices[0]
+                msg = getattr(first, "message", None)
+                content = getattr(msg, "content", None) if msg else None
+                if content is None or content == "":
+                    finish = getattr(first, "finish_reason", None)
+                    logger.warning(
+                        "OpenRouter returned empty content for model %s (finish_reason=%s)",
+                        self._current_model, finish,
+                    )
+                    reply = (
+                        f"The model ({self._current_model}) returned an empty message "
+                        f"(finish_reason={finish}). This can happen with content filters "
+                        f"or provider errors. Try rephrasing, retrying, or switching models."
+                    )
+                else:
+                    reply = content
         else:
             # Direct Anthropic SDK (fallback)
             response = client.messages.create(
@@ -1732,7 +1762,11 @@ class AssistantManager:
                 system=system,
                 messages=messages,
             )
-            reply = response.content[0].text
+            content_blocks = getattr(response, "content", None)
+            if not content_blocks:
+                reply = "Anthropic API returned no content. Please try again."
+            else:
+                reply = getattr(content_blocks[0], "text", "") or "(empty response)"
 
         session.messages.append(ChatMessage(role="assistant", content=reply))
 

@@ -3216,8 +3216,13 @@ async def chat_endpoint(req: ChatRequest):
             model=assistant.get_current_model(),
         )
     except Exception as e:
-        logger.error("Chat error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        tb = traceback.format_exc()
+        logger.error("Chat error:\n%s", tb)
+        # Return the last 3 lines of the traceback in the detail so frontend can surface it
+        tb_lines = [l for l in tb.splitlines() if l.strip()]
+        detail = f"{type(e).__name__}: {e} | {' | '.join(tb_lines[-3:])}"
+        raise HTTPException(status_code=500, detail=detail[:800])
 
 
 @app.get("/api/models", response_model=ModelsResponse)
