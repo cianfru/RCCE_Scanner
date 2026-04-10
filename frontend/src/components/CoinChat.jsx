@@ -239,17 +239,18 @@ export default function CoinChat({ symbol, isMobile }) {
             background: "linear-gradient(180deg, rgba(34,211,238,0.04) 0%, transparent 100%)",
           }}>
             <div style={{
-              width: 44, height: 44, borderRadius: 10,
+              width: 48, height: 48, borderRadius: 10,
               background: "rgba(34,211,238,0.08)",
               border: "1px solid rgba(34,211,238,0.25)",
               display: "flex", alignItems: "center", justifyContent: "center",
               flexShrink: 0,
               boxShadow: "0 0 16px rgba(34,211,238,0.15)",
+              overflow: "hidden",
             }}>
               <img
                 src="/Robot.png"
                 alt="AI"
-                style={{ width: 36, height: 36, objectFit: "contain" }}
+                style={{ width: 56, height: 56, objectFit: "contain", marginTop: 2 }}
               />
             </div>
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
