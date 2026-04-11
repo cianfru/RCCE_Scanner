@@ -46,9 +46,16 @@ export default function BridgeFlowWidget({ isMobile }) {
 
   if (!data || !data.available || !data.w24h) return null;
 
+  // Prefer 24h for display, but fall back to 6h if 24h is incomplete
+  // (e.g. very low bridge activity or a cold start).
   const w24 = data.w24h;
-  const net = w24.net_usd || 0;
-  const gross = (w24.inflow_usd || 0) + (w24.outflow_usd || 0);
+  const w6 = data.w6h || w24;
+  const displayWindow = w24.complete ? w24 : w6;
+  const displayLabel = w24.complete ? "24h" : "6h";
+  const partial = !w24.complete;
+
+  const net = displayWindow.net_usd || 0;
+  const gross = (displayWindow.inflow_usd || 0) + (displayWindow.outflow_usd || 0);
   if (gross === 0) return null;
 
   const trend = data.trend || "NEUTRAL";
@@ -77,12 +84,15 @@ export default function BridgeFlowWidget({ isMobile }) {
     "rgba(82,82,91,0.1)";
 
   // Tooltip summary — accessed by browsers via native title attribute.
+  // Append "*" to windows that aren't complete in the current sample.
+  const star = (w) => w.complete ? "" : " *";
   const title =
     `HL Bridge (Arbitrum) — USDC flows\n` +
-    `1h:  ${fmtUsd(data.w1h.net_usd)} net  (${data.w1h.tx_count} tx)\n` +
-    `6h:  ${fmtUsd(data.w6h.net_usd)} net  (${data.w6h.tx_count} tx)\n` +
-    `24h: ${fmtUsd(w24.net_usd)} net  (${w24.tx_count} tx)\n` +
-    `7d:  ${fmtUsd(data.w7d.net_usd)} net  (${data.w7d.tx_count} tx)`;
+    `1h:  ${fmtUsd(data.w1h.net_usd)} net  (${data.w1h.tx_count} tx)${star(data.w1h)}\n` +
+    `6h:  ${fmtUsd(data.w6h.net_usd)} net  (${data.w6h.tx_count} tx)${star(data.w6h)}\n` +
+    `24h: ${fmtUsd(w24.net_usd)} net  (${w24.tx_count} tx)${star(w24)}\n` +
+    `7d:  ${fmtUsd(data.w7d.net_usd)} net  (${data.w7d.tx_count} tx)${star(data.w7d)}\n` +
+    (partial ? "\n* = sample doesn't cover the full window" : "");
 
   return (
     <GlassCard style={{
@@ -96,7 +106,7 @@ export default function BridgeFlowWidget({ isMobile }) {
         letterSpacing: "0.08em", fontFamily: T.font,
         fontWeight: 600, textTransform: "uppercase",
       }}>
-        HL Bridge 24h
+        HL Bridge {displayLabel}{partial ? "*" : ""}
       </span>
       <span style={{
         padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",

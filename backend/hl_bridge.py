@@ -62,6 +62,10 @@ class BridgeWindow:
     tx_count: int = 0
     inflow_count: int = 0
     outflow_count: int = 0
+    # True when our transfer sample covers this full window, False when the
+    # oldest sampled transfer is newer than the window start (i.e. we're only
+    # seeing a partial slice of the period).
+    complete: bool = False
 
 
 @dataclass
@@ -74,6 +78,7 @@ class BridgeFlowSnapshot:
     signal: str = "BALANCED"        # ACCUMULATING | DEPLETING | BALANCED
     last_tx_time: int = 0
     tx_sample_size: int = 0
+    sample_span_seconds: int = 0    # age of oldest tx in sample
     fetched_at: float = 0.0
 
 
@@ -110,6 +115,10 @@ def _aggregate(transfers: List[EtherscanTransfer], now_ts: int) -> BridgeFlowSna
 
     USDC on Arbitrum is 6 decimals; the fetcher already normalizes ``value``
     to human-readable units (so value == USD).
+
+    Each window is tagged ``complete=True`` only if the oldest transfer in
+    our sample is at least as old as the window start — otherwise the window
+    is a partial slice and the frontend will show it muted.
     """
     windows = {
         WINDOW_1H: BridgeWindow(),
@@ -118,6 +127,7 @@ def _aggregate(transfers: List[EtherscanTransfer], now_ts: int) -> BridgeFlowSna
         WINDOW_7D: BridgeWindow(),
     }
     last_tx_time = 0
+    oldest_tx_time: Optional[int] = None
 
     for tx in transfers:
         if tx.token_contract.lower() != ARB_USDC:
@@ -127,6 +137,8 @@ def _aggregate(transfers: List[EtherscanTransfer], now_ts: int) -> BridgeFlowSna
             continue
         if tx.timestamp > last_tx_time:
             last_tx_time = tx.timestamp
+        if oldest_tx_time is None or tx.timestamp < oldest_tx_time:
+            oldest_tx_time = tx.timestamp
 
         usd = float(tx.value)
         is_inflow = tx.to_addr.lower() == HL_BRIDGE_ADDRESS
@@ -145,6 +157,11 @@ def _aggregate(transfers: List[EtherscanTransfer], now_ts: int) -> BridgeFlowSna
                     bucket.outflow_count += 1
                 bucket.net_usd = bucket.inflow_usd - bucket.outflow_usd
 
+    # Mark each window complete only if our sample actually reaches back that far
+    sample_span = (now_ts - oldest_tx_time) if oldest_tx_time else 0
+    for win_len, bucket in windows.items():
+        bucket.complete = sample_span >= win_len
+
     snap = BridgeFlowSnapshot(
         w1h=windows[WINDOW_1H],
         w6h=windows[WINDOW_6H],
@@ -153,22 +170,24 @@ def _aggregate(transfers: List[EtherscanTransfer], now_ts: int) -> BridgeFlowSna
         last_tx_time=last_tx_time,
         tx_sample_size=len(transfers),
     )
+    snap.sample_span_seconds = sample_span
 
-    # Trend/signal labels keyed off the 24h window
-    w24 = snap.w24h
-    gross = w24.inflow_usd + w24.outflow_usd
+    # Trend/signal labels prefer the 24h window if we have enough sample,
+    # otherwise fall back to 6h so we don't classify off a 1-hour blip.
+    decision = snap.w24h if snap.w24h.complete else snap.w6h
+    gross = decision.inflow_usd + decision.outflow_usd
     if gross <= 0:
         snap.trend = "NEUTRAL"
         snap.signal = "BALANCED"
     else:
-        net_pct = w24.net_usd / gross  # -1..+1
+        net_pct = decision.net_usd / gross  # -1..+1
         if net_pct >= 0.25:
             snap.trend = "INFLOW"
             # Strong inflow with meaningful volume → ACCUMULATING
-            snap.signal = "ACCUMULATING" if w24.inflow_usd >= 5_000_000 else "BALANCED"
+            snap.signal = "ACCUMULATING" if decision.inflow_usd >= 5_000_000 else "BALANCED"
         elif net_pct <= -0.25:
             snap.trend = "OUTFLOW"
-            snap.signal = "DEPLETING" if w24.outflow_usd >= 5_000_000 else "BALANCED"
+            snap.signal = "DEPLETING" if decision.outflow_usd >= 5_000_000 else "BALANCED"
         else:
             snap.trend = "NEUTRAL"
             snap.signal = "BALANCED"
@@ -185,6 +204,7 @@ def _snapshot_to_dict(snap: BridgeFlowSnapshot) -> dict:
             "tx_count": b.tx_count,
             "inflow_count": b.inflow_count,
             "outflow_count": b.outflow_count,
+            "complete": b.complete,
         }
     return {
         "bridge_address": HL_BRIDGE_ADDRESS,
@@ -194,6 +214,7 @@ def _snapshot_to_dict(snap: BridgeFlowSnapshot) -> dict:
         "signal": snap.signal,
         "last_tx_time": snap.last_tx_time,
         "tx_sample_size": snap.tx_sample_size,
+        "sample_span_seconds": snap.sample_span_seconds,
         "fetched_at": snap.fetched_at,
         "w1h": _w(snap.w1h),
         "w6h": _w(snap.w6h),
@@ -218,16 +239,17 @@ async def get_bridge_flow(force_refresh: bool = False) -> Optional[dict]:
     if fetcher is None:
         return None
 
-    # Pull the most recent 300 transfers for the bridge address + USDC. That's
-    # usually several hours of activity for a busy bridge.
+    # Pull a generous sample — the HL bridge runs ~300 USDC tx/hour during
+    # active periods, so 5000 gives us roughly 16h minimum and usually more
+    # than 24h. Etherscan V2 tokentx caps at 10000 per call.
     try:
         transfers = await asyncio.wait_for(
             fetcher.get_address_transfers(
                 address=HL_BRIDGE_ADDRESS,
                 contract=ARB_USDC,
-                offset=300,
+                offset=5000,
             ),
-            timeout=15.0,
+            timeout=25.0,
         )
     except asyncio.TimeoutError:
         logger.warning("hl_bridge: arbiscan timeout")
@@ -251,11 +273,13 @@ async def get_bridge_flow(force_refresh: bool = False) -> Optional[dict]:
     payload = _snapshot_to_dict(snap)
     _cache_payload = payload
     _cache_expires_at = now + _CACHE_TTL_S
+    span_h = snap.sample_span_seconds / 3600.0 if snap.sample_span_seconds else 0.0
     logger.info(
-        "hl_bridge: sampled %d txs, 24h net=$%s, trend=%s",
-        len(transfers),
+        "hl_bridge: sampled %d txs (%.1fh span), 24h net=$%s, trend=%s, 24h_complete=%s",
+        len(transfers), span_h,
         f"{snap.w24h.net_usd:,.0f}",
         snap.trend,
+        snap.w24h.complete,
     )
     return payload
 
