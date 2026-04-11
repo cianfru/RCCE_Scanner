@@ -239,17 +239,18 @@ async def get_bridge_flow(force_refresh: bool = False) -> Optional[dict]:
     if fetcher is None:
         return None
 
-    # Pull a generous sample — the HL bridge runs ~300 USDC tx/hour during
-    # active periods, so 5000 gives us roughly 16h minimum and usually more
-    # than 24h. Etherscan V2 tokentx caps at 10000 per call.
+    # Pull the maximum single-call sample — Etherscan V2 tokentx caps at
+    # 10000 per page. At the bridge's ~230 tx/h velocity this gives us
+    # ~44h of coverage, safely completing the 24h window. The 7d bucket
+    # remains partial and is flagged as such via ``complete: false``.
     try:
         transfers = await asyncio.wait_for(
             fetcher.get_address_transfers(
                 address=HL_BRIDGE_ADDRESS,
                 contract=ARB_USDC,
-                offset=5000,
+                offset=10000,
             ),
-            timeout=25.0,
+            timeout=35.0,
         )
     except asyncio.TimeoutError:
         logger.warning("hl_bridge: arbiscan timeout")
