@@ -525,6 +525,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           bsr={selected.buy_sell_ratio}
           vpin={selected.vpin}
           vpinLabel={selected.vpin_label}
+          vpinHistory={selected.vpin_history}
           oiContext={selected.oi_context}
         />
 

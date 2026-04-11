@@ -1006,6 +1006,25 @@ async def hyperliquid_bridge_flow():
     return {"available": True, **payload}
 
 
+@app.get("/api/hyperliquid/bridge/history")
+async def hyperliquid_bridge_history(hours: int = 24):
+    """Return the last ``hours`` of persisted bridge snapshots (oldest first).
+
+    Source: SQLite snapshot table written on every successful bridge poll.
+    Max 168 hours (7 days). Each row has ts + trend + the 1h/6h/24h window
+    summaries, so the frontend can render a sparkline of ``w1h.net_usd`` or
+    any other metric over time.
+    """
+    from hl_bridge import get_bridge_history
+    hours = max(1, min(168, int(hours or 24)))
+    history = get_bridge_history(hours=hours)
+    return {
+        "hours": hours,
+        "count": len(history),
+        "history": history,
+    }
+
+
 @app.get("/api/coinglass/status")
 async def coinglass_status():
     """Return current CoinGlass cache status (for debugging).

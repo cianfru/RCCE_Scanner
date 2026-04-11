@@ -128,7 +128,8 @@ def _ensure_history(cache: Any) -> None:
         cache.smoothed_confidence: Dict[str, float] = {}
     # Positioning metric histories (48 ticks each)
     for attr in ("funding_history", "oi_history", "oi_change_history",
-                 "lsr_history", "bsr_history", "spot_ratio_history"):
+                 "lsr_history", "bsr_history", "spot_ratio_history",
+                 "vpin_history"):
         if not hasattr(cache, attr):
             setattr(cache, attr, {})
 
@@ -541,6 +542,7 @@ def _update_history(
     cache: Any,
     positioning: Optional[Dict[str, Any]] = None,
     bsr: float = 1.0,
+    vpin: Optional[float] = None,
 ) -> None:
     tf_key = f"{symbol}:{timeframe}"
     _push(cache.signal_history, tf_key, adjusted_signal, _SIGNAL_HISTORY_LEN)
@@ -568,6 +570,11 @@ def _update_history(
         spot = pos.get("spot_futures_ratio")
         if spot and spot > 0:
             _push(cache.spot_ratio_history, tf_key, round(spot, 3), _POS_HISTORY_LEN)
+
+    # VPIN history — flow toxicity over time. 0 is a valid value (balanced
+    # flow), so we only skip when None. Round to 4 decimals.
+    if vpin is not None:
+        _push(cache.vpin_history, tf_key, round(float(vpin), 4), _POS_HISTORY_LEN)
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +772,7 @@ def process(
         symbol, timeframe, signal, confidence, divergence, current_z, current_heat, cache,
         positioning=scan_result.get("positioning"),
         bsr=scan_result.get("buy_sell_ratio", 1.0),
+        vpin=scan_result.get("vpin"),
     )
 
     # Attach smoothed confidence for downstream use

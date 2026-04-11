@@ -898,6 +898,7 @@ async def _synthesize_and_enrich(
                     ("lsr_history",        "lsr_history"),
                     ("bsr_history",        "bsr_history"),
                     ("spot_ratio_history", "spot_ratio_history"),
+                    ("vpin_history",       "vpin_history"),
                 ):
                     hist = getattr(scan_cache, hist_attr, {}).get(tf_key, [])
                     if hist:

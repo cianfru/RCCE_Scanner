@@ -274,11 +274,31 @@ function MetricsPanel({ data }) {
     { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
   ].filter(m => m.history && m.history.length >= 2);
 
-  if (metrics.length === 0) return null;
-
   // Determine accent color from confidence
   const conf = data.confidence;
   const accent = conf >= 60 ? "#34d399" : conf >= 40 ? "#fbbf24" : "#f87171";
+
+  // ── Engine scalar rows (merged from EngineMetrics) ────────────────────────
+  const engineRows = [
+    ["Z-Score",    fmt(data.zscore, 3),                                                          zBar(data.zscore)?.color],
+    ["Energy",     fmt(data.energy, 3),                                                          null],
+    ["Momentum",   `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%`,                  data.momentum >= 0 ? "#34d399" : "#f87171"],
+    ["Price",      data.price ? `$${data.price < 1 ? fmt(data.price, 5) : fmt(data.price, 2)}`  : "\u2014", null],
+    ["Divergence", data.divergence || "None",                                                    data.divergence ? "#fbbf24" : null],
+    ["Heat",       data.heat != null ? Math.round(data.heat) : "\u2014",                         heatColor(data.heat)],
+    ["Phase",      data.heat_phase || "\u2014",                                                  phaseColor(data.heat_phase)],
+    ["ATR",        data.atr_regime || "\u2014",                                                  null],
+    ["Deviation",  data.deviation_pct != null ? `${fmt(data.deviation_pct, 2)}%` : "\u2014",     null],
+    ["Exhaust",    data.exhaustion_state || "\u2014",                                            exhaustMeta(data.exhaustion_state).color],
+    ["Floor",      data.floor_confirmed ? "Conf" : "No",                                         data.floor_confirmed ? "#34d399" : null],
+    ["Absorb",     data.is_absorption ? "Yes" : "No",                                            data.is_absorption ? "#67e8f9" : null],
+    ["Climax",     data.is_climax ? "Yes" : "No",                                                data.is_climax ? "#fbbf24" : null],
+    ["Effort",     data.effort != null ? fmt(data.effort, 3) : "\u2014",                         null],
+    ["Rel Vol",    data.rel_vol != null ? fmt(data.rel_vol, 2) + "x" : "\u2014",                 null],
+  ];
+
+  // Hide the whole card if neither sparklines nor engine scalars are available
+  if (metrics.length === 0 && data.zscore == null) return null;
 
   return (
     <div style={{
@@ -294,76 +314,60 @@ function MetricsPanel({ data }) {
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: accent, flexShrink: 0 }} />
         <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
-          Metrics
+          Metrics & Engine
         </span>
-        <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
-          {metrics[0].history.length} ticks
-        </span>
+        {metrics.length > 0 && (
+          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
+            {metrics[0].history.length} ticks
+          </span>
+        )}
       </div>
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-      }}>
-        {metrics.map(m => (
-          <MetricSparkline key={m.label} {...m} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Engine Metrics Grid (extracted from DetailPanel)
-// ---------------------------------------------------------------------------
+      {/* Sparklines */}
+      {metrics.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {metrics.map(m => <MetricSparkline key={m.label} {...m} />)}
+        </div>
+      )}
 
-function EngineMetrics({ data, isMobile }) {
-  const rows = [
-    ["Z-Score", fmt(data.zscore, 3), zBar(data.zscore)?.color],
-    ["Energy", fmt(data.energy, 3), null],
-    ["Momentum", `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%`, data.momentum >= 0 ? "#34d399" : "#f87171"],
-    ["Price", data.price ? `$${data.price < 1 ? fmt(data.price, 5) : fmt(data.price, 2)}` : "\u2014", null],
-    ["Divergence", data.divergence || "None", data.divergence ? "#fbbf24" : null],
-    [null],
-    ["Heat", data.heat != null ? Math.round(data.heat) : "\u2014", heatColor(data.heat)],
-    ["Phase", data.heat_phase || "\u2014", phaseColor(data.heat_phase)],
-    ["ATR Regime", data.atr_regime || "\u2014", null],
-    ["Deviation", data.deviation_pct != null ? `${fmt(data.deviation_pct, 2)}%` : "\u2014", null],
-    [null],
-    ["Exhaustion", data.exhaustion_state || "\u2014", exhaustMeta(data.exhaustion_state).color],
-    ["Floor", data.floor_confirmed ? "Confirmed" : "No", data.floor_confirmed ? "#34d399" : null],
-    ["Absorption", data.is_absorption ? "Yes" : "No", data.is_absorption ? "#67e8f9" : null],
-    ["Climax", data.is_climax ? "Yes" : "No", data.is_climax ? "#fbbf24" : null],
-    ["Effort", data.effort != null ? fmt(data.effort, 3) : "\u2014", null],
-    ["Rel Volume", data.rel_vol != null ? fmt(data.rel_vol, 2) + "x" : "\u2014", null],
-  ];
-
-  return (
-    <div style={{
-      background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: isMobile ? "14px 14px" : "16px 20px",
-      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-      boxShadow: `0 2px 12px ${T.shadow}`,
-    }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 14, paddingBottom: 10,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-        <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
-          Engine Metrics
-        </span>
-      </div>
-      {rows.map(([label, value, valColor], i) => {
-        if (!label) return <div key={i} style={{ height: 1, background: T.overlay06, margin: "6px 0" }} />;
-        return (
-          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0" }}>
-            <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.mono, fontWeight: 500, letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ fontFamily: T.mono, fontSize: T.textBase, color: valColor || T.text1, fontWeight: 600 }}>{value}</span>
+      {/* Engine scalars — compact 3-col grid */}
+      {data.zscore != null && (
+        <>
+          {metrics.length > 0 && (
+            <div style={{
+              height: 1, background: T.overlay06, margin: "14px 0 12px",
+            }} />
+          )}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            rowGap: 8, columnGap: 14,
+          }}>
+            {engineRows.map(([label, value, valColor]) => (
+              <div key={label} style={{
+                display: "flex", flexDirection: "column", gap: 2,
+                minWidth: 0,
+              }}>
+                <span style={{
+                  fontSize: 9, color: T.text4, fontFamily: T.mono,
+                  fontWeight: 600, letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}>
+                  {label}
+                </span>
+                <span style={{
+                  fontSize: T.textSm, color: valColor || T.text1,
+                  fontFamily: T.mono, fontWeight: 700,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {value}
+                </span>
+              </div>
+            ))}
           </div>
-        );
-      })}
+        </>
+      )}
     </div>
   );
 }
@@ -655,6 +659,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           bsr={data.buy_sell_ratio}
           vpin={data.vpin}
           vpinLabel={data.vpin_label}
+          vpinHistory={data.vpin_history}
           oiContext={data.oi_context}
         />
 
@@ -664,11 +669,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         {/* Whale Consensus */}
         <SmartMoneyPanel data={data} />
 
-        {/* Metrics — unified sparklines panel */}
+        {/* Metrics & Engine — merged sparklines + scalar grid */}
         <MetricsPanel data={data} />
-
-        {/* Engine Metrics (includes Z-Score) */}
-        <EngineMetrics data={data} isMobile={isMobile} />
       </div>
 
       {/* Per-coin AI chat popover */}

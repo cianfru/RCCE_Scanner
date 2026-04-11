@@ -24,17 +24,59 @@ function fmtUsd(v) {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
+// Compact 60×18 sparkline of a signed numeric series. Color is green when
+// the latest value is positive (net inflow), red when negative.
+function MiniFlowSparkline({ values }) {
+  if (!values || values.length < 2) return null;
+  const w = 72, h = 18, pad = 1;
+  const n = values.length;
+  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
+
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const absMax = Math.max(Math.abs(max), Math.abs(min), 1);
+
+  // Center the zero line vertically
+  const midY = h / 2;
+  const yFor = (v) => midY - (v / absMax) * (h / 2 - pad);
+
+  const points = values.map((v, i) => `${pad + i * xStep},${yFor(v)}`).join(" ");
+  const latest = values[values.length - 1];
+  const stroke = latest >= 0 ? "#34d399" : "#f87171";
+
+  // Build a fill polygon back to the midline so it reads like an area chart
+  const fill = `${pad},${midY} ${points} ${pad + (n - 1) * xStep},${midY}`;
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ flexShrink: 0 }}>
+      {/* Zero line */}
+      <line x1="0" y1={midY} x2={w} y2={midY} stroke={T.overlay12 || T.border} strokeWidth="0.5" strokeDasharray="1 2" />
+      <polygon points={fill} fill={`${stroke}22`} />
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function BridgeFlowWidget({ isMobile }) {
   const [data, setData] = useState(null);
+  const [history, setHistory] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/hyperliquid/bridge`);
-        if (!res.ok) return;
-        const j = await res.json();
-        if (!cancelled) setData(j);
+        const [snapRes, histRes] = await Promise.all([
+          fetch(`${API_BASE}/api/hyperliquid/bridge`),
+          fetch(`${API_BASE}/api/hyperliquid/bridge/history?hours=24`),
+        ]);
+        if (snapRes.ok) {
+          const j = await snapRes.json();
+          if (!cancelled) setData(j);
+        }
+        if (histRes.ok) {
+          const h = await histRes.json();
+          if (!cancelled) setHistory(h.history || []);
+        }
       } catch {
         /* swallow — widget just hides */
       }
@@ -94,6 +136,11 @@ export default function BridgeFlowWidget({ isMobile }) {
     `7d:  ${fmtUsd(data.w7d.net_usd)} net  (${data.w7d.tx_count} tx)${star(data.w7d)}\n` +
     (partial ? "\n* = sample doesn't cover the full window" : "");
 
+  // Build the 1h-net flow series (most responsive window for showing pulse)
+  const flowSeries = (history || [])
+    .map(row => row?.w1h?.net_usd)
+    .filter(v => typeof v === "number");
+
   return (
     <GlassCard style={{
       padding: isMobile ? "10px 14px" : "10px 16px",
@@ -123,6 +170,7 @@ export default function BridgeFlowWidget({ isMobile }) {
       }}>
         {fmtUsd(net)}
       </span>
+      {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
     </GlassCard>
   );
 }

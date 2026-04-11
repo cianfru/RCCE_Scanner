@@ -124,6 +124,7 @@ class ScanResult(BaseModel):
     lsr_history: List[float] = []
     bsr_history: List[float] = []
     spot_ratio_history: List[float] = []
+    vpin_history: List[float] = []
     smoothed_confidence: Optional[float] = None  # current EMA-smoothed confidence
     effective_conditions: Optional[float] = None  # weighted score post-boost/penalty
     vol_scale: Optional[float] = None           # volatility scaling factor

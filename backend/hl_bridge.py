@@ -19,8 +19,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sqlite3
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from onchain.fetcher_etherscan import EtherscanFetcher, EtherscanTransfer
@@ -48,6 +50,128 @@ _cache_payload: Optional[dict] = None
 
 # Fetcher singleton
 _fetcher: Optional[EtherscanFetcher] = None
+
+# ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+# We reuse HYPERLENS_DB_PATH so the Railway persistent volume covers bridge
+# snapshots too. WAL mode makes multi-connection access safe.
+
+_DB_PATH = os.environ.get("HYPERLENS_DB_PATH", str(Path(__file__).parent / "hyperlens.db"))
+_db_conn: Optional[sqlite3.Connection] = None
+
+# How long to keep snapshots. 14 days gives room for cross-week analysis.
+_SNAPSHOT_RETENTION_DAYS = 14
+
+_BRIDGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS bridge_snapshots (
+    ts               REAL PRIMARY KEY,
+    trend            TEXT NOT NULL,
+    signal           TEXT NOT NULL,
+    w1h_inflow_usd   REAL,
+    w1h_outflow_usd  REAL,
+    w1h_net_usd      REAL,
+    w6h_inflow_usd   REAL,
+    w6h_outflow_usd  REAL,
+    w6h_net_usd      REAL,
+    w24h_inflow_usd  REAL,
+    w24h_outflow_usd REAL,
+    w24h_net_usd     REAL,
+    w24h_complete    INTEGER NOT NULL DEFAULT 0,
+    sample_span_s    INTEGER NOT NULL DEFAULT 0,
+    tx_sample_size   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_bridge_ts ON bridge_snapshots(ts DESC);
+"""
+
+
+def _get_db() -> sqlite3.Connection:
+    global _db_conn
+    if _db_conn is None:
+        db_dir = os.path.dirname(_DB_PATH)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+        _db_conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+        _db_conn.execute("PRAGMA journal_mode=WAL")
+        _db_conn.execute("PRAGMA synchronous=NORMAL")
+        _db_conn.execute("PRAGMA busy_timeout=5000")
+        _db_conn.executescript(_BRIDGE_SCHEMA)
+        _db_conn.commit()
+        logger.info("hl_bridge: DB opened at %s", _DB_PATH)
+    return _db_conn
+
+
+def _persist_snapshot(payload: dict) -> None:
+    """Write the latest bridge snapshot to SQLite. Never raises — logs instead."""
+    try:
+        conn = _get_db()
+        w1 = payload.get("w1h") or {}
+        w6 = payload.get("w6h") or {}
+        w24 = payload.get("w24h") or {}
+        conn.execute(
+            """INSERT OR REPLACE INTO bridge_snapshots (
+                ts, trend, signal,
+                w1h_inflow_usd, w1h_outflow_usd, w1h_net_usd,
+                w6h_inflow_usd, w6h_outflow_usd, w6h_net_usd,
+                w24h_inflow_usd, w24h_outflow_usd, w24h_net_usd,
+                w24h_complete, sample_span_s, tx_sample_size
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                float(payload.get("fetched_at") or time.time()),
+                payload.get("trend") or "NEUTRAL",
+                payload.get("signal") or "BALANCED",
+                w1.get("inflow_usd"),  w1.get("outflow_usd"),  w1.get("net_usd"),
+                w6.get("inflow_usd"),  w6.get("outflow_usd"),  w6.get("net_usd"),
+                w24.get("inflow_usd"), w24.get("outflow_usd"), w24.get("net_usd"),
+                1 if w24.get("complete") else 0,
+                int(payload.get("sample_span_seconds") or 0),
+                int(payload.get("tx_sample_size") or 0),
+            ),
+        )
+        # Prune old rows
+        cutoff = time.time() - (_SNAPSHOT_RETENTION_DAYS * 86400)
+        conn.execute("DELETE FROM bridge_snapshots WHERE ts < ?", (cutoff,))
+        conn.commit()
+    except Exception as exc:
+        logger.warning("hl_bridge: persist failed: %s", exc)
+
+
+def get_bridge_history(hours: int = 24) -> List[dict]:
+    """Return the last ``hours`` of bridge snapshots, oldest first.
+
+    Each row is a dict with ts + trend + the three window dicts. Never raises.
+    """
+    try:
+        conn = _get_db()
+        since = time.time() - (hours * 3600)
+        rows = conn.execute(
+            """SELECT ts, trend, signal,
+                      w1h_inflow_usd, w1h_outflow_usd, w1h_net_usd,
+                      w6h_inflow_usd, w6h_outflow_usd, w6h_net_usd,
+                      w24h_inflow_usd, w24h_outflow_usd, w24h_net_usd,
+                      w24h_complete, sample_span_s, tx_sample_size
+                 FROM bridge_snapshots
+                WHERE ts >= ?
+                ORDER BY ts ASC""",
+            (since,),
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("hl_bridge: history fetch failed: %s", exc)
+        return []
+
+    out: List[dict] = []
+    for r in rows:
+        out.append({
+            "ts": r[0],
+            "trend": r[1],
+            "signal": r[2],
+            "w1h":  {"inflow_usd": r[3],  "outflow_usd": r[4],  "net_usd": r[5]},
+            "w6h":  {"inflow_usd": r[6],  "outflow_usd": r[7],  "net_usd": r[8]},
+            "w24h": {"inflow_usd": r[9],  "outflow_usd": r[10], "net_usd": r[11], "complete": bool(r[12])},
+            "sample_span_seconds": r[13],
+            "tx_sample_size": r[14],
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +406,8 @@ async def get_bridge_flow(force_refresh: bool = False) -> Optional[dict]:
         snap.trend,
         snap.w24h.complete,
     )
+    # Persist to SQLite for historical sparkline (never raises on failure).
+    _persist_snapshot(payload)
     return payload
 
 
