@@ -13,6 +13,8 @@
  *   cvdTrend    — "BULLISH" | "BEARISH" | "NEUTRAL"
  *   cvdDiv      — bool
  *   bsr         — number (buy/sell ratio)
+ *   vpin        — number 0..1 (volume-synchronized probability of informed trading)
+ *   vpinLabel   — "BALANCED" | "ELEVATED" | "TOXIC"
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
 import { useState } from "react";
@@ -284,7 +286,81 @@ const OI_CTX_COLOR = {
   "capitulation": "#fbbf24",
 };
 
-export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, oiContext }) {
+// ─── VPIN gauge ───────────────────────────────────────────────────────────────
+
+const VPIN_INFO = {
+  title: "VPIN — Flow Toxicity",
+  text: "Volume-Synchronized Probability of Informed Trading. Measures how one-sided taker flow has been across recent volume buckets. BALANCED (<30%) = healthy two-way flow. ELEVATED (30-55%) = directional pressure building. TOXIC (>55%) = persistent one-sided flow, often signals informed trading before a move. Market makers pull quotes when VPIN is high, amplifying volatility.",
+};
+
+function VpinGauge({ vpin, vpinLabel }) {
+  if (vpin == null || vpin === 0) return null;
+  const pct = Math.max(0, Math.min(1, vpin)) * 100;
+  // Thresholds mirror backend labels: 30% / 55%
+  const color =
+    vpinLabel === "TOXIC" ? "#f87171" :
+    vpinLabel === "ELEVATED" ? "#fbbf24" :
+    "#34d399";
+  const displayLabel =
+    vpinLabel === "TOXIC" ? "TOXIC FLOW" :
+    vpinLabel === "ELEVATED" ? "ELEVATED" :
+    "BALANCED";
+
+  return (
+    <div style={{
+      padding: "8px 10px", borderRadius: 8,
+      background: T.overlay02,
+      border: `1px solid ${T.overlay06}`,
+      marginBottom: 14,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 6, gap: 8,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{
+            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
+            fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+          }}>
+            VPIN
+          </span>
+          <InfoTip {...VPIN_INFO} />
+        </div>
+        <span style={{
+          fontSize: T.textXs, color, fontFamily: T.mono, fontWeight: 700,
+          letterSpacing: "0.06em",
+        }}>
+          {displayLabel} · {pct.toFixed(0)}%
+        </span>
+      </div>
+      {/* Track */}
+      <div style={{
+        position: "relative", height: 6, borderRadius: 3,
+        background: T.overlay06, overflow: "hidden",
+      }}>
+        {/* Zone markers: green 0-30, yellow 30-55, red 55-100 */}
+        <div style={{
+          position: "absolute", left: "30%", top: 0, bottom: 0,
+          width: 1, background: T.overlay12 || T.border,
+        }} />
+        <div style={{
+          position: "absolute", left: "55%", top: 0, bottom: 0,
+          width: 1, background: T.overlay12 || T.border,
+        }} />
+        {/* Fill */}
+        <div style={{
+          position: "absolute", left: 0, top: 0, bottom: 0,
+          width: `${pct}%`,
+          background: color,
+          boxShadow: `0 0 8px ${color}66`,
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, vpin, vpinLabel, oiContext }) {
   if (!positioning) return null;
 
   const {
@@ -375,6 +451,9 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, o
         <Badge {...b5} />
         <Badge {...b6} />
       </div>
+
+      {/* VPIN flow toxicity gauge */}
+      <VpinGauge vpin={vpin} vpinLabel={vpinLabel} />
 
       {/* Numbers strip */}
       {stats.length > 0 && (

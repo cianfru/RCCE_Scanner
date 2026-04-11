@@ -6,6 +6,7 @@ import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
+import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -652,8 +653,13 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           cvdTrend={data.cvd_trend}
           cvdDiv={data.cvd_divergence}
           bsr={data.buy_sell_ratio}
+          vpin={data.vpin}
+          vpinLabel={data.vpin_label}
           oiContext={data.oi_context}
         />
+
+        {/* Cross-Exchange Funding / OI */}
+        <CrossExchangePanel symbol={data.symbol} />
 
         {/* Whale Consensus */}
         <SmartMoneyPanel data={data} />

@@ -8,7 +8,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 # Load .env file if present (before any env var reads)
 try:
@@ -878,6 +878,132 @@ async def positioning(symbol: str):
             if r.get("symbol") == symbol and r.get("positioning"):
                 return PositioningResponse(**r["positioning"])
     return PositioningResponse()
+
+
+# --- Cross-exchange funding / OI widget ------------------------------------
+
+# In-memory TTL cache so repeated CoinPage opens don't spam exchange APIs.
+_cross_exchange_cache: Dict[str, tuple] = {}  # symbol -> (expires_at, payload)
+_CROSS_EXCHANGE_TTL_S = 60
+
+
+@app.get("/api/positioning/cross-exchange/{symbol:path}")
+async def cross_exchange_positioning(symbol: str):
+    """Return funding rate + open interest for a symbol across Binance,
+    Bybit, and Hyperliquid side-by-side. Cached 60s.
+
+    Payload shape::
+
+        {
+          "symbol": "BTC/USDT",
+          "exchanges": [
+            {"name": "Binance", "available": true, "funding_rate_hourly": 0.0000125,
+             "funding_rate_8h_pct": 0.01, "open_interest_usd": 12500000000.0,
+             "mark_price": 69123.4},
+            ...
+          ],
+          "funding_spread_bp": 2.4,   // max-min across exchanges, in basis points (8h)
+          "dominant_oi": "Binance"
+        }
+    """
+    symbol = symbol.upper().replace("-", "/")
+    if "/" not in symbol:
+        symbol = f"{symbol}/USDT"
+
+    now = time.time()
+    cached = _cross_exchange_cache.get(symbol)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    # Prefer data already sitting in the scan cache — it's usually fresh.
+    bn = cache._last_binance_metrics.get(symbol) if cache._last_binance_metrics else None
+    hl = cache._last_hl_metrics.get(symbol) if cache._last_hl_metrics else None
+    by = cache._last_bybit_metrics.get(symbol) if getattr(cache, "_last_bybit_metrics", None) else None
+
+    # Fill the gaps on-demand (Bybit + HL aren't always populated for this symbol).
+    from binance_futures_data import fetch_binance_futures_metrics
+    from hyperliquid_data import fetch_hyperliquid_metrics
+    from bybit_futures_data import fetch_bybit_futures_metrics
+
+    async def _safe(coro):
+        try:
+            return await asyncio.wait_for(coro, timeout=6.0)
+        except Exception:
+            return None
+
+    # Run the missing fetches in parallel
+    tasks = {}
+    if bn is None:
+        tasks["bn"] = _safe(fetch_binance_futures_metrics([symbol]))
+    if hl is None:
+        tasks["hl"] = _safe(fetch_hyperliquid_metrics())
+    if by is None:
+        tasks["by"] = _safe(fetch_bybit_futures_metrics([symbol]))
+
+    if tasks:
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        for key, res in zip(tasks.keys(), results):
+            if isinstance(res, Exception) or not res:
+                continue
+            if key == "bn":
+                bn = res.get(symbol)
+            elif key == "hl":
+                hl = res.get(symbol)
+            elif key == "by":
+                by = res.get(symbol)
+
+    def _row(name: str, m):
+        if m is None:
+            return {"name": name, "available": False}
+        fr_hourly = float(getattr(m, "funding_rate", 0.0) or 0.0)
+        oi_usd = float(getattr(m, "open_interest", 0.0) or 0.0)
+        mark = float(getattr(m, "mark_price", 0.0) or 0.0)
+        return {
+            "name": name,
+            "available": oi_usd > 0 or fr_hourly != 0,
+            "funding_rate_hourly": fr_hourly,
+            "funding_rate_8h_pct": round(fr_hourly * 8 * 100, 4),
+            "open_interest_usd": oi_usd,
+            "mark_price": mark,
+        }
+
+    exchanges = [_row("Binance", bn), _row("Bybit", by), _row("Hyperliquid", hl)]
+    live = [e for e in exchanges if e.get("available")]
+
+    funding_spread_bp = 0.0
+    dominant_oi = None
+    if live:
+        fundings_8h = [e["funding_rate_8h_pct"] for e in live]
+        funding_spread_bp = round((max(fundings_8h) - min(fundings_8h)) * 100.0, 2)  # % → bp
+        dominant = max(live, key=lambda e: e["open_interest_usd"])
+        dominant_oi = dominant["name"]
+
+    payload = {
+        "symbol": symbol,
+        "exchanges": exchanges,
+        "funding_spread_bp": funding_spread_bp,
+        "dominant_oi": dominant_oi,
+        "fetched_at": now,
+    }
+    _cross_exchange_cache[symbol] = (now + _CROSS_EXCHANGE_TTL_S, payload)
+    return payload
+
+
+@app.get("/api/hyperliquid/bridge")
+async def hyperliquid_bridge_flow():
+    """Return Hyperliquid L1 bridge flow snapshot (USDC in/out on Arbitrum).
+
+    Rolling windows: 1h / 6h / 24h / 7d. Cached 3 minutes on the backend.
+    Returns ``{"available": false, ...}`` when ETHERSCAN_API_KEY is not set.
+    """
+    from hl_bridge import get_bridge_flow
+    payload = await get_bridge_flow()
+    if payload is None:
+        return {
+            "available": False,
+            "reason": "ETHERSCAN_API_KEY not set",
+        }
+    return {"available": True, **payload}
 
 
 @app.get("/api/coinglass/status")

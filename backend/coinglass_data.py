@@ -183,6 +183,11 @@ class CoinglassCVD:
     buy_volume_usd: float = 0.0
     sell_volume_usd: float = 0.0
     buy_sell_ratio: float = 1.0      # buy / sell
+    # VPIN — Volume-Synchronized Probability of Informed Trading
+    # mean(|buy_i - sell_i| / (buy_i + sell_i)) over last N bars. Range 0..1.
+    # 0 = perfectly balanced flow; 1 = fully one-sided (toxic/informed).
+    vpin: float = 0.0
+    vpin_label: str = "BALANCED"     # BALANCED | ELEVATED | TOXIC
     timestamp: float = 0.0
 
 
@@ -488,6 +493,25 @@ def _parse_detail(coin: str, detail: dict) -> Tuple[
                (price_chg < 0 and cvd_trend == "BULLISH"):
                 divergence = True
 
+        # VPIN — volume-synchronized probability of informed trading.
+        # Each bar is a volume bucket; imbalance = |buy-sell|/(buy+sell).
+        # High VPIN (>0.5) indicates persistent one-sided flow ("toxic" for MMs).
+        vpin_window = fut_bars[-20:] if len(fut_bars) >= 20 else fut_bars
+        vpin_samples = []
+        for b in vpin_window:
+            bb = float(b.get("aggregated_buy_volume_usd") or 0)
+            ss = float(b.get("aggregated_sell_volume_usd") or 0)
+            tot = bb + ss
+            if tot > 0:
+                vpin_samples.append(abs(bb - ss) / tot)
+        vpin_value = sum(vpin_samples) / len(vpin_samples) if vpin_samples else 0.0
+        if vpin_value >= 0.55:
+            vpin_label = "TOXIC"
+        elif vpin_value >= 0.30:
+            vpin_label = "ELEVATED"
+        else:
+            vpin_label = "BALANCED"
+
         cvd = CoinglassCVD(
             coin=coin,
             cvd_trend=cvd_trend,
@@ -496,6 +520,8 @@ def _parse_detail(coin: str, detail: dict) -> Tuple[
             buy_volume_usd=total_buy,
             sell_volume_usd=total_sell,
             buy_sell_ratio=round(bsr, 3),
+            vpin=round(vpin_value, 4),
+            vpin_label=vpin_label,
             timestamp=time.time(),
         )
 

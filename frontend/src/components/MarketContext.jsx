@@ -3,6 +3,7 @@ import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 import FearGreedGauge from "./FearGreedGauge.jsx";
 import StablecoinWidget from "./StablecoinWidget.jsx";
+import BridgeFlowWidget from "./BridgeFlowWidget.jsx";
 
 export default function MarketContext({ globalMetrics, altSeason, sentiment, stablecoin, macro, isMobile }) {
   if (!globalMetrics?.btc_dominance && !altSeason && !sentiment && !stablecoin && !macro) return null;
@@ -135,6 +136,9 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
             )}
           </GlassCard>
         )}
+
+        {/* Hyperliquid Bridge 24h USDC flow (Arbitrum) */}
+        <BridgeFlowWidget isMobile={isMobile} />
       </div>
     </FadeIn>
   );

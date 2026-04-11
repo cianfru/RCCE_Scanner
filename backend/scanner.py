@@ -337,9 +337,11 @@ class ScanCache:
         self.anomalies: List[dict] = []
         # Symbols with active anomalies — promoted to "hot" tier in drip scan
         self.anomaly_hot_symbols: set = set()
-        # Latest exchange metrics (for anomaly cross-exchange confirmation)
+        # Latest exchange metrics (for anomaly cross-exchange confirmation
+        # + cross-exchange funding/OI widget served to CoinPage)
         self._last_hl_metrics: dict = {}
         self._last_binance_metrics: dict = {}
+        self._last_bybit_metrics: dict = {}
 
     # -- query helpers -----------------------------------------------------
 
@@ -1130,6 +1132,8 @@ async def _scan_timeframe(
                 logger.info("Bybit fallback: %d/%d gap symbols filled", len(bybit_metrics), len(gap_symbols))
         except Exception as exc:
             logger.warning("Bybit fallback fetch failed: %s", exc)
+    if bybit_metrics:
+        cache._last_bybit_metrics = bybit_metrics
 
     # 7. Compute positioning per symbol (using extracted helper)
     pos_counts = {"binance": 0, "hyperliquid": 0, "bybit": 0}
@@ -1218,6 +1222,8 @@ async def _scan_timeframe(
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
                 r["buy_sell_ratio"] = cvd.buy_sell_ratio
+                r["vpin"] = getattr(cvd, "vpin", 0.0)
+                r["vpin_label"] = getattr(cvd, "vpin_label", "BALANCED")
                 r["cvd_source"] = "coinglass" if base_coin in cg_cvd else "exchange"
 
         logger.info(
@@ -1584,6 +1590,8 @@ async def _run_synthesis_pass(
             bybit_metrics = await fetch_bybit_futures_metrics(gap_symbols)
         except Exception:
             pass
+    if bybit_metrics:
+        scan_cache._last_bybit_metrics = bybit_metrics
 
     # CVD batch fetch (dual-source)
     price_changes_dict: dict = {}
@@ -1651,6 +1659,8 @@ async def _run_synthesis_pass(
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
                 r["buy_sell_ratio"] = cvd.buy_sell_ratio
+                r["vpin"] = getattr(cvd, "vpin", 0.0)
+                r["vpin_label"] = getattr(cvd, "vpin_label", "BALANCED")
 
         # Attach HyperLens smart money consensus (display-only, not in signal scoring)
         try:

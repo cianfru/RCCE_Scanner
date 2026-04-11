@@ -116,6 +116,10 @@ class CVDResult:
     buy_volume_usd: float = 0.0
     sell_volume_usd: float = 0.0
     buy_sell_ratio: float = 1.0
+    # VPIN — volume-synchronized probability of informed trading.
+    # mean(|buy_i - sell_i| / (buy_i + sell_i)) over window. Range 0..1.
+    vpin: float = 0.0
+    vpin_label: str = "BALANCED"     # BALANCED | ELEVATED | TOXIC
     timestamp: float = 0.0
 
 
@@ -395,9 +399,15 @@ def _compute_cvd(
 
     total_buy = 0.0
     total_sell = 0.0
+    vpin_samples = []
     for bar in bars:
-        total_buy += float(bar.get("buyVol", 0))
-        total_sell += float(bar.get("sellVol", 0))
+        bv = float(bar.get("buyVol", 0))
+        sv = float(bar.get("sellVol", 0))
+        total_buy += bv
+        total_sell += sv
+        tot = bv + sv
+        if tot > 0:
+            vpin_samples.append(abs(bv - sv) / tot)
 
     cvd_value = total_buy - total_sell
     bsr = total_buy / total_sell if total_sell > 0 else 1.0
@@ -415,6 +425,14 @@ def _compute_cvd(
            (price_change_pct < 0 and trend == "BULLISH"):
             divergence = True
 
+    vpin_value = sum(vpin_samples) / len(vpin_samples) if vpin_samples else 0.0
+    if vpin_value >= 0.55:
+        vpin_label = "TOXIC"
+    elif vpin_value >= 0.30:
+        vpin_label = "ELEVATED"
+    else:
+        vpin_label = "BALANCED"
+
     return CVDResult(
         cvd_trend=trend,
         cvd_value=cvd_value,
@@ -422,6 +440,8 @@ def _compute_cvd(
         buy_volume_usd=total_buy,
         sell_volume_usd=total_sell,
         buy_sell_ratio=round(bsr, 3),
+        vpin=round(vpin_value, 4),
+        vpin_label=vpin_label,
         timestamp=time.time(),
     )
 

@@ -523,6 +523,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           cvdTrend={selected.cvd_trend}
           cvdDiv={selected.cvd_divergence}
           bsr={selected.buy_sell_ratio}
+          vpin={selected.vpin}
+          vpinLabel={selected.vpin_label}
           oiContext={selected.oi_context}
         />
 
