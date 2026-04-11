@@ -841,6 +841,11 @@ async def _synthesize_and_enrich(
             r["conditions_total"] = synth.conditions_total
             r["effective_conditions"] = synth.effective_conditions
             r["vol_scale"] = synth.vol_scale
+            # Signed conviction score -100..+100 (bullish/bearish magnitude)
+            from signal_synthesizer import compute_signal_score
+            r["signal_score"] = compute_signal_score(
+                synth.signal, synth.effective_conditions, synth.conditions_total,
+            )
             oi_trend = (r.get("positioning") or {}).get("oi_trend", "STABLE")
             r["oi_context"] = interpret_oi_context(oi_trend, synth.signal)
             scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
@@ -2461,6 +2466,10 @@ async def run_tradfi_scan(
                 r["conditions_total"] = synth.conditions_total
                 r["conditions_detail"] = synth.conditions_detail
                 r["effective_conditions"] = synth.effective_conditions
+                from signal_synthesizer import compute_signal_score
+                r["signal_score"] = compute_signal_score(
+                    synth.signal, synth.effective_conditions, synth.conditions_total,
+                )
 
         # 6. Compute priority scores
         for r in results:

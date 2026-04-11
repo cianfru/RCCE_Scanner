@@ -76,6 +76,50 @@ class SynthesizedSignal:
     vol_scale: float = 1.0
 
 
+# Signal conviction score — computed from the synth result, not a field.
+# Positive = bullish conviction, negative = bearish, zero = no signal.
+# Magnitude reflects the strength of the weighted condition score (-100..+100).
+_BULL_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
+_BEAR_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG", "LIGHT_SHORT"}
+
+# Signal-specific magnitude ceiling — STRONG signals push closer to the limit,
+# LIGHT signals cap at a more moderate value.
+_SIGNAL_SCORE_CEILING = {
+    "STRONG_LONG": 100, "LIGHT_LONG": 70, "ACCUMULATE": 50,
+    "REVIVAL_SEED": 40, "REVIVAL_SEED_CONFIRMED": 55,
+    "LIGHT_SHORT": -70,
+    "TRIM": -60, "TRIM_HARD": -85, "RISK_OFF": -100, "NO_LONG": -50,
+}
+
+
+def compute_signal_score(
+    signal: str,
+    effective_conditions: float,
+    conditions_total: int,
+) -> int:
+    """Compute a signed conviction score (-100..+100) from a synth result.
+
+    Positive = bullish, negative = bearish, 0 = WAIT / unknown.
+
+    The score combines the signal direction (sign) with the weighted
+    condition fill rate (magnitude), capped at a per-signal ceiling so
+    LIGHT_LONG never outranks STRONG_LONG etc.
+    """
+    if signal in ("WAIT",) or not signal:
+        return 0
+    if conditions_total <= 0:
+        return 0
+    fill_pct = max(0.0, min(1.0, effective_conditions / float(conditions_total)))
+    ceiling = _SIGNAL_SCORE_CEILING.get(signal)
+    if ceiling is None:
+        return 0
+    # Scale fill_pct against the absolute ceiling, preserve sign
+    magnitude = abs(ceiling) * fill_pct
+    if ceiling < 0:
+        return int(round(-magnitude))
+    return int(round(magnitude))
+
+
 # ---------------------------------------------------------------------------
 # CVD + Spot modifier helper
 # ---------------------------------------------------------------------------

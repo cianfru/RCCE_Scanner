@@ -126,6 +126,7 @@ class ScanResult(BaseModel):
     effective_conditions: Optional[float] = None  # weighted score post-boost/penalty
     vol_scale: Optional[float] = None           # volatility scaling factor
     unified_signal: Optional[str] = None        # cross-TF signal (WAIT if 4H/1D disagree)
+    signal_score: int = 0                       # signed conviction -100..+100 (bullish/bearish)
 
 
 class ScanResponse(BaseModel):
