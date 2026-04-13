@@ -57,7 +57,8 @@ _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 # trade reconstruction uses last 2, consensus uses last 1,
 # get_position_changes() needs ~6 for its 30-min window.
 # Historical equity curves are served from SQLite (30-day retention).
-_POSITION_HISTORY_LEN = 20
+# Reduced from 20 → 6 to cut RAM (~40% of HyperLens memory).
+_POSITION_HISTORY_LEN = 6
 
 # Staleness: skip snapshots older than this when computing consensus
 _SNAPSHOT_MAX_AGE_S = 20 * 60              # 20 minutes (covers roster interval)

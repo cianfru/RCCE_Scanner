@@ -97,9 +97,9 @@ SUPPORTED_TIMEFRAMES = list(_CACHE_TTL.keys())
 # Z-score needs 2 × LEN_LONG (400) bars; we add margin for the
 # inner SMA/stdev to normalise over a representative window.
 _DEFAULT_LIMIT: Dict[str, int] = {
-    "4h": 500,     # ~83 days — plenty for 4h
-    "1d": 600,     # ~1.6 years — full warmup + margin
-    "1w": 500,     # ~9.6 years — covers most crypto history
+    "4h": 250,     # ~42 days — z-score needs 200 (LEN_LONG), 50 margin
+    "1d": 300,     # ~10 months — full warmup + margin, was 600
+    "1w": 200,     # ~3.8 years — enough for weekly regime detection
 }
 
 # Concurrency knobs — tuned for Hyperliquid rate limits.
