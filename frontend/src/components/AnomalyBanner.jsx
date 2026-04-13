@@ -17,6 +17,7 @@ const TYPE_LABELS = {
   VOLUME_SPIKE:    "VOLUME",
   LSR_EXTREME:     "LSR",
   CVD_EXTREME:     "CVD",
+  VPIN_TOXIC:      "VPIN",
 };
 
 function getDismissed() {

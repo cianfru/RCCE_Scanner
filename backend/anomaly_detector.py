@@ -89,6 +89,10 @@ ABS_BSR_CRITICAL = 5.0            # 5.0 → critical
 ABS_BSR_LOW_HIGH = 0.33           # <0.33 → high
 ABS_BSR_LOW_CRITICAL = 0.2        # <0.2 → critical
 
+# VPIN: 0 = balanced, 1 = fully one-sided (toxic informed flow)
+ABS_VPIN_HIGH = 0.55              # matches TOXIC label threshold
+ABS_VPIN_CRITICAL = 0.70          # extremely one-sided — very rare
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -240,6 +244,15 @@ def _abs_severity_bsr(val: float) -> Optional[str]:
     return None
 
 
+def _abs_severity_vpin(val: float) -> Optional[str]:
+    """Absolute threshold for VPIN (flow toxicity, 0..1)."""
+    if val >= ABS_VPIN_CRITICAL:
+        return "critical"
+    if val >= ABS_VPIN_HIGH:
+        return "high"
+    return None
+
+
 def _direction_from_value(value: float) -> str:
     if value > 0:
         return "LONG"
@@ -337,6 +350,19 @@ _METRIC_EXTRACTORS = {
         "abs_fn": _abs_severity_bsr,
         "exchange_field": None,
         "min_notable": 1.8,         # BSR between 0.55-1.8 is normal range
+    },
+    "VPIN_TOXIC": {
+        "extract": lambda r: r.get("vpin", 0.0) or 0.0,
+        "history_key": "vpin_history",
+        "context_fn": lambda sym, val, z, sig: (
+            f"VPIN {val:.0%} — {'toxic' if val >= 0.55 else 'elevated'} informed flow "
+            f"(z={z:.1f}, {abs(sig):.1f}\u03c3 vs own history)"
+        ),
+        "direction_fn": lambda val: "NEUTRAL",  # VPIN is directionless — use CVD for direction
+        "filter_zero": True,
+        "abs_fn": _abs_severity_vpin,
+        "exchange_field": None,
+        "min_notable": 0.45,        # <45% is normal two-way flow, not worth flagging
     },
 }
 

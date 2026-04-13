@@ -456,6 +456,7 @@ export default function NotificationBell() {
                 const typeMap = {
                   EXTREME_FUNDING: "FUNDING", OI_SURGE: "OI",
                   VOLUME_SPIKE: "VOL", LSR_EXTREME: "LSR", CVD_EXTREME: "CVD",
+                  VPIN_TOXIC: "VPIN",
                 };
                 const key = `anom:${a.dedup_key}`;
                 return (

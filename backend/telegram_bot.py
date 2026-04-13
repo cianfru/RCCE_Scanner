@@ -512,6 +512,7 @@ class TelegramBot:
         "VOLUME_SPIKE": "VOLUME SPIKE",
         "LSR_EXTREME": "LSR EXTREME",
         "CVD_EXTREME": "CVD EXTREME",
+        "VPIN_TOXIC": "TOXIC FLOW (VPIN)",
     }
 
     async def push_anomaly_alerts(self, anomalies) -> int:
