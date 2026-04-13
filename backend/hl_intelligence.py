@@ -731,12 +731,26 @@ async def poll_positions() -> int:
     if idle_roster_due:
         _last_idle_roster_poll_at = now
 
-    # --- Safe eviction: remove wallets whose AV dropped below threshold ---
-    # Build new lists (atomic reference swap — safe for concurrent readers).
+    # --- Safe eviction: remove wallets that provide no value ---
+    # Two categories:
+    #   a) AV dropped below threshold (withdrew funds)
+    #   b) Consistently idle: 10+ snapshots collected but ZERO positions ever
+    #      observed → wallet made its money before we tracked it or trades
+    #      intra-poll. No point wasting poll slots on it.
+    _IDLE_EVICTION_MIN_SNAPS = 10  # enough polls to establish a pattern
+
     evicted_addrs: Set[str] = set()
     for w in _roster:
+        # (a) AV too low
         if w.account_value > 0 and w.account_value < _EVICTION_THRESHOLD:
             evicted_addrs.add(w.address)
+            continue
+        # (b) Tracked long enough but never had a single position
+        snaps = _snapshots.get(w.address)
+        if snaps and len(snaps) >= _IDLE_EVICTION_MIN_SNAPS:
+            ever_had_positions = any(len(s.positions) > 0 for s in snaps)
+            if not ever_had_positions:
+                evicted_addrs.add(w.address)
 
     if evicted_addrs:
         _roster = [w for w in _roster if w.address not in evicted_addrs]
@@ -751,8 +765,8 @@ async def poll_positions() -> int:
             _position_first_seen.pop(addr, None)
             _wallet_orders.pop(addr, None)
         logger.info(
-            "HyperLens: evicted %d wallets below $%dk AV (full cleanup)",
-            len(evicted_addrs), _EVICTION_THRESHOLD // 1000,
+            "HyperLens: evicted %d wallets (low AV or perpetually idle, full cleanup)",
+            len(evicted_addrs),
         )
 
     # Prune stale wallet orders for addresses no longer in roster
