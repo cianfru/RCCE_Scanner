@@ -78,6 +78,7 @@ _ROSTER_COHORTS = {
 }
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
+_MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum absolute PnL (rejects dust/lottery)
 _SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
@@ -398,9 +399,13 @@ async def refresh_leaderboard() -> int:
             continue  # Skip malformed entries
 
     # --- Build Money Printers cohort ---
+    # Require minimum ROI%, minimum AV, AND minimum absolute PnL so
+    # lottery/dust wallets (162k% on $100) don't pollute the roster.
     mp_candidates = [
         w for w in all_wallets
-        if w.roi >= _MP_MIN_ROI_PCT and w.account_value >= _MP_MIN_ACCOUNT_VALUE
+        if (w.roi >= _MP_MIN_ROI_PCT
+            and w.account_value >= _MP_MIN_ACCOUNT_VALUE
+            and abs(w.pnl) >= _MP_MIN_PNL)
     ]
     mp_candidates.sort(key=lambda w: w.roi, reverse=True)
     _roster_money_printers = mp_candidates[:_ROSTER_COHORTS["money_printers"]]
@@ -739,8 +744,14 @@ async def poll_positions() -> int:
         _roster_smart_money = [w for w in _roster_smart_money if w.address not in evicted_addrs]
         for addr in evicted_addrs:
             _wallet_cohorts.pop(addr, None)
+            # Full cleanup — don't leave ghost data in memory
+            _snapshots.pop(addr, None)
+            _last_positions.pop(addr, None)
+            _trade_log.pop(addr, None)
+            _position_first_seen.pop(addr, None)
+            _wallet_orders.pop(addr, None)
         logger.info(
-            "HyperLens: evicted %d wallets below $%dk AV",
+            "HyperLens: evicted %d wallets below $%dk AV (full cleanup)",
             len(evicted_addrs), _EVICTION_THRESHOLD // 1000,
         )
 
@@ -1086,10 +1097,11 @@ def get_roster(cohort: Optional[str] = None, min_av: float = _DISPLAY_MIN_AV) ->
     else:
         source = _roster
 
-    # Filter by minimum account value (keep wallets not yet polled)
+    # Filter by minimum account value — no bypass for unpolled wallets.
+    # wallet.account_value is either the leaderboard value (before first poll)
+    # or the live snapshot value (after polling), so it's always meaningful.
     if min_av > 0:
-        source = [w for w in source
-                  if w.account_value >= min_av or w.address not in _snapshots]
+        source = [w for w in source if w.account_value >= min_av]
 
     # Pre-build cohort rank lookups
     mp_rank = {w.address: i + 1 for i, w in enumerate(_roster_money_printers)}
