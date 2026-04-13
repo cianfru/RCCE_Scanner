@@ -12,7 +12,7 @@ import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const POLL_INTERVAL_MS = 3 * 60 * 1000;
+const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 min — macro indicator, not tick-level
 
 function fmtUsd(v) {
   if (v == null) return "—";

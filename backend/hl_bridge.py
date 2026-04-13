@@ -44,7 +44,7 @@ WINDOW_24H = 24 * 3600
 WINDOW_7D = 7 * 24 * 3600
 
 # Cache
-_CACHE_TTL_S = 180  # 3 min
+_CACHE_TTL_S = 600  # 10 min — bridge flow is a macro indicator, no need for 3-min granularity
 _cache_expires_at: float = 0.0
 _cache_payload: Optional[dict] = None
 
