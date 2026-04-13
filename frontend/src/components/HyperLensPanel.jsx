@@ -331,7 +331,7 @@ function StatusStrip({ status, cohort, roster }) {
 
   const items = [
     { label: "WALLETS", value: walletLabel },
-    { label: "WITH DATA", value: status.wallets_with_data || 0 },
+    { label: "ACTIVE", value: status.active_wallets || 0 },
     { label: "SYMBOLS", value: status.consensus_symbols || 0 },
     { label: "POLLS", value: status.poll_count || 0 },
     { label: "LAST POLL", value: timeAgo(status.last_poll) },

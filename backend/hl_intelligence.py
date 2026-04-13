@@ -441,15 +441,29 @@ async def refresh_leaderboard() -> int:
     _roster = merged
     _roster_updated_at = time.time()
 
+    # Prune ghost wallets from _snapshots — addresses that were tracked in a
+    # previous refresh but no longer qualify.  Consensus already iterates
+    # _roster (not _snapshots) so ghosts don't affect signals, but they waste
+    # RAM and inflate the "with data" counter, confusing the UI.
+    roster_addrs = {w.address for w in _roster}
+    ghost_addrs = [a for a in _snapshots if a not in roster_addrs]
+    for a in ghost_addrs:
+        del _snapshots[a]
+        _last_positions.pop(a, None)
+        _trade_log.pop(a, None)
+        _position_first_seen.pop(a, None)
+        _wallet_orders.pop(a, None)
+
     logger.info(
         "HyperLens: cohort roster built — %d total (%d money_printers, %d smart_money, "
-        "%d elite) from %d parsed (%d raw rows).",
+        "%d elite) from %d parsed (%d raw rows). Pruned %d ghost wallets.",
         len(_roster),
         len(_roster_money_printers),
         len(_roster_smart_money),
         len(elite_addresses),
         len(all_wallets),
         len(rows),
+        len(ghost_addrs),
     )
     return len(_roster)
 
