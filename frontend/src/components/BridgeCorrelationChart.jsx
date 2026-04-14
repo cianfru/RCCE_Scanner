@@ -154,6 +154,9 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       .map((r) => ({ time: Math.floor(r.ts), value: r.divergence_score }));
 
     // ── Pane 0: BTC price ────────────────────────────────────────────────
+    // All series are added to the default pane, then explicitly moved to
+    // their target pane via moveToPane() — this is the reliable v5 API.
+    // The third positional arg of addSeries() didn't take effect here.
     const btcSeries = chart.addSeries(LineSeries, {
       color: "#fbbf24",
       lineWidth: 2,
@@ -161,7 +164,7 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       priceLineVisible: false,
       priceFormat: { type: "price", precision: 0, minMove: 1 },
       title: "BTC",
-    }, 0);
+    });
     btcSeries.setData(btcLine);
 
     // EXHAUSTION markers on the BTC pane — distribution = red flag down,
@@ -188,8 +191,9 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       lastValueVisible: true,
       title: "Bridge 6h",
       base: 0,
-    }, 1);
+    });
     flowSeries.setData(flowHist);
+    try { flowSeries.moveToPane(1); } catch (e) { /* v5 fallback: stays on pane 0 */ }
 
     // ── Pane 2: Divergence score with threshold bands ────────────────────
     const divSeries = chart.addSeries(LineSeries, {
@@ -199,8 +203,9 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       priceLineVisible: false,
       priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       title: "Divergence σ",
-    }, 2);
+    });
     divSeries.setData(divLine);
+    try { divSeries.moveToPane(2); } catch (e) { /* v5 fallback */ }
 
     // Threshold lines for visual reference
     [

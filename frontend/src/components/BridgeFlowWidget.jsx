@@ -14,6 +14,7 @@
  *              callout when EXHAUSTION fires
  */
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import BridgeCorrelationChart from "./BridgeCorrelationChart.jsx";
@@ -151,6 +152,10 @@ function DivergenceSparkline({ values }) {
 
 // Full-screen modal that hosts the BridgeCorrelationChart. Closes on
 // backdrop click or Escape — same pattern as other drawers in the app.
+//
+// Rendered through a portal to document.body so it escapes any backdrop-filter
+// stacking contexts created by ancestor GlassCards (which would otherwise trap
+// position: fixed and cause the modal to render *under* the scanner grid).
 function CorrelationModal({ onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -162,11 +167,11 @@ function CorrelationModal({ onClose }) {
     };
   }, [onClose]);
 
-  return (
+  const modalContent = (
     <div
       onClick={onClose}
       style={{
-        position: "fixed", inset: 0, zIndex: 300,
+        position: "fixed", inset: 0, zIndex: 9999,
         background: "rgba(0,0,0,0.65)",
         backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -215,12 +220,17 @@ function CorrelationModal({ onClose }) {
               color: T.text2, padding: "6px 12px", borderRadius: 6,
               fontFamily: T.font, fontSize: 12, cursor: "pointer",
             }}
-          >Close \u2715</button>
+          >{"Close \u2715"}</button>
         </div>
         <BridgeCorrelationChart height={540} />
       </div>
     </div>
   );
+
+  // Portal escapes any backdrop-filter / transform stacking contexts that
+  // ancestor GlassCards would create.
+  if (typeof document === "undefined") return null;
+  return createPortal(modalContent, document.body);
 }
 
 export default function BridgeFlowWidget({ isMobile }) {
