@@ -114,7 +114,9 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: T.text3 || "#9CA3AF",
+        // Bright label color for axis ticks — T.text3 was rendering almost
+        // black against the dark modal background and was unreadable.
+        textColor: "#d1d5db",
         fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 10,
         attributionLogo: false,
@@ -225,7 +227,26 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       });
     });
 
-    chart.timeScale().fitContent();
+    // Auto-zoom to where the chart actually has signal: prefer the range
+    // where divergence scores exist (since that's the reason this chart
+    // exists), fall back to BTC range, fall back to fitContent.
+    const populatedFrom =
+      (divLine.length >= 2 && divLine[0].time) ||
+      (btcLine.length >= 2 && btcLine[0].time) ||
+      null;
+    const populatedTo =
+      (divLine.length >= 2 && divLine[divLine.length - 1].time) ||
+      (btcLine.length >= 2 && btcLine[btcLine.length - 1].time) ||
+      null;
+    if (populatedFrom && populatedTo && populatedTo > populatedFrom) {
+      try {
+        chart.timeScale().setVisibleRange({ from: populatedFrom, to: populatedTo });
+      } catch (_) {
+        chart.timeScale().fitContent();
+      }
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     // Resize observer keeps the chart sized to container
     const ro = new ResizeObserver(() => {
@@ -287,6 +308,30 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     }
 
     stats = { corr, eventCount, distEvents, accumEvents, peak };
+  }
+
+  // ── "Data available since" hint ───────────────────────────────────────────
+  // Figures out the earliest timestamp the chart actually has data for.
+  // Two anchors: when bridge snapshots first started accumulating (sets the
+  // BTC + flow line floor), and when the divergence engine had enough
+  // baseline to compute scores. The latter is usually ~7d after the former.
+  let availability = null;
+  if (data && data.rows && data.rows.length > 0) {
+    const firstSnapshot = data.rows[0]?.ts;
+    const firstDivergence = data.rows.find((r) => r.divergence_score != null)?.ts;
+    const fmt = (ts) => {
+      if (!ts) return null;
+      const d = new Date(ts * 1000);
+      return d.toLocaleString(undefined, {
+        year: "numeric", month: "short", day: "2-digit",
+        hour: "2-digit", minute: "2-digit",
+      });
+    };
+    availability = {
+      snapshotSince: fmt(firstSnapshot),
+      divergenceSince: fmt(firstDivergence),
+      hasDivergence: firstDivergence != null,
+    };
   }
 
   return (
@@ -360,6 +405,26 @@ export default function BridgeCorrelationChart({ height = 540 }) {
           </>
         )}
       </div>
+
+      {/* Data availability hint — explains why longer ranges may look sparse */}
+      {availability && availability.snapshotSince && (
+        <div style={{
+          fontFamily: T.font, fontSize: 10, color: T.text4,
+          fontStyle: "italic",
+          marginTop: -4,
+        }}>
+          Bridge snapshots since {availability.snapshotSince}
+          {availability.hasDivergence && (
+            <> · Divergence available since {availability.divergenceSince}</>
+          )}
+          {!availability.hasDivergence && (
+            <> · Divergence engine still warming up (needs 7d of baseline)</>
+          )}
+          <span style={{ marginLeft: 6, opacity: 0.7 }}>
+            — longer ranges fill out as history accumulates
+          </span>
+        </div>
+      )}
 
       {/* Chart */}
       <div style={{ position: "relative", width: "100%", minHeight: height }}>
