@@ -1,19 +1,20 @@
 /**
- * BridgeCorrelationChart — multi-pane time-series of BTC price vs HL bridge
- * net flow, plus the BTC × flow divergence score that drives the alert.
+ * BridgeCorrelationChart — three vertically-stacked charts of BTC price vs HL
+ * bridge net flow vs the BTC × flow divergence score that drives the alert.
  *
- * Three vertically-stacked panes share a single time axis (TradingView-style):
  *   1. BTC price (line) with markers at confirmed EXHAUSTION events
  *   2. Bridge net flow (6h window) as a signed histogram (green up / red down)
  *   3. Divergence z-score line with ±1.5σ (DIVERGING) and ±2.5σ (EXHAUSTION)
  *      threshold bands
  *
- * Powered by ``/api/hyperliquid/bridge/correlation`` which returns one
- * fully time-aligned row per snapshot (10-min cadence). Defaults to 7 days,
- * adjustable up to 14 (the snapshot retention window).
+ * Each is its own independent `lightweight-charts` instance — sharing one
+ * chart with multi-pane / multi-scale was unreliable across timeframes in
+ * v5.1.0 (worked for 1D, broke silently for 3D / 7D / 14D). Three separate
+ * charts removes every shared-scale / shared-pane failure mode at once. The
+ * three time scales are synchronized via subscribeVisibleTimeRangeChange so
+ * panning or zooming any one chart moves the others in lockstep.
  *
- * Backed by ``lightweight-charts`` v5 — same library as BMSBChart and the
- * HyperLens charts.
+ * Powered by ``/api/hyperliquid/bridge/correlation``.
  */
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
@@ -37,7 +38,6 @@ const RANGE_OPTIONS = [
 ];
 
 // Pearson correlation between two equal-length numeric arrays.
-// Returns NaN if either array is too small or has zero variance.
 function pearson(xs, ys) {
   const n = Math.min(xs.length, ys.length);
   if (n < 5) return NaN;
@@ -53,19 +53,44 @@ function pearson(xs, ys) {
   return num / Math.sqrt(dx * dy);
 }
 
-function fmtUsd(v) {
-  if (v == null) return "—";
-  const abs = Math.abs(v);
-  const sign = v < 0 ? "-" : v > 0 ? "+" : "";
-  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(0)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
+// Shared base config for each of the three sub-charts. Keeps them visually
+// consistent and reduces duplication.
+function baseChartOptions(width, height) {
+  return {
+    width,
+    height,
+    layout: {
+      background: { type: ColorType.Solid, color: "transparent" },
+      textColor: "#d1d5db",
+      fontFamily: "'SF Mono', 'Fira Code', monospace",
+      fontSize: 10,
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { color: "rgba(255,255,255,0.025)" },
+      horzLines: { color: "rgba(255,255,255,0.025)" },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { color: "rgba(34,211,238,0.18)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
+      horzLine: { color: "rgba(34,211,238,0.18)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
+    },
+    timeScale: {
+      borderColor: "rgba(255,255,255,0.06)",
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    rightPriceScale: { borderColor: "rgba(255,255,255,0.06)" },
+  };
 }
 
 export default function BridgeCorrelationChart({ height = 540 }) {
-  const containerRef = useRef(null);
-  const chartRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const btcContainerRef = useRef(null);
+  const flowContainerRef = useRef(null);
+  const divContainerRef = useRef(null);
+  const chartsRef = useRef({ btc: null, flow: null, div: null });
+
   const [hours, setHours] = useState(168);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -91,55 +116,28 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     return () => { cancelled = true; };
   }, [hours]);
 
-  // ── Build chart whenever data changes ─────────────────────────────────────
-  const buildChart = useCallback(() => {
-    if (!containerRef.current || !data || !data.rows || data.rows.length === 0) {
-      return;
-    }
+  // ── Build all three charts whenever data changes ──────────────────────────
+  const buildCharts = useCallback(() => {
+    const wrap = wrapperRef.current;
+    const btcEl = btcContainerRef.current;
+    const flowEl = flowContainerRef.current;
+    const divEl = divContainerRef.current;
+    if (!wrap || !btcEl || !flowEl || !divEl) return;
+    if (!data || !data.rows || data.rows.length === 0) return;
 
-    // Clean up previous chart
-    if (chartRef.current) {
-      try { chartRef.current.remove(); } catch (_) { /* ignore */ }
-      chartRef.current = null;
-    }
-
-    const container = containerRef.current;
-    // Inside a freshly-mounted modal the container can briefly report 0 width
-    // before layout settles. Fall back to a sensible default so the chart
-    // doesn't render collapsed; the ResizeObserver below will fix it once the
-    // real width is known.
-    const initialWidth = container.clientWidth || 800;
-    const chart = createChart(container, {
-      width: initialWidth,
-      height,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        // Bright label color for axis ticks — T.text3 was rendering almost
-        // black against the dark modal background and was unreadable.
-        textColor: "#d1d5db",
-        fontFamily: "'SF Mono', 'Fira Code', monospace",
-        fontSize: 10,
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: "rgba(255,255,255,0.025)" },
-        horzLines: { color: "rgba(255,255,255,0.025)" },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(34,211,238,0.18)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
-        horzLine: { color: "rgba(34,211,238,0.18)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
-      },
-      timeScale: {
-        borderColor: "rgba(255,255,255,0.06)",
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      rightPriceScale: { borderColor: "rgba(255,255,255,0.06)" },
+    // Tear down any previous charts
+    Object.values(chartsRef.current).forEach((c) => {
+      if (c) { try { c.remove(); } catch (_) { /* ignore */ } }
     });
-    chartRef.current = chart;
+    chartsRef.current = { btc: null, flow: null, div: null };
 
-    // Convert backend rows into chart points
+    // Each chart gets ~1/3 of the wrapper height. Width is wrapper width
+    // (with sensible fallback so we never init at 0 inside the modal).
+    const totalH = height;
+    const each = Math.floor((totalH - 8) / 3); // 8px gap budget
+    const w = wrap.clientWidth || 800;
+
+    // Series data
     const rows = data.rows;
     const btcLine = rows
       .filter((r) => r.btc_price != null)
@@ -147,35 +145,16 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     const flowHist = rows.map((r) => ({
       time: Math.floor(r.ts),
       value: r.net_flow_6h,
-      color: r.net_flow_6h >= 0 ? "rgba(52,211,153,0.55)" : "rgba(248,113,113,0.55)",
+      color: r.net_flow_6h >= 0 ? "rgba(52,211,153,0.65)" : "rgba(248,113,113,0.65)",
     }));
     const divLine = rows
       .filter((r) => r.divergence_score != null)
       .map((r) => ({ time: Math.floor(r.ts), value: r.divergence_score }));
 
-    // ── Single-pane multi-scale layout ───────────────────────────────────
-    // Three series share the same X-axis but each uses its own price scale,
-    // positioned vertically via scaleMargins. This is the same proven
-    // pattern BMSBChart uses (volume on its own scale at the bottom). It
-    // avoids any moveToPane / pane-API quirks that were leaving series
-    // crammed onto a single shared scale with incompatible magnitudes
-    // (BTC ~75k vs flow ~$1M vs divergence ~3σ → BTC line goes flat at top,
-    // divergence is invisible at zero, etc.).
-    //
-    // Vertical layout (top → bottom):
-    //   BTC price       │ 0%  – 35% (default right scale)
-    //   Bridge net flow │ 40% – 65% (priceScaleId: "flow")
-    //   Divergence σ    │ 70% – 100% (priceScaleId: "divergence")
-
-    // Configure scale margins BEFORE adding series — v5 needs the layout
-    // intent set up first or the auto-scale picks the wrong region.
-    chart.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.02, bottom: 0.65 },
-      borderColor: "rgba(255,255,255,0.06)",
-    });
-
-    // BTC price (top region) — uses the default right scale
-    const btcSeries = chart.addSeries(LineSeries, {
+    // ── Chart 1: BTC ─────────────────────────────────────────────────────
+    const btcChart = createChart(btcEl, baseChartOptions(w, each));
+    chartsRef.current.btc = btcChart;
+    const btcSeries = btcChart.addSeries(LineSeries, {
       color: "#fbbf24",
       lineWidth: 2,
       lastValueVisible: true,
@@ -185,9 +164,7 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     });
     btcSeries.setData(btcLine);
 
-    // EXHAUSTION markers on the BTC line — distribution = red flag down,
-    // accumulation = cyan flag up. Helps eyeball whether the signal called
-    // turning points on the price chart itself.
+    // EXHAUSTION markers on BTC (red TOP arrows, cyan BTM arrows)
     if (data.events && data.events.length > 0) {
       const markers = data.events.map((ev) => {
         const isDist = ev.direction === "DIST";
@@ -199,49 +176,41 @@ export default function BridgeCorrelationChart({ height = 540 }) {
           text: isDist ? "TOP" : "BTM",
         };
       });
-      try { createSeriesMarkers(btcSeries, markers); } catch (_) { /* v5 marker API */ }
+      try { createSeriesMarkers(btcSeries, markers); } catch (_) { /* v5 */ }
     }
 
-    // Bridge net flow (middle region) — own scale id "flow"
-    const flowSeries = chart.addSeries(HistogramSeries, {
+    // ── Chart 2: Bridge flow histogram ───────────────────────────────────
+    const flowChart = createChart(flowEl, baseChartOptions(w, each));
+    chartsRef.current.flow = flowChart;
+    const flowSeries = flowChart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
-      priceScaleId: "flow",
       priceLineVisible: false,
       lastValueVisible: true,
-      title: "Bridge 6h",
+      title: "Bridge net flow (6h)",
       base: 0,
-    });
-    chart.priceScale("flow").applyOptions({
-      scaleMargins: { top: 0.40, bottom: 0.35 },
-      borderColor: "rgba(255,255,255,0.06)",
-      visible: true,
     });
     flowSeries.setData(flowHist);
 
-    // Divergence score (bottom region) — own scale id "divergence"
-    const divSeries = chart.addSeries(LineSeries, {
+    // ── Chart 3: Divergence σ ────────────────────────────────────────────
+    const divChart = createChart(divEl, baseChartOptions(w, each));
+    chartsRef.current.div = divChart;
+    const divSeries = divChart.addSeries(LineSeries, {
       color: "#a78bfa",
       lineWidth: 2,
-      priceScaleId: "divergence",
       lastValueVisible: true,
       priceLineVisible: false,
       priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       title: "Divergence σ",
     });
-    chart.priceScale("divergence").applyOptions({
-      scaleMargins: { top: 0.72, bottom: 0.02 },
-      borderColor: "rgba(255,255,255,0.06)",
-      visible: true,
-    });
     divSeries.setData(divLine);
 
-    // Threshold lines for visual reference (drawn on the divergence scale)
+    // Threshold bands at ±1.5σ and ±2.5σ + the zero line
     [
-      { value:  2.5, color: "rgba(248,113,113,0.4)", title: "+2.5σ EXHAUSTION" },
-      { value:  1.5, color: "rgba(251,191,36,0.35)", title: "+1.5σ DIVERGING" },
+      { value:  2.5, color: "rgba(248,113,113,0.5)" },
+      { value:  1.5, color: "rgba(251,191,36,0.4)" },
       { value:  0.0, color: "rgba(255,255,255,0.18)" },
-      { value: -1.5, color: "rgba(251,191,36,0.35)", title: "-1.5σ DIVERGING" },
-      { value: -2.5, color: "rgba(34,211,238,0.4)",  title: "-2.5σ EXHAUSTION" },
+      { value: -1.5, color: "rgba(251,191,36,0.4)" },
+      { value: -2.5, color: "rgba(34,211,238,0.5)" },
     ].forEach((line) => {
       divSeries.createPriceLine({
         price: line.value,
@@ -249,78 +218,84 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: false,
-        title: line.title || "",
       });
     });
 
-    // Always fit content first — guarantees a sane default visible range
-    // (this is what was working on every TF before auto-zoom was added).
-    // Force the visible time range to cover all data. fitContent() alone
-    // wasn't taking effect inside the modal — the chart was collapsing to
-    // the latest moment so 137 points compressed into a 1px sliver at the
-    // right edge (lines invisible). Computing the range from data.rows
-    // directly and calling setVisibleRange explicitly is bulletproof.
-    const allTimes = data.rows
+    // ── Time-scale synchronization ───────────────────────────────────────
+    // Pan or zoom in any chart → mirror the visible range to the other two.
+    // A guard flag prevents recursive callbacks ping-ponging forever.
+    let syncing = false;
+    const sync = (sourceChart) => (range) => {
+      if (syncing || !range) return;
+      syncing = true;
+      try {
+        Object.values(chartsRef.current).forEach((c) => {
+          if (c && c !== sourceChart) {
+            try { c.timeScale().setVisibleRange(range); } catch (_) { /* ignore */ }
+          }
+        });
+      } finally { syncing = false; }
+    };
+    btcChart.timeScale().subscribeVisibleTimeRangeChange(sync(btcChart));
+    flowChart.timeScale().subscribeVisibleTimeRangeChange(sync(flowChart));
+    divChart.timeScale().subscribeVisibleTimeRangeChange(sync(divChart));
+
+    // ── Initial visible range: span all data ─────────────────────────────
+    // Compute once from the rows array (most reliable source of truth) and
+    // apply to all three. Defer briefly so the layout is settled.
+    const allTimes = rows
       .map((r) => Math.floor(r.ts))
       .filter((t) => Number.isFinite(t) && t > 0);
     const dataFrom = allTimes.length ? Math.min(...allTimes) : null;
     const dataTo   = allTimes.length ? Math.max(...allTimes) : null;
-
     const applyRange = () => {
-      if (!chartRef.current) return;
-      try { chart.timeScale().fitContent(); } catch (_) { /* fallback */ }
-      if (dataFrom && dataTo && dataTo > dataFrom) {
-        try {
-          chart.timeScale().setVisibleRange({ from: dataFrom, to: dataTo });
-        } catch (_) { /* fitContent already ran */ }
-      }
+      if (!chartsRef.current.btc) return;
+      Object.values(chartsRef.current).forEach((c) => {
+        if (!c) return;
+        try { c.timeScale().fitContent(); } catch (_) { /* ignore */ }
+        if (dataFrom && dataTo && dataTo > dataFrom) {
+          try { c.timeScale().setVisibleRange({ from: dataFrom, to: dataTo }); } catch (_) { /* ignore */ }
+        }
+      });
     };
-    // Apply immediately, then again after layout settles. Two passes catch
-    // both the synchronous-ready case and the layout-pending case.
     applyRange();
-    const rangeTimeout = setTimeout(applyRange, 50);
+    const rangeT = setTimeout(applyRange, 60);
 
-    // Resize observer keeps the chart sized to container, and re-applies the
-    // visible range on resize (chart sometimes loses the range when width
-    // changes drastically e.g. during modal open animation).
+    // ── Resize observer keeps all three sized to the wrapper ────────────
     const ro = new ResizeObserver(() => {
-      if (chartRef.current && containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
-        applyRange();
-      }
+      const newW = wrap.clientWidth;
+      Object.values(chartsRef.current).forEach((c) => {
+        if (c) { try { c.applyOptions({ width: newW }); } catch (_) { /* ignore */ } }
+      });
+      applyRange();
     });
-    ro.observe(container);
+    ro.observe(wrap);
+
     return () => {
-      clearTimeout(rangeTimeout);
+      clearTimeout(rangeT);
       ro.disconnect();
     };
   }, [data, height]);
 
   useEffect(() => {
-    // Defer chart creation by a frame so a freshly-opened modal has settled
-    // its layout (otherwise containerRef can report 0 width and the chart
-    // renders collapsed).
     let cleanup;
     const raf = requestAnimationFrame(() => {
-      cleanup = buildChart();
+      cleanup = buildCharts();
     });
     return () => {
       cancelAnimationFrame(raf);
       if (typeof cleanup === "function") cleanup();
-      if (chartRef.current) {
-        try { chartRef.current.remove(); } catch (_) { /* ignore */ }
-        chartRef.current = null;
-      }
+      Object.values(chartsRef.current).forEach((c) => {
+        if (c) { try { c.remove(); } catch (_) { /* ignore */ } }
+      });
+      chartsRef.current = { btc: null, flow: null, div: null };
     };
-  }, [buildChart]);
+  }, [buildCharts]);
 
-  // ── Stat strip: pearson correlation + event count ─────────────────────────
+  // ── Stat strip + diagnostics + availability ───────────────────────────────
   let stats = null;
   if (data && data.rows && data.rows.length >= 10) {
     const rows = data.rows.filter((r) => r.btc_price != null);
-    // Pearson(BTC return, net flow 6h) over the visible window.
-    // Returns over each interval rather than levels so we're correlating
-    // changes, not absolute values (which would just track BTC's trend).
     const btcReturns = [];
     const flows = [];
     for (let i = 1; i < rows.length; i++) {
@@ -335,8 +310,6 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     const eventCount = (data.events || []).length;
     const distEvents = (data.events || []).filter((e) => e.direction === "DIST").length;
     const accumEvents = (data.events || []).filter((e) => e.direction === "ACCUM").length;
-
-    // Strongest divergence by absolute score in the window
     let peak = null;
     for (const r of data.rows) {
       if (r.divergence_score == null) continue;
@@ -344,12 +317,9 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         peak = r;
       }
     }
-
     stats = { corr, eventCount, distEvents, accumEvents, peak };
   }
 
-  // ── Diagnostic counts: how many points actually reach each series ────────
-  // Helps tell "no data" from "data exists but chart isn't drawing".
   let diag = null;
   if (data && data.rows) {
     const rows = data.rows;
@@ -362,11 +332,6 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     };
   }
 
-  // ── "Data available since" hint ───────────────────────────────────────────
-  // Figures out the earliest timestamp the chart actually has data for.
-  // Two anchors: when bridge snapshots first started accumulating (sets the
-  // BTC + flow line floor), and when the divergence engine had enough
-  // baseline to compute scores. The latter is usually ~7d after the former.
   let availability = null;
   if (data && data.rows && data.rows.length > 0) {
     const firstSnapshot = data.rows[0]?.ts;
@@ -385,6 +350,8 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       hasDivergence: firstDivergence != null,
     };
   }
+
+  const each = Math.floor((height - 8) / 3);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
@@ -458,7 +425,7 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         )}
       </div>
 
-      {/* Diagnostic counts — what's actually reaching each series */}
+      {/* Diagnostic counts */}
       {diag && (
         <div style={{
           fontFamily: T.mono, fontSize: 10, color: T.text3,
@@ -473,7 +440,7 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         </div>
       )}
 
-      {/* Data availability hint — explains why longer ranges may look sparse */}
+      {/* Availability hint */}
       {availability && availability.snapshotSince && (
         <div style={{
           fontFamily: T.font, fontSize: 10, color: T.text4,
@@ -493,9 +460,11 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         </div>
       )}
 
-      {/* Chart */}
-      <div style={{ position: "relative", width: "100%", minHeight: height }}>
-        <div ref={containerRef} style={{ width: "100%", height }} />
+      {/* Three stacked chart containers */}
+      <div ref={wrapperRef} style={{ position: "relative", width: "100%" }}>
+        <div ref={btcContainerRef}  style={{ width: "100%", height: each, marginBottom: 4 }} />
+        <div ref={flowContainerRef} style={{ width: "100%", height: each, marginBottom: 4 }} />
+        <div ref={divContainerRef}  style={{ width: "100%", height: each }} />
         {loading && (
           <div style={{
             position: "absolute", inset: 0,
@@ -527,7 +496,7 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         )}
       </div>
 
-      {/* Legend / explainer */}
+      {/* Legend */}
       <div style={{
         fontFamily: T.font, fontSize: 11, color: T.text4, lineHeight: 1.5,
       }}>
