@@ -1015,13 +1015,20 @@ async def hyperliquid_bridge_history(hours: int = 24):
     summaries, so the frontend can render a sparkline of ``w1h.net_usd`` or
     any other metric over time.
     """
-    from hl_bridge import get_bridge_history
+    from hl_bridge import get_bridge_history, get_divergence_history
     hours = max(1, min(168, int(hours or 24)))
     history = get_bridge_history(hours=hours)
+    # Divergence history is computed against a 7d trailing baseline, so it may
+    # be empty when bridge history is shallow (e.g. first day after deploy).
+    try:
+        divergence_history = await get_divergence_history(hours=hours)
+    except Exception:
+        divergence_history = []
     return {
         "hours": hours,
         "count": len(history),
         "history": history,
+        "divergence_history": divergence_history,
     }
 
 

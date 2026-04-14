@@ -1783,6 +1783,18 @@ async def _run_synthesis_pass(
         except Exception:
             logger.debug("Anomaly detection skipped", exc_info=True)
 
+        # --- Bridge × BTC divergence alerts (macro, single-asset) --------
+        # Reuses the 10-min cached bridge snapshot — no extra API calls. Fires
+        # Telegram only on confirmed EXHAUSTION transitions (cooldown-gated).
+        try:
+            from hl_bridge import get_bridge_flow
+            from hl_bridge_alerts import check_and_alert as _bridge_check_alert
+            bridge_payload = await get_bridge_flow()
+            if bridge_payload:
+                await _bridge_check_alert(bridge_payload.get("divergence"))
+        except Exception:
+            logger.debug("Bridge divergence alert skipped", exc_info=True)
+
         if gm is not None:
             scan_cache.global_metrics = {
                 "btc_dominance": gm.btc_dominance,

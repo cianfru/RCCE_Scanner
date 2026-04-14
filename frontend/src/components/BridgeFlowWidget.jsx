@@ -57,9 +57,48 @@ function MiniFlowSparkline({ values }) {
   );
 }
 
+// Divergence sparkline — signed z-score series. Amber zone at ±1.5σ marks the
+// DIVERGING threshold, red/cyan zone at ±2.5σ marks EXHAUSTION. Helps spot
+// the *trajectory* toward a top/bottom rather than just the current reading.
+function DivergenceSparkline({ values }) {
+  if (!values || values.length < 2) return null;
+  const w = 72, h = 18, pad = 1;
+  const n = values.length;
+  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
+  const absMax = Math.max(...values.map((v) => Math.abs(v)), 3.0); // clamp so ±2.5σ always visible
+  const midY = h / 2;
+  const yFor = (v) => midY - (v / absMax) * (h / 2 - pad);
+  const points = values.map((v, i) => `${pad + i * xStep},${yFor(v)}`).join(" ");
+
+  const latest = values[values.length - 1];
+  const absL = Math.abs(latest);
+  // Distribution (BTC up more than flow) = score > 0 → red-ish;
+  // Accumulation = score < 0 → cyan-ish.
+  const stroke =
+    absL >= 2.5 ? (latest > 0 ? "#f87171" : "#22d3ee") :
+    absL >= 1.5 ? "#fbbf24" :
+    "#64748b";
+
+  // Threshold bands
+  const y15pos = yFor(1.5);
+  const y15neg = yFor(-1.5);
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ flexShrink: 0 }}>
+      {/* ±1.5σ bands */}
+      <line x1="0" y1={y15pos} x2={w} y2={y15pos} stroke="#fbbf2433" strokeWidth="0.5" strokeDasharray="1 2" />
+      <line x1="0" y1={y15neg} x2={w} y2={y15neg} stroke="#fbbf2433" strokeWidth="0.5" strokeDasharray="1 2" />
+      {/* Zero line */}
+      <line x1="0" y1={midY} x2={w} y2={midY} stroke={T.overlay12 || T.border} strokeWidth="0.5" />
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function BridgeFlowWidget({ isMobile }) {
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null);
+  const [divHistory, setDivHistory] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +114,10 @@ export default function BridgeFlowWidget({ isMobile }) {
         }
         if (histRes.ok) {
           const h = await histRes.json();
-          if (!cancelled) setHistory(h.history || []);
+          if (!cancelled) {
+            setHistory(h.history || []);
+            setDivHistory(h.divergence_history || []);
+          }
         }
       } catch {
         /* swallow — widget just hides */
@@ -125,20 +167,49 @@ export default function BridgeFlowWidget({ isMobile }) {
     trend === "OUTFLOW" ? "rgba(248,113,113,0.1)" :
     "rgba(82,82,91,0.1)";
 
+  // BTC × flow divergence (may be absent during cold-start, when <4h of history)
+  const div = data.divergence || null;
+  const divScore = div ? Number(div.score_6h || 0) : 0;
+  const divAbs = Math.abs(divScore);
+  const divLabel = div ? div.label : null;
+  const divDistribution = divScore > 0;
+  const divColor =
+    divLabel === "EXHAUSTION" ? (divDistribution ? "#f87171" : "#22d3ee") :
+    divLabel === "DIVERGING"  ? "#fbbf24" :
+    divLabel === "CONFIRMING" ? T.text3 :
+    T.text3;
+  const divShortLabel =
+    divLabel === "EXHAUSTION" ? (divDistribution ? "DISTRIB" : "ACCUM") :
+    divLabel === "DIVERGING"  ? "DIVERG" :
+    divLabel === "CONFIRMING" ? "CONFIRM" :
+    null;
+  const showDiv = div && divLabel !== "NEUTRAL" && divShortLabel;
+
   // Tooltip summary — accessed by browsers via native title attribute.
   // Append "*" to windows that aren't complete in the current sample.
   const star = (w) => w.complete ? "" : " *";
+  const divLine = div
+    ? `\nBTC×Flow: ${divLabel}${div.confirmed ? " (confirmed)" : ""} — ${div.interpretation || ""}\n` +
+      `  6h score ${divScore >= 0 ? "+" : ""}${divScore.toFixed(1)}σ  ` +
+      `(BTC z=${Number(div.btc_return_6h_z).toFixed(1)}, flow z=${Number(div.net_flow_6h_z).toFixed(1)})`
+    : "";
   const title =
     `HL Bridge (Arbitrum) — USDC flows\n` +
     `1h:  ${fmtUsd(data.w1h.net_usd)} net  (${data.w1h.tx_count} tx)${star(data.w1h)}\n` +
     `6h:  ${fmtUsd(data.w6h.net_usd)} net  (${data.w6h.tx_count} tx)${star(data.w6h)}\n` +
     `24h: ${fmtUsd(w24.net_usd)} net  (${w24.tx_count} tx)${star(w24)}\n` +
     `7d:  ${fmtUsd(data.w7d.net_usd)} net  (${data.w7d.tx_count} tx)${star(data.w7d)}\n` +
-    (partial ? "\n* = sample doesn't cover the full window" : "");
+    (partial ? "\n* = sample doesn't cover the full window" : "") +
+    divLine;
 
   // Build the 1h-net flow series (most responsive window for showing pulse)
   const flowSeries = (history || [])
     .map(row => row?.w1h?.net_usd)
+    .filter(v => typeof v === "number");
+
+  // Divergence score series for the divergence sparkline
+  const divSeries = (divHistory || [])
+    .map(row => row?.score_6h)
     .filter(v => typeof v === "number");
 
   return (
@@ -147,6 +218,7 @@ export default function BridgeFlowWidget({ isMobile }) {
       display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
       flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
       border: `1px solid ${borderColor}`,
+      flexWrap: "wrap",
     }} title={title}>
       <span style={{
         fontSize: m(11, isMobile), color: T.text3,
@@ -171,6 +243,31 @@ export default function BridgeFlowWidget({ isMobile }) {
         {fmtUsd(net)}
       </span>
       {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
+
+      {showDiv && (
+        <>
+          <span style={{
+            width: 1, height: 14, background: T.border, opacity: 0.5,
+          }} />
+          <span style={{
+            padding: "2px 8px", borderRadius: "20px",
+            background: `${divColor}1a`,
+            border: `1px solid ${divColor}40`,
+            color: divColor,
+            fontSize: m(10, isMobile), fontFamily: T.mono, fontWeight: 700,
+            letterSpacing: "0.06em",
+          }}>
+            {divShortLabel}{div.confirmed ? "\u2713" : ""}
+          </span>
+          <span style={{
+            fontFamily: T.mono, fontSize: m(11, isMobile), fontWeight: 600,
+            color: divColor,
+          }}>
+            {divScore >= 0 ? "+" : ""}{divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}σ
+          </span>
+          {divSeries.length >= 2 && <DivergenceSparkline values={divSeries} />}
+        </>
+      )}
     </GlassCard>
   );
 }
