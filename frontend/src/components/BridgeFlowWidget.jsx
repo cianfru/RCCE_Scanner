@@ -6,6 +6,12 @@
  *
  * Renders nothing when the backend reports ``available: false`` (missing
  * ETHERSCAN_API_KEY), so the row doesn't get a broken tile.
+ *
+ * The BTC × bridge-flow divergence chip has two layouts, toggleable via
+ * the ``?bridge=v2`` URL query string for live A/B comparison:
+ *   - default: chip + score + sparkline (always visible when non-NEUTRAL)
+ *   - v2:      quiet by default, subtle dot for DIVERGING, full plain-English
+ *              callout when EXHAUSTION fires
  */
 import { useState, useEffect } from "react";
 import { T, m } from "../theme.js";
@@ -13,6 +19,53 @@ import GlassCard from "./GlassCard.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 min — macro indicator, not tick-level
+
+// ── A/B toggle ───────────────────────────────────────────────────────────────
+// Add ``?bridge=v2`` to the URL to render the alternate state-driven layout.
+// Reads once on mount; refresh to switch.
+function useBridgeVariant() {
+  const [variant] = useState(() => {
+    if (typeof window === "undefined") return "v1";
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("bridge") === "v2" ? "v2" : "v1";
+    } catch {
+      return "v1";
+    }
+  });
+  return variant;
+}
+
+// ── Plain-English translations for v2 ────────────────────────────────────────
+function strengthWord(absScore) {
+  if (absScore >= 4.0) return "extreme";
+  if (absScore >= 3.0) return "very strong";
+  if (absScore >= 2.5) return "strong";
+  if (absScore >= 2.0) return "growing";
+  return "mild";
+}
+
+function divergenceHeadline(div) {
+  if (!div) return null;
+  const isDist = (div.score_6h || 0) > 0;
+  if (div.label === "EXHAUSTION") {
+    return isDist ? "POSSIBLE BTC TOP" : "POSSIBLE BTC BOTTOM";
+  }
+  if (div.label === "DIVERGING") {
+    return isDist ? "Top risk building" : "Bottom risk building";
+  }
+  return null;
+}
+
+function divergenceSentence(div) {
+  if (!div) return "";
+  const isDist = (div.score_6h || 0) > 0;
+  const strength = strengthWord(Math.abs(div.score_6h || 0));
+  if (isDist) {
+    return `Capital draining while BTC climbs · ${strength}`;
+  }
+  return `Capital flowing in while BTC dips · ${strength}`;
+}
 
 function fmtUsd(v) {
   if (v == null) return "—";
@@ -96,6 +149,7 @@ function DivergenceSparkline({ values }) {
 }
 
 export default function BridgeFlowWidget({ isMobile }) {
+  const variant = useBridgeVariant();
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null);
   const [divHistory, setDivHistory] = useState(null);
@@ -212,6 +266,127 @@ export default function BridgeFlowWidget({ isMobile }) {
     .map(row => row?.score_6h)
     .filter(v => typeof v === "number");
 
+  // ── v2 layout: state-driven prominence ────────────────────────────────────
+  // - NEUTRAL/CONFIRMING: hide divergence entirely (card looks pristine)
+  // - DIVERGING:          subtle amber dot in the corner (don't shout)
+  // - EXHAUSTION:         full callout with plain-English headline + sentence,
+  //                       flow info demoted to a sub-line, σ score in tooltip
+  if (variant === "v2") {
+    const isExhaustion = divLabel === "EXHAUSTION";
+    const isDiverging = divLabel === "DIVERGING";
+    const headline = divergenceHeadline(div);
+    const sentence = divergenceSentence(div);
+
+    // EXHAUSTION → callout banner mode
+    if (isExhaustion) {
+      const calloutColor = divColor;
+      return (
+        <GlassCard style={{
+          padding: isMobile ? "10px 14px" : "12px 16px",
+          display: "flex", flexDirection: "column", gap: 6,
+          flex: isMobile ? "1 1 100%" : "1 1 360px",
+          minWidth: isMobile ? undefined : 320,
+          border: `1px solid ${calloutColor}`,
+          background: `linear-gradient(135deg, ${calloutColor}1a 0%, transparent 70%)`,
+          boxShadow: `0 0 12px ${calloutColor}33`,
+        }} title={title}>
+          {/* Top: plain-English headline + confidence tag */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: m(13, isMobile) }}>{divDistribution ? "\u26a0\ufe0f" : "\ud83d\udce5"}</span>
+            <span style={{
+              fontSize: m(11, isMobile), color: calloutColor,
+              fontFamily: T.font, fontWeight: 700,
+              letterSpacing: "0.08em", textTransform: "uppercase",
+            }}>{headline}</span>
+            {div.confirmed && (
+              <span style={{
+                marginLeft: "auto",
+                fontSize: m(9, isMobile), color: calloutColor,
+                fontFamily: T.mono, fontWeight: 600,
+                opacity: 0.7,
+              }}>CONFIRMED</span>
+            )}
+          </div>
+          {/* Sentence */}
+          <div style={{
+            fontSize: m(11, isMobile), color: T.text2,
+            fontFamily: T.font, lineHeight: 1.3,
+          }}>{sentence}</div>
+          {/* Bottom: flow info as small context line + sparklines */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+            <span style={{
+              fontSize: m(9, isMobile), color: T.text4,
+              letterSpacing: "0.08em", fontFamily: T.font,
+              fontWeight: 600, textTransform: "uppercase",
+            }}>HL Bridge {displayLabel}{partial ? "*" : ""}</span>
+            <span style={{
+              fontFamily: T.mono, fontSize: m(11, isMobile), fontWeight: 600,
+              color,
+            }}>{fmtUsd(net)}</span>
+            {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{
+                fontSize: m(9, isMobile), color: T.text4,
+                fontFamily: T.mono,
+              }}>
+                {divScore >= 0 ? "+" : ""}{divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}\u03c3
+              </span>
+              {divSeries.length >= 2 && <DivergenceSparkline values={divSeries} />}
+            </span>
+          </div>
+        </GlassCard>
+      );
+    }
+
+    // DIVERGING → original-shaped card with a subtle corner dot
+    // CONFIRMING / NEUTRAL → original-shaped card with no divergence info at all
+    return (
+      <GlassCard style={{
+        padding: isMobile ? "10px 14px" : "10px 16px",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
+        border: `1px solid ${borderColor}`,
+        position: "relative",
+      }} title={title}>
+        {isDiverging && (
+          <span
+            title={`${headline} — ${sentence} (${divScore >= 0 ? "+" : ""}${divScore.toFixed(1)}\u03c3)`}
+            style={{
+              position: "absolute", top: 6, right: 6,
+              width: 7, height: 7, borderRadius: "50%",
+              background: "#fbbf24",
+              boxShadow: "0 0 6px #fbbf24cc",
+            }}
+          />
+        )}
+        <span style={{
+          fontSize: m(11, isMobile), color: T.text3,
+          letterSpacing: "0.08em", fontFamily: T.font,
+          fontWeight: 600, textTransform: "uppercase",
+        }}>
+          HL Bridge {displayLabel}{partial ? "*" : ""}
+        </span>
+        <span style={{
+          padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",
+          background: bgTint,
+          color,
+          fontSize: m(11, isMobile), fontFamily: T.mono, fontWeight: 700,
+          letterSpacing: "0.06em",
+        }}>
+          {label}
+        </span>
+        <span style={{
+          fontFamily: T.mono, fontSize: m(13, isMobile), fontWeight: 700,
+          color,
+        }}>
+          {fmtUsd(net)}
+        </span>
+        {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
+      </GlassCard>
+    );
+  }
+
+  // ── v1 layout (default): chip + score + sparkline always visible ──────────
   return (
     <GlassCard style={{
       padding: isMobile ? "10px 14px" : "10px 16px",
