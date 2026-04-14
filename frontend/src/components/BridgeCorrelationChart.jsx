@@ -167,6 +167,13 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     //   Bridge net flow │ 40% – 65% (priceScaleId: "flow")
     //   Divergence σ    │ 70% – 100% (priceScaleId: "divergence")
 
+    // Configure scale margins BEFORE adding series — v5 needs the layout
+    // intent set up first or the auto-scale picks the wrong region.
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: 0.02, bottom: 0.65 },
+      borderColor: "rgba(255,255,255,0.06)",
+    });
+
     // BTC price (top region) — uses the default right scale
     const btcSeries = chart.addSeries(LineSeries, {
       color: "#fbbf24",
@@ -177,10 +184,6 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       title: "BTC",
     });
     btcSeries.setData(btcLine);
-    chart.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.02, bottom: 0.65 },
-      borderColor: "rgba(255,255,255,0.06)",
-    });
 
     // EXHAUSTION markers on the BTC line — distribution = red flag down,
     // accumulation = cyan flag up. Helps eyeball whether the signal called
@@ -208,11 +211,12 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       title: "Bridge 6h",
       base: 0,
     });
-    flowSeries.setData(flowHist);
     chart.priceScale("flow").applyOptions({
       scaleMargins: { top: 0.40, bottom: 0.35 },
       borderColor: "rgba(255,255,255,0.06)",
+      visible: true,
     });
+    flowSeries.setData(flowHist);
 
     // Divergence score (bottom region) — own scale id "divergence"
     const divSeries = chart.addSeries(LineSeries, {
@@ -224,11 +228,12 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       title: "Divergence σ",
     });
-    divSeries.setData(divLine);
     chart.priceScale("divergence").applyOptions({
       scaleMargins: { top: 0.72, bottom: 0.02 },
       borderColor: "rgba(255,255,255,0.06)",
+      visible: true,
     });
+    divSeries.setData(divLine);
 
     // Threshold lines for visual reference (drawn on the divergence scale)
     [
@@ -335,6 +340,20 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     stats = { corr, eventCount, distEvents, accumEvents, peak };
   }
 
+  // ── Diagnostic counts: how many points actually reach each series ────────
+  // Helps tell "no data" from "data exists but chart isn't drawing".
+  let diag = null;
+  if (data && data.rows) {
+    const rows = data.rows;
+    diag = {
+      total: rows.length,
+      btcPts: rows.filter((r) => r.btc_price != null).length,
+      flowPts: rows.length,
+      divPts: rows.filter((r) => r.divergence_score != null).length,
+      events: (data.events || []).length,
+    };
+  }
+
   // ── "Data available since" hint ───────────────────────────────────────────
   // Figures out the earliest timestamp the chart actually has data for.
   // Two anchors: when bridge snapshots first started accumulating (sets the
@@ -430,6 +449,21 @@ export default function BridgeCorrelationChart({ height = 540 }) {
           </>
         )}
       </div>
+
+      {/* Diagnostic counts — what's actually reaching each series */}
+      {diag && (
+        <div style={{
+          fontFamily: T.mono, fontSize: 10, color: T.text3,
+          marginTop: -4,
+          display: "flex", gap: 12, flexWrap: "wrap",
+        }}>
+          <span>rows: <b style={{ color: T.text1 }}>{diag.total}</b></span>
+          <span>BTC pts: <b style={{ color: diag.btcPts > 0 ? "#fbbf24" : "#f87171" }}>{diag.btcPts}</b></span>
+          <span>Flow bars: <b style={{ color: diag.flowPts > 0 ? "#34d399" : "#f87171" }}>{diag.flowPts}</b></span>
+          <span>Divergence pts: <b style={{ color: diag.divPts > 0 ? "#a78bfa" : T.text4 }}>{diag.divPts}</b></span>
+          <span>Events: <b style={{ color: T.text1 }}>{diag.events}</b></span>
+        </div>
+      )}
 
       {/* Data availability hint — explains why longer ranges may look sparse */}
       {availability && availability.snapshotSince && (
