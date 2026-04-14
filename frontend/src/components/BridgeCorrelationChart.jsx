@@ -255,37 +255,45 @@ export default function BridgeCorrelationChart({ height = 540 }) {
 
     // Always fit content first — guarantees a sane default visible range
     // (this is what was working on every TF before auto-zoom was added).
-    chart.timeScale().fitContent();
+    // Force the visible time range to cover all data. fitContent() alone
+    // wasn't taking effect inside the modal — the chart was collapsing to
+    // the latest moment so 137 points compressed into a 1px sliver at the
+    // right edge (lines invisible). Computing the range from data.rows
+    // directly and calling setVisibleRange explicitly is bulletproof.
+    const allTimes = data.rows
+      .map((r) => Math.floor(r.ts))
+      .filter((t) => Number.isFinite(t) && t > 0);
+    const dataFrom = allTimes.length ? Math.min(...allTimes) : null;
+    const dataTo   = allTimes.length ? Math.max(...allTimes) : null;
 
-    // Then *optionally* refine to a narrower view only if divergence covers
-    // a meaningfully short slice of the full data range — that's the case
-    // where fitContent would leave a lot of empty canvas. If divergence
-    // already spans most of the data, leave the wider view alone.
-    if (divLine.length >= 10 && btcLine.length >= 10) {
-      const divFrom = divLine[0].time;
-      const divTo   = divLine[divLine.length - 1].time;
-      const btcFrom = btcLine[0].time;
-      const btcTo   = btcLine[btcLine.length - 1].time;
-      const divSpan = divTo - divFrom;
-      const btcSpan = btcTo - btcFrom;
-      // Refine only when divergence span is meaningful (>= 6h) AND
-      // covers less than half the BTC range (so the user otherwise sees
-      // a lot of empty pre-divergence space)
-      if (divSpan >= 6 * 3600 && divSpan < btcSpan * 0.5) {
+    const applyRange = () => {
+      if (!chartRef.current) return;
+      try { chart.timeScale().fitContent(); } catch (_) { /* fallback */ }
+      if (dataFrom && dataTo && dataTo > dataFrom) {
         try {
-          chart.timeScale().setVisibleRange({ from: divFrom, to: divTo });
-        } catch (_) { /* keep fitContent */ }
+          chart.timeScale().setVisibleRange({ from: dataFrom, to: dataTo });
+        } catch (_) { /* fitContent already ran */ }
       }
-    }
+    };
+    // Apply immediately, then again after layout settles. Two passes catch
+    // both the synchronous-ready case and the layout-pending case.
+    applyRange();
+    const rangeTimeout = setTimeout(applyRange, 50);
 
-    // Resize observer keeps the chart sized to container
+    // Resize observer keeps the chart sized to container, and re-applies the
+    // visible range on resize (chart sometimes loses the range when width
+    // changes drastically e.g. during modal open animation).
     const ro = new ResizeObserver(() => {
       if (chartRef.current && containerRef.current) {
         chart.applyOptions({ width: containerRef.current.clientWidth });
+        applyRange();
       }
     });
     ro.observe(container);
-    return () => ro.disconnect();
+    return () => {
+      clearTimeout(rangeTimeout);
+      ro.disconnect();
+    };
   }, [data, height]);
 
   useEffect(() => {
