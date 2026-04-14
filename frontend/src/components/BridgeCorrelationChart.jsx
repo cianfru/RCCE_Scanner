@@ -227,25 +227,29 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       });
     });
 
-    // Auto-zoom to where the chart actually has signal: prefer the range
-    // where divergence scores exist (since that's the reason this chart
-    // exists), fall back to BTC range, fall back to fitContent.
-    const populatedFrom =
-      (divLine.length >= 2 && divLine[0].time) ||
-      (btcLine.length >= 2 && btcLine[0].time) ||
-      null;
-    const populatedTo =
-      (divLine.length >= 2 && divLine[divLine.length - 1].time) ||
-      (btcLine.length >= 2 && btcLine[btcLine.length - 1].time) ||
-      null;
-    if (populatedFrom && populatedTo && populatedTo > populatedFrom) {
-      try {
-        chart.timeScale().setVisibleRange({ from: populatedFrom, to: populatedTo });
-      } catch (_) {
-        chart.timeScale().fitContent();
+    // Always fit content first — guarantees a sane default visible range
+    // (this is what was working on every TF before auto-zoom was added).
+    chart.timeScale().fitContent();
+
+    // Then *optionally* refine to a narrower view only if divergence covers
+    // a meaningfully short slice of the full data range — that's the case
+    // where fitContent would leave a lot of empty canvas. If divergence
+    // already spans most of the data, leave the wider view alone.
+    if (divLine.length >= 10 && btcLine.length >= 10) {
+      const divFrom = divLine[0].time;
+      const divTo   = divLine[divLine.length - 1].time;
+      const btcFrom = btcLine[0].time;
+      const btcTo   = btcLine[btcLine.length - 1].time;
+      const divSpan = divTo - divFrom;
+      const btcSpan = btcTo - btcFrom;
+      // Refine only when divergence span is meaningful (>= 6h) AND
+      // covers less than half the BTC range (so the user otherwise sees
+      // a lot of empty pre-divergence space)
+      if (divSpan >= 6 * 3600 && divSpan < btcSpan * 0.5) {
+        try {
+          chart.timeScale().setVisibleRange({ from: divFrom, to: divTo });
+        } catch (_) { /* keep fitContent */ }
       }
-    } else {
-      chart.timeScale().fitContent();
     }
 
     // Resize observer keeps the chart sized to container
