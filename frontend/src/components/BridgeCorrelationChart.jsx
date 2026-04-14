@@ -104,8 +104,13 @@ export default function BridgeCorrelationChart({ height = 540 }) {
     }
 
     const container = containerRef.current;
+    // Inside a freshly-mounted modal the container can briefly report 0 width
+    // before layout settles. Fall back to a sensible default so the chart
+    // doesn't render collapsed; the ResizeObserver below will fix it once the
+    // real width is known.
+    const initialWidth = container.clientWidth || 800;
     const chart = createChart(container, {
-      width: container.clientWidth,
+      width: initialWidth,
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
@@ -228,8 +233,15 @@ export default function BridgeCorrelationChart({ height = 540 }) {
   }, [data, height]);
 
   useEffect(() => {
-    const cleanup = buildChart();
+    // Defer chart creation by a frame so a freshly-opened modal has settled
+    // its layout (otherwise containerRef can report 0 width and the chart
+    // renders collapsed).
+    let cleanup;
+    const raf = requestAnimationFrame(() => {
+      cleanup = buildChart();
+    });
     return () => {
+      cancelAnimationFrame(raf);
       if (typeof cleanup === "function") cleanup();
       if (chartRef.current) {
         try { chartRef.current.remove(); } catch (_) { /* ignore */ }

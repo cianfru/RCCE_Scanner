@@ -179,7 +179,11 @@ function CorrelationModal({ onClose }) {
           width: "min(1200px, 100%)",
           maxHeight: "calc(100vh - 32px)",
           overflowY: "auto",
-          background: T.glassBg || "rgba(20,20,24,0.96)",
+          // Use the opaque drawer background — glassBg is near-transparent
+          // and would let the page show through the modal panel.
+          background: T.drawerBg,
+          backdropFilter: "blur(32px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(32px) saturate(1.4)",
           border: `1px solid ${T.border}`,
           borderRadius: 12,
           padding: 20,
