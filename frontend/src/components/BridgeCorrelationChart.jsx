@@ -120,8 +120,6 @@ export default function BridgeCorrelationChart({ height = 540 }) {
         fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 10,
         attributionLogo: false,
-        // Three panes: price, flow, divergence
-        panes: { separatorColor: "rgba(255,255,255,0.06)", separatorHoverColor: "rgba(255,255,255,0.12)" },
       },
       grid: {
         vertLines: { color: "rgba(255,255,255,0.025)" },
@@ -155,10 +153,21 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       .filter((r) => r.divergence_score != null)
       .map((r) => ({ time: Math.floor(r.ts), value: r.divergence_score }));
 
-    // ── Pane 0: BTC price ────────────────────────────────────────────────
-    // All series are added to the default pane, then explicitly moved to
-    // their target pane via moveToPane() — this is the reliable v5 API.
-    // The third positional arg of addSeries() didn't take effect here.
+    // ── Single-pane multi-scale layout ───────────────────────────────────
+    // Three series share the same X-axis but each uses its own price scale,
+    // positioned vertically via scaleMargins. This is the same proven
+    // pattern BMSBChart uses (volume on its own scale at the bottom). It
+    // avoids any moveToPane / pane-API quirks that were leaving series
+    // crammed onto a single shared scale with incompatible magnitudes
+    // (BTC ~75k vs flow ~$1M vs divergence ~3σ → BTC line goes flat at top,
+    // divergence is invisible at zero, etc.).
+    //
+    // Vertical layout (top → bottom):
+    //   BTC price       │ 0%  – 35% (default right scale)
+    //   Bridge net flow │ 40% – 65% (priceScaleId: "flow")
+    //   Divergence σ    │ 70% – 100% (priceScaleId: "divergence")
+
+    // BTC price (top region) — uses the default right scale
     const btcSeries = chart.addSeries(LineSeries, {
       color: "#fbbf24",
       lineWidth: 2,
@@ -168,8 +177,12 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       title: "BTC",
     });
     btcSeries.setData(btcLine);
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: 0.02, bottom: 0.65 },
+      borderColor: "rgba(255,255,255,0.06)",
+    });
 
-    // EXHAUSTION markers on the BTC pane — distribution = red flag down,
+    // EXHAUSTION markers on the BTC line — distribution = red flag down,
     // accumulation = cyan flag up. Helps eyeball whether the signal called
     // turning points on the price chart itself.
     if (data.events && data.events.length > 0) {
@@ -186,30 +199,38 @@ export default function BridgeCorrelationChart({ height = 540 }) {
       try { createSeriesMarkers(btcSeries, markers); } catch (_) { /* v5 marker API */ }
     }
 
-    // ── Pane 1: Bridge net flow (6h, signed) ─────────────────────────────
+    // Bridge net flow (middle region) — own scale id "flow"
     const flowSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
+      priceScaleId: "flow",
       priceLineVisible: false,
       lastValueVisible: true,
       title: "Bridge 6h",
       base: 0,
     });
     flowSeries.setData(flowHist);
-    try { flowSeries.moveToPane(1); } catch (e) { /* v5 fallback: stays on pane 0 */ }
+    chart.priceScale("flow").applyOptions({
+      scaleMargins: { top: 0.40, bottom: 0.35 },
+      borderColor: "rgba(255,255,255,0.06)",
+    });
 
-    // ── Pane 2: Divergence score with threshold bands ────────────────────
+    // Divergence score (bottom region) — own scale id "divergence"
     const divSeries = chart.addSeries(LineSeries, {
       color: "#a78bfa",
       lineWidth: 2,
+      priceScaleId: "divergence",
       lastValueVisible: true,
       priceLineVisible: false,
       priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       title: "Divergence σ",
     });
     divSeries.setData(divLine);
-    try { divSeries.moveToPane(2); } catch (e) { /* v5 fallback */ }
+    chart.priceScale("divergence").applyOptions({
+      scaleMargins: { top: 0.72, bottom: 0.02 },
+      borderColor: "rgba(255,255,255,0.06)",
+    });
 
-    // Threshold lines for visual reference
+    // Threshold lines for visual reference (drawn on the divergence scale)
     [
       { value:  2.5, color: "rgba(248,113,113,0.4)", title: "+2.5σ EXHAUSTION" },
       { value:  1.5, color: "rgba(251,191,36,0.35)", title: "+1.5σ DIVERGING" },
