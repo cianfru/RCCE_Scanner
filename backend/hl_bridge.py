@@ -474,6 +474,141 @@ async def get_divergence_history(hours: int = 24) -> List[dict]:
         return []
 
 
+async def get_correlation_series(hours: int = 168) -> dict:
+    """Return paired BTC price + bridge flow + divergence series for charting.
+
+    Designed to back a multi-pane TradingView chart: the frontend gets one
+    array of fully-aligned rows so it can render BTC price (top pane),
+    bridge net flow (middle pane), and divergence score (bottom pane) on
+    the same time axis.
+
+    The display window covers ``hours`` of history (default 168h = 7d, max
+    14d = the snapshot retention limit). Internally we pull baseline_days
+    of additional data so the divergence z-score baseline is fresh at the
+    earliest displayed point too.
+
+    Returns:
+        {
+          "hours": int,
+          "count": int,
+          "rows": [
+            {
+              "ts": float,            # unix seconds (UTC)
+              "btc_price": float,     # BTC/USDT close at that timestamp
+              "net_flow_1h": float,   # bridge w1h.net_usd (signed)
+              "net_flow_6h": float,   # bridge w6h.net_usd (signed)
+              "divergence_score": float | None,
+              "divergence_label": str | None,
+              "confirmed": bool,
+            },
+            …
+          ],
+          "events": [
+            {"ts": float, "label": str, "direction": "DIST"|"ACCUM",
+             "confirmed": bool, "score": float}
+          ],
+        }
+
+    Never raises — returns ``{"rows": [], "events": []}`` on failure.
+    """
+    try:
+        max_h = _SNAPSHOT_RETENTION_DAYS * 24  # cap at retention window
+        hours = max(1, min(max_h, int(hours or 168)))
+        # Pull baseline + display so we can compute divergence at each row
+        total_hours = (_DIV_BASELINE_DAYS * 24) + hours
+        snapshots = get_bridge_history(hours=total_hours)
+        if not snapshots:
+            return {"hours": hours, "count": 0, "rows": [], "events": []}
+
+        btc_closes = await _fetch_btc_closes(hours=total_hours + 1)
+        if not btc_closes:
+            # Still return bridge data without BTC pairing — chart can show
+            # just the flow pane and tell the user BTC fetch failed.
+            display_cutoff = time.time() - (hours * 3600)
+            rows = [{
+                "ts": s["ts"],
+                "btc_price": None,
+                "net_flow_1h": float((s.get("w1h") or {}).get("net_usd") or 0.0),
+                "net_flow_6h": float((s.get("w6h") or {}).get("net_usd") or 0.0),
+                "divergence_score": None,
+                "divergence_label": None,
+                "confirmed": False,
+            } for s in snapshots if s["ts"] >= display_cutoff]
+            return {"hours": hours, "count": len(rows), "rows": rows, "events": []}
+
+        paired = _pair_snapshots_with_btc(snapshots, btc_closes)
+        if not paired:
+            return {"hours": hours, "count": 0, "rows": [], "events": []}
+
+        display_cutoff = time.time() - (hours * 3600)
+        rows: List[dict] = []
+        events: List[dict] = []
+        last_event_label: Optional[str] = None
+        last_event_direction: Optional[str] = None
+
+        for i, row in enumerate(paired):
+            div_score: Optional[float] = None
+            div_label: Optional[str] = None
+            confirmed = False
+            if i + 1 >= _DIV_MIN_SAMPLES:
+                trailing = paired[: i + 1]
+                div = _compute_divergence(trailing)
+                if div is not None:
+                    div_score = div["score_6h"]
+                    div_label = div["label"]
+                    confirmed = bool(div["confirmed"])
+
+            if row["ts"] < display_cutoff:
+                # Update event tracking even outside display window so
+                # transitions at the boundary are detected correctly.
+                if div_label in ("DIVERGING", "EXHAUSTION"):
+                    last_event_label = div_label
+                    last_event_direction = "DIST" if (div_score or 0) > 0 else "ACCUM"
+                continue
+
+            rows.append({
+                "ts": row["ts"],
+                "btc_price": row["btc_close"],
+                "net_flow_1h": row["net_1h"],
+                "net_flow_6h": row["net_6h"],
+                "divergence_score": div_score,
+                "divergence_label": div_label,
+                "confirmed": confirmed,
+            })
+
+            # Detect EXHAUSTION transitions (and direction flips) for markers
+            if div_label == "EXHAUSTION" and confirmed:
+                direction = "DIST" if (div_score or 0) > 0 else "ACCUM"
+                is_new = (last_event_label != "EXHAUSTION"
+                          or last_event_direction != direction)
+                if is_new:
+                    events.append({
+                        "ts": row["ts"],
+                        "label": div_label,
+                        "direction": direction,
+                        "confirmed": confirmed,
+                        "score": div_score,
+                    })
+                last_event_label = div_label
+                last_event_direction = direction
+            elif div_label in ("DIVERGING", "EXHAUSTION"):
+                last_event_label = div_label
+                last_event_direction = "DIST" if (div_score or 0) > 0 else "ACCUM"
+            else:
+                # Reset on any non-event label so the next entry counts as new
+                last_event_label = div_label
+
+        return {
+            "hours": hours,
+            "count": len(rows),
+            "rows": rows,
+            "events": events,
+        }
+    except Exception as exc:
+        logger.debug("hl_bridge: correlation series failed: %s", exc)
+        return {"hours": hours, "count": 0, "rows": [], "events": []}
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------

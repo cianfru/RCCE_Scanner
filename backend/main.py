@@ -1032,6 +1032,19 @@ async def hyperliquid_bridge_history(hours: int = 24):
     }
 
 
+@app.get("/api/hyperliquid/bridge/correlation")
+async def hyperliquid_bridge_correlation(hours: int = 168):
+    """Return paired BTC price + bridge flow + divergence series for charting.
+
+    Designed to back a multi-pane TradingView-style chart. ``hours`` defaults
+    to 168 (7 days) and is capped at the snapshot retention window (14 days).
+    Returns one array of fully time-aligned rows plus the EXHAUSTION events
+    that the frontend can mark on the price pane.
+    """
+    from hl_bridge import get_correlation_series
+    return await get_correlation_series(hours=hours)
+
+
 @app.get("/api/coinglass/status")
 async def coinglass_status():
     """Return current CoinGlass cache status (for debugging).
