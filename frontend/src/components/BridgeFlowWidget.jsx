@@ -280,40 +280,56 @@ export default function BridgeFlowWidget({ isMobile }) {
     // EXHAUSTION → callout banner mode
     if (isExhaustion) {
       const calloutColor = divColor;
+      const scoreText = `${divScore >= 0 ? "+" : ""}${divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}σ`;
       return (
         <GlassCard style={{
-          padding: isMobile ? "10px 14px" : "12px 16px",
-          display: "flex", flexDirection: "column", gap: 6,
-          flex: isMobile ? "1 1 100%" : "1 1 360px",
-          minWidth: isMobile ? undefined : 320,
+          padding: isMobile ? "10px 14px" : "10px 14px",
+          display: "flex", flexDirection: "column", gap: 4,
+          // Cap width so we don't expand to fill the whole row when wrapping
+          flex: isMobile ? "1 1 100%" : "0 1 460px",
+          minWidth: isMobile ? undefined : 360,
+          maxWidth: isMobile ? undefined : 520,
           border: `1px solid ${calloutColor}`,
-          background: `linear-gradient(135deg, ${calloutColor}1a 0%, transparent 70%)`,
-          boxShadow: `0 0 12px ${calloutColor}33`,
+          background: `linear-gradient(135deg, ${calloutColor}1f 0%, transparent 65%)`,
+          boxShadow: `0 0 10px ${calloutColor}33`,
         }} title={title}>
-          {/* Top: plain-English headline + confidence tag */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: m(13, isMobile) }}>{divDistribution ? "\u26a0\ufe0f" : "\ud83d\udce5"}</span>
+          {/* Row 1: icon + headline + score (right-aligned) */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: m(12, isMobile), lineHeight: 1 }}>
+              {divDistribution ? "\u26a0\ufe0f" : "\ud83d\udce5"}
+            </span>
             <span style={{
               fontSize: m(11, isMobile), color: calloutColor,
               fontFamily: T.font, fontWeight: 700,
               letterSpacing: "0.08em", textTransform: "uppercase",
+              whiteSpace: "nowrap",
             }}>{headline}</span>
-            {div.confirmed && (
+            <span style={{
+              marginLeft: "auto",
+              display: "flex", alignItems: "baseline", gap: 6,
+              fontFamily: T.mono,
+            }}>
               <span style={{
-                marginLeft: "auto",
-                fontSize: m(9, isMobile), color: calloutColor,
-                fontFamily: T.mono, fontWeight: 600,
-                opacity: 0.7,
-              }}>CONFIRMED</span>
-            )}
+                fontSize: m(12, isMobile), color: calloutColor, fontWeight: 700,
+              }}>{scoreText}</span>
+              {div.confirmed && (
+                <span style={{
+                  fontSize: m(9, isMobile), color: calloutColor,
+                  fontWeight: 600, opacity: 0.7, letterSpacing: "0.06em",
+                }}>{"\u2713 CONFIRMED"}</span>
+              )}
+            </span>
           </div>
-          {/* Sentence */}
+          {/* Row 2: plain-English sentence */}
           <div style={{
             fontSize: m(11, isMobile), color: T.text2,
-            fontFamily: T.font, lineHeight: 1.3,
+            fontFamily: T.font, lineHeight: 1.35,
           }}>{sentence}</div>
-          {/* Bottom: flow info as small context line + sparklines */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+          {/* Row 3: bridge flow context, single coherent line */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, marginTop: 2,
+            paddingTop: 4, borderTop: `1px solid ${T.border}40`,
+          }}>
             <span style={{
               fontSize: m(9, isMobile), color: T.text4,
               letterSpacing: "0.08em", fontFamily: T.font,
@@ -323,16 +339,11 @@ export default function BridgeFlowWidget({ isMobile }) {
               fontFamily: T.mono, fontSize: m(11, isMobile), fontWeight: 600,
               color,
             }}>{fmtUsd(net)}</span>
-            {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
-            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{
-                fontSize: m(9, isMobile), color: T.text4,
-                fontFamily: T.mono,
-              }}>
-                {divScore >= 0 ? "+" : ""}{divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}\u03c3
+            {flowSeries.length >= 2 && (
+              <span style={{ marginLeft: "auto" }}>
+                <MiniFlowSparkline values={flowSeries} />
               </span>
-              {divSeries.length >= 2 && <DivergenceSparkline values={divSeries} />}
-            </span>
+            )}
           </div>
         </GlassCard>
       );
