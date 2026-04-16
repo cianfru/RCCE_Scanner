@@ -48,6 +48,18 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
 
+# ─── Stop-loss rails (decided with user 2026-04-21) ──────────────────────────
+# Hard stop: catastrophic floor only. Fires when unrealized P&L ≤ -8%.
+# Intent: prevent another TAO/ZRO scenario where signal-flip exit didn't
+# fire in time. Should almost never trigger on a trade that works normally.
+_HARD_STOP_PCT = -8.0
+# Break-even stop arming threshold: once a position peaks at +5%, mark it
+# "armed" so a retrace back to entry closes it. Only triggers on true
+# reversals (not normal pullbacks) — strictly less restrictive than a
+# trailing stop. Backtest showed trailing stops kill bull-run performance,
+# so we explicitly avoid them.
+_BE_ARM_PCT = 5.0
+
 # Leverage per signal — used in live (Hyperliquid) mode
 _LEVERAGE_MAP: Dict[str, int] = {
     "STRONG_LONG":  5,
@@ -87,6 +99,9 @@ class ExecutorPosition:
     order_id: str = ""              # order ID from engine
     entry_reason: str = ""          # signal_reason at entry time
     entry_warnings: List[str] = field(default_factory=list)
+    # Stop-loss tracking (populated during live monitoring)
+    peak_unrealized_pct: float = 0.0   # highest +% reached since entry
+    be_armed: bool = False             # True once peak >= BE_ARM_PCT (+5%)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -324,6 +339,39 @@ class Executor:
 
         has_position = symbol in self.positions
 
+        # ------ STOP-LOSS CHECKS (run BEFORE signal logic) ------
+        # Applies only to LONG positions with a valid current price.
+        if has_position and price > 0:
+            pos = self.positions[symbol]
+            if pos.side == "LONG" and pos.entry_price > 0:
+                unrealized_pct = (price - pos.entry_price) / pos.entry_price * 100
+
+                # Track peak for BE-stop arming
+                if unrealized_pct > pos.peak_unrealized_pct:
+                    pos.peak_unrealized_pct = unrealized_pct
+                if not pos.be_armed and pos.peak_unrealized_pct >= _BE_ARM_PCT:
+                    pos.be_armed = True
+                    logger.info(
+                        "BE stop armed for %s: peak %.1f%% >= %.1f%%",
+                        symbol, pos.peak_unrealized_pct, _BE_ARM_PCT,
+                    )
+
+                # Hard stop: catastrophic floor
+                if unrealized_pct <= _HARD_STOP_PCT:
+                    logger.warning(
+                        "HARD STOP triggered for %s: unrealized %.1f%% <= %.1f%%",
+                        symbol, unrealized_pct, _HARD_STOP_PCT,
+                    )
+                    return await self._execute_exit(symbol, "STOP_LOSS", price)
+
+                # BE stop: only after armed (peaked >= +5%)
+                if pos.be_armed and unrealized_pct <= 0.0:
+                    logger.info(
+                        "BE STOP triggered for %s: retraced to entry after peak %.1f%%",
+                        symbol, pos.peak_unrealized_pct,
+                    )
+                    return await self._execute_exit(symbol, "BE_STOP", price)
+
         # ------ EXIT SIGNALS ------
         # RISK_OFF / TRIM / TRIM_HARD / NO_LONG — close THIS symbol's position
         if signal in _EXIT_SIGNALS and has_position:
@@ -518,7 +566,18 @@ class Executor:
             except Exception as e:
                 logger.warning("Failed to get portfolio status: %s", e)
 
-        total_pnl = sum(t.pnl_pct for t in self.trade_log)
+        # Capital-weighted P&L: sum actual dollar P&L across closed trades,
+        # divided by total cost. Previous logic summed raw percentages which
+        # is mathematically meaningless across differently-sized positions.
+        total_pnl_usd = sum(getattr(t, "pnl_usd", 0.0) or 0.0 for t in self.trade_log)
+        total_cost = 0.0
+        for t in self.trade_log:
+            # Prefer explicit cost if present, else reconstruct from entry_price * volume
+            cost = getattr(t, "cost_usd", None)
+            if cost is None:
+                cost = (t.entry_price or 0.0) * (t.volume or 0.0)
+            total_cost += cost or 0.0
+        total_pnl_pct = (total_pnl_usd / total_cost * 100) if total_cost > 0 else 0.0
         wins = sum(1 for t in self.trade_log if t.pnl_pct > 0)
 
         result = {
@@ -530,7 +589,9 @@ class Executor:
             },
             "open_position_count": len(self.positions),
             "total_trades": len(self.trade_log),
-            "total_pnl_pct": round(total_pnl, 2),
+            "total_pnl_pct": round(total_pnl_pct, 2),
+            "total_pnl_usd": round(total_pnl_usd, 2),
+            "total_cost_usd": round(total_cost, 2),
             "win_rate": round(wins / len(self.trade_log) * 100, 1) if self.trade_log else 0,
             "last_scan_signals": self.last_scan_signals,
             "last_error": self.last_error,

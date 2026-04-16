@@ -489,6 +489,21 @@ class OHLCVStore:
                     skipped += 1
                     continue
 
+                # One-time purge: cross-quoted pairs (BASE/BTC, BASE/ETH) had
+                # USD-price data cached due to the XMR/BTC=344 bug before the
+                # ratio-fetch fix. Reject so they refetch cleanly.
+                sym = parts[0]
+                if "/" in sym:
+                    sym_quote = sym.split("/", 1)[1]
+                    if sym_quote not in ("USDT", "USD"):
+                        closes = ohlcv.get("close", [])
+                        if len(closes) > 0 and float(closes[-1]) >= 1.0:
+                            # Real BASE/BTC or BASE/ETH ratios are almost
+                            # always < 1. A value ≥ 1 means we cached the
+                            # buggy USD price. Discard this entry.
+                            skipped += 1
+                            continue
+
                 self._store[key] = ohlcv
                 self._updated_at[key] = time.monotonic()
                 loaded += 1
@@ -639,6 +654,61 @@ def _hl_coin_name(symbol: str) -> str:
     """Convert scanner symbol 'BASE/USDT' → HL coin name, applying renames."""
     base = symbol.split("/")[0]
     return _HL_COIN_MAP.get(base, base)
+
+
+def _ratio_ohlcv(base: Optional[dict], quote: Optional[dict]) -> Optional[dict]:
+    """Compose OHLCV for BASE/QUOTE from two USD-denominated legs.
+
+    Used to resolve cross-quoted pairs like XMR/BTC where Hyperliquid only
+    offers USD candles. We align on timestamp, then divide: ohlc_ratio =
+    ohlc_base / ohlc_quote. Volume is base-leg volume (quote-leg volume is
+    in different units and can't be meaningfully combined).
+
+    Returns None if either leg failed, was empty, or had no overlap.
+    """
+    if not isinstance(base, dict) or not isinstance(quote, dict):
+        return None
+    b_ts = base.get("timestamp")
+    q_ts = quote.get("timestamp")
+    if b_ts is None or q_ts is None:
+        return None
+    b_ts_arr = np.asarray(b_ts)
+    q_ts_arr = np.asarray(q_ts)
+    if len(b_ts_arr) == 0 or len(q_ts_arr) == 0:
+        return None
+
+    # Intersect timestamps so both legs have a value at every bar
+    common, b_idx, q_idx = np.intersect1d(b_ts_arr, q_ts_arr, return_indices=True)
+    if len(common) < 2:
+        return None
+
+    fields = ("open", "high", "low", "close")
+    out: Dict[str, np.ndarray] = {"timestamp": common}
+    for f in fields:
+        b_arr = np.asarray(base.get(f, []))[b_idx] if f in base else None
+        q_arr = np.asarray(quote.get(f, []))[q_idx] if f in quote else None
+        if b_arr is None or q_arr is None or len(b_arr) != len(common):
+            return None
+        # Guard against zero in the quote leg (would produce inf)
+        safe_q = np.where(q_arr == 0, np.nan, q_arr)
+        out[f] = b_arr / safe_q
+
+    # Volume: use base-leg volume; quote-leg is in different denomination
+    if "volume" in base:
+        b_vol = np.asarray(base["volume"])[b_idx]
+        out["volume"] = b_vol
+    else:
+        out["volume"] = np.zeros_like(common, dtype=float)
+
+    # Drop any bars that ended up with NaN (zero quote price)
+    mask = np.isfinite(out["close"])
+    if not np.all(mask):
+        for k in out:
+            out[k] = out[k][mask]
+    if len(out["timestamp"]) < 2:
+        return None
+
+    return out
 
 
 async def _fetch_ohlcv_hyperliquid(
@@ -837,9 +907,32 @@ async def fetch_batch(
     connector = aiohttp.TCPConnector(limit=_MAX_CONCURRENT_FETCHES, keepalive_timeout=30)
 
     async def _hl_fetch(session: aiohttp.ClientSession, sym: str, limit: int) -> str:
-        """Returns sym on success, raises on failure."""
-        coin = _hl_coin_name(sym)
-        data = await _fetch_hl_candles(session, coin, timeframe, limit=limit)
+        """Returns sym on success, raises on failure.
+
+        For cross-quoted pairs (e.g. XMR/BTC, ETH/BTC) where HL only offers
+        USD-denominated candles, fetch both legs and compute the ratio so
+        the price stream reflects the true BASE/QUOTE value — not the
+        BASE/USD price, which was the XMR/BTC=344 bug.
+        """
+        parts = sym.split("/")
+        base = parts[0]
+        quote = parts[1] if len(parts) > 1 else "USDT"
+
+        if quote in ("USDT", "USD"):
+            # Direct USD fetch — HL native
+            coin = _hl_coin_name(sym)
+            data = await _fetch_hl_candles(session, coin, timeframe, limit=limit)
+        else:
+            # Cross-quote — fetch both legs vs USD and ratio them
+            base_coin = _hl_coin_name(f"{base}/USDT")
+            quote_coin = _hl_coin_name(f"{quote}/USDT")
+            base_data, quote_data = await asyncio.gather(
+                _fetch_hl_candles(session, base_coin, timeframe, limit=limit),
+                _fetch_hl_candles(session, quote_coin, timeframe, limit=limit),
+                return_exceptions=True,
+            )
+            data = _ratio_ohlcv(base_data, quote_data)
+
         if data is not None:
             # Merge into persistent store
             merged = _ohlcv_store.update(sym, timeframe, data)
