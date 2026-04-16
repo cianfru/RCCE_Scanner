@@ -342,6 +342,11 @@ class ScanCache:
         self._last_hl_metrics: dict = {}
         self._last_binance_metrics: dict = {}
         self._last_bybit_metrics: dict = {}
+        # Signal-age tracking: when did each (symbol, tf) enter its current
+        # signal? Reset on every transition. Exposed via scan result so the
+        # UI can show "fired 2.1d ago" without hitting the DB.
+        self.signal_first_seen_at: Dict[tuple, float] = {}
+        self.signal_first_seen_label: Dict[tuple, str] = {}
 
     # -- query helpers -----------------------------------------------------
 
@@ -880,6 +885,20 @@ async def _synthesize_and_enrich(
             oi_trend = (r.get("positioning") or {}).get("oi_trend", "STABLE")
             r["oi_context"] = interpret_oi_context(oi_trend, synth.signal)
             scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
+
+            # Signal age — reset timestamp whenever the signal changes so the
+            # UI can show "fired Nd ago" without querying the DB.
+            sym = r.get("symbol", "")
+            age_key = (sym, tf)
+            prev_label = scan_cache.signal_first_seen_label.get(age_key)
+            if prev_label != synth.signal:
+                scan_cache.signal_first_seen_at[age_key] = time.time()
+                scan_cache.signal_first_seen_label[age_key] = synth.signal
+            r["signal_first_seen_at"] = scan_cache.signal_first_seen_at.get(age_key)
+            r["signal_age_seconds"] = (
+                int(time.time() - scan_cache.signal_first_seen_at[age_key])
+                if age_key in scan_cache.signal_first_seen_at else 0
+            )
 
             # Attach HyperLens smart money data for frontend divergence display
             symbol = r.get("symbol", "")

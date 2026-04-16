@@ -416,7 +416,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         />
 
         {/* Regime + Signal badges */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
           <RegimeBadge regime={selected.regime} />
           <SignalDot signal={selected.signal} />
           {selected.signal_confidence != null && (
@@ -429,6 +429,31 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
               {Math.round(selected.signal_confidence * 100)}%
             </span>
           )}
+          {selected.signal_age_seconds != null && selected.signal_age_seconds > 0 && (() => {
+            const s = selected.signal_age_seconds;
+            const label = s < 60 ? "just now"
+              : s < 3600 ? `${Math.round(s / 60)}m`
+              : s < 86400 ? `${(s / 3600).toFixed(1)}h`
+              : `${(s / 86400).toFixed(1)}d`;
+            const color =
+              s < 24 * 3600 ? "#34d399" :
+              s < 3 * 24 * 3600 ? T.text2 :
+              s < 7 * 24 * 3600 ? "#fbbf24" :
+              T.text4;
+            return (
+              <span
+                title="Time since signal label last changed"
+                style={{
+                  padding: "3px 8px", borderRadius: "20px",
+                  background: "transparent", border: `1px solid ${T.border}`,
+                  fontSize: 9, fontFamily: T.mono, fontWeight: 500,
+                  color,
+                }}
+              >
+                fired {label}{s >= 24 * 3600 ? " ago" : ""}
+              </span>
+            );
+          })()}
         </div>
 
         {/* Conditions Scorecard */}

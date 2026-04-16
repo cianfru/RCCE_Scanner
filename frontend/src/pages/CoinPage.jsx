@@ -83,6 +83,56 @@ function ConfidenceSparkline({ history, current }) {
 }
 
 // ---------------------------------------------------------------------------
+// SignalAgeChip — compact "fired Nago" indicator
+// ---------------------------------------------------------------------------
+// Color tiers (empirical, not statistically proven — informational only):
+//   <24h  green   — fresh, just fired
+//   1-3d  neutral — within the active range
+//   3-7d  amber  — aging, verify conditions still hold
+//   >7d   grey   — stale, likely noise at this point
+// No auto-exit is enforced — user decides whether to act on staleness.
+
+function fmtSignalAge(s) {
+  if (s == null || s < 0) return null;
+  if (s < 60)      return "just now";
+  if (s < 3600)    return `${Math.round(s / 60)}m`;
+  if (s < 86400)   return `${(s / 3600).toFixed(1)}h`;
+  if (s < 7 * 86400) return `${(s / 86400).toFixed(1)}d`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function SignalAgeChip({ ageSeconds }) {
+  const label = fmtSignalAge(ageSeconds);
+  if (!label) return null;
+
+  const s = ageSeconds;
+  const color =
+    s < 24 * 3600       ? "#34d399" :
+    s < 3 * 24 * 3600   ? T.text2  :
+    s < 7 * 24 * 3600   ? "#fbbf24" :
+                          T.text4;
+
+  return (
+    <span
+      title="Time since the signal label last changed. Informational only — no auto-exit."
+      style={{
+        padding: "4px 10px", borderRadius: 20,
+        background: "transparent",
+        border: `1px solid ${T.border}`,
+        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
+        color,
+        letterSpacing: "0.04em",
+        display: "inline-flex", alignItems: "center", gap: 4,
+      }}
+    >
+      <span style={{ fontSize: 9, color: T.text4, textTransform: "uppercase" }}>fired</span>
+      {label}
+      {s >= 24 * 3600 && <span style={{ fontSize: 9, color: T.text4, textTransform: "uppercase" }}>ago</span>}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Generic Metric Sparkline — auto-scaled, compact
 // ---------------------------------------------------------------------------
 
@@ -524,6 +574,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             {data.signal_confidence}%
           </span>
         )}
+        <SignalAgeChip ageSeconds={data.signal_age_seconds} />
         <div style={{ marginLeft: "auto", display: "flex", borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
           {["4h", "1d"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)}

@@ -132,6 +132,8 @@ class ScanResult(BaseModel):
     signal_score: int = 0                       # signed conviction -100..+100 (bullish/bearish)
     regime_unstable: bool = False               # True when ≥3 regime changes in 7d (caps STRONG_LONG)
     regime_changes_7d: int = 0                  # count of regime changes in last 7 days
+    signal_first_seen_at: Optional[float] = None  # Unix ts when current signal label first fired
+    signal_age_seconds: int = 0                 # seconds since signal label last changed
 
 
 class ScanResponse(BaseModel):
