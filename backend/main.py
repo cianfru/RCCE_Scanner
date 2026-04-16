@@ -155,7 +155,21 @@ async def lifespan(app: FastAPI):
     # Initialize signal log DB
     try:
         from signal_log import SignalLog
-        await SignalLog.get().init()
+        sig_log = SignalLog.get()
+        await sig_log.init()
+
+        # Seed scanner signal-age map from persisted signal_events so
+        # "fired Nago" survives Railway redeploys instead of resetting to fresh.
+        try:
+            first_seen_map = await sig_log.get_signal_first_seen_map()
+            restored = 0
+            for (sym, tf), (sig, ts) in first_seen_map.items():
+                cache.signal_first_seen_at[(sym, tf)] = ts
+                cache.signal_first_seen_label[(sym, tf)] = sig
+                restored += 1
+            logger.info("Signal-age seed: restored %d (symbol, tf) entries from DB", restored)
+        except Exception as seed_exc:
+            logger.warning("Signal-age seed failed (non-fatal): %s", seed_exc)
     except Exception as e:
         logger.warning("Signal log init failed (non-fatal): %s", e)
 

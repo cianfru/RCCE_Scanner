@@ -708,6 +708,37 @@ class SignalLog:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+    # == Query: signal-age seed (when did each symbol enter its current label) ==
+
+    async def get_signal_first_seen_map(self) -> Dict[tuple, tuple]:
+        """Return {(symbol, timeframe): (signal, first_seen_ts)} for each
+        symbol+tf, representing when the CURRENT signal label was first
+        entered. Used at scanner startup to seed in-memory age tracking
+        so ``signal_age_seconds`` survives across Railway redeploys.
+
+        Logic: for each (symbol, tf), find the most recent signal-change
+        event (where prev_signal != signal) — that timestamp is when the
+        currently-active label first appeared.
+        """
+        db = self._ensure_db()
+        cursor = await db.execute(
+            """
+            SELECT symbol, timeframe, signal, timestamp
+            FROM signal_events e
+            WHERE id = (
+                SELECT MAX(id) FROM signal_events
+                WHERE symbol = e.symbol AND timeframe = e.timeframe
+                  AND (prev_signal IS NULL OR prev_signal != signal)
+            )
+            """
+        )
+        rows = await cursor.fetchall()
+        out: Dict[tuple, tuple] = {}
+        for r in rows:
+            key = (r["symbol"], r["timeframe"])
+            out[key] = (r["signal"], float(r["timestamp"]))
+        return out
+
     # == Query: signal heatmap (14-day grid) ====================================
 
     async def get_signal_heatmap(
