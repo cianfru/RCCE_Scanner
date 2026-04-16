@@ -16,7 +16,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
   createChart,
-  LineSeries,
+  AreaSeries,
   ColorType,
   LineStyle,
   CrosshairMode,
@@ -117,34 +117,80 @@ export default function BridgeCorrelationChart({ height = 440 }) {
     });
     chartRef.current = chart;
 
-    // BTC line — the primary visual
-    const btcLine = data.rows
-      .filter((r) => r.btc_price != null)
-      .map((r) => ({ time: Math.floor(r.ts), value: r.btc_price }));
+    // Build BTC series data defensively: v5's setData silently rejects the
+    // whole call on duplicates, out-of-order points, or non-finite values.
+    // That's almost certainly why we were seeing axes + last-value labels
+    // but no visible line.
+    const seen = new Set();
+    const btcLineRaw = [];
+    for (const r of data.rows) {
+      const price = Number(r.btc_price);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const t = Math.floor(Number(r.ts));
+      if (!Number.isFinite(t) || t <= 0) continue;
+      if (seen.has(t)) continue;
+      seen.add(t);
+      btcLineRaw.push({ time: t, value: price });
+    }
+    const btcLine = btcLineRaw.sort((a, b) => a.time - b.time);
 
-    const btcSeries = chart.addSeries(LineSeries, {
-      color: "#fbbf24",
+    // Use AreaSeries rather than LineSeries — the filled area is visible
+    // even at very thin line widths, which rules out "line drawn but too
+    // thin to see" as a failure mode.
+    const btcSeries = chart.addSeries(AreaSeries, {
+      lineColor: "#fbbf24",
+      topColor: "rgba(251,191,36,0.28)",
+      bottomColor: "rgba(251,191,36,0.02)",
       lineWidth: 2,
       lastValueVisible: true,
       priceLineVisible: false,
       priceFormat: { type: "price", precision: 0, minMove: 1 },
       title: "BTC/USDT",
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 4,
     });
-    btcSeries.setData(btcLine);
 
-    // EXHAUSTION markers — red TOP arrows, cyan BTM arrows
-    if (data.events && data.events.length > 0) {
-      const markers = data.events.map((ev) => {
-        const isDist = ev.direction === "DIST";
-        return {
-          time: Math.floor(ev.ts),
-          position: isDist ? "aboveBar" : "belowBar",
-          color: isDist ? "#f87171" : "#22d3ee",
-          shape: isDist ? "arrowDown" : "arrowUp",
-          text: isDist ? "TOP" : "BTM",
-        };
+    try {
+      btcSeries.setData(btcLine);
+      // eslint-disable-next-line no-console
+      console.info("[BridgeChart] setData ok", {
+        points: btcLine.length,
+        first: btcLine[0],
+        last: btcLine[btcLine.length - 1],
       });
-      try { createSeriesMarkers(btcSeries, markers); } catch (_) { /* v5 */ }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[BridgeChart] setData FAILED", e, {
+        sample: btcLine.slice(0, 3),
+        length: btcLine.length,
+      });
+    }
+
+    // Explicitly enable auto-scaling on the price axis so the Y range
+    // snaps to actual data bounds.
+    try { btcSeries.priceScale().applyOptions({ autoScale: true }); } catch (_) { /* ignore */ }
+
+    // EXHAUSTION markers — red TOP arrows, cyan BTM arrows. Wrapped so an
+    // API hiccup here can't break the base chart.
+    if (data.events && data.events.length > 0) {
+      try {
+        const markers = data.events
+          .filter((ev) => Number.isFinite(Number(ev.ts)))
+          .map((ev) => {
+            const isDist = ev.direction === "DIST";
+            return {
+              time: Math.floor(Number(ev.ts)),
+              position: isDist ? "aboveBar" : "belowBar",
+              color: isDist ? "#f87171" : "#22d3ee",
+              shape: isDist ? "arrowDown" : "arrowUp",
+              text: isDist ? "TOP" : "BTM",
+            };
+          });
+        createSeriesMarkers(btcSeries, markers);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[BridgeChart] markers failed", e);
+      }
     }
 
     // Force visible range to span all data — fitContent alone proved
