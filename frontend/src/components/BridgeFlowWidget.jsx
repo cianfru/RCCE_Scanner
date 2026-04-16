@@ -14,10 +14,8 @@
  *              callout when EXHAUSTION fires
  */
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
-import BridgeCorrelationChart from "./BridgeCorrelationChart.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 min — macro indicator, not tick-level
@@ -150,95 +148,11 @@ function DivergenceSparkline({ values }) {
   );
 }
 
-// Full-screen modal that hosts the BridgeCorrelationChart. Closes on
-// backdrop click or Escape — same pattern as other drawers in the app.
-//
-// Rendered through a portal to document.body so it escapes any backdrop-filter
-// stacking contexts created by ancestor GlassCards (which would otherwise trap
-// position: fixed and cause the modal to render *under* the scanner grid).
-function CorrelationModal({ onClose }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [onClose]);
-
-  const modalContent = (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 9999,
-        background: "rgba(0,0,0,0.65)",
-        backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(1200px, 100%)",
-          maxHeight: "calc(100vh - 32px)",
-          overflowY: "auto",
-          // Use the opaque drawer background — glassBg is near-transparent
-          // and would let the page show through the modal panel.
-          background: T.drawerBg,
-          backdropFilter: "blur(32px) saturate(1.4)",
-          WebkitBackdropFilter: "blur(32px) saturate(1.4)",
-          border: `1px solid ${T.border}`,
-          borderRadius: 12,
-          padding: 20,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
-        }}
-      >
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          marginBottom: 16,
-        }}>
-          <div>
-            <div style={{
-              fontFamily: T.font, fontSize: 14, fontWeight: 700,
-              color: T.text1, letterSpacing: "0.04em",
-            }}>
-              HL Bridge × BTC — historical correlation
-            </div>
-            <div style={{
-              fontFamily: T.font, fontSize: 11, color: T.text4, marginTop: 2,
-            }}>
-              How net flow into the Hyperliquid bridge has tracked BTC price.
-              Markers flag confirmed EXHAUSTION events from the live divergence signal.
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent", border: `1px solid ${T.border}`,
-              color: T.text2, padding: "6px 12px", borderRadius: 6,
-              fontFamily: T.font, fontSize: 12, cursor: "pointer",
-            }}
-          >{"Close \u2715"}</button>
-        </div>
-        <BridgeCorrelationChart height={540} />
-      </div>
-    </div>
-  );
-
-  // Portal escapes any backdrop-filter / transform stacking contexts that
-  // ancestor GlassCards would create.
-  if (typeof document === "undefined") return null;
-  return createPortal(modalContent, document.body);
-}
-
 export default function BridgeFlowWidget({ isMobile }) {
   const variant = useBridgeVariant();
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null);
   const [divHistory, setDivHistory] = useState(null);
-  const [showChart, setShowChart] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -368,8 +282,7 @@ export default function BridgeFlowWidget({ isMobile }) {
       const calloutColor = divColor;
       const scoreText = `${divScore >= 0 ? "+" : ""}${divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}σ`;
       return (
-        <>
-        <GlassCard onClick={() => setShowChart(true)} style={{
+        <GlassCard style={{
           padding: isMobile ? "10px 14px" : "10px 14px",
           display: "flex", flexDirection: "column", gap: 4,
           // Cap width so we don't expand to fill the whole row when wrapping
@@ -379,8 +292,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           border: `1px solid ${calloutColor}`,
           background: `linear-gradient(135deg, ${calloutColor}1f 0%, transparent 65%)`,
           boxShadow: `0 0 10px ${calloutColor}33`,
-          cursor: "pointer",
-        }} title={`${title}\n\nClick to open historical chart`}>
+        }} title={title}>
           {/* Row 1: icon + headline + score (right-aligned) */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: m(12, isMobile), lineHeight: 1 }}>
@@ -434,23 +346,19 @@ export default function BridgeFlowWidget({ isMobile }) {
             )}
           </div>
         </GlassCard>
-        {showChart && <CorrelationModal onClose={() => setShowChart(false)} />}
-        </>
       );
     }
 
     // DIVERGING → original-shaped card with a subtle corner dot
     // CONFIRMING / NEUTRAL → original-shaped card with no divergence info at all
     return (
-      <>
-      <GlassCard onClick={() => setShowChart(true)} style={{
+      <GlassCard style={{
         padding: isMobile ? "10px 14px" : "10px 16px",
         display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
         flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
         border: `1px solid ${borderColor}`,
         position: "relative",
-        cursor: "pointer",
-      }} title={`${title}\n\nClick to open historical chart`}>
+      }} title={title}>
         {isDiverging && (
           <span
             title={`${headline} — ${sentence} (${divScore >= 0 ? "+" : ""}${divScore.toFixed(1)}\u03c3)`}
@@ -486,22 +394,18 @@ export default function BridgeFlowWidget({ isMobile }) {
         </span>
         {flowSeries.length >= 2 && <MiniFlowSparkline values={flowSeries} />}
       </GlassCard>
-      {showChart && <CorrelationModal onClose={() => setShowChart(false)} />}
-      </>
     );
   }
 
   // ── v1 layout (default): chip + score + sparkline always visible ──────────
   return (
-    <>
-    <GlassCard onClick={() => setShowChart(true)} style={{
+    <GlassCard style={{
       padding: isMobile ? "10px 14px" : "10px 16px",
       display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
       flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
       border: `1px solid ${borderColor}`,
       flexWrap: "wrap",
-      cursor: "pointer",
-    }} title={`${title}\n\nClick to open historical chart`}>
+    }} title={title}>
       <span style={{
         fontSize: m(11, isMobile), color: T.text3,
         letterSpacing: "0.08em", fontFamily: T.font,
@@ -551,7 +455,5 @@ export default function BridgeFlowWidget({ isMobile }) {
         </>
       )}
     </GlassCard>
-    {showChart && <CorrelationModal onClose={() => setShowChart(false)} />}
-    </>
   );
 }
