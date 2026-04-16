@@ -769,6 +769,16 @@ async def _synthesize_and_enrich(
         scan_cache.prev_heat = {}
     prev_heat_snapshot = dict(scan_cache.prev_heat)
 
+    # Regime instability tracking — lazily init per-symbol timestamp lists.
+    # A symbol with ≥3 regime changes in 7 days is classified as "chop" and
+    # cannot produce STRONG_LONG (data shows this is noise, not regime).
+    if not hasattr(scan_cache, 'regime_change_log'):
+        scan_cache.regime_change_log = {}  # tf_key → List[float] of change timestamps
+    if not hasattr(scan_cache, 'prev_regime_by_tf'):
+        scan_cache.prev_regime_by_tf = {}  # tf_key → last seen regime
+    _REGIME_INSTABILITY_WINDOW_S = 7 * 24 * 3600  # 7 days
+    _REGIME_INSTABILITY_MIN_CHANGES = 3
+
     _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
     _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
     _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
@@ -788,6 +798,25 @@ async def _synthesize_and_enrich(
         macro_blocked = True if not bmsb_valid else heat_direction < 0
         symbol = r.get("symbol", "")
         prev_heat = prev_heat_snapshot.get(symbol, 0)
+
+        # Regime instability: record changes, count how many happened in the
+        # last 7 days. Symbols with ≥3 changes are classified as chop.
+        current_regime = r.get("regime", "FLAT").upper()
+        tf_key = f"{symbol}:{tf}"
+        now_ts = time.time()
+        prev_regime_seen = scan_cache.prev_regime_by_tf.get(tf_key)
+        if prev_regime_seen is not None and prev_regime_seen != current_regime:
+            log = scan_cache.regime_change_log.setdefault(tf_key, [])
+            log.append(now_ts)
+            # Prune anything older than the window
+            cutoff = now_ts - _REGIME_INSTABILITY_WINDOW_S
+            scan_cache.regime_change_log[tf_key] = [t for t in log if t >= cutoff]
+        scan_cache.prev_regime_by_tf[tf_key] = current_regime
+
+        recent_changes = len(scan_cache.regime_change_log.get(tf_key, []))
+        regime_unstable = recent_changes >= _REGIME_INSTABILITY_MIN_CHANGES
+        r["regime_changes_7d"] = recent_changes
+        r["regime_unstable"] = regime_unstable
 
         # Look up HyperLens consensus for this symbol
         hl_coin = _hl_norm(symbol) if _hl_consensus else None

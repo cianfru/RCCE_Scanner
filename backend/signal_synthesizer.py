@@ -267,6 +267,12 @@ def synthesize_signal(
     raw_signal = result.get("raw_signal", "WAIT")
     z = result.get("zscore", 0.0)
     confidence = result.get("confidence", 0.0) / 100.0  # HMM outputs 0-100, normalize to 0-1 for thresholds
+
+    # Regime instability — scanner sets this when the coin has flipped
+    # regime ≥3 times in 7 days. Choppy regimes are noise, not trend,
+    # and STRONG_LONG in unstable regimes performs poorly. Demote to LIGHT_LONG.
+    regime_unstable = bool(result.get("regime_unstable", False))
+    regime_changes_7d = int(result.get("regime_changes_7d", 0) or 0)
     vol_state = result.get("vol_state", "MID")
     vol_low = vol_state == "LOW"
     vol_high = vol_state == "HIGH"
@@ -658,22 +664,45 @@ def synthesize_signal(
         )
         return _apply_hl_modifiers(result)
 
-    # --- STRONG_LONG: effective score >= total_max (all conditions + boosts) + no BEAR-DIV ---
-    # Use percentage: >= 75% weighted score for STRONG_LONG
+    # --- STRONG_LONG: regime-aware thresholds (backtest-driven) ---
+    # Live scorecard shows STRONG_LONG in MARKUP has 40.7% WR (n=59) vs
+    # 68.4% WR in ACCUM (n=38). Tightening MARKUP requirements:
+    #   - MARKUP: 85% weighted score, z in (0, 1.0) — must be early in trend
+    #   - ACCUM/CAP: 75% weighted score (unchanged — this is where alpha lives)
+    # HL-native coins (total_max == 10): raise to 80% (8/10) since they
+    # have fewer condition checks (no CoinGlass).
     eff_pct = effective / total_max if total_max > 0 else 0.0
-    if eff_pct >= 0.75 and divergence != "BEAR-DIV":
-        # MARKUP with full confirmation
-        if regime == "MARKUP" and z > -0.5 and z < 1.0:
-            _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
-            out.signal = "STRONG_LONG"
-            out.reason = " + ".join(_reason_parts()) + f" {_tag}"
+    is_hl_only = not has_coinglass
+    strong_long_threshold = 0.80 if is_hl_only else 0.75
+
+    if eff_pct >= strong_long_threshold and divergence != "BEAR-DIV":
+        # Regime instability cap — no STRONG_LONG in choppy symbols
+        strong_long_label = "STRONG_LONG"
+        instability_note = ""
+        if regime_unstable:
+            strong_long_label = "LIGHT_LONG"
+            instability_note = f" [regime chop: {regime_changes_7d} changes/7d — capped LIGHT_LONG]"
+            warnings.append(f"Regime flipped {regime_changes_7d} times in 7d — conviction capped")
+
+        # MARKUP: stricter — needs 85% + early-trend z-score
+        if regime == "MARKUP" and eff_pct >= 0.85 and 0 < z < 1.0:
+            _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%}) MARKUP-strict]"
+            out.signal = strong_long_label
+            out.reason = " + ".join(_reason_parts()) + f" {_tag}{instability_note}"
             out.warnings = warnings
             return _cvd_return()
-        # ACCUM with full confirmation (boosts help here)
+        # MARKUP with 75-85% or extended z: downgrade to LIGHT_LONG
+        # (the 40.7% WR zone we're trying to avoid)
+        if regime == "MARKUP" and z > -0.5 and z < z_blowoff:
+            out.signal = "LIGHT_LONG"
+            out.reason = " + ".join(_reason_parts()) + f" [MARKUP downgrade: eff={eff_pct:.0%} or z={z:.2f} outside strict band]{instability_note}"
+            out.warnings = warnings
+            return _cvd_return()
+        # ACCUM/CAP with full confirmation (68.4% WR zone — keep as-is)
         if regime in ("ACCUM", "CAP"):
             _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
-            out.signal = "STRONG_LONG"
-            out.reason = " + ".join(_reason_parts()) + f" {_tag}"
+            out.signal = strong_long_label
+            out.reason = " + ".join(_reason_parts()) + f" {_tag}{instability_note}"
             out.warnings = warnings
             return _cvd_return()
     # STRONG_LONG with 55%+ effective but blocked by funding
@@ -768,14 +797,24 @@ def synthesize_signal(
             out.warnings = warnings
             return _cvd_return()
 
-        # REACC LIGHT_LONG: needs supportive consensus + decent confidence
+        # REACC LIGHT_LONG: live scorecard shows 34.1% WR (n=44) here —
+        # the worst long setup in the system. Require CVD BULLISH + SPOT_LED
+        # (genuine demand) before firing. Otherwise downgrade to ACCUMULATE
+        # which has 62.5% WR in REACC (n=64).
         if (regime == "REACC" and z < 0.5
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
                 and mkt_consensus in ("RISK-ON", "MIXED")):
-            out.signal = "LIGHT_LONG"
-            out.reason = " + ".join(_reason_parts()) + " [REACC + RISK-ON]"
-            out.warnings = warnings
+            cvd_demand = (cvd_trend == "BULLISH" and spot_dominance == "SPOT_LED")
+            if cvd_demand:
+                out.signal = "LIGHT_LONG"
+                out.reason = " + ".join(_reason_parts()) + " [REACC + CVD demand]"
+                out.warnings = warnings
+                return _cvd_return()
+            # No CVD demand confirmation → demote to ACCUMULATE (62.5% WR)
+            out.signal = "ACCUMULATE"
+            out.reason = " + ".join(_reason_parts()) + " [REACC no CVD demand → ACCUMULATE]"
+            out.warnings = warnings + ["REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)"]
             return _cvd_return()
 
     # --- CAP without strong revival conditions ---
