@@ -21,7 +21,7 @@ except ImportError:
 
 from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan_status, \
@@ -1043,6 +1043,59 @@ async def hyperliquid_bridge_correlation(hours: int = 168):
     """
     from hl_bridge import get_correlation_series
     return await get_correlation_series(hours=hours)
+
+
+@app.get("/api/admin/cb_premium_analysis", response_class=PlainTextResponse)
+async def admin_cb_premium_analysis(
+    interval: str = "h4",
+    limit: int = 1000,
+    etf: bool = False,
+    token: str = "",
+):
+    """One-off historical correlation analysis: Coinbase premium vs BTC.
+
+    Token-gated so only the operator can trigger CoinGlass calls. Set the
+    ``ADMIN_API_TOKEN`` env var on Railway, then hit:
+        /api/admin/cb_premium_analysis?token=<value>
+
+    Optional query params:
+      - interval=h1|h4|d1   (default h4)
+      - limit=50..1000      (default 1000 \u2014 CoinGlass max)
+      - etf=true            (also run ETF flows vs BTC analysis)
+
+    Returns plain text suitable for browser display or copy/paste.
+    Disabled (503) if ADMIN_API_TOKEN is not set.
+    """
+    import secrets
+    expected = os.environ.get("ADMIN_API_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "Admin endpoint disabled (set ADMIN_API_TOKEN to enable)")
+    if not token or not secrets.compare_digest(token, expected):
+        raise HTTPException(401, "Invalid or missing token")
+
+    api_key = os.environ.get("COINGLASS_API_KEY") or os.environ.get("COINGLASS_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "COINGLASS_API_KEY not set")
+    if interval not in ("h1", "h4", "d1"):
+        raise HTTPException(400, "interval must be h1, h4, or d1")
+    limit = max(50, min(1000, int(limit)))
+
+    # Add scripts/ to sys.path on first call so we can import the analysis module
+    import sys
+    from pathlib import Path
+    scripts_dir = Path(__file__).parent / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    try:
+        import cb_premium_correlation as cbc
+        text = await cbc.analyze_to_string(
+            api_key=api_key, interval=interval, limit=limit, include_etf=etf,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Analysis failed: {exc}")
+    return text
 
 
 @app.get("/api/coinglass/status")

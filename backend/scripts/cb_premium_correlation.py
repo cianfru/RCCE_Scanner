@@ -445,6 +445,30 @@ async def run_etf_analysis(api_key: str, use_color: bool) -> None:
     print_lead_lag(rows, use_color)
 
 
+# ─── Programmatic entry point (used by /api/admin/cb_premium_analysis) ────
+
+async def analyze_to_string(
+    api_key: str,
+    interval: str = "h4",
+    limit: int = 1000,
+    include_etf: bool = False,
+) -> str:
+    """Run the full analysis and return the formatted output as a string.
+
+    Captures stdout from the existing print-based functions so the same code
+    powers both the CLI and the admin HTTP endpoint without duplication.
+    Always emits color-free output (browsers won't render ANSI codes).
+    """
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        await run_cb_analysis(api_key, interval, limit, use_color=False)
+        if include_etf:
+            await run_etf_analysis(api_key, use_color=False)
+    return buf.getvalue()
+
+
 # ─── Entry ─────────────────────────────────────────────────────────────────
 
 def main() -> int:
