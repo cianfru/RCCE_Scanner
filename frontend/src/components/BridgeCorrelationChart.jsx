@@ -17,6 +17,8 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import {
   createChart,
   AreaSeries,
+  HistogramSeries,
+  LineSeries,
   ColorType,
   LineStyle,
   CrosshairMode,
@@ -110,7 +112,10 @@ export default function BridgeCorrelationChart({ height = 440 }) {
       },
       rightPriceScale: {
         borderColor: "rgba(255,255,255,0.06)",
-        scaleMargins: { top: 0.05, bottom: 0.08 },
+        // BTC lives in the upper half of the chart. Flow histogram and
+        // divergence line get their own scales (configured below) for the
+        // middle and lower bands.
+        scaleMargins: { top: 0.05, bottom: 0.55 },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
@@ -192,6 +197,110 @@ export default function BridgeCorrelationChart({ height = 440 }) {
         console.error("[BridgeChart] markers failed", e);
       }
     }
+
+    // ── Bridge net flow (middle band) ─────────────────────────────────────
+    // Clean + dedupe the same way as BTC. Negative values keep their sign so
+    // the histogram draws downward bars for outflow.
+    const flowSeen = new Set();
+    const flowDataRaw = [];
+    for (const r of data.rows) {
+      const v = Number(r.net_flow_6h);
+      if (!Number.isFinite(v)) continue;
+      const t = Math.floor(Number(r.ts));
+      if (!Number.isFinite(t) || t <= 0) continue;
+      if (flowSeen.has(t)) continue;
+      flowSeen.add(t);
+      flowDataRaw.push({
+        time: t,
+        value: v,
+        color: v >= 0 ? "rgba(52,211,153,0.7)" : "rgba(248,113,113,0.7)",
+      });
+    }
+    const flowData = flowDataRaw.sort((a, b) => a.time - b.time);
+
+    chart.priceScale("flow").applyOptions({
+      scaleMargins: { top: 0.55, bottom: 0.28 },
+      borderColor: "rgba(255,255,255,0.06)",
+      visible: true,
+    });
+    const flowSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "flow",
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: "Bridge 6h",
+      base: 0,
+    });
+    try {
+      flowSeries.setData(flowData);
+      // eslint-disable-next-line no-console
+      console.info("[BridgeChart] flow setData ok", { points: flowData.length });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[BridgeChart] flow setData FAILED", e);
+    }
+    try { flowSeries.priceScale().applyOptions({ autoScale: true }); } catch (_) { /* ignore */ }
+
+    // ── Divergence σ (lower band) ─────────────────────────────────────────
+    const divSeen = new Set();
+    const divDataRaw = [];
+    for (const r of data.rows) {
+      if (r.divergence_score == null) continue;
+      const v = Number(r.divergence_score);
+      if (!Number.isFinite(v)) continue;
+      const t = Math.floor(Number(r.ts));
+      if (!Number.isFinite(t) || t <= 0) continue;
+      if (divSeen.has(t)) continue;
+      divSeen.add(t);
+      divDataRaw.push({ time: t, value: v });
+    }
+    const divData = divDataRaw.sort((a, b) => a.time - b.time);
+
+    chart.priceScale("divergence").applyOptions({
+      scaleMargins: { top: 0.78, bottom: 0.02 },
+      borderColor: "rgba(255,255,255,0.06)",
+      visible: true,
+    });
+    const divSeries = chart.addSeries(AreaSeries, {
+      lineColor: "#a78bfa",
+      topColor: "rgba(167,139,250,0.25)",
+      bottomColor: "rgba(167,139,250,0.02)",
+      lineWidth: 2,
+      priceScaleId: "divergence",
+      lastValueVisible: true,
+      priceLineVisible: false,
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+      title: "Divergence σ",
+    });
+    try {
+      divSeries.setData(divData);
+      // eslint-disable-next-line no-console
+      console.info("[BridgeChart] div setData ok", { points: divData.length });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[BridgeChart] div setData FAILED", e);
+    }
+    try { divSeries.priceScale().applyOptions({ autoScale: true }); } catch (_) { /* ignore */ }
+
+    // Threshold bands on the divergence scale — ±1.5σ (DIVERGING) amber,
+    // ±2.5σ (EXHAUSTION) red/cyan, plus the zero line for reference.
+    [
+      { value:  2.5, color: "rgba(248,113,113,0.5)" },
+      { value:  1.5, color: "rgba(251,191,36,0.4)" },
+      { value:  0.0, color: "rgba(255,255,255,0.18)" },
+      { value: -1.5, color: "rgba(251,191,36,0.4)" },
+      { value: -2.5, color: "rgba(34,211,238,0.5)" },
+    ].forEach((line) => {
+      try {
+        divSeries.createPriceLine({
+          price: line.value,
+          color: line.color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: false,
+        });
+      } catch (_) { /* ignore */ }
+    });
 
     // Force visible range to span all data — fitContent alone proved
     // unreliable inside the modal. Applied twice (immediate + deferred) to
@@ -392,8 +501,11 @@ export default function BridgeCorrelationChart({ height = 440 }) {
         fontFamily: T.font, fontSize: 11, color: T.text4, lineHeight: 1.5,
       }}>
         <span style={{ color: "#fbbf24" }}>━━</span> BTC/USDT ·{" "}
+        <span style={{ color: "rgba(52,211,153,0.8)" }}>▮</span> bridge inflow /{" "}
+        <span style={{ color: "rgba(248,113,113,0.8)" }}>▮</span> outflow ·{" "}
+        <span style={{ color: "#a78bfa" }}>━━</span> divergence σ (±1.5 / ±2.5 bands) ·{" "}
         <span style={{ color: "#f87171" }}>▼ TOP</span> /{" "}
-        <span style={{ color: "#22d3ee" }}>▲ BTM</span> = confirmed EXHAUSTION events fired by the bridge × flow divergence signal
+        <span style={{ color: "#22d3ee" }}>▲ BTM</span> = confirmed EXHAUSTION events
       </div>
     </div>
   );
