@@ -563,6 +563,24 @@ async def status():
 # Feature flag admin (runtime toggles, persisted to /data/feature_flags.json)
 # ---------------------------------------------------------------------------
 
+@app.get("/api/admin/memory-snapshot")
+async def admin_memory_snapshot():
+    """Deep inventory of in-memory data structures + process RSS.
+
+    Walks every known dict/deque/list across hl_intelligence, the scanner
+    cache, OHLCV store, signal log, and the bridge cache; deep-sizes each
+    (numpy.ndarray uses .nbytes for accuracy); reports process RSS via
+    psutil; and returns the top 15 object types by aggregate size from
+    a gc walk.
+
+    Use this to find unexpected memory consumers before guessing what to cut.
+    Walk takes ~1-3 seconds depending on heap size.
+    """
+    import memory_diag
+    # Run the heavy walk off the event loop so we don't block other requests
+    return await asyncio.to_thread(memory_diag.full_report)
+
+
 @app.get("/api/admin/features")
 async def admin_get_features():
     """Return current feature flag state + available presets."""
