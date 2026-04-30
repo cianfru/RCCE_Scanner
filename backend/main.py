@@ -192,7 +192,13 @@ async def lifespan(app: FastAPI):
     # Start drip scan loop (1 symbol/1s continuous) + synthesis pass (every 60s)
     asyncio.create_task(run_drip_scan(cache))
     asyncio.create_task(_periodic_scan())
-    asyncio.create_task(_periodic_whale_poll())
+
+    # On-chain whale tracker — opt-in via env var (rarely used by current user)
+    if os.environ.get("WHALE_TRACKER_ENABLED", "false").lower() == "true":
+        asyncio.create_task(_periodic_whale_poll())
+        logger.info("Whale tracker: ENABLED")
+    else:
+        logger.info("Whale tracker: DISABLED (set WHALE_TRACKER_ENABLED=true to re-enable)")
 
     # Start CoinGlass drip loop (1 coin every 1.5s instead of 150 calls at once)
     try:
@@ -201,13 +207,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("CoinGlass drip loop init failed (non-fatal): %s", e)
 
-    # Start exchange derivatives shadow fetch (runs alongside CoinGlass for comparison)
-    asyncio.create_task(_shadow_derivatives_loop())
+    # Shadow derivatives loop intentionally removed — it was a duplicate
+    # fetcher whose only output was comparison logging. Scanner already uses
+    # exchange_derivatives_data as a CoinGlass fallback in the main flow.
 
-    # Start HyperLens smart-money tracking loop
+    # HyperLens "Sentiment Mode" — slim sentiment aggregator (50 wallets,
+    # 10-min polling, latest-snapshot only, no trade reconstruction).
+    # Always on; cost is now small enough to keep running by default.
     try:
         from hl_intelligence import run_hyperlens_loop
         asyncio.create_task(run_hyperlens_loop())
+        logger.info("HyperLens: ENABLED (sentiment mode)")
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
 
@@ -221,11 +231,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Price ticker init failed (non-fatal): %s", e)
 
-    # Initialize assistant memory + start proactive market monitor
+    # Initialize assistant memory + optional proactive monitor.
+    # The monitor calls an LLM every 5min when changes are detected — costly.
+    # DB init still happens so assistant context survives restart.
     try:
-        from assistant_memory import ConversationMemory, run_market_monitor
+        from assistant_memory import ConversationMemory
         await ConversationMemory.get().init()
-        asyncio.create_task(run_market_monitor(interval=300))  # every 5 min
+        if os.environ.get("MARKET_MONITOR_ENABLED", "false").lower() == "true":
+            from assistant_memory import run_market_monitor
+            asyncio.create_task(run_market_monitor(interval=300))
+            logger.info("Market monitor: ENABLED")
+        else:
+            logger.info("Market monitor: DISABLED (set MARKET_MONITOR_ENABLED=true to re-enable)")
     except Exception as e:
         logger.warning("Assistant memory init failed (non-fatal): %s", e)
 
@@ -255,25 +272,6 @@ def _set_backtest_running(val: bool):
     global _backtest_running
     _backtest_running = val
     cache._backtest_running = val
-
-
-async def _shadow_derivatives_loop():
-    """Shadow fetch exchange derivatives every 5 min (alongside CoinGlass).
-
-    Logs comparison data for validation before switching from CoinGlass.
-    """
-    await asyncio.sleep(30)  # Wait for initial scan to populate price data
-    while True:
-        try:
-            from exchange_derivatives_data import fetch_exchange_derivatives
-            metrics, cvd, _ = await fetch_exchange_derivatives()
-            logger.info(
-                "Shadow derivatives: fetched %d coins, %d CVD entries",
-                len(metrics), len(cvd),
-            )
-        except Exception as exc:
-            logger.warning("Shadow derivatives fetch failed: %s", exc)
-        await asyncio.sleep(5 * 60)  # Every 5 minutes
 
 
 async def _periodic_scan():

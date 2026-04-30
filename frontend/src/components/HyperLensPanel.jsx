@@ -2860,11 +2860,12 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
 
 
 function TabSwitcher({ active, onChange, isMobile }) {
+  // Roster tab removed in "Sentiment Mode" \u2014 same data is on the HL
+  // leaderboard, and the in-app value lives in Consensus instead.
   const tabs = [
     { key: "favorites", label: "\u2605 Watchlist" },
     { key: "consensus", label: "Consensus" },
     { key: "heatmap", label: "Heatmap" },
-    { key: "roster", label: "Roster" },
     { key: "pressure", label: "Pressure" },
   ];
 
@@ -3112,15 +3113,7 @@ export default function HyperLensPanel({ isMobile }) {
               cohort={cohort}
             />
           )}
-          {tab === "roster" && (
-            <RosterTable
-              wallets={roster}
-              consensus={consensus}
-              onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
-              isMobile={isMobile}
-              cohort={cohort}
-            />
-          )}
+          {/* Roster tab removed in Sentiment Mode — see TabSwitcher comment */}
           {tab === "pressure" && (
             <PressureMap
               consensus={consensus}

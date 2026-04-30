@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import re
 import time
 from collections import deque
@@ -47,18 +48,19 @@ _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 
-# Tiered polling — watchlist wallets get priority, rest of roster polled less often
+# Polling cadence — "Sentiment Mode" uses a uniform 10-min cadence for
+# the roster. Watchlist (explicitly-followed wallets) keeps its 5-min tier
+# because the user added them on purpose.
 _WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
-_ROSTER_POLL_INTERVAL = 15 * 60            # 15 min for the rest of the roster
-_ROSTER_IDLE_POLL_INTERVAL = 30 * 60       # 30 min for wallets with zero open positions
+_ROSTER_POLL_INTERVAL = 10 * 60            # 10 min uniform for roster (was 15)
+_ROSTER_IDLE_POLL_INTERVAL = 10 * 60       # 10 min uniform (was 30 — tier merged)
 _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 
-# In-memory snapshot depth per wallet.  Only recent snapshots are needed:
-# trade reconstruction uses last 2, consensus uses last 1,
-# get_position_changes() needs ~6 for its 30-min window.
-# Historical equity curves are served from SQLite (30-day retention).
-# Reduced from 20 → 6 to cut RAM (~40% of HyperLens memory).
-_POSITION_HISTORY_LEN = 6
+# In-memory snapshot depth per wallet. "Sentiment Mode" only needs the
+# latest snapshot for consensus — trade reconstruction is disabled, so
+# we don't need consecutive snapshots anymore. Equity curves still served
+# from SQLite (30-day retention). Was 20 → 6 → 1 (now ~88% smaller still).
+_POSITION_HISTORY_LEN = 1
 
 # Staleness: skip snapshots older than this when computing consensus
 _SNAPSHOT_MAX_AGE_S = 20 * 60              # 20 minutes (covers roster interval)
@@ -72,10 +74,12 @@ _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
-# Cohort definitions
+# Cohort definitions — "Sentiment Mode": top 50 each (post-dedup ~80 unique).
+# Statistical sample of elite traders is plenty for directional consensus.
+# Was 300 each → 50 each (~83% fewer wallets, RAM + egress proportional).
 _ROSTER_COHORTS = {
-    "money_printers": 300,  # top performers by ROI
-    "smart_money": 300,      # largest wallets by AV
+    "money_printers": 50,    # top performers by ROI
+    "smart_money": 50,       # largest wallets by AV
 }
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
@@ -672,23 +676,25 @@ async def poll_positions() -> int:
     now = time.time()
     watchlist_addrs = _get_watchlist_addresses()
     roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
-    idle_roster_due = (now - _last_idle_roster_poll_at) >= _ROSTER_IDLE_POLL_INTERVAL
+    # idle_roster_due kept as alias for backward-compat with logging below;
+    # in Sentiment Mode active/idle merged into single 10-min cadence.
+    idle_roster_due = roster_due
 
-    # Split roster into tiers based on open positions
+    # Sentiment Mode: simplified split — watchlist (always) + roster (every
+    # _ROSTER_POLL_INTERVAL). No active/idle subdivision.
     watchlist_wallets = []
-    active_roster_wallets = []
-    idle_roster_wallets = []
+    roster_to_poll = []
     for w in _roster:
         if w.address.lower() in watchlist_addrs:
             watchlist_wallets.append(w)
-        elif _wallet_has_open_positions(w.address):
-            if roster_due:
-                active_roster_wallets.append(w)
-        else:
-            if idle_roster_due:
-                idle_roster_wallets.append(w)
+        elif roster_due:
+            roster_to_poll.append(w)
 
-    wallets_to_poll = watchlist_wallets + active_roster_wallets + idle_roster_wallets
+    # Backward-compat aliases for the rest of this function
+    active_roster_wallets = roster_to_poll
+    idle_roster_wallets: list = []
+
+    wallets_to_poll = watchlist_wallets + roster_to_poll
     if not wallets_to_poll:
         logger.debug("HyperLens: no wallets due for polling this cycle")
         return 0
@@ -697,15 +703,12 @@ async def poll_positions() -> int:
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
     success_count = 0
 
-    # Build tasks with tier-appropriate full/light polling
-    watchlist_set = {w.address for w in watchlist_wallets}
-
+    # "Sentiment Mode": always run light polling (positions only, no orders,
+    # no xyz DEX). Saves 2 of 3 API calls per wallet. Order-driven features
+    # (pressure map, smart orders) were already disabled.
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
-            _fetch_wallet_positions(
-                session, semaphore, w,
-                full=(w.address in watchlist_set),
-            )
+            _fetch_wallet_positions(session, semaphore, w, full=False)
             for w in wallets_to_poll
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -776,18 +779,19 @@ async def poll_positions() -> int:
     for a in stale_order_keys:
         del _wallet_orders[a]
 
-    # Reconstruct trades from snapshot diffs (must run before consensus)
-    _reconstruct_trades()
+    # Trade reconstruction disabled in "Sentiment Mode" — we only need
+    # the latest snapshot for consensus, not snapshot-to-snapshot diffs.
+    # _reconstruct_trades() removed; _trade_log / _last_positions /
+    # _position_first_seen stay empty.
 
     # Recompute consensus
     _recompute_consensus()
     _consensus_updated_at = time.time()
 
-    # Persist to SQLite (non-blocking — runs in background thread)
+    # Persist snapshots only — trade log + first-seen no longer populated.
+    # Snapshot persistence stays for the on-demand wallet-detail page.
     try:
         _db_save_snapshots(_snapshots)
-        _db_save_trades(_trade_log, since_timestamp=_last_poll_at - _POLL_INTERVAL)
-        _db_save_first_seen(_position_first_seen)
     except Exception as exc:
         logger.warning("HyperLens DB: save error: %s", exc)
 
@@ -2397,8 +2401,14 @@ async def run_hyperlens_loop() -> None:
     last_roster_refresh = time.time()
     last_cleanup = time.time()
 
-    # Launch order book polling as an independent concurrent task
-    asyncio.create_task(_order_book_loop())
+    # Order book polling drives the pressure-map feature only. Off by
+    # default in Sentiment Mode (~80K outbound calls/day saved). Set
+    # HYPERLENS_PRESSURE_MAP_ENABLED=true to re-enable.
+    if os.environ.get("HYPERLENS_PRESSURE_MAP_ENABLED", "false").lower() == "true":
+        asyncio.create_task(_order_book_loop())
+        logger.info("HyperLens pressure map: ENABLED")
+    else:
+        logger.info("HyperLens pressure map: DISABLED")
 
     while True:
         try:
