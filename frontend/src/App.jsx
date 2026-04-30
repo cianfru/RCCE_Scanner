@@ -17,6 +17,7 @@ import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
+import SettingsDropdown from "./components/SettingsDropdown.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
 import TradingPanel from "./components/TradingPanel.jsx";
@@ -845,6 +846,7 @@ export default function App() {
             </svg>
           </button>
           <NotificationBell />
+          <SettingsDropdown />
           <button
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}

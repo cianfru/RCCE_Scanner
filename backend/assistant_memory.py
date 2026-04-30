@@ -486,8 +486,13 @@ async def run_market_monitor(interval: float = 300.0) -> None:
 
     Compares current scanner state against previous snapshot,
     detects notable changes, and pushes insights via WebSocket.
+
+    Runtime-toggleable via /api/admin/features (flag: market_monitor).
+    When disabled the loop sleeps; toggling back on takes effect within
+    ~30s without restart.
     """
     global _last_monitor_state
+    from feature_flags import get_flag
 
     # Wait for scanner to have initial data
     await asyncio.sleep(120)
@@ -495,6 +500,9 @@ async def run_market_monitor(interval: float = 300.0) -> None:
     logger.info("Market monitor started (interval=%.0fs)", interval)
 
     while True:
+        if not get_flag("market_monitor"):
+            await asyncio.sleep(30)
+            continue
         try:
             curr = await _build_monitor_snapshot()
 

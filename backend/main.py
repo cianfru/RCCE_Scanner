@@ -193,12 +193,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(run_drip_scan(cache))
     asyncio.create_task(_periodic_scan())
 
-    # On-chain whale tracker — opt-in via env var (rarely used by current user)
-    if os.environ.get("WHALE_TRACKER_ENABLED", "false").lower() == "true":
-        asyncio.create_task(_periodic_whale_poll())
-        logger.info("Whale tracker: ENABLED")
-    else:
-        logger.info("Whale tracker: DISABLED (set WHALE_TRACKER_ENABLED=true to re-enable)")
+    # On-chain whale tracker — runtime-toggleable via /api/admin/features.
+    # Task always spawned; the loop checks the feature flag each cycle.
+    asyncio.create_task(_periodic_whale_poll())
+    logger.info("Whale tracker: task spawned (runtime-toggleable)")
 
     # Start CoinGlass drip loop (1 coin every 1.5s instead of 150 calls at once)
     try:
@@ -231,18 +229,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Price ticker init failed (non-fatal): %s", e)
 
-    # Initialize assistant memory + optional proactive monitor.
-    # The monitor calls an LLM every 5min when changes are detected — costly.
-    # DB init still happens so assistant context survives restart.
+    # Initialize assistant memory + market monitor — runtime-toggleable.
+    # The monitor diffs scanner state every 5 min and pushes WebSocket
+    # insight events. Template-based (no LLM call). Task always spawned;
+    # the loop checks the feature flag each cycle.
     try:
-        from assistant_memory import ConversationMemory
+        from assistant_memory import ConversationMemory, run_market_monitor
         await ConversationMemory.get().init()
-        if os.environ.get("MARKET_MONITOR_ENABLED", "false").lower() == "true":
-            from assistant_memory import run_market_monitor
-            asyncio.create_task(run_market_monitor(interval=300))
-            logger.info("Market monitor: ENABLED")
-        else:
-            logger.info("Market monitor: DISABLED (set MARKET_MONITOR_ENABLED=true to re-enable)")
+        asyncio.create_task(run_market_monitor(interval=300))
+        logger.info("Market monitor: task spawned (runtime-toggleable)")
     except Exception as e:
         logger.warning("Assistant memory init failed (non-fatal): %s", e)
 
@@ -562,6 +557,50 @@ async def alt_season(timeframe: str = Query("4h")):
 @app.get("/api/status")
 async def status():
     return get_scan_status()
+
+
+# ---------------------------------------------------------------------------
+# Feature flag admin (runtime toggles, persisted to /data/feature_flags.json)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/features")
+async def admin_get_features():
+    """Return current feature flag state + available presets."""
+    import feature_flags as ff
+    return {
+        "flags": ff.get_all_flags(),
+        "presets": list(ff.PRESETS.keys()),
+        "defaults": ff.DEFAULTS,
+    }
+
+
+@app.post("/api/admin/features")
+async def admin_set_features(payload: dict):
+    """Update one or more feature flags. Payload shape:
+
+        {"flags": {"hyperlens_enabled": false, ...}}
+        OR
+        {"preset": "idle" | "normal" | "power"}
+
+    Returns the full flag state after the update.
+    """
+    import feature_flags as ff
+    if not isinstance(payload, dict):
+        return {"error": "expected JSON object", "flags": ff.get_all_flags()}
+
+    preset = payload.get("preset")
+    if preset is not None:
+        try:
+            updated = ff.apply_preset(preset)
+        except ValueError as exc:
+            return {"error": str(exc), "flags": ff.get_all_flags()}
+        return {"flags": updated, "applied_preset": preset}
+
+    updates = payload.get("flags", {})
+    if not isinstance(updates, dict):
+        return {"error": "flags must be an object", "flags": ff.get_all_flags()}
+    updated = ff.update_flags(updates)
+    return {"flags": updated}
 
 
 @app.get("/api/ohlcv-cache/status")
@@ -2247,12 +2286,26 @@ async def _ensure_whale_db():
 
 
 async def _periodic_whale_poll():
-    """Poll on-chain whale data every 2 minutes (separate from main scan)."""
+    """Poll on-chain whale data every 2 minutes (separate from main scan).
+
+    Runtime-toggleable via /api/admin/features. When the flag is off, the
+    loop sleeps and skips work — but the task stays alive so toggling back
+    on takes effect within ~30s.
+    """
+    from feature_flags import get_flag
     await asyncio.sleep(30)  # let main scan start first
-    tracker = _get_whale_tracker()
-    # Initialize snapshot DB on first poll
-    await _ensure_whale_db()
+    tracker = None
+    db_initialized = False
     while True:
+        if not get_flag("whale_tracker"):
+            await asyncio.sleep(30)
+            continue
+        # Lazy init — only when first enabled
+        if tracker is None:
+            tracker = _get_whale_tracker()
+        if not db_initialized:
+            await _ensure_whale_db()
+            db_initialized = True
         try:
             if tracker.store.get_tracked_tokens():
                 await tracker.poll_all()

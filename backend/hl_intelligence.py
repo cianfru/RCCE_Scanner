@@ -2378,12 +2378,19 @@ async def _order_book_loop() -> None:
 
 
 async def run_hyperlens_loop() -> None:
-    """Main background loop: refresh roster daily, poll positions with tiered intervals."""
+    """Main background loop: refresh roster daily, poll positions every 10 min.
+
+    Runtime-toggleable via /api/admin/features (flag: hyperlens_enabled).
+    When disabled, the loop sleeps and skips work; toggling back on takes
+    effect within ~30s without restart. The order book / pressure-map
+    sub-task is gated on a separate flag (hyperlens_pressure_map).
+    """
     global _initialized
+    from feature_flags import get_flag
 
     logger.info("HyperLens: starting background loop...")
 
-    # Restore persisted data from SQLite before anything else
+    # Restore persisted data from SQLite (cheap, runs once)
     try:
         _restore_from_db()
     except Exception as exc:
@@ -2392,32 +2399,44 @@ async def run_hyperlens_loop() -> None:
     # Initial delay — let the main scan warm up first
     await asyncio.sleep(15)
 
-    # Initial roster fetch
-    count = await refresh_leaderboard()
-    if count == 0:
-        logger.warning("HyperLens: empty roster on startup, will retry in 5 min")
-
-    _initialized = True
-    last_roster_refresh = time.time()
+    last_roster_refresh = 0.0
     last_cleanup = time.time()
-
-    # Order book polling drives the pressure-map feature only. Off by
-    # default in Sentiment Mode (~80K outbound calls/day saved). Set
-    # HYPERLENS_PRESSURE_MAP_ENABLED=true to re-enable.
-    if os.environ.get("HYPERLENS_PRESSURE_MAP_ENABLED", "false").lower() == "true":
-        asyncio.create_task(_order_book_loop())
-        logger.info("HyperLens pressure map: ENABLED")
-    else:
-        logger.info("HyperLens pressure map: DISABLED")
+    pressure_task: Optional[asyncio.Task] = None
 
     while True:
         try:
+            if not get_flag("hyperlens_enabled"):
+                await asyncio.sleep(30)
+                continue
+
+            # Initial roster fetch on first run after enable
+            if not _initialized or not _roster:
+                count = await refresh_leaderboard()
+                if count == 0:
+                    logger.warning("HyperLens: empty roster, retrying in 5 min")
+                    _initialized = True  # don't busy-loop
+                    await asyncio.sleep(5 * 60)
+                    continue
+                _initialized = True
+                last_roster_refresh = time.time()
+
+            # Pressure map sub-task — spawn/cancel based on the flag
+            if get_flag("hyperlens_pressure_map"):
+                if pressure_task is None or pressure_task.done():
+                    pressure_task = asyncio.create_task(_order_book_loop())
+                    logger.info("HyperLens pressure map: ENABLED (sub-task spawned)")
+            else:
+                if pressure_task is not None and not pressure_task.done():
+                    pressure_task.cancel()
+                    pressure_task = None
+                    logger.info("HyperLens pressure map: DISABLED (sub-task cancelled)")
+
             # Refresh roster daily
             if time.time() - last_roster_refresh > _ROSTER_REFRESH_INTERVAL:
                 await refresh_leaderboard()
                 last_roster_refresh = time.time()
 
-            # Poll positions (also fetches open orders per wallet)
+            # Poll positions
             if _roster:
                 await poll_positions()
 
