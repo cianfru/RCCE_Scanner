@@ -244,75 +244,68 @@ _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "
 # ---------------------------------------------------------------------------
 
 def _restore_from_db() -> None:
-    """Load persisted snapshots, trade log, and first-seen data from SQLite.
+    """Load persisted snapshots from SQLite on startup.
 
-    Called once on startup before the first poll to restore state across
-    Railway redeploys.
+    "Sentiment Mode" only restores the LATEST snapshot per wallet (not the
+    full 24h history) since consensus only needs the current state. The
+    trade_log and position_first_seen restores are skipped entirely —
+    trade reconstruction is disabled, so loading them was 24 MB of pure
+    dead weight (per /api/admin/memory-snapshot).
+
+    The first poll cycle (~10 min after restart) will refresh whatever
+    wallets are in the new roster; non-roster wallets get pruned by
+    refresh_leaderboard's eviction step.
     """
-    global _snapshots, _trade_log, _position_first_seen, _last_positions
+    global _snapshots, _last_positions
 
-    # 1. Restore snapshots (last 24h into in-memory deque)
-    raw_snaps = _db_load_snapshots(max_age_hours=24)
-    restored_snap_count = 0
+    # Restore snapshots — keep only the latest per wallet (deque maxlen=1
+    # in Sentiment Mode). Cap to 6h to limit how many ghost wallets we
+    # restore for ones that have since dropped out of the roster.
+    raw_snaps = _db_load_snapshots(max_age_hours=6)
+    restored_count = 0
     for address, snap_list in raw_snaps.items():
+        if not snap_list:
+            continue
+        # Only the most recent snapshot is needed (consensus uses snaps[-1])
+        s = snap_list[-1]
+        positions = []
+        for p in s["positions"]:
+            try:
+                positions.append(WalletPosition(
+                    coin=p["coin"],
+                    side=p["side"],
+                    size=p.get("size", 0),
+                    size_usd=p.get("size_usd", 0),
+                    entry_px=p.get("entry_px", 0),
+                    unrealized_pnl=p.get("unrealized_pnl", 0),
+                    leverage=p.get("leverage", 1),
+                    liq_px=p.get("liq_px", 0),
+                    margin_used=p.get("margin_used", 0),
+                    return_on_equity=p.get("return_on_equity", 0),
+                    liq_distance_pct=p.get("liq_distance_pct", 0),
+                    leverage_type=p.get("leverage_type", "cross"),
+                    asset_class=p.get("asset_class", "crypto"),
+                    dex=p.get("dex", ""),
+                ))
+            except Exception:
+                continue
+
         dq = deque(maxlen=_POSITION_HISTORY_LEN)
-        for s in snap_list:
-            positions = []
-            for p in s["positions"]:
-                try:
-                    positions.append(WalletPosition(
-                        coin=p["coin"],
-                        side=p["side"],
-                        size=p.get("size", 0),
-                        size_usd=p.get("size_usd", 0),
-                        entry_px=p.get("entry_px", 0),
-                        unrealized_pnl=p.get("unrealized_pnl", 0),
-                        leverage=p.get("leverage", 1),
-                        liq_px=p.get("liq_px", 0),
-                        margin_used=p.get("margin_used", 0),
-                        return_on_equity=p.get("return_on_equity", 0),
-                        liq_distance_pct=p.get("liq_distance_pct", 0),
-                        leverage_type=p.get("leverage_type", "cross"),
-                        asset_class=p.get("asset_class", "crypto"),
-                        dex=p.get("dex", ""),
-                    ))
-                except Exception:
-                    continue
-
-            dq.append(PositionSnapshot(
-                timestamp=s["timestamp"],
-                positions=positions,
-                account_value=s["account_value"],
-            ))
-            restored_snap_count += 1
+        dq.append(PositionSnapshot(
+            timestamp=s["timestamp"],
+            positions=positions,
+            account_value=s["account_value"],
+        ))
         _snapshots[address] = dq
+        restored_count += 1
 
-        # Rebuild _last_positions from latest snapshot (needed for trade reconstruction diffs)
-        if dq:
-            latest = dq[-1]
-            _last_positions[address] = {
-                pos.coin: {
-                    "side": pos.side,
-                    "size": pos.size,
-                    "size_usd": pos.size_usd,
-                    "entry_px": pos.entry_px,
-                    "unrealized_pnl": pos.unrealized_pnl,
-                    "leverage": pos.leverage,
-                }
-                for pos in latest.positions
-            }
-
-    # 2. Restore trade log
-    _trade_log.update(_db_load_trades())
-
-    # 3. Restore position first-seen
-    _position_first_seen.update(_db_load_first_seen())
+    # _trade_log + _position_first_seen no longer restored (Sentiment Mode
+    # disables trade reconstruction, so those structures stay empty).
+    # _last_positions also unused; stays empty.
 
     logger.info(
-        "HyperLens DB restore: %d snapshots for %d wallets, %d trades, %d first-seen entries",
-        restored_snap_count, len(raw_snaps),
-        sum(len(v) for v in _trade_log.values()),
-        sum(len(v) for v in _position_first_seen.values()),
+        "HyperLens DB restore: %d wallets (latest snapshot only, 6h window)",
+        restored_count,
     )
 
 
