@@ -363,3 +363,112 @@ def full_report() -> Dict[str, Any]:
         "other": _safe_inventory("other", inventory_other),
         "top_types": _safe_inventory("top_types", lambda: top_objects_by_type(15)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Active cleanup
+# ---------------------------------------------------------------------------
+
+def _malloc_trim() -> bool:
+    """Ask glibc to release unused malloc arenas back to the OS.
+
+    Only effective on Linux glibc (Railway containers use Debian which has
+    glibc). Returns True if the call succeeded.
+    """
+    try:
+        import ctypes
+        # libc.so.6 is the glibc shared library; malloc_trim(0) returns all
+        # unused memory at the top of any arena to the OS.
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+        return True
+    except Exception as exc:
+        logger.debug("malloc_trim unavailable: %s", exc)
+        return False
+
+
+def cleanup() -> Dict[str, Any]:
+    """Active memory cleanup. Returns before/after RSS.
+
+    Steps:
+      1. Snapshot current RSS
+      2. Clear regenerable caches (engine cache, ttl cache, etc.)
+      3. Run gc.collect() three times (helps with cycles)
+      4. Ask glibc to release unused arenas back to the OS
+
+    Safe to call repeatedly. None of the cleared caches affect signal
+    correctness — they're all rebuilt on next access.
+    """
+    before = process_info()
+    cleared: Dict[str, int] = {}
+
+    # 1. Scanner engine cache — regenerated on every scan
+    try:
+        from main import cache as scan_cache
+        ec = getattr(scan_cache, "_engine_cache", None)
+        if ec is not None:
+            cleared["scanner._engine_cache"] = len(ec)
+            ec.clear()
+    except Exception as exc:
+        logger.warning("cleanup: scanner cache clear failed: %s", exc)
+
+    # 2. OHLCV TTL cache — short-lived, safe to drop
+    try:
+        from data_fetcher import _cache as ttl
+        if hasattr(ttl, "_cache"):
+            cleared["ohlcv.ttl_cache"] = len(ttl._cache)
+            ttl._cache.clear()
+    except Exception as exc:
+        logger.warning("cleanup: ttl cache clear failed: %s", exc)
+
+    # 3. CCXT pool — exchange instances accumulate market data caches
+    try:
+        from data_fetcher import _ccxt_pool
+        if isinstance(_ccxt_pool, dict):
+            cleared["ccxt_pool"] = len(_ccxt_pool)
+            # Don't actually delete instances (they hold async sessions);
+            # just clear their loaded market caches.
+            for ex in _ccxt_pool.values():
+                if hasattr(ex, "markets"):
+                    ex.markets = {}
+                if hasattr(ex, "markets_by_id"):
+                    ex.markets_by_id = {}
+    except Exception as exc:
+        logger.debug("cleanup: ccxt pool not present: %s", exc)
+
+    # 4. HyperLens last-poll metrics caches (not the live state)
+    try:
+        from main import cache as scan_cache
+        for attr in ("_last_hl_metrics", "_last_binance_metrics", "_last_bybit_metrics"):
+            d = getattr(scan_cache, attr, None)
+            if d is not None and len(d) > 0:
+                cleared[f"scanner.{attr}"] = len(d)
+                # Keep latest values but drop stale entries (best-effort)
+                # Actually, these get refreshed on next scan, so safe to clear.
+                d.clear()
+    except Exception as exc:
+        logger.warning("cleanup: metric cache clear failed: %s", exc)
+
+    # 5. Run garbage collector multiple times (helps with cyclic refs)
+    gc_runs = []
+    for _ in range(3):
+        gc_runs.append(gc.collect())
+
+    # 6. Ask glibc to return unused arena memory to OS
+    trimmed = _malloc_trim()
+
+    after = process_info()
+
+    rss_before = before.get("rss_bytes", 0) or 0
+    rss_after = after.get("rss_bytes", 0) or 0
+    delta = rss_before - rss_after
+
+    return {
+        "before": before,
+        "after": after,
+        "freed_bytes": delta,
+        "freed": _fmt_bytes(delta) if delta > 0 else "(no reduction)",
+        "cleared_caches": cleared,
+        "gc_collected_objects": gc_runs,
+        "malloc_trimmed": trimmed,
+    }

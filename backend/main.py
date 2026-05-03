@@ -581,6 +581,30 @@ async def admin_memory_snapshot():
     return await asyncio.to_thread(memory_diag.full_report)
 
 
+@app.post("/api/admin/memory-cleanup")
+async def admin_memory_cleanup():
+    """Active memory cleanup. Returns before/after RSS + what was cleared.
+
+    Steps:
+      1. Clear regenerable caches (engine cache, OHLCV TTL, CCXT markets,
+         per-exchange metric snapshots — all rebuilt on next scan)
+      2. Run gc.collect() x3 (frees Python objects with cyclic refs)
+      3. Call glibc malloc_trim(0) to release unused arena memory back to OS
+
+    Doesn't touch:
+      - OHLCV pickle store (the actual scan history)
+      - HyperLens snapshots/consensus (the actual sentiment data)
+      - Signal log SQLite handle
+      - WebSocket connections
+
+    Note: This frees process RSS, but Railway's CYCLE-AVERAGED billing for
+    GB-minutes already accumulated is permanent. The cleanup helps the
+    AVERAGE going forward (and shrinks the chart you see), not retroactively.
+    """
+    import memory_diag
+    return await asyncio.to_thread(memory_diag.cleanup)
+
+
 @app.get("/api/admin/features")
 async def admin_get_features():
     """Return current feature flag state + available presets."""
