@@ -222,6 +222,12 @@ _initialized = False
 _last_poll_at: float = 0.0
 _poll_count: int = 0
 
+# Throttle SQLite snapshot writes — once per hour is enough for the
+# wallet-detail page to stay reasonably fresh, and frequent writes
+# inflate the kernel page cache (Railway bills cgroup memory).
+_DB_SAVE_INTERVAL_S: float = 3600.0
+_last_db_save_at: float = 0.0
+
 # Asset index map: @index → name (e.g. @142 → "PENGU")
 _asset_index_map: Dict[str, str] = {}
 
@@ -782,11 +788,17 @@ async def poll_positions() -> int:
     _consensus_updated_at = time.time()
 
     # Persist snapshots only — trade log + first-seen no longer populated.
-    # Snapshot persistence stays for the on-demand wallet-detail page.
-    try:
-        _db_save_snapshots(_snapshots)
-    except Exception as exc:
-        logger.warning("HyperLens DB: save error: %s", exc)
+    # Throttle DB writes to ≤1/hour: SQLite writes inflate the kernel page
+    # cache (which Railway bills as memory). Wallet-detail page stays
+    # accurate within the hour from in-memory state; on-disk persistence
+    # is for surviving Railway redeploys.
+    global _last_db_save_at
+    if (time.time() - _last_db_save_at) >= _DB_SAVE_INTERVAL_S:
+        try:
+            _db_save_snapshots(_snapshots)
+            _last_db_save_at = time.time()
+        except Exception as exc:
+            logger.warning("HyperLens DB: save error: %s", exc)
 
     # Logging
     tier_info = f"watchlist={len(watchlist_wallets)}"

@@ -698,11 +698,12 @@ async def run_coinglass_drip() -> None:
                         coin = _scanner_to_coin(sym_out)
                         oi_usd, oi_4h, oi_24h, cvd, spot, lsr, top_lsr = _parse_detail(coin, detail)
 
-                        # Debug: trace LSR for BTC
+                        # Debug: trace LSR for BTC (downgraded — fires once
+                        # per drip rotation per BTC, ~every 4 min)
                         if coin == "BTC":
                             raw_g = detail.get("lsr_global") or []
                             raw_t = detail.get("lsr_top") or []
-                            logger.info(
+                            logger.debug(
                                 "DRIP LSR BTC: raw_global=%s raw_top=%s lsr=%.4f top=%.4f",
                                 raw_g[:1] if raw_g else "EMPTY",
                                 raw_t[:1] if raw_t else "EMPTY",

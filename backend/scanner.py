@@ -1556,7 +1556,9 @@ async def run_drip_scan(
 
         cold_status = f"{cold_this_rotation} cold" if include_cold else "cold [skip]"
         deep_status = f"{deep_cold_this_rotation} deep" if include_deep_cold else "deep [skip]"
-        logger.info(
+        # Per-rotation log demoted to DEBUG (fires every ~4 min, fills the
+        # log buffer / kernel page cache). Status visible via /api/status.
+        logger.debug(
             "=== Drip rotation #%d: %d symbols (%d hot, %d active, %s, %s), "
             "%d TF results in %.1fs ===",
             _drip_rotation_count,

@@ -250,8 +250,11 @@ _OHLCV_CACHE_PATH = Path(os.environ.get(
     str(_DATA_DIR / "ohlcv_cache.pkl"),
 ))
 
-# Minimum interval between disk saves (seconds) — debounce rapid cycles
-_SAVE_DEBOUNCE_SECS = 120
+# Minimum interval between disk saves (seconds) — debounce rapid cycles.
+# Bumped from 120s → 600s to reduce kernel page-cache pressure on Railway.
+# Pickle is also force-saved on shutdown via lifespan hook, so worst-case
+# restart loses 10 min of cached bars (which scanner refetches anyway).
+_SAVE_DEBOUNCE_SECS = 600
 
 
 class OHLCVStore:
