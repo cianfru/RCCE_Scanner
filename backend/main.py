@@ -615,7 +615,7 @@ async def admin_memory_snapshot():
     return await asyncio.to_thread(memory_diag.full_report)
 
 
-@app.post("/api/admin/memory-cleanup")
+@app.api_route("/api/admin/memory-cleanup", methods=["GET", "POST"])
 async def admin_memory_cleanup():
     """Active memory cleanup. Returns before/after RSS + what was cleared.
 
