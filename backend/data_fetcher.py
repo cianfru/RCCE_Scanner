@@ -734,33 +734,89 @@ async def _fetch_ohlcv_hyperliquid(
 
 
 # ---------------------------------------------------------------------------
-# CCXT exchange pool — reuse instances instead of creating per call
+# Lightweight CEX OHLCV fallback — direct REST, no ccxt, no load_markets()
 # ---------------------------------------------------------------------------
-_exchange_pool: Dict[str, "object"] = {}  # ccxt.Exchange instances (lazy-loaded)
-_exchange_pool_lock = asyncio.Lock()
 
-# Symbols already deepened via CCXT — skip on subsequent scan cycles
+# Symbols already deepened via CEX fallback — skip on subsequent scan cycles
 _ccxt_deepened: Dict[str, set] = {}  # timeframe → set of symbols
 
+# Kept for memory_diag cleanup compat (now always empty)
+_exchange_pool: Dict[str, "object"] = {}
 
-async def _get_exchange(exchange_id: str):
-    """Get or create a cached CCXT exchange with markets pre-loaded."""
-    if exchange_id in _exchange_pool:
-        return _exchange_pool[exchange_id]
+_BINANCE_TF_MAP = {"4h": "4h", "1d": "1d", "1w": "1w"}
+_BYBIT_TF_MAP = {"4h": "240", "1d": "D", "1w": "W"}
 
-    async with _exchange_pool_lock:
-        if exchange_id in _exchange_pool:
-            return _exchange_pool[exchange_id]
 
-        ccxt = _get_ccxt()
-        exchange_class = getattr(ccxt, exchange_id, None)
-        if exchange_class is None:
-            raise ValueError(f"Unknown exchange: {exchange_id}")
-        exchange = exchange_class({"enableRateLimit": True})
-        await exchange.load_markets()
-        _exchange_pool[exchange_id] = exchange
-        logger.info("CCXT pool: loaded %s (%d markets)", exchange_id, len(exchange.markets))
-        return exchange
+async def _fetch_ohlcv_binance(
+    session: aiohttp.ClientSession, symbol: str, timeframe: str, limit: int,
+) -> Optional[dict]:
+    """Fetch OHLCV from Binance public API (no auth, no ccxt)."""
+    pair = symbol.replace("/", "")  # BTC/USDT → BTCUSDT
+    interval = _BINANCE_TF_MAP.get(timeframe)
+    if not interval:
+        return None
+    url = f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={interval}&limit={limit}"
+    try:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return None
+            raw = await resp.json()
+        if not raw:
+            return None
+        timestamps = [float(r[0]) for r in raw]
+        opens = [float(r[1]) for r in raw]
+        highs = [float(r[2]) for r in raw]
+        lows = [float(r[3]) for r in raw]
+        closes = [float(r[4]) for r in raw]
+        volumes = [float(r[5]) for r in raw]
+        return {
+            "timestamp": np.array(timestamps, dtype=np.float64),
+            "open": np.array(opens, dtype=np.float64),
+            "high": np.array(highs, dtype=np.float64),
+            "low": np.array(lows, dtype=np.float64),
+            "close": np.array(closes, dtype=np.float64),
+            "volume": np.array(volumes, dtype=np.float64),
+        }
+    except Exception as exc:
+        logger.debug("Binance OHLCV failed for %s: %s", symbol, exc)
+        return None
+
+
+async def _fetch_ohlcv_bybit(
+    session: aiohttp.ClientSession, symbol: str, timeframe: str, limit: int,
+) -> Optional[dict]:
+    """Fetch OHLCV from Bybit public API (no auth, no ccxt)."""
+    pair = symbol.replace("/", "")
+    interval = _BYBIT_TF_MAP.get(timeframe)
+    if not interval:
+        return None
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={pair}&interval={interval}&limit={limit}"
+    try:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return None
+            body = await resp.json()
+        rows = body.get("result", {}).get("list", [])
+        if not rows:
+            return None
+        rows.reverse()  # Bybit returns newest-first
+        timestamps = [float(r[0]) for r in rows]
+        opens = [float(r[1]) for r in rows]
+        highs = [float(r[2]) for r in rows]
+        lows = [float(r[3]) for r in rows]
+        closes = [float(r[4]) for r in rows]
+        volumes = [float(r[5]) for r in rows]
+        return {
+            "timestamp": np.array(timestamps, dtype=np.float64),
+            "open": np.array(opens, dtype=np.float64),
+            "high": np.array(highs, dtype=np.float64),
+            "low": np.array(lows, dtype=np.float64),
+            "close": np.array(closes, dtype=np.float64),
+            "volume": np.array(volumes, dtype=np.float64),
+        }
+    except Exception as exc:
+        logger.debug("Bybit OHLCV failed for %s: %s", symbol, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -825,40 +881,30 @@ async def _fetch_ohlcv_ccxt(
     exchange_id: str = "kraken",
     limit: Optional[int] = None,
 ) -> Optional[dict]:
-    """Fetch OHLCV via CCXT exchange fallback chain."""
+    """Fetch OHLCV via lightweight direct REST calls (Binance → Bybit).
+
+    No ccxt import, no load_markets() — saves ~50-80MB of RAM.
+    """
     if limit is None:
         limit = _DEFAULT_LIMIT.get(timeframe, 500)
 
-    exchanges_to_try = [exchange_id]
-    # Fallback chain: Bybit/OKX/KuCoin/Gate have broad coverage and no geo-blocking
-    _FALLBACK_CHAIN = ["bybit", "okx", "kucoin", "gate", "kraken"]
-    for exch in _FALLBACK_CHAIN:
-        if exch != exchange_id:
-            exchanges_to_try.append(exch)
-
-    last_error: Optional[Exception] = None
-
-    for exch_id in exchanges_to_try:
-        try:
-            exchange = await _get_exchange(exch_id)
-            if symbol not in exchange.markets:
-                continue
-            raw = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            if not raw:
-                continue
-            data = _parse_ohlcv(raw)
-            _cache.put(symbol, timeframe, data)
-            logger.debug("Fetched %d bars for %s (%s) from %s", len(raw), symbol, timeframe, exch_id)
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        # Try Binance first (broadest coverage)
+        data = await _fetch_ohlcv_binance(session, symbol, timeframe, limit)
+        if data is not None:
+            logger.debug("Fetched %d bars for %s (%s) from binance-rest",
+                         len(data["close"]), symbol, timeframe)
             return data
-        except Exception as exc:
-            last_error = exc
-            _ccxt = _get_ccxt()
-            if not isinstance(exc, (_ccxt.BadSymbol, _ccxt.NetworkError, _ccxt.ExchangeError)):
-                logger.error("Unexpected error fetching %s from %s: %s", symbol, exch_id, exc)
-            continue
 
-    if last_error:
-        logger.warning("All CCXT exchanges failed for %s: %s", symbol, last_error)
+        # Bybit fallback
+        data = await _fetch_ohlcv_bybit(session, symbol, timeframe, limit)
+        if data is not None:
+            logger.debug("Fetched %d bars for %s (%s) from bybit-rest",
+                         len(data["close"]), symbol, timeframe)
+            return data
+
+    logger.warning("CEX REST fallback failed for %s (%s)", symbol, timeframe)
     return None
 
 

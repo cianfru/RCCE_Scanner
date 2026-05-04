@@ -221,35 +221,27 @@ async def _fetch_btc_closes(hours: int = 168) -> List[tuple]:
     ):
         return _btc_closes_cache
 
-    try:
-        from data_fetcher import _get_exchange  # late import; avoids cycle
-    except Exception as exc:
-        logger.debug("hl_bridge: data_fetcher import failed: %s", exc)
-        return _btc_closes_cache or []
+    import aiohttp
 
-    # 15m candles → 4/hour → hours*4 candles. Cap at 1000 (most exchanges' limit).
+    # 15m candles → 4/hour → hours*4 candles. Cap at 1000 (Binance max).
     limit = min(1000, int(hours * 4) + 4)
 
-    # Try Kraken first (matches scanner default), then the usual fallback chain.
-    for exch_id in ("kraken", "bybit", "okx", "kucoin"):
-        try:
-            ex = await _get_exchange(exch_id)
-            sym = "BTC/USDT" if "BTC/USDT" in ex.markets else "BTC/USD"
-            if sym not in ex.markets:
-                continue
-            raw = await ex.fetch_ohlcv(sym, "15m", limit=limit)
-            if not raw:
-                continue
-            # CCXT returns [[ts_ms, o, h, l, c, v], …] sorted oldest→newest
-            closes = [(int(r[0]) / 1000.0, float(r[4])) for r in raw if r and r[4]]
-            if closes:
-                _btc_closes_cache = closes
-                _btc_closes_cached_hours = hours
-                _btc_closes_expires_at = now + _BTC_CLOSES_TTL_S
-                return closes
-        except Exception as exc:
-            logger.debug("hl_bridge: BTC fetch via %s failed: %s", exch_id, exc)
-            continue
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit={limit}"
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    raw = await resp.json()
+                    if raw:
+                        closes = [(float(r[0]) / 1000.0, float(r[4])) for r in raw if r and r[4]]
+                        if closes:
+                            _btc_closes_cache = closes
+                            _btc_closes_cached_hours = hours
+                            _btc_closes_expires_at = now + _BTC_CLOSES_TTL_S
+                            return closes
+    except Exception as exc:
+        logger.debug("hl_bridge: BTC 15m fetch failed: %s", exc)
 
     return _btc_closes_cache or []
 
