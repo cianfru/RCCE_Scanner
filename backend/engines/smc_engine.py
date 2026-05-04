@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 _HAS_SMC = False
 
 try:
-    import pandas as pd
     from smartmoneyconcepts.smc import smc as _smc_lib
+    import pandas as pd
     _HAS_SMC = True
 except ImportError:
     logger.info("smartmoneyconcepts not installed — SMC engine disabled")

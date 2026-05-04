@@ -24,7 +24,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import aiohttp
-import ccxt.async_support as ccxt
+_ccxt_mod = None
+
+def _get_ccxt():
+    global _ccxt_mod
+    if _ccxt_mod is None:
+        import ccxt.async_support as _ccxt
+        _ccxt_mod = _ccxt
+    return _ccxt_mod
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -182,50 +189,47 @@ _HL_COIN_MAP: Dict[str, str] = {
 # DataCache -- simple in-memory TTL cache
 # ---------------------------------------------------------------------------
 
-@dataclass
-class _CacheEntry:
-    data: dict
-    expires_at: float
-
-
 class DataCache:
-    """Thread-unsafe, in-memory TTL cache keyed by (symbol, timeframe)."""
+    """Lightweight fetch-throttle: tracks when each symbol+TF was last fetched.
+
+    Stores only timestamps (not data) — reads go through OHLCVStore.
+    Saves ~20-40MB vs the old design which duplicated all OHLCV arrays.
+    """
 
     def __init__(self) -> None:
-        self._store: Dict[str, _CacheEntry] = {}
+        self._fetched_at: Dict[str, float] = {}
 
     @staticmethod
     def _key(symbol: str, timeframe: str) -> str:
         return f"{symbol}|{timeframe}"
 
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
-        """Return cached OHLCV dict or *None* if missing / expired."""
+        """Return OHLCVStore data if recently fetched, else None."""
         key = self._key(symbol, timeframe)
-        entry = self._store.get(key)
-        if entry is None:
+        fetched = self._fetched_at.get(key)
+        if fetched is None:
             return None
-        if time.monotonic() > entry.expires_at:
-            del self._store[key]
+        ttl = _CACHE_TTL.get(timeframe, 300)
+        if time.monotonic() - fetched > ttl:
+            del self._fetched_at[key]
             return None
-        return entry.data
+        return _ohlcv_store.get(symbol, timeframe)
 
     def put(self, symbol: str, timeframe: str, data: dict, ttl: Optional[int] = None) -> None:
-        """Store *data* with a TTL derived from the timeframe (or explicit)."""
-        if ttl is None:
-            ttl = _CACHE_TTL.get(timeframe, 300)
+        """Record that this symbol+TF was just fetched (data is in OHLCVStore)."""
         key = self._key(symbol, timeframe)
-        self._store[key] = _CacheEntry(data=data, expires_at=time.monotonic() + ttl)
+        self._fetched_at[key] = time.monotonic()
 
     def invalidate(self, symbol: str, timeframe: str) -> None:
         """Remove a single entry."""
-        self._store.pop(self._key(symbol, timeframe), None)
+        self._fetched_at.pop(self._key(symbol, timeframe), None)
 
     def clear(self) -> None:
         """Drop every cached entry."""
-        self._store.clear()
+        self._fetched_at.clear()
 
     def __len__(self) -> int:
-        return len(self._store)
+        return len(self._fetched_at)
 
 
 # Module-level cache instance shared across calls
@@ -410,21 +414,14 @@ class OHLCVStore:
             return False
 
         try:
-            # Convert numpy arrays to lists for safe pickling across numpy versions
-            serializable = {}
-            for key, ohlcv in self._store.items():
-                serializable[key] = {
-                    field: arr.tolist() if hasattr(arr, "tolist") else arr
-                    for field, arr in ohlcv.items()
-                }
-
-            # Atomic write: write to temp file then rename
+            # Atomic write: write to temp file then rename.
+            # Version 2: pickle numpy arrays directly (no .tolist() copy).
             tmp_path = path.with_suffix(".pkl.tmp")
             with open(tmp_path, "wb") as f:
                 pickle.dump({
-                    "version": 1,
-                    "store": serializable,
-                    "saved_at": time.time(),  # wall clock for staleness checks
+                    "version": 2,
+                    "store": self._store,
+                    "saved_at": time.time(),
                 }, f, protocol=pickle.HIGHEST_PROTOCOL)
             tmp_path.rename(path)
 
@@ -479,11 +476,17 @@ class OHLCVStore:
                     skipped += 1
                     continue
 
-                # Convert lists back to numpy arrays
-                ohlcv = {
-                    field: np.array(values, dtype=np.float64)
-                    for field, values in ohlcv_lists.items()
-                }
+                # v1 stored lists, v2 stores numpy arrays directly
+                if version <= 1:
+                    ohlcv = {
+                        field: np.array(values, dtype=np.float64)
+                        for field, values in ohlcv_lists.items()
+                    }
+                else:
+                    ohlcv = {
+                        field: np.asarray(values, dtype=np.float64)
+                        for field, values in ohlcv_lists.items()
+                    }
 
                 # Validate minimum bar count
                 bar_count = len(ohlcv.get("close", []))
@@ -733,14 +736,14 @@ async def _fetch_ohlcv_hyperliquid(
 # ---------------------------------------------------------------------------
 # CCXT exchange pool — reuse instances instead of creating per call
 # ---------------------------------------------------------------------------
-_exchange_pool: Dict[str, ccxt.Exchange] = {}
+_exchange_pool: Dict[str, "object"] = {}  # ccxt.Exchange instances (lazy-loaded)
 _exchange_pool_lock = asyncio.Lock()
 
 # Symbols already deepened via CCXT — skip on subsequent scan cycles
 _ccxt_deepened: Dict[str, set] = {}  # timeframe → set of symbols
 
 
-async def _get_exchange(exchange_id: str) -> ccxt.Exchange:
+async def _get_exchange(exchange_id: str):
     """Get or create a cached CCXT exchange with markets pre-loaded."""
     if exchange_id in _exchange_pool:
         return _exchange_pool[exchange_id]
@@ -749,6 +752,7 @@ async def _get_exchange(exchange_id: str) -> ccxt.Exchange:
         if exchange_id in _exchange_pool:
             return _exchange_pool[exchange_id]
 
+        ccxt = _get_ccxt()
         exchange_class = getattr(ccxt, exchange_id, None)
         if exchange_class is None:
             raise ValueError(f"Unknown exchange: {exchange_id}")
@@ -846,12 +850,11 @@ async def _fetch_ohlcv_ccxt(
             _cache.put(symbol, timeframe, data)
             logger.debug("Fetched %d bars for %s (%s) from %s", len(raw), symbol, timeframe, exch_id)
             return data
-        except (ccxt.BadSymbol, ccxt.NetworkError, ccxt.ExchangeError) as exc:
-            last_error = exc
-            continue
         except Exception as exc:
             last_error = exc
-            logger.error("Unexpected error fetching %s from %s: %s", symbol, exch_id, exc)
+            _ccxt = _get_ccxt()
+            if not isinstance(exc, (_ccxt.BadSymbol, _ccxt.NetworkError, _ccxt.ExchangeError)):
+                logger.error("Unexpected error fetching %s from %s: %s", symbol, exch_id, exc)
             continue
 
     if last_error:

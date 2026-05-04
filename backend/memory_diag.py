@@ -250,8 +250,8 @@ def inventory_ohlcv() -> Dict[str, Any]:
         "by_timeframe": by_tf,
     }
     out["ttl_cache"] = {
-        "entries": len(getattr(_ttl_cache, "_cache", {})),
-        "size": _fmt_bytes(_deep_size(getattr(_ttl_cache, "_cache", {}))),
+        "entries": len(getattr(_ttl_cache, "_fetched_at", {})),
+        "size": _fmt_bytes(_deep_size(getattr(_ttl_cache, "_fetched_at", {}))),
     }
     out["_total"] = {"bytes": total_bytes, "size": _fmt_bytes(total_bytes)}
     return out
@@ -412,23 +412,20 @@ def cleanup() -> Dict[str, Any]:
     except Exception as exc:
         logger.warning("cleanup: scanner cache clear failed: %s", exc)
 
-    # 2. OHLCV TTL cache — short-lived, safe to drop
+    # 2. OHLCV TTL cache — lightweight timestamp tracker, safe to drop
     try:
         from data_fetcher import _cache as ttl
-        if hasattr(ttl, "_cache"):
-            cleared["ohlcv.ttl_cache"] = len(ttl._cache)
-            ttl._cache.clear()
+        cleared["ohlcv.ttl_cache"] = len(ttl)
+        ttl.clear()
     except Exception as exc:
         logger.warning("cleanup: ttl cache clear failed: %s", exc)
 
     # 3. CCXT pool — exchange instances accumulate market data caches
     try:
-        from data_fetcher import _ccxt_pool
-        if isinstance(_ccxt_pool, dict):
-            cleared["ccxt_pool"] = len(_ccxt_pool)
-            # Don't actually delete instances (they hold async sessions);
-            # just clear their loaded market caches.
-            for ex in _ccxt_pool.values():
+        from data_fetcher import _exchange_pool
+        if isinstance(_exchange_pool, dict):
+            cleared["ccxt_pool"] = len(_exchange_pool)
+            for ex in _exchange_pool.values():
                 if hasattr(ex, "markets"):
                     ex.markets = {}
                 if hasattr(ex, "markets_by_id"):

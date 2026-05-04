@@ -3,13 +3,13 @@ FROM python:3.11-slim
 # Ensure Python output is unbuffered for real-time logging
 ENV PYTHONUNBUFFERED=1
 
-# --- Memory tuning (glibc malloc) -------------------------------------------
-# Python on Linux uses glibc malloc which by default creates up to
-# 8 × CPU memory arenas. Each arena holds free chunks that aren't returned
-# to the OS — this manifests as Railway showing 2GB+ RAM even when actual
-# Python live objects are <500MB. Capping arenas to 2 typically saves
-# 200-500MB on long-running async services. Safe default.
-ENV MALLOC_ARENA_MAX=2
+# --- Memory tuning: jemalloc -------------------------------------------------
+# glibc malloc holds freed memory in arenas, inflating RSS by 100-200MB+
+# on long-running async Python services. jemalloc actively returns unused
+# pages to the OS and handles fragmentation far better.
+RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/*
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 WORKDIR /app
 

@@ -75,69 +75,103 @@ logger = logging.getLogger(__name__)
 
 _exchange_symbols: Optional[List[dict]] = None
 _exchange_symbols_lock = asyncio.Lock()
+_EXCHANGE_SYMBOLS_JSON = Path(os.environ.get(
+    "EXCHANGE_SYMBOLS_PATH",
+    str(Path("/data" if Path("/data").is_dir() else ".") / "exchange_symbols.json"),
+))
+_EXCHANGE_SYMBOLS_MAX_AGE = 24 * 3600  # refresh daily
 
 
 async def _load_exchange_symbols() -> List[dict]:
-    """Load available trading pairs from CEXes + Hyperliquid, tracking which exchanges list each."""
+    """Load available trading pairs. Reads from disk cache first; fetches from
+    exchanges only if stale or missing (avoids loading ccxt into RAM on every boot)."""
     global _exchange_symbols
     if _exchange_symbols is not None:
         return _exchange_symbols
 
     async with _exchange_symbols_lock:
-        # Double-check after acquiring lock
         if _exchange_symbols is not None:
             return _exchange_symbols
 
-        import ccxt.async_support as ccxt
-
-        # {symbol: {symbol, base, quote, exchanges: [...]}}
-        sym_map: dict = {}
-
-        # CEX exchanges via CCXT
-        for exch_id in ("kraken", "kucoin", "binance", "bybit"):
+        # Try disk cache first
+        if _EXCHANGE_SYMBOLS_JSON.exists():
             try:
-                exchange = getattr(ccxt, exch_id)({"enableRateLimit": True})
-                await exchange.load_markets()
-                for sym, market in exchange.markets.items():
-                    quote = market.get("quote", "")
-                    if quote in ("USDT", "BTC") and market.get("active", True):
-                        if sym in sym_map:
-                            sym_map[sym]["exchanges"].append(exch_id)
-                        else:
-                            sym_map[sym] = {
-                                "symbol": sym,
-                                "base": market.get("base", ""),
-                                "quote": quote,
-                                "exchanges": [exch_id],
-                            }
-                await exchange.close()
-                logger.info("Loaded exchange symbols from %s (%d total so far)", exch_id, len(sym_map))
+                import json as _json
+                data = _json.loads(_EXCHANGE_SYMBOLS_JSON.read_text())
+                age = time.time() - data.get("saved_at", 0)
+                if age < _EXCHANGE_SYMBOLS_MAX_AGE and data.get("symbols"):
+                    _exchange_symbols = data["symbols"]
+                    logger.info("Loaded %d exchange symbols from disk cache (%.0fh old)",
+                                len(_exchange_symbols), age / 3600)
+                    return _exchange_symbols
             except Exception as exc:
-                logger.warning("Failed to load markets from %s: %s", exch_id, exc)
+                logger.warning("Failed to read exchange symbols cache: %s", exc)
 
-        # Hyperliquid perps (direct API, no CCXT)
-        try:
-            from hyperliquid_data import fetch_hyperliquid_metrics
-            metrics = await fetch_hyperliquid_metrics()
-            hl_added = 0
-            for m in metrics.values():
-                sym = f"{m.coin}/USDT"
-                if sym in sym_map:
-                    sym_map[sym]["exchanges"].append("hyperliquid")
-                else:
-                    sym_map[sym] = {
-                        "symbol": sym,
-                        "base": m.coin,
-                        "quote": "USDT",
-                        "exchanges": ["hyperliquid"],
-                    }
-                    hl_added += 1
-            logger.info("Added %d Hyperliquid-only symbols (%d total)", hl_added, len(sym_map))
-        except Exception as exc:
-            logger.warning("Failed to load Hyperliquid symbols: %s", exc)
-
-        _exchange_symbols = sorted(sym_map.values(), key=lambda x: x["symbol"])
+        # Cache miss — fetch from exchanges (loads ccxt on demand)
+        _exchange_symbols = await _fetch_exchange_symbols_live()
         return _exchange_symbols
+
+
+async def _fetch_exchange_symbols_live() -> List[dict]:
+    """Fetch symbol lists from 4 CEXes + Hyperliquid, save to disk, return result."""
+    import ccxt.async_support as ccxt
+
+    sym_map: dict = {}
+
+    for exch_id in ("kraken", "kucoin", "binance", "bybit"):
+        try:
+            exchange = getattr(ccxt, exch_id)({"enableRateLimit": True})
+            await exchange.load_markets()
+            for sym, market in exchange.markets.items():
+                quote = market.get("quote", "")
+                if quote in ("USDT", "BTC") and market.get("active", True):
+                    if sym in sym_map:
+                        sym_map[sym]["exchanges"].append(exch_id)
+                    else:
+                        sym_map[sym] = {
+                            "symbol": sym,
+                            "base": market.get("base", ""),
+                            "quote": quote,
+                            "exchanges": [exch_id],
+                        }
+            await exchange.close()
+            logger.info("Loaded exchange symbols from %s (%d total so far)", exch_id, len(sym_map))
+        except Exception as exc:
+            logger.warning("Failed to load markets from %s: %s", exch_id, exc)
+
+    try:
+        from hyperliquid_data import fetch_hyperliquid_metrics
+        metrics = await fetch_hyperliquid_metrics()
+        hl_added = 0
+        for m in metrics.values():
+            sym = f"{m.coin}/USDT"
+            if sym in sym_map:
+                sym_map[sym]["exchanges"].append("hyperliquid")
+            else:
+                sym_map[sym] = {
+                    "symbol": sym,
+                    "base": m.coin,
+                    "quote": "USDT",
+                    "exchanges": ["hyperliquid"],
+                }
+                hl_added += 1
+        logger.info("Added %d Hyperliquid-only symbols (%d total)", hl_added, len(sym_map))
+    except Exception as exc:
+        logger.warning("Failed to load Hyperliquid symbols: %s", exc)
+
+    result = sorted(sym_map.values(), key=lambda x: x["symbol"])
+
+    # Persist to disk so next boot skips the ccxt import
+    try:
+        import json as _json
+        tmp = _EXCHANGE_SYMBOLS_JSON.with_suffix(".tmp")
+        tmp.write_text(_json.dumps({"saved_at": time.time(), "symbols": result}))
+        tmp.rename(_EXCHANGE_SYMBOLS_JSON)
+        logger.info("Saved %d exchange symbols to disk cache", len(result))
+    except Exception as exc:
+        logger.warning("Failed to save exchange symbols cache: %s", exc)
+
+    return result
 
 
 def _sync_cache_symbols() -> None:

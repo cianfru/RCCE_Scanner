@@ -33,14 +33,24 @@ import time
 from functools import partial
 from typing import Dict, List, Optional
 
+
+def _malloc_trim():
+    """Ask glibc/jemalloc to release unused memory back to the OS."""
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
 # Thread pool for CPU-bound engine work (symbol processing + signal synthesis)
-_CPU_WORKERS = min(8, (os.cpu_count() or 4))
+_CPU_WORKERS = int(os.environ.get("ENGINE_WORKERS", min(2, os.cpu_count() or 2)))
 _engine_pool = concurrent.futures.ThreadPoolExecutor(
     max_workers=_CPU_WORKERS,
     thread_name_prefix="rcce-engine",
 )
 
-from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, DataCache, \
+from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, \
     fetch_batch_hip3, fetch_batch_yfinance, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP, \
     _ohlcv_store
 from engines.rcce_engine import compute_rcce
@@ -330,9 +340,9 @@ class ScanCache:
         # Rolling scan state
         self._rotation_offset: int = 0
         self._results_by_sym: Dict[str, Dict[str, dict]] = {}  # symbol -> {tf -> result}
-        # Engine result cache: skip recomputation when candle data hasn't changed
-        # Key: (symbol, timeframe) → {"last_candle_ts": int, "result": dict}
-        self._engine_cache: Dict[tuple, dict] = {}
+        # Engine cache: stores only the last-closed-candle timestamp per (symbol, tf).
+        # On hit, reuses result from _results_by_sym instead of storing a full copy.
+        self._engine_cache: Dict[tuple, int] = {}
         # Anomaly detection results (served by /api/notifications/anomalies)
         self.anomalies: List[dict] = []
         # Symbols with active anomalies — promoted to "hot" tier in drip scan
@@ -1044,15 +1054,16 @@ async def _scan_timeframe(
         last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
 
         cache_key = (symbol, tf)
-        cached_entry = scan_cache._engine_cache.get(cache_key) if scan_cache else None
+        cached_ts = scan_cache._engine_cache.get(cache_key) if scan_cache else None
 
-        if cached_entry and cached_entry["last_candle_ts"] == last_closed_ts:
-            # No new candle — reuse cached engine result, just update live price
-            cached_result = cached_entry["result"].copy()
-            cached_result["price"] = float(ohlcv["close"][-1])
-            cache_results.append(cached_result)
-            cache_hits += 1
-            continue
+        if cached_ts and cached_ts == last_closed_ts:
+            # No new candle — reuse result from _results_by_sym
+            prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
+            if prev is not None:
+                prev["price"] = float(ohlcv["close"][-1])
+                cache_results.append(prev)
+                cache_hits += 1
+                continue
 
         weekly = weekly_batch.get(symbol)
         engine_symbols.append(symbol)
@@ -1078,15 +1089,11 @@ async def _scan_timeframe(
             logger.exception("Failed to process %s on %s: %s", symbol, tf, outcome)
         else:
             results.append(outcome)
-            # Store in engine cache for future cycles
             if scan_cache:
                 ohlcv = ohlcv_batch.get(symbol)
                 timestamps = ohlcv.get("timestamp", []) if ohlcv else []
                 last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
-                scan_cache._engine_cache[(symbol, tf)] = {
-                    "last_candle_ts": last_closed_ts,
-                    "result": outcome.copy(),
-                }
+                scan_cache._engine_cache[(symbol, tf)] = last_closed_ts
 
     logger.info(
         "Processed %d symbols for %s (%.1fs total, %d cache hits, %d recomputed)",
@@ -1331,12 +1338,13 @@ async def _drip_one_symbol(
         timestamps = ohlcv.get("timestamp", [])
         last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
         cache_key = (symbol, tf)
-        cached_entry = scan_cache._engine_cache.get(cache_key)
+        cached_ts = scan_cache._engine_cache.get(cache_key)
 
-        if cached_entry and cached_entry["last_candle_ts"] == last_closed_ts:
-            # No new candle — reuse cached result, update live price
-            result = cached_entry["result"].copy()
-            result["price"] = float(ohlcv["close"][-1])
+        prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
+        if cached_ts and cached_ts == last_closed_ts and prev is not None:
+            # No new candle — reuse previous result, update live price
+            prev["price"] = float(ohlcv["close"][-1])
+            result = prev
         else:
             # New candle — run engines
             btc_data = _ohlcv_store.get("BTC/USDT", tf)
@@ -1353,10 +1361,7 @@ async def _drip_one_symbol(
                     eth_data=eth_data,
                 ),
             )
-            scan_cache._engine_cache[cache_key] = {
-                "last_candle_ts": last_closed_ts,
-                "result": result.copy(),
-            }
+            scan_cache._engine_cache[cache_key] = last_closed_ts
 
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
@@ -2171,6 +2176,7 @@ async def run_scan(
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start
         logger.info("=== Scan completed in %.1fs ===", elapsed)
+        _malloc_trim()
 
     finally:
         scan_cache.is_scanning = False
@@ -2340,6 +2346,7 @@ async def run_rolling_scan(
             "=== Rolling scan completed in %.1fs (%d symbols) ===",
             elapsed, len(batch),
         )
+        _malloc_trim()
 
     finally:
         scan_cache.is_scanning = False
