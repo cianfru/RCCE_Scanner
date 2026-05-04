@@ -941,7 +941,7 @@ export default function App() {
           </span>
           {showDashboard && (
             <button
-              onClick={() => { setEditingGroup(activeGroup || null); setShowGroupModal(true); }}
+              onClick={() => { setEditingGroup(activeGroup || groups[0] || null); setShowGroupModal(true); }}
               style={{
                 fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
                 padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
