@@ -393,12 +393,55 @@ app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+# API_AUTH_TOKEN: when set, every /api/* request (and the WebSocket) must
+# present it as `Authorization: Bearer <token>` or `X-API-Token`. When unset,
+# auth is disabled — set it in the Railway env to lock the backend, and set the
+# same value as VITE_API_TOKEN in the Vercel frontend env.
+# ALLOWED_ORIGINS: comma-separated CORS allow-list (e.g. your Vercel URL).
+# Defaults to "*" so nothing breaks until it's configured.
+API_AUTH_TOKEN = os.environ.get("API_AUTH_TOKEN", "").strip()
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()
+] or ["*"]
+
+# Public paths that never require a token.
+_PUBLIC_PATHS = frozenset({"/health"})
+
+if not API_AUTH_TOKEN:
+    logger.warning(
+        "API_AUTH_TOKEN not set — backend API is UNAUTHENTICATED. "
+        "Set API_AUTH_TOKEN (Railway) + VITE_API_TOKEN (Vercel) to lock it."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _extract_token(request) -> str:
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    return request.headers.get("x-api-token", "").strip()
+
+
+@app.middleware("http")
+async def _auth_middleware(request, call_next):
+    """Require API_AUTH_TOKEN on /api/* when configured. OPTIONS (CORS
+    preflight) and public paths pass through."""
+    if API_AUTH_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        if path.startswith("/api/") and path not in _PUBLIC_PATHS:
+            if _extract_token(request) != API_AUTH_TOKEN:
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 # Paths that must NOT count as user activity (health checks, uptime pingers,
 # and the activity/memory diagnostics themselves) — otherwise the app would
@@ -435,6 +478,12 @@ async def websocket_scan(websocket: WebSocket):
     Events sent: synthesis-complete, signal-transition, anomaly, symbol-update, heartbeat.
     Client can send: {"type": "refresh"} to request immediate full state.
     """
+    # Auth: when API_AUTH_TOKEN is set, require ?token= on the WS URL.
+    if API_AUTH_TOKEN:
+        supplied = websocket.query_params.get("token", "")
+        if supplied != API_AUTH_TOKEN:
+            await websocket.close(code=1008)  # policy violation
+            return
     hub = WebSocketHub.get()
     await hub.connect(websocket)
     try:
