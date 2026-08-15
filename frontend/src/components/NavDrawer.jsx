@@ -40,16 +40,6 @@ const NAV_ICONS = {
       <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
   ),
-  executor: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M5 2l8 6-8 6V2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-    </svg>
-  ),
-  trading: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M2 8h3l2-5 2 10 2-5h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
   tradfi: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <rect x="2" y="6" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
@@ -83,11 +73,9 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Trading",
+    label: "Tools",
     items: [
       { key: "backtest", label: "Backtest", desc: "Strategy backtesting" },
-      { key: "executor", label: "Executor", desc: "Signal execution engine" },
-      { key: "trading", label: "Portfolio", desc: "Hyperliquid portfolio" },
     ],
   },
 ];
