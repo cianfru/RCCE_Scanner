@@ -92,6 +92,7 @@ function ToggleSwitch({ checked, onChange, color = T.accent }) {
 export default function SettingsDropdown() {
   const [open, setOpen] = useState(false);
   const [flags, setFlags] = useState(null);
+  const [activity, setActivity] = useState(null);
   const [busy, setBusy] = useState(false);
   const popoverRef = useRef(null);
   const buttonRef = useRef(null);
@@ -101,10 +102,29 @@ export default function SettingsDropdown() {
     if (open && flags === null) {
       fetch(`${API_BASE}/api/admin/features`)
         .then(r => r.ok ? r.json() : null)
-        .then(j => { if (j?.flags) setFlags(j.flags); })
+        .then(j => {
+          if (j?.flags) setFlags(j.flags);
+          if (j?.activity) setActivity(j.activity);
+        })
         .catch(() => {});
     }
   }, [open, flags]);
+
+  // Live activity badge — poll while the panel is open. This endpoint is
+  // excluded from activity tracking, so polling it never keeps the app awake.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const tick = () => {
+      fetch(`${API_BASE}/api/admin/activity`)
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (alive && j) setActivity(j); })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, [open]);
 
   // Close on outside click
   useEffect(() => {
@@ -237,6 +257,67 @@ export default function SettingsDropdown() {
                 loading…
               </span>
             )}
+          </div>
+
+          {/* Power state — active/idle throttle */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginBottom: 6,
+            }}>
+              <span style={{
+                fontSize: 9, color: T.text4, fontFamily: T.mono,
+                fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
+              }}>
+                Power State
+              </span>
+              {activity && (() => {
+                const isActive = !!activity.active;
+                const color = isActive ? "#34d399" : "#6b7280";
+                const label = isActive ? "ACTIVE" : "IDLE";
+                return (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                    letterSpacing: "0.06em", color,
+                  }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%",
+                      background: color,
+                      boxShadow: isActive ? `0 0 6px ${color}` : "none",
+                    }} />
+                    {label}
+                  </span>
+                );
+              })()}
+            </div>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: T.overlay02,
+              border: `1px solid ${T.overlay06}`,
+              gap: 10,
+            }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{
+                  fontSize: T.textSm, color: T.text1,
+                  fontFamily: T.font, fontWeight: 600, marginBottom: 2,
+                }}>
+                  Keep Awake
+                </div>
+                <div style={{
+                  fontSize: 10, color: T.text4, fontFamily: T.font, lineHeight: 1.35,
+                }}>
+                  Pin full-speed scanning on. Off: auto-idle when no dashboard is open (wakes instantly on reload).
+                </div>
+              </div>
+              <ToggleSwitch
+                checked={flags?.keep_active ?? false}
+                color="#34d399"
+                onChange={() => updateFlag("keep_active", !(flags?.keep_active ?? false))}
+              />
+            </div>
           </div>
 
           {/* Presets */}

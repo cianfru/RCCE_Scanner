@@ -7,3 +7,9 @@ __pycache__/
 *.egg-info/
 .claude/
 backend/start.sh
+backend/feature_flags.json
+# Runtime state / caches (generated at boot, persisted to Railway volume)
+*.db
+*.db-shm
+*.db-wal
+*.pkl

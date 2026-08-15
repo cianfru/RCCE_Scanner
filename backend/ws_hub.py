@@ -63,6 +63,13 @@ class WebSocketHub:
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
         self._connections.add(ws)
+        # Opening a dashboard is the primary "wake" signal — bump activity so
+        # idle background loops resume full cadence within a few seconds.
+        try:
+            from activity import mark_active
+            mark_active("ws-connect")
+        except Exception:
+            pass
         logger.info("WS client connected (%d total)", len(self._connections))
 
     def disconnect(self, ws: WebSocket) -> None:
