@@ -1462,6 +1462,9 @@ async def run_drip_scan(
     DRIP_INTERVAL = 1.0           # seconds between symbols (hot + active)
     COLD_EVERY_N = 20             # cold symbols every 20th rotation (~7 min)
     DEEP_COLD_EVERY_N = 60        # deep cold every 60th rotation (~20 min)
+    # Idle mode: pause between full rotations when nobody is watching
+    # ("maximum savings" — ~15 min). Interruptible; wakes on activity.
+    IDLE_DRIP_PAUSE_S = int(os.environ.get("IDLE_DRIP_PAUSE_S", "900"))
 
     # Wait briefly for initial data to be available
     await asyncio.sleep(5)
@@ -1575,6 +1578,18 @@ async def run_drip_scan(
             total_processed,
             elapsed_total,
         )
+
+        # --- Idle throttle -------------------------------------------------
+        # When nobody is watching (no dashboard WS, no recent API traffic,
+        # "Keep Awake" off), pause a long time between rotations instead of
+        # looping immediately. 4H/1D candles close far slower than this, so
+        # no signal is missed; opening the dashboard wakes it within seconds.
+        try:
+            from activity import is_active, idle_sleep
+            if not is_active():
+                await idle_sleep(IDLE_DRIP_PAUSE_S)
+        except Exception:
+            pass
 
 
 async def _run_synthesis_pass(

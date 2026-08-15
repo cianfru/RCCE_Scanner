@@ -80,6 +80,7 @@ _RETRY_DELAY_S       = 3.0
 _PER_COIN_LIMIT      = 30            # max coins for one-shot fetch (legacy, used as fallback)
 _DRIP_INTERVAL_S     = 1.5           # seconds between per-coin fetches in drip mode
 _DRIP_CYCLE_PAUSE_S  = 30            # pause after completing a full rotation
+_IDLE_CYCLE_PAUSE_S  = int(os.environ.get("IDLE_COINGLASS_PAUSE_S", "1200"))  # ~20 min when idle
 
 # Rate limiting — Hobbyist plan allows ~30 req/min but empirically
 # needs wider gap to avoid 429s across 5 endpoints per coin
@@ -746,6 +747,16 @@ async def run_coinglass_drip() -> None:
             # Also update the per-coin cache so fetch_coinglass_metrics
             # doesn't re-fetch in burst mode
             _per_coin_cache.put(_per_coin_detail, _PER_COIN_CACHE_TTL * 10)
+
+            # Idle throttle: when nobody is watching, nearly pause the drip
+            # (LSR/OI update every ~4h anyway). Wakes on activity.
+            try:
+                from activity import is_active, idle_sleep
+                if not is_active():
+                    await idle_sleep(_IDLE_CYCLE_PAUSE_S)
+                    continue
+            except Exception:
+                pass
 
             await asyncio.sleep(_DRIP_CYCLE_PAUSE_S)
 

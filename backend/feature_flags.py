@@ -41,6 +41,11 @@ _FLAGS_PATH = Path(
 # defaults are persisted to disk; missing keys re-fill from defaults.
 
 DEFAULTS: Dict[str, bool] = {
+    # Keep Awake — pin the app to "active" so background loops never drop
+    # to the idle heartbeat. Off (default): auto-idle after IDLE_AFTER_SECONDS
+    # of no dashboard connection / API traffic. On: stay full-speed 24/7
+    # (use while actively trading). See activity.py.
+    "keep_active": False,
     # HyperLens — slim sentiment aggregator (50 wallets, 10-min poll).
     # Off: pause polling entirely; consensus + roster freeze in last state.
     "hyperlens_enabled": True,

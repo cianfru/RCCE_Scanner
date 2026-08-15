@@ -24,6 +24,24 @@ logger = logging.getLogger("price_ticker")
 _BATCH_INTERVAL = 1.0  # seconds
 
 
+def _idle_active() -> bool:
+    """True when the app is active (someone watching). Safe fallback: active."""
+    try:
+        from activity import is_active
+        return is_active()
+    except Exception:
+        return True
+
+
+async def _idle_nap(seconds: float) -> None:
+    """Interruptible idle wait — wakes early once active."""
+    try:
+        from activity import idle_sleep
+        await idle_sleep(seconds)
+    except Exception:
+        await asyncio.sleep(seconds)
+
+
 # ── Symbol conversion helpers ─────────────────────────────────────────────────
 
 def _ccxt_to_binance(symbol: str) -> Optional[str]:
@@ -145,6 +163,12 @@ class PriceTicker:
         import websockets
 
         while self._running:
+            # Idle gate: live prices only matter when someone is watching.
+            # Skip connecting entirely while idle (streams are pure CPU with
+            # no clients). Wakes on activity within ~10s.
+            if not _idle_active():
+                await _idle_nap(30)
+                continue
             try:
                 streams = []
                 for sym in symbols:
@@ -161,10 +185,17 @@ class PriceTicker:
 
                 logger.info("Connecting to Binance ticker (%d symbols)", len(streams))
 
+                _last_chk = time.monotonic()
                 async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
                     async for raw in ws:
                         if not self._running:
                             return
+                        # Re-check activity every ~5s; drop the stream when idle.
+                        _now = time.monotonic()
+                        if _now - _last_chk > 5.0:
+                            _last_chk = _now
+                            if not _idle_active():
+                                break
                         try:
                             msg = json.loads(raw)
                             data = msg.get("data", msg)
@@ -196,11 +227,15 @@ class PriceTicker:
         coin_set = set(coin_to_ccxt.keys())
 
         while self._running:
+            if not _idle_active():
+                await _idle_nap(30)
+                continue
             try:
                 url = "wss://api.hyperliquid.xyz/ws"
                 logger.info("Connecting to Hyperliquid ticker (%d coins: %s)",
                             len(coins), ", ".join(coins[:10]))
 
+                _last_chk = time.monotonic()
                 async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
                     # Subscribe to allMids channel
                     await ws.send(json.dumps({
@@ -211,6 +246,11 @@ class PriceTicker:
                     async for raw in ws:
                         if not self._running:
                             return
+                        _now = time.monotonic()
+                        if _now - _last_chk > 5.0:
+                            _last_chk = _now
+                            if not _idle_active():
+                                break
                         try:
                             msg = json.loads(raw)
                             # allMids response: {"channel": "allMids", "data": {"mids": {"BTC": "67423.5", ...}}}

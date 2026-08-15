@@ -388,7 +388,17 @@ async def _periodic_scan():
                 logger.debug("OHLCV cache save failed (non-fatal)")
         except Exception as e:
             logger.error("Synthesis pass #%d failed: %s", _cycle, e)
-        await asyncio.sleep(60)
+
+        # Idle throttle: synthesize every 60s when active; slow to ~5 min
+        # when nobody is watching. Position monitor / outcomes still tick.
+        try:
+            from activity import is_active, idle_sleep
+            if is_active():
+                await asyncio.sleep(60)
+            else:
+                await idle_sleep(int(os.environ.get("IDLE_SYNTHESIS_S", "300")))
+        except Exception:
+            await asyncio.sleep(60)
 
 
 async def _auto_init_executor():
@@ -432,6 +442,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Paths that must NOT count as user activity (health checks, uptime pingers,
+# and the activity/memory diagnostics themselves) — otherwise the app would
+# never idle.
+_NO_ACTIVITY_PATHS = frozenset({
+    "/health",
+    "/api/status",
+    "/api/admin/activity",
+    "/api/admin/memory-snapshot",
+})
+
+
+@app.middleware("http")
+async def _activity_middleware(request, call_next):
+    """Mark the app active on genuine API traffic so it wakes from idle."""
+    path = request.url.path
+    if path.startswith("/api/") and path not in _NO_ACTIVITY_PATHS:
+        try:
+            from activity import mark_active
+            mark_active("http")
+        except Exception:
+            pass
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -641,13 +674,27 @@ async def admin_memory_cleanup():
 
 @app.get("/api/admin/features")
 async def admin_get_features():
-    """Return current feature flag state + available presets."""
+    """Return current feature flag state + available presets + activity mode."""
     import feature_flags as ff
+    try:
+        import activity
+        act = activity.get_state()
+    except Exception:
+        act = None
     return {
         "flags": ff.get_all_flags(),
         "presets": list(ff.PRESETS.keys()),
         "defaults": ff.DEFAULTS,
+        "activity": act,
     }
+
+
+@app.get("/api/admin/activity")
+async def admin_get_activity():
+    """Live active/idle state — for the Settings badge (excluded from
+    activity tracking so polling it never keeps the app awake)."""
+    import activity
+    return activity.get_state()
 
 
 @app.post("/api/admin/features")
