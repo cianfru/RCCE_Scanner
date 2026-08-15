@@ -2414,6 +2414,16 @@ async def run_hyperlens_loop() -> None:
                 await asyncio.sleep(30)
                 continue
 
+            # Idle throttle: when no dashboard is open, pause polling — the
+            # consensus/roster freeze in their last state and resume on wake.
+            try:
+                from activity import is_active, idle_sleep
+                if not is_active():
+                    await idle_sleep(int(os.environ.get("IDLE_HYPERLENS_PAUSE_S", "900")))
+                    continue
+            except ImportError:
+                pass
+
             # Initial roster fetch on first run after enable
             if not _initialized or not _roster:
                 count = await refresh_leaderboard()

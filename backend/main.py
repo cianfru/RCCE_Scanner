@@ -2026,6 +2026,14 @@ async def _periodic_whale_poll():
         if not get_flag("whale_tracker"):
             await asyncio.sleep(30)
             continue
+        # Idle throttle: pause on-chain polling when no dashboard is open.
+        try:
+            from activity import is_active, idle_sleep
+            if not is_active():
+                await idle_sleep(600)
+                continue
+        except ImportError:
+            pass
         # Lazy init — only when first enabled
         if tracker is None:
             tracker = _get_whale_tracker()
