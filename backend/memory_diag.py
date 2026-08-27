@@ -287,23 +287,6 @@ def inventory_other() -> Dict[str, Any]:
     except Exception as exc:
         out["hl_bridge"] = {"error": str(exc)}
 
-    # Executor
-    try:
-        from executor import _executor_singleton  # noqa
-    except Exception:
-        pass
-    try:
-        import executor as ex
-        executor = getattr(ex, "_executor", None)
-        if executor:
-            out["executor"] = {
-                "positions": len(getattr(executor, "positions", {})),
-                "trade_log": len(getattr(executor, "trade_log", [])),
-                "size": _fmt_bytes(_deep_size(executor)),
-            }
-    except Exception as exc:
-        out["executor"] = {"error": str(exc)}
-
     # Whale follows + on-chain tracker
     try:
         import whale_follows as wf

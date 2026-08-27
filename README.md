@@ -38,14 +38,33 @@ The frontend proxies /api → localhost:8000 automatically.
 
 ## Deploy
 
-**Backend** → Railway (same workflow as Aerowake)
+**Backend** → Railway
 - Set start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 **Frontend** → Vercel
 - Build command: `npm run build`
 - Output dir: `dist`
-- Set env var `VITE_API_URL` to your Railway backend URL, then update the
-  fetch calls in App.tsx to use `import.meta.env.VITE_API_URL`.
+- Set env var `VITE_API_URL` to your Railway backend URL.
+
+### Access control (recommended)
+
+The API is unauthenticated unless you set a token. To lock it:
+
+- **Railway**: set `API_AUTH_TOKEN` to a random secret, and `ALLOWED_ORIGINS`
+  to your Vercel URL (e.g. `https://your-app.vercel.app`).
+- **Vercel**: set `VITE_API_TOKEN` to the *same* value as `API_AUTH_TOKEN`.
+
+The frontend then sends the token on every API call and WebSocket connection.
+`/health` stays public for uptime checks.
+
+### Cost / idle mode
+
+The app runs at full cadence while a dashboard is open and drops to a slow
+heartbeat when idle (no dashboard, no recent API traffic), so it costs
+close to nothing at rest and wakes instantly on reload. Tunable via env:
+`IDLE_AFTER_SECONDS` (default 900), `IDLE_DRIP_PAUSE_S`,
+`IDLE_COINGLASS_PAUSE_S`, `IDLE_HYPERLENS_PAUSE_S`, `IDLE_SYNTHESIS_S`.
+Pin it awake from the Settings gear ("Keep Awake") while actively trading.
 
 ## Signals
 

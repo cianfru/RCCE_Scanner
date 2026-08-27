@@ -10,6 +10,7 @@
 
 const ports = new Set();
 let apiBase = "";
+let apiToken = "";
 
 // Visibility tracking — pause when ALL tabs are hidden
 const tabVisibility = new Map(); // portId → boolean (true = visible)
@@ -57,7 +58,8 @@ function anyTabVisible() {
 }
 
 async function fetchJSON(url) {
-  const res = await fetch(url);
+  const opts = apiToken ? { headers: { Authorization: `Bearer ${apiToken}` } } : undefined;
+  const res = await fetch(url, opts);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -251,6 +253,7 @@ self.onconnect = function (e) {
       case "connect":
         if (msg.apiBase && !apiBase) {
           apiBase = msg.apiBase;
+          if (msg.apiToken) apiToken = msg.apiToken;
           startPolling();
         }
         // Send cached data immediately so new tab doesn't wait for next poll

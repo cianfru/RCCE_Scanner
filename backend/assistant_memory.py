@@ -503,6 +503,14 @@ async def run_market_monitor(interval: float = 300.0) -> None:
         if not get_flag("market_monitor"):
             await asyncio.sleep(30)
             continue
+        # Idle throttle: skip the diff pass when no dashboard is open.
+        try:
+            from activity import is_active, idle_sleep
+            if not is_active():
+                await idle_sleep(int(interval))
+                continue
+        except ImportError:
+            pass
         try:
             curr = await _build_monitor_snapshot()
 

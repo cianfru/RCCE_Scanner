@@ -19,8 +19,6 @@ import GlassCard from "./components/GlassCard.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import SettingsDropdown from "./components/SettingsDropdown.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
-import ExecutorPanel from "./components/ExecutorPanel.jsx";
-import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
@@ -72,8 +70,6 @@ const ROUTE_TO_TAB = {
   "/tradfi": "tradfi",
   "/ai": "chat",
   "/backtest": "backtest",
-  "/executor": "executor",
-  "/portfolio": "trading",
   "/onchain": "onchain",
 };
 const TAB_TO_ROUTE = {
@@ -86,8 +82,6 @@ const TAB_TO_ROUTE = {
   tradfi: "/tradfi",
   chat: "/ai",
   backtest: "/backtest",
-  executor: "/executor",
-  trading: "/portfolio",
   onchain: "/onchain",
 };
 
@@ -594,11 +588,11 @@ export default function App() {
 
   const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
+    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -930,8 +924,6 @@ export default function App() {
             letterSpacing: "-0.02em",
           }}>
             {activeTab === "backtest" ? "Backtest" :
-             activeTab === "executor" ? "Executor" :
-             activeTab === "trading" ? "Portfolio" :
              activeTab === "signals" ? "Signal Log" :
              activeTab === "analytics" ? "Analytics" :
              activeTab === "onchain" ? "On-Chain" :
@@ -1014,17 +1006,6 @@ export default function App() {
           </FadeIn>
         )}
 
-        {activeTab === "executor" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <ExecutorPanel api={API_BASE} />
-          </FadeIn>
-        )}
-
-        {activeTab === "trading" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <TradingPanel api={API_BASE} />
-          </FadeIn>
-        )}
 
         {activeTab === "signals" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>

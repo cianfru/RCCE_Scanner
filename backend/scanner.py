@@ -2013,17 +2013,6 @@ async def _run_synthesis_pass(
         except Exception as exc:
             logger.debug("Signal outcome tracking error: %s", exc)
 
-    # Executor
-    try:
-        from executor import get_executor
-        executor = get_executor()
-        if executor and executor.enabled:
-            exec_results = scan_cache.results.get("4h", [])
-            if exec_results:
-                await executor.process_scan_results(exec_results)
-    except (ImportError, Exception):
-        pass
-
     scan_cache.last_scan_time = time.time()
     elapsed = time.time() - t0
     n_syms = len(scan_cache._results_by_sym)
@@ -2170,23 +2159,6 @@ async def run_scan(
                             r["confluence"] = scan_cache.confluence[sym]
             except Exception:
                 logger.exception("Confluence computation failed")
-
-        # 11. Execute signals via Kraken (if executor is enabled)
-        try:
-            from executor import get_executor
-            executor = get_executor()
-            if executor and executor.enabled:
-                # Use 4h results as the primary signal source
-                exec_results = scan_cache.results.get("4h", [])
-                if exec_results:
-                    exec_summary = await executor.process_scan_results(exec_results)
-                    actions = exec_summary.get("actions", [])
-                    if actions:
-                        logger.info("Executor: %d actions — %s", len(actions), actions)
-        except ImportError:
-            pass  # executor module not available
-        except Exception:
-            logger.exception("Executor processing failed (scan unaffected)")
 
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start
@@ -2338,22 +2310,6 @@ async def run_rolling_scan(
                             r["confluence"] = scan_cache.confluence[sym]
             except Exception:
                 logger.exception("Confluence computation failed")
-
-        # ── Executor ──
-        try:
-            from executor import get_executor
-            executor = get_executor()
-            if executor and executor.enabled:
-                exec_results = scan_cache.results.get("4h", [])
-                if exec_results:
-                    exec_summary = await executor.process_scan_results(exec_results)
-                    actions = exec_summary.get("actions", [])
-                    if actions:
-                        logger.info("Executor: %d actions — %s", len(actions), actions)
-        except ImportError:
-            pass
-        except Exception:
-            logger.exception("Executor processing failed (scan unaffected)")
 
         scan_cache.last_scan_time = time.time()
         elapsed = time.time() - scan_start

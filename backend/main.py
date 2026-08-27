@@ -19,7 +19,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -42,14 +42,6 @@ from models import (
     PositioningResponse,
     BacktestRequest,
     WalkForwardRequest,
-    ExecutorInitRequest,
-    ExecutorStatusResponse,
-    ExecutorTradeResponse,
-    WhitelistUpdate,
-    WhitelistAddRequest,
-    HLLeverageRequest,
-    TradeLogRequest,
-    TradeCloseLogRequest,
     PortfolioGroupResponse,
     PortfolioGroupCreate,
     PortfolioGroupUpdate,
@@ -186,6 +178,13 @@ async def lifespan(app: FastAPI):
     """On startup, load portfolio groups and start periodic refresh."""
     _sync_cache_symbols()
 
+    # Initialize wallet-account store (multi-user)
+    try:
+        import user_store
+        await user_store.init()
+    except Exception as e:
+        logger.warning("user_store init failed (non-fatal): %s", e)
+
     # Initialize signal log DB
     try:
         from signal_log import SignalLog
@@ -313,7 +312,6 @@ async def _periodic_scan():
     3. Update signal outcomes, position monitor, OHLCV cache
     """
     global _backtest_running
-    _executor_auto_started = False
     _backtest_defer_count = 0
     _cycle = 0
     _TRADFI_EVERY = 15
@@ -375,11 +373,6 @@ async def _periodic_scan():
             except Exception:
                 logger.debug("Position monitor notification failed (non-fatal)")
 
-            # Auto-initialize executor after first successful scan
-            if not _executor_auto_started:
-                _executor_auto_started = True
-                await _auto_init_executor()
-
             # Persist OHLCV cache to disk (debounced — saves at most every 2 min)
             try:
                 from data_fetcher import _ohlcv_store
@@ -401,47 +394,64 @@ async def _periodic_scan():
             await asyncio.sleep(60)
 
 
-async def _auto_init_executor():
-    """Auto-initialize and enable the executor after first scan.
-
-    This ensures the executor is always running after a Railway redeploy
-    without requiring manual "Initialize" button clicks.
-    """
-    try:
-        from executor import init_executor, get_executor
-
-        executor = get_executor()
-        if executor and executor.initialized:
-            logger.info("Executor already initialized — skipping auto-init")
-            return
-
-        logger.info("Auto-initializing executor (paper mode)...")
-        executor = await init_executor(
-            mode="paper",
-            balance=10000.0,
-            scanner_symbols=cache.symbols,
-        )
-        executor.enabled = True
-        logger.info(
-            "Executor auto-initialized and enabled: %d pairs available",
-            len(executor.pair_map),
-        )
-    except Exception as e:
-        logger.warning("Failed to auto-initialize executor: %s (non-fatal)", e)
-
-
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 
 # GZip responses > 500 bytes — reduces network egress ~70-80% for JSON payloads
 from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+# API_AUTH_TOKEN: when set, every /api/* request (and the WebSocket) must
+# present it as `Authorization: Bearer <token>` or `X-API-Token`. When unset,
+# auth is disabled — set it in the Railway env to lock the backend, and set the
+# same value as VITE_API_TOKEN in the Vercel frontend env.
+# ALLOWED_ORIGINS: comma-separated CORS allow-list (e.g. your Vercel URL).
+# Defaults to "*" so nothing breaks until it's configured.
+API_AUTH_TOKEN = os.environ.get("API_AUTH_TOKEN", "").strip()
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()
+] or ["*"]
+
+# Public paths that never require a token.
+_PUBLIC_PATHS = frozenset({"/health"})
+
+if not API_AUTH_TOKEN:
+    logger.warning(
+        "API_AUTH_TOKEN not set — backend API is UNAUTHENTICATED. "
+        "Set API_AUTH_TOKEN (Railway) + VITE_API_TOKEN (Vercel) to lock it."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _extract_token(request) -> str:
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    return request.headers.get("x-api-token", "").strip()
+
+
+@app.middleware("http")
+async def _auth_middleware(request, call_next):
+    """Require API_AUTH_TOKEN on /api/* when configured. OPTIONS (CORS
+    preflight) and public paths pass through."""
+    if API_AUTH_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        # Wallet sign-in + session-scoped endpoints self-manage their auth
+        # (SIWE / JWT), so they bypass the owner-token gate.
+        is_session_path = path.startswith("/api/auth/") or path == "/api/me" or path.startswith("/api/me/")
+        if path.startswith("/api/") and path not in _PUBLIC_PATHS and not is_session_path:
+            if _extract_token(request) != API_AUTH_TOKEN:
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 # Paths that must NOT count as user activity (health checks, uptime pingers,
 # and the activity/memory diagnostics themselves) — otherwise the app would
@@ -478,6 +488,12 @@ async def websocket_scan(websocket: WebSocket):
     Events sent: synthesis-complete, signal-transition, anomaly, symbol-update, heartbeat.
     Client can send: {"type": "refresh"} to request immediate full state.
     """
+    # Auth: when API_AUTH_TOKEN is set, require ?token= on the WS URL.
+    if API_AUTH_TOKEN:
+        supplied = websocket.query_params.get("token", "")
+        if supplied != API_AUTH_TOKEN:
+            await websocket.close(code=1008)  # policy violation
+            return
     hub = WebSocketHub.get()
     await hub.connect(websocket)
     try:
@@ -695,6 +711,74 @@ async def admin_get_activity():
     activity tracking so polling it never keeps the app awake)."""
     import activity
     return activity.get_state()
+
+
+# ---------------------------------------------------------------------------
+# Wallet authentication (Sign-In-With-Ethereum) + per-user accounts
+# ---------------------------------------------------------------------------
+
+async def require_session(authorization: str = Header(default="")) -> str:
+    """FastAPI dependency: resolve the authenticated wallet address from the
+    Bearer session token, or 401. The wallet address IS the account id."""
+    import auth
+    token = authorization[7:].strip() if authorization[:7].lower() == "bearer " else ""
+    address = auth.verify_session(token)
+    if not address:
+        raise HTTPException(status_code=401, detail="Sign in with your wallet")
+    return address
+
+
+@app.get("/api/auth/nonce")
+async def auth_nonce(address: str = Query(..., min_length=42, max_length=42)):
+    """Return a one-time message for the wallet to sign."""
+    import auth
+    return {"message": auth.build_nonce_message(address)}
+
+
+@app.post("/api/auth/verify")
+async def auth_verify(payload: dict):
+    """Verify a signed sign-in message and issue a session token."""
+    import auth
+    import user_store
+    address = str(payload.get("address", "")).strip()
+    signature = str(payload.get("signature", "")).strip()
+    if len(address) != 42 or not signature:
+        raise HTTPException(status_code=400, detail="address and signature required")
+    if not auth.verify_signature(address, signature):
+        raise HTTPException(status_code=401, detail="Signature verification failed")
+    await user_store.upsert_user(address)
+    return {"token": auth.issue_session(address), "address": address.lower()}
+
+
+@app.get("/api/me")
+async def me(address: str = Depends(require_session)):
+    """The authenticated account (wallet address + profile)."""
+    import user_store
+    user = await user_store.get_user(address)
+    return {"address": address, "user": user}
+
+
+@app.get("/api/me/favorites")
+async def me_favorites(address: str = Depends(require_session)):
+    import user_store
+    return {"favorites": await user_store.list_favorites(address)}
+
+
+@app.post("/api/me/favorites")
+async def me_add_favorite(payload: dict, address: str = Depends(require_session)):
+    import user_store
+    symbol = str(payload.get("symbol", "")).strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol required")
+    await user_store.add_favorite(address, symbol)
+    return {"favorites": await user_store.list_favorites(address)}
+
+
+@app.delete("/api/me/favorites/{symbol:path}")
+async def me_remove_favorite(symbol: str, address: str = Depends(require_session)):
+    import user_store
+    await user_store.remove_favorite(address, symbol)
+    return {"favorites": await user_store.list_favorites(address)}
 
 
 @app.post("/api/admin/features")
@@ -1983,409 +2067,6 @@ def _sample_curve(curve: list, max_points: int) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Executor endpoints (Kraken paper/live trading)
-# ---------------------------------------------------------------------------
-
-@app.post("/api/executor/init")
-async def executor_init(body: ExecutorInitRequest = ExecutorInitRequest()):
-    """Initialize the executor (paper or live mode).
-
-    Discovers available Kraken pairs from the current watchlist
-    and initializes the paper trading account.
-    """
-    from executor import init_executor
-
-    try:
-        executor = await init_executor(
-            mode=body.mode,
-            balance=body.balance,
-            scanner_symbols=cache.symbols,
-        )
-        return {
-            "status": "initialized",
-            "mode": body.mode,
-            "balance": body.balance,
-            "pairs_available": len(executor.pair_map),
-            "pairs": sorted(executor.pair_map.keys()),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/executor/enable")
-async def executor_enable():
-    """Enable signal execution. Executor must be initialized first."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor or not executor.initialized:
-        raise HTTPException(
-            status_code=400,
-            detail="Executor not initialized. Call POST /api/executor/init first.",
-        )
-    executor.enabled = True
-    executor._save_state()
-    logger.info("Executor ENABLED — signals will be executed via Kraken (%s mode)", executor.mode)
-    return {"status": "enabled", "mode": executor.mode}
-
-
-@app.post("/api/executor/disable")
-async def executor_disable():
-    """Disable signal execution. Open positions remain."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-    executor.enabled = False
-    executor._save_state()
-    logger.info("Executor DISABLED — signals will NOT be executed")
-    return {"status": "disabled", "open_positions": len(executor.positions)}
-
-
-@app.get("/api/executor/status")
-async def executor_status():
-    """Get executor status: mode, positions, PnL, last signals."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        return ExecutorStatusResponse()
-
-    status = await executor.get_status()
-    return status
-
-
-@app.get("/api/executor/trades")
-async def executor_trades():
-    """Get trade history from the executor."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        return {"trades": []}
-
-    return {"trades": executor.get_trades()}
-
-
-@app.get("/api/executor/portfolio")
-async def executor_portfolio():
-    """Get current portfolio from trading engine."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor or not executor.initialized:
-        return {"error": "Executor not initialized"}
-
-    try:
-        portfolio = executor.engine.get_portfolio() if executor.engine else {}
-        recent_trades = executor.get_trades()[-20:]
-        return {
-            "portfolio": portfolio,
-            "recent_trades": recent_trades,
-            "mode": executor.mode,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/executor/reset")
-async def executor_reset():
-    """Reset paper trading account and clear all state."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-
-    result = await executor.reset()
-    return result
-
-
-# ---------- Executor whitelist ----------
-
-@app.get("/api/executor/whitelist")
-async def executor_whitelist():
-    """Get current executor whitelist and available pairs."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-
-    return executor.get_whitelist()
-
-
-@app.post("/api/executor/whitelist")
-async def executor_set_whitelist(body: WhitelistUpdate):
-    """Set the full executor whitelist."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-
-    return executor.set_whitelist(body.symbols)
-
-
-@app.post("/api/executor/whitelist/add")
-async def executor_add_whitelist(body: WhitelistAddRequest):
-    """Add a single symbol to the executor whitelist."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-
-    return executor.add_to_whitelist(body.symbol)
-
-
-@app.delete("/api/executor/whitelist/{symbol:path}")
-async def executor_remove_whitelist(symbol: str):
-    """Remove a symbol from the executor whitelist."""
-    from executor import get_executor
-
-    executor = get_executor()
-    if not executor:
-        raise HTTPException(status_code=400, detail="Executor not initialized")
-
-    symbol = symbol.upper().replace("-", "/")
-    return executor.remove_from_whitelist(symbol)
-
-
-# ---------------------------------------------------------------------------
-# Hyperliquid live-mode endpoints
-# ---------------------------------------------------------------------------
-
-@app.get("/api/executor/hl/account")
-async def hl_account():
-    """Get Hyperliquid account summary (equity, margin, positions count)."""
-    from executor import get_executor
-    import asyncio
-
-    executor = get_executor()
-    if not executor or not executor.initialized or executor.mode != "live":
-        raise HTTPException(
-            status_code=400,
-            detail="Executor not in live mode. Init with mode='live' first.",
-        )
-    try:
-        summary = await asyncio.to_thread(executor.engine.get_account_summary)
-        return summary
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/executor/hl/positions")
-async def hl_positions():
-    """Get real-time Hyperliquid positions (bypasses executor state)."""
-    from executor import get_executor
-    import asyncio
-
-    executor = get_executor()
-    if not executor or not executor.initialized or executor.mode != "live":
-        raise HTTPException(
-            status_code=400,
-            detail="Executor not in live mode.",
-        )
-    try:
-        positions = await asyncio.to_thread(executor.engine.get_positions)
-        return {"positions": positions, "count": len(positions)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/executor/hl/fills")
-async def hl_fills(limit: int = Query(50, ge=1, le=500)):
-    """Get recent Hyperliquid fill history."""
-    from executor import get_executor
-    import asyncio
-
-    executor = get_executor()
-    if not executor or not executor.initialized or executor.mode != "live":
-        raise HTTPException(
-            status_code=400,
-            detail="Executor not in live mode.",
-        )
-    try:
-        fills = await asyncio.to_thread(executor.engine.get_fills, limit)
-        return {"fills": fills, "count": len(fills)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/executor/hl/leverage")
-async def hl_set_leverage(body: HLLeverageRequest):
-    """Set leverage for a specific coin on Hyperliquid."""
-    from executor import get_executor
-    import asyncio
-
-    executor = get_executor()
-    if not executor or not executor.initialized or executor.mode != "live":
-        raise HTTPException(
-            status_code=400,
-            detail="Executor not in live mode.",
-        )
-    try:
-        result = await asyncio.to_thread(
-            executor.engine.set_leverage, body.coin, body.leverage, body.is_cross,
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
-# Manual Trading endpoints (wallet-signed — no private key on server)
-# ---------------------------------------------------------------------------
-
-# Standalone HL Info for read-only queries (no private key needed)
-_hl_info = None
-
-def _get_hl_info():
-    global _hl_info
-    if _hl_info is None:
-        from hyperliquid.info import Info
-        from hyperliquid.utils import constants
-        _hl_info = Info(constants.MAINNET_API_URL, skip_ws=True)
-    return _hl_info
-
-
-@app.get("/api/trade/account")
-async def trade_account(address: str = Query(..., min_length=10)):
-    """Get Hyperliquid account summary for a wallet address."""
-    try:
-        info = _get_hl_info()
-        state = await asyncio.to_thread(info.user_state, address)
-        summary = state.get("marginSummary", {})
-        positions = state.get("assetPositions", [])
-        active = [p for p in positions if abs(float(p.get("position", {}).get("szi", 0))) > 1e-12]
-        return {
-            "address": address,
-            "account_value": float(summary.get("accountValue", 0)),
-            "total_margin_used": float(summary.get("totalMarginUsed", 0)),
-            "total_ntl_pos": float(summary.get("totalNtlPos", 0)),
-            "total_raw_usd": float(summary.get("totalRawUsd", 0)),
-            "positions_count": len(active),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/positions")
-async def trade_positions(address: str = Query(..., min_length=10)):
-    """Get current Hyperliquid positions for a wallet address."""
-    try:
-        info = _get_hl_info()
-        state = await asyncio.to_thread(info.user_state, address)
-        raw_positions = state.get("assetPositions", [])
-        positions = []
-        for ap in raw_positions:
-            pos = ap.get("position", {})
-            szi = float(pos.get("szi", 0))
-            if abs(szi) < 1e-12:
-                continue
-            positions.append({
-                "coin": pos.get("coin", ""),
-                "side": "LONG" if szi > 0 else "SHORT",
-                "size": abs(szi),
-                "entry_price": float(pos.get("entryPx", 0)),
-                "unrealized_pnl": float(pos.get("unrealizedPnl", 0)),
-                "margin_used": float(pos.get("marginUsed", 0)),
-                "liquidation_px": float(pos.get("liquidationPx", 0)) if pos.get("liquidationPx") else None,
-                "leverage_type": pos.get("leverage", {}).get("type", "cross"),
-                "leverage_value": int(pos.get("leverage", {}).get("value", 1)),
-                "return_on_equity": float(pos.get("returnOnEquity", 0)),
-            })
-        return {"positions": positions, "count": len(positions)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/fills")
-async def trade_fills(
-    address: str = Query(..., min_length=10),
-    limit: int = Query(50, ge=1, le=500),
-):
-    """Get recent Hyperliquid fills for a wallet address."""
-    try:
-        info = _get_hl_info()
-        raw_fills = await asyncio.to_thread(info.user_fills, address)
-        fills = []
-        for f in raw_fills[:limit]:
-            fills.append({
-                "coin": f.get("coin", ""),
-                "side": f.get("side", ""),
-                "price": float(f.get("px", 0)),
-                "size": float(f.get("sz", 0)),
-                "time": f.get("time", 0),
-                "fee": float(f.get("fee", 0)),
-                "oid": f.get("oid", 0),
-                "crossed": f.get("crossed", False),
-            })
-        return {"fills": fills, "count": len(fills)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/trade/history")
-async def trade_history():
-    """Get manual trade journal with stats."""
-    from manual_trader import get_trade_journal
-    journal = get_trade_journal()
-    trades = journal.get_trade_history()
-    stats = journal.get_stats()
-    return {"trades": trades, "stats": stats}
-
-
-@app.post("/api/trade/log")
-async def trade_log(body: TradeLogRequest):
-    """Log a completed trade reported by the frontend wallet."""
-    from manual_trader import get_trade_journal
-    journal = get_trade_journal()
-
-    # Capture scanner signal/regime at trade time
-    signal_at_trade = ""
-    regime_at_trade = ""
-    for r in (cache.results_4h or []):
-        if r.get("symbol") == body.symbol:
-            signal_at_trade = r.get("signal", "")
-            regime_at_trade = r.get("regime", "")
-            break
-
-    trade = journal.log_trade(
-        address=body.address,
-        symbol=body.symbol,
-        coin=body.coin,
-        side=body.side,
-        size_usd=body.size_usd,
-        volume=body.volume,
-        leverage=body.leverage,
-        entry_price=body.entry_price,
-        order_id=body.order_id,
-        signal_at_trade=signal_at_trade,
-        regime_at_trade=regime_at_trade,
-    )
-    return {"status": "ok", "trade": trade.to_dict()}
-
-
-@app.post("/api/trade/log-close")
-async def trade_log_close(body: TradeCloseLogRequest):
-    """Log a position closure reported by the frontend wallet."""
-    from manual_trader import get_trade_journal
-    journal = get_trade_journal()
-
-    trade = journal.log_close(
-        symbol=body.symbol,
-        exit_price=body.exit_price,
-        close_order_id=body.close_order_id,
-    )
-    if not trade:
-        raise HTTPException(status_code=404, detail=f"No open trade found for {body.symbol}")
-    return {"status": "closed", "trade": trade.to_dict()}
-
-
-# ---------------------------------------------------------------------------
 # On-chain whale tracking
 # ---------------------------------------------------------------------------
 
@@ -2423,6 +2104,14 @@ async def _periodic_whale_poll():
         if not get_flag("whale_tracker"):
             await asyncio.sleep(30)
             continue
+        # Idle throttle: pause on-chain polling when no dashboard is open.
+        try:
+            from activity import is_active, idle_sleep
+            if not is_active():
+                await idle_sleep(600)
+                continue
+        except ImportError:
+            pass
         # Lazy init — only when first enabled
         if tracker is None:
             tracker = _get_whale_tracker()
@@ -3329,148 +3018,6 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
     except Exception as e:
         logger.warning("Market setups failed: %s", e)
         return {"setups": [], "count": 0}
-
-
-# ---------------------------------------------------------------------------
-# AIXBT Entry Confirmation
-# ---------------------------------------------------------------------------
-
-@app.get("/api/aixbt/status")
-async def aixbt_status():
-    """Check AIXBT integration status: key availability, wallet, expiry."""
-    from aixbt_client import _get_api_key, _KEY_FILE
-    import json as _json
-
-    has_env_key = bool(os.environ.get("AIXBT_API_KEY", "").strip())
-    has_wallet = bool(os.environ.get("AIXBT_WALLET_KEY", "").strip())
-
-    key_file_info = None
-    if _KEY_FILE.exists():
-        try:
-            data = _json.loads(_KEY_FILE.read_text())
-            key_file_info = {
-                "expires_at": data.get("expires_at"),
-                "duration": data.get("duration"),
-                "cost": data.get("cost"),
-                "valid": data.get("expires_ts", 0) > time.time() * 1000,
-            }
-        except Exception:
-            pass
-
-    active_key = _get_api_key()
-
-    # x402 diagnostics
-    x402_diag = {}
-    if has_wallet and not active_key:
-        try:
-            from eth_account import Account
-            x402_diag["eth_account"] = "ok"
-        except ImportError as e:
-            x402_diag["eth_account"] = f"MISSING: {e}"
-        try:
-            from x402 import x402ClientSync
-            x402_diag["x402_client"] = "ok"
-        except ImportError as e:
-            x402_diag["x402_client"] = f"MISSING: {e}"
-        try:
-            from x402.mechanisms.evm import EthAccountSigner
-            from x402.mechanisms.evm.exact.register import register_exact_evm_client
-            x402_diag["x402_evm"] = "ok"
-        except ImportError as e:
-            x402_diag["x402_evm"] = f"MISSING: {e}"
-        try:
-            from x402.http.clients import x402_requests
-            x402_diag["x402_requests"] = "ok"
-        except ImportError as e:
-            x402_diag["x402_requests"] = f"MISSING: {e}"
-
-    return {
-        "connected": bool(active_key),
-        "auth_method": "api_key" if has_env_key else ("x402" if has_wallet else "none"),
-        "has_env_key": has_env_key,
-        "has_wallet": has_wallet,
-        "key_file": key_file_info,
-        "x402_diagnostics": x402_diag or None,
-        "setup_instructions": (
-            "Set AIXBT_WALLET_KEY in .env with a Base wallet private key funded with USDC. "
-            "Run: cd backend/x402 && node buy-key.js --generate-wallet"
-        ) if not active_key else None,
-    }
-
-
-@app.get("/api/confirm/{symbol}")
-async def confirm_entry(
-    symbol: str,
-    timeframe: str = Query("4h"),
-):
-    """
-    Entry confirmation: combines scanner signal + AIXBT social intelligence.
-    Returns a GO / LEAN_GO / WAIT / NO / EXIT verdict.
-    Used by the rcce-entry-confirm Claude Skill.
-    """
-    from aixbt_client import build_confirmation_report
-
-    # Find scanner data for this symbol
-    scanner_data = None
-    results = cache.results.get(timeframe, [])
-    # Normalize input: "BTC" → match "BTC/USDT", "SOL" → "SOL/USDT"
-    sym_upper = symbol.upper().replace("/USDT", "").replace("USDT", "")
-    for r in results:
-        r_base = r.get("symbol", "").replace("/USDT", "")
-        if r_base == sym_upper:
-            scanner_data = r
-            break
-
-    if not scanner_data:
-        # Still run AIXBT even without scanner data
-        report = await build_confirmation_report(symbol)
-        report["scanner"] = None
-        report["verdict"]["reason"] = (
-            f"Symbol {symbol} not in current scan — AIXBT only. "
-            + report["verdict"].get("reason", "")
-        )
-        return report
-
-    return await build_confirmation_report(symbol, scanner_data=scanner_data)
-
-
-@app.get("/api/confirm")
-async def confirm_entry_list(
-    timeframe: str = Query("4h"),
-    signals_only: bool = Query(True),
-):
-    """
-    Batch confirmation for all symbols with active entry signals.
-    If signals_only=True, only confirms symbols with entry signals.
-    """
-    from aixbt_client import build_confirmation_report
-
-    results = cache.results.get(timeframe, [])
-    entry_signals = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
-
-    targets = []
-    for r in results:
-        if signals_only and r.get("signal") not in entry_signals:
-            continue
-        targets.append(r)
-
-    if not targets:
-        return {"confirmations": [], "message": "No active entry signals"}
-
-    # Run confirmations concurrently
-    tasks = [
-        build_confirmation_report(t["symbol"], scanner_data=t)
-        for t in targets[:10]  # Cap at 10 to stay within rate limits
-    ]
-    reports = await asyncio.gather(*tasks, return_exceptions=True)
-
-    confirmations = []
-    for report in reports:
-        if isinstance(report, Exception):
-            continue
-        confirmations.append(report)
-
-    return {"confirmations": confirmations, "count": len(confirmations)}
 
 
 # ---------------------------------------------------------------------------

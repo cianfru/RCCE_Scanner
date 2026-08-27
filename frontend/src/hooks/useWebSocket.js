@@ -16,11 +16,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 // ── Derive WebSocket URL from API base ───────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_TOKEN = import.meta.env.VITE_API_TOKEN || "";
 
 function getWsUrl() {
   // Convert http(s)://host to ws(s)://host
   const base = API_BASE.replace(/^http/, "ws");
-  return `${base}/ws/scan`;
+  // WebSocket can't send Authorization headers — pass the token as a query param.
+  const q = API_TOKEN ? `?token=${encodeURIComponent(API_TOKEN)}` : "";
+  return `${base}/ws/scan${q}`;
 }
 
 // ── Singleton WebSocket manager ──────────────────────────────────────────────

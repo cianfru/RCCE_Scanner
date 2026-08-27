@@ -34,7 +34,11 @@ function initWorker() {
     };
 
     workerPort.start();
-    workerPort.postMessage({ type: "connect", apiBase: API_BASE });
+    workerPort.postMessage({
+      type: "connect",
+      apiBase: API_BASE,
+      apiToken: import.meta.env.VITE_API_TOKEN || "",
+    });
 
     // Visibility forwarding
     document.addEventListener("visibilitychange", () => {

@@ -1,3 +1,4 @@
+import "./apiClient.js";  // installs API-token fetch wrapper (must run first)
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
