@@ -19,7 +19,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -177,6 +177,13 @@ def _sync_cache_symbols() -> None:
 async def lifespan(app: FastAPI):
     """On startup, load portfolio groups and start periodic refresh."""
     _sync_cache_symbols()
+
+    # Initialize wallet-account store (multi-user)
+    try:
+        import user_store
+        await user_store.init()
+    except Exception as e:
+        logger.warning("user_store init failed (non-fatal): %s", e)
 
     # Initialize signal log DB
     try:
@@ -437,7 +444,10 @@ async def _auth_middleware(request, call_next):
     preflight) and public paths pass through."""
     if API_AUTH_TOKEN and request.method != "OPTIONS":
         path = request.url.path
-        if path.startswith("/api/") and path not in _PUBLIC_PATHS:
+        # Wallet sign-in + session-scoped endpoints self-manage their auth
+        # (SIWE / JWT), so they bypass the owner-token gate.
+        is_session_path = path.startswith("/api/auth/") or path == "/api/me" or path.startswith("/api/me/")
+        if path.startswith("/api/") and path not in _PUBLIC_PATHS and not is_session_path:
             if _extract_token(request) != API_AUTH_TOKEN:
                 from fastapi.responses import JSONResponse
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
@@ -701,6 +711,74 @@ async def admin_get_activity():
     activity tracking so polling it never keeps the app awake)."""
     import activity
     return activity.get_state()
+
+
+# ---------------------------------------------------------------------------
+# Wallet authentication (Sign-In-With-Ethereum) + per-user accounts
+# ---------------------------------------------------------------------------
+
+async def require_session(authorization: str = Header(default="")) -> str:
+    """FastAPI dependency: resolve the authenticated wallet address from the
+    Bearer session token, or 401. The wallet address IS the account id."""
+    import auth
+    token = authorization[7:].strip() if authorization[:7].lower() == "bearer " else ""
+    address = auth.verify_session(token)
+    if not address:
+        raise HTTPException(status_code=401, detail="Sign in with your wallet")
+    return address
+
+
+@app.get("/api/auth/nonce")
+async def auth_nonce(address: str = Query(..., min_length=42, max_length=42)):
+    """Return a one-time message for the wallet to sign."""
+    import auth
+    return {"message": auth.build_nonce_message(address)}
+
+
+@app.post("/api/auth/verify")
+async def auth_verify(payload: dict):
+    """Verify a signed sign-in message and issue a session token."""
+    import auth
+    import user_store
+    address = str(payload.get("address", "")).strip()
+    signature = str(payload.get("signature", "")).strip()
+    if len(address) != 42 or not signature:
+        raise HTTPException(status_code=400, detail="address and signature required")
+    if not auth.verify_signature(address, signature):
+        raise HTTPException(status_code=401, detail="Signature verification failed")
+    await user_store.upsert_user(address)
+    return {"token": auth.issue_session(address), "address": address.lower()}
+
+
+@app.get("/api/me")
+async def me(address: str = Depends(require_session)):
+    """The authenticated account (wallet address + profile)."""
+    import user_store
+    user = await user_store.get_user(address)
+    return {"address": address, "user": user}
+
+
+@app.get("/api/me/favorites")
+async def me_favorites(address: str = Depends(require_session)):
+    import user_store
+    return {"favorites": await user_store.list_favorites(address)}
+
+
+@app.post("/api/me/favorites")
+async def me_add_favorite(payload: dict, address: str = Depends(require_session)):
+    import user_store
+    symbol = str(payload.get("symbol", "")).strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol required")
+    await user_store.add_favorite(address, symbol)
+    return {"favorites": await user_store.list_favorites(address)}
+
+
+@app.delete("/api/me/favorites/{symbol:path}")
+async def me_remove_favorite(symbol: str, address: str = Depends(require_session)):
+    import user_store
+    await user_store.remove_favorite(address, symbol)
+    return {"favorites": await user_store.list_favorites(address)}
 
 
 @app.post("/api/admin/features")
