@@ -45,10 +45,10 @@
 
 /* Reading order: filters and results first, supporting context on demand. */
 .scanner-signal-summary{display:flex;flex-wrap:wrap;gap:4px 20px;margin:14px 0 18px;}
-.scanner-signal-summary button{display:flex;align-items:baseline;gap:12px;padding:10px 0;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--t-text2);cursor:pointer;font:14px var(--font-geist-sans),sans-serif;}
+.scanner-signal-summary .scanner-signal-item > button{display:flex;align-items:baseline;gap:12px;padding:10px 0;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--t-text2);cursor:pointer;font:14px var(--font-geist-sans),sans-serif;}
 .scanner-signal-summary strong{font:600 20px var(--font-geist-mono),monospace;color:var(--signal-color);}
-.scanner-signal-summary button[aria-pressed=true]{border-color:var(--signal-color);}
-.scanner-signal-summary button:disabled{opacity:.45;cursor:default;}
+.scanner-signal-summary .scanner-signal-item > button[aria-pressed=true]{border-color:var(--signal-color);}
+.scanner-signal-summary .scanner-signal-item > button:disabled{opacity:.45;cursor:default;}
 .scanner-context{margin:16px 0 0;border-block:1px solid var(--t-border);}
 .scanner-context>summary{padding:14px 0;color:var(--t-text2);font-size:14px;cursor:pointer;}
 .scanner-context>summary span{margin-left:12px;color:var(--t-text3);font-size:12px;}
@@ -142,3 +142,10 @@
 .universe-markets > div { display:grid; gap:5px; min-width:0; padding:14px 0; overflow-wrap:anywhere; }
 .universe-markets > div > span:first-child { color:var(--t-text1); }
 .universe-markets > div > span:last-child { line-height:1.6; }
+
+.scanner-signal-item {display:flex;align-items:center;gap:8px;}
+.scanner-toolbar {grid-template-columns:auto minmax(220px,1.4fr) minmax(270px,1fr);}
+.scanner-consensus {display:grid;grid-template-columns:auto minmax(100px,1fr);gap:24px;}
+.scanner-strength {width:auto;min-width:0;}
+@media(max-width:900px){.scanner-toolbar{grid-template-columns:auto minmax(0,1fr);}.scanner-consensus{grid-column:1/-1;grid-template-columns:1fr 1fr;}.scanner-strength{width:100%;max-width:none;}}
+@media(min-width:901px){.scanner-consensus{grid-column:auto;padding-top:0;border-top:0;}}
