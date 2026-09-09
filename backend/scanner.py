@@ -578,6 +578,9 @@ def _process_symbol(
         "beta_btc": round(rcce.get("beta_btc", 0), 4),
         "beta_eth": round(rcce.get("beta_eth", 0), 4),
         "atr_ratio": round(rcce.get("atr_ratio", 0), 3),
+        "regime_transition": rcce.get("regime_transition"),
+        "history_bars": rcce.get("data_bars", 0),
+        "normalization_ready": rcce.get("normalization_ready", False),
         "regime_probabilities": rcce.get("regime_probabilities", {}),
     }
     return result
@@ -1079,7 +1082,7 @@ async def _scan_timeframe(
         if cached_ts and cached_ts == last_closed_ts:
             # No new candle — reuse result from _results_by_sym
             prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
-            if prev is not None:
+            if prev is not None and prev.get("history_bars") == len(timestamps):
                 prev["price"] = float(ohlcv["close"][-1])
                 cache_results.append(prev)
                 cache_hits += 1
@@ -1376,7 +1379,7 @@ async def _drip_one_symbol(
         cached_ts = scan_cache._engine_cache.get(cache_key)
 
         prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
-        if cached_ts and cached_ts == last_closed_ts and prev is not None:
+        if cached_ts and cached_ts == last_closed_ts and prev is not None and prev.get("history_bars") == len(timestamps):
             # No new candle — reuse previous result, update live price
             prev["price"] = float(ohlcv["close"][-1])
             result = prev
