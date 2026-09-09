@@ -619,7 +619,9 @@ class Executor:
 
     def get_trades(self) -> List[dict]:
         """Return trade history."""
-        return [t.to_dict() for t in self.trade_log]
+        from executor_ledger_audit import closure_issue
+        rows = [t.to_dict() for t in self.trade_log]
+        return [{**row, "quality_issue": closure_issue(row)} for row in rows]
 
     # ------------------------------------------------------------------
     # State persistence

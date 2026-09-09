@@ -269,6 +269,7 @@ function PositionCard({ pos }) {
       </div>
 
       {/* Row 3: Reason */}
+      {currentPrice && pos.mark_source && <p style={{color:T.text3,fontSize:11,lineHeight:1.6,marginTop:10}}>Price source: {pos.mark_source} · {fullDate(pos.mark_observed_at)}</p>}
       {pos.valuation_issue && <p style={{color: T.text3, fontSize:12, lineHeight:1.6}}>{pos.valuation_issue}</p>}
       <details style={{marginTop:12,fontSize:12,color:T.text3}}><summary style={{cursor:'pointer'}}>Entry rationale</summary><ReasonBlock reason={pos.entry_reason} warnings={pos.entry_warnings} /></details>
     </div>
@@ -371,6 +372,7 @@ function TradeRow({ trade, expanded, onToggle }) {
         <td style={cellStyle} title={fullDate(trade.exit_time)}>{timeAgo(trade.exit_time)}<small style={{display:"block",marginTop:5,color:T.text3}} title={fullDate(trade.entry_time)}>Opened {timeAgo(trade.entry_time)}</small></td>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
           {trade.symbol.replace("/USDT", "")}
+          {trade.quality_issue && <small title={trade.quality_issue} style={{display:'block',fontWeight:400,color:T.text3,marginTop:5}}>Price-unit error</small>}
         </td>
         <td style={cellStyle}>
           <span style={S.badge(side.bg, side.color, side.border)}>{side.label}</span>
@@ -395,6 +397,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       {expanded && (
         <tr>
           <td colSpan={7} style={{ padding: "8px 20px 14px", background: T.overlay02 }}>
+            {trade.quality_issue && <p style={{whiteSpace:'normal',lineHeight:1.6,color:T.text2}}>{trade.quality_issue}</p>}
             <ReasonBlock reason={trade.entry_reason} warnings={trade.entry_warnings} />
             {!trade.entry_reason && (
               <div style={{ fontSize: 11, color: T.text4, fontFamily: T.mono }}>

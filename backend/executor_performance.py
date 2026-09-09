@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import math
 import time
+from executor_ledger_audit import closure_issue
 
 
 def number(value):
@@ -17,6 +18,8 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
     now = now or time.time()
     closed = [t for t in trades if number(t.get('pnl_usd')) is not None and number(t.get('exit_time'))]
     realized = sum(float(t['pnl_usd']) for t in closed)
+    issues = [{**t, 'quality_issue': closure_issue(t)} for t in closed if closure_issue(t)]
+    flagged_pnl = sum(float(t['pnl_usd']) for t in issues)
     wins = sum(float(t['pnl_usd']) > 0 for t in closed)
     losses = sum(float(t['pnl_usd']) < 0 for t in closed)
     flat = len(closed) - wins - losses
@@ -31,23 +34,23 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
         reason = None
         if symbol.rsplit('/', 1)[-1] not in ('USD', 'USDT', 'USDC', 'USDH'):
             reason = 'Legacy cross-quoted position: USD valuation needs reconciliation.'
-        elif number(p.get('peak_unrealized_pct')) is not None and float(p['peak_unrealized_pct']) > 100000:
+        elif number(p.get('peak_unrealized_pct')) is not None and float(p['peak_unrealized_pct']) > 100000 and not mark.get('entry_unit_verified'):
             reason = 'Legacy price-unit anomaly: entry history needs reconciliation.'
         elif entry is None or entry <= 0 or cost is None or cost <= 0:
             reason = 'Missing or invalid entry cost.'
         elif price is None or price <= 0:
-            reason = 'No matching scanner price available.'
+            reason = 'No reliable current quote available; frozen delisting prices are not used.'
         observed = number(mark.get('observed_at'))
         if not reason and (not observed or now - observed > 6 * 3600):
             reason = 'Scanner price is older than six hours or has no observation time.'
         pct = None if reason else (price / entry - 1) * (100 if p.get('side') != 'SHORT' else -100)
-        row.update(mark_price=price if not reason else None, mark_observed_at=observed,
+        row.update(mark_source=mark.get("source"), mark_price=price if not reason else None, mark_observed_at=observed,
                    unrealized_pnl_pct=pct, unrealized_pnl_usd=None if reason else cost * pct / 100,
                    valuation_issue=reason)
         valued.append(row)
     unrealized = sum(p['unrealized_pnl_usd'] for p in valued if p['unrealized_pnl_usd'] is not None)
     priced_count = sum(p['unrealized_pnl_usd'] is not None for p in valued)
-    complete = priced_count == len(positions) and len(closed) == len(trades)
+    complete = priced_count == len(positions) and len(closed) == len(trades) and not issues
     cash = number((portfolio or {}).get('cash'))
     cash_difference = None
     if cash is not None and all(p.get('side', 'LONG') == 'LONG' for p in positions):
@@ -69,7 +72,9 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
         'as_of': now, 'first_entry_at': min(starts) if starts else None,
         'history_days': int((now - min(starts)) / 86400) if starts else 0,
         'initial_balance_usd': initial_balance,
-        'realized_pnl_usd': realized, 'unrealized_pnl_usd': unrealized,
+        'realized_pnl_usd': realized, 'flagged_closed_trades': len(issues),
+        'flagged_closed_pnl_usd': flagged_pnl, 'unflagged_realized_pnl_usd': realized-flagged_pnl,
+        'closed_issues': issues, 'open_profitable_count': sum((p['unrealized_pnl_usd'] or 0)>0 for p in valued), 'unrealized_pnl_usd': unrealized,
         'combined_pnl_usd': total if complete else None,
         'valued_pnl_subtotal_usd': total,
         'return_on_starting_capital_pct': total / initial_balance * 100 if complete and initial_balance > 0 else None,
@@ -85,5 +90,5 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
         'exit_reasons': dict(Counter(t.get('exit_signal', 'UNKNOWN') for t in closed)),
         'monthly_realized': [{'month': key, **value} for key, value in sorted(months.items())],
         'realized_curve': curve, 'positions': valued,
-        'basis': 'Recorded executor ledger and latest matching scanner prices. Paper results exclude fees, funding and slippage. The realized curve is not an equity curve. Legacy records have not been rewritten.',
+        'basis': 'Recorded executor ledger with scanner marks and explicitly mapped external reference quotes. USD and USD-pegged quotes are treated as equivalent for reference valuation. Paper results exclude fees, funding and slippage. The realized curve is not an equity curve. Legacy records have not been rewritten.',
     }
