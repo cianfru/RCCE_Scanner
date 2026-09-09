@@ -1,7 +1,7 @@
 """Wall-clock refresh policy. One worker, no per-market timers or task fan-out."""
 
 
-def refresh_interval(*, tier, kind, active, unavailable=False):
+def refresh_interval(*, tier, active, unavailable=False):
     # Seconds between attempts, not promises of exact delivery under load.
     interval = 900 if tier == "hot" else 3600
     if tier == "cold":
@@ -25,10 +25,10 @@ class ScanSchedule:
         self.attempts = {s: t for s, t in self.attempts.items() if s in current}
         self.unavailable.intersection_update(current)
 
-    def next_due(self, symbols, now, tier_for, kind_for, active):
+    def next_due(self, symbols, now, tier_for, active):
         due = [s for s in symbols if s not in self.attempts or
                now - self.attempts[s] >= refresh_interval(
-                   tier=tier_for(s), kind=kind_for(s), active=active,
+                   tier=tier_for(s), active=active,
                    unavailable=s in self.unavailable)]
         # Oldest attempts first prevent a large hot set starving other listings.
         # BTC and ETH lead the initial pass because other engines reference them.

@@ -1440,7 +1440,6 @@ async def run_drip_scan(
     """Refresh due markets serially; synthesis/position monitoring stays separate."""
     global _drip_attempt_count
     from activity import is_active, idle_sleep
-    from hyperliquid_universe import MARKETS
     from scan_schedule import ScanSchedule
 
     if scan_cache is None:
@@ -1456,7 +1455,6 @@ async def run_drip_scan(
         symbol = schedule.next_due(
             symbols, time.monotonic(),
             lambda s: "hot" if s in ("BTC/USDT", "ETH/USDT") else _classify_drip_tier(s, scan_cache),
-            lambda s: MARKETS.get(s, {}).get("kind", "perp"),
             is_active(),
         )
         if symbol is None:

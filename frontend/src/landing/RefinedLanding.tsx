@@ -6,8 +6,6 @@ import { ArrowUpRight, ArrowRight, ChevronDown, Activity, ScanLine, Layers3, Loc
 import { Mark, LogoLettering } from './Mark';
 import { useState, useEffect, useRef } from 'react';
 import { Tabs,TabsList,TabsTrigger } from './tabs';
-import { Table,TableHeader,TableRow,TableHead,TableBody,TableCell } from './table';
-import { forTimeframe, price, tone } from './scanner-data';
 import './base.css';
 import './refined-landing.css';
 import './palette.css';
