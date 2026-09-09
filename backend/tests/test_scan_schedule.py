@@ -20,9 +20,9 @@ class ScheduleTests(unittest.TestCase):
         schedule.record('BTC', 0, True)
         def due(now, active=True):
             return schedule.next_due(['BTC'], now, lambda s: 'hot', lambda s: 'perpetual', active)
-        self.assertIsNone(due(299))
-        self.assertEqual(due(300), 'BTC')
-        self.assertIsNone(due(301, False))
+        self.assertIsNone(due(899))
+        self.assertEqual(due(900), 'BTC')
+        self.assertIsNone(due(901, False))
         self.assertEqual(due(3600, False), 'BTC')
 
     def test_unavailable_backoff_and_recovery(self):
@@ -32,7 +32,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertIsNone(due(3599))
         self.assertEqual(due(3600), 'NEW')
         schedule.record('NEW', 3600, True)
-        self.assertEqual(due(3900), 'NEW')
+        self.assertEqual(due(4500), 'NEW')
 
     def test_oldest_due_is_not_starved_and_delisting_prunes(self):
         schedule = ScanSchedule()
@@ -44,6 +44,6 @@ class ScheduleTests(unittest.TestCase):
         self.assertNotIn('COLD', schedule.attempts)
 
     def test_spot_and_cold_intervals(self):
-        self.assertEqual(refresh_interval(tier='active', kind='spot', active=True), 1800)
-        self.assertEqual(refresh_interval(tier='active', kind='perpetual', active=True), 900)
+        self.assertEqual(refresh_interval(tier='active', kind='spot', active=True), 3600)
+        self.assertEqual(refresh_interval(tier='active', kind='perpetual', active=True), 3600)
         self.assertEqual(refresh_interval(tier='deep_cold', kind='spot', active=True), 14400)

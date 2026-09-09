@@ -1400,15 +1400,11 @@ def _classify_drip_tier(
 ) -> str:
     """Classify a symbol into a drip scan tier.
 
-    Favorites and anomalies are hot; BMSB direction separates the other tiers.
+    Favorites are hot; BMSB direction separates the other tiers.
     Wall-clock intervals are defined in scan_schedule.refresh_interval.
     """
     # Favorites always get priority regardless of BMSB
     if symbol in fav_store.get():
-        return "hot"
-
-    # Symbols with active anomalies get promoted to hot tier
-    if symbol in scan_cache.anomaly_hot_symbols:
         return "hot"
 
     # Check cached engine results for BMSB direction

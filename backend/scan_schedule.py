@@ -3,7 +3,7 @@
 
 def refresh_interval(*, tier, kind, active, unavailable=False):
     # Seconds between attempts, not promises of exact delivery under load.
-    interval = 300 if tier == "hot" else (1800 if kind == "spot" else 900)
+    interval = 900 if tier == "hot" else 3600
     if tier == "cold":
         interval = max(interval, 3600)
     elif tier == "deep_cold":

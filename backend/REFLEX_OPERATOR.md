@@ -16,8 +16,8 @@ Validation: `PYTHONPATH=backend python -m unittest discover -s backend/tests -v`
 
 `scan_schedule.py` schedules one market at a time, at most one start per second.
 All verified listings receive an initial attempt. Subsequent candle checks use
-wall-clock intervals: favorites/anomalies and BTC/ETH 5 min; ordinary perps 15 min;
-spot-only 30 min; cold 60 min; deep cold 4 h. Failed or unavailable-history checks
+wall-clock intervals: favorites and BTC/ETH 15 min; ordinary perps and
+spot-only 60 min; cold 60 min; deep cold 4 h. Failed or unavailable-history checks
 back off to at least 60 min. Idle periods impose a 60 min minimum. Intervals are
 minimum spacing, not freshness guarantees: startup and queue load add delay.
 Oldest attempts run first to avoid starvation. Listing removal prunes scheduling
@@ -29,3 +29,30 @@ production snapshot used about 367 MB RSS, with about 26 MB in scanner/OHLCV dat
 runtime and other background services contribute to the baseline. Compare Railway
 CPU, memory and egress over a full day before and after release. A free allowance
 is not guaranteed. No billing limits, service plans or execution settings change.
+
+
+## Token membership and personal watchlists: next implementation boundary
+
+The existing favorites store is global. It is not wallet authentication or a
+private user watchlist. Do not use a wallet address supplied by the client as
+proof of ownership. Before launching membership:
+
+- Authenticate with a signed, single-use, expiring wallet challenge bound to the
+  app domain and chain, then issue a secure session.
+- Verify the required token balance server-side using the confirmed token
+  contract/network and access threshold. Cache checks briefly with explicit
+  expiry and recheck access; holding a token is not permission to move it.
+- Store favorites by authenticated wallet. Enforce an operator-configured limit
+  per wallet and derive a deduplicated priority set from eligible memberships.
+  Personal list visibility and changes must never mutate another user's list.
+- Run one shared scan per market/timeframe, irrespective of the number of users
+  following it. Never start a scanner per wallet or per browser connection.
+- Retain a bounded global worker/refresh budget as favorites grow. The 15-minute
+  priority target is best effort, not a contractual freshness guarantee. Show
+  actual candle-check times and retain hourly broad-market discovery.
+- Separate app preferences from the existing global favorites used by Telegram
+  alerts/execution. Do not expose execution privileges through membership.
+
+The token network/contract, required balance, per-wallet favorite allowance and
+membership recheck/grace rules must be settled before enabling this layer. A
+permanent free AI/provider or hosting allowance cannot be guaranteed by gating.
