@@ -5,7 +5,7 @@ export default function RegimeTransition({ data }) {
   const transition = data?.regime_transition;
   const limited = data?.history_bars > 0 && data.normalization_ready === false;
   if (!transition && !limited) return null;
-  return <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
+  return <span onClick={event => event.stopPropagation()} style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
     fontSize: 11, lineHeight: 1.6, fontFamily: T.mono, color: T.text3, maxWidth: '100%' }}>
     {transition && <span>→ {REGIME_META[transition.candidate]?.label || transition.candidate} pending · {transition.observed_bars}/{transition.required_bars}</span>}
     {limited && <span>Limited history</span>}
