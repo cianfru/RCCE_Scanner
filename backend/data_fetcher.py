@@ -658,6 +658,9 @@ async def _fetch_hl_candles(
 
 def _hl_coin_name(symbol: str) -> str:
     """Convert scanner symbol 'BASE/USDT' → HL coin name, applying renames."""
+    from hyperliquid_universe import MARKETS
+    if symbol in MARKETS:
+        return MARKETS[symbol]["coin"]
     base = symbol.split("/")[0]
     return _HL_COIN_MAP.get(base, base)
 
@@ -852,11 +855,13 @@ async def fetch_ohlcv(
 
     # Fetch from source
     data = None
-    if symbol in _ccxt_only:
+    from hyperliquid_universe import MARKETS
+    native_spot = MARKETS.get(symbol, {}).get("kind") == "spot"
+    if symbol in _ccxt_only and not native_spot:
         data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
     else:
         data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, fetch_limit)
-        if data is None:
+        if data is None and not native_spot:
             data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
             if data is not None:
                 _ccxt_only.add(symbol)
@@ -970,7 +975,8 @@ async def fetch_batch(
         base = parts[0]
         quote = parts[1] if len(parts) > 1 else "USDT"
 
-        if quote in ("USDT", "USD"):
+        from hyperliquid_universe import MARKETS
+        if quote in ("USDT", "USD", "USDC", "USDH") or sym in MARKETS:
             # Direct USD fetch — HL native
             coin = _hl_coin_name(sym)
             data = await _fetch_hl_candles(session, coin, timeframe, limit=limit)
@@ -1068,7 +1074,10 @@ async def fetch_batch(
 
         # Collect symbols that failed OR have insufficient HL history
         need_ccxt: List[str] = []
+        from hyperliquid_universe import MARKETS
         for sym in uncached:
+            if MARKETS.get(sym, {}).get("kind") == "spot":
+                continue
             if sym in deepened:
                 continue  # Already tried CCXT for this symbol+timeframe
             if sym not in results:

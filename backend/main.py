@@ -175,16 +175,17 @@ async def _fetch_exchange_symbols_live() -> List[dict]:
 
 
 def _sync_cache_symbols() -> None:
-    """Set cache.symbols to the union of all portfolio groups."""
-    mgr = PortfolioGroupManager.get()
-    cache.symbols = mgr.get_union_symbols()
-    logger.info("Cache symbols synced: %d symbols from %d groups", len(cache.symbols), len(mgr.groups))
+    """Keep discovery authoritative even when legacy integrations call this helper."""
+    from hyperliquid_universe import apply_universe
+    apply_universe(cache)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """On startup, load portfolio groups and start periodic refresh."""
-    _sync_cache_symbols()
+    """Discover Hyperliquid markets and start periodic refresh."""
+    from hyperliquid_universe import refresh, run_refresh
+    await refresh(cache)
+    asyncio.create_task(run_refresh(cache))
 
     # Initialize signal log DB
     try:
@@ -485,8 +486,8 @@ async def websocket_scan(websocket: WebSocket):
         await hub.send_to(websocket, {
             "type": "synthesis-complete",
             "data": {
-                "results_4h": cache.results.get("4h", []),
-                "results_1d": cache.results.get("1d", []),
+                "results_4h": cache.get_results("4h"),
+                "results_1d": cache.get_results("1d"),
                 "consensus_4h": cache.consensus.get("4h"),
                 "consensus_1d": cache.consensus.get("1d"),
                 "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
@@ -502,8 +503,8 @@ async def websocket_scan(websocket: WebSocket):
                     await hub.send_to(websocket, {
                         "type": "synthesis-complete",
                         "data": {
-                            "results_4h": cache.results.get("4h", []),
-                            "results_1d": cache.results.get("1d", []),
+                            "results_4h": cache.get_results("4h"),
+                            "results_1d": cache.get_results("1d"),
                             "consensus_4h": cache.consensus.get("4h"),
                             "consensus_1d": cache.consensus.get("1d"),
                             "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
@@ -836,48 +837,24 @@ async def get_watchlist():
 
 @app.post("/api/watchlist")
 async def update_watchlist(body: WatchlistUpdate):
-    """Replace the entire watchlist."""
-    cache.symbols = [s.upper().replace("-", "/") for s in body.symbols]
-    return {"ok": True, "count": len(cache.symbols)}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/watchlist/add")
 async def add_to_watchlist(body: WatchlistAddRequest):
-    """Add a single symbol to the watchlist."""
-    symbol = body.symbol.upper().replace("-", "/")
-
-    # Ensure USDT quote if not specified
-    if "/" not in symbol:
-        symbol = f"{symbol}/USDT"
-
-    if symbol in cache.symbols:
-        return {"ok": True, "message": f"{symbol} already in watchlist", "count": len(cache.symbols)}
-
-    # Validate symbol exists on exchange
-    available = await _load_exchange_symbols()
-    valid_symbols = {s["symbol"] for s in available}
-    if symbol not in valid_symbols:
-        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found on any exchange")
-
-    cache.symbols.append(symbol)
-    return {"ok": True, "message": f"Added {symbol}", "count": len(cache.symbols)}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.delete("/api/watchlist/{symbol}")
 async def remove_from_watchlist(symbol: str):
-    """Remove a single symbol from the watchlist."""
-    symbol = symbol.upper().replace("-", "/")
-    if symbol not in cache.symbols:
-        raise HTTPException(status_code=404, detail=f"{symbol} not in watchlist")
-
-    cache.symbols.remove(symbol)
-    return {"ok": True, "message": f"Removed {symbol}", "count": len(cache.symbols)}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.get("/api/watchlist/search")
 async def search_symbols(q: str = Query(..., min_length=1, description="Search query")):
-    """Search available USDT and BTC trading pairs on supported exchanges."""
-    available = await _load_exchange_symbols()
+    """Search the verified Hyperliquid universe."""
+    from hyperliquid_universe import MARKETS
+    available = [{**m, "exchanges": ["hyperliquid"]} for m in MARKETS.values()]
     query = q.upper()
     matches = [
         SymbolSearchResult(**s)
@@ -889,140 +866,69 @@ async def search_symbols(q: str = Query(..., min_length=1, description="Search q
 
 @app.post("/api/watchlist/reset")
 async def reset_watchlist():
-    """Reset watchlist to defaults (25 symbols)."""
-    from data_fetcher import DEFAULT_SYMBOLS
-    cache.symbols = DEFAULT_SYMBOLS.copy()
-    return {"ok": True, "count": len(cache.symbols)}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/watchlist/clear")
 async def clear_watchlist():
-    """Clear the entire watchlist."""
-    cache.symbols = []
-    return {"ok": True, "count": 0}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/watchlist/full")
 async def full_watchlist():
-    """Load the full 65-symbol preset."""
-    from data_fetcher import FULL_SYMBOLS
-    cache.symbols = FULL_SYMBOLS.copy()
-    return {"ok": True, "count": len(cache.symbols)}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
-
-# ---------------------------------------------------------------------------
-# Portfolio group endpoints
-# ---------------------------------------------------------------------------
 
 @app.get("/api/groups")
 async def list_groups():
-    """List all portfolio groups."""
-    mgr = PortfolioGroupManager.get()
-    return [
-        PortfolioGroupResponse(**{
-            "id": g.id, "name": g.name, "symbols": g.symbols,
-            "color": g.color, "order": g.order, "pinned": g.pinned,
-        })
-        for g in mgr.get_all()
-    ]
+    """Compatibility endpoint: one exchange-owned market collection."""
+    return [{"id": "hyperliquid", "name": "Hyperliquid", "symbols": cache.symbols,
+             "color": "#97FCE4", "order": 0, "pinned": True}]
+
+
+@app.get("/api/universe")
+async def market_universe(timeframe: str = Query("1d", pattern="^(4h|1d)$")):
+    import hyperliquid_universe as universe
+    ready = {r["symbol"] for r in cache.get_results(timeframe)}
+    return {"updated_at": universe.UPDATED_AT, "stale": universe.STALE,
+            "markets": [{**m, "analysis_status": "ready" if s in ready else "pending"}
+                        for s, m in universe.MARKETS.items()]}
 
 
 @app.post("/api/groups")
 async def create_group(body: PortfolioGroupCreate):
-    """Create a new portfolio group."""
-    mgr = PortfolioGroupManager.get()
-    group = mgr.create_group(name=body.name, symbols=body.symbols, color=body.color)
-    _sync_cache_symbols()
-    return PortfolioGroupResponse(**{
-        "id": group.id, "name": group.name, "symbols": group.symbols,
-        "color": group.color, "order": group.order, "pinned": group.pinned,
-    })
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.put("/api/groups/{group_id}")
 async def update_group(group_id: str, body: PortfolioGroupUpdate):
-    """Update a group's name and/or color."""
-    mgr = PortfolioGroupManager.get()
-    group = mgr.update_group(group_id, name=body.name, color=body.color)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Group not found")
-    return PortfolioGroupResponse(**{
-        "id": group.id, "name": group.name, "symbols": group.symbols,
-        "color": group.color, "order": group.order, "pinned": group.pinned,
-    })
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.delete("/api/groups/{group_id}")
 async def delete_group(group_id: str):
-    """Delete a portfolio group. Pinned groups (Main, BTC) cannot be deleted."""
-    mgr = PortfolioGroupManager.get()
-    group = mgr.get_by_id(group_id)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Group not found")
-    if group.pinned:
-        raise HTTPException(status_code=400, detail="Cannot delete pinned group")
-    mgr.delete_group(group_id)
-    _sync_cache_symbols()
-    return {"ok": True}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/groups/{group_id}/symbols")
 async def add_symbol_to_group(group_id: str, body: PortfolioGroupAddSymbol):
-    """Add a symbol to a portfolio group."""
-    mgr = PortfolioGroupManager.get()
-    group = mgr.add_symbol(group_id, body.symbol)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Group not found")
-    _sync_cache_symbols()
-    return PortfolioGroupResponse(**{
-        "id": group.id, "name": group.name, "symbols": group.symbols,
-        "color": group.color, "order": group.order, "pinned": group.pinned,
-    })
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/groups/{group_id}/symbols/batch")
 async def add_symbols_batch(group_id: str, body: dict):
-    """Add multiple symbols to a group in one call."""
-    symbols = body.get("symbols", [])
-    if not symbols:
-        raise HTTPException(status_code=400, detail="No symbols provided")
-    mgr = PortfolioGroupManager.get()
-    group = mgr.add_symbols_batch(group_id, symbols)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Group not found")
-    _sync_cache_symbols()
-    return PortfolioGroupResponse(**{
-        "id": group.id, "name": group.name, "symbols": group.symbols,
-        "color": group.color, "order": group.order, "pinned": group.pinned,
-    })
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.delete("/api/groups/{group_id}/symbols/{symbol:path}")
 async def remove_symbol_from_group(group_id: str, symbol: str):
-    """Remove a symbol from a portfolio group."""
-    mgr = PortfolioGroupManager.get()
-    symbol = symbol.upper().replace("-", "/")
-    group = mgr.remove_symbol(group_id, symbol)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Group not found")
-    _sync_cache_symbols()
-    return PortfolioGroupResponse(**{
-        "id": group.id, "name": group.name, "symbols": group.symbols,
-        "color": group.color, "order": group.order, "pinned": group.pinned,
-    })
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
 
 @app.post("/api/groups/reorder")
 async def reorder_groups(body: PortfolioGroupReorder):
-    """Reorder portfolio group tabs."""
-    mgr = PortfolioGroupManager.get()
-    mgr.reorder(body.order)
-    return {"ok": True}
+    raise HTTPException(status_code=409, detail="Markets are managed automatically from Hyperliquid listings.")
 
-
-# ---------------------------------------------------------------------------
-# New data endpoints (v4.0)
-# ---------------------------------------------------------------------------
 
 @app.get("/api/sentiment")
 async def sentiment():
@@ -1045,7 +951,8 @@ async def stablecoin():
 @app.get("/api/positioning/{symbol}")
 async def positioning(symbol: str):
     """Return positioning data for a symbol (Binance / Hyperliquid)."""
-    symbol = symbol.upper().replace("-", "/")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
     # Find in latest scan results
     for tf in ("4h", "1d"):
         for r in cache.results.get(tf, []):
@@ -1080,7 +987,8 @@ async def cross_exchange_positioning(symbol: str):
           "dominant_oi": "Binance"
         }
     """
-    symbol = symbol.upper().replace("-", "/")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
     if "/" not in symbol:
         symbol = f"{symbol}/USDT"
 
@@ -1440,7 +1348,8 @@ async def signal_heatmap(
 @app.get("/api/confluence/{symbol}")
 async def confluence_for_symbol(symbol: str):
     """Return multi-TF confluence for a symbol."""
-    symbol = symbol.upper().replace("-", "/")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
     c = cache.confluence.get(symbol)
     if c is None:
         return ConfluenceResponse()
@@ -1463,7 +1372,8 @@ async def chart_data(
     from engines.cto_engine import compute_cto_series
     import numpy as np
 
-    symbol = symbol.upper().replace("-", "/")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
 
     # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
     effective_limit = min(limit, 500)
@@ -2149,7 +2059,8 @@ async def executor_remove_whitelist(symbol: str):
     if not executor:
         raise HTTPException(status_code=400, detail="Executor not initialized")
 
-    symbol = symbol.upper().replace("-", "/")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
     return executor.remove_from_whitelist(symbol)
 
 
@@ -3614,6 +3525,7 @@ async def chat_endpoint(req: ChatRequest):
             user_message=req.message,
             symbol=req.symbol,
             wallet_address=req.wallet_address,
+            timeframe=req.timeframe,
         )
         return ChatResponse(
             reply=reply,
@@ -3625,42 +3537,18 @@ async def chat_endpoint(req: ChatRequest):
         import traceback
         tb = traceback.format_exc()
         logger.error("Chat error:\n%s", tb)
-        # Return the last 3 lines of the traceback in the detail so frontend can surface it
-        tb_lines = [l for l in tb.splitlines() if l.strip()]
-        detail = f"{type(e).__name__}: {e} | {' | '.join(tb_lines[-3:])}"
-        raise HTTPException(status_code=500, detail=detail[:800])
+        raise HTTPException(status_code=503, detail="AI Assist is temporarily unavailable. Your scanner data remains available; please try again later.")
 
 
-@app.get("/api/models", response_model=ModelsResponse)
+
+@app.get("/api/models")
 async def get_models():
-    """List available LLM models and current selection."""
-    try:
-        from assistant import get_assistant
-        assistant = get_assistant()
-        return ModelsResponse(
-            models=await assistant.get_available_models(),
-            current=assistant.get_current_model(),
-            mode=assistant.get_mode(),
-        )
-    except Exception as e:
-        logger.error("Models list error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"managed_by": "server", "free_only": True}
 
 
-@app.post("/api/models", response_model=SetModelResponse)
+@app.post("/api/models")
 async def set_model(req: SetModelRequest):
-    """Switch the active LLM model."""
-    try:
-        from assistant import get_assistant
-        assistant = get_assistant()
-        success = assistant.set_model(req.model_id)
-        return SetModelResponse(
-            success=success,
-            current=assistant.get_current_model(),
-        )
-    except Exception as e:
-        logger.error("Model switch error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=403, detail="Model selection is managed by the operator.")
 
 
 @app.get("/api/briefing", response_model=BriefingResponse)

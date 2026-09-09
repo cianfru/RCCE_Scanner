@@ -2,7 +2,7 @@
 RCCE Scanner — Pydantic response models
 """
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 
 class PositioningResponse(BaseModel):
@@ -64,6 +64,8 @@ class ConditionDetail(BaseModel):
 
 
 class ScanResult(BaseModel):
+    market_kind: Optional[str] = None
+    market_coin: Optional[str] = None
     symbol: str
     timeframe: str
     price: float
@@ -409,6 +411,7 @@ class ChatRequest(BaseModel):
     session_id: str = "default"
     symbol: Optional[str] = None
     wallet_address: Optional[str] = None
+    timeframe: Literal["4h", "1d"] = "1d"
 
 
 class ChatResponse(BaseModel):

@@ -5,8 +5,7 @@ LLM-powered trading assistant with OpenRouter multi-model support.
 
 Provides natural-language signal explanations, daily briefings,
 and conversational Q&A over live RCCE Scanner data.
-Supports model switching via OpenRouter (Claude, GPT, Gemini, DeepSeek, etc.)
-with automatic fallback to direct Anthropic API.
+Uses an operator-configured, verified free OpenRouter model with no paid fallback.
 """
 
 from __future__ import annotations
@@ -26,12 +25,8 @@ logger = logging.getLogger(__name__)
 # Model catalogue & provider config
 # ---------------------------------------------------------------------------
 
-# Default to a capable, reliable free model; override via OPENROUTER_MODEL env var.
-# openai/gpt-oss-120b:free gives consistent analysis and isn't currently rate-limited
-# (as of 2026-04-10). Nemotron was flaky with empty-response errors; Gemma3/4 are
-# rate-limited on the free tier. gpt-oss-120b has 131K context which fits our prompt.
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
-ANTHROPIC_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
+# Operator-owned configuration. Never accept provider/model choices from a chat request.
+DEFAULT_MODEL = os.environ.get("REFLEX_ASSISTANT_MODEL", "google/gemma-4-31b-it:free")
 MAX_HISTORY_MESSAGES = 20
 
 # Minimum context window to include a model (filters out tiny/toy models)
@@ -89,7 +84,7 @@ async def _fetch_openrouter_models() -> list:
         pricing = m.get("pricing", {})
         prompt_cost = float(pricing.get("prompt", "0") or "0")
         completion_cost = float(pricing.get("completion", "0") or "0")
-        is_free = (prompt_cost == 0 and completion_cost == 0)
+        is_free = ("prompt" in pricing and "completion" in pricing and prompt_cost == 0 and completion_cost == 0 and float(pricing.get("request", "0") or "0") == 0)
 
         # Created timestamp — newer models are generally more capable
         created_at = m.get("created", 0) or 0
@@ -135,7 +130,7 @@ def _load_env():
 def _get_provider_config() -> Tuple[str, Optional[str], str]:
     """Return (api_key, base_url, mode) for the active LLM provider.
 
-    Prefers OpenRouter; falls back to direct Anthropic SDK.
+    OpenRouter only; absent configuration fails closed.
     """
     # Try OpenRouter first
     or_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -146,18 +141,8 @@ def _get_provider_config() -> Tuple[str, Optional[str], str]:
     if or_key:
         return or_key, "https://openrouter.ai/api/v1", "openrouter"
 
-    # Fallback: direct Anthropic
-    ant_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not ant_key:
-        _load_env()
-        ant_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    raise RuntimeError("AI Assist is unavailable: the server needs OPENROUTER_API_KEY.")
 
-    if ant_key:
-        return ant_key, None, "anthropic"
-
-    raise RuntimeError(
-        "No LLM API key found. Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in .env"
-    )
 
 # ---------------------------------------------------------------------------
 # System prompt — encodes the full RCCE decision matrix
@@ -621,40 +606,25 @@ class AssistantManager:
                     },
                 )
                 logger.info("LLM provider: OpenRouter (model=%s)", self._current_model)
-            else:
-                from anthropic import Anthropic
-                self._client = Anthropic(api_key=api_key)
-                logger.info("LLM provider: Anthropic direct (model=%s)", ANTHROPIC_FALLBACK_MODEL)
         return self._client
 
     # -- Model management ---------------------------------------------------
 
     def get_current_model(self) -> str:
         """Return the active model ID."""
-        if self._mode == "anthropic":
-            return ANTHROPIC_FALLBACK_MODEL
         return self._current_model
 
     def set_model(self, model_id: str) -> bool:
-        """Switch to a different model. Accepts any OpenRouter model ID."""
-        if not model_id or not isinstance(model_id, str):
-            return False
-        self._current_model = model_id
-        logger.info("Model switched to: %s", model_id)
-        return True
+        """Retired public mutation. Operators use REFLEX_ASSISTANT_MODEL."""
+        return False
 
     async def get_available_models(self) -> list:
-        """Return the full OpenRouter model catalogue (cached)."""
-        models = await _fetch_openrouter_models()
-        # Auto-select best free model if still on default and it's not available
-        if models and self._mode == "openrouter":
-            available_ids = {m["id"] for m in models}
-            if self._current_model not in available_ids:
-                free_models = [m for m in models if m.get("is_free")]
-                if free_models:
-                    self._current_model = free_models[0]["id"]
-                    logger.info("Auto-selected best free model: %s", self._current_model)
-        return models
+        return [m for m in await _fetch_openrouter_models() if m.get("is_free") and m["id"].endswith(":free")]
+
+    async def _validate_free_model(self):
+        models = await self.get_available_models()
+        if not self._current_model.endswith(":free") or not any(m["id"] == self._current_model for m in models):
+            raise RuntimeError("AI Assist is temporarily unavailable. The configured free model needs an operator update.")
 
     def get_mode(self) -> str:
         """Return current provider mode, initialising client if needed."""
@@ -1568,22 +1538,8 @@ class AssistantManager:
 
     def _detect_symbol(self, text: str) -> Optional[str]:
         """Extract a symbol from user text, e.g. 'why is HYPE light long?' -> 'HYPE/USDT'."""
-        from scanner import cache
-
-        text_upper = text.upper()
-        best_match = None
-        best_len = 0
-
-        for tf_key, tf_results in cache.results.items():
-            for r in tf_results:
-                sym = r.get("symbol", "")
-                base = sym.split("/")[0]
-                # Match longest base symbol to avoid "BTC" matching inside "ABTC"
-                if base in text_upper and len(base) > best_len:
-                    best_match = sym
-                    best_len = len(base)
-
-        return best_match
+        matches = self._detect_all_symbols(text)
+        return matches[0] if matches else None
 
     def _detect_all_symbols(self, text: str) -> List[str]:
         """Extract all mentioned symbols from user text for comparison queries."""
@@ -1596,10 +1552,13 @@ class AssistantManager:
 
         # Collect all known base symbols
         all_bases: List[tuple] = []
-        for tf_key, tf_results in cache.results.items():
+        for tf_key in ("4h", "1d"):
+            tf_results = cache.get_results(tf_key)
             for r in tf_results:
                 sym = r.get("symbol", "")
                 base = sym.split("/")[0]
+                if base.upper() in {"I", "A", "AN", "IS", "IT", "ME", "MY", "ON", "IN", "THE", "AND", "OR", "FOR", "TO", "WHY", "WHAT", "HOW", "ALL", "NOW", "UP", "GO", "BE", "AS", "AT", "DO", "AI"} and "$" + base.upper() not in text_upper:
+                    continue
                 if base not in seen_bases:
                     all_bases.append((base, sym))
                     seen_bases.add(base)
@@ -1628,72 +1587,25 @@ class AssistantManager:
         user_message: str,
         symbol: Optional[str] = None,
         wallet_address: Optional[str] = None,
+        timeframe: str = "1d",
     ) -> tuple[str, Optional[str]]:
         """Process a user message and return (reply, detected_symbol)."""
-        # Scope session by wallet so different users don't share history
-        scoped_session_id = (
-            f"{wallet_address}:{session_id}" if wallet_address else session_id
-        )
+        import re
+        from scanner import cache
+        from assistant_snapshot import snapshot, RULES
+        requested_tf = re.search(r"\b(4h|1d)\b", user_message, re.I)
+        timeframe = requested_tf.group(1).lower() if requested_tf else timeframe
+        if timeframe not in {"4h", "1d"}:
+            raise ValueError("Timeframe must be 4h or 1d")
+        scoped_session_id = f"{wallet_address or 'public'}:{session_id}:{timeframe}"
         session = self.get_or_create_session(scoped_session_id)
-
-        # Detect symbol from message if not provided
-        detected = symbol
-        if not detected:
-            detected = self._detect_symbol(user_message)
-
-        # Normalize symbol format
+        mentions = self._detect_all_symbols(user_message)
+        detected = mentions[0] if mentions else symbol
         if detected and "/" not in detected:
-            detected = f"{detected}/USDT"
-
-        # Build context (async — queries signal log history + user positions)
-        context = await self.build_context(
-            symbol=detected,
-            include_market=True,
-            wallet_address=wallet_address,
-        )
-
-        # Comparative analysis: detect if user mentions multiple symbols
-        try:
-            all_symbols = self._detect_all_symbols(user_message)
-            if len(all_symbols) >= 2:
-                from assistant_context import build_comparison_context
-                from scanner import cache
-                comparison = build_comparison_context(cache, all_symbols[:4])
-                if comparison:
-                    context += "\n\n" + comparison
-        except Exception:
-            pass
-
-        # Build memory context (past conversations + user profile)
-        memory_context = ""
-        try:
-            from assistant_memory import ConversationMemory
-            mem = ConversationMemory.get()
-            memory_context = await mem.build_memory_context(
-                current_symbol=detected,
-                user_message=user_message,
-                wallet=wallet_address,
-            )
-        except Exception:
-            pass
-
-        # Fetch recent news context
-        news_context = ""
-        try:
-            from news_feed import fetch_news, fetch_news_for_symbol, format_news_context
-            if detected:
-                # Symbol-specific + general hot news
-                symbol_news = await fetch_news_for_symbol(detected, limit=4)
-                general_news = await fetch_news(filter_type="hot", limit=4)
-                # Merge, deduplicate by title
-                seen = {n.title for n in symbol_news}
-                combined = symbol_news + [n for n in general_news if n.title not in seen]
-                news_context = format_news_context(combined, max_items=8)
-            else:
-                general_news = await fetch_news(filter_type="hot", limit=8)
-                news_context = format_news_context(general_news, max_items=8)
-        except Exception:
-            pass
+            detected = next((s for s in cache.symbols if s.split("/")[0].upper() == detected.upper()), f"{detected}/USDT")
+        requested = list(dict.fromkeys(mentions + ([detected] if detected else [])))
+        context = snapshot(cache, requested, timeframe)
+        await self._validate_free_model()
 
         # Append user message
         session.messages.append(ChatMessage(role="user", content=user_message))
@@ -1708,23 +1620,21 @@ class AssistantManager:
             for m in session.messages
         ]
 
-        # System prompt + memory + news + live data context
-        system = SYSTEM_PROMPT
-        if memory_context:
-            system += "\n\n" + memory_context
-        if news_context:
-            system += "\n\n" + news_context
-        system += "\n\n## Current Scanner Data\n\n" + context
+        system = RULES + "\n\nCurrent scanner snapshot:\n" + context
 
         client = self._get_client()
 
         if self._mode == "openrouter":
             # OpenAI-compatible format: system is first message in array
             openai_messages = [{"role": "system", "content": system}] + messages
-            response = client.chat.completions.create(
+            import asyncio
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
                 model=self._current_model,
                 max_tokens=4096,
+                temperature=0.1,
                 messages=openai_messages,
+                extra_body={"provider": {"max_price": {"prompt": 0, "completion": 0}, "allow_fallbacks": False}},
             )
             # Defensive parsing — some free OpenRouter models return empty/null
             # choices when the upstream provider has issues. Surface a readable
@@ -1734,12 +1644,7 @@ class AssistantManager:
                 raw = getattr(response, "model_dump", lambda: {})() or str(response)
                 logger.warning("OpenRouter returned no choices for model %s. Raw: %s",
                                self._current_model, str(raw)[:500])
-                reply = (
-                    f"The model ({self._current_model}) returned an empty response. "
-                    f"This usually means the upstream provider is rate-limited or "
-                    f"had an error. Try again in a few seconds, or switch to a "
-                    f"different model in Settings."
-                )
+                reply = "AI Assist is temporarily unavailable. Please try again shortly."
             else:
                 first = choices[0]
                 msg = getattr(first, "message", None)
@@ -1750,26 +1655,11 @@ class AssistantManager:
                         "OpenRouter returned empty content for model %s (finish_reason=%s)",
                         self._current_model, finish,
                     )
-                    reply = (
-                        f"The model ({self._current_model}) returned an empty message "
-                        f"(finish_reason={finish}). This can happen with content filters "
-                        f"or provider errors. Try rephrasing, retrying, or switching models."
-                    )
+                    reply = "AI Assist could not produce an explanation. Please try again shortly."
                 else:
                     reply = content
         else:
-            # Direct Anthropic SDK (fallback)
-            response = client.messages.create(
-                model=ANTHROPIC_FALLBACK_MODEL,
-                max_tokens=4096,
-                system=system,
-                messages=messages,
-            )
-            content_blocks = getattr(response, "content", None)
-            if not content_blocks:
-                reply = "Anthropic API returned no content. Please try again."
-            else:
-                reply = getattr(content_blocks[0], "text", "") or "(empty response)"
+            raise RuntimeError("AI Assist requires the configured free provider.")
 
         session.messages.append(ChatMessage(role="assistant", content=reply))
 
@@ -1807,12 +1697,13 @@ class AssistantManager:
             session_id=f"explain-{symbol}-{int(time.time())}",
             user_message=(
                 f"Explain why {symbol} has its current signal on the {timeframe} "
-                f"timeframe. Walk through the 14 conditions (10 core + 4 CoinGlass), "
+                f"timeframe. Walk through the conditions supplied in the snapshot, "
                 f"explain which pass and fail, show the weighted score, and explain "
                 f"the specific reason the signal is what it is. Include how CVD, "
                 f"smart money LSR, and macro data influenced the outcome. Be precise with numbers."
             ),
             symbol=symbol,
+            timeframe=timeframe,
         )
         return reply
 

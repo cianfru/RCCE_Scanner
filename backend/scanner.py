@@ -368,7 +368,11 @@ class ScanCache:
         asset_class: Optional[str] = None,
     ) -> List[dict]:
         """Return cached results for *timeframe*, optionally filtered."""
-        items = self.results.get(timeframe, [])
+        from hyperliquid_universe import MARKETS
+        allowed = set(self.symbols)
+        items = [{**r, "market_kind": MARKETS.get(r.get("symbol"), {}).get("kind"),
+                  "market_coin": MARKETS.get(r.get("symbol"), {}).get("coin")}
+                 for r in self.results.get(timeframe, []) if r.get("symbol") in allowed]
         if regime is not None:
             regime_upper = regime.upper()
             items = [r for r in items if r.get("regime", "").upper() == regime_upper]
@@ -1363,6 +1367,8 @@ async def _drip_one_symbol(
             )
             scan_cache._engine_cache[cache_key] = last_closed_ts
 
+        if symbol not in scan_cache.symbols:
+            return processed
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
 
@@ -1618,6 +1624,8 @@ async def _run_synthesis_pass(
     from bybit_futures_data import fetch_bybit_futures_metrics
     from coinglass_data import fetch_coinglass_metrics, fetch_macro_signals
 
+    allowed = set(scan_cache.symbols)
+    scan_cache._results_by_sym = {s: r for s, r in scan_cache._results_by_sym.items() if s in allowed}
     all_symbols = list(scan_cache._results_by_sym.keys())
 
     gm: Optional[GlobalMetrics] = None
@@ -2034,8 +2042,8 @@ async def _run_synthesis_pass(
         hub = WebSocketHub.get()
         if hub.client_count > 0:
             await hub.push_synthesis(
-                scan_cache.results.get("4h", []),
-                scan_cache.results.get("1d", []),
+                scan_cache.get_results("4h"),
+                scan_cache.get_results("1d"),
                 scan_cache.consensus.get("4h"),
                 scan_cache.consensus.get("1d"),
                 {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms},
@@ -2651,7 +2659,7 @@ def run_scan_sync(
 def get_all_results() -> dict:
     """Return all cached results keyed by timeframe."""
     return {
-        "results": cache.results,
+        "results": {tf: cache.get_results(tf) for tf in cache.results},
         "consensus": cache.consensus,
         "alt_season": cache.alt_season,
         "global_metrics": cache.global_metrics,

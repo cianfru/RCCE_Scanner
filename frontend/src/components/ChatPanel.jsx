@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T, m } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
-import { useTheme } from "../ThemeContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -198,14 +197,13 @@ function getSessionId() {
 
 const QUICK_ACTIONS = [
   { label: "Briefing", msg: "Give me a daily market briefing." },
-  { label: "My Positions", msg: "How are my positions doing? Give me a full breakdown with scanner context." },
+  { label: "Entry conditions", msg: "Explain what the entry conditions mean for BTC and which currently pass." },
   { label: "Top Signals", msg: "What are the strongest signals right now?" },
   { label: "Risk Check", msg: "Are there any risk warnings I should know about?" },
 ];
 
 export default function ChatPanel({ isMobile, selectedSymbol }) {
   const { address: walletAddress } = useWallet();
-  const { mode: themeMode } = useTheme();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -214,83 +212,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
 
-  // Model selection state
-  const [models, setModels] = useState([]);
-  const [currentModel, setCurrentModel] = useState("");
-  const [providerMode, setProviderMode] = useState("");
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [modelSearch, setModelSearch] = useState("");
-  const modelPickerRef = useRef(null);
-  const modelSearchRef = useRef(null);
-
   // Scroll window to top on mount
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
-
-  // Fetch available models on mount
-  useEffect(() => {
-    fetch(`${API_BASE}/api/models`)
-      .then((r) => r.json())
-      .then((d) => {
-        setModels(d.models || []);
-        setCurrentModel(d.current || "");
-        setProviderMode(d.mode || "");
-      })
-      .catch(() => {});
-  }, []);
-
-  // Close model picker on outside click
-  useEffect(() => {
-    if (!modelPickerOpen) return;
-    const handler = (e) => {
-      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target)) {
-        setModelPickerOpen(false);
-        setModelSearch("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [modelPickerOpen]);
-
-  // Auto-focus search when picker opens
-  useEffect(() => {
-    if (modelPickerOpen && modelSearchRef.current) {
-      modelSearchRef.current.focus();
-    }
-  }, [modelPickerOpen]);
-
-  const handleModelChange = useCallback(async (modelId) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model_id: modelId }),
-      });
-      const d = await res.json();
-      if (d.success) {
-        setCurrentModel(d.current);
-        setModelPickerOpen(false);
-        setModelSearch("");
-      }
-    } catch (e) {
-      // silent fail
-    }
-  }, []);
-
-  // Derive short display label from current model
-  const currentModelLabel = (() => {
-    const md = models.find((mod) => mod.id === currentModel);
-    if (md) return md.label;
-    return currentModel.split("/").pop() || "Model";
-  })();
-
-  // Filter models by search term
-  const filteredModels = models.filter((mod) => {
-    if (!modelSearch) return true;
-    const q = modelSearch.toLowerCase();
-    return mod.label.toLowerCase().includes(q) || mod.id.toLowerCase().includes(q) || mod.provider.toLowerCase().includes(q);
-  });
 
   // Scroll chat to bottom only when new messages arrive
   useEffect(() => {
@@ -315,6 +240,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           message: text,
           session_id: sessionId.current,
           symbol: selectedSymbol || null,
+          timeframe: "1d",
           wallet_address: walletAddress || null,
         }),
       });
@@ -363,112 +289,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: isMobile ? "4px 4px" : "10px 0",
         flexShrink: 0,
-        position: "relative", zIndex: modelPickerOpen ? 999 : "auto",
+        position: "relative",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {providerMode === "openrouter" && models.length > 0 ? (
-            <div ref={modelPickerRef} style={{ position: "relative" }}>
-              <button
-                onClick={() => setModelPickerOpen(!modelPickerOpen)}
-                style={{
-                  fontSize: m(T.textSm, isMobile), fontFamily: T.font, color: T.text3,
-                  padding: isMobile ? "6px 14px" : "5px 12px", borderRadius: 8,
-                  background: T.overlay06, border: `1px solid ${T.border}`,
-                  fontWeight: 500, cursor: "pointer", outline: "none",
-                  display: "flex", alignItems: "center", gap: 6,
-                  transition: "all 0.15s",
-                }}
-              >
-                {currentModelLabel}
-                <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>{modelPickerOpen ? "\u25B2" : "\u25BC"}</span>
-              </button>
-
-              {modelPickerOpen && (
-                <div style={{
-                  position: "absolute", top: "calc(100% + 6px)", left: 0,
-                  width: isMobile ? "calc(100vw - 32px)" : 340,
-                  maxHeight: 400, zIndex: 9999,
-                  background: "#16161e", border: `1px solid rgba(255,255,255,0.15)`,
-                  borderRadius: 10, overflow: "hidden",
-                  boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
-                }}>
-                  <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                    <input
-                      ref={modelSearchRef}
-                      type="text"
-                      value={modelSearch}
-                      onChange={(e) => setModelSearch(e.target.value)}
-                      placeholder="Search..."
-                      style={{
-                        width: "100%", fontSize: m(12, isMobile), fontFamily: T.font,
-                        color: "#e0e0e4", background: "#1e1e28",
-                        border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-                        padding: isMobile ? "8px 10px" : "6px 8px", outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  </div>
-                  <div style={{ overflowY: "auto", maxHeight: 340 }}>
-                    {filteredModels.length === 0 && (
-                      <div style={{
-                        padding: 14, textAlign: "center",
-                        color: T.text4, fontSize: m(12, isMobile), fontFamily: T.font,
-                      }}>
-                        No models found
-                      </div>
-                    )}
-                    {filteredModels.map((mod) => {
-                      const active = mod.id === currentModel;
-                      return (
-                        <div
-                          key={mod.id}
-                          onClick={() => handleModelChange(mod.id)}
-                          style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: isMobile ? "8px 12px" : "6px 10px", cursor: "pointer",
-                            background: active ? "rgba(151,252,228,0.08)" : "transparent",
-                            borderLeft: active ? "2px solid #97FCE4" : "2px solid transparent",
-                            transition: "background 0.1s",
-                            minHeight: isMobile ? 40 : 32,
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!active) e.currentTarget.style.background = "transparent";
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{
-                              fontSize: m(12, isMobile), fontFamily: T.font, fontWeight: 500,
-                              color: active ? "#97FCE4" : "#d1d1d6",
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}>
-                              {mod.label}
-                            </div>
-                          </div>
-                          <div style={{
-                            fontSize: m(10, isMobile), fontFamily: T.font, color: "#6e6e73",
-                            flexShrink: 0, marginLeft: 8, textAlign: "right",
-                          }}>
-                            {mod.context_length ? `${(mod.context_length / 1000).toFixed(0)}K` : ""}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <span style={{
-              fontSize: m(T.textSm, isMobile), fontFamily: T.font, color: T.text4,
-              padding: isMobile ? "6px 14px" : "5px 12px", borderRadius: 8,
-              background: T.overlay06, fontWeight: 500,
-            }}>
-              {providerMode === "anthropic" ? "Haiku (Direct)" : "Haiku"}
-            </span>
-          )}
+          <span style={{color:T.text3,fontSize:13}}>AI Assist · Scanner analysis · 1D</span>
         </div>
         <button onClick={clearChat} className="apple-btn" style={{
           padding: isMobile ? "8px 16px" : "6px 14px",
@@ -496,43 +320,9 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             height: "100%",
             padding: isMobile ? "20px 20px 0" : "40px 20px", textAlign: "center",
           }}>
-            <div style={{ position: "relative", width: "min(90%, 550px)", margin: "0 auto", marginBottom: isMobile ? 8 : 20 }}>
-              <img
-                src={themeMode === "light" ? "/AI_Agent_white.png" : "/AI_Agent_dark.png"}
-                alt="Reflex AI"
-                style={{
-                  width: "100%",
-                  borderRadius: 16,
-                  display: "block",
-                }}
-              />
-              <div style={{
-                position: "absolute",
-                bottom: isMobile ? 10 : 20,
-                left: 0, right: 0,
-                textAlign: "center",
-              }}>
-                <div style={{
-                  color: T.text1, fontSize: m(16, isMobile), fontFamily: T.font,
-                  fontWeight: 500, lineHeight: 1.6,
-                }}>
-                  Ask about any signal, symbol, or market condition.
-                </div>
-                {walletAddress && (
-                  <div style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    marginTop: 8, padding: "4px 12px", borderRadius: 20,
-                    background: "rgba(34, 197, 94, 0.12)",
-                    border: "1px solid rgba(34, 197, 94, 0.25)",
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
-                    <span style={{ color: "#22c55e", fontSize: m(11, isMobile), fontFamily: T.font, fontWeight: 600, letterSpacing: "0.04em" }}>
-                      Position-aware context is active
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
+            <img src="/brand/reflex-ribbon-transparent.svg" alt="Reflex AI" style={{width:100,height:120,objectFit:"contain",marginBottom:24}} />
+            <h2 style={{fontSize:24,fontWeight:500,color:T.text1,lineHeight:1.3}}>Understand the setup.</h2>
+            <p style={{fontSize:14,color:T.text3,lineHeight:1.7,maxWidth:390,marginTop:12}}>Ask about a Hyperliquid signal, its entry conditions, or the evidence that disagrees.</p>
 
             {/* Quick actions */}
             <div style={{
