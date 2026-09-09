@@ -604,9 +604,9 @@ export default function NotificationBell() {
               {visibleSetups.map((s, i) => {
                 const SETUP_COLORS = {
                   squeeze_setup: "#a78bfa", crowded_short_entry: "#34d399",
-                  oi_front_run: "#22d3ee", shorts_into_floor: "#f59e0b",
+                  oi_front_run: "#97FCE4", shorts_into_floor: "#f59e0b",
                   capitulation_watch: "#6b7280", cvd_bullish_div: "#34d399",
-                  spot_led_breakout: "#22d3ee",
+                  spot_led_breakout: "#97FCE4",
                 };
                 const SETUP_ICONS = {
                   squeeze_setup: "\u{1F300}", crowded_short_entry: "\u{1F525}",

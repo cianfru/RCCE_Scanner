@@ -103,9 +103,9 @@ const S = {
     transition: "all 0.15s",
   },
   btnPrimary: {
-    background: "rgba(34,211,238,0.12)",
-    borderColor: "rgba(34,211,238,0.3)",
-    color: "#22d3ee",
+    background: "rgba(151,252,228,0.12)",
+    borderColor: "rgba(151,252,228,0.3)",
+    color: "#97FCE4",
   },
   btnLive: {
     background: "rgba(248,113,113,0.12)",
@@ -183,7 +183,7 @@ function ReasonBlock({ reason, warnings }) {
           padding: "6px 10px",
           background: T.overlay02,
           borderRadius: 4,
-          borderLeft: "2px solid rgba(34,211,238,0.3)",
+          borderLeft: "2px solid rgba(151,252,228,0.3)",
         }}>
           {reason}
         </div>
@@ -720,7 +720,7 @@ export default function ExecutorPanel({ api }) {
             Choose a mode to start the executor.
             <br />
             <span style={{ fontSize: 11, color: T.text4, marginTop: 8, display: "inline-block" }}>
-              <strong style={{ color: "#22d3ee" }}>Paper</strong> simulates trades.{" "}
+              <strong style={{ color: "#97FCE4" }}>Paper</strong> simulates trades.{" "}
               <strong style={{ color: "#f87171" }}>Live</strong> executes real orders on Hyperliquid.
             </span>
           </div>
@@ -819,9 +819,9 @@ export default function ExecutorPanel({ api }) {
                   style={{
                     padding: "4px 10px",
                     borderRadius: 6,
-                    border: `1px solid ${active ? "rgba(34,211,238,0.35)" : T.border}`,
-                    background: active ? "rgba(34,211,238,0.08)" : T.overlay02,
-                    color: active ? "#22d3ee" : T.text4,
+                    border: `1px solid ${active ? "rgba(151,252,228,0.35)" : T.border}`,
+                    background: active ? "rgba(151,252,228,0.08)" : T.overlay02,
+                    color: active ? "#97FCE4" : T.text4,
                     fontSize: 11,
                     fontFamily: T.mono,
                     fontWeight: active ? 700 : 500,

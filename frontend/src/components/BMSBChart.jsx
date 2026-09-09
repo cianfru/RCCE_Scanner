@@ -19,8 +19,8 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const SIGNAL_MARKER = {
   STRONG_LONG:  { color: "#34d399", shape: "arrowUp",   position: "belowBar", text: "STRONG LONG" },
   LIGHT_LONG:   { color: "#6ee7b7", shape: "arrowUp",   position: "belowBar", text: "LIGHT LONG" },
-  ACCUMULATE:   { color: "#22d3ee", shape: "arrowUp",   position: "belowBar", text: "ACCUMULATE" },
-  REVIVAL_SEED: { color: "#67e8f9", shape: "arrowUp",   position: "belowBar", text: "REVIVAL" },
+  ACCUMULATE:   { color: "#97FCE4", shape: "arrowUp",   position: "belowBar", text: "ACCUMULATE" },
+  REVIVAL_SEED: { color: "#b8fff0", shape: "arrowUp",   position: "belowBar", text: "REVIVAL" },
   TRIM:         { color: "#fbbf24", shape: "arrowDown", position: "aboveBar", text: "TRIM" },
   TRIM_HARD:    { color: "#f87171", shape: "arrowDown", position: "aboveBar", text: "TRIM HARD" },
   RISK_OFF:     { color: "#ef4444", shape: "arrowDown", position: "aboveBar", text: "RISK-OFF" },
@@ -87,13 +87,13 @@ export default function BMSBChart({
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: "rgba(34,211,238,0.15)",
+          color: "rgba(151,252,228,0.15)",
           width: 1,
           style: LineStyle.Dashed,
           labelBackgroundColor: "#1a1a1e",
         },
         horzLine: {
-          color: "rgba(34,211,238,0.15)",
+          color: "rgba(151,252,228,0.15)",
           width: 1,
           style: LineStyle.Dashed,
           labelBackgroundColor: "#1a1a1e",
@@ -195,7 +195,7 @@ export default function BMSBChart({
     // ── BMSB lines ──
     // EMA (upper band boundary)
     const bmsbEmaSeries = chart.addSeries(LineSeries, {
-      color: "rgba(34,211,238,0.25)",
+      color: "rgba(151,252,228,0.25)",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       crosshairMarkerVisible: false,
@@ -205,7 +205,7 @@ export default function BMSBChart({
 
     // SMA (lower band boundary)
     const bmsbSmaSeries = chart.addSeries(LineSeries, {
-      color: "rgba(34,211,238,0.25)",
+      color: "rgba(151,252,228,0.25)",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       crosshairMarkerVisible: false,
@@ -215,7 +215,7 @@ export default function BMSBChart({
 
     // Mid (main BMSB line — solid, prominent)
     const bmsbMidSeries = chart.addSeries(LineSeries, {
-      color: "#22d3ee",
+      color: "#97FCE4",
       lineWidth: 2,
       lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: true,
@@ -669,10 +669,10 @@ export default function BMSBChart({
                   letterSpacing: "0.06em",
                   transition: "all 0.15s ease",
                   background: activeTimeframe === tf.key
-                    ? "rgba(34,211,238,0.15)"
+                    ? "rgba(151,252,228,0.15)"
                     : "transparent",
                   color: activeTimeframe === tf.key
-                    ? "#22d3ee"
+                    ? "#97FCE4"
                     : "rgba(255,255,255,0.3)",
                 }}
               >
@@ -695,8 +695,8 @@ export default function BMSBChart({
           }}>
             <div style={{
               width: 20, height: 20,
-              border: "2px solid rgba(34,211,238,0.15)",
-              borderTopColor: "#22d3ee",
+              border: "2px solid rgba(151,252,228,0.15)",
+              borderTopColor: "#97FCE4",
               borderRadius: "50%",
               animation: "spin 0.8s linear infinite",
             }} />

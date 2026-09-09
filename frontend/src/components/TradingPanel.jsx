@@ -89,7 +89,7 @@ const SIGNAL_COMPACT = {
 const SIGNAL_COLOR = {
   STRONG_LONG:  "#34d399",
   LIGHT_LONG:   "#6ee7b7",
-  ACCUMULATE:   "#22d3ee",
+  ACCUMULATE:   "#97FCE4",
   REVIVAL_SEED: "#a78bfa",
   TRIM:         "#fbbf24",
   TRIM_HARD:    "#f97316",
@@ -101,7 +101,7 @@ const SIGNAL_COLOR = {
 const REGIME_COLOR = {
   MARKUP:   "#34d399",
   BLOWOFF:  "#fbbf24",
-  REACC:    "#22d3ee",
+  REACC:    "#97FCE4",
   MARKDOWN: "#f87171",
   CAP:      "#f87171",
   ACCUM:    "#a78bfa",
@@ -122,7 +122,7 @@ function computeAlignment(signal, isLong) {
 function heatColor(heat) {
   if (heat >= 80) return "#f87171";
   if (heat >= 60) return "#fbbf24";
-  if (heat >= 40) return "#22d3ee";
+  if (heat >= 40) return "#97FCE4";
   return "#6b7280";
 }
 
@@ -194,15 +194,15 @@ const S = {
   }),
   pillBtn: (active) => ({
     padding: "6px 14px", borderRadius: 8, cursor: "pointer",
-    border: active ? "1px solid rgba(34,211,238,0.45)" : `1px solid ${GLASS.border}`,
+    border: active ? "1px solid rgba(151,252,228,0.45)" : `1px solid ${GLASS.border}`,
     background: active
-      ? "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(34,211,238,0.06))"
+      ? "linear-gradient(135deg, rgba(151,252,228,0.15), rgba(151,252,228,0.06))"
       : "rgba(255,255,255,0.03)",
-    color: active ? "#22d3ee" : T.text3,
+    color: active ? "#97FCE4" : T.text3,
     fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
     transition: "all 0.2s ease",
     backdropFilter: "blur(8px)",
-    boxShadow: active ? "0 0 12px rgba(34,211,238,0.12)" : "none",
+    boxShadow: active ? "0 0 12px rgba(151,252,228,0.12)" : "none",
   }),
   empty: {
     padding: "32px 24px", textAlign: "center",
@@ -313,8 +313,8 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(34,211,238,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
-        horzLine: { color: "rgba(34,211,238,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
+        vertLine: { color: "rgba(151,252,228,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
+        horzLine: { color: "rgba(151,252,228,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
       },
       timeScale: {
         borderColor: "rgba(255,255,255,0.06)",
@@ -331,10 +331,10 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
     chartRef.current = chart;
 
     const lineColor = mode === "value"
-      ? "#22d3ee"
+      ? "#97FCE4"
       : (isPositive ? "#34d399" : "#f87171");
     const topColor = mode === "value"
-      ? "rgba(34,211,238,0.18)"
+      ? "rgba(151,252,228,0.18)"
       : (isPositive ? "rgba(52,211,153,0.18)" : "rgba(248,113,113,0.18)");
 
     const areaSeries = chart.addSeries(AreaSeries, {
@@ -401,7 +401,7 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
       </div>
       <div ref={containerRef} style={{
         height: 280, width: "100%",
-        background: "radial-gradient(ellipse at 50% 80%, rgba(34,211,238,0.03) 0%, transparent 70%)",
+        background: "radial-gradient(ellipse at 50% 80%, rgba(151,252,228,0.03) 0%, transparent 70%)",
       }} />
     </div>
   );
@@ -1213,7 +1213,7 @@ export default function TradingPanel({ api }) {
           <div style={{
             position: "absolute", top: -20, right: -20, width: 180, height: 180,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(34,211,238,0.04) 0%, transparent 70%)",
+            background: "radial-gradient(circle, rgba(151,252,228,0.04) 0%, transparent 70%)",
             pointerEvents: "none",
           }} />
           <div style={S.sectionHeader}>
@@ -1542,9 +1542,9 @@ export default function TradingPanel({ api }) {
                     );
                     return (
                       <tr key={i} style={{
-                        background: isCurrentTier ? "rgba(34,211,238,0.06)" : "transparent",
+                        background: isCurrentTier ? "rgba(151,252,228,0.06)" : "transparent",
                       }}>
-                        <td style={{ ...cellStyle, fontWeight: isCurrentTier ? 700 : 400, color: isCurrentTier ? "#22d3ee" : T.text2 }}>
+                        <td style={{ ...cellStyle, fontWeight: isCurrentTier ? 700 : 400, color: isCurrentTier ? "#97FCE4" : T.text2 }}>
                           VIP {i}{isCurrentTier ? " \u2190" : ""}
                         </td>
                         <td style={cellStyle}>{fmtVlm(cutoff)}</td>

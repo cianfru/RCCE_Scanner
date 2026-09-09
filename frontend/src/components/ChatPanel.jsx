@@ -426,8 +426,8 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                           style={{
                             display: "flex", alignItems: "center", justifyContent: "space-between",
                             padding: isMobile ? "8px 12px" : "6px 10px", cursor: "pointer",
-                            background: active ? "rgba(34,211,238,0.08)" : "transparent",
-                            borderLeft: active ? "2px solid #22d3ee" : "2px solid transparent",
+                            background: active ? "rgba(151,252,228,0.08)" : "transparent",
+                            borderLeft: active ? "2px solid #97FCE4" : "2px solid transparent",
                             transition: "background 0.1s",
                             minHeight: isMobile ? 40 : 32,
                           }}
@@ -441,7 +441,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
                           <div style={{ minWidth: 0 }}>
                             <div style={{
                               fontSize: m(12, isMobile), fontFamily: T.font, fontWeight: 500,
-                              color: active ? "#22d3ee" : "#d1d1d6",
+                              color: active ? "#97FCE4" : "#d1d1d6",
                               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                             }}>
                               {mod.label}
@@ -572,7 +572,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
               borderRadius: isMobile ? 18 : 16,
               background: msg.role === "user" ? T.accentDim : T.overlay04,
               border: `1px solid ${msg.role === "user"
-                ? "rgba(34,211,238,0.2)" : T.border}`,
+                ? "rgba(151,252,228,0.2)" : T.border}`,
               maxWidth: isMobile ? "90%" : "82%",
             }}>
               <div style={{
@@ -659,12 +659,12 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             fontFamily: T.font, fontSize: m(T.textBase, isMobile), fontWeight: 700,
             letterSpacing: "0.02em",
             cursor: loading || !input.trim() ? "default" : "pointer",
-            color: loading || !input.trim() ? "rgba(34,211,238,0.45)" : undefined,
-            background: loading || !input.trim() ? "rgba(34,211,238,0.06)" : undefined,
-            border: loading || !input.trim() ? "1px solid rgba(34,211,238,0.15)" : undefined,
+            color: loading || !input.trim() ? "rgba(151,252,228,0.45)" : undefined,
+            background: loading || !input.trim() ? "rgba(151,252,228,0.06)" : undefined,
+            border: loading || !input.trim() ? "1px solid rgba(151,252,228,0.15)" : undefined,
             opacity: 1,
             transition: "all 0.15s ease",
-            boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(34,211,238,0.25)",
+            boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(151,252,228,0.25)",
           }}
         >
           Send

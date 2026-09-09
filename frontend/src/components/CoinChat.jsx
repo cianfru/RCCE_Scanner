@@ -180,7 +180,7 @@ export default function CoinChat({ symbol, isMobile }) {
           background: "rgba(10, 10, 20, 0.5)",
           backdropFilter: "blur(20px) saturate(1.5)",
           WebkitBackdropFilter: "blur(20px) saturate(1.5)",
-          border: "2px solid rgba(34, 211, 238, 0.4)",
+          border: "2px solid rgba(151,252,228, 0.4)",
           cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: "0 2px 16px rgba(0,0,0,0.3)",
@@ -189,8 +189,8 @@ export default function CoinChat({ symbol, isMobile }) {
           overflow: "visible",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = "#22d3ee";
-          e.currentTarget.style.boxShadow = "0 4px 24px rgba(34,211,238,0.4)";
+          e.currentTarget.style.background = "#97FCE4";
+          e.currentTarget.style.boxShadow = "0 4px 24px rgba(151,252,228,0.4)";
         }}
         onMouseLeave={(e) => {
           if (!open) {
@@ -236,15 +236,15 @@ export default function CoinChat({ symbol, isMobile }) {
             borderBottom: `1px solid ${T.border}`,
             display: "flex", alignItems: "center", gap: 12,
             flexShrink: 0,
-            background: "linear-gradient(180deg, rgba(34,211,238,0.04) 0%, transparent 100%)",
+            background: "linear-gradient(180deg, rgba(151,252,228,0.04) 0%, transparent 100%)",
           }}>
             <div style={{
               width: 48, height: 48, borderRadius: 10,
-              background: "rgba(34,211,238,0.08)",
-              border: "1px solid rgba(34,211,238,0.25)",
+              background: "rgba(151,252,228,0.08)",
+              border: "1px solid rgba(151,252,228,0.25)",
               display: "flex", alignItems: "center", justifyContent: "center",
               flexShrink: 0,
-              boxShadow: "0 0 16px rgba(34,211,238,0.15)",
+              boxShadow: "0 0 16px rgba(151,252,228,0.15)",
               overflow: "hidden",
             }}>
               <img
@@ -340,7 +340,7 @@ export default function CoinChat({ symbol, isMobile }) {
                   padding: "10px 14px",
                   borderRadius: 14,
                   background: msg.role === "user" ? T.accentDim : T.overlay04,
-                  border: `1px solid ${msg.role === "user" ? "rgba(34,211,238,0.2)" : T.border}`,
+                  border: `1px solid ${msg.role === "user" ? "rgba(151,252,228,0.2)" : T.border}`,
                   maxWidth: "88%",
                 }}>
                   <div style={{

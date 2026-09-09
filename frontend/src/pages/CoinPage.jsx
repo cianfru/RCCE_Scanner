@@ -341,7 +341,7 @@ function MetricsPanel({ data }) {
     ["Deviation",  data.deviation_pct != null ? `${fmt(data.deviation_pct, 2)}%` : "\u2014",     null],
     ["Exhaust",    data.exhaustion_state || "\u2014",                                            exhaustMeta(data.exhaustion_state).color],
     ["Floor",      data.floor_confirmed ? "Conf" : "No",                                         data.floor_confirmed ? "#34d399" : null],
-    ["Absorb",     data.is_absorption ? "Yes" : "No",                                            data.is_absorption ? "#67e8f9" : null],
+    ["Absorb",     data.is_absorption ? "Yes" : "No",                                            data.is_absorption ? "#b8fff0" : null],
     ["Climax",     data.is_climax ? "Yes" : "No",                                                data.is_climax ? "#fbbf24" : null],
     ["Effort",     data.effort != null ? fmt(data.effort, 3) : "\u2014",                         null],
     ["Rel Vol",    data.rel_vol != null ? fmt(data.rel_vol, 2) + "x" : "\u2014",                 null],
@@ -620,7 +620,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
               border: `1px solid ${T.border}`, background: "transparent",
               transition: "color 0.15s, border-color 0.15s",
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#22d3ee"; e.currentTarget.style.borderColor = "#22d3ee"; }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#97FCE4"; e.currentTarget.style.borderColor = "#97FCE4"; }}
             onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
           >
             Trade on Hyperliquid {"\u2197"}

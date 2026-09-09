@@ -430,7 +430,7 @@ export default function App() {
 
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
-  const createGroup = async (name, symbols = [], color = "#22d3ee") => {
+  const createGroup = async (name, symbols = [], color = "#97FCE4") => {
     try {
       const res = await fetch(`${API_BASE}/api/groups`, {
         method: "POST",
@@ -617,7 +617,7 @@ export default function App() {
         tr:hover td { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
+        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }
         @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -657,14 +657,14 @@ export default function App() {
         }
         .apple-btn-accent {
           background: linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%);
-          border: 1px solid rgba(34,211,238,0.5);
+          border: 1px solid rgba(151,252,228,0.5);
           color: #000;
           box-shadow: 0 1px 3px var(--t-shadow), inset 0 1px 0 var(--t-overlay20);
         }
         .apple-btn-accent:hover {
-          background: linear-gradient(180deg, #40e8ff 0%, #22d3ee 100%);
-          border-color: rgba(34,211,238,0.7);
-          box-shadow: 0 2px 12px rgba(34,211,238,0.25), inset 0 1px 0 var(--t-overlay25);
+          background: linear-gradient(180deg, #40e8ff 0%, #97FCE4 100%);
+          border-color: rgba(151,252,228,0.7);
+          box-shadow: 0 2px 12px rgba(151,252,228,0.25), inset 0 1px 0 var(--t-overlay25);
           color: #000;
         }
         .apple-btn-accent:active {
@@ -684,8 +684,8 @@ export default function App() {
           box-shadow: 0 2px 8px var(--t-shadowDeep), inset 0 1px 0 var(--t-overlay08);
         }
         .apple-select:focus {
-          border-color: rgba(34,211,238,0.4);
-          box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px var(--t-shadow);
+          border-color: rgba(151,252,228,0.4);
+          box-shadow: 0 0 0 3px rgba(151,252,228,0.08), 0 1px 2px var(--t-shadow);
         }
       `}</style>
 
@@ -752,7 +752,7 @@ export default function App() {
           position: "absolute", bottom: 0, left: 0, right: 0,
           height: "60%",
           background: mode === "dark"
-            ? "linear-gradient(0deg, rgba(34,211,238,0.10) 0%, rgba(34,211,238,0.03) 60%, transparent 100%)"
+            ? "linear-gradient(0deg, rgba(151,252,228,0.10) 0%, rgba(151,252,228,0.03) 60%, transparent 100%)"
             : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
@@ -880,7 +880,7 @@ export default function App() {
       <div style={{
         height: 1, width: "100%",
         background: mode === "dark"
-          ? "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.15) 25%, rgba(34,211,238,0.25) 50%, rgba(34,211,238,0.15) 75%, transparent 100%)"
+          ? "linear-gradient(90deg, transparent 0%, rgba(151,252,228,0.15) 25%, rgba(151,252,228,0.25) 50%, rgba(151,252,228,0.15) 75%, transparent 100%)"
           : "linear-gradient(90deg, transparent 0%, rgba(14,116,144,0.12) 25%, rgba(14,116,144,0.18) 50%, rgba(14,116,144,0.12) 75%, transparent 100%)",
         position: "sticky", top: isMobile ? 56 : 56, zIndex: 99,
       }} />

@@ -597,7 +597,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
             [null],
             ["Exhaustion", selected.exhaustion_state || "\u2014", exhaustMeta(selected.exhaustion_state).color],
             ["Floor", selected.floor_confirmed ? "Confirmed" : "No", selected.floor_confirmed ? "#34d399" : null],
-            ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#67e8f9" : null],
+            ["Absorption", selected.is_absorption ? "Yes" : "No", selected.is_absorption ? "#b8fff0" : null],
             ["Climax", selected.is_climax ? "Yes" : "No", selected.is_climax ? "#fbbf24" : null],
             ["Effort", selected.effort != null ? fmt(selected.effort, 3) : "\u2014", null],
             ["Rel Volume", selected.rel_vol != null ? fmt(selected.rel_vol, 2) + "x" : "\u2014", null],

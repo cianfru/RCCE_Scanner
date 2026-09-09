@@ -14,7 +14,7 @@ export default function GroupModal({
   const btcPairs = modalSymbols.filter(s => s.endsWith("/BTC"));
 
   const [groupName, setGroupName] = useState(isEditing ? editingGroup.name : "");
-  const [groupColor, setGroupColor] = useState(isEditing ? (editingGroup.color || "#22d3ee") : "#22d3ee");
+  const [groupColor, setGroupColor] = useState(isEditing ? (editingGroup.color || "#97FCE4") : "#97FCE4");
   const [watchlistSearch, setWatchlistSearch] = useState("");
   const [watchlistResults, setWatchlistResults] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
@@ -91,7 +91,7 @@ export default function GroupModal({
                     }}
                   />
                   <div style={{ display: "flex", gap: 4 }}>
-                    {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24", "#67e8f9"].map(c => (
+                    {["#97FCE4", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24", "#b8fff0"].map(c => (
                       <span
                         key={c}
                         onClick={() => { setGroupColor(c); onUpdateGroup(modalGroupId, { color: c }); }}
@@ -128,7 +128,7 @@ export default function GroupModal({
                     }}
                   />
                   <div style={{ display: "flex", gap: 3 }}>
-                    {["#22d3ee", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24"].map(c => (
+                    {["#97FCE4", "#34d399", "#fb923c", "#f87171", "#c084fc", "#fbbf24"].map(c => (
                       <span
                         key={c}
                         onClick={() => setGroupColor(c)}

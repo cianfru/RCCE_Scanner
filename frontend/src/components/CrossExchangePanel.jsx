@@ -36,7 +36,7 @@ function fundingColor(pct8h) {
 const EX_COLOR = {
   Binance:     "#f3ba2f",
   Bybit:       "#f7a600",
-  Hyperliquid: "#22d3ee",
+  Hyperliquid: "#97FCE4",
 };
 
 // ─── Row ─────────────────────────────────────────────────────────────────────

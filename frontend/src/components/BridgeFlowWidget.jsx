@@ -128,7 +128,7 @@ function DivergenceSparkline({ values }) {
   // Distribution (BTC up more than flow) = score > 0 → red-ish;
   // Accumulation = score < 0 → cyan-ish.
   const stroke =
-    absL >= 2.5 ? (latest > 0 ? "#f87171" : "#22d3ee") :
+    absL >= 2.5 ? (latest > 0 ? "#f87171" : "#97FCE4") :
     absL >= 1.5 ? "#fbbf24" :
     "#64748b";
 
@@ -228,7 +228,7 @@ export default function BridgeFlowWidget({ isMobile }) {
   const divLabel = div ? div.label : null;
   const divDistribution = divScore > 0;
   const divColor =
-    divLabel === "EXHAUSTION" ? (divDistribution ? "#f87171" : "#22d3ee") :
+    divLabel === "EXHAUSTION" ? (divDistribution ? "#f87171" : "#97FCE4") :
     divLabel === "DIVERGING"  ? "#fbbf24" :
     divLabel === "CONFIRMING" ? T.text3 :
     T.text3;

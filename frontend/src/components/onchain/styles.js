@@ -98,7 +98,7 @@ export const CHAIN_META = {
 };
 
 export const ALERT_COLORS = {
-  ACCUMULATING: "#22d3ee",
+  ACCUMULATING: "#97FCE4",
   DISTRIBUTING: "#f87171",
   NEW_WHALE: "#34d399",
   LARGE_BUY: "#34d399",
