@@ -891,7 +891,8 @@ async def market_universe(timeframe: str = Query("1d", pattern="^(4h|1d)$")):
     import hyperliquid_universe as universe
     ready = {r["symbol"] for r in cache.get_results(timeframe)}
     return {"updated_at": universe.UPDATED_AT, "stale": universe.STALE,
-            "markets": [{**m, "analysis_status": "ready" if s in ready else "pending"}
+            "markets": [{**m, "analysis_status": "ready" if s in ready else "pending",
+                         "candles_checked_at": cache._results_by_sym.get(s, {}).get(timeframe, {}).get("candles_checked_at")}
                         for s, m in universe.MARKETS.items()]}
 
 
