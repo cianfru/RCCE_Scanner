@@ -98,7 +98,7 @@ export default function ConsensusBar({ consensus, isMobile, activeTab, onTabChan
             fontSize: m(T.textBase, isMobile), color: T.text2, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600,
             textTransform: "uppercase",
           }}>Consensus</span>
-          <span style={{
+          <span className="terminal-status" style={{
             padding: isMobile ? "6px 16px" : "5px 16px", borderRadius: "20px",
             background: `${color}15`, color,
             fontSize: m(T.textMd, isMobile), fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",

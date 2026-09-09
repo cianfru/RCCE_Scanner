@@ -154,12 +154,12 @@ export default function BMSBChart({
     candleSeriesRef.current = null;
     pressureLinesRef.current = [];
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "rgba(34,197,94,0.5)",
-      wickDownColor: "rgba(239,68,68,0.5)",
+      upColor: "#528e80",
+      downColor: "#a36e65",
+      borderUpColor: "#97FCE4",
+      borderDownColor: "#d8a094",
+      wickUpColor: "rgba(151,252,228,0.65)",
+      wickDownColor: "rgba(216,160,148,0.65)",
     });
 
     // ── CTO Line Advanced (rendered behind BMSB) ──
@@ -303,7 +303,7 @@ export default function BMSBChart({
           const priceUp = lastCandle.close >= lastCandle.open;
           candleSeries.createPriceLine({
             price: lastCandle.close,
-            color: priceUp ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
+            color: priceUp ? "rgba(151,252,228,0.65)" : "rgba(216,160,148,0.65)",
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
@@ -538,7 +538,7 @@ export default function BMSBChart({
       borderRadius: 12,
       overflow: "hidden",
       border: "1px solid rgba(255,255,255,0.06)",
-      background: "rgba(10,10,14,0.6)",
+      background: "rgba(9,22,25,0.6)",
       marginBottom: 14,
       position: "relative",
     }}>
@@ -547,14 +547,14 @@ export default function BMSBChart({
         position: "absolute", top: 0, left: 0, right: 0, zIndex: 5,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "7px 10px",
-        background: "linear-gradient(180deg, rgba(10,10,14,0.92) 0%, rgba(10,10,14,0.5) 70%, transparent 100%)",
+        background: "linear-gradient(180deg, rgba(9,22,25,0.92) 0%, rgba(9,22,25,0.5) 70%, transparent 100%)",
       }}>
         {/* Left: info pills */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
           {/* Regime pill */}
           {rm && (
-            <span style={{
-              padding: "2px 7px", borderRadius: 10,
+            <span className="terminal-status" style={{
+              padding: "2px 7px", borderRadius: 0,
               background: rm.bg, color: rm.color,
               fontSize: 9, fontFamily: T.mono, fontWeight: 700,
               letterSpacing: "0.04em",
@@ -568,15 +568,14 @@ export default function BMSBChart({
 
           {/* Signal pill */}
           {sm && signal !== "WAIT" && (
-            <span style={{
-              padding: "2px 7px", borderRadius: 10,
+            <span className="terminal-status" style={{
+              padding: "2px 7px", borderRadius: 0,
               background: `${sm.color}12`, color: sm.color,
               fontSize: 9, fontFamily: T.mono, fontWeight: 700,
               letterSpacing: "0.04em",
               border: `1px solid ${sm.color}18`,
               display: "inline-flex", alignItems: "center", gap: 3,
             }}>
-              <span style={{ fontSize: 6 }}>{sm.dot}</span>
               {sm.label}
             </span>
           )}
@@ -688,7 +687,7 @@ export default function BMSBChart({
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(10,10,14,0.8)", zIndex: 10,
+          background: "rgba(9,22,25,0.8)", zIndex: 10,
         }}>
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
@@ -716,7 +715,7 @@ export default function BMSBChart({
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(10,10,14,0.9)", zIndex: 10,
+          background: "rgba(9,22,25,0.9)", zIndex: 10,
         }}>
           <span style={{
             color: "rgba(239,68,68,0.7)", fontFamily: T.mono, fontSize: 10,

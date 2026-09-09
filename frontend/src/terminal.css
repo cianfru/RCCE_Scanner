@@ -21,3 +21,18 @@
 
 [data-theme="light"] .terminal-wordmark{filter:brightness(0) saturate(100%);}
 .refined .reflex-terminal{font-family:var(--font-geist-sans),sans-serif;}
+
+/* Status is expressed through type and a short rule, never a rounded capsule. */
+.reflex-terminal .terminal-status {border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:3px 0!important;letter-spacing:.045em;}
+.reflex-terminal button.terminal-status {padding:6px 10px!important;border-bottom:1px solid currentColor!important;}
+.reflex-terminal .apple-btn {border-radius:6px;}
+.reflex-terminal .market-context {gap:0!important;border-block:1px solid var(--t-border);padding:10px 0;margin-top:16px!important;}
+.reflex-terminal .market-context > div {border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;}
+.alt-season-info {position:relative;display:inline-flex;margin-left:8px;text-transform:none;letter-spacing:normal;}
+.alt-season-info > button {border:1px solid var(--t-text4);background:transparent;color:var(--t-text3);border-radius:50%;width:16px;height:16px;font:11px Georgia,serif;cursor:help;padding:0;}
+.alt-season-explanation {position:absolute;top:25px;right:-80px;width:min(310px,75vw);z-index:100;background:var(--t-popoverBg);color:var(--t-text2);padding:18px;border:1px solid var(--t-border);border-radius:8px;box-shadow:0 12px 40px var(--t-shadow);font:12px/1.6 var(--font-geist-sans),sans-serif;}
+.alt-season-explanation > * {display:block;margin-bottom:8px;}
+.refined .r-terminal .terminal-data-table {overflow-x:auto;}
+.refined .r-terminal .terminal-data-table table {min-width:1600px;}
+.reflex-terminal .signal-entry {border-right:1px solid var(--t-border)!important;padding-inline:12px!important;}
+.reflex-terminal .signal-entry:focus-visible {outline:2px solid var(--t-accent);outline-offset:2px;}

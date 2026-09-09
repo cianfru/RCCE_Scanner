@@ -151,7 +151,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
   if (chips.length === 0 && hiddenCount === 0) return null;
 
   const FILTER_OPTIONS = ["HIGH", "MED", "ALL"];
-  const FILTER_LABELS  = { HIGH: "●●●●+", MED: "●●●+", ALL: "4H+1D" };
+  const FILTER_LABELS  = { HIGH: "4+ factors", MED: "3+ factors", ALL: "All" };
 
   return (
     <FadeIn delay={420}>
@@ -189,7 +189,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
             {FILTER_OPTIONS.map(opt => {
               const active = filter === opt;
               return (
-                <button
+                <button className="terminal-status"
                   key={opt}
                   onClick={() => setFilter(opt)}
                   style={{
@@ -226,7 +226,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
             const showCond = isEntry && r.conditions_met != null;
 
             return (
-              <span
+              <span className="terminal-status signal-entry" role="button" tabIndex={0} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(r); } }}
                 key={`${r.symbol}-${r.tf}`}
                 onClick={() => onSelect(r)}
                 title={`Confluence: ${r.confluence}/7 | Priority: ${r.priority_score}`}
@@ -267,8 +267,8 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
                 {/* Conditions badge (entry signals) */}
                 {showCond && (
                   <span style={{
-                    padding: "1px 4px", borderRadius: "10px",
-                    background: `${sm.color}18`,
+                    padding: "1px 4px", borderRadius: 0,
+                    background: "transparent",
                     fontSize: m(T.textXs, isMobile), fontWeight: 700,
                   }}>
                     {r.conditions_met}/{r.conditions_total || 10}
@@ -276,8 +276,8 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
                 )}
 
                 {/* Confluence dots */}
-                <span style={{ fontSize: 8, opacity: 0.65, letterSpacing: "-1px" }}>
-                  {"●".repeat(r.confluence)}{"○".repeat(7 - r.confluence)}
+                <span style={{ fontSize: 10, opacity: 0.65 }}>
+                  {r.confluence}/7
                 </span>
 
                 {/* Timeframe tag */}
@@ -294,7 +294,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
 
           {/* Hidden count pill */}
           {hiddenCount > 0 && (
-            <span
+            <span className="terminal-status"
               onClick={() => setFilter("ALL")}
               style={{
                 padding: "2px 8px", borderRadius: 12, flexShrink: 0,

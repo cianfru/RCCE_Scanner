@@ -256,7 +256,7 @@ export default function GroupModal({
                   {usdtPairs.map(sym => (
                     <span
                       key={sym}
-                      style={{
+                      className="terminal-status" style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "5px 10px", borderRadius: "20px",
                         background: T.surface, border: `1px solid ${T.border}`,
@@ -289,7 +289,7 @@ export default function GroupModal({
                   {btcPairs.map(sym => (
                     <span
                       key={sym}
-                      style={{
+                      className="terminal-status" style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "5px 10px", borderRadius: "20px",
                         background: T.surface, border: `1px solid rgba(251,146,60,0.25)`,

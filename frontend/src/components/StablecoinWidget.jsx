@@ -39,7 +39,7 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
       </span>
 
       {/* Trend arrow + badge */}
-      <span style={{
+      <span className="terminal-status" style={{
         padding: "2px 10px",
         borderRadius: "20px",
         background: `${meta.color}10`,

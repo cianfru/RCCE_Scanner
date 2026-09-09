@@ -1,3 +1,4 @@
+import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
@@ -115,7 +116,7 @@ function SignalAgeChip({ ageSeconds }) {
   return (
     <span
       title="Time since the signal label last changed. Informational only — no auto-exit."
-      style={{
+      className="terminal-status" style={{
         padding: "4px 10px", borderRadius: 20,
         background: "transparent",
         border: `1px solid ${T.border}`,
@@ -139,24 +140,8 @@ function SignalAgeChip({ ageSeconds }) {
 function MetricSparkline({ label, history, current, unit, colorFn }) {
   if (!history || history.length < 2) return null;
 
-  const w = 120, h = 32, pad = 2;
   const vals = history;
-  const n = vals.length;
-  const dataMin = Math.min(...vals);
-  const dataMax = Math.max(...vals);
-  const range = dataMax - dataMin || 1;
-  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
-
-  const points = vals.map((v, i) => {
-    const x = pad + i * xStep;
-    const y = h - pad - ((v - dataMin) / range) * (h - pad * 2);
-    return `${x},${y}`;
-  }).join(" ");
-
-  const color = colorFn ? colorFn(current) : (current >= vals[0] ? "#34d399" : "#f87171");
-  const lastX = pad + (n - 1) * xStep;
-  const lastY = h - pad - ((vals[n - 1] - dataMin) / range) * (h - pad * 2);
-
+  const color = colorFn ? colorFn(current) : (current >= vals[0] ? "#97FCE4" : "#d8a094");
   const fmtVal = (v) => {
     if (v == null) return "\u2014";
     if (unit === "%") {
@@ -180,10 +165,10 @@ function MetricSparkline({ label, history, current, unit, colorFn }) {
           {fmtVal(current)}
         </span>
       </div>
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", width: "100%" }}>
-        <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <circle cx={lastX} cy={lastY} r="2.5" fill={color} />
-      </svg>
+      <TrendChart data={history} color={color} label={`${label} history`} />
+      <div style={{display:'flex', justifyContent:'space-between', fontFamily:T.mono, fontSize:10, color:T.text4}}>
+        <span>Low {fmtVal(Math.min(...history))}</span><span>High {fmtVal(Math.max(...history))}</span>
+      </div>
     </div>
   );
 }
@@ -248,7 +233,7 @@ function ConfluenceSection({ confluence }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{
+        <span className="terminal-status" style={{
           padding: "4px 12px", borderRadius: 20,
           background: `${lColor}15`, color: lColor,
           fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
@@ -278,7 +263,7 @@ function ConfluenceSection({ confluence }) {
             {row.tf}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{
+            <span className="terminal-status" style={{
               padding: "3px 10px", borderRadius: 20, background: row.rm.bg, color: row.rm.color,
               fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.04em", border: `1px solid ${row.rm.color}20`,
             }}>{row.regime || "\u2014"}</span>
@@ -451,7 +436,7 @@ function SmartMoneyPanel({ data }) {
         <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
           Whale Consensus
         </span>
-        <span style={{
+        <span className="terminal-status" style={{
           fontSize: T.textSm, fontWeight: 700, color: trendColor, fontFamily: T.mono,
           marginLeft: "auto", padding: "3px 10px", borderRadius: 20,
           background: `${trendColor}15`, border: `1px solid ${trendColor}28`,
@@ -565,7 +550,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <RegimeBadge regime={data.regime} />
         <SignalDot signal={data.signal} />
         {data.signal_confidence != null && (
-          <span style={{
+          <span className="terminal-status" style={{
             padding: "4px 12px", borderRadius: 20,
             background: T.surface, border: `1px solid ${T.border}`,
             fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,

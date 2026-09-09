@@ -36,7 +36,7 @@ export default function NotableSignals({ notable4h, notable1d, onSelect, isMobil
             .map(r => {
               const sm = SIGNAL_META[r.signal] || SIGNAL_META.WAIT;
               return (
-                <span
+                <span className="terminal-status"
                   key={`${r.symbol}-${r.tf}`}
                   onClick={() => onSelect(r)}
                   style={{
