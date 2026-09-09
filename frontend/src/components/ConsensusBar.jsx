@@ -4,7 +4,7 @@ import FadeIn from "./FadeIn.jsx";
 
 export default function ConsensusBar({ consensus, activeTab, onTabChange, searchTerm, onSearchChange }) {
   const color = ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-OFF": T.red,
-    ACCUMULATION: T.cyan, MIXED: T.gray })[consensus?.consensus] || T.text3;
+    ACCUMULATION: T.cyan, MIXED: T.text2 })[consensus?.consensus] || T.text3;
   const strength = Math.max(0, Math.min(100, Number(consensus?.strength) || 0));
   return <FadeIn delay={350}>
     <GlassCard style={{ marginTop: T.sp3, padding: "16px 20px" }}>
