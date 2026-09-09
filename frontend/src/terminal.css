@@ -1,0 +1,13 @@
+/* Terminal presentation only. Existing routes, feeds, filters and trading logic are unchanged. */
+.reflex-terminal {font-variant-numeric:tabular-nums;}
+.reflex-terminal .terminal-header {background:var(--t-headerBg)!important;border-bottom:1px solid var(--t-border)!important;min-height:68px;}
+.reflex-terminal .terminal-header > div[style*="pointer-events"] {display:none;}
+.reflex-terminal .apple-btn {border-radius:999px;box-shadow:none;}
+.reflex-terminal button:focus-visible,.reflex-terminal input:focus-visible,.reflex-terminal select:focus-visible {outline:2px solid var(--t-accent);outline-offset:3px;}
+.reflex-terminal .terminal-data-table {border-radius:16px;}
+.reflex-terminal .terminal-data-table th {font-size:10px!important;letter-spacing:.09em;background:var(--t-surface);padding-top:17px!important;padding-bottom:17px!important;}
+.reflex-terminal .terminal-data-table tbody tr {transition:background .15s ease;}
+.reflex-terminal .terminal-data-table tbody tr:hover {background:var(--t-accentDim)!important;}
+.reflex-terminal .terminal-data-table td {border-bottom:1px solid var(--t-overlay04);}
+@media(max-width:640px){.reflex-terminal .terminal-header{min-height:60px;}.reflex-terminal .terminal-data-table th{letter-spacing:.03em;}}
+@media(prefers-reduced-motion:reduce){.reflex-terminal *{animation:none!important;transition:none!important;}}

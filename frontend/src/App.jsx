@@ -1,3 +1,5 @@
+import ReflexBrand from "./components/ReflexBrand.jsx";
+import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
@@ -430,7 +432,7 @@ export default function App() {
 
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
-  const createGroup = async (name, symbols = [], color = "#22d3ee") => {
+  const createGroup = async (name, symbols = [], color = "#97FCE4") => {
     try {
       const res = await fetch(`${API_BASE}/api/groups`, {
         method: "POST",
@@ -603,7 +605,7 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
@@ -617,7 +619,7 @@ export default function App() {
         tr:hover td { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(34,211,238,0.12);} 50%{box-shadow: 0 0 24px rgba(34,211,238,0.25);} }
+        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }
         @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -656,19 +658,19 @@ export default function App() {
           transform: scale(0.98);
         }
         .apple-btn-accent {
-          background: linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%);
-          border: 1px solid rgba(34,211,238,0.5);
+          background: linear-gradient(180deg, #97FCE4 0%, #80dbc7 100%);
+          border: 1px solid rgba(151,252,228,0.5);
           color: #000;
           box-shadow: 0 1px 3px var(--t-shadow), inset 0 1px 0 var(--t-overlay20);
         }
         .apple-btn-accent:hover {
-          background: linear-gradient(180deg, #40e8ff 0%, #22d3ee 100%);
-          border-color: rgba(34,211,238,0.7);
-          box-shadow: 0 2px 12px rgba(34,211,238,0.25), inset 0 1px 0 var(--t-overlay25);
+          background: linear-gradient(180deg, #F5FEFD 0%, #97FCE4 100%);
+          border-color: rgba(151,252,228,0.7);
+          box-shadow: 0 2px 12px rgba(151,252,228,0.25), inset 0 1px 0 var(--t-overlay25);
           color: #000;
         }
         .apple-btn-accent:active {
-          background: linear-gradient(180deg, #18b8d0 0%, #1aa8c0 100%);
+          background: linear-gradient(180deg, #80dbc7 0%, #80dbc7 100%);
           box-shadow: 0 0px 1px var(--t-shadow), inset 0 1px 3px var(--t-shadow);
           transform: scale(0.98);
         }
@@ -684,8 +686,8 @@ export default function App() {
           box-shadow: 0 2px 8px var(--t-shadowDeep), inset 0 1px 0 var(--t-overlay08);
         }
         .apple-select:focus {
-          border-color: rgba(34,211,238,0.4);
-          box-shadow: 0 0 0 3px rgba(34,211,238,0.08), 0 1px 2px var(--t-shadow);
+          border-color: rgba(151,252,228,0.4);
+          box-shadow: 0 0 0 3px rgba(151,252,228,0.08), 0 1px 2px var(--t-shadow);
         }
       `}</style>
 
@@ -693,12 +695,12 @@ export default function App() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
         <div style={{
           position: "absolute", top: "-10%", left: "15%", width: 600, height: 600,
-          borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%)",
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(151,252,228,0.06) 0%, transparent 70%)",
           filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite",
         }} />
         <div style={{
           position: "absolute", top: "40%", right: "10%", width: 500, height: 500,
-          borderRadius: "50%", background: "radial-gradient(circle, rgba(168,85,247,0.04) 0%, transparent 70%)",
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(15,57,51,0.04) 0%, transparent 70%)",
           filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 3s",
         }} />
         <div style={{
@@ -730,7 +732,7 @@ export default function App() {
       />
 
       {/* ── HEADER ── */}
-      <div style={{
+      <div className="terminal-header" style={{
         padding: `0 ${hPad}px`,
         borderBottom: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
         display: "flex",
@@ -752,7 +754,7 @@ export default function App() {
           position: "absolute", bottom: 0, left: 0, right: 0,
           height: "60%",
           background: mode === "dark"
-            ? "linear-gradient(0deg, rgba(34,211,238,0.10) 0%, rgba(34,211,238,0.03) 60%, transparent 100%)"
+            ? "linear-gradient(0deg, rgba(151,252,228,0.10) 0%, rgba(151,252,228,0.03) 60%, transparent 100%)"
             : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
@@ -761,7 +763,7 @@ export default function App() {
           position: "absolute", top: 0, left: 0, right: 0,
           height: "100%",
           background: mode === "dark"
-            ? "linear-gradient(180deg, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.03) 60%, transparent 100%)"
+            ? "linear-gradient(180deg, rgba(15,57,51,0.10) 0%, rgba(15,57,51,0.03) 60%, transparent 100%)"
             : "linear-gradient(180deg, rgba(126,34,206,0.07) 0%, rgba(126,34,206,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
@@ -784,20 +786,7 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
-          <img
-            src="/logo.png"
-            alt="Reflex"
-            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
-            style={{
-              height: isMobile ? 32 : 40,
-              width: "auto",
-              objectFit: "contain",
-              flexShrink: 0,
-              display: "block",
-              filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
-              cursor: "pointer",
-            }}
-          />
+          <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 12px",
@@ -881,7 +870,7 @@ export default function App() {
       <div style={{
         height: 1, width: "100%",
         background: mode === "dark"
-          ? "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.15) 25%, rgba(34,211,238,0.25) 50%, rgba(34,211,238,0.15) 75%, transparent 100%)"
+          ? "linear-gradient(90deg, transparent 0%, rgba(151,252,228,0.15) 25%, rgba(151,252,228,0.25) 50%, rgba(151,252,228,0.15) 75%, transparent 100%)"
           : "linear-gradient(90deg, transparent 0%, rgba(14,116,144,0.12) 25%, rgba(14,116,144,0.18) 50%, rgba(14,116,144,0.12) 75%, transparent 100%)",
         position: "sticky", top: isMobile ? 56 : 56, zIndex: 99,
       }} />
@@ -923,8 +912,8 @@ export default function App() {
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <span style={{
-            fontSize: m(T.textXl, isMobile),
-            fontWeight: 700,
+            fontSize: isMobile ? 24 : 32,
+            fontWeight: 550,
             color: T.text1,
             fontFamily: T.font,
             letterSpacing: "-0.02em",

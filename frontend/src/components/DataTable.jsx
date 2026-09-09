@@ -209,7 +209,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
           textTransform: "uppercase",
         }}>{label}</div>
       )}
-      <GlassCard style={{ overflow: "visible" }}>
+      <GlassCard className="terminal-data-table" style={{ overflow: "visible" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
