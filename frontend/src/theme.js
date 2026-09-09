@@ -1,48 +1,50 @@
 // ─── THEME PALETTES ─────────────────────────────────────────────────────────
 
+// Hyperliquid palette — Aquamarine #97FCE4, Firefly #0F3933, Ebony #04060C,
+// Foam #F5FEFD. Matches the marketing landing.
 const DARK = {
-  bg:          "#0a0a0c",
-  surface:     "rgba(255,255,255,0.05)",
-  surfaceH:    "rgba(255,255,255,0.09)",
-  border:      "rgba(255,255,255,0.12)",
-  borderH:     "rgba(255,255,255,0.20)",
-  text1:       "#f5f5f7",
-  text2:       "#d1d1d6",
-  text3:       "#98989f",
-  text4:       "#6e6e73",
-  accent:      "#22d3ee",
-  accentDim:   "rgba(34,211,238,0.12)",
-  // Overlay opacities (white on dark)
-  overlay02:   "rgba(255,255,255,0.02)",
-  overlay03:   "rgba(255,255,255,0.03)",
-  overlay04:   "rgba(255,255,255,0.04)",
-  overlay06:   "rgba(255,255,255,0.06)",
-  overlay08:   "rgba(255,255,255,0.08)",
-  overlay10:   "rgba(255,255,255,0.10)",
-  overlay12:   "rgba(255,255,255,0.12)",
-  overlay15:   "rgba(255,255,255,0.15)",
-  overlay20:   "rgba(255,255,255,0.20)",
-  overlay25:   "rgba(255,255,255,0.25)",
-  overlay30:   "rgba(255,255,255,0.30)",
+  bg:          "#04060C",
+  surface:     "rgba(15,57,51,0.32)",
+  surfaceH:    "rgba(15,57,51,0.55)",
+  border:      "rgba(151,252,228,0.16)",
+  borderH:     "rgba(151,252,228,0.30)",
+  text1:       "#F5FEFD",
+  text2:       "rgba(245,254,253,0.82)",
+  text3:       "rgba(245,254,253,0.60)",
+  text4:       "rgba(245,254,253,0.42)",
+  accent:      "#97FCE4",
+  accentDim:   "rgba(151,252,228,0.12)",
+  // Overlay opacities (aquamarine on ebony)
+  overlay02:   "rgba(151,252,228,0.02)",
+  overlay03:   "rgba(151,252,228,0.03)",
+  overlay04:   "rgba(151,252,228,0.04)",
+  overlay06:   "rgba(151,252,228,0.06)",
+  overlay08:   "rgba(151,252,228,0.08)",
+  overlay10:   "rgba(151,252,228,0.10)",
+  overlay12:   "rgba(151,252,228,0.12)",
+  overlay15:   "rgba(151,252,228,0.15)",
+  overlay20:   "rgba(151,252,228,0.20)",
+  overlay25:   "rgba(151,252,228,0.25)",
+  overlay30:   "rgba(151,252,228,0.30)",
   // Shadows
-  shadow:      "rgba(0,0,0,0.3)",
-  shadowDeep:  "rgba(0,0,0,0.5)",
-  shadowHeavy: "rgba(0,0,0,0.85)",
+  shadow:      "rgba(0,0,0,0.35)",
+  shadowDeep:  "rgba(0,0,0,0.55)",
+  shadowHeavy: "rgba(0,0,0,0.88)",
   // Composite backgrounds
-  glassBg:     "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
-  glassInset:  "inset 0 1px 0 rgba(255,255,255,0.04)",
-  glassShadow: "0 2px 12px rgba(0,0,0,0.3)",
-  headerBg:    "linear-gradient(180deg, rgba(18,18,20,0.92) 0%, rgba(10,10,12,0.88) 100%)",
-  popoverBg:   "linear-gradient(180deg, rgba(30,30,34,0.98), rgba(20,20,24,0.98))",
-  drawerBg:    "linear-gradient(180deg, rgba(20,20,22,0.92) 0%, rgba(10,10,12,0.94) 100%)",
-  selectBg:    "#1c1c1e",
-  scrollThumb: "rgba(255,255,255,0.12)",
-  scrollHover: "rgba(255,255,255,0.25)",
+  glassBg:     "linear-gradient(180deg, rgba(15,57,51,0.30) 0%, rgba(15,57,51,0.10) 100%)",
+  glassInset:  "inset 0 1px 0 rgba(245,254,253,0.06)",
+  glassShadow: "0 2px 12px rgba(0,0,0,0.35)",
+  headerBg:    "linear-gradient(180deg, rgba(9,20,18,0.92) 0%, rgba(4,6,12,0.9) 100%)",
+  popoverBg:   "linear-gradient(180deg, rgba(12,25,22,0.98), rgba(6,12,14,0.98))",
+  drawerBg:    "linear-gradient(180deg, rgba(10,22,20,0.94) 0%, rgba(4,6,12,0.95) 100%)",
+  selectBg:    "#0a1512",
+  scrollThumb: "rgba(151,252,228,0.16)",
+  scrollHover: "rgba(151,252,228,0.30)",
   // Chart-specific (resolved values for canvas/libraries)
-  chartGrid:   "rgba(255,255,255,0.03)",
-  chartCross:  "rgba(34,211,238,0.3)",
-  chartLabel:  "#1a1a1a",
-  chartText:   "#98989f",
+  chartGrid:   "rgba(151,252,228,0.04)",
+  chartCross:  "rgba(151,252,228,0.35)",
+  chartLabel:  "#04060C",
+  chartText:   "rgba(245,254,253,0.60)",
 };
 
 const LIGHT = {
@@ -146,8 +148,8 @@ export const T = {
   scrollThumb: "var(--t-scrollThumb)",
   scrollHover: "var(--t-scrollHover)",
   // Static (not theme-dependent)
-  font:        "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  mono:        "'SF Mono', 'Fira Code', monospace",
+  font:        "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
+  mono:        "'Geist Mono', 'SF Mono', monospace",
   radius:      "14px",
   radiusSm:    "10px",
   radiusXs:    "8px",
@@ -188,8 +190,8 @@ export const T = {
   red:      "#f87171",
   redDark:  "#ef4444",
   yellow:   "#fbbf24",
-  cyan:     "#22d3ee",
-  cyanDim:  "#67e8f9",
+  cyan:     "#97FCE4",
+  cyanDim:  "#b8fff0",
   purple:   "#c084fc",
   purpleDim:"#d8b4fe",
   orange:   "#fb923c",
@@ -214,7 +216,7 @@ export function resolveToken(key) {
 export const REGIME_META = {
   MARKUP:    { color: "#34d399", bg: "rgba(52,211,153,0.08)", glow: "rgba(52,211,153,0.25)", label: "MARKUP",    glyph: "\u2197" },
   BLOWOFF:   { color: "#f87171", bg: "rgba(248,113,113,0.08)", glow: "rgba(248,113,113,0.25)", label: "BLOWOFF",   glyph: "\u25b2\u25b2" },
-  REACC:     { color: "#22d3ee", bg: "rgba(34,211,238,0.08)",  glow: "rgba(34,211,238,0.25)",  label: "REACC",     glyph: "\u25c6" },
+  REACC:     { color: "#97FCE4", bg: "rgba(151,252,228,0.08)",  glow: "rgba(151,252,228,0.25)",  label: "REACC",     glyph: "\u25c6" },
   MARKDOWN:  { color: "#fb923c", bg: "rgba(251,146,60,0.08)",  glow: "rgba(251,146,60,0.25)",  label: "MARKDOWN",  glyph: "\u25bc" },
   CAP:       { color: "#c084fc", bg: "rgba(192,132,252,0.08)", glow: "rgba(192,132,252,0.25)", label: "CAP",       glyph: "\u25bc\u25bc" },
   ACCUM:     { color: "#6ee7b7", bg: "rgba(110,231,183,0.08)", glow: "rgba(110,231,183,0.25)", label: "ACCUM",     glyph: "\u25c7" },
@@ -227,8 +229,8 @@ export const REGIME_META = {
 export const SIGNAL_META = {
   STRONG_LONG:  { color: "#34d399", label: "STRONG LONG",  dot: "\u25cf" },
   LIGHT_LONG:   { color: "#6ee7b7", label: "LIGHT LONG",   dot: "\u25cf" },
-  ACCUMULATE:   { color: "#22d3ee", label: "ACCUMULATE",    dot: "\u25c6" },
-  REVIVAL_SEED: { color: "#67e8f9", label: "REVIVAL",       dot: "\u25cf" },
+  ACCUMULATE:   { color: "#97FCE4", label: "ACCUMULATE",    dot: "\u25c6" },
+  REVIVAL_SEED: { color: "#b8fff0", label: "REVIVAL",       dot: "\u25cf" },
   WAIT:         { color: "#52525b", label: "WAIT",          dot: "\u25cb" },
   TRIM:         { color: "#fbbf24", label: "TRIM",          dot: "\u25cf" },
   TRIM_HARD:    { color: "#f87171", label: "TRIM HARD",     dot: "\u25cf" },
@@ -243,7 +245,7 @@ export const REGIME_ORDER = ["BLOWOFF","MARKUP","REACC","ACCUM","CAP","MARKDOWN"
 export const TRANSITION_META = {
   UPGRADE:   { color: "#34d399", glyph: "\u2191", label: "UPGRADE" },
   DOWNGRADE: { color: "#f87171", glyph: "\u2193", label: "DOWNGRADE" },
-  ENTRY:     { color: "#22d3ee", glyph: "\u25b6", label: "ENTRY" },
+  ENTRY:     { color: "#97FCE4", glyph: "\u25b6", label: "ENTRY" },
   EXIT:      { color: "#fb923c", glyph: "\u25a0", label: "EXIT" },
   LATERAL:   { color: "#52525b", glyph: "\u2192", label: "LATERAL" },
   INITIAL:   { color: "#c084fc", glyph: "\u25c6", label: "INITIAL" },
@@ -261,14 +263,14 @@ export function heatColor(heat) {
 }
 
 export function phaseColor(phase) {
-  return { Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#22d3ee", Neutral: "#52525b" }[phase] || "#52525b";
+  return { Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#97FCE4", Neutral: "#52525b" }[phase] || "#52525b";
 }
 
 export function exhaustMeta(state) {
   return {
-    EXHAUSTED_FLOOR: { color: "#22d3ee", text: "FLOOR" },
+    EXHAUSTED_FLOOR: { color: "#97FCE4", text: "FLOOR" },
     CLIMAX:          { color: "#fbbf24", text: "CLIMAX" },
-    ABSORBING:       { color: "#67e8f9", text: "ABSORB" },
+    ABSORBING:       { color: "#b8fff0", text: "ABSORB" },
     BEAR_ZONE:       { color: "#f87171", text: "BEAR" },
     NEUTRAL:         { color: "#3f3f46", text: "\u2014" },
   }[state] || { color: "#3f3f46", text: "\u2014" };
@@ -287,7 +289,7 @@ export function zBar(z) {
   const pct = ((clamped + 3) / 6) * 100;
   let color = "#71717a";
   if (z <= -1) color = "#c084fc";
-  else if (z <= 0) color = "#22d3ee";
+  else if (z <= 0) color = "#97FCE4";
   else if (z <= 1.2) color = "#34d399";
   else if (z <= 2.0) color = "#fbbf24";
   else color = "#f87171";

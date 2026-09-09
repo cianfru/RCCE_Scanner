@@ -102,7 +102,7 @@ function SectionHeader({ title, subtitle }) {
 
 function GroupBadge({ group }) {
   const colors = {
-    core: { bg: "#22d3ee10", border: "#22d3ee30", text: "#22d3ee" },
+    core: { bg: "#97FCE410", border: "#97FCE430", text: "#97FCE4" },
     coinglass: { bg: "#a78bfa10", border: "#a78bfa30", text: "#a78bfa" },
     hyperlens: { bg: "#fbbf2410", border: "#fbbf2430", text: "#fbbf24" },
   };
@@ -257,8 +257,8 @@ function ComboCards({ combos, isMobile }) {
               <span key={c} style={{
                 fontSize: fs, fontFamily: T.mono,
                 padding: "3px 8px", borderRadius: 5,
-                background: "#22d3ee10", border: "1px solid #22d3ee25",
-                color: "#22d3ee", fontWeight: 500,
+                background: "#97FCE410", border: "1px solid #97FCE425",
+                color: "#97FCE4", fontWeight: 500,
               }}>
                 {c.replace(/_/g, " ")}
               </span>

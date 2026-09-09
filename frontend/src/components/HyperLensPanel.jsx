@@ -1044,7 +1044,7 @@ function WalletTags({ data }) {
   const roi = data.monthly_roi || 0;
   if (av >= 10e6) tags.push({ label: "Leviathan", color: "#a78bfa", emoji: "\ud83d\udc0b" });
   else if (av >= 1e6) tags.push({ label: "Whale", color: "#60a5fa", emoji: "\ud83d\udc33" });
-  else if (av >= 100e3) tags.push({ label: "Dolphin", color: "#67e8f9", emoji: "\ud83d\udc2c" });
+  else if (av >= 100e3) tags.push({ label: "Dolphin", color: "#b8fff0", emoji: "\ud83d\udc2c" });
   if (roi >= 100) tags.push({ label: "Money Printer", color: T.green, emoji: "\ud83d\udcb0" });
   else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow, emoji: "\u2b50" });
   if (tags.length === 0) return null;

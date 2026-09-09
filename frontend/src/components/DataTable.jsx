@@ -30,7 +30,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const devPct = row.deviation_pct ?? 0;
       const hasAnomaly = row.has_anomaly;
       const scanTier = isFav ? "hot" : (row.heat_direction > 0 ? "active" : (row.heat_direction < 0 ? (devPct <= -10 ? "deep_cold" : "cold") : "active"));
-      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#22d3ee" : scanTier === "cold" ? "#64748b" : "#3b1c32";
+      const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#97FCE4" : scanTier === "cold" ? "#64748b" : "#3b1c32";
       const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : scanTier === "cold" ? "Cold — scanned every ~7 min (below BMSB)" : "Deep cold — scanned every ~20 min (>10% below BMSB)";
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
@@ -67,7 +67,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
               marginLeft: hasAnomaly ? 3 : 5,
               verticalAlign: "middle",
               opacity: scanTier === "deep_cold" ? 0.4 : scanTier === "cold" ? 0.55 : 1,
-              boxShadow: `0 0 0 1px ${scanTier === "hot" ? "#facc1540" : scanTier === "active" ? "#22d3ee30" : "transparent"}`,
+              boxShadow: `0 0 0 1px ${scanTier === "hot" ? "#facc1540" : scanTier === "active" ? "#97FCE430" : "transparent"}`,
             }}
           />
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
@@ -178,7 +178,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.unified_signal || row.signal);
   const stripeBg = index % 2 === 1 ? T.overlay02 : "transparent";
-  const restBg = selected ? "rgba(34,211,238,0.04)" : isHighlight ? rm.bg : stripeBg;
+  const restBg = selected ? "rgba(151,252,228,0.04)" : isHighlight ? rm.bg : stripeBg;
 
   return (
     <tr

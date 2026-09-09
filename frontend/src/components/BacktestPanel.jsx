@@ -92,14 +92,14 @@ function EquityChart({ equity, btcEquity, height = 260 }) {
     // BTC benchmark (dashed orange)
     drawLine(btcEquity, "rgb(251,146,60)", true);
     // Strategy (solid cyan)
-    drawLine(equity, "rgb(34,211,238)", false);
+    drawLine(equity, "rgb(151,252,228)", false);
 
     // Legend
     ctx.setLineDash([]);
     const legendY = 12;
     ctx.font = "9px SF Mono, Fira Code, monospace";
 
-    ctx.fillStyle = "rgb(34,211,238)";
+    ctx.fillStyle = "rgb(151,252,228)";
     ctx.fillRect(pad.l, legendY - 4, 12, 2);
     ctx.fillText("Strategy", pad.l + 16, legendY);
 
