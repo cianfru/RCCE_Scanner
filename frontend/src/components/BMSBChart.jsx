@@ -247,8 +247,8 @@ export default function BMSBChart({
         if (data.candles?.length > 0) {
           // Auto-detect price precision for micro-cap coins (e.g. MOG at 0.0000001)
           const samplePrice = data.candles[data.candles.length - 1]?.close || 0;
-          if (samplePrice > 0 && samplePrice < 0.01) {
-            const decimals = Math.max(2, Math.ceil(-Math.log10(samplePrice)) + 2);
+          if (samplePrice > 0 && samplePrice < 1) {
+            const decimals = Math.max(2, Math.ceil(-Math.log10(samplePrice)) + 3);
             const minMove = Math.pow(10, -decimals);
             const pf = { type: "price", precision: decimals, minMove };
             candleSeries.applyOptions({ priceFormat: pf });
