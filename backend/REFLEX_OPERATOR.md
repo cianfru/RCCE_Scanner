@@ -56,3 +56,21 @@ proof of ownership. Before launching membership:
 The token network/contract, required balance, per-wallet favorite allowance and
 membership recheck/grace rules must be settled before enabling this layer. A
 permanent free AI/provider or hosting allowance cannot be guaranteed by gating.
+
+## Separate spot and perpetual coverage
+
+Perpetuals remain eligible by listing. Spot requires a USDC quote and at least
+`REFLEX_SPOT_MIN_VOLUME_USD` in 24-hour notional volume (default 25000), obtained
+from `spotMetaAndAssetCtxs` in the existing universe refresh request. No extra
+per-market volume polling is needed. Missing/invalid volume fails closed. The
+public universe lists excluded markets with reasons, while the worker skips them.
+Tokens listed in both markets have distinct keys (`NAME/USDT` for the existing
+perpetual convention, `NAME/USDC` for native spot), routes and candles.
+
+Each spot timeframe also requires 50 closed bars, recent data no more than two
+intervals stale, valid positive OHLC values, and at least 80% continuity and
+trading activity across the last 30 closed bars. Both serial and manual batch
+scans enforce this; rejected histories lose cached signals and charts explain
+why analysis is unavailable. Markets can re-enter automatically after volume
+and candle quality recover. This screen does not measure executable depth or
+slippage and is not a guarantee against wash trading or poor liquidity.

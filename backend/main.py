@@ -598,9 +598,10 @@ async def remove_tradfi_sym(coin: str):
 
 
 @app.get("/api/consensus")
-async def consensus(timeframe: str = Query("4h")):
+async def consensus(timeframe: str = Query("4h"), market: str = Query(None, pattern="^(perpetual|spot)$")):
     """Return market consensus for a timeframe."""
-    c = cache.consensus.get(timeframe, {"consensus": "MIXED", "strength": 0})
+    from scanner import compute_consensus
+    c = compute_consensus([r for r in cache.get_results(timeframe) if r.get("market_kind") == market]) if market else cache.consensus.get(timeframe, {"consensus": "MIXED", "strength": 0})
     return ConsensusResponse(consensus=c["consensus"], strength=c["strength"], timeframe=timeframe)
 
 
@@ -889,11 +890,17 @@ async def list_groups():
 @app.get("/api/universe")
 async def market_universe(timeframe: str = Query("1d", pattern="^(4h|1d)$")):
     import hyperliquid_universe as universe
+    from spot_quality import volume_reason, MIN_SPOT_VOLUME
     ready = {r["symbol"] for r in cache.get_results(timeframe)}
+    markets = []
+    for symbol, market in universe.MARKETS.items():
+        reason = volume_reason(market) or getattr(cache, "spot_quality", {}).get((symbol, timeframe))
+        markets.append({**market, "exclusion_reason": reason,
+                        "analysis_status": "excluded" if reason else "ready" if symbol in ready else "pending",
+                        "candles_checked_at": cache._results_by_sym.get(symbol, {}).get(timeframe, {}).get("candles_checked_at")})
     return {"updated_at": universe.UPDATED_AT, "stale": universe.STALE,
-            "markets": [{**m, "analysis_status": "ready" if s in ready else "pending",
-                         "candles_checked_at": cache._results_by_sym.get(s, {}).get(timeframe, {}).get("candles_checked_at")}
-                        for s, m in universe.MARKETS.items()]}
+            "spot_min_volume_usd": MIN_SPOT_VOLUME, "markets": markets}
+
 
 
 @app.post("/api/groups")
@@ -1376,6 +1383,12 @@ async def chart_data(
     from hyperliquid_universe import MARKETS
     symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
 
+    from spot_quality import volume_reason, candle_reason
+    market = MARKETS.get(symbol, {})
+    reason = volume_reason(market)
+    if reason:
+        raise HTTPException(status_code=422, detail=f"Spot analysis unavailable: {reason}")
+
     # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
     effective_limit = min(limit, 500)
     ohlcv = await fetch_ohlcv(symbol, timeframe, limit=effective_limit)
@@ -1395,6 +1408,11 @@ async def chart_data(
     if ohlcv is None:
         raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 
+    if market.get("kind") == "spot":
+        reason = candle_reason(ohlcv, timeframe)
+        if reason:
+            raise HTTPException(status_code=422, detail=f"Spot analysis unavailable: {reason}")
+
     # Candle timestamps in unix seconds
     candle_times = [int(ohlcv["timestamp"][i] / 1000) for i in range(len(ohlcv["timestamp"]))]
 
@@ -1402,10 +1420,10 @@ async def chart_data(
     candles = [
         {
             "time": candle_times[i],
-            "open": round(float(ohlcv["open"][i]), 6),
-            "high": round(float(ohlcv["high"][i]), 6),
-            "low": round(float(ohlcv["low"][i]), 6),
-            "close": round(float(ohlcv["close"][i]), 6),
+            "open": float(ohlcv["open"][i]),
+            "high": float(ohlcv["high"][i]),
+            "low": float(ohlcv["low"][i]),
+            "close": float(ohlcv["close"][i]),
         }
         for i in range(len(ohlcv["timestamp"]))
     ]

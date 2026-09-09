@@ -2,7 +2,7 @@ import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { RegimeBadge, SignalDot } from "../components/badges.jsx";
 import useViewport from "../hooks/useViewport.js";
@@ -483,13 +483,28 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
   const [timeframe, setTimeframe] = useState("1d");
+  const location = useLocation();
+  const marketKind = new URLSearchParams(location.search).get("market") === "spot" || (urlSymbol || "").includes("/USDC") ? "spot" : "perpetual";
+  const [availability, setAvailability] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setAvailability(null);
+    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => r.json()).then(d => {
+      const sym = (urlSymbol || "").toUpperCase();
+      const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
+      if (!cancelled) setAvailability(market || {exclusion_reason: "This market is not in the Hyperliquid universe."});
+    }).catch(() => {});
+    load(); const timer = setInterval(load, 60000);
+    return () => {cancelled = true; clearInterval(timer);};
+  }, [urlSymbol, timeframe, marketKind]);
+
 
   // Find scan result matching URL symbol
   const data = useMemo(() => {
     const scanData = timeframe === "4h" ? scanData4h : scanData1d;
     if (!scanData || scanData.length === 0) return null;
     const sym = (urlSymbol || "").toUpperCase();
-    return scanData.find(r => {
+    return scanData.find(r => r.symbol?.toUpperCase() === sym) || scanData.find(r => {
       const base = getBaseSymbol(r.symbol).replace("/", "").toUpperCase();
       return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT`;
     });
@@ -506,14 +521,14 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     return () => { document.title = "RCCE Scanner"; };
   }, [data]);
 
-  if (!data) {
+  if (!data || availability?.exclusion_reason) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 16, color: T.text3, fontFamily: T.mono, marginBottom: 16 }}>
-          {urlSymbol ? `Loading ${urlSymbol.toUpperCase()}...` : "Symbol not found"}
+          {availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
         </div>
         <button
-          onClick={() => navigate("/scanner")}
+          onClick={() => navigate(`/scanner?market=${marketKind}`)}
           className="apple-btn"
           style={{ padding: "8px 20px", fontSize: 12, fontFamily: T.mono, borderRadius: 8 }}
         >
@@ -533,7 +548,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
       }}>
         <button
-          onClick={() => navigate("/scanner")}
+          onClick={() => navigate(`/scanner?market=${marketKind}`)}
           className="apple-btn"
           style={{ padding: "7px 16px", fontSize: T.textSm, fontFamily: T.font, fontWeight: 600, borderRadius: 8, flexShrink: 0 }}
         >

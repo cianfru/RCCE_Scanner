@@ -215,7 +215,7 @@ def compute_cto_series(
             color = COLOR_NEUTRAL
 
         t = int(timestamps[i] / 1000)  # ms → unix seconds
-        cto_fast.append({"time": t, "value": round(float(v1[i]), 6), "color": color})
-        cto_slow.append({"time": t, "value": round(float(v2[i]), 6), "color": color})
+        cto_fast.append({"time": t, "value": float(v1[i]), "color": color})
+        cto_slow.append({"time": t, "value": float(v2[i]), "color": color})
 
     return {"cto_fast": cto_fast, "cto_slow": cto_slow}

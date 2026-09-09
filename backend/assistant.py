@@ -1600,6 +1600,11 @@ class AssistantManager:
         scoped_session_id = f"{wallet_address or 'public'}:{session_id}:{timeframe}"
         session = self.get_or_create_session(scoped_session_id)
         mentions = self._detect_all_symbols(user_message)
+        # A coin page supplies the exact native market; a bare ticker in the
+        # question must not switch a selected spot to its same-name perpetual.
+        if symbol and symbol in cache.symbols:
+            base = symbol.split("/")[0].upper()
+            mentions = [symbol if m.split("/")[0].upper() == base else m for m in mentions]
         detected = mentions[0] if mentions else symbol
         if detected and "/" not in detected:
             detected = next((s for s in cache.symbols if s.split("/")[0].upper() == detected.upper()), f"{detected}/USDT")
