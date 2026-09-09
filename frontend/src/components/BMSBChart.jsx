@@ -1,3 +1,4 @@
+import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
 import { useRef, useEffect, useState, useCallback } from "react";
@@ -41,6 +42,8 @@ export default function BMSBChart({
   timeframe: initialTimeframe = "1d",
   height = 360,
   signal,
+  signalFirstSeenAt,
+  signalTimeframe,
   regime,
   heat,
   conditions,
@@ -56,8 +59,10 @@ export default function BMSBChart({
   const candleSeriesRef = useRef(null);
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
+  const [signalMarkerIndex, setSignalMarkerIndex] = useState(null);
   const [error, setError] = useState(null);
   const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
+  useEffect(() => { setActiveTimeframe(initialTimeframe === "1d" ? "1d" : "4h"); }, [initialTimeframe]);
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
@@ -233,6 +238,7 @@ export default function BMSBChart({
     const apiTf = tfConfig.apiTf || tf;
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
+    setSignalMarkerIndex(null);
     setError(null);
 
     fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${apiTf}&limit=${tfConfig.limit}`)
@@ -267,16 +273,20 @@ export default function BMSBChart({
             volumeSeries.setData(data.volume);
           }
 
-          // ── Signal markers on latest candle ──
+          // Anchor the signal to its recorded first-seen candle, never the live bar.
           const markerDef = signal && SIGNAL_MARKER[signal];
           if (markerDef) {
             const last = data.candles[data.candles.length - 1];
-            const markers = [{
-              time: last.time,
+            const markerTime = (!signalTimeframe || signalTimeframe === apiTf)
+              ? signalCandleTime(data.candles, signalFirstSeenAt, apiTf === "4h" ? 14400 : 86400)
+              : null;
+            setSignalMarkerIndex(markerTime == null ? null : data.candles.findIndex(c => c.time === markerTime));
+            const markers = markerTime == null ? [] : [{
+              time: markerTime,
               position: markerDef.position,
               color: markerDef.color,
               shape: markerDef.shape,
-              text: markerDef.text,
+              text: `${markerDef.text} · first recorded`,
             }];
 
             if (floorConfirmed) {
@@ -285,7 +295,7 @@ export default function BMSBChart({
                 position: "belowBar",
                 color: "#34d399",
                 shape: "circle",
-                text: "FLOOR",
+                text: "FLOOR · current",
               });
             }
             if (exhaustionState === "CLIMAX") {
@@ -294,7 +304,7 @@ export default function BMSBChart({
                 position: "aboveBar",
                 color: "#fbbf24",
                 shape: "circle",
-                text: "CLIMAX",
+                text: "CLIMAX · current",
               });
             }
 
@@ -374,7 +384,7 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, regime, exhaustionState, floorConfirmed]);
+  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed]);
 
   // Build chart on mount and when dependencies change
   useEffect(() => {
@@ -736,6 +746,11 @@ export default function BMSBChart({
 
       {/* ── Chart container ── */}
       <div ref={containerRef} style={{ width: "100%", height }} />
+      {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
+        <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex == null ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
+        {signalMarkerIndex != null && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
+      </div>}
+
 
       {/* ── CSS for spinner ── */}
       <style>{`

@@ -104,7 +104,7 @@ function fmtSignalAge(s) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-function SignalAgeChip({ ageSeconds }) {
+function SignalAgeChip({ ageSeconds, firstSeenAt }) {
   const label = fmtSignalAge(ageSeconds);
   if (!label) return null;
 
@@ -117,7 +117,7 @@ function SignalAgeChip({ ageSeconds }) {
 
   return (
     <span
-      title="Time since the signal label last changed. Informational only — no auto-exit."
+      title={firstSeenAt ? `Current signal first recorded ${new Date(firstSeenAt * 1000).toLocaleString()}. This is an observed timestamp, not a backdated entry price.` : "Time since the current signal was first recorded."}
       className="terminal-status" style={{
         padding: "4px 10px", borderRadius: 20,
         background: "transparent",
@@ -128,7 +128,7 @@ function SignalAgeChip({ ageSeconds }) {
         display: "inline-flex", alignItems: "center", gap: 4,
       }}
     >
-      <span style={{ fontSize: 12, color: T.text3, textTransform: "uppercase" }}>fired</span>
+      <span style={{ fontSize: 12, color: T.text3, textTransform: "uppercase" }}>first recorded</span>
       {label}
       {s >= 24 * 3600 && <span style={{ fontSize: 12, color: T.text3, textTransform: "uppercase" }}>ago</span>}
     </span>
@@ -578,7 +578,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             Checks {formatPercent(data.signal_confidence)}
           </span>
         )}
-        <SignalAgeChip ageSeconds={data.signal_age_seconds} />
+        <SignalAgeChip ageSeconds={data.signal_age_seconds} firstSeenAt={data.signal_first_seen_at} />
         <div style={{ marginLeft: "auto", display: "flex", borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
           {["4h", "1d"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)}
@@ -603,6 +603,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           onTimeframeChange={setTimeframe}
           height={isMobile ? 380 : 520}
           signal={data.signal}
+          signalFirstSeenAt={data.signal_first_seen_at}
+          signalTimeframe={data.timeframe}
           regime={data.regime}
           heat={data.heat}
           conditions={data.conditions_met}

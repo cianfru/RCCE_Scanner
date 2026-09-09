@@ -406,6 +406,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
           height={isMobile ? 300 : isTablet ? 420 : 520}
           signal={selected.signal}
+          signalFirstSeenAt={selected.signal_first_seen_at}
+          signalTimeframe={selected.timeframe}
           regime={selected.regime}
           heat={selected.heat}
           conditions={selected.conditions_met}
