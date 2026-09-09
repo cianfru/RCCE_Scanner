@@ -1,7 +1,7 @@
 """
 RCCE Scanner — Pydantic response models
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, List, Optional, Literal
 
 
@@ -407,11 +407,22 @@ class WhaleWalletLabelRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    message: str
-    session_id: str = "default"
-    symbol: Optional[str] = None
-    wallet_address: Optional[str] = None
+    # Cap message length: the free models are prompt-heavy already (the scanner
+    # snapshot is injected as system context), so a very long user message only
+    # burns tokens/CPU. 4000 chars (~1k tokens) is ample for a real question.
+    message: str = Field(min_length=1, max_length=4000)
+    session_id: str = Field(default="default", max_length=128)
+    symbol: Optional[str] = Field(default=None, max_length=32)
+    wallet_address: Optional[str] = Field(default=None, max_length=64)
     timeframe: Literal["4h", "1d"] = "1d"
+
+    @field_validator("message")
+    @classmethod
+    def _strip_message(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("message must not be empty")
+        return v
 
 
 class ChatResponse(BaseModel):

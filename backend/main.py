@@ -19,7 +19,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -3515,9 +3515,38 @@ async def whale_address_history(
 # LLM Assistant endpoints
 # ---------------------------------------------------------------------------
 
+# The assistant endpoints are public (no auth) and drive the only real
+# outbound cost + CPU on the box, so throttle them per client. In-process,
+# single-instance limiter — see ratelimit.py.
+from ratelimit import SlidingWindowLimiter
+
+_chat_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=60)
+_briefing_limiter = SlidingWindowLimiter(max_requests=6, window_seconds=60)
+_explain_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=60)
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP behind Railway's proxy."""
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(limiter: SlidingWindowLimiter, request: Request) -> None:
+    allowed, retry_after = limiter.check(_client_ip(request))
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please slow down and try again shortly.",
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, request: Request):
     """LLM-powered trading assistant chat."""
+    _enforce_rate_limit(_chat_limiter, request)
     try:
         from assistant import get_assistant
         assistant = get_assistant()
@@ -3555,8 +3584,9 @@ async def set_model(req: SetModelRequest):
 
 
 @app.get("/api/briefing", response_model=BriefingResponse)
-async def briefing_endpoint():
+async def briefing_endpoint(request: Request):
     """Generate a daily market briefing."""
+    _enforce_rate_limit(_briefing_limiter, request)
     try:
         from assistant import get_assistant
         assistant = get_assistant()
@@ -3568,8 +3598,9 @@ async def briefing_endpoint():
 
 
 @app.get("/api/explain/{symbol:path}")
-async def explain_endpoint(symbol: str, timeframe: str = Query("4h")):
+async def explain_endpoint(symbol: str, request: Request, timeframe: str = Query("4h")):
     """Explain the current signal for a symbol."""
+    _enforce_rate_limit(_explain_limiter, request)
     try:
         from assistant import get_assistant
         assistant = get_assistant()

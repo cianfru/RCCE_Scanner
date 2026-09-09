@@ -14,6 +14,7 @@ import json
 import os
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 # Operator-owned configuration. Never accept provider/model choices from a chat request.
 DEFAULT_MODEL = os.environ.get("REFLEX_ASSISTANT_MODEL", "google/gemma-4-31b-it:free")
 MAX_HISTORY_MESSAGES = 20
+# Cap retained chat sessions. Briefing/explain mint a unique session id per call,
+# so an unbounded dict would leak memory over time; evict the oldest past this.
+MAX_SESSIONS = 500
 
 # Minimum context window to include a model (filters out tiny/toy models)
 _MIN_CONTEXT_LENGTH = 16_000
@@ -586,7 +590,7 @@ class AssistantManager:
     """Manages chat sessions and LLM API calls (OpenRouter or Anthropic)."""
 
     def __init__(self):
-        self.sessions: Dict[str, ChatSession] = {}
+        self.sessions: "OrderedDict[str, ChatSession]" = OrderedDict()
         self._client = None
         self._mode: Optional[str] = None  # "openrouter" or "anthropic"
         self._current_model: str = DEFAULT_MODEL
@@ -632,9 +636,16 @@ class AssistantManager:
         return self._mode or "unknown"
 
     def get_or_create_session(self, session_id: str) -> ChatSession:
-        if session_id not in self.sessions:
-            self.sessions[session_id] = ChatSession(session_id=session_id)
-        return self.sessions[session_id]
+        session = self.sessions.get(session_id)
+        if session is None:
+            session = ChatSession(session_id=session_id)
+            self.sessions[session_id] = session
+            # Evict the least-recently-used sessions past the cap.
+            while len(self.sessions) > MAX_SESSIONS:
+                self.sessions.popitem(last=False)
+        else:
+            self.sessions.move_to_end(session_id)
+        return session
 
     # -- Context builder ---------------------------------------------------
 
