@@ -1,0 +1,7 @@
+/* Base reset the design assumed from Tailwind preflight (not ported).
+   Scoped to .refined so it never touches the rest of the app. */
+.refined *, .refined *::before, .refined *::after { box-sizing: border-box; }
+.refined a { color: inherit; text-decoration: none; }
+.refined button { font: inherit; color: inherit; }
+.refined .skip { position: absolute; left: -9999px; top: 0; }
+.refined img { max-width: 100%; }
