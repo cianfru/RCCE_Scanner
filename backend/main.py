@@ -3537,7 +3537,9 @@ async def chat_endpoint(req: ChatRequest):
         import traceback
         tb = traceback.format_exc()
         logger.error("Chat error:\n%s", tb)
-        raise HTTPException(status_code=503, detail="AI Assist is temporarily unavailable. Your scanner data remains available; please try again later.")
+        from assistant_errors import public_assistant_error
+        status, message = public_assistant_error(e)
+        raise HTTPException(status_code=status, detail=message)
 
 
 

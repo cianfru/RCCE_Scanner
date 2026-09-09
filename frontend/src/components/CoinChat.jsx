@@ -152,7 +152,10 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
           wallet_address: walletAddress || null,
         }),
       });
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.detail || `Request failed (${res.status})`);
+      }
       const data = await res.json();
       setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
     } catch (e) {

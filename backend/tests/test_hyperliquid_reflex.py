@@ -84,4 +84,17 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(data['markets'][0]['signal'],'WAIT')
         self.assertEqual(captured['extra_body']['provider']['max_price'],{'prompt':0,'completion':0})
 
+class ProviderErrorTests(unittest.TestCase):
+    def test_safe_capacity_and_configuration_messages(self):
+        from assistant_errors import public_assistant_error
+        error=RuntimeError("secret provider response")
+        error.status_code=429
+        status,message=public_assistant_error(error)
+        self.assertEqual(status,429)
+        self.assertIn("capacity",message)
+        self.assertNotIn("secret",message)
+        status,message=public_assistant_error(RuntimeError("server needs OPENROUTER_API_KEY"))
+        self.assertEqual(status,503)
+        self.assertIn("configured by the operator",message)
+
 if __name__ == '__main__': unittest.main()
