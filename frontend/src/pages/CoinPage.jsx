@@ -599,7 +599,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         />
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           <a
-            href={`https://app.hyperliquid.xyz/trade/${data.symbol.split("/")[0]}`}
+            href={`https://app.hyperliquid.xyz/trade/${encodeURIComponent(data.market_coin || data.symbol.split("/")[0])}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -670,7 +670,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
-      <CoinChat symbol={data.symbol} isMobile={isMobile} />
+      <CoinChat symbol={data.symbol} timeframe={timeframe} isMobile={isMobile} />
     </div>
   );
 }

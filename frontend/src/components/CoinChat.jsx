@@ -92,7 +92,7 @@ function getCoinSessionId(symbol) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function CoinChat({ symbol, isMobile }) {
+export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
   const { address: walletAddress } = useWallet();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -148,6 +148,7 @@ export default function CoinChat({ symbol, isMobile }) {
           message: userMsg,
           session_id: sessionId.current,
           symbol: symbol || null,
+          timeframe,
           wallet_address: walletAddress || null,
         }),
       });
@@ -159,7 +160,7 @@ export default function CoinChat({ symbol, isMobile }) {
     } finally {
       setLoading(false);
     }
-  }, [symbol, walletAddress, loading]);
+  }, [symbol, walletAddress, loading, timeframe]);
 
   const handleKey = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -203,9 +204,9 @@ export default function CoinChat({ symbol, isMobile }) {
           <span style={{ color: T.text2, fontSize: 20, lineHeight: 1 }}>{"\u2715"}</span>
         ) : (
           <img
-            src="/Robot.png"
+            src="/brand/reflex-ribbon-transparent.svg"
             alt="AI Assistant"
-            style={{ width: 66, height: 66, objectFit: "contain", opacity: 0.5 }}
+            style={{ width: 32, height: 36, objectFit: "contain", opacity: 1 }}
           />
         )}
       </button>
@@ -248,7 +249,7 @@ export default function CoinChat({ symbol, isMobile }) {
               overflow: "hidden",
             }}>
               <img
-                src="/Robot.png"
+                src="/brand/reflex-ribbon-transparent.svg"
                 alt="AI"
                 style={{ width: 56, height: 56, objectFit: "contain", marginTop: 2 }}
               />

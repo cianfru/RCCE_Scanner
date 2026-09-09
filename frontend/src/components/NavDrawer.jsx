@@ -75,7 +75,7 @@ const NAV_SECTIONS = [
   {
     label: "Intelligence",
     items: [
-      { key: "chat", label: "AI Assist", desc: "Ask about any asset" },
+      { key: "chat", label: "AI Assist", desc: "Explain the scanner’s market data" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
       { key: "hyperlens", label: "HyperLens", desc: "Smart-money wallet tracking" },
@@ -196,7 +196,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
 
         {/* Scanner + Watchlists + Nav sections */}
         <div style={{ padding: "12px 12px 24px", flex: 1 }}>
-          {/* ── Scanner section (All Assets + Watchlists) ── */}
+          {/* ── Scanner section (Hyperliquid + Watchlists) ── */}
           <div style={{ marginBottom: 20 }}>
             <div style={{
               fontSize: 11, fontWeight: 700, color: T.text4,
@@ -206,22 +206,9 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
               <span>Scanner</span>
-              <button
-                onClick={() => { onGroupCreate?.(); onClose(); }}
-                style={{
-                  background: T.surface, border: `1px solid ${T.border}`,
-                  borderRadius: 8, color: T.text3,
-                  cursor: "pointer", fontSize: 20, fontWeight: 500,
-                  width: 32, height: 32,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent + "40"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; e.currentTarget.style.borderColor = T.border; }}
-              >+</button>
             </div>
 
-            {/* All Assets */}
+            {/* Hyperliquid */}
             {(() => {
               const SCANNER_TABS = ["4h", "1d", "split"];
               const isAllActive = !activeGroupId && SCANNER_TABS.includes(activeTab);
@@ -252,7 +239,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
                     fontFamily: T.font, fontSize: 14,
                     fontWeight: isAllActive ? 600 : 500,
                     color: isAllActive ? T.accent : T.text1,
-                  }}>All Assets</span>
+                  }}>Hyperliquid</span>
                   <span style={{
                     fontSize: 11, color: T.text4, fontFamily: T.mono,
                     marginLeft: "auto",
@@ -262,58 +249,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
             })()}
 
             {/* Watchlists */}
-            {groups && groups.map(g => {
-              const isActive = g.id === activeGroupId;
-              const gColor = g.color || T.accent;
 
-              // Compute group performance vs BTC
-              const btcMom = scanData?.find(r => r.symbol === "BTC/USDT")?.momentum ?? 0;
-              const members = scanData?.filter(r => g.symbols?.includes(r.symbol)) || [];
-              const beating = members.filter(r => (r.momentum ?? 0) > btcMom).length;
-              const total = members.length;
-
-              return (
-                <button
-                  key={g.id}
-                  onClick={() => { onWatchlistSelect?.(g.id); onClose(); }}
-                  style={{
-                    width: "100%", display: "flex", alignItems: "center", gap: 8,
-                    padding: "10px 12px", borderRadius: 10, textAlign: "left",
-                    border: isActive ? `1px solid ${gColor}40` : "1px solid transparent",
-                    background: isActive ? `${gColor}12` : "transparent",
-                    cursor: "pointer", transition: "all 0.15s ease",
-                    marginBottom: 2,
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? `${gColor}12` : "transparent"; }}
-                >
-                  <span style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: gColor, flexShrink: 0,
-                    opacity: isActive ? 1 : 0.4,
-                  }} />
-                  <span style={{
-                    fontFamily: T.font, fontSize: 14,
-                    fontWeight: isActive ? 600 : 500,
-                    color: isActive ? gColor : T.text1,
-                  }}>{g.name}</span>
-                  <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                    {total > 0 && (
-                      <span style={{
-                        fontSize: 10, fontFamily: T.mono, fontWeight: 600,
-                        color: beating > total / 2 ? T.green : beating > 0 ? T.yellow : T.text4,
-                        letterSpacing: "0.02em",
-                      }}>
-                        {beating}/{total} {"\u25B2"}BTC
-                      </span>
-                    )}
-                    <span style={{
-                      fontSize: 11, color: T.text4, fontFamily: T.mono,
-                    }}>{g.symbols?.length || 0}</span>
-                  </span>
-                </button>
-              );
-            })}
           </div>
 
           {/* ── Other nav sections ── */}

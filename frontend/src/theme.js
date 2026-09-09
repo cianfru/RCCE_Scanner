@@ -298,7 +298,7 @@ export function zBar(z) {
 
 export function getBaseSymbol(sym) {
   if (sym.endsWith("/BTC")) return sym.replace("/BTC", "/\u20bf");
-  return sym.replace("/USDT", "");
+  return sym.split("/")[0];
 }
 
 // Coins where Binance's TradingView chart carries old/delisted ticker history

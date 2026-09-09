@@ -122,30 +122,9 @@ class PriceTicker:
         """Main loop: launch Binance + Hyperliquid streams + broadcast task."""
         self._running = True
 
-        # Classify symbols into Binance vs Hyperliquid
-        symbols = self._get_watchlist_symbols()
-        binance_syms = []
-        hl_coins = []
-
-        for sym in symbols:
-            base = sym.split("/")[0] if "/" in sym else sym
-            if await _check_binance_symbol(base):
-                binance_syms.append(sym)
-            else:
-                hl_coins.append(base)
-
-        logger.info(
-            "Price ticker: %d Binance, %d Hyperliquid-only symbols",
-            len(binance_syms), len(hl_coins),
-        )
-
-        # Launch all tasks concurrently
-        tasks = [asyncio.create_task(self._broadcast_loop())]
-
-        if binance_syms:
-            tasks.append(asyncio.create_task(self._binance_loop(binance_syms)))
-        if hl_coins:
-            tasks.append(asyncio.create_task(self._hyperliquid_loop(hl_coins)))
+        from hyperliquid_universe import MARKETS
+        tasks = [asyncio.create_task(self._broadcast_loop()),
+                 asyncio.create_task(self._hyperliquid_loop([m["coin"] for m in MARKETS.values()]))]
 
         try:
             await asyncio.gather(*tasks)
@@ -222,10 +201,6 @@ class PriceTicker:
         """Hyperliquid allMids WebSocket — covers HL-native tokens not on Binance."""
         import websockets
 
-        # Map HL coin names to CCXT symbols
-        coin_to_ccxt = {coin.upper(): f"{coin.upper()}/USDT" for coin in coins}
-        coin_set = set(coin_to_ccxt.keys())
-
         while self._running:
             if not _idle_active():
                 await _idle_nap(30)
@@ -256,6 +231,9 @@ class PriceTicker:
                             # allMids response: {"channel": "allMids", "data": {"mids": {"BTC": "67423.5", ...}}}
                             if msg.get("channel") == "allMids":
                                 mids = msg.get("data", {}).get("mids", {})
+                                from hyperliquid_universe import MARKETS
+                                coin_to_ccxt = {m["coin"].upper(): s for s, m in MARKETS.items()}
+                                coin_set = set(coin_to_ccxt)
                                 for coin, price_str in mids.items():
                                     if coin.upper() in coin_set:
                                         ccxt_sym = coin_to_ccxt[coin.upper()]

@@ -27,6 +27,7 @@ import TradingPanel from "./components/TradingPanel.jsx";
 import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
+import UniverseCoverage from "./components/UniverseCoverage.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import TradFiPanel from "./components/TradFiPanel.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
@@ -105,7 +106,7 @@ export default function App() {
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
     const m = location.pathname.match(/^\/scanner\/([^/]+)$/);
-    return m ? m[1] : null;
+    return m ? decodeURIComponent(m[1]) : null;
   }, [location.pathname]);
 
   // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
@@ -113,7 +114,7 @@ export default function App() {
     if (event?.shiftKey) {
       setSelected(row);
     } else {
-      const base = (row.symbol || "").replace("/USDT", "").replace("/USD", "");
+      const base = encodeURIComponent((row.symbol || "").split("/")[0]);
       navigate(`/scanner/${base}`);
     }
   }, [navigate]);
@@ -410,7 +411,7 @@ export default function App() {
       const data = await res.json();
       setGroups(data || []);
       // Keep activeGroupId as null (All Assets) by default — only preserve existing selection
-      setActiveGroupId(prev => prev);
+      setActiveGroupId(null);
     } catch (_) {}
   }, []);
 
@@ -898,21 +899,7 @@ export default function App() {
              activeTab === "hyperlens" ? "HyperLens" :
              activeGroup ? activeGroup.name : "Scanner"}
           </span>
-          {showDashboard && (
-            <button
-              onClick={() => { setEditingGroup(activeGroup || groups[0] || null); setShowGroupModal(true); }}
-              style={{
-                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
-                padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
-                border: `1px solid ${T.border}`,
-                background: "transparent",
-                color: T.text4,
-                transition: "all 0.15s ease",
-              }}
-            >
-              + Manage
-            </button>
-          )}
+
         </div>
       )}
 
@@ -928,6 +915,7 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
+        {showDashboard && <UniverseCoverage timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
         {showDashboard && <BestSetups results={activeTab === "4h" ? data4h : data1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>

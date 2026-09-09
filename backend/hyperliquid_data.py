@@ -98,7 +98,7 @@ def _coin_from_symbol(symbol: str) -> str:
 
 def _symbol_from_coin(coin: str) -> str:
     """Convert Hyperliquid coin name 'BTC' → scanner symbol 'BTC/USDT'."""
-    return f"{coin}/USDT"
+    return f"{coin.upper()}/USDT"
 
 
 # ---------------------------------------------------------------------------
