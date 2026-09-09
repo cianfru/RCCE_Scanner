@@ -7,7 +7,7 @@ This folder contains the landing page, scanner design preview, token-access conc
 ## Review the design
 
 - `preview/`: runnable React/Vinext preview, with `/`, `/scanner`, and `/access` routes.
-- `brand/`: selected liquid ribbon artwork, SVG viewport wrappers, favicon, and usage guidance. Earlier pulse assets remain for reference and are superseded.
+- `brand/`: selected liquid ribbon artwork, transparent SVG assets, favicon, and usage guidance. Earlier pulse assets remain for reference and are superseded.
 - `Token-access-proposal.md`: proposed hold-at-least-X access model.
 
 Private hosted preview (owner access required): https://reflex-market-intelligence.openclimb.chatgpt.site/

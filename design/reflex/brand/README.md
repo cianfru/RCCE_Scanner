@@ -1,7 +1,3 @@
-# Reflex — Liquid ribbon identity
+# Reflex liquid ribbon logo
 
-Selected artwork supplied by the user. This supersedes the market-pulse logo.
-
-The PNG is the original approved artwork, unchanged. The SVG mark, lettering, and lockup are viewport wrappers referencing that PNG; keep them beside it. They are not vector redraws or transparent cutouts. The self-contained favicon embeds the artwork.
-
-The website uses cropped viewports of the original ribbon and lettering, with screen blending on its dark surfaces. Use this identity on dark backgrounds. A true transparent master and a simplified vector mark remain separate production refinements.
+Use reflex-ribbon-transparent.svg and reflex-lettering-clean.svg. The ribbon is the supplied artwork inside an explicit SVG silhouette mask with a transparent counter and exterior; it is self-contained. The lettering uses clean outlined Bricolage glyphs. No blend mode or opaque rectangle is used. Older viewport wrappers and generated extraction attempts are superseded.
