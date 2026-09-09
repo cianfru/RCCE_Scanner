@@ -1317,6 +1317,10 @@ async def _scan_timeframe(
 _drip_attempt_count: int = 0
 _backtest_running_ref = None  # set by main.py to share the flag
 
+# When idle and nothing is due, nap this long between checks instead of a
+# tight 5s poll over the whole universe. idle_sleep wakes early on activity.
+_DRIP_IDLE_POLL_SECONDS = 300
+
 
 async def _drip_one_symbol(
     symbol: str,
@@ -1435,7 +1439,7 @@ async def run_drip_scan(
 ) -> None:
     """Refresh due markets serially; synthesis/position monitoring stays separate."""
     global _drip_attempt_count
-    from activity import is_active
+    from activity import is_active, idle_sleep
     from hyperliquid_universe import MARKETS
     from scan_schedule import ScanSchedule
 
@@ -1456,7 +1460,13 @@ async def run_drip_scan(
             is_active(),
         )
         if symbol is None:
-            await asyncio.sleep(5)
+            # Nothing due. When idle the whole universe is on a ≥1h cadence, so
+            # a 5s poll over ~480 markets just burns CPU at rest — nap instead
+            # and wake the instant activity resumes. Active keeps the tight poll.
+            if is_active():
+                await asyncio.sleep(5)
+            else:
+                await idle_sleep(_DRIP_IDLE_POLL_SECONDS)
             continue
         started = time.monotonic()
         available = False

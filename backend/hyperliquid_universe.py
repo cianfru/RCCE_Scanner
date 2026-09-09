@@ -88,6 +88,13 @@ async def refresh(cache):
 
 
 async def run_refresh(cache):
+    from activity import is_active, idle_sleep
     while True:
-        await asyncio.sleep(900)
+        # The tradable universe barely moves at rest, so refresh every 15 min
+        # while active but stretch to ~hourly when idle (wakes early on
+        # activity). Avoids re-fetching + parsing ~480 markets round the clock.
+        if is_active():
+            await asyncio.sleep(900)
+        else:
+            await idle_sleep(3600)
         await refresh(cache)
