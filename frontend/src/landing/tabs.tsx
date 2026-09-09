@@ -31,6 +31,18 @@ export function TabsTrigger({ value, className = '', children, ...rest }: any) {
       data-slot="tabs-trigger"
       data-active={active ? '' : undefined}
       aria-selected={active}
+      tabIndex={active ? 0 : -1}
+      onKeyDown={event => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        const buttons = Array.from(event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]') || []);
+        const index = buttons.indexOf(event.currentTarget);
+        if (!buttons.length) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next].focus();
+        buttons[next].click();
+      }}
       className={className}
       onClick={() => ctx.onValueChange(value)}
       {...rest}

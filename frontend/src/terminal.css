@@ -1,0 +1,23 @@
+/* Terminal presentation only. Existing routes, feeds, filters and trading logic are unchanged. */
+.reflex-terminal {font-variant-numeric:tabular-nums;}
+.reflex-terminal .terminal-header {background:var(--t-headerBg)!important;border-bottom:1px solid var(--t-border)!important;min-height:68px;}
+.reflex-terminal .terminal-header > div[style*="pointer-events"] {display:none;}
+.reflex-terminal .apple-btn {border-radius:999px;box-shadow:none;}
+.reflex-terminal button:focus-visible,.reflex-terminal input:focus-visible,.reflex-terminal select:focus-visible {outline:2px solid var(--t-accent);outline-offset:3px;}
+.reflex-terminal .terminal-data-table {border-radius:16px;}
+.reflex-terminal .terminal-data-table th {font-size:10px!important;letter-spacing:.09em;background:var(--t-surface);padding-top:17px!important;padding-bottom:17px!important;}
+.reflex-terminal .terminal-data-table tbody tr {transition:background .15s ease;}
+.reflex-terminal .terminal-data-table tbody tr:hover {background:var(--t-accentDim)!important;}
+.reflex-terminal .terminal-data-table td {border-bottom:1px solid var(--t-overlay04);}
+@media(max-width:640px){.reflex-terminal .terminal-header{min-height:60px;}.reflex-terminal .terminal-data-table th{letter-spacing:.03em;}}
+@media(prefers-reduced-motion:reduce){.reflex-terminal *{animation:none!important;transition:none!important;}}
+
+.reflex-terminal .terminal-header{margin:16px 20px 0;border:1px solid var(--t-border);border-radius:20px;top:12px;box-shadow:inset 0 1px 0 var(--t-overlay04),0 12px 40px var(--t-shadow)!important;}
+.reflex-terminal .terminal-header + div{position:relative;}
+.reflex-terminal .terminal-data-table{box-shadow:inset 0 1px 0 var(--t-overlay04),0 20px 60px var(--t-shadow);}
+.reflex-terminal .terminal-data-table td{padding-top:15px!important;padding-bottom:15px!important;}
+.reflex-terminal .terminal-header button[aria-label="Open navigation"]{width:36px!important;height:36px!important;}
+@media(max-width:640px){.reflex-terminal .terminal-header{margin:8px 8px 0;top:6px;border-radius:16px;padding-inline:12px!important;}.reflex-terminal .terminal-data-table td{padding-top:12px!important;padding-bottom:12px!important;}}
+
+[data-theme="light"] .terminal-wordmark{filter:brightness(0) saturate(100%);}
+.refined .reflex-terminal{font-family:var(--font-geist-sans),sans-serif;}

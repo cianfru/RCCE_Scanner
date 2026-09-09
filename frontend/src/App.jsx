@@ -1,3 +1,5 @@
+import ReflexBrand from "./components/ReflexBrand.jsx";
+import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
@@ -603,12 +605,12 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; font-feature-settings: "tnum"; }
+        .reflex-terminal, .reflex-terminal * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
+        body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: var(--font-geist-sans), sans-serif; font-size: 14px; font-feature-settings: "tnum"; }
         table, th, td, span, div, button, select, input, textarea, p, label { font-family: inherit; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -730,7 +732,7 @@ export default function App() {
       />
 
       {/* ── HEADER ── */}
-      <div style={{
+      <div className="terminal-header" style={{
         padding: `0 ${hPad}px`,
         borderBottom: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
         display: "flex",
@@ -784,19 +786,7 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
-          <img
-            src="/reflex-logo.png"
-            alt="Reflex"
-            onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
-            style={{
-              height: isMobile ? 30 : 36,
-              width: "auto",
-              objectFit: "contain",
-              flexShrink: 0,
-              display: "block",
-              cursor: "pointer",
-            }}
-          />
+          <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
           <div style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 12px",
@@ -922,11 +912,11 @@ export default function App() {
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <span style={{
-            fontSize: m(T.textXl, isMobile),
-            fontWeight: 700,
+            fontSize: isMobile ? 25 : 34,
+            fontWeight: 550,
             color: T.text1,
-            fontFamily: T.font,
-            letterSpacing: "-0.02em",
+            fontFamily: "var(--font-display), sans-serif",
+            letterSpacing: "-0.035em",
           }}>
             {activeTab === "backtest" ? "Backtest" :
              activeTab === "executor" ? "Executor" :
