@@ -1,6 +1,6 @@
 # Reflex design review
 
-This folder contains the landing page, scanner design preview, token-access concept, and liquid ribbon logo proposed for Reflex. The existing frontend and backend are unchanged by this design review.
+This folder contains the landing page, scanner design preview, token-access concept, and liquid ribbon logo proposed for Reflex. The terminal visual refresh is now implemented directly in the original `frontend/` React/Vite application. The standalone preview below remains a design reference; the backend is unchanged.
 
 ![Selected Reflex liquid ribbon identity](brand/reflex-liquid-artwork.png)
 
