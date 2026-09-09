@@ -67,10 +67,10 @@ function DynamicHero(){
     py.set(Math.max(-1,Math.min(1,((event.clientY-b.top)/b.height-.5)*2)));
   };
   return <section ref={heroRef} className="r-hero r-width" data-moving={active?'true':'false'} onPointerMove={track} onPointerLeave={reset}>
-    <motion.div className="r-hero-art r-art-stage" style={{x:artX,y:artY,rotate:artRotate}} aria-hidden="true">
-      <div className="r-art-drift">
-        <img className="r-art-image" src="/reflex-glass-hero.png" width="1672" height="941" alt="" fetchPriority="high"/>
-        <img className="r-art-reflection" src="/reflex-glass-hero.png" width="1672" height="941" alt=""/>
+    <motion.div className="r-hero-art r-art-stage r-logo-stage" style={{x:artX,y:artY,rotate:artRotate}} aria-hidden="true">
+      <div className="r-logo-halo"/><div className="r-logo-shadow"/><div className="r-art-drift">
+        <img className="r-art-image" src="/brand/reflex-ribbon-transparent.svg" width="535" height="555" alt="" fetchPriority="high"/>
+        <img className="r-art-reflection" src="/brand/reflex-ribbon-transparent.svg" width="535" height="555" alt=""/>
       </div>
     </motion.div>
     <Reveal className="r-hero-copy">
