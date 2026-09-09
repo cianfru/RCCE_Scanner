@@ -693,7 +693,7 @@ export default function App() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
         <div style={{
           position: "absolute", top: "-10%", left: "15%", width: 600, height: 600,
-          borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%)",
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(151,252,228,0.07) 0%, transparent 70%)",
           filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite",
         }} />
         <div style={{
@@ -756,13 +756,13 @@ export default function App() {
             : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
-        {/* Aura: purple accent band across full header */}
+        {/* Aura: aquamarine accent band across full header */}
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0,
           height: "100%",
           background: mode === "dark"
-            ? "linear-gradient(180deg, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.03) 60%, transparent 100%)"
-            : "linear-gradient(180deg, rgba(126,34,206,0.07) 0%, rgba(126,34,206,0.02) 60%, transparent 100%)",
+            ? "linear-gradient(180deg, rgba(15,57,51,0.55) 0%, rgba(15,57,51,0.18) 60%, transparent 100%)"
+            : "linear-gradient(180deg, rgba(14,116,144,0.07) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
           pointerEvents: "none",
         }} />
         {/* Left: hamburger + logo + scanning */}
@@ -785,16 +785,15 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
           <img
-            src="/logo.png"
+            src="/reflex-logo.png"
             alt="Reflex"
             onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }}
             style={{
-              height: isMobile ? 32 : 40,
+              height: isMobile ? 30 : 36,
               width: "auto",
               objectFit: "contain",
               flexShrink: 0,
               display: "block",
-              filter: mode === "light" ? "invert(1) hue-rotate(180deg)" : "none",
               cursor: "pointer",
             }}
           />
