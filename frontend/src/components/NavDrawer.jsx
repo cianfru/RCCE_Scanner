@@ -92,7 +92,7 @@ const NAV_SECTIONS = [
   },
 ];
 
-export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData }) {
+export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData, marketKind, onMarketChange }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
@@ -208,45 +208,14 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               <span>Scanner</span>
             </div>
 
-            {/* Hyperliquid */}
-            {(() => {
-              const SCANNER_TABS = ["4h", "1d"];
-              const isAllActive = !activeGroupId && SCANNER_TABS.includes(activeTab);
-              return (
-                <button
-                  onClick={() => { onWatchlistSelect?.(null); onClose(); }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", textAlign: "left",
-                    padding: "10px 12px", borderRadius: 10,
-                    border: isAllActive ? `1px solid ${T.accent}30` : "1px solid transparent",
-                    background: isAllActive ? T.accentDim : "transparent",
-                    cursor: "pointer", transition: "all 0.15s ease",
-                    marginBottom: 2,
-                  }}
-                  onMouseEnter={e => { if (!isAllActive) e.currentTarget.style.background = T.surface; }}
-                  onMouseLeave={e => { if (!isAllActive) e.currentTarget.style.background = isAllActive ? T.accentDim : "transparent"; }}
-                >
-                  <div style={{
-                    width: 20, height: 20,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: isAllActive ? T.accent : T.text3,
-                    flexShrink: 0,
-                  }}>
-                    {NAV_ICONS["1d"]}
-                  </div>
-                  <span style={{
-                    fontFamily: T.font, fontSize: 14,
-                    fontWeight: isAllActive ? 600 : 500,
-                    color: isAllActive ? T.accent : T.text1,
-                  }}>Hyperliquid</span>
-                  <span style={{
-                    fontSize: 11, color: T.text4, fontFamily: T.mono,
-                    marginLeft: "auto",
-                  }}>{scanData?.length || 0}</span>
-                </button>
-              );
-            })()}
+            {[["perpetual", "Perpetuals"], ["spot", "Spot markets"]].map(([kind, label]) => {
+              const selected = ["4h", "1d"].includes(activeTab) && marketKind === kind;
+              return <button key={kind} aria-current={selected ? "page" : undefined}
+                onClick={() => {onMarketChange?.(kind); onClose();}}
+                style={{display:"flex",justifyContent:"space-between",width:"100%",padding:"14px 12px",textAlign:"left",border:0,borderLeft:`2px solid ${selected ? T.accent : "transparent"}`,background:selected ? T.accentDim : "transparent",color:selected ? T.accent : T.text1,fontSize:14,cursor:"pointer"}}>
+                {label}<span style={{color:T.text3,fontSize:12}}>{scanData?.filter(r=>r.market_kind===kind).length || 0}</span>
+              </button>;
+            })}
 
             {/* Watchlists */}
 

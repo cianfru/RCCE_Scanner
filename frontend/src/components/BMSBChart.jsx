@@ -236,9 +236,10 @@ export default function BMSBChart({
     setError(null);
 
     fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${apiTf}&limit=${tfConfig.limit}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Chart unavailable (${r.status})`);
+        return data;
       })
       .then(data => {
         if (cancelled) return;
@@ -246,8 +247,8 @@ export default function BMSBChart({
         if (data.candles?.length > 0) {
           // Auto-detect price precision for micro-cap coins (e.g. MOG at 0.0000001)
           const samplePrice = data.candles[data.candles.length - 1]?.close || 0;
-          if (samplePrice > 0 && samplePrice < 0.01) {
-            const decimals = Math.max(2, Math.ceil(-Math.log10(samplePrice)) + 2);
+          if (samplePrice > 0 && samplePrice < 1) {
+            const decimals = Math.max(2, Math.ceil(-Math.log10(samplePrice)) + 3);
             const minMove = Math.pow(10, -decimals);
             const pf = { type: "price", precision: decimals, minMove };
             candleSeries.applyOptions({ priceFormat: pf });
@@ -725,8 +726,8 @@ export default function BMSBChart({
           background: "rgba(9,22,25,0.9)", zIndex: 10,
         }}>
           <span style={{
-            color: "rgba(239,68,68,0.7)", fontFamily: T.mono, fontSize: 10,
-            letterSpacing: "0.04em",
+            color: "rgba(239,68,68,0.7)", fontFamily: T.font, fontSize: 13, padding: "24px 32px", maxWidth: 560, textAlign: "center", lineHeight: 1.6,
+            letterSpacing: "0.01em",
           }}>
             Chart unavailable ({error})
           </span>

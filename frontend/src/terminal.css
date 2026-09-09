@@ -137,3 +137,8 @@
 .scanner-strength-track i { display:block; height:100%; background:var(--consensus-color); transition:width .4s ease; }
 @media(max-width:1000px) { .scanner-toolbar { gap:16px; grid-template-columns:auto minmax(0,1fr); } .scanner-consensus { grid-column:1/-1; justify-content:space-between; padding-top:14px; border-top:1px solid var(--t-overlay08); } .scanner-strength { width:35%; max-width:200px; } }
 @media(prefers-reduced-motion:reduce) { .scanner-strength-track i { transition:none; } }
+/* Exclusion explanations need their own line, especially on narrow screens. */
+.universe-markets { grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr)); }
+.universe-markets > div { display:grid; gap:5px; min-width:0; padding:14px 0; overflow-wrap:anywhere; }
+.universe-markets > div > span:first-child { color:var(--t-text1); }
+.universe-markets > div > span:last-child { line-height:1.6; }

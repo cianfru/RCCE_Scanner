@@ -84,6 +84,23 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const marketKind = new URLSearchParams(location.search).get("market") === "spot" ? "spot" : "perpetual";
+  const changeMarket = (kind) => {
+    setActiveGroupId(null);
+    setSearchTerm("");
+    setStatCardFilter(null);
+    navigate(`/scanner?market=${kind}${activeTab === "4h" ? "&tf=4h" : ""}`);
+  };
+  const [marketConsensus, setMarketConsensus] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMarketConsensus(null);
+    const tf = new URLSearchParams(location.search).get("tf") === "4h" ? "4h" : "1d";
+    const load = () => fetch(`${API_BASE}/api/consensus?timeframe=${tf}&market=${marketKind}`).then(r => r.ok ? r.json() : null).then(d => {if (!cancelled) setMarketConsensus(d);}).catch(() => {});
+    load(); const timer = setInterval(load, 60000);
+    return () => {cancelled = true; clearInterval(timer);};
+  }, [marketKind, location.search]);
+
   // Derive activeTab from URL
   const activeTab = useMemo(() => {
     const p = location.pathname.replace(/\/$/, "") || "/scanner";
@@ -112,14 +129,14 @@ export default function App() {
     if (event?.shiftKey) {
       setSelected(row);
     } else {
-      const base = encodeURIComponent((row.symbol || "").split("/")[0]);
-      navigate(`/scanner/${base}`);
+      const base = encodeURIComponent(row.market_kind === "spot" ? row.symbol : (row.symbol || "").split("/")[0]);
+      navigate(`/scanner/${base}?market=${row.market_kind === "spot" ? "spot" : "perpetual"}`);
     }
   }, [navigate]);
 
   const setActiveTab = useCallback((tab) => {
-    navigate(TAB_TO_ROUTE[tab] || "/scanner");
-  }, [navigate]);
+    navigate(["4h", "1d"].includes(tab) ? `/scanner?market=${marketKind}${tab === "4h" ? "&tf=4h" : ""}` : TAB_TO_ROUTE[tab] || "/scanner");
+  }, [navigate, marketKind]);
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -504,18 +521,18 @@ export default function App() {
   }, [activeGroup]);
 
   const filtered4h = useMemo(() => {
-    let d = data4h;
+    let d = data4h.filter(r => r.market_kind === marketKind);
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
     return d;
-  }, [data4h, activeGroupSymbols, searchTerm]);
+  }, [data4h, activeGroupSymbols, searchTerm, marketKind]);
 
   const filtered1d = useMemo(() => {
-    let d = data1d;
+    let d = data1d.filter(r => r.market_kind === marketKind);
     if (activeGroupSymbols) d = d.filter(r => activeGroupSymbols.has(r.symbol));
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
     return d;
-  }, [data1d, activeGroupSymbols, searchTerm]);
+  }, [data1d, activeGroupSymbols, searchTerm, marketKind]);
 
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
@@ -572,7 +589,7 @@ export default function App() {
   const display1d = applyStatFilter(sorted1d);
   const displayTradfi = applyStatFilter(sortedTradfi);
 
-  const activeConsensus = activeTab === "1d" ? consensus1d : consensus4h;
+  const activeConsensus = marketConsensus;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
   const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
@@ -701,6 +718,8 @@ export default function App() {
         onTabChange={setActiveTab}
         isMobile={isMobile}
         groups={groups}
+        marketKind={marketKind}
+        onMarketChange={changeMarket}
         activeGroupId={activeGroupId}
         onGroupChange={setActiveGroupId}
         onGroupCreate={() => { setEditingGroup(null); setShowGroupModal(true); }}
@@ -890,7 +909,7 @@ export default function App() {
              activeTab === "onchain" ? "On-Chain" :
              activeTab === "tradfi" ? "TradFi" :
              activeTab === "hyperlens" ? "HyperLens" :
-             activeGroup ? activeGroup.name : "Scanner"}
+             activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
           </span>
 
         </div>
@@ -908,8 +927,8 @@ export default function App() {
 
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
-        {showDashboard && <UniverseCoverage timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <BestSetups results={activeTab === "4h" ? data4h : data1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
+        {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
+        {showDashboard && <BestSetups results={activeTab === "4h" ? filtered4h : filtered1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>

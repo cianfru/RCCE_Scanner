@@ -14,7 +14,7 @@ STALE = True
 _PATH = Path(os.environ.get("HL_UNIVERSE_PATH", "/data/hyperliquid_universe.json" if Path("/data").is_dir() else "hyperliquid_universe.json"))
 
 
-def parse_markets(meta, spot):
+def parse_markets(meta, spot, contexts=None):
     markets = {}
     for asset in meta["universe"]:
         name = asset["name"]
@@ -23,9 +23,9 @@ def parse_markets(meta, spot):
         symbol = f"{name.upper()}/USDT"  # Existing engine key; HL perps settle in USDC.
         markets[symbol] = {"symbol": symbol, "coin": name, "base": name, "quote": "USDC", "kind": "perpetual"}
     tokens = {t["index"]: t for t in spot["tokens"]}
-    # A project with a perp already has an analysis; add one native spot market
-    # per remaining token, preferring USDC. Preserve identity for duplicate tickers.
-    perp_names = {m["base"].upper() for m in markets.values()}
+    # Keep perpetual and spot identities distinct; prefer one USDC pair per token.
+    from spot_quality import volume_reason
+    context_by_coin = {c["coin"]: c for c in (contexts or [])}
     seen_tokens = set()
     names = {}
     for token in tokens.values():
@@ -35,20 +35,24 @@ def parse_markets(meta, spot):
         if pair.get("isDelisted"):
             continue
         base, quote = [tokens[i] for i in pair["tokens"]]
-        if base["index"] in seen_tokens or base["name"].upper() in perp_names:
+        if base["index"] in seen_tokens:
             continue
         seen_tokens.add(base["index"])
         label = base["name"] if names[base["name"]] == 1 else f'{base["name"]}~{base["index"]}'
         symbol = f'{label}/{quote["name"]}'.upper()
         markets[symbol] = {"symbol": symbol, "coin": pair["name"], "base": label, "quote": quote["name"], "kind": "spot", "token_id": base.get("tokenId")}
+        market = markets[symbol]
+        market["volume_24h_usd"] = context_by_coin.get(pair["name"], {}).get("dayNtlVlm")
+        market["exclusion_reason"] = volume_reason(market)
     if not markets:
         raise ValueError("Hyperliquid returned an empty universe")
     return markets
 
 
 def apply_universe(cache):
-    allowed = set(MARKETS)
-    cache.symbols = list(MARKETS)
+    from spot_quality import volume_reason
+    allowed = {s for s, m in MARKETS.items() if not volume_reason(m)}
+    cache.symbols = [s for s in MARKETS if s in allowed]
     cache.results = {tf: [r for r in rows if r.get("symbol") in allowed] for tf, rows in cache.results.items()}
     cache._results_by_sym = {s: r for s, r in cache._results_by_sym.items() if s in allowed}
 
@@ -61,8 +65,8 @@ async def refresh(cache):
                 async with session.post("https://api.hyperliquid.xyz/info", json={"type": kind}) as response:
                     response.raise_for_status()
                     return await response.json()
-            meta, spot = await asyncio.gather(fetch("meta"), fetch("spotMeta"))
-        markets = parse_markets(meta, spot)
+            meta, spot_data = await asyncio.gather(fetch("meta"), fetch("spotMetaAndAssetCtxs"))
+        markets = parse_markets(meta, spot_data[0], spot_data[1])
         MARKETS.clear()
         MARKETS.update(markets)
         UPDATED_AT, STALE = time.time(), False

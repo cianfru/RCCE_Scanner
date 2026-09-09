@@ -14,7 +14,7 @@ class UniverseTests(unittest.TestCase):
         spot = {"tokens":[{"index":0,"name":"USDC"},{"index":1,"name":"BTC"},{"index":2,"name":"NEW"},{"index":3,"name":"NEW"}],
                 "universe":[{"index":0,"name":"@0","tokens":[1,0]},{"index":1,"name":"@1","tokens":[2,0]}, {"index":2,"name":"@2","tokens":[3,0]}]}
         result = parse_markets(meta,spot)
-        self.assertEqual(set(result), {"BTC/USDT","KPEPE/USDT","NEW~2/USDC","NEW~3/USDC"})
+        self.assertEqual(set(result), {"BTC/USDT","BTC/USDC","KPEPE/USDT","NEW~2/USDC","NEW~3/USDC"})
         self.assertEqual(result["KPEPE/USDT"]["coin"],"kPEPE")
         self.assertEqual(result["NEW~2/USDC"]["coin"],"@1")
 

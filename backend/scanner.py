@@ -372,7 +372,8 @@ class ScanCache:
         allowed = set(self.symbols)
         items = [{**r, "market_kind": MARKETS.get(r.get("symbol"), {}).get("kind"),
                   "market_coin": MARKETS.get(r.get("symbol"), {}).get("coin")}
-                 for r in self.results.get(timeframe, []) if r.get("symbol") in allowed]
+                 for r in self.results.get(timeframe, []) if r.get("symbol") in allowed
+                 and not getattr(self, "spot_quality", {}).get((r.get("symbol"), timeframe))]
         if regime is not None:
             regime_upper = regime.upper()
             items = [r for r in items if r.get("regime", "").upper() == regime_upper]
@@ -1014,6 +1015,12 @@ async def _scan_timeframe(
     logger.info("Starting scan for timeframe=%s (%d symbols)", tf, len(symbols))
     t0 = time.time()
 
+    from hyperliquid_universe import MARKETS
+    from spot_quality import volume_reason, candle_reason
+    symbols = [s for s in symbols if not volume_reason(MARKETS.get(s, {}))]
+    if scan_cache and not hasattr(scan_cache, "spot_quality"):
+        scan_cache.spot_quality = {}
+
     # 1. Fetch OHLCV for all symbols at this timeframe
     ohlcv_batch = await fetch_batch(symbols, tf)
     fetched = sum(1 for v in ohlcv_batch.values() if v is not None)
@@ -1047,6 +1054,15 @@ async def _scan_timeframe(
 
     for symbol in symbols:
         ohlcv = ohlcv_batch.get(symbol)
+        if MARKETS.get(symbol, {}).get("kind") == "spot":
+            reason = candle_reason(ohlcv, tf)
+            if scan_cache:
+                scan_cache.spot_quality[(symbol, tf)] = reason
+                if reason:
+                    scan_cache._results_by_sym.get(symbol, {}).pop(tf, None)
+                    scan_cache._engine_cache.pop((symbol, tf), None)
+            if reason:
+                continue
         if ohlcv is None:
             logger.debug("Skipping %s -- no OHLCV data", symbol)
             continue
@@ -1327,14 +1343,29 @@ async def _drip_one_symbol(
     Stores raw engine results (no signal) into scan_cache._results_by_sym.
     Returns number of timeframes actually processed (0, 1, or 2).
     """
+    from hyperliquid_universe import MARKETS
+    from spot_quality import volume_reason, candle_reason
+    market = MARKETS.get(symbol, {})
+    if volume_reason(market):
+        return 0
     loop = asyncio.get_running_loop()
     processed = 0
+    if not hasattr(scan_cache, "spot_quality"):
+        scan_cache.spot_quality = {}
 
     # Fetch weekly data once (shared by both TFs for heatmap/exhaustion)
     weekly = await fetch_ohlcv(symbol, "1w")
 
     for tf in ("4h", "1d"):
         ohlcv = await fetch_ohlcv(symbol, tf)
+        if market.get("kind") == "spot":
+            reason = candle_reason(ohlcv, tf)
+            scan_cache.spot_quality[(symbol, tf)] = reason
+            if reason:
+                scan_cache._results_by_sym.get(symbol, {}).pop(tf, None)
+                scan_cache._engine_cache.pop((symbol, tf), None)
+                scan_cache.results[tf] = [r for r in scan_cache.results.get(tf, []) if r.get("symbol") != symbol]
+                continue
         if ohlcv is None:
             continue
 
@@ -1369,6 +1400,8 @@ async def _drip_one_symbol(
 
         if symbol not in scan_cache.symbols:
             return processed
+        result["market_kind"] = market.get("kind")
+        result["market_coin"] = market.get("coin")
         result["candles_checked_at"] = time.time()
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
