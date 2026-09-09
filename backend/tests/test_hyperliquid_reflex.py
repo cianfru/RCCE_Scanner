@@ -65,6 +65,15 @@ class SnapshotTests(unittest.TestCase):
             self.assertIsNone(manager._detect_symbol("ABTC is not BTCB"))
             self.assertEqual(manager._detect_symbol("Explain BTC please"),'BTC/USDT')
 
+    def test_trading_words_do_not_select_same_named_spot_tokens(self):
+        fake=self.cache()
+        original=fake.get_results
+        fake.get_results=lambda tf: original(tf)+[{"symbol":"SELL/USDC"},{"symbol":"NEAR/USDT"}]
+        with patch.dict(sys.modules, {"scanner":SimpleNamespace(cache=fake)}):
+            manager=AssistantManager()
+            self.assertEqual(manager._detect_all_symbols("Should I sell BTC near this price?"),["BTC/USDT"])
+            self.assertEqual(manager._detect_all_symbols("Explain $SELL"),["SELL/USDC"])
+
     def test_selected_timeframe_and_zero_price_routing_reach_provider(self):
         cache=self.cache()
         captured={}

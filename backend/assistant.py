@@ -1557,7 +1557,7 @@ class AssistantManager:
             for r in tf_results:
                 sym = r.get("symbol", "")
                 base = sym.split("/")[0]
-                if base.upper() in {"I", "A", "AN", "IS", "IT", "ME", "MY", "ON", "IN", "THE", "AND", "OR", "FOR", "TO", "WHY", "WHAT", "HOW", "ALL", "NOW", "UP", "GO", "BE", "AS", "AT", "DO", "AI"} and "$" + base.upper() not in text_upper:
+                if (len(base) == 1 or base.upper() in {"I", "A", "AN", "IS", "IT", "ME", "MY", "ON", "IN", "THE", "AND", "OR", "FOR", "TO", "WHY", "WHAT", "HOW", "ALL", "NOW", "UP", "DOWN", "GO", "BE", "AS", "AT", "DO", "AI", "SELL", "BUY", "LONG", "SHORT", "STRONG", "LIGHT", "WAIT", "HOLD", "HIGH", "LOW", "NEAR", "ONE", "RISK", "MARKET", "PRICE", "ENTRY", "EXIT", "TIME", "CHECK", "SIGNAL", "STOP", "FUN", "SAFE", "GOOD", "BEST", "NEW"}) and "$" + base.upper() not in text_upper:
                     continue
                 if base not in seen_bases:
                     all_bases.append((base, sym))
