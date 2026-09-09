@@ -184,4 +184,3 @@
 
 .executor-return-grid {grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--t-border);}
 @media(max-width:480px){.executor-return-grid{grid-template-columns:1fr}}
-
