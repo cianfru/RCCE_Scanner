@@ -132,3 +132,18 @@ accounting note is under expandable details. Do not report account equity or
 starting-capital return for this incomplete sample. Open mark eligibility is
 re-evaluated with each status response, independently of whether P&L is positive
 or negative. An older backend cannot be mislabeled as the included-trade view.
+
+
+## Included return and annualized equivalent
+
+Show combined included P&L divided by the original $10,000 capital as the
+included-trade period return, with the exact elapsed period from first included
+entry to valuation. The snapshot's +$721.88 is +7.22% over roughly 182 days.
+The unrealized-only +17.14% is not the net result because closed losses count.
+
+Show a separate hypothetical annualized equivalent using
+`expm1(log1p(period_return) * 365 / elapsed_days)`, approximately +15%.
+This assumes the same compounded pace and is not a forecast or actual one-year
+track record. Suppress it for less than 30 days, returns at/below −100%, invalid
+starting capital or nonfinite results. Full-account return/equity still remains
+unavailable; the displayed percentage is explicitly for the included sample.

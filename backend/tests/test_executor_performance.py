@@ -61,3 +61,32 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(p['cash_reconciliation_difference_usd'],100)
         self.assertFalse(p['accounting_reconciled'])
         self.assertIsNone(p['estimated_equity_usd'])
+
+
+class ReturnTests(unittest.TestCase):
+    def test_included_period_return_combines_realized_and_open(self):
+        p=performance([pos(cost=1000)], [trade(-100)], {'BTC/USDT':{'price':12,'observed_at':NOW}},1000,NOW)
+        self.assertAlmostEqual(p['included_return_pct'],10)
+        self.assertAlmostEqual(p['annualized_included_return_pct'],((1.1)**(365/180)-1)*100)
+        self.assertEqual(p['return_period_days'],180)
+
+    def test_exclusions_do_not_prevent_labeled_subset_return(self):
+        p=performance([pos(),pos('OLD/USDT')], [], {'BTC/USDT':{'price':15,'observed_at':NOW}},1000,NOW)
+        self.assertEqual(p['included_return_pct'],5)
+        self.assertIsNotNone(p['annualized_included_return_pct'])
+        self.assertIsNone(p['return_on_starting_capital_pct'])
+        self.assertIsNone(p['estimated_equity_usd'])
+
+    def test_negative_return_and_annualization_limits(self):
+        for pnl in (-100,-1000,-1100):
+            p=performance([], [trade(pnl)], {},1000,NOW)
+            self.assertAlmostEqual(p['included_return_pct'],pnl/10)
+            if pnl > -1000:
+                self.assertLess(p['annualized_included_return_pct'],0)
+            else:
+                self.assertIsNone(p['annualized_included_return_pct'])
+        p=performance([], [{**trade(10),'entry_time':NOW-86400,'exit_time':NOW}],{},1000,NOW)
+        self.assertIsNone(p['annualized_included_return_pct'])
+        p=performance([],[],{},0,NOW)
+        self.assertIsNone(p['included_return_pct'])
+        self.assertIsNone(p['annualized_included_return_pct'])

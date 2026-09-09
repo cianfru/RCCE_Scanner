@@ -1,5 +1,6 @@
 import HelpTip from './HelpTip.jsx';
 const money = v => v == null ? '—' : new Intl.NumberFormat('en-US', {style:'currency',currency:'USD',maximumFractionDigits:2}).format(v);
+const percent = v => v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
 const tone = v => v == null || v === 0 ? '' : v > 0 ? 'positive' : 'negative';
 export default function ExecutorPerformance({ performance: p, mode }) {
   if (!p) return <div className="executor-performance"><h2>Engine performance</h2><p>Performance attribution is not available from this backend yet.</p></div>;
@@ -20,6 +21,11 @@ export default function ExecutorPerformance({ performance: p, mode }) {
       <Metric label="Combined P&L · included trades" value={money(p.combined_pnl_usd)} amount={p.combined_pnl_usd} note="Realized + unrealized on included trades" />
       <Metric label="Closed win rate" value={p.closed_win_rate == null ? '—' : `${p.closed_win_rate.toFixed(1)}%`} note={`${p.wins} wins / ${p.losses} losses / ${p.breakeven} flat`} />
     </div>
+    <div className="executor-performance-grid executor-return-grid">
+      <Metric label={`Return over ${Math.floor(p.return_period_days ?? p.history_days)} days · included trades`} value={percent(p.included_return_pct)} amount={p.included_return_pct} note={`${money(p.combined_pnl_usd)} combined P&L ÷ ${money(p.initial_balance_usd)} starting capital`} />
+      <Metric label="Annualized equivalent · hypothetical" value={percent(p.annualized_included_return_pct)} amount={p.annualized_included_return_pct} note="Equivalent 365-day compounded rate, not a forecast" />
+    </div>
+    <details className="executor-method"><summary>How these returns are calculated</summary><p>The period return includes both realized and unrealized P&L from the included trades, divided by the original starting capital. Open gains alone are not the total return. Excluded trades and positions are omitted, so this is not a reconciled account return.</p><p>The annualized equivalent is ((1 + period return) raised to (365 ÷ elapsed days) − 1). It assumes the same compounded pace for a full year; it does not predict the next six months. At least 30 days of history and a return above −100% are required. Paper results exclude fees, funding and slippage.</p></details>
     <p className="executor-data-note">Included trades only. {p.excluded_closed_trades || 0} closed trades and {p.excluded_open_positions || 0} open positions are excluded because of price errors or unavailable valuations. These figures are not a full account return.</p>
     <div className="executor-history-grid"><div><h3>Realized P&L over time</h3><p>Included closed trades only. Open gains and losses are excluded.</p>
       {curve.length ? <svg viewBox="0 0 800 154" role="img" aria-label={`Cumulative realized P&L ending at ${money(p.realized_pnl_usd)}`}><line x1="12" x2="788" y1={y(0)} y2={y(0)} stroke="currentColor" opacity=".2"/><path d={path} fill="none" stroke="var(--t-accent)" strokeWidth="2" vectorEffect="non-scaling-stroke"/></svg> : <p>No closed trades yet.</p>}

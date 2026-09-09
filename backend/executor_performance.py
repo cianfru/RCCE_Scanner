@@ -61,6 +61,16 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
     accounting_reconciled = cash_difference is None or abs(cash_difference) <= max(1, initial_balance * .0001)
     total = realized + unrealized
     starts = [float(t['entry_time']) for t in [*closed, *[p for p in valued if not p['valuation_issue']]] if number(t.get('entry_time')) and float(t['entry_time']) > 0]
+    elapsed_days = max(0, (now - min(starts)) / 86400) if starts else 0
+    included_return = total / initial_balance if initial_balance > 0 else None
+    annualized = None
+    # A mathematical equivalent, not a forecast. Avoid extrapolating short samples
+    # or raising a non-positive capital multiple to a fractional power.
+    if included_return is not None and included_return > -1 and elapsed_days >= 30:
+        try:
+            annualized = number(math.expm1(math.log1p(included_return) * 365 / elapsed_days) * 100)
+        except OverflowError:
+            pass
     months = defaultdict(lambda: {'pnl_usd': 0, 'closed': 0, 'wins': 0})
     cumulative, curve = 0, []
     for t in sorted(closed, key=lambda t: t['exit_time']):
@@ -74,6 +84,9 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
         'as_of': now, 'first_entry_at': min(starts) if starts else None,
         'history_days': int((now - min(starts)) / 86400) if starts else 0,
         'initial_balance_usd': initial_balance,
+        'included_return_pct': included_return * 100 if included_return is not None else None,
+        'annualized_included_return_pct': annualized,
+        'return_period_days': elapsed_days,
         'recorded_realized_pnl_usd': recorded_realized,
         'excluded_closed_trades': len(trades)-len(closed),
         'excluded_open_positions': len(positions)-priced_count,
