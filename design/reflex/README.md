@@ -1,13 +1,13 @@
 # Reflex design review
 
-This folder contains the landing page, scanner design preview, token-access concept, and market-pulse logo proposed for Reflex. The existing frontend and backend are unchanged by this design review.
+This folder contains the landing page, scanner design preview, token-access concept, and liquid ribbon logo proposed for Reflex. The existing frontend and backend are unchanged by this design review.
 
-![Reflex market-pulse identity](brand/Reflex-pulse-identity.svg.png)
+![Selected Reflex liquid ribbon identity](brand/reflex-liquid-artwork.png)
 
 ## Review the design
 
 - `preview/`: runnable React/Vinext preview, with `/`, `/scanner`, and `/access` routes.
-- `brand/`: scalable SVG symbols and outlined wordmarks, favicon, presentation, and usage guidance.
+- `brand/`: selected liquid ribbon artwork, SVG viewport wrappers, favicon, and usage guidance. Earlier pulse assets remain for reference and are superseded.
 - `Token-access-proposal.md`: proposed hold-at-least-X access model.
 
 Private hosted preview (owner access required): https://reflex-market-intelligence.openclimb.chatgpt.site/

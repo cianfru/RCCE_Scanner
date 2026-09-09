@@ -1,3 +1,7 @@
-Reflex / Measured Pulse
+# Reflex — Liquid ribbon identity
 
-SVG logos use outlined lettering and require no font installation. Aquamarine is the primary on-dark mark, Foam is the neutral on-dark alternative, and Ebony is for light backgrounds. The icon includes an Ebony rounded tile. Presentation PNG is for review; use the SVG masters for production.
+Selected artwork supplied by the user. This supersedes the market-pulse logo.
+
+The PNG is the original approved artwork, unchanged. The SVG mark, lettering, and lockup are viewport wrappers referencing that PNG; keep them beside it. They are not vector redraws or transparent cutouts. The self-contained favicon embeds the artwork.
+
+The website uses cropped viewports of the original ribbon and lettering, with screen blending on its dark surfaces. Use this identity on dark backgrounds. A true transparent master and a simplified vector mark remain separate production refinements.
