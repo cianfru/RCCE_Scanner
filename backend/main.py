@@ -230,7 +230,6 @@ async def lifespan(app: FastAPI):
 
     # On-chain whale tracker — runtime-toggleable via /api/admin/features.
     # Task always spawned; the loop checks the feature flag each cycle.
-    asyncio.create_task(_periodic_whale_poll())
     logger.info("Whale tracker: task spawned (runtime-toggleable)")
 
     # Start CoinGlass drip loop (1 coin every 1.5s instead of 150 calls at once)
@@ -1982,6 +1981,22 @@ async def executor_status():
         return ExecutorStatusResponse()
 
     status = await executor.get_status()
+    from executor_performance import performance
+    from data_fetcher import _ohlcv_store
+    marks = {}
+    for symbol in status.get("positions", {}):
+        candidates = []
+        for tf in ("4h", "1d"):
+            data = _ohlcv_store.get(symbol, tf)
+            observed = _ohlcv_store.observed_at(symbol, tf)
+            if data is not None and len(data.get("close", [])) and observed is not None:
+                candidates.append({"price": float(data["close"][-1]),
+                                   "observed_at": observed})
+        if candidates:
+            marks[symbol] = max(candidates, key=lambda m: m["observed_at"])
+    status["performance"] = performance(list(status.get("positions", {}).values()),
+                                        executor.get_trades(), marks, executor.initial_balance,
+                                        portfolio=status.get("portfolio") if executor.mode == "paper" else None)
     return status
 
 

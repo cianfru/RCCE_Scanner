@@ -18,21 +18,17 @@ let portIdCounter = 0;
 // Poll intervals (ms)
 const MAIN_INTERVAL = 60_000;
 const NOTIF_INTERVAL = 60_000;
-const ONCHAIN_INTERVAL = 15_000;
 
 let mainTimer = null;
 let notifTimer = null;
-let onchainTimer = null;
 
 // Latest data cache — new tabs get data immediately on connect
 let latestMain = null;
 let latestNotif = null;
-let latestOnchain = null;
 
 // Per-tab params (use latest values from any tab)
 let walletAddress = "";
 let notifMinScore = 3; // "HIGH" default
-let onchainActiveToken = null; // { chain, contract }
 let filterRegime = "ALL";
 let filterSignal = "ALL";
 
@@ -165,48 +161,6 @@ async function pollNotifications() {
 
 // ── On-chain polling ─────────────────────────────────────────────────────────
 
-async function pollOnchain() {
-  if (!apiBase) return;
-  try {
-    const baseFetches = [
-      fetchJSON(`${apiBase}/api/whales/status`).catch(() => null),
-      fetchJSON(`${apiBase}/api/whales/tokens`).catch(() => []),
-      fetchJSON(`${apiBase}/api/whales/alerts?limit=30`).catch(() => []),
-      fetchJSON(`${apiBase}/api/whales/trending`).catch(() => []),
-    ];
-
-    const [status, tokens, alerts, trending] = await Promise.all(baseFetches);
-
-    // Per-token data if an active token is set
-    let holdersData = null;
-    let transfers = [];
-    let tokenAlerts = [];
-
-    if (onchainActiveToken) {
-      const { chain, contract } = onchainActiveToken;
-      const enc = encodeURIComponent(contract);
-      try {
-        [holdersData, transfers, tokenAlerts] = await Promise.all([
-          fetchJSON(`${apiBase}/api/whales/holders/${chain}/${enc}?min_pct=0.4&limit=50`).catch(() => null),
-          fetchJSON(`${apiBase}/api/whales/transfers?chain=${chain}&contract=${enc}&limit=50`).catch(() => []),
-          fetchJSON(`${apiBase}/api/whales/alerts?contract=${enc}&limit=20`).catch(() => []),
-        ]);
-      } catch (_) {}
-    }
-
-    latestOnchain = {
-      status, tokens, alerts, trending,
-      holdersData, transfers, tokenAlerts,
-      activeContract: onchainActiveToken?.contract || null,
-      timestamp: Date.now(),
-    };
-
-    broadcast({ type: "onchain-data", payload: latestOnchain });
-  } catch (e) {
-    broadcast({ type: "error", source: "onchain", message: e.message });
-  }
-}
-
 // ── Timer management ─────────────────────────────────────────────────────────
 
 function startPolling() {
@@ -215,7 +169,7 @@ function startPolling() {
   // Initial fetch
   pollMain();
   pollNotifications();
-  pollOnchain();
+
 
   mainTimer = setInterval(() => {
     if (anyTabVisible()) pollMain();
@@ -225,15 +179,12 @@ function startPolling() {
     if (anyTabVisible()) pollNotifications();
   }, NOTIF_INTERVAL);
 
-  onchainTimer = setInterval(() => {
-    if (anyTabVisible()) pollOnchain();
-  }, ONCHAIN_INTERVAL);
+
 }
 
 function stopPolling() {
   if (mainTimer) { clearInterval(mainTimer); mainTimer = null; }
   if (notifTimer) { clearInterval(notifTimer); notifTimer = null; }
-  if (onchainTimer) { clearInterval(onchainTimer); onchainTimer = null; }
 }
 
 // ── Port handling ────────────────────────────────────────────────────────────
@@ -256,7 +207,6 @@ self.onconnect = function (e) {
         // Send cached data immediately so new tab doesn't wait for next poll
         if (latestMain) port.postMessage({ type: "main-data", payload: latestMain });
         if (latestNotif) port.postMessage({ type: "notif-data", payload: latestNotif });
-        if (latestOnchain) port.postMessage({ type: "onchain-data", payload: latestOnchain });
         break;
 
       case "refresh":
@@ -288,22 +238,13 @@ self.onconnect = function (e) {
         pollMain(); // re-fetch with new filters
         break;
 
-      case "set-onchain-token":
-        const newToken = msg.token; // { chain, contract } or null
-        const changed = JSON.stringify(newToken) !== JSON.stringify(onchainActiveToken);
-        if (changed) {
-          onchainActiveToken = newToken;
-          pollOnchain();
-        }
-        break;
-
       case "visibility":
         tabVisibility.set(portId, !msg.hidden);
         // If a tab just became visible and we were paused, poll immediately
         if (!msg.hidden && anyTabVisible()) {
           pollMain();
           pollNotifications();
-          pollOnchain();
+
         }
         break;
 

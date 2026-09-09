@@ -6,8 +6,6 @@ import { ArrowUpRight, ArrowRight, ChevronDown, Activity, ScanLine, Layers3, Loc
 import { Mark, LogoLettering } from './Mark';
 import { useState, useEffect, useRef } from 'react';
 import { Tabs,TabsList,TabsTrigger } from './tabs';
-import { Table,TableHeader,TableRow,TableHead,TableBody,TableCell } from './table';
-import { forTimeframe, price, tone } from './scanner-data';
 import './base.css';
 import './refined-landing.css';
 import './palette.css';
@@ -36,7 +34,7 @@ function BelowFold(){return <>
 ['Where does the preview data come from?','The preview reads the same scanner API as the terminal and refreshes every minute. Cycle diagrams and the floating transition card remain illustrative.'],
 ['Is this a trading recommendation?','No. A market regime describes conditions, not a guaranteed outcome. Signals can be wrong. Use the information alongside your own research and risk limits.']
 ].map(([q,a],i)=><motion.details key={q} initial={{opacity:0}} whileInView={{opacity:1}} viewport={{once:true}} transition={{delay:i*.04}}><summary><span>{q}</span><span className="r-faq-plus">+</span></summary><p>{a}</p></motion.details>)}</Reveal></section>
-<section className="r-width r-final"><Reveal><span className="r-kicker"><i/> THE TERMINAL IS OPEN</span><h2>Have a look.<br/><span>Form your own view.</span></h2><Action href="/scanner">Explore Reflex <ArrowUpRight size={18}/></Action><p>Explore market cycles and signals.</p></Reveal></section>
+<section className="r-width r-final"><Reveal><span className="r-kicker"> THE TERMINAL IS OPEN</span><h2>Have a look.<br/><span>Form your own view.</span></h2><Action href="/scanner">Explore Reflex <ArrowUpRight size={18}/></Action><p>Explore market cycles and signals.</p></Reveal></section>
 </>}
 function DynamicHero(){
   const heroRef=useRef<HTMLElement>(null);
@@ -74,14 +72,14 @@ function DynamicHero(){
       <LogoSculpture active={active}/>
     </motion.div>
     <Reveal className="r-hero-copy">
-      <span className="r-kicker"><i/> MARKET INTELLIGENCE FOR HYPERLIQUID</span>
+      <span className="r-kicker"> MARKET INTELLIGENCE FOR HYPERLIQUID</span>
       <h1>Price is only<br/><span>part of the story.</span></h1>
       <p>Reflex brings market cycles and Hyperliquid positioning into the same view, so you can see what’s behind the move.</p>
       <div className="r-hero-actions"><Action href="/scanner">Explore the platform <ArrowUpRight size={19}/></Action><motion.a className="r-quiet-link" href="#platform" whileHover={{scale:1.02}} whileTap={{scale:.98}}>Take a closer look <ChevronDown size={15}/></motion.a></div>
     </Reveal>
     <div className="r-hero-side" aria-label="Example market signal">
       <motion.div className="r-floating-signal glass r-dynamic-card" style={{x:cardX,y:cardY}}>
-        <div><span className="r-meta">CYCLE DETECTED</span><span className="r-signal-dot"/></div>
+        <div><span className="r-meta">CYCLE DETECTED</span></div>
         <h3>Accumulation <MoveUpRight size={19}/> Markup</h3>
         <div className="r-floating-bottom"><span>SOL <span className="r-muted">/ USDT</span></span><span className="r-mono">1D</span></div>
         <span className="r-card-glint" aria-hidden="true"/>

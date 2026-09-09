@@ -19,12 +19,6 @@ const NAV_ICONS = {
       <path d="M3 13V8M6 13V5M9 13V7M12 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   ),
-  onchain: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  ),
   hyperlens: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/>
@@ -79,7 +73,6 @@ const NAV_SECTIONS = [
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
       { key: "hyperlens", label: "HyperLens", desc: "Smart-money wallet tracking" },
-      { key: "onchain", label: "On-Chain", desc: "On-chain analytics" },
     ],
   },
   {

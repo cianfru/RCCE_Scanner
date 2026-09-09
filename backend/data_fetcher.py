@@ -220,6 +220,10 @@ class DataCache:
         key = self._key(symbol, timeframe)
         self._fetched_at[key] = time.monotonic()
 
+    def observed_at(self, symbol: str, timeframe: str) -> Optional[float]:
+        updated = self._updated_at.get(self._key(symbol, timeframe))
+        return time.time() - (time.monotonic() - updated) if updated is not None else None
+
     def invalidate(self, symbol: str, timeframe: str) -> None:
         """Remove a single entry."""
         self._fetched_at.pop(self._key(symbol, timeframe), None)
@@ -282,6 +286,10 @@ class OHLCVStore:
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
         """Return cached OHLCV arrays or None if not stored."""
         return self._store.get(self._key(symbol, timeframe))
+
+    def observed_at(self, symbol: str, timeframe: str) -> Optional[float]:
+        updated = self._updated_at.get(self._key(symbol, timeframe))
+        return time.time() - (time.monotonic() - updated) if updated is not None else None
 
     def invalidate(self, symbol: str, timeframe: str) -> None:
         """Remove a single entry, forcing a full refetch next call."""
@@ -373,6 +381,7 @@ class OHLCVStore:
                 pickle.dump({
                     "version": 3,
                     "history_targets": self._history_targets,
+                    "observed_at": {key: time.time() - (time.monotonic() - updated) for key, updated in self._updated_at.items()},
                     "store": self._store,
                     "saved_at": time.time(),
                 }, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -465,7 +474,8 @@ class OHLCVStore:
                             continue
 
                 self._store[key] = ohlcv
-                self._updated_at[key] = time.monotonic()
+                observed_at = payload.get("observed_at", {}).get(key, saved_at)
+                self._updated_at[key] = time.monotonic() - max(0, time.time() - observed_at)
                 loaded += 1
 
             logger.info(

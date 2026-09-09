@@ -24,7 +24,6 @@ import SettingsDropdown from "./components/SettingsDropdown.jsx";
 import BacktestPanel from "./components/BacktestPanel.jsx";
 import ExecutorPanel from "./components/ExecutorPanel.jsx";
 import TradingPanel from "./components/TradingPanel.jsx";
-import OnChainPanel from "./components/OnChainPanel.jsx";
 import SignalLogPanel from "./components/SignalLogPanel.jsx";
 import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
@@ -61,7 +60,6 @@ const ROUTE_TO_TAB = {
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
-  "/onchain": "onchain",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
@@ -74,7 +72,6 @@ const TAB_TO_ROUTE = {
   backtest: "/backtest",
   executor: "/executor",
   trading: "/portfolio",
-  onchain: "/onchain",
 };
 
 export default function App() {
@@ -591,11 +588,11 @@ export default function App() {
 
   const activeConsensus = marketConsensus;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "onchain" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
   const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"]]
+    : [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -906,7 +903,6 @@ export default function App() {
              activeTab === "trading" ? "Portfolio" :
              activeTab === "signals" ? "Signal Log" :
              activeTab === "analytics" ? "Analytics" :
-             activeTab === "onchain" ? "On-Chain" :
              activeTab === "tradfi" ? "TradFi" :
              activeTab === "hyperlens" ? "HyperLens" :
              activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
@@ -989,12 +985,6 @@ export default function App() {
         {activeTab === "analytics" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <AnalyticsPanel isMobile={isMobile} />
-          </FadeIn>
-        )}
-
-        {activeTab === "onchain" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <OnChainPanel isMobile={isMobile} />
           </FadeIn>
         )}
 
