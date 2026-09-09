@@ -29,7 +29,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               hoverable
               glow={c.value > 0 ? `${c.color}08` : null}
               style={{
-                padding: isMobile ? "12px 14px" : "12px 16px",
+                padding: isMobile ? "16px 16px" : "20px 22px",
                 border: `1.5px solid ${isActive ? c.color : c.value > 0 ? c.color + "22" : T.border}`,
                 transition: "all 0.25s ease",
                 cursor: c.value > 0 ? "pointer" : "default",
@@ -37,7 +37,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
                   ? `0 0 24px ${c.color}35, 0 0 8px ${c.color}25, inset 0 0 0 1px ${c.color}50`
                   : "none",
                 background: isActive ? `${c.color}12` : undefined,
-                transform: isActive ? "scale(1.04)" : undefined,
+                transform: isActive ? "translateY(-2px)" : undefined,
               }}
               onClick={() => {
                 if (c.value === 0) return;
@@ -45,7 +45,7 @@ export default function StatCards({ results, isMobile, isTablet, activeSignalFil
               }}
             >
               <div style={{
-                fontSize: isMobile ? 26 : 26, fontWeight: 700, fontFamily: T.mono,
+                fontSize: isMobile ? 26 : 26, fontWeight: 550, fontFamily: T.mono,
                 color: c.value > 0 ? c.color : T.text4,
                 lineHeight: 1,
                 filter: c.value > 0 ? `drop-shadow(0 0 8px ${c.color}30)` : "none",

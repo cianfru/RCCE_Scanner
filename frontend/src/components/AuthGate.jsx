@@ -1,3 +1,4 @@
+import ReflexBrand from "./ReflexBrand.jsx";
 import { useState } from "react";
 import { T } from "../theme.js";
 
@@ -59,11 +60,7 @@ export default function AuthGate({ children }) {
 
       {/* Logo */}
       <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 48 }}>
-        <img
-          src="/reflex-logo.png"
-          alt="Reflex"
-          style={{ height: 52, width: "auto", objectFit: "contain", display: "block", margin: "0 auto" }}
-        />
+        <ReflexBrand />
         <p style={{
           marginTop: 12, fontSize: 14, color: T.text4, letterSpacing: "0.04em",
         }}>
