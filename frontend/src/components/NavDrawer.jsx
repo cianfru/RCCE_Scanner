@@ -210,7 +210,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
 
             {/* Hyperliquid */}
             {(() => {
-              const SCANNER_TABS = ["4h", "1d", "split"];
+              const SCANNER_TABS = ["4h", "1d"];
               const isAllActive = !activeGroupId && SCANNER_TABS.includes(activeTab);
               return (
                 <button

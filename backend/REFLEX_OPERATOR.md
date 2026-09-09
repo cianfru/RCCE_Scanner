@@ -11,3 +11,21 @@ Free provider quotas are shared by the backend account, not per visitor. OpenRou
 Assistant prompts use a fresh, explicitly labelled snapshot from the same scan cache and selected timeframe as the terminal. Missing values remain null. News and old conversation memories are not injected as current market evidence. Generated language can still be mistaken; deterministic scanner values remain authoritative.
 
 Validation: `PYTHONPATH=backend python -m unittest discover -s backend/tests -v` and `npm --prefix frontend run build`.
+
+## Scan resource budget
+
+`scan_schedule.py` schedules one market at a time, at most one start per second.
+All verified listings receive an initial attempt. Subsequent candle checks use
+wall-clock intervals: favorites/anomalies and BTC/ETH 5 min; ordinary perps 15 min;
+spot-only 30 min; cold 60 min; deep cold 4 h. Failed or unavailable-history checks
+back off to at least 60 min. Idle periods impose a 60 min minimum. Intervals are
+minimum spacing, not freshness guarantees: startup and queue load add delay.
+Oldest attempts run first to avoid starvation. Listing removal prunes scheduling
+state. The 60-second synthesis and existing position monitoring are unchanged;
+prices update independently. Slower candle refresh can delay new signal discovery.
+
+This limits incremental scanning work, not total Railway spend. The September 9
+production snapshot used about 367 MB RSS, with about 26 MB in scanner/OHLCV data;
+runtime and other background services contribute to the baseline. Compare Railway
+CPU, memory and egress over a full day before and after release. A free allowance
+is not guaranteed. No billing limits, service plans or execution settings change.

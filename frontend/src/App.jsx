@@ -66,7 +66,6 @@ const ROUTE_TO_TAB = {
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
   "4h": "/scanner?tf=4h",
-  split: "/scanner?tf=split",
   signals: "/signals",
   analytics: "/analytics",
   hyperlens: "/hyperlens",
@@ -93,7 +92,6 @@ export default function App() {
       const sp = new URLSearchParams(location.search);
       const tf = sp.get("tf");
       if (tf === "4h") return "4h";
-      if (tf === "split" && !isMobile) return "split";
       return "1d";
     }
     // Check known routes (non-scanner)
@@ -203,11 +201,6 @@ export default function App() {
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
-
-  // Force off split view on mobile
-  useEffect(() => {
-    if (isMobile && activeTab === "split") setActiveTab("4h");
-  }, [isMobile, activeTab, setActiveTab]);
 
   // ── SharedWorker integration ───────────────────────────────────────────────
 
@@ -585,7 +578,7 @@ export default function App() {
 
   const tabOptions = isMobile
     ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]]
-    : [["4h", "4H"], ["1d", "1D"], ["split", "SPLIT"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
+    : [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"], ["onchain", "ON-CHAIN"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -712,8 +705,8 @@ export default function App() {
         onGroupChange={setActiveGroupId}
         onGroupCreate={() => { setEditingGroup(null); setShowGroupModal(true); }}
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
-        onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d" && activeTab !== "split") setActiveTab("1d"); }}
-        scanData={activeTab === "1d" || activeTab === "split" ? data1d : data4h}
+        onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d") setActiveTab("1d"); }}
+        scanData={activeTab === "1d" ? data1d : data4h}
       />
 
       {/* ── HEADER ── */}
@@ -931,20 +924,17 @@ export default function App() {
             display: "flex", flexDirection: isDesktop ? "row" : "column",
             gap: isDesktop ? 16 : 12, marginTop: isMobile ? 12 : 16,
           }}>
-            {(activeTab === "4h" || activeTab === "split") && (
+            {(activeTab === "4h") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display4h} label={activeTab === "split" ? "4H TIMEFRAME" : null}
+                <DataTable results={display4h} label={null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
             )}
-            {activeTab === "split" && (
-              <div style={{ width: isDesktop ? 1 : "100%", height: isDesktop ? undefined : 1, background: T.border, flexShrink: 0 }} />
-            )}
-            {(activeTab === "1d" || activeTab === "split") && (
-              <FadeIn delay={activeTab === "split" ? 600 : 500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display1d} label={activeTab === "split" ? "DAILY TIMEFRAME" : null}
+            {(activeTab === "1d") && (
+              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
+                <DataTable results={display1d} label={null}
                   sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />

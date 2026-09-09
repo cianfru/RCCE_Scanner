@@ -1314,7 +1314,7 @@ async def _scan_timeframe(
 # Drip scan — continuous per-symbol processing (PR2)
 # ---------------------------------------------------------------------------
 
-_drip_rotation_count: int = 0
+_drip_attempt_count: int = 0
 _backtest_running_ref = None  # set by main.py to share the flag
 
 
@@ -1369,6 +1369,7 @@ async def _drip_one_symbol(
 
         if symbol not in scan_cache.symbols:
             return processed
+        result["candles_checked_at"] = time.time()
         scan_cache._results_by_sym.setdefault(symbol, {})[tf] = result
         processed += 1
 
@@ -1399,16 +1400,8 @@ def _classify_drip_tier(
 ) -> str:
     """Classify a symbol into a drip scan tier.
 
-    Tiers
-    -----
-    - **hot**:       Favorited (starred) — always scanned at full speed.
-    - **active**:    Above BMSB (heat_direction == +1) — tradeable, full speed.
-    - **cold**:      Below BMSB, within 10% — scanned every 20th rotation (~7 min).
-    - **deep_cold**: Below BMSB by >10% — scanned every 60th rotation (~20 min).
-                     These coins are deeply underwater and BMSB crossover is distant.
-
-    On the first rotation (no cached results yet), all symbols default to
-    "active" so they get an initial scan.
+    Favorites and anomalies are hot; BMSB direction separates the other tiers.
+    Wall-clock intervals are defined in scan_schedule.refresh_interval.
     """
     # Favorites always get priority regardless of BMSB
     if symbol in fav_store.get():
@@ -1444,158 +1437,41 @@ def _classify_drip_tier(
 async def run_drip_scan(
     scan_cache: Optional[ScanCache] = None,
 ) -> None:
-    """Continuous drip scan with four-tier adaptive frequency.
-
-    Tier behavior:
-    - **hot** (favorites):      scanned every rotation (~1.0s per symbol)
-    - **active** (above BMSB):  scanned every rotation (~1.0s per symbol)
-    - **cold** (<10% below):    scanned every 20th rotation (~7 min)
-    - **deep_cold** (>10% below): scanned every 60th rotation (~20 min)
-
-    In a bear market with 90% of coins below BMSB, this cuts per-rotation
-    API calls dramatically. Deep-cold coins (>10% below BMSB) are far from
-    a crossover and barely need checking.
-
-    Runs as a long-lived background task. Never returns.
-    Stores raw engine results into scan_cache._results_by_sym.
-    The synthesis pass (_run_synthesis_pass) runs separately every 60s.
-    """
-    global _drip_rotation_count
+    """Refresh due markets serially; synthesis/position monitoring stays separate."""
+    global _drip_attempt_count
+    from activity import is_active
+    from hyperliquid_universe import MARKETS
+    from scan_schedule import ScanSchedule
 
     if scan_cache is None:
         scan_cache = cache
-
-    DRIP_INTERVAL = 1.0           # seconds between symbols (hot + active)
-    COLD_EVERY_N = 20             # cold symbols every 20th rotation (~7 min)
-    DEEP_COLD_EVERY_N = 60        # deep cold every 60th rotation (~20 min)
-    # Idle mode: pause between full rotations when nobody is watching
-    # ("maximum savings" — ~15 min). Interruptible; wakes on activity.
-    IDLE_DRIP_PAUSE_S = int(os.environ.get("IDLE_DRIP_PAUSE_S", "900"))
-
-    # Wait briefly for initial data to be available
+    schedule = ScanSchedule()
     await asyncio.sleep(5)
-
     while True:
         symbols = list(scan_cache.symbols)
-        if not symbols:
-            await asyncio.sleep(5)
-            continue
-
-        # Check backtest flag (accessed via scan_cache to avoid circular import)
-        if getattr(scan_cache, '_backtest_running', False):
-            logger.debug("Drip scan paused — backtest in progress")
+        schedule.prune(symbols)
+        if getattr(scan_cache, "_backtest_running", False):
             await asyncio.sleep(10)
             continue
-
-        # --- Tier classification ---
-        hot_syms: List[str] = []
-        active_syms: List[str] = []
-        cold_syms: List[str] = []
-        deep_cold_syms: List[str] = []
-
-        for s in symbols:
-            tier = _classify_drip_tier(s, scan_cache)
-            if tier == "hot":
-                hot_syms.append(s)
-            elif tier == "active":
-                active_syms.append(s)
-            elif tier == "deep_cold":
-                deep_cold_syms.append(s)
-            else:
-                cold_syms.append(s)
-
-        # Decide whether cold / deep-cold symbols are included this rotation
-        include_cold = (_drip_rotation_count % COLD_EVERY_N == 0)
-        include_deep_cold = (_drip_rotation_count % DEEP_COLD_EVERY_N == 0)
-
-        # Build ordered list: BTC/ETH first, then hot, active, then cold tiers if due
-        priority = ["BTC/USDT", "ETH/USDT"]
-        ordered: List[str] = []
-
-        # Priority symbols first (may overlap with hot/active)
-        for s in priority:
-            if s in symbols:
-                ordered.append(s)
-
-        # Hot symbols (excluding already-added priority)
-        seen = set(ordered)
-        for s in hot_syms:
-            if s not in seen:
-                ordered.append(s)
-                seen.add(s)
-
-        # Active symbols
-        for s in active_syms:
-            if s not in seen:
-                ordered.append(s)
-                seen.add(s)
-
-        # Cold symbols (every 20th rotation)
-        cold_this_rotation = 0
-        if include_cold:
-            for s in cold_syms:
-                if s not in seen:
-                    ordered.append(s)
-                    seen.add(s)
-                    cold_this_rotation += 1
-
-        # Deep cold symbols (every 60th rotation)
-        deep_cold_this_rotation = 0
-        if include_deep_cold:
-            for s in deep_cold_syms:
-                if s not in seen:
-                    ordered.append(s)
-                    seen.add(s)
-                    deep_cold_this_rotation += 1
-
-        rotation_start = time.time()
-        total_processed = 0
-
-        for symbol in ordered:
-            t0 = time.monotonic()
-
-            try:
-                n = await _drip_one_symbol(symbol, scan_cache)
-                total_processed += n
-            except Exception:
-                logger.warning("Drip failed for %s", symbol, exc_info=True)
-
-            # Pace to ~1.0s per symbol
-            elapsed = time.monotonic() - t0
-            if elapsed < DRIP_INTERVAL:
-                await asyncio.sleep(DRIP_INTERVAL - elapsed)
-
-        _drip_rotation_count += 1
-        elapsed_total = time.time() - rotation_start
-
-        cold_status = f"{cold_this_rotation} cold" if include_cold else "cold [skip]"
-        deep_status = f"{deep_cold_this_rotation} deep" if include_deep_cold else "deep [skip]"
-        # Per-rotation log demoted to DEBUG (fires every ~4 min, fills the
-        # log buffer / kernel page cache). Status visible via /api/status.
-        logger.debug(
-            "=== Drip rotation #%d: %d symbols (%d hot, %d active, %s, %s), "
-            "%d TF results in %.1fs ===",
-            _drip_rotation_count,
-            len(ordered),
-            len(hot_syms),
-            len(active_syms),
-            cold_status,
-            deep_status,
-            total_processed,
-            elapsed_total,
+        symbol = schedule.next_due(
+            symbols, time.monotonic(),
+            lambda s: "hot" if s in ("BTC/USDT", "ETH/USDT") else _classify_drip_tier(s, scan_cache),
+            lambda s: MARKETS.get(s, {}).get("kind", "perp"),
+            is_active(),
         )
-
-        # --- Idle throttle -------------------------------------------------
-        # When nobody is watching (no dashboard WS, no recent API traffic,
-        # "Keep Awake" off), pause a long time between rotations instead of
-        # looping immediately. 4H/1D candles close far slower than this, so
-        # no signal is missed; opening the dashboard wakes it within seconds.
+        if symbol is None:
+            await asyncio.sleep(5)
+            continue
+        started = time.monotonic()
+        available = False
         try:
-            from activity import is_active, idle_sleep
-            if not is_active():
-                await idle_sleep(IDLE_DRIP_PAUSE_S)
+            available = await _drip_one_symbol(symbol, scan_cache) > 0
         except Exception:
-            pass
+            logger.warning("Drip failed for %s", symbol, exc_info=True)
+        finally:
+            schedule.record(symbol, time.monotonic(), available)
+            _drip_attempt_count += 1
+        await asyncio.sleep(max(0, 1.0 - (time.monotonic() - started)))
 
 
 async def _run_synthesis_pass(
@@ -2052,8 +1928,8 @@ async def _run_synthesis_pass(
         pass
 
     logger.info(
-        "=== Synthesis pass complete: %d symbols in %.1fs (rotation #%d) ===",
-        n_syms, elapsed, _drip_rotation_count,
+        "=== Synthesis pass complete: %d symbols in %.1fs (%d candle-refresh attempts) ===",
+        n_syms, elapsed, _drip_attempt_count,
     )
 
 
@@ -2689,7 +2565,7 @@ def get_scan_status() -> dict:
         "symbols_count": len(cache.symbols),
         "cache_age_seconds": cache.get_cache_age(),
         "mode": "drip",
-        "drip_rotation": _drip_rotation_count,
+        "drip_attempts": _drip_attempt_count,
         "symbols_scanned": len(cache._results_by_sym),
         "drip_tiers": {"hot": hot, "active": active, "cold": cold, "deep_cold": deep_cold},
     }
