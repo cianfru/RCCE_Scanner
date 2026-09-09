@@ -88,7 +88,7 @@ export default function ConfluencePanel({ confluence }) {
 
       {/* Label badge + alignment */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{
+        <span className="terminal-status" style={{
           padding: "4px 12px", borderRadius: 20,
           background: `${lColor}15`, color: lColor,
           fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700,
@@ -136,7 +136,7 @@ export default function ConfluencePanel({ confluence }) {
             {row.tf}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{
+            <span className="terminal-status" style={{
               padding: "3px 10px", borderRadius: 20,
               background: row.regimeMeta.bg, color: row.regimeMeta.color,
               fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,

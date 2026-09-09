@@ -377,7 +377,7 @@ export default function BridgeFlowWidget({ isMobile }) {
         }}>
           HL Bridge {displayLabel}{partial ? "*" : ""}
         </span>
-        <span style={{
+        <span className="terminal-status" style={{
           padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",
           background: bgTint,
           color,
@@ -413,7 +413,7 @@ export default function BridgeFlowWidget({ isMobile }) {
       }}>
         HL Bridge {displayLabel}{partial ? "*" : ""}
       </span>
-      <span style={{
+      <span className="terminal-status" style={{
         padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",
         background: bgTint,
         color,
@@ -435,7 +435,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           <span style={{
             width: 1, height: 14, background: T.border, opacity: 0.5,
           }} />
-          <span style={{
+          <span className="terminal-status" style={{
             padding: "2px 8px", borderRadius: "20px",
             background: `${divColor}1a`,
             border: `1px solid ${divColor}40`,

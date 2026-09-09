@@ -92,7 +92,7 @@ export default function ChangesTicker({ timeframe = "4h", isMobile, refreshKey }
                 alignItems: "center",
                 gap: 4,
                 padding: isMobile ? "4px 7px" : "3px 8px",
-                borderRadius: 6,
+                borderRadius: 0,
                 background: `${color}0a`,
                 border: `1px solid ${color}18`,
                 fontSize: m(T.textXs, isMobile),

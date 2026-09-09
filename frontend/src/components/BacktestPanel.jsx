@@ -519,7 +519,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
           <button
             onClick={startBacktest}
             disabled={isRunning || config.symbols.length === 0}
-            style={{
+            className="terminal-status" style={{
               padding: "8px 24px", borderRadius: "20px", border: "none",
               background: (isRunning || config.symbols.length === 0) ? T.text4 : T.accent,
               color: "#000", fontFamily: T.mono, fontSize: 11, fontWeight: 700,

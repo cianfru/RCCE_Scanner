@@ -176,9 +176,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
 
 function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
-  const isHighlight = ["STRONG_LONG", "LIGHT_LONG", "TRIM_HARD", "RISK_OFF"].includes(row.unified_signal || row.signal);
-  const stripeBg = index % 2 === 1 ? T.overlay02 : "transparent";
-  const restBg = selected ? "rgba(151,252,228,0.04)" : isHighlight ? rm.bg : stripeBg;
+  const restBg = selected ? T.accentDim : rm.bg;
 
   return (
     <tr
@@ -187,6 +185,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
         cursor: "pointer",
         borderBottom: `1px solid ${T.border}`,
         background: restBg,
+        boxShadow: `inset 2px 0 ${rm.color}`,
         transition: "background 0.2s ease",
       }}
       onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.overlay10; }}

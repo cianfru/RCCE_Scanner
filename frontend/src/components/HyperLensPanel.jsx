@@ -231,7 +231,7 @@ function RiskBadge({ score }) {
   if (score == null) return null;
   const color = riskColor(score);
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
       padding: "4px 10px", borderRadius: 20,
       color, background: `${color}12`,
@@ -524,7 +524,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                   <ConfidenceBar confidence={c.confidence} trend={cf.trend} />
                 </td>
                 <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                  <span style={{
+                  <span className="terminal-status" style={{
                     fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
                     padding: "4px 12px", borderRadius: 20,
                     color: trendColor(cf.trend),
@@ -803,14 +803,14 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                   {(w.cohorts || []).length > 0 && (
                     <span style={{ marginLeft: 6, display: "inline-flex", gap: 3 }}>
                       {(w.cohorts || []).includes("money_printer") && (
-                        <span style={{
+                        <span className="terminal-status" style={{
                           fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
                           color: T.green, background: `${T.green}12`,
                           fontFamily: T.mono, fontWeight: 600,
                         }}>{"\uD83D\uDCB0"}</span>
                       )}
                       {(w.cohorts || []).includes("smart_money") && (
-                        <span style={{
+                        <span className="terminal-status" style={{
                           fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
                           color: T.accent, background: `${T.accent}12`,
                           fontFamily: T.mono, fontWeight: 600,
@@ -832,7 +832,7 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                     </td>
                     <td style={{ padding: "7px 10px", textAlign: "center" }}>
                       {bias ? (
-                        <span style={{
+                        <span className="terminal-status" style={{
                           fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
                           padding: "3px 10px", borderRadius: 20,
                           color: biasColor, background: `${biasColor}12`,
@@ -1169,7 +1169,7 @@ function WalletDetail({ address, onClose, userWallet }) {
               {truncAddr(address)}
             </span>
             {data.rank && (
-              <span style={{
+              <span className="terminal-status" style={{
                 fontFamily: T.mono, fontSize: 11, fontWeight: 700,
                 padding: "3px 8px", borderRadius: 20,
                 color: T.accent, background: `${T.accent}12`, border: `1px solid ${T.accent}25`,
@@ -1871,14 +1871,14 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
           <span style={{ fontFamily: T.mono, fontSize: T.textXl, fontWeight: 700, color: T.text1 }}>
             {symbol}
           </span>
-          <span style={{
+          <span className="terminal-status" style={{
             fontFamily: T.mono, fontSize: T.textSm, color: T.text4, fontWeight: 600,
             padding: "3px 10px", borderRadius: 20, background: T.overlay06,
           }}>
             {positions.length} wallet{positions.length !== 1 ? "s" : ""}
           </span>
           {cData.trend && (
-            <span style={{
+            <span className="terminal-status" style={{
               fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
               padding: "4px 12px", borderRadius: 20,
               color: trendColor(cData.trend),
@@ -2994,7 +2994,7 @@ export default function HyperLensPanel({ isMobile }) {
           {consensus.length > 0 && (
             <div style={{ display: "flex", gap: 6 }}>
               {bullish > 0 && (
-                <span style={{
+                <span className="terminal-status" style={{
                   fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
                   padding: "5px 14px", borderRadius: 20,
                   color: T.green, background: `${T.green}15`,
@@ -3006,7 +3006,7 @@ export default function HyperLensPanel({ isMobile }) {
                 </span>
               )}
               {bearish > 0 && (
-                <span style={{
+                <span className="terminal-status" style={{
                   fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
                   padding: "5px 14px", borderRadius: 20,
                   color: T.red, background: `${T.red}15`,
@@ -3018,7 +3018,7 @@ export default function HyperLensPanel({ isMobile }) {
                 </span>
               )}
               {neutral > 0 && (
-                <span style={{
+                <span className="terminal-status" style={{
                   fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
                   padding: "5px 14px", borderRadius: 20,
                   color: T.text4, background: T.overlay04,

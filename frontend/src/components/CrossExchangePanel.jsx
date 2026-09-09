@@ -64,11 +64,6 @@ function ExchangeRow({ ex, maxOi }) {
       {/* Name + dot */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: dot, flexShrink: 0,
-          boxShadow: available ? `0 0 6px ${dot}66` : "none",
-        }} />
-        <span style={{
           fontSize: T.textSm, fontFamily: T.mono,
           color: T.text1, fontWeight: 700, letterSpacing: "0.04em",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",

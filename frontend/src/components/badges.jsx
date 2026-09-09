@@ -35,7 +35,7 @@ export function ZScoreBar({ z, isMobile }) {
 export function RegimeBadge({ regime, isMobile }) {
   const rm = REGIME_META[regime] || REGIME_META.FLAT;
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       padding: isMobile ? "5px 12px" : "4px 12px", borderRadius: "20px",
       background: rm.bg, color: rm.color,
@@ -81,10 +81,6 @@ export function SignalDot({ signal, reason, warnings, isMobile }) {
       onMouseLeave={() => setShowTip(false)}
       onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
     >
-      <span style={{
-        fontSize: isMobile ? 11 : 9,
-        filter: signal !== "WAIT" ? `drop-shadow(0 0 4px ${sm.color})` : "none",
-      }}>{sm.dot}</span>
       {sm.label}
       {warnings && warnings.length > 0 && (
         <svg width="22" height="22" viewBox="0 0 24 24" style={{ marginLeft: 4, verticalAlign: "middle", flexShrink: 0 }}>
@@ -147,7 +143,7 @@ export function DivergencePill({ div }) {
   const color = isBull ? "#34d399" : "#f87171";
   const glyph = isBull ? "\u25b2" : "\u25bc";
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       padding: "3px 8px", borderRadius: "20px",
       background: `${color}14`, color,
       fontSize: 10, fontFamily: T.mono, fontWeight: 600,
@@ -212,7 +208,7 @@ export function ExhaustBadge({ state, floorConfirmed }) {
     : meta.text;
   const glowColor = state === "FLOOR" && floorConfirmed ? "#34d399" : meta.color;
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       padding: "3px 9px", borderRadius: "20px",
       background: `${glowColor}14`, color: glowColor,
       fontSize: 11, fontFamily: T.mono, fontWeight: 600,
@@ -252,7 +248,7 @@ export function OITrendBadge({ trend }) {
     SHORTING:    { color: "#c084fc", label: "SHORT" },
   }[trend] || { color: T.text4, label: trend.slice(0, 5) };
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       padding: "3px 8px", borderRadius: "20px",
       background: `${meta.color}14`, color: meta.color,
       fontSize: 11, fontFamily: T.mono, fontWeight: 600,
@@ -285,7 +281,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   const icon = ICONS[trend] || "\u25cf";
 
   return (
-    <span style={{
+    <span className="terminal-status" style={{
       display: "inline-flex", alignItems: "center", gap: 3,
       padding: "3px 8px", borderRadius: 20,
       background: color + "14",
@@ -320,7 +316,7 @@ export function SmartMoneyBadge({ sm }) {
   return (
     <span
       title={`Smart Money: ${trend} (${long_count}L / ${short_count}S, conf ${Math.round((confidence || 0) * 100)}%)`}
-      style={{
+      className="terminal-status" style={{
         display: "inline-flex", alignItems: "center", gap: 3,
         padding: "3px 7px", borderRadius: 20,
         background: color + "14",

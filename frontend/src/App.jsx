@@ -44,24 +44,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 // [sortKey, label, minViewportWidth]
 // HEAT absorbs PHASE as a sub-label (EXT/ENTR/EXHS/FADE).
 // EXHAUST absorbs FORMING — shows "FLOOR ✓" when floor is confirmed.
-const COLUMNS = [
-  [null,             "#",       0],
-  ["priority_score", "PRI",     0],     // composite ranking 0-100 — always visible
-  ["symbol",         "SYMBOL",  0],     // includes price sub-label on desktop
-  ["regime",         "REGIME",  0],
-  [null,             "SIGNAL",  0],
-  ["zscore",         "Z-SCORE", 480],
-  [null,             "SPARK",   640],   // moved after Z-SCORE, hidden on small mobile
-  [null,             "COND",    640],   // conditions met — entry quality
-  ["heat",           "HEAT",    640],   // bar + phase sub-label
-  [null,             "CVD",     768],   // net taker pressure
-  [null,             "CONF",    768],   // multi-TF confluence
-  [null,             "DIV",     900],
-  [null,             "EXHAUST", 1024],  // state + ✓ when floor confirmed
-  ["energy",         "ENERGY",  1024],
-  [null,             "SM",      1200],  // HyperLens smart money consensus
-  [null,             "OI",      1440],  // OI trend — wide monitors only
-];
+import { SCANNER_COLUMNS as COLUMNS } from "./scannerColumns.js";
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
@@ -787,21 +770,7 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
           <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
-          <div style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "4px 12px",
-            fontSize: 10, letterSpacing: "0.08em",
-            fontFamily: T.mono, fontWeight: 600,
-            color: wsRef.connected ? "#22c55e" : (sw.supported || !error) ? "#eab308" : "#ef4444",
-          }}
-            title={wsRef.connected ? "WebSocket real-time" : (sw.supported ? "SharedWorker polling" : (!error ? "REST polling" : "API unreachable"))}
-          >
-            <span style={{
-              color: wsRef.connected ? "#22c55e" : (sw.supported || !error) ? "#eab308" : "#ef4444",
-              animation: wsRef.connected ? "livePulse 2s ease-in-out infinite" : "none",
-            }}>{"\u25cf"}</span>
-            {wsRef.connected ? "LIVE" : (sw.supported || !error) ? "POLL" : "OFF"}
-          </div>
+
         </div>
 
         {/* Right: timestamp, refresh, cache, theme toggle */}

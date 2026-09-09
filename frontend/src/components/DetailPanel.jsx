@@ -420,7 +420,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           <RegimeBadge regime={selected.regime} />
           <SignalDot signal={selected.signal} />
           {selected.signal_confidence != null && (
-            <span style={{
+            <span className="terminal-status" style={{
               padding: "3px 8px", borderRadius: "20px",
               background: T.surface, border: `1px solid ${T.border}`,
               fontSize: 9, fontFamily: T.mono, fontWeight: 500,
@@ -443,7 +443,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
             return (
               <span
                 title="Time since signal label last changed"
-                style={{
+                className="terminal-status" style={{
                   padding: "3px 8px", borderRadius: "20px",
                   background: "transparent", border: `1px solid ${T.border}`,
                   fontSize: 9, fontFamily: T.mono, fontWeight: 500,
