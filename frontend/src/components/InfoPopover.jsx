@@ -63,10 +63,6 @@ const COLUMN_INFO = {
     title: "Momentum",
     desc: "Rate of change in price expressed as a percentage. Positive values indicate upward momentum, negative values indicate downward pressure.",
   },
-  PRICE: {
-    title: "Current Price",
-    desc: "Latest price from the exchange. Updates each scan cycle (every 5 minutes).",
-  },
   HEAT: {
     title: "BMSB Heat Score",
     desc: "Heatmap engine output (0-100) measuring deviation from the BMSB bands. Higher heat means price is stretched further from equilibrium. The sub-label shows the current structural phase.",
@@ -232,21 +228,21 @@ export default function InfoButton({ label }) {
 
   return (
     <span style={{ display: "inline-flex", marginLeft: 4 }}>
-      <span
+      <button type="button" aria-label={`About ${info.title}`} aria-expanded={open}
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 14, height: 14, borderRadius: "50%",
+          width: 20, height: 20, borderRadius: "50%",
           border: `1px solid ${open ? T.accent : T.overlay15}`,
           color: open ? T.accent : T.text4,
-          fontSize: 8, fontWeight: 700, fontFamily: T.font,
+          background: "transparent", padding: 0, fontSize: 11, fontWeight: 700, fontFamily: T.font,
           cursor: "pointer", transition: "all 0.2s",
           lineHeight: 1, userSelect: "none",
         }}
         onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay30; e.currentTarget.style.color = T.text2; }}}
         onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay15; e.currentTarget.style.color = T.text4; }}}
-      >i</span>
+      >i</button>
       {open && <InfoPopover info={info} anchor={btnRef.current} onClose={() => setOpen(false)} />}
     </span>
   );

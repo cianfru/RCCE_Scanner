@@ -38,3 +38,30 @@
 @media(max-width:800px){.refined .r-logo-stage{width:360px;height:390px;right:-45px;top:220px;opacity:.85}}
 @media(max-width:480px){.refined .r-logo-stage{width:300px;height:330px;right:-48px;top:260px}}
 @media(prefers-reduced-motion:reduce){.r-logo-shadow{animation:none!important}.r-logo-stage .r-art-drift{transform:none}}
+.r-sculpture{position:absolute;inset:0;isolation:isolate;}
+.r-sculpture canvas,.r-sculpture>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;}
+.r-sculpture[data-rendered=false] canvas{visibility:hidden;}
+.refined .r-motion-toggle{border-radius:5px;background:#0f393388;color:#f5fefd;}
+.refined .r-hero-caption{font-size:10px;letter-spacing:.12em;}
+.r-scroll-hint{font-size:12px!important;color:#b2c4c0!important;margin:12px 0 0!important;}
+.r-reading-example{margin:52px 0 0;padding:28px 0;border-block:1px solid #97fce426;}
+.r-reading-heading{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:28px;}
+.r-reading-heading h3{font-size:28px;letter-spacing:-.04em;margin:12px 0 0;}
+.r-reading-heading label{font-size:13px;color:#b2c4c0;display:flex;align-items:center;gap:12px;}
+.r-reading-heading select{background:#0c201e;color:#f5fefd;border:1px solid #97fce444;border-radius:5px;padding:10px 16px;font:inherit;}
+.r-reading-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;}
+.r-reading-grid article>span{font-size:12px;color:#b2c4c0;}
+.r-reading-grid h4{font-size:21px;font-weight:500;color:#97fce4;margin:16px 0 12px;}
+.r-reading-grid p{font-size:14px;line-height:1.75;color:#b2c4c0;}
+.r-reading-example>a{display:inline-block;color:#97fce4;font-size:14px;margin-top:20px;}
+.r-reading-footnote{font-size:11px!important;color:#b2c4c0!important;margin-top:14px!important;}
+@media(max-width:700px){.r-reading-grid{grid-template-columns:1fr;gap:18px;}.r-reading-heading{align-items:start;flex-direction:column;}}
+@media(max-width:800px){
+ .refined .r-hero{display:flex;flex-direction:column;align-items:stretch;gap:24px;}
+ .refined .r-hero-copy{order:1;}
+ .refined .r-hero .r-logo-stage{position:relative;order:2;inset:auto;align-self:center;width:min(100%,380px);height:340px;opacity:1;margin:0;}
+ .refined .r-hero-side{order:3;align-self:stretch;height:210px;}
+ .refined .r-hero-side .r-floating-signal{left:0;right:0;width:100%;bottom:30px;}
+ .refined .r-hero-caption{bottom:0;right:0;}
+ .refined .r-motion-toggle{top:-40px;right:0;}
+}

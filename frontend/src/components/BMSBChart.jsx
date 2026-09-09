@@ -1,3 +1,5 @@
+import HelpTip from "./HelpTip.jsx";
+import { formatPercent } from "../utils/marketPresentation.js";
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
   createChart,
@@ -47,6 +49,7 @@ export default function BMSBChart({
   floorConfirmed,
   signalConfidence,
   momentum,
+  onTimeframeChange,
 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
@@ -543,10 +546,10 @@ export default function BMSBChart({
       position: "relative",
     }}>
       {/* ── Top bar: info strip + timeframe toggle ── */}
-      <div style={{
-        position: "absolute", top: 0, left: 0, right: 0, zIndex: 5,
+      <div className="chart-toolbar" style={{
+        position: "relative", zIndex: 5,
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "7px 10px",
+        padding: "14px 18px",
         background: "linear-gradient(180deg, rgba(9,22,25,0.92) 0%, rgba(9,22,25,0.5) 70%, transparent 100%)",
       }}>
         {/* Left: info pills */}
@@ -615,10 +618,10 @@ export default function BMSBChart({
           {signalConfidence != null && signal !== "WAIT" && (
             <span style={{
               fontSize: 8, fontFamily: T.mono, fontWeight: 500,
-              color: signalConfidence >= 0.8 ? "#22c55e" : signalConfidence >= 0.5 ? "#fbbf24" : "rgba(255,255,255,0.25)",
+              color: signalConfidence >= 80 ? "#22c55e" : signalConfidence >= 50 ? "#fbbf24" : "rgba(255,255,255,0.25)",
               opacity: 0.7,
             }}>
-              {Math.round(signalConfidence * 100)}%
+              Checks {formatPercent(signalConfidence)}
             </span>
           )}
         </div>
@@ -628,7 +631,8 @@ export default function BMSBChart({
           {/* Pressure levels toggle */}
           <button
             onClick={() => setShowPressure(p => !p)}
-            title={showPressure ? "Hide smart money levels" : "Show smart money stops/TPs/limits"}
+            aria-pressed={showPressure}
+            title="Toggle tracked liquidation levels, stops, take-profits and limit orders"
             style={{
               padding: "3px 8px",
               borderRadius: 4,
@@ -644,8 +648,10 @@ export default function BMSBChart({
               display: "flex", alignItems: "center", gap: 3,
             }}
           >
-            {pressureLoading ? "⏳" : "⚡"} SM
+            {pressureLoading ? "Loading levels…" : "Smart money levels"}
           </button>
+
+          <HelpTip title="Smart money levels"><p>Shows available liquidation clusters and tracked stop, take-profit and limit-order levels for this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
 
           {/* Timeframe toggle */}
           <div style={{
@@ -656,7 +662,8 @@ export default function BMSBChart({
             {TIMEFRAMES.map(tf => (
               <button
                 key={tf.key}
-                onClick={() => setActiveTimeframe(tf.key)}
+                aria-label={`Chart timeframe ${tf.label}`} aria-pressed={activeTimeframe === tf.key}
+                onClick={() => { setActiveTimeframe(tf.key); onTimeframeChange?.(tf.key); }}
                 style={{
                   padding: "3px 10px",
                   borderRadius: 4,

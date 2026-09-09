@@ -11,7 +11,7 @@ const DARK = {
   text1:       "#F5FEFD",
   text2:       "rgba(245,254,253,0.82)",
   text3:       "rgba(245,254,253,0.60)",
-  text4:       "rgba(245,254,253,0.42)",
+  text4:       "rgba(245,254,253,0.58)",
   accent:      "#97FCE4",
   accentDim:   "rgba(151,252,228,0.12)",
   // Overlay opacities (aquamarine on ebony)
@@ -165,9 +165,9 @@ export const T = {
   sp10: 40,
 
   // ─── TYPE SCALE ───────────────────────────────────────────────────────────
-  textXs:   11,   // smallest allowed
-  textSm:   12,   // secondary labels, captions
-  textBase: 13,   // body text, table cells, badges
+  textXs:   12,   // smallest allowed
+  textSm:   13,   // secondary labels, captions
+  textBase: 14,   // body text, table cells, badges
   textMd:   14,   // emphasized data values
   textLg:   15,   // primary text, nav items
   textXl:   18,   // section titles

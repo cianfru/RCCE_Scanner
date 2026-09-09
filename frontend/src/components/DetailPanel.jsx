@@ -1,3 +1,4 @@
+import { formatPercent } from "../utils/marketPresentation.js";
 import { useState, useEffect, useCallback } from "react";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { ZScoreBar, RegimeBadge, SignalDot } from "./badges.jsx";
@@ -424,9 +425,9 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
               padding: "3px 8px", borderRadius: "20px",
               background: T.surface, border: `1px solid ${T.border}`,
               fontSize: 9, fontFamily: T.mono, fontWeight: 500,
-              color: selected.signal_confidence >= 0.8 ? "#34d399" : selected.signal_confidence >= 0.5 ? "#fbbf24" : T.text3,
+              color: selected.signal_confidence >= 80 ? "#34d399" : selected.signal_confidence >= 50 ? "#fbbf24" : T.text3,
             }}>
-              {Math.round(selected.signal_confidence * 100)}%
+              Checks {formatPercent(selected.signal_confidence)}
             </span>
           )}
           {selected.signal_age_seconds != null && selected.signal_age_seconds > 0 && (() => {

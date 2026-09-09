@@ -79,8 +79,8 @@ function ExchangeRow({ ex, maxOi }) {
           marginBottom: 4, gap: 8,
         }}>
           <span style={{
-            fontSize: 9, fontFamily: T.mono, color: T.text4,
-            letterSpacing: "0.08em", textTransform: "uppercase",
+            fontSize: 12, fontFamily: T.mono, color: T.text4,
+            letterSpacing: "0.02em", textTransform: "none",
           }}>
             Open Interest
           </span>
@@ -108,8 +108,8 @@ function ExchangeRow({ ex, maxOi }) {
       {/* Funding */}
       <div style={{ textAlign: "right" }}>
         <div style={{
-          fontSize: 9, fontFamily: T.mono, color: T.text4,
-          letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2,
+          fontSize: 12, fontFamily: T.mono, color: T.text4,
+          letterSpacing: "0.02em", textTransform: "none", marginBottom: 2,
         }}>
           Funding /8h
         </div>
@@ -184,7 +184,7 @@ export default function CrossExchangePanel({ symbol }) {
           }} />
           <span style={{
             fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+            fontFamily: T.font, fontWeight: 700, textTransform: "none",
           }}>
             Cross-Exchange
           </span>
