@@ -1,3 +1,4 @@
+import HelpTip from "./HelpTip.jsx";
 import { T } from "../theme.js";
 
 const MET_COLOR = "#34d399";
@@ -11,40 +12,9 @@ function scoreColor(pct) {
 
 function ConditionPill({ c }) {
   return (
-    <div
-      title={c.desc}
-      style={{
-        display: "flex", alignItems: "center", gap: 6,
-        padding: "6px 10px", borderRadius: 8,
-        background: c.met ? "rgba(52,211,153,0.06)" : "rgba(248,113,113,0.04)",
-        border: `1px solid ${c.met ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.10)"}`,
-        cursor: "help",
-        transition: "background 0.15s",
-        overflow: "hidden",
-        minWidth: 0,
-      }}
-    >
-      <span style={{
-        fontSize: T.textBase, fontWeight: 700, flexShrink: 0,
-        color: c.met ? MET_COLOR : UNMET_COLOR,
-      }}>
-        {c.met ? "\u2713" : "\u2717"}
-      </span>
-      <span style={{
-        fontSize: T.textSm, fontFamily: T.mono, fontWeight: 500,
-        color: c.met ? T.text2 : T.text4,
-        whiteSpace: "nowrap", flexShrink: 0,
-      }}>
-        {c.label}
-      </span>
-      <span style={{
-        fontSize: T.textXs, fontFamily: T.mono, fontWeight: 400,
-        color: T.text4, marginLeft: "auto",
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        minWidth: 0,
-      }}>
-        {c.desc}
-      </span>
+    <div className="condition-item" title={c.desc}>
+      <span aria-label={c.met ? 'Met' : 'Not met'} style={{color:c.met ? MET_COLOR : UNMET_COLOR}}>{c.met ? '✓' : '✗'}</span>
+      <div><strong>{c.label}</strong><p>{c.desc}</p></div>
     </div>
   );
 }
@@ -79,9 +49,9 @@ export default function ConditionsScorecard({ conditions, met, total }) {
           <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
           <span style={{
             fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+            fontFamily: T.font, fontWeight: 700, textTransform: "none",
           }}>
-            Entry Conditions
+            Entry Conditions <HelpTip title="Entry conditions"><p>The individual checks used by the signal engine: regime, market consensus, price deviation, heat, funding and other available inputs. A checkmark means the condition is met in the current snapshot. The percentage is checks passed divided by checks evaluated—not a probability of a profitable trade.</p></HelpTip>
           </span>
         </div>
         <span style={{ fontFamily: T.mono, fontSize: T.textLg, fontWeight: 700, color }}>
@@ -107,8 +77,8 @@ export default function ConditionsScorecard({ conditions, met, total }) {
 
       {/* Core conditions */}
       <div style={{
-        fontSize: T.textSm, color: T.text4, letterSpacing: "0.08em",
-        fontFamily: T.font, fontWeight: 600, textTransform: "uppercase",
+        fontSize: T.textSm, color: T.text4, letterSpacing: "0.02em",
+        fontFamily: T.font, fontWeight: 600, textTransform: "none",
         marginBottom: 8, display: "flex", justifyContent: "space-between",
       }}>
         <span>Core Engine</span>
@@ -116,7 +86,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
           {coreMet}/{core.length}
         </span>
       </div>
-      <div style={{
+      <div className="condition-list" style={{
         display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
         gap: 5, marginBottom: cg.length > 0 ? 14 : 0,
       }}>
@@ -127,8 +97,8 @@ export default function ConditionsScorecard({ conditions, met, total }) {
       {cg.length > 0 && (
         <>
           <div style={{
-            fontSize: T.textSm, color: T.text4, letterSpacing: "0.08em",
-            fontFamily: T.font, fontWeight: 600, textTransform: "uppercase",
+            fontSize: T.textSm, color: T.text4, letterSpacing: "0.02em",
+            fontFamily: T.font, fontWeight: 600, textTransform: "none",
             marginBottom: 8, display: "flex", justifyContent: "space-between",
           }}>
             <span>Market Context</span>
@@ -136,7 +106,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
               {cgMet}/{cg.length}
             </span>
           </div>
-          <div style={{
+          <div className="condition-list" style={{
             display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
             gap: 5,
           }}>

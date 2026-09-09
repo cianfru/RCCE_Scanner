@@ -1,3 +1,5 @@
+import HelpTip from "../components/HelpTip.jsx";
+import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -126,9 +128,9 @@ function SignalAgeChip({ ageSeconds }) {
         display: "inline-flex", alignItems: "center", gap: 4,
       }}
     >
-      <span style={{ fontSize: 9, color: T.text4, textTransform: "uppercase" }}>fired</span>
+      <span style={{ fontSize: 12, color: T.text3, textTransform: "uppercase" }}>fired</span>
       {label}
-      {s >= 24 * 3600 && <span style={{ fontSize: 9, color: T.text4, textTransform: "uppercase" }}>ago</span>}
+      {s >= 24 * 3600 && <span style={{ fontSize: 12, color: T.text3, textTransform: "uppercase" }}>ago</span>}
     </span>
   );
 }
@@ -216,7 +218,7 @@ function ConfluenceSection({ confluence }) {
         <span style={{
           fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
           fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
-        }}>Confluence</span>
+        }}>Timeframe agreement <HelpTip title="Confluence"><p>A 0–100 score describing how the four-hour and daily signals, regimes and supporting factors align. Higher agreement means more shared evidence across timeframes. It is not a win rate or a probability of profit.</p></HelpTip></span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -300,7 +302,7 @@ function MetricsPanel({ data }) {
   const spotColor = (v) => v > 0.5 ? "#34d399" : v < 0.3 ? "#f87171" : T.text3;
 
   const metrics = [
-    { label: "Confidence", history: data.confidence_history, current: data.confidence, unit: "%", colorFn: confColor },
+    { label: "Regime confidence", history: data.confidence_history, current: data.confidence, unit: "%", colorFn: confColor },
     { label: "Funding", history: data.funding_history, current: pos.funding_rate != null ? pos.funding_rate * 100 : null, unit: "%", colorFn: fundColor },
     { label: "Open Interest", history: data.oi_history, current: pos.oi_value, unit: "$", colorFn: null },
     { label: "OI Change", history: data.oi_change_history, current: pos.oi_change_pct, unit: "%", colorFn: oiChgColor },
@@ -349,7 +351,7 @@ function MetricsPanel({ data }) {
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: accent, flexShrink: 0 }} />
         <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
-          Metrics & Engine
+          History & engine values
         </span>
         {metrics.length > 0 && (
           <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
@@ -360,7 +362,7 @@ function MetricsPanel({ data }) {
 
       {/* Sparklines */}
       {metrics.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="metric-history-grid">
           {metrics.map(m => <MetricSparkline key={m.label} {...m} />)}
         </div>
       )}
@@ -384,7 +386,7 @@ function MetricsPanel({ data }) {
                 minWidth: 0,
               }}>
                 <span style={{
-                  fontSize: 9, color: T.text4, fontFamily: T.mono,
+                  fontSize: 12, color: T.text3, fontFamily: T.mono,
                   fontWeight: 600, letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   whiteSpace: "nowrap",
@@ -434,7 +436,7 @@ function SmartMoneyPanel({ data }) {
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: "#a78bfa", flexShrink: 0 }} />
         <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
-          Whale Consensus
+          Whale positioning
         </span>
         <span className="terminal-status" style={{
           fontSize: T.textSm, fontWeight: 700, color: trendColor, fontFamily: T.mono,
@@ -445,22 +447,24 @@ function SmartMoneyPanel({ data }) {
         </span>
       </div>
 
+      <p className="analysis-explanation">The direction weights position value more heavily than wallet count. A smaller number of larger short positions can outweigh a majority of long wallets.</p>
+      <details className="analysis-method"><summary>How this is calculated</summary><p>The engine blends dollar imbalance (70%) and wallet-count imbalance (30%). Dollar weight rises to 85% when the notional imbalance exceeds 50%. A blended score above +0.15 is bullish, below −0.15 bearish. Conviction also accounts for wallet participation; it is not a probability of profit.</p></details>
       {/* L/S bar */}
       <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
         <div style={{ width: `${longPct}%`, background: "#34d399", transition: "width 0.3s" }} />
         <div style={{ flex: 1, background: "#f87171" }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: T.textSm, fontFamily: T.mono, marginBottom: 10 }}>
-        <span style={{ color: "#34d399" }}>{longPct}% LONG</span>
-        <span style={{ color: "#f87171" }}>{100 - longPct}% SHORT</span>
+        <span style={{ color: "#34d399" }}>{longPct}% of wallets long</span>
+        <span style={{ color: "#f87171" }}>{100 - longPct}% short</span>
       </div>
 
       {/* Stats */}
       {[
         ["Wallets Long", sm.long_count, "#34d399"],
         ["Wallets Short", sm.short_count, "#f87171"],
-        ["Confidence", `${Math.round(sm.confidence * 100)}%`, trendColor],
-        ["Net Ratio", sm.net_ratio > 0 ? `+${sm.net_ratio.toFixed(2)}` : sm.net_ratio.toFixed(2), sm.net_ratio > 0 ? "#34d399" : "#f87171"],
+        ["Directional conviction", formatPercent(sm.confidence, { ratio: true }), trendColor],
+        ["Wallet-count balance", sm.net_ratio > 0 ? `+${sm.net_ratio.toFixed(2)}` : sm.net_ratio.toFixed(2), sm.net_ratio > 0 ? "#34d399" : "#f87171"],
       ].map(([label, val, color]) => (
         <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
           <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.font }}>{label}</span>
@@ -556,7 +560,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
             color: data.signal_confidence >= 80 ? "#34d399" : data.signal_confidence >= 50 ? "#fbbf24" : T.text3,
           }}>
-            {data.signal_confidence}%
+            Checks {formatPercent(data.signal_confidence)}
           </span>
         )}
         <SignalAgeChip ageSeconds={data.signal_age_seconds} />
@@ -581,6 +585,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <BMSBChart
           symbol={data.symbol}
           timeframe={timeframe}
+          onTimeframeChange={setTimeframe}
           height={isMobile ? 380 : 520}
           signal={data.signal}
           regime={data.regime}
@@ -630,84 +635,39 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </div>
 
-      {/* Signal Reason + Warnings — full width banner */}
-      {(data.signal_reason || (data.signal_warnings && data.signal_warnings.length > 0)) && (
-        <div style={{
-          display: "flex", gap: 16, marginBottom: 20,
-          flexDirection: isMobile ? "column" : "row",
-        }}>
-          {data.signal_reason && (
-            <div style={{
-              flex: 1, padding: "14px 18px", borderRadius: 12,
-              background: T.glassBg, border: `1px solid ${T.border}`,
-              backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 3, height: 14, borderRadius: 2, background: T.text3, flexShrink: 0 }} />
-                <span style={{ fontSize: T.textSm, color: T.text4, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>Signal Reason</span>
-              </div>
-              <div style={{ fontSize: T.textBase, color: T.text2, fontFamily: T.mono, lineHeight: 1.7, paddingLeft: 11 }}>
-                {data.signal_reason}
-              </div>
-            </div>
-          )}
-          {data.signal_warnings && data.signal_warnings.length > 0 && (
-            <div style={{
-              flex: 1, padding: "14px 18px", borderRadius: 12,
-              background: "rgba(251,191,36,0.03)", border: "1px solid rgba(251,191,36,0.12)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 3, height: 14, borderRadius: 2, background: "#fbbf24", flexShrink: 0 }} />
-                <span style={{ fontSize: T.textSm, color: "#fbbf24", letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>Warnings</span>
-              </div>
-              {data.signal_warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: T.textBase, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.7, display: "flex", gap: 6, alignItems: "flex-start" }}>
-                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
-                  <span>{w}</span>
-                </div>
-              ))}
-            </div>
-          )}
+      <section className="analysis-evidence">
+        <article className="analysis-card">
+          <h2>Why this signal?</h2>
+          <p className="analysis-lead">{evidenceSummary(data)}</p>
+          <div className="analysis-definitions">
+            <div><span>Entry checks</span><strong>{formatPercent(data.signal_confidence)}</strong><p>Share of entry conditions met, not a win probability.</p></div>
+            <div><span>Regime confidence</span><strong>{formatPercent(data.confidence, {digits:1})}</strong><p>The cycle engine’s confidence in its phase classification.</p></div>
+            <div><span>Timeframe agreement</span><strong>{data.confluence?.score != null ? `${Math.round(data.confluence.score)} / 100` : '—'}</strong><p>Confluence between the 4H and daily views.</p></div>
+          </div>
+          {data.signal_reason && <details className="analysis-method"><summary>Inspect the engine calculation</summary><p className="analysis-raw">{data.signal_reason}</p></details>}
+        </article>
+        <article className="analysis-card analysis-caution">
+          <h2>What disagrees?</h2>
+          {data.confluence && <p className="analysis-lead">{data.confluence.signal_aligned ? 'The 4H and daily signals agree.' : 'The 4H and daily signals differ. Check both before interpreting the setup.'}</p>}
+          {data.signal_warnings?.length > 0 ? <ul>{data.signal_warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul> : <p>No additional warnings were returned in this snapshot. This does not mean the setup is risk-free.</p>}
+          {data.smart_money && <p>The whale direction weights position sizes; the long/short bar below counts wallets. These can point in different directions.</p>}
+        </article>
+      </section>
+
+      <section className="analysis-section"><h2>Check the setup</h2><p className="analysis-section-caption">The conditions behind the signal and its agreement across timeframes.</p>
+        <div className="analysis-grid">
+          <ConditionsScorecard conditions={data.conditions_detail} met={data.conditions_met} total={data.conditions_total}/>
+          <ConfluenceCard confluence={data.confluence}/>
         </div>
-      )}
-
-      {/* Data panels — responsive grid */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : isWide ? "1fr 1fr 1fr" : "1fr 1fr",
-        gap: 16,
-      }}>
-        {/* Conditions */}
-        <ConditionsScorecard
-          conditions={data.conditions_detail}
-          met={data.conditions_met}
-          total={data.conditions_total}
-        />
-
-        {/* Confluence */}
-        <ConfluenceCard confluence={data.confluence} />
-
-        {/* Positioning */}
-        <PositioningPanel
-          positioning={data.positioning}
-          cvdTrend={data.cvd_trend}
-          cvdDiv={data.cvd_divergence}
-          bsr={data.buy_sell_ratio}
-          vpin={data.vpin}
-          vpinLabel={data.vpin_label}
-          vpinHistory={data.vpin_history}
-          oiContext={data.oi_context}
-        />
-
-        {/* Cross-Exchange Funding / OI */}
-        <CrossExchangePanel symbol={data.symbol} />
-
-        {/* Whale Consensus */}
-        <SmartMoneyPanel data={data} />
-
-        {/* Metrics & Engine — merged sparklines + scalar grid */}
-        <MetricsPanel data={data} />
-      </div>
+      </section>
+      <section className="analysis-section"><h2>Positioning & counter-evidence</h2><p className="analysis-section-caption">Compare market structure, exchange data and tracked wallets.</p>
+        <div className="analysis-grid analysis-grid-three">
+          <PositioningPanel positioning={data.positioning} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} vpinLabel={data.vpin_label} vpinHistory={data.vpin_history} oiContext={data.oi_context}/>
+          <CrossExchangePanel symbol={data.symbol}/>
+          <SmartMoneyPanel data={data}/>
+        </div>
+      </section>
+      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
       <CoinChat symbol={data.symbol} isMobile={isMobile} />

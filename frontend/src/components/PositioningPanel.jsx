@@ -1,3 +1,4 @@
+import HelpTip from "./HelpTip.jsx";
 /**
  * PositioningPanel — Signal-forward market structure display.
  *
@@ -94,7 +95,7 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
         border: `1px solid ${T.border}`,
         display: "flex", flexDirection: "column", gap: 2, minWidth: 0,
       }}>
-        <span style={{ fontSize: 9, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>{"\u2014"}</span>
+        <span style={{ fontSize: 12, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "none", letterSpacing: "0.02em" }}>{"\u2014"}</span>
       </div>
     );
   }
@@ -127,7 +128,7 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
       )}
       {context && (
         <span style={{
-          fontSize: 9, color: contextColor || T.text4, fontFamily: T.mono,
+          fontSize: 12, color: contextColor || T.text4, fontFamily: T.mono,
           fontWeight: 600, letterSpacing: "0.04em", opacity: 0.9,
         }}>
           {context}
@@ -261,7 +262,7 @@ function Stat({ label, value, color }) {
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{
           fontSize: T.textXs, color: T.text4, fontFamily: T.font,
-          fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em",
+          fontWeight: 600, textTransform: "none", letterSpacing: "0.02em",
           whiteSpace: "nowrap",
         }}>{label}</span>
         {infoText && <InfoTip text={infoText} />}
@@ -381,7 +382,7 @@ function VpinGauge({ vpin, vpinLabel, vpinHistory }) {
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{
             fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-            fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+            fontWeight: 700, textTransform: "none", letterSpacing: "0.02em",
           }}>
             VPIN
           </span>
@@ -425,8 +426,8 @@ function VpinGauge({ vpin, vpinLabel, vpinHistory }) {
           gap: 10,
         }}>
           <span style={{
-            fontSize: 9, color: T.text4, fontFamily: T.mono,
-            fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
+            fontSize: 12, color: T.text4, fontFamily: T.mono,
+            fontWeight: 600, letterSpacing: "0.06em", textTransform: "none",
           }}>
             {vpinHistory.length} ticks
           </span>
@@ -500,9 +501,9 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, v
           }} />
           <span style={{
             fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
+            fontFamily: T.font, fontWeight: 700, textTransform: "none",
           }}>
-            Market Structure
+            Market Structure <HelpTip title="Market structure"><p>Positioning and trading-flow context from available exchange data. Funding describes the cost of holding perpetual positions; open interest measures outstanding exposure; taker flow describes aggressive buying or selling. Read these together with price: none alone confirms direction.</p></HelpTip>
           </span>
         </div>
         {source && (

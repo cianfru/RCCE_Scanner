@@ -33,7 +33,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const tierColor = scanTier === "hot" ? "#facc15" : scanTier === "active" ? "#97FCE4" : scanTier === "cold" ? "#64748b" : "#3b1c32";
       const tierLabel = scanTier === "hot" ? "Hot — scanned every rotation (favorited)" : scanTier === "active" ? "Active — scanned every rotation (above BMSB)" : scanTier === "cold" ? "Cold — scanned every ~7 min (below BMSB)" : "Deep cold — scanned every ~20 min (>10% below BMSB)";
       return (
-        <td style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
+        <td className="scanner-symbol" style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
           <span
             onClick={e => { e.stopPropagation(); onToggleFavorite?.(row.symbol); }}
             style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 20 : 22, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
@@ -214,7 +214,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
                 {visibleColumns.map(([key, colLabel]) => (
-                  <th
+                  <th className={colLabel === "SYMBOL" ? "scanner-symbol" : undefined}
                     key={colLabel}
                     onClick={() => key && onSort(key)}
                     style={{
