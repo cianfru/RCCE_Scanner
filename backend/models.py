@@ -70,6 +70,9 @@ class ScanResult(BaseModel):
     timeframe: str
     price: float
     regime: str
+    regime_transition: Optional[dict] = None
+    history_bars: int = 0
+    normalization_ready: bool = False
     confidence: float                    # RCCE regime probability (legacy, kept for compat)
     regime_probability: float = 0.0     # same value, clearer name
     signal: str

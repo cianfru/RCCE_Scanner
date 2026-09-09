@@ -1,0 +1,642 @@
+{
+  "0G/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/0G.svg",
+    "src": "/token-logos/fcdb493433ded3c1.svg"
+  },
+  "2Z/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/2Z.svg",
+    "src": "/token-logos/41e67d90ffbc848e.svg"
+  },
+  "AAVE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AAVE.svg",
+    "src": "/token-logos/7169cdc23c88cc99.svg"
+  },
+  "ACE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ACE.svg",
+    "src": "/token-logos/4114ff162070e7f0.svg"
+  },
+  "ADA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ADA.svg",
+    "src": "/token-logos/5c85eff43a2f0dc8.svg"
+  },
+  "AIXBT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AIXBT.svg",
+    "src": "/token-logos/895d5a006ab42ad2.svg"
+  },
+  "ALGO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ALGO.svg",
+    "src": "/token-logos/01c4d0b0a84b6cef.svg"
+  },
+  "ALT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ALT.svg",
+    "src": "/token-logos/658d5424c5dc8e03.svg"
+  },
+  "ANIME/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ANIME.svg",
+    "src": "/token-logos/bf0afb9e775e6efa.svg"
+  },
+  "APE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/APE.svg",
+    "src": "/token-logos/13e7797993b79845.svg"
+  },
+  "APEX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/APEX.svg",
+    "src": "/token-logos/9f52e8862e100903.svg"
+  },
+  "APT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/APT.svg",
+    "src": "/token-logos/cd9f4a072f14cda1.svg"
+  },
+  "AR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AR.svg",
+    "src": "/token-logos/4940286b73b2adfe.svg"
+  },
+  "ARB/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ARB.svg",
+    "src": "/token-logos/7c89a7b5192b003e.svg"
+  },
+  "ASTER/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ASTER.svg",
+    "src": "/token-logos/3a9f41152bcfd523.svg"
+  },
+  "ATOM/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ATOM.svg",
+    "src": "/token-logos/062882f3fbe04b67.svg"
+  },
+  "AVAX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AVAX.svg",
+    "src": "/token-logos/efef237c3553475a.svg"
+  },
+  "AVNT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AVNT.svg",
+    "src": "/token-logos/40fb1ef495e47815.svg"
+  },
+  "AXS/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AXS.svg",
+    "src": "/token-logos/162de493eb388a7c.svg"
+  },
+  "AZTEC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/AZTEC.svg",
+    "src": "/token-logos/b48335977328608a.svg"
+  },
+  "BABY/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BABY.svg",
+    "src": "/token-logos/7ef717950fde0d08.svg"
+  },
+  "BANANA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BANANA.svg",
+    "src": "/token-logos/e9f20d802cb782af.svg"
+  },
+  "BCH/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BCH.svg",
+    "src": "/token-logos/53d4114cd5aa3cbf.svg"
+  },
+  "BERA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BERA.svg",
+    "src": "/token-logos/b3a4925369b56411.svg"
+  },
+  "BIGTIME/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BIGTIME.svg",
+    "src": "/token-logos/da698c1f88dfdfe0.svg"
+  },
+  "BIO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BIO.svg",
+    "src": "/token-logos/22af21b52b46b562.svg"
+  },
+  "BLUR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BLUR.svg",
+    "src": "/token-logos/c8a85a61b29f2b31.svg"
+  },
+  "BNB/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BNB.svg",
+    "src": "/token-logos/d510543ae4d6997a.svg"
+  },
+  "BOME/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BOME.svg",
+    "src": "/token-logos/4194f067dff26401.svg"
+  },
+  "BSV/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BSV.svg",
+    "src": "/token-logos/907602c1fd8c3a1c.svg"
+  },
+  "BTC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BTC.svg",
+    "src": "/token-logos/45ea9984b7923557.svg"
+  },
+  "CAKE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CAKE.svg",
+    "src": "/token-logos/af3e043e47ac5b39.svg"
+  },
+  "CC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CC.svg",
+    "src": "/token-logos/470d11873452450f.svg"
+  },
+  "CELO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CELO.svg",
+    "src": "/token-logos/1640e817ef988525.svg"
+  },
+  "CFX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CFX.svg",
+    "src": "/token-logos/0196e1bbe11b6110.svg"
+  },
+  "CHIP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CHIP.svg",
+    "src": "/token-logos/3a237f84895c4793.svg"
+  },
+  "COMP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/COMP.svg",
+    "src": "/token-logos/11b0350198f31662.svg"
+  },
+  "CRV/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/CRV.svg",
+    "src": "/token-logos/ea1b726b0dcc8b09.svg"
+  },
+  "DASH/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/DASH.svg",
+    "src": "/token-logos/5bbc5fb7faa0a2d0.svg"
+  },
+  "DOGE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/DOGE.svg",
+    "src": "/token-logos/639011850654f8f0.svg"
+  },
+  "DOT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/DOT.svg",
+    "src": "/token-logos/eeb8fe43686e638f.svg"
+  },
+  "DYDX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/DYDX.svg",
+    "src": "/token-logos/6077aac9fc506ea8.svg"
+  },
+  "DYM/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/DYM.svg",
+    "src": "/token-logos/1103c7a03e67c3ef.svg"
+  },
+  "EIGEN/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/EIGEN.svg",
+    "src": "/token-logos/c06b67e09cb1ddad.svg"
+  },
+  "ENA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ENA.svg",
+    "src": "/token-logos/58ca7c8426a69aa3.svg"
+  },
+  "ENS/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ENS.svg",
+    "src": "/token-logos/b463e95c5125a605.svg"
+  },
+  "ETC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ETC.svg",
+    "src": "/token-logos/986fd7165caee03e.svg"
+  },
+  "ETH/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ETH.svg",
+    "src": "/token-logos/1186309d94304915.svg"
+  },
+  "ETHFI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ETHFI.svg",
+    "src": "/token-logos/e972b65856f8f7e4.svg"
+  },
+  "FARTCOIN/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/FARTCOIN.svg",
+    "src": "/token-logos/1db8c284aaa50a2f.svg"
+  },
+  "FET/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/FET.svg",
+    "src": "/token-logos/ea4c3b8070d65592.svg"
+  },
+  "FIL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/FIL.svg",
+    "src": "/token-logos/869a81e323995ec4.svg"
+  },
+  "FOGO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/FOGO.svg",
+    "src": "/token-logos/3f4deef0a498bf7c.svg"
+  },
+  "GALA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GALA.svg",
+    "src": "/token-logos/b00c4723b2cb24c3.svg"
+  },
+  "GAS/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GAS.svg",
+    "src": "/token-logos/ed69f7d2c8e017ac.svg"
+  },
+  "GMT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GMT.svg",
+    "src": "/token-logos/e26654ad7625ba58.svg"
+  },
+  "GMX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GMX.svg",
+    "src": "/token-logos/0d226a181501ce82.svg"
+  },
+  "GRAM/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GRAM.svg",
+    "src": "/token-logos/f49a6525978d8d39.svg"
+  },
+  "GRASS/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GRASS.svg",
+    "src": "/token-logos/9d3ab8dd58feb2a3.svg"
+  },
+  "GRIFFAIN/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/GRIFFAIN.svg",
+    "src": "/token-logos/1fa7445763454c06.svg"
+  },
+  "HBAR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/HBAR.svg",
+    "src": "/token-logos/9a7aed41ecbcd31f.svg"
+  },
+  "HEMI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/HEMI.svg",
+    "src": "/token-logos/6c5bec219120d802.svg"
+  },
+  "HYPE/USDC": {
+    "source": "https://app.hyperliquid.xyz/coins/HYPE.svg",
+    "src": "/token-logos/4ef1f539cdd3472f.svg"
+  },
+  "HYPE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/HYPE.svg",
+    "src": "/token-logos/4ef1f539cdd3472f.svg"
+  },
+  "HYPER/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/HYPER.svg",
+    "src": "/token-logos/8bf18e53b62782fb.svg"
+  },
+  "ICP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ICP.svg",
+    "src": "/token-logos/cf8e56ad550a64b3.svg"
+  },
+  "IMX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/IMX.svg",
+    "src": "/token-logos/1daab368e69be8dc.svg"
+  },
+  "INIT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/INIT.svg",
+    "src": "/token-logos/5af9a7993890fbbf.svg"
+  },
+  "INJ/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/INJ.svg",
+    "src": "/token-logos/e6c14c55432f73c6.svg"
+  },
+  "IO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/IO.svg",
+    "src": "/token-logos/b98fec0860869712.svg"
+  },
+  "IOTA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/IOTA.svg",
+    "src": "/token-logos/6d7a53de06dd0164.svg"
+  },
+  "JTO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/JTO.svg",
+    "src": "/token-logos/5f976d78f6172905.svg"
+  },
+  "JUP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/JUP.svg",
+    "src": "/token-logos/cef8ca9171929a69.svg"
+  },
+  "KAITO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/KAITO.svg",
+    "src": "/token-logos/4903bdfe5f4770b6.svg"
+  },
+  "KAS/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/KAS.svg",
+    "src": "/token-logos/ce341c520ee63df0.svg"
+  },
+  "LAYER/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LAYER.svg",
+    "src": "/token-logos/65c6da10eb6db3c2.svg"
+  },
+  "LDO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LDO.svg",
+    "src": "/token-logos/cf22dac513d4ffa0.svg"
+  },
+  "LINEA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LINEA.svg",
+    "src": "/token-logos/ef8775279f62e71d.svg"
+  },
+  "LINK/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LINK.svg",
+    "src": "/token-logos/1133d76bf0c0abe6.svg"
+  },
+  "LIT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LIT.svg",
+    "src": "/token-logos/dca420add5c78990.svg"
+  },
+  "LTC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LTC.svg",
+    "src": "/token-logos/2f4a752cc4525c75.svg"
+  },
+  "MANTA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MANTA.svg",
+    "src": "/token-logos/51eded8a89e0d5b0.svg"
+  },
+  "ME/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ME.svg",
+    "src": "/token-logos/60c0dce7016b8a3f.svg"
+  },
+  "MEGA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MEGA.svg",
+    "src": "/token-logos/02419b220e441733.svg"
+  },
+  "MEME/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MEME.svg",
+    "src": "/token-logos/4553de6be1216127.svg"
+  },
+  "MERL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MERL.svg",
+    "src": "/token-logos/ffa74d57da62a3fa.svg"
+  },
+  "MET/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MET.svg",
+    "src": "/token-logos/ddd17da8a79e26be.svg"
+  },
+  "MINA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MINA.svg",
+    "src": "/token-logos/12e1514c19f70e8d.svg"
+  },
+  "MNT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MNT.svg",
+    "src": "/token-logos/160a6f7f6f179c2f.svg"
+  },
+  "MON/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MON.svg",
+    "src": "/token-logos/9e043f128331e9f9.svg"
+  },
+  "MORPHO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/MORPHO.svg",
+    "src": "/token-logos/35c74f92cfb8df09.svg"
+  },
+  "NEAR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/NEAR.svg",
+    "src": "/token-logos/6b7ba2fef66324ee.svg"
+  },
+  "NEO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/NEO.svg",
+    "src": "/token-logos/61ae6e24f2992751.svg"
+  },
+  "NIL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/NIL.svg",
+    "src": "/token-logos/02d94d808fbfb697.svg"
+  },
+  "NOT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/NOT.svg",
+    "src": "/token-logos/81a440ccc59c55bd.svg"
+  },
+  "NXPC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/NXPC.svg",
+    "src": "/token-logos/a793072987778c8d.svg"
+  },
+  "ONDO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ONDO.svg",
+    "src": "/token-logos/ee512442a4257951.svg"
+  },
+  "OP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/OP.svg",
+    "src": "/token-logos/2a6c739c631edf94.svg"
+  },
+  "ORDI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ORDI.svg",
+    "src": "/token-logos/97c2f45ab5616705.svg"
+  },
+  "PAXG/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PAXG.svg",
+    "src": "/token-logos/4053435fdbff0176.svg"
+  },
+  "PENDLE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PENDLE.svg",
+    "src": "/token-logos/04d5ab37e6083f04.svg"
+  },
+  "PENGU/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PENGU.svg",
+    "src": "/token-logos/5a458b535925ef3e.svg"
+  },
+  "POL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/POL.svg",
+    "src": "/token-logos/3835bc459b9043d5.svg"
+  },
+  "POLYX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/POLYX.svg",
+    "src": "/token-logos/1a2bb226662322f0.svg"
+  },
+  "POPCAT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/POPCAT.svg",
+    "src": "/token-logos/a27b6afc07491881.svg"
+  },
+  "PROVE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PROVE.svg",
+    "src": "/token-logos/0ab19b5045649571.svg"
+  },
+  "PUMP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PUMP.svg",
+    "src": "/token-logos/72eb837382c0d078.svg"
+  },
+  "PURR/USDC": {
+    "source": "https://app.hyperliquid.xyz/coins/PURR.svg",
+    "src": "/token-logos/b205a45064ebec42.svg"
+  },
+  "PURR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PURR.svg",
+    "src": "/token-logos/b205a45064ebec42.svg"
+  },
+  "PYTH/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PYTH.svg",
+    "src": "/token-logos/ffed9bb23156fa73.svg"
+  },
+  "RENDER/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/RENDER.svg",
+    "src": "/token-logos/a8cfba9df6b94f0b.svg"
+  },
+  "RESOLV/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/RESOLV.svg",
+    "src": "/token-logos/32554d0199bf9b1d.svg"
+  },
+  "REZ/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/REZ.svg",
+    "src": "/token-logos/c66460b6de1635ad.svg"
+  },
+  "RSR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/RSR.svg",
+    "src": "/token-logos/7ca35755653cd382.svg"
+  },
+  "RUNE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/RUNE.svg",
+    "src": "/token-logos/66f26beb272db287.svg"
+  },
+  "S/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/S.svg",
+    "src": "/token-logos/24ef02b06b59ffbf.svg"
+  },
+  "SAGA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SAGA.svg",
+    "src": "/token-logos/bdfd701af097640d.svg"
+  },
+  "SAND/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SAND.svg",
+    "src": "/token-logos/b8ad141f56dc43f8.svg"
+  },
+  "SEI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SEI.svg",
+    "src": "/token-logos/61760aa3ca457358.svg"
+  },
+  "SKR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SKR.svg",
+    "src": "/token-logos/986d2949202f5c67.svg"
+  },
+  "SKY/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SKY.svg",
+    "src": "/token-logos/947903f6e0c5cadc.svg"
+  },
+  "SNX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SNX.svg",
+    "src": "/token-logos/2ba7293b61b3f813.svg"
+  },
+  "SOL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SOL.svg",
+    "src": "/token-logos/1e33a43cac40be4d.svg"
+  },
+  "SOPH/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SOPH.svg",
+    "src": "/token-logos/eca991175c53b0cd.svg"
+  },
+  "SPX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SPX.svg",
+    "src": "/token-logos/544e93df7ecb641e.svg"
+  },
+  "STABLE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/STABLE.svg",
+    "src": "/token-logos/0531f02d8f9fecbf.svg"
+  },
+  "STBL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/STBL.svg",
+    "src": "/token-logos/9e4198a66c41ab21.svg"
+  },
+  "STRK/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/STRK.svg",
+    "src": "/token-logos/5dd3595969441324.svg"
+  },
+  "STX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/STX.svg",
+    "src": "/token-logos/74e735840f8cbefc.svg"
+  },
+  "SUI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SUI.svg",
+    "src": "/token-logos/4c92293254d97405.svg"
+  },
+  "SUPER/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SUPER.svg",
+    "src": "/token-logos/62e645b902fc7edc.svg"
+  },
+  "SUSHI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SUSHI.svg",
+    "src": "/token-logos/f00e806f3c6b39e0.svg"
+  },
+  "SYRUP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SYRUP.svg",
+    "src": "/token-logos/6a070e239abf7700.svg"
+  },
+  "TAO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TAO.svg",
+    "src": "/token-logos/f2b67eef1ef2247e.svg"
+  },
+  "TIA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TIA.svg",
+    "src": "/token-logos/795389b642657c33.svg"
+  },
+  "TNSR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TNSR.svg",
+    "src": "/token-logos/ce3273c721a2b392.svg"
+  },
+  "TRB/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TRB.svg",
+    "src": "/token-logos/e37f3e6e6421d33d.svg"
+  },
+  "TRUMP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TRUMP.svg",
+    "src": "/token-logos/b7cc915fb76bcc56.svg"
+  },
+  "TRX/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TRX.svg",
+    "src": "/token-logos/2b0f27a6d1053f63.svg"
+  },
+  "TURBO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/TURBO.svg",
+    "src": "/token-logos/5e0224832076c358.svg"
+  },
+  "UMA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/UMA.svg",
+    "src": "/token-logos/d4dc3efcabb2639b.svg"
+  },
+  "UNI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/UNI.svg",
+    "src": "/token-logos/ce9e28fc062a7224.svg"
+  },
+  "VIRTUAL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/VIRTUAL.svg",
+    "src": "/token-logos/0e65ebada9fbb2dd.svg"
+  },
+  "VVV/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/VVV.svg",
+    "src": "/token-logos/39cb3e5b86404f3b.svg"
+  },
+  "W/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/W.svg",
+    "src": "/token-logos/76a12fa228ff8dfb.svg"
+  },
+  "WCT/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/WCT.svg",
+    "src": "/token-logos/e68666a2c2ed8f57.svg"
+  },
+  "WLD/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/WLD.svg",
+    "src": "/token-logos/55c3afd659571ec1.svg"
+  },
+  "WLFI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/WLFI.svg",
+    "src": "/token-logos/5d415ce4cc785636.svg"
+  },
+  "XAI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/XAI.svg",
+    "src": "/token-logos/246f4dfbb1502d47.svg"
+  },
+  "XLM/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/XLM.svg",
+    "src": "/token-logos/8ef1b7dc4a4b80a8.svg"
+  },
+  "XMR/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/XMR.svg",
+    "src": "/token-logos/e5a56142e334a75b.svg"
+  },
+  "XPL/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/XPL.svg",
+    "src": "/token-logos/7b5ec3788b12796c.svg"
+  },
+  "XRP/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/XRP.svg",
+    "src": "/token-logos/7070b94594f959e6.svg"
+  },
+  "YGG/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/YGG.svg",
+    "src": "/token-logos/1a51a558376b99e5.svg"
+  },
+  "ZEC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZEC.svg",
+    "src": "/token-logos/cff0cbd805947314.svg"
+  },
+  "ZEN/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZEN.svg",
+    "src": "/token-logos/09daf321b83ccd28.svg"
+  },
+  "ZETA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZETA.svg",
+    "src": "/token-logos/341f260a979d9216.svg"
+  },
+  "ZK/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZK.svg",
+    "src": "/token-logos/95038fb44d57bb8a.svg"
+  },
+  "ZORA/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZORA.svg",
+    "src": "/token-logos/49fd62c39cd75e7f.svg"
+  },
+  "ZRO/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/ZRO.svg",
+    "src": "/token-logos/98610772c13a2a3d.svg"
+  }
+}

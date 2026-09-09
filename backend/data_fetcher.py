@@ -101,11 +101,11 @@ _CACHE_TTL: Dict[str, int] = {
 SUPPORTED_TIMEFRAMES = list(_CACHE_TTL.keys())
 
 # Minimum candle counts per timeframe for full z-score warm-up.
-# Z-score needs 2 × LEN_LONG (400) bars; we add margin for the
-# inner SMA/stdev to normalise over a representative window.
+# Z-score needs a 300-bar regression followed by 200 bars of normalization;
+# keep extra history for regime persistence beyond that warm-up.
 _DEFAULT_LIMIT: Dict[str, int] = {
-    "4h": 250,     # ~42 days — z-score needs 200 (LEN_LONG), 50 margin
-    "1d": 300,     # ~10 months — full warmup + margin, was 600
+    "4h": 600,     # 300-bar regression + 200-bar normalization + persistence margin
+    "1d": 600,     # same engine warm-up requirements as 4h
     "1w": 200,     # ~3.8 years — enough for weekly regime detection
 }
 
@@ -272,6 +272,7 @@ class OHLCVStore:
 
     def __init__(self) -> None:
         self._store: Dict[str, dict] = {}       # key: "SYMBOL|TF" → OHLCV dict
+        self._history_targets: Dict[str, int] = {}
         self._updated_at: Dict[str, float] = {}  # key → monotonic time
 
     @staticmethod
@@ -287,6 +288,7 @@ class OHLCVStore:
         key = self._key(symbol, timeframe)
         self._store.pop(key, None)
         self._updated_at.pop(key, None)
+        self._history_targets.pop(key, None)
 
     def needs_full_fetch(self, symbol: str, timeframe: str) -> bool:
         """True if no cache or cache is stale (too old for incremental update)."""
@@ -297,20 +299,19 @@ class OHLCVStore:
         max_age = _STALENESS_LIMIT.get(timeframe, 24 * 3600)
         if time.monotonic() - updated > max_age:
             return True
-        # Also check minimum bar count
+        # Backfill once when the configured history target increases.
         cached = self._store[key]
         bar_count = len(cached.get("close", []))
-        min_bars = _MIN_BARS.get(timeframe, 100)
-        return bar_count < min_bars
+        target = _DEFAULT_LIMIT.get(timeframe, 500)
+        return bar_count < target and self._history_targets.get(key, 0) < target
 
     def update(self, symbol: str, timeframe: str, new_data: dict,
-               max_bars: Optional[int] = None) -> dict:
+               max_bars: Optional[int] = None, full_fetch_target: Optional[int] = None) -> dict:
         """Merge new bars into cached array. Returns the full updated array.
 
-        Logic:
-        1. No cache → store as-is (cold start)
-        2. New latest timestamp == cached latest → update last bar in-place
-        3. New latest timestamp > cached latest → append new closed bars
+        Preserve older backfills and newer cached bars; fetched values replace
+        matching timestamps. Record successful full requests so short listings
+        do not trigger another backfill on every scan.
         """
         key = self._key(symbol, timeframe)
         if max_bars is None:
@@ -321,71 +322,22 @@ class OHLCVStore:
             # Empty new data — return existing cache or None
             return self._store.get(key, new_data)
 
-        cached = self._store.get(key)
-
-        if cached is None or len(cached.get("timestamp", [])) == 0:
-            # Cold start — store full array
-            self._store[key] = new_data
-            self._updated_at[key] = time.monotonic()
-            return new_data
-
-        cached_ts = cached["timestamp"]
-        new_latest_ts = float(new_ts[-1])
-        cached_latest_ts = float(cached_ts[-1])
-
         fields = ["timestamp", "open", "high", "low", "close", "volume"]
-
-        if new_latest_ts == cached_latest_ts:
-            # Same candle — update last bar in-place (live candle update)
-            for f in fields:
-                if f in new_data and f in cached:
-                    cached[f][-1] = new_data[f][-1]
-            self._updated_at[key] = time.monotonic()
-            return cached
-
-        if new_latest_ts > cached_latest_ts:
-            # New bar(s) have closed — find which bars to append
-            # Filter new_data to only bars newer than cached latest
-            mask = new_ts > cached_latest_ts
-            if not np.any(mask):
-                # Edge case: timestamps don't overlap as expected
-                # Update last bar and return
-                for f in fields:
-                    if f in new_data and f in cached:
-                        cached[f][-1] = new_data[f][-1]
-                self._updated_at[key] = time.monotonic()
-                return cached
-
-            # First, update the last cached bar with the matching bar from new_data
-            # (in case the previously-live candle has now closed with final values)
-            match_mask = new_ts == cached_latest_ts
-            if np.any(match_mask):
-                idx = np.where(match_mask)[0][0]
-                for f in fields:
-                    if f in new_data and f in cached:
-                        cached[f][-1] = new_data[f][idx]
-
-            # Append truly new bars
-            new_bars_mask = new_ts > cached_latest_ts
-            for f in fields:
-                if f in new_data and f in cached:
-                    new_slice = new_data[f][new_bars_mask]
-                    cached[f] = np.concatenate([cached[f], new_slice])
-
-            # Trim to max_bars (drop oldest)
-            total = len(cached["timestamp"])
-            if total > max_bars:
-                trim = total - max_bars
-                for f in fields:
-                    if f in cached:
-                        cached[f] = cached[f][trim:]
-
-            self._store[key] = cached
-            self._updated_at[key] = time.monotonic()
-            return cached
-
-        # new_latest_ts < cached_latest_ts — stale fetch, ignore
-        return cached
+        cached = self._store.get(key)
+        if cached is None:
+            merged = {f: np.asarray(new_data[f])[-max_bars:].copy() for f in fields}
+        else:
+            # Merge by timestamp, including older backfill and revised closed bars.
+            # Reverse before unique so newly fetched values win on overlap.
+            timestamps = np.concatenate([cached["timestamp"], new_ts])
+            _, reverse_indices = np.unique(timestamps[::-1], return_index=True)
+            indices = (len(timestamps) - 1 - reverse_indices)[-max_bars:]
+            merged = {f: np.concatenate([cached[f], new_data[f]])[indices] for f in fields}
+        self._store[key] = merged
+        self._updated_at[key] = time.monotonic()
+        if full_fetch_target is not None:
+            self._history_targets[key] = max(full_fetch_target, self._history_targets.get(key, 0))
+        return merged
 
     def count(self) -> int:
         """Number of cached symbol/timeframe pairs."""
@@ -419,7 +371,8 @@ class OHLCVStore:
             tmp_path = path.with_suffix(".pkl.tmp")
             with open(tmp_path, "wb") as f:
                 pickle.dump({
-                    "version": 2,
+                    "version": 3,
+                    "history_targets": self._history_targets,
                     "store": self._store,
                     "saved_at": time.time(),
                 }, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -458,6 +411,7 @@ class OHLCVStore:
             version = payload.get("version", 0)
             saved_at = payload.get("saved_at", 0)
             store_data = payload["store"]
+            self._history_targets = payload.get("history_targets", {})
             age_secs = time.time() - saved_at
 
             loaded = 0
@@ -491,7 +445,7 @@ class OHLCVStore:
                 # Validate minimum bar count
                 bar_count = len(ohlcv.get("close", []))
                 min_bars = _MIN_BARS.get(tf, 100)
-                if bar_count < min_bars:
+                if bar_count == 0 or (bar_count < min_bars and self._history_targets.get(key, 0) < _DEFAULT_LIMIT.get(tf, 500)):
                     skipped += 1
                     continue
 
@@ -501,7 +455,7 @@ class OHLCVStore:
                 sym = parts[0]
                 if "/" in sym:
                     sym_quote = sym.split("/", 1)[1]
-                    if sym_quote not in ("USDT", "USD"):
+                    if sym_quote in ("BTC", "ETH"):
                         closes = ohlcv.get("close", [])
                         if len(closes) > 0 and float(closes[-1]) >= 1.0:
                             # Real BASE/BTC or BASE/ETH ratios are almost
@@ -846,11 +800,11 @@ async def fetch_ohlcv(
 
     # Determine fetch limit: full history or incremental update
     is_incremental = not _ohlcv_store.needs_full_fetch(symbol, timeframe)
-    fetch_limit = 2 if is_incremental else (limit or _DEFAULT_LIMIT.get(timeframe, 500))
+    fetch_limit = 2 if is_incremental else max(limit or 0, _DEFAULT_LIMIT.get(timeframe, 500))
 
     # Check TTL cache for very recent fetches (avoids redundant calls within same cycle)
     cached = _cache.get(symbol, timeframe)
-    if cached is not None:
+    if cached is not None and is_incremental:
         return cached
 
     # Fetch from source
@@ -872,7 +826,7 @@ async def fetch_ohlcv(
         return _ohlcv_store.get(symbol, timeframe)
 
     # Merge into persistent store
-    merged = _ohlcv_store.update(symbol, timeframe, data)
+    merged = _ohlcv_store.update(symbol, timeframe, data, full_fetch_target=fetch_limit if not is_incremental else None)
 
     # Also put in TTL cache to prevent re-fetching within same scan cycle
     _cache.put(symbol, timeframe, merged)
@@ -993,7 +947,7 @@ async def fetch_batch(
 
         if data is not None:
             # Merge into persistent store
-            merged = _ohlcv_store.update(sym, timeframe, data)
+            merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=limit if limit > 2 else None)
             _cache.put(sym, timeframe, merged)
             results[sym] = merged
             return sym
@@ -1049,7 +1003,7 @@ async def fetch_batch(
                     rt_limit = 2 if not _ohlcv_store.needs_full_fetch(sym, timeframe) else _DEFAULT_LIMIT.get(timeframe, 500)
                     data = await _fetch_hl_candles(s, coin, timeframe, limit=rt_limit)
                     if data is not None:
-                        merged = _ohlcv_store.update(sym, timeframe, data)
+                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=rt_limit if rt_limit > 2 else None)
                         _cache.put(sym, timeframe, merged)
                         results[sym] = merged
                         return sym
@@ -1098,7 +1052,7 @@ async def fetch_batch(
                     ccxt_count = len(data.get("close", []))
                     # Only replace if CCXT has more data
                     if ccxt_count > hl_count:
-                        merged = _ohlcv_store.update(sym, timeframe, data)
+                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=_DEFAULT_LIMIT.get(timeframe, 500))
                         _cache.put(sym, timeframe, merged)
                         results[sym] = merged
                         logger.info("CCXT deepened %s: %d → %d bars", sym, hl_count, ccxt_count)

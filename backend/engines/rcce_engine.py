@@ -532,7 +532,8 @@ def _calc_regime_probabilities(
 
 def _resolve_regime_with_persistence(
     prob_stack: np.ndarray,  # shape (6, N)
-) -> Tuple[np.ndarray, np.ndarray]:
+    with_transition: bool = False,
+) -> tuple:
     """Simulate Pine-style regime persistence with hysteresis.
 
     The dominant regime is the one with the highest probability.
@@ -555,7 +556,8 @@ def _resolve_regime_with_persistence(
     """
     n = prob_stack.shape[1]
     if n == 0:
-        return np.array([], dtype=np.int64), np.array([], dtype=np.float64)
+        empty = (np.array([], dtype=np.int64), np.array([], dtype=np.float64))
+        return (*empty, None) if with_transition else empty
 
     # Regime indices: 0=MARKUP, 1=BLOWOFF, 2=REACC, 3=MARKDOWN, 4=CAP, 5=ACCUM
     BULLISH_FAMILY = {0, 2, 5}  # MARKUP, REACC, ACCUM
@@ -600,7 +602,15 @@ def _resolve_regime_with_persistence(
         regimes[i] = current_regime
         confidences[i] = float(prob_stack[current_regime, i])
 
-    return regimes, confidences
+    transition = None
+    if pending_regime != current_regime and pending_count > 0:
+        transition = {
+            "candidate": ["MARKUP", "BLOWOFF", "REACC", "MARKDOWN", "CAP", "ACCUM"][pending_regime],
+            "observed_bars": pending_count,
+            "required_bars": MIN_REGIME_BARS,
+            "includes_latest_candle": True,
+        }
+    return (regimes, confidences, transition) if with_transition else (regimes, confidences)
 
 
 # ---------------------------------------------------------------------------
@@ -823,8 +833,8 @@ def compute_rcce(
         return _empty_result
     first_valid = int(np.argmax(finite_z))
 
-    regime_indices, confidence_series = _resolve_regime_with_persistence(
-        prob_stack[:, first_valid:],
+    regime_indices, confidence_series, transition = _resolve_regime_with_persistence(
+        prob_stack[:, first_valid:], with_transition=True,
     )
     full_regime = np.full(
         n,
@@ -933,6 +943,8 @@ def compute_rcce(
         "vol_scale": round(vol_scale, 3),
         "atr_ratio": round(atr_ratio, 3),
         "data_bars": n,
+        "regime_transition": transition,
+        "normalization_ready": n >= LEN_REGRESSION + LEN_LONG - 1,
         "warmup_quality": round(warmup_ratio, 2),
         "baseline_type": baseline_type,
         "z_declining": z_declining,

@@ -1,3 +1,5 @@
+import TokenLogo from "../components/TokenLogo.jsx";
+import RegimeTransition from "../components/RegimeTransition.jsx";
 import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
@@ -554,19 +556,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         >
           {"\u2190"} Scanner
         </button>
-        <img
-          src={`https://assets.coincap.io/assets/icons/${coin.toLowerCase()}@2x.png`}
-          alt=""
-          style={{
-            width: isMobile ? 32 : 40, height: isMobile ? 32 : 40,
-            borderRadius: "50%", flexShrink: 0, background: T.overlay04,
-          }}
-          onError={e => { e.target.style.display = "none"; }}
-        />
+        <TokenLogo symbol={data.symbol} size={isMobile ? 32 : 40} />
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
-        <RegimeBadge regime={data.regime} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><RegimeBadge regime={data.regime} /><RegimeTransition data={data} /></div>
         <SignalDot signal={data.signal} />
         {data.signal_confidence != null && (
           <span className="terminal-status" style={{

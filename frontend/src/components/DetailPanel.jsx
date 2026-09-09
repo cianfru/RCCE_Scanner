@@ -1,3 +1,5 @@
+import TokenLogo from "./TokenLogo.jsx";
+import RegimeTransition from "./RegimeTransition.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
 import { useState, useEffect, useCallback } from "react";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
@@ -420,7 +422,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
 
         {/* Regime + Signal badges */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <RegimeBadge regime={selected.regime} />
+          <TokenLogo symbol={selected.symbol} size={32} /><div><RegimeBadge regime={selected.regime} /><RegimeTransition data={selected} /></div>
           <SignalDot signal={selected.signal} />
           {selected.signal_confidence != null && (
             <span className="terminal-status" style={{

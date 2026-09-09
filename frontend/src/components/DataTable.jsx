@@ -1,3 +1,5 @@
+import TokenLogo from "./TokenLogo.jsx";
+import RegimeTransition from "./RegimeTransition.jsx";
 import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
 import { TableSkeleton } from "./Skeleton.jsx";
 import {
@@ -39,7 +41,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
             style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 20 : 22, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
             title={isFav ? "Remove from favorites" : "Add to favorites"}
           >{isFav ? "\u2605" : "\u2606"}</span>
-          <span style={{ verticalAlign: "middle" }}>{getBaseSymbol(row.symbol)}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}><TokenLogo symbol={row.symbol} />{getBaseSymbol(row.symbol)}</span>
           {/* Anomaly dot (pulsing red) — shown alongside tier dot */}
           {hasAnomaly && (
             <span
@@ -86,7 +88,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       );
     }
     case "REGIME":
-      return <td style={{ padding: cellPad }}><RegimeBadge regime={row.regime} isMobile={isMobile} /></td>;
+      return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} /></td>;
     case "SIGNAL":
       return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
     case "SPARK":
