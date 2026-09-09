@@ -114,3 +114,21 @@ so its last price was rejected. No fabricated quote fills these gaps.
 
 Primary quote sources: https://api.kraken.com/0/public/Ticker and
 https://api.bybit.com/v5/market/tickers (spot category, CHILLGUYUSDT).
+
+
+## Included-trade view (requested after the audit)
+
+Exclude the five verified bad closures and all currently unpriceable open
+positions from the displayed performance sample. Apply the same sample to
+realized totals, unrealized totals, combined P&L, win rate, profit factor,
+monthly results, curve and position/trade lists. Keep valid losses. At the
+reviewed snapshot this is 771 closed trades and 94 open positions: −$991.93
+realized, +$1,713.80 unrealized, +$721.88 combined.
+
+A single scope note states the excluded counts. Do not display the excluded
+records or their warnings in the main view. Preserve source records for the
+executor and keep cash reconciliation against the original ledger; its
+accounting note is under expandable details. Do not report account equity or
+starting-capital return for this incomplete sample. Open mark eligibility is
+re-evaluated with each status response, independently of whether P&L is positive
+or negative. An older backend cannot be mislabeled as the included-trade view.

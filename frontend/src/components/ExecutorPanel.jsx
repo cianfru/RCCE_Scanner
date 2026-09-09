@@ -438,9 +438,8 @@ const headerCell = {
 
 export default function ExecutorPanel({ api }) {
   const [status, setStatus] = useState(null);
-  const [trades, setTrades] = useState([]);
+  const [rawTrades, setTrades] = useState([]);
   const [positionQuery, setPositionQuery] = useState("");
-  const [positionScope, setPositionScope] = useState("all");
   const [tradePage, setTradePage] = useState(0);
   const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -571,6 +570,7 @@ export default function ExecutorPanel({ api }) {
   };
 
   const positions = status?.performance?.positions || (status?.positions ? Object.values(status.positions) : []);
+  const trades = status?.performance?.included_closed_trades || rawTrades.filter(t => !t.quality_issue);
   const reversedTrades = [...trades].reverse(); // newest first
 
 
@@ -774,7 +774,7 @@ export default function ExecutorPanel({ api }) {
         </details>
       )}
 
-      <div className="executor-list-tools" style={{marginBottom:16}}><input aria-label="Search open positions" placeholder="Search open positions" value={positionQuery} onChange={e=>setPositionQuery(e.target.value)} /><select aria-label="Position valuation filter" value={positionScope} onChange={e=>setPositionScope(e.target.value)} style={{background:T.surface,color:T.text2,padding:10,border:`1px solid ${T.border}`,borderRadius:6}}><option value="all">All positions</option><option value="review">Needs valuation review</option></select><span style={{fontSize:12,color:T.text3}}>Sorted by unrealized P&L</span></div>
+      <div className="executor-list-tools" style={{marginBottom:16}}><input aria-label="Search open positions" placeholder="Search open positions" value={positionQuery} onChange={e=>setPositionQuery(e.target.value)} /><span style={{fontSize:12,color:T.text3}}>Sorted by unrealized P&L</span></div>
       {/* ─── EXECUTOR POSITIONS (Paper / Tracked) ─── */}
       <div style={S.section}>
         <div style={S.sectionHeader}>
@@ -793,7 +793,7 @@ export default function ExecutorPanel({ api }) {
             {status?.enabled ? "No open positions \u2014 waiting for entry signals" : "Executor paused \u2014 no positions being managed"}
           </div>
         ) : (
-          positions.filter(pos => pos.symbol.toLowerCase().includes(positionQuery.toLowerCase()) && (positionScope === "all" || pos.valuation_issue)).sort((a,b)=>(b.unrealized_pnl_usd ?? -Infinity)-(a.unrealized_pnl_usd ?? -Infinity)).map(pos => (
+          positions.filter(pos => pos.symbol.toLowerCase().includes(positionQuery.toLowerCase())).sort((a,b)=>(b.unrealized_pnl_usd ?? -Infinity)-(a.unrealized_pnl_usd ?? -Infinity)).map(pos => (
             <PositionCard key={pos.symbol} pos={pos} />
           ))
         )}

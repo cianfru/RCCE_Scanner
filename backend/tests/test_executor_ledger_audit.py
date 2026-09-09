@@ -14,14 +14,23 @@ class LedgerAuditTests(unittest.TestCase):
             self.assertIsNone(closure_issue({**row,'exit_price':entry*.0001}))
         self.assertIsNone(closure_issue({'entry_time':None}))
 
-    def test_flagged_record_is_preserved_and_total_withheld(self):
+    def test_flagged_record_is_preserved_but_excluded_from_all_performance(self):
         symbol,entered,exited,entry,exit_price=AUDITED_UNIT_MISMATCHES[0]
         row=dict(symbol=symbol,entry_time=entered,exit_time=exited,entry_price=entry,exit_price=exit_price,pnl_usd=-120)
         result=performance([], [row,{**row,'symbol':'BTC/USDT','pnl_usd':-30}],{},1000,1800000000)
-        self.assertEqual(result['realized_pnl_usd'],-150)
+        self.assertEqual(result['realized_pnl_usd'],-30)
+        self.assertEqual(result['recorded_realized_pnl_usd'],-150)
         self.assertEqual(result['flagged_closed_trades'],1)
         self.assertEqual(result['unflagged_realized_pnl_usd'],-30)
-        self.assertIsNone(result['combined_pnl_usd'])
+        self.assertEqual(result['combined_pnl_usd'],-30)
+        self.assertEqual(result['closed_trades'],1)
+        self.assertEqual(result['losses'],1)
+        self.assertEqual(result['excluded_closed_trades'],1)
+        self.assertEqual(result['realized_curve'][-1]['pnl_usd'],-30)
+        self.assertEqual(sum(x['pnl_usd'] for x in result['monthly_realized']),-30)
+        self.assertEqual([t['symbol'] for t in result['included_closed_trades']],['BTC/USDT'])
+        self.assertIsNone(result['estimated_equity_usd'])
+        self.assertIsNone(result['return_on_starting_capital_pct'])
         self.assertEqual(row['pnl_usd'],-120)
 
     def test_unit_conversion_is_limited_to_verified_entries(self):

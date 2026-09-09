@@ -24,7 +24,9 @@ class PerformanceTests(unittest.TestCase):
         p=performance([pos(side='SHORT'),pos('OLD/USDT')],[],{'BTC/USDT':{'price':8,'observed_at':NOW}},1000,NOW)
         self.assertAlmostEqual(p['unrealized_pnl_usd'],20)
         self.assertEqual(p['priced_positions'],1)
-        self.assertIsNone(p['combined_pnl_usd'])
+        self.assertAlmostEqual(p['combined_pnl_usd'],20)
+        self.assertEqual(p['excluded_open_positions'],1)
+        self.assertEqual(len(p['positions']),1)
         self.assertIsNone(p['estimated_equity_usd'])
 
     def test_stale_and_legacy_unit_errors_are_not_astronomical_winners(self):
@@ -32,7 +34,8 @@ class PerformanceTests(unittest.TestCase):
         p=performance([bad,pos('XMR/BTC'),pos()],[],{s:{'price':10000,'observed_at':NOW-30000} for s in ['MKR/USDT','XMR/BTC','BTC/USDT']},1000,NOW)
         self.assertEqual(p['priced_positions'],0)
         self.assertEqual(p['unrealized_pnl_usd'],0)
-        self.assertTrue(all(x['valuation_issue'] for x in p['positions']))
+        self.assertEqual(p['positions'],[])
+        self.assertEqual(p['excluded_open_positions'],3)
 
     def test_empty_and_invalid_records(self):
         p=performance([],[],{},1000,NOW)
