@@ -1,4 +1,3 @@
-import ExecutorShadow from './ExecutorShadow.jsx';
 import ExecutorPerformance from "./ExecutorPerformance.jsx";
 import { useState, useEffect, useCallback } from "react";
 import { T, SIGNAL_META } from "../theme.js";
@@ -579,7 +578,6 @@ export default function ExecutorPanel({ api }) {
     <div style={S.panel}>
       {fetchError && <p role="status" style={{color:T.text3,fontSize:12,lineHeight:1.6}}>{fetchError}</p>}
       <ExecutorPerformance performance={status?.performance} mode={status?.mode} />
-      <ExecutorShadow study={status?.shadow_study} />
 
       {/* ─── CONTROLS ─── */}
       <details className="executor-controls" style={S.section}><summary>Engine controls and configuration</summary>

@@ -185,4 +185,3 @@
 .executor-return-grid {grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--t-border);}
 @media(max-width:480px){.executor-return-grid{grid-template-columns:1fr}}
 
-.executor-shadow{margin-top:24px}.executor-shadow-table{width:100%;border-collapse:collapse;font-size:12px}.executor-shadow-table th,.executor-shadow-table td{padding:16px 12px;text-align:right;border-bottom:1px solid var(--t-border);font-variant-numeric:tabular-nums}.executor-shadow-table th:first-child,.executor-shadow-table td:first-child{text-align:left;min-width:200px}.executor-shadow-table th{color:var(--t-text3);font-weight:400}

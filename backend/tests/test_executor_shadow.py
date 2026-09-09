@@ -78,18 +78,3 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(volatility(data,NOW),4)
         data['timestamp'][5]+=1000
         self.assertIsNone(volatility(data,NOW))
-
-class HookTests(unittest.IsolatedAsyncioTestCase):
-    async def test_shadow_failure_does_not_prevent_active_processing(self):
-        from unittest.mock import patch,AsyncMock,Mock
-        from executor import Executor
-        from data_fetcher import _ohlcv_store
-        with tempfile.TemporaryDirectory() as directory, patch('executor._STATE_FILE',Path(directory)/'executor.json'):
-            executor=Executor();executor.initialized=True;executor.enabled=True
-            executor.pair_map={'BTC/USDT':'BTC'};executor.whitelist=['BTC/USDT']
-            executor._process_signal=AsyncMock(return_value=None);executor._save_state=Mock()
-            executor.shadow.process=Mock(side_effect=RuntimeError('research error'))
-            with patch.object(_ohlcv_store,'get',return_value=None),patch.object(_ohlcv_store,'observed_at',return_value=NOW),patch('executor.logger'):
-                await executor.process_scan_results([{'symbol':'BTC/USDT','signal':'STRONG_LONG','price':100}])
-            executor._process_signal.assert_awaited_once()
-            self.assertIn('research error',executor.shadow.error)

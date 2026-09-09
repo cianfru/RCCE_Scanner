@@ -1,3 +1,5 @@
+> Superseded: the user requested historical reconstruction instead. The executor hook and frontend panel were removed; no forward experiment starts on deployment. The isolated simulation library is retained for research/testing.
+
 # Forward shadow study: re-entry discipline and stop placement
 
 Implements the approved next experiment, separately from historical executor

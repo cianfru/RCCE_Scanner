@@ -194,8 +194,6 @@ class Executor:
 
         # Whitelist: only trade these symbols (default: backtested set)
         self.whitelist: List[str] = DEFAULT_WHITELIST.copy()
-        from executor_shadow import ShadowStudy
-        self.shadow = ShadowStudy(_STATE_FILE.parent / "executor_shadow_v1.json", initial_balance, _ENTRY_SIZING)
 
     # ------------------------------------------------------------------
     # Initialization
@@ -272,24 +270,6 @@ class Executor:
         """
         if not self.initialized or not self.enabled:
             return {"status": "disabled"}
-
-        # Independent virtual portfolios only; no order engine and no network calls.
-        try:
-            from executor_shadow import volatility
-            from data_fetcher import _ohlcv_store
-            shadow_now = time.time()
-            shadow_data = {}
-            for row in results:
-                symbol = row.get("symbol", "")
-                shadow_data[symbol] = {"observed_at": _ohlcv_store.observed_at(symbol, "4h"),
-                                       "atr": volatility(_ohlcv_store.get(symbol, "4h"), shadow_now)}
-            if _HARD_STOP_PCT != -8.0 or _BE_ARM_PCT != 5.0:
-                self.shadow.error = "Shadow study paused: active stop configuration no longer matches the versioned baseline."
-            self.shadow.process(results, set(self.whitelist) & set(self.pair_map),
-                                shadow_data, shadow_now, allocation_count=len(self.whitelist))
-        except Exception as exc:
-            self.shadow.error = f"Shadow study paused after processing error: {exc}"
-            logger.exception("Shadow research failed; active executor continues unchanged")
 
         actions_taken = []
         self.last_scan_signals = {}
@@ -624,7 +604,6 @@ class Executor:
             "whitelist_count": len(self.whitelist),
             "paper_balance": self.initial_balance,
             "portfolio": portfolio,
-            "shadow_study": self.shadow.status(time.time()),
             "state_file": str(_STATE_FILE),
             "state_persistent": _STATE_FILE.exists(),
         }
