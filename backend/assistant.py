@@ -227,17 +227,6 @@ class AssistantManager:
             self.sessions.move_to_end(session_id)
         return session
 
-    # -- Context builder ---------------------------------------------------
-
-
-
-
-
-
-    @staticmethod
-
-    # -- Analytics context -------------------------------------------------
-
 
     # -- Symbol detection --------------------------------------------------
 

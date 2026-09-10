@@ -8,18 +8,18 @@ class ScheduleTests(unittest.TestCase):
         symbols = [f'T{i}/USDC' for i in range(482)] + ['BTC/USDT']
         visited = []
         for now in range(len(symbols)):
-            symbol = schedule.next_due(symbols, now, lambda s: 'active', lambda s: 'spot', True)
+            symbol = schedule.next_due(symbols, now, lambda s: 'active', True)
             visited.append(symbol)
             schedule.record(symbol, now, True)
         self.assertEqual(visited[0], 'BTC/USDT')
         self.assertEqual(set(visited), set(symbols))
-        self.assertIsNone(schedule.next_due(symbols, 500, lambda s: 'active', lambda s: 'spot', True))
+        self.assertIsNone(schedule.next_due(symbols, 500, lambda s: 'active', True))
 
     def test_wall_clock_and_activity_changes(self):
         schedule = ScanSchedule()
         schedule.record('BTC', 0, True)
         def due(now, active=True):
-            return schedule.next_due(['BTC'], now, lambda s: 'hot', lambda s: 'perpetual', active)
+            return schedule.next_due(['BTC'], now, lambda s: 'hot', active)
         self.assertIsNone(due(899))
         self.assertEqual(due(900), 'BTC')
         self.assertIsNone(due(901, False))
@@ -28,7 +28,7 @@ class ScheduleTests(unittest.TestCase):
     def test_unavailable_backoff_and_recovery(self):
         schedule = ScanSchedule()
         schedule.record('NEW', 0, False)
-        due = lambda now: schedule.next_due(['NEW'], now, lambda s: 'hot', lambda s: 'spot', True)
+        due = lambda now: schedule.next_due(['NEW'], now, lambda s: 'hot', True)
         self.assertIsNone(due(3599))
         self.assertEqual(due(3600), 'NEW')
         schedule.record('NEW', 3600, True)
@@ -39,11 +39,13 @@ class ScheduleTests(unittest.TestCase):
         schedule.record('HOT', 4000, True)
         schedule.record('COLD', 0, True)
         self.assertEqual(schedule.next_due(['HOT', 'COLD'], 5000,
-                         lambda s: 'hot' if s == 'HOT' else 'cold', lambda s: 'spot', True), 'COLD')
+                         lambda s: 'hot' if s == 'HOT' else 'cold', True), 'COLD')
         schedule.prune(['HOT'])
         self.assertNotIn('COLD', schedule.attempts)
 
-    def test_spot_and_cold_intervals(self):
-        self.assertEqual(refresh_interval(tier='active', kind='spot', active=True), 3600)
-        self.assertEqual(refresh_interval(tier='active', kind='perpetual', active=True), 3600)
-        self.assertEqual(refresh_interval(tier='deep_cold', kind='spot', active=True), 14400)
+    def test_tier_intervals(self):
+        self.assertEqual(refresh_interval(tier='active', active=True), 3600)
+        self.assertEqual(refresh_interval(tier='hot', active=True), 900)
+        self.assertEqual(refresh_interval(tier='deep_cold', active=True), 14400)
+        # Idle floors any tier to at least hourly.
+        self.assertEqual(refresh_interval(tier='hot', active=False), 3600)
