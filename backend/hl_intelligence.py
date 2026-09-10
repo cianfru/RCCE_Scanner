@@ -2403,6 +2403,7 @@ async def run_hyperlens_loop() -> None:
 
     # Initial delay — let the main scan warm up first
     await asyncio.sleep(15)
+    from activity import is_active, idle_sleep
 
     last_roster_refresh = 0.0
     last_cleanup = time.time()
@@ -2441,8 +2442,10 @@ async def run_hyperlens_loop() -> None:
                 await refresh_leaderboard()
                 last_roster_refresh = time.time()
 
-            # Poll positions
-            if _roster:
+            # Poll positions — skip while idle (no viewer to serve); the poll
+            # hits Hyperliquid once per roster member, so at rest this is the
+            # bulk of HyperLens's cost. Resumes on the next active cycle.
+            if _roster and is_active():
                 await poll_positions()
 
             # DB cleanup every 6 hours
@@ -2456,4 +2459,9 @@ async def run_hyperlens_loop() -> None:
         except Exception as exc:
             logger.warning("HyperLens loop error: %s", exc)
 
-        await asyncio.sleep(_POLL_INTERVAL)
+        # Fast cadence when active; long interruptible nap when idle so the box
+        # isn't waking every 5 min to poll HL round the clock.
+        if is_active():
+            await asyncio.sleep(_POLL_INTERVAL)
+        else:
+            await idle_sleep(_ROSTER_IDLE_POLL_INTERVAL)
