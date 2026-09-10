@@ -107,6 +107,18 @@ class PriceTicker:
         self._prices: Dict[str, float] = {}    # symbol -> latest price
         self._dirty: Dict[str, float] = {}     # prices changed since last broadcast
         self._running = False
+        # Cached HL-coin -> ccxt-symbol map, rebuilt only when the universe
+        # changes (keyed on hyperliquid_universe.UPDATED_AT), not per message.
+        self._coin_map: Dict[str, str] = {}
+        self._coin_map_version = object()
+
+    def _get_coin_map(self) -> Dict[str, str]:
+        """Return the coin->symbol map, rebuilding it only when MARKETS changed."""
+        import hyperliquid_universe as hu
+        if hu.UPDATED_AT != self._coin_map_version:
+            self._coin_map = {m["coin"].upper(): s for s, m in hu.MARKETS.items()}
+            self._coin_map_version = hu.UPDATED_AT
+        return self._coin_map
 
     @classmethod
     def get(cls) -> "PriceTicker":
@@ -231,12 +243,10 @@ class PriceTicker:
                             # allMids response: {"channel": "allMids", "data": {"mids": {"BTC": "67423.5", ...}}}
                             if msg.get("channel") == "allMids":
                                 mids = msg.get("data", {}).get("mids", {})
-                                from hyperliquid_universe import MARKETS
-                                coin_to_ccxt = {m["coin"].upper(): s for s, m in MARKETS.items()}
-                                coin_set = set(coin_to_ccxt)
+                                coin_to_ccxt = self._get_coin_map()
                                 for coin, price_str in mids.items():
-                                    if coin.upper() in coin_set:
-                                        ccxt_sym = coin_to_ccxt[coin.upper()]
+                                    ccxt_sym = coin_to_ccxt.get(coin.upper())
+                                    if ccxt_sym is not None:
                                         try:
                                             price = float(price_str)
                                             self._prices[ccxt_sym] = price
