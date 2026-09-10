@@ -1,3 +1,4 @@
+import ExecutorPerformance from "./ExecutorPerformance.jsx";
 import { useState, useEffect, useCallback } from "react";
 import { T, SIGNAL_META } from "../theme.js";
 
@@ -23,7 +24,7 @@ function fmtPrice(p) {
   if (!p) return "\u2014";
   if (p >= 1000) return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (p >= 1)    return `$${p.toFixed(4)}`;
-  return `$${p.toFixed(6)}`;
+  return `$${p.toLocaleString("en-US", {maximumSignificantDigits:6})}`;
 }
 
 function fmtUsd(v) {
@@ -131,11 +132,11 @@ const S = {
   },
   badge: (bg, color, border) => ({
     display: "inline-block",
-    padding: "3px 10px",
-    borderRadius: 5,
-    background: bg,
+    padding: 0,
+    borderRadius: 0,
+    background: "transparent",
     color: color,
-    border: `1px solid ${border}`,
+    border: "none",
     fontSize: 10,
     fontFamily: T.mono,
     fontWeight: 700,
@@ -159,15 +160,6 @@ function ModeBadge({ mode, enabled }) {
     bg = "rgba(82,82,91,0.1)"; color = T.text4; border = T.border; label = "DISABLED";
   }
   return <span style={S.badge(bg, color, border)}>{label}</span>;
-}
-
-function StatBox({ label, value, color }) {
-  return (
-    <div style={{ textAlign: "center", minWidth: 90 }}>
-      <div style={{ ...S.value, fontSize: 18, color: color || T.text1 }}>{value}</div>
-      <div style={{ ...S.label, fontSize: 9, marginTop: 2 }}>{label}</div>
-    </div>
-  );
 }
 
 function ReasonBlock({ reason, warnings }) {
@@ -214,19 +206,10 @@ function ReasonBlock({ reason, warnings }) {
 // Open Position Card (Paper mode)
 // ---------------------------------------------------------------------------
 
-function PositionCard({ pos, scanResults }) {
+function PositionCard({ pos }) {
   const side = sideBadge(pos.side);
-  // Try to find current price from scan results
-  const current = scanResults.find(r => r.symbol === pos.symbol);
-  const currentPrice = current?.price;
-  let unrealizedPnl = null;
-  if (currentPrice && pos.entry_price > 0) {
-    if (pos.side === "SHORT") {
-      unrealizedPnl = ((pos.entry_price - currentPrice) / pos.entry_price) * 100;
-    } else {
-      unrealizedPnl = ((currentPrice - pos.entry_price) / pos.entry_price) * 100;
-    }
-  }
+  const currentPrice = pos.mark_price;
+  const unrealizedPnl = pos.unrealized_pnl_pct;
 
   return (
     <div style={{
@@ -258,7 +241,7 @@ function PositionCard({ pos, scanResults }) {
             fontWeight: 700,
             color: pnlColor(unrealizedPnl),
           }}>
-            {fmtPnl(unrealizedPnl)}
+            {fmtPnl(unrealizedPnl)} <small style={{fontWeight:400}}>{fmtUsd(pos.unrealized_pnl_usd)}</small>
           </span>
         )}
       </div>
@@ -272,12 +255,12 @@ function PositionCard({ pos, scanResults }) {
         {currentPrice && (
           <div>
             <span style={S.label}>Now </span>
-            <span style={S.value}>{fmtPrice(currentPrice)}</span>
+            <span style={S.value} title={fullDate(pos.mark_observed_at)}>{fmtPrice(currentPrice)}</span>
           </div>
         )}
         <div>
-          <span style={S.label}>Size </span>
-          <span style={S.value}>{(pos.size_pct * 100).toFixed(0)}%</span>
+          <span style={S.label}>Entry capital </span>
+          <span style={S.value}>{fmtUsd(pos.cost_usd)}</span>
         </div>
         <div title={fullDate(pos.entry_time)}>
           <span style={S.label}>Opened </span>
@@ -286,7 +269,9 @@ function PositionCard({ pos, scanResults }) {
       </div>
 
       {/* Row 3: Reason */}
-      <ReasonBlock reason={pos.entry_reason} warnings={pos.entry_warnings} />
+      {currentPrice && pos.mark_source && <p style={{color:T.text3,fontSize:11,lineHeight:1.6,marginTop:10}}>Price source: {pos.mark_source} · {fullDate(pos.mark_observed_at)}</p>}
+      {pos.valuation_issue && <p style={{color: T.text3, fontSize:12, lineHeight:1.6}}>{pos.valuation_issue}</p>}
+      <details style={{marginTop:12,fontSize:12,color:T.text3}}><summary style={{cursor:'pointer'}}>Entry rationale</summary><ReasonBlock reason={pos.entry_reason} warnings={pos.entry_warnings} /></details>
     </div>
   );
 }
@@ -384,9 +369,10 @@ function TradeRow({ trade, expanded, onToggle }) {
         onMouseOver={e => e.currentTarget.style.background = T.overlay04}
         onMouseOut={e => e.currentTarget.style.background = trade.pnl_pct > 0 ? "rgba(52,211,153,0.03)" : trade.pnl_pct < 0 ? "rgba(248,113,113,0.03)" : "transparent"}
       >
-        <td style={cellStyle} title={fullDate(trade.entry_time)}>{timeAgo(trade.entry_time)}</td>
+        <td style={cellStyle} title={fullDate(trade.exit_time)}>{timeAgo(trade.exit_time)}<small style={{display:"block",marginTop:5,color:T.text3}} title={fullDate(trade.entry_time)}>Opened {timeAgo(trade.entry_time)}</small></td>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
           {trade.symbol.replace("/USDT", "")}
+          {trade.quality_issue && <small title={trade.quality_issue} style={{display:'block',fontWeight:400,color:T.text3,marginTop:5}}>Price-unit error</small>}
         </td>
         <td style={cellStyle}>
           <span style={S.badge(side.bg, side.color, side.border)}>{side.label}</span>
@@ -411,6 +397,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       {expanded && (
         <tr>
           <td colSpan={7} style={{ padding: "8px 20px 14px", background: T.overlay02 }}>
+            {trade.quality_issue && <p style={{whiteSpace:'normal',lineHeight:1.6,color:T.text2}}>{trade.quality_issue}</p>}
             <ReasonBlock reason={trade.entry_reason} warnings={trade.entry_warnings} />
             {!trade.entry_reason && (
               <div style={{ fontSize: 11, color: T.text4, fontFamily: T.mono }}>
@@ -451,8 +438,10 @@ const headerCell = {
 
 export default function ExecutorPanel({ api }) {
   const [status, setStatus] = useState(null);
-  const [trades, setTrades] = useState([]);
-  const [scanResults, setScanResults] = useState([]);
+  const [rawTrades, setTrades] = useState([]);
+  const [positionQuery, setPositionQuery] = useState("");
+  const [tradePage, setTradePage] = useState(0);
+  const [fetchError, setFetchError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState(null);
   const [whitelist, setWhitelist] = useState(null);
@@ -467,17 +456,16 @@ export default function ExecutorPanel({ api }) {
       const fetches = [
         fetch(`${api}/api/executor/status`),
         fetch(`${api}/api/executor/trades`),
-        fetch(`${api}/api/scan?timeframe=4h`),
         fetch(`${api}/api/executor/whitelist`).catch(() => null),
       ];
 
-      const [statusResp, tradesResp, scanResp, wlResp] = await Promise.all(fetches);
+      const [statusResp, tradesResp, wlResp] = await Promise.all(fetches);
+      if (!statusResp.ok || !tradesResp.ok) throw new Error("Executor data is unavailable");
       const statusData = await statusResp.json();
       const tradesData = await tradesResp.json();
-      const scanData = await scanResp.json();
+      setFetchError(null);
       setStatus(statusData);
       setTrades(tradesData.trades || []);
-      setScanResults(scanData.results || []);
       if (wlResp?.ok) {
         const wlData = await wlResp.json();
         setWhitelist(wlData);
@@ -503,6 +491,7 @@ export default function ExecutorPanel({ api }) {
         }
       }
     } catch (e) {
+      setFetchError("Could not refresh executor data. Previously loaded figures may be out of date.");
       console.error("Executor fetch error:", e);
     }
   }, [api]);
@@ -580,23 +569,18 @@ export default function ExecutorPanel({ api }) {
     setWlLoading(false);
   };
 
-  const positions = status?.positions ? Object.values(status.positions) : [];
+  const positions = status?.performance?.positions || (status?.positions ? Object.values(status.positions) : []);
+  const trades = status?.performance?.included_closed_trades || rawTrades.filter(t => !t.quality_issue);
   const reversedTrades = [...trades].reverse(); // newest first
 
-  // Compute equity value
-  const equityValue = isLive
-    ? (hlAccount?.account_value || status?.account_value || 0)
-    : (status?.portfolio?.current_value || status?.paper_balance || 0);
-
-  const equityColor = isLive
-    ? T.text1
-    : (status?.portfolio?.current_value > status?.paper_balance ? "#34d399" : status?.portfolio?.current_value < status?.paper_balance ? "#f87171" : T.text1);
 
   return (
     <div style={S.panel}>
+      {fetchError && <p role="status" style={{color:T.text3,fontSize:12,lineHeight:1.6}}>{fetchError}</p>}
+      <ExecutorPerformance performance={status?.performance} mode={status?.mode} />
 
       {/* ─── CONTROLS ─── */}
-      <div style={S.section}>
+      <details className="executor-controls" style={S.section}><summary>Engine controls and configuration</summary>
         <div style={S.sectionHeader}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={S.sectionTitle}>Executor</span>
@@ -658,55 +642,7 @@ export default function ExecutorPanel({ api }) {
           </div>
         </div>
 
-        {/* Stats row */}
-        {status?.initialized && (
-          <div style={{
-            display: "flex",
-            justifyContent: "space-around",
-            padding: "14px 20px",
-            gap: 16,
-            flexWrap: "wrap",
-          }}>
-            <StatBox
-              label={isLive ? "ACCOUNT EQUITY" : "EQUITY"}
-              value={fmtUsd(equityValue)}
-              color={equityColor}
-            />
-            {isLive && hlAccount && (
-              <>
-                <StatBox
-                  label="MARGIN USED"
-                  value={fmtUsd(hlAccount.total_margin_used)}
-                  color={hlAccount.total_margin_used > 0 ? "#fbbf24" : T.text3}
-                />
-                <StatBox
-                  label="HL POSITIONS"
-                  value={hlAccount.positions_count || hlPositions.length || 0}
-                />
-              </>
-            )}
-            <StatBox label="PAIRS" value={`${status.whitelist_count || 0}/${status.available_pairs || 0}`} />
-            <StatBox label="TRADES" value={status.total_trades || 0} />
-            <StatBox
-              label="WIN RATE"
-              value={status.total_trades > 0 ? `${status.win_rate}%` : "\u2014"}
-              color={status.win_rate >= 50 ? "#34d399" : status.win_rate > 0 ? "#fbbf24" : T.text3}
-            />
-            <StatBox
-              label="TOTAL P&L"
-              value={status.total_trades > 0 ? fmtPnl(status.total_pnl_pct) : "\u2014"}
-              color={pnlColor(status.total_pnl_pct)}
-            />
-            <StatBox
-              label="SCANS"
-              value={status.total_executions || 0}
-            />
-            <StatBox
-              label="LAST EXEC"
-              value={timeAgo(status.last_execution_time)}
-            />
-          </div>
-        )}
+
 
         {/* Not initialized message */}
         {!status?.initialized && (
@@ -741,7 +677,7 @@ export default function ExecutorPanel({ api }) {
             Last error: {status.last_error}
           </div>
         )}
-      </div>
+      </details>
 
       {/* ─── HYPERLIQUID LIVE POSITIONS ─── */}
       {isLive && status?.initialized && (
@@ -786,7 +722,7 @@ export default function ExecutorPanel({ api }) {
 
       {/* ─── TRADING WHITELIST ─── */}
       {status?.initialized && whitelist && (
-        <div style={S.section}>
+        <details className="executor-controls" style={S.section}><summary>Trading universe / {whitelist.whitelist_count} enabled pairs</summary>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={S.sectionTitle}>Trading Whitelist</span>
@@ -835,9 +771,10 @@ export default function ExecutorPanel({ api }) {
               );
             })}
           </div>
-        </div>
+        </details>
       )}
 
+      <div className="executor-list-tools" style={{marginBottom:16}}><input aria-label="Search open positions" placeholder="Search open positions" value={positionQuery} onChange={e=>setPositionQuery(e.target.value)} /><span style={{fontSize:12,color:T.text3}}>Sorted by unrealized P&L</span></div>
       {/* ─── EXECUTOR POSITIONS (Paper / Tracked) ─── */}
       <div style={S.section}>
         <div style={S.sectionHeader}>
@@ -856,8 +793,8 @@ export default function ExecutorPanel({ api }) {
             {status?.enabled ? "No open positions \u2014 waiting for entry signals" : "Executor paused \u2014 no positions being managed"}
           </div>
         ) : (
-          positions.map(pos => (
-            <PositionCard key={pos.symbol} pos={pos} scanResults={scanResults} />
+          positions.filter(pos => pos.symbol.toLowerCase().includes(positionQuery.toLowerCase())).sort((a,b)=>(b.unrealized_pnl_usd ?? -Infinity)-(a.unrealized_pnl_usd ?? -Infinity)).map(pos => (
+            <PositionCard key={pos.symbol} pos={pos} />
           ))
         )}
       </div>
@@ -867,14 +804,14 @@ export default function ExecutorPanel({ api }) {
         <div style={S.sectionHeader}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={S.sectionTitle}>
-              Trade Log {trades.length > 0 && `(${trades.length})`}
+              Closed trades {trades.length > 0 && `(${trades.length})`}
             </span>
             {trades.length > 0 && (
               <span style={{ fontSize: 11, fontFamily: T.mono, color: T.text3 }}>
-                {trades.filter(t => t.pnl_pct > 0).length}W / {trades.filter(t => t.pnl_pct <= 0).length}L
-                {" \u2022 "}
+                {trades.filter(t => t.pnl_usd > 0).length}W / {trades.filter(t => t.pnl_usd < 0).length}L
+                 / {trades.filter(t => t.pnl_usd === 0).length} flat
                 <span style={{ color: pnlColor(status?.total_pnl_pct) }}>
-                  {fmtPnl(status?.total_pnl_pct)}
+                  {fmtUsd(status?.performance?.realized_pnl_usd)} realized
                 </span>
               </span>
             )}
@@ -895,7 +832,7 @@ export default function ExecutorPanel({ api }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={headerCell}>Time</th>
+                  <th style={headerCell}>Closed</th>
                   <th style={headerCell}>Symbol</th>
                   <th style={headerCell}>Side</th>
                   <th style={headerCell}>Signal</th>
@@ -905,7 +842,7 @@ export default function ExecutorPanel({ api }) {
                 </tr>
               </thead>
               <tbody>
-                {reversedTrades.map((trade, i) => (
+                {reversedTrades.slice(tradePage * 25, (tradePage + 1) * 25).map((trade, i) => (
                   <TradeRow
                     key={i}
                     trade={trade}
@@ -915,6 +852,7 @@ export default function ExecutorPanel({ api }) {
                 ))}
               </tbody>
             </table>
+            <div style={{padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}><button style={S.btn} disabled={tradePage===0} onClick={()=>{setTradePage(p=>p-1);setExpandedTrade(null)}}>Previous</button><span style={S.label}>Page {tradePage+1} of {Math.ceil(trades.length/25)}</span><button style={S.btn} disabled={(tradePage+1)*25>=trades.length} onClick={()=>{setTradePage(p=>p+1);setExpandedTrade(null)}}>Next</button></div>
           </div>
         )}
       </div>

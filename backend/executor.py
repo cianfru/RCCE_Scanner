@@ -134,6 +134,7 @@ class ExecutorTrade:
     volume: float = 0.0
     pnl_pct: float = 0.0
     pnl_usd: float = 0.0
+    cost_usd: Optional[float] = None
     order_ids: List[str] = field(default_factory=list)
     entry_reason: str = ""
     entry_warnings: List[str] = field(default_factory=list)
@@ -532,6 +533,7 @@ class Executor:
             volume=pos.volume,
             pnl_pct=pnl_pct,
             pnl_usd=pnl_usd,
+            cost_usd=pos.cost_usd,
             order_ids=[pos.order_id, result.get("order_id", "")],
             entry_reason=pos.entry_reason,
             entry_warnings=pos.entry_warnings,
@@ -617,7 +619,9 @@ class Executor:
 
     def get_trades(self) -> List[dict]:
         """Return trade history."""
-        return [t.to_dict() for t in self.trade_log]
+        from executor_ledger_audit import closure_issue
+        rows = [t.to_dict() for t in self.trade_log]
+        return [{**row, "quality_issue": closure_issue(row)} for row in rows]
 
     # ------------------------------------------------------------------
     # State persistence

@@ -230,7 +230,6 @@ async def lifespan(app: FastAPI):
 
     # On-chain whale tracker — runtime-toggleable via /api/admin/features.
     # Task always spawned; the loop checks the feature flag each cycle.
-    asyncio.create_task(_periodic_whale_poll())
     logger.info("Whale tracker: task spawned (runtime-toggleable)")
 
     # Start CoinGlass drip loop (1 coin every 1.5s instead of 150 calls at once)
@@ -1982,6 +1981,31 @@ async def executor_status():
         return ExecutorStatusResponse()
 
     status = await executor.get_status()
+    from executor_performance import performance
+    from data_fetcher import _ohlcv_store
+    from executor_marks import external_marks, converted_native_mark
+    marks = {}
+    for symbol in set(status.get("positions", {})) | {"KBONK/USDT", "KFLOKI/USDT"}:
+        candidates = []
+        for tf in ("4h", "1d"):
+            data = _ohlcv_store.get(symbol, tf)
+            observed = _ohlcv_store.observed_at(symbol, tf)
+            if data is not None and len(data.get("close", [])) and observed is not None:
+                candidates.append({"price": float(data["close"][-1]), "source": "Scanner cached candle",
+                                   "observed_at": observed})
+        if candidates:
+            marks[symbol] = max(candidates, key=lambda m: m["observed_at"])
+    for pos in status.get("positions", {}).values():
+        converted = converted_native_mark(pos, marks)
+        if converted:
+            marks[pos["symbol"]] = converted
+    missing = [symbol for symbol in status.get("positions", {}) if symbol not in marks or time.time()-marks[symbol]["observed_at"] > 21600]
+    for symbol, mark in (await external_marks(missing)).items():
+        if symbol in missing:
+            marks[symbol] = mark
+    status["performance"] = performance(list(status.get("positions", {}).values()),
+                                        executor.get_trades(), marks, executor.initial_balance,
+                                        portfolio=status.get("portfolio") if executor.mode == "paper" else None)
     return status
 
 

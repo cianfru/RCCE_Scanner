@@ -55,7 +55,6 @@ initWorker();
 export function useSharedWorker() {
   const [mainData, setMainData] = useState(null);
   const [notifData, setNotifData] = useState(null);
-  const [onchainData, setOnchainData] = useState(null);
   const idRef = useRef(null);
 
   useEffect(() => {
@@ -71,9 +70,6 @@ export function useSharedWorker() {
           break;
         case "notif-data":
           setNotifData(msg.payload);
-          break;
-        case "onchain-data":
-          setOnchainData(msg.payload);
           break;
       }
     };
@@ -97,19 +93,16 @@ export function useSharedWorker() {
   const setWallet = useCallback((address) => send({ type: "set-wallet", address }), [send]);
   const setNotifParams = useCallback((minScore) => send({ type: "set-notif-params", minScore }), [send]);
   const setFilters = useCallback((regime, signal) => send({ type: "set-filters", regime, signal }), [send]);
-  const setOnchainToken = useCallback((token) => send({ type: "set-onchain-token", token }), [send]);
 
   return {
     supported: workerSupported,
     mainData,
     notifData,
-    onchainData,
     refresh,
     refreshNotifications,
     setWallet,
     setNotifParams,
     setFilters,
-    setOnchainToken,
     send,
   };
 }
