@@ -53,20 +53,49 @@ class TransitionTests(unittest.TestCase):
         for i, regime in enumerate(candidates): result[regime, i] = .95
         return result
 
-    def test_four_candidates_pending_fifth_confirms(self):
-        p = self.probabilities([3, 2, 2, 2, 2])
-        regimes, _, pending = _resolve_regime_with_persistence(p, True)
-        self.assertEqual(regimes[-1], 3)
-        self.assertEqual(pending['candidate'], 'REACC')
-        self.assertEqual(pending['observed_bars'], 4)
-        regimes, _, pending = _resolve_regime_with_persistence(self.probabilities([3, 2, 2, 2, 2, 2]), True)
+    def bearish_then_bullish(self, bull_regimes, bull_p=0.45, bear_p=0.20):
+        """MARKDOWN bar 0, then bullish-family bars below the dominance
+        thresholds so the family-exit persistence path (not the override) is
+        exercised."""
+        n = len(bull_regimes) + 1
+        p = np.full((6, n), 0.01)
+        p[3, 0] = 0.95
+        for i, reg in enumerate(bull_regimes, start=1):
+            p[reg, i] = bull_p
+            p[3, i] = bear_p
+        return p
+
+    def test_dominant_bullish_releases_bearish_latch_immediately(self):
+        # The model gives the held MARKDOWN 0.01 while REACC dominates (0.95):
+        # the latch releases on the first bar, without waiting MIN_REGIME_BARS.
+        regimes, _, pending = _resolve_regime_with_persistence(self.probabilities([3, 2]), True)
         self.assertEqual(regimes[-1], 2)
         self.assertIsNone(pending)
-        self.assertEqual(len(_resolve_regime_with_persistence(p)), 2)
 
-    def test_interrupted_candidate_resets_and_hysteresis_is_respected(self):
-        _, _, pending = _resolve_regime_with_persistence(self.probabilities([3, 2, 2, 3, 2]), True)
-        self.assertEqual(pending['observed_bars'], 1)
+    def test_family_persistence_when_not_dominant(self):
+        # Rotating bullish family (MARKUP<->REACC), each below the dominance
+        # threshold, must still persist MIN_REGIME_BARS before the bearish label
+        # is released -- but the count now spans the family, not one sub-regime.
+        p = self.bearish_then_bullish([0, 2, 0, 2, 0])   # 5 bullish bars after MARKDOWN
+        # 4 bullish bars: not yet released (was previously stuck forever here
+        # because MARKUP/REACC never repeated 5x in a row).
+        regimes4, _, pending4 = _resolve_regime_with_persistence(p[:, :5], True)
+        self.assertEqual(regimes4[-1], 3)
+        self.assertEqual(pending4['observed_bars'], 4)
+        # 5th bullish-family bar confirms the exit.
+        regimes5, _, pending5 = _resolve_regime_with_persistence(p, True)
+        self.assertIn(regimes5[-1], (0, 2))
+        self.assertNotEqual(regimes5[-1], 3)
+
+    def test_bearish_entry_still_requires_persistence(self):
+        # Guard the safety intent: a bullish regime does not flip to MARKDOWN on
+        # a brief bearish blip (needs MIN_REGIME_BARS).
+        regimes, _, _ = _resolve_regime_with_persistence(self.probabilities([0, 3, 3, 0, 0]), True)
+        self.assertEqual(regimes[-1], 0)
+
+    def test_bullish_family_hysteresis_respected(self):
+        # Within the bullish family, a marginally-higher candidate does not win
+        # without clearing the hysteresis ratio.
         p = self.probabilities([0, 0]); p[0, 1] = .45; p[2, 1] = .5
         _, _, pending = _resolve_regime_with_persistence(p, True)
         self.assertIsNone(pending)
