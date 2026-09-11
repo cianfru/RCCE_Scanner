@@ -563,6 +563,26 @@ def _resolve_regime_with_persistence(
     BULLISH_FAMILY = {0, 2, 5}  # MARKUP, REACC, ACCUM
     _HYSTERESIS_RATIO = 1.25    # candidate must have 25% more prob to switch
 
+    # Bearish-latch release. A bearish regime (BLOWOFF/MARKDOWN/CAP) is entered
+    # unprotected but, originally, could only be *left* after MIN_REGIME_BARS of
+    # the SAME bullish sub-regime — and during a recovery the bullish family
+    # rotates (MARKUP<->REACC<->ACCUM), so the counter kept resetting and the
+    # label latched for many bars while the probabilities had already turned
+    # bullish. Two release paths fix that without touching the probability model:
+    #   * family exit: confirm the exit on bullish-FAMILY persistence rather than
+    #     an identical sub-regime.
+    #   * dominance override: release at once when holding the bearish label is
+    #     indefensible per the model itself — its probability has collapsed while
+    #     a bullish regime clearly dominates. It never fires during a genuine
+    #     downturn (the bearish probability does not collapse then).
+    _DOMINANCE_BULL = 0.50   # a bullish regime must exceed this to override
+    _DOMINANCE_CUR = 0.10    # ...while the held bearish regime is below this
+    # The override must hold for this many consecutive bars. A single bar is
+    # enough to catch a real recovery but also fires on hard dead-cat bounces
+    # (~7.7% of releases re-entered a bearish regime within 10 bars); two bars
+    # roughly halves that while still releasing every genuine case measured.
+    _DOMINANCE_BARS = 2
+
     def _pick_candidate(current: int, probs: np.ndarray) -> int:
         """Apply hysteresis: within bullish family, current regime gets a boost."""
         if current not in BULLISH_FAMILY:
@@ -582,22 +602,59 @@ def _resolve_regime_with_persistence(
     current_regime: int = int(np.argmax(prob_stack[:, 0]))
     pending_regime: int = current_regime
     pending_count: int = 1
+    bull_streak: int = 0  # consecutive bullish-family bars while in a bearish regime
+    dom_streak: int = 0   # consecutive bars the dominance override condition has held
 
     for i in range(n):
         col = prob_stack[:, i]
+
+        # Dominance override: holding a bearish regime whose own probability has
+        # collapsed while a bullish regime clearly dominates is indefensible —
+        # release immediately rather than let the persistence counter outvote the
+        # model.
+        if current_regime not in BULLISH_FAMILY:
+            best_bull = max(BULLISH_FAMILY, key=lambda k: col[k])
+            if col[best_bull] > _DOMINANCE_BULL and col[current_regime] < _DOMINANCE_CUR:
+                dom_streak += 1
+                if dom_streak >= _DOMINANCE_BARS:
+                    current_regime = best_bull
+                    pending_regime = current_regime
+                    pending_count = 0
+                    bull_streak = 0
+                    dom_streak = 0
+                    regimes[i] = current_regime
+                    confidences[i] = float(prob_stack[current_regime, i])
+                    continue
+            else:
+                dom_streak = 0
+        else:
+            dom_streak = 0
+
         candidate = _pick_candidate(current_regime, col)
 
-        if candidate == current_regime:
-            pending_regime = current_regime
-            pending_count = 0
-        elif candidate == pending_regime:
-            pending_count += 1
-            if pending_count >= MIN_REGIME_BARS:
-                current_regime = pending_regime
-                pending_count = 0
-        else:
+        if current_regime not in BULLISH_FAMILY and candidate in BULLISH_FAMILY:
+            # Family exit: confirm on bullish-family persistence, not an identical
+            # sub-regime (which rotation would keep resetting).
+            bull_streak += 1
             pending_regime = candidate
-            pending_count = 1
+            pending_count = bull_streak
+            if bull_streak >= MIN_REGIME_BARS:
+                current_regime = candidate
+                pending_count = 0
+                bull_streak = 0
+        else:
+            bull_streak = 0
+            if candidate == current_regime:
+                pending_regime = current_regime
+                pending_count = 0
+            elif candidate == pending_regime:
+                pending_count += 1
+                if pending_count >= MIN_REGIME_BARS:
+                    current_regime = pending_regime
+                    pending_count = 0
+            else:
+                pending_regime = candidate
+                pending_count = 1
 
         regimes[i] = current_regime
         confidences[i] = float(prob_stack[current_regime, i])
