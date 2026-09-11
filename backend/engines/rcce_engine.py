@@ -577,6 +577,11 @@ def _resolve_regime_with_persistence(
     #     downturn (the bearish probability does not collapse then).
     _DOMINANCE_BULL = 0.50   # a bullish regime must exceed this to override
     _DOMINANCE_CUR = 0.10    # ...while the held bearish regime is below this
+    # The override must hold for this many consecutive bars. A single bar is
+    # enough to catch a real recovery but also fires on hard dead-cat bounces
+    # (~7.7% of releases re-entered a bearish regime within 10 bars); two bars
+    # roughly halves that while still releasing every genuine case measured.
+    _DOMINANCE_BARS = 2
 
     def _pick_candidate(current: int, probs: np.ndarray) -> int:
         """Apply hysteresis: within bullish family, current regime gets a boost."""
@@ -598,6 +603,7 @@ def _resolve_regime_with_persistence(
     pending_regime: int = current_regime
     pending_count: int = 1
     bull_streak: int = 0  # consecutive bullish-family bars while in a bearish regime
+    dom_streak: int = 0   # consecutive bars the dominance override condition has held
 
     for i in range(n):
         col = prob_stack[:, i]
@@ -609,13 +615,20 @@ def _resolve_regime_with_persistence(
         if current_regime not in BULLISH_FAMILY:
             best_bull = max(BULLISH_FAMILY, key=lambda k: col[k])
             if col[best_bull] > _DOMINANCE_BULL and col[current_regime] < _DOMINANCE_CUR:
-                current_regime = best_bull
-                pending_regime = current_regime
-                pending_count = 0
-                bull_streak = 0
-                regimes[i] = current_regime
-                confidences[i] = float(prob_stack[current_regime, i])
-                continue
+                dom_streak += 1
+                if dom_streak >= _DOMINANCE_BARS:
+                    current_regime = best_bull
+                    pending_regime = current_regime
+                    pending_count = 0
+                    bull_streak = 0
+                    dom_streak = 0
+                    regimes[i] = current_regime
+                    confidences[i] = float(prob_stack[current_regime, i])
+                    continue
+            else:
+                dom_streak = 0
+        else:
+            dom_streak = 0
 
         candidate = _pick_candidate(current_regime, col)
 

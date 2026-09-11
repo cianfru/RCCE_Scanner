@@ -65,12 +65,23 @@ class TransitionTests(unittest.TestCase):
             p[3, i] = bear_p
         return p
 
-    def test_dominant_bullish_releases_bearish_latch_immediately(self):
-        # The model gives the held MARKDOWN 0.01 while REACC dominates (0.95):
-        # the latch releases on the first bar, without waiting MIN_REGIME_BARS.
+    def test_dominant_bullish_releases_bearish_latch_after_two_bars(self):
+        # The model gives the held MARKDOWN 0.01 while REACC dominates (0.95).
+        # A single dominant bar must NOT release (that fires on dead-cat
+        # bounces); two consecutive dominant bars release without waiting the
+        # full MIN_REGIME_BARS.
         regimes, _, pending = _resolve_regime_with_persistence(self.probabilities([3, 2]), True)
+        self.assertEqual(regimes[-1], 3)
+        self.assertEqual(pending['candidate'], 'REACC')
+        regimes, _, pending = _resolve_regime_with_persistence(self.probabilities([3, 2, 2]), True)
         self.assertEqual(regimes[-1], 2)
         self.assertIsNone(pending)
+
+    def test_interrupted_dominance_streak_resets(self):
+        # Dominant, then a bearish bar, then dominant again: the streak must
+        # restart, so the label is still held after the second dominant bar.
+        regimes, _, _ = _resolve_regime_with_persistence(self.probabilities([3, 2, 3, 2]), True)
+        self.assertEqual(regimes[-1], 3)
 
     def test_family_persistence_when_not_dominant(self):
         # Rotating bullish family (MARKUP<->REACC), each below the dominance
