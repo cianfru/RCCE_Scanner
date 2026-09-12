@@ -1,5 +1,5 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect } from "react";
+import HelpTip from "./HelpTip.jsx";
 import { REGIME_META, T, m, SIGNAL_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
@@ -27,71 +27,6 @@ function edgeColor(edge) {
 }
 
 // ---------------------------------------------------------------------------
-// InfoTip — inline tooltip matching PositioningPanel pattern
-// ---------------------------------------------------------------------------
-
-function InfoTip({ text }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState(null);
-  const anchor = useRef(null);
-  const WIDTH = 240;
-
-  // Portaled to <body> and fixed-positioned so the card can't be clipped by a
-  // scrolling/backdrop-filtered ancestor (it was absolutely centered on the
-  // anchor, which pushed it outside the panel near its edges).
-  useLayoutEffect(() => {
-    if (!show || !anchor.current) { setPos(null); return; }
-    const place = () => {
-      const r = anchor.current.getBoundingClientRect();
-      const left = Math.max(12, Math.min(r.left + r.width / 2 - WIDTH / 2, window.innerWidth - WIDTH - 12));
-      const above = r.top > 180;
-      setPos(above ? { left, bottom: window.innerHeight - r.top + 6 } : { left, top: r.bottom + 6 });
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [show]);
-
-  return (
-    <span
-      ref={anchor}
-      style={{ position: "relative", display: "inline-flex", alignItems: "center", marginLeft: 4 }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 14, height: 14, borderRadius: "50%",
-        border: `1px solid ${show ? T.accent : T.border}`,
-        color: show ? T.accent : T.text4,
-        fontSize: 8, fontFamily: T.mono, fontWeight: 700,
-        cursor: "help", lineHeight: 1,
-      }}>
-        i
-      </span>
-      {show && pos && createPortal(
-        <div style={{
-          position: "fixed", ...pos, width: WIDTH, padding: "10px 12px",
-          background: "rgba(16,16,20,0.95)", backdropFilter: "blur(16px)",
-          borderRadius: 8, border: `1px solid ${T.border}`,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 100000, pointerEvents: "none",
-        }}>
-          <div style={{
-            fontSize: m(T.textXs, false), color: T.text3,
-            fontFamily: T.font, fontWeight: 400, lineHeight: 1.55,
-          }}>
-            {text}
-          </div>
-        </div>,
-        document.body
-      )}
-    </span>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // SectionHeader — title + subtitle explanation
@@ -197,19 +132,19 @@ function ConditionValueTable({ conditions, isMobile }) {
             <th style={{ ...TH, textAlign: "right" }}>Group</th>
             <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (True)
-              <InfoTip text="Average 7-day return when this condition was TRUE at signal time." />
+              <HelpTip width={240}>{"Average 7-day return when this condition was TRUE at signal time."}</HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (False)
-              <InfoTip text="Average 7-day return when this condition was FALSE at signal time." />
+              <HelpTip width={240}>{"Average 7-day return when this condition was FALSE at signal time."}</HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               Edge
-              <InfoTip text="Difference in avg 7-day return between TRUE and FALSE. Positive means this condition predicts better outcomes." />
+              <HelpTip width={240}>{"Difference in avg 7-day return between TRUE and FALSE. Positive means this condition predicts better outcomes."}</HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               WR (T)
-              <InfoTip text="Win rate when condition is TRUE. A 'win' means the 7-day price moved in the signal's expected direction." />
+              <HelpTip width={240}>{"Win rate when condition is TRUE. A 'win' means the 7-day price moved in the signal's expected direction."}</HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>WR (F)</th>
           </tr>
@@ -561,7 +496,7 @@ function HyperLensAttribution({ data, isMobile }) {
           color: edgeColor(edge_pct), fontWeight: 700,
         }}>
           Whale edge: {edge_pct > 0 ? "+" : ""}{edge_pct}% avg 7d
-          <InfoTip text="The additional average 7-day return gained when HyperLens whale consensus confirmed the signal direction." />
+          <HelpTip width={240}>{"The additional average 7-day return gained when HyperLens whale consensus confirmed the signal direction."}</HelpTip>
         </div>
       )}
     </div>

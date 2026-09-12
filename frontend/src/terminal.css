@@ -29,7 +29,8 @@
 .reflex-terminal .market-context {gap:0!important;border-block:1px solid var(--t-border);padding:10px 0;margin-top:16px!important;}
 .reflex-terminal .market-context > div {border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;}
 .alt-season-info {position:relative;display:inline-flex;margin-left:8px;text-transform:none;letter-spacing:normal;}
-.alt-season-info > button {border:1px solid var(--t-text4);background:transparent;color:var(--t-text3);border-radius:50%;width:16px;height:16px;font:11px Georgia,serif;cursor:help;padding:0;}
+.alt-season-info > button {border:1px solid var(--t-border);background:transparent;color:var(--t-text4);border-radius:50%;width:14px;height:14px;font:600 10px/1 var(--font-geist-sans),sans-serif;cursor:help;padding:0;display:inline-flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s;}
+.alt-season-info > button:hover,.alt-season-info > button[aria-expanded=true] {color:var(--t-accent);border-color:var(--t-accent);}
 .alt-season-explanation {position:absolute;top:25px;right:-80px;width:min(310px,75vw);z-index:100;background:var(--t-popoverBg);color:var(--t-text2);padding:18px;border:1px solid var(--t-border);border-radius:8px;box-shadow:0 12px 40px var(--t-shadow);font:12px/1.6 var(--font-geist-sans),sans-serif;}
 .alt-season-explanation > * {display:block;margin-bottom:8px;}
 .refined .r-terminal .terminal-data-table {overflow-x:auto;}
@@ -184,3 +185,13 @@
 
 .executor-return-grid {grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--t-border);}
 @media(max-width:480px){.executor-return-grid{grid-template-columns:1fr}}
+/* Shared tooltip variants (HelpTip). */
+.alt-season-explanation.is-compact {padding:10px 12px;font:12px/1.55 var(--font-geist-sans),sans-serif;}
+.alt-season-explanation.is-compact > * {margin:0 0 6px;}
+.alt-season-explanation.is-compact strong {font-size:12px;letter-spacing:.02em;}
+.alt-season-explanation p {margin:0 0 10px;}
+.alt-season-explanation .help-legend {display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--t-border);padding-top:8px;margin:0;}
+.alt-season-explanation .help-legend > div {display:flex;gap:8px;align-items:baseline;font-size:11px;line-height:1.4;margin:0;}
+.alt-season-explanation .help-legend > div > span:first-child {display:inline-flex;align-items:center;gap:5px;min-width:100px;flex-shrink:0;font-weight:600;}
+.alt-season-explanation .help-legend-key {color:var(--t-accent);font-size:10px;letter-spacing:.03em;}
+.alt-season-explanation .help-legend > div > span:last-child {color:var(--t-text4);}
