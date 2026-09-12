@@ -9,7 +9,7 @@ import {
   SmartMoneyBadge,
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
-import InfoButton from "./InfoPopover.jsx";
+import ColumnHelp from "./ColumnHelp.jsx";
 import GlassCard from "./GlassCard.jsx";
 
 function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
@@ -196,7 +196,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
                       {colLabel}{key && sortKey === key ? " \u25bc" : ""}
-                      {colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
+                      {colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <ColumnHelp label={colLabel} />}
                     </span>
                   </th>
                 ))}

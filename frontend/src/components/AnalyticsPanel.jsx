@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { REGIME_META, T, m, SIGNAL_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
+import HelpTip from "./HelpTip.jsx";
 import FadeIn from "./FadeIn.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -23,48 +24,6 @@ function edgeColor(edge) {
   if (edge > 0) return "#6ee7b7";
   if (edge > -3) return "#fbbf24";
   return "#f87171";
-}
-
-// ---------------------------------------------------------------------------
-// InfoTip — inline tooltip matching PositioningPanel pattern
-// ---------------------------------------------------------------------------
-
-function InfoTip({ text }) {
-  const [show, setShow] = useState(false);
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", alignItems: "center", marginLeft: 4 }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 14, height: 14, borderRadius: "50%",
-        border: `1px solid ${show ? T.accent : T.border}`,
-        color: show ? T.accent : T.text4,
-        fontSize: 8, fontFamily: T.mono, fontWeight: 700,
-        cursor: "help", lineHeight: 1,
-      }}>
-        i
-      </span>
-      {show && (
-        <div style={{
-          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-          transform: "translateX(-50%)", width: 240, padding: "10px 12px",
-          background: "rgba(16,16,20,0.95)", backdropFilter: "blur(16px)",
-          borderRadius: 8, border: `1px solid ${T.border}`,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 9999,
-        }}>
-          <div style={{
-            fontSize: m(T.textXs, false), color: T.text3,
-            fontFamily: T.font, fontWeight: 400, lineHeight: 1.55,
-          }}>
-            {text}
-          </div>
-        </div>
-      )}
-    </span>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -171,19 +130,19 @@ function ConditionValueTable({ conditions, isMobile }) {
             <th style={{ ...TH, textAlign: "right" }}>Group</th>
             <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (True)
-              <InfoTip text="Average 7-day return when this condition was TRUE at signal time." />
+              <HelpTip title="Avg 7d (True)" width={300}><p>Average 7-day return when this condition was TRUE at signal time.</p></HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (False)
-              <InfoTip text="Average 7-day return when this condition was FALSE at signal time." />
+              <HelpTip title="Avg 7d (False)" width={300}><p>Average 7-day return when this condition was FALSE at signal time.</p></HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               Edge
-              <InfoTip text="Difference in avg 7-day return between TRUE and FALSE. Positive means this condition predicts better outcomes." />
+              <HelpTip title="Edge" width={300}><p>Difference in avg 7-day return between TRUE and FALSE. Positive means this condition predicts better outcomes.</p></HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               WR (T)
-              <InfoTip text="Win rate when condition is TRUE. A 'win' means the 7-day price moved in the signal's expected direction." />
+              <HelpTip title="WR (True)" width={300}><p>Win rate when condition is TRUE. A 'win' means the 7-day price moved in the signal's expected direction.</p></HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>WR (F)</th>
           </tr>
@@ -535,7 +494,7 @@ function HyperLensAttribution({ data, isMobile }) {
           color: edgeColor(edge_pct), fontWeight: 700,
         }}>
           Whale edge: {edge_pct > 0 ? "+" : ""}{edge_pct}% avg 7d
-          <InfoTip text="The additional average 7-day return gained when HyperLens whale consensus confirmed the signal direction." />
+          <HelpTip title="Whale edge" width={300}><p>The additional average 7-day return gained when HyperLens whale consensus confirmed the signal direction.</p></HelpTip>
         </div>
       )}
     </div>

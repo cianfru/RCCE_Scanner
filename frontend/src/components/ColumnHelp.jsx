@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from "react";
-import ReactDOM from "react-dom";
-import { T, REGIME_META } from "../theme.js";
+import { REGIME_META } from "../theme.js";
 import RegimeIcon from "./RegimeIcon.jsx";
+import HelpTip from "./HelpTip.jsx";
 
 const COLUMN_INFO = {
   PRI: {
@@ -157,105 +156,28 @@ const COLUMN_INFO = {
   },
 };
 
-function InfoPopover({ info, anchor, onClose }) {
-  const ref = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      const popW = 280;
-      let left = r.left;
-      if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
-      if (left < 12) left = 12;
-      setPos({ top: r.bottom + 6, left });
-    }
-  }, [anchor]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  return ReactDOM.createPortal(
-    <div ref={ref} style={{
-      position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
-      width: 280, padding: "14px 16px",
-      background: T.popoverBg,
-      backdropFilter: "blur(20px) saturate(1.4)",
-      border: `1px solid ${T.border}`,
-      borderRadius: T.radiusSm, boxShadow: `0 8px 32px ${T.shadowDeep}`,
-      maxHeight: "70vh", overflowY: "auto",
-    }}>
-      <div style={{
-        fontFamily: T.font, fontSize: 12, fontWeight: 700, color: T.text1,
-        marginBottom: 6, letterSpacing: "0.02em",
-      }}>{info.title}</div>
-      <div style={{
-        fontFamily: T.font, fontSize: 11, color: T.text3, lineHeight: 1.5,
-        marginBottom: info.values ? 10 : 0,
-      }}>{info.desc}</div>
+/** Click-to-open column explainer for DataTable headers, rendered by the shared HelpTip. */
+export default function ColumnHelp({ label }) {
+  const info = COLUMN_INFO[label];
+  if (!info) return null;
+  return (
+    <HelpTip trigger="click" width={320} title={info.title}>
+      <p>{info.desc}</p>
       {info.values && (
-        <div style={{
-          display: "flex", flexDirection: "column", gap: 4,
-          borderTop: `1px solid ${T.border}`, paddingTop: 8,
-        }}>
-          {info.values.map(([label, desc]) => {
-            const rm = REGIME_META[label];
+        <div className="help-tip-values">
+          {info.values.map(([value, desc]) => {
+            const rm = REGIME_META[value];
             return (
-            <div key={label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-              {rm ? (
-                <span title={label} style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  fontFamily: T.font, fontSize: 10, fontWeight: 600, color: rm.color,
-                  minWidth: 110, flexShrink: 0,
-                }}><RegimeIcon regime={label} size={12} />{rm.name}</span>
-              ) : (
-              <span style={{
-                fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.accent,
-                minWidth: 70, flexShrink: 0, letterSpacing: "0.03em",
-              }}>{label}</span>
-              )}
-              <span style={{
-                fontFamily: T.font, fontSize: 10, color: T.text4, lineHeight: 1.4,
-              }}>{desc}</span>
-            </div>
+              <div key={value}>
+                {rm
+                  ? <span title={value} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: rm.color }}><RegimeIcon regime={value} size={12} />{rm.name}</span>
+                  : <span>{value}</span>}
+                <span>{desc}</span>
+              </div>
             );
           })}
         </div>
       )}
-    </div>,
-    document.body
-  );
-}
-
-export default function InfoButton({ label }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef(null);
-  const info = COLUMN_INFO[label];
-  if (!info) return null;
-
-  return (
-    <span style={{ display: "inline-flex", marginLeft: 4 }}>
-      <button type="button" aria-label={`About ${info.title}`} aria-expanded={open}
-        ref={btnRef}
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 20, height: 20, borderRadius: "50%",
-          border: `1px solid ${open ? T.accent : T.overlay15}`,
-          color: open ? T.accent : T.text4,
-          background: "transparent", padding: 0, fontSize: 11, fontWeight: 700, fontFamily: T.font,
-          cursor: "pointer", transition: "all 0.2s",
-          lineHeight: 1, userSelect: "none",
-        }}
-        onMouseEnter={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay30; e.currentTarget.style.color = T.text2; }}}
-        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.borderColor = T.overlay15; e.currentTarget.style.color = T.text4; }}}
-      >i</button>
-      {open && <InfoPopover info={info} anchor={btnRef.current} onClose={() => setOpen(false)} />}
-    </span>
+    </HelpTip>
   );
 }

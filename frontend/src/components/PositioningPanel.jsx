@@ -19,60 +19,7 @@ import HelpTip from "./HelpTip.jsx";
  *   vpinHistory — number[] (rolling 48-tick history 0..1)
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
-import { useState } from "react";
 import { T } from "../theme.js";
-
-// ─── Inline tooltip ───────────────────────────────────────────────────────────
-
-function InfoTip({ title, text }) {
-  const [show, setShow] = useState(false);
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span style={{
-        fontSize: 7, color: T.text4, cursor: "help",
-        fontFamily: T.mono, fontWeight: 700,
-        width: 12, height: 12, borderRadius: "50%",
-        border: `1px solid ${T.border}`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        lineHeight: 1, userSelect: "none",
-        transition: "all 0.15s",
-      }}>
-        i
-      </span>
-      {show && (
-        <div style={{
-          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-          transform: "translateX(-50%)",
-          background: "rgba(16,16,20,0.95)",
-          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-          border: `1px solid ${T.border}`,
-          borderRadius: 8, padding: "10px 12px",
-          zIndex: 9999, width: 220, pointerEvents: "none",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-        }}>
-          {title && (
-            <div style={{
-              fontSize: T.textSm, color: T.text1, fontFamily: T.mono,
-              fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em",
-            }}>
-              {title}
-            </div>
-          )}
-          <div style={{
-            fontSize: T.textXs, color: T.text3, fontFamily: T.font,
-            fontWeight: 400, lineHeight: 1.55,
-          }}>
-            {text}
-          </div>
-        </div>
-      )}
-    </span>
-  );
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -116,7 +63,7 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
         }}>
           {label}
         </span>
-        {info && <InfoTip title={info.title} text={info.text} />}
+        {info && <HelpTip title={info.title} width={300}><p>{info.text}</p></HelpTip>}
       </div>
       {sub && (
         <span style={{
@@ -265,7 +212,7 @@ function Stat({ label, value, color }) {
           fontWeight: 600, textTransform: "none", letterSpacing: "0.02em",
           whiteSpace: "nowrap",
         }}>{label}</span>
-        {infoText && <InfoTip text={infoText} />}
+        {infoText && <HelpTip title={label} width={300}><p>{infoText}</p></HelpTip>}
       </div>
       <span style={{
         fontSize: T.textSm, color: color || T.text2, fontFamily: T.mono,
@@ -386,7 +333,7 @@ function VpinGauge({ vpin, vpinLabel, vpinHistory }) {
           }}>
             VPIN
           </span>
-          <InfoTip {...VPIN_INFO} />
+          <HelpTip title={VPIN_INFO.title} width={300}><p>{VPIN_INFO.text}</p></HelpTip>
         </div>
         <span style={{
           fontSize: T.textXs, color, fontFamily: T.mono, fontWeight: 700,
