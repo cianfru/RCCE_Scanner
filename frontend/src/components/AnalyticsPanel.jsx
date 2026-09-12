@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { T, m, SIGNAL_META } from "../theme.js";
+import { REGIME_META, T, m, SIGNAL_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -329,7 +329,7 @@ function RegimeScorecard({ data, isMobile }) {
           <tr style={{ borderBottom: `1px solid ${T.border}` }}>
             <th style={{ ...TH, textAlign: "left" }}>Signal</th>
             {regimes.map(r => (
-              <th key={r} style={{ ...TH, textAlign: "center" }}>{r}</th>
+              <th key={r} title={r} style={{ ...TH, textAlign: "center" }}>{REGIME_META[r]?.name || r}</th>
             ))}
           </tr>
         </thead>

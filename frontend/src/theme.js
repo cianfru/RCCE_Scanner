@@ -214,14 +214,14 @@ export function resolveToken(key) {
 // ─── REGIME METADATA ────────────────────────────────────────────────────────
 
 export const REGIME_META = {
-  MARKUP:    { color: "#97FCE4", bg: "rgba(151,252,228,0.055)", glow: "rgba(151,252,228,0.12)", label: "MARKUP",    glyph: "\u2197" },
-  BLOWOFF:   { color: "#f87171", bg: "rgba(248,113,113,0.08)", glow: "rgba(248,113,113,0.25)", label: "BLOWOFF",   glyph: "\u25b2\u25b2" },
-  REACC:     { color: "#b5a5db", bg: "rgba(181,165,219,0.055)", glow: "rgba(181,165,219,0.12)",  label: "REACC",     glyph: "\u25c6" },
-  MARKDOWN:  { color: "#cf9185", bg: "rgba(207,145,133,0.055)", glow: "rgba(207,145,133,0.12)",  label: "MARKDOWN",  glyph: "\u25bc" },
-  CAP:       { color: "#c084fc", bg: "rgba(192,132,252,0.08)", glow: "rgba(192,132,252,0.25)", label: "CAP",       glyph: "\u25bc\u25bc" },
-  ACCUM:     { color: "#91b9e8", bg: "rgba(145,185,232,0.055)", glow: "rgba(145,185,232,0.12)", label: "ACCUM",     glyph: "\u25c7" },
-  ABSORBING: { color: "#d8b4fe", bg: "rgba(216,180,254,0.08)", glow: "rgba(216,180,254,0.25)", label: "ABSORBING", glyph: "\u2715" },
-  FLAT:      { color: "#52525b", bg: "rgba(82,82,91,0.06)",    glow: "rgba(82,82,91,0.15)",    label: "FLAT",      glyph: "\u2014" },
+  MARKUP:    { color: "#97FCE4", bg: "rgba(151,252,228,0.055)", glow: "rgba(151,252,228,0.12)", label: "MARKUP", name: "Uptrend", hint: "Price trending above its mean",    glyph: "\u2197" },
+  BLOWOFF:   { color: "#f87171", bg: "rgba(248,113,113,0.08)", glow: "rgba(248,113,113,0.25)", label: "BLOWOFF", name: "Overheated", hint: "Extreme overextension — reversal risk",   glyph: "\u25b2\u25b2" },
+  REACC:     { color: "#b5a5db", bg: "rgba(181,165,219,0.055)", glow: "rgba(181,165,219,0.12)",  label: "REACC", name: "Re-accumulating", hint: "Pullback within an uptrend",     glyph: "\u25c6" },
+  MARKDOWN:  { color: "#cf9185", bg: "rgba(207,145,133,0.055)", glow: "rgba(207,145,133,0.12)",  label: "MARKDOWN", name: "Downtrend", hint: "Price trending below its mean",  glyph: "\u25bc" },
+  CAP:       { color: "#c084fc", bg: "rgba(192,132,252,0.08)", glow: "rgba(192,132,252,0.25)", label: "CAP", name: "Capitulation", hint: "Panic flush toward a floor",       glyph: "\u25bc\u25bc" },
+  ACCUM:     { color: "#91b9e8", bg: "rgba(145,185,232,0.055)", glow: "rgba(145,185,232,0.12)", label: "ACCUM", name: "Accumulation", hint: "Building a base after a decline",     glyph: "\u25c7" },
+  ABSORBING: { color: "#d8b4fe", bg: "rgba(216,180,254,0.08)", glow: "rgba(216,180,254,0.25)", label: "ABSORBING", name: "Absorbing", hint: "Supply being absorbed — no long", glyph: "\u2715" },
+  FLAT:      { color: "#52525b", bg: "rgba(82,82,91,0.06)",    glow: "rgba(82,82,91,0.15)",    label: "FLAT", name: "Flat", hint: "No clear regime",      glyph: "\u2014" },
 };
 
 // ─── SIGNAL METADATA ────────────────────────────────────────────────────────

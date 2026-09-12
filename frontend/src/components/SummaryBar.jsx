@@ -17,7 +17,7 @@ export default function SummaryBar({ results }) {
         return (
           <div
             key={r}
-            title={`${m.label}: ${counts[r]}`}
+            title={`${m.name}: ${counts[r]}`}
             style={{
               flex: pct,
               background: `linear-gradient(90deg, ${m.color}cc, ${m.color})`,

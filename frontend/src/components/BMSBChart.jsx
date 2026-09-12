@@ -1,5 +1,6 @@
 import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
+import RegimeIcon from "./RegimeIcon.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
@@ -575,8 +576,8 @@ export default function BMSBChart({
               border: `1px solid ${rm.color}20`,
               display: "inline-flex", alignItems: "center", gap: 3,
             }}>
-              <span style={{ fontSize: 7 }}>{rm.glyph}</span>
-              {rm.label}
+              <RegimeIcon regime={regime} size={10} />
+              {rm.name}
             </span>
           )}
 
