@@ -19,15 +19,42 @@ import HelpTip from "./HelpTip.jsx";
  *   vpinHistory — number[] (rolling 48-tick history 0..1)
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { T } from "../theme.js";
 
 // ─── Inline tooltip ───────────────────────────────────────────────────────────
 
 function InfoTip({ title, text }) {
   const [show, setShow] = useState(false);
+  const [pos, setPos] = useState(null);
+  const anchor = useRef(null);
+  const WIDTH = 220;
+
+  // Portaled to <body> and fixed-positioned so the card can never be clipped
+  // by the detail drawer's scroll box (it used to be absolutely positioned and
+  // centered on the anchor, which pushed it past the drawer's left edge).
+  useLayoutEffect(() => {
+    if (!show || !anchor.current) { setPos(null); return; }
+    const place = () => {
+      const r = anchor.current.getBoundingClientRect();
+      const left = Math.max(12, Math.min(r.left + r.width / 2 - WIDTH / 2, window.innerWidth - WIDTH - 12));
+      // Prefer above the anchor; flip below when there is no room.
+      const above = r.top > 180;
+      setPos(above ? { left, bottom: window.innerHeight - r.top + 6 } : { left, top: r.bottom + 6 });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [show]);
+
   return (
     <span
+      ref={anchor}
       style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
@@ -43,15 +70,14 @@ function InfoTip({ title, text }) {
       }}>
         i
       </span>
-      {show && (
+      {show && pos && createPortal(
         <div style={{
-          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-          transform: "translateX(-50%)",
+          position: "fixed", ...pos,
           background: "rgba(16,16,20,0.95)",
           backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
           border: `1px solid ${T.border}`,
           borderRadius: 8, padding: "10px 12px",
-          zIndex: 9999, width: 220, pointerEvents: "none",
+          zIndex: 100000, width: WIDTH, pointerEvents: "none",
           boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
         }}>
           {title && (
@@ -68,7 +94,8 @@ function InfoTip({ title, text }) {
           }}>
             {text}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
