@@ -1,6 +1,21 @@
 // One intuitive glyph per market-cycle phase. Icons live here (not in
 // theme.js) so theme.js stays React-free for the plain node tests.
-import { Layers, TrendingUp, Flame, Repeat, TrendingDown, ArrowDownToLine, CircleSlash, Minus } from "lucide-react";
+import { Layers, TrendingUp, Flame, Repeat, TrendingDown, ArrowDownToLine, Minus } from "lucide-react";
+
+// Absorption: an arrow sinking into liquidity. Lucide has no such glyph, so
+// this is drawn in its idiom (24 grid, 2px round stroke, currentColor) and
+// exposes the same size/strokeWidth API as the lucide components.
+function Absorb({ size = 24, strokeWidth = 2, ...rest }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...rest}>
+      <path d="M12 3v9" />
+      <path d="M8.5 8.5 12 12l3.5-3.5" />
+      <path d="M2 16.5q2.5-2 5 0t5 0 5 0 5 0" />
+      <path d="M2 20.5q2.5-2 5 0t5 0 5 0 5 0" />
+    </svg>
+  );
+}
 import { REGIME_META } from "../theme.js";
 
 const ICONS = {
@@ -10,7 +25,7 @@ const ICONS = {
   REACC: Repeat,
   MARKDOWN: TrendingDown,
   CAP: ArrowDownToLine,
-  ABSORBING: CircleSlash,
+  ABSORBING: Absorb,
   FLAT: Minus,
 };
 
