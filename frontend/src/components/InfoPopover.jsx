@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ReactDOM from "react-dom";
-import { T } from "../theme.js";
+import { T, REGIME_META } from "../theme.js";
+import RegimeIcon from "./RegimeIcon.jsx";
 
 const COLUMN_INFO = {
   PRI: {
@@ -19,12 +20,12 @@ const COLUMN_INFO = {
     title: "Market Regime",
     desc: "Z-score based regime detection using price deviation from statistical mean. Identifies the current market phase in the cycle.",
     values: [
-      ["MARKUP", "Price trending above mean \u2014 bullish momentum"],
-      ["BLOWOFF", "Extreme overextension \u2014 potential reversal zone"],
-      ["RE-ACC", "Re-accumulation \u2014 pullback within uptrend"],
-      ["MARKDOWN", "Price trending below mean \u2014 bearish momentum"],
-      ["CAPITULATION", "Extreme underextension \u2014 panic selling"],
-      ["ACCUM", "Accumulation \u2014 building base after decline"],
+      ["MARKUP", "Price trending above its mean"],
+      ["BLOWOFF", "Extreme overextension \u2014 reversal risk"],
+      ["REACC", "Pullback within an uptrend"],
+      ["MARKDOWN", "Price trending below its mean"],
+      ["CAP", "Panic flush toward a floor"],
+      ["ACCUM", "Building a base after a decline"],
     ],
   },
   SIGNAL: {
@@ -202,17 +203,28 @@ function InfoPopover({ info, anchor, onClose }) {
           display: "flex", flexDirection: "column", gap: 4,
           borderTop: `1px solid ${T.border}`, paddingTop: 8,
         }}>
-          {info.values.map(([label, desc]) => (
+          {info.values.map(([label, desc]) => {
+            const rm = REGIME_META[label];
+            return (
             <div key={label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              {rm ? (
+                <span title={label} style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  fontFamily: T.font, fontSize: 10, fontWeight: 600, color: rm.color,
+                  minWidth: 110, flexShrink: 0,
+                }}><RegimeIcon regime={label} size={12} />{rm.name}</span>
+              ) : (
               <span style={{
                 fontFamily: T.mono, fontSize: 9, fontWeight: 600, color: T.accent,
                 minWidth: 70, flexShrink: 0, letterSpacing: "0.03em",
               }}>{label}</span>
+              )}
               <span style={{
                 fontFamily: T.font, fontSize: 10, color: T.text4, lineHeight: 1.4,
               }}>{desc}</span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>,

@@ -37,6 +37,10 @@ function formatValue(val, eventType) {
     const meta = SIGNAL_META[val];
     return meta ? meta.label : val;
   }
+  if (eventType === "regime") {
+    const meta = REGIME_META[val];
+    return meta ? meta.name : val;
+  }
   return val;
 }
 

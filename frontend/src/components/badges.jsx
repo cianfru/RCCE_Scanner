@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
+import RegimeIcon from "./RegimeIcon.jsx";
 
 export function ZScoreBar({ z, isMobile }) {
   const bar = zBar(z);
@@ -34,19 +35,16 @@ export function ZScoreBar({ z, isMobile }) {
 
 export function RegimeBadge({ regime, isMobile }) {
   const rm = REGIME_META[regime] || REGIME_META.FLAT;
+  // Icon + plain-English phase name. The engine code stays in the tooltip for
+  // anyone who wants it. No capsule: status reads through type and color.
   return (
-    <span className="terminal-status" style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: isMobile ? "5px 12px" : "4px 12px", borderRadius: "20px",
-      background: rm.bg, color: rm.color,
-      fontSize: m(12, isMobile), fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.06em",
-      border: `1px solid ${rm.color}25`,
-      boxShadow: `0 0 12px ${rm.glow}`,
-      whiteSpace: "nowrap",
+    <span className="terminal-status" title={`${rm.label} — ${rm.hint}`} style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      color: rm.color, fontSize: m(12, isMobile), fontWeight: 600,
+      letterSpacing: "0.02em", whiteSpace: "nowrap",
     }}>
-      <span style={{ fontSize: m(11, isMobile), opacity: 0.9 }}>{rm.glyph}</span>
-      {rm.label}
+      <RegimeIcon regime={regime} size={m(14, isMobile)} />
+      {rm.name}
     </span>
   );
 }
