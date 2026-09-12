@@ -19,87 +19,7 @@ import HelpTip from "./HelpTip.jsx";
  *   vpinHistory — number[] (rolling 48-tick history 0..1)
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
-import { useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { T } from "../theme.js";
-
-// ─── Inline tooltip ───────────────────────────────────────────────────────────
-
-function InfoTip({ title, text }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState(null);
-  const anchor = useRef(null);
-  const WIDTH = 220;
-
-  // Portaled to <body> and fixed-positioned so the card can never be clipped
-  // by the detail drawer's scroll box (it used to be absolutely positioned and
-  // centered on the anchor, which pushed it past the drawer's left edge).
-  useLayoutEffect(() => {
-    if (!show || !anchor.current) { setPos(null); return; }
-    const place = () => {
-      const r = anchor.current.getBoundingClientRect();
-      const left = Math.max(12, Math.min(r.left + r.width / 2 - WIDTH / 2, window.innerWidth - WIDTH - 12));
-      // Prefer above the anchor; flip below when there is no room.
-      const above = r.top > 180;
-      setPos(above ? { left, bottom: window.innerHeight - r.top + 6 } : { left, top: r.bottom + 6 });
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [show]);
-
-  return (
-    <span
-      ref={anchor}
-      style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <span style={{
-        fontSize: 7, color: T.text4, cursor: "help",
-        fontFamily: T.mono, fontWeight: 700,
-        width: 12, height: 12, borderRadius: "50%",
-        border: `1px solid ${T.border}`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        lineHeight: 1, userSelect: "none",
-        transition: "all 0.15s",
-      }}>
-        i
-      </span>
-      {show && pos && createPortal(
-        <div style={{
-          position: "fixed", ...pos,
-          background: "rgba(16,16,20,0.95)",
-          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-          border: `1px solid ${T.border}`,
-          borderRadius: 8, padding: "10px 12px",
-          zIndex: 100000, width: WIDTH, pointerEvents: "none",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-        }}>
-          {title && (
-            <div style={{
-              fontSize: T.textSm, color: T.text1, fontFamily: T.mono,
-              fontWeight: 700, marginBottom: 4, letterSpacing: "0.04em",
-            }}>
-              {title}
-            </div>
-          )}
-          <div style={{
-            fontSize: T.textXs, color: T.text3, fontFamily: T.font,
-            fontWeight: 400, lineHeight: 1.55,
-          }}>
-            {text}
-          </div>
-        </div>,
-        document.body
-      )}
-    </span>
-  );
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -143,7 +63,7 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
         }}>
           {label}
         </span>
-        {info && <InfoTip title={info.title} text={info.text} />}
+        {info && <HelpTip title={info.title} width={220}>{info.text}</HelpTip>}
       </div>
       {sub && (
         <span style={{
@@ -292,7 +212,7 @@ function Stat({ label, value, color }) {
           fontWeight: 600, textTransform: "none", letterSpacing: "0.02em",
           whiteSpace: "nowrap",
         }}>{label}</span>
-        {infoText && <InfoTip text={infoText} />}
+        {infoText && <HelpTip width={220}>{infoText}</HelpTip>}
       </div>
       <span style={{
         fontSize: T.textSm, color: color || T.text2, fontFamily: T.mono,
@@ -413,7 +333,7 @@ function VpinGauge({ vpin, vpinLabel, vpinHistory }) {
           }}>
             VPIN
           </span>
-          <InfoTip {...VPIN_INFO} />
+          <HelpTip title={VPIN_INFO.title} width={220}>{VPIN_INFO.text}</HelpTip>
         </div>
         <span style={{
           fontSize: T.textXs, color, fontFamily: T.mono, fontWeight: 700,
