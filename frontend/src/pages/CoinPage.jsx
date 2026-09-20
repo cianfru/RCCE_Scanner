@@ -11,6 +11,7 @@ import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
+import ExpectedRange from "../components/ExpectedRange.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
 
@@ -678,7 +679,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           <SmartMoneyPanel data={data}/>
         </div>
       </section>
-      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><MetricsPanel data={data}/></section>
+      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><ExpectedRange data={data.expected_range} timeframe={timeframe} isMobile={isMobile}/><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
       <CoinChat symbol={data.symbol} timeframe={timeframe} isMobile={isMobile} />

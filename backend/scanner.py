@@ -54,6 +54,7 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, \
     fetch_batch_hip3, fetch_batch_yfinance, TRADFI_SYMBOLS, TRADFI_SYMBOL_LIST, TRADFI_COIN_MAP, \
     _ohlcv_store
 from engines.rcce_engine import compute_rcce
+from engines.range_forecast import forecast as range_forecast
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
 from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
@@ -486,6 +487,15 @@ def _compute_priority(r: dict, anomaly_symbols: set = None) -> float:
 # Core scan logic
 # ---------------------------------------------------------------------------
 
+def _expected_range(ohlcv: dict, timeframe: str) -> Optional[dict]:
+    """Guarded next-bar range forecast; never blocks a scan if it fails."""
+    try:
+        return range_forecast(ohlcv["high"], ohlcv["low"], ohlcv["close"], timeframe)
+    except Exception:
+        logger.debug("range forecast failed", exc_info=True)
+        return None
+
+
 def _process_symbol(
     symbol: str,
     timeframe: str,
@@ -552,6 +562,8 @@ def _process_symbol(
         "vol_state": rcce.get("vol_state", "MID"),
         "momentum": round(rcce.get("momentum", 0), 2),
         "vol_scale": rcce.get("vol_scale", 1.0),
+        # Calibrated next-bar range forecast (magnitude only, never direction)
+        "expected_range": _expected_range(ohlcv, timeframe),
         "divergence": None,  # populated after consensus pass
         "asset_class": classify_asset(symbol),
         # Heatmap fields

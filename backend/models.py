@@ -114,6 +114,9 @@ class ScanResult(BaseModel):
     buy_sell_ratio: float = 1.0      # taker buy / sell volume ratio
     vpin: float = 0.0                # Volume-Synchronized PIN, 0..1 (flow toxicity)
     vpin_label: str = "BALANCED"     # BALANCED | ELEVATED | TOXIC
+    # Calibrated next-bar range forecast: {probability, label, atr_mult,
+    # expected_range_pct, current_percentile, sample_size}. Magnitude only.
+    expected_range: Optional[dict] = None
     # Agent layer outputs (post-synthesis overrides)
     agent_signal: Optional[str] = None          # overridden signal (None = no change)
     agent_warnings: List[str] = []              # agent filter alerts
