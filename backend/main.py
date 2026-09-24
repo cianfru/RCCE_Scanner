@@ -277,6 +277,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    from setup_research_service import stop_setup_research
+    await stop_setup_research(cache)
+
     # Force-save OHLCV cache on shutdown (survives redeploys)
     try:
         from data_fetcher import _ohlcv_store
@@ -4038,3 +4041,27 @@ async def opportunity_transitions(limit: int = Query(100, ge=1, le=500)):
     for event in events:
         event["opportunity"] = json.loads(event.pop("payload"))
     return {"events": events, "available": True}
+
+
+@app.get("/api/research/setups")
+async def research_setups():
+    """Read-only forward paper outcomes, explicitly separate from live positions."""
+    from scanner import cache
+    ledger = getattr(cache, "paper_ledger", None)
+    if ledger is None:
+        return dict(mode="paper", validation_status="unvalidated", available=False,
+                    strategies={}, records=[], error=getattr(cache, "paper_research_error", None))
+    return dict(ledger.report(), available=True,
+                updated_at=getattr(cache, "paper_research_updated_at", None),
+                error=getattr(cache, "paper_research_error", None))
+
+
+@app.get("/api/research/setups/{setup_id}/events")
+async def research_setup_events(setup_id: str):
+    import json
+    from scanner import cache
+    ledger = getattr(cache, "paper_ledger", None)
+    events = ledger.events(setup_id) if ledger else []
+    for event in events:
+        event["state"] = json.loads(event.pop("payload"))
+    return dict(mode="paper", events=events)

@@ -1817,6 +1817,8 @@ async def _run_synthesis_pass(
             logger.exception("Confluence computation failed")
 
     attach_unified_signals(scan_cache.results, scan_cache)
+    from setup_research_service import schedule_setup_research
+    schedule_setup_research(scan_cache)
     if "4h" in scan_cache.results and "1d" in scan_cache.results:
         # Track unified signal outcomes (MFE/MAE)
         try:
@@ -1984,6 +1986,8 @@ async def run_scan(
                 logger.exception("Confluence computation failed")
 
         attach_unified_signals(scan_cache.results, scan_cache)
+        from setup_research_service import schedule_setup_research
+        schedule_setup_research(scan_cache)
 
         # 11. Execute signals via Kraken (if executor is enabled)
         try:
@@ -2154,6 +2158,8 @@ async def run_rolling_scan(
                 logger.exception("Confluence computation failed")
 
         attach_unified_signals(scan_cache.results, scan_cache)
+        from setup_research_service import schedule_setup_research
+        schedule_setup_research(scan_cache)
 
         # ── Executor ──
         try:

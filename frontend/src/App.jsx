@@ -1,3 +1,4 @@
+import SetupResearchDashboard from "./components/SetupResearchDashboard.jsx";
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import BestSetups from "./components/BestSetups.jsx";
@@ -926,6 +927,7 @@ export default function App() {
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
+        {showDashboard && <SetupResearchDashboard />}
         {showDashboard && <BestSetups results={activeTab === "4h" ? filtered4h : filtered1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>

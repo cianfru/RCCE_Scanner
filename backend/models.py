@@ -88,6 +88,7 @@ class ScanResult(BaseModel):
     opportunity_persisted: bool = False
     cto_shadow: dict = {}
     opportunity: Optional[dict] = None
+    trading_setups: list = []
     input_quality: dict = {}
     decision_version: Optional[str] = None
     decision_input_id: Optional[str] = None
