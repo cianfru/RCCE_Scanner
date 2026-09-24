@@ -3,20 +3,11 @@ import { T, m, SIGNAL_META, getBaseSymbol } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
-const ENTRY_SIGNALS = new Set([
-  "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED",
-]);
-const EXIT_SIGNALS = new Set([
-  "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG",
-]);
-const ALL_ACTIONABLE = new Set([
-  "STRONG_LONG", "LIGHT_LONG", "ACCUMULATE",
-  "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED",
-  "TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG",
-]);
+import { ENTRY_SIGNALS, EXIT_SIGNALS, selectOpportunity } from "../utils/opportunities.js";
 
 const SIGNAL_SHORT = {
   STRONG_LONG: "STRONG",
+  LIGHT_SHORT: "SHORT",
   LIGHT_LONG: "LIGHT",
   ACCUMULATE: "ACCUM",
   REVIVAL_SEED: "SEED",
@@ -41,7 +32,7 @@ const SIGNAL_SHORT = {
  */
 export function computeConfluence(r, crossTfMatch = false) {
   let score = 0;
-  const isExit = EXIT_SIGNALS.has(r.signal);
+  const isExit = EXIT_SIGNALS.has(r.signal) || r.signal === "LIGHT_SHORT";
   const positioning = r.positioning || {};
   const oi  = positioning.oi_trend  || "";
   const fr  = positioning.funding_regime || "NEUTRAL";
@@ -90,44 +81,19 @@ export function computeConfluence(r, crossTfMatch = false) {
   return score;
 }
 
-/**
- * Unified signal bar — CROSS-TIMEFRAME ONLY.
- *
- * Only shows coins where BOTH 4H and 1D agree on signal direction.
- * Single-TF signals are suppressed — they produce too much noise.
- *
- * Confluence filter (applied on top of the cross-TF requirement):
- *   HIGH (≥4): strong multi-engine alignment — very few, highest quality
- *   MED  (≥3): solid alignment — manageable set
- *   ALL:       all cross-TF matches regardless of confluence
- */
+/** Final cross-timeframe opportunities, plus independent exit warnings. */
 export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
   const [filter, setFilter] = useState("MED"); // HIGH | MED | ALL
 
   const { chips, hiddenCount } = useMemo(() => {
-    const map4h = new Map();
-    const map1d = new Map();
-    for (const r of data4h) if (ALL_ACTIONABLE.has(r.signal)) map4h.set(r.symbol, r);
-    for (const r of data1d) if (ALL_ACTIONABLE.has(r.signal)) map1d.set(r.symbol, r);
-
+    const map4h = new Map(data4h.map(r => [r.symbol, r]));
+    const map1d = new Map(data1d.map(r => [r.symbol, r]));
     const rawChips = [];
-
-    // Cross-timeframe matches only — both TFs must agree on direction
-    for (const [sym, r4] of map4h) {
-      const r1 = map1d.get(sym);
-      if (!r1) continue;
-      const bothExit   = EXIT_SIGNALS.has(r4.signal)   && EXIT_SIGNALS.has(r1.signal);
-      const bothEntry  = ENTRY_SIGNALS.has(r4.signal)  && ENTRY_SIGNALS.has(r1.signal);
-      const bothStrong = r4.signal === "STRONG_LONG"   && r1.signal === "STRONG_LONG";
-      if (!bothExit && !bothEntry && !bothStrong) continue;
-
-      // Use whichever TF has the stronger signal (higher priority score)
-      const primary = (r4.priority_score || 0) >= (r1.priority_score || 0) ? r4 : r1;
-      rawChips.push({
-        ...primary,
-        tf: "4H+1D",
-        crossTf: true,
-        confluence: computeConfluence(primary, true),
+    for (const sym of new Set([...map4h.keys(), ...map1d.keys()])) {
+      const opportunity = selectOpportunity(map4h.get(sym), map1d.get(sym));
+      if (opportunity) rawChips.push({
+        ...opportunity,
+        confluence: computeConfluence(opportunity, opportunity.crossTf),
       });
     }
 
@@ -142,7 +108,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
 
     // Apply confluence filter (all are already cross-TF confirmed)
     const minScore = filter === "HIGH" ? 4 : filter === "MED" ? 3 : 0;
-    const visible = rawChips.filter(c => c.confluence >= minScore);
+    const visible = rawChips.filter(c => EXIT_SIGNALS.has(c.signal) || c.confluence >= minScore);
     const hidden  = rawChips.length - visible.length;
 
     return { chips: visible.slice(0, 15), hiddenCount: hidden };
@@ -181,7 +147,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
             flexShrink: 0,
             marginRight: 2,
           }}>
-            4H+1D
+            Opportunities
           </span>
 
           {/* Filter toggles */}
@@ -218,7 +184,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
           {/* Chips */}
           {chips.length === 0 ? (
             <span style={{ fontSize: 11, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
-              No 4H+1D confirmed signals at this confluence level
+              No opportunities at this confluence level
             </span>
           ) : chips.map(r => {
             const sm = SIGNAL_META[r.signal] || SIGNAL_META.WAIT;

@@ -162,7 +162,7 @@ def _compute_bmsb_filter(ohlcv_1w_btc: dict, consecutive_weeks: int = 2) -> Dict
     blocked: Dict[float, bool] = {}
     consec_below = 0
     for i in range(n):
-        ts = timestamps[i] if not isinstance(timestamps, np.ndarray) else float(timestamps[i])
+        ts = float(timestamps[i]) + 7 * 24 * 3600 * 1000  # observable at weekly close
         if np.isnan(midline[i]):
             blocked[ts] = False
             continue
@@ -347,7 +347,7 @@ async def _run_backtest_task(
         btc_price_lookup: Dict[float, float] = {}
         if btc_4h is not None:
             for i in range(len(btc_4h["timestamp"])):
-                btc_price_lookup[btc_4h["timestamp"][i]] = btc_4h["close"][i]
+                btc_price_lookup[btc_4h["timestamp"][i] + 4 * 3600 * 1000] = btc_4h["close"][i]
 
         # Group bars by timestamp for mark-to-market
         bars_by_ts: Dict[float, List[BarResult]] = {}

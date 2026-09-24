@@ -32,6 +32,14 @@ def _get_ccxt():
         import ccxt.async_support as _ccxt
         _ccxt_mod = _ccxt
     return _ccxt_mod
+
+
+async def _create_exchange(exchange_id: str):
+    """Create an unshared public-data client; the caller owns and closes it."""
+    exchange_class = getattr(_get_ccxt(), exchange_id)
+    return exchange_class({"enableRateLimit": True, "timeout": 30000})
+
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

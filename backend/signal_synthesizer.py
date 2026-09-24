@@ -17,6 +17,7 @@ a ``raw_signal`` for reference, but the scanner pipeline calls
 from __future__ import annotations
 
 import logging
+from functools import wraps
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -71,7 +72,11 @@ class SynthesizedSignal:
     warnings: list = field(default_factory=list)
     conditions_met: int = 0
     effective_conditions: float = 0.0  # Weighted score post-boost/penalty
-    conditions_total: int = 10  # Raw condition count (10 for HL-native, 14 for CEX)
+    weighted_total: float = 9.0
+    evidence_coverage: float = 0.0
+    strong_long_blockers: list = field(default_factory=list)
+    entry_blocked: bool = False
+    conditions_total: int = 9  # Unweighted checklist denominator
     conditions_detail: list = field(default_factory=list)  # [{name, label, desc, met}]
     vol_scale: float = 1.0
 
@@ -95,12 +100,13 @@ _SIGNAL_SCORE_CEILING = {
 def compute_signal_score(
     signal: str,
     effective_conditions: float,
-    conditions_total: int,
+    conditions_total: float,
 ) -> int:
     """Compute a signed conviction score (-100..+100) from a synth result.
 
     Positive = bullish, negative = bearish, 0 = WAIT / unknown.
 
+    Pass weighted_total as the denominator, not the raw checklist count.
     The score combines the signal direction (sign) with the weighted
     condition fill rate (magnitude), capped at a per-signal ceiling so
     LIGHT_LONG never outranks STRONG_LONG etc.
@@ -216,16 +222,16 @@ def _apply_cvd_modifiers(
 # Main synthesis function
 # ---------------------------------------------------------------------------
 
-def synthesize_signal(
+def _synthesize_signal(
     result: dict,
     consensus: dict,
     global_metrics: Optional[dict] = None,
     positioning: Optional[dict] = None,
     sentiment: Optional[dict] = None,
     stablecoin: Optional[dict] = None,
-    macro_blocked: bool = False,
-    prev_heat: int = 0,
-    bmsb_valid: bool = True,
+    macro_blocked: Optional[bool] = None,
+    prev_heat: Optional[int] = None,
+    bmsb_valid: Optional[bool] = None,
     cvd_trend: str = "NEUTRAL",
     cvd_divergence: bool = False,
     spot_dominance: str = "NEUTRAL",
@@ -315,7 +321,15 @@ def synthesize_signal(
         heat_force = HEAT_FORCE_TRIM
         heat_block = HEAT_BLOCK_STRONG
 
+    if bmsb_valid is None:
+        bmsb_valid = result.get("bmsb_valid", bool(result.get("bmsb_mid", 0)))
+    if macro_blocked is None:
+        macro_blocked = not bmsb_valid or result.get("heat_direction", 0) < 0
+    if prev_heat is None:
+        prev_heat = result.get("previous_heat")
+
     out = SynthesizedSignal(raw_signal=raw_signal)
+    out.entry_blocked = bool(macro_blocked or is_climax or result.get("engine_errors"))
     reasons: list = []
     warnings: list = []
 
@@ -344,9 +358,9 @@ def synthesize_signal(
     cond_no_bear_div = divergence != "BEAR-DIV"
     cond_heat_ok = heat < heat_block
     cond_no_climax = not is_climax
-    cond_funding_ok = funding_regime != "CROWDED_LONG"
-    cond_not_greedy = fear_greed < FNG_GREED
-    cond_liquidity_ok = stable_trend != "CONTRACTING"
+    cond_funding_ok = bool(positioning and positioning.get("funding_regime") is not None) and funding_regime != "CROWDED_LONG"
+    cond_not_greedy = bool(sentiment and sentiment.get("fear_greed_value") is not None) and fear_greed < FNG_GREED
+    cond_liquidity_ok = bool(stablecoin and stablecoin.get("trend") is not None) and stable_trend != "CONTRACTING"
 
     core_conditions = [
         cond_bullish_regime, cond_consensus, cond_z_range,
@@ -369,8 +383,8 @@ def synthesize_signal(
 
     # -- CoinGlass conditions (weight 0.75, only when data available) --
     cond_oi_confirms = oi_trend in ("BUILDING", "STABLE") if regime in ("MARKUP", "ACCUM", "REACC") else oi_trend in ("LIQUIDATING", "SQUEEZE")
-    cond_cvd_confirms = cvd_trend in ("BULLISH", "NEUTRAL")  # NEUTRAL = no bias, not counter-evidence
-    cond_smart_money = top_trader_lsr >= SMART_MONEY_LSR_OK or top_trader_lsr == 1.0  # 1.0 = no data → neutral pass
+    cond_cvd_confirms = cvd_trend == "BULLISH"  # Neutral is not positive evidence.
+    cond_smart_money = top_trader_lsr != 1.0 and top_trader_lsr >= SMART_MONEY_LSR_OK  # 1.0 is a missing-data sentinel.
     cond_macro_tailwind = etf_flow_usd > 0 or cb_premium > 0
 
     cg_conditions = [cond_oi_confirms, cond_cvd_confirms, cond_smart_money, cond_macro_tailwind]
@@ -433,6 +447,7 @@ def synthesize_signal(
         conditions_met = core_met
         conditions_total = 9
 
+    out.weighted_total = total_max
     out.conditions_met = conditions_met
     out.conditions_total = conditions_total
 
@@ -451,6 +466,25 @@ def synthesize_signal(
             {"name": n, "label": l, "desc": d, "met": bool(c), "group": g}
             for (n, l, d, g), c in zip(_HL_NAMES, hl_conditions)
         ]
+
+    # Unknown evidence is visible and never earns a confirmation point.
+    availability = {
+        "funding_ok": bool(positioning and positioning.get("funding_regime") is not None),
+        "not_greedy": bool(sentiment and sentiment.get("fear_greed_value") is not None),
+        "liquidity_ok": bool(stablecoin and stablecoin.get("trend") is not None),
+        "oi_confirms": oi_trend != "UNKNOWN",
+        "cvd_confirms": cvd_trend in ("BULLISH", "BEARISH"),
+        # Providers use 1.0 as the missing-data sentinel; conservatively leave it unknown.
+        "smart_money_ok": top_trader_lsr != 1.0,
+        "macro_tailwind": etf_flow_usd != 0 or cb_premium != 0,
+    }
+    for condition in out.conditions_detail:
+        condition["available"] = availability.get(condition["name"], True)
+        condition["status"] = ("unknown" if not condition["available"]
+                               else "pass" if condition["met"] else "fail")
+        if not condition["available"]:
+            condition["met"] = False
+    out.evidence_coverage = sum(c["available"] for c in out.conditions_detail) / conditions_total
 
     # ── Feature B: Regime-specific boosters & penalties ──
     effective = weighted_score
@@ -471,6 +505,19 @@ def synthesize_signal(
         boost_reasons.append(f"-1 heat {heat_phase.lower()}")
 
     out.effective_conditions = effective
+    # Carry mandatory caps through CVD/whale upgrades and later agent filters.
+    if regime_unstable:
+        out.strong_long_blockers.append("unstable regime")
+    if heat >= heat_block:
+        out.strong_long_blockers.append("heat above strong-entry limit")
+    if funding_regime == "CROWDED_LONG":
+        out.strong_long_blockers.append("crowded long funding")
+    if divergence == "BEAR-DIV":
+        out.strong_long_blockers.append("bearish divergence")
+    if any(not c["available"] for c in out.conditions_detail if c["group"] == "core"):
+        out.strong_long_blockers.append("core context unavailable")
+    if regime == "MARKUP" and not (effective / total_max >= 0.85 and 0 < z < 1.0):
+        out.strong_long_blockers.append("MARKUP outside strict entry band")
     out.vol_scale = vs
 
     # Helper: build human-readable reason string
@@ -576,6 +623,7 @@ def synthesize_signal(
             return out
         if (0.3 <= z <= 1.2
                 and heat >= 20
+                and prev_heat is not None
                 and heat <= prev_heat          # rally momentum stalling
                 and divergence != "BULL-DIV"
                 and funding_regime != "CROWDED_SHORT"
@@ -706,7 +754,7 @@ def synthesize_signal(
             out.warnings = warnings
             return _cvd_return()
     # STRONG_LONG with 55%+ effective but blocked by funding
-    elif eff_pct >= 0.55 and not cond_funding_ok:
+    elif eff_pct >= 0.55 and funding_regime == "CROWDED_LONG":
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
         if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
             out.signal = "LIGHT_LONG"
@@ -793,7 +841,7 @@ def synthesize_signal(
                 and mkt_consensus in ("RISK-ON", "MIXED")
                 and divergence != "BEAR-DIV"):
             out.signal = "LIGHT_LONG"
-            out.reason = " + ".join(_reason_parts()) + f" [{effective}/{len(conditions)} effective]"
+            out.reason = " + ".join(_reason_parts()) + f" [{effective:.1f}/{total_max:.0f} effective]"
             out.warnings = warnings
             return _cvd_return()
 
@@ -836,3 +884,25 @@ def synthesize_signal(
         out, cvd_trend, cvd_divergence, spot_dominance,
         long_short_ratio, liquidation_24h_usd, top_trader_lsr,
     )
+
+
+def enforce_signal_constraints(signal: str, *, entry_blocked=False, strong_long_blockers=()) -> str:
+    """Final eligibility check; modifiers may not erase mandatory restrictions."""
+    if signal in _BULL_SIGNALS and entry_blocked:
+        return "WAIT"
+    if signal == "STRONG_LONG" and strong_long_blockers:
+        return "LIGHT_LONG"
+    return signal
+
+
+@wraps(_synthesize_signal)
+def synthesize_signal(*args, **kwargs) -> SynthesizedSignal:
+    out = _synthesize_signal(*args, **kwargs)
+    final = enforce_signal_constraints(out.signal, entry_blocked=out.entry_blocked,
+                                       strong_long_blockers=out.strong_long_blockers)
+    if final != out.signal:
+        reason = "entries blocked" if out.entry_blocked else ", ".join(out.strong_long_blockers)
+        out.reason += f" [final eligibility: {reason}]"
+        out.warnings.append(reason)
+        out.signal = final
+    return out
