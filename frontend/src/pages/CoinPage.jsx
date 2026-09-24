@@ -1,3 +1,5 @@
+import TradingSetupCards from "../components/TradingSetupCards.jsx";
+import OpportunityCard from "../components/OpportunityCard.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import RegimeTransition from "../components/RegimeTransition.jsx";
 import HelpTip from "../components/HelpTip.jsx";
@@ -668,6 +670,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
       <section className="analysis-section"><h2>Check the setup</h2><p className="analysis-section-caption">The conditions behind the signal and its agreement across timeframes.</p>
         <div className="analysis-grid">
+          <TradingSetupCards records={data.trading_setups} />
+          <OpportunityCard row={data} />
           <ConditionsScorecard conditions={data.conditions_detail} met={data.conditions_met} total={data.conditions_total}/>
           <ConfluenceCard confluence={data.confluence}/>
         </div>

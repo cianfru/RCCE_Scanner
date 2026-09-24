@@ -44,6 +44,8 @@ Filter state lives in ScanCache attributes added on first use:
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+from signal_synthesizer import enforce_signal_constraints
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -190,7 +192,7 @@ def _filter_cooldown(
     if not is_positioned:
         return signal
 
-    history: List[str] = cache.signal_history.get(symbol, [])
+    history: List[str] = cache.signal_history.get(f"{symbol}:{cache._current_timeframe}", [])
     if not history:
         return signal
 
@@ -258,7 +260,7 @@ def _filter_bear_div_flapping(
     if regime == "MARKDOWN":
         return signal
 
-    div_history: List[Optional[str]] = cache.divergence_history.get(symbol, [])
+    div_history: List[Optional[str]] = cache.divergence_history.get(f"{symbol}:{cache._current_timeframe}", [])
 
     # If current bar has no BEAR-DIV, nothing to do
     if divergence != "BEAR-DIV":
@@ -382,8 +384,8 @@ def _filter_heat_z_divergence(
     if signal not in _ENTRY_SIGNALS:
         return signal
 
-    prev_heat: int = cache.prev_heat.get(symbol, current_heat)
-    prev_z: float = cache.prev_zscore.get(symbol, current_z)
+    prev_heat: int = cache.prev_heat.get(f"{symbol}:{cache._current_timeframe}", current_heat)
+    prev_z: float = cache.prev_zscore.get(f"{symbol}:{cache._current_timeframe}", current_z)
 
     heat_delta = current_heat - prev_heat
     z_delta = prev_z - current_z  # positive = z fell
@@ -550,8 +552,8 @@ def _update_history(
     smoothed = _smooth_confidence(confidence, symbol, timeframe, cache)
     _push(cache.confidence_history, tf_key, round(smoothed, 1), _CONF_HISTORY_LEN)
     _push(cache.divergence_history, tf_key, divergence, _DIV_HISTORY_LEN)
-    cache.prev_zscore[symbol] = current_z
-    cache.prev_heat[symbol] = current_heat
+    cache.prev_zscore[tf_key] = current_z
+    cache.prev_heat[tf_key] = current_heat
 
     # Push positioning metric histories for sparklines
     if positioning:
@@ -677,6 +679,30 @@ def process(
     timeframe = scan_result.get("timeframe", "")
     # Stash current timeframe so filters can scope state per-TF
     cache._current_timeframe = timeframe
+    # Re-evaluations of one closed candle start from the same historical state.
+    # Live context can change, but another poll must not count as another bar.
+    tf_key = f"{symbol}:{timeframe}"
+    bar_time = scan_result.get("signal_bar_close_time")
+    if not hasattr(cache, "agent_bar_baselines"):
+        cache.agent_bar_baselines = {}
+    history_names = ("signal_history", "divergence_history", "confidence_history",
+                     "smoothed_confidence", "prev_heat", "prev_zscore", "signal_inertia",
+                     "funding_history", "oi_history", "oi_change_history", "lsr_history",
+                     "bsr_history", "spot_ratio_history", "vpin_history")
+    baseline = cache.agent_bar_baselines.get(tf_key)
+    if bar_time is not None:
+        if baseline and baseline["bar"] == bar_time:
+            for name, value in baseline["values"].items():
+                mapping = getattr(cache, name, {})
+                if value is None:
+                    mapping.pop(tf_key, None)
+                else:
+                    mapping[tf_key] = deepcopy(value)
+        else:
+            cache.agent_bar_baselines[tf_key] = {
+                "bar": bar_time,
+                "values": {name: deepcopy(getattr(cache, name, {}).get(tf_key)) for name in history_names},
+            }
     original_signal = scan_result.get("signal", "WAIT")
     confidence = float(scan_result.get("confidence", 0.0))
     divergence = scan_result.get("divergence")
@@ -727,7 +753,14 @@ def process(
     signal = _filter_anomaly_context(signal, symbol, cache, out)
 
     # F7: Signal inertia (LAST — holds entries through brief downgrades)
-    signal = _filter_signal_inertia(signal, symbol, cache, out)
+    if scan_result.get("entry_blocked") or signal != original_signal:
+        # Explicit eligibility/safety decisions are immediate, never held by inertia.
+        cache.signal_inertia[tf_key] = {"signal": signal, "downgrade_count": 0}
+    else:
+        signal = _filter_signal_inertia(signal, symbol, cache, out)
+    signal = enforce_signal_constraints(signal,
+        entry_blocked=scan_result.get("entry_blocked", False),
+        strong_long_blockers=scan_result.get("strong_long_blockers", []))
 
     # ---------- finalise ----------
 

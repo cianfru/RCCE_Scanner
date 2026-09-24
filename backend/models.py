@@ -60,6 +60,11 @@ class ConditionDetail(BaseModel):
     label: str
     desc: str = ""
     met: bool
+    available: bool = True
+    status: str = "pass"
+    source: Optional[str] = None
+    observed_at: Optional[float] = None
+    freshness: str = "missing"
     group: str = "core"  # "core" or "coinglass"
 
 
@@ -76,6 +81,25 @@ class ScanResult(BaseModel):
     confidence: float                    # RCCE regime probability (legacy, kept for compat)
     regime_probability: float = 0.0     # same value, clearer name
     signal: str
+    cto: Optional[dict] = None
+    cto_mode: str = "shadow"
+    cto_policy: list = ["baseline", 1]
+    cto_policy_evidence: Optional[str] = None
+    opportunity_persisted: bool = False
+    cto_shadow: dict = {}
+    opportunity: Optional[dict] = None
+    trading_setups: list = []
+    input_quality: dict = {}
+    decision_version: Optional[str] = None
+    decision_input_id: Optional[str] = None
+    evaluated_at: Optional[float] = None
+    signal_status: str = "ready"
+    decision_price: Optional[float] = None
+    signal_bar_close_time: Optional[float] = None
+    weighted_total: float = 9.0
+    evidence_coverage: float = 0.0
+    strong_long_blockers: List[str] = []
+    entry_blocked: bool = False
     raw_signal: str = "WAIT"
     signal_reason: str = ""
     signal_warnings: List[str] = []

@@ -1,3 +1,6 @@
+import SetupResearchDashboard from "./components/SetupResearchDashboard.jsx";
+import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
+import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import BestSetups from "./components/BestSetups.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
@@ -924,10 +927,13 @@ export default function App() {
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
+        {showDashboard && <SetupResearchDashboard />}
         {showDashboard && <BestSetups results={activeTab === "4h" ? filtered4h : filtered1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
+          <OpportunityActivity />
+          <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={handleSelectCoin} />
           <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>
           <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh}/>
         </details>}

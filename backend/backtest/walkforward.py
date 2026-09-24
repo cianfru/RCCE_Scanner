@@ -290,7 +290,7 @@ async def _run_window(
     btc_4h = sliced_4h.get(btc_sym)
     if btc_4h is not None:
         for i in range(len(btc_4h["timestamp"])):
-            ts_val = float(btc_4h["timestamp"][i])
+            ts_val = float(btc_4h["timestamp"][i]) + 4 * 3600 * 1000
             btc_price_lookup[ts_val] = float(btc_4h["close"][i])
 
     # Group bars by timestamp
@@ -587,7 +587,7 @@ async def _run_walkforward_task(
             full_btc_lookup: Dict[float, float] = {}
             if btc_4h_data is not None:
                 for i in range(len(btc_4h_data["timestamp"])):
-                    full_btc_lookup[float(btc_4h_data["timestamp"][i])] = float(btc_4h_data["close"][i])
+                    full_btc_lookup[float(btc_4h_data["timestamp"][i]) + 4 * 3600 * 1000] = float(btc_4h_data["close"][i])
 
             full_bars_by_ts: Dict[float, List[BarResult]] = {}
             for b in full_bar_results:

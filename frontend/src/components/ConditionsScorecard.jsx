@@ -12,9 +12,9 @@ function scoreColor(pct) {
 
 function ConditionPill({ c }) {
   return (
-    <div className="condition-item" title={c.desc}>
-      <span aria-label={c.met ? 'Met' : 'Not met'} style={{color:c.met ? MET_COLOR : UNMET_COLOR}}>{c.met ? '✓' : '✗'}</span>
-      <div><strong>{c.label}</strong><p>{c.desc}</p></div>
+    <div className="condition-item" title={`${c.desc} · ${c.source || "Source unavailable"} · ${c.freshness || "Unknown freshness"}${c.observed_at ? ` · ${new Date(c.observed_at * 1000).toISOString()}` : ""}`}>
+      <span aria-label={c.available === false ? 'Unknown' : c.met ? 'Met' : 'Not met'} style={{color:c.available === false ? T.text4 : c.met ? MET_COLOR : UNMET_COLOR}}>{c.available === false ? '?' : c.met ? '✓' : '✗'}</span>
+      <div><strong>{c.label}</strong><p>{c.available === false ? "Data unavailable — not counted as confirmation" : c.desc}</p></div>
     </div>
   );
 }
@@ -51,7 +51,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
             fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
             fontFamily: T.font, fontWeight: 700, textTransform: "none",
           }}>
-            Entry Conditions <HelpTip title="Entry conditions"><p>The individual checks used by the signal engine: regime, market consensus, price deviation, heat, funding and other available inputs. A checkmark means the condition is met in the current snapshot. The percentage is checks passed divided by checks evaluated—not a probability of a profitable trade.</p></HelpTip>
+            Entry Conditions <HelpTip title="Entry conditions"><p>The individual checks used by the signal engine: regime, market consensus, price deviation, heat, funding and other available inputs. A checkmark means the condition is met in the current snapshot. Unknown inputs earn no points. The percentage shows checklist alignment, not the probability of a profitable trade.</p></HelpTip>
           </span>
         </div>
         <span style={{ fontFamily: T.mono, fontSize: T.textLg, fontWeight: 700, color }}>
@@ -62,6 +62,11 @@ export default function ConditionsScorecard({ conditions, met, total }) {
         </span>
       </div>
 
+      {conditions.some(c => c.available === false) && (
+        <p style={{ color: T.text4, marginBottom: 10 }}>
+          Evidence available: {conditions.filter(c => c.available !== false).length}/{conditions.length}
+        </p>
+      )}
       {/* Progress bar */}
       <div style={{
         height: 5, background: T.overlay04,

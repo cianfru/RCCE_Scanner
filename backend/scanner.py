@@ -55,17 +55,20 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, \
     _ohlcv_store
 from engines.rcce_engine import compute_rcce
 from engines.range_forecast import forecast as range_forecast
+from engines.cto_engine import compute_cto_snapshot
+from decision_pipeline import evaluate_decision, apply_synthesis_result, finalize_signal
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
 from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
-from signal_synthesizer import synthesize_signal
+from signal_synthesizer import synthesize_signal, compute_signal_score, enforce_signal_constraints
+from candle_snapshot import closed_candles, snapshot_key, TF_MS
 from market_data import (
     fetch_global_metrics, GlobalMetrics,
     fetch_fear_greed, fetch_stablecoin_supply,
 )
 # binance_futures_data removed — Binance geo-blocked on Railway
 from hyperliquid_data import fetch_hyperliquid_metrics
-from confluence import compute_all_confluences
+from confluence import compute_all_confluences, unified_signal
 import favorites as fav_store
 
 logger = logging.getLogger(__name__)
@@ -341,9 +344,9 @@ class ScanCache:
         # Rolling scan state
         self._rotation_offset: int = 0
         self._results_by_sym: Dict[str, Dict[str, dict]] = {}  # symbol -> {tf -> result}
-        # Engine cache: stores only the last-closed-candle timestamp per (symbol, tf).
+        # Engine cache: digest of completed OHLCV plus weekly/reference inputs.
         # On hit, reuses result from _results_by_sym instead of storing a full copy.
-        self._engine_cache: Dict[tuple, int] = {}
+        self._engine_cache: Dict[tuple, str] = {}
         # Anomaly detection results (served by /api/notifications/anomalies)
         self.anomalies: List[dict] = []
         # Symbols with active anomalies — promoted to "hot" tier in drip scan
@@ -503,6 +506,7 @@ def _process_symbol(
     weekly: Optional[dict],
     btc_data: Optional[dict],
     eth_data: Optional[dict],
+    as_of_ms: Optional[float] = None,
 ) -> dict:
     """Run all three engines for a single symbol and merge into one result dict.
 
@@ -513,6 +517,20 @@ def _process_symbol(
     ``signal`` is set to "WAIT" here and overwritten by the signal
     synthesizer after consensus and divergence are computed.
     """
+    as_of_ms = time.time() * 1000 if as_of_ms is None else as_of_ms
+    live_price = float(ohlcv["close"][-1])
+    ohlcv = closed_candles(ohlcv, timeframe, as_of_ms)
+    weekly = closed_candles(weekly, "1w", as_of_ms)
+    btc_data = closed_candles(btc_data, timeframe, as_of_ms)
+    eth_data = closed_candles(eth_data, timeframe, as_of_ms)
+    ohlcv = {k: v[-599:] for k, v in ohlcv.items()}
+    weekly = {k: v[-199:] for k, v in weekly.items()} if weekly is not None else None
+    btc_data = {k: v[-599:] for k, v in btc_data.items()} if btc_data is not None else None
+    eth_data = {k: v[-599:] for k, v in eth_data.items()} if eth_data is not None else None
+    if len(ohlcv["close"]) == 0:
+        raise ValueError("No completed candles available")
+    engine_errors = []
+
     # --- RCCE engine -------------------------------------------------------
     # Skip beta calculation for /BTC pairs (currency mismatch with USD reference)
     quote = symbol.split("/")[1] if "/" in symbol else "USDT"
@@ -526,6 +544,7 @@ def _process_symbol(
             None if is_btc_quoted else eth_data,
         )
     except Exception:
+        engine_errors.append("RCCE")
         logger.exception("RCCE engine failed for %s (%s)", symbol, timeframe)
 
     # --- Heatmap engine ----------------------------------------------------
@@ -534,6 +553,7 @@ def _process_symbol(
         try:
             heatmap = compute_heatmap(ohlcv, weekly)
         except Exception:
+            engine_errors.append("Heatmap")
             logger.exception("Heatmap engine failed for %s (%s)", symbol, timeframe)
 
     # --- Exhaustion engine -------------------------------------------------
@@ -542,13 +562,39 @@ def _process_symbol(
         try:
             exhaustion = compute_exhaustion(ohlcv, weekly)
         except Exception:
+            engine_errors.append("Exhaustion")
             logger.exception("Exhaustion engine failed for %s (%s)", symbol, timeframe)
+
+    # Previous completed-bar heat, with only weekly information available then.
+    previous_heat = None
+    if len(ohlcv["close"]) >= 2 and weekly is not None:
+        previous_close_ms = float(ohlcv["timestamp"][-2]) + TF_MS[timeframe]
+        try:
+            previous = compute_heatmap(
+                {k: v[:-1] for k, v in ohlcv.items()},
+                closed_candles(weekly, "1w", previous_close_ms),
+            )
+            if previous.get("bmsb_mid", 0):
+                previous_heat = previous.get("heat")
+        except Exception:
+            logger.warning("Previous heat unavailable for %s (%s)", symbol, timeframe)
+
 
     # --- Merge into ScanResult shape ---------------------------------------
     result: dict = {
         "symbol": symbol,
         "timeframe": timeframe,
-        "price": float(ohlcv["close"][-1]),
+        "price": live_price,
+        "decision_price": float(ohlcv["close"][-1]),
+        "decision_input_id": snapshot_key(ohlcv, timeframe, weekly, btc_data, eth_data, as_of_ms=as_of_ms),
+        "signal_bar_close_time": (float(ohlcv["timestamp"][-1]) + TF_MS[timeframe]) / 1000,
+        "previous_heat": previous_heat,
+        "cto": compute_cto_snapshot(ohlcv, timeframe, as_of_ms),
+        "structure": {"swing_low": float(min(ohlcv["low"][-10:])),
+                      "swing_high": float(max(ohlcv["high"][-10:])), "lookback_bars": 10},
+        "bmsb_valid": bool(heatmap.get("bmsb_mid", 0)),
+        "engine_errors": engine_errors,
+        "signal_status": "unavailable" if engine_errors else "ready",
         # RCCE fields
         "regime": rcce.get("regime", "FLAT"),
         "confidence": round(rcce.get("confidence", 0), 1),  # RCCE regime probability (legacy name kept for compat)
@@ -652,7 +698,13 @@ def _attach_positioning(
         mark_price = by.mark_price
         source = "bybit"
 
+    chosen = {"binance": bn, "hyperliquid": hl, "bybit": by}.get(source)
+    metadata = result.setdefault("input_metadata", {})
+    metadata["funding"] = {"source": source or None, "observed_at": getattr(chosen, "timestamp", None)}
+    cg = (cg_metrics or {}).get(symbol)
+    metadata["coinglass"] = {"source": "derivatives_feed", "observed_at": getattr(cg, "timestamp", None)}
     if not source:
+        result.pop("positioning", None)
         return ""
 
     sparkline = result.get("sparkline", [])
@@ -750,6 +802,59 @@ def _attach_positioning(
     return source
 
 
+def attach_unified_signals(results_by_tf: dict, scan_cache=None) -> None:
+    four = {r["symbol"]: r for r in results_by_tf.get("4h", [])}
+    daily = {r["symbol"]: r for r in results_by_tf.get("1d", [])}
+    for symbol in four.keys() | daily.keys():
+        signal = unified_signal(four.get(symbol), daily.get(symbol))
+        for row in (four.get(symbol), daily.get(symbol)):
+            if row is not None:
+                row["unified_signal"] = signal
+    if scan_cache is not None:
+        update_opportunities(results_by_tf, scan_cache)
+
+
+
+def update_opportunities(results_by_tf, scan_cache):
+    from opportunities import build_opportunity
+    from opportunity_journal import OpportunityJournal
+    try:
+        if not hasattr(scan_cache, "opportunity_journal"):
+            scan_cache.opportunity_journal = OpportunityJournal()
+        journal = scan_cache.opportunity_journal
+    except Exception:
+        logger.exception("Opportunity persistence unavailable")
+        journal = None
+    if not hasattr(scan_cache, "opportunity_states"):
+        scan_cache.opportunity_states = {}
+    events = []
+    for results in results_by_tf.values():
+        for row in results:
+            as_of = row.get("evaluated_at", time.time())
+            key = (row["symbol"], row["timeframe"])
+            previous = scan_cache.opportunity_states.get(key)
+            if journal and previous is None:
+                try:
+                    previous = journal.previous(*key)
+                except Exception:
+                    logger.exception("Opportunity state read failed")
+            policy, bars = row.get("cto_policy", ["baseline", 1])
+            opportunity = build_opportunity(row, previous, as_of=as_of, variant=policy, confirmation_bars=bars)
+            if opportunity["status"] == "confirmed" and row.get("unified_signal") == "WAIT":
+                opportunity.update(status="blocked", reason="Cross-timeframe entry disagreement",
+                                   conflicting_timeframe="1d" if row["timeframe"] == "4h" else "4h")
+            row["opportunity"] = opportunity
+            scan_cache.opportunity_states[key] = opportunity
+            row["opportunity_persisted"] = False
+            try:
+                if journal and journal.record(row, opportunity, as_of=as_of):
+                    events.append({"symbol": row["symbol"], "timeframe": row["timeframe"], **opportunity})
+                row["opportunity_persisted"] = journal is not None
+            except Exception:
+                logger.exception("Opportunity journal write failed for %s", row["symbol"])
+    scan_cache.opportunity_events = events
+
+
 async def _synthesize_and_enrich(
     results: List[dict],
     tf: str,
@@ -800,200 +905,58 @@ async def _synthesize_and_enrich(
             "total_cap": stablecoin_data.total_stablecoin_cap,
         }
 
-    if not hasattr(scan_cache, 'prev_heat'):
-        scan_cache.prev_heat = {}
-    prev_heat_snapshot = dict(scan_cache.prev_heat)
-
-    # Regime instability tracking — lazily init per-symbol timestamp lists.
-    # A symbol with ≥3 regime changes in 7 days is classified as "chop" and
-    # cannot produce STRONG_LONG (data shows this is noise, not regime).
-    if not hasattr(scan_cache, 'regime_change_log'):
-        scan_cache.regime_change_log = {}  # tf_key → List[float] of change timestamps
-    if not hasattr(scan_cache, 'prev_regime_by_tf'):
-        scan_cache.prev_regime_by_tf = {}  # tf_key → last seen regime
-    _REGIME_INSTABILITY_WINDOW_S = 7 * 24 * 3600  # 7 days
-    _REGIME_INSTABILITY_MIN_CHANGES = 3
-
-    _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
-    _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
-    _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
-
-    # Fetch HyperLens whale consensus (thread-safe read of in-memory dict)
     try:
-        from hl_intelligence import get_all_consensus as _hl_get_all, _normalize_coin as _hl_norm
-        _hl_consensus = _hl_get_all()  # Dict[str, SymbolConsensus]
+        from hl_intelligence import get_all_consensus, _normalize_coin, _consensus_updated_at
+        hl_consensus = get_all_consensus()
     except Exception:
-        _hl_consensus = {}
-
-    def _synth_one(r):
-        heat_direction = r.get("heat_direction", 0)
-        deviation_pct = r.get("deviation_pct", 0.0)
-        heat_val = r.get("heat", 0)
-        bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
-        macro_blocked = True if not bmsb_valid else heat_direction < 0
+        hl_consensus, _consensus_updated_at = {}, 0
+    as_of = time.time()
+    other_tf = "1d" if tf == "4h" else "4h"
+    other_rows = {r["symbol"]: r for r in scan_cache.results.get(other_tf, [])}
+    from confluence import compute_confluence
+    for r in results:
         symbol = r.get("symbol", "")
-        prev_heat = prev_heat_snapshot.get(symbol, 0)
-
-        # Regime instability: record changes, count how many happened in the
-        # last 7 days. Symbols with ≥3 changes are classified as chop.
-        current_regime = r.get("regime", "FLAT").upper()
-        tf_key = f"{symbol}:{tf}"
-        now_ts = time.time()
-        prev_regime_seen = scan_cache.prev_regime_by_tf.get(tf_key)
-        if prev_regime_seen is not None and prev_regime_seen != current_regime:
-            log = scan_cache.regime_change_log.setdefault(tf_key, [])
-            log.append(now_ts)
-            # Prune anything older than the window
-            cutoff = now_ts - _REGIME_INSTABILITY_WINDOW_S
-            scan_cache.regime_change_log[tf_key] = [t for t in log if t >= cutoff]
-        scan_cache.prev_regime_by_tf[tf_key] = current_regime
-
-        recent_changes = len(scan_cache.regime_change_log.get(tf_key, []))
-        regime_unstable = recent_changes >= _REGIME_INSTABILITY_MIN_CHANGES
-        r["regime_changes_7d"] = recent_changes
-        r["regime_unstable"] = regime_unstable
-
-        # Look up HyperLens consensus for this symbol
-        hl_coin = _hl_norm(symbol) if _hl_consensus else None
-        hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
-
-        return synthesize_signal(
-            r, consensus, gm_dict,
-            positioning=r.get("positioning"),
-            sentiment=sentiment_dict,
-            stablecoin=stablecoin_dict,
-            macro_blocked=macro_blocked,
-            prev_heat=prev_heat,
-            bmsb_valid=bmsb_valid,
-            cvd_trend=r.get("cvd_trend", "NEUTRAL"),
-            cvd_divergence=r.get("cvd_divergence", False),
-            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
+        hl_data = hl_consensus.get(_normalize_coin(symbol)) if hl_consensus else None
+        context = dict(
+            consensus=consensus, global_metrics=gm_dict, positioning=r.get("positioning"),
+            sentiment=sentiment_dict, stablecoin=stablecoin_dict,
+            cvd_trend=r.get("cvd_trend", "UNAVAILABLE"), cvd_divergence=r.get("cvd_divergence", False),
+            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "UNAVAILABLE"),
             long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
             liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
-            etf_flow_usd=_etf_flow,
-            cb_premium=_cb_premium,
-            has_coinglass=symbol in _cg_symbols,
+            etf_flow_usd=macro_data.etf_flow_usd_7d if macro_data else 0.0,
+            cb_premium=macro_data.coinbase_premium_rate if macro_data else 0.0,
+            has_coinglass=symbol in (cg_metrics or {}),
             hl_consensus_trend=hl_data.trend if hl_data else "NEUTRAL",
             hl_consensus_confidence=hl_data.confidence if hl_data else 0.0,
             hl_consensus_net_ratio=hl_data.net_ratio if hl_data else 0.0,
             has_hyperlens=hl_data is not None,
         )
-
-    synth_futures = [
-        loop.run_in_executor(_engine_pool, _synth_one, r)
-        for r in results
-    ]
-    synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
-
-    for r, synth in zip(results, synth_results):
-        if isinstance(synth, Exception):
-            logger.exception("Signal synthesis failed for %s: %s", r.get("symbol"), synth)
-            r["signal"] = r.get("raw_signal", "WAIT")
-            r["signal_reason"] = "synthesis error — using raw signal"
-            r["signal_warnings"] = ["Signal synthesizer encountered an error"]
-            r["conditions_detail"] = []
-            r["conditions_met"] = 0
-            r["conditions_total"] = 10
+        metadata = dict(r.get("input_metadata") or {})
+        metadata["global_metrics"] = {"source": "market_totals", "observed_at": getattr(gm, "timestamp", None)}
+        for name, obj, source in (("sentiment", sentiment_data, "fear_greed"),
+                                  ("stablecoin", stablecoin_data, "stablecoin_supply"),
+                                  ("macro", macro_data, "macro_feed")):
+            metadata[name] = {"source": source, "observed_at": getattr(obj, "timestamp", None)}
+        metadata["hyperlens"] = {"source": "hyperlens", "observed_at": _consensus_updated_at if hl_data else None}
+        r["input_metadata"] = metadata
+        # Cross-TF safety uses current stored context rather than an older attached object.
+        other = other_rows.get(symbol)
+        if other:
+            pair = (r, other) if tf == "4h" else (other, r)
+            r["confluence"] = vars(compute_confluence(*pair))
         else:
-            r["signal"] = synth.signal
-            r["signal_reason"] = synth.reason
-            r["signal_warnings"] = synth.warnings
-            r["signal_confidence"] = (
-                round(synth.conditions_met / synth.conditions_total * 100)
-                if synth.conditions_total > 0 else 0
-            )
-            r["conditions_detail"] = synth.conditions_detail
-            r["conditions_met"] = synth.conditions_met
-            r["conditions_total"] = synth.conditions_total
-            r["effective_conditions"] = synth.effective_conditions
-            r["vol_scale"] = synth.vol_scale
-            # Signed conviction score -100..+100 (bullish/bearish magnitude)
-            from signal_synthesizer import compute_signal_score
-            r["signal_score"] = compute_signal_score(
-                synth.signal, synth.effective_conditions, synth.conditions_total,
-            )
-            oi_trend = (r.get("positioning") or {}).get("oi_trend", "STABLE")
-            r["oi_context"] = interpret_oi_context(oi_trend, synth.signal)
-            scan_cache.prev_heat[r.get("symbol", "")] = r.get("heat", 0)
-
-            # Signal age — reset timestamp whenever the signal changes so the
-            # UI can show "fired Nd ago" without querying the DB.
-            sym = r.get("symbol", "")
-            age_key = (sym, tf)
-            prev_label = scan_cache.signal_first_seen_label.get(age_key)
-            if prev_label != synth.signal:
-                scan_cache.signal_first_seen_at[age_key] = time.time()
-                scan_cache.signal_first_seen_label[age_key] = synth.signal
-            r["signal_first_seen_at"] = scan_cache.signal_first_seen_at.get(age_key)
-            r["signal_age_seconds"] = (
-                int(time.time() - scan_cache.signal_first_seen_at[age_key])
-                if age_key in scan_cache.signal_first_seen_at else 0
-            )
-
-            # Attach HyperLens smart money data for frontend divergence display
-            symbol = r.get("symbol", "")
-            hl_coin = _hl_norm(symbol) if _hl_consensus else None
-            hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
-            if hl_data:
-                r["smart_money"] = {
-                    "trend": hl_data.trend,
-                    "confidence": round(hl_data.confidence, 2),
-                    "net_ratio": round(hl_data.net_ratio, 2),
-                    "long_count": hl_data.long_count,
-                    "short_count": hl_data.short_count,
-                    "long_notional": round(hl_data.long_notional),
-                    "short_notional": round(hl_data.short_notional),
-                }
-
-    # Agent layer
-    try:
-        from agent_layer import process as _agent_process
-        _open_positions: list = []
-        agent_override_count = 0
-        for r in results:
-            try:
-                ao = _agent_process(r, _open_positions, scan_cache)
-                if ao.alerts:
-                    existing = r.get("signal_warnings", [])
-                    r["signal_warnings"] = existing + [f"[Agent] {a}" for a in ao.alerts]
-                if ao.adjusted_signal != ao.original_signal:
-                    r["signal"] = ao.adjusted_signal
-                    agent_override_count += 1
-                # Attach confidence history for frontend sparkline (timeframe-scoped)
-                sym = r.get("symbol", "")
-                tf_key = f"{sym}:{tf}"
-                conf_hist = scan_cache.confidence_history.get(tf_key, [])
-                if conf_hist:
-                    r["confidence_history"] = list(conf_hist)
-                # Attach smoothed confidence
-                if hasattr(scan_cache, "smoothed_confidence"):
-                    r["smoothed_confidence"] = scan_cache.smoothed_confidence.get(tf_key)
-                # Attach positioning metric histories for sparklines
-                for hist_attr, result_key in (
-                    ("funding_history",    "funding_history"),
-                    ("oi_history",         "oi_history"),
-                    ("oi_change_history",  "oi_change_history"),
-                    ("lsr_history",        "lsr_history"),
-                    ("bsr_history",        "bsr_history"),
-                    ("spot_ratio_history", "spot_ratio_history"),
-                    ("vpin_history",       "vpin_history"),
-                ):
-                    hist = getattr(scan_cache, hist_attr, {}).get(tf_key, [])
-                    if hist:
-                        r[result_key] = list(hist)
-            except Exception as _ae:
-                logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
-        if agent_override_count:
-            logger.info("Agent layer: %d signal overrides on %s", agent_override_count, tf)
-    except ImportError:
-        pass
-
-    # Priority scores (signal strength is the primary factor)
-    _anom_syms = getattr(scan_cache, "anomaly_hot_symbols", set())
-    for r in results:
-        r["priority_score"] = _compute_priority(r)
-        # Flag anomaly symbols so the frontend can show an anomaly tier dot
-        if r.get("symbol") in _anom_syms:
+            r.pop("confluence", None)
+        evaluate_decision(r, context, scan_cache, as_of=as_of, metadata=metadata,
+                          synthesizer=synthesize_signal)
+        r["baseline_priority_score"] = _compute_priority(dict(r, signal=r.get("baseline_signal", r["signal"])))
+        r["priority_score"] = max(0, min(100, _compute_priority(r) + r.get("cto_rank_adjustment", 0)))
+        if hl_data:
+            r["smart_money"] = {"trend": hl_data.trend, "confidence": hl_data.confidence,
+                                "net_ratio": hl_data.net_ratio, "long_count": hl_data.long_count,
+                                "short_count": hl_data.short_count,
+                                "long_notional": hl_data.long_notional, "short_notional": hl_data.short_notional}
+        if r.get("symbol") in getattr(scan_cache, "anomaly_hot_symbols", set()):
             r["has_anomaly"] = True
 
     signal_summary = {}
@@ -1057,13 +1020,11 @@ async def _scan_timeframe(
     eth_data = ohlcv_batch.get("ETH/USDT")
 
     # 4. Process each symbol through engines (parallel via thread pool)
-    #    Skip engine recomputation when the last closed candle hasn't changed.
-    #    OHLCV data only meaningfully changes when a new candle closes (every
-    #    4h / 1d), so we cache engine results keyed by last-closed-candle
-    #    timestamp and only rerun numpy when new bar data appears.
+    #    Cache completed snapshots, including revisions and benchmark/weekly inputs.
     loop = asyncio.get_running_loop()
     engine_futures = []
     engine_symbols = []
+    pending_keys = {}
     cache_hits = 0
     cache_results: List[dict] = []  # results served from cache
 
@@ -1082,25 +1043,20 @@ async def _scan_timeframe(
             logger.debug("Skipping %s -- no OHLCV data", symbol)
             continue
 
-        # Determine the last closed candle timestamp
-        timestamps = ohlcv.get("timestamp", [])
-        # Last element is the live (still-forming) candle; second-to-last is
-        # the most recently *closed* candle.
-        last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
-
+        as_of_ms = time.time() * 1000
+        weekly = weekly_batch.get(symbol)
         cache_key = (symbol, tf)
-        cached_ts = scan_cache._engine_cache.get(cache_key) if scan_cache else None
-
-        if cached_ts and cached_ts == last_closed_ts:
-            # No new candle — reuse result from _results_by_sym
+        current_key = snapshot_key(ohlcv, tf, weekly, btc_data, eth_data, as_of_ms=as_of_ms)
+        cached_key = scan_cache._engine_cache.get(cache_key) if scan_cache else None
+        if cached_key == current_key:
             prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
-            if prev is not None and prev.get("history_bars") == len(timestamps):
+            if prev is not None:
                 prev["price"] = float(ohlcv["close"][-1])
                 cache_results.append(prev)
                 cache_hits += 1
                 continue
+        pending_keys[symbol] = current_key
 
-        weekly = weekly_batch.get(symbol)
         engine_symbols.append(symbol)
         engine_futures.append(
             loop.run_in_executor(
@@ -1113,6 +1069,7 @@ async def _scan_timeframe(
                     weekly=weekly,
                     btc_data=btc_data,
                     eth_data=eth_data,
+                    as_of_ms=as_of_ms,
                 ),
             )
         )
@@ -1124,11 +1081,8 @@ async def _scan_timeframe(
             logger.exception("Failed to process %s on %s: %s", symbol, tf, outcome)
         else:
             results.append(outcome)
-            if scan_cache:
-                ohlcv = ohlcv_batch.get(symbol)
-                timestamps = ohlcv.get("timestamp", []) if ohlcv else []
-                last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
-                scan_cache._engine_cache[(symbol, tf)] = last_closed_ts
+            if scan_cache and not outcome.get("engine_errors"):
+                scan_cache._engine_cache[(symbol, tf)] = pending_keys[symbol]
 
     logger.info(
         "Processed %d symbols for %s (%.1fs total, %d cache hits, %d recomputed)",
@@ -1307,8 +1261,11 @@ async def _scan_timeframe(
         for r in results:
             sym = r.get("symbol", "")
             base_coin = sym.split("/")[0] if "/" in sym else sym
+            r.setdefault("input_metadata", {}).pop("cvd", None)
+            r.update(cvd_trend="UNAVAILABLE", cvd_divergence=False, buy_sell_ratio=1.0, vpin=0.0)
             cvd = cvd_by_coin.get(base_coin)
             if cvd is not None:
+                r.setdefault("input_metadata", {})["cvd"] = {"source": "taker_flow", "observed_at": getattr(cvd, "timestamp", None)}
                 r["cvd_trend"] = cvd.cvd_trend
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
@@ -1388,21 +1345,16 @@ async def _drip_one_symbol(
         if ohlcv is None:
             continue
 
-        # Engine cache check — skip recomputation if candle unchanged
-        timestamps = ohlcv.get("timestamp", [])
-        last_closed_ts = int(timestamps[-2]) if len(timestamps) >= 2 else 0
+        as_of_ms = time.time() * 1000
+        btc_data = _ohlcv_store.get("BTC/USDT", tf)
+        eth_data = _ohlcv_store.get("ETH/USDT", tf)
         cache_key = (symbol, tf)
-        cached_ts = scan_cache._engine_cache.get(cache_key)
-
+        current_key = snapshot_key(ohlcv, tf, weekly, btc_data, eth_data, as_of_ms=as_of_ms)
         prev = scan_cache._results_by_sym.get(symbol, {}).get(tf)
-        if cached_ts and cached_ts == last_closed_ts and prev is not None and prev.get("history_bars") == len(timestamps):
-            # No new candle — reuse previous result, update live price
+        if scan_cache._engine_cache.get(cache_key) == current_key and prev is not None:
             prev["price"] = float(ohlcv["close"][-1])
             result = prev
         else:
-            # New candle — run engines
-            btc_data = _ohlcv_store.get("BTC/USDT", tf)
-            eth_data = _ohlcv_store.get("ETH/USDT", tf)
             result = await loop.run_in_executor(
                 _engine_pool,
                 partial(
@@ -1413,9 +1365,11 @@ async def _drip_one_symbol(
                     weekly=weekly,
                     btc_data=btc_data,
                     eth_data=eth_data,
+                    as_of_ms=as_of_ms,
                 ),
             )
-            scan_cache._engine_cache[cache_key] = last_closed_ts
+            if not result.get("engine_errors"):
+                scan_cache._engine_cache[cache_key] = current_key
 
         if symbol not in scan_cache.symbols:
             return processed
@@ -1662,8 +1616,11 @@ async def _run_synthesis_pass(
         for r in results:
             sym = r.get("symbol", "")
             base_coin = sym.split("/")[0] if "/" in sym else sym
+            r.setdefault("input_metadata", {}).pop("cvd", None)
+            r.update(cvd_trend="UNAVAILABLE", cvd_divergence=False, buy_sell_ratio=1.0, vpin=0.0)
             cvd = cvd_by_coin.get(base_coin)
             if cvd is not None:
+                r.setdefault("input_metadata", {})["cvd"] = {"source": "taker_flow", "observed_at": getattr(cvd, "timestamp", None)}
                 r["cvd_trend"] = cvd.cvd_trend
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
@@ -1859,91 +1816,10 @@ async def _run_synthesis_pass(
         except Exception:
             logger.exception("Confluence computation failed")
 
-    # Unified cross-TF signal — regime-aware confluence
-    # Rules (priority order):
-    #   1. Either TF firing exit → use stronger exit (safety override)
-    #   2. Both regimes bullish family (MARKUP/REACC/ACCUM):
-    #      - Both entry → use weaker
-    #      - One entry, other WAIT → use the entry (trust the TF that fired)
-    #      - Both WAIT → WAIT
-    #   3. Either regime bearish family (MARKDOWN/CAP/BLOWOFF) → WAIT
-    #   4. FLAT/unknown → strict confluence (both must fire entry)
-    _ENTRY_SIGS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
-    _EXIT_SIGS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
-    _BULLISH_REGIMES = {"MARKUP", "REACC", "ACCUM"}
-    _BEARISH_REGIMES = {"MARKDOWN", "CAP", "BLOWOFF"}
-    # Lower rank = weaker entry; higher rank = stronger exit
-    _ENTRY_RANK = {"REVIVAL_SEED": 0, "REVIVAL_SEED_CONFIRMED": 0, "ACCUMULATE": 1, "LIGHT_LONG": 2, "STRONG_LONG": 3}
-    _EXIT_RANK = {"NO_LONG": 0, "TRIM": 1, "TRIM_HARD": 2, "RISK_OFF": 3}
-
+    attach_unified_signals(scan_cache.results, scan_cache)
+    from setup_research_service import schedule_setup_research
+    schedule_setup_research(scan_cache)
     if "4h" in scan_cache.results and "1d" in scan_cache.results:
-        r1d_map = {r.get("symbol", ""): r for r in scan_cache.results["1d"]}
-        unified_count = {"entry": 0, "exit": 0, "wait": 0}
-
-        for r4 in scan_cache.results["4h"]:
-            sym = r4.get("symbol", "")
-            r1 = r1d_map.get(sym)
-            if not r1:
-                r4["unified_signal"] = r4["signal"]
-                continue
-
-            sig4 = r4["signal"]
-            sig1 = r1["signal"]
-            regime4 = r4.get("regime", "")
-            regime1 = r1.get("regime", "")
-
-            # Priority 1: Safety override — either TF firing exit signal
-            if sig4 in _EXIT_SIGS or sig1 in _EXIT_SIGS:
-                # Use the stronger exit signal (most urgent)
-                candidates = [s for s in (sig4, sig1) if s in _EXIT_SIGS]
-                unified = max(candidates, key=lambda s: _EXIT_RANK.get(s, 0))
-                unified_count["exit"] += 1
-
-            # Priority 2: Both regimes in bullish family → trust any entry signal
-            elif regime4 in _BULLISH_REGIMES and regime1 in _BULLISH_REGIMES:
-                has4 = sig4 in _ENTRY_SIGS
-                has1 = sig1 in _ENTRY_SIGS
-                if has4 and has1:
-                    # Both fire entry → weaker wins
-                    rank4 = _ENTRY_RANK.get(sig4, 0)
-                    rank1 = _ENTRY_RANK.get(sig1, 0)
-                    unified = sig4 if rank4 <= rank1 else sig1
-                    unified_count["entry"] += 1
-                elif has4:
-                    unified = sig4
-                    unified_count["entry"] += 1
-                elif has1:
-                    unified = sig1
-                    unified_count["entry"] += 1
-                else:
-                    # Both WAIT in bullish structure → nothing to trade yet
-                    unified = "WAIT"
-                    unified_count["wait"] += 1
-
-            # Priority 3: Either regime bearish → WAIT (block entries)
-            elif regime4 in _BEARISH_REGIMES or regime1 in _BEARISH_REGIMES:
-                unified = "WAIT"
-                unified_count["wait"] += 1
-
-            # Priority 4: FLAT or unknown regime → strict confluence
-            else:
-                if sig4 in _ENTRY_SIGS and sig1 in _ENTRY_SIGS:
-                    rank4 = _ENTRY_RANK.get(sig4, 0)
-                    rank1 = _ENTRY_RANK.get(sig1, 0)
-                    unified = sig4 if rank4 <= rank1 else sig1
-                    unified_count["entry"] += 1
-                else:
-                    unified = "WAIT"
-                    unified_count["wait"] += 1
-
-            r4["unified_signal"] = unified
-            r1["unified_signal"] = unified
-
-        logger.info(
-            "Unified signals (regime-aware): %d entry, %d exit, %d wait",
-            unified_count["entry"], unified_count["exit"], unified_count["wait"],
-        )
-
         # Track unified signal outcomes (MFE/MAE)
         try:
             from signal_outcomes import update_outcomes
@@ -1976,7 +1852,7 @@ async def _run_synthesis_pass(
                 scan_cache.get_results("1d"),
                 scan_cache.consensus.get("4h"),
                 scan_cache.consensus.get("1d"),
-                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms},
+                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms, "opportunity_events": getattr(scan_cache, "opportunity_events", [])},
             )
     except Exception:
         pass
@@ -2108,6 +1984,10 @@ async def run_scan(
                             r["confluence"] = scan_cache.confluence[sym]
             except Exception:
                 logger.exception("Confluence computation failed")
+
+        attach_unified_signals(scan_cache.results, scan_cache)
+        from setup_research_service import schedule_setup_research
+        schedule_setup_research(scan_cache)
 
         # 11. Execute signals via Kraken (if executor is enabled)
         try:
@@ -2276,6 +2156,10 @@ async def run_rolling_scan(
                             r["confluence"] = scan_cache.confluence[sym]
             except Exception:
                 logger.exception("Confluence computation failed")
+
+        attach_unified_signals(scan_cache.results, scan_cache)
+        from setup_research_service import schedule_setup_research
+        schedule_setup_research(scan_cache)
 
         # ── Executor ──
         try:
@@ -2460,53 +2344,16 @@ async def run_tradfi_scan(
         # 5. Compute TradFi-specific consensus
         tradfi_consensus = compute_consensus(results)
 
-        # 6. Synthesize signals in parallel via thread pool
-        def _tradfi_synth_one(r):
-            heat_direction = r.get("heat_direction", 0)
-            deviation_pct = r.get("deviation_pct", 0.0)
-            heat_val = r.get("heat", 0)
-            bmsb_valid = not (heat_val == 0 and heat_direction == 0 and deviation_pct == 0.0)
-            macro_blocked = heat_direction < 0 if bmsb_valid else True
-            return synthesize_signal(
-                result=r,
-                consensus=tradfi_consensus,
-                global_metrics=None,
-                positioning=r.get("positioning"),
-                sentiment=None,
-                stablecoin=None,
-                macro_blocked=macro_blocked,
-                prev_heat=r.get("heat", 0),
-                bmsb_valid=bmsb_valid,
-            )
-
-        synth_futures = [
-            loop.run_in_executor(_engine_pool, _tradfi_synth_one, r)
-            for r in results
-        ]
-        synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
-        for r, synth in zip(results, synth_results):
-            if isinstance(synth, Exception):
-                logger.debug("TradFi signal synthesis failed for %s: %s", r.get("symbol"), synth)
-            else:
-                r["signal"] = synth.signal
-                r["signal_reason"] = synth.reason
-                r["signal_warnings"] = synth.warnings
-                r["signal_confidence"] = (
-                    round(synth.conditions_met / synth.conditions_total * 100)
-                    if synth.conditions_total > 0 else 0
-                )
-                r["conditions_met"] = synth.conditions_met
-                r["conditions_total"] = synth.conditions_total
-                r["conditions_detail"] = synth.conditions_detail
-                r["effective_conditions"] = synth.effective_conditions
-                from signal_synthesizer import compute_signal_score
-                r["signal_score"] = compute_signal_score(
-                    synth.signal, synth.effective_conditions, synth.conditions_total,
-                )
+        # Shared deterministic evaluation, with unavailable crypto macro feeds explicit.
+        for r in results:
+            xyz = xyz_metrics.get(f"{r.get('tradfi_coin', '')}/USD")
+            metadata = {"funding": {"source": "hyperliquid_xyz", "observed_at": getattr(xyz, "timestamp", None)}}
+            evaluate_decision(r, {"consensus": tradfi_consensus, "positioning": r.get("positioning")},
+                              scan_cache, as_of=time.time(), metadata=metadata)
 
         # 6. Compute priority scores
         for r in results:
-            r["priority_score"] = _compute_priority(r)
+            r["priority_score"] = max(0, min(100, _compute_priority(r) + r.get("cto_rank_adjustment", 0)))
 
         results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
         scan_cache.tradfi_results[tf] = results
@@ -2557,6 +2404,7 @@ async def run_tradfi_scan(
         except Exception:
             logger.debug("TradFi confluence computation failed (non-fatal)")
 
+    attach_unified_signals(scan_cache.tradfi_results, scan_cache)
     elapsed = time.time() - t0
     logger.info("=== TradFi scan completed in %.1fs ===", elapsed)
 

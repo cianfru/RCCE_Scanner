@@ -1,11 +1,12 @@
 """
 replay_engine.py
 ~~~~~~~~~~~~~~~~
-Bar-by-bar replay through the exact same engine pipeline as the live scanner.
+Causal bar-close replay through the scanner engines and signal synthesizer.
 
 Feeds historical OHLCV data through RCCE, Heatmap, and Exhaustion engines,
 computes consensus and divergence, then synthesizes signals — producing
-identical results to the live scanner by construction.
+a technical baseline through the shared decision and agent pipeline. Historical
+external feeds remain unavailable unless replaying recorded decision snapshots.
 """
 
 from __future__ import annotations
@@ -23,9 +24,11 @@ import numpy as np
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
-from scanner import _process_symbol, compute_consensus, detect_divergence, classify_asset
+from scanner import _process_symbol, compute_consensus, detect_divergence, classify_asset, _compute_priority
 from signal_synthesizer import synthesize_signal
 from confluence import compute_confluence
+from candle_snapshot import closed_candles, TF_MS
+from decision_pipeline import evaluate_decision, new_state
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,14 @@ class BarResult:
     conditions_total: int
     signal_reason: str
     signal_warnings: List[str]
+    structure: dict = field(default_factory=dict)
+    input_quality: dict = field(default_factory=dict)
+    signal_score: int = 0
+    priority_score: float = 0
+    signal_status: str = "ready"
+    cto: dict = field(default_factory=dict)
+    cto_shadow: dict = field(default_factory=dict)
+    regime_changes_7d: int = 0
     confluence_score: int = 0
     confluence_label: str = "UNKNOWN"
     divergence: Optional[str] = None
@@ -63,7 +74,7 @@ class BarResult:
 # OHLCV slicing helpers
 # ---------------------------------------------------------------------------
 
-_ROLLING_WINDOW = 500  # Max bars to pass to engines (they need ~200 max)
+_ROLLING_WINDOW = 600  # Max bars to pass to engines (they need ~200 max)
 
 
 def _slice_ohlcv(ohlcv: dict, end_idx: int, rolling: bool = False) -> dict:
@@ -83,7 +94,7 @@ def _find_weekly_slice(ohlcv_weekly: dict, timestamp_ms: float) -> Optional[dict
     if ohlcv_weekly is None:
         return None
     ts = ohlcv_weekly["timestamp"]
-    mask = ts <= timestamp_ms
+    mask = ts + TF_MS["1w"] <= timestamp_ms
     count = np.sum(mask)
     if count < 10:
         return None
@@ -91,12 +102,12 @@ def _find_weekly_slice(ohlcv_weekly: dict, timestamp_ms: float) -> Optional[dict
 
 
 def _find_daily_index(ohlcv_1d: dict, timestamp_ms: float) -> int:
-    """Find the 1d bar index that contains the given 4h timestamp."""
+    """Number of daily bars completed by the decision timestamp."""
     if ohlcv_1d is None:
         return 0
     ts = ohlcv_1d["timestamp"]
-    # Find last 1d timestamp <= current 4h timestamp
-    mask = ts <= timestamp_ms
+    # Daily OHLCV is observable only after its close.
+    mask = ts + TF_MS["1d"] <= timestamp_ms
     return int(np.sum(mask))
 
 
@@ -112,6 +123,7 @@ async def run_replay(
     fear_greed: Dict[str, int],
     warmup_bars: int = 400,
     on_progress: Optional[Callable[[float, str], None]] = None,
+    as_of_ms: Optional[float] = None,
 ) -> List[BarResult]:
     """Run bar-by-bar replay through all engines.
 
@@ -134,6 +146,8 @@ async def run_replay(
         All signal results across all bars and symbols.
     """
     t0 = time.time()
+    decision_state = new_state()
+    available_at = time.time() * 1000 if as_of_ms is None else as_of_ms
 
     # Filter to symbols that have primary data
     valid_symbols = [s for s in symbols if s in ohlcv_4h]
@@ -188,7 +202,10 @@ async def run_replay(
         progress = (bar_idx - warmup_bars) / total_replay_bars * 100.0
 
         # Current timestamp from the reference symbol
-        current_ts = float(ref_data["timestamp"][bar_idx])
+        bar_open_ts = float(ref_data["timestamp"][bar_idx])
+        current_ts = bar_open_ts + TF_MS["4h"]
+        if current_ts > available_at:
+            break  # Providers may include an unfinished final historical candle.
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
         # Yield to event loop every 5 bars to keep server responsive
@@ -203,7 +220,7 @@ async def run_replay(
 
         for symbol in valid_symbols:
             # Look up this symbol's local index for the current timestamp
-            local_idx = sym_ts_to_idx.get(symbol, {}).get(current_ts)
+            local_idx = sym_ts_to_idx.get(symbol, {}).get(bar_open_ts)
             if local_idx is None or local_idx < warmup_bars:
                 continue  # Symbol has no data or insufficient warmup at this time
 
@@ -221,10 +238,10 @@ async def run_replay(
             is_btc_quoted = quote == "BTC"
 
             btc_slice = None if is_btc_quoted else (
-                _slice_ohlcv(ohlcv_4h[btc_sym], bar_idx + 1, rolling=True) if btc_sym in ohlcv_4h else None
+                closed_candles(ohlcv_4h[btc_sym], "4h", current_ts) if btc_sym in ohlcv_4h else None
             )
             eth_slice = None if is_btc_quoted else (
-                _slice_ohlcv(ohlcv_4h[eth_sym], bar_idx + 1, rolling=True) if eth_sym in ohlcv_4h else None
+                closed_candles(ohlcv_4h[eth_sym], "4h", current_ts) if eth_sym in ohlcv_4h else None
             )
 
             try:
@@ -235,6 +252,7 @@ async def run_replay(
                     weekly=weekly,
                     btc_data=btc_slice,
                     eth_data=eth_slice,
+                    as_of_ms=current_ts,
                 )
                 bar_results_raw.append(result)
             except Exception:
@@ -256,8 +274,8 @@ async def run_replay(
             r["divergence"] = detect_divergence(r["regime"], btc_regime)
 
         # --- Step 4: Update 1d results every ~6 bars for confluence ---
-        if bar_idx - last_1d_update_idx >= 6:
-            last_1d_update_idx = bar_idx
+        if int(current_ts // TF_MS["1d"]) != last_1d_update_idx:
+            last_1d_update_idx = int(current_ts // TF_MS["1d"])
             for symbol in valid_symbols:
                 if symbol not in ohlcv_1d:
                     continue
@@ -270,10 +288,10 @@ async def run_replay(
                 sym_quote = symbol.split("/")[1] if "/" in symbol else "USDT"
                 sym_is_btc_quoted = sym_quote == "BTC"
                 btc_1d = None if sym_is_btc_quoted else (
-                    _slice_ohlcv(ohlcv_1d[btc_sym], daily_idx, rolling=True) if btc_sym in ohlcv_1d else None
+                    closed_candles(ohlcv_1d[btc_sym], "1d", current_ts) if btc_sym in ohlcv_1d else None
                 )
                 eth_1d = None if sym_is_btc_quoted else (
-                    _slice_ohlcv(ohlcv_1d[eth_sym], daily_idx, rolling=True) if eth_sym in ohlcv_1d else None
+                    closed_candles(ohlcv_1d[eth_sym], "1d", current_ts) if eth_sym in ohlcv_1d else None
                 )
 
                 try:
@@ -281,55 +299,61 @@ async def run_replay(
                         symbol=symbol, timeframe="1d",
                         ohlcv=slice_1d, weekly=weekly,
                         btc_data=btc_1d, eth_data=eth_1d,
+                        as_of_ms=current_ts,
                     )
                 except Exception:
                     pass
 
-        # --- Step 5: Compute confluence per symbol ---
-        confluences: Dict[str, dict] = {}
-        for r in bar_results_raw:
-            sym = r["symbol"]
-            if sym in cached_1d_results:
-                c = compute_confluence(r, cached_1d_results[sym])
-                confluences[sym] = {
-                    "score": c.score,
-                    "label": c.label,
-                    "regime_aligned": c.regime_aligned,
-                    "signal_aligned": c.signal_aligned,
-                }
-
         # --- Step 6: Look up Fear & Greed ---
-        fng_value = fear_greed.get(current_date, 50)
-        sentiment_dict = {"fear_greed_value": fng_value, "fear_greed_label": ""}
+        sentiment_date = datetime.fromtimestamp((current_ts - TF_MS["1d"]) / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        known_fng = fear_greed.get(sentiment_date)
+        sentiment_dict = {"fear_greed_value": known_fng} if known_fng is not None else None
+
+        # Synthesize both timeframes before comparing signal direction.
+        daily_consensus = compute_consensus(list(cached_1d_results.values()))
+        btc_daily_regime = cached_1d_results.get("BTC/USDT", {}).get("regime", "FLAT")
+        for daily in cached_1d_results.values():
+            daily["divergence"] = detect_divergence(daily["regime"], btc_daily_regime)
+            try:
+                evaluate_decision(daily, {"consensus": daily_consensus, "sentiment": sentiment_dict}, decision_state,
+                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
+                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}}, synthesizer=synthesize_signal)
+            except Exception:
+                daily["signal"] = "WAIT"
+                logger.exception("Daily synthesis unavailable for %s", daily.get("symbol"))
 
         # --- Step 7: Synthesize signals ---
         for r in bar_results_raw:
             try:
-                synth = synthesize_signal(
-                    r, consensus,
-                    global_metrics=None,
-                    positioning=None,
-                    sentiment=sentiment_dict,
-                    stablecoin=None,
-                )
+                evaluate_decision(r, {"consensus": consensus, "sentiment": sentiment_dict}, decision_state,
+                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
+                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}},
+                                  synthesizer=synthesize_signal)
                 sym = r["symbol"]
-                conf = confluences.get(sym, {})
+                c = compute_confluence(r, cached_1d_results.get(sym))
+                conf = {"score": c.score, "label": c.label}
 
                 bar_result = BarResult(
                     timestamp=current_ts,
                     date=current_date,
                     symbol=sym,
                     price=r["price"],
-                    signal=synth.signal,
-                    raw_signal=synth.raw_signal,
+                    signal=r["signal"],
+                    raw_signal=r["raw_signal"],
                     regime=r["regime"],
                     confidence=r["confidence"],
                     zscore=r["zscore"],
                     heat=r.get("heat", 0),
-                    conditions_met=synth.conditions_met,
-                    conditions_total=synth.conditions_total,
-                    signal_reason=synth.reason,
-                    signal_warnings=synth.warnings,
+                    conditions_met=r["conditions_met"],
+                    conditions_total=r["conditions_total"],
+                    signal_reason=r["signal_reason"],
+                    signal_warnings=r["signal_warnings"],
+                    condition_flags=[c["met"] for c in r["conditions_detail"]],
+                    structure=r.get("structure", {}), input_quality=r.get("input_quality", {}),
+                    signal_score=r.get("signal_score", 0), priority_score=_compute_priority(r),
+                    signal_status=r.get("signal_status", "unavailable"),
+                    cto=r.get("cto", {}), cto_shadow=r.get("cto_shadow", {}),
+                    regime_changes_7d=r.get("regime_changes_7d", 0),
                     confluence_score=conf.get("score", 0),
                     confluence_label=conf.get("label", "UNKNOWN"),
                     divergence=r.get("divergence"),
@@ -339,7 +363,7 @@ async def run_replay(
                 all_results.append(bar_result)
 
                 # Track WAIT count for signal decay
-                if synth.signal == "WAIT":
+                if r["signal"] == "WAIT":
                     wait_counts[sym] = wait_counts.get(sym, 0) + 1
                 else:
                     wait_counts[sym] = 0
