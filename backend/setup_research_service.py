@@ -195,11 +195,8 @@ async def update_setup_research(cache):
                     return_exceptions=True,
                 )
             market = {s: r for s, r in zip(UNIVERSE, responses) if isinstance(r, dict)}
-            from setup_v2 import build_live_setups
-
-            apply_research_cycle(
-                cache, market, as_of=time.time(), builder=build_live_setups
-            )
+            # Retired v2 experiments remain in the ledger; create only legacy controls.
+            apply_research_cycle(cache, market, as_of=time.time())
         except Exception as exc:
             cache.paper_research_error = type(exc).__name__
             log.exception("Forward paper research update unavailable")
