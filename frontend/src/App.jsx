@@ -1,3 +1,5 @@
+import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
+import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import BestSetups from "./components/BestSetups.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
@@ -928,6 +930,8 @@ export default function App() {
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
+          <OpportunityActivity />
+          <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={handleSelectCoin} />
           <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>
           <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh}/>
         </details>}

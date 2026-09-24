@@ -55,6 +55,8 @@ from data_fetcher import fetch_batch, fetch_ohlcv, DEFAULT_SYMBOLS, \
     _ohlcv_store
 from engines.rcce_engine import compute_rcce
 from engines.range_forecast import forecast as range_forecast
+from engines.cto_engine import compute_cto_snapshot
+from decision_pipeline import evaluate_decision, apply_synthesis_result, finalize_signal
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
 from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
@@ -521,6 +523,10 @@ def _process_symbol(
     weekly = closed_candles(weekly, "1w", as_of_ms)
     btc_data = closed_candles(btc_data, timeframe, as_of_ms)
     eth_data = closed_candles(eth_data, timeframe, as_of_ms)
+    ohlcv = {k: v[-599:] for k, v in ohlcv.items()}
+    weekly = {k: v[-199:] for k, v in weekly.items()} if weekly is not None else None
+    btc_data = {k: v[-599:] for k, v in btc_data.items()} if btc_data is not None else None
+    eth_data = {k: v[-599:] for k, v in eth_data.items()} if eth_data is not None else None
     if len(ohlcv["close"]) == 0:
         raise ValueError("No completed candles available")
     engine_errors = []
@@ -580,8 +586,12 @@ def _process_symbol(
         "timeframe": timeframe,
         "price": live_price,
         "decision_price": float(ohlcv["close"][-1]),
+        "decision_input_id": snapshot_key(ohlcv, timeframe, weekly, btc_data, eth_data, as_of_ms=as_of_ms),
         "signal_bar_close_time": (float(ohlcv["timestamp"][-1]) + TF_MS[timeframe]) / 1000,
         "previous_heat": previous_heat,
+        "cto": compute_cto_snapshot(ohlcv, timeframe, as_of_ms),
+        "structure": {"swing_low": float(min(ohlcv["low"][-10:])),
+                      "swing_high": float(max(ohlcv["high"][-10:])), "lookback_bars": 10},
         "bmsb_valid": bool(heatmap.get("bmsb_mid", 0)),
         "engine_errors": engine_errors,
         "signal_status": "unavailable" if engine_errors else "ready",
@@ -688,6 +698,11 @@ def _attach_positioning(
         mark_price = by.mark_price
         source = "bybit"
 
+    chosen = {"binance": bn, "hyperliquid": hl, "bybit": by}.get(source)
+    metadata = result.setdefault("input_metadata", {})
+    metadata["funding"] = {"source": source or None, "observed_at": getattr(chosen, "timestamp", None)}
+    cg = (cg_metrics or {}).get(symbol)
+    metadata["coinglass"] = {"source": "derivatives_feed", "observed_at": getattr(cg, "timestamp", None)}
     if not source:
         result.pop("positioning", None)
         return ""
@@ -787,29 +802,7 @@ def _attach_positioning(
     return source
 
 
-def apply_synthesis_result(result: dict, synth) -> None:
-    """Use the same fail-closed output in every scanner path."""
-    result.update(agent_signal=None, agent_warnings=[], agent_filters_fired=[])
-    if isinstance(synth, Exception) or result.get("engine_errors"):
-        logger.error("Signal unavailable for %s: %s", result.get("symbol"),
-                     synth if isinstance(synth, Exception) else result["engine_errors"])
-        result.update(signal="WAIT", signal_status="unavailable",
-                      signal_reason="Signal computation unavailable — entries suppressed",
-                      signal_warnings=["Signal pipeline failed"], conditions_detail=[],
-                      conditions_met=0, conditions_total=9, effective_conditions=0.0,
-                      weighted_total=9.0, evidence_coverage=0.0, signal_confidence=0,
-                      signal_score=0, entry_blocked=True, strong_long_blockers=[], unified_signal="WAIT")
-        return
-    result.update(signal=synth.signal, signal_status="ready", signal_reason=synth.reason,
-                  signal_warnings=synth.warnings, conditions_detail=synth.conditions_detail,
-                  conditions_met=synth.conditions_met, conditions_total=synth.conditions_total,
-                  effective_conditions=synth.effective_conditions, weighted_total=synth.weighted_total,
-                  evidence_coverage=synth.evidence_coverage, vol_scale=synth.vol_scale,
-                  strong_long_blockers=synth.strong_long_blockers, entry_blocked=synth.entry_blocked)
-    result["signal_confidence"] = round(synth.conditions_met / synth.conditions_total * 100) if synth.conditions_total else 0
-
-
-def attach_unified_signals(results_by_tf: dict) -> None:
+def attach_unified_signals(results_by_tf: dict, scan_cache=None) -> None:
     four = {r["symbol"]: r for r in results_by_tf.get("4h", [])}
     daily = {r["symbol"]: r for r in results_by_tf.get("1d", [])}
     for symbol in four.keys() | daily.keys():
@@ -817,27 +810,49 @@ def attach_unified_signals(results_by_tf: dict) -> None:
         for row in (four.get(symbol), daily.get(symbol)):
             if row is not None:
                 row["unified_signal"] = signal
+    if scan_cache is not None:
+        update_opportunities(results_by_tf, scan_cache)
 
 
-def finalize_signal(result: dict, scan_cache: "ScanCache") -> None:
-    """Label, score and age must all describe the post-filter decision."""
-    original = result.get("signal", "WAIT")
-    final = enforce_signal_constraints(original,
-        entry_blocked=result.get("entry_blocked", False),
-        strong_long_blockers=result.get("strong_long_blockers", []))
-    if result.get("signal_status") == "unavailable":
-        final = "WAIT"
-    if final != original:
-        result["signal_reason"] += " [final eligibility cap]"
-    result["signal"] = final
-    result["signal_score"] = compute_signal_score(final, result.get("effective_conditions", 0), result.get("weighted_total", 9))
-    result["oi_context"] = interpret_oi_context((result.get("positioning") or {}).get("oi_trend", "UNKNOWN"), final)
-    key = (result.get("symbol", ""), result.get("timeframe", ""))
-    if scan_cache.signal_first_seen_label.get(key) != final:
-        scan_cache.signal_first_seen_label[key] = final
-        scan_cache.signal_first_seen_at[key] = time.time()
-    result["signal_first_seen_at"] = scan_cache.signal_first_seen_at.get(key)
-    result["signal_age_seconds"] = int(time.time() - result["signal_first_seen_at"]) if result["signal_first_seen_at"] else 0
+
+def update_opportunities(results_by_tf, scan_cache):
+    from opportunities import build_opportunity
+    from opportunity_journal import OpportunityJournal
+    try:
+        if not hasattr(scan_cache, "opportunity_journal"):
+            scan_cache.opportunity_journal = OpportunityJournal()
+        journal = scan_cache.opportunity_journal
+    except Exception:
+        logger.exception("Opportunity persistence unavailable")
+        journal = None
+    if not hasattr(scan_cache, "opportunity_states"):
+        scan_cache.opportunity_states = {}
+    events = []
+    for results in results_by_tf.values():
+        for row in results:
+            as_of = row.get("evaluated_at", time.time())
+            key = (row["symbol"], row["timeframe"])
+            previous = scan_cache.opportunity_states.get(key)
+            if journal and previous is None:
+                try:
+                    previous = journal.previous(*key)
+                except Exception:
+                    logger.exception("Opportunity state read failed")
+            policy, bars = row.get("cto_policy", ["baseline", 1])
+            opportunity = build_opportunity(row, previous, as_of=as_of, variant=policy, confirmation_bars=bars)
+            if opportunity["status"] == "confirmed" and row.get("unified_signal") == "WAIT":
+                opportunity.update(status="blocked", reason="Cross-timeframe entry disagreement",
+                                   conflicting_timeframe="1d" if row["timeframe"] == "4h" else "4h")
+            row["opportunity"] = opportunity
+            scan_cache.opportunity_states[key] = opportunity
+            row["opportunity_persisted"] = False
+            try:
+                if journal and journal.record(row, opportunity, as_of=as_of):
+                    events.append({"symbol": row["symbol"], "timeframe": row["timeframe"], **opportunity})
+                row["opportunity_persisted"] = journal is not None
+            except Exception:
+                logger.exception("Opportunity journal write failed for %s", row["symbol"])
+    scan_cache.opportunity_events = events
 
 
 async def _synthesize_and_enrich(
@@ -890,161 +905,58 @@ async def _synthesize_and_enrich(
             "total_cap": stablecoin_data.total_stablecoin_cap,
         }
 
-    if not hasattr(scan_cache, 'prev_heat'):
-        scan_cache.prev_heat = {}
-
-    # Regime instability tracking — lazily init per-symbol timestamp lists.
-    # A symbol with ≥3 regime changes in 7 days is classified as "chop" and
-    # cannot produce STRONG_LONG (data shows this is noise, not regime).
-    if not hasattr(scan_cache, 'regime_change_log'):
-        scan_cache.regime_change_log = {}  # tf_key → List[float] of change timestamps
-    if not hasattr(scan_cache, 'prev_regime_by_tf'):
-        scan_cache.prev_regime_by_tf = {}  # tf_key → last seen regime
-    _REGIME_INSTABILITY_WINDOW_S = 7 * 24 * 3600  # 7 days
-    _REGIME_INSTABILITY_MIN_CHANGES = 3
-
-    _etf_flow = macro_data.etf_flow_usd_7d if macro_data else 0.0
-    _cb_premium = macro_data.coinbase_premium_rate if macro_data else 0.0
-    _cg_symbols = set(cg_metrics.keys()) if cg_metrics else set()
-
-    # Fetch HyperLens whale consensus (thread-safe read of in-memory dict)
     try:
-        from hl_intelligence import get_all_consensus as _hl_get_all, _normalize_coin as _hl_norm
-        _hl_consensus = _hl_get_all()  # Dict[str, SymbolConsensus]
+        from hl_intelligence import get_all_consensus, _normalize_coin, _consensus_updated_at
+        hl_consensus = get_all_consensus()
     except Exception:
-        _hl_consensus = {}
-
-    def _synth_one(r):
-        heat_direction = r.get("heat_direction", 0)
-        bmsb_valid = r.get("bmsb_valid", False)
-        macro_blocked = True if not bmsb_valid else heat_direction < 0
+        hl_consensus, _consensus_updated_at = {}, 0
+    as_of = time.time()
+    other_tf = "1d" if tf == "4h" else "4h"
+    other_rows = {r["symbol"]: r for r in scan_cache.results.get(other_tf, [])}
+    from confluence import compute_confluence
+    for r in results:
         symbol = r.get("symbol", "")
-        prev_heat = r.get("previous_heat")
-
-        # Regime instability: record changes, count how many happened in the
-        # last 7 days. Symbols with ≥3 changes are classified as chop.
-        current_regime = r.get("regime", "FLAT").upper()
-        tf_key = f"{symbol}:{tf}"
-        now_ts = time.time()
-        prev_regime_seen = scan_cache.prev_regime_by_tf.get(tf_key)
-        if prev_regime_seen is not None and prev_regime_seen != current_regime:
-            log = scan_cache.regime_change_log.setdefault(tf_key, [])
-            log.append(now_ts)
-        # Prune even when the regime did not change this cycle.
-        cutoff = now_ts - _REGIME_INSTABILITY_WINDOW_S
-        scan_cache.regime_change_log[tf_key] = [
-            t for t in scan_cache.regime_change_log.get(tf_key, []) if t >= cutoff
-        ]
-        scan_cache.prev_regime_by_tf[tf_key] = current_regime
-
-        recent_changes = len(scan_cache.regime_change_log.get(tf_key, []))
-        regime_unstable = recent_changes >= _REGIME_INSTABILITY_MIN_CHANGES
-        r["regime_changes_7d"] = recent_changes
-        r["regime_unstable"] = regime_unstable
-
-        # Look up HyperLens consensus for this symbol
-        hl_coin = _hl_norm(symbol) if _hl_consensus else None
-        hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
-
-        return synthesize_signal(
-            r, consensus, gm_dict,
-            positioning=r.get("positioning"),
-            sentiment=sentiment_dict,
-            stablecoin=stablecoin_dict,
-            macro_blocked=macro_blocked,
-            prev_heat=prev_heat,
-            bmsb_valid=bmsb_valid,
-            cvd_trend=r.get("cvd_trend", "NEUTRAL"),
-            cvd_divergence=r.get("cvd_divergence", False),
-            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "NEUTRAL"),
+        hl_data = hl_consensus.get(_normalize_coin(symbol)) if hl_consensus else None
+        context = dict(
+            consensus=consensus, global_metrics=gm_dict, positioning=r.get("positioning"),
+            sentiment=sentiment_dict, stablecoin=stablecoin_dict,
+            cvd_trend=r.get("cvd_trend", "UNAVAILABLE"), cvd_divergence=r.get("cvd_divergence", False),
+            spot_dominance=(r.get("positioning") or {}).get("spot_dominance", "UNAVAILABLE"),
             long_short_ratio=(r.get("positioning") or {}).get("long_short_ratio", 1.0),
             liquidation_24h_usd=(r.get("positioning") or {}).get("liquidation_24h_usd", 0.0),
-            etf_flow_usd=_etf_flow,
-            cb_premium=_cb_premium,
-            has_coinglass=symbol in _cg_symbols,
+            etf_flow_usd=macro_data.etf_flow_usd_7d if macro_data else 0.0,
+            cb_premium=macro_data.coinbase_premium_rate if macro_data else 0.0,
+            has_coinglass=symbol in (cg_metrics or {}),
             hl_consensus_trend=hl_data.trend if hl_data else "NEUTRAL",
             hl_consensus_confidence=hl_data.confidence if hl_data else 0.0,
             hl_consensus_net_ratio=hl_data.net_ratio if hl_data else 0.0,
             has_hyperlens=hl_data is not None,
         )
-
-    synth_futures = [
-        loop.run_in_executor(_engine_pool, _synth_one, r)
-        for r in results
-    ]
-    synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
-
-    for r, synth in zip(results, synth_results):
-        apply_synthesis_result(r, synth)
-        if not isinstance(synth, Exception):
-            # Attach HyperLens smart money data for frontend divergence display
-            symbol = r.get("symbol", "")
-            hl_coin = _hl_norm(symbol) if _hl_consensus else None
-            hl_data = _hl_consensus.get(hl_coin) if hl_coin else None
-            if hl_data:
-                r["smart_money"] = {
-                    "trend": hl_data.trend,
-                    "confidence": round(hl_data.confidence, 2),
-                    "net_ratio": round(hl_data.net_ratio, 2),
-                    "long_count": hl_data.long_count,
-                    "short_count": hl_data.short_count,
-                    "long_notional": round(hl_data.long_notional),
-                    "short_notional": round(hl_data.short_notional),
-                }
-
-    # Agent layer
-    try:
-        from agent_layer import process as _agent_process
-        _open_positions: list = []
-        agent_override_count = 0
-        for r in results:
-            if r.get("signal_status") == "unavailable":
-                continue
-            try:
-                ao = _agent_process(r, _open_positions, scan_cache)
-                if ao.alerts:
-                    existing = r.get("signal_warnings", [])
-                    r["signal_warnings"] = existing + [f"[Agent] {a}" for a in ao.alerts]
-                if ao.adjusted_signal != ao.original_signal:
-                    r["signal"] = ao.adjusted_signal
-                    r["signal_reason"] += f" [agent: {ao.reasoning}]"
-                    agent_override_count += 1
-                # Attach confidence history for frontend sparkline (timeframe-scoped)
-                sym = r.get("symbol", "")
-                tf_key = f"{sym}:{tf}"
-                conf_hist = scan_cache.confidence_history.get(tf_key, [])
-                if conf_hist:
-                    r["confidence_history"] = list(conf_hist)
-                # Attach smoothed confidence
-                if hasattr(scan_cache, "smoothed_confidence"):
-                    r["smoothed_confidence"] = scan_cache.smoothed_confidence.get(tf_key)
-                # Attach positioning metric histories for sparklines
-                for hist_attr, result_key in (
-                    ("funding_history",    "funding_history"),
-                    ("oi_history",         "oi_history"),
-                    ("oi_change_history",  "oi_change_history"),
-                    ("lsr_history",        "lsr_history"),
-                    ("bsr_history",        "bsr_history"),
-                    ("spot_ratio_history", "spot_ratio_history"),
-                    ("vpin_history",       "vpin_history"),
-                ):
-                    hist = getattr(scan_cache, hist_attr, {}).get(tf_key, [])
-                    if hist:
-                        r[result_key] = list(hist)
-            except Exception as _ae:
-                logger.debug("Agent layer skipped for %s: %s", r.get("symbol"), _ae)
-        if agent_override_count:
-            logger.info("Agent layer: %d signal overrides on %s", agent_override_count, tf)
-    except ImportError:
-        pass
-
-    # Priority scores (signal strength is the primary factor)
-    _anom_syms = getattr(scan_cache, "anomaly_hot_symbols", set())
-    for r in results:
-        finalize_signal(r, scan_cache)
-        r["priority_score"] = _compute_priority(r)
-        # Flag anomaly symbols so the frontend can show an anomaly tier dot
-        if r.get("symbol") in _anom_syms:
+        metadata = dict(r.get("input_metadata") or {})
+        metadata["global_metrics"] = {"source": "market_totals", "observed_at": getattr(gm, "timestamp", None)}
+        for name, obj, source in (("sentiment", sentiment_data, "fear_greed"),
+                                  ("stablecoin", stablecoin_data, "stablecoin_supply"),
+                                  ("macro", macro_data, "macro_feed")):
+            metadata[name] = {"source": source, "observed_at": getattr(obj, "timestamp", None)}
+        metadata["hyperlens"] = {"source": "hyperlens", "observed_at": _consensus_updated_at if hl_data else None}
+        r["input_metadata"] = metadata
+        # Cross-TF safety uses current stored context rather than an older attached object.
+        other = other_rows.get(symbol)
+        if other:
+            pair = (r, other) if tf == "4h" else (other, r)
+            r["confluence"] = vars(compute_confluence(*pair))
+        else:
+            r.pop("confluence", None)
+        evaluate_decision(r, context, scan_cache, as_of=as_of, metadata=metadata,
+                          synthesizer=synthesize_signal)
+        r["baseline_priority_score"] = _compute_priority(dict(r, signal=r.get("baseline_signal", r["signal"])))
+        r["priority_score"] = max(0, min(100, _compute_priority(r) + r.get("cto_rank_adjustment", 0)))
+        if hl_data:
+            r["smart_money"] = {"trend": hl_data.trend, "confidence": hl_data.confidence,
+                                "net_ratio": hl_data.net_ratio, "long_count": hl_data.long_count,
+                                "short_count": hl_data.short_count,
+                                "long_notional": hl_data.long_notional, "short_notional": hl_data.short_notional}
+        if r.get("symbol") in getattr(scan_cache, "anomaly_hot_symbols", set()):
             r["has_anomaly"] = True
 
     signal_summary = {}
@@ -1349,9 +1261,11 @@ async def _scan_timeframe(
         for r in results:
             sym = r.get("symbol", "")
             base_coin = sym.split("/")[0] if "/" in sym else sym
+            r.setdefault("input_metadata", {}).pop("cvd", None)
             r.update(cvd_trend="UNAVAILABLE", cvd_divergence=False, buy_sell_ratio=1.0, vpin=0.0)
             cvd = cvd_by_coin.get(base_coin)
             if cvd is not None:
+                r.setdefault("input_metadata", {})["cvd"] = {"source": "taker_flow", "observed_at": getattr(cvd, "timestamp", None)}
                 r["cvd_trend"] = cvd.cvd_trend
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
@@ -1702,9 +1616,11 @@ async def _run_synthesis_pass(
         for r in results:
             sym = r.get("symbol", "")
             base_coin = sym.split("/")[0] if "/" in sym else sym
+            r.setdefault("input_metadata", {}).pop("cvd", None)
             r.update(cvd_trend="UNAVAILABLE", cvd_divergence=False, buy_sell_ratio=1.0, vpin=0.0)
             cvd = cvd_by_coin.get(base_coin)
             if cvd is not None:
+                r.setdefault("input_metadata", {})["cvd"] = {"source": "taker_flow", "observed_at": getattr(cvd, "timestamp", None)}
                 r["cvd_trend"] = cvd.cvd_trend
                 r["cvd_divergence"] = cvd.cvd_divergence
                 r["cvd_value"] = getattr(cvd, "cvd_value", 0.0)
@@ -1900,7 +1816,7 @@ async def _run_synthesis_pass(
         except Exception:
             logger.exception("Confluence computation failed")
 
-    attach_unified_signals(scan_cache.results)
+    attach_unified_signals(scan_cache.results, scan_cache)
     if "4h" in scan_cache.results and "1d" in scan_cache.results:
         # Track unified signal outcomes (MFE/MAE)
         try:
@@ -1934,7 +1850,7 @@ async def _run_synthesis_pass(
                 scan_cache.get_results("1d"),
                 scan_cache.consensus.get("4h"),
                 scan_cache.consensus.get("1d"),
-                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms},
+                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms, "opportunity_events": getattr(scan_cache, "opportunity_events", [])},
             )
     except Exception:
         pass
@@ -2067,7 +1983,7 @@ async def run_scan(
             except Exception:
                 logger.exception("Confluence computation failed")
 
-        attach_unified_signals(scan_cache.results)
+        attach_unified_signals(scan_cache.results, scan_cache)
 
         # 11. Execute signals via Kraken (if executor is enabled)
         try:
@@ -2237,7 +2153,7 @@ async def run_rolling_scan(
             except Exception:
                 logger.exception("Confluence computation failed")
 
-        attach_unified_signals(scan_cache.results)
+        attach_unified_signals(scan_cache.results, scan_cache)
 
         # ── Executor ──
         try:
@@ -2422,35 +2338,16 @@ async def run_tradfi_scan(
         # 5. Compute TradFi-specific consensus
         tradfi_consensus = compute_consensus(results)
 
-        # 6. Synthesize signals in parallel via thread pool
-        def _tradfi_synth_one(r):
-            heat_direction = r.get("heat_direction", 0)
-            bmsb_valid = r.get("bmsb_valid", False)
-            macro_blocked = heat_direction < 0 if bmsb_valid else True
-            return synthesize_signal(
-                result=r,
-                consensus=tradfi_consensus,
-                global_metrics=None,
-                positioning=r.get("positioning"),
-                sentiment=None,
-                stablecoin=None,
-                macro_blocked=macro_blocked,
-                prev_heat=r.get("previous_heat"),
-                bmsb_valid=bmsb_valid,
-            )
-
-        synth_futures = [
-            loop.run_in_executor(_engine_pool, _tradfi_synth_one, r)
-            for r in results
-        ]
-        synth_results = await asyncio.gather(*synth_futures, return_exceptions=True)
-        for r, synth in zip(results, synth_results):
-            apply_synthesis_result(r, synth)
-            finalize_signal(r, scan_cache)
+        # Shared deterministic evaluation, with unavailable crypto macro feeds explicit.
+        for r in results:
+            xyz = xyz_metrics.get(f"{r.get('tradfi_coin', '')}/USD")
+            metadata = {"funding": {"source": "hyperliquid_xyz", "observed_at": getattr(xyz, "timestamp", None)}}
+            evaluate_decision(r, {"consensus": tradfi_consensus, "positioning": r.get("positioning")},
+                              scan_cache, as_of=time.time(), metadata=metadata)
 
         # 6. Compute priority scores
         for r in results:
-            r["priority_score"] = _compute_priority(r)
+            r["priority_score"] = max(0, min(100, _compute_priority(r) + r.get("cto_rank_adjustment", 0)))
 
         results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
         scan_cache.tradfi_results[tf] = results
@@ -2501,7 +2398,7 @@ async def run_tradfi_scan(
         except Exception:
             logger.debug("TradFi confluence computation failed (non-fatal)")
 
-    attach_unified_signals(scan_cache.tradfi_results)
+    attach_unified_signals(scan_cache.tradfi_results, scan_cache)
     elapsed = time.time() - t0
     logger.info("=== TradFi scan completed in %.1fs ===", elapsed)
 

@@ -97,6 +97,9 @@ def _classify_transition(prev_signal: Optional[str], new_signal: str) -> str:
 def _build_context(r: dict, consensus: str) -> str:
     """Build compact JSON context blob from full scanner result dict."""
     ctx = {
+        "cto": r.get("cto"), "cto_shadow": r.get("cto_shadow"),
+        "input_quality": r.get("input_quality"), "cto_mode": r.get("cto_mode"),
+        "decision_version": r.get("decision_version"),
         "rcce": {
             "energy": r.get("energy"),
             "vol_state": r.get("vol_state"),

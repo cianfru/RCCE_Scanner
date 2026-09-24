@@ -12,7 +12,7 @@ function scoreColor(pct) {
 
 function ConditionPill({ c }) {
   return (
-    <div className="condition-item" title={c.desc}>
+    <div className="condition-item" title={`${c.desc} · ${c.source || "Source unavailable"} · ${c.freshness || "Unknown freshness"}${c.observed_at ? ` · ${new Date(c.observed_at * 1000).toISOString()}` : ""}`}>
       <span aria-label={c.available === false ? 'Unknown' : c.met ? 'Met' : 'Not met'} style={{color:c.available === false ? T.text4 : c.met ? MET_COLOR : UNMET_COLOR}}>{c.available === false ? '?' : c.met ? '✓' : '✗'}</span>
       <div><strong>{c.label}</strong><p>{c.available === false ? "Data unavailable — not counted as confirmation" : c.desc}</p></div>
     </div>

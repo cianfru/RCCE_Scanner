@@ -5,8 +5,8 @@ Causal bar-close replay through the scanner engines and signal synthesizer.
 
 Feeds historical OHLCV data through RCCE, Heatmap, and Exhaustion engines,
 computes consensus and divergence, then synthesizes signals — producing
-a technical baseline. Historical positioning and live agent context are unavailable;
-this is not a full reproduction of live trading decisions.
+a technical baseline through the shared decision and agent pipeline. Historical
+external feeds remain unavailable unless replaying recorded decision snapshots.
 """
 
 from __future__ import annotations
@@ -24,10 +24,11 @@ import numpy as np
 from engines.rcce_engine import compute_rcce
 from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
-from scanner import _process_symbol, compute_consensus, detect_divergence, classify_asset
+from scanner import _process_symbol, compute_consensus, detect_divergence, classify_asset, _compute_priority
 from signal_synthesizer import synthesize_signal
 from confluence import compute_confluence
 from candle_snapshot import closed_candles, TF_MS
+from decision_pipeline import evaluate_decision, new_state
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,14 @@ class BarResult:
     conditions_total: int
     signal_reason: str
     signal_warnings: List[str]
+    structure: dict = field(default_factory=dict)
+    input_quality: dict = field(default_factory=dict)
+    signal_score: int = 0
+    priority_score: float = 0
+    signal_status: str = "ready"
+    cto: dict = field(default_factory=dict)
+    cto_shadow: dict = field(default_factory=dict)
+    regime_changes_7d: int = 0
     confluence_score: int = 0
     confluence_label: str = "UNKNOWN"
     divergence: Optional[str] = None
@@ -65,7 +74,7 @@ class BarResult:
 # OHLCV slicing helpers
 # ---------------------------------------------------------------------------
 
-_ROLLING_WINDOW = 500  # Max bars to pass to engines (they need ~200 max)
+_ROLLING_WINDOW = 600  # Max bars to pass to engines (they need ~200 max)
 
 
 def _slice_ohlcv(ohlcv: dict, end_idx: int, rolling: bool = False) -> dict:
@@ -114,6 +123,7 @@ async def run_replay(
     fear_greed: Dict[str, int],
     warmup_bars: int = 400,
     on_progress: Optional[Callable[[float, str], None]] = None,
+    as_of_ms: Optional[float] = None,
 ) -> List[BarResult]:
     """Run bar-by-bar replay through all engines.
 
@@ -136,6 +146,8 @@ async def run_replay(
         All signal results across all bars and symbols.
     """
     t0 = time.time()
+    decision_state = new_state()
+    available_at = time.time() * 1000 if as_of_ms is None else as_of_ms
 
     # Filter to symbols that have primary data
     valid_symbols = [s for s in symbols if s in ohlcv_4h]
@@ -192,6 +204,8 @@ async def run_replay(
         # Current timestamp from the reference symbol
         bar_open_ts = float(ref_data["timestamp"][bar_idx])
         current_ts = bar_open_ts + TF_MS["4h"]
+        if current_ts > available_at:
+            break  # Providers may include an unfinished final historical candle.
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
         # Yield to event loop every 5 bars to keep server responsive
@@ -301,8 +315,9 @@ async def run_replay(
         for daily in cached_1d_results.values():
             daily["divergence"] = detect_divergence(daily["regime"], btc_daily_regime)
             try:
-                daily_synth = synthesize_signal(daily, daily_consensus, sentiment=sentiment_dict)
-                daily["signal"] = "WAIT" if daily.get("engine_errors") else daily_synth.signal
+                evaluate_decision(daily, {"consensus": daily_consensus, "sentiment": sentiment_dict}, decision_state,
+                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
+                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}}, synthesizer=synthesize_signal)
             except Exception:
                 daily["signal"] = "WAIT"
                 logger.exception("Daily synthesis unavailable for %s", daily.get("symbol"))
@@ -310,15 +325,11 @@ async def run_replay(
         # --- Step 7: Synthesize signals ---
         for r in bar_results_raw:
             try:
-                synth = synthesize_signal(
-                    r, consensus,
-                    global_metrics=None,
-                    positioning=None,
-                    sentiment=sentiment_dict,
-                    stablecoin=None,
-                )
+                evaluate_decision(r, {"consensus": consensus, "sentiment": sentiment_dict}, decision_state,
+                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
+                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}},
+                                  synthesizer=synthesize_signal)
                 sym = r["symbol"]
-                r["signal"] = "WAIT" if r.get("engine_errors") else synth.signal
                 c = compute_confluence(r, cached_1d_results.get(sym))
                 conf = {"score": c.score, "label": c.label}
 
@@ -328,16 +339,21 @@ async def run_replay(
                     symbol=sym,
                     price=r["price"],
                     signal=r["signal"],
-                    raw_signal=synth.raw_signal,
+                    raw_signal=r["raw_signal"],
                     regime=r["regime"],
                     confidence=r["confidence"],
                     zscore=r["zscore"],
                     heat=r.get("heat", 0),
-                    conditions_met=synth.conditions_met,
-                    conditions_total=synth.conditions_total,
-                    signal_reason=synth.reason,
-                    signal_warnings=synth.warnings,
-                    condition_flags=[c["met"] for c in synth.conditions_detail],
+                    conditions_met=r["conditions_met"],
+                    conditions_total=r["conditions_total"],
+                    signal_reason=r["signal_reason"],
+                    signal_warnings=r["signal_warnings"],
+                    condition_flags=[c["met"] for c in r["conditions_detail"]],
+                    structure=r.get("structure", {}), input_quality=r.get("input_quality", {}),
+                    signal_score=r.get("signal_score", 0), priority_score=_compute_priority(r),
+                    signal_status=r.get("signal_status", "unavailable"),
+                    cto=r.get("cto", {}), cto_shadow=r.get("cto_shadow", {}),
+                    regime_changes_7d=r.get("regime_changes_7d", 0),
                     confluence_score=conf.get("score", 0),
                     confluence_label=conf.get("label", "UNKNOWN"),
                     divergence=r.get("divergence"),
@@ -347,7 +363,7 @@ async def run_replay(
                 all_results.append(bar_result)
 
                 # Track WAIT count for signal decay
-                if synth.signal == "WAIT":
+                if r["signal"] == "WAIT":
                     wait_counts[sym] = wait_counts.get(sym, 0) + 1
                 else:
                     wait_counts[sym] = 0

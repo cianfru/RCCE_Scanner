@@ -245,10 +245,11 @@ class ReplayTests(unittest.TestCase):
         def engine(**kwargs):
             data = kwargs["ohlcv"]
             return dict(favorable(), symbol=kwargs["symbol"], timeframe=kwargs["timeframe"],
-                        price=float(data["close"][-1]), signal="WAIT", vol_state="LOW")
+                        price=float(data["close"][-1]), signal_bar_close_time=kwargs["as_of_ms"] / 1000,
+                        signal="WAIT", vol_state="LOW")
         data = candles(400)
         with patch("backtest.replay_engine._process_symbol", side_effect=engine), \
-             patch("backtest.replay_engine.synthesize_signal", side_effect=lambda *a, **kw: SimpleNamespace(
+             patch("backtest.replay_engine.synthesize_signal", side_effect=lambda *a, **kw: __import__("signal_synthesizer").SynthesizedSignal(
                  signal="LIGHT_LONG", raw_signal="WAIT", conditions_met=6, conditions_total=9,
                  reason="test", warnings=[], conditions_detail=[])):
             results = asyncio.run(run_replay(["BTC/USDT"], {"BTC/USDT": data},

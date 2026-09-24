@@ -14,6 +14,7 @@ export function selectOpportunity(r4, r1) {
     return { ...primary, crossTf: exits.length === 2, tf: exits.length === 2 ? "4H+1D" : primary.timeframe?.toUpperCase() };
   }
   if (valid.length !== 2) return null;
+  if (valid.some(r => (ENTRY_SIGNALS.has(r.signal) || r.signal === "LIGHT_SHORT") && r.opportunity && r.opportunity.status !== "confirmed")) return null;
   // Consume the backend's final cross-timeframe decision when supplied.
   const unified = r4.unified_signal ?? r1.unified_signal;
   if (unified != null) {

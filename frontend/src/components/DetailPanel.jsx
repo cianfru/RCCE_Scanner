@@ -1,3 +1,4 @@
+import OpportunityCard from "./OpportunityCard.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
@@ -463,7 +464,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         </div>
 
         {/* Conditions Scorecard */}
-        <ConditionsScorecard
+        <OpportunityCard row={selected} />
+          <ConditionsScorecard
           conditions={selected.conditions_detail}
           met={selected.conditions_met}
           total={selected.conditions_total}

@@ -187,7 +187,7 @@ export default function BMSBChart({
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
-      title: "CTO",
+      title: "CTO (closed)",
     });
 
     // ── 200-day MA ──

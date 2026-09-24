@@ -30,6 +30,8 @@ SMMA_MID2 = 20
 SMMA_SLOW = 24
 SMOOTH_LEN = 2       # SMA applied on top of each SMMA
 ATR_LEN = 14
+CTO_HISTORY_BARS = 599
+CTO_VERSION = "cto-1"
 STRONG_MULT = 0.2    # spread > ATR * this ⇒ strong trend
 
 COLOR_STRONG_UP = "#13d460"
@@ -152,8 +154,14 @@ def compute_cto_series(
     timestamps = np.asarray(timestamps, dtype=np.float64)
 
     n = len(close)
+    if any(len(a) != n for a in (high, low, timestamps)):
+        raise ValueError("CTO input arrays must have matching lengths")
+    if not all(np.all(np.isfinite(a)) for a in (high, low, close, timestamps)):
+        raise ValueError("CTO requires finite candles")
+    if np.any(high < low) or np.any(close > high) or np.any(close < low) or np.any(low <= 0) or np.any(np.diff(timestamps) <= 0):
+        raise ValueError("CTO requires ordered valid candles")
     if n < SMMA_SLOW + SMOOTH_LEN:
-        return {"cto_fast": [], "cto_slow": []}
+        return {"cto_fast": [], "cto_slow": [], "cto_states": []}
 
     # Source: (high + low) / 2
     hl2 = (high + low) / 2.0
@@ -174,6 +182,10 @@ def compute_cto_series(
     # Build output series with per-bar colours
     cto_fast = []
     cto_slow = []
+    cto_states = []
+    state_age = direction_age = 0
+    previous_state = previous_direction = None
+    transition_at = None
 
     for i in range(1, n):
         # Skip bars where any value is NaN
@@ -214,8 +226,73 @@ def compute_cto_series(
         else:
             color = COLOR_NEUTRAL
 
+        state = {COLOR_STRONG_UP: "strong_up", COLOR_WEAK_UP: "weak_up",
+                 COLOR_STRONG_DN: "strong_down", COLOR_WEAK_DN: "weak_down",
+                 COLOR_NEUTRAL: "neutral"}[color]
+        direction = "up" if trend_up else "down" if trend_down else "neutral"
+        state_age = state_age + 1 if state == previous_state else 1
+        direction_age = direction_age + 1 if direction == previous_direction else 1
+        if state != previous_state:
+            transition_at = int(timestamps[i] / 1000)
+        cto_states.append({
+            "time": int(timestamps[i] / 1000), "state": state, "direction": direction,
+            "fast": float(v1[i]), "slow": float(v2[i]),
+            "fast_slope": float(v1[i] - v1[i - 1]), "slow_slope": float(v2[i] - v2[i - 1]),
+            "spread_atr": float(spread / atr_val) if atr_val > 0 else None,
+            "atr": float(atr_val), "internal_conflict": bool(internal_conflict),
+            "state_age_bars": state_age, "direction_age_bars": direction_age,
+            "last_transition_at": transition_at,
+        })
+        previous_state, previous_direction = state, direction
+
         t = int(timestamps[i] / 1000)  # ms → unix seconds
         cto_fast.append({"time": t, "value": float(v1[i]), "color": color})
         cto_slow.append({"time": t, "value": float(v2[i]), "color": color})
 
-    return {"cto_fast": cto_fast, "cto_slow": cto_slow}
+    return {"cto_fast": cto_fast, "cto_slow": cto_slow, "cto_states": cto_states}
+
+
+def compute_cto_snapshot(ohlcv: dict, timeframe: str, as_of_ms: float) -> dict:
+    """Canonical completed-bar CTO; shared by chart, live scanner and replay."""
+    from candle_snapshot import closed_candles, TF_MS, snapshot_key
+    metadata = {"version": CTO_VERSION, "timeframe": timeframe, "source": "market_candles",
+                "state": "unavailable", "direction": "unavailable", "data_quality": "unavailable"}
+    try:
+        closed = closed_candles(ohlcv, timeframe, as_of_ms)
+        if closed is None:
+            return dict(metadata, reason="missing candle data")
+        closed = {k: v[-CTO_HISTORY_BARS:] for k, v in closed.items()}
+        metadata["history_bars"] = len(closed["close"])
+        if len(closed["close"]) < SMMA_SLOW + SMOOTH_LEN:
+            return dict(metadata, reason="insufficient completed history")
+        if np.any(np.diff(closed["timestamp"]) != TF_MS[timeframe]):
+            return dict(metadata, reason="candle gaps")
+        series = compute_cto_series(closed["high"], closed["low"], closed["close"], closed["timestamp"])
+        if not series["cto_states"]:
+            return dict(metadata, reason="indicator warmup incomplete")
+        latest = series["cto_states"][-1]
+        close_time = latest["time"] + TF_MS[timeframe] / 1000
+        return dict(metadata, **latest, data_quality="ready", candle_close_time=close_time,
+                    observed_at=close_time, last_transition_close_time=latest["last_transition_at"] + TF_MS[timeframe] / 1000,
+                    input_id=snapshot_key(closed, timeframe, as_of_ms=as_of_ms))
+    except (ValueError, KeyError, TypeError):
+        return dict(metadata, reason="invalid candle data")
+
+
+def compute_cto_chart(ohlcv: dict, timeframe: str, as_of_ms: float) -> dict:
+    """Confirmed overlay plus a separately identified live preview point."""
+    from candle_snapshot import closed_candles, TF_MS
+    closed = closed_candles(ohlcv, timeframe, as_of_ms)
+    closed = {k: v[-CTO_HISTORY_BARS:] for k, v in closed.items()}
+    series = compute_cto_series(closed["high"], closed["low"], closed["close"], closed["timestamp"])
+    snapshot = compute_cto_snapshot(closed, timeframe, as_of_ms)
+    preview = None
+    opens = np.asarray(ohlcv["timestamp"])
+    live = (opens <= as_of_ms) & (opens + TF_MS[timeframe] > as_of_ms)
+    if np.any(live):
+        combined = {k: np.concatenate([v, np.asarray(ohlcv[k])[live][:1]]) for k, v in closed.items()}
+        points = compute_cto_series(combined["high"], combined["low"], combined["close"], combined["timestamp"])
+        if points["cto_states"]:
+            preview = dict(points["cto_states"][-1], provisional=True)
+    return {"cto_fast": series["cto_fast"], "cto_slow": series["cto_slow"],
+            "cto_snapshot": snapshot, "cto_preview": preview}
