@@ -37,7 +37,7 @@ class ReplayLedger(PaperLedger):
         if contract["id"] in self.all:
             return self.all[contract["id"]]
         state = initial_state(contract)
-        if state["status"] == "pending" and any(
+        if state["status"] in ("pending", "scheduled") and any(
             r["contract"]["symbol"] == contract["symbol"]
             and r["contract"]["strategy"] == contract["strategy"]
             and r["state"]["status"] in ACTIVE
