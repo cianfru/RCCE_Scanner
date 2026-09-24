@@ -24,7 +24,7 @@ PRODUCTION_PROFILE = dict(
 
 def build_live_setups(row, daily, candles, book, *, as_of):
     legacy = build_setups(row, daily, candles, book, as_of=as_of)
-    if os.environ.get("PAPER_SETUP_V2_ENABLED", "1").lower() in ("0", "false", "off"):
+    if os.environ.get("PAPER_SETUP_V2_ENABLED", "0").lower() in ("0", "false", "off"):
         return legacy
     f = features(row, daily, candles, book, as_of)
     return candidate(row, daily, f, PRODUCTION_PROFILE, as_of) + legacy

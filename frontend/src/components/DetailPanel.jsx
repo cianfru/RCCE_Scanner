@@ -1,4 +1,3 @@
-import TradingSetupCards from "./TradingSetupCards.jsx";
 import OpportunityCard from "./OpportunityCard.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
@@ -465,7 +464,6 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         </div>
 
         {/* Conditions Scorecard */}
-        <TradingSetupCards records={selected.trading_setups} />
           <OpportunityCard row={selected} />
           <ConditionsScorecard
           conditions={selected.conditions_detail}
