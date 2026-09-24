@@ -26,7 +26,7 @@
 //   * The BMSB uses completed weekly candles (no repainting); the scanner on
 //     main includes the in-progress week.
 //   * History here is the full chart; the scanner sees the last ~600 bars.
-indicator("Reflex RCCE - engine view", shorttitle = "RCCE", overlay = false, precision = 2, max_bars_back = 500)
+indicator("Reflex RCCE - engine view", shorttitle = "RCCE", overlay = false, precision = 2, max_bars_back = 500, max_labels_count = 500)
 
 // ---------- Inputs ----------
 G_CTX  = "Market context (copy from the terminal)"
@@ -42,13 +42,14 @@ useDiv = input.bool(true, "Check BTC divergence", group = G_REF)
 G_VIS    = "Display"
 showBg   = input.bool(true, "Regime background on price", group = G_VIS)
 showBmsb = input.bool(true, "Weekly BMSB band on price", group = G_VIS)
-showSig  = input.bool(true, "Signal markers on price", group = G_VIS)
+showSig  = input.bool(true, "Setup markers on price (open / upgrade / exit)", group = G_VIS)
+showRaw  = input.bool(false, "Raw engine signal changes (debug)", group = G_VIS)
 showExh  = input.bool(true, "Absorption / climax / floor markers", group = G_VIS)
 showTbl  = input.bool(true, "Engine table", group = G_VIS)
 showChk  = input.bool(true, "Include the 9 checks in the table", group = G_VIS)
 tblPos   = input.string("top_right", "Table position", options = ["top_right", "top_left", "bottom_right", "bottom_left"], group = G_VIS)
 tblSize  = input.string("small", "Table text", options = ["tiny", "small", "normal"], group = G_VIS)
-closedOnly = input.bool(true, "Markers on closed bars only", group = G_VIS)
+closedOnly = input.bool(true, "Setup changes on closed bars only", group = G_VIS)
 
 // ---------- Engine constants (rcce_engine.py) ----------
 LEN_LONG = 200
@@ -445,22 +446,97 @@ plot(showBmsb ? wMid : na, "BMSB mid", color = color.new(#e4e4e7, 20), linewidth
 plot(showBmsb ? wEma : na, "BMSB EMA21", color = color.new(#a1a1aa, 50), force_overlay = true)
 plot(showBmsb ? wSma : na, "BMSB SMA20", color = color.new(#a1a1aa, 50), force_overlay = true)
 
-bool canMark = not closedOnly or barstate.isconfirmed
+// ---------- Setup: one position until it is upgraded or cancelled ----------
+// Long grades rise REVIVAL_SEED < REVIVAL_SEED_CONFIRMED < ACCUMULATE < LIGHT_LONG < STRONG_LONG.
+// An open long holds through WAIT and through equal or weaker long signals, is
+// upgraded only by a stronger one, and closes only on an exit signal (TRIM,
+// TRIM_HARD, RISK_OFF, NO_LONG) or an opposite LIGHT_SHORT. An open short
+// closes when any long entry fires. Moves are close-to-close from the signal
+// bar, with no stop, fees or funding: a read of the signal, not a trade result.
+f_longRank(string s) =>
+    switch s
+        "REVIVAL_SEED" => 0
+        "REVIVAL_SEED_CONFIRMED" => 1
+        "ACCUMULATE" => 2
+        "LIGHT_LONG" => 3
+        "STRONG_LONG" => 4
+        => -1
+
+f_isExit(string s) =>
+    s == "TRIM" or s == "TRIM_HARD" or s == "RISK_OFF" or s == "NO_LONG"
+
+var string setup = "NONE"
+var float entryPx = na
+var int entryTime = na
+string opened = ""
+string upgraded = ""
+string closedBy = ""
+float closedMove = na
+bool step = hasRegime and (not closedOnly or barstate.isconfirmed)
+if step
+    int rank = f_longRank(sig)
+    if setup == "NONE"
+        if rank >= 0 or sig == "LIGHT_SHORT"
+            opened := sig
+    else if f_longRank(setup) >= 0
+        if f_isExit(sig) or sig == "LIGHT_SHORT"
+            closedBy := sig
+            closedMove := (close / entryPx - 1.0) * 100.0
+            setup := "NONE"
+            if sig == "LIGHT_SHORT"
+                opened := sig
+        else if rank > f_longRank(setup)
+            upgraded := sig
+            setup := sig
+    else if rank >= 0
+        closedBy := sig
+        closedMove := (entryPx - close) / entryPx * 100.0
+        setup := "NONE"
+        opened := sig
+    if opened != ""
+        setup := opened
+        entryPx := close
+        entryTime := time
+
+bool inLong = f_longRank(setup) >= 0
+bool inShort = setup == "LIGHT_SHORT"
+float openMove = inLong ? (close / entryPx - 1.0) * 100.0 : inShort ? (entryPx - close) / entryPx * 100.0 : na
+
+f_open(string s) =>
+    showSig and opened == s
+f_up(string s) =>
+    showSig and upgraded == s
+
+plot(showSig and setup != "NONE" ? entryPx : na, "Setup entry price", color = inShort ? color.new(#fb923c, 30) : color.new(#34d399, 30), style = plot.style_linebr, force_overlay = true)
+plotshape(f_open("STRONG_LONG"), "Open STRONG", shape.labelup, location.belowbar, color.new(#34d399, 0), text = "STRONG", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_open("LIGHT_LONG"), "Open LIGHT", shape.labelup, location.belowbar, color.new(#6ee7b7, 0), text = "LIGHT", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_open("ACCUMULATE"), "Open ACC", shape.labelup, location.belowbar, color.new(#97FCE4, 0), text = "ACC", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_open("REVIVAL_SEED"), "Open REV", shape.labelup, location.belowbar, color.new(#b8fff0, 0), text = "REV", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_open("REVIVAL_SEED_CONFIRMED"), "Open REV+", shape.labelup, location.belowbar, color.new(#b8fff0, 0), text = "REV+", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_open("LIGHT_SHORT"), "Open SHORT", shape.labeldown, location.abovebar, color.new(#fb923c, 0), text = "SHORT", textcolor = #09090b, size = size.tiny, force_overlay = true)
+plotshape(f_up("STRONG_LONG"), "Upgrade to STRONG", shape.triangleup, location.belowbar, color.new(#34d399, 0), text = "UP STRONG", textcolor = #34d399, size = size.tiny, force_overlay = true)
+plotshape(f_up("LIGHT_LONG"), "Upgrade to LIGHT", shape.triangleup, location.belowbar, color.new(#6ee7b7, 0), text = "UP LIGHT", textcolor = #6ee7b7, size = size.tiny, force_overlay = true)
+plotshape(f_up("ACCUMULATE"), "Upgrade to ACC", shape.triangleup, location.belowbar, color.new(#97FCE4, 0), text = "UP ACC", textcolor = #97FCE4, size = size.tiny, force_overlay = true)
+plotshape(f_up("REVIVAL_SEED_CONFIRMED"), "Upgrade to REV+", shape.triangleup, location.belowbar, color.new(#b8fff0, 0), text = "UP REV+", textcolor = #b8fff0, size = size.tiny, force_overlay = true)
+
+if showSig and closedBy != ""
+    string exitTxt = closedBy == "LIGHT_SHORT" ? "FLIP TO SHORT" : f_longRank(closedBy) >= 0 ? "SHORT CLOSED" : "EXIT " + closedBy
+    string moveTxt = (closedMove >= 0 ? "+" : "") + str.tostring(closedMove, "#.#") + "%"
+    label.new(bar_index, na, exitTxt + "\n" + moveTxt, yloc = f_longRank(closedBy) >= 0 ? yloc.belowbar : yloc.abovebar, style = f_longRank(closedBy) >= 0 ? label.style_label_up : label.style_label_down, color = closedMove >= 0 ? color.new(#34d399, 10) : color.new(#f87171, 10), textcolor = #09090b, size = size.tiny, force_overlay = true)
+
+// Raw engine output, bar by bar (debug): every change of the synthesizer's label
 bool isNew = sig != sig[1]
 f_mark(string s) =>
-    showSig and canMark and isNew and sig == s
+    showRaw and step and isNew and sig == s
 
-plotshape(f_mark("STRONG_LONG"), "STRONG_LONG", shape.labelup, location.belowbar, color.new(#34d399, 0), text = "STRONG", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("LIGHT_LONG"), "LIGHT_LONG", shape.labelup, location.belowbar, color.new(#6ee7b7, 0), text = "LIGHT", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("ACCUMULATE"), "ACCUMULATE", shape.labelup, location.belowbar, color.new(#97FCE4, 0), text = "ACC", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("REVIVAL_SEED"), "REVIVAL_SEED", shape.labelup, location.belowbar, color.new(#b8fff0, 0), text = "REV", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("REVIVAL_SEED_CONFIRMED"), "REVIVAL_SEED_CONFIRMED", shape.labelup, location.belowbar, color.new(#b8fff0, 0), text = "REV+", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("TRIM"), "TRIM", shape.labeldown, location.abovebar, color.new(#fbbf24, 0), text = "TRIM", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("TRIM_HARD"), "TRIM_HARD", shape.labeldown, location.abovebar, color.new(#f87171, 0), text = "TRIM!", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("RISK_OFF"), "RISK_OFF", shape.labeldown, location.abovebar, color.new(#ef4444, 0), text = "RISK-OFF", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("NO_LONG"), "NO_LONG", shape.labeldown, location.abovebar, color.new(#d8b4fe, 0), text = "NO LONG", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("LIGHT_SHORT"), "LIGHT_SHORT", shape.labeldown, location.abovebar, color.new(#fb923c, 0), text = "SHORT", textcolor = #09090b, size = size.tiny, force_overlay = true)
-plotshape(f_mark("WAIT") and (sig[1] != "TRIM" and sig[1] != "TRIM_HARD" and sig[1] != "RISK_OFF" and sig[1] != "NO_LONG"), "Back to WAIT", shape.xcross, location.abovebar, color.new(#71717a, 30), size = size.tiny, force_overlay = true)
+plotshape(f_mark("STRONG_LONG"), "Raw STRONG_LONG", shape.circle, location.bottom, color.new(#34d399, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("LIGHT_LONG"), "Raw LIGHT_LONG", shape.circle, location.bottom, color.new(#6ee7b7, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("ACCUMULATE"), "Raw ACCUMULATE", shape.circle, location.bottom, color.new(#97FCE4, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("REVIVAL_SEED") or f_mark("REVIVAL_SEED_CONFIRMED"), "Raw REVIVAL", shape.circle, location.bottom, color.new(#b8fff0, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("TRIM") or f_mark("TRIM_HARD"), "Raw TRIM", shape.circle, location.top, color.new(#fbbf24, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("RISK_OFF") or f_mark("NO_LONG"), "Raw RISK_OFF / NO_LONG", shape.circle, location.top, color.new(#ef4444, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("LIGHT_SHORT"), "Raw LIGHT_SHORT", shape.circle, location.top, color.new(#fb923c, 40), size = size.tiny, force_overlay = true)
+plotshape(f_mark("WAIT"), "Raw WAIT", shape.xcross, location.bottom, color.new(#71717a, 50), size = size.tiny, force_overlay = true)
 
 plotshape(showExh and absorption, "Absorption", shape.diamond, location.belowbar, color.new(#b8fff0, 20), size = size.auto, force_overlay = true)
 plotshape(showExh and climax, "Climax", shape.triangleup, location.belowbar, color.new(#fbbf24, 10), size = size.tiny, force_overlay = true)
@@ -494,7 +570,7 @@ f_sigCol(string s) =>
         "LIGHT_SHORT" => #fb923c
         => #a1a1aa
 
-var table tbl = table.new(f_pos(tblPos), 2, 22, bgcolor = color.new(#09090b, 8), border_color = color.new(#27272a, 0), border_width = 1, frame_color = color.new(#3f3f46, 0), frame_width = 1)
+var table tbl = table.new(f_pos(tblPos), 2, 24, bgcolor = color.new(#09090b, 8), border_color = color.new(#27272a, 0), border_width = 1, frame_color = color.new(#3f3f46, 0), frame_width = 1)
 
 f_row(int r, string k, string v, color vc) =>
     table.cell(tbl, 0, r, k, text_color = #a1a1aa, text_size = f_size(tblSize), text_halign = text.align_left)
@@ -504,36 +580,38 @@ f_check(int r, string k, bool ok) =>
     f_row(r, k, ok ? "PASS" : "FAIL", ok ? #34d399 : #f87171)
 
 if showTbl and barstate.islast
-    table.clear(tbl, 0, 0, 1, 21)
+    table.clear(tbl, 0, 0, 1, 23)
     string pendTxt = hasRegime and not na(pendReg) and pendReg != regime and pendCount > 0 ? "to " + array.get(REG_NAME, nz(pendReg)) + "  " + str.tostring(pendCount) + "/" + str.tostring(MIN_REGIME_BARS) : "none"
     string volTxt = (volHigh ? "HIGH" : volLow ? "LOW" : "MID") + "  x" + str.tostring(vs, "#.##")
     string heatTxt = str.tostring(heat) + "  " + heatPhase + (heatDir > 0 ? "  above BMSB" : heatDir < 0 ? "  below BMSB" : "")
-    f_row(0, "RCCE  " + timeframe.period, sig, f_sigCol(sig))
-    f_row(1, "Why", why, #e4e4e7)
-    f_row(2, "Regime", hasRegime ? regName + "  " + str.tostring(cf * 100, "#") + "%  " + array.get(REG_HINT, regIdx) : "FLAT", regCol)
-    f_row(3, "Pending switch", pendTxt, #e4e4e7)
-    f_row(4, "Z-score", str.tostring(zz, "#.##"), #e4e4e7)
-    f_row(5, "Energy", str.tostring(nz(energy), "#.##"), #e4e4e7)
-    f_row(6, "Volatility", volTxt, #e4e4e7)
-    f_row(7, "Heat", heatTxt, heat >= 80 ? #fbbf24 : #e4e4e7)
-    f_row(8, "Exhaustion", exhState, exhState == "NEUTRAL" ? #e4e4e7 : #b8fff0)
-    f_row(9, "BTC divergence", divergence == "" ? "none" : divergence, bearDiv ? #f87171 : divergence == "BULL-DIV" ? #34d399 : #e4e4e7)
-    f_row(10, "Regime changes 7d", str.tostring(changes7d) + (unstable ? "  (chop)" : ""), unstable ? #fbbf24 : #e4e4e7)
-    f_row(11, "Checks", str.tostring(coreMet) + "/9   effective " + str.tostring(effPct * 100, "#") + "%", effPct >= 0.80 ? #34d399 : effPct >= 0.55 ? #fbbf24 : #a1a1aa)
+    string sinceTxt = setup == "NONE" ? "no open setup" : str.format_time(entryTime, "yyyy-MM-dd HH:mm", syminfo.timezone) + "   " + (openMove >= 0 ? "+" : "") + str.tostring(openMove, "#.#") + "%"
+    f_row(0, "RCCE  " + timeframe.period + "  setup", setup == "NONE" ? "none" : setup, f_sigCol(setup))
+    f_row(1, "Open since", sinceTxt, setup == "NONE" ? #a1a1aa : openMove >= 0 ? #34d399 : #f87171)
+    f_row(2, "Engine this bar", sig, f_sigCol(sig))
+    f_row(3, "Why", why, #e4e4e7)
+    f_row(4, "Regime", hasRegime ? regName + "  " + str.tostring(cf * 100, "#") + "%  " + array.get(REG_HINT, regIdx) : "FLAT", regCol)
+    f_row(5, "Pending switch", pendTxt, #e4e4e7)
+    f_row(6, "Z-score", str.tostring(zz, "#.##"), #e4e4e7)
+    f_row(7, "Energy", str.tostring(nz(energy), "#.##"), #e4e4e7)
+    f_row(8, "Volatility", volTxt, #e4e4e7)
+    f_row(9, "Heat", heatTxt, heat >= 80 ? #fbbf24 : #e4e4e7)
+    f_row(10, "Exhaustion", exhState, exhState == "NEUTRAL" ? #e4e4e7 : #b8fff0)
+    f_row(11, "BTC divergence", divergence == "" ? "none" : divergence, bearDiv ? #f87171 : divergence == "BULL-DIV" ? #34d399 : #e4e4e7)
+    f_row(12, "Regime changes 7d", str.tostring(changes7d) + (unstable ? "  (chop)" : ""), unstable ? #fbbf24 : #e4e4e7)
+    f_row(13, "Checks", str.tostring(coreMet) + "/9   effective " + str.tostring(effPct * 100, "#") + "%", effPct >= 0.80 ? #34d399 : effPct >= 0.55 ? #fbbf24 : #a1a1aa)
     if showChk
-        f_check(12, "  Regime MARKUP/ACCUM", c1)
-        f_check(13, "  Consensus " + consIn, c2)
-        f_check(14, "  Z in -0.5 .. 2.5", c3)
-        f_check(15, "  No bear divergence", c4)
-        f_check(16, "  Heat < " + str.tostring(heatBlock), c5)
-        f_check(17, "  No climax", c6)
-        f_check(18, "  Funding " + fundIn, c7)
-        f_check(19, "  Fear & Greed " + str.tostring(fgIn) + " < 70", c8)
-        f_check(20, "  Stablecoins " + stabIn, c9)
+        f_check(14, "  Regime MARKUP/ACCUM", c1)
+        f_check(15, "  Consensus " + consIn, c2)
+        f_check(16, "  Z in -0.5 .. 2.5", c3)
+        f_check(17, "  No bear divergence", c4)
+        f_check(18, "  Heat < " + str.tostring(heatBlock), c5)
+        f_check(19, "  No climax", c6)
+        f_check(20, "  Funding " + fundIn, c7)
+        f_check(21, "  Fear & Greed " + str.tostring(fgIn) + " < 70", c8)
+        f_check(22, "  Stablecoins " + stabIn, c9)
 
 // ---------- Alerts ----------
-bool entryNew = isNew and barstate.isconfirmed and (sig == "STRONG_LONG" or sig == "LIGHT_LONG" or sig == "ACCUMULATE" or sig == "REVIVAL_SEED" or sig == "REVIVAL_SEED_CONFIRMED")
-bool exitNew = isNew and barstate.isconfirmed and (sig == "TRIM" or sig == "TRIM_HARD" or sig == "RISK_OFF" or sig == "NO_LONG")
-alertcondition(entryNew, "RCCE entry", "RCCE: new entry signal on {{ticker}} {{interval}}")
-alertcondition(exitNew, "RCCE exit", "RCCE: new exit signal on {{ticker}} {{interval}}")
+alertcondition(opened != "", "Setup opened", "RCCE: setup opened on {{ticker}} {{interval}}")
+alertcondition(upgraded != "", "Setup upgraded", "RCCE: setup upgraded on {{ticker}} {{interval}}")
+alertcondition(closedBy != "", "Setup closed", "RCCE: setup closed on {{ticker}} {{interval}}")
 alertcondition(hasRegime and regime != regime[1], "RCCE regime change", "RCCE: regime changed on {{ticker}} {{interval}}")
