@@ -1,7 +1,7 @@
-// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// This Pine Script code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 //@version=6
 //
-// Reflex RCCE — engine view
+// Reflex RCCE - engine view
 // -------------------------
 // A chart port of the Reflex scanner's decision logic, so setups can be read
 // bar by bar. Mirrors, from the backend:
@@ -16,7 +16,7 @@
 // Not reproducible from a chart, so set by hand in the inputs (read them off
 // the terminal): market consensus, Fear & Greed, funding regime, stablecoin
 // trend. CoinGlass / HyperLens / CVD modifiers and the agent-layer filters
-// (cooldown, flapping, inertia) are omitted — they need live feeds and scan
+// (cooldown, flapping, inertia) are omitted - they need live feeds and scan
 // history. The chart therefore behaves like a Hyperliquid-only symbol
 // (9 checks, STRONG_LONG at >= 80% effective).
 //
@@ -26,9 +26,9 @@
 //   * The BMSB uses completed weekly candles (no repainting); the scanner on
 //     main includes the in-progress week.
 //   * History here is the full chart; the scanner sees the last ~600 bars.
-indicator("Reflex RCCE — engine view", shorttitle = "RCCE", overlay = false, precision = 2, max_bars_back = 500)
+indicator("Reflex RCCE - engine view", shorttitle = "RCCE", overlay = false, precision = 2, max_bars_back = 500)
 
-// ───────────────────────── Inputs ─────────────────────────
+// ---------- Inputs ----------
 G_CTX  = "Market context (copy from the terminal)"
 consIn = input.string("MIXED", "Market consensus", options = ["RISK-ON", "ACCUMULATION", "MIXED", "RISK-OFF", "EUPHORIA"], group = G_CTX)
 fgIn   = input.int(50, "Fear & Greed", minval = 0, maxval = 100, group = G_CTX)
@@ -50,7 +50,7 @@ tblPos   = input.string("top_right", "Table position", options = ["top_right", "
 tblSize  = input.string("small", "Table text", options = ["tiny", "small", "normal"], group = G_VIS)
 closedOnly = input.bool(true, "Markers on closed bars only", group = G_VIS)
 
-// ───────────────────────── Engine constants (rcce_engine.py) ─────────────────────────
+// ---------- Engine constants (rcce_engine.py) ----------
 LEN_LONG = 200
 LEN_SHORT = 30
 LEN_REG = 300
@@ -72,7 +72,7 @@ var REG_NAME = array.from("MARKUP", "BLOWOFF", "REACC", "MARKDOWN", "CAP", "ACCU
 var REG_HINT = array.from("Uptrend", "Overheated", "Re-accumulating", "Downtrend", "Capitulation", "Accumulation")
 var REG_COL  = array.from(#97FCE4, #f87171, #b5a5db, #cf9185, #c084fc, #91b9e8)
 
-// ───────────────────────── Helpers ─────────────────────────
+// ---------- Helpers ----------
 f_gate(float x, float c, float w) =>
     1.0 / (1.0 + math.exp(-(x - c) / math.max(w, 0.01)))
 
@@ -121,7 +121,7 @@ f_pctLinear(float src, int n, float pct) =>
 f_volScale(float r) =>
     r < 0.8 ? 0.85 : r < 1.1 ? 1.0 : r < 1.5 ? 1.15 : 1.25
 
-// ───────────────────────── RCCE regime engine ─────────────────────────
+// ---------- RCCE regime engine ----------
 f_rcce() =>
     // 1. Hybrid z-score: log price vs linreg(300), SMA(200) fallback, normalised over 200 bars
     float logp = math.log(math.max(close, EPS))
@@ -244,7 +244,7 @@ while array.size(changeTimes) > 0 and array.get(changeTimes, 0) < time - 7 * 864
 int changes7d = array.size(changeTimes)
 bool unstable = changes7d >= 3
 
-// ───────────────────────── Weekly BMSB + heat (heatmap_engine.py) ─────────────────────────
+// ---------- Weekly BMSB + heat (heatmap_engine.py) ----------
 f_weekly() =>
     float e = ta.ema(close, 21)
     float s = ta.sma(close, 20)
@@ -271,7 +271,7 @@ string heatPhase = exhaustPeak ? "Exhaustion" : heat > 80 and heatDir > 0 and he
 int prevHeat = nz(heat[1])
 bool macroBlocked = not bmsbValid or heatDir < 0
 
-// ───────────────────────── Exhaustion (exhaustion_engine.py) ─────────────────────────
+// ---------- Exhaustion (exhaustion_engine.py) ----------
 float trE = ta.tr(true)
 float atrE = nz(ta.atr(14), 1.0)
 float effDown = (close < close[1] ? math.abs(close - close[1]) : 0.0) / atrE
@@ -291,13 +291,13 @@ if absorption and aquaCount == 1
 bool floorOk = aquaCount >= 3 and not na(startVol) and volume < startVol
 string exhState = floorOk ? "EXHAUSTED_FLOOR" : climax ? "CLIMAX" : absorption ? "ABSORBING" : downZone ? "BEAR_ZONE" : "NEUTRAL"
 
-// ───────────────────────── BTC divergence (scanner.detect_divergence) ─────────────────────────
+// ---------- BTC divergence (scanner.detect_divergence) ----------
 int btcRegRaw = request.security(btcSym, timeframe.period, f_regimeOnly())
 int btcReg = useDiv ? btcRegRaw : na
 string divergence = na(btcReg) or not hasRegime ? "" : (regime == 0 or regime == 2) and btcReg == 3 ? "BEAR-DIV" : (regime == 3 or regime == 4) and btcReg == 0 ? "BULL-DIV" : ""
 bool bearDiv = divergence == "BEAR-DIV"
 
-// ───────────────────────── Signal synthesis (signal_synthesizer.py) ─────────────────────────
+// ---------- Signal synthesis (signal_synthesizer.py) ----------
 float zz = nz(z)
 float cf = nz(conf)
 int heatForce = regName == "BLOWOFF" ? 85 : (regName == "CAP" or regName == "ACCUM") ? 100 : 95
@@ -359,16 +359,16 @@ else if regName == "MARKDOWN" and not macroBlocked
     why := "MARKDOWN regime"
     decided := true
 else if climax
-    why := "Exhaustion climax — entries blocked"
+    why := "Exhaustion climax - entries blocked"
     decided := true
 else if macroBlocked
     if not bmsbValid
-        why := "No weekly BMSB — all entries blocked"
+        why := "No weekly BMSB - all entries blocked"
     else if zz >= 0.3 and zz <= 1.2 and heat >= 20 and heat <= prevHeat and divergence != "BULL-DIV" and fundIn != "CROWDED_SHORT" and cf > 0.30
         sig := "LIGHT_SHORT"
         why := "Below BMSB: stalling bear rally"
     else
-        why := "Below weekly BMSB — longs blocked"
+        why := "Below weekly BMSB - longs blocked"
     decided := true
 
 // Entry rules (evaluated by strength)
@@ -429,7 +429,7 @@ if not decided and regName == "CAP" and zz < -1.0 and cf > 0.30 and absorption
 if not decided
     why := "No entry rule met (" + str.tostring(effPct * 100, "#") + "% effective)"
 
-// ───────────────────────── Pane: z-score ─────────────────────────
+// ---------- Pane: z-score ----------
 hline(0, "Zero", color = color.new(#71717a, 60), linestyle = hline.style_dotted)
 hBandLo = hline(-0.5, "Strong band low", color = color.new(#34d399, 70), linestyle = hline.style_dotted)
 hBandHi = hline(1.0, "Strong band high", color = color.new(#34d399, 70), linestyle = hline.style_dotted)
@@ -439,7 +439,7 @@ plot(zTrim, "Trim", color = color.new(#fbbf24, 40), style = plot.style_stepline)
 plot(Z_CAP * vs, "Capitulation", color = color.new(#c084fc, 40), style = plot.style_stepline)
 plot(z, "Z-score", color = regCol, linewidth = 2)
 
-// ───────────────────────── Price chart ─────────────────────────
+// ---------- Price chart ----------
 bgcolor(showBg and hasRegime ? color.new(regCol, 88) : na, title = "Regime", force_overlay = true)
 plot(showBmsb ? wMid : na, "BMSB mid", color = color.new(#e4e4e7, 20), linewidth = 2, force_overlay = true)
 plot(showBmsb ? wEma : na, "BMSB EMA21", color = color.new(#a1a1aa, 50), force_overlay = true)
@@ -466,7 +466,7 @@ plotshape(showExh and absorption, "Absorption", shape.diamond, location.belowbar
 plotshape(showExh and climax, "Climax", shape.triangleup, location.belowbar, color.new(#fbbf24, 10), size = size.tiny, force_overlay = true)
 plotshape(showExh and floorOk and not floorOk[1], "Floor confirmed", shape.circle, location.belowbar, color.new(#34d399, 0), text = "FLOOR", textcolor = #34d399, size = size.tiny, force_overlay = true)
 
-// ───────────────────────── Engine table ─────────────────────────
+// ---------- Engine table ----------
 f_pos(string p) =>
     switch p
         "top_left" => position.top_left
@@ -531,7 +531,7 @@ if showTbl and barstate.islast
         f_check(19, "  Fear & Greed " + str.tostring(fgIn) + " < 70", c8)
         f_check(20, "  Stablecoins " + stabIn, c9)
 
-// ───────────────────────── Alerts ─────────────────────────
+// ---------- Alerts ----------
 bool entryNew = isNew and barstate.isconfirmed and (sig == "STRONG_LONG" or sig == "LIGHT_LONG" or sig == "ACCUMULATE" or sig == "REVIVAL_SEED" or sig == "REVIVAL_SEED_CONFIRMED")
 bool exitNew = isNew and barstate.isconfirmed and (sig == "TRIM" or sig == "TRIM_HARD" or sig == "RISK_OFF" or sig == "NO_LONG")
 alertcondition(entryNew, "RCCE entry", "RCCE: new entry signal on {{ticker}} {{interval}}")
