@@ -136,7 +136,7 @@ class ScanResult(BaseModel):
     cvd_trend: str = "NEUTRAL"       # BULLISH | BEARISH | NEUTRAL
     cvd_divergence: bool = False     # price direction ≠ CVD direction
     buy_sell_ratio: float = 1.0      # taker buy / sell volume ratio
-    vpin: float = 0.0                # Volume-Synchronized PIN, 0..1 (flow toxicity)
+    vpin: Optional[float] = None     # 0..1 flow toxicity; None when feed unavailable
     vpin_label: str = "BALANCED"     # BALANCED | ELEVATED | TOXIC
     # Calibrated next-bar range forecast: {probability, label, atr_mult,
     # expected_range_pct, current_percentile, sample_size}. Magnitude only.
