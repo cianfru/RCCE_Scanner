@@ -1,4 +1,5 @@
 import PaperEventHistory from "./PaperEventHistory.jsx";
+import TradingSetupCards from "./TradingSetupCards.jsx";
 import { useEffect, useState } from 'react';
 import { T } from '../theme.js';
 import { strategyLabel, evidenceLabel, researchPercent as pct, researchNumber as number, researchTime as stamp } from '../utils/researchSetups.js';
@@ -19,11 +20,12 @@ export default function SetupResearchDashboard() {
     return () => { controller.abort(); clearInterval(timer); };
   }, []);
   return <section style={{ color: T.text2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, margin: '12px 0' }}>
-    <h2>Setup research · forward paper record</h2>
+    <h2>Trading setups · paper performance</h2>
     <p>BTC, ETH and SOL · 4h with daily context · long only · unvalidated</p>
     {error || data?.error ? <p role="status">Research updates unavailable. Previously recorded results may be stale.</p> : null}
     {!data?.available ? <p>No forward observations available yet. Collection starts when the updated backend runs.</p> : <>
       <p>Last collection: {stamp(data.updated_at)}. Paper results are hypothetical; no orders are placed.</p>
+      <TradingSetupCards records={(data.active_records || []).filter(r => r.contract.entry_mode === 'next_open')} />
       <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', textAlign: 'left', borderSpacing: 10 }}>
         <thead><tr><th>Strategy</th><th>Closed / fully costed</th><th>Modeled net expectancy</th><th>Mean R</th><th>Losing fraction</th><th>Realized drawdown R</th></tr></thead>
         <tbody>{Object.entries(data.strategies || {}).map(([key, value]) => <tr key={key}>

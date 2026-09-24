@@ -15,7 +15,7 @@ ACTIVE = {"pending", "scheduled", "open"}
 
 
 def initial_state(contract):
-    return dict(
+    state = dict(
         status=contract["status"],
         reason=contract["reason"],
         updated_at=contract["observed_at"],
@@ -32,6 +32,16 @@ def initial_state(contract):
         net_return=None,
         net_r=None,
     )
+    if contract.get("entry_mode") == "next_open" and contract["status"] == "pending":
+        state.update(
+            status="scheduled",
+            trigger_at=contract["observed_at"],
+            trigger_candle_close=contract["reference_close"],
+            entry_due=math.ceil(contract["observed_at"] / TF_SECONDS) * TF_SECONDS,
+            trigger_execution=copy.deepcopy(contract["execution"]),
+            reason="Closed-candle setup confirmed; next opening precommitted",
+        )
+    return state
 
 
 def finish(contract, state, price, exit_at, reason):
@@ -188,19 +198,26 @@ def advance(contract, previous, bars, book, funding, *, as_of):
                 slippage_bps=slip,
             )
         if state["status"] == "open":
-            stop = bar["low"] <= contract["stop"]
+            active_stop = state.get("active_stop", contract["stop"])
+            stop = bar["low"] <= active_stop
             target = bar["high"] >= contract["target"]
             state["bars_held"] += 1
             state["ambiguous"] = state["ambiguous"] or (stop and target)
             if stop:
-                raw_exit = min(bar["open"], contract["stop"])
+                raw_exit = min(bar["open"], active_stop)
                 state["mae"] = min(state["mae"], raw_exit / state["entry"] - 1)
                 finish(
                     contract,
                     state,
                     raw_exit,
                     end,
-                    "Stop hit; conservative ordering" if target else "Stop hit",
+                    (
+                        "Protected stop hit"
+                        if active_stop > contract["stop"]
+                        else "Stop hit; conservative ordering"
+                        if target
+                        else "Stop hit"
+                    ),
                 )
             else:
                 state["mae"] = min(state["mae"], bar["low"] / state["entry"] - 1)
@@ -212,6 +229,30 @@ def advance(contract, previous, bars, book, funding, *, as_of):
                     finish(contract, state, contract["target"], end, "Target hit")
                 elif state["bars_held"] >= p["max_hold_bars"]:
                     finish(contract, state, bar["close"], end, "Time exit")
+            if state["status"] == "open":
+                # Only completed closes can arm protection, and the new stop
+                # takes effect next bar. Never use a bar's high to backdate BE.
+                risk = state["entry"] - contract["stop"]
+                mode = p.get("protection", "none")
+                held = state["bars_held"] >= p.get("protection_min_bars", 0)
+                arm = (
+                    bar["close"] >= state["entry"] * 1.05
+                    if mode in ("be_5pct", "legacy_be_5pct")
+                    else bar["close"] >= state["entry"] + 2 * risk
+                )
+                if held and mode in ("be_5pct", "legacy_be_5pct", "be_2r") and arm:
+                    # Cost-aware level compensates estimated entry/exit fees
+                    # and exit slippage, but not unknown future funding/gaps.
+                    fee = p["fee_bps"] / 10000
+                    slip = state["slippage_bps"] / 10000
+                    level = state["entry"] * (1 + fee) / ((1 - slip) * (1 - fee))
+                    if mode == "legacy_be_5pct":
+                        level = state["raw_entry"]
+                    state["active_stop"] = max(active_stop, level)
+                elif held and mode == "trail_2r" and arm:
+                    state["active_stop"] = max(
+                        active_stop, bar["close"] - 2 * contract["atr"]
+                    )
             if state["status"] == "closed":
                 settle_funding(contract, state, funding)
                 break
@@ -306,7 +347,7 @@ class PaperLedger:
             "SELECT state FROM setups WHERE symbol=? AND strategy=?",
             (contract["symbol"], contract["strategy"]),
         )
-        if state["status"] == "pending" and any(
+        if state["status"] in ("pending", "scheduled") and any(
             json.loads(r[0])["status"] in ACTIVE for r in active
         ):
             state.update(
@@ -343,6 +384,7 @@ class PaperLedger:
                 "entry_at",
                 "exit_at",
                 "paused_reason",
+                "active_stop",
             )
         )
         payload = json.dumps(state, sort_keys=True, allow_nan=False)
@@ -363,6 +405,9 @@ class PaperLedger:
                         as_of,
                         "funding_complete"
                         if previous["status"] == "closed" and state["funding_complete"]
+                        else "stop_updated"
+                        if state.get("active_stop") != previous.get("active_stop")
+                        and state["status"] == "open"
                         else state["status"],
                         payload,
                     ),
@@ -423,6 +468,7 @@ class PaperLedger:
                 for key, rows in grouped.items()
             },
             records=records[:30],
+            active_records=[r for r in records if r["state"]["status"] in ACTIVE],
             assumptions="Long-only fixed-notional independent research episodes; no combined portfolio return. Same-bar stop/target uses stop first. Funding uses entry notional. Future execution uses modeled costs.",
         )
 

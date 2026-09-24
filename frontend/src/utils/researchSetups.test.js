@@ -11,3 +11,10 @@ test('comparator and empty evidence remain explicitly labeled', () => {
   assert.equal(strategyLabel('trend_comparator'), 'Simple trend comparator');
   assert.equal(evidenceLabel({closed_trades:0}), 'No closed paper trades yet');
 });
+
+test('new setup labels describe precommitted entry and explicit exit policy', async () => {
+  const { entryRuleLabel, exitRuleLabel } = await import('./researchSetups.js');
+  assert.equal(strategyLabel('adaptive_breakout'), 'Confirmed breakout');
+  assert.equal(entryRuleLabel({entry_mode:'next_open'}), 'Confirmed close / next opening');
+  assert.match(exitRuleLabel({parameters:{protection:'none'}}), /no automatic break-even/);
+});

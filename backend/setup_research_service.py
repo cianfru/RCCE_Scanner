@@ -88,7 +88,7 @@ async def fetch_market(symbol, *, funding_start, session):
     return dict(book=parse_book(book), candles=candles, bars=bars, funding=parsed)
 
 
-def apply_research_cycle(cache, market, *, as_of):
+def apply_research_cycle(cache, market, *, as_of, builder=build_setups):
     """Synchronous deterministic integration, independently testable with fixtures."""
     ledger = cache.paper_ledger
     # Process commitments using their original definitions before considering new context.
@@ -99,7 +99,7 @@ def apply_research_cycle(cache, market, *, as_of):
             continue
         d = daily.get(row["symbol"])
         feed = market.get(row["symbol"], {})
-        definitions = build_setups(
+        definitions = builder(
             row, d, feed.get("candles"), feed.get("book"), as_of=as_of
         )
         observed = []
@@ -195,7 +195,11 @@ async def update_setup_research(cache):
                     return_exceptions=True,
                 )
             market = {s: r for s, r in zip(UNIVERSE, responses) if isinstance(r, dict)}
-            apply_research_cycle(cache, market, as_of=time.time())
+            from setup_v2 import build_live_setups
+
+            apply_research_cycle(
+                cache, market, as_of=time.time(), builder=build_live_setups
+            )
         except Exception as exc:
             cache.paper_research_error = type(exc).__name__
             log.exception("Forward paper research update unavailable")

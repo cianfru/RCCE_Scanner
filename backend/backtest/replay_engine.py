@@ -124,6 +124,7 @@ async def run_replay(
     warmup_bars: int = 400,
     on_progress: Optional[Callable[[float, str], None]] = None,
     as_of_ms: Optional[float] = None,
+    on_decision_bar: Optional[Callable] = None,
 ) -> List[BarResult]:
     """Run bar-by-bar replay through all engines.
 
@@ -370,6 +371,13 @@ async def run_replay(
 
             except Exception:
                 logger.debug("Signal synthesis failed for %s at bar %d", r.get("symbol"), bar_idx)
+
+        # Read-only research observer, outside exception suppression: failures must
+        # abort a study, not silently remove inconvenient historical decisions.
+        if on_decision_bar:
+            import copy
+            on_decision_bar(current_ts / 1000, copy.deepcopy(bar_results_raw),
+                            copy.deepcopy(list(cached_1d_results.values())))
 
     elapsed = time.time() - t0
     logger.info(
