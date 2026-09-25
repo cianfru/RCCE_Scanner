@@ -211,3 +211,32 @@ Entries, sizing, BMSB gate and costs are exactly B1's. Entries are skipped while
 | X3 | X1 plus RCCE's own exit signals (TRIM, TRIM_HARD, NO_LONG, RISK_OFF); no 8% stop, no decay exit. |
 
 No parameters are tuned; these three are the whole test.
+
+### Results (run `exits_w1-9`)
+
+| | Compounded W1-9 | Worst window DD | Trades | Win rate | Avg hold (bars) | Exits |
+|---|---:|---:|---:|---:|---:|---|
+| B1 RCCE baseline | +53.9% | -24.4% | 228 | 28% | 27 | 8% stop 139, RISK_OFF 21, TRIM 18, decay 8, window end 42 |
+| B3 control (blue veto, B1 exits) | +27.7% | -21.4% | 206 | 28% | 26 | 8% stop 130, RISK_OFF 13, TRIM 18, decay 7, window end 38 |
+| X1 ribbon-blue exit only | +31.6% | -17.8% | 106 | 33% | 57 | blue 66, window end 40 |
+| X2 X1 + 12% stop | +30.8% | -18.3% | 147 | 29% | 38 | blue 49, 12% stop 58, window end 40 |
+| X3 X1 + RCCE exit signals | +28.5% | -17.8% | 131 | 37% | 44 | blue 63, TRIM 18, RISK_OFF 12, window end 38 |
+
+Per window, return % (Sharpe):
+
+| W | B1 | B3 | X1 | X2 | X3 |
+|---|---|---|---|---|---|
+| 1 | -18.2 (-1.90) | -15.1 (-1.73) | -11.1 (-1.32) | -11.8 (-1.37) | -11.1 (-1.32) |
+| 2 | 0.0 (0.00) | 0.0 (0.00) | 0.0 (0.00) | 0.0 (0.00) | 0.0 (0.00) |
+| 3 | 3.5 (0.62) | 0.0 (0.05) | 2.5 (0.47) | 2.2 (0.41) | 2.5 (0.47) |
+| **4** | **-7.7 (-1.77)** | **-8.8 (-2.87)** | **-8.0 (-1.70)** | **-8.5 (-1.96)** | **-8.0 (-1.70)** |
+| 5 | 60.8 (4.60) | 46.1 (4.59) | 49.5 (3.04) | 49.0 (3.02) | 44.9 (4.91) |
+| 6 | -3.1 (-0.73) | -3.2 (-1.57) | -5.5 (-1.98) | -5.0 (-2.17) | -5.7 (-2.04) |
+| 7 | 21.6 (1.94) | 18.0 (1.91) | 11.8 (1.06) | 10.2 (0.93) | 12.8 (1.63) |
+| 8 | 13.3 (1.20) | 7.2 (0.83) | 5.2 (0.72) | 7.6 (0.93) | 5.2 (0.72) |
+| 9 | -8.3 (-1.35) | -7.8 (-1.28) | -5.4 (-0.95) | -5.6 (-0.96) | -5.4 (-0.95) |
+
+Reading:
+- **Against the exact control, Larsson exits help a little**: +31.6% vs +27.7% compounded, a shallower worst drawdown (-17.8% vs -21.4%), half the trades and twice the holding time. The gain comes from the bear windows (W1, W9); the bull windows W7-W8 give some back.
+- **The blue-entry veto is what hurts**, not the exits: B1 -> B3 costs 26 points of compounded return. RCCE's valuable entries often come while the ribbon is still blue, near bottoms, before a trend indicator can confirm.
+- Differences of a few points over nine windows and 100-230 trades are within noise. None of this touches the holdout.

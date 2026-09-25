@@ -312,7 +312,8 @@ def run_b0(win, data):
     return curve, [1.0] * len(days), trades
 
 
-def run_b1(win, data, replay, bmsb, veto_blue=False):
+def _costed_pm_class():
+    """PositionManager with the study's per-side costs; trading rules untouched."""
     from backtest.position_manager import PositionManager
     rate = (FEE_BPS + SLIP_BPS) / 10_000.0
 
@@ -338,6 +339,11 @@ def run_b1(win, data, replay, bmsb, veto_blue=False):
                 t.pnl_usd -= fee
             return t
 
+    return CostedPM
+
+
+def run_b1(win, data, replay, bmsb, veto_blue=False, pm_class=None):
+    CostedPM = pm_class or _costed_pm_class()
     syms = [f"{s}/USDT" for s in data]
     pm = CostedPM(INITIAL_CAPITAL, syms)
     days = _days(win, data)
@@ -352,6 +358,9 @@ def run_b1(win, data, replay, bmsb, veto_blue=False):
                 i = data[s].index.get(ts)
                 veto = i is not None and data[s].ll["state"][i] == "blue"
             pm.macro_blocked = blocked or veto
+            if hasattr(pm, "ll_state"):
+                i = data[s].index.get(ts)
+                pm.ll_state = data[s].ll["state"][i] if i is not None else None
             pm.process_bar(bar)
         pm.mark_to_market(ts, {b.symbol: b.price for b in bars})
         value = sum(pm.per_symbol_alloc * p.size_pct * pm._latest_prices.get(sym, p.entry_price) / p.entry_price
