@@ -350,3 +350,13 @@ Instead of spending the one-shot holdout on a result the search could not separa
 It never trades and never changes a signal. Returns are per trade, net of 10 bps per side; a missed day is counted and skipped, never back-filled. It writes one small JSON file per day (`exit_shadow.json` on the Railway volume) and exposes `GET /api/research/exit-shadow`. Disable with `EXIT_SHADOW_ENABLED=0`.
 
 Snapshot prices come from the scanner and can be up to an hour old when the app is idle (four hours for the least active coins); both books read the same snapshot, so the comparison stays fair. Review after at least 60 closed trades per book; the holdout remains unused.
+
+## Module D: pattern validity study (declared before running)
+
+Declared 2026-09-25 before any outcome was measured. Detector `patterns-1` with its declared parameters (Module B defaults for pivots, tolerance and buffer; 40-bar forming limit; two pre-result fixes: tie pivots merged, cup roundness 40%). Universe: the 40 coins of the primary and secondary sets, Binance spot daily. Period: patterns formed and resolved inside windows 1-9 (2021-10-21 to 2026-03-29); the holdout stays untouched.
+
+1. **Forming → outcome.** For every pattern that forms: share confirmed in its direction, failed, expired; rectangles by break direction. This is the historical probability for a pattern seen forming.
+2. **After a confirmed break.** Entry at the next open; return to the close 10, 20 and 40 bars later, signed by the pattern's direction; win rate at 20 bars. Compared with (a) Module B breakouts / breakdowns on bars with no pattern, and (b) the unconditional drift of the same coins over the same period, signed the same way.
+3. **By Larsson state at the break:** bull patterns while gold vs not gold; bear patterns while blue vs not blue.
+
+Uncertainty: 90% intervals from a bootstrap over calendar dates (breaks on the same day move together). A pattern "works" only if its 20-bar signed return beats the no-pattern level events with an interval that excludes zero.
