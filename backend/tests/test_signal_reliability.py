@@ -222,6 +222,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(unified_signal(row("STRONG_LONG"), row("LIGHT_SHORT")), "WAIT")
         self.assertEqual(unified_signal(row("STRONG_LONG"), row("LIGHT_LONG", signal_status="unavailable")), "WAIT")
         self.assertEqual(unified_signal(row("TRIM"), None), "TRIM")
+        self.assertEqual(unified_signal(row("LIGHT_LONG"), row("WAIT", entry_blocked=True)), "WAIT")
 
 
 class ReplayTests(unittest.TestCase):
