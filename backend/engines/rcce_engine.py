@@ -562,6 +562,7 @@ def _calc_regime_probabilities(
 def _resolve_regime_with_persistence(
     prob_stack: np.ndarray,  # shape (6, N)
     with_transition: bool = False,
+    trace: Optional[dict] = None,
 ) -> tuple:
     """Simulate Pine-style regime persistence with hysteresis.
 
@@ -627,6 +628,10 @@ def _resolve_regime_with_persistence(
 
     regimes = np.empty(n, dtype=np.int64)
     confidences = np.empty(n, dtype=np.float64)
+    # Research only: per-bar pending regime and its candle count (see backtest/transition_study.py).
+    if trace is not None:
+        trace["pending"] = np.full(n, -1, dtype=np.int64)
+        trace["count"] = np.zeros(n, dtype=np.int64)
 
     current_regime: int = int(np.argmax(prob_stack[:, 0]))
     pending_regime: int = current_regime
@@ -653,6 +658,8 @@ def _resolve_regime_with_persistence(
                     dom_streak = 0
                     regimes[i] = current_regime
                     confidences[i] = float(prob_stack[current_regime, i])
+                    if trace is not None:
+                        trace["pending"][i], trace["count"][i] = current_regime, 0
                     continue
             else:
                 dom_streak = 0
@@ -687,6 +694,8 @@ def _resolve_regime_with_persistence(
 
         regimes[i] = current_regime
         confidences[i] = float(prob_stack[current_regime, i])
+        if trace is not None:
+            trace["pending"][i], trace["count"][i] = pending_regime, pending_count
 
     transition = None
     if pending_regime != current_regime and pending_count > 0:
