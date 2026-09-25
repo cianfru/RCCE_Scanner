@@ -1,4 +1,4 @@
-import { T } from '../theme.js';
+import { T, col } from '../theme.js';
 import HelpTip from './HelpTip.jsx';
 const explanations = {
   STRONG_LONG: 'The engine finds strong weighted support for a long setup in a supportive market phase. It checks trend, price extension, heat, divergence and available positioning data. Markup setups face stricter entry rules; crowding or repeated regime changes can reduce the label to Light long.',
@@ -9,10 +9,12 @@ const explanations = {
 };
 export default function StatCards({ results, activeSignalFilter, onSignalFilter }) {
   const count = {};
-  results.forEach(row => { const key = row.unified_signal || row.signal; count[key] = (count[key] || 0) + 1; });
-  const items = [['Strong long','STRONG_LONG',count.STRONG_LONG || 0,T.green],['Light long','LIGHT_LONG',count.LIGHT_LONG || 0,T.greenDim],['Accumulate','ACCUMULATE',count.ACCUMULATE || 0,'#91b9e8'],['Trim','TRIM',(count.TRIM || 0)+(count.TRIM_HARD || 0),T.yellow],['Risk-off','RISK_OFF',count.RISK_OFF || 0,T.red]];
+  results.forEach(row => { const key = row.signal; count[key] = (count[key] || 0) + 1; });
+  const items = [['Strong long','STRONG_LONG',count.STRONG_LONG || 0,T.green],['Light long','LIGHT_LONG',count.LIGHT_LONG || 0,T.greenDim],['Accumulate','ACCUMULATE',count.ACCUMULATE || 0,col('#91b9e8')],['Trim','TRIM',(count.TRIM || 0)+(count.TRIM_HARD || 0),T.yellow],['Risk-off','RISK_OFF',count.RISK_OFF || 0,T.red]];
   return <div className="scanner-signal-summary" aria-label="Filter by signal">{items.map(([label,key,value,color]) => <div className="scanner-signal-item" key={key} style={{'--signal-color':color}}>
     <button type="button" aria-pressed={activeSignalFilter===key} disabled={!value && activeSignalFilter!==key} onClick={()=>onSignalFilter?.(activeSignalFilter===key ? null : key)}><span>{label}</span><strong>{value}</strong></button>
-    <HelpTip title={label}><p>{explanations[key]}</p><p>These counts use the combined 4H/1D signal when available: exit warnings win, and when both timeframes have entry signals the weaker label wins. Open a coin’s “Why this signal?” and entry conditions for its exact reasons. Strength is not a win probability.</p></HelpTip>
-  </div>)}</div>;
+  </div>)}
+    <HelpTip title="Signal counts" width={440}>{items.map(([label,key]) => <p key={key}><strong>{label}.</strong> {explanations[key]}</p>)}
+      <p>Counts use this timeframe’s own signal, the one the backtests and the 4H executor act on. The combined 4H+1D decision is shown on each coin page. Strength is not a win probability.</p></HelpTip>
+  </div>;
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {signalContext, setupAlignment, signalDirection} from './signalPresentation.js';
+import {signalContext, setupAlignment, signalDirection, marketWideMissing} from './signalPresentation.js';
 import {candleChange, rangeRuler} from './chartPresentation.js';
 test('missing core names and consequences are visible without a bearish verdict',()=>{
  const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Whale consensus BULLISH (80%)']};
@@ -34,4 +34,13 @@ test('downgrades, forced exits and crowded positive funding are cautions, not ne
  for(const w of ['REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)','Heat at 96/95 — forced exit','Extreme funding: +120% annualized funding (0.01%/h) | hyperliquid only'])
   assert.equal(signalContext({signal:'WAIT',signal_warnings:[w]})[0].kind,'caution',w);
  assert.equal(signalContext({signal:'WAIT',signal_warnings:['Extreme funding: -90% annualized funding']})[0].kind,'info');
+});
+test('a core input missing across the market is reported once, not per row',()=>{
+ const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Not Greedy'}]};
+ const rows=Array.from({length:20},()=>row);
+ assert.deepEqual(marketWideMissing(rows),['Not Greedy']);
+ assert.equal(signalContext(row,{marketWide:['Not Greedy']}).some(i=>i.kind==='missing'),false);
+ assert.equal(setupAlignment(row,{marketWide:['Not Greedy']}).state,'bullish');
+ assert.equal(signalContext(row).some(i=>i.kind==='missing'),true);
+ assert.deepEqual(marketWideMissing(rows.slice(0,5)),[]);
 });

@@ -11,7 +11,8 @@ export function ThemeProvider({ children }) {
     localStorage.setItem("rcce-theme", mode);
   }, [mode]);
 
-  const toggle = useCallback(() => setMode(m => m === "dark" ? "light" : "dark"), []);
+  // Repaint the shared colour tables before the re-render that follows, not after it.
+  const toggle = useCallback(() => setMode(m => { const next = m === "dark" ? "light" : "dark"; applyTheme(next); return next; }), []);
 
   return (
     <ThemeContext.Provider value={{ mode, toggle }}>

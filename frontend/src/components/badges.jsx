@@ -1,7 +1,7 @@
 import HelpTip from "./HelpTip.jsx";
 import SignalContext, { CONTEXT_META } from "./SignalContext.jsx";
 import { signalContext, friendlyReason } from "../utils/signalPresentation.js";
-import { T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
+import { col, T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
 import RegimeIcon from "./RegimeIcon.jsx";
 
 export function ZScoreBar({ z, isMobile }) {
@@ -50,17 +50,17 @@ export function RegimeBadge({ regime, isMobile }) {
   );
 }
 
-export function SignalDot({ signal, reason, warnings, context, isMobile }) {
+export function SignalDot({ signal, reason, warnings, context, isMobile, marketWide }) {
   const sm = SIGNAL_META[signal] || {color:T.text3, label:signal?.replaceAll('_',' ') || 'WAIT'};
   const row = context || {signal, signal_reason:reason, signal_warnings:warnings};
-  const items = signalContext(row);
-  const kinds = [...new Set(items.map(i => i.kind))].sort((a,b) => ['missing','conflict','caution','bearish','bullish','info'].indexOf(a) - ['missing','conflict','caution','bearish','bullish','info'].indexOf(b));
+  const items = signalContext(row, { marketWide });
+  const kinds = [...new Set(items.map(i => i.kind))].sort((a,b) => ['conflict','caution','missing','bearish','bullish','info'].indexOf(a) - ['conflict','caution','missing','bearish','bullish','info'].indexOf(b));
   return <span className="signal-label" style={{display:'inline-flex',alignItems:'center',gap:6,color:sm.color,fontFamily:T.mono,fontSize:m(12,isMobile),fontWeight:600,whiteSpace:'nowrap'}}>
     {sm.label}
     {(reason || items.length > 0) && <HelpTip className="signal-context-trigger" title="Signal context" width={360} label={kinds.map(k=>CONTEXT_META[k].label).join(', ') || 'Signal explanation'} size={20}
       buttonStyle={{width:'auto',minWidth:22,height:26,border:0,borderRadius:4,display:'inline-flex',alignItems:'center',gap:3,padding:'2px 3px'}}
-      icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={color}/>;})}</>}>
-      <SignalContext row={row}/>
+      icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={col(color)}/>;})}</>}>
+      <SignalContext row={row} marketWide={marketWide}/>
       {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:11,color:T.text3}}>{friendlyReason(reason)}</p>}
     </HelpTip>}
   </span>;

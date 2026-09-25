@@ -94,7 +94,37 @@ const LIGHT = {
 
 // ─── APPLY THEME (sets CSS custom properties on :root) ──────────────────────
 
+// Dark-theme hues are pastel for a near-black background; on white they fall
+// below readable contrast. col() maps each product hue to a darker equivalent in
+// light mode; applyTheme repaints the shared colour tables in place, and the
+// colour helpers below call col() at render time.
+const LIGHT_HUES = {
+  "#34d399": "#047857", "#6ee7b7": "#0f766e", "#f87171": "#dc2626", "#ef4444": "#b91c1c",
+  "#fbbf24": "#b45309", "#97fce4": "#0e7490", "#b8fff0": "#0f766e", "#c084fc": "#7e22ce",
+  "#d8b4fe": "#8b5cf6", "#fb923c": "#c2410c", "#52525b": "#6b7280", "#3f3f46": "#a1a1aa",
+  "#71717a": "#6b7280", "#cf9185": "#b4533f", "#b5a5db": "#6d5bb0", "#91b9e8": "#2f6fb5",
+};
+let currentMode = "dark";
+export function col(hex) {
+  return currentMode === "light" ? (LIGHT_HUES[String(hex).toLowerCase()] || hex) : hex;
+}
+const darkCopies = new WeakMap();
+function repaint(meta, keys) {
+  if (!darkCopies.has(meta)) darkCopies.set(meta, { ...meta });
+  const dark = darkCopies.get(meta);
+  for (const key of keys) if (typeof dark[key] === "string") meta[key] = col(dark[key]);
+  if (dark.bg && dark.color) {
+    meta.bg = currentMode === "light" ? `${col(dark.color)}12` : dark.bg;
+    meta.glow = currentMode === "light" ? `${col(dark.color)}26` : dark.glow;
+  }
+}
+
 export function applyTheme(mode) {
+  currentMode = mode === "light" ? "light" : "dark";
+  for (const table of [REGIME_META, SIGNAL_META, TRANSITION_META]) {
+    for (const meta of Object.values(table)) repaint(meta, ["color"]);
+  }
+  repaint(T, ["green", "greenDim", "red", "redDark", "yellow", "cyan", "cyanDim", "purple", "purpleDim", "orange", "gray", "grayDim"]);
   const tokens = mode === "light" ? LIGHT : DARK;
   const root = document.documentElement;
   for (const [key, val] of Object.entries(tokens)) {
@@ -103,8 +133,6 @@ export function applyTheme(mode) {
   root.dataset.theme = mode;
 }
 
-// Apply on module load to prevent flash
-applyTheme(localStorage.getItem("rcce-theme") || "dark");
 
 // ─── DESIGN TOKENS (CSS variable references) ───────────────────────────────
 
@@ -257,26 +285,27 @@ export const TRANSITION_META = {
 // ─── COLOR HELPERS ──────────────────────────────────────────────────────────
 
 export function heatColor(heat) {
-  if (heat == null) return "#3f3f46";
-  if (heat >= 80) return "#f87171";
-  if (heat >= 60) return "#fb923c";
-  if (heat >= 40) return "#fbbf24";
-  if (heat >= 20) return "#34d399";
-  return "#3f3f46";
+  if (heat == null) return col("#3f3f46");
+  if (heat >= 80) return col("#f87171");
+  if (heat >= 60) return col("#fb923c");
+  if (heat >= 40) return col("#fbbf24");
+  if (heat >= 20) return col("#34d399");
+  return col("#3f3f46");
 }
 
 export function phaseColor(phase) {
-  return { Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#97FCE4", Neutral: "#52525b" }[phase] || "#52525b";
+  return col({ Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#97FCE4", Neutral: "#52525b" }[phase] || "#52525b");
 }
 
 export function exhaustMeta(state) {
-  return {
+  const meta = {
     EXHAUSTED_FLOOR: { color: "#97FCE4", text: "FLOOR" },
     CLIMAX:          { color: "#fbbf24", text: "CLIMAX" },
     ABSORBING:       { color: "#b8fff0", text: "ABSORB" },
     BEAR_ZONE:       { color: "#f87171", text: "BEAR" },
     NEUTRAL:         { color: "#3f3f46", text: "\u2014" },
   }[state] || { color: "#3f3f46", text: "\u2014" };
+  return { ...meta, color: col(meta.color) };
 }
 
 // ─── FORMAT HELPERS ─────────────────────────────────────────────────────────
@@ -295,8 +324,8 @@ export function zBar(z) {
   else if (z <= 0) color = "#97FCE4";
   else if (z <= 1.2) color = "#34d399";
   else if (z <= 2.0) color = "#fbbf24";
-  else color = "#f87171";
-  return { pct, color };
+  else color = "#fb923c";   // stretched, not bearish: red is kept for downside
+  return { pct, color: col(color) };
 }
 
 export function getBaseSymbol(sym) {
@@ -357,3 +386,6 @@ export const MCAP_RANK = {
   "ETH/BTC": 2,  "SOL/BTC": 4,  "XRP/BTC": 5,  "ADA/BTC": 7,
   "LINK/BTC": 10, "DOT/BTC": 14, "AVAX/BTC": 8, "DOGE/BTC": 6,
 };
+
+// Apply on module load to prevent flash (after the colour tables exist).
+applyTheme(localStorage.getItem("rcce-theme") || "dark");

@@ -241,3 +241,9 @@
 .terminal-data-table .setup-pair{min-height:24px;padding-block:1px;}
 .terminal-data-table .setup-pair-wrap{gap:1px;}
 @media(max-width:640px){.terminal-data-table .regime-note-compact{display:none!important;}}
+/* Shared tabs (Signal Log, Analytics, HyperLens) match the scanner timeframe tabs. */
+.reflex-tabs{display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+.reflex-tabs button{flex-shrink:0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--t-text3);font-family:inherit;font-weight:600;font-size:13px;padding:10px 12px;cursor:pointer;}
+.reflex-tabs button[aria-pressed="true"]{color:var(--t-accent);border-bottom-color:var(--t-accent);}
+.reflex-tabs button:hover{color:var(--t-text1);}
+.reflex-tabs-small button{font-size:12px;padding:6px 8px;}

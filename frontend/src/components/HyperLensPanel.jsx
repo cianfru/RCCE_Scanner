@@ -1,3 +1,4 @@
+import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
@@ -491,9 +492,9 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
         <thead>
           <tr>
             <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={70} />
-            <SortTh label="TREND" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={72} />
+            <SortTh label="TREND BY SIZE" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={96} />
             <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }}>L / S</th>
+            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }} title="Wallet count, long versus short. The trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
             <SortTh label="NET" sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
             {!isMobile && (
@@ -2869,33 +2870,7 @@ function TabSwitcher({ active, onChange, isMobile }) {
     { key: "pressure", label: "Pressure" },
   ];
 
-  return (
-    <div style={{
-      display: "inline-flex", borderRadius: 8,
-      border: `1px solid ${T.border}`,
-      overflow: "hidden", flexShrink: 0, alignSelf: "flex-start",
-    }}>
-      {tabs.map(({ key, label }) => {
-        const isActive = active === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            style={{
-              padding: isMobile ? "8px 12px" : "7px 16px", border: "none",
-              background: isActive ? T.accent : "transparent",
-              color: isActive ? T.bg : T.text3,
-              fontFamily: T.font, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: isActive ? 700 : 500,
-              cursor: "pointer", letterSpacing: "0.04em",
-              transition: "all 0.15s ease",
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <Tabs label="HyperLens view" items={tabs} value={active} onChange={onChange} />;
 }
 
 // ─── COHORT FILTER ──────────────────────────────────────────────────────────

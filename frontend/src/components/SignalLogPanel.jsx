@@ -1,3 +1,4 @@
+import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { T, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
 
@@ -29,9 +30,10 @@ function fmtUsd(v) {
 }
 
 const SIGNAL_SHORT = {
-  STRONG_LONG: "STR", LIGHT_LONG: "LIT", ACCUMULATE: "ACC",
-  REVIVAL_SEED: "REV", REVIVAL_SEED_CONFIRMED: "REV",
-  WAIT: "", TRIM: "TRM", TRIM_HARD: "TRM!", RISK_OFF: "OFF", NO_LONG: "NO",
+  // Heatmap cells are narrow; these are the first word of the grid's labels.
+  STRONG_LONG: "STRONG", LIGHT_LONG: "LIGHT", ACCUMULATE: "ACCUM",
+  REVIVAL_SEED: "REVIVE", REVIVAL_SEED_CONFIRMED: "REVIVE",
+  WAIT: "", TRIM: "TRIM", TRIM_HARD: "TRIM!", RISK_OFF: "RISK", NO_LONG: "NO",
 };
 
 const BULL_SIGNALS = new Set(["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"]);
@@ -440,16 +442,16 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
   }, [activeView, timeframe, api]);
 
   const VIEWS = [
-    { key: "heatmap", label: "HEATMAP" },
-    { key: "divergence", label: "DIVERGENCE" },
-    { key: "transitions", label: "TRANSITIONS" },
-    { key: "streaks", label: "STREAKS" },
+    { key: "heatmap", label: "Heatmap" },
+    { key: "divergence", label: "Divergence" },
+    { key: "transitions", label: "Transitions" },
+    { key: "streaks", label: "Streaks" },
   ];
 
   const SORTS = [
-    { key: "bullish", label: "\u2191 BULL" },
-    { key: "bearish", label: "\u2193 BEAR" },
-    { key: "default", label: "PRIORITY" },
+    { key: "bullish", label: "Bullish first" },
+    { key: "bearish", label: "Bearish first" },
+    { key: "default", label: "Priority" },
   ];
 
   return (
@@ -459,27 +461,11 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
         display: "flex", justifyContent: "space-between",
         alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8,
       }}>
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-          {VIEWS.map(v => (
-            <button key={v.key} onClick={() => setActiveView(v.key)}
-              style={{ ...S.pillBtn(activeView === v.key), flexShrink: 0 }}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          {activeView === "heatmap" && SORTS.map(s => (
-            <button key={s.key} onClick={() => setSortMode(s.key)}
-              style={{ ...S.pillBtn(sortMode === s.key), padding: "4px 8px", fontSize: 10 }}>
-              {s.label}
-            </button>
-          ))}
-          {activeView === "heatmap" && <span style={{ width: 1, background: T.border, margin: "0 4px" }} />}
-          {["4h", "1d"].map(tf => (
-            <button key={tf} onClick={() => setTimeframe(tf)} style={S.pillBtn(timeframe === tf)}>
-              {tf.toUpperCase()}
-            </button>
-          ))}
+        <Tabs label="Signal log view" items={VIEWS} value={activeView} onChange={setActiveView} />
+        <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+          {activeView === "heatmap" && <Tabs small label="Sort" items={SORTS} value={sortMode} onChange={setSortMode} />}
+          {activeView === "heatmap" && <span style={{ width: 1, alignSelf: "stretch", background: T.border, margin: "0 4px" }} />}
+          <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />
         </div>
       </div>
 
