@@ -197,3 +197,17 @@ Readings:
 | W8 | -26.2 | -9.8 | -9.6 | -7.3 | -5.4 | -6.8 | -12.5 | -13.2 | -19.3 |
 | W9 | -63.4 | -11.6 | -13.4 | -11.1 | -9.0 | -10.2 | -20.0 | -19.2 | -22.9 |
 | median | -39.5 | -9.6 | -15.8 | -7.3 | -7.3 | -8.6 | -17.7 | -17.4 | -22.9 |
+
+## Follow-up: RCCE entries with Larsson Line exits (declared before running)
+
+Question: do RCCE's entries do better when exits are handed to the Larsson Line? Declared 2026-09-25, before any result was seen. Windows 1-9, primary universe, same data, costs and fill convention as B1 (signal-bar close), holdout untouched.
+
+Entries, sizing, BMSB gate and costs are exactly B1's. Entries are skipped while the ribbon is blue, since "hold until it turns blue" cannot apply to a trade opened in blue; that makes **B3 the exact control** (same entries, same veto, B1's exits). Only the exit rule changes:
+
+| ID | Exit rule |
+|---|---|
+| X1 | First daily close with the ribbon blue. No price stop, no RCCE exit signals, no decay exit. |
+| X2 | X1 plus a 12% catastrophe stop checked on the close. |
+| X3 | X1 plus RCCE's own exit signals (TRIM, TRIM_HARD, NO_LONG, RISK_OFF); no 8% stop, no decay exit. |
+
+No parameters are tuned; these three are the whole test.
