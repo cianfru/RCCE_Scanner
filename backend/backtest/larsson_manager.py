@@ -42,7 +42,10 @@ from typing import Dict, List, Optional, Tuple
 
 from engines.levels_engine import nearest_resistance, nearest_support
 
-VARIANTS = ("L1", "L2", "L3", "L4", "L5", "B2")
+VARIANTS = ("L1", "L2", "L3", "L4", "L5", "B2", "L2P", "L3X50", "L3X100")
+# Pattern variants run on a parent's rules plus one pattern rule (see docs/reviews/larsson-study.md).
+PARENT = {"L2P": "L2", "L3X50": "L3", "L3X100": "L3"}
+BULL_PATTERNS, BEAR_PATTERNS = {10, 11, 12, 13}, {20, 21, 23}
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class DayBar:
     gate_ok: bool = True
     is_alt: bool = False
     first_bar: bool = False                # first bar of the evaluation window
+    patterns: List[int] = field(default_factory=list)   # pattern codes confirmed on this bar
 
 
 @dataclass
@@ -324,7 +328,7 @@ class LarssonManager:
             self._queue(_Order(sym, "sell", reason, fraction=fraction))
 
     def _on_close(self, b: DayBar) -> None:
-        sym, v = b.symbol, self.cfg.variant
+        sym, v = b.symbol, PARENT.get(self.cfg.variant, self.cfg.variant)
         self._sr[sym] = b.sr_levels
         # Drop queued entries whose setup no longer holds (e.g. no longer gold).
         self._orders = [o for o in self._orders if not (o.symbol == sym and o.side == "buy" and o.kind == "entry"
@@ -344,6 +348,8 @@ class LarssonManager:
             if pos.r_per_unit > 0 and b.close >= pos.avg_entry + self.cfg.trail_R * pos.r_per_unit and pos.broken_level:
                 pos.stop = max(pos.stop, pos.broken_level * (1 - self.cfg.stop_buffer))
 
+        if self.cfg.variant in ("L3X50", "L3X100") and sym in self.positions and BEAR_PATTERNS & set(b.patterns):
+            self._exit(sym, 0.5 if self.cfg.variant == "L3X50" else 1.0, "bear_pattern")
         ranging = v in ("L3", "L4", "L5") and b.range_state
         if ranging:
             self._range_rules(b)
@@ -379,6 +385,8 @@ class LarssonManager:
         kinds = {e["event"] for e in b.events}
         if pos is not None and b.prev_range_state and "breakdown" in kinds:
             self._exit(sym, 1.0, "range_breakdown")
+            return
+        if self.cfg.variant == "L2P" and not BULL_PATTERNS & set(b.patterns):
             return
         if pos is not None and b.trend == "gold" and kinds & {"breakout", "bounce"} and pos.adds < self.cfg.max_adds:
             if self.cfg.variant == "L5" and not b.gate_ok:

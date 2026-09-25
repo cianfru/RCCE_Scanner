@@ -48,10 +48,12 @@ class Scenario:
     exit: str             # flip | grey | blue | e32 | atr3 | t30 | t60
     stop: Optional[float] # None | 0.12 | 0.08
     signals: bool         # RCCE exit signals on
+    pattern_exit: bool = False   # full exit when a bear pattern confirms (pattern variants only)
 
     @property
     def name(self) -> str:
-        return f"{'F1' if self.veto else 'F0'}-{self.exit}-{'nostop' if self.stop is None else f's{int(self.stop*100)}'}-{'sig' if self.signals else 'nosig'}"
+        base = f"{'F1' if self.veto else 'F0'}-{self.exit}-{'nostop' if self.stop is None else f's{int(self.stop*100)}'}-{'sig' if self.signals else 'nosig'}"
+        return base + ("-px" if self.pattern_exit else "")
 
 
 H1 = Scenario(veto=False, exit="flip", stop=0.12, signals=False)
@@ -115,6 +117,8 @@ def scenario_pm_class(sc: Scenario):
                     reason = f"STOP_{int(sc.stop * 100)}"
                 if reason is None and sc.signals and signal in _EXIT_100_SIGNALS:
                     reason = signal
+                if reason is None and sc.pattern_exit and i is not None and {20, 21, 23} & set(sd.pattern_bars.get(i, [])):
+                    reason = "BEAR_PATTERN"
                 if reason is not None:
                     self._st.pop(sym, None)
                     return self._close_position(sym, bar.timestamp, price, reason, close_pct=1.0)

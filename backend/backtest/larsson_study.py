@@ -46,6 +46,7 @@ from backtest import binance_history as bh
 from backtest.larsson_manager import DayBar, LarssonManager, ManagerConfig
 from engines.larsson_engine import LARSSON_VERSION, READY_BARS, compute_larsson_series
 from engines.levels_engine import LEVELS_VERSION, LevelConfig, compute_levels
+from engines.patterns_engine import breaks_by_bar, detect_patterns
 
 logger = logging.getLogger("larsson_study")
 
@@ -148,6 +149,7 @@ def load_universe(symbols: List[str], data_end: str) -> Dict[str, SymbolData]:
                               ll=compute_larsson_series(d["close"], d["timestamp"]), cto_up=_cto_up(d),
                               is_alt=np.zeros(len(d["close"]), bool) if sym == "BTC" else _alt_flags(d, btc),
                               index={t: i for i, t in enumerate(d["timestamp"])})
+        out[sym].pattern_bars = breaks_by_bar(detect_patterns(d))
     return out
 
 
@@ -285,7 +287,7 @@ def run_larsson(variant: str, params: dict, win: dict, data: Dict[str, SymbolDat
                              close=u["close"][i], trend=trend, last_actionable=lat, flip=flip, grey_after_gold=gag,
                              events=bl.events, sr_levels=bl.sr_levels, range_state=bl.range_state,
                              prev_range_state=lv[s][i - 1].range_state, gate_ok=gate, is_alt=bool(sd.is_alt[i]),
-                             first_bar=s not in seen)
+                             first_bar=s not in seen, patterns=list(getattr(sd, "pattern_bars", {}).get(i, [])))
             seen.add(s)
         if bars:
             mgr.process_day(ts, bars)

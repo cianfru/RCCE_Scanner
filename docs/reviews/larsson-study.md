@@ -420,3 +420,15 @@ Declared 2026-09-25 after the validity study above and before any strategy resul
 | RCCE-PX | B1 entries and exits, plus a full exit when a bear pattern confirms | B1 |
 | H60-PX | `F0-t60-s12-nosig` (the scenario search's best), plus a full exit when a bear pattern confirms | F0-t60-s12-nosig |
 
+
+### Results (run `pattern_strats_w1-9`)
+
+| Variant | Compounded W1-9 | Worst window DD | Trades | Pattern exits | Parent (compounded) |
+|---|---:|---:|---:|---:|---|
+| RCCE-PX | +49.6% | -24.6% | 231 | 10 | B1 (+53.9%) |
+| H60-PX | +82.9% | -20.3% | 213 | 7 | F0-t60-s12-nosig (+83.4%) |
+| L2P | +49.4% | -22.8% | 116 | - | L2 (+54.9%) |
+| L3X50 | +46.8% | -26.1% | 142 | - | L3 (+45.7%) |
+| L3X100 | +47.7% | -26.1% | 142 | 3 | L3 (+45.7%) |
+
+White's Reality Check over the five against B1: p = 0.45. Every parent reproduces its earlier result exactly. The pattern rules move their parents by -5 to +2 points, consistent with the validity study: the detector finds the patterns, but they carry no edge over plain level events in 2021-2026.
