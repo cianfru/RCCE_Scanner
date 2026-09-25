@@ -232,3 +232,12 @@
 [data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.4);}
 .price-chart-panel .chart-levels-label-short{display:none;}
 @media(max-width:600px){.price-chart-panel .chart-levels-label{display:none;}.price-chart-panel .chart-levels-label-short{display:inline;}.price-chart-panel .chart-toolbar{padding:10px 14px!important;gap:8px;}.price-chart-panel .chart-toolbar>div{gap:6px!important;}}
+
+/* Grid: one-line regime notes keep rows a uniform height; phones stack regime over signal. */
+.setup-pair-wrap{max-width:100%;min-width:0;}
+@media(max-width:640px){.terminal-data-table .setup-pair{flex-direction:column;align-items:flex-start;gap:2px;padding:2px 4px;}.terminal-data-table .setup-pair-regime,.terminal-data-table .setup-pair-signal{min-width:0;}.terminal-data-table .setup-pair>.alt-season-info{display:none;}}
+.reflex-terminal .regime-note-compact .alt-season-info{margin-left:2px;}
+.reflex-terminal .regime-note-compact .alt-season-info>button{flex-basis:14px;width:14px;height:14px;min-width:14px;min-height:14px;max-width:14px;max-height:14px;font-size:9px;}
+.terminal-data-table .setup-pair{min-height:24px;padding-block:1px;}
+.terminal-data-table .setup-pair-wrap{gap:1px;}
+@media(max-width:640px){.terminal-data-table .regime-note-compact{display:none!important;}}

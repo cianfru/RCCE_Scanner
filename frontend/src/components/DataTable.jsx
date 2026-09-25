@@ -55,7 +55,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       );
     }
     case "REGIME":
-      return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} /></td>;
+      return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} compact /></td>;
     case "SIGNAL":
       return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} context={row} isMobile={isMobile} /></td>;
     case "SPARK":
@@ -162,7 +162,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
     >
       {visibleColumns.map(([, label], colIndex) => {
         if (label === "SIGNAL" && visibleColumns[colIndex - 1]?.[1] === "REGIME") return null;
-        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition/></td>;
+        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition compact/></td>;
         return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />;
       })}
     </tr>

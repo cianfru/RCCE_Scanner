@@ -17,7 +17,13 @@ export function signalContext(row = {}) {
   const missing = (row.conditions_detail || []).filter(c => c.group === 'core' && c.available === false);
   const messages = [...new Set([...(row.signal_warnings || []), ...(row.strong_long_blockers || [])])];
   const items = [];
-  if (row.signal_status === 'unavailable') items.push({kind:'missing', text:'Assessment unavailable — the signal could not be calculated. Entries are suppressed.'});
+  if (row.signal_status === 'unavailable') {
+    // The synthesizer's own notes describe a signal that has been withdrawn, so they are not repeated.
+    const stale = /stale|missing|future/i.test(row.signal_reason || '');
+    return [{kind:'missing', text: stale
+      ? 'Signal paused — the latest candles have not been refreshed yet. New entries resume after the next update.'
+      : 'Assessment unavailable — the signal could not be calculated. Entries are suppressed.'}];
+  }
   if (missing.length || messages.some(w => /core context unavailable/i.test(w))) {
     items.push({kind:'missing', text:`Assessment incomplete — ${missing.length ? missing.map(c => c.label || c.name).join(', ') : 'required market context'} unavailable. Strong Long cannot be confirmed.`});
   }
@@ -27,7 +33,7 @@ export function signalContext(row = {}) {
     const text = friendlyReason(raw);
     let kind = 'info';
     // Restrictions take precedence over directional words inside the same message.
-    if ((row.strong_long_blockers || []).includes(raw) || /blocked|downgrade|risk|overextension|escalation|euphoria|may not sustain|cascade|contracting|capped|limit|unstable|outside strict|waiting for/.test(text.toLowerCase())) kind = 'caution';
+    if ((row.strong_long_blockers || []).includes(raw) || /blocked|downgrade|risk|overextension|escalation|euphoria|may not sustain|cascade|contracting|capped|limit|unstable|outside strict|waiting for|demoted|forced exit|extreme funding: \+/.test(text.toLowerCase())) kind = 'caution';
     else if (/unavailable|missing|pipeline failed/i.test(text)) kind = 'missing';
     else if (/bearish|BEAR-DIV|heavy_short/i.test(text)) kind = 'bearish';
     else if (/bullish|BULL-DIV|Floor confirmed|Absorption detected|spot_led_demand|smart_money_long|rally fuel|potential bottom/i.test(text)) kind = 'bullish';

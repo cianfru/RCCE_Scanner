@@ -325,7 +325,7 @@ export default function BMSBChart({
               position: markerDef.position,
               color: markerDef.color,
               shape: markerDef.shape,
-              text: `${markerDef.text} · first recorded`,
+              text: markerDef.text,
             }];
 
             if (floorConfirmed) {
@@ -883,7 +883,7 @@ export default function BMSBChart({
         {chartRange ? <><strong style={{color:'#91b9e8'}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong> <HelpTip title="Range ruler" width={360}>
           <p>The ruler's full height represents the estimated true-range magnitude ({chartRange.atr_mult} × ATR14). It is centred on the reference price for illustration; its ends are not forecast highs or lows.</p>
           <p>Chance of a top-quartile range: {Math.round(chartRange.probability*100)}%, compared with a 25% baseline. This is not directional confidence or a price containment interval.</p>
-          <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()}. The estimate can change while the source candle is open.</p>
+          <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()} from the last closed candle, the same input as the coin page's range card.</p>
         </HelpTip><span style={{marginLeft:8,fontSize:10}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
       </div>}
       {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
