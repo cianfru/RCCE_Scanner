@@ -1,9 +1,11 @@
+import SetupPair from "./SetupPair.jsx";
+import SignalContext from "./SignalContext.jsx";
 import TokenLogo from "./TokenLogo.jsx";
-import RegimeTransition from "./RegimeTransition.jsx";
+import { friendlyReason } from "../utils/signalPresentation.js";
 import { formatPercent } from "../utils/marketPresentation.js";
 import { useState, useEffect, useCallback } from "react";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
-import { ZScoreBar, RegimeBadge, SignalDot } from "./badges.jsx";
+import { ZScoreBar, SignalDot } from "./badges.jsx";
 import BMSBChart from "./BMSBChart.jsx";
 import ConditionsScorecard from "./ConditionsScorecard.jsx";
 import ConfluencePanel from "./ConfluencePanel.jsx";
@@ -407,7 +409,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         <BMSBChart
           symbol={selected.symbol}
           timeframe={selected.timeframe === "1d" ? "1d" : "4h"}
-          height={isMobile ? 300 : isTablet ? 420 : 520}
+          height={isMobile ? 340 : isTablet ? 460 : 560}
           signal={selected.signal}
           signalFirstSeenAt={selected.signal_first_seen_at}
           signalTimeframe={selected.timeframe}
@@ -423,8 +425,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
 
         {/* Regime + Signal badges */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <TokenLogo symbol={selected.symbol} size={32} /><div><RegimeBadge regime={selected.regime} /><RegimeTransition data={selected} /></div>
-          <SignalDot signal={selected.signal} />
+          <TokenLogo symbol={selected.symbol} size={32} /><SetupPair row={selected} isMobile={isMobile} transition/>
           {selected.signal_confidence != null && (
             <span className="terminal-status" style={{
               padding: "3px 8px", borderRadius: "20px",
@@ -487,31 +488,13 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
               </span>
             </div>
             <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.mono, lineHeight: 1.6, paddingLeft: 11 }}>
-              {selected.signal_reason}
+              {friendlyReason(selected.signal_reason)}
             </div>
           </div>
         )}
 
         {/* Signal warnings */}
-        {selected.signal_warnings && selected.signal_warnings.length > 0 && (
-          <div style={{
-            padding: "12px 14px", borderRadius: T.radiusSm,
-            background: "rgba(251,191,36,0.03)",
-            border: "1px solid rgba(251,191,36,0.12)",
-            marginBottom: 14,
-            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-          }}>
-            {selected.signal_warnings.map((w, i) => (
-              <div key={i} style={{
-                fontSize: T.textXs, color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.7,
-                display: "flex", gap: 6, alignItems: "flex-start",
-              }}>
-                <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
-                <span>{w}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={{marginBottom:16}}><SignalContext row={selected}/></div>
 
         {/* Raw vs Final signal */}
         {selected.raw_signal && selected.raw_signal !== selected.signal && (

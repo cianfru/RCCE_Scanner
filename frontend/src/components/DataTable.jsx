@@ -1,3 +1,7 @@
+import HelpTip from "./HelpTip.jsx";
+import { useState } from "react";
+import { setupAlignment } from "../utils/signalPresentation.js";
+import SetupPair from "./SetupPair.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
 import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
@@ -53,7 +57,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
     case "REGIME":
       return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} /></td>;
     case "SIGNAL":
-      return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} isMobile={isMobile} /></td>;
+      return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} context={row} isMobile={isMobile} /></td>;
     case "SPARK":
       return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={72} height={22} /></td>;
     case "Z-SCORE":
@@ -156,14 +160,18 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
       onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.overlay10; }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = restBg; }}
     >
-      {visibleColumns.map(([, label]) => (
-        <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />
-      ))}
+      {visibleColumns.map(([, label], colIndex) => {
+        if (label === "SIGNAL" && visibleColumns[colIndex - 1]?.[1] === "REGIME") return null;
+        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition/></td>;
+        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />;
+      })}
     </tr>
   );
 }
 
 export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash }) {
+  const [alignedFirst, setAlignedFirst] = useState(false);
+  const displayedResults = alignedFirst ? [...results].sort((a,b) => setupAlignment(b).strength - setupAlignment(a).strength) : results;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
@@ -173,13 +181,17 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
           textTransform: "uppercase",
         }}>{label}</div>
       )}
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}><button type="button" aria-pressed={alignedFirst} onClick={()=>setAlignedFirst(v=>!v)} title="Group aligned regime and signal setups first, preserving the selected order within each strength. Does not change engine scores." style={{background:alignedFirst ? T.accentDim : 'transparent',color:alignedFirst ? T.accent : T.text3,border:`1px solid ${T.border}`,borderRadius:6,padding:'6px 10px',fontSize:11,cursor:'pointer'}}>Aligned setups first</button></div>
       <GlassCard className="terminal-data-table" style={{ overflow: "visible" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
-                {visibleColumns.map(([key, colLabel]) => (
-                  <th className={colLabel === "SYMBOL" ? "scanner-symbol" : undefined}
+                {visibleColumns.map(([key, colLabel], colIndex) => {
+                  if (colLabel === 'SIGNAL' && visibleColumns[colIndex-1]?.[1] === 'REGIME') return null;
+                  const paired = colLabel === 'REGIME' && visibleColumns[colIndex+1]?.[1] === 'SIGNAL';
+                  return (
+                  <th colSpan={paired ? 2 : 1} className={colLabel === "SYMBOL" ? "scanner-symbol" : undefined}
                     key={colLabel}
                     onClick={() => key && onSort(key)}
                     style={{
@@ -195,11 +207,11 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     }}
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
-                      {colLabel}{key && sortKey === key ? " \u25bc" : ""}
-                      {colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
+                      {paired ? 'REGIME → SIGNAL' : colLabel}{key && sortKey === key ? " \u25bc" : ""}
+                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A linked pair means the trend supports the signal. A broken link marks a countertrend setup. An information mark means required context is missing.</p><p>The subtle highlight is stronger for a Strong signal. It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
                     </span>
                   </th>
-                ))}
+                );})}
               </tr>
             </thead>
             <tbody>
@@ -215,7 +227,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   NO DATA
                 </td></tr>
               ) : (
-                results.map((row, idx) => (
+                displayedResults.map((row, idx) => (
                   <SymbolRow
                     key={row.symbol}
                     row={row}

@@ -1485,9 +1485,19 @@ async def chart_data(
     def display(points):
         return [p for p in points if p["time"] >= first_display_time]
 
+    # Same magnitude-only model as the scanner, evaluated on this chart's timeframe.
+    from engines.range_forecast import forecast as range_forecast
+    chart_range = range_forecast(ohlcv["high"], ohlcv["low"], ohlcv["close"], timeframe)
+    if chart_range is not None and candles:
+        chart_range = {**chart_range, "reference_price": candles[-1]["close"],
+                       "source_candle_time": candles[-1]["time"], "as_of": int(time.time()),
+                       "timeframe": timeframe}
+
     return {
         "symbol": symbol,
         "timeframe": timeframe,
+        "expected_range": chart_range,
+        "volume_unit": symbol.split("/")[0],
         "candles": candles[-limit:],
         "volume": volume[-limit:],
         "bmsb_mid": display(_interpolate(bmsb["mid"])),
