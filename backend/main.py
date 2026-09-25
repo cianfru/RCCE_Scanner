@@ -1452,6 +1452,21 @@ async def chart_data(
     except Exception:
         logger.warning("CTO computation failed for %s", symbol)
 
+    # Larsson Line ribbon and (1D only) chart patterns: display only, never read by signals
+    larsson = None
+    try:
+        from engines.larsson_engine import compute_larsson_chart
+        larsson = compute_larsson_chart(ohlcv["close"], ohlcv["timestamp"])
+    except Exception:
+        logger.warning("Larsson Line computation failed for %s", symbol)
+    patterns = []
+    if timeframe == "1d":
+        try:
+            from engines.patterns_engine import chart_patterns
+            patterns = chart_patterns(ohlcv)
+        except Exception:
+            logger.warning("Pattern detection failed for %s", symbol)
+
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
     try:
@@ -1494,6 +1509,8 @@ async def chart_data(
         "bmsb_sma": _interpolate(bmsb["sma"]),
         "cto_fast": cto["cto_fast"],
         "cto_slow": cto["cto_slow"],
+        "larsson": larsson,
+        "patterns": patterns,
     }
 
 

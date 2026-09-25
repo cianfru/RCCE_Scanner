@@ -445,3 +445,7 @@ Diagnostic only; Pro's tags (15 Apr - 16 Sep 2026) lie inside the holdout window
 | Detector confirmations on those pairs and dates matching a Pro tag (precision) | 5 of 31 (16%) |
 
 By family: rectangle 2/27, triangle 2/14, head & shoulders 1/12, cup & handle 0/2. This is the same order as level agreement in the research (23% recall, 13% precision): Pro draws patterns more loosely than a fixed geometric rule (for example a "rectangle" that price had already left and re-entered), and its picker is described as AI-based.
+
+## Terminal chart (display only)
+
+The terminal chart draws the Larsson Line ribbon (four EMAs coloured gold / blue / grey per bar) where the CTO lines used to be, and on 1D offers a Patterns toggle, off by default. Each drawn pattern carries its measured track record from the validity study above. Neither feeds the synthesizer, the exits or any signal; the chart endpoint still returns `cto_fast` / `cto_slow` unchanged, and the new data sits under its own keys (`larsson`, `patterns`). The ribbon skips the first 3 x 58 bars of the chart history; on BTC, ETH, SOL and DOGE the drawn 500-bar ribbon matched a full-history computation on every bar's state (EMA gap below 0.1%).

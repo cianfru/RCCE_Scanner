@@ -136,3 +136,28 @@ def compute_larsson_snapshot(ohlcv: dict, timeframe: str, as_of_ms: float) -> di
         candle_close_time=(float(ts[-1]) + TF_MS[timeframe]) / 1000.0,
         input_id=digest.hexdigest(), history_bars=len(close),
     )
+
+
+CHART_WARMUP = 3 * LENGTHS[-1]  # SMA seed differs from TradingView's; after 3x58 bars the gap is < 1%
+
+
+def compute_larsson_chart(close, timestamps) -> dict:
+    """Ribbon for the terminal chart, as compact parallel arrays (the client colours it).
+
+    Display only. ``timestamps`` in ms; output times in unix seconds. Bars inside
+    the warm-up are left out because a short chart history seeds the EMAs later
+    than TradingView does.
+    """
+    s = compute_larsson_series(close, timestamps)
+    n = len(s["state"])
+    idx = [i for i in range(min(CHART_WARMUP, n), n) if s["state"][i] is not None]
+    sig = lambda v: float(f"{v:.8g}")
+    return {
+        "version": LARSSON_VERSION,
+        "time": [int(s["timestamps"][i] / 1000) for i in idx],
+        **{k: [sig(s[k][i]) for i in idx] for k in ("e32", "e35", "e50", "e58")},
+        "state": [s["state"][i] for i in idx],
+        "current": s["state"][-1] if n else None,
+        "last_actionable": s["last_actionable"][-1] if n else None,
+        "bars_since_flip": s["bars_since_flip"][-1] if n else None,
+    }

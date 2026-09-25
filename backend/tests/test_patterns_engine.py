@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from engines.patterns_engine import (
-    CODES, Pattern, PatternConfig, breaks_by_bar, detect_patterns, pack,
+    CODES, Pattern, PatternConfig, breaks_by_bar, chart_patterns, detect_patterns, pack,
 )
 
 
@@ -110,6 +110,27 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(breaks_by_bar(pts), {20: [11, 10]})
         self.assertEqual(pack([11, 10]), 11010)
         self.assertEqual(pack([13]), 13)
+
+
+class ChartPatternTests(unittest.TestCase):
+    def test_chart_patterns_carry_times_levels_and_track_record(self):
+        d = with_tail([100, 115, 100, 115, 100, 115, 100, 112], [125])
+        pats = chart_patterns(d)
+        rect = [p for p in pats if p["kind"] == "rect" and p["status"] == "confirmed"]
+        self.assertTrue(rect)
+        p = rect[0]
+        self.assertEqual(p["direction"], 1)
+        self.assertEqual(len(p["levels"]), 2)
+        self.assertLess(p["start"], p["end"])
+        self.assertIn("upside break", p["track_record"])
+        times = [a["time"] for a in p["anchors"]]
+        self.assertEqual(times, sorted(times))
+        self.assertTrue(all(isinstance(t, int) for t in times))
+
+    def test_old_and_expired_patterns_are_left_out(self):
+        d = with_tail([100, 115, 100, 115, 100, 115, 100, 112], [125] + [126] * 40, leg=8)
+        self.assertEqual(chart_patterns(d, recent=20), [])
+        self.assertFalse(any(p["status"] == "expired" for p in chart_patterns(d)))
 
 
 if __name__ == "__main__":

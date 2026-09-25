@@ -12,7 +12,7 @@ import numpy as np
 
 from engines.larsson_engine import (
     BLUE, GOLD, GREY, LARSSON_VERSION, READY_BARS, compute_larsson_series,
-    compute_larsson_snapshot, ema,
+    compute_larsson_chart, compute_larsson_snapshot, ema,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "larsson"
@@ -117,6 +117,20 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snap["data_quality"], "warmup")
         tiny = compute_larsson_snapshot({"timestamp": ts[:20], "close": close[:20]}, "1d", ts[19] + DAY_MS)
         self.assertEqual(tiny["data_quality"], "unavailable")
+
+
+class ChartTests(unittest.TestCase):
+    def test_short_history_ribbon_matches_full_history(self):
+        ts, close = load("BTCUSDT")
+        full = compute_larsson_chart(close, ts)
+        short = compute_larsson_chart(close[-500:], ts[-500:])
+        ref = {t: (v, s) for t, v, s in zip(full["time"], full["e58"], full["state"])}
+        self.assertEqual(len(short["time"]), 500 - 3 * 58)
+        for t, v, s in zip(short["time"], short["e58"], short["state"]):
+            self.assertLess(abs(v / ref[t][0] - 1), 0.002)
+            self.assertEqual(s, ref[t][1])
+        self.assertEqual(short["current"], full["current"])
+        self.assertEqual(short["time"][-1], int(ts[-1] / 1000))
 
 
 if __name__ == "__main__":

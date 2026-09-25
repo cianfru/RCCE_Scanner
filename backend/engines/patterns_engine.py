@@ -334,3 +334,63 @@ def pattern_dict(p: Pattern) -> dict:
     d = asdict(p)
     d["name"] = NAMES.get(p.code) if p.code else None
     return d
+
+
+# Measured track record of patterns-1 (docs/reviews/larsson-study.md, run patterns_w1-9:
+# 40 coins, Binance spot daily, patterns formed and resolved 2021-10-21 to 2026-03-29).
+# "forming" is what happened to patterns once seen forming; "after" is the return 20 bars
+# after a confirmed break (entry next open) against plain breakouts without a pattern.
+TRACK_RECORD = {
+    "rect": {"forming": "Breaks 84% of the time: up 44%, down 40%, so the direction is a coin flip.",
+             "after_up": "After an upside break: +9.6% at 20 bars, not better than a plain breakout (+5.1%) beyond noise.",
+             "after_down": "After a downside break: no edge as a short (+0.2% at 20 bars)."},
+    "asc": {"forming": "Confirms 36%, fails 62%.",
+            "after": "After the break: -4.8% at 20 bars, significantly worse than a plain breakout."},
+    "desc": {"forming": "Confirms 47%, fails 51%.",
+             "after": "After the break: no edge as a short (-1.1% at 20 bars)."},
+    "hs": {"forming": "Confirms 76%, fails 6%.",
+           "after": "After the break: no edge as a short; price was 9% higher on average 40 bars later."},
+    "ihs": {"forming": "Confirms 36%, fails 21%, expires 43%.",
+            "after": "After the break: +17.9% at 20 bars on only 20 cases, within noise."},
+    "cup": {"forming": "Confirms 33%, fails 67%.",
+            "after": "After the break: +8.2% at 20 bars, within noise."},
+}
+SHORT_NAMES = {"rect": "Rectangle", "asc": "Asc triangle", "desc": "Desc triangle",
+               "hs": "H&S", "ihs": "Inv H&S", "cup": "Cup & handle"}
+
+
+def track_record(p: Pattern) -> str:
+    tr = TRACK_RECORD[p.kind]
+    if p.status != "confirmed":
+        return tr["forming"]
+    if p.kind == "rect":
+        return tr["after_up" if p.code == CODES["rect_up"] else "after_down"]
+    return tr["after"]
+
+
+def chart_patterns(ohlcv: Dict[str, np.ndarray], recent: int = 180) -> List[dict]:
+    """Patterns for the terminal chart: forming, confirmed or failed within the last
+    ``recent`` bars (expired ones are left out). Display only; times in unix seconds."""
+    ts = np.asarray(ohlcv["timestamp"], dtype=np.float64)
+    n = len(ts)
+    t = lambda i: int(ts[min(i, n - 1)] / 1000)
+    out = []
+    for p in detect_patterns(ohlcv):
+        end = p.resolved if p.resolved is not None else n - 1
+        if p.status == "expired" or end < n - recent:
+            continue
+        if p.kind == "rect":
+            levels = [p.upper, p.lower]
+        else:
+            levels = [p.neckline]
+        direction = p.direction
+        if p.kind == "rect" and p.status == "confirmed":
+            direction = BULL if p.code == CODES["rect_up"] else BEAR
+        out.append({
+            "kind": p.kind, "name": SHORT_NAMES[p.kind], "status": p.status, "direction": direction,
+            "code": p.code, "levels": [float(v) for v in levels], "invalidation": float(p.invalidation),
+            "anchors": [{"time": t(i), "value": float(v)} for i, v in p.anchors],
+            "start": t(p.start), "formed": t(p.formed), "end": t(end),
+            "track_record": track_record(p),
+        })
+    return out
