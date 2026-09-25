@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { withToken } from "../auth.js";
 
 // ── Derive WebSocket URL from API base ───────────────────────────────────────
 
@@ -20,7 +21,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 function getWsUrl() {
   // Convert http(s)://host to ws(s)://host
   const base = API_BASE.replace(/^http/, "ws");
-  return `${base}/ws/scan`;
+  return withToken(`${base}/ws/scan`);
 }
 
 // ── Singleton WebSocket manager ──────────────────────────────────────────────

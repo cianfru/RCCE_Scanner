@@ -344,7 +344,7 @@ async def _build_monitor_snapshot() -> Dict:
     # Count signals by type
     signal_counts = {}
     for r in cache.results.get("4h", []):
-        sig = r.get("unified_signal") or r.get("signal", "WAIT")
+        sig = r.get("signal", "WAIT")
         signal_counts[sig] = signal_counts.get(sig, 0) + 1
     snapshot["signal_counts"] = signal_counts
 
@@ -355,11 +355,11 @@ async def _build_monitor_snapshot() -> Dict:
     # Symbols with strong signals
     snapshot["strong_longs"] = [
         r["symbol"] for r in cache.results.get("4h", [])
-        if (r.get("unified_signal") or r.get("signal")) == "STRONG_LONG"
+        if r.get("signal") == "STRONG_LONG"
     ]
     snapshot["risk_offs"] = [
         r["symbol"] for r in cache.results.get("4h", [])
-        if (r.get("unified_signal") or r.get("signal")) in ("RISK_OFF", "TRIM_HARD")
+        if r.get("signal") in ("RISK_OFF", "TRIM_HARD")
     ]
 
     return snapshot

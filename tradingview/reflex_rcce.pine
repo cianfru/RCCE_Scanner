@@ -166,6 +166,9 @@ f_rcce() =>
     float pBo = math.max(0.0, zS - zBo) * f_gate(zS, zBo, 0.2)
     float pRe = math.max(0.0, -zRe) * f_gate(-zRe, 0.0, 0.2) * nvhB
     float pMd = vS * 2.0 * f_gate(-zS, 0.0, 0.2) * vhB
+    // Markdown only while price is falling over LEN_SHORT bars (engine: MARKDOWN_TREND_GATE)
+    float trend30 = bar_index >= LEN_SHORT ? math.log(close / close[LEN_SHORT]) : 0.0
+    pMd := pMd * f_gate(-trend30, 0.0, 0.03)
     float pCp = math.max(0.0, -zS) * f_gate(-zS, -zCp, 0.3) * vlB
     float pAc = f_gate(zS, -0.5, 0.15) * (1.0 - f_gate(zS, 0.5, 0.15)) * vlB
     float sumP = pMk + pBo + pRe + pMd + pCp + pAc + EPS

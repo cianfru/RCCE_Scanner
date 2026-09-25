@@ -1,3 +1,4 @@
+import { getToken, logout } from "../auth.js";
 /**
  * useSharedWorker — React hook for the RCCE SharedWorker.
  *
@@ -26,6 +27,7 @@ function initWorker() {
     workerSupported = true;
 
     workerPort.onmessage = (event) => {
+      if (event.data?.type === "auth-expired") { logout(); return; }
       for (const listener of listeners) {
         try {
           listener.handler(event.data);
@@ -34,7 +36,7 @@ function initWorker() {
     };
 
     workerPort.start();
-    workerPort.postMessage({ type: "connect", apiBase: API_BASE });
+    workerPort.postMessage({ type: "connect", apiBase: API_BASE, token: getToken() });
 
     // Visibility forwarding
     document.addEventListener("visibilitychange", () => {

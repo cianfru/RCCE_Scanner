@@ -44,6 +44,10 @@ def unified_signal(result_4h: Optional[dict], result_1d: Optional[dict]) -> str:
     entries = [s for s in signals if s in _ENTRY_SIGNALS]
     if any(r in _BEARISH for r in regimes):
         return "WAIT"
+    # A timeframe the engine has blocked (e.g. below the weekly BMSB) cannot lend
+    # its trend to the other timeframe's entry.
+    if any(r.get("entry_blocked") for r in valid):
+        return "WAIT"
     if entries and (all(r in _BULLISH for r in regimes) or len(entries) == 2):
         rank = {"REVIVAL_SEED": 0, "REVIVAL_SEED_CONFIRMED": 1,
                 "ACCUMULATE": 2, "LIGHT_LONG": 3, "STRONG_LONG": 4}

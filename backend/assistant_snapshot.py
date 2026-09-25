@@ -26,7 +26,7 @@ FIELDS = ("regime_transition", "history_bars", "normalization_ready", "symbol", 
 def snapshot(cache, symbols, timeframe):
     rows = cache.get_results(timeframe)
     selected = set(symbols)
-    ranking = sorted([r for r in rows if (r.get("unified_signal") or r.get("signal")) in
+    ranking = sorted([r for r in rows if r.get("signal") in
                       {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"} and isinstance(r.get("priority_score"), (int, float))],
                      key=lambda r: (-r["priority_score"], r["symbol"]))[:3]
     wanted = selected | {r["symbol"] for r in ranking} | {"BTC/USDT", "ETH/USDT", "SOL/USDT"}

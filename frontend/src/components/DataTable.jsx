@@ -1,6 +1,6 @@
 import HelpTip from "./HelpTip.jsx";
-import { useState } from "react";
-import { setupAlignment } from "../utils/signalPresentation.js";
+import { useMemo, useState } from "react";
+import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.js";
 import SetupPair from "./SetupPair.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
@@ -57,7 +57,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
     case "REGIME":
       return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} compact /></td>;
     case "SIGNAL":
-      return <td style={{ padding: cellPad }}><SignalDot signal={row.unified_signal || row.signal} reason={row.signal_reason} warnings={row.signal_warnings} context={row} isMobile={isMobile} /></td>;
+      return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} context={row} isMobile={isMobile} /></td>;
     case "SPARK":
       return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={72} height={22} /></td>;
     case "Z-SCORE":
@@ -143,9 +143,13 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
+function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
-  const restBg = selected ? T.accentDim : rm.bg;
+  // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
+  // out; every other row keeps just its regime stripe on the left.
+  const alignment = setupAlignment(row, { marketWide });
+  const lockedTint = alignment.strength ? `${rm.color}${alignment.strength === 2 ? "14" : "0b"}` : "transparent";
+  const restBg = selected ? T.accentDim : lockedTint;
 
   return (
     <tr
@@ -154,7 +158,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
         cursor: "pointer",
         borderBottom: `1px solid ${T.border}`,
         background: restBg,
-        boxShadow: `inset 2px 0 ${rm.color}`,
+        boxShadow: `inset ${alignment.strength ? 3 : 2}px 0 ${alignment.strength ? rm.color : `${rm.color}80`}`,
         transition: "background 0.2s ease",
       }}
       onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.overlay10; }}
@@ -162,7 +166,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
     >
       {visibleColumns.map(([, label], colIndex) => {
         if (label === "SIGNAL" && visibleColumns[colIndex - 1]?.[1] === "REGIME") return null;
-        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition compact/></td>;
+        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition compact marketWide={marketWide}/></td>;
         return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />;
       })}
     </tr>
@@ -171,7 +175,8 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
 
 export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash }) {
   const [alignedFirst, setAlignedFirst] = useState(false);
-  const displayedResults = alignedFirst ? [...results].sort((a,b) => setupAlignment(b).strength - setupAlignment(a).strength) : results;
+  const marketWide = useMemo(() => marketWideMissing(results), [results]);
+  const displayedResults = alignedFirst ? [...results].sort((a,b) => setupAlignment(b, { marketWide }).strength - setupAlignment(a, { marketWide }).strength) : results;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {label && (
@@ -182,6 +187,9 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
         }}>{label}</div>
       )}
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}><button type="button" aria-pressed={alignedFirst} onClick={()=>setAlignedFirst(v=>!v)} title="Group aligned regime and signal setups first, preserving the selected order within each strength. Does not change engine scores." style={{background:alignedFirst ? T.accentDim : 'transparent',color:alignedFirst ? T.accent : T.text3,border:`1px solid ${T.border}`,borderRadius:6,padding:'6px 10px',fontSize:11,cursor:'pointer'}}>Aligned setups first</button></div>
+      {marketWide.length > 0 && <p role="status" style={{margin:"0 0 10px",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:8,fontSize:12,lineHeight:1.6,color:T.text2}}>
+        Market-wide input unavailable: {marketWide.join(", ")}. Strong Long cannot be confirmed on any market until it returns; other signals are unaffected.
+      </p>}
       <GlassCard className="terminal-data-table" style={{ overflow: "visible" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -207,8 +215,8 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     }}
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
-                      {paired ? 'REGIME → SIGNAL' : colLabel}{key && sortKey === key ? " \u25bc" : ""}
-                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A linked pair means the trend supports the signal. A broken link marks a countertrend setup. An information mark means required context is missing.</p><p>The subtle highlight is stronger for a Strong signal. It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
+                      {paired ? <span className="setup-pair-head"><span>Regime</span><span aria-hidden="true" /><span>Signal</span></span> : colLabel}{key && sortKey === key ? " \u25bc" : ""}
+                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A locked, outlined pair means the trend supports the entry signal; a Strong signal gets the brighter outline. A broken link marks a countertrend setup; a dashed circle means required context is missing.</p><p>The highlight It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
                     </span>
                   </th>
                 );})}
@@ -235,6 +243,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     selected={selected?.symbol === row.symbol}
                     onSelect={onSelect}
                     visibleColumns={visibleColumns}
+                    marketWide={marketWide}
                     isMobile={isMobile}
                     backtestSymbols={backtestSymbols}
                     favorites={favorites}

@@ -197,14 +197,6 @@
 .alt-season-explanation .help-legend > div > span:last-child {color:var(--t-text4);}
 
 /* Regime and signal keep the terminal's typographic status language. */
-.setup-pair-wrap{display:inline-flex;flex-direction:column;gap:2px;}
-.setup-pair{display:inline-flex;align-items:center;gap:10px;min-height:28px;padding:2px 7px;background:var(--setup-fill);border-bottom:1px solid transparent;}
-.setup-pair[data-strength="2"]{border-bottom-color:color-mix(in srgb,var(--setup-color) 30%,transparent);}
-.setup-pair-regime{min-width:105px;}
-.setup-pair-signal{min-width:110px;}
-.setup-pair>.alt-season-info{margin-left:0;}
-.setup-pair .terminal-status{font-size:11px!important;}
-.setup-pair .signal-label{font-size:11px!important;letter-spacing:.015em;}
 .reflex-terminal .signal-context-trigger{margin-left:2px;}
 .reflex-terminal .signal-context-trigger>button{width:auto!important;max-width:none;min-width:20px;flex-basis:auto;aspect-ratio:auto;border:0;border-radius:3px;}
 .flow-toxicity{padding:12px 0;margin-bottom:14px;border-block:1px solid var(--t-border);}
@@ -215,7 +207,6 @@
 .flow-toxicity-value span{font-size:10px;color:var(--t-text3);}
 .flow-toxicity-history{width:100%;height:88px;display:block;margin-top:9px;}
 .flow-toxicity-caption{font-size:10px;color:var(--t-text3);margin:6px 0 0;}
-@media(max-width:640px){.setup-pair{gap:6px;padding-inline:4px;}.setup-pair-regime{min-width:92px;}.setup-pair-signal{min-width:100px;}}
 
 /* Chart surface: Firefly depth, a lit upper edge, and a quiet plotting field. */
 .price-chart-panel{border:1px solid var(--t-border);border-radius:14px;background:linear-gradient(145deg,#0d2527 0%,#091c20 44%,#07131a 100%);box-shadow:inset 0 1px 0 rgba(190,255,240,.08),0 18px 48px rgba(0,0,0,.22);}
@@ -225,8 +216,6 @@
 .price-chart-panel .chart-reset{border:0;border-bottom:1px solid var(--t-border);background:transparent;border-radius:0;padding:4px 0;margin-right:8px;color:var(--t-text3);font:11px var(--font-geist-sans),sans-serif;cursor:pointer;}
 .price-chart-panel .chart-reset:hover{color:var(--t-accent)!important;border-bottom-color:var(--t-accent);}
 .price-chart-panel .chart-reset:disabled{opacity:.4;cursor:default;}
-.setup-pair{border-radius:3px;background:linear-gradient(90deg,var(--setup-fill),transparent 48%,var(--setup-fill));}
-.setup-pair[data-strength="2"]{box-shadow:inset 0 1px 0 color-mix(in srgb,var(--setup-color) 8%,transparent);}
 [data-theme="light"] .price-chart-panel{background:linear-gradient(145deg,#f4faf9,#edf3f5);box-shadow:inset 0 1px 0 #fff,0 12px 36px rgba(20,48,54,.07);}
 [data-theme="light"] .price-chart-canvas{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
 [data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.4);}
@@ -234,10 +223,34 @@
 @media(max-width:600px){.price-chart-panel .chart-levels-label{display:none;}.price-chart-panel .chart-levels-label-short{display:inline;}.price-chart-panel .chart-toolbar{padding:10px 14px!important;gap:8px;}.price-chart-panel .chart-toolbar>div{gap:6px!important;}}
 
 /* Grid: one-line regime notes keep rows a uniform height; phones stack regime over signal. */
-.setup-pair-wrap{max-width:100%;min-width:0;}
-@media(max-width:640px){.terminal-data-table .setup-pair{flex-direction:column;align-items:flex-start;gap:2px;padding:2px 4px;}.terminal-data-table .setup-pair-regime,.terminal-data-table .setup-pair-signal{min-width:0;}.terminal-data-table .setup-pair>.alt-season-info{display:none;}}
 .reflex-terminal .regime-note-compact .alt-season-info{margin-left:2px;}
 .reflex-terminal .regime-note-compact .alt-season-info>button{flex-basis:14px;width:14px;height:14px;min-width:14px;min-height:14px;max-width:14px;max-height:14px;font-size:9px;}
-.terminal-data-table .setup-pair{min-height:24px;padding-block:1px;}
-.terminal-data-table .setup-pair-wrap{gap:1px;}
 @media(max-width:640px){.terminal-data-table .regime-note-compact{display:none!important;}}
+/* Shared tabs (Signal Log, Analytics, HyperLens) match the scanner timeframe tabs. */
+.reflex-tabs{display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+.reflex-tabs button{flex-shrink:0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--t-text3);font-family:inherit;font-weight:600;font-size:13px;padding:10px 12px;cursor:pointer;}
+.reflex-tabs button[aria-pressed="true"]{color:var(--t-accent);border-bottom-color:var(--t-accent);}
+.reflex-tabs button:hover{color:var(--t-text1);}
+.reflex-tabs-small button{font-size:12px;padding:6px 8px;}
+/* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
+   with the column header, so each label sits over its value. */
+.setup-pair-wrap{display:inline-flex;flex-direction:column;gap:1px;max-width:100%;min-width:0;}
+.setup-pair,.setup-pair-head{display:inline-grid;grid-template-columns:128px 22px auto;align-items:center;column-gap:8px;padding:1px 10px 1px 8px;border:1px solid transparent;border-radius:6px;}
+.setup-pair{min-height:26px;transition:border-color .15s,background .15s,box-shadow .15s;}
+.setup-pair>.alt-season-info{margin-left:0;justify-self:center;}
+.setup-pair .terminal-status{font-size:11px!important;}
+.setup-pair .signal-label{font-size:11px!important;letter-spacing:.015em;}
+/* Locked in: trend and entry signal agree. One outlined unit with a lock;
+   a Strong signal gets the brighter edge and a soft glow. */
+.setup-pair[data-locked="true"]{border-color:color-mix(in srgb,var(--setup-color) 40%,transparent);background:color-mix(in srgb,var(--setup-color) 8%,transparent);}
+.setup-pair[data-strength="2"]{border-color:color-mix(in srgb,var(--setup-color) 75%,transparent);background:color-mix(in srgb,var(--setup-color) 13%,transparent);box-shadow:0 0 16px -6px var(--setup-color);}
+.reflex-terminal .setup-pair[data-locked="true"] .setup-pair-link>button{background:color-mix(in srgb,var(--setup-color) 18%,transparent)!important;border-radius:50%!important;}
+.setup-pair-head{border-color:transparent;}
+@media(max-width:640px){.terminal-data-table .setup-pair{grid-template-columns:auto;row-gap:2px;padding:3px 6px;}.terminal-data-table .setup-pair>.alt-season-info{display:none;}.setup-pair-head{grid-template-columns:auto;}.setup-pair-head>span:nth-child(2){display:none;}}
+/* Pending regime change: one square per candle, filled in the incoming regime's colour. */
+.regime-progress{display:inline-flex;gap:2px;align-items:center;margin-left:2px;}
+.regime-progress i{display:block;width:6px;height:6px;border:1px solid;border-radius:1.5px;box-sizing:border-box;}
+.regime-note:not(.regime-note-compact) .regime-progress i{width:8px;height:8px;border-radius:2px;}
+.terminal-data-table .setup-pair{min-height:22px;padding-block:0;}
+.setup-pair-regime{min-width:0;overflow:hidden;}
+.setup-pair-regime .terminal-status{max-width:100%;overflow:hidden;text-overflow:ellipsis;}

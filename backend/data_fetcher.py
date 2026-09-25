@@ -206,10 +206,20 @@ class DataCache:
 
     def __init__(self) -> None:
         self._fetched_at: Dict[str, float] = {}
+        self._fetched_wall: Dict[str, float] = {}
 
     @staticmethod
     def _key(symbol: str, timeframe: str) -> str:
         return f"{symbol}|{timeframe}"
+
+    @staticmethod
+    def _last_close(timeframe: str, wall: float) -> float:
+        """Most recent candle close for *timeframe* (UTC; weeks close Monday 00:00)."""
+        bar = {"4h": 14_400, "1d": 86_400, "1w": 604_800}.get(timeframe)
+        if bar is None:
+            return float("-inf")
+        offset = 4 * 86_400 if timeframe == "1w" else 0   # the epoch began on a Thursday
+        return (wall - offset) // bar * bar + offset
 
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
         """Return OHLCVStore data if recently fetched, else None."""
@@ -218,8 +228,12 @@ class DataCache:
         if fetched is None:
             return None
         ttl = _CACHE_TTL.get(timeframe, 300)
-        if time.monotonic() - fetched > ttl:
+        # A candle close invalidates the entry even inside its TTL, otherwise a fetch
+        # just before the close would hand back the previous candle for up to 30 min.
+        closed_since = self._fetched_wall.get(key, float("-inf")) < self._last_close(timeframe, time.time())
+        if time.monotonic() - fetched > ttl or closed_since:
             del self._fetched_at[key]
+            self._fetched_wall.pop(key, None)
             return None
         return _ohlcv_store.get(symbol, timeframe)
 
@@ -227,18 +241,17 @@ class DataCache:
         """Record that this symbol+TF was just fetched (data is in OHLCVStore)."""
         key = self._key(symbol, timeframe)
         self._fetched_at[key] = time.monotonic()
-
-    def observed_at(self, symbol: str, timeframe: str) -> Optional[float]:
-        updated = self._updated_at.get(self._key(symbol, timeframe))
-        return time.time() - (time.monotonic() - updated) if updated is not None else None
+        self._fetched_wall[key] = time.time()
 
     def invalidate(self, symbol: str, timeframe: str) -> None:
         """Remove a single entry."""
         self._fetched_at.pop(self._key(symbol, timeframe), None)
+        self._fetched_wall.pop(self._key(symbol, timeframe), None)
 
     def clear(self) -> None:
         """Drop every cached entry."""
         self._fetched_at.clear()
+        self._fetched_wall.clear()
 
     def __len__(self) -> int:
         return len(self._fetched_at)

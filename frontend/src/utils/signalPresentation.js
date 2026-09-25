@@ -11,10 +11,23 @@ export function friendlyReason(text = '') {
     .replace(/final eligibility:/gi, 'Entry restriction:');
 }
 
-export function signalContext(row = {}) {
-  const signal = row.unified_signal || row.signal;
+// Core inputs missing on most rows are a market-wide outage (e.g. the Fear & Greed
+// feed), shown once above the grid rather than as an icon on every row.
+export function marketWideMissing(rows = [], share = 0.8) {
+  if (rows.length < 10) return [];
+  const counts = {};
+  for (const r of rows) for (const c of r.conditions_detail || []) {
+    if (c.group === 'core' && c.available === false) { const k = c.label || c.name; counts[k] = (counts[k] || 0) + 1; }
+  }
+  return Object.entries(counts).filter(([, n]) => n / rows.length >= share).map(([k]) => k);
+}
+
+export function signalContext(row = {}, { marketWide = [] } = {}) {
+  const signal = row.signal;
   const direction = signalDirection(signal);
-  const missing = (row.conditions_detail || []).filter(c => c.group === 'core' && c.available === false);
+  const allMissing = (row.conditions_detail || []).filter(c => c.group === 'core' && c.available === false);
+  const missing = allMissing.filter(c => !marketWide.includes(c.label || c.name));
+  const onlyMarketWide = allMissing.length > 0 && missing.length === 0;
   const messages = [...new Set([...(row.signal_warnings || []), ...(row.strong_long_blockers || [])])];
   const items = [];
   if (row.signal_status === 'unavailable') {
@@ -24,7 +37,7 @@ export function signalContext(row = {}) {
       ? 'Signal paused — the latest candles have not been refreshed yet. New entries resume after the next update.'
       : 'Assessment unavailable — the signal could not be calculated. Entries are suppressed.'}];
   }
-  if (missing.length || messages.some(w => /core context unavailable/i.test(w))) {
+  if (missing.length || (!onlyMarketWide && messages.some(w => /core context unavailable/i.test(w)))) {
     items.push({kind:'missing', text:`Assessment incomplete — ${missing.length ? missing.map(c => c.label || c.name).join(', ') : 'required market context'} unavailable. Strong Long cannot be confirmed.`});
   }
   if (row.entry_blocked && row.signal_status !== 'unavailable') items.push({kind:'caution', text:'Long entries blocked by the engine. Inspect the entry checks for the blocking condition.'});
@@ -44,10 +57,10 @@ export function signalContext(row = {}) {
   return items;
 }
 
-export function setupAlignment(row = {}) {
-  const signal = row.unified_signal || row.signal;
+export function setupAlignment(row = {}, opts = {}) {
+  const signal = row.signal;
   const direction = signalDirection(signal);
-  if (!row.regime || row.signal_status === 'unavailable' || signalContext(row).some(i => i.kind === 'missing')) return {state:'incomplete', label:'Assessment incomplete', strength:0};
+  if (!row.regime || row.signal_status === 'unavailable' || signalContext(row, opts).some(i => i.kind === 'missing')) return {state:'incomplete', label:'Assessment incomplete', strength:0};
   if (row.entry_blocked || ['BLOWOFF', 'CAP', 'ABSORBING'].includes(row.regime)) return {state:'caution', label: row.entry_blocked ? 'Entry restricted' : 'Transition / elevated risk', strength:0};
   if (!direction) return {state:'neutral', label:signal === 'WAIT' ? 'No active setup' : 'Position management', strength:0};
   const aligned = direction === 'bullish' ? ['MARKUP','REACC'].includes(row.regime) : row.regime === 'MARKDOWN';

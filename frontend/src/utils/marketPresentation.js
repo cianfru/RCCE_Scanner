@@ -10,5 +10,5 @@ export function evidenceSummary(data) {
 }
 
 export function bestEntrySetups(results, limit = 3) {
- return [...results].filter(row => (ENTRY_SIGNALS.has(row.unified_signal ?? row.signal) || (row.unified_signal ?? row.signal) === 'LIGHT_SHORT') && row.signal_status !== 'unavailable' && (!row.opportunity || row.opportunity.status === 'confirmed') && Number.isFinite(row.priority_score)).sort((a,b)=>b.priority_score-a.priority_score || a.symbol.localeCompare(b.symbol)).slice(0,limit);
+ return [...results].filter(row => (ENTRY_SIGNALS.has(row.signal) || row.signal === 'LIGHT_SHORT') && row.signal_status !== 'unavailable' && (!row.opportunity || row.opportunity.status === 'confirmed') && Number.isFinite(row.priority_score)).sort((a,b)=>b.priority_score-a.priority_score || a.symbol.localeCompare(b.symbol)).slice(0,limit);
 }

@@ -806,10 +806,14 @@ def attach_unified_signals(results_by_tf: dict, scan_cache=None) -> None:
     four = {r["symbol"]: r for r in results_by_tf.get("4h", [])}
     daily = {r["symbol"]: r for r in results_by_tf.get("1d", [])}
     for symbol in four.keys() | daily.keys():
-        signal = unified_signal(four.get(symbol), daily.get(symbol))
-        for row in (four.get(symbol), daily.get(symbol)):
+        pair = (four.get(symbol), daily.get(symbol))
+        signal = unified_signal(*pair)
+        # Both timeframes must have a usable signal for WAIT to mean disagreement.
+        complete = all(r is not None and r.get("signal_status") != "unavailable" for r in pair)
+        for row in pair:
             if row is not None:
                 row["unified_signal"] = signal
+                row["unified_complete"] = complete
     if scan_cache is not None:
         update_opportunities(results_by_tf, scan_cache)
 
@@ -840,7 +844,8 @@ def update_opportunities(results_by_tf, scan_cache):
                     logger.exception("Opportunity state read failed")
             policy, bars = row.get("cto_policy", ["baseline", 1])
             opportunity = build_opportunity(row, previous, as_of=as_of, variant=policy, confirmation_bars=bars)
-            if opportunity["status"] == "confirmed" and row.get("unified_signal") == "WAIT":
+            if (opportunity["status"] == "confirmed" and row.get("unified_signal") == "WAIT"
+                    and row.get("unified_complete", True)):
                 opportunity.update(status="blocked", reason="Cross-timeframe entry disagreement",
                                    conflicting_timeframe="1d" if row["timeframe"] == "4h" else "4h")
             row["opportunity"] = opportunity
@@ -1460,6 +1465,7 @@ async def run_drip_scan(
             lambda s: "hot" if s in ("BTC/USDT", "ETH/USDT") else _classify_drip_tier(s, scan_cache),
             lambda s: MARKETS.get(s, {}).get("kind", "perp"),
             is_active(),
+            wall=time.time(),
         )
         if symbol is None:
             # Nothing due. When idle the whole universe is on a ≥1h cadence, so
@@ -1468,16 +1474,21 @@ async def run_drip_scan(
             if is_active():
                 await asyncio.sleep(5)
             else:
-                await idle_sleep(_DRIP_IDLE_POLL_SECONDS)
+                # Wake for the next candle close even when nobody is watching:
+                # the executor and alerts depend on fresh closed candles.
+                from scan_schedule import BAR_SECONDS, last_bar_close
+                until_close = last_bar_close(time.time()) + BAR_SECONDS - time.time()
+                await idle_sleep(max(5, min(_DRIP_IDLE_POLL_SECONDS, until_close)))
             continue
         started = time.monotonic()
+        started_wall = time.time()
         available = False
         try:
             available = await _drip_one_symbol(symbol, scan_cache) > 0
         except Exception:
             logger.warning("Drip failed for %s", symbol, exc_info=True)
         finally:
-            schedule.record(symbol, time.monotonic(), available)
+            schedule.record(symbol, time.monotonic(), available, wall=started_wall)
             _drip_attempt_count += 1
         await asyncio.sleep(max(0, 1.0 - (time.monotonic() - started)))
 

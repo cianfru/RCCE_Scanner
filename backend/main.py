@@ -468,6 +468,13 @@ _NO_ACTIVITY_PATHS = frozenset({
 async def _activity_middleware(request, call_next):
     """Mark the app active on genuine API traffic so it wakes from idle."""
     path = request.url.path
+    # Server-side access control (access.py): only when REFLEX_ACCESS_CODE is set.
+    import access
+    if request.method != "OPTIONS" and not access.allowed(path, request.headers, request.query_params):
+        # This middleware sits outside CORS, so the header is added here for the
+        # browser to read the 401 and show the login screen.
+        return JSONResponse({"detail": "Login required"}, status_code=401,
+                            headers={"Access-Control-Allow-Origin": "*"})
     if path.startswith("/api/") and path not in _NO_ACTIVITY_PATHS:
         try:
             from activity import mark_active
@@ -488,6 +495,10 @@ async def websocket_scan(websocket: WebSocket):
     Events sent: synthesis-complete, signal-transition, anomaly, symbol-update, heartbeat.
     Client can send: {"type": "refresh"} to request immediate full state.
     """
+    import access
+    if not access.allowed("/ws/scan", websocket.headers, websocket.query_params):
+        await websocket.close(code=4401)
+        return
     hub = WebSocketHub.get()
     await hub.connect(websocket)
     try:
@@ -3705,6 +3716,30 @@ async def explain_endpoint(symbol: str, request: Request, timeframe: str = Query
     except Exception as e:
         logger.error("Explain error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/auth/login")
+async def auth_login(payload: dict):
+    """Exchange the access code for a signed token. When no code is configured the
+    API is open and any login succeeds without a token (previous behaviour)."""
+    import access
+    if not access.enforced():
+        return {"ok": True, "enforced": False, "token": None}
+    if not access.check_code((payload or {}).get("code", "")):
+        await asyncio.sleep(1.0)   # slow down guessing
+        raise HTTPException(status_code=401, detail="Incorrect access code")
+    return {"ok": True, "enforced": True, "token": access.issue_token()}
+
+
+_PREVIEW_COINS = {"BTC", "ETH", "SOL", "HYPE", "LINK"}
+
+
+@app.get("/api/public/preview")
+async def public_preview(timeframe: str = Query("1d", description="4h or 1d")):
+    """The landing page's live preview: five large markets only, public by design."""
+    rows = [r for r in cache.get_results(timeframe if timeframe in ("4h", "1d") else "1d")
+            if str(r.get("symbol", "")).split("/")[0] in _PREVIEW_COINS]
+    return {"results": rows}
 
 
 @app.get("/health")

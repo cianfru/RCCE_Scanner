@@ -1,3 +1,4 @@
+import Tabs from "./Tabs.jsx";
 import { useState, useEffect } from "react";
 import HelpTip from "./HelpTip.jsx";
 import { REGIME_META, T, m, SIGNAL_META } from "../theme.js";
@@ -531,22 +532,7 @@ export default function AnalyticsPanel({ isMobile }) {
       <div style={{
         display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
       }}>
-        {["4h", "1d"].map(t => (
-          <button
-            key={t}
-            onClick={() => setTf(t)}
-            style={{
-              padding: "5px 16px", borderRadius: 6,
-              border: `1px solid ${tf === t ? T.accent : T.border}`,
-              background: tf === t ? T.accentDim : "transparent",
-              color: tf === t ? T.accent : T.text3,
-              fontFamily: T.mono, fontSize: m(T.textSm, isMobile),
-              fontWeight: 600, cursor: "pointer", letterSpacing: "0.06em",
-            }}
-          >
-            {t.toUpperCase()}
-          </button>
-        ))}
+        <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tf} onChange={setTf} />
         <span style={{
           fontSize: m(T.textXs, isMobile), color: T.text4,
           fontFamily: T.mono, marginLeft: "auto",
