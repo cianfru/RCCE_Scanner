@@ -360,3 +360,63 @@ Declared 2026-09-25 before any outcome was measured. Detector `patterns-1` with 
 3. **By Larsson state at the break:** bull patterns while gold vs not gold; bear patterns while blue vs not blue.
 
 Uncertainty: 90% intervals from a bootstrap over calendar dates (breaks on the same day move together). A pattern "works" only if its 20-bar signed return beats the no-pattern level events with an interval that excludes zero.
+
+### Results (run `patterns_w1-9`, 40 coins, patterns formed and resolved in W1-9)
+
+**Forming → outcome** (share of patterns seen forming):
+
+| Pattern | n | Confirmed | Failed | Expired / other |
+|---|---:|---:|---:|---:|
+| cup & handle | 61 | 33% | 67% | 0% |
+| rectangle | 106 | 84% (up 44%, down 40%) | 0% | 16% |
+| ascending triangle | 76 | 36% | 62% | 3% |
+| descending triangle | 143 | 47% | 51% | 2% |
+| head & shoulders | 70 | 76% | 6% | 19% |
+| inverse head & shoulders | 56 | 36% | 21% | 43% |
+
+**After a confirmed break** (entry next open; return signed by direction; mean with 90% date-bootstrap interval):
+
+| Group | n | +10 bars | +20 bars | +40 bars | Win at 20 | vs no-pattern level events (20 bars) |
+|---|---:|---:|---:|---:|---:|---:|
+| 10 rectangle breakout | 44 | +4.0% [+1.1, +7.1] | +9.6% [+3.2, +16.7] | +10.3% [+1.5, +19.7] | 55% | +4.5 pp [-2.8, +12.6] |
+| 11 inverse head & shoulders | 20 | +7.0% [-1.5, +18.8] | +17.9% [-0.7, +47.1] | +14.9% [-2.1, +37.7] | 65% | +12.8 pp [-6.8, +39.7] |
+| 12 cup & handle | 20 | +7.6% [+0.8, +16.7] | +8.2% [-1.3, +19.1] | +8.3% [-2.8, +21.7] | 50% | +3.1 pp [-7.0, +14.0] |
+| 13 ascending triangle | 27 | -4.2% [-7.4, -1.1] | -4.8% [-10.3, +0.6] | -5.6% [-14.3, +3.0] | 37% | -9.9 pp [-16.7, -3.6] |
+| 20 rectangle breakdown | 42 | +1.5% [-1.7, +4.5] | +0.2% [-6.8, +6.9] | +2.0% [-8.1, +11.6] | 55% | -0.8 pp [-7.6, +6.1] |
+| 21 head & shoulders | 53 | -0.7% [-3.7, +2.0] | -2.9% [-6.8, +0.7] | -9.1% [-19.4, -0.1] | 40% | -3.9 pp [-8.4, +0.4] |
+| 23 descending triangle | 67 | -0.5% [-3.4, +2.3] | -1.1% [-5.0, +2.5] | +1.7% [-5.1, +8.1] | 52% | -2.1 pp [-6.5, +2.2] |
+| all bull patterns | 111 | +3.2% [+0.3, +6.5] | +7.3% [+1.7, +13.4] | +6.9% [+0.1, +13.9] | 51% | +2.2 pp [-4.2, +10.0] |
+| all bear patterns | 162 | -0.1% [-2.0, +1.8] | -1.3% [-4.2, +1.5] | -1.8% [-7.4, +3.7] | 49% | -2.4 pp [-5.9, +1.3] |
+| no-pattern breakouts (Module B) | 970 | +1.8% [+0.2, +3.5] | +5.1% [+2.0, +8.4] | +5.5% [+1.8, +9.6] | 45% | — |
+| no-pattern breakdowns (Module B) | 1218 | +1.3% [+0.2, +2.3] | +1.0% [-1.2, +3.0] | -1.7% [-5.5, +1.7] | 59% | — |
+
+Unconditional drift over the same coin-days: long -0.4%, short +0.4% per 20 bars.
+
+**By Larsson state at the break:**
+
+| Group | n | +20 bars | Win at 20 |
+|---|---:|---:|---:|
+| bull patterns, aligned with Larsson state | 66 | +8.0% [+1.5, +14.2] | 56% |
+| bull patterns, not aligned with Larsson state | 45 | +6.4% [-3.7, +19.8] | 44% |
+| bear patterns, aligned with Larsson state | 141 | -1.2% [-4.4, +2.0] | 49% |
+| bear patterns, not aligned with Larsson state | 21 | -2.2% [-6.2, +1.0] | 48% |
+
+Reading:
+- **Recognition works; the edge does not.** No pattern type beats no-pattern level events with an interval excluding zero. Ascending triangles are significantly *worse* (-9.9 pp).
+- Bullish breaks in general (with or without a pattern) beat the drift in 2021-2026; the pattern adds about 2 points, within noise.
+- Bear patterns do not work as short signals here: after a head & shoulders breakdown price was on average 9% higher 40 bars later. The spec's preliminary evidence (84% wins, n = 19) came from the bearish 2026 months inside the holdout window.
+- Larsson alignment does not change bull-pattern outcomes significantly.
+- The forming-outcome shares are the evidence-based probabilities for a pattern seen forming: head & shoulders confirm 76% of the time, rectangles break either way (84%, direction a coin flip), ascending triangles, inverse head & shoulders and cups fail more often than they confirm.
+
+## Pattern strategy variants (declared before running)
+
+Declared 2026-09-25 after the validity study above and before any strategy result. Windows 1-9, primary universe, declared parameters; each is compared with its parent and with B1, with White's Reality Check over these five against B1.
+
+| ID | Definition | Parent |
+|---|---|---|
+| L2P | L2, but level-event adds also need a bull pattern (10/11/12/13) confirmed on the same bar | L2 |
+| L3X50 | L3, plus sell 50% at the next open when a bear pattern (20/21/23) confirms while holding, whatever the ribbon state | L3 |
+| L3X100 | as L3X50 with a full exit | L3 |
+| RCCE-PX | B1 entries and exits, plus a full exit when a bear pattern confirms | B1 |
+| H60-PX | `F0-t60-s12-nosig` (the scenario search's best), plus a full exit when a bear pattern confirms | F0-t60-s12-nosig |
+
