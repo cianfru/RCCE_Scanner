@@ -10,6 +10,7 @@
 
 const ports = new Set();
 let apiBase = "";
+let token = null;   // API token from the page (see src/auth.js)
 
 // Visibility tracking — pause when ALL tabs are hidden
 const tabVisibility = new Map(); // portId → boolean (true = visible)
@@ -53,7 +54,8 @@ function anyTabVisible() {
 }
 
 async function fetchJSON(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+  if (res.status === 401) { token = null; broadcast({ type: "auth-expired" }); }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -200,6 +202,7 @@ self.onconnect = function (e) {
 
     switch (msg.type) {
       case "connect":
+        if (msg.token) token = msg.token;
         if (msg.apiBase && !apiBase) {
           apiBase = msg.apiBase;
           startPolling();

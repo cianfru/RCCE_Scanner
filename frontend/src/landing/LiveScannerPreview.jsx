@@ -25,7 +25,7 @@ export default function LiveScannerPreview() {
       controller.signal.addEventListener('abort', abort, { once: true });
       const timeout = setTimeout(abort, 12000);
       try {
-        const response = await fetch(`${API_BASE}/api/scan?timeframe=${tf}`, { signal: request.signal });
+        const response = await fetch(`${API_BASE}/api/public/preview?timeframe=${tf}`, { signal: request.signal });
         if (!response.ok) throw new Error('Scanner unavailable');
         const data = await response.json();
         if (!Array.isArray(data.results)) throw new Error('Invalid scan response');

@@ -1,35 +1,47 @@
 import ReflexBrand from "./ReflexBrand.jsx";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../theme.js";
+import { isAuthenticated, login } from "../auth.js";
 
-const PASSWORD = "Admin123";
-const AUTH_KEY = "reflex_auth";
-
-export function isAuthenticated() {
-  // Persist auth across sessions; also auto-bypass if wallet was previously connected
-  return localStorage.getItem(AUTH_KEY) === "1"
-    || !!localStorage.getItem("rcce-wallet-address");
-}
+export { isAuthenticated };
 
 export default function AuthGate({ children }) {
   const [authed, setAuthed] = useState(isAuthenticated());
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
   const [shaking, setShaking] = useState(false);
+
+  // A 401 from any API call (expired token, code changed) returns here.
+  useEffect(() => {
+    const expire = () => setAuthed(false);
+    window.addEventListener("reflex-auth-expired", expire);
+    return () => window.removeEventListener("reflex-auth-expired", expire);
+  }, []);
 
   if (authed) return children;
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    if (value === PASSWORD) {
-      localStorage.setItem(AUTH_KEY, "1");
-      setAuthed(true);
-    } else {
-      setError(true);
-      setShaking(true);
-      setTimeout(() => setShaking(false), 500);
-      setValue("");
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (await login(value)) {
+        setAuthed(true);
+        setError(false);
+        return;
+      }
+      setMessage("Incorrect access code");
+    } catch {
+      setMessage("The server is unreachable. Try again in a moment.");
+    } finally {
+      setBusy(false);
     }
+    setError(true);
+    setShaking(true);
+    setTimeout(() => setShaking(false), 500);
+    setValue("");
   };
 
   return (
@@ -108,7 +120,7 @@ export default function AuthGate({ children }) {
           <p style={{
             fontSize: 12, color: "#ef4444", marginTop: 8, fontFamily: T.mono,
           }}>
-            Invalid password
+            {message || "Incorrect access code"}
           </p>
         )}
         <button type="submit" style={{
