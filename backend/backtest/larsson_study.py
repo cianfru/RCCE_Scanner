@@ -247,8 +247,11 @@ def _bmsb(replay) -> tuple:
 # ---------------------------------------------------------------------------------------------- strategies
 
 def _days(win, data) -> List[float]:
-    btc = data["BTC"].usd["timestamp"]
-    return [float(t) for t in btc if win["start_ms"] <= t < win["end_ms"]]
+    if "BTC" in data:
+        cal = data["BTC"].usd["timestamp"]
+    else:
+        cal = sorted(set().union(*(set(sd.usd["timestamp"].tolist()) for sd in data.values())))
+    return [float(t) for t in cal if win["start_ms"] <= t < win["end_ms"]]
 
 
 def run_larsson(variant: str, params: dict, win: dict, data: Dict[str, SymbolData], replay=None, bmsb=None):
@@ -361,6 +364,8 @@ def run_b1(win, data, replay, bmsb, veto_blue=False, pm_class=None):
             if hasattr(pm, "ll_state"):
                 i = data[s].index.get(ts)
                 pm.ll_state = data[s].ll["state"][i] if i is not None else None
+            if hasattr(pm, "set_context"):
+                pm.set_context(s, data[s].index.get(ts), data[s])
             pm.process_bar(bar)
         pm.mark_to_market(ts, {b.symbol: b.price for b in bars})
         value = sum(pm.per_symbol_alloc * p.size_pct * pm._latest_prices.get(sym, p.entry_price) / p.entry_price
