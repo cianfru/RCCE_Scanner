@@ -145,7 +145,11 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
 
 function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
-  const restBg = selected ? T.accentDim : rm.bg;
+  // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
+  // out; every other row keeps just its regime stripe on the left.
+  const alignment = setupAlignment(row, { marketWide });
+  const lockedTint = alignment.strength ? `${rm.color}${alignment.strength === 2 ? "14" : "0b"}` : "transparent";
+  const restBg = selected ? T.accentDim : lockedTint;
 
   return (
     <tr
@@ -154,7 +158,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
         cursor: "pointer",
         borderBottom: `1px solid ${T.border}`,
         background: restBg,
-        boxShadow: `inset 2px 0 ${rm.color}`,
+        boxShadow: `inset ${alignment.strength ? 3 : 2}px 0 ${alignment.strength ? rm.color : `${rm.color}80`}`,
         transition: "background 0.2s ease",
       }}
       onMouseEnter={e => { if (!selected) e.currentTarget.style.background = T.overlay10; }}
@@ -211,8 +215,8 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     }}
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
-                      {paired ? 'REGIME → SIGNAL' : colLabel}{key && sortKey === key ? " \u25bc" : ""}
-                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A linked pair means the trend supports the signal. A broken link marks a countertrend setup. An information mark means required context is missing.</p><p>The subtle highlight is stronger for a Strong signal. It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
+                      {paired ? <span className="setup-pair-head"><span>Regime</span><span aria-hidden="true" /><span>Signal</span></span> : colLabel}{key && sortKey === key ? " \u25bc" : ""}
+                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A locked, outlined pair means the trend supports the entry signal; a Strong signal gets the brighter outline. A broken link marks a countertrend setup; a dashed circle means required context is missing.</p><p>The highlight It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
                     </span>
                   </th>
                 );})}
