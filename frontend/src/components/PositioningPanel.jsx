@@ -1,3 +1,4 @@
+import FlowToxicity from "./FlowToxicity.jsx";
 import HelpTip from "./HelpTip.jsx";
 /**
  * PositioningPanel — Signal-forward market structure display.
@@ -235,156 +236,6 @@ const OI_CTX_COLOR = {
   "capitulation": "#fbbf24",
 };
 
-// ─── VPIN gauge ───────────────────────────────────────────────────────────────
-
-const VPIN_INFO = {
-  title: "VPIN — Flow Toxicity",
-  text: "Volume-Synchronized Probability of Informed Trading. Measures how one-sided taker flow has been across recent volume buckets. BALANCED (<30%) = healthy two-way flow. ELEVATED (30-55%) = directional pressure building. TOXIC (>55%) = persistent one-sided flow, often signals informed trading before a move. Market makers pull quotes when VPIN is high, amplifying volatility.",
-};
-
-// Mini sparkline — 0..1 VPIN values mapped against the 0-55 zones so the
-// threshold lines stay at the same visual position as the main gauge bar.
-function VpinSparkline({ history }) {
-  if (!history || history.length < 2) return null;
-  const w = 100, h = 22, pad = 1;
-  const n = history.length;
-  const xStep = (w - pad * 2) / Math.max(n - 1, 1);
-
-  const yFor = (v) => {
-    const clamped = Math.max(0, Math.min(1, v));
-    return h - pad - clamped * (h - pad * 2);
-  };
-
-  const points = history.map((v, i) => `${pad + i * xStep},${yFor(v)}`).join(" ");
-
-  // Threshold lines at 30% and 55% (matching the gauge)
-  const y30 = yFor(0.30);
-  const y55 = yFor(0.55);
-
-  // Color the stroke by the latest value
-  const latest = history[history.length - 1];
-  const stroke =
-    latest >= 0.55 ? "#f87171" :
-    latest >= 0.30 ? "#fbbf24" :
-    "#34d399";
-
-  return (
-    <svg
-      width={w}
-      height={h}
-      style={{ flexShrink: 0 }}
-      viewBox={`0 0 ${w} ${h}`}
-    >
-      {/* Elevated zone tint */}
-      <rect x="0" y={y55} width={w} height={y30 - y55} fill="#fbbf2410" />
-      {/* Toxic zone tint */}
-      <rect x="0" y="0" width={w} height={y55} fill="#f8717110" />
-      {/* Threshold lines */}
-      <line x1="0" y1={y30} x2={w} y2={y30} stroke="#fbbf2430" strokeDasharray="2 2" />
-      <line x1="0" y1={y55} x2={w} y2={y55} stroke="#f8717130" strokeDasharray="2 2" />
-      {/* Main line */}
-      <polyline
-        points={points}
-        fill="none"
-        stroke={stroke}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      {/* Latest dot */}
-      <circle
-        cx={pad + (n - 1) * xStep}
-        cy={yFor(latest)}
-        r="2"
-        fill={stroke}
-      />
-    </svg>
-  );
-}
-
-function VpinGauge({ vpin, vpinLabel, vpinHistory }) {
-  if (vpin == null || vpin === 0) return null;
-  const pct = Math.max(0, Math.min(1, vpin)) * 100;
-  // Thresholds mirror backend labels: 30% / 55%
-  const color =
-    vpinLabel === "TOXIC" ? "#f87171" :
-    vpinLabel === "ELEVATED" ? "#fbbf24" :
-    "#34d399";
-  const displayLabel =
-    vpinLabel === "TOXIC" ? "TOXIC FLOW" :
-    vpinLabel === "ELEVATED" ? "ELEVATED" :
-    "BALANCED";
-
-  return (
-    <div style={{
-      padding: "8px 10px", borderRadius: 8,
-      background: T.overlay02,
-      border: `1px solid ${T.overlay06}`,
-      marginBottom: 14,
-    }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        marginBottom: 6, gap: 8,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{
-            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-            fontWeight: 700, textTransform: "none", letterSpacing: "0.02em",
-          }}>
-            VPIN
-          </span>
-          <HelpTip title={VPIN_INFO.title} width={220}>{VPIN_INFO.text}</HelpTip>
-        </div>
-        <span style={{
-          fontSize: T.textXs, color, fontFamily: T.mono, fontWeight: 700,
-          letterSpacing: "0.06em",
-        }}>
-          {displayLabel} · {pct.toFixed(0)}%
-        </span>
-      </div>
-      {/* Track */}
-      <div style={{
-        position: "relative", height: 6, borderRadius: 3,
-        background: T.overlay06, overflow: "hidden",
-      }}>
-        {/* Zone markers: green 0-30, yellow 30-55, red 55-100 */}
-        <div style={{
-          position: "absolute", left: "30%", top: 0, bottom: 0,
-          width: 1, background: T.overlay12 || T.border,
-        }} />
-        <div style={{
-          position: "absolute", left: "55%", top: 0, bottom: 0,
-          width: 1, background: T.overlay12 || T.border,
-        }} />
-        {/* Fill */}
-        <div style={{
-          position: "absolute", left: 0, top: 0, bottom: 0,
-          width: `${pct}%`,
-          background: color,
-          boxShadow: `0 0 8px ${color}66`,
-          transition: "width 0.4s ease",
-        }} />
-      </div>
-      {/* History sparkline */}
-      {vpinHistory && vpinHistory.length >= 2 && (
-        <div style={{
-          marginTop: 6,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 10,
-        }}>
-          <span style={{
-            fontSize: 12, color: T.text4, fontFamily: T.mono,
-            fontWeight: 600, letterSpacing: "0.06em", textTransform: "none",
-          }}>
-            {vpinHistory.length} ticks
-          </span>
-          <VpinSparkline history={vpinHistory} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, vpin, vpinLabel, vpinHistory, oiContext }) {
   if (!positioning) return null;
 
@@ -478,7 +329,7 @@ export default function PositioningPanel({ positioning, cvdTrend, cvdDiv, bsr, v
       </div>
 
       {/* VPIN flow toxicity gauge */}
-      <VpinGauge vpin={vpin} vpinLabel={vpinLabel} vpinHistory={vpinHistory} />
+      <FlowToxicity vpin={vpin} vpinLabel={vpinLabel} vpinHistory={vpinHistory} />
 
       {/* Numbers strip */}
       {stats.length > 0 && (

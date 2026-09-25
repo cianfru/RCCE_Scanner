@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
+import HelpTip from "./HelpTip.jsx";
+import SignalContext, { CONTEXT_META } from "./SignalContext.jsx";
+import { signalContext, friendlyReason } from "../utils/signalPresentation.js";
 import { T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
 import RegimeIcon from "./RegimeIcon.jsx";
 
@@ -49,90 +50,20 @@ export function RegimeBadge({ regime, isMobile }) {
   );
 }
 
-export function SignalDot({ signal, reason, warnings, isMobile }) {
-  const sm = SIGNAL_META[signal] || SIGNAL_META.WAIT;
-  const [showTip, setShowTip] = useState(false);
-  const hasInfo = reason || (warnings && warnings.length > 0);
-  const anchorRef = useRef(null);
-  const [tipPos, setTipPos] = useState({ top: 0, left: 0 });
-
-  useEffect(() => {
-    if (!showTip || !anchorRef.current) return;
-    const r = anchorRef.current.getBoundingClientRect();
-    const tipW = 320;
-    let top = r.top - 8; // above the element
-    let left = r.left;
-    if (left + tipW > window.innerWidth - 12) left = window.innerWidth - tipW - 12;
-    if (left < 12) left = 12;
-    setTipPos({ top, left });
-  }, [showTip]);
-
-  return (
-    <span
-      ref={anchorRef}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        color: sm.color, fontFamily: T.mono, fontSize: m(12, isMobile), whiteSpace: "nowrap",
-        fontWeight: 600, cursor: hasInfo ? "help" : "default",
-      }}
-      onMouseEnter={() => hasInfo && !isMobile && setShowTip(true)}
-      onMouseLeave={() => setShowTip(false)}
-      onClick={(e) => { if (hasInfo && isMobile) { e.stopPropagation(); setShowTip(!showTip); } }}
-    >
-      {sm.label}
-      {warnings && warnings.length > 0 && (
-        <svg width="22" height="22" viewBox="0 0 24 24" style={{ marginLeft: 4, verticalAlign: "middle", flexShrink: 0 }}>
-          <path d="M12 2L1 21h22L12 2z" fill="#fbbf24" stroke="#1a1a1e" strokeWidth="1.5" strokeLinejoin="round"/>
-          <path d="M12 2.8L2 20.5h20L12 2.8z" fill="#fbbf24"/>
-          <rect x="11" y="9" width="2.2" height="6.5" rx="1" fill="#1a1a1e"/>
-          <circle cx="12.1" cy="17.5" r="1.2" fill="#1a1a1e"/>
-        </svg>
-      )}
-      {showTip && hasInfo && createPortal(
-        <div
-          ref={el => {
-            if (!el) return;
-            // Measure actual height, position above anchor, flip below if no room
-            const tipH = el.offsetHeight;
-            let top = tipPos.top - tipH;
-            if (top < 8) {
-              const r = anchorRef.current?.getBoundingClientRect();
-              top = r ? r.bottom + 8 : 8;
-            }
-            el.style.top = `${top}px`;
-            el.style.left = `${tipPos.left}px`;
-          }}
-          style={{
-            position: "fixed", zIndex: 99999,
-            background: T.popoverBg, border: `1px solid ${T.borderH}`,
-            borderRadius: T.radiusSm, padding: isMobile ? "12px 14px" : "10px 12px",
-            width: 320,
-            boxShadow: `0 8px 32px ${T.shadowDeep}`,
-            backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-            whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "break-word",
-            pointerEvents: "none",
-          }}
-        >
-          {reason && (
-            <div style={{ fontSize: m(10, isMobile), color: T.text2, fontFamily: T.mono, lineHeight: 1.6, marginBottom: warnings?.length ? 8 : 0 }}>
-              {reason}
-            </div>
-          )}
-          {warnings && warnings.length > 0 && (
-            <div style={{ borderTop: reason ? `1px solid ${T.border}` : "none", paddingTop: reason ? 6 : 0 }}>
-              {warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: m(9, isMobile), color: "#fbbf24", fontFamily: T.mono, lineHeight: 1.6, display: "flex", gap: 4, alignItems: "flex-start" }}>
-                  <span style={{ flexShrink: 0 }}>{"\u26a0"}</span>
-                  <span>{w}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
-    </span>
-  );
+export function SignalDot({ signal, reason, warnings, context, isMobile }) {
+  const sm = SIGNAL_META[signal] || {color:T.text3, label:signal?.replaceAll('_',' ') || 'WAIT'};
+  const row = context || {signal, signal_reason:reason, signal_warnings:warnings};
+  const items = signalContext(row);
+  const kinds = [...new Set(items.map(i => i.kind))].sort((a,b) => ['missing','conflict','caution','bearish','bullish','info'].indexOf(a) - ['missing','conflict','caution','bearish','bullish','info'].indexOf(b));
+  return <span className="signal-label" style={{display:'inline-flex',alignItems:'center',gap:6,color:sm.color,fontFamily:T.mono,fontSize:m(12,isMobile),fontWeight:600,whiteSpace:'nowrap'}}>
+    {sm.label}
+    {(reason || items.length > 0) && <HelpTip className="signal-context-trigger" title="Signal context" width={360} label={kinds.map(k=>CONTEXT_META[k].label).join(', ') || 'Signal explanation'} size={20}
+      buttonStyle={{width:'auto',minWidth:22,height:26,border:0,borderRadius:4,display:'inline-flex',alignItems:'center',gap:3,padding:'2px 3px'}}
+      icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={color}/>;})}</>}>
+      <SignalContext row={row}/>
+      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:11,color:T.text3}}>{friendlyReason(reason)}</p>}
+    </HelpTip>}
+  </span>;
 }
 
 export function DivergencePill({ div }) {

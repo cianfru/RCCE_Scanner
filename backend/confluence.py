@@ -25,6 +25,32 @@ _ENTRY_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "RE
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
 
 
+def unified_signal(result_4h: Optional[dict], result_1d: Optional[dict]) -> str:
+    """One cross-timeframe decision for the API, UI and outcome tracker."""
+    rows = [r for r in (result_4h, result_1d) if r is not None]
+    valid = [r for r in rows if r.get("signal_status") != "unavailable"]
+    exits = [r["signal"] for r in valid if r.get("signal") in _EXIT_SIGNALS]
+    if exits:
+        rank = {"NO_LONG": 0, "TRIM": 1, "TRIM_HARD": 2, "RISK_OFF": 3}
+        return max(exits, key=rank.get)
+    if len(valid) != 2:
+        return "WAIT"
+    signals = [r.get("signal", "WAIT") for r in valid]
+    if signals == ["LIGHT_SHORT", "LIGHT_SHORT"]:
+        return "LIGHT_SHORT"
+    if "LIGHT_SHORT" in signals:
+        return "WAIT"
+    regimes = [r.get("regime", "FLAT") for r in valid]
+    entries = [s for s in signals if s in _ENTRY_SIGNALS]
+    if any(r in _BEARISH for r in regimes):
+        return "WAIT"
+    if entries and (all(r in _BULLISH for r in regimes) or len(entries) == 2):
+        rank = {"REVIVAL_SEED": 0, "REVIVAL_SEED_CONFIRMED": 1,
+                "ACCUMULATE": 2, "LIGHT_LONG": 3, "STRONG_LONG": 4}
+        return min(entries, key=rank.get)
+    return "WAIT"
+
+
 # ---------------------------------------------------------------------------
 # Output container
 # ---------------------------------------------------------------------------

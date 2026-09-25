@@ -50,11 +50,11 @@ export default function ExpectedRange({ data, timeframe, isMobile }) {
           fontSize: T.textXs, color: T.text3, letterSpacing: "0.1em",
           fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
         }}>
-          Expected Range · next {tf}
+          Estimated true range · next {tf}
         </span>
         <HelpTip title="Expected Range" width={360}>
           <p>
-            The probability that the next bar's true range lands in the <strong>top quartile</strong> of
+            The large percentage shows the estimated total true-range magnitude, not a ± price target. The bar below shows the probability that the next bar's true range lands in the <strong>top quartile</strong> of
             this market's own trailing 100-bar range distribution. The unconditional baseline is 25%
             (marked on the bar); volatility clusters, so a large bar raises the odds of another one.
           </p>
@@ -75,7 +75,7 @@ export default function ExpectedRange({ data, timeframe, isMobile }) {
           fontFamily: T.mono, fontSize: isMobile ? 20 : 24, fontWeight: 700,
           color: T.text1, lineHeight: 1,
         }}>
-          &plusmn;{expected_range_pct.toFixed(2)}%
+          {expected_range_pct.toFixed(2)}%
         </span>
         <span className="terminal-status" style={{
           padding: "3px 8px", borderRadius: "20px",

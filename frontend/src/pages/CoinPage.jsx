@@ -1,12 +1,12 @@
+import SetupPair from "../components/SetupPair.jsx";
+import SignalContext from "../components/SignalContext.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
-import RegimeTransition from "../components/RegimeTransition.jsx";
 import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
-import { RegimeBadge, SignalDot } from "../components/badges.jsx";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
@@ -561,8 +561,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><RegimeBadge regime={data.regime} /><RegimeTransition data={data} /></div>
-        <SignalDot signal={data.signal} />
+        <SetupPair row={data} isMobile={isMobile} transition/>
         {data.signal_confidence != null && (
           <span className="terminal-status" style={{
             padding: "4px 12px", borderRadius: 20,
@@ -596,7 +595,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           symbol={data.symbol}
           timeframe={timeframe}
           onTimeframeChange={setTimeframe}
-          height={isMobile ? 380 : 520}
+          height={isMobile ? 400 : 580}
           signal={data.signal}
           signalFirstSeenAt={data.signal_first_seen_at}
           signalTimeframe={data.timeframe}
@@ -658,10 +657,10 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           </div>
           {data.signal_reason && <details className="analysis-method"><summary>Inspect the engine calculation</summary><p className="analysis-raw">{data.signal_reason}</p></details>}
         </article>
-        <article className="analysis-card analysis-caution">
-          <h2>What disagrees?</h2>
+        <article className="analysis-card">
+          <h2>Signal context</h2>
           {data.confluence && <p className="analysis-lead">{data.confluence.signal_aligned ? 'The 4H and daily signals agree.' : 'The 4H and daily signals differ. Check both before interpreting the setup.'}</p>}
-          {data.signal_warnings?.length > 0 ? <ul>{data.signal_warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul> : <p>No additional warnings were returned in this snapshot. This does not mean the setup is risk-free.</p>}
+          <SignalContext row={data}/>
           {data.smart_money && <p>The whale direction weights position sizes; the long/short bar below counts wallets. These can point in different directions.</p>}
         </article>
       </section>

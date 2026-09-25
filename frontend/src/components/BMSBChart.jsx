@@ -1,3 +1,6 @@
+import { useTheme } from "../ThemeContext.jsx";
+import RangeRuler from "./RangeRuler.js";
+import { candleChange } from "../utils/chartPresentation.js";
 import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import RegimeIcon from "./RegimeIcon.jsx";
@@ -66,11 +69,15 @@ export default function BMSBChart({
   momentum,
   onTimeframeChange,
 }) {
+  const { mode } = useTheme();
+  const resetViewRef = useRef(null);
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
+  const [hoverCandle, setHoverCandle] = useState(null);
+  const [chartRange, setChartRange] = useState(null);
   const [signalMarkerIndex, setSignalMarkerIndex] = useState(null);
   const [error, setError] = useState(null);
   const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
@@ -105,8 +112,8 @@ export default function BMSBChart({
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.02)" },
-        horzLines: { color: "rgba(255,255,255,0.025)" },
+        vertLines: { color: resolveToken("chartGrid") },
+        horzLines: { color: resolveToken("chartGrid") },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -133,7 +140,7 @@ export default function BMSBChart({
       },
       rightPriceScale: {
         borderColor: "rgba(255,255,255,0.06)",
-        scaleMargins: { top: 0.08, bottom: 0.18 },
+        scaleMargins: { top: 0.10, bottom: 0.16 },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
       handleScale: { mouseWheel: true, pinch: true },
@@ -245,6 +252,8 @@ export default function BMSBChart({
     const apiTf = tfConfig.apiTf || tf;
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
+    setHoverCandle(null);
+    setChartRange(null);
     setSignalMarkerIndex(null);
     setRibbon(null);
     setPatterns([]);
@@ -280,6 +289,27 @@ export default function BMSBChart({
           // ── Volume data ──
           if (data.volume?.length > 0) {
             volumeSeries.setData(data.volume);
+          }
+
+          const volumes = new Map((data.volume || []).map(v => [v.time, v.value]));
+          const latestCandle = data.candles.at(-1);
+          const readCandle = candle => setHoverCandle(candle ? {
+            ...candle, change:candleChange(candle), volume:volumes.get(candle.time),
+            volumeUnit:data.volume_unit || baseSymbol,
+            live: candle.time <= Date.now()/1000 && candle.time + (apiTf === '1d' ? 86400 : 14400) > Date.now()/1000,
+          } : null);
+          readCandle(latestCandle);
+          chart.subscribeCrosshairMove(param => {
+            if (cancelled) return;
+            const candle = param.seriesData?.get(candleSeries);
+            readCandle(candle?.open != null ? candle : latestCandle);
+          });
+          if (data.expected_range && data.expected_range.timeframe === apiTf) {
+            const forecast = data.expected_range;
+            setChartRange(forecast);
+            candleSeries.attachPrimitive(new RangeRuler({reference:forecast.reference_price,
+              percentage:forecast.expected_range_pct, lastIndex:data.candles.length-1,
+              horizon:apiTf === '1d' ? '24h' : '4h'}));
           }
 
           // Anchor the signal to its recorded first-seen candle, never the live bar.
@@ -368,17 +398,19 @@ export default function BMSBChart({
         if (data.bmsb_ema?.length > 0) bmsbEmaSeries.setData(data.bmsb_ema);
         if (data.bmsb_sma?.length > 0) bmsbSmaSeries.setData(data.bmsb_sma);
 
-        // Show most recent candles at comfortable zoom, not all crammed in
+        // Denser desktop history with a readable minimum candle width on small screens.
         const candleCount = data.candles?.length || 0;
-        const visibleBars = tf === "1d" ? 90 : 120; // ~3 months for 1D, ~20 days for 4H
-        if (candleCount > visibleBars) {
+        resetViewRef.current = () => {
+          candleSeries.priceScale().applyOptions({ autoScale: true });
+          const plotWidth = Math.max(160, (containerRef.current?.clientWidth || 900) - 80);
+          const preferredBars = tf === "1d" ? 150 : 180;
+          const visibleBars = Math.min(preferredBars, Math.max(40, Math.floor(plotWidth / 4)));
           chart.timeScale().setVisibleLogicalRange({
-            from: candleCount - visibleBars,
-            to: candleCount + 5,
+            from: Math.max(-1, candleCount - visibleBars),
+            to: candleCount + 7,
           });
-        } else {
-          chart.timeScale().fitContent();
-        }
+        };
+        resetViewRef.current();
         setLoading(false);
       })
       .catch(err => {
@@ -397,11 +429,12 @@ export default function BMSBChart({
 
     return () => {
       cancelled = true;
+      resetViewRef.current = null;
       ro.disconnect();
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed]);
+  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode]);
 
   // Build chart on mount and when dependencies change
   useEffect(() => {
@@ -604,12 +637,9 @@ export default function BMSBChart({
   const momColor = momentum != null ? (momentum >= 0 ? "#22c55e" : "#ef4444") : null;
 
   return (
-    <div style={{
+    <div className="price-chart-panel" style={{
       width: "100%",
-      borderRadius: 12,
       overflow: "hidden",
-      border: "1px solid rgba(255,255,255,0.06)",
-      background: "rgba(9,22,25,0.6)",
       marginBottom: 14,
       position: "relative",
     }}>
@@ -653,7 +683,7 @@ export default function BMSBChart({
 
           {/* CTO ribbon state (display only) */}
           {ribbon && (
-            <span title={`CTO ${ribbon.current}${ribbon.current === "grey" && ribbon.last_actionable ? ` (last trend ${ribbon.last_actionable})` : ""}. Display only; not used by signals.`} style={{
+            <span title={`CTO ${ribbon.current} (closed candles)${ribbon.current === "grey" && ribbon.last_actionable ? ` (last trend ${ribbon.last_actionable})` : ""}. Display only; not used by signals.`} style={{
               padding: "2px 7px", fontSize: 9, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
               color: RIBBON_COLOR[ribbon.current], border: `1px solid ${RIBBON_COLOR[ribbon.current]}40`,
             }}>
@@ -706,6 +736,7 @@ export default function BMSBChart({
 
         {/* Right: pressure toggle + timeframe toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price">Reset view</button>
           {/* Pressure levels toggle */}
           <button
             onClick={() => setShowPressure(p => !p)}
@@ -726,7 +757,7 @@ export default function BMSBChart({
               display: "flex", alignItems: "center", gap: 3,
             }}
           >
-            {pressureLoading ? "Loading levels…" : "Smart money levels"}
+            {pressureLoading ? "Loading…" : <><span className="chart-levels-label">Smart money levels</span><span className="chart-levels-label-short">Levels</span></>}
           </button>
 
           <HelpTip title="Smart money levels"><p>Shows available liquidation clusters and tracked stop, take-profit and limit-order levels for this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
@@ -834,8 +865,27 @@ export default function BMSBChart({
         </div>
       )}
 
+      <div className="candle-inspector" aria-label="Candle details" style={{padding:'8px 18px',minHeight:44,borderBottom:`1px solid ${T.border}`,fontFamily:T.mono,fontSize:11,color:T.text3,display:'flex',flexDirection:'column',gap:7}}>
+        {hoverCandle ? <>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
+            <span>{new Date(hoverCandle.time*1000).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} UTC · {activeTimeframe.toUpperCase()}</span>
+            <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? '#97FCE4' : '#d8a094'}}>Candle {hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
+            <span>Volume {Number.isFinite(hoverCandle.volume) ? new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(hoverCandle.volume) : '—'} {hoverCandle.volumeUnit}</span>
+            {hoverCandle.live && <span style={{color:'#91b9e8'}}>Live candle</span>}
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{['open','high','low','close'].map(key=><span key={key}>{key[0].toUpperCase()} <span style={{color:T.text2}}>{new Intl.NumberFormat('en',{maximumSignificantDigits:7}).format(hoverCandle[key])}</span></span>)}</div>
+        </> : <span>Move over a candle to inspect its change and volume.</span>}
+      </div>
+
       {/* ── Chart container ── */}
-      <div ref={containerRef} style={{ width: "100%", height }} />
+      <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
+      {!loading && !error && <div style={{padding:'10px 18px',fontSize:11,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
+        {chartRange ? <><strong style={{color:'#91b9e8'}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong> <HelpTip title="Range ruler" width={360}>
+          <p>The ruler's full height represents the estimated true-range magnitude ({chartRange.atr_mult} × ATR14). It is centred on the reference price for illustration; its ends are not forecast highs or lows.</p>
+          <p>Chance of a top-quartile range: {Math.round(chartRange.probability*100)}%, compared with a 25% baseline. This is not directional confidence or a price containment interval.</p>
+          <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()}. The estimate can change while the source candle is open.</p>
+        </HelpTip><span style={{marginLeft:8,fontSize:10}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
+      </div>}
       {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
         <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex == null ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
         {signalMarkerIndex != null && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}

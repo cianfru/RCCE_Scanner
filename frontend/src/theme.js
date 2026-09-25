@@ -227,6 +227,9 @@ export const REGIME_META = {
 // ─── SIGNAL METADATA ────────────────────────────────────────────────────────
 
 export const SIGNAL_META = {
+  LIGHT_SHORT:  { color: "#cf9185", label: "LIGHT SHORT", dot: "\u25cf" },
+  STRONG_SHORT: { color: "#f87171", label: "STRONG SHORT", dot: "\u25cf" },
+  REVIVAL_SEED_CONF: { color: "#b8fff0", label: "REVIVAL CONFIRMED", dot: "\u25cf" },
   STRONG_LONG:  { color: "#34d399", label: "STRONG LONG",  dot: "\u25cf" },
   LIGHT_LONG:   { color: "#6ee7b7", label: "LIGHT LONG",   dot: "\u25cf" },
   ACCUMULATE:   { color: "#97FCE4", label: "ACCUMULATE",    dot: "\u25c6" },

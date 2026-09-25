@@ -284,6 +284,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    from setup_research_service import stop_setup_research
+    await stop_setup_research(cache)
+
     # Force-save OHLCV cache on shutdown (survives redeploys)
     try:
         from data_fetcher import _ohlcv_store
@@ -1378,13 +1381,16 @@ async def confluence_for_symbol(symbol: str):
 async def chart_data(
     symbol: str,
     timeframe: str = Query("1d", description="4h or 1d"),
-    limit: int = Query(365, description="Number of candles"),
+    limit: int = Query(365, ge=50, le=600, description="Number of displayed candles"),
 ):
     """Return OHLCV + BMSB overlay data for charting."""
     from data_fetcher import fetch_ohlcv, _ohlcv_store, _cache
     from engines.heatmap_engine import compute_bmsb_series
-    from engines.cto_engine import compute_cto_series
+    from engines.cto_engine import compute_cto_chart, CTO_HISTORY_BARS
     import numpy as np
+
+    if timeframe not in ("4h", "1d"):
+        raise HTTPException(status_code=422, detail="Use 4h or 1d")
 
     from hyperliquid_universe import MARKETS
     symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
@@ -1396,7 +1402,7 @@ async def chart_data(
         raise HTTPException(status_code=422, detail=f"Spot analysis unavailable: {reason}")
 
     # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
-    effective_limit = min(limit, 500)
+    effective_limit = CTO_HISTORY_BARS + 1  # identical CTO warmup to the scanner
     ohlcv = await fetch_ohlcv(symbol, timeframe, limit=effective_limit)
 
     # If cache returned too few candles (e.g. cold-start with sparse data),
@@ -1446,27 +1452,23 @@ async def chart_data(
     # Compute CTO Line overlay on chart-timeframe data
     cto = {"cto_fast": [], "cto_slow": []}
     try:
-        cto = compute_cto_series(
-            ohlcv["high"], ohlcv["low"], ohlcv["close"], ohlcv["timestamp"],
-        )
+        cto = compute_cto_chart(ohlcv, timeframe, time.time() * 1000)
     except Exception:
         logger.warning("CTO computation failed for %s", symbol)
 
-    # CTO ribbon and (1D only) chart patterns: display only, never read by signals
-    cto_ribbon = None
+    # CTO ribbon and (1D only) chart patterns on closed candles: display only, never read by signals
+    cto_ribbon, patterns = None, []
     try:
+        from candle_snapshot import closed_candles
         from engines.larsson_engine import compute_larsson_chart
-        cto_ribbon = compute_larsson_chart(ohlcv["close"], ohlcv["timestamp"])
+        closed = closed_candles(ohlcv, timeframe, time.time() * 1000)
+        cto_ribbon = compute_larsson_chart(closed["close"], closed["timestamp"])
         cto_ribbon.pop("version", None)
-    except Exception:
-        logger.warning("CTO ribbon computation failed for %s", symbol)
-    patterns = []
-    if timeframe == "1d":
-        try:
+        if timeframe == "1d":
             from engines.patterns_engine import chart_patterns
-            patterns = chart_patterns(ohlcv)
-        except Exception:
-            logger.warning("Pattern detection failed for %s", symbol)
+            patterns = chart_patterns(closed)
+    except Exception:
+        logger.warning("CTO ribbon / pattern computation failed for %s", symbol)
 
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
@@ -1500,16 +1502,40 @@ async def chart_data(
             result.append({"time": ts, "value": round(val, interp_prec)})
         return result
 
+    first_display_time = candles[-min(limit, len(candles))]["time"] if candles else 0
+    def display(points):
+        return [p for p in points if p["time"] >= first_display_time]
+
+    if cto_ribbon and cto_ribbon["time"]:
+        k = next((i for i, t in enumerate(cto_ribbon["time"]) if t >= first_display_time), len(cto_ribbon["time"]))
+        for key in ("time", "e32", "e35", "e50", "e58", "state"):
+            cto_ribbon[key] = cto_ribbon[key][k:]
+    for p in patterns:
+        p["anchors"] = [a for a in p["anchors"] if a["time"] >= first_display_time]
+        p["start"] = max(p["start"], first_display_time)
+
+    # Same magnitude-only model as the scanner, evaluated on this chart's timeframe.
+    from engines.range_forecast import forecast as range_forecast
+    chart_range = range_forecast(ohlcv["high"], ohlcv["low"], ohlcv["close"], timeframe)
+    if chart_range is not None and candles:
+        chart_range = {**chart_range, "reference_price": candles[-1]["close"],
+                       "source_candle_time": candles[-1]["time"], "as_of": int(time.time()),
+                       "timeframe": timeframe}
+
     return {
         "symbol": symbol,
         "timeframe": timeframe,
-        "candles": candles,
-        "volume": volume,
-        "bmsb_mid": _interpolate(bmsb["mid"]),
-        "bmsb_ema": _interpolate(bmsb["ema"]),
-        "bmsb_sma": _interpolate(bmsb["sma"]),
-        "cto_fast": cto["cto_fast"],
-        "cto_slow": cto["cto_slow"],
+        "expected_range": chart_range,
+        "volume_unit": symbol.split("/")[0],
+        "candles": candles[-limit:],
+        "volume": volume[-limit:],
+        "bmsb_mid": display(_interpolate(bmsb["mid"])),
+        "bmsb_ema": display(_interpolate(bmsb["ema"])),
+        "bmsb_sma": display(_interpolate(bmsb["sma"])),
+        "cto_fast": display(cto["cto_fast"]),
+        "cto_slow": display(cto["cto_slow"]),
+        "cto_snapshot": cto.get("cto_snapshot"),
+        "cto_preview": cto.get("cto_preview"),
         "cto_ribbon": cto_ribbon,
         "patterns": patterns,
     }
@@ -4049,3 +4075,41 @@ async def exit_shadow_summary(recent: int = Query(20, ge=0, le=200)):
     """Forward shadow comparison of RCCE exit policies (research only; see exit_shadow.py)."""
     import exit_shadow
     return exit_shadow.get().summary(recent=recent)
+
+
+@app.get("/api/opportunities/transitions")
+async def opportunity_transitions(limit: int = Query(100, ge=1, le=500)):
+    """Persisted lifecycle changes; repeated scans do not create repeat alerts."""
+    import json
+    from scanner import cache
+    journal = getattr(cache, "opportunity_journal", None)
+    if journal is None:
+        return {"events": [], "available": False}
+    events = journal.recent(limit)
+    for event in events:
+        event["opportunity"] = json.loads(event.pop("payload"))
+    return {"events": events, "available": True}
+
+
+@app.get("/api/research/setups")
+async def research_setups():
+    """Read-only forward paper outcomes, explicitly separate from live positions."""
+    from scanner import cache
+    ledger = getattr(cache, "paper_ledger", None)
+    if ledger is None:
+        return dict(mode="paper", validation_status="unvalidated", available=False,
+                    strategies={}, records=[], error=getattr(cache, "paper_research_error", None))
+    return dict(ledger.report(), available=True,
+                updated_at=getattr(cache, "paper_research_updated_at", None),
+                error=getattr(cache, "paper_research_error", None))
+
+
+@app.get("/api/research/setups/{setup_id}/events")
+async def research_setup_events(setup_id: str):
+    import json
+    from scanner import cache
+    ledger = getattr(cache, "paper_ledger", None)
+    events = ledger.events(setup_id) if ledger else []
+    for event in events:
+        event["state"] = json.loads(event.pop("payload"))
+    return dict(mode="paper", events=events)

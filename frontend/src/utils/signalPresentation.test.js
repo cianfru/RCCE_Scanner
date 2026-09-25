@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {signalContext, setupAlignment, signalDirection} from './signalPresentation.js';
+import {candleChange, rangeRuler} from './chartPresentation.js';
+test('missing core names and consequences are visible without a bearish verdict',()=>{
+ const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Whale consensus BULLISH (80%)']};
+ const c=signalContext(row);assert.equal(c[0].kind,'missing');assert.match(c[0].text,/Funding/);assert.match(c[0].text,/Strong Long/);assert.equal(c[1].kind,'bullish');assert.equal(setupAlignment(row).state,'incomplete');
+});
+test('bearish context supports shorts but conflicts with longs',()=>{
+ assert.equal(signalContext({signal:'LIGHT_SHORT',signal_warnings:['Whale consensus BEARISH']})[0].kind,'bearish');
+ assert.equal(signalContext({signal:'LIGHT_LONG',signal_warnings:['Whale consensus BEARISH']})[0].kind,'conflict');
+ assert.equal(signalContext({signal:'STRONG_LONG',signal_warnings:['BEAR-DIV active — STRONG_LONG blocked']})[0].kind,'caution');
+});
+test('only actual entry signals earn directional alignment; transitions do not glow',()=>{
+ assert.equal(setupAlignment({regime:'MARKUP',signal:'STRONG_LONG'}).strength,2);
+ assert.equal(setupAlignment({regime:'MARKUP',signal:'LIGHT_LONG'}).strength,1);
+ assert.equal(setupAlignment({regime:'MARKDOWN',signal:'LIGHT_SHORT'}).state,'bearish');
+ for(const signal of ['TRIM','TRIM_HARD','NO_LONG','RISK_OFF','WAIT']) assert.equal(signalDirection(signal),null);
+ for(const regime of ['BLOWOFF','CAP','ABSORBING','ACCUM','FLAT']) assert.equal(setupAlignment({regime,signal:'STRONG_LONG'}).strength,0);
+ assert.equal(setupAlignment({regime:'MARKDOWN',signal:'LIGHT_LONG'}).state,'conflict');
+ assert.equal(setupAlignment({regime:'MARKUP',signal:'STRONG_LONG',entry_blocked:true}).strength,0);
+});
+test('candle return is open to close and rejects invalid opens',()=>{
+ assert.equal(candleChange({open:100,close:102}),2);assert.equal(candleChange({open:100,close:97}),-3);assert.equal(candleChange({open:0,close:10}),null);
+});
+test('range ruler illustrates total magnitude without doubling it',()=>{
+ const r=rangeRuler(100,6);assert.equal(r.top-r.bottom,6);assert.equal(r.size,6);assert.equal(rangeRuler(0,6),null);assert.equal(rangeRuler(100,NaN),null);
+});

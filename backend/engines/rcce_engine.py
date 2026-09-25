@@ -222,8 +222,19 @@ def _percentile_rolling(arr: np.ndarray, n: int, pct: float) -> np.ndarray:
     except TypeError:
         _pct_kwargs = {"interpolation": "linear"}
 
-    for i in range(n - 1, len(arr)):
-        window = arr[i - n + 1 : i + 1]
+    # Batch complete windows; preserve the original NaN-skipping semantics
+    # for partial windows. This avoids thousands of percentile dispatches
+    # per historical decision without changing the interpolation method.
+    windows = np.lib.stride_tricks.sliding_window_view(arr, n)
+    complete = ~np.isnan(windows).any(axis=1)
+    positions = np.flatnonzero(complete)
+    if len(positions):
+        out[n - 1 + positions] = np.percentile(
+            windows[positions], pct, axis=1, **_pct_kwargs
+        )
+    for j in np.flatnonzero(~complete):
+        i = j + n - 1
+        window = windows[j]
         valid = window[~np.isnan(window)]
         if len(valid) > 0:
             out[i] = np.percentile(valid, pct, **_pct_kwargs)

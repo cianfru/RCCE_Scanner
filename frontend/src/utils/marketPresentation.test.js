@@ -19,3 +19,7 @@ test('ranks eligible entries by existing score, without changing input order',()
  assert.deepEqual(bestEntrySetups(rows).map(r=>r.symbol),['ETH','SOL']);
  assert.equal(rows[0].symbol,'SOL');
 });
+test('shortlist respects lifecycle and includes confirmed shorts',()=>{
+ const rows=[{symbol:'BTC',signal:'STRONG_LONG',priority_score:90,opportunity:{status:'expired'}},{symbol:'ETH',signal:'LIGHT_SHORT',priority_score:60,opportunity:{status:'confirmed'}},{symbol:'SOL',signal:'LIGHT_LONG',priority_score:70,signal_status:'unavailable'}];
+ assert.deepEqual(bestEntrySetups(rows).map(r=>r.symbol),['ETH']);
+});
