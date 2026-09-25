@@ -313,3 +313,27 @@ Readings:
 | F0-flip-nostop-nosig | +21.8% | -40.1% | 72 | 43% | 148 |
 
 Without resets the 60-bar holds still lead (+62-64% vs B1 +48.7%, drawdown -27% vs -32%); the Larsson flip exits fall behind B1, so window truncation was not what held them back.
+
+### Confirmation on unseen coins (run `scen_secondary`, 30 coins, windows 1-9)
+
+Secondary universe (top quote volume in the 90 days before W1, listed before 2020-02; later-delisted or renamed coins such as FTT, MATIC, old BTT and FTM included): FTM MATIC FTT ATOM LTC ETC TRX EOS VET THETA ALGO OMG XTZ CHZ BCH ONE CELR IOTX KAVA DENT XLM BTT IOST HBAR IOTA FET NEO WIN HOT QTUM.
+
+| Candidate | Primary W1-9 | Secondary W1-9 | Secondary worst DD | Continuous (primary, no resets) | Declared confirmation |
+|---|---:|---:|---:|---:|---|
+| B1 baseline | +53.9% | +12.5% | -26.3% | +48.7% (DD -31.7%) | - |
+| `F0-t60-s12-nosig` (hold 60, 12% stop, ignore RCCE exits) | +83.4% | +22.4% | -27.3% | +62.2% (DD -27.6%) | no (DD 1 pt worse) |
+| `F0-t60-s8-nosig` | +70.6% | +26.7% | -27.3% | +63.6% (DD -27.4%) | no (DD 1 pt worse) |
+| `F0-t60-nostop-nosig` (hold 60, no stop) | +69.9% | +31.5% | -22.4% | +35.6% (DD -33.5%) | **yes** |
+| `F0-flip-nostop-nosig` | +42.4% | +4.9% | -30.6% | +21.8% (DD -40.1%) | no |
+| H1 `F0-flip-s12-nosig` (Larsson flip, 12% stop) | +58.4% | +16.3% | -29.5% | +39.4% (DD -31.8%) | no |
+
+Reality Check over the five candidates on the secondary set: p = 0.36 (best `F0-t60-nostop-nosig`). Over the full 78-scenario family on the primary set: p = 0.58.
+
+Tail risk: `F0-t60-nostop-nosig` has no stop; on the primary set its three worst trades lost $287, $216 and $211 per $10k window (B1's worst: $102), with 11 trades losing more than $150 (B1: none).
+
+### Verdict of the scenario search
+
+- **No statistically real edge.** Neither Reality Check comes near p < 0.10.
+- **The Larsson Line adds nothing as an exit for RCCE entries.** Its flip exit (H1) trails the 60-bar holds everywhere and falls behind B1 without resets.
+- **One consistent direction, not yet proven:** keep RCCE's entries, hold about 60 bars, and ignore TRIM / RISK_OFF. The 60-bar holds beat B1's compounded return on both universes; the 12% / 8% stop versions also beat it without resets, while the no-stop version, the only one to pass the declared confirmation rule, loses to B1 without resets and carries much larger single-trade losses.
+- Mining more variations of the same nine windows would only produce more results like these. The next evidence has to come from data not yet used: the holdout (run once) or forward shadow logging.
