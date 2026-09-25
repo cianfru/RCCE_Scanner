@@ -265,3 +265,51 @@ That is 36 F0 + 42 F1 = 78 scenarios, against B1 and B3.
 **Confirmation on unseen coins:** the three scenarios with the highest compounded return, the one with the best median-window Sharpe if different, and H1 are rerun on a secondary universe of 30 Binance USDT pairs chosen by quote volume in the 90 days before W1 (information available at the time; stablecoins, fiat, wrapped and leveraged tokens and the primary ten excluded; listed before 2020-02 so they are warmed up by W1). A candidate is confirmed only if it also beats B1 there on compounded return and worst drawdown.
 
 **Diagnostic:** the same candidates run once without window resets (one capital from W1 start to W9 end) to show how much the 180-day resets truncate trend trades. Not an acceptance criterion.
+
+### Results: primary universe (run `scen_primary`)
+
+**White's Reality Check over all 78 scenarios: family p = 0.58** (best: `F0-t60-s12-nosig`). The declared bar for a real edge is p < 0.10: **not met**.
+
+Top 12 by compounded return, then B1/B3, then the bottom 3 (all 80 rows are in `summary.json`):
+
+| Scenario | Compounded W1-9 | Worst window DD | Windows beating B1 | Trades | Win rate | Avg hold | Naive p vs B1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| F0-t60-s12-nosig | +83.4% | -19.8% | 5.0/9 | 211 | 36% | 31 | 0.09 |
+| F0-t60-s8-nosig | +70.6% | -20.0% | 3.0/9 | 244 | 30% | 25 | 0.19 |
+| F0-t60-nostop-nosig | +69.9% | -18.1% | 4.0/9 | 151 | 45% | 48 | 0.30 |
+| F0-t60-s12-sig | +67.5% | -19.3% | 4.0/9 | 238 | 37% | 26 | 0.22 |
+| F0-grey-s8-nosig | +64.5% | -21.1% | 4.0/9 | 209 | 30% | 30 | 0.20 |
+| F0-grey-s12-nosig | +62.0% | -20.6% | 4.0/9 | 178 | 33% | 37 | 0.24 |
+| F1-t60-s12-nosig | +60.1% | -17.0% | 2.0/9 | 194 | 37% | 30 | 0.41 |
+| F0-flip-s12-nosig | +58.4% | -23.9% | 3.0/9 | 153 | 33% | 44 | 0.31 |
+| F0-grey-s8-sig | +57.1% | -21.1% | 3.0/9 | 258 | 30% | 23 | 0.35 |
+| F0-t60-s8-sig | +56.4% | -20.0% | 3.0/9 | 273 | 30% | 22 | 0.46 |
+| F0-grey-s12-sig | +56.1% | -20.1% | 4.0/9 | 221 | 33% | 28 | 0.39 |
+| F0-t60-nostop-sig | +55.2% | -18.1% | 4.0/9 | 175 | 44% | 40 | 0.52 |
+| B1 | +53.9% | -24.4% | 0.0/9 | 228 | 28% | 27 | - |
+| B3 | +27.7% | -21.4% | 2.0/9 | 206 | 28% | 26 | - |
+| F1-t30-s8-nosig | +13.1% | -18.2% | 2.0/9 | 302 | 37% | 17 | 0.96 |
+| F1-t30-s12-sig | +11.1% | -15.1% | 1.0/9 | 279 | 39% | 18 | 0.96 |
+| F1-t30-s8-sig | +9.0% | -18.2% | 2.0/9 | 316 | 37% | 16 | 0.97 |
+
+Named hypothesis H1 (`F0-flip-s12-nosig`): +58.4% vs B1 +53.9%, worst drawdown -23.9% vs -24.4%.
+
+Readings:
+- The best scenario is a **time-exit control**, not a Larsson rule: hold 60 bars, 12% stop, ignore RCCE's exit signals.
+- The consistent pattern across the top rows is *hold longer, use a wider stop, and ignore TRIM / RISK_OFF*. It matches the earlier exit study (8% stops and early breakeven cut winners).
+- The Larsson flip exit with a 12% stop (H1) is roughly level with B1; the ribbon adds nothing a 60-bar hold does not.
+- With 78 variations tried, the best result is well within luck (family p = 0.58).
+
+### Diagnostic: no window resets (run `scen_continuous`, 2021-10-21 to 2026-03-29, one capital)
+
+| Scenario | Total return | Max drawdown | Trades | Win rate | Avg hold |
+|---|---:|---:|---:|---:|---:|
+| F0-t60-s8-nosig | +63.6% | -27.4% | 214 | 26% | 30 |
+| F0-t60-s12-nosig | +62.2% | -27.6% | 180 | 32% | 37 |
+| B1 | +48.7% | -31.7% | 185 | 22% | 35 |
+| F0-flip-s12-nosig | +39.4% | -31.8% | 115 | 30% | 64 |
+| F0-t60-nostop-nosig | +35.6% | -33.5% | 127 | 44% | 60 |
+| B3 | +27.1% | -31.4% | 170 | 21% | 34 |
+| F0-flip-nostop-nosig | +21.8% | -40.1% | 72 | 43% | 148 |
+
+Without resets the 60-bar holds still lead (+62-64% vs B1 +48.7%, drawdown -27% vs -32%); the Larsson flip exits fall behind B1, so window truncation was not what held them back.
