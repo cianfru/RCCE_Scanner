@@ -432,3 +432,16 @@ Declared 2026-09-25 after the validity study above and before any strategy resul
 | L3X100 | +47.7% | -26.1% | 142 | 3 | L3 (+45.7%) |
 
 White's Reality Check over the five against B1: p = 0.45. Every parent reproduces its earlier result exactly. The pattern rules move their parents by -5 to +2 points, consistent with the validity study: the detector finds the patterns, but they carry no edge over plain level events in 2021-2026.
+
+### Agreement with Pro's pattern tags (run `pattern_agreement`, frozen `patterns-1`)
+
+Diagnostic only; Pro's tags (15 Apr - 16 Sep 2026) lie inside the holdout window, so agreement is reported and no returns. A tag counts as matched when the detector confirms the same family on the same pair within ±1 day, with its neckline within 1% of Pro's level where known.
+
+| | Value |
+|---|---:|
+| Pro USD-chart tags | 55 |
+| Matched by family and level (recall) | 5 (9%) |
+| Any detector pattern confirming within ±1 day | 11 (20%) |
+| Detector confirmations on those pairs and dates matching a Pro tag (precision) | 5 of 31 (16%) |
+
+By family: rectangle 2/27, triangle 2/14, head & shoulders 1/12, cup & handle 0/2. This is the same order as level agreement in the research (23% recall, 13% precision): Pro draws patterns more loosely than a fixed geometric rule (for example a "rectangle" that price had already left and re-entered), and its picker is described as AI-based.
