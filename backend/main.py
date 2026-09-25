@@ -1452,13 +1452,14 @@ async def chart_data(
     except Exception:
         logger.warning("CTO computation failed for %s", symbol)
 
-    # Larsson Line ribbon and (1D only) chart patterns: display only, never read by signals
-    larsson = None
+    # CTO ribbon and (1D only) chart patterns: display only, never read by signals
+    cto_ribbon = None
     try:
         from engines.larsson_engine import compute_larsson_chart
-        larsson = compute_larsson_chart(ohlcv["close"], ohlcv["timestamp"])
+        cto_ribbon = compute_larsson_chart(ohlcv["close"], ohlcv["timestamp"])
+        cto_ribbon.pop("version", None)
     except Exception:
-        logger.warning("Larsson Line computation failed for %s", symbol)
+        logger.warning("CTO ribbon computation failed for %s", symbol)
     patterns = []
     if timeframe == "1d":
         try:
@@ -1509,7 +1510,7 @@ async def chart_data(
         "bmsb_sma": _interpolate(bmsb["sma"]),
         "cto_fast": cto["cto_fast"],
         "cto_slow": cto["cto_slow"],
-        "larsson": larsson,
+        "cto_ribbon": cto_ribbon,
         "patterns": patterns,
     }
 

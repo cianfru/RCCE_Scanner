@@ -31,9 +31,9 @@ const SIGNAL_MARKER = {
   NO_LONG:      { color: "#d8b4fe", shape: "arrowDown", position: "aboveBar", text: "NO LONG" },
 };
 
-// ─── Larsson Line ribbon colours (display only) ───────────────────────────────
-const LARSSON_COLOR = { gold: "#e3b341", blue: "#4f8fe0", grey: "#8b8f94" };
-const LARSSON_LINES = [
+// ─── CTO ribbon colours (display only) ────────────────────────────────────────
+const RIBBON_COLOR = { gold: "#e3b341", blue: "#4f8fe0", grey: "#8b8f94" };
+const RIBBON_LINES = [
   { key: "e32", width: 2, alpha: "" },
   { key: "e35", width: 1, alpha: "80" },
   { key: "e50", width: 1, alpha: "80" },
@@ -78,7 +78,7 @@ export default function BMSBChart({
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
-  const [larsson, setLarsson] = useState(null);
+  const [ribbon, setRibbon] = useState(null);
   const [patterns, setPatterns] = useState([]);
   const [showPatterns, setShowPatterns] = useState(false);
   const patternSeriesRef = useRef([]);
@@ -186,9 +186,9 @@ export default function BMSBChart({
       wickDownColor: "rgba(216,160,148,0.65)",
     });
 
-    // ── Larsson Line ribbon (rendered behind BMSB; display only) ──
-    const larssonSeries = LARSSON_LINES.map(l => chart.addSeries(LineSeries, {
-      color: LARSSON_COLOR.grey,
+    // ── CTO ribbon (rendered behind BMSB; display only) ──
+    const ribbonSeries = RIBBON_LINES.map(l => chart.addSeries(LineSeries, {
+      color: RIBBON_COLOR.grey,
       lineWidth: l.width,
       lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: false,
@@ -246,7 +246,7 @@ export default function BMSBChart({
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setSignalMarkerIndex(null);
-    setLarsson(null);
+    setRibbon(null);
     setPatterns([]);
     patternSeriesRef.current = [];
     setError(null);
@@ -268,7 +268,7 @@ export default function BMSBChart({
             const minMove = Math.pow(10, -decimals);
             const pf = { type: "price", precision: decimals, minMove };
             candleSeries.applyOptions({ priceFormat: pf });
-            larssonSeries.forEach(ls => { try { ls.applyOptions({ priceFormat: pf }); } catch(_){} });
+            ribbonSeries.forEach(ls => { try { ls.applyOptions({ priceFormat: pf }); } catch(_){} });
             try { bmsbMidSeries.applyOptions({ priceFormat: pf }); } catch(_){}
             try { bmsbEmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
             try { bmsbSmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
@@ -351,16 +351,16 @@ export default function BMSBChart({
           if (maData.length > 0) ma200Series.setData(maData);
         }
 
-        // ── Larsson Line ribbon: each bar coloured by its state ──
-        const lr = data.larsson;
+        // ── CTO ribbon: each bar coloured by its state ──
+        const lr = data.cto_ribbon;
         if (lr?.time?.length > 0) {
-          LARSSON_LINES.forEach((l, k) => {
-            larssonSeries[k].setData(lr.time.map((t, i) => ({
-              time: t, value: lr[l.key][i], color: `${LARSSON_COLOR[lr.state[i]]}${l.alpha}`,
+          RIBBON_LINES.forEach((l, k) => {
+            ribbonSeries[k].setData(lr.time.map((t, i) => ({
+              time: t, value: lr[l.key][i], color: `${RIBBON_COLOR[lr.state[i]]}${l.alpha}`,
             })));
           });
         }
-        setLarsson(lr?.current ? lr : null);
+        setRibbon(lr?.current ? lr : null);
         setPatterns(Array.isArray(data.patterns) ? data.patterns : []);
 
         // ── BMSB overlay data ──
@@ -651,13 +651,13 @@ export default function BMSBChart({
             </span>
           )}
 
-          {/* Larsson Line state (display only) */}
-          {larsson && (
-            <span title={`Larsson Line ${larsson.current}${larsson.current === "grey" && larsson.last_actionable ? ` (last trend ${larsson.last_actionable})` : ""}. Display only; not used by signals.`} style={{
+          {/* CTO ribbon state (display only) */}
+          {ribbon && (
+            <span title={`CTO ${ribbon.current}${ribbon.current === "grey" && ribbon.last_actionable ? ` (last trend ${ribbon.last_actionable})` : ""}. Display only; not used by signals.`} style={{
               padding: "2px 7px", fontSize: 9, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-              color: LARSSON_COLOR[larsson.current], border: `1px solid ${LARSSON_COLOR[larsson.current]}40`,
+              color: RIBBON_COLOR[ribbon.current], border: `1px solid ${RIBBON_COLOR[ribbon.current]}40`,
             }}>
-              LARSSON {larsson.current.toUpperCase()}
+              CTO {ribbon.current.toUpperCase()}
             </span>
           )}
 
