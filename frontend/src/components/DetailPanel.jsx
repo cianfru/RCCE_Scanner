@@ -10,7 +10,6 @@ import BMSBChart from "./BMSBChart.jsx";
 import ConditionsScorecard from "./ConditionsScorecard.jsx";
 import ConfluencePanel from "./ConfluencePanel.jsx";
 import PositioningPanel from "./PositioningPanel.jsx";
-import ExpectedRange from "./ExpectedRange.jsx";
 import { useWallet } from "../WalletContext.jsx";
 import * as hlClient from "../services/hlClient.js";
 
@@ -547,13 +546,6 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         <div style={{ marginBottom: 16 }}>
           <ZScoreBar z={selected.zscore} isMobile={isMobile} />
         </div>
-
-        {/* Next-bar range forecast (magnitude only) */}
-        <ExpectedRange
-          data={selected.expected_range}
-          timeframe={selected.timeframe}
-          isMobile={isMobile}
-        />
 
         {/* Detailed Metrics */}
         <div style={{

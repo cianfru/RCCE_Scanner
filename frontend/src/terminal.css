@@ -254,3 +254,8 @@
 .terminal-data-table .setup-pair{min-height:22px;padding-block:0;}
 .setup-pair-regime{min-width:0;overflow:hidden;}
 .setup-pair-regime .terminal-status{max-width:100%;overflow:hidden;text-overflow:ellipsis;}
+/* Hover links a locked-in setup to its evidence: the capsule brightens and the
+   conditions and timeframe-agreement cells are outlined in the same colour. */
+.terminal-data-table tbody tr[data-locked="true"]:hover .setup-pair[data-locked="true"]{border-color:color-mix(in srgb,var(--setup-color) 95%,transparent);background:color-mix(in srgb,var(--setup-color) 16%,transparent);}
+.terminal-data-table tbody tr[data-locked="true"]:hover .cell-evidence{box-shadow:inset 0 -2px 0 color-mix(in srgb,var(--t-accent) 55%,transparent);}
+.cell-evidence{transition:box-shadow .15s;}

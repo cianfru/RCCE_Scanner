@@ -6,12 +6,11 @@ import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
+import { col, T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import useViewport from "../hooks/useViewport.js";
 import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
-import ExpectedRange from "../components/ExpectedRange.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
 
@@ -574,7 +573,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             padding: "4px 12px", borderRadius: 20,
             background: T.surface, border: `1px solid ${T.border}`,
             fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
-            color: data.signal_confidence >= 80 ? "#34d399" : data.signal_confidence >= 50 ? "#fbbf24" : T.text3,
+            color: data.signal_confidence >= 80 ? col("#34d399") : data.signal_confidence >= 50 ? T.text2 : T.text3,
           }}>
             Checks {formatPercent(data.signal_confidence)}
           </span>
@@ -685,7 +684,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           <SmartMoneyPanel data={data}/>
         </div>
       </section>
-      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><ExpectedRange data={data.expected_range} timeframe={timeframe} isMobile={isMobile}/><MetricsPanel data={data}/></section>
+      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Recent observations and underlying engine values. Each trend uses its own scale.</p><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
       <CoinChat symbol={data.symbol} timeframe={timeframe} isMobile={isMobile} />
