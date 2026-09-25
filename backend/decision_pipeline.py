@@ -113,7 +113,9 @@ def evaluate_decision(row: dict, context: dict, state, *, as_of: float,
     row.update(regime_changes_7d=len(changes), regime_unstable=len(changes) >= 3)
 
     close_time = row.get("signal_bar_close_time")
-    ttl = TF_MS.get(row.get("timeframe"), TF_MS["4h"]) / 1000 + 300
+    # One bar plus a 20-minute grace: the drip refreshes every market after each
+    # close (scan_schedule), which takes several minutes across the universe.
+    ttl = TF_MS.get(row.get("timeframe"), TF_MS["4h"]) / 1000 + 1200
     candle_age = as_of - close_time if isinstance(close_time, (int, float)) and math.isfinite(close_time) else None
     candle_status = "missing" if candle_age is None else "future" if candle_age < 0 else "stale" if candle_age > ttl else "ready"
     quality["candles"] = dict(source="market_candles", observed_at=close_time, age_seconds=candle_age,
