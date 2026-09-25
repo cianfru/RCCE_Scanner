@@ -28,6 +28,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 LEN_LONG: int = 200
 LEN_SHORT: int = 30
+MARKDOWN_TREND_GATE: bool = True   # require a falling LEN_SHORT-bar trend for MARKDOWN
 LEN_ENERGY_FAST: int = 14
 LEN_ENERGY_SLOW: int = 50
 LEN_BETA: int = 100
@@ -440,6 +441,16 @@ def _vol_scale_factor(atr_ratio: float) -> float:
 # Regime probability vectors (vectorised)
 # ---------------------------------------------------------------------------
 
+def _log_return(close: np.ndarray, n: int) -> np.ndarray:
+    """n-bar log return, NaN for the first n bars."""
+    close = np.asarray(close, dtype=np.float64)
+    out = np.full(len(close), np.nan)
+    if len(close) > n:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[n:] = np.log(close[n:] / close[:-n])
+    return out
+
+
 def _soft_gate(x: np.ndarray, center: float, width: float = 0.15) -> np.ndarray:
     """Smooth sigmoid transition: 0→1 over ~2*width around center.
 
@@ -456,6 +467,7 @@ def _calc_regime_probabilities(
     vol_low: np.ndarray,
     vol_high: np.ndarray,
     vol_scale: float = 1.0,
+    trend: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, ...]:
     """Return six probability arrays (markup, blowoff, reacc, markdown,
     cap, accum) normalised so they sum to 1 at each bar.
@@ -518,6 +530,12 @@ def _calc_regime_probabilities(
 
     # MARKDOWN: z < 0, boosted by high-vol
     p_md = vol_safe * 2.0 * _soft_gate(-z_safe, 0.0, 0.2) * vh_boost
+    # ...and only while price is actually falling. ``trend`` is the LEN_SHORT-bar
+    # log return. Without this gate a volatile leader consolidating near its highs,
+    # with z just under its regression line, scored as MARKDOWN (HYPE and INJ,
+    # September 2026). Validation: docs/reviews/markdown-trend-gate.md.
+    if trend is not None and MARKDOWN_TREND_GATE:
+        p_md = p_md * _soft_gate(-np.nan_to_num(np.asarray(trend, dtype=np.float64), nan=0.0), 0.0, 0.03)
 
     # CAPITULATION: z below cap threshold, boosted by low-vol
     p_cap = np.maximum(0.0, -z_safe) * _soft_gate(-z_safe, -z_cap, 0.3) * vl_boost
@@ -884,7 +902,7 @@ def compute_rcce(
     p_markup, p_blowoff, p_reacc, p_md, p_cap, p_acc = (
         _calc_regime_probabilities(
             z_series, energy_series, vol_series, vol_low_series, vol_high_series,
-            vol_scale=vol_scale,
+            vol_scale=vol_scale, trend=_log_return(close, LEN_SHORT),
         )
     )
     prob_stack = np.vstack(
