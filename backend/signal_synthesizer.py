@@ -298,7 +298,9 @@ def _synthesize_signal(
     funding_rate = (positioning or {}).get("funding_rate", 0.0)
     top_trader_lsr = (positioning or {}).get("top_trader_lsr", 1.0)
 
-    fear_greed = (sentiment or {}).get("fear_greed_value", 50)
+    # None when the index is unavailable: never stand in a neutral 50 for a missing reading.
+    fear_greed = (sentiment or {}).get("fear_greed_value")
+    fg_known = fear_greed is not None
 
     stable_trend = (stablecoin or {}).get("trend", "STABLE")
 
@@ -359,7 +361,7 @@ def _synthesize_signal(
     cond_heat_ok = heat < heat_block
     cond_no_climax = not is_climax
     cond_funding_ok = bool(positioning and positioning.get("funding_regime") is not None) and funding_regime != "CROWDED_LONG"
-    cond_not_greedy = bool(sentiment and sentiment.get("fear_greed_value") is not None) and fear_greed < FNG_GREED
+    cond_not_greedy = fg_known and fear_greed < FNG_GREED
     cond_liquidity_ok = bool(stablecoin and stablecoin.get("trend") is not None) and stable_trend != "CONTRACTING"
 
     core_conditions = [
@@ -548,9 +550,14 @@ def _synthesize_signal(
 
     # 1a. Heat force-trim (extreme overextension, regime-adaptive)
     if heat >= heat_force:
+        # Heat measures distance from the weekly BMSB in either direction. Above the
+        # band this is overextension; far below it the same rule acts as a crash exit.
+        # Both behaviours are part of the backtested strategy; only the wording differs.
+        below = result.get("heat_direction", 0) < 0
         out.signal = "TRIM"
-        out.reason = f"Heat={heat} >= {heat_force} (extreme overextension)"
-        out.warnings = [f"Heat at {heat}/100 — forced exit"]
+        out.reason = (f"Heat={heat} >= {heat_force} (far below the weekly band)" if below
+                      else f"Heat={heat} >= {heat_force} (extreme overextension)")
+        out.warnings = [f"Heat at {heat}/100 {'below' if below else 'above'} the weekly band — forced exit"]
         return out
 
     # 1b. BLOWOFF exits (dynamic z-thresholds scaled by vol_scale)
@@ -669,11 +676,17 @@ def _synthesize_signal(
     if stable_trend == "CONTRACTING":
         warnings.append("Stablecoin supply contracting — reduced market liquidity")
     # HyperLens warnings
+    # The trend is weighted mostly by position size; the net ratio counts wallets.
+    # Say which is which so "BEARISH" next to a positive wallet ratio is not a contradiction.
+    def _whale_note(trend):
+        lean = "long" if hl_consensus_net_ratio > 0 else "short" if hl_consensus_net_ratio < 0 else "even"
+        return (f"Whale consensus {trend} by position size (conviction {hl_consensus_confidence:.0%}); "
+                f"wallet count leans {lean} ({hl_consensus_net_ratio:+.2f})")
     if has_hyperlens and hl_consensus_confidence >= HL_CONFIDENCE_THRESHOLD:
         if hl_consensus_trend == "BULLISH":
-            warnings.append(f"Whale consensus BULLISH ({hl_consensus_confidence:.0%}, ratio={hl_consensus_net_ratio:+.2f})")
+            warnings.append(_whale_note("BULLISH"))
         elif hl_consensus_trend == "BEARISH":
-            warnings.append(f"Whale consensus BEARISH ({hl_consensus_confidence:.0%}, ratio={hl_consensus_net_ratio:+.2f})")
+            warnings.append(_whale_note("BEARISH"))
 
     def _apply_hl_modifiers(out):
         """Apply HyperLens whale consensus modifiers after CVD modifiers."""
@@ -772,14 +785,15 @@ def _synthesize_signal(
         and mkt_consensus != "RISK-OFF"
         and heat < HEAT_ENTRY_ZONE
     ):
-        if fear_greed <= FNG_FEAR:
+        if fg_known and fear_greed <= FNG_FEAR:
             out.signal = "ACCUMULATE"
             out.reason = " + ".join(_reason_parts()) + f" [ACCUM + F&G={fear_greed}]"
             out.warnings = warnings
             return _cvd_return()
         else:
             # Not fearful enough — signal as WAIT with note
-            warnings.append(f"ACCUM conditions met but F&G={fear_greed} > {FNG_FEAR} — waiting for fear")
+            warnings.append(f"ACCUM conditions met but F&G={fear_greed} > {FNG_FEAR} — waiting for fear" if fg_known
+                            else "ACCUM conditions met but Fear & Greed unavailable — waiting for a reading")
             # Fall through to LIGHT_LONG evaluation
 
     # --- ACCUMULATE via absorption (non-CAP regimes) ---
@@ -807,7 +821,7 @@ def _synthesize_signal(
         and vol_high
         and confidence > CONF_REVIVAL
         and mkt_consensus != "RISK-OFF"
-        and fear_greed <= FNG_FEAR
+        and fg_known and fear_greed <= FNG_FEAR
     ):
         signal = "REVIVAL_SEED"
         if floor_confirmed:

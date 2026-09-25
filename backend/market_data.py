@@ -235,16 +235,45 @@ def _fng_label(value: int) -> str:
     return "Extreme Greed"
 
 
-async def fetch_fear_greed() -> Optional[SentimentData]:
-    """Fetch the current Fear & Greed Index from CoinGlass v4.
+_ALT_FNG_URL = "https://api.alternative.me/fng/?limit=1&format=json"
 
-    Uses /api/index/fear-greed-history — returns parallel arrays of
+
+async def _fetch_fear_greed_alternative() -> Optional[SentimentData]:
+    """alternative.me index: the same series the backtests replay, so live and
+    historical signals read the same Fear & Greed values."""
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_ALT_FNG_URL) as resp:
+                resp.raise_for_status()
+                payload = await resp.json(content_type=None)
+        entry = (payload.get("data") or [None])[0]
+        if not entry:
+            return None
+        value = int(entry["value"])
+        result = SentimentData(fear_greed_value=value, fear_greed_label=_fng_label(value), timestamp=time.time())
+        _sentiment_cache.put(result)
+        logger.info("Fear & Greed Index (alternative.me): %d (%s)", value, result.fear_greed_label)
+        return result
+    except Exception as exc:
+        logger.warning("Failed to fetch Fear & Greed from alternative.me: %s", exc)
+        return None
+
+
+async def fetch_fear_greed() -> Optional[SentimentData]:
+    """Current Fear & Greed Index: alternative.me first, CoinGlass v4 as fallback.
+
+    CoinGlass uses /api/index/fear-greed-history — returns parallel arrays of
     data_list (values), price_list (BTC prices), time_list (timestamps).
     We take the most recent entry.
     """
     cached = _sentiment_cache.get()
     if cached is not None:
         return cached
+
+    primary = await _fetch_fear_greed_alternative()
+    if primary is not None:
+        return primary
 
     api_key = _get_cg_api_key()
     if not api_key:
