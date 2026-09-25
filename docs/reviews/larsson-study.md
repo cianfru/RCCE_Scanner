@@ -240,3 +240,28 @@ Reading:
 - **Against the exact control, Larsson exits help a little**: +31.6% vs +27.7% compounded, a shallower worst drawdown (-17.8% vs -21.4%), half the trades and twice the holding time. The gain comes from the bear windows (W1, W9); the bull windows W7-W8 give some back.
 - **The blue-entry veto is what hurts**, not the exits: B1 -> B3 costs 26 points of compounded return. RCCE's valuable entries often come while the ribbon is still blue, near bottoms, before a trend indicator can confirm.
 - Differences of a few points over nine windows and 100-230 trades are within noise. None of this touches the holdout.
+
+## Scenario search: RCCE entries × exit rules (declared before running)
+
+Declared 2026-09-25, before any of these results were seen. Windows 1-9 only; the holdout stays locked. Same data, costs, sizing, BMSB gate and fill convention as B1. Every scenario below is run and reported; nothing outside this list is tuned.
+
+**Named hypothesis (H1):** entries unchanged (no ribbon veto); exit on the first blue bar after the ribbon has been gold since entry (for a trade opened in blue: gold first, then blue); 12% catastrophe stop; RCCE exit signals off.
+
+**Family** (all combinations; decay exit off in every scenario):
+
+| Dimension | Levels |
+|---|---|
+| Entry filter | F0 = B1 entries · F1 = skip entries while the ribbon is blue |
+| Trend exit | `flip` blue after gold-since-entry · `grey` first grey or blue after gold-since-entry · `blue` first blue bar (F1 only) · `e32` first close below EMA32 after a close above it since entry · `atr3` close below highest close since entry − 3×ATR(14) · `t30` / `t60` time exit after 30 / 60 bars (controls for "just hold longer") |
+| Safety stop (on close, from average entry) | none · 12% · 8% |
+| RCCE exit signals (TRIM, TRIM_HARD, NO_LONG, RISK_OFF) | off · on |
+
+That is 36 F0 + 42 F1 = 78 scenarios, against B1 and B3.
+
+**Statistics**
+- Per scenario: compounded return over W1-9, worst window drawdown, median-window Sharpe, windows beating B1, and a stationary-bootstrap p-value for its mean daily excess return over B1 (naive, uncorrected).
+- Multiple testing: White's Reality Check over all 78 scenarios (stationary bootstrap, mean block 10 days, 2,000 resamples) on daily excess returns versus B1. A "real edge" needs Reality Check p < 0.10.
+
+**Confirmation on unseen coins:** the three scenarios with the highest compounded return, the one with the best median-window Sharpe if different, and H1 are rerun on a secondary universe of 30 Binance USDT pairs chosen by quote volume in the 90 days before W1 (information available at the time; stablecoins, fiat, wrapped and leveraged tokens and the primary ten excluded; listed before 2020-02 so they are warmed up by W1). A candidate is confirmed only if it also beats B1 there on compounded return and worst drawdown.
+
+**Diagnostic:** the same candidates run once without window resets (one capital from W1 start to W9 end) to show how much the 180-day resets truncate trend trades. Not an acceptance criterion.
