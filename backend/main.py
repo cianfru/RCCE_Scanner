@@ -253,6 +253,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
 
+    # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
+    try:
+        from exit_shadow import run_exit_shadow
+        asyncio.create_task(run_exit_shadow(cache))
+    except Exception as e:
+        logger.warning("Exit shadow log init failed (non-fatal): %s", e)
+
     # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
     asyncio.create_task(WebSocketHub.get().run_heartbeat())
 
@@ -4017,3 +4024,10 @@ async def check_follow(address: str, user: str = Query(...)):
     """Check if a user follows a specific wallet."""
     import whale_follows as wf
     return {"following": wf.is_following(user, address)}
+
+
+@app.get("/api/research/exit-shadow")
+async def exit_shadow_summary(recent: int = Query(20, ge=0, le=200)):
+    """Forward shadow comparison of RCCE exit policies (research only; see exit_shadow.py)."""
+    import exit_shadow
+    return exit_shadow.get().summary(recent=recent)

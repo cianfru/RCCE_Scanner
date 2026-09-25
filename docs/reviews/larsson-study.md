@@ -337,3 +337,16 @@ Tail risk: `F0-t60-nostop-nosig` has no stop; on the primary set its three worst
 - **The Larsson Line adds nothing as an exit for RCCE entries.** Its flip exit (H1) trails the 60-bar holds everywhere and falls behind B1 without resets.
 - **One consistent direction, not yet proven:** keep RCCE's entries, hold about 60 bars, and ignore TRIM / RISK_OFF. The 60-bar holds beat B1's compounded return on both universes; the 12% / 8% stop versions also beat it without resets, while the no-stop version, the only one to pass the declared confirmation rule, loses to B1 without resets and carries much larger single-trade losses.
 - Mining more variations of the same nine windows would only produce more results like these. The next evidence has to come from data not yet used: the holdout (run once) or forward shadow logging.
+
+## Forward shadow log (decided 2026-09-25)
+
+Instead of spending the one-shot holdout on a result the search could not separate from luck, the question moves to data that does not exist yet. `backend/exit_shadow.py` runs inside the app, reads the scanner's 1D results once a day between 23:50 and 23:59 UTC, and advances two paper books with identical entries (STRONG_LONG, LIGHT_LONG, REVIVAL_SEED):
+
+| Book | Exits |
+|---|---|
+| `current` | the backtest PositionManager's: 8% stop, TRIM / TRIM_HARD / NO_LONG, RISK_OFF closes all, 20 WAIT snapshots |
+| `hold60` | 60 daily snapshots or a 12% stop; RCCE exit signals ignored |
+
+It never trades and never changes a signal. Returns are per trade, net of 10 bps per side; a missed day is counted and skipped, never back-filled. It writes one small JSON file per day (`exit_shadow.json` on the Railway volume) and exposes `GET /api/research/exit-shadow`. Disable with `EXIT_SHADOW_ENABLED=0`.
+
+Snapshot prices come from the scanner and can be up to an hour old when the app is idle (four hours for the least active coins); both books read the same snapshot, so the comparison stays fair. Review after at least 60 closed trades per book; the holdout remains unused.
