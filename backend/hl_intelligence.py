@@ -77,9 +77,12 @@ _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 # Cohort definitions — "Sentiment Mode": top 50 each (post-dedup ~80 unique).
 # Statistical sample of elite traders is plenty for directional consensus.
 # Was 300 each → 50 each (~83% fewer wallets, RAM + egress proportional).
+# Each wallet costs one API call per poll interval and a few KB of memory, so the
+# size is a Railway variable (HYPERLENS_COHORT_SIZE, capped at 300 per cohort).
+_COHORT_SIZE = max(10, min(300, int(os.environ.get("HYPERLENS_COHORT_SIZE", "50"))))
 _ROSTER_COHORTS = {
-    "money_printers": 50,    # top performers by ROI
-    "smart_money": 50,       # largest wallets by AV
+    "money_printers": _COHORT_SIZE,    # top performers by ROI
+    "smart_money": _COHORT_SIZE,       # largest wallets by AV
 }
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV

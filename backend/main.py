@@ -6,6 +6,10 @@ import asyncio
 import logging
 import os
 import time
+
+# Cap maths-library threads before numpy is imported (see run_server.py).
+for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_var, "1")
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -183,6 +187,11 @@ def _sync_cache_symbols() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Discover Hyperliquid markets and start periodic refresh."""
+    # asyncio's default pool sizes itself from the host's core count (up to 32
+    # threads on a large Railway host); DNS lookups and blocking calls need a few.
+    import concurrent.futures
+    asyncio.get_running_loop().set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=int(os.environ.get("IO_WORKERS", "4")), thread_name_prefix="io"))
     from hyperliquid_universe import refresh, run_refresh
     await refresh(cache)
     asyncio.create_task(run_refresh(cache))
@@ -549,15 +558,35 @@ async def scan(
     regime: Optional[str] = Query(None),
     signal: Optional[str] = Query(None),
 ):
-    """Return cached scan results, filtered by regime/signal."""
-    results = cache.get_results(timeframe, regime=regime, signal=signal)
+    """Return cached scan results, filtered by regime/signal.
+
+    Encoding ~200 rows through the response model was the largest steady CPU cost
+    (every open tab polls both timeframes each minute), so the encoded body is kept
+    until the next synthesis pass replaces the results, and at most 30 seconds.
+    """
+    import json
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import Response
+    source = cache.results.get(timeframe)
     consensus = cache.consensus.get(timeframe)
-    return ScanResponse(
-        results=results,
-        scan_running=cache.is_scanning,
-        cache_age_seconds=cache.get_cache_age(),
-        consensus=consensus,
-    )
+    key = (timeframe, regime, signal, id(source), id(consensus), int(time.time() // 30))
+    body = _SCAN_BODY_CACHE.get(key)
+    if body is None:
+        encoded = jsonable_encoder(ScanResponse(
+            results=cache.get_results(timeframe, regime=regime, signal=signal),
+            scan_running=False, cache_age_seconds=0.0, consensus=consensus,
+        ))
+        encoded.pop("scan_running", None)
+        encoded.pop("cache_age_seconds", None)
+        body = json.dumps(encoded, separators=(",", ":"))
+        while len(_SCAN_BODY_CACHE) >= 6:   # both timeframes plus a few filters
+            _SCAN_BODY_CACHE.pop(next(iter(_SCAN_BODY_CACHE)))
+        _SCAN_BODY_CACHE[key] = body
+    head = json.dumps({"scan_running": cache.is_scanning, "cache_age_seconds": cache.get_cache_age()})
+    return Response(content=head[:-1] + "," + body[1:], media_type="application/json")
+
+
+_SCAN_BODY_CACHE: Dict[tuple, str] = {}
 
 
 @app.get("/api/tradfi")
