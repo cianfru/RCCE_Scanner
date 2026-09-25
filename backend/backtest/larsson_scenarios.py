@@ -149,17 +149,19 @@ def select_secondary(n: int = 30) -> List[str]:
         if base.endswith(("UP", "DOWN", "BULL", "BEAR")) and len(base) > 4:
             continue
         cands.append(s["symbol"])
-    scored = []
-    for sym in cands:
+    def score(sym):
         try:
             first = json.loads(bh._get(f"{bh.API}?symbol={sym}&interval=1d&startTime=0&limit=1"))
             if not first or int(first[0][0]) > cutoff:
-                continue
+                return None
             rows = json.loads(bh._get(f"{bh.API}?symbol={sym}&interval=1d&startTime={w1 - 90 * DAY_MS}&endTime={w1 - 1}&limit=100"))
         except Exception:
-            continue
-        if len(rows) >= 80:
-            scored.append((sum(float(r[7]) for r in rows), sym[:-4]))
+            return None
+        return (sum(float(r[7]) for r in rows), sym[:-4]) if len(rows) >= 80 else None
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        scored = [x for x in pool.map(score, cands) if x is not None]
     scored.sort(reverse=True)
     chosen = [b for _, b in scored[:n]]
     RUNS_DIR.mkdir(parents=True, exist_ok=True)

@@ -41,7 +41,7 @@ def _get(url: str, retries: int = 4) -> bytes:
             with urllib.request.urlopen(url, timeout=30, context=_ssl_context()) as resp:
                 return resp.read()
         except urllib.error.HTTPError as exc:
-            if exc.code == 404:
+            if 400 <= exc.code < 500 and exc.code != 429:   # bad/unknown symbol: retrying cannot help
                 raise
             if attempt == retries - 1:
                 raise
