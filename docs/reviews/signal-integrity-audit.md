@@ -42,3 +42,17 @@ The login screen checked a code shipped in the browser bundle, and the API was o
 ## Validation of the logic against returns
 
 See "Replay results" below: the same 4H Binance history (10 primary coins, walk-forward windows 1–9, holdout untouched) replayed through (A) the engine before #130, (B) today's live logic, (C) today's logic with the MARKDOWN gate, all scored by the same costed PositionManager (`backtest/live_logic_replay.py`, `backtest/live_logic_check.py`).
+
+### Replay results (4H, 10 primary coins, windows 1-9, same costed PositionManager)
+
+| Variant | Compounded | Worst window DD | Median Sharpe | Trades | Per-window return (%) |
+|---|---:|---:|---:|---:|---|
+| A: engine before #130 (1cc132d) | +13.4% | -30.2% | 0.00 | 515 | -7.7, 0.0, 9.6, -9.1, 73.3, -21.8, 3.2, 13.0, -22.1 |
+| B: today's live logic | +42.5% | -10.4% | 0.32 | 315 | 1.3, 0.0, 5.0, -1.9, 35.7, -9.9, 11.6, 6.0, -5.6 |
+| C: B + MARKDOWN trend gate | +43.1% | -10.4% | 0.32 | 314 | 1.3, 0.0, 5.0, -1.9, 35.6, -9.9, 11.8, 6.4, -5.6 |
+
+Reading:
+- Today's logic does not give up the returns the earlier logic produced on 4H; it roughly triples the compounded return and cuts the worst window drawdown from 30% to 10%. The pre-#130 logic fired STRONG_LONG on 25% of all bars (missing inputs counted as passes), which sized up into drawdowns; its weak 4H result is consistent with the executor's weak realized record, which ran on that logic.
+- The MARKDOWN gate removes 30% of MARKDOWN bars (623 to 441) and changes returns by +0.7 points: neutral to slightly positive, so it ships.
+- Limits: history has no funding, whale or stablecoin data, so B and C never reach STRONG_LONG here. Live has those inputs (and Fear & Greed again), so live will fire some Strong Longs that this test cannot score. Ten coins and nine windows; the W5 bull window dominates every variant. The earlier +53.9% B1 figure was a 1D study on the pre-#130 engine and is not comparable to these 4H numbers.
+- Since #130 the study's daily B1 harness passes daily candles into the replay's 4H slot and produces no trades; these scripts replace it for engine comparisons.
