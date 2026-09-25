@@ -5,9 +5,14 @@ import { RegimeBadge, SignalDot } from './badges.jsx';
 import HelpTip from './HelpTip.jsx';
 import RegimeTransition from './RegimeTransition.jsx';
 
+const SETUP_HUES = { bullish: '#97FCE4', bearish: '#cf9185', conflict: '#fb923c', caution: '#fbbf24' };
+export function setupColor(alignment) {
+  return col(SETUP_HUES[alignment.state] || '#52525b');
+}
+
 export default function SetupPair({ row, isMobile, transition = false, compact = false, marketWide }) {
   const alignment = setupAlignment(row, { marketWide });
-  const color = col(({bullish:'#97FCE4',bearish:'#cf9185',conflict:'#fb923c',caution:'#fbbf24'})[alignment.state] || '#52525b');
+  const color = setupColor(alignment);
   const direction = signalDirection(row.signal);
   const relationship = alignment.strength ? `The broader trend supports this ${direction === "bearish" ? "short" : "long"} setup.` : alignment.state === "conflict" ? "The current signal runs against the broader trend." : alignment.state === "incomplete" ? "Required context is missing. Check the information icon beside the signal." : "The market structure does not currently confirm a directional entry.";
   // Locked in: the regime's trend and the entry signal point the same way. The pair

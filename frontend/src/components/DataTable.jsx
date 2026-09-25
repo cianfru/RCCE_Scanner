@@ -1,7 +1,7 @@
 import HelpTip from "./HelpTip.jsx";
 import { useMemo, useState } from "react";
 import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.js";
-import SetupPair from "./SetupPair.jsx";
+import SetupPair, { setupColor } from "./SetupPair.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
 import { T, m, REGIME_META, fmt, getBaseSymbol } from "../theme.js";
@@ -160,8 +160,9 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
   // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
   // out; every other row keeps just its regime stripe on the left.
   const alignment = setupAlignment(row, { marketWide });
-  const lockedTint = alignment.strength ? `${rm.color}${alignment.strength === 2 ? "14" : "0b"}` : "transparent";
-  const restBg = selected ? T.accentDim : lockedTint;
+  const restBg = selected ? T.accentDim : "transparent";
+  // Locked in: the whole regime/signal cell fills edge to edge, no inner box.
+  const lockedCell = alignment.strength ? { background: `${setupColor(alignment)}${alignment.strength === 2 ? "24" : "12"}` } : {};
 
   return (
     <tr
@@ -179,7 +180,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
     >
       {visibleColumns.map(([, label], colIndex) => {
         if (label === "SIGNAL" && visibleColumns[colIndex - 1]?.[1] === "REGIME") return null;
-        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} style={{padding:isMobile ? 8 : 12}}><SetupPair row={row} isMobile={isMobile} transition compact marketWide={marketWide}/></td>;
+        if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} className="setup-cell" data-strength={alignment.strength} style={{padding:isMobile ? 8 : 12, ...lockedCell}}><SetupPair row={row} isMobile={isMobile} transition compact marketWide={marketWide}/></td>;
         return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />;
       })}
     </tr>
