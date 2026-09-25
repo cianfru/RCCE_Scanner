@@ -13,3 +13,10 @@ backend/feature_flags.json
 *.db-shm
 *.db-wal
 *.pkl
+
+# Larsson study: paid third-party data and research notes stay out of this
+# public repo; the Binance kline cache is regenerated on demand.
+data/private/
+backend/data/private/
+backend/data/larsson_cache/
+backend/data/larsson_runs/

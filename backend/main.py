@@ -253,6 +253,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
 
+    # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
+    try:
+        from exit_shadow import run_exit_shadow
+        asyncio.create_task(run_exit_shadow(cache))
+    except Exception as e:
+        logger.warning("Exit shadow log init failed (non-fatal): %s", e)
+
     # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
     asyncio.create_task(WebSocketHub.get().run_heartbeat())
 
@@ -1449,6 +1456,20 @@ async def chart_data(
     except Exception:
         logger.warning("CTO computation failed for %s", symbol)
 
+    # CTO ribbon and (1D only) chart patterns on closed candles: display only, never read by signals
+    cto_ribbon, patterns = None, []
+    try:
+        from candle_snapshot import closed_candles
+        from engines.larsson_engine import compute_larsson_chart
+        closed = closed_candles(ohlcv, timeframe, time.time() * 1000)
+        cto_ribbon = compute_larsson_chart(closed["close"], closed["timestamp"])
+        cto_ribbon.pop("version", None)
+        if timeframe == "1d":
+            from engines.patterns_engine import chart_patterns
+            patterns = chart_patterns(closed)
+    except Exception:
+        logger.warning("CTO ribbon / pattern computation failed for %s", symbol)
+
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
     try:
@@ -1485,6 +1506,14 @@ async def chart_data(
     def display(points):
         return [p for p in points if p["time"] >= first_display_time]
 
+    if cto_ribbon and cto_ribbon["time"]:
+        k = next((i for i, t in enumerate(cto_ribbon["time"]) if t >= first_display_time), len(cto_ribbon["time"]))
+        for key in ("time", "e32", "e35", "e50", "e58", "state"):
+            cto_ribbon[key] = cto_ribbon[key][k:]
+    for p in patterns:
+        p["anchors"] = [a for a in p["anchors"] if a["time"] >= first_display_time]
+        p["start"] = max(p["start"], first_display_time)
+
     # Same magnitude-only model as the scanner, evaluated on this chart's timeframe.
     from engines.range_forecast import forecast as range_forecast
     chart_range = range_forecast(ohlcv["high"], ohlcv["low"], ohlcv["close"], timeframe)
@@ -1507,6 +1536,8 @@ async def chart_data(
         "cto_slow": display(cto["cto_slow"]),
         "cto_snapshot": cto.get("cto_snapshot"),
         "cto_preview": cto.get("cto_preview"),
+        "cto_ribbon": cto_ribbon,
+        "patterns": patterns,
     }
 
 
@@ -4037,6 +4068,13 @@ async def check_follow(address: str, user: str = Query(...)):
     """Check if a user follows a specific wallet."""
     import whale_follows as wf
     return {"following": wf.is_following(user, address)}
+
+
+@app.get("/api/research/exit-shadow")
+async def exit_shadow_summary(recent: int = Query(20, ge=0, le=200)):
+    """Forward shadow comparison of RCCE exit policies (research only; see exit_shadow.py)."""
+    import exit_shadow
+    return exit_shadow.get().summary(recent=recent)
 
 
 @app.get("/api/opportunities/transitions")

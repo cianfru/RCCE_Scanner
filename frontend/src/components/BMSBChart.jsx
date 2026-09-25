@@ -34,6 +34,17 @@ const SIGNAL_MARKER = {
   NO_LONG:      { color: "#d8b4fe", shape: "arrowDown", position: "aboveBar", text: "NO LONG" },
 };
 
+// ─── CTO ribbon colours (display only) ────────────────────────────────────────
+const RIBBON_COLOR = { gold: "#e3b341", blue: "#4f8fe0", grey: "#8b8f94" };
+const RIBBON_LINES = [
+  { key: "e32", width: 2, alpha: "" },
+  { key: "e35", width: 1, alpha: "80" },
+  { key: "e50", width: 1, alpha: "80" },
+  { key: "e58", width: 2, alpha: "" },
+];
+
+const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
+
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
 const TIMEFRAMES = [
@@ -74,6 +85,10 @@ export default function BMSBChart({
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
+  const [ribbon, setRibbon] = useState(null);
+  const [patterns, setPatterns] = useState([]);
+  const [showPatterns, setShowPatterns] = useState(false);
+  const patternSeriesRef = useRef([]);
 
   const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
@@ -178,24 +193,15 @@ export default function BMSBChart({
       wickDownColor: "rgba(216,160,148,0.65)",
     });
 
-    // ── CTO Line Advanced (rendered behind BMSB) ──
-    const ctoFastSeries = chart.addSeries(LineSeries, {
-      color: "#c0c0c0",
-      lineWidth: 2,
+    // ── CTO ribbon (rendered behind BMSB; display only) ──
+    const ribbonSeries = RIBBON_LINES.map(l => chart.addSeries(LineSeries, {
+      color: RIBBON_COLOR.grey,
+      lineWidth: l.width,
       lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
-    });
-    const ctoSlowSeries = chart.addSeries(LineSeries, {
-      color: "#c0c0c0",
-      lineWidth: 2,
-      lineStyle: LineStyle.Solid,
-      crosshairMarkerVisible: false,
-      lastValueVisible: false,
-      priceLineVisible: false,
-      title: "CTO (closed)",
-    });
+    }));
 
     // ── 200-day MA ──
     const ma200Series = chart.addSeries(LineSeries, {
@@ -249,6 +255,9 @@ export default function BMSBChart({
     setHoverCandle(null);
     setChartRange(null);
     setSignalMarkerIndex(null);
+    setRibbon(null);
+    setPatterns([]);
+    patternSeriesRef.current = [];
     setError(null);
 
     fetch(`${API_BASE}/api/chart/${encoded}?timeframe=${apiTf}&limit=${tfConfig.limit}`)
@@ -268,8 +277,7 @@ export default function BMSBChart({
             const minMove = Math.pow(10, -decimals);
             const pf = { type: "price", precision: decimals, minMove };
             candleSeries.applyOptions({ priceFormat: pf });
-            try { ctoFastSeries.applyOptions({ priceFormat: pf }); } catch(_){}
-            try { ctoSlowSeries.applyOptions({ priceFormat: pf }); } catch(_){}
+            ribbonSeries.forEach(ls => { try { ls.applyOptions({ priceFormat: pf }); } catch(_){} });
             try { bmsbMidSeries.applyOptions({ priceFormat: pf }); } catch(_){}
             try { bmsbEmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
             try { bmsbSmaSeries.applyOptions({ priceFormat: pf }); } catch(_){}
@@ -373,9 +381,17 @@ export default function BMSBChart({
           if (maData.length > 0) ma200Series.setData(maData);
         }
 
-        // ── CTO Line overlay data ──
-        if (data.cto_fast?.length > 0) ctoFastSeries.setData(data.cto_fast);
-        if (data.cto_slow?.length > 0) ctoSlowSeries.setData(data.cto_slow);
+        // ── CTO ribbon: each bar coloured by its state ──
+        const lr = data.cto_ribbon;
+        if (lr?.time?.length > 0) {
+          RIBBON_LINES.forEach((l, k) => {
+            ribbonSeries[k].setData(lr.time.map((t, i) => ({
+              time: t, value: lr[l.key][i], color: `${RIBBON_COLOR[lr.state[i]]}${l.alpha}`,
+            })));
+          });
+        }
+        setRibbon(lr?.current ? lr : null);
+        setPatterns(Array.isArray(data.patterns) ? data.patterns : []);
 
         // ── BMSB overlay data ──
         if (data.bmsb_mid?.length > 0) bmsbMidSeries.setData(data.bmsb_mid);
@@ -425,6 +441,46 @@ export default function BMSBChart({
     const cleanup = buildChart(activeTimeframe);
     return cleanup;
   }, [activeTimeframe, buildChart]);
+
+  // Patterns overlay (1D, off by default): necklines and anchor points, display only
+  useEffect(() => {
+    const chart = chartRef.current;
+    patternSeriesRef.current.forEach(ps => { try { chart?.removeSeries(ps); } catch (_) {} });
+    patternSeriesRef.current = [];
+    if (!showPatterns || !chart || patterns.length === 0) return;
+    const add = (opts, data) => {
+      const ser = chart.addSeries(LineSeries, {
+        lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, ...opts,
+      });
+      ser.setData(data);
+      patternSeriesRef.current.push(ser);
+      return ser;
+    };
+    // Patterns sharing a neckline within a few days get one combined label
+    const labelled = [];
+    patterns.forEach(p => {
+      const g = labelled.find(q => Math.abs(q.level / p.levels[0] - 1) < 0.005 && Math.abs(q.end - p.end) <= 5 * 86400 && q.status === p.status);
+      if (g) g.names.push(p.name); else labelled.push({ p, level: p.levels[0], end: p.end, status: p.status, names: [p.name] });
+    });
+    patterns.forEach(p => {
+      const label = labelled.find(q => q.p === p);
+      const color = PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0];
+      const pts = [];
+      p.anchors.forEach(a => { if (!pts.length || a.time > pts[pts.length - 1].time) pts.push(a); });
+      if (pts.length > 1) add({ color: `${color}99`, lineStyle: LineStyle.Dotted }, pts);
+      p.levels.forEach((lvl, k) => {
+        if (!(p.end > p.start)) return;
+        const ser = add({ color, lineStyle: p.status === "forming" ? LineStyle.Dashed : LineStyle.Solid },
+          [{ time: p.start, value: lvl }, { time: p.end, value: lvl }]);
+        if (k === 0 && label) {
+          createSeriesMarkers(ser, [{
+            time: p.end, position: p.direction < 0 ? "belowBar" : "aboveBar", color, shape: "square",
+            text: `${label.names.join(" + ")} · ${p.status}`,
+          }]);
+        }
+      });
+    });
+  }, [showPatterns, patterns]);
 
   // Pressure levels overlay — fetch + render price lines
   useEffect(() => {
@@ -625,6 +681,16 @@ export default function BMSBChart({
             </span>
           )}
 
+          {/* CTO ribbon state (display only) */}
+          {ribbon && (
+            <span title={`CTO ${ribbon.current} (closed candles)${ribbon.current === "grey" && ribbon.last_actionable ? ` (last trend ${ribbon.last_actionable})` : ""}. Display only; not used by signals.`} style={{
+              padding: "2px 7px", fontSize: 9, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
+              color: RIBBON_COLOR[ribbon.current], border: `1px solid ${RIBBON_COLOR[ribbon.current]}40`,
+            }}>
+              CTO {ribbon.current.toUpperCase()}
+            </span>
+          )}
+
           {/* Conditions */}
           {conditions != null && conditionsTotal != null && (
             <span style={{
@@ -695,6 +761,29 @@ export default function BMSBChart({
           </button>
 
           <HelpTip title="Smart money levels"><p>Shows available liquidation clusters and tracked stop, take-profit and limit-order levels for this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
+
+          {activeTimeframe === "1d" && (
+            <button
+              onClick={() => setShowPatterns(p => !p)}
+              aria-pressed={showPatterns}
+              title="Toggle detected chart patterns with their measured track record. Display only; never used by signals."
+              style={{
+                padding: "3px 8px",
+                borderRadius: 4,
+                border: `1px solid ${showPatterns ? "rgba(196,181,253,0.35)" : "rgba(255,255,255,0.08)"}`,
+                cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                transition: "all 0.15s ease",
+                background: showPatterns ? "rgba(196,181,253,0.12)" : "transparent",
+                color: showPatterns ? "#c4b5fd" : "rgba(255,255,255,0.3)",
+              }}
+            >
+              Patterns{patterns.length ? ` (${patterns.length})` : ""}
+            </button>
+          )}
 
           {/* Timeframe toggle */}
           <div style={{
@@ -802,6 +891,23 @@ export default function BMSBChart({
         {signalMarkerIndex != null && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
       </div>}
 
+      {!loading && !error && showPatterns && activeTimeframe === "1d" && (
+        <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
+          {patterns.length === 0 ? <p style={{margin:0}}>No patterns forming, confirmed or failed in the last 180 days.</p> : (
+            <ul style={{margin:0,padding:0,listStyle:"none",display:"grid",gap:6}}>
+              {patterns.map((p, i) => (
+                <li key={i}>
+                  <span style={{color: PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0], fontFamily:T.mono, fontSize:11, fontWeight:700}}>
+                    {p.name} · {p.status} · {new Date(p.end * 1000).toLocaleDateString()}
+                  </span>{" "}
+                  {p.track_record}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p style={{margin:"8px 0 0",fontSize:11}}>Measured on 40 coins, Oct 2021 to Mar 2026. Recognition works; no pattern showed an edge over a plain breakout. Display only; patterns never trigger or block a signal.</p>
+        </div>
+      )}
 
       {/* ── CSS for spinner ── */}
       <style>{`
