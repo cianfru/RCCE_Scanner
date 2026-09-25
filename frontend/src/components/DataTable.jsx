@@ -16,6 +16,16 @@ import SparklineCell from "./SparklineCell.jsx";
 import InfoButton from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
 
+// Optional columns hidden while every row in view would show only a dash, so the
+// grid carries no dead columns (e.g. no divergences or exhaustion states today).
+const EMPTY_WHEN = {
+  DIV: r => !r.divergence,
+  EXHAUST: r => !r.exhaustion_state || r.exhaustion_state === "NEUTRAL",
+  SM: r => !r.smart_money?.trend || r.smart_money.trend === "NEUTRAL",
+  OI: r => !r.positioning?.oi_trend,
+  CVD: r => !r.cvd_trend || ["NEUTRAL", "UNAVAILABLE"].includes(r.cvd_trend),
+};
+
 function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
   const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
   switch (colLabel) {
@@ -108,17 +118,19 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         </td>
       );
     case "CONF":
-      return <td style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
+      return <td className="cell-evidence" style={{ padding: cellPad }}><ConfluenceBadge score={row.confluence?.score} label={row.confluence?.label} /></td>;
     case "PRI": {
       const pri = row.priority_score ?? 0;
-      const priColor = pri >= 75 ? T.green : pri >= 50 ? T.cyan : pri >= 30 ? T.yellow : T.text4;
+      // Rank reads as a bar under the number, in the accent colour only.
       return (
         <td style={{ padding: cellPad }}>
-          <span style={{
-            fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
-            color: priColor, letterSpacing: "0.02em",
-          }}>
-            {Math.round(pri)}
+          <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, minWidth: 28 }}>
+            <span style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1, letterSpacing: "0.02em" }}>
+              {Math.round(pri)}
+            </span>
+            <span aria-hidden="true" style={{ height: 3, borderRadius: 2, background: T.overlay06, overflow: "hidden" }}>
+              <span style={{ display: "block", height: "100%", width: `${Math.max(0, Math.min(100, pri))}%`, background: T.accent, opacity: 0.35 + 0.65 * Math.max(0, Math.min(1, (pri - 30) / 60)) }} />
+            </span>
           </span>
         </td>
       );
@@ -128,10 +140,10 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const ct = row.conditions_total ?? 10;
       const pct = ct > 0 ? cm / ct : 0;
       return (
-        <td style={{ padding: cellPad }}>
+        <td className="cell-evidence" style={{ padding: cellPad }}>
           <span style={{
             fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
-            color: pct >= 0.75 ? T.green : pct >= 0.5 ? T.yellow : T.text4,
+            color: pct >= 0.75 ? T.green : pct >= 0.5 ? T.text2 : T.text4,
           }}>
             {cm}/{ct}
           </span>
@@ -153,6 +165,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
 
   return (
     <tr
+      data-locked={alignment.strength > 0}
       onClick={(e) => onSelect(row, e)}
       style={{
         cursor: "pointer",
@@ -176,6 +189,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
 export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash }) {
   const [alignedFirst, setAlignedFirst] = useState(false);
   const marketWide = useMemo(() => marketWideMissing(results), [results]);
+  const shownColumns = useMemo(() => results.length < 10 ? visibleColumns : visibleColumns.filter(([, label]) => !(EMPTY_WHEN[label] && results.every(EMPTY_WHEN[label]))), [visibleColumns, results]);
   const displayedResults = alignedFirst ? [...results].sort((a,b) => setupAlignment(b, { marketWide }).strength - setupAlignment(a, { marketWide }).strength) : results;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -195,9 +209,9 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
-                {visibleColumns.map(([key, colLabel], colIndex) => {
-                  if (colLabel === 'SIGNAL' && visibleColumns[colIndex-1]?.[1] === 'REGIME') return null;
-                  const paired = colLabel === 'REGIME' && visibleColumns[colIndex+1]?.[1] === 'SIGNAL';
+                {shownColumns.map(([key, colLabel], colIndex) => {
+                  if (colLabel === 'SIGNAL' && shownColumns[colIndex-1]?.[1] === 'REGIME') return null;
+                  const paired = colLabel === 'REGIME' && shownColumns[colIndex+1]?.[1] === 'SIGNAL';
                   return (
                   <th colSpan={paired ? 2 : 1} className={colLabel === "SYMBOL" ? "scanner-symbol" : undefined}
                     key={colLabel}
@@ -242,7 +256,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     index={idx}
                     selected={selected?.symbol === row.symbol}
                     onSelect={onSelect}
-                    visibleColumns={visibleColumns}
+                    visibleColumns={shownColumns}
                     marketWide={marketWide}
                     isMobile={isMobile}
                     backtestSymbols={backtestSymbols}

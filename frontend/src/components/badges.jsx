@@ -27,7 +27,7 @@ export function ZScoreBar({ z, isMobile }) {
           width: 1, background: T.overlay08
         }} />
       </div>
-      <span style={{ color: bar.color, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
+      <span style={{ color: T.text1, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
         {fmt(z, 2)}
       </span>
     </div>
@@ -264,7 +264,9 @@ export function SmartMoneyBadge({ sm }) {
 
 export function ConfluenceBadge({ score, label }) {
   if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const color = (score ?? 0) >= 75 ? "#34d399" : (score ?? 0) >= 50 ? "#facc15" : (score ?? 0) >= 25 ? "#fb923c" : "#f87171";
+  // Agreement strength in one hue (bright when strong, dim when weak); amber and red
+  // stay reserved for caution and downside.
+  const color = (score ?? 0) >= 75 ? col("#34d399") : (score ?? 0) >= 50 ? col("#6ee7b7") : col("#52525b");
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <div style={{
@@ -276,7 +278,7 @@ export function ConfluenceBadge({ score, label }) {
           background: color, borderRadius: 2,
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 12, color, fontWeight: 700 }}>
+      <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text1, fontWeight: 600 }}>
         {score != null ? Math.round(score) : "\u2014"}
       </span>
     </div>

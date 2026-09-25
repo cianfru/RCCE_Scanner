@@ -17,7 +17,7 @@ import {
   createTextWatermark,
   createSeriesMarkers,
 } from "lightweight-charts";
-import { T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
+import { col, T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -134,7 +134,7 @@ export default function BMSBChart({
         borderColor: "rgba(255,255,255,0.06)",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: 10,   // room for the range label right of the last candle
         barSpacing: (TIMEFRAMES.find(t => t.key === tf) || {}).barSpace || 8,
         minBarSpacing: 3,
       },
@@ -405,9 +405,12 @@ export default function BMSBChart({
           const plotWidth = Math.max(160, (containerRef.current?.clientWidth || 900) - 80);
           const preferredBars = tf === "1d" ? 150 : 180;
           const visibleBars = Math.min(preferredBars, Math.max(40, Math.floor(plotWidth / 4)));
+          // Keep ~110px empty right of the last candle for the range ruler's label,
+          // whatever the width: p empty bars take p / (visibleBars + p) of the plot.
+          const pad = Math.max(6, Math.ceil(110 * visibleBars / Math.max(60, plotWidth - 110)));
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(-1, candleCount - visibleBars),
-            to: candleCount + 7,
+            to: candleCount + pad,
           });
         };
         resetViewRef.current();
@@ -726,7 +729,7 @@ export default function BMSBChart({
           {signalConfidence != null && signal !== "WAIT" && (
             <span style={{
               fontSize: 8, fontFamily: T.mono, fontWeight: 500,
-              color: signalConfidence >= 80 ? "#22c55e" : signalConfidence >= 50 ? "#fbbf24" : "rgba(255,255,255,0.25)",
+              color: signalConfidence >= 80 ? col("#34d399") : signalConfidence >= 50 ? T.text2 : T.text4,
               opacity: 0.7,
             }}>
               Checks {formatPercent(signalConfidence)}
@@ -880,13 +883,14 @@ export default function BMSBChart({
       {/* ── Chart container ── */}
       <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
       {!loading && !error && <div style={{padding:'10px 18px',fontSize:11,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
-        {chartRange ? <><strong style={{color:'#91b9e8'}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong> <HelpTip title="Range ruler" width={360}>
+        {chartRange ? <><strong style={{color:'#91b9e8'}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong>
+          {chartRange.probability != null && <span style={{marginLeft:8}}>{Math.round(chartRange.probability*100)}% chance of an unusually wide candle (usual: 25%)</span>} <HelpTip title="Range ruler" width={360}>
           <p>The ruler's full height represents the estimated true-range magnitude ({chartRange.atr_mult} × ATR14). It is centred on the reference price for illustration; its ends are not forecast highs or lows.</p>
           <p>Chance of a top-quartile range: {Math.round(chartRange.probability*100)}%, compared with a 25% baseline. This is not directional confidence or a price containment interval.</p>
           <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()} from the last closed candle, the same input as the coin page's range card.</p>
         </HelpTip><span style={{marginLeft:8,fontSize:10}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
       </div>}
-      {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
+      {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",flexWrap:"wrap",gap:"8px 20px",padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
         <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex == null ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
         {signalMarkerIndex != null && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
       </div>}
