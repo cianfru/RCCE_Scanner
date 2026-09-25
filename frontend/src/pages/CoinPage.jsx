@@ -545,7 +545,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const coin = getBaseSymbol(data.symbol);
 
   return (
-    <div style={{ padding: isMobile ? 16 : 24 }}>
+    <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
       {/* Header */}
       <div style={{
         display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
@@ -561,7 +561,14 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
-        <SetupPair row={data} isMobile={isMobile} transition/>
+        <SetupPair row={{...data, unified_signal: undefined}} isMobile={isMobile} transition/>
+        {data.unified_signal && data.unified_signal !== data.signal && (
+          <span title="Combined 4H and 1D decision used for alerts and the scanner counts. It can differ from this timeframe's signal." style={{
+            fontSize: T.textSm, fontFamily: T.mono, color: T.text3, whiteSpace: "nowrap",
+          }}>
+            4H+1D {(SIGNAL_META[data.unified_signal]?.label || data.unified_signal.replaceAll("_", " "))}
+          </span>
+        )}
         {data.signal_confidence != null && (
           <span className="terminal-status" style={{
             padding: "4px 12px", borderRadius: 20,

@@ -1,5 +1,5 @@
 export const SCANNER_COLUMNS = [
-  [null,             "#",       0],
+  [null,             "#",       480],   // row rank; hidden on phones so the signal fits on screen
   ["priority_score", "PRI",     0],     // composite ranking 0-100 — always visible
   ["symbol",         "SYMBOL",  0],     // includes price sub-label on desktop
   ["regime",         "REGIME",  0],

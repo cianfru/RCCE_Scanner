@@ -1516,10 +1516,13 @@ async def chart_data(
 
     # Same magnitude-only model as the scanner, evaluated on this chart's timeframe.
     from engines.range_forecast import forecast as range_forecast
-    chart_range = range_forecast(ohlcv["high"], ohlcv["low"], ohlcv["close"], timeframe)
-    if chart_range is not None and candles:
-        chart_range = {**chart_range, "reference_price": candles[-1]["close"],
-                       "source_candle_time": candles[-1]["time"], "as_of": int(time.time()),
+    # Closed candles only, like the scanner, so the chart and the coin page show the same forecast.
+    from candle_snapshot import closed_candles as _closed
+    closed_range = _closed(ohlcv, timeframe, time.time() * 1000)
+    chart_range = range_forecast(closed_range["high"], closed_range["low"], closed_range["close"], timeframe)
+    if chart_range is not None and len(closed_range["close"]):
+        chart_range = {**chart_range, "reference_price": float(closed_range["close"][-1]),
+                       "source_candle_time": int(closed_range["timestamp"][-1] / 1000), "as_of": int(time.time()),
                        "timeframe": timeframe}
 
     return {

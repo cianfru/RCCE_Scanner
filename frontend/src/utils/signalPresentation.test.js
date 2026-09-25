@@ -26,3 +26,12 @@ test('candle return is open to close and rejects invalid opens',()=>{
 test('range ruler illustrates total magnitude without doubling it',()=>{
  const r=rangeRuler(100,6);assert.equal(r.top-r.bottom,6);assert.equal(r.size,6);assert.equal(rangeRuler(0,6),null);assert.equal(rangeRuler(100,NaN),null);
 });
+test('stale candles read as a pause and withdrawn notes are not repeated',()=>{
+ const c=signalContext({signal:'WAIT',signal_status:'unavailable',signal_reason:'Candle snapshot stale; new entries unavailable',signal_warnings:['REACC LIGHT_LONG demoted: no CVD/spot confirmation']});
+ assert.equal(c.length,1);assert.equal(c[0].kind,'missing');assert.match(c[0].text,/paused/);
+});
+test('downgrades, forced exits and crowded positive funding are cautions, not neutral notes',()=>{
+ for(const w of ['REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)','Heat at 96/95 — forced exit','Extreme funding: +120% annualized funding (0.01%/h) | hyperliquid only'])
+  assert.equal(signalContext({signal:'WAIT',signal_warnings:[w]})[0].kind,'caution',w);
+ assert.equal(signalContext({signal:'WAIT',signal_warnings:['Extreme funding: -90% annualized funding']})[0].kind,'info');
+});

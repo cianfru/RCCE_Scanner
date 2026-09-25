@@ -179,8 +179,8 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
         ref={btnRef}
         onClick={() => setOpen(!open)}
         style={{
-          position: "fixed", bottom: 24, right: 24,
-          width: 56, height: 56, borderRadius: "50%",
+          position: "fixed", bottom: isMobile ? 16 : 24, right: isMobile ? 16 : 24,
+          width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: "50%",
           background: "rgba(10, 10, 20, 0.5)",
           backdropFilter: "blur(20px) saturate(1.5)",
           WebkitBackdropFilter: "blur(20px) saturate(1.5)",
@@ -209,7 +209,7 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
           <img
             src="/brand/reflex-ribbon-transparent.svg"
             alt="AI Assistant"
-            style={{ width: 32, height: 36, objectFit: "contain", opacity: 1 }}
+            style={{ width: isMobile ? 26 : 32, height: isMobile ? 29 : 36, objectFit: "contain", opacity: 1 }}
           />
         )}
       </button>
