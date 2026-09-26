@@ -107,9 +107,11 @@ const heatmapTextColor = (ratio) => {
 
 // ─── MODAL OVERLAY ───────────────────────────────────────────────────────────
 
+// The portal lands outside App's .reflex-terminal wrapper, so it is wrapped again
+// here to pick up the terminal rules (flat .terminal-status, font reset).
 function ModalOverlay({ children, onClose }) {
   return createPortal(
-    <div
+    <div className="reflex-terminal"><div
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
@@ -125,7 +127,7 @@ function ModalOverlay({ children, onClose }) {
       }}>
         {children}
       </div>
-    </div>,
+    </div></div>,
     document.body
   );
 }
@@ -327,7 +329,6 @@ function StatusStrip({ status, cohort, roster }) {
     ? (status.tracked_wallets || 0)
     : cohort === "money_printers" ? mpCount
     : cohort === "smart_money" ? smCount
-    : cohort === "elite" ? eliteCount
     : (status.tracked_wallets || 0);
 
   const items = [
@@ -420,30 +421,21 @@ function ConsensusBar({ long_count, short_count }) {
 
 // ─── CONSENSUS TABLE (enhanced) ─────────────────────────────────────────────
 
-// Helper to extract cohort-specific fields from a consensus entry
+// Helper to extract cohort-specific fields from a consensus entry. The API nests
+// them under c.money_printer / c.smart_money; the aggregate is only a fallback
+// for rows that lack the nested block.
+const COHORT_BLOCK = { money_printers: "money_printer", smart_money: "smart_money" };
+
 function getCohortFields(c, cohort) {
-  if (cohort === "money_printers") {
-    return {
-      long_count: c.money_printer_long_count ?? c.long_count,
-      short_count: c.money_printer_short_count ?? c.short_count,
-      net_ratio: c.money_printer_net_ratio ?? c.net_ratio,
-      trend: c.money_printer_trend ?? c.trend,
-    };
-  }
-  if (cohort === "smart_money") {
-    return {
-      long_count: c.smart_money_long_count ?? c.long_count,
-      short_count: c.smart_money_short_count ?? c.short_count,
-      net_ratio: c.smart_money_net_ratio ?? c.net_ratio,
-      trend: c.smart_money_trend ?? c.trend,
-    };
-  }
-  // "all" or "elite" — use aggregate fields
+  const k = COHORT_BLOCK[cohort];
+  const g = (k && c[k]) || c;
   return {
-    long_count: c.long_count,
-    short_count: c.short_count,
-    net_ratio: c.net_ratio,
-    trend: c.trend,
+    long_count: g.long_count ?? 0,
+    short_count: g.short_count ?? 0,
+    net_ratio: g.net_ratio ?? 0,
+    trend: g.trend ?? "NEUTRAL",
+    long_notional: g.long_notional ?? 0,
+    short_notional: g.short_notional ?? 0,
   };
 }
 
@@ -451,9 +443,16 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
   const [sortKey, setSortKey] = useState("positioned");
   const [sortAsc, setSortAsc] = useState(false);
 
+  // Confidence and leverage exist only for all wallets, so they are hidden
+  // while a cohort is selected.
+  const allWallets = cohort === "all";
+
   const maxNotional = useMemo(() => {
-    return Math.max(...consensus.map(c => (c.long_notional || 0) + (c.short_notional || 0)), 1);
-  }, [consensus]);
+    return Math.max(...consensus.map(c => {
+      const f = getCohortFields(c, cohort);
+      return f.long_notional + f.short_notional;
+    }), 1);
+  }, [consensus, cohort]);
 
   const filtered = useMemo(() => {
     let items = [...consensus];
@@ -461,16 +460,18 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
       const q = filter.toUpperCase();
       items = items.filter(c => c.symbol.includes(q));
     }
+    // A hidden column cannot be the sort key.
+    const key = cohort !== "all" && (sortKey === "confidence" || sortKey === "leverage") ? "positioned" : sortKey;
     items.sort((a, b) => {
       const aF = getCohortFields(a, cohort);
       const bF = getCohortFields(b, cohort);
       let va, vb;
-      switch (sortKey) {
+      switch (key) {
         case "symbol": va = a.symbol; vb = b.symbol; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
         case "trend": va = aF.trend; vb = bF.trend; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
         case "long": va = aF.long_count; vb = bF.long_count; break;
         case "short": va = aF.short_count; vb = bF.short_count; break;
-        case "notional": va = (a.long_notional || 0) + (a.short_notional || 0); vb = (b.long_notional || 0) + (b.short_notional || 0); break;
+        case "notional": va = aF.long_notional + aF.short_notional; vb = bF.long_notional + bF.short_notional; break;
         case "net": va = aF.net_ratio; vb = bF.net_ratio; break;
         case "confidence": va = a.confidence || 0; vb = b.confidence || 0; break;
         case "leverage": va = a.avg_leverage || 0; vb = b.avg_leverage || 0; break;
@@ -496,13 +497,9 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
             <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
             <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }} title="Wallet count, long versus short. The trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
             <SortTh label="NET" sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
-            <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
-            {!isMobile && (
-              <>
-                <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />
-                <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />
-              </>
-            )}
+            {allWallets && <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />}
+            {!isMobile && allWallets && <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />}
+            {!isMobile && <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />}
           </tr>
         </thead>
         <tbody>
@@ -522,7 +519,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                   <div style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
                     {c.symbol}
                   </div>
-                  <ConfidenceBar confidence={c.confidence} trend={cf.trend} />
+                  {allWallets && <ConfidenceBar confidence={c.confidence} trend={cf.trend} />}
                 </td>
                 <td style={{ padding: "10px 12px", textAlign: "center" }}>
                   <span className="terminal-status" style={{
@@ -550,25 +547,27 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                 }}>
                   {cf.net_ratio > 0 ? "+" : ""}{(cf.net_ratio * 100).toFixed(0)}%
                 </td>
-                <td style={{
-                  padding: "10px 12px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: T.textBase, color: T.text3,
-                }}>
-                  {c.confidence != null ? `${(c.confidence * 100).toFixed(0)}%` : "--"}
-                </td>
+                {allWallets && (
+                  <td style={{
+                    padding: "10px 12px", textAlign: "center",
+                    fontFamily: T.mono, fontSize: T.textBase, color: T.text3,
+                  }}>
+                    {c.confidence != null ? `${(c.confidence * 100).toFixed(0)}%` : "--"}
+                  </td>
+                )}
+                {!isMobile && allWallets && (
+                  <td style={{
+                    padding: "10px 12px", textAlign: "center",
+                    fontFamily: T.mono, fontSize: T.textBase, fontWeight: 600,
+                    color: levColor(c.avg_leverage),
+                  }}>
+                    {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
+                  </td>
+                )}
                 {!isMobile && (
-                  <>
-                    <td style={{
-                      padding: "10px 12px", textAlign: "center",
-                      fontFamily: T.mono, fontSize: T.textBase, fontWeight: 600,
-                      color: levColor(c.avg_leverage),
-                    }}>
-                      {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <NotionalBar long_notional={c.long_notional} short_notional={c.short_notional} maxNotional={maxNotional} />
-                    </td>
-                  </>
+                  <td style={{ padding: "10px 12px" }}>
+                    <NotionalBar long_notional={cf.long_notional} short_notional={cf.short_notional} maxNotional={maxNotional} />
+                  </td>
                 )}
               </tr>
             );
@@ -1037,28 +1036,23 @@ function LiqDistBar({ pct }) {
   );
 }
 
-// ─── WALLET TAG BADGES (derived like HyperTracker's Leviathan/Money Printer) ─
+// ─── WALLET TAGS (account size and monthly return) ──────────────────────────
 
 function WalletTags({ data }) {
   const tags = [];
   const av = data.account_value || 0;
   const roi = data.monthly_roi || 0;
-  if (av >= 10e6) tags.push({ label: "Leviathan", color: "#a78bfa", emoji: "\ud83d\udc0b" });
-  else if (av >= 1e6) tags.push({ label: "Whale", color: "#60a5fa", emoji: "\ud83d\udc33" });
-  else if (av >= 100e3) tags.push({ label: "Dolphin", color: "#b8fff0", emoji: "\ud83d\udc2c" });
-  if (roi >= 100) tags.push({ label: "High return", color: T.green, emoji: "\ud83d\udcb0" });
-  else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow, emoji: "\u2b50" });
+  if (av >= 10e6) tags.push({ label: "$10M+ account", color: T.text2 });
+  else if (av >= 1e6) tags.push({ label: "$1M+ account", color: T.text2 });
+  else if (av >= 100e3) tags.push({ label: "$100K+ account", color: T.text2 });
+  if (roi >= 100) tags.push({ label: "High return", color: T.green });
+  else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow });
   if (tags.length === 0) return null;
   return (
-    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
       {tags.map(t => (
-        <span key={t.label} style={{
-          fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-          padding: "2px 8px", borderRadius: 12,
-          color: t.color, background: `${t.color}15`,
-          border: `1px solid ${t.color}30`,
-        }}>
-          {t.emoji} {t.label}
+        <span key={t.label} style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: t.color }}>
+          {t.label}
         </span>
       ))}
     </div>
@@ -1073,6 +1067,7 @@ function WalletDetail({ address, onClose, userWallet }) {
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState("positions");
   const [isFollowing, setIsFollowing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Check follow state on mount
   useEffect(() => {
@@ -1185,22 +1180,26 @@ function WalletDetail({ address, onClose, userWallet }) {
             <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>
               {data.snapshot_count} snaps
             </span>
-            <span
-              style={{
-                fontFamily: T.mono, fontSize: 10, color: T.text4,
-                cursor: "pointer", userSelect: "all", wordBreak: "break-all",
-              }}
-              title="Click to copy"
+            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
+              {address}
+            </span>
+            <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                navigator.clipboard.writeText(address);
-                const el = e.currentTarget;
-                el.style.color = T.green;
-                setTimeout(() => el.style.color = T.text4, 1200);
+                navigator.clipboard?.writeText(address).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1200);
+                }).catch(() => {});
+              }}
+              style={{
+                fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
+                color: copied ? T.green : T.accent, background: "none", border: 0,
+                padding: 0, cursor: "pointer", flexShrink: 0,
               }}
             >
-              {address} \u2398
-            </span>
+              {copied ? "Copied" : "Copy"}
+            </button>
           </div>
           {/* Tags */}
           <div style={{ marginTop: 6 }}>
@@ -1212,19 +1211,14 @@ function WalletDetail({ address, onClose, userWallet }) {
             <button
               onClick={toggleFollow}
               title={isFollowing ? "Unfollow wallet" : "Follow wallet for trade alerts"}
+              aria-pressed={isFollowing}
               style={{
-                width: 30, height: 30, borderRadius: 8,
-                border: `1px solid ${isFollowing ? "#fbbf2440" : T.overlay10}`,
-                background: isFollowing ? "#fbbf2418" : T.overlay04,
-                color: isFollowing ? "#fbbf24" : T.text3,
-                fontSize: 16, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.15s",
+                height: 30, padding: "0 4px", background: "none", border: 0,
+                fontFamily: T.font, fontSize: T.textSm, fontWeight: 600,
+                color: isFollowing ? T.accent : T.text3, cursor: "pointer",
               }}
-              onMouseEnter={e => { if (!isFollowing) { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = "#fbbf24"; } }}
-              onMouseLeave={e => { if (!isFollowing) { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; } }}
             >
-              {isFollowing ? "\u2605" : "\u2606"}
+              {isFollowing ? "Following" : "Follow"}
             </button>
           )}
           <button
@@ -1341,22 +1335,12 @@ function WalletDetail({ address, onClose, userWallet }) {
             display: "flex", flexDirection: "column", gap: 3, justifyContent: "center",
           }}>
             {s.best_trade && (
-              <span style={{
-                fontFamily: T.mono, fontSize: 10,
-                padding: "2px 8px", borderRadius: 12,
-                color: T.green, background: `${T.green}12`, border: `1px solid ${T.green}25`,
-                fontWeight: 600, whiteSpace: "nowrap",
-              }}>
+              <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.green, whiteSpace: "nowrap" }}>
                 {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
               </span>
             )}
             {s.worst_trade && (
-              <span style={{
-                fontFamily: T.mono, fontSize: 10,
-                padding: "2px 8px", borderRadius: 12,
-                color: T.red, background: `${T.red}12`, border: `1px solid ${T.red}25`,
-                fontWeight: 600, whiteSpace: "nowrap",
-              }}>
+              <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.red, whiteSpace: "nowrap" }}>
                 {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
               </span>
             )}
@@ -2582,7 +2566,6 @@ function PressureLiqClusters({ clusters }) {
             border: `1px solid ${T.yellow}20`,
             display: "flex", alignItems: "center", gap: 10,
           }}>
-            <span style={{ fontSize: 16 }}>{"\u26A1"}</span>
             <div style={{ flex: 1, fontFamily: T.mono, fontSize: 12, color: T.text2, lineHeight: 1.5 }}>
               <span style={{ fontWeight: 700, color: T.yellow }}>{c.wallet_count} wallets</span>
               {" with "}
@@ -2775,18 +2758,15 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); unfollow(w.address); }}
-              title="Unfollow"
               style={{
-                width: 28, height: 28, borderRadius: 6,
-                border: `1px solid ${T.overlay10}`, background: T.overlay04,
-                color: "#fbbf24", fontSize: 14, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.15s", flexShrink: 0,
+                background: "none", border: 0, padding: "4px 0",
+                fontFamily: T.font, fontSize: T.textSm, fontWeight: 600,
+                color: T.text3, cursor: "pointer", flexShrink: 0,
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#f8717118"; e.currentTarget.style.color = "#f87171"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = "#fbbf24"; }}
+              onMouseEnter={e => { e.currentTarget.style.color = T.red; }}
+              onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
             >
-              {"\u2605"}
+              Unfollow
             </button>
           </div>
         ))}
@@ -2864,7 +2844,7 @@ function TabSwitcher({ active, onChange, isMobile }) {
   // Roster tab removed in "Sentiment Mode" \u2014 same data is on the HL
   // leaderboard, and the in-app value lives in Consensus instead.
   const tabs = [
-    { key: "favorites", label: "\u2605 Watchlist" },
+    { key: "favorites", label: "Watchlist" },
     { key: "consensus", label: "Consensus" },
     { key: "heatmap", label: "Heatmap" },
     { key: "pressure", label: "Pressure" },
@@ -2875,44 +2855,13 @@ function TabSwitcher({ active, onChange, isMobile }) {
 
 // ─── COHORT FILTER ──────────────────────────────────────────────────────────
 
+// No "Both" option: the consensus API has no per-symbol figures for wallets in
+// both groups, and showing all-wallet numbers under that label would mislead.
 const COHORT_OPTIONS = [
-  { key: "all", label: "ALL", color: T.text1 },
-  { key: "money_printers", label: "Profitable traders", color: T.green, title: "Top 300 by monthly return (at least 30% and $10K) that were also in profit before this month" },
-  { key: "smart_money", label: "Large accounts", color: T.accent, title: "The 300 largest accounts ($1M and up); profit is not checked" },
-  { key: "elite", label: "Both", color: T.yellow, title: "Wallets in both groups" },
+  { key: "all", label: "All wallets" },
+  { key: "money_printers", label: "Profitable traders", title: "Top 300 by monthly return (at least 30% and $10K) that were also in profit before this month" },
+  { key: "smart_money", label: "Large accounts", title: "The 300 largest accounts ($1M and up); profit is not checked" },
 ];
-
-function CohortFilter({ active, onChange, isMobile }) {
-  return (
-    <div style={{
-      display: "flex", gap: 4, flexWrap: "wrap",
-    }}>
-      {COHORT_OPTIONS.map(({ key, label, color, title }) => {
-        const isActive = active === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            title={title}
-            style={{
-              padding: isMobile ? "6px 12px" : "5px 14px", borderRadius: 20,
-              fontFamily: T.font, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: 600,
-              color: isActive ? color : T.text4,
-              background: isActive ? `${color}15` : T.overlay04,
-              border: isActive ? `1px solid ${color}35` : `1px solid ${T.overlay06}`,
-              boxShadow: isActive ? `0 0 12px ${color}15` : "none",
-              cursor: "pointer", transition: "all 0.2s ease",
-              letterSpacing: "0.04em",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
@@ -2932,10 +2881,11 @@ export default function HyperLensPanel({ isMobile }) {
 
   const loadData = useCallback(async () => {
     try {
+      // Consensus rows carry every cohort's figures; only the roster is filtered.
       const cohortParam = cohort !== "all" ? `?cohort=${cohort}` : "";
       const [statusRes, consensusRes, rosterRes] = await Promise.all([
         fetch(`${API}/api/hyperlens/status`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/consensus${cohortParam}`).then(r => r.json()),
+        fetch(`${API}/api/hyperlens/consensus`).then(r => r.json()),
         fetch(`${API}/api/hyperlens/roster${cohortParam}`).then(r => r.json()),
       ]);
       setStatus(statusRes);
@@ -3018,7 +2968,7 @@ export default function HyperLensPanel({ isMobile }) {
           gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} isMobile={isMobile} />
-          <CohortFilter active={cohort} onChange={setCohort} isMobile={isMobile} />
+          <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />
 
           {tab === "consensus" && (
             <input

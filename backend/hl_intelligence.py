@@ -208,6 +208,8 @@ class SymbolConsensus:
     smart_money_net_ratio: float = 0.0
     smart_money_long_count: int = 0
     smart_money_short_count: int = 0
+    smart_money_long_notional: float = 0.0
+    smart_money_short_notional: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1101,6 +1103,8 @@ def _recompute_consensus() -> None:
             smart_money_net_ratio=round(sm_net_ratio, 4),
             smart_money_long_count=d["sm_long"],
             smart_money_short_count=d["sm_short"],
+            smart_money_long_notional=round(d["sm_long_notional"], 2),
+            smart_money_short_notional=round(d["sm_short_notional"], 2),
         )
 
     _consensus = new_consensus
