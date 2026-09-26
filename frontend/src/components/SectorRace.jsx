@@ -3,6 +3,7 @@ import { SECTOR_SHORT, traderWeight } from "../utils/sectors.js";
 import { traderLean } from "../utils/traders.js";
 import { raceLines } from "../utils/sectorRace.js";
 import Tabs from "./Tabs.jsx";
+import HelpTip from "./HelpTip.jsx";
 
 // Race of sectors (or ecosystems) against BTC. Every group is a thin muted line;
 // up to three are highlighted in fixed colours (the leaders by default, or the ones
@@ -80,6 +81,10 @@ export default function SectorRace({ data, rows, by, value }) {
       <Tabs small label="Compare" items={MODES} value={mode} onChange={setMode} />
       <Tabs small label="Range" items={RANGES} value={range} onChange={setRange} />
       {picked.length > 0 && <button type="button" className="sector-clear" onClick={() => setPicked([])}>Show leaders</button>}
+      <HelpTip title="Race against BTC" width={400}>
+        <p>Each line is a group's median daily move, chained and started at 100, so one coin cannot drag it. Against BTC divides by Bitcoin: above 100 the group is beating BTC. Closed daily candles, perpetual markets only.</p>
+        <p>Tested on 2021 to March 2026: the sector leading over 30 days went on to beat the weakest sector over the next 10 days in 8 of 9 test periods (+3.8% on average). It beat BTC itself only 42% of the time, so leadership is a guide to which altcoins, not a long-altcoins / short-BTC trade. Seven-day leadership and ecosystems showed no persistence. Not yet a ranking input.</p>
+      </HelpTip>
     </div>
     <div className="race-body">
       <figure className="race-chart" ref={ref}>
