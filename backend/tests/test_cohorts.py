@@ -220,3 +220,24 @@ class SymbolCadenceTests(unittest.TestCase):
                 ts = st.latest_ts()
                 counts.append(len([r for r in st.snapshot(ts) if r["symbol"]]))
             self.assertEqual(counts, [1, 0, 1])      # a BTC row in the PnL view ($20K is below the equity view)
+
+
+class RetryTests(unittest.TestCase):
+    def test_failed_wallet_is_retried_once(self):
+        class Flaky(FakeSource):
+            def __init__(self):
+                super().__init__()
+                self.fails = {"0xa1": 1, "0xb1": 5}
+            async def fetch(self, address):
+                if self.fails.get(address, 0) > 0:
+                    self.fails[address] -= 1
+                    return None
+                return await super().fetch(address)
+        with tempfile.TemporaryDirectory() as d:
+            st = Store(os.path.join(d, "c.db"))
+            st.update_registry([("0xa1", 50_000.0, 2e5), ("0xb1", 50_000.0, 2e5)], now=0)
+            c = Clock(100.0)
+            asyncio.run(Sweeper(st, Flaky(), TokenBucket(6000, clock=c, sleep=c.sleep), clock=c, sleep=c.sleep,
+                                respect_quiet=False).run_once())
+            run = st.runs(1)[0]
+            self.assertEqual((run["polled"], run["errors"], run["weight"]), (1, 1, 8))   # a1 recovered, b1 gave up

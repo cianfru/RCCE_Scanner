@@ -116,6 +116,7 @@ class Sweeper:
         queue: asyncio.Queue = asyncio.Queue()
         for item in todo:
             queue.put_nowait(item)
+        retried: set = set()
         done: List[tuple] = []
         stats = {"polled": 0, "errors": 0, "rate_limited": 0, "weight": 0}
 
@@ -148,7 +149,11 @@ class Sweeper:
                     queue.put_nowait((address, pnl))
                     continue
                 if raw is None:
-                    stats["errors"] += 1
+                    if address not in retried:          # one retry, at the back of the queue
+                        retried.add(address)
+                        queue.put_nowait((address, pnl))
+                    else:
+                        stats["errors"] += 1
                     continue
                 now = self.clock()
                 equity, positions = raw
