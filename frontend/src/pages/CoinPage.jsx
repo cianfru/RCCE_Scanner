@@ -2,7 +2,7 @@ import SetupPair from "../components/SetupPair.jsx";
 import SignalContext from "../components/SignalContext.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import HelpTip from "../components/HelpTip.jsx";
-import { formatPercent, evidenceSummary } from "../utils/marketPresentation.js";
+import { formatPercent, evidenceSummary, funding8hPct, hasCoinglass } from "../utils/marketPresentation.js";
 import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -298,7 +298,7 @@ function MetricsPanel({ data }) {
 
   // Color functions for each metric
   const confColor = (v) => v >= 60 ? "#34d399" : v >= 40 ? "#fbbf24" : "#f87171";
-  const fundColor = (v) => v < 0 ? "#34d399" : v > 0.01 ? "#f87171" : T.text3;
+  const fundColor = (v) => v < 0 ? "#34d399" : v > 0.01 ? "#f87171" : T.text3;  // percent per 8h
   const oiChgColor = (v) => v > 0 ? "#34d399" : v < 0 ? "#f87171" : T.text3;
   const lsrColor = (v) => v < 0.9 ? "#34d399" : v > 1.2 ? "#f87171" : T.text3;
   const bsrColor = (v) => v > 1 ? "#34d399" : v < 1 ? "#f87171" : T.text3;
@@ -306,13 +306,15 @@ function MetricsPanel({ data }) {
 
   const metrics = [
     { label: "Regime confidence", history: data.confidence_history, current: data.confidence, unit: "%", colorFn: confColor },
-    { label: "Funding", history: data.funding_history, current: pos.funding_rate != null ? pos.funding_rate * 100 : null, unit: "%", colorFn: fundColor },
+    // funding_history holds hourly percent; show it per 8h like the current value.
+    { label: "Funding /8h", history: data.funding_history?.map(v => v * 8), current: funding8hPct(pos.funding_rate), unit: "%", colorFn: fundColor },
     { label: "Open Interest", history: data.oi_history, current: pos.oi_value, unit: "$", colorFn: null },
     { label: "OI Change", history: data.oi_change_history, current: pos.oi_change_pct, unit: "%", colorFn: oiChgColor },
-    { label: "LSR", history: data.lsr_history, current: pos.long_short_ratio, unit: "x", colorFn: lsrColor },
+    // Without CoinGlass these two hold placeholders (1.0 and 0), not readings.
+    hasCoinglass(data) && { label: "LSR", history: data.lsr_history, current: pos.long_short_ratio, unit: "x", colorFn: lsrColor },
     { label: "Buy/Sell", history: data.bsr_history, current: data.buy_sell_ratio, unit: "x", colorFn: bsrColor },
-    { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
-  ].filter(m => m.history && m.history.length >= 2);
+    hasCoinglass(data) && { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
+  ].filter(m => m && m.history && m.history.length >= 2);
 
   // Determine accent color from confidence
   const conf = data.confidence;
@@ -465,7 +467,7 @@ function SmartMoneyPanel({ data }) {
       </> : <p className="analysis-explanation">No profitable trader holds this market right now.</p>}
       <p className="analysis-explanation">Top 300 Hyperliquid wallets by monthly return, also in profit before this month. In a rising month most are long, so a market they avoid says more than one they hold.{pro.n > 0 && pro.n < 3 ? " Fewer than three hold it, too few to read." : ""}</p>
       <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, margin: "14px 0 6px", paddingTop: 12, borderTop: `1px solid ${T.overlay06}` }}>All tracked wallets <span style={{ color: T.text4, fontWeight: 400 }}>(profitable traders and large accounts)</span></div>
-      <p className="analysis-explanation">The direction weights position value more heavily than wallet count, so the largest accounts dominate it. A smaller number of larger short positions can outweigh a majority of long wallets. This is the reading the signal's whale check uses.</p>
+      <p className="analysis-explanation">The direction weights position value more heavily than wallet count, so the largest accounts dominate it. A smaller number of larger short positions can outweigh a majority of long wallets. This is the reading the signal's tracked-wallet check uses.</p>
       <details className="analysis-method"><summary>How this is calculated</summary><p>The engine blends dollar imbalance (70%) and wallet-count imbalance (30%). Dollar weight rises to 85% when the notional imbalance exceeds 50%. A blended score above +0.15 is bullish, below −0.15 bearish. Conviction also accounts for wallet participation; it is not a probability of profit.</p></details>
       {/* L/S bar */}
       <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
@@ -522,11 +524,12 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     const scanData = timeframe === "4h" ? scanData4h : scanData1d;
     if (!scanData || scanData.length === 0) return null;
     const sym = (urlSymbol || "").toUpperCase();
-    return scanData.find(r => r.symbol?.toUpperCase() === sym) || scanData.find(r => {
-      const base = getBaseSymbol(r.symbol).replace("/", "").toUpperCase();
-      return base === sym || r.symbol?.toUpperCase() === sym || r.symbol?.toUpperCase() === `${sym}/USDT`;
-    });
-  }, [scanData4h, scanData1d, urlSymbol, timeframe]);
+    // Only rows of the requested market; never fall back to the other one.
+    const rows = scanData.filter(r => (r.market_kind || "perpetual") === marketKind);
+    return rows.find(r => r.symbol?.toUpperCase() === sym)
+      || rows.find(r => getBaseSymbol(r.symbol).replace("/", "").toUpperCase() === sym)
+      || null;
+  }, [scanData4h, scanData1d, urlSymbol, timeframe, marketKind]);
 
   // Scroll to top on open
   useEffect(() => { window.scrollTo(0, 0); }, [urlSymbol]);
@@ -695,7 +698,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       </section>
       <section className="analysis-section"><h2>Positioning & counter-evidence</h2><p className="analysis-section-caption">Compare market structure, exchange data and tracked wallets.</p>
         <div className="analysis-grid analysis-grid-three">
-          <PositioningPanel positioning={data.positioning} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} vpinLabel={data.vpin_label} vpinHistory={data.vpin_history} oiContext={data.oi_context}/>
+          <PositioningPanel positioning={data.positioning} hasCoinglass={hasCoinglass(data)} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} vpinLabel={data.vpin_label} vpinHistory={data.vpin_history} oiContext={data.oi_context}/>
           <CrossExchangePanel symbol={data.symbol}/>
           <SmartMoneyPanel data={data}/>
         </div>

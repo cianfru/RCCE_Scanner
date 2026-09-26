@@ -1,6 +1,7 @@
 import ExecutorPerformance from "./ExecutorPerformance.jsx";
 import { useState, useEffect, useCallback } from "react";
 import { T, SIGNAL_META } from "../theme.js";
+import { getAdminKey } from "../auth.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,14 +41,14 @@ function fmtPnl(pct) {
 
 function pnlColor(pct) {
   if (pct == null) return T.text3;
-  return pct >= 0 ? "#34d399" : "#f87171";
+  return pct >= 0 ? T.green : T.red;
 }
 
 function sideBadge(side) {
   const isLong = side === "LONG";
   return {
     bg: isLong ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.12)",
-    color: isLong ? "#34d399" : "#f87171",
+    color: isLong ? T.green : T.red,
     border: isLong ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.25)",
     label: side,
   };
@@ -106,17 +107,22 @@ const S = {
   btnPrimary: {
     background: "rgba(151,252,228,0.12)",
     borderColor: "rgba(151,252,228,0.3)",
-    color: "#97FCE4",
+    color: T.accent,
   },
-  btnLive: {
-    background: "rgba(248,113,113,0.12)",
-    borderColor: "rgba(248,113,113,0.3)",
-    color: "#f87171",
+  // Getters: T.red is repainted in place by applyTheme, so read it at render time
+  get btnLive() {
+    return {
+      background: "rgba(248,113,113,0.12)",
+      borderColor: "rgba(248,113,113,0.3)",
+      color: T.red,
+    };
   },
-  btnDanger: {
-    background: "rgba(248,113,113,0.08)",
-    borderColor: "rgba(248,113,113,0.2)",
-    color: "#f87171",
+  get btnDanger() {
+    return {
+      background: "rgba(248,113,113,0.08)",
+      borderColor: "rgba(248,113,113,0.2)",
+      color: T.red,
+    };
   },
   label: {
     fontSize: 11,
@@ -153,9 +159,9 @@ function ModeBadge({ mode, enabled }) {
   if (!enabled && mode !== "disabled") {
     bg = "rgba(82,82,91,0.15)"; color = T.text3; border = T.border; label = "PAUSED";
   } else if (mode === "paper") {
-    bg = "rgba(52,211,153,0.12)"; color = "#34d399"; border = "rgba(52,211,153,0.3)"; label = "PAPER";
+    bg = "rgba(52,211,153,0.12)"; color = T.green; border = "rgba(52,211,153,0.3)"; label = "PAPER";
   } else if (mode === "live") {
-    bg = "rgba(248,113,113,0.12)"; color = "#f87171"; border = "rgba(248,113,113,0.3)"; label = "LIVE";
+    bg = "rgba(248,113,113,0.12)"; color = T.red; border = "rgba(248,113,113,0.3)"; label = "LIVE";
   } else {
     bg = "rgba(82,82,91,0.1)"; color = T.text4; border = T.border; label = "DISABLED";
   }
@@ -343,7 +349,7 @@ function HLPositionCard({ pos }) {
         {pos.liquidation_price && (
           <div>
             <span style={S.label}>Liq </span>
-            <span style={{ ...S.value, color: "#f87171" }}>{fmtPrice(pos.liquidation_price)}</span>
+            <span style={{ ...S.value, color: T.red }}>{fmtPrice(pos.liquidation_price)}</span>
           </div>
         )}
       </div>
@@ -579,7 +585,10 @@ export default function ExecutorPanel({ api }) {
       {fetchError && <p role="status" style={{color:T.text3,fontSize:12,lineHeight:1.6}}>{fetchError}</p>}
       <ExecutorPerformance performance={status?.performance} mode={status?.mode} />
 
-      {/* ─── CONTROLS ─── */}
+      {/* ─── CONTROLS (admin key only; the server rejects changes without it) ─── */}
+      {!getAdminKey() ? (
+        <p style={{ color: T.text3, fontSize: 12, lineHeight: 1.6 }}>Engine controls need the admin key (Settings).</p>
+      ) : (
       <details className="executor-controls" style={S.section}><summary>Engine controls and configuration</summary>
         <div style={S.sectionHeader}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -656,8 +665,8 @@ export default function ExecutorPanel({ api }) {
             Choose a mode to start the executor.
             <br />
             <span style={{ fontSize: 11, color: T.text4, marginTop: 8, display: "inline-block" }}>
-              <strong style={{ color: "#97FCE4" }}>Paper</strong> simulates trades.{" "}
-              <strong style={{ color: "#f87171" }}>Live</strong> executes real orders on Hyperliquid.
+              <strong style={{ color: T.accent }}>Paper</strong> simulates trades.{" "}
+              <strong style={{ color: T.red }}>Live</strong> executes real orders on Hyperliquid.
             </span>
           </div>
         )}
@@ -672,12 +681,13 @@ export default function ExecutorPanel({ api }) {
             borderRadius: 6,
             fontSize: 11,
             fontFamily: T.mono,
-            color: "#f87171",
+            color: T.red,
           }}>
             Last error: {status.last_error}
           </div>
         )}
       </details>
+      )}
 
       {/* ─── HYPERLIQUID LIVE POSITIONS ─── */}
       {isLive && status?.initialized && (
@@ -687,12 +697,12 @@ export default function ExecutorPanel({ api }) {
         }}>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ ...S.sectionTitle, color: "#f87171" }}>
+              <span style={{ ...S.sectionTitle, color: T.red }}>
                 Hyperliquid Positions {hlPositions.length > 0 && `(${hlPositions.length})`}
               </span>
               <span style={S.badge(
                 "rgba(248,113,113,0.12)",
-                "#f87171",
+                T.red,
                 "rgba(248,113,113,0.3)",
               )}>LIVE</span>
             </div>
@@ -730,13 +740,13 @@ export default function ExecutorPanel({ api }) {
                 {whitelist.whitelist_count}/{whitelist.available_count} pairs active
               </span>
             </div>
-            <button
+            {getAdminKey() && <button
               style={S.btn}
               onClick={resetWhitelist}
               disabled={wlLoading}
             >
               Reset Default
-            </button>
+            </button>}
           </div>
           <div style={{
             padding: "14px 20px",
@@ -751,17 +761,17 @@ export default function ExecutorPanel({ api }) {
                 <button
                   key={sym}
                   onClick={() => toggleWhitelist(sym, !active)}
-                  disabled={wlLoading}
+                  disabled={wlLoading || !getAdminKey()}   // read-only without the admin key
                   style={{
                     padding: "4px 10px",
                     borderRadius: 6,
                     border: `1px solid ${active ? "rgba(151,252,228,0.35)" : T.border}`,
                     background: active ? "rgba(151,252,228,0.08)" : T.overlay02,
-                    color: active ? "#97FCE4" : T.text4,
+                    color: active ? T.accent : T.text4,
                     fontSize: 11,
                     fontFamily: T.mono,
                     fontWeight: active ? 700 : 500,
-                    cursor: wlLoading ? "not-allowed" : "pointer",
+                    cursor: wlLoading ? "not-allowed" : getAdminKey() ? "pointer" : "default",
                     transition: "all 0.15s",
                     opacity: wlLoading ? 0.5 : 1,
                   }}

@@ -2,7 +2,7 @@ import SetupPair from "./SetupPair.jsx";
 import SignalContext from "./SignalContext.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { friendlyReason } from "../utils/signalPresentation.js";
-import { formatPercent } from "../utils/marketPresentation.js";
+import { formatPercent, hasCoinglass } from "../utils/marketPresentation.js";
 import { useState, useEffect, useCallback } from "react";
 import { T, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import { ZScoreBar, SignalDot } from "./badges.jsx";
@@ -533,6 +533,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
         {/* Market Structure — Positioning + CoinGlass signals unified */}
         <PositioningPanel
           positioning={selected.positioning}
+          hasCoinglass={hasCoinglass(selected)}
           cvdTrend={selected.cvd_trend}
           cvdDiv={selected.cvd_divergence}
           bsr={selected.buy_sell_ratio}

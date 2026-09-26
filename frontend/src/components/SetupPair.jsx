@@ -22,7 +22,7 @@ export default function SetupPair({ row, isMobile, transition = false, compact =
   return <div className="setup-pair-wrap">
     <div className="setup-pair" data-locked={locked} data-strength={alignment.strength} aria-label={`Regime and signal: ${alignment.label}`}
       style={{'--setup-color':color}}>
-      <span className="setup-pair-regime"><RegimeBadge regime={row.regime} isMobile={isMobile}/></span>
+      <span className="setup-pair-regime"><RegimeBadge regime={row.regime} isMobile={isMobile} noHistory={row.history_bars === 0}/></span>
       <HelpTip className="setup-pair-link" title={alignment.label} label={`Setup alignment: ${alignment.label}`} width={300} size={16}
         buttonStyle={{border:0,color,background:'transparent'}} icon={<Icon size={locked ? 12 : 13} strokeWidth={locked ? 2.4 : 2}/> }>
         <p>{relationship}</p>

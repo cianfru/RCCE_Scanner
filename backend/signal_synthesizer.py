@@ -200,9 +200,9 @@ def _apply_cvd_modifiers(
     if top_trader_lsr != 1.0:
         if top_trader_lsr < 0.7 and signal in ("STRONG_LONG", "LIGHT_LONG"):
             signal = "LIGHT_LONG" if signal == "STRONG_LONG" else "ACCUMULATE"
-            extra_warnings.append(f"smart_money_heavy_short(lsr={top_trader_lsr:.2f})→downgrade")
+            extra_warnings.append(f"top_trader_heavy_short(lsr={top_trader_lsr:.2f})→downgrade")
         if top_trader_lsr > 1.5 and signal not in _adverse:
-            extra_warnings.append(f"smart_money_long(lsr={top_trader_lsr:.2f})")
+            extra_warnings.append(f"top_trader_long(lsr={top_trader_lsr:.2f})")
 
     # Informational warnings (no signal change)
     if spot_dominance == "SPOT_LED" and signal not in _adverse:
@@ -395,7 +395,7 @@ def _synthesize_signal(
     _CG_NAMES = [
         ("oi_confirms",      "OI Confirms",     f"OI {oi_trend}",                        "coinglass"),
         ("cvd_confirms",     "CVD Confirms",    f"CVD {cvd_trend}",                      "coinglass"),
-        ("smart_money_ok",   "Smart Money",     f"LSR {top_trader_lsr:.2f} >= {SMART_MONEY_LSR_OK}", "coinglass"),
+        ("smart_money_ok",   "Top-trader L/S",  f"LSR {top_trader_lsr:.2f} >= {SMART_MONEY_LSR_OK}", "coinglass"),
         ("macro_tailwind",   "Macro Tailwind",  f"ETF ${etf_flow_usd/1e6:+.0f}M CB {cb_premium*100:+.2f}%", "coinglass"),
     ]
 
@@ -412,8 +412,8 @@ def _synthesize_signal(
     hl_met = sum(hl_conditions)
 
     _HL_NAMES = [
-        ("hl_whale_aligned",  "Whale Aligned",   f"HL {hl_consensus_trend} ({hl_consensus_confidence:.0%})", "hyperlens"),
-        ("hl_not_counter",    "No Whale Counter", f"HL not bearish (ratio={hl_consensus_net_ratio:+.2f})",   "hyperlens"),
+        ("hl_whale_aligned",  "Tracked wallets aligned",     f"HL {hl_consensus_trend} ({hl_consensus_confidence:.0%})", "hyperlens"),
+        ("hl_not_counter",    "Tracked wallets not bearish", f"HL not bearish (ratio={hl_consensus_net_ratio:+.2f})",   "hyperlens"),
     ]
 
     # Weighted scoring: core (1.0) + CoinGlass (0.75 each) + HyperLens (0.5 each)
@@ -539,7 +539,7 @@ def _synthesize_signal(
         if vs != 1.0:
             parts.append(f"vs={vs:.2f}")
         if has_hyperlens and hl_consensus_trend != "NEUTRAL":
-            parts.append(f"whales={hl_consensus_trend}({hl_consensus_confidence:.0%})")
+            parts.append(f"wallets={hl_consensus_trend}({hl_consensus_confidence:.0%})")
         if boost_reasons:
             parts.append("[" + ", ".join(boost_reasons) + "]")
         return parts
@@ -625,8 +625,8 @@ def _synthesize_signal(
         # No BMSB data at all → always WAIT (no shorts either without BMSB)
         if not bmsb_valid:
             out.signal = "WAIT"
-            out.reason = f"BMSB data unavailable (insufficient weekly bars) — {regime} regime, all entries blocked"
-            out.warnings = warnings + ["No BMSB data — token too new or weekly history too short"]
+            out.reason = f"BMSB data unavailable (weekly history too short or inconsistent with price) — {regime} regime, all entries blocked"
+            out.warnings = warnings + ["No BMSB data — token too new, weekly history too short, or weekly bars inconsistent with price"]
             return out
         if (0.3 <= z <= 1.2
                 and heat >= 20
@@ -680,7 +680,7 @@ def _synthesize_signal(
     # Say which is which so "BEARISH" next to a positive wallet ratio is not a contradiction.
     def _whale_note(trend):
         lean = "long" if hl_consensus_net_ratio > 0 else "short" if hl_consensus_net_ratio < 0 else "even"
-        return (f"Whale consensus {trend} by position size (conviction {hl_consensus_confidence:.0%}); "
+        return (f"Tracked-wallet consensus {trend} by position size (conviction {hl_consensus_confidence:.0%}); "
                 f"wallet count leans {lean} ({hl_consensus_net_ratio:+.2f})")
     if has_hyperlens and hl_consensus_confidence >= HL_CONFIDENCE_THRESHOLD:
         if hl_consensus_trend == "BULLISH":
@@ -703,17 +703,17 @@ def _synthesize_signal(
                 and hl_consensus_net_ratio > 0.2):
             if out.signal == "ACCUMULATE":
                 out.signal = "LIGHT_LONG"
-                out.reason += " [whales_bullish→upgrade]"
+                out.reason += " [tracked_wallets_bullish→upgrade]"
             elif out.signal == "WAIT" and hl_consensus_confidence >= 0.40:
                 out.signal = "ACCUMULATE"
-                out.reason += " [whales_loading→accum]"
+                out.reason += " [tracked_wallets_loading→accum]"
 
         # Whale BEARISH + entry signal → add warning (don't hard downgrade,
         # same philosophy as CVD bearish divergence)
         if (hl_consensus_trend == "BEARISH"
                 and hl_consensus_confidence >= 0.30
                 and out.signal in ("STRONG_LONG", "LIGHT_LONG")):
-            out.warnings = out.warnings + [f"WHALE DIVERGENCE: signal {out.signal} but whales BEARISH ({hl_consensus_confidence:.0%})"]
+            out.warnings = out.warnings + [f"TRACKED-WALLET DIVERGENCE: signal {out.signal} but tracked wallets BEARISH ({hl_consensus_confidence:.0%})"]
 
         return out
 

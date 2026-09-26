@@ -15,6 +15,8 @@ function Progress({ observed, required, color }) {
 
 export default function RegimeTransition({ data, compact = false }) {
   const transition = data?.regime_transition;
+  // With no history at all the regime cell already reads "No history" (RegimeBadge).
+  if (data?.history_bars === 0) return null;
   const limited = data?.history_bars > 0 && data.normalization_ready === false;
   if (!transition && !limited) return null;
   const target = transition && (REGIME_META[transition.candidate] || REGIME_META.FLAT);

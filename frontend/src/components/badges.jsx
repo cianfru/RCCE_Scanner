@@ -35,7 +35,10 @@ export function ZScoreBar({ z, isMobile }) {
   );
 }
 
-export function RegimeBadge({ regime, isMobile }) {
+export function RegimeBadge({ regime, isMobile, noHistory = false }) {
+  // No candle history means no measured regime: say so instead of showing Flat.
+  if (noHistory) return <span className="terminal-status" title="Not enough candle history to measure a regime. Left out of the market consensus."
+    style={{ color: T.text4, fontSize: m(12, isMobile), fontWeight: 600, letterSpacing: "0.02em", whiteSpace: "nowrap" }}>No history</span>;
   const rm = REGIME_META[regime] || REGIME_META.FLAT;
   // Icon + plain-English phase name. The engine code stays in the tooltip for
   // anyone who wants it. No capsule: status reads through type and color.

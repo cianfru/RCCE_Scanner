@@ -12,7 +12,8 @@ const explanations = {
 };
 
 // One row per signal: label, share-of-market bar, count. Each row filters the grid.
-export default function SignalLadder({ rows, timeframe, scopeLabel, active, onChange }) {
+// Spot hides Strong long: without a funding rate the engine never issues it there.
+export default function SignalLadder({ rows, timeframe, scopeLabel, active, onChange, spot = false }) {
   const { n, counts, other } = signalCounts(rows);
   const items = [
     ["STRONG_LONG", "Strong long", T.green],
@@ -21,7 +22,7 @@ export default function SignalLadder({ rows, timeframe, scopeLabel, active, onCh
     ["WAIT", "Wait", "var(--t-text3)"],
     ["TRIM", "Trim", T.yellow],
     ["RISK_OFF", "Risk-off", T.red],
-  ];
+  ].filter(([key]) => !(spot && key === "STRONG_LONG"));
   const tf = String(timeframe || "").toUpperCase();
   return <div className="ms-signals">
     <div className="ms-eyebrow"><span className="ms-eyebrow-text">Signals · {tf}</span>

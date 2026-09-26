@@ -1438,7 +1438,8 @@ async def chart_data(
 ):
     """Return OHLCV + BMSB overlay data for charting."""
     from data_fetcher import fetch_ohlcv, _ohlcv_store, _cache
-    from engines.heatmap_engine import compute_bmsb_series
+    from engines.heatmap_engine import compute_bmsb_series, bmsb_implausible
+    from candle_snapshot import consistent_weekly
     from engines.cto_engine import compute_cto_chart, CTO_HISTORY_BARS
     import numpy as np
 
@@ -1526,11 +1527,14 @@ async def chart_data(
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
     try:
-        weekly = await fetch_ohlcv(symbol, "1w", limit=250)
+        weekly = consistent_weekly(await fetch_ohlcv(symbol, "1w", limit=250), ohlcv, timeframe)
         if weekly is not None:
             w_close = np.asarray(weekly["close"], dtype=np.float64)
             w_ts = np.asarray(weekly["timestamp"], dtype=np.float64)
             bmsb = compute_bmsb_series(w_close, w_ts)
+            # A band far from recent price is corrupt data: show none rather than a misleading line.
+            if bmsb["mid"] and bmsb_implausible(bmsb["mid"][-1]["value"], ohlcv["close"], ohlcv["timestamp"]):
+                bmsb = {"mid": [], "ema": [], "sma": []}
     except Exception:
         logger.warning("BMSB computation failed for %s", symbol)
 
@@ -3212,7 +3216,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "detail": (
                         f"OI +{oi_change_pct:.1f}% with price (BUILDING) but signal still {signal}. "
                         f"Regime: {regime} | Heat: {heat}/100. "
-                        f"Smart money positioning ahead of signal upgrade — watch for entry"
+                        f"New positions building ahead of a signal upgrade — watch for entry"
                     ),
                     "signal": signal, "regime": regime, "heat": heat,
                     "oi_trend": oi_trend, "oi_change_pct": oi_change_pct,
@@ -3272,7 +3276,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "title": f"{base_coin}: CVD/price bullish divergence",
                     "detail": (
                         f"Price falling but taker buy flow dominant (BSR: {bsr:.2f}x). "
-                        f"Smart money absorbing into weakness. "
+                        f"Buyers absorbing into weakness. "
                         f"Signal: {signal} | Regime: {regime} | Heat: {heat}/100. "
                         f"Watch for reversal — buyers not visible in price yet"
                     ),
@@ -3960,14 +3964,13 @@ async def hyperlens_roster(
 @app.get("/api/hyperlens/consensus")
 async def hyperlens_consensus(
     symbol: Optional[str] = Query(None),
-    cohort: Optional[str] = Query(None),
     cohorts: bool = Query(False, description="Add wallet-cohort bias for the symbol (display; weighting unchanged)"),
 ):
     """Per-symbol smart-money consensus.
 
     Optional ?symbol=BTC filter, otherwise returns all symbols sorted by
-    number of positioned wallets.
-    Optional ?cohort=money_printers|smart_money|elite to filter by cohort.
+    number of positioned wallets. Every row carries the per-cohort figures
+    nested under "money_printer" and "smart_money"; there is no cohort filter.
     """
     from hl_intelligence import get_consensus, get_all_consensus
 
@@ -3988,12 +3991,16 @@ async def hyperlens_consensus(
                 "net_ratio": c.money_printer_net_ratio,
                 "long_count": c.money_printer_long_count,
                 "short_count": c.money_printer_short_count,
+                "long_notional": round(c.money_printer_long_notional, 2),
+                "short_notional": round(c.money_printer_short_notional, 2),
             },
             "smart_money": {
                 "trend": c.smart_money_trend,
                 "net_ratio": c.smart_money_net_ratio,
                 "long_count": c.smart_money_long_count,
                 "short_count": c.smart_money_short_count,
+                "long_notional": round(c.smart_money_long_notional, 2),
+                "short_notional": round(c.smart_money_short_notional, 2),
             },
         }
         return d

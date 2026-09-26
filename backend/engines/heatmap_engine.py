@@ -18,6 +18,8 @@ import numpy as np
 
 EMA_LEN = 21
 SMA_LEN = 20
+BMSB_RANGE_DAYS = 200  # the band averages ~21 weeks of closes, so it must sit inside what traded then
+BMSB_RANGE_TOL = 0.15  # EMA memory reaches a little further back
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -171,7 +173,8 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
 
     # Use the last valid weekly BMSB mid value
     bmsb_mid = _last_valid(bmsb_mid_series)
-    if np.isnan(bmsb_mid):
+    if np.isnan(bmsb_mid) or bmsb_implausible(bmsb_mid, d_close, ohlcv_daily.get("timestamp")):
+        # Unavailable rather than bearish: bmsb_mid 0 marks the band invalid downstream.
         return _default_result()
 
     # ---- Volatility components ---------------------------------------------
@@ -274,8 +277,8 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
         "phase": phase,
         "atr_regime": atr_regime,
         "deviation_pct": round(deviation_pct, 4),
-        "deviation_abs": round(abs_dev, 4),
-        "bmsb_mid": round(bmsb_mid, 4),
+        "deviation_abs": float(f"{abs_dev:.6g}"),    # significant digits: sub-cent coins keep their band
+        "bmsb_mid": float(f"{bmsb_mid:.6g}"),
         "r3": round(r3, 4),
     }
 
@@ -316,6 +319,29 @@ def compute_bmsb_series(
         "ema": _to_series(bmsb_ema),
         "sma": _to_series(bmsb_sma),
     }
+
+
+def bmsb_implausible(bmsb_mid: float, closes, timestamps=None, days: int = BMSB_RANGE_DAYS) -> bool:
+    """True when the band lies outside the range of daily closes it was averaged from.
+
+    The band is a 20-week SMA / 21-week EMA of weekly closes, so a genuine one sits
+    inside the low-high of the last ~200 daily closes however far price has since moved
+    (a pump or crash leaves it valid). A band outside that range can only come from
+    weekly bars that disagree with the daily market (audit COIN-02).
+    """
+    closes = np.asarray(closes, dtype=np.float64)
+    if timestamps is not None and len(timestamps) == len(closes) and len(closes):
+        ts = np.asarray(timestamps, dtype=np.float64)
+        recent = closes[ts >= ts[-1] - (days - 1) * 86_400_000]
+    else:
+        recent = closes[-days:]
+    recent = recent[np.isfinite(recent)]
+    if len(recent) == 0:
+        return False
+    if not np.isfinite(bmsb_mid) or bmsb_mid <= 0:
+        return True
+    lo, hi = float(recent.min()), float(recent.max())
+    return bmsb_mid > hi * (1 + BMSB_RANGE_TOL) or bmsb_mid < lo * (1 - BMSB_RANGE_TOL)
 
 
 # ---------------------------------------------------------------------------

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {signalContext, setupAlignment, signalDirection, marketWideMissing} from './signalPresentation.js';
 import {candleChange, rangeRuler} from './chartPresentation.js';
 test('missing core names and consequences are visible without a bearish verdict',()=>{
- const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Whale consensus BULLISH (80%)']};
+ const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Tracked-wallet consensus BULLISH by position size (conviction 80%)']};
  const c=signalContext(row);assert.equal(c[0].kind,'missing');assert.match(c[0].text,/Funding/);assert.match(c[0].text,/Strong Long/);assert.equal(c[1].kind,'bullish');assert.equal(setupAlignment(row).state,'incomplete');
 });
 test('bearish context supports shorts but conflicts with longs',()=>{
- assert.equal(signalContext({signal:'LIGHT_SHORT',signal_warnings:['Whale consensus BEARISH']})[0].kind,'bearish');
- assert.equal(signalContext({signal:'LIGHT_LONG',signal_warnings:['Whale consensus BEARISH']})[0].kind,'conflict');
+ assert.equal(signalContext({signal:'LIGHT_SHORT',signal_warnings:['Tracked-wallet consensus BEARISH by position size (conviction 40%)']})[0].kind,'bearish');
+ assert.equal(signalContext({signal:'LIGHT_LONG',signal_warnings:['Tracked-wallet consensus BEARISH by position size (conviction 40%)']})[0].kind,'conflict');
  assert.equal(signalContext({signal:'STRONG_LONG',signal_warnings:['BEAR-DIV active — STRONG_LONG blocked']})[0].kind,'caution');
 });
 test('only actual entry signals earn directional alignment; transitions do not glow',()=>{
@@ -43,4 +43,14 @@ test('a core input missing across the market is reported once, not per row',()=>
  assert.equal(setupAlignment(row,{marketWide:['Not Greedy']}).state,'bullish');
  assert.equal(signalContext(row).some(i=>i.kind==='missing'),true);
  assert.deepEqual(marketWideMissing(rows.slice(0,5)),[]);
+});
+test('spot funding is not applicable: no market-wide banner and no per-row missing note',()=>{
+ const row={market_kind:'spot',regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,name:'funding_ok',label:'Funding OK'}]};
+ const rows=Array.from({length:20},()=>row);
+ assert.deepEqual(marketWideMissing(rows),[]);
+ assert.equal(signalContext(row).some(i=>i.kind==='missing'),false);
+ assert.equal(setupAlignment(row).state,'bullish');
+ const perp={...row,market_kind:'perpetual'};
+ assert.deepEqual(marketWideMissing(Array.from({length:20},()=>perp)),['Funding OK']);
+ assert.equal(signalContext(perp).some(i=>i.kind==='missing'),true);
 });

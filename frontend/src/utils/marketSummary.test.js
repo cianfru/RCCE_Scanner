@@ -26,6 +26,12 @@ test('regime mix puts the deciding bucket first', () => {
   assert.equal(mixed.order[0], 'MARKDOWN');
 });
 
+test('markets without candle history are left out of the regime mix', () => {
+  const rs = [...rows({ MARKUP: 17, FLAT: 6 }, 'regime'), ...Array.from({ length: 10 }, () => ({ regime: 'FLAT', history_bars: 0 }))];
+  const m = regimeMix(rs, 'RISK-ON');
+  assert.deepEqual([m.n, m.N, m.p, m.counts.FLAT], [17, 23, 74, 6]);
+});
+
 test('Fear & Greed bands match the backend labels', () => {
   const edges = [[20, 0], [21, 1], [40, 1], [41, 2], [60, 2], [61, 3], [80, 3], [81, 4], [0, 0], [100, 4]];
   for (const [v, b] of edges) assert.equal(fgBand(v), b, `v=${v}`);
