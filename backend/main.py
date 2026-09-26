@@ -1438,7 +1438,8 @@ async def chart_data(
 ):
     """Return OHLCV + BMSB overlay data for charting."""
     from data_fetcher import fetch_ohlcv, _ohlcv_store, _cache
-    from engines.heatmap_engine import compute_bmsb_series
+    from engines.heatmap_engine import compute_bmsb_series, bmsb_implausible
+    from candle_snapshot import consistent_weekly
     from engines.cto_engine import compute_cto_chart, CTO_HISTORY_BARS
     import numpy as np
 
@@ -1526,11 +1527,14 @@ async def chart_data(
     # Compute BMSB series from weekly data
     bmsb = {"mid": [], "ema": [], "sma": []}
     try:
-        weekly = await fetch_ohlcv(symbol, "1w", limit=250)
+        weekly = consistent_weekly(await fetch_ohlcv(symbol, "1w", limit=250), ohlcv, timeframe)
         if weekly is not None:
             w_close = np.asarray(weekly["close"], dtype=np.float64)
             w_ts = np.asarray(weekly["timestamp"], dtype=np.float64)
             bmsb = compute_bmsb_series(w_close, w_ts)
+            # A band far from recent price is corrupt data: show none rather than a misleading line.
+            if bmsb["mid"] and bmsb_implausible(bmsb["mid"][-1]["value"], ohlcv["close"], ohlcv["timestamp"]):
+                bmsb = {"mid": [], "ema": [], "sma": []}
     except Exception:
         logger.warning("BMSB computation failed for %s", symbol)
 
@@ -3212,7 +3216,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "detail": (
                         f"OI +{oi_change_pct:.1f}% with price (BUILDING) but signal still {signal}. "
                         f"Regime: {regime} | Heat: {heat}/100. "
-                        f"Smart money positioning ahead of signal upgrade — watch for entry"
+                        f"New positions building ahead of a signal upgrade — watch for entry"
                     ),
                     "signal": signal, "regime": regime, "heat": heat,
                     "oi_trend": oi_trend, "oi_change_pct": oi_change_pct,
@@ -3272,7 +3276,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "title": f"{base_coin}: CVD/price bullish divergence",
                     "detail": (
                         f"Price falling but taker buy flow dominant (BSR: {bsr:.2f}x). "
-                        f"Smart money absorbing into weakness. "
+                        f"Buyers absorbing into weakness. "
                         f"Signal: {signal} | Regime: {regime} | Heat: {heat}/100. "
                         f"Watch for reversal — buyers not visible in price yet"
                     ),

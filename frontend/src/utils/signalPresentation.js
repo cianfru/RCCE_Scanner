@@ -49,7 +49,7 @@ export function signalContext(row = {}, { marketWide = [] } = {}) {
     if ((row.strong_long_blockers || []).includes(raw) || /blocked|downgrade|risk|overextension|escalation|euphoria|may not sustain|cascade|contracting|capped|limit|unstable|outside strict|waiting for|demoted|forced exit|extreme funding: \+/.test(text.toLowerCase())) kind = 'caution';
     else if (/unavailable|missing|pipeline failed/i.test(text)) kind = 'missing';
     else if (/bearish|BEAR-DIV|heavy_short/i.test(text)) kind = 'bearish';
-    else if (/bullish|BULL-DIV|Floor confirmed|Absorption detected|spot_led_demand|smart_money_long|rally fuel|potential bottom/i.test(text)) kind = 'bullish';
+    else if (/bullish|BULL-DIV|Floor confirmed|Absorption detected|spot_led_demand|top_trader_long|smart_money_long|rally fuel|potential bottom/i.test(text)) kind = 'bullish';
     const opposed = direction && ['bullish','bearish'].includes(kind) && kind !== direction;
     const aligned = direction && kind === direction;
     items.push({kind: opposed ? 'conflict' : kind, text: `${text}${opposed ? ` — opposes this ${direction === 'bullish' ? 'long' : 'short'}` : aligned ? ` — supports this ${direction === 'bullish' ? 'long' : 'short'}` : ''}`});

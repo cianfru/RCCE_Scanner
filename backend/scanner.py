@@ -61,7 +61,7 @@ from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
 from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
 from signal_synthesizer import synthesize_signal, compute_signal_score, enforce_signal_constraints
-from candle_snapshot import closed_candles, snapshot_key, TF_MS
+from candle_snapshot import closed_candles, consistent_weekly, snapshot_key, TF_MS
 from market_data import (
     fetch_global_metrics, GlobalMetrics,
     fetch_fear_greed, fetch_stablecoin_supply,
@@ -530,6 +530,8 @@ def _process_symbol(
     btc_data = closed_candles(btc_data, timeframe, as_of_ms)
     eth_data = closed_candles(eth_data, timeframe, as_of_ms)
     ohlcv = {k: v[-599:] for k, v in ohlcv.items()}
+    # A weekly close outside that week's traded range is a corrupt bar; it would skew the BMSB.
+    weekly = consistent_weekly(weekly, ohlcv, timeframe)
     weekly = {k: v[-199:] for k, v in weekly.items()} if weekly is not None else None
     btc_data = {k: v[-599:] for k, v in btc_data.items()} if btc_data is not None else None
     eth_data = {k: v[-599:] for k, v in eth_data.items()} if eth_data is not None else None

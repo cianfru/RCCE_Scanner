@@ -33,3 +33,31 @@ def snapshot_key(ohlcv, timeframe, weekly=None, btc=None, eth=None, *, as_of_ms=
             digest.update(len(values).to_bytes(8, "little"))
             digest.update(values.tobytes())
     return digest.hexdigest()
+
+
+def consistent_weekly(weekly: dict | None, sub: dict | None, sub_timeframe: str, tolerance: float = 0.02) -> dict | None:
+    """Drop weekly bars whose close lies outside that week's low-high range in *sub*.
+
+    *sub* is the same market on a shorter timeframe (4h or 1d). Only weeks the
+    shorter candles cover end to end are checked; older weeks are kept as they are.
+    """
+    if weekly is None or sub is None or len(sub["timestamp"]) == 0 or len(weekly["timestamp"]) == 0:
+        return weekly
+    w_ts = np.asarray(weekly["timestamp"], dtype=np.float64)
+    w_close = np.asarray(weekly["close"], dtype=np.float64)
+    s_ts = np.asarray(sub["timestamp"], dtype=np.float64)
+    s_low = np.asarray(sub["low"], dtype=np.float64)
+    s_high = np.asarray(sub["high"], dtype=np.float64)
+    covered_until = s_ts[-1] + TF_MS[sub_timeframe]
+    start = np.searchsorted(s_ts, w_ts, "left")
+    end = np.searchsorted(s_ts, w_ts + TF_MS["1w"], "left")
+    keep = np.ones(len(w_ts), dtype=bool)
+    for i in range(len(w_ts)):
+        if w_ts[i] < s_ts[0] or w_ts[i] + TF_MS["1w"] > covered_until or end[i] <= start[i]:
+            continue
+        low = np.nanmin(s_low[start[i]:end[i]])
+        high = np.nanmax(s_high[start[i]:end[i]])
+        keep[i] = low * (1 - tolerance) <= w_close[i] <= high * (1 + tolerance)
+    if keep.all():
+        return weekly
+    return {key: np.asarray(values)[keep] for key, values in weekly.items()}

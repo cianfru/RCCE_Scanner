@@ -760,10 +760,10 @@ export default function BMSBChart({
               display: "flex", alignItems: "center", gap: 3,
             }}
           >
-            {pressureLoading ? "Loading…" : <><span className="chart-levels-label">Smart money levels</span><span className="chart-levels-label-short">Levels</span></>}
+            {pressureLoading ? "Loading…" : <><span className="chart-levels-label">Wallet levels</span><span className="chart-levels-label-short">Levels</span></>}
           </button>
 
-          <HelpTip title="Smart money levels"><p>Shows available liquidation clusters and tracked stop, take-profit and limit-order levels for this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
+          <HelpTip title="Wallet levels"><p>Shows available liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets in this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
 
           {activeTimeframe === "1d" && (
             <button
