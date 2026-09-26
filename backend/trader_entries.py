@@ -60,6 +60,16 @@ async def _post(session: aiohttp.ClientSession, body: dict):
     return data
 
 
+def _prune() -> None:
+    """Drop expired entries so the caches only ever hold the last ten minutes of views."""
+    now = time.time()
+    for cache in (_fills_cache, _result_cache):
+        for k in [k for k, v in cache.items() if now - v[0] >= CACHE_S]:
+            del cache[k]
+    for k in [k for k, t in _tasks.items() if t.done()]:
+        del _tasks[k]
+
+
 def _fresh(address: str) -> Optional[dict]:
     hit = _fills_cache.get(address)
     return hit[1] if hit and time.time() - hit[0] < CACHE_S else None
@@ -74,10 +84,13 @@ async def _wallet_fills(session, address: str) -> dict:
         return hit
     regular = await _post(session, {"type": "userFills", "user": address, "aggregateByTime": True})
     twap = await _post(session, {"type": "userTwapSliceFills", "user": address})
-    fills = list(regular) + [dict(x["fill"], twap=True) for x in twap]
+    # Keep only the fields the bursts need: a full fill is ~20 fields, and up to 4,000 per wallet.
+    slim = lambda f, tw: {"coin": f.get("coin"), "time": f["time"], "px": f["px"], "sz": f["sz"], "side": f.get("side"),
+                          "dir": f.get("dir"), "startPosition": f.get("startPosition"), "twap": tw, "tid": f.get("tid")}
+    fills = [slim(f, False) for f in regular] + [slim(x["fill"], True) for x in twap]
     seen, out = set(), []
     for f in sorted(fills, key=lambda f: f["time"]):
-        key = (f.get("tid"), f["time"], f["px"], f["sz"])
+        key = (f["tid"], f["time"], f["px"], f["sz"])
         if key not in seen:
             seen.add(key)
             out.append(f)
@@ -85,6 +98,7 @@ async def _wallet_fills(session, address: str) -> dict:
     limits = [min(f["time"] for f in lst) / 1000 for lst in (regular, [x["fill"] for x in twap]) if len(lst) >= 2000]
     covered = max(limits) if limits else None
     res = {"fills": out, "covered_from": covered}
+    _prune()
     _fills_cache[address] = (time.time(), res)
     return res
 
@@ -144,6 +158,7 @@ async def _fetch_all(addresses: List[str]) -> None:
 async def entries_for(symbol: str) -> dict:
     from hl_intelligence import _normalize_coin, get_symbol_positions
     coin = _normalize_coin(symbol)
+    _prune()
     hit = _result_cache.get(coin)
     if hit and time.time() - hit[0] < CACHE_S:
         return hit[1]
