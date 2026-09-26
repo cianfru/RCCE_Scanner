@@ -68,6 +68,21 @@ class BmsbSanityTests(unittest.TestCase):
         heat = compute_heatmap(self.daily, weekly_from(self.daily))
         self.assertAlmostEqual(heat["bmsb_mid"], 0.10, delta=0.01)
 
+    def test_genuine_pump_or_crash_keeps_the_band(self):
+        # Price triples (or falls to a third) over the last 20 days: the band lags but is real.
+        for mult in (3.5, 0.28):
+            d = daily()
+            d = {k: v.copy() for k, v in d.items()}
+            for k in ("open", "high", "low", "close"):
+                d[k][-20:] *= mult
+            heat = compute_heatmap(d, weekly_from(d))
+            self.assertGreater(heat["bmsb_mid"], 0.0, mult)
+
+    def test_sub_cent_coin_keeps_its_band(self):
+        scale = lambda x: {k: (v * 1e-5 if k in ("open", "high", "low", "close") else v) for k, v in x.items()}
+        heat = compute_heatmap(scale(self.daily), scale(weekly_from(self.daily)))
+        self.assertAlmostEqual(heat["bmsb_mid"], 1e-6, delta=1e-7)
+
     def test_scanner_uses_the_cleaned_weekly_series(self):
         from scanner import _process_symbol
         as_of = float(self.daily["timestamp"][-1] + TF_MS["1d"])

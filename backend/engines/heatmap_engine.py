@@ -18,7 +18,8 @@ import numpy as np
 
 EMA_LEN = 21
 SMA_LEN = 20
-BMSB_MAX_RATIO = 3.0  # a band this far from recent price means a corrupt weekly series
+BMSB_RANGE_DAYS = 200  # the band averages ~21 weeks of closes, so it must sit inside what traded then
+BMSB_RANGE_TOL = 0.15  # EMA memory reaches a little further back
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -276,8 +277,8 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
         "phase": phase,
         "atr_regime": atr_regime,
         "deviation_pct": round(deviation_pct, 4),
-        "deviation_abs": round(abs_dev, 4),
-        "bmsb_mid": round(bmsb_mid, 4),
+        "deviation_abs": float(f"{abs_dev:.6g}"),    # significant digits: sub-cent coins keep their band
+        "bmsb_mid": float(f"{bmsb_mid:.6g}"),
         "r3": round(r3, 4),
     }
 
@@ -320,9 +321,14 @@ def compute_bmsb_series(
     }
 
 
-def bmsb_implausible(bmsb_mid: float, closes, timestamps=None, days: int = 20) -> bool:
-    """True when the band is more than BMSB_MAX_RATIO away from the median close
-    of the last *days* days (the last *days* closes when timestamps are missing)."""
+def bmsb_implausible(bmsb_mid: float, closes, timestamps=None, days: int = BMSB_RANGE_DAYS) -> bool:
+    """True when the band lies outside the range of daily closes it was averaged from.
+
+    The band is a 20-week SMA / 21-week EMA of weekly closes, so a genuine one sits
+    inside the low-high of the last ~200 daily closes however far price has since moved
+    (a pump or crash leaves it valid). A band outside that range can only come from
+    weekly bars that disagree with the daily market (audit COIN-02).
+    """
     closes = np.asarray(closes, dtype=np.float64)
     if timestamps is not None and len(timestamps) == len(closes) and len(closes):
         ts = np.asarray(timestamps, dtype=np.float64)
@@ -332,11 +338,10 @@ def bmsb_implausible(bmsb_mid: float, closes, timestamps=None, days: int = 20) -
     recent = recent[np.isfinite(recent)]
     if len(recent) == 0:
         return False
-    median = float(np.median(recent))
-    if median <= 0 or not np.isfinite(bmsb_mid) or bmsb_mid <= 0:
+    if not np.isfinite(bmsb_mid) or bmsb_mid <= 0:
         return True
-    ratio = bmsb_mid / median
-    return ratio > BMSB_MAX_RATIO or ratio < 1.0 / BMSB_MAX_RATIO
+    lo, hi = float(recent.min()), float(recent.max())
+    return bmsb_mid > hi * (1 + BMSB_RANGE_TOL) or bmsb_mid < lo * (1 - BMSB_RANGE_TOL)
 
 
 # ---------------------------------------------------------------------------
