@@ -58,13 +58,21 @@ const riskColor = (score) => {
 // The portal lands outside App's .reflex-terminal wrapper, so it is wrapped again
 // here to pick up the terminal rules (flat .terminal-status, font reset).
 function ModalOverlay({ children, onClose }) {
+  const dialogRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Move focus into the dialog on open and hand it back on close.
+  useEffect(() => {
+    const opener = document.activeElement;
+    dialogRef.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
   return createPortal(
     <div className="reflex-terminal"><div
+      ref={dialogRef} tabIndex={-1}
       role="dialog" aria-modal="true"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
@@ -72,7 +80,7 @@ function ModalOverlay({ children, onClose }) {
         background: "rgba(0,0,0,0.55)", backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 20,
+        padding: 20, outline: "none",
       }}
     >
       <div style={{
@@ -85,6 +93,14 @@ function ModalOverlay({ children, onClose }) {
     document.body
   );
 }
+
+// Keyboard access for clickable rows: focusable, Enter or Space activates.
+const keyActivate = (fn) => ({
+  tabIndex: 0,
+  onKeyDown: (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); }
+  },
+});
 
 // ─── SVG: LEVERAGE GAUGE ────────────────────────────────────────────────────
 
@@ -139,7 +155,9 @@ function RiskBadge({ score }) {
   if (score == null) return null;
   const color = riskColor(score);
   return (
-    <span className="terminal-status" style={{
+    <span className="terminal-status"
+      title="Risk 0 to 100 from open positions: average leverage (up to 40), closeness to liquidation (up to 30) and share in the largest position (up to 30). Higher is riskier."
+      style={{
       fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
       color, letterSpacing: "0.04em",
     }}>
@@ -376,6 +394,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
               <tr
                 key={c.symbol}
                 onClick={() => onSymbolClick?.(c.symbol)}
+                {...keyActivate(() => onSymbolClick?.(c.symbol))}
                 style={{ cursor: "pointer", transition: "background 0.2s ease", borderBottom: `1px solid ${T.overlay04}`, background: stripeBg }}
                 onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
                 onMouseLeave={e => e.currentTarget.style.background = stripeBg}
@@ -488,6 +507,7 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
           <div
             key={r.symbol}
             onClick={() => onSymbolClick?.(r.symbol)}
+            {...keyActivate(() => onSymbolClick?.(r.symbol))}
             style={{ ...grid, paddingTop: 6, paddingBottom: 6, cursor: "pointer", transition: "background 0.15s" }}
             onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -650,17 +670,14 @@ function LiqDistBar({ pct }) {
   );
 }
 
-// ─── WALLET TAGS (account size and monthly return) ──────────────────────────
+// ─── WALLET TAGS (account size) ─────────────────────────────────────────────
 
 function WalletTags({ data }) {
   const tags = [];
   const av = data.account_value || 0;
-  const roi = data.monthly_roi || 0;
   if (av >= 10e6) tags.push({ label: "$10M+ account", color: T.text2 });
   else if (av >= 1e6) tags.push({ label: "$1M+ account", color: T.text2 });
   else if (av >= 100e3) tags.push({ label: "$100K+ account", color: T.text2 });
-  if (roi >= 100) tags.push({ label: "High return", color: T.green });
-  else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow });
   if (tags.length === 0) return null;
   return (
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -778,20 +795,10 @@ function WalletDetail({ address, onClose, userWallet }) {
             <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
               {truncAddr(address)}
             </span>
-            {data.rank && (
-              <span className="terminal-status" style={{
-                fontFamily: T.mono, fontSize: T.textXs, fontWeight: 700, color: T.accent,
-              }}>
-                #{data.rank}
-              </span>
-            )}
             <RiskBadge score={data.risk_score} />
           </div>
-          {/* Full address + copy + snaps */}
+          {/* Full address + copy */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
-              {data.snapshot_count} snaps
-            </span>
             <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
               {address}
             </span>
@@ -880,6 +887,9 @@ function WalletDetail({ address, onClose, userWallet }) {
             const pnl = last - first;
             const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
             const color = pnl >= 0 ? T.green : T.red;
+            const since = avHistory[0]?.timestamp
+              ? new Date(avHistory[0].timestamp * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+              : null;
             return (
               <div style={{ textAlign: "right" }}>
                 <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color }}>
@@ -888,9 +898,11 @@ function WalletDetail({ address, onClose, userWallet }) {
                 <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4 }}>
                   ({fmtSignedUsd(pnl)})
                 </span>
-                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: 4 }}>
-                  tracked
-                </span>
+                {since && (
+                  <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: 4 }}>
+                    since {since}
+                  </span>
+                )}
               </div>
             );
           })()}
@@ -929,7 +941,6 @@ function WalletDetail({ address, onClose, userWallet }) {
           {[
             ["30d ROI", fmtSignedPct(data.monthly_roi), data.monthly_roi == null ? T.text4 : data.monthly_roi >= 0 ? T.green : T.red],
             ["30d PnL", fmtSignedUsd(data.monthly_pnl || 0), (data.monthly_pnl || 0) >= 0 ? T.green : T.red],
-            ["Score", (data.score || 0).toFixed(0), T.text1],
             ...(s.total_trades > 0 ? [
               ["Win", `${s.win_rate}% (${s.wins}/${s.total_trades})`, s.win_rate > 50 ? T.green : T.red],
               ["Avg", fmtSignedPct(s.avg_pnl_pct, 2), s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4],
@@ -1121,10 +1132,6 @@ function WalletDetail({ address, onClose, userWallet }) {
             {trades.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                 No trades detected yet — trades appear as positions open and close over time.
-                <br />
-                <span style={{ fontSize: 12, marginTop: 4, display: "block" }}>
-                  Tracking since {data.snapshot_count} snapshots ago
-                </span>
               </div>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1312,6 +1319,7 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   const WalletRow = ({ p }) => (
     <div
       onClick={() => onWalletClick?.(p.address)}
+      {...(onWalletClick ? keyActivate(() => onWalletClick(p.address)) : {})}
       style={{
         padding: "8px 10px",
         borderBottom: `1px solid ${T.overlay06}`,
@@ -1608,6 +1616,7 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
             cursor: "pointer", transition: "all 0.15s",
           }}
             onClick={() => onWalletClick(w.address)}
+            {...keyActivate(() => onWalletClick(w.address))}
             onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = T.overlay08; }}
           >
@@ -1673,7 +1682,8 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
                   return (
                     <tr key={`${ev.wallet}-${ev.coin}-${ev.timestamp}-${i}`}
                         style={{ background: i % 2 === 1 ? T.overlay02 : "transparent", cursor: "pointer" }}
-                        onClick={() => onWalletClick(ev.wallet)}>
+                        onClick={() => onWalletClick(ev.wallet)}
+                        {...keyActivate(() => onWalletClick(ev.wallet))}>
                       <td style={{ padding: "6px 8px", color: T.text4, fontSize: T.textXs, borderBottom: `1px solid ${T.overlay04}` }}>{ago}</td>
                       <td style={{ padding: "6px 8px", color: T.text2, fontSize: T.textXs, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}` }}>{fmtAddr(ev.wallet)}</td>
                       <td style={{ padding: "6px 8px", borderBottom: `1px solid ${T.overlay04}` }}>
@@ -1831,7 +1841,8 @@ export default function HyperLensPanel({ isMobile }) {
           {tab === "consensus" && (
             <input
               type="text"
-              placeholder="Filter symbol..."
+              placeholder="Filter"
+              aria-label="Filter by symbol"
               value={filter}
               onChange={e => setFilter(e.target.value)}
               style={{

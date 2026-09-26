@@ -419,12 +419,13 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   const [config, setConfig] = useState({
     start_date: "2025-01-01",
     end_date: "",
-    initial_capital: 10000,
+    // Capital and leverage stay as typed; startBacktest validates them.
+    initial_capital: "10000",
     symbols: [...DEFAULT_SYMBOLS],
     use_confluence: true,
     use_fear_greed: true,
     timeframe: "4h",
-    leverage: 1.0,
+    leverage: "1",
   });
   const [btId, setBtId] = useState(null);
   const [result, setResult] = useState(null);
@@ -468,12 +469,17 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   }, [polling, btId, poll]);
 
   const startBacktest = async () => {
-    setError(null); setResult(null); setShowTrades(false);
+    setError(null);
+    const capital = Number(config.initial_capital);
+    const leverage = Number(config.leverage);
+    if (!(capital > 0)) { setError("Capital must be greater than 0."); return; }
+    if (!(leverage >= 0.1 && leverage <= 10)) { setError("Leverage must be between 0.1 and 10."); return; }
+    setResult(null); setShowTrades(false);
     try {
       const resp = await fetch(`${API}/api/backtest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, initial_capital: capital, leverage }),
       });
       if (!resp.ok) throw new Error("Failed to start backtest");
       const data = await resp.json();
@@ -496,7 +502,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   };
 
   return (
-    <div style={{ padding: isMobile ? 12 : 0 }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 0 }}>
 
       {/* ── CONFIG FORM ── */}
       <div style={{
@@ -509,12 +515,12 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <InputField label="Start" type="date" value={config.start_date}
             onChange={v => setConfig(c => ({ ...c, start_date: v }))} isMobile={isMobile} />
-          <InputField label="End" type="date" value={config.end_date} placeholder="today"
+          <InputField label="End" type="date" value={config.end_date} hint="blank for today"
             onChange={v => setConfig(c => ({ ...c, end_date: v }))} isMobile={isMobile} />
           <InputField label="Capital" type="number" value={config.initial_capital}
-            onChange={v => setConfig(c => ({ ...c, initial_capital: Number(v) }))} isMobile={isMobile} />
+            onChange={v => setConfig(c => ({ ...c, initial_capital: v }))} isMobile={isMobile} />
           <InputField label="Leverage" type="number" value={config.leverage}
-            onChange={v => setConfig(c => ({ ...c, leverage: Math.max(0.1, Math.min(10, Number(v) || 1)) }))} isMobile={isMobile} />
+            onChange={v => setConfig(c => ({ ...c, leverage: v }))} isMobile={isMobile} />
           <TimeframeToggle value={config.timeframe}
             onChange={v => setConfig(c => ({ ...c, timeframe: v }))} />
           <button
@@ -571,13 +577,13 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             <MetricCard label="Total Return" value={fmt(m.total_return_pct, 1)} suffix="%" positive={m.total_return_pct > 0} isMobile={isMobile} />
             <MetricCard label="BTC Return" value={fmt(m.btc_return_pct, 1)} suffix="%" positive={m.btc_return_pct > 0} isMobile={isMobile} />
-            <MetricCard label="Alpha" value={fmt(m.alpha_pct, 1)} suffix="%" positive={m.alpha_pct > 0} isMobile={isMobile} />
-            <MetricCard label="Win Rate" value={fmt(m.win_rate, 0)} suffix="%" positive={m.win_rate > 50} isMobile={isMobile} />
+            <MetricCard label="Return vs BTC hold" value={fmt(m.alpha_pct, 1)} suffix="%" positive={m.alpha_pct > 0} isMobile={isMobile} />
+            <MetricCard label="Win Rate" value={fmt(m.win_rate, 0)} suffix="%" isMobile={isMobile} />
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-            <MetricCard label="Sharpe" value={fmt(m.sharpe_ratio, 2)} positive={m.sharpe_ratio > 1} isMobile={isMobile} />
-            <MetricCard label="Sortino" value={fmt(m.sortino_ratio, 2)} positive={m.sortino_ratio > 1} isMobile={isMobile} />
-            <MetricCard label="Max DD" value={fmt(m.max_drawdown_pct, 1)} suffix="%" positive={m.max_drawdown_pct > -15} isMobile={isMobile} />
+            <MetricCard label="Sharpe" value={fmt(m.sharpe_ratio, 2)} positive={m.sharpe_ratio > 0} isMobile={isMobile} />
+            <MetricCard label="Sortino" value={fmt(m.sortino_ratio, 2)} positive={m.sortino_ratio > 0} isMobile={isMobile} />
+            <MetricCard label="Max DD" value={fmt(m.max_drawdown_pct, 1)} suffix="%" isMobile={isMobile} />
             <MetricCard label="Trades" value={m.total_trades} isMobile={isMobile} />
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -622,12 +628,11 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
                 <tbody>
                   {Object.entries(result.signal_stats).map(([sig, s]) => {
                     const sm = SIGNAL_META[sig] || { color: T.text3 };
-                    const wrColor = s.win_rate >= 60 ? T.green : s.win_rate >= 50 ? T.yellow : T.red;
                     return (
                       <tr key={sig} style={{ borderBottom: `1px solid ${T.border}` }}>
                         <td style={{ padding: "6px 10px", color: sm.color, fontWeight: 600 }}>{signalLabel(sig)}</td>
                         <td style={{ padding: "6px 10px", color: T.text2 }}>{s.count}</td>
-                        <td style={{ padding: "6px 10px", color: wrColor, fontWeight: 600 }}>{s.win_rate.toFixed(0)}%</td>
+                        <td style={{ padding: "6px 10px", color: T.text2 }}>{s.win_rate.toFixed(0)}%</td>
                         <td style={{ padding: "6px 10px", color: s.avg_return_pct >= 0 ? T.green : T.red }}>{s.avg_return_pct.toFixed(2)}%</td>
                         <td style={{ padding: "6px 10px", color: s.total_pnl_pct >= 0 ? T.green : T.red }}>{s.total_pnl_pct.toFixed(2)}%</td>
                         <td style={{ padding: "6px 10px", color: T.text3 }}>{s.avg_bars_held.toFixed(0)}</td>
@@ -646,12 +651,12 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
               padding: 16, marginBottom: 16, overflowX: "auto",
             }}>
               <div style={sectionLabel}>
-                Condition predictive value
+                Condition analysis
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: T.textXs }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                    {["Condition", "True", "False", "Avg return (true)", "Avg return (false)", "Value"].map(h => (
+                    {["Condition", "True", "False", "Avg return (true)", "Avg return (false)", "True minus false (pp)"].map(h => (
                       <th key={h} style={thStyle}>{h}</th>
                     ))}
                   </tr>
@@ -662,12 +667,12 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
                       <td style={{ padding: "6px 10px", color: T.text2, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{ca.name}</td>
                       <td style={{ padding: "6px 10px", color: T.text3 }}>{ca.times_true}</td>
                       <td style={{ padding: "6px 10px", color: T.text3 }}>{ca.times_false}</td>
-                      <td style={{ padding: "6px 10px", color: ca.avg_return_true >= 0 ? T.green : T.red }}>{ca.avg_return_true.toFixed(3)}%</td>
-                      <td style={{ padding: "6px 10px", color: ca.avg_return_false >= 0 ? T.green : T.red }}>{ca.avg_return_false.toFixed(3)}%</td>
+                      <td style={{ padding: "6px 10px", color: ca.avg_return_true >= 0 ? T.green : T.red }}>{ca.avg_return_true.toFixed(2)}%</td>
+                      <td style={{ padding: "6px 10px", color: ca.avg_return_false >= 0 ? T.green : T.red }}>{ca.avg_return_false.toFixed(2)}%</td>
                       <td style={{
                         padding: "6px 10px", fontWeight: 700,
                         color: ca.predictive_value > 0 ? T.green : ca.predictive_value < 0 ? T.red : T.text3,
-                      }}>{ca.predictive_value > 0 ? "+" : ""}{ca.predictive_value.toFixed(3)}</td>
+                      }}>{ca.predictive_value > 0 ? "+" : ""}{ca.predictive_value.toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -766,10 +771,12 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
 
 // ─── INPUT FIELD ────────────────────────────────────────────────────────────
 
-function InputField({ label, value, onChange, type = "text", placeholder, isMobile }) {
+function InputField({ label, value, onChange, type = "text", placeholder, hint, isMobile }) {
   return (
     <div style={{ flex: isMobile ? "1 1 100%" : undefined }}>
-      <div style={fieldLabel}>{label}</div>
+      <div style={fieldLabel}>
+        {label}{hint && <span style={{ color: T.text4 }}> ({hint})</span>}
+      </div>
       <input
         type={type}
         value={value}
