@@ -33,3 +33,22 @@ Method (`backend/backtest/transition_study.py`): at every closed candle the live
 - On 1D, entering early does not pay. The price you save by not waiting (median 3.5% from square 1, 1.1% from square 3) is smaller than what the false starts cost, so returns rise steadily toward confirmation. A freshly confirmed daily Uptrend is the best entry measured, well above an average Uptrend bar (+5.8% vs +0.3% mean over 20 days), though the median is near zero: the gain comes from a minority of large moves.
 - On 4H the squares carry little: no entry point beats simply being in an Uptrend.
 - Limits: overlapping episodes, no significance test, mean driven by a few large moves; 2021-2026 only.
+
+## Completion odds for every regime change
+
+The squares now show these odds in the grid (`frontend/src/utils/regimeOdds.js`, generated from `transition_study.py`; combinations with fewer than 20 cases are omitted). Share of pending changes, seen at square k, that completed:
+
+| TF | Change | Cases at square 1 | Square 1 | Square 2 | Square 3 | Square 4 |
+|---|---|---:|---:|---:|---:|---:|
+| 1D | Accumulation to Uptrend | 336 | 59% | 78% | 87% | 96% |
+| 1D | Re-accumulation to Uptrend | 355 | 42% | 60% | 74% | 86% |
+| 1D | Uptrend to Re-accumulation | 324 | 26% | 43% | 58% | 80% |
+| 1D | Uptrend to Downtrend | 289 | 40% | 58% | 78% | 88% |
+| 1D | Re-accumulation to Downtrend | 393 | 54% | 67% | 78% | 88% |
+| 1D | Re-accumulation to Accumulation | 706 | 30% | 48% | 63% | 79% |
+| 4H | Accumulation to Uptrend | 603 | 53% | 69% | 81% | 90% |
+| 4H | Re-accumulation to Uptrend | 711 | 47% | 65% | 79% | 89% |
+| 4H | Uptrend to Re-accumulation | 852 | 40% | 58% | 73% | 86% |
+| 4H | Uptrend to Downtrend | 110 | 30% | 59% | 73% | 89% |
+| 4H | Re-accumulation to Downtrend | 64 | 20% | 32% | 54% | - |
+| 4H | Re-accumulation to Accumulation | 1167 | 28% | 45% | 62% | 79% |

@@ -1,6 +1,7 @@
 import HelpTip from "./HelpTip.jsx";
 import { useMemo, useState } from "react";
 import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.js";
+import { SECTOR_SHORT } from "../utils/sectors.js";
 import SetupPair, { setupColor } from "./SetupPair.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
@@ -59,6 +60,8 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
               transition: "color 0.3s ease",
             }}>
               {priceStr}
+              {row.sector && row.sector !== "Other" && <span title={[row.sector, row.ecosystem, row.size_tier && `${row.size_tier} size`].filter(Boolean).join(" · ")}
+                style={{ color: T.text4, marginLeft: 6, fontFamily: T.font, fontWeight: 500 }}>{SECTOR_SHORT[row.sector] || row.sector}</span>}
             </div>
           )}
         </td>

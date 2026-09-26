@@ -40,3 +40,17 @@ class ScanResponseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SectorTests(unittest.TestCase):
+    def test_sectors_ecosystems_and_tiers(self):
+        from sectors import classify, size_tier
+        self.assertEqual(classify("SKR/USDT", "SKR"), ("Infrastructure", "Solana"))
+        self.assertEqual(classify("WIF/USDT", "WIF"), ("Memes", "Solana"))
+        self.assertEqual(classify("UBTC/USDC", "@142"), ("Majors", "Bitcoin"))
+        self.assertEqual(classify("XMR1/USDC", "@9"), ("Privacy", None))
+        self.assertEqual(classify("NEWCOIN/USDT", "NEWCOIN"), ("Other", None))
+        self.assertEqual(size_tier({"oi_value": 5e8}), "Large")
+        self.assertEqual(size_tier({"oi_value": 2e7}), "Mid")
+        self.assertEqual(size_tier({"oi_value": 0, "volume_24h": 8e6}), "Small")
+        self.assertIsNone(size_tier(None))

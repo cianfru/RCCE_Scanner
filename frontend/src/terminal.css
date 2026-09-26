@@ -265,3 +265,18 @@
 .terminal-data-table tbody tr[data-locked="true"]:hover td.setup-cell{filter:brightness(1.15);}
 .terminal-data-table td.setup-cell[data-strength="2"] .signal-label{font-weight:700!important;}
 .setup-pair-head{padding-inline:0 10px;}
+/* Sector strip: which parts of the market are moving. */
+.sector-strip{margin:4px 0 18px;}
+.sector-strip-head{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.sector-clear{margin-left:auto;background:transparent;border:0;border-bottom:1px solid var(--t-accent);color:var(--t-accent);font-size:12px;padding:2px 0;cursor:pointer;}
+.sector-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
+.sector-chip{flex:0 0 auto;display:grid;grid-template-columns:auto auto;column-gap:10px;row-gap:2px;align-items:baseline;text-align:left;padding:8px 12px;border:1px solid var(--t-border);border-radius:8px;background:transparent;color:var(--t-text2);cursor:pointer;transition:border-color .15s,background .15s;}
+.sector-chip:hover{border-color:var(--t-borderH);}
+.sector-chip[aria-pressed="true"]{border-color:var(--t-accent);background:var(--t-accentDim);}
+.sector-name{font-size:12px;font-weight:600;color:var(--t-text1);}
+.sector-rel{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text3);justify-self:end;}
+.sector-rel.up{color:var(--t-accent);}
+.sector-rel.down{color:#cf9185;}
+[data-theme="light"] .sector-rel.down{color:#b4533f;}
+.sector-meta{grid-column:1 / -1;font-size:10px;color:var(--t-text3);white-space:nowrap;}
+.best-setup-sector{display:block;font-style:normal;font-size:11px;color:var(--t-text3);margin:-2px 0 6px;}

@@ -74,12 +74,12 @@ _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
-# Cohort definitions — "Sentiment Mode": top 50 each (post-dedup ~80 unique).
-# Statistical sample of elite traders is plenty for directional consensus.
-# Was 300 each → 50 each (~83% fewer wallets, RAM + egress proportional).
-# Each wallet costs one API call per poll interval and a few KB of memory, so the
-# size is a Railway variable (HYPERLENS_COHORT_SIZE, capped at 300 per cohort).
-_COHORT_SIZE = max(10, min(300, int(os.environ.get("HYPERLENS_COHORT_SIZE", "50"))))
+# Cohort definitions — "Sentiment Mode" (latest snapshot only, one call per wallet).
+# Each wallet costs one light API call per poll interval (weight 2 of Hyperliquid's
+# 1200/min) and a few KB of memory; the earlier cost came from trade reconstruction
+# and order polling, which stay off. 300 per cohort (~500 unique wallets) is the
+# default; HYPERLENS_COHORT_SIZE lowers it (10-300) without a code change.
+_COHORT_SIZE = max(10, min(300, int(os.environ.get("HYPERLENS_COHORT_SIZE", "300"))))
 _ROSTER_COHORTS = {
     "money_printers": _COHORT_SIZE,    # top performers by ROI
     "smart_money": _COHORT_SIZE,       # largest wallets by AV

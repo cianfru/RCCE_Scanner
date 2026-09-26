@@ -70,6 +70,25 @@ def _episodes(s):
     return eps
 
 
+def _completion(s):
+    """Every pending change, any direction: (from, to, square k, completed?)."""
+    out, cur = [], None
+    for i, regime, cand, k in s["rows"]:
+        if cand and k >= 1:
+            if cur is not None and (cand != cur["to"] or k <= cur["k"]):
+                out.extend((cur["from"], cur["to"], j, False) for j in range(1, cur["k"] + 1))
+                cur = None
+            if cur is None:
+                cur = {"from": regime, "to": cand, "k": 0}
+            cur["k"] = k
+            continue
+        if cur is not None:
+            done = regime == cur["to"]
+            out.extend((cur["from"], cur["to"], j, done) for j in range(1, cur["k"] + 1))
+            cur = None
+    return out
+
+
 def _ret(s, i, h):
     """Enter at the open after bar i, exit at the close h bars later, net of costs."""
     o, c = s["open"], s["close"]
@@ -100,7 +119,7 @@ def _worker(args):
         key = "MARKUP any bar" if regime == "MARKUP" else "ACCUM/REACC any bar" if regime in ("ACCUM", "REACC") else None
         if key:
             base[key].append(_ret(s, i, h2))
-    return sym, {"rows": rows, "base": base, "episodes": len(eps),
+    return sym, {"rows": rows, "base": base, "episodes": len(eps), "completion": _completion(s),
                  "confirmed": sum(e["confirm"] is not None for e in eps)}
 
 
@@ -143,6 +162,12 @@ def main(argv=None):
     out = {"tf": args.tf, "coins": sum(1 for v in results.values() if v), "table": table,
            "episodes": sum(v["episodes"] for v in results.values() if v),
            "confirmed": sum(v["confirmed"] for v in results.values() if v)}
+    odds = {}
+    for res in results.values():
+        for frm, to, k, done in (res or {}).get("completion", []):
+            n, c = odds.get(f"{frm}>{to}>{k}", (0, 0))
+            odds[f"{frm}>{to}>{k}"] = (n + 1, c + done)
+    out["completion_odds"] = {key: {"n": n, "pct": round(100 * c / n)} for key, (n, c) in sorted(odds.items()) if n >= 20}
     (RUNS_DIR / f"{args.out}.json").write_text(json.dumps(out, indent=1, default=float))
     print(json.dumps(out, indent=1, default=float))
 
