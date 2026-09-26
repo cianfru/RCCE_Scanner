@@ -30,6 +30,7 @@ const EMPTY_WHEN = {
 
 function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
   const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
+  const noHistory = row.history_bars === 0;   // unmeasured, not zero
   switch (colLabel) {
     case "#":
       return (
@@ -69,20 +70,20 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       );
     }
     case "REGIME":
-      return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} /></div><RegimeTransition data={row} compact /></td>;
+      return <td style={{ padding: cellPad }}><div><RegimeBadge regime={row.regime} isMobile={isMobile} noHistory={noHistory} /></div><RegimeTransition data={row} compact /></td>;
     case "SIGNAL":
       return <td style={{ padding: cellPad }}><SignalDot signal={row.signal} reason={row.signal_reason} warnings={row.signal_warnings} context={row} isMobile={isMobile} /></td>;
     case "SPARK":
       return <td style={{ padding: cellPad }}><SparklineCell data={row.sparkline} width={72} height={22} /></td>;
     case "Z-SCORE":
-      return <td style={{ padding: cellPad }}><ZScoreBar z={row.zscore} isMobile={isMobile} /></td>;
+      return <td style={{ padding: cellPad }}>{noHistory ? <span style={{ color: T.text4 }}>{"\u2014"}</span> : <ZScoreBar z={row.zscore} isMobile={isMobile} />}</td>;
     case "ENERGY":
-      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), color: T.text2 }}>{fmt(row.energy, 2)}</td>;
+      return <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile), color: noHistory ? T.text4 : T.text2 }}>{noHistory ? "\u2014" : fmt(row.energy, 2)}</td>;
     case "MOM":
       return (
         <td style={{ padding: cellPad, fontFamily: T.mono, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile) }}>
-          <span style={{ color: row.momentum >= 0 ? T.green : T.red, fontWeight: 600 }}>
-            {row.momentum != null ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
+          <span style={{ color: noHistory ? T.text4 : row.momentum >= 0 ? T.green : T.red, fontWeight: 600 }}>
+            {row.momentum != null && !noHistory ? `${row.momentum >= 0 ? "+" : ""}${fmt(row.momentum, 1)}%` : "\u2014"}
           </span>
         </td>
       );

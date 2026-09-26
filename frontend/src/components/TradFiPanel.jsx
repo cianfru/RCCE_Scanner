@@ -6,27 +6,24 @@ import {
 import SparklineCell from "./SparklineCell.jsx";
 import GlassCard from "./GlassCard.jsx";
 import Tabs from "./Tabs.jsx";
+import { getAdminKey } from "../auth.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const CATEGORIES = ["ALL", "Commodities", "Indices", "Equities", "ETFs"];
 const ADD_CATEGORIES = ["Equities", "Commodities", "Indices", "ETFs"];
 
-const TF_OPTIONS = [
-  ["1d", "DAILY"],
-  ["4h", "4H"],
-];
-
+// The timeframe tabs sit in the page title row (App.jsx); tfView comes from there.
 export default function TradFiPanel({
-  results, data4h, data1d,
+  results, data4h, data1d, tfView = "1d",
   sortKey, onSort, selected, onSelect,
   visibleColumns, isMobile, loading,
 }) {
   const [category, setCategory] = useState("ALL");
-  const [tfView, setTfView] = useState("1d");
   const [managing, setManaging] = useState(false);
   const [symbols, setSymbols] = useState([]);
   const [addForm, setAddForm] = useState({ coin: "", name: "", category: "Equities", yf: "" });
   const [addError, setAddError] = useState("");
+  const canManage = !!getAdminKey();   // adding or removing markets needs the admin key
 
   // Clean coin input: strip common pair suffixes the user might add
   const cleanCoin = (raw) => raw.toUpperCase().replace(/[/-](USDC?|USDT|USD)$/i, "");
@@ -98,10 +95,11 @@ export default function TradFiPanel({
     return c;
   }, [activeData]);
 
-  // Regime summary
+  // Regime summary (markets without candle history have no measured regime)
   const regimeSummary = useMemo(() => {
     const s = {};
     for (const r of sorted) {
+      if (r.history_bars === 0) continue;
       s[r.regime] = (s[r.regime] || 0) + 1;
     }
     return s;
@@ -111,54 +109,22 @@ export default function TradFiPanel({
 
   return (
     <div style={{ marginTop: isMobile ? 16 : 20 }}>
-      {/* Header */}
+      {/* Subtitle + Manage (admin only) */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexWrap: "wrap", gap: 12, marginBottom: 16,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            fontFamily: T.mono, fontWeight: 700, fontSize: m(isMobile ? T.textLg : T.textXl, isMobile),
-            color: T.text1, letterSpacing: "0.04em",
-          }}>
-            TRADFI
-          </span>
-          <span style={{
-            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), color: T.text4,
-            background: T.glassBg, border: `1px solid ${T.border}`,
-            borderRadius: 6, padding: isMobile ? "3px 10px" : "2px 8px",
-          }}>
-            HIP-3
-          </span>
-        </div>
-
-        {/* Timeframe toggle + Manage button */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 4 }}>
-            {TF_OPTIONS.map(([val, label]) => (
-              <button key={val} onClick={() => setTfView(val)} style={{
-                fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
-                padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
-                border: `1px solid ${tfView === val ? T.cyan : T.border}`,
-                background: tfView === val ? `${T.cyan}18` : "transparent",
-                color: tfView === val ? T.cyan : T.text3,
-                transition: "all 0.15s ease",
-              }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setManaging(!managing)} style={{
-            fontFamily: T.mono, fontSize: m(T.textSm, isMobile), fontWeight: 600,
-            padding: isMobile ? "6px 14px" : "4px 12px", borderRadius: 6, cursor: "pointer",
-            border: `1px solid ${managing ? T.cyan : T.border}`,
-            background: managing ? `${T.cyan}18` : "transparent",
-            color: managing ? T.cyan : T.text4,
-            transition: "all 0.15s ease",
+        <span style={{ fontFamily: T.font, fontSize: m(T.textSm, isMobile), color: T.text3 }}>HIP-3 markets</span>
+        {canManage && (
+          <button type="button" aria-pressed={managing} onClick={() => setManaging(!managing)} style={{
+            border: "none", background: "transparent", padding: 0, cursor: "pointer",
+            fontFamily: T.font, fontSize: m(T.textSm, isMobile),
+            color: managing ? T.text1 : T.text3,
+            textDecoration: "underline", textUnderlineOffset: 3,
           }}>
             {managing ? "Done" : "+ Manage"}
           </button>
-        </div>
+        )}
       </div>
 
       {/* Category filter: the shared tab style */}
@@ -168,7 +134,7 @@ export default function TradFiPanel({
       </div>
 
       {/* Manage panel */}
-      {managing && (
+      {managing && canManage && (
         <GlassCard style={{ marginBottom: 14, padding: isMobile ? 14 : 16 }}>
           {/* Add form */}
           <div style={{
@@ -342,6 +308,7 @@ export default function TradFiPanel({
               <tbody>
                 {sorted.map((r, i) => {
                   const isSelected = selected?.symbol === r.symbol;
+                  const noHistory = r.history_bars === 0;   // unmeasured, not zero
                   return (
                     <tr
                       key={r.symbol}
@@ -366,25 +333,19 @@ export default function TradFiPanel({
                           {r.tradfi_name || r.symbol} — ${fmt(r.price, r.price > 100 ? 2 : 4)}
                         </div>
                       </td>
-                      <td style={{ padding: cellPad }}>
-                        <span style={{
-                          fontFamily: T.mono, fontSize: m(T.textXs, isMobile), fontWeight: 600,
-                          color: T.text3, background: `${T.text4}18`, borderRadius: 4,
-                          padding: isMobile ? "3px 8px" : "2px 6px",
-                        }}>
-                          {r.asset_class}
-                        </span>
+                      <td style={{ padding: cellPad, fontFamily: T.font, fontSize: m(T.textXs, isMobile), color: T.text3 }}>
+                        {r.asset_class}
                       </td>
-                      <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} isMobile={isMobile} /></td>
+                      <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} isMobile={isMobile} noHistory={noHistory} /></td>
                       <td style={{ padding: cellPad }}><SignalDot signal={r.signal} reason={r.signal_reason} warnings={r.signal_warnings} isMobile={isMobile} /></td>
                       <td style={{ padding: cellPad }}><SparklineCell data={r.sparkline} width={72} height={22} /></td>
-                      <td style={{ padding: cellPad }}><ZScoreBar z={r.zscore} isMobile={isMobile} /></td>
+                      <td style={{ padding: cellPad }}>{noHistory ? <span style={{ color: T.text4 }}>—</span> : <ZScoreBar z={r.zscore} isMobile={isMobile} />}</td>
                       <td style={{
                         padding: cellPad, fontFamily: T.mono,
                         fontSize: m(isMobile ? T.textBase : T.textMd, isMobile),
-                        color: (r.momentum || 0) > 0 ? T.green : (r.momentum || 0) < 0 ? T.red : T.text3,
+                        color: noHistory ? T.text4 : (r.momentum || 0) > 0 ? T.green : (r.momentum || 0) < 0 ? T.red : T.text3,
                       }}>
-                        {fmt(r.momentum, 1)}%
+                        {noHistory ? "—" : `${fmt(r.momentum, 1)}%`}
                       </td>
                       <td style={{ padding: cellPad }}><HeatCell heat={r.heat} phase={r.heat_phase} isMobile={isMobile} /></td>
                       <td style={{ padding: cellPad }}>
