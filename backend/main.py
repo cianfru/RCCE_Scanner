@@ -3960,14 +3960,13 @@ async def hyperlens_roster(
 @app.get("/api/hyperlens/consensus")
 async def hyperlens_consensus(
     symbol: Optional[str] = Query(None),
-    cohort: Optional[str] = Query(None),
     cohorts: bool = Query(False, description="Add wallet-cohort bias for the symbol (display; weighting unchanged)"),
 ):
     """Per-symbol smart-money consensus.
 
     Optional ?symbol=BTC filter, otherwise returns all symbols sorted by
-    number of positioned wallets.
-    Optional ?cohort=money_printers|smart_money|elite to filter by cohort.
+    number of positioned wallets. Every row carries the per-cohort figures
+    nested under "money_printer" and "smart_money"; there is no cohort filter.
     """
     from hl_intelligence import get_consensus, get_all_consensus
 
@@ -3988,12 +3987,16 @@ async def hyperlens_consensus(
                 "net_ratio": c.money_printer_net_ratio,
                 "long_count": c.money_printer_long_count,
                 "short_count": c.money_printer_short_count,
+                "long_notional": round(c.money_printer_long_notional, 2),
+                "short_notional": round(c.money_printer_short_notional, 2),
             },
             "smart_money": {
                 "trend": c.smart_money_trend,
                 "net_ratio": c.smart_money_net_ratio,
                 "long_count": c.smart_money_long_count,
                 "short_count": c.smart_money_short_count,
+                "long_notional": round(c.smart_money_long_notional, 2),
+                "short_notional": round(c.smart_money_short_notional, 2),
             },
         }
         return d
