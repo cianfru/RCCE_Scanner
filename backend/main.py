@@ -310,6 +310,15 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # First, since it is quick: save the latest wallet readings, so the next start restores
+    # fresh positions instead of waiting 20-30 minutes for the sweep (hourly saves are too old).
+    try:
+        from hl_intelligence import _snapshots
+        from hl_persistence import save_snapshots
+        save_snapshots(_snapshots)
+    except Exception:
+        logger.debug("HyperLens snapshot shutdown save failed")
+
     from setup_research_service import stop_setup_research
     await stop_setup_research(cache)
 
@@ -319,6 +328,7 @@ async def lifespan(app: FastAPI):
         _ohlcv_store.save_to_disk(force=True)
     except Exception:
         logger.debug("OHLCV cache shutdown save failed")
+
 
     # Shutdown Telegram bot
     try:
