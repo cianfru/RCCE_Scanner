@@ -2199,6 +2199,18 @@ async def executor_set_whitelist(body: WhitelistUpdate):
     return executor.set_whitelist(body.symbols)
 
 
+@app.post("/api/executor/whitelist/reset")
+async def executor_reset_whitelist():
+    """Replace the executor whitelist with the default majors."""
+    from executor import get_executor, DEFAULT_WHITELIST
+
+    executor = get_executor()
+    if not executor:
+        raise HTTPException(status_code=400, detail="Executor not initialized")
+
+    return executor.set_whitelist(DEFAULT_WHITELIST)
+
+
 @app.post("/api/executor/whitelist/add")
 async def executor_add_whitelist(body: WhitelistAddRequest):
     """Add a single symbol to the executor whitelist."""

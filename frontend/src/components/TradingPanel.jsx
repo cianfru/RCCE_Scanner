@@ -2,16 +2,18 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   createChart, AreaSeries, ColorType, LineStyle, CrosshairMode,
 } from "lightweight-charts";
-import { T } from "../theme.js";
+import { T, SIGNAL_META, REGIME_META, heatColor, col, resolveToken } from "../theme.js";
+import { useTheme } from "../ThemeContext.jsx";
 import { useWallet } from "../WalletContext.jsx";
 import * as hlClient from "../services/hlClient.js";
+import Tabs from "./Tabs.jsx";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function timeAgo(ts) {
-  if (!ts) return "\u2014";
+  if (!ts) return "—";
   const s = typeof ts === "number" && ts > 1e12 ? ts / 1000 : ts;
   const diff = (Date.now() / 1000) - s;
   if (diff < 60)   return `${Math.round(diff)}s ago`;
@@ -21,25 +23,19 @@ function timeAgo(ts) {
 }
 
 function fmtUsd(v) {
-  if (v == null) return "\u2014";
+  if (v == null) return "—";
   const n = typeof v === "string" ? parseFloat(v) : v;
-  if (isNaN(n)) return "\u2014";
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (isNaN(n)) return "—";
+  return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtPrice(p) {
-  if (!p) return "\u2014";
+  if (!p) return "—";
   const n = typeof p === "string" ? parseFloat(p) : p;
-  if (isNaN(n)) return "\u2014";
+  if (isNaN(n)) return "—";
   if (n >= 1000) return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (n >= 1) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(6)}`;
-}
-
-function fmtPnl(pct) {
-  if (pct == null) return "\u2014";
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
 }
 
 function fmtVlm(v) {
@@ -51,14 +47,15 @@ function fmtVlm(v) {
 }
 
 function fmtBps(rate) {
-  if (!rate) return "\u2014";
+  if (!rate) return "—";
   const bps = parseFloat(rate) * 10000;
   return `${bps.toFixed(2)} bps`;
 }
 
+// T.green / T.red are repainted in place by applyTheme, so read them at render time.
 function pnlColor(v) {
   if (v == null || v === 0) return T.text3;
-  return v > 0 ? "#34d399" : "#f87171";
+  return v > 0 ? T.green : T.red;
 }
 
 function parseNum(v) {
@@ -74,73 +71,18 @@ function parseNum(v) {
 const ENTRY_SIGNALS = new Set(["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED"]);
 const EXIT_SIGNALS  = new Set(["TRIM", "TRIM_HARD", "RISK_OFF"]);
 
-const SIGNAL_COMPACT = {
-  STRONG_LONG:  "STRONG",
-  LIGHT_LONG:   "LIGHT",
-  ACCUMULATE:   "ACCUM",
-  REVIVAL_SEED: "SEED",
-  TRIM:         "TRIM",
-  TRIM_HARD:    "TRIM!",
-  RISK_OFF:     "RISK OFF",
-  NO_LONG:      "NO LONG",
-  WAIT:         "WAIT",
-};
+const signalLabel = sig => SIGNAL_META[sig]?.label ?? String(sig || "—").replaceAll("_", " ");
+const signalColor = sig => SIGNAL_META[sig]?.color ?? T.text3;
 
-const SIGNAL_COLOR = {
-  STRONG_LONG:  "#34d399",
-  LIGHT_LONG:   "#6ee7b7",
-  ACCUMULATE:   "#97FCE4",
-  REVIVAL_SEED: "#a78bfa",
-  TRIM:         "#fbbf24",
-  TRIM_HARD:    "#f97316",
-  RISK_OFF:     "#f87171",
-  NO_LONG:      "#9ca3af",
-  WAIT:         "#6b7280",
-};
-
-const REGIME_COLOR = {
-  MARKUP:   "#34d399",
-  BLOWOFF:  "#fbbf24",
-  REACC:    "#97FCE4",
-  MARKDOWN: "#f87171",
-  CAP:      "#f87171",
-  ACCUM:    "#a78bfa",
-};
-
-const ALIGN_STYLE = {
-  ALIGNED:     { color: "#34d399", bg: "rgba(52,211,153,0.12)",   border: "rgba(52,211,153,0.3)" },
-  CONFLICTING: { color: "#f87171", bg: "rgba(248,113,113,0.12)",  border: "rgba(248,113,113,0.3)" },
-  NEUTRAL:     { color: "#9ca3af", bg: "rgba(156,163,175,0.08)",  border: "rgba(156,163,175,0.18)" },
-};
-
+// Whether the scanner's signal points the same way as the position.
 function computeAlignment(signal, isLong) {
   if (ENTRY_SIGNALS.has(signal)) return isLong ? "ALIGNED" : "CONFLICTING";
   if (EXIT_SIGNALS.has(signal))  return isLong ? "CONFLICTING" : "ALIGNED";
   return "NEUTRAL";
 }
 
-function heatColor(heat) {
-  if (heat >= 80) return "#f87171";
-  if (heat >= 60) return "#fbbf24";
-  if (heat >= 40) return "#97FCE4";
-  return "#6b7280";
-}
-
-// ---------------------------------------------------------------------------
-// Glassmorphism Design Tokens
-// ---------------------------------------------------------------------------
-
-const GLASS = {
-  bg: "rgba(255,255,255,0.03)",
-  bgHover: "rgba(255,255,255,0.055)",
-  border: "rgba(255,255,255,0.08)",
-  borderBright: "rgba(255,255,255,0.14)",
-  blur: "blur(24px)",
-  shadow: "0 4px 32px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset",
-  shadowSubtle: "0 2px 16px rgba(0,0,0,0.2)",
-  glow: (color, intensity = 0.12) => `0 0 32px rgba(${color},${intensity}), 0 0 8px rgba(${color},${intensity * 0.6})`,
-  displayFont: "'Outfit', 'Inter', sans-serif",
-};
+const ALIGN_TEXT = { ALIGNED: "Agrees", CONFLICTING: "Disagrees", NEUTRAL: "No clear signal" };
+const alignColor = a => a === "ALIGNED" ? T.green : a === "CONFLICTING" ? T.red : T.text3;
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -149,76 +91,49 @@ const GLASS = {
 const S = {
   panel: { padding: 0, maxWidth: 1200, margin: "0 auto" },
   section: {
-    background: GLASS.bg,
-    backdropFilter: GLASS.blur,
-    WebkitBackdropFilter: GLASS.blur,
-    border: `1px solid ${GLASS.border}`,
-    borderRadius: 16, marginBottom: 20, overflow: "hidden",
-    boxShadow: GLASS.shadow,
-    transition: "all 0.25s ease",
+    background: T.surface,
+    border: `1px solid ${T.border}`,
+    borderRadius: T.radius, marginBottom: 16, overflow: "hidden",
   },
   sectionHeader: {
-    padding: "16px 24px",
-    borderBottom: `1px solid ${GLASS.border}`,
-    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-    background: "rgba(255,255,255,0.015)",
+    padding: "14px 20px",
+    borderBottom: `1px solid ${T.border}`,
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
   },
   title: {
-    fontSize: 13, fontWeight: 700, fontFamily: GLASS.displayFont, color: T.text1,
-    letterSpacing: "0.04em", textTransform: "uppercase",
+    fontSize: T.textSm, fontWeight: 600, fontFamily: T.font, color: T.text1,
   },
   btn: {
-    padding: "7px 16px", borderRadius: 8,
-    border: `1px solid ${GLASS.border}`,
-    background: "rgba(255,255,255,0.04)",
-    backdropFilter: "blur(12px)",
-    color: T.text1, fontSize: 11, fontFamily: T.mono,
+    padding: "6px 14px", borderRadius: 6,
+    border: `1px solid ${T.border}`,
+    background: "transparent",
+    color: T.text1, fontSize: T.textXs, fontFamily: T.mono,
     fontWeight: 600, cursor: "pointer",
-    transition: "all 0.2s ease",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
   },
-  btnDanger: {
-    background: "rgba(248,113,113,0.1)",
-    borderColor: "rgba(248,113,113,0.25)",
-    color: "#f87171",
-    boxShadow: "0 1px 8px rgba(248,113,113,0.1)",
+  // Getter: T.red is repainted in place by applyTheme, so read it at render time
+  get btnDanger() {
+    return { borderColor: T.red, color: T.red };
   },
-  label: { fontSize: 11, fontFamily: T.font, color: T.text3, fontWeight: 500 },
-  value: { fontSize: 13, fontFamily: T.mono, color: T.text1, fontWeight: 600 },
-  badge: (bg, color, border) => ({
-    display: "inline-flex", alignItems: "center", padding: "4px 12px", borderRadius: 6,
-    background: bg, color, border: `1px solid ${border}`,
-    fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-    backdropFilter: "blur(8px)",
-    boxShadow: `0 1px 6px ${bg}`,
-  }),
-  pillBtn: (active) => ({
-    padding: "6px 14px", borderRadius: 8, cursor: "pointer",
-    border: active ? "1px solid rgba(151,252,228,0.45)" : `1px solid ${GLASS.border}`,
-    background: active
-      ? "linear-gradient(135deg, rgba(151,252,228,0.15), rgba(151,252,228,0.06))"
-      : "rgba(255,255,255,0.03)",
-    color: active ? "#97FCE4" : T.text3,
-    fontSize: 10, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
-    transition: "all 0.2s ease",
-    backdropFilter: "blur(8px)",
-    boxShadow: active ? "0 0 12px rgba(151,252,228,0.12)" : "none",
+  label: { fontSize: T.textXs, fontFamily: T.font, color: T.text3, fontWeight: 500 },
+  value: { fontSize: T.textSm, fontFamily: T.mono, color: T.text1, fontWeight: 600 },
+  badge: (color) => ({
+    display: "inline-block", padding: 0, borderRadius: 0,
+    background: "transparent", color, border: "none",
+    fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
   }),
   empty: {
     padding: "32px 24px", textAlign: "center",
-    color: T.text4, fontSize: 12, fontFamily: T.mono,
+    color: T.text3, fontSize: T.textXs, fontFamily: T.mono,
   },
 };
 
 const cellStyle = {
-  padding: "12px 16px", fontSize: 12, fontFamily: T.mono, color: T.text2,
-  borderBottom: `1px solid ${GLASS.border}`, whiteSpace: "nowrap",
+  padding: "12px 16px", fontSize: T.textXs, fontFamily: T.mono, color: T.text2,
+  borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap",
 };
 const headerCell = {
-  padding: "12px 16px", fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-  color: T.text3, letterSpacing: "0.12em", textTransform: "uppercase",
-  borderBottom: `1px solid ${GLASS.borderBright}`, textAlign: "left",
-  background: "rgba(255,255,255,0.01)",
+  padding: "12px 16px", fontSize: T.textXs, fontFamily: T.font, fontWeight: 600,
+  color: T.text3, borderBottom: `1px solid ${T.borderH}`, textAlign: "left",
 };
 
 // ---------------------------------------------------------------------------
@@ -227,29 +142,18 @@ const headerCell = {
 
 function StatBox({ label, value, color, small }) {
   return (
-    <div style={{
-      textAlign: "center", minWidth: small ? 80 : 100,
-      padding: small ? "8px 10px" : "10px 14px",
-      borderRadius: 10,
-      background: "rgba(255,255,255,0.02)",
-      border: `1px solid rgba(255,255,255,0.04)`,
-      transition: "all 0.2s ease",
-    }}>
-      <div style={{
-        fontSize: small ? 15 : 20,
-        fontFamily: GLASS.displayFont,
-        fontWeight: 700,
-        color: color || T.text1,
-        lineHeight: 1.2,
-        letterSpacing: "-0.01em",
-      }}>
-        {value}
+    <div style={{ minWidth: small ? 90 : 120, padding: small ? "8px 10px" : "10px 14px" }}>
+      <div style={{ fontSize: T.textXs, fontFamily: T.font, color: T.text3, marginBottom: 4 }}>
+        {label}
       </div>
       <div style={{
-        fontSize: 9, fontFamily: T.mono, color: T.text4,
-        marginTop: 4, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase",
+        fontSize: small ? 15 : 20,
+        fontFamily: T.mono,
+        fontWeight: 600,
+        color: color || T.text1,
+        lineHeight: 1.2,
       }}>
-        {label}
+        {value}
       </div>
     </div>
   );
@@ -261,12 +165,13 @@ const PERIODS = [
   { key: "1D", label: "1D", sdk: "perpDay" },
   { key: "1W", label: "1W", sdk: "perpWeek" },
   { key: "1M", label: "1M", sdk: "perpMonth" },
-  { key: "ALL", label: "ALL", sdk: "perpAllTime" },
+  { key: "ALL", label: "All", sdk: "perpAllTime" },
 ];
 
 function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
+  const { mode: themeMode } = useTheme();
 
   useEffect(() => {
     if (!containerRef.current || !portfolio) return;
@@ -296,33 +201,37 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
 
     const lastVal = chartData[chartData.length - 1].value;
     const isPositive = lastVal >= 0;
+    // Library colours are resolved from the theme tokens; rebuilt when the theme changes.
+    const border = resolveToken("border");
+    const cross = resolveToken("chartCross");
+    const labelBg = resolveToken("accent");
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
       height: 280,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#98989f",
-        fontFamily: "'SF Mono', 'Fira Code', monospace",
-        fontSize: 10,
+        textColor: resolveToken("chartText"),
+        fontFamily: "'Geist Mono', monospace",
+        fontSize: 12,
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.02)" },
-        horzLines: { color: "rgba(255,255,255,0.025)" },
+        vertLines: { color: resolveToken("chartGrid") },
+        horzLines: { color: resolveToken("chartGrid") },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(151,252,228,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
-        horzLine: { color: "rgba(151,252,228,0.15)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1a1a1e" },
+        vertLine: { color: cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: labelBg },
+        horzLine: { color: cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: labelBg },
       },
       timeScale: {
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: border,
         timeVisible: true, secondsVisible: false,
         rightOffset: 3, minBarSpacing: 1,
       },
       rightPriceScale: {
-        borderColor: "rgba(255,255,255,0.06)",
+        borderColor: border,
         scaleMargins: { top: 0.08, bottom: 0.08 },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
@@ -331,21 +240,18 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
     chartRef.current = chart;
 
     const lineColor = mode === "value"
-      ? "#97FCE4"
-      : (isPositive ? "#34d399" : "#f87171");
-    const topColor = mode === "value"
-      ? "rgba(151,252,228,0.18)"
-      : (isPositive ? "rgba(52,211,153,0.18)" : "rgba(248,113,113,0.18)");
+      ? resolveToken("accent")
+      : col(isPositive ? "#34d399" : "#f87171");
 
     const areaSeries = chart.addSeries(AreaSeries, {
-      topColor,
+      topColor: `${lineColor}2e`,
       bottomColor: "transparent",
       lineColor,
       lineWidth: 2,
       crosshairMarkerRadius: 4,
       crosshairMarkerBorderWidth: 1,
       crosshairMarkerBorderColor: lineColor,
-      priceFormat: { type: "custom", formatter: (v) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+      priceFormat: { type: "custom", formatter: (v) => fmtUsd(v) },
     });
     areaSeries.setData(chartData);
     chart.timeScale().fitContent();
@@ -365,7 +271,7 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
         chartRef.current = null;
       }
     };
-  }, [portfolio, period, mode]);
+  }, [portfolio, period, mode, themeMode]);
 
   const sdkPeriod = PERIODS.find(p => p.key === period)?.sdk || "perpAllTime";
   const vlm = portfolio?.[sdkPeriod]?.vlm;
@@ -373,138 +279,50 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
   return (
     <div style={S.section}>
       <div style={S.sectionHeader}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={S.title}>Portfolio</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={S.title}>Perps portfolio</span>
           {vlm > 0 && (
-            <span style={{
-              fontSize: 10, fontFamily: T.mono, color: T.text4,
-              padding: "3px 8px", borderRadius: 6,
-              background: "rgba(255,255,255,0.03)",
-              border: `1px solid rgba(255,255,255,0.05)`,
-            }}>
-              Vol: {fmtVlm(vlm)}
+            <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text3 }}>
+              Volume {fmtVlm(vlm)}
             </span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          {/* Mode toggle */}
-          <button style={S.pillBtn(mode === "value")} onClick={() => onModeChange("value")}>VALUE</button>
-          <button style={S.pillBtn(mode === "pnl")} onClick={() => onModeChange("pnl")}>PnL</button>
-          <div style={{ width: 1, height: 16, background: GLASS.border, margin: "0 4px" }} />
-          {/* Period toggle */}
-          {PERIODS.map(p => (
-            <button key={p.key} style={S.pillBtn(period === p.key)} onClick={() => onPeriodChange(p.key)}>
-              {p.label}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <Tabs small label="Chart value" value={mode} onChange={onModeChange}
+            items={[{ key: "value", label: "Value" }, { key: "pnl", label: "P&L" }]} />
+          <Tabs small label="Chart period" value={period} onChange={onPeriodChange}
+            items={PERIODS.map(p => ({ key: p.key, label: p.label }))} />
         </div>
       </div>
-      <div ref={containerRef} style={{
-        height: 280, width: "100%",
-        background: "radial-gradient(ellipse at 50% 80%, rgba(151,252,228,0.03) 0%, transparent 70%)",
-      }} />
+      <div ref={containerRef} style={{ height: 280, width: "100%" }} />
     </div>
   );
 }
 
-// ─── Scanner Context Strip ───────────────────────────────────────────────────
+// ─── Scanner Context Line ────────────────────────────────────────────────────
 
 function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
   const ctx4h = scanMap4h[coin];
   const ctx1d  = scanMap1d[coin];
   if (!ctx4h) return null;
 
-  const alignment  = computeAlignment(ctx4h.signal, isLong);
-  const alignStyle = ALIGN_STYLE[alignment];
-  const sigColor   = SIGNAL_COLOR[ctx4h.signal] || T.text3;
-  const regColor   = REGIME_COLOR[ctx4h.regime]  || T.text3;
-  const hc         = heatColor(ctx4h.heat);
+  const alignment = computeAlignment(ctx4h.signal, isLong);
+  const regime = REGIME_META[ctx4h.regime];
+  const sep = <span style={{ color: T.text4 }}>{"·"}</span>;
 
   return (
-    <div style={{
-      marginTop: 12,
-      padding: "10px 14px",
-      background: "rgba(255,255,255,0.02)",
-      backdropFilter: "blur(12px)",
-      borderRadius: 10,
-      border: `1px solid ${GLASS.border}`,
-      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-    }}>
-      {/* Top row: badges */}
-      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-        <span style={{
-          fontSize: 9, fontFamily: T.mono, color: T.text4,
-          letterSpacing: "0.12em", fontWeight: 700,
-        }}>
-          SCANNER
-        </span>
-
-        {/* 4H Signal */}
-        <span style={{
-          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "3px 8px", borderRadius: 5,
-          background: sigColor + "18", color: sigColor,
-          letterSpacing: "0.04em",
-          border: `1px solid ${sigColor}25`,
-          boxShadow: `0 0 8px ${sigColor}10`,
-        }}>
-          {SIGNAL_COMPACT[ctx4h.signal] || ctx4h.signal} · 4H
-        </span>
-
-        {/* Regime */}
-        <span style={{
-          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "3px 8px", borderRadius: 5,
-          background: regColor + "14", color: regColor,
-          border: `1px solid ${regColor}20`,
-        }}>
-          {ctx4h.regime}
-        </span>
-
-        {/* Heat */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, letterSpacing: "0.06em" }}>HEAT</span>
-          <div style={{
-            width: 44, height: 5, borderRadius: 3,
-            background: "rgba(255,255,255,0.06)",
-            overflow: "hidden",
-          }}>
-            <div style={{
-              width: `${ctx4h.heat}%`, height: "100%",
-              borderRadius: 3, background: hc,
-              boxShadow: `0 0 6px ${hc}50`,
-              transition: "width 0.3s ease",
-            }} />
-          </div>
-          <span style={{ fontSize: 9, fontFamily: T.mono, color: hc, fontWeight: 700 }}>
-            {ctx4h.heat}
-          </span>
-        </div>
-
-        {/* 1D signal if different */}
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: T.textXs, fontFamily: T.mono }}>
+        <span style={{ color: T.text3, fontFamily: T.font }}>Scanner 4H</span>
+        <span style={{ color: signalColor(ctx4h.signal), fontWeight: 700 }}>{signalLabel(ctx4h.signal)}</span>
+        {sep}
+        <span style={{ color: regime?.color ?? T.text3 }}>{regime?.name ?? ctx4h.regime}</span>
+        {ctx4h.heat != null && <>{sep}<span style={{ color: T.text3 }}>Heat <span style={{ color: heatColor(ctx4h.heat), fontWeight: 700 }}>{ctx4h.heat}</span></span></>}
         {ctx1d && ctx1d.signal !== ctx4h.signal && (
-          <span style={{
-            fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-            padding: "3px 8px", borderRadius: 5,
-            background: (SIGNAL_COLOR[ctx1d.signal] || T.text4) + "14",
-            color: SIGNAL_COLOR[ctx1d.signal] || T.text4,
-            border: `1px solid ${(SIGNAL_COLOR[ctx1d.signal] || T.text4)}20`,
-          }}>
-            {SIGNAL_COMPACT[ctx1d.signal] || ctx1d.signal} · 1D
-          </span>
+          <>{sep}<span style={{ color: T.text3 }}>1D <span style={{ color: signalColor(ctx1d.signal), fontWeight: 600 }}>{signalLabel(ctx1d.signal)}</span></span></>
         )}
-
-        {/* Alignment badge — pinned right */}
-        <span style={{
-          marginLeft: "auto",
-          fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-          padding: "3px 10px", borderRadius: 5,
-          background: alignStyle.bg, color: alignStyle.color,
-          border: `1px solid ${alignStyle.border}`,
-          letterSpacing: "0.06em", flexShrink: 0,
-          boxShadow: `0 0 8px ${alignStyle.bg}`,
-        }}>
-          {alignment}
+        <span style={{ marginLeft: "auto", color: alignColor(alignment), fontWeight: 700, fontFamily: T.font }}>
+          {alignment === "NEUTRAL" ? ALIGN_TEXT.NEUTRAL : `${ALIGN_TEXT[alignment]} with this ${isLong ? "long" : "short"}`}
         </span>
       </div>
 
@@ -512,17 +330,10 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
       {posWarnings.length > 0 && (
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
           {posWarnings.map((w, i) => {
-            const wc = w.severity === "critical" ? "#f87171" : w.severity === "high" ? "#fbbf24" : "#eab308";
+            const wc = w.severity === "critical" ? T.red : T.yellow;
             return (
-              <div key={i} style={{
-                display: "flex", alignItems: "flex-start", gap: 6,
-                fontSize: 9, fontFamily: T.mono, color: wc,
-                padding: "4px 8px", borderRadius: 5,
-                background: wc + "08",
-                border: `1px solid ${wc}12`,
-              }}>
-                <span style={{ flexShrink: 0, fontSize: 7, marginTop: 2 }}>&#9650;</span>
-                <span style={{ lineHeight: 1.5 }}>{w.detail}</span>
+              <div key={i} style={{ fontSize: T.textXs, fontFamily: T.mono, lineHeight: 1.5, color: T.text2 }}>
+                <span style={{ color: wc, fontWeight: 700 }}>Warning: </span>{w.detail}
               </div>
             );
           })}
@@ -532,273 +343,59 @@ function ScannerContext({ coin, scanMap4h, scanMap1d, isLong, posWarnings }) {
   );
 }
 
-// ─── Portfolio Health Card ───────────────────────────────────────────────────
+// ─── Scanner Check (plain facts, no score) ───────────────────────────────────
 
-function PortfolioHealthCard({ positions, scanMap4h, warnings }) {
+function ScannerCheck({ positions, scanMap4h }) {
   if (positions.length === 0) return null;
 
-  // Per-position health scoring
-  const positionScores = positions.map(ap => {
+  const rows = positions.map(ap => {
     const p      = ap.position || ap;
     const coin   = p.coin;
-    const szi    = parseNum(ap.position?.szi ?? ap.szi);
-    const isLong = szi > 0;
+    const isLong = parseNum(ap.position?.szi ?? ap.szi) > 0;
     const ctx    = scanMap4h[coin];
-    const entryPx = parseNum(p.entryPx);
     const liqPx  = p.liquidationPx ? parseNum(p.liquidationPx) : null;
-
-    let health = 65; // base
-
-    if (ctx) {
-      const alignment = computeAlignment(ctx.signal, isLong);
-      if (alignment === "ALIGNED")     health += 20;
-      if (alignment === "CONFLICTING") health -= 30;
-
-      if (ctx.heat >= 85)      health -= 20;
-      else if (ctx.heat >= 70) health -= 10;
-
-      if (ctx.is_climax)         health -= 15;
-      if (ctx.floor_confirmed && !isLong) health -= 10;
-    }
-
-    if (liqPx && entryPx) {
-      const currentPrice = ctx?.price || entryPx;
-      const liqDist = Math.abs(currentPrice - liqPx) / currentPrice * 100;
-      if (liqDist < 8)       health -= 30;
-      else if (liqDist < 15) health -= 15;
-      else if (liqDist < 25) health -= 5;
-    }
-
-    // Penalise for active critical/high warnings
-    const coinWarnings = warnings.filter(w => w.symbol === coin || w.symbol === `${coin}/USDT`);
-    coinWarnings.forEach(w => {
-      if (w.severity === "critical") health -= 15;
-      else if (w.severity === "high") health -= 8;
-    });
-
-    return { coin, isLong, health: Math.max(0, Math.min(100, health)), ctx };
+    const liqDist = liqPx && ctx?.price ? Math.abs(ctx.price - liqPx) / ctx.price * 100 : null;
+    return { coin, isLong, ctx, liqDist, alignment: ctx ? computeAlignment(ctx.signal, isLong) : null };
   });
 
-  const avgHealth = positionScores.reduce((s, v) => s + v.health, 0) / positionScores.length;
+  const covered     = rows.filter(r => r.ctx);
+  const agree       = covered.filter(r => r.alignment === "ALIGNED").length;
+  const disagree    = covered.filter(r => r.alignment === "CONFLICTING").length;
+  const noSignal    = covered.length - agree - disagree;
+  const notScanned  = rows.length - covered.length;
 
-  // Categorise
-  const aligned     = positionScores.filter(ps => ps.ctx && computeAlignment(ps.ctx.signal, ps.isLong) === "ALIGNED").length;
-  const conflicting = positionScores.filter(ps => ps.ctx && computeAlignment(ps.ctx.signal, ps.isLong) === "CONFLICTING").length;
-  const neutral     = positionScores.length - aligned - conflicting;
-
-  const hc    = avgHealth >= 68 ? "#34d399" : avgHealth >= 45 ? "#fbbf24" : "#f87171";
-  const label = avgHealth >= 68 ? "HEALTHY"  : avgHealth >= 45 ? "MODERATE" : "AT RISK";
-
-  // Suggested actions from scanner signals
-  const actions = positionScores
-    .filter(ps => ps.ctx)
-    .map(ps => {
-      const sig = ps.ctx.signal;
-      const side = ps.isLong ? "LONG" : "SHORT";
-      if (sig === "TRIM" || sig === "TRIM_HARD") return { coin: ps.coin, text: `TRIM ${ps.coin} ${side} — scanner says ${sig}`, color: "#fbbf24" };
-      if (sig === "RISK_OFF") return { coin: ps.coin, text: `CLOSE ${ps.coin} — RISK OFF signal`, color: "#f87171" };
-      if ((sig === "STRONG_LONG" || sig === "LIGHT_LONG") && !ps.isLong) return { coin: ps.coin, text: `COVER ${ps.coin} SHORT — bullish signal`, color: "#f97316" };
-      if (sig === "STRONG_LONG" && ps.isLong && ps.ctx.heat < 70) return { coin: ps.coin, text: `HOLD / ADD ${ps.coin} — strong regime`, color: "#34d399" };
-      return null;
-    })
-    .filter(Boolean);
-
-  // SVG arc for the circular gauge
-  const gaugeRadius = 38;
-  const gaugeCircumference = 2 * Math.PI * gaugeRadius;
-  const gaugeArc = (avgHealth / 100) * gaugeCircumference * 0.75; // 270° arc
-  const gaugeRGB = hc === "#34d399" ? "52,211,153" : hc === "#fbbf24" ? "251,191,36" : "248,113,113";
+  // Descriptions of what the scanner shows, not instructions.
+  const notes = rows.flatMap(r => {
+    const side = r.isLong ? "long" : "short";
+    const out = [];
+    if (r.alignment === "CONFLICTING") {
+      out.push({ key: `${r.coin}-sig`, color: T.red, text: `${r.coin} ${side}: scanner shows ${signalLabel(r.ctx.signal)} on 4H, against the position.` });
+    }
+    if (r.liqDist != null && r.liqDist < 15) {
+      out.push({ key: `${r.coin}-liq`, color: r.liqDist < 8 ? T.red : T.yellow, text: `${r.coin} ${side}: liquidation price is ${r.liqDist.toFixed(1)}% from the scanner's last price.` });
+    }
+    return out;
+  });
 
   return (
-    <div style={{
-      ...S.section,
-      marginBottom: 20,
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      {/* Radial glow background tied to health color */}
-      <div style={{
-        position: "absolute", top: -40, left: -20,
-        width: 200, height: 200,
-        borderRadius: "50%",
-        background: `radial-gradient(circle, rgba(${gaugeRGB},0.08) 0%, transparent 70%)`,
-        pointerEvents: "none",
-        filter: "blur(20px)",
-      }} />
-
-      {/* Header */}
-      <div style={{
-        padding: "14px 24px",
-        borderBottom: `1px solid ${GLASS.border}`,
-        display: "flex", alignItems: "center", gap: 12,
-        background: "rgba(255,255,255,0.015)",
-        position: "relative",
-      }}>
-        <span style={S.title}>Portfolio Health</span>
-        <span style={{
-          fontSize: 10, fontFamily: GLASS.displayFont, fontWeight: 700,
-          padding: "3px 10px", borderRadius: 6,
-          background: `rgba(${gaugeRGB},0.12)`, color: hc,
-          border: `1px solid rgba(${gaugeRGB},0.25)`,
-          letterSpacing: "0.04em",
-          boxShadow: `0 0 10px rgba(${gaugeRGB},0.1)`,
-        }}>
-          {label}
-        </span>
+    <div style={S.section}>
+      <div style={S.sectionHeader}>
+        <span style={S.title}>Scanner check · 4H</span>
       </div>
-
-      {/* Score + breakdowns */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 28,
-        padding: "20px 24px", flexWrap: "wrap",
-        borderBottom: actions.length > 0 ? `1px solid ${GLASS.border}` : "none",
-        position: "relative",
-      }}>
-        {/* Circular gauge */}
-        <div style={{ position: "relative", width: 90, height: 90, flexShrink: 0 }}>
-          <svg width="90" height="90" viewBox="0 0 90 90" style={{ transform: "rotate(-225deg)" }}>
-            {/* Background arc */}
-            <circle
-              cx="45" cy="45" r={gaugeRadius}
-              fill="none"
-              stroke="rgba(255,255,255,0.06)"
-              strokeWidth="6"
-              strokeDasharray={`${gaugeCircumference * 0.75} ${gaugeCircumference * 0.25}`}
-              strokeLinecap="round"
-            />
-            {/* Health arc */}
-            <circle
-              cx="45" cy="45" r={gaugeRadius}
-              fill="none"
-              stroke={hc}
-              strokeWidth="6"
-              strokeDasharray={`${gaugeArc} ${gaugeCircumference - gaugeArc}`}
-              strokeLinecap="round"
-              style={{ transition: "stroke-dasharray 0.6s ease", filter: `drop-shadow(0 0 6px rgba(${gaugeRGB},0.4))` }}
-            />
-          </svg>
-          {/* Center score */}
-          <div style={{
-            position: "absolute", top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            textAlign: "center",
-          }}>
-            <div style={{
-              fontSize: 26, fontFamily: GLASS.displayFont, fontWeight: 800,
-              color: hc, lineHeight: 1, letterSpacing: "-0.02em",
-            }}>
-              {Math.round(avgHealth)}
-            </div>
-            <div style={{
-              fontSize: 8, fontFamily: T.mono, color: T.text4,
-              letterSpacing: "0.12em", marginTop: 2,
-            }}>
-              /100
-            </div>
+      <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: 8, fontSize: T.textXs, fontFamily: T.font, color: T.text2, lineHeight: 1.6 }}>
+        <div>
+          Of {rows.length} open position{rows.length === 1 ? "" : "s"}, the scanner's 4H signal{" "}
+          <span style={{ color: T.green, fontWeight: 600 }}>agrees with {agree}</span>,{" "}
+          <span style={{ color: disagree ? T.red : T.text2, fontWeight: 600 }}>disagrees with {disagree}</span>
+          {" "}and gives no clear direction for {noSignal}.
+          {notScanned > 0 && ` ${notScanned} ${notScanned === 1 ? "is" : "are"} not covered by the scanner.`}
+        </div>
+        {notes.map(n => (
+          <div key={n.key} style={{ fontFamily: T.mono }}>
+            <span style={{ color: n.color, fontWeight: 700 }}>Note: </span>{n.text}
           </div>
-        </div>
-
-        {/* Divider */}
-        <div style={{ width: 1, height: 56, background: GLASS.border, flexShrink: 0 }} />
-
-        {/* Alignment stats */}
-        <div style={{ display: "flex", gap: 16 }}>
-          {aligned > 0 && (
-            <div style={{
-              textAlign: "center", padding: "8px 12px", borderRadius: 10,
-              background: "rgba(52,211,153,0.05)",
-              border: "1px solid rgba(52,211,153,0.1)",
-            }}>
-              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: "#34d399" }}>{aligned}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: "#34d399", marginTop: 3, letterSpacing: "0.08em", opacity: 0.8 }}>ALIGNED</div>
-            </div>
-          )}
-          {neutral > 0 && (
-            <div style={{
-              textAlign: "center", padding: "8px 12px", borderRadius: 10,
-              background: "rgba(255,255,255,0.02)",
-              border: `1px solid rgba(255,255,255,0.05)`,
-            }}>
-              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: T.text3 }}>{neutral}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text4, marginTop: 3, letterSpacing: "0.08em" }}>NEUTRAL</div>
-            </div>
-          )}
-          {conflicting > 0 && (
-            <div style={{
-              textAlign: "center", padding: "8px 12px", borderRadius: 10,
-              background: "rgba(248,113,113,0.05)",
-              border: "1px solid rgba(248,113,113,0.1)",
-            }}>
-              <div style={{ fontSize: 22, fontFamily: GLASS.displayFont, fontWeight: 700, color: "#f87171" }}>{conflicting}</div>
-              <div style={{ fontSize: 9, fontFamily: T.mono, color: "#f87171", marginTop: 3, letterSpacing: "0.08em", opacity: 0.8 }}>CONFLICT</div>
-            </div>
-          )}
-        </div>
-
-        {/* Per-position mini gauges */}
-        {positionScores.length > 1 && (
-          <>
-            <div style={{ width: 1, height: 56, background: GLASS.border, flexShrink: 0 }} />
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              {positionScores.map(ps => {
-                const phc = ps.health >= 68 ? "#34d399" : ps.health >= 45 ? "#fbbf24" : "#f87171";
-                return (
-                  <div key={ps.coin} style={{
-                    textAlign: "center", padding: "6px 8px", borderRadius: 8,
-                    background: "rgba(255,255,255,0.02)",
-                    border: `1px solid rgba(255,255,255,0.04)`,
-                    minWidth: 48,
-                  }}>
-                    <div style={{ fontSize: 9, fontFamily: T.mono, color: T.text3, marginBottom: 4, fontWeight: 600 }}>{ps.coin}</div>
-                    <div style={{
-                      width: 40, height: 4, borderRadius: 2,
-                      background: "rgba(255,255,255,0.06)", margin: "0 auto",
-                      overflow: "hidden",
-                    }}>
-                      <div style={{
-                        width: `${ps.health}%`, height: "100%",
-                        borderRadius: 2, background: phc,
-                        boxShadow: `0 0 6px ${phc}40`,
-                        transition: "width 0.4s ease",
-                      }} />
-                    </div>
-                    <div style={{
-                      fontSize: 10, fontFamily: GLASS.displayFont, color: phc,
-                      fontWeight: 700, marginTop: 3,
-                    }}>
-                      {Math.round(ps.health)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+        ))}
       </div>
-
-      {/* Suggested actions */}
-      {actions.length > 0 && (
-        <div style={{ padding: "14px 24px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{
-            fontSize: 9, fontFamily: T.mono, color: T.text4,
-            letterSpacing: "0.1em", fontWeight: 700, marginBottom: 2,
-          }}>
-            SUGGESTED ACTIONS
-          </div>
-          {actions.map((a, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              fontSize: 11, fontFamily: T.mono, color: a.color,
-              padding: "6px 12px", borderRadius: 8,
-              background: a.color + "08",
-              border: `1px solid ${a.color}15`,
-            }}>
-              <span style={{ fontSize: 7, opacity: 0.8 }}>&#9654;</span>
-              <span style={{ lineHeight: 1.4 }}>{a.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -809,14 +406,12 @@ function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings
   const szi = parseNum(pos.position?.szi ?? pos.szi);
   const isLong = szi > 0;
   const side = isLong ? "LONG" : "SHORT";
-  const sideColor = isLong ? "#34d399" : "#f87171";
-  const sideBg = isLong ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.12)";
-  const sideBorder = isLong ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.25)";
+  const sideColor = isLong ? T.green : T.red;
 
   const p = pos.position || pos;
   const coin = p.coin;
   const leverage = p.leverage?.value ?? "?";
-  const leverageType = p.leverage?.type === "isolated" ? "ISO" : "CROSS";
+  const leverageType = p.leverage?.type === "isolated" ? "isolated" : "cross";
   const entryPx = parseNum(p.entryPx);
   const posValue = parseNum(p.positionValue);
   const unrealizedPnl = parseNum(p.unrealizedPnl);
@@ -837,75 +432,45 @@ function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings
     w => w.symbol === coin || w.symbol === `${coin}/USDT`
   );
 
-  const pnlRGB = unrealizedPnl >= 0 ? "52,211,153" : "248,113,113";
-
   return (
-    <div style={{
-      padding: "18px 24px",
-      borderBottom: `1px solid ${GLASS.border}`,
-      position: "relative",
-      transition: "background 0.2s ease",
-    }}>
-      {/* Subtle PnL glow */}
-      <div style={{
-        position: "absolute", top: 0, right: 0, width: 160, height: "100%",
-        background: `linear-gradient(270deg, rgba(${pnlRGB},0.03) 0%, transparent 100%)`,
-        pointerEvents: "none",
-      }} />
-
-      {/* Row 1: Coin + badges + PnL */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap", position: "relative" }}>
-        <span style={{
-          fontSize: 17, fontFamily: GLASS.displayFont, fontWeight: 700,
-          color: T.text1, letterSpacing: "-0.01em",
-        }}>
+    <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+      {/* Row 1: Coin + side + PnL */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 16, fontFamily: T.mono, fontWeight: 700, color: T.text1 }}>
           {coin}
         </span>
-        <span style={S.badge(sideBg, sideColor, sideBorder)}>{side}</span>
-        <span style={S.badge("rgba(139,92,246,0.1)", "#a78bfa", "rgba(139,92,246,0.2)")}>
+        <span style={S.badge(sideColor)}>{side}</span>
+        <span style={{ ...S.badge(T.text3), fontWeight: 500 }}>
           {leverage}x {leverageType}
         </span>
         {liqDanger && (
-          <span style={{
-            ...S.badge("rgba(239,68,68,0.12)", "#f87171", "rgba(239,68,68,0.3)"),
-            animation: "none",
-            boxShadow: "0 0 10px rgba(239,68,68,0.15)",
-          }}>
-            LIQ {liqDistPct.toFixed(1)}%
+          <span style={S.badge(T.red)}>
+            Liquidation {liqDistPct.toFixed(1)}% away
           </span>
         )}
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div style={{
-            fontSize: 16, fontFamily: GLASS.displayFont, fontWeight: 700,
-            color: pnlColor(unrealizedPnl), letterSpacing: "-0.01em",
-          }}>
+          <div style={{ fontSize: 16, fontFamily: T.mono, fontWeight: 700, color: pnlColor(unrealizedPnl) }}>
             {unrealizedPnl >= 0 ? "+" : ""}{fmtUsd(unrealizedPnl)}
           </div>
-          <div style={{ fontSize: 10, fontFamily: T.mono, color: pnlColor(roe), opacity: 0.85 }}>
+          <div style={{ fontSize: T.textXs, fontFamily: T.mono, color: pnlColor(roe) }}>
             ROE {roe >= 0 ? "+" : ""}{roe.toFixed(2)}%
           </div>
         </div>
       </div>
 
-      {/* Row 2: Details — grid-like with subtle containers */}
-      <div style={{
-        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
-      }}>
+      {/* Row 2: Details */}
+      <div style={{ display: "flex", gap: "8px 20px", flexWrap: "wrap", alignItems: "center" }}>
         {[
           { label: "Entry", val: fmtPrice(entryPx) },
           { label: "Size", val: Math.abs(szi).toFixed(4) },
           { label: "Value", val: fmtUsd(posValue) },
           { label: "Margin", val: fmtUsd(marginUsed) },
-          ...(liqPx ? [{ label: "Liq", val: fmtPrice(liqPx), color: liqDanger ? "#f87171" : undefined }] : []),
+          ...(liqPx ? [{ label: "Liquidation", val: fmtPrice(liqPx), color: liqDanger ? T.red : undefined }] : []),
           ...(fundingSinceOpen !== 0 ? [{ label: "Funding", val: `${fundingSinceOpen >= 0 ? "-" : "+"}${fmtUsd(Math.abs(fundingSinceOpen))}`, color: pnlColor(-fundingSinceOpen) }] : []),
         ].map((d, i) => (
-          <div key={i} style={{
-            padding: "5px 10px", borderRadius: 7,
-            background: "rgba(255,255,255,0.02)",
-            border: `1px solid rgba(255,255,255,0.04)`,
-          }}>
-            <span style={{ ...S.label, fontSize: 9, letterSpacing: "0.06em" }}>{d.label} </span>
-            <span style={{ ...S.value, fontSize: 12, color: d.color || T.text1 }}>{d.val}</span>
+          <div key={i}>
+            <span style={S.label}>{d.label} </span>
+            <span style={{ ...S.value, color: d.color || T.text1 }}>{d.val}</span>
           </div>
         ))}
         <button
@@ -914,14 +479,13 @@ function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings
           style={{
             ...S.btn, ...S.btnDanger, marginLeft: "auto",
             opacity: closing ? 0.5 : 1, cursor: closing ? "not-allowed" : "pointer",
-            borderRadius: 8, padding: "7px 16px",
           }}
         >
           {closing ? "Closing..." : "Close"}
         </button>
       </div>
 
-      {/* Scanner context strip */}
+      {/* Scanner context line */}
       <ScannerContext
         coin={coin}
         scanMap4h={scanMap4h}
@@ -938,11 +502,11 @@ function PositionCard({ pos, onClose, closing, scanMap4h, scanMap1d, posWarnings
 // ---------------------------------------------------------------------------
 
 const SECTION_TABS = [
-  { key: "positions", label: "POSITIONS" },
-  { key: "orders",   label: "ORDERS" },
-  { key: "fills",    label: "FILLS" },
-  { key: "funding",  label: "FUNDING" },
-  { key: "fees",     label: "FEES" },
+  { key: "positions", label: "Positions" },
+  { key: "orders",   label: "Orders" },
+  { key: "fills",    label: "Fills" },
+  { key: "funding",  label: "Funding" },
+  { key: "fees",     label: "Fees" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1123,25 +687,26 @@ export default function TradingPanel({ api }) {
   const xyzMarginSummary = xyzChState?.crossMarginSummary || xyzChState?.marginSummary;
   const xyzAccountValue = parseNum(xyzMarginSummary?.accountValue);
 
-  // Spot balances — sum all token values using entryNtl (notional USD value)
-  // For USDC/USDT, total IS the USD value; for others, we need mid prices
-  const spotTotalValue = useMemo(() => {
-    if (!spotState?.balances) return 0;
-    return spotState.balances.reduce((sum, b) => {
+  // Spot balances: stablecoins at face value, other tokens at the scanner's last
+  // price when it has one (already fetched, no extra calls), otherwise at cost.
+  const spot = useMemo(() => {
+    const out = { value: 0, atCost: 0 };
+    for (const b of spotState?.balances || []) {
       const total = parseNum(b.total);
-      if (total === 0) return sum;
-      // USDC is 1:1 USD
-      if (b.coin === "USDC" || b.coin === "USDT") return sum + total;
-      // For other tokens, entryNtl gives us a notional estimate
+      if (total === 0) continue;
+      if (b.coin === "USDC" || b.coin === "USDT" || b.coin === "USDH") { out.value += total; continue; }
+      const price = scanMap4h[b.coin]?.price;
+      if (price > 0) { out.value += total * price; continue; }
       const ntl = parseNum(b.entryNtl);
-      return sum + (ntl > 0 ? ntl : 0);
-    }, 0);
-  }, [spotState]);
+      if (ntl > 0) { out.value += ntl; out.atCost += 1; }
+    }
+    return out;
+  }, [spotState, scanMap4h]);
 
-  // Combined account value across all venues
-  const accountValue = perpsAccountValue + xyzAccountValue + spotTotalValue;
+  // Positions and unrealized P&L below cover the main perps account only.
   const positions     = (chState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0);
   const totalUnrealizedPnl = positions.reduce((sum, ap) => sum + parseNum(ap.position?.unrealizedPnl), 0);
+  const xyzPositionCount = (xyzChState?.assetPositions || []).filter(ap => parseNum(ap.position?.szi) !== 0).length;
 
   // All-time total PnL from portfolio
   const allTimePnl = portfolio?.perpAllTime?.pnlHistory;
@@ -1161,45 +726,19 @@ export default function TradingPanel({ api }) {
 
       {/* ─── NOT CONNECTED ─── */}
       {!isConnected && (
-        <div style={{
-          ...S.section, padding: "48px 24px", textAlign: "center",
-          position: "relative", overflow: "hidden",
-        }}>
-          {/* Decorative gradient */}
-          <div style={{
-            position: "absolute", top: "-50%", left: "50%", transform: "translateX(-50%)",
-            width: 300, height: 300, borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)",
-            pointerEvents: "none",
-          }} />
-          <div style={{
-            fontSize: 14, fontFamily: GLASS.displayFont, color: T.text3,
-            marginBottom: 18, fontWeight: 500, position: "relative",
-          }}>
-            Connect your wallet to view portfolio
+        <div style={{ ...S.section, padding: "48px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: T.textBase, fontFamily: T.font, color: T.text3, marginBottom: 16 }}>
+            Connect your wallet to view your Hyperliquid portfolio
           </div>
           <button
             onClick={connect}
-            style={{
-              padding: "12px 36px", borderRadius: 12,
-              border: "1px solid rgba(139,92,246,0.3)",
-              background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))",
-              backdropFilter: "blur(12px)",
-              color: "#a78bfa",
-              fontSize: 13, fontFamily: GLASS.displayFont, fontWeight: 700,
-              cursor: "pointer", letterSpacing: "0.04em",
-              boxShadow: "0 0 24px rgba(139,92,246,0.1), 0 2px 8px rgba(0,0,0,0.2)",
-              transition: "all 0.25s ease",
-              position: "relative",
-            }}
+            className="terminal-status"
+            style={{ color: T.accent, fontSize: T.textSm, fontFamily: T.mono, fontWeight: 700, cursor: "pointer" }}
           >
-            Connect Wallet
+            Connect wallet
           </button>
           {walletError && (
-            <div style={{
-              marginTop: 10, fontSize: 10, color: "#f87171",
-              fontFamily: T.mono, position: "relative",
-            }}>
+            <div style={{ marginTop: 10, fontSize: T.textXs, color: T.red, fontFamily: T.mono }}>
               {walletError}
             </div>
           )}
@@ -1208,44 +747,35 @@ export default function TradingPanel({ api }) {
 
       {/* ─── ACCOUNT SUMMARY BAR ─── */}
       {isConnected && (
-        <div style={{ ...S.section, position: "relative", overflow: "hidden" }}>
-          {/* Subtle accent glow */}
-          <div style={{
-            position: "absolute", top: -20, right: -20, width: 180, height: 180,
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(151,252,228,0.04) 0%, transparent 70%)",
-            pointerEvents: "none",
-          }} />
+        <div style={S.section}>
           <div style={S.sectionHeader}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={S.title}>Hyperliquid Portfolio</span>
-              <span style={{
-                ...S.badge("rgba(52,211,153,0.1)", "#34d399", "rgba(52,211,153,0.25)"),
-                boxShadow: "0 0 10px rgba(52,211,153,0.1)",
-              }}>
-                LIVE
-              </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={S.title}>Hyperliquid account</span>
+              <span className="terminal-status" style={S.badge(T.green)}>LIVE</span>
             </div>
-            <span style={{
-              fontSize: 10, fontFamily: T.mono, color: T.text4,
-              padding: "3px 8px", borderRadius: 5,
-              background: "rgba(255,255,255,0.03)",
-              border: `1px solid rgba(255,255,255,0.05)`,
-            }}>
+            <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text3 }}>
               {address?.slice(0, 6)}...{address?.slice(-4)}
             </span>
           </div>
           <div style={{
             display: "flex", justifyContent: "space-around",
-            padding: "18px 20px", gap: 12, flexWrap: "wrap",
-            position: "relative",
+            padding: "16px 20px 8px", gap: 12, flexWrap: "wrap",
           }}>
-            <StatBox label="ACCOUNT VALUE"  value={fmtUsd(accountValue)} />
-            <StatBox label="UNREALIZED PnL" value={`${totalUnrealizedPnl >= 0 ? "+" : ""}${fmtUsd(totalUnrealizedPnl)}`} color={pnlColor(totalUnrealizedPnl)} />
-            <StatBox label="TOTAL PnL"      value={totalPnl != null ? `${totalPnl >= 0 ? "+" : ""}${fmtUsd(totalPnl)}` : "\u2014"} color={pnlColor(totalPnl)} />
-            <StatBox label="AVAILABLE"      value={fmtUsd(withdrawable)} />
-            <StatBox label="MARGIN USED"    value={fmtUsd(marginUsedVal)} color={marginUsedVal > 0 ? "#fbbf24" : T.text3} />
+            <StatBox label="Perps account value" value={fmtUsd(perpsAccountValue)} />
+            {xyzChState && xyzAccountValue !== 0 && <StatBox label="TradFi (xyz) account value" value={fmtUsd(xyzAccountValue)} />}
+            {spot.value > 0 && <StatBox label="Spot balances" value={fmtUsd(spot.value)} />}
+            <StatBox label="Perps unrealized P&L" value={`${totalUnrealizedPnl >= 0 ? "+" : ""}${fmtUsd(totalUnrealizedPnl)}`} color={pnlColor(totalUnrealizedPnl)} />
+            <StatBox label="Perps all-time P&L" value={totalPnl != null ? `${totalPnl >= 0 ? "+" : ""}${fmtUsd(totalPnl)}` : "\u2014"} color={pnlColor(totalPnl)} />
+            <StatBox label="Perps withdrawable" value={fmtUsd(withdrawable)} />
+            <StatBox label="Perps margin used" value={fmtUsd(marginUsedVal)} color={marginUsedVal > 0 ? T.yellow : T.text3} />
           </div>
+          <p style={{ padding: "0 20px 14px", fontSize: T.textXs, color: T.text3, lineHeight: 1.6 }}>
+            Positions, orders and unrealized P&L below cover the main perps account.
+            {xyzPositionCount > 0 && ` ${xyzPositionCount} TradFi (xyz) position${xyzPositionCount === 1 ? " is" : "s are"} held in the separate xyz account and not listed here.`}
+            {spot.value > 0 && (spot.atCost > 0
+              ? ` Spot tokens are valued at the scanner's last price; ${spot.atCost} without one ${spot.atCost === 1 ? "is" : "are"} shown at cost.`
+              : " Spot tokens are valued at the scanner's last price.")}
+          </p>
         </div>
       )}
 
@@ -1260,51 +790,29 @@ export default function TradingPanel({ api }) {
         />
       )}
 
-      {/* ─── SECTION TAB BAR ─── */}
+      {/* ─── SECTION TABS ─── */}
       {isConnected && (
-        <div style={{
-          display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap",
-          padding: "12px 16px",
-          background: "rgba(255,255,255,0.015)",
-          backdropFilter: "blur(16px)",
-          borderRadius: 12,
-          border: `1px solid ${GLASS.border}`,
-          boxShadow: GLASS.shadowSubtle,
-        }}>
-          {SECTION_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveSection(tab.key)}
-              style={{
-                ...S.pillBtn(activeSection === tab.key),
-                padding: "8px 16px", fontSize: 11,
-                fontFamily: GLASS.displayFont,
-              }}
-            >
-              {tab.label}
-              {tab.key === "positions" && positions.length > 0 && ` (${positions.length})`}
-              {tab.key === "orders"    && openOrders.length > 0 && ` (${openOrders.length})`}
-            </button>
-          ))}
+        <div style={{ marginBottom: 16 }}>
+          <Tabs label="Portfolio sections" value={activeSection} onChange={setActiveSection}
+            items={SECTION_TABS.map(tab => ({
+              key: tab.key,
+              label: `${tab.label}${tab.key === "positions" && positions.length > 0 ? ` (${positions.length})` : ""}${tab.key === "orders" && openOrders.length > 0 ? ` (${openOrders.length})` : ""}`,
+            }))} />
         </div>
       )}
 
       {/* ─── OPEN POSITIONS ─── */}
       {isConnected && activeSection === "positions" && (
         <>
-          {/* Portfolio health card — only when there are positions + scanner data */}
+          {/* Scanner check: only when there are positions + scanner data */}
           {positions.length > 0 && Object.keys(scanMap4h).length > 0 && (
-            <PortfolioHealthCard
-              positions={positions}
-              scanMap4h={scanMap4h}
-              warnings={posWarnings}
-            />
+            <ScannerCheck positions={positions} scanMap4h={scanMap4h} />
           )}
 
           <div style={S.section}>
             <div style={S.sectionHeader}>
               <span style={S.title}>
-                Open Positions {positions.length > 0 && `(${positions.length})`}
+                Open perps positions {positions.length > 0 && `(${positions.length})`}
               </span>
             </div>
             {positions.length === 0 ? (
@@ -1331,7 +839,7 @@ export default function TradingPanel({ api }) {
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <span style={S.title}>
-              Open Orders {openOrders.length > 0 && `(${openOrders.length})`}
+              Open orders {openOrders.length > 0 && `(${openOrders.length})`}
             </span>
           </div>
           {openOrders.length === 0 ? (
@@ -1354,20 +862,18 @@ export default function TradingPanel({ api }) {
                   {openOrders.map((o, i) => {
                     const isBuy = o.side === "B";
                     const typeLabel = o.orderType || "Limit";
-                    const typeBg = o.isTrigger ? "rgba(251,191,36,0.12)" : T.overlay04;
-                    const typeColor = o.isTrigger ? "#fbbf24" : T.text2;
-                    const typeBorder = o.isTrigger ? "rgba(251,191,36,0.3)" : T.overlay12;
+                    const typeColor = o.isTrigger ? T.yellow : T.text2;
                     return (
                       <tr key={o.oid || i}>
                         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>{o.coin}</td>
                         <td style={cellStyle}>
-                          <span style={S.badge(typeBg, typeColor, typeBorder)}>{typeLabel}</span>
+                          <span style={S.badge(typeColor)}>{typeLabel}</span>
                           {o.isPositionTpsl && (
-                            <span style={{ ...S.badge("rgba(139,92,246,0.12)", "#8b5cf6", "rgba(139,92,246,0.3)"), marginLeft: 4 }}>TP/SL</span>
+                            <span style={{ ...S.badge(T.purple), marginLeft: 8 }}>TP/SL</span>
                           )}
                         </td>
                         <td style={cellStyle}>
-                          <span style={{ color: isBuy ? "#34d399" : "#f87171", fontWeight: 600 }}>
+                          <span style={{ color: isBuy ? T.green : T.red, fontWeight: 600 }}>
                             {isBuy ? "BUY" : "SELL"}
                           </span>
                         </td>
@@ -1379,7 +885,7 @@ export default function TradingPanel({ api }) {
                             onClick={() => cancelOrd(o.coin, o.oid)}
                             disabled={cancelling === o.oid}
                             style={{
-                              ...S.btn, ...S.btnDanger, padding: "4px 10px", fontSize: 10,
+                              ...S.btn, ...S.btnDanger, padding: "4px 10px",
                               opacity: cancelling === o.oid ? 0.5 : 1,
                             }}
                           >
@@ -1401,7 +907,7 @@ export default function TradingPanel({ api }) {
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <span style={S.title}>
-              Recent Fills {fills.length > 0 && `(${fills.length})`}
+              Recent fills {fills.length > 0 && `(${fills.length})`}
             </span>
           </div>
           {fills.length === 0 ? (
@@ -1416,7 +922,7 @@ export default function TradingPanel({ api }) {
                     <th style={headerCell}>Side</th>
                     <th style={headerCell}>Size</th>
                     <th style={headerCell}>Price</th>
-                    <th style={{ ...headerCell, textAlign: "right" }}>Closed PnL</th>
+                    <th style={{ ...headerCell, textAlign: "right" }}>Closed P&L</th>
                     <th style={{ ...headerCell, textAlign: "right" }}>Fee</th>
                   </tr>
                 </thead>
@@ -1432,7 +938,7 @@ export default function TradingPanel({ api }) {
                         <td style={cellStyle}>{timeAgo(f.time)}</td>
                         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>{f.coin}</td>
                         <td style={cellStyle}>
-                          <span style={{ color: isBuy ? "#34d399" : "#f87171", fontWeight: 600 }}>
+                          <span style={{ color: isBuy ? T.green : T.red, fontWeight: 600 }}>
                             {isBuy ? "BUY" : "SELL"}
                           </span>
                         </td>
@@ -1459,9 +965,9 @@ export default function TradingPanel({ api }) {
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={S.title}>Funding History</span>
+              <span style={S.title}>Funding history</span>
               {funding.length > 0 && (
-                <span style={{ fontSize: 11, fontFamily: T.mono, color: pnlColor(-totalFunding) }}>
+                <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: pnlColor(-totalFunding) }}>
                   Total: {totalFunding >= 0 ? "-" : "+"}{fmtUsd(Math.abs(totalFunding))}
                 </span>
               )}
@@ -1508,17 +1014,17 @@ export default function TradingPanel({ api }) {
       {isConnected && activeSection === "fees" && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
-            <span style={S.title}>Fee Tier</span>
+            <span style={S.title}>Fee tier</span>
           </div>
           <div style={{
             display: "flex", justifyContent: "space-around",
             padding: "18px 20px", gap: 12, flexWrap: "wrap",
           }}>
-            <StatBox label="TAKER RATE" value={fmtBps(takerRate)} small />
-            <StatBox label="MAKER RATE" value={fmtBps(makerRate)} small />
-            <StatBox label="30D VOLUME" value={fmtVlm(volume30d)} small />
+            <StatBox label="Taker rate" value={fmtBps(takerRate)} small />
+            <StatBox label="Maker rate" value={fmtBps(makerRate)} small />
+            <StatBox label="30-day volume" value={fmtVlm(volume30d)} small />
             {fees?.activeReferralDiscount && parseNum(fees.activeReferralDiscount) > 0 && (
-              <StatBox label="REFERRAL DISC." value={`${(parseNum(fees.activeReferralDiscount) * 100).toFixed(1)}%`} color="#8b5cf6" small />
+              <StatBox label="Referral discount" value={`${(parseNum(fees.activeReferralDiscount) * 100).toFixed(1)}%`} color={T.purple} small />
             )}
           </div>
 
@@ -1529,7 +1035,7 @@ export default function TradingPanel({ api }) {
                 <thead>
                   <tr>
                     <th style={headerCell}>Tier</th>
-                    <th style={headerCell}>Volume Req</th>
+                    <th style={headerCell}>Volume required</th>
                     <th style={headerCell}>Taker</th>
                     <th style={headerCell}>Maker</th>
                   </tr>
@@ -1542,10 +1048,10 @@ export default function TradingPanel({ api }) {
                     );
                     return (
                       <tr key={i} style={{
-                        background: isCurrentTier ? "rgba(151,252,228,0.06)" : "transparent",
+                        background: isCurrentTier ? T.accentDim : "transparent",
                       }}>
-                        <td style={{ ...cellStyle, fontWeight: isCurrentTier ? 700 : 400, color: isCurrentTier ? "#97FCE4" : T.text2 }}>
-                          VIP {i}{isCurrentTier ? " \u2190" : ""}
+                        <td style={{ ...cellStyle, fontWeight: isCurrentTier ? 700 : 400, color: isCurrentTier ? T.accent : T.text2 }}>
+                          VIP {i}{isCurrentTier ? " (current)" : ""}
                         </td>
                         <td style={cellStyle}>{fmtVlm(cutoff)}</td>
                         <td style={cellStyle}>{fmtBps(tier.cross)}</td>
