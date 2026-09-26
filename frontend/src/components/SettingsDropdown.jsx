@@ -14,6 +14,7 @@
 import { useState, useEffect, useRef } from "react";
 import { T } from "../theme.js";
 
+import { getAdminKey, setAdminKey } from "../auth.js";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // Display metadata for each flag — order = display order in the panel.
@@ -230,7 +231,7 @@ export default function SettingsDropdown() {
             top: "calc(100% + 8px)",
             right: 0,
             width: 320,
-            background: "rgba(16,16,20,0.96)",
+            background: T.popoverBg,
             backdropFilter: "blur(20px) saturate(1.3)",
             WebkitBackdropFilter: "blur(20px) saturate(1.3)",
             border: `1px solid ${T.border}`,
@@ -258,6 +259,17 @@ export default function SettingsDropdown() {
               </span>
             )}
           </div>
+
+          {/* Admin key: needed for changes once REFLEX_ADMIN_KEY is set on the server */}
+          <label style={{ display: "block", marginBottom: 14 }}>
+            <span style={{ display: "block", fontSize: 12, color: T.text3, fontFamily: T.font, marginBottom: 6 }}>
+              Admin key <span style={{ color: T.text4 }}>(for changes; stored in this browser only)</span>
+            </span>
+            <input type="password" autoComplete="off" defaultValue={getAdminKey()} placeholder="Not set"
+              onChange={e => setAdminKey(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", height: 34, padding: "0 10px", borderRadius: 6,
+                border: `1px solid ${T.border}`, background: T.overlay04, color: T.text1, fontFamily: T.mono, fontSize: 12 }} />
+          </label>
 
           {/* Power state — active/idle throttle */}
           <div style={{ marginBottom: 14 }}>

@@ -8,6 +8,11 @@ sends as "Authorization: Bearer <token>" (or ?token= for the WebSocket).
 
 REFLEX_AUTH_SECRET, if set, signs tokens; otherwise the access code does, so changing
 the code also signs everyone out.
+
+Writes are guarded separately: once REFLEX_ADMIN_KEY is set, every non-GET API request
+(executor controls, TradFi markets, feature flags, watchlists, chat, backtests, scan
+refresh...) must carry "X-Admin-Key: <key>", whether or not viewing is open. Login is
+exempt. Until the variable is set nothing changes.
 """
 from __future__ import annotations
 
@@ -64,3 +69,21 @@ def request_token(headers, query_params) -> Optional[str]:
 
 def allowed(path: str, headers, query_params) -> bool:
     return not enforced() or is_public(path) or token_valid(request_token(headers, query_params))
+
+
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+WRITE_EXEMPT = ("/api/auth/",)
+
+
+def admin_enforced() -> bool:
+    return bool(os.environ.get("REFLEX_ADMIN_KEY"))
+
+
+def write_allowed(method: str, path: str, headers) -> bool:
+    """Non-GET API calls need the admin key once REFLEX_ADMIN_KEY is set."""
+    if not admin_enforced() or method.upper() not in WRITE_METHODS:
+        return True
+    if not path.startswith("/api/") or path.startswith(WRITE_EXEMPT):
+        return True
+    given = headers.get("x-admin-key", "")
+    return bool(given) and hmac.compare_digest(given.encode(), os.environ["REFLEX_ADMIN_KEY"].encode())

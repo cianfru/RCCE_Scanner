@@ -15,6 +15,7 @@ import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
 import MarketSummary from "./components/MarketSummary.jsx";
 import ScannerControls from "./components/ScannerControls.jsx";
+import AdminNotice from "./components/AdminNotice.jsx";
 import { matchesSignal } from "./utils/marketSummary.js";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
@@ -1043,6 +1044,7 @@ export default function App() {
       )}
 
       {/* ── DETAIL PANEL ── */}
+      <AdminNotice />
       <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
     </div>
   );
