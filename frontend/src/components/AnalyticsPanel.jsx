@@ -85,22 +85,11 @@ function SectionHeader({ title, subtitle }) {
   );
 }
 
+// Flat coloured text, as the scanner's status labels.
 function GroupBadge({ group }) {
   const hue = col({ core: "#97FCE4", coinglass: "#a78bfa", hyperlens: "#fbbf24" }[group] || "#97FCE4");
-  const c = { bg: `${hue}10`, border: `${hue}30`, text: hue };
   return (
-    <span style={{
-      fontSize: T.textXs,
-      fontFamily: T.mono,
-      padding: "2px 6px",
-      borderRadius: 4,
-      background: c.bg,
-      border: `1px solid ${c.border}`,
-      color: c.text,
-      textTransform: "uppercase",
-      letterSpacing: "0.05em",
-      fontWeight: 600,
-    }}>
+    <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: hue, fontWeight: 600 }}>
       {group}
     </span>
   );
@@ -137,6 +126,8 @@ function ConditionValueTable({ conditions, isMobile }) {
   if (!conditions || conditions.length === 0) return <NoData />;
 
   const fs = m(T.textXs, isMobile);
+  // Phones: Condition, Edge and win rate when met only; the rest would sit off-screen.
+  const full = !isMobile;
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -149,15 +140,15 @@ function ConditionValueTable({ conditions, isMobile }) {
         <thead>
           <tr style={{ borderBottom: `1px solid ${T.border}` }}>
             <th style={{ ...TH, textAlign: "left" }}>Condition</th>
-            <th style={{ ...TH, textAlign: "right" }}>Group</th>
-            <th style={{ ...TH, textAlign: "right" }}>
+            {full && <th style={{ ...TH, textAlign: "right" }}>Group</th>}
+            {full && <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (True)
               <HelpTip width={240}>{"Average 7-day return when this condition was TRUE at signal time."}</HelpTip>
-            </th>
-            <th style={{ ...TH, textAlign: "right" }}>
+            </th>}
+            {full && <th style={{ ...TH, textAlign: "right" }}>
               Avg 7d (False)
               <HelpTip width={240}>{"Average 7-day return when this condition was FALSE at signal time."}</HelpTip>
-            </th>
+            </th>}
             <th style={{ ...TH, textAlign: "right" }}>
               Edge
               <HelpTip width={240}>{"Difference in average 7-day return between TRUE and FALSE. Shown only when both sides have at least 30 events; a difference is not a causal effect."}</HelpTip>
@@ -166,26 +157,26 @@ function ConditionValueTable({ conditions, isMobile }) {
               WR (T)
               <HelpTip width={240}>{"Win rate when condition is TRUE. A 'win' means the 7-day price moved in the signal's expected direction."}</HelpTip>
             </th>
-            <th style={{ ...TH, textAlign: "right" }}>WR (F)</th>
+            {full && <th style={{ ...TH, textAlign: "right" }}>WR (F)</th>}
           </tr>
         </thead>
         <tbody>
           {conditions.map(c => (
             <tr key={c.name} style={{ borderBottom: `1px solid ${T.border}22` }}>
-              <td style={{ padding: "6px 10px", color: T.text2, textAlign: "left", fontWeight: 500, fontSize: fs }}>
+              <td style={{ padding: "6px 10px", color: T.text2, textAlign: "left", fontWeight: 500, fontSize: fs, whiteSpace: "nowrap" }}>
                 {conditionLabel(c.name)}
               </td>
-              <td style={{ padding: "6px 10px", textAlign: "right" }}>
+              {full && <td style={{ padding: "6px 10px", textAlign: "right" }}>
                 <GroupBadge group={c.group} />
-              </td>
-              <td style={{ padding: "6px 10px", textAlign: "right", color: T.text2, fontSize: fs }}>
+              </td>}
+              {full && <td style={{ padding: "6px 10px", textAlign: "right", color: T.text2, fontSize: fs }}>
                 {c.avg_7d_true != null ? `${c.avg_7d_true > 0 ? "+" : ""}${c.avg_7d_true}%` : "—"}
                 <span style={{ color: T.text4, marginLeft: 4, fontSize: T.textXs }}>({c.true_count})</span>
-              </td>
-              <td style={{ padding: "6px 10px", textAlign: "right", color: T.text3, fontSize: fs }}>
+              </td>}
+              {full && <td style={{ padding: "6px 10px", textAlign: "right", color: T.text3, fontSize: fs }}>
                 {c.avg_7d_false != null ? `${c.avg_7d_false > 0 ? "+" : ""}${c.avg_7d_false}%` : "—"}
                 <span style={{ color: T.text4, marginLeft: 4, fontSize: T.textXs }}>({c.false_count})</span>
-              </td>
+              </td>}
               <td style={{
                 padding: "6px 10px", textAlign: "right",
                 color: edgeColor(c.edge), fontWeight: 700, fontSize: fs,
@@ -195,9 +186,9 @@ function ConditionValueTable({ conditions, isMobile }) {
               <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_true, c.true_count), fontWeight: 600, fontSize: fs }}>
                 {c.win_rate_true != null ? `${c.win_rate_true}%` : "—"}
               </td>
-              <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_false, c.false_count), fontSize: fs }}>
+              {full && <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_false, c.false_count), fontSize: fs }}>
                 {c.win_rate_false != null ? `${c.win_rate_false}%` : "—"}
-              </td>
+              </td>}
             </tr>
           ))}
         </tbody>
@@ -233,18 +224,9 @@ function ComboCards({ combos, isMobile }) {
           }}>
             #{i + 1}
           </span>
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}>
-            {combo.conditions.map(c => (
-              <span key={c} style={{
-                fontSize: fs, fontFamily: T.mono,
-                padding: "3px 8px", borderRadius: 5,
-                background: `${col("#97FCE4")}10`, border: `1px solid ${col("#97FCE4")}25`,
-                color: col("#97FCE4"), fontWeight: 500,
-              }}>
-                {conditionLabel(c)}
-              </span>
-            ))}
-          </div>
+          <span style={{ flex: 1, minWidth: 0, fontSize: fs, fontFamily: T.mono, color: T.text2, fontWeight: 500 }}>
+            {combo.conditions.map(conditionLabel).join(" + ")}
+          </span>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <span style={{
               fontSize: m(T.textSm, isMobile), fontFamily: T.mono,
@@ -258,7 +240,7 @@ function ComboCards({ combos, isMobile }) {
                 color: combo.count < MIN_N ? T.text4 : combo.lift > 0 ? col("#34d399") : combo.lift < -5 ? col("#f87171") : T.text4,
                 fontWeight: 600,
               }}>
-                {combo.lift > 0 ? "+" : ""}{combo.lift}% lift
+                {combo.lift > 0 ? "+" : ""}{combo.lift} pts{combo.baseline_wr != null ? ` vs ${combo.baseline_wr}% baseline` : ""}
               </span>
             )}
             <span style={{
@@ -321,14 +303,14 @@ function RegimeScorecard({ data, isMobile }) {
             for (const e of (data[sig] || [])) byRegime[e.regime] = e;
             return (
               <tr key={sig} style={{ borderBottom: `1px solid ${T.border}22` }}>
-                <td style={{ padding: "6px 10px", color: meta.color, fontWeight: 600, textAlign: "left", fontSize: fs }}>
+                <td style={{ padding: "6px 10px", color: meta.color, fontWeight: 600, textAlign: "left", fontSize: fs, whiteSpace: "nowrap" }}>
                   {meta.label || sig}
                 </td>
                 {regimes.map(r => {
                   const cell = byRegime[r];
                   if (!cell) return <td key={r} style={{ padding: "6px 10px", textAlign: "center", color: T.text4 }}>—</td>;
                   return (
-                    <td key={r} style={{ padding: "6px 10px", textAlign: "center" }}>
+                    <td key={r} style={{ padding: "6px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                       <span style={{ color: rateColor(cell.win_rate, cell.count), fontWeight: cell.count < MIN_N ? 400 : 700, fontSize: fs }}>
                         {cell.win_rate}%
                       </span>
@@ -444,8 +426,8 @@ function EdgeDecay({ periods, isMobile }) {
             fontSize: m(T.textXs, isMobile), color: T.text4,
             fontFamily: T.mono, marginTop: 6,
           }}>
-            {p.count > 0 ? `${p.positive_pct}% positive` : ""}
-            {p.count > 0 && " · "}n={p.count}
+            {p.count > 0 && <div style={{ whiteSpace: "nowrap" }}>{p.positive_pct}% positive</div>}
+            <div>n={p.count}</div>
           </div>
         </div>
       ))}
@@ -531,22 +513,28 @@ export default function AnalyticsPanel({ isMobile }) {
   const [tf, setTf] = useState("4h");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [reload, setReload] = useState(0);
 
+  // A late response for the previous timeframe must not overwrite the current one.
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(false);
     fetch(`${API_BASE}/api/analytics/attribution?timeframe=${tf}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [tf]);
+      .then(d => { if (!cancelled) { setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setData(null); setError(true); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [tf, reload]);
 
   const pad = isMobile ? 14 : 20;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <div>
       {/* Timeframe toggle */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
@@ -556,7 +544,7 @@ export default function AnalyticsPanel({ isMobile }) {
           fontSize: m(T.textXs, isMobile), color: T.text4,
           fontFamily: T.mono, marginLeft: "auto",
         }}>
-          {loading ? "Loading..." : data ? "Live signal data" : "No data"}
+          {loading ? "Loading..." : data ? "Live signal data" : error ? "" : "No data"}
         </span>
       </div>
 
@@ -602,8 +590,8 @@ export default function AnalyticsPanel({ isMobile }) {
           <div style={{ display: "flex", gap: isMobile ? 14 : 18, flexDirection: isMobile ? "column" : "row" }}>
             <GlassCard style={{ padding: pad, flex: 1 }}>
               <SectionHeader
-                title="Signal Edge Decay"
-                subtitle="How signal returns distribute over time. Shows whether alpha concentrates in the first day or spreads evenly across the week."
+                title="Average return by holding window"
+                subtitle="Average price return of signals over each window after they fired, and the share of them that rose."
               />
               <EdgeDecay periods={data.edge_decay} isMobile={isMobile} />
             </GlassCard>
@@ -618,7 +606,16 @@ export default function AnalyticsPanel({ isMobile }) {
         </div>
       )}
 
-      {!loading && !data && (
+      {!loading && error && (
+        <GlassCard style={{ padding: 32, textAlign: "center" }}>
+          <div style={{ color: T.text4, fontFamily: T.mono, fontSize: m(T.textSm, false) }}>
+            Could not load.{" "}
+            <button type="button" onClick={() => setReload(n => n + 1)} style={{ background: "transparent", border: 0, borderBottom: `1px solid ${T.accent}`, padding: 0, color: T.accent, fontSize: m(T.textSm, false), fontFamily: T.mono, cursor: "pointer" }}>Retry</button>
+          </div>
+        </GlassCard>
+      )}
+
+      {!loading && !error && !data && (
         <GlassCard style={{ padding: 32, textAlign: "center" }}>
           <div style={{ color: T.text4, fontFamily: T.mono, fontSize: m(T.textSm, false) }}>
             No attribution data available. Signal events with 7-day outcomes are needed.

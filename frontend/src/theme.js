@@ -350,8 +350,11 @@ const _TV_EXCHANGE_OVERRIDES = {
   "OMNI": "COINBASE",  // Binance OMNIUSDT shows OmniLayer (2019-2021) + Omni Network (2024+)
 };
 
-export function getTVSymbol(sym) {
+// onBinance: the market has a Binance perp (positioning.source === "binance").
+// Without one the BINANCE ticker does not exist, so there is no chart to link (null).
+export function getTVSymbol(sym, onBinance = true) {
   const base = getBaseSymbol(sym).replace("/\u20bf", ""); // strip /₿ if BTC-quoted
+  if (!onBinance && !_TV_EXCHANGE_OVERRIDES[base]) return null;
   const exchange = _TV_EXCHANGE_OVERRIDES[base] || "BINANCE";
   const quote = exchange === "COINBASE" ? "USD" : sym.endsWith("/BTC") ? "BTC" : "USDT";
   return `${exchange}:${base}${quote}`;

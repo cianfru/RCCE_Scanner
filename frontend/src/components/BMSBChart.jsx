@@ -317,7 +317,8 @@ export default function BMSBChart({
             const markerTime = (!signalTimeframe || signalTimeframe === apiTf)
               ? signalCandleTime(data.candles, signalFirstSeenAt, apiTf === "4h" ? 14400 : 86400)
               : null;
-            setSignalMarkerIndex(markerTime == null ? null : data.candles.findIndex(c => c.time === markerTime));
+            // -1: looked up but outside the loaded candles. Null: no marker for this signal (e.g. WAIT).
+            setSignalMarkerIndex(markerTime == null ? -1 : data.candles.findIndex(c => c.time === markerTime));
             const markers = markerTime == null ? [] : [{
               time: markerTime,
               position: markerDef.position,
@@ -357,7 +358,8 @@ export default function BMSBChart({
             color: priceUp ? "rgba(151,252,228,0.65)" : "rgba(216,160,148,0.65)",
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
+            // The series' own last-value label already marks the price on the axis.
+            axisLabelVisible: false,
             title: "",
           });
         }
@@ -822,8 +824,8 @@ export default function BMSBChart({
         </HelpTip><span style={{marginLeft:8}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
       </div>}
       {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",flexWrap:"wrap",gap:"8px 20px",padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
-        <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex == null ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
-        {signalMarkerIndex != null && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
+        <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex === -1 ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
+        {signalMarkerIndex != null && signalMarkerIndex >= 0 && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
       </div>}
 
       {!loading && !error && showPatterns && activeTimeframe === "1d" && (

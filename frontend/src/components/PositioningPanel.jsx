@@ -1,5 +1,6 @@
 import FlowToxicity from "./FlowToxicity.jsx";
 import HelpTip from "./HelpTip.jsx";
+import PanelHeader from "./PanelHeader.jsx";
 /**
  * PositioningPanel — Signal-forward market structure display.
  *
@@ -50,9 +51,10 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
   const c = color || T.text2;
   return (
     <div style={{
+      // Flat: the reading's colour is carried by the text alone.
       flex: "1 1 48%", padding: "10px 12px", borderRadius: 10,
-      background: `${c}08`,
-      border: `1px solid ${c}18`,
+      background: T.overlay02,
+      border: `1px solid ${T.border}`,
       display: "flex", flexDirection: "column", gap: 4, minWidth: 0,
       transition: "all 0.2s ease",
     }}>
@@ -292,37 +294,15 @@ export default function PositioningPanel({ positioning, hasCoinglass = false, cv
       WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        marginBottom: 12, paddingBottom: 10,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 3, height: 14, borderRadius: 2,
-            background: T.accent, flexShrink: 0,
-          }} />
-          <span style={{
-            fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "none",
-          }}>
-            Market Structure <HelpTip title="Market structure"><p>Positioning and trading-flow context from available exchange data. Funding describes the cost of holding perpetual positions; open interest measures outstanding exposure; taker flow describes aggressive buying or selling. Read these together with price: none alone confirms direction.</p></HelpTip>
-          </span>
-        </div>
+      <PanelHeader title={<>
+        Market structure <HelpTip title="Market structure"><p>Positioning and trading-flow context from available exchange data. Funding describes the cost of holding perpetual positions; open interest measures outstanding exposure; taker flow describes aggressive buying or selling. Read these together with price: none alone confirms direction.</p></HelpTip>
+      </>}>
         {source && (
-          <span style={{
-            fontSize: T.textXs, color: T.accent,
-            fontFamily: T.mono, fontWeight: 600,
-            padding: "2px 8px", borderRadius: 6,
-            background: `${T.accent}12`,
-            border: `1px solid ${T.accent}20`,
-            letterSpacing: "0.06em",
-          }}>
+          <span style={{ fontSize: T.textXs, color: T.accent, fontFamily: T.mono, fontWeight: 600 }}>
             {{ binance: "Binance", hyperliquid: "Hyperliquid" }[source] || source}
           </span>
         )}
-      </div>
+      </PanelHeader>
 
       {/* Badge grid — 2 columns \u00d7 3 rows */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
