@@ -1869,7 +1869,8 @@ export default function HyperLensPanel({ isMobile }) {
       )}
 
       {/* Main content */}
-      {loading ? (
+      {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
+      {loading && tab !== "cohorts" ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           <TableSkeleton rows={10} cols={6} />
         </GlassCard>
