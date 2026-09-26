@@ -1,6 +1,7 @@
 import Tabs from "./Tabs.jsx";
 import CohortsView from "./CohortsView.jsx";
 import PositioningView from "./PositioningView.jsx";
+import FollowingView from "./FollowingView.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { T } from "../theme.js";
@@ -1546,180 +1547,11 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Favorites / Watchlist tab
-// ---------------------------------------------------------------------------
-
-function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
-  const [follows, setFollows] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!userWallet) { setLoading(false); return; }
-    Promise.all([
-      fetch(`${API}/api/hyperlens/follows?user=${userWallet}`).then(r => r.json()),
-      fetch(`${API}/api/hyperlens/follows/events?user=${userWallet}&since=0`).then(r => r.json()),
-    ])
-      .then(([fRes, eRes]) => {
-        setFollows(fRes.wallets || []);
-        setEvents(eRes.events || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [userWallet]);
-
-  const unfollow = (addr) => {
-    fetch(`${API}/api/hyperlens/follows/${addr}?user=${userWallet}`, { method: "DELETE" })
-      .then(() => setFollows(f => f.filter(w => w.address !== addr)))
-      .catch(() => {});
-  };
-
-  if (!userWallet) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center", fontFamily: T.mono, color: T.text4, fontSize: 13 }}>
-        Connect your wallet to use the watchlist.
-      </div>
-    );
-  }
-
-  if (loading) {
-    return <div style={{ padding: "40px 20px", textAlign: "center", fontFamily: T.mono, color: T.text4, fontSize: 13 }}>Loading watchlist...</div>;
-  }
-
-  if (follows.length === 0) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center", fontFamily: T.mono, color: T.text4, fontSize: 13 }}>
-        No wallets followed yet. Open a wallet profile and choose Follow.
-      </div>
-    );
-  }
-
-  const fmtAddr = (a) => a ? `${a.slice(0, 6)}...${a.slice(-4)}` : "?";
-  const fmtUsd = (v) => {
-    if (!v) return "$0";
-    if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-    if (Math.abs(v) >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-    return `$${v.toFixed(0)}`;
-  };
-
-  return (
-    <div style={{ padding: isMobile ? 12 : 16 }}>
-      {/* Followed wallets */}
-      <div style={{ fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
-        FOLLOWING {follows.length} WALLET{follows.length !== 1 ? "S" : ""}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 20 }}>
-        {follows.map(w => (
-          <div key={w.address} style={{
-            background: T.overlay02, border: `1px solid ${T.overlay08}`, borderRadius: 10,
-            padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center",
-            cursor: "pointer", transition: "all 0.15s",
-          }}
-            onClick={() => onWalletClick(w.address)}
-            {...keyActivate(() => onWalletClick(w.address))}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = T.overlay08; }}
-          >
-            <div>
-              <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.accent }}>{fmtAddr(w.address)}</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: T.mono, fontSize: T.textXs, color: T.text3 }}>
-                <span>AV: {fmtUsd(w.account_value)}</span>
-                <span>30d ROI: {fmtSignedPct(w.roi)}</span>
-                <span>{w.positions_count} pos</span>
-              </div>
-              {w.cohorts && w.cohorts.some(c => c !== "elite") && (
-                <div style={{ marginTop: 4, fontFamily: T.mono, fontSize: T.textXs, color: T.text3 }}>
-                  {w.cohorts.filter(c => c !== "elite").map(c => ({ money_printer: "Profitable trader", smart_money: "Large account" }[c] || c)).join(" · ")}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); unfollow(w.address); }}
-              style={{
-                background: "none", border: 0, padding: "4px 0",
-                fontFamily: T.font, fontSize: T.textSm, fontWeight: 600,
-                color: T.text3, cursor: "pointer", flexShrink: 0,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = T.red; }}
-              onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
-            >
-              Unfollow
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Recent trade events */}
-      {events.length > 0 && (
-        <>
-          <div style={{ fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
-            RECENT TRADES
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>TIME</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>WALLET</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>ACTION</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>COIN</th>
-                  <th style={{ textAlign: "right", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>SIZE</th>
-                  {!isMobile && <th style={{ textAlign: "right", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>PnL</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {events.slice(0, 30).map((ev, i) => {
-                  const actionColor = ev.action === "OPENED" ? T.green : ev.action === "CLOSED" ? T.red : T.yellow;
-                  const sideColor = ev.side === "LONG" ? T.green : T.red;
-                  const ago = ev.timestamp
-                    ? (() => {
-                        const diff = Date.now() / 1000 - ev.timestamp;
-                        if (diff < 3600) return `${Math.round(diff / 60)}m`;
-                        if (diff < 86400) return `${(diff / 3600).toFixed(1)}h`;
-                        return `${(diff / 86400).toFixed(1)}d`;
-                      })()
-                    : "—";
-                  return (
-                    <tr key={`${ev.wallet}-${ev.coin}-${ev.timestamp}-${i}`}
-                        style={{ background: i % 2 === 1 ? T.overlay02 : "transparent", cursor: "pointer" }}
-                        onClick={() => onWalletClick(ev.wallet)}
-                        {...keyActivate(() => onWalletClick(ev.wallet))}>
-                      <td style={{ padding: "6px 8px", color: T.text4, fontSize: T.textXs, borderBottom: `1px solid ${T.overlay04}` }}>{ago}</td>
-                      <td style={{ padding: "6px 8px", color: T.text2, fontSize: T.textXs, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}` }}>{fmtAddr(ev.wallet)}</td>
-                      <td style={{ padding: "6px 8px", borderBottom: `1px solid ${T.overlay04}` }}>
-                        <span style={{ fontSize: T.textXs, fontWeight: 700, color: actionColor }}>{ev.action}</span>
-                      </td>
-                      <td style={{ padding: "6px 8px", fontWeight: 700, borderBottom: `1px solid ${T.overlay04}` }}>
-                        <span style={{ color: sideColor }}>{ev.side}</span>
-                        <span style={{ color: T.text2, marginLeft: 4 }}>{ev.coin}</span>
-                        <span style={{ color: T.text4, fontSize: T.textXs, marginLeft: 4 }}>{ev.leverage}x</span>
-                      </td>
-                      <td style={{ padding: "6px 8px", textAlign: "right", color: T.text3, borderBottom: `1px solid ${T.overlay04}` }}>{fmtUsd(ev.size_usd)}</td>
-                      {!isMobile && (
-                        <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`,
-                          color: ev.pnl >= 0 ? T.green : T.red,
-                        }}>
-                          {ev.action !== "OPENED" ? fmtSignedUsd(ev.pnl) : "—"}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 
 // View tabs. Keys are stable; to add a view, add an entry here and a matching
 // `tab === key` branch in the panel body.
 const VIEW_TABS = [
-  { key: "favorites", label: "Watchlist" },
+  { key: "favorites", label: "Following", title: "Traders you follow, with Telegram alerts on their changes" },
   { key: "consensus", label: "Consensus" },
   { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
   { key: "cohorts", label: "Cohorts", title: "How groups of wallets lean, now and over time" },
@@ -1838,7 +1670,7 @@ export default function HyperLensPanel({ isMobile }) {
           gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
-          {tab !== "cohorts" && tab !== "positioning" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
+          {tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
 
           {tab === "consensus" && (
             <input
@@ -1883,19 +1715,13 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Main content */}
       {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
-      {loading && tab !== "cohorts" && tab !== "positioning" ? (
+      {loading && tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           <TableSkeleton rows={10} cols={6} />
         </GlassCard>
       ) : (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
-          {tab === "favorites" && (
-            <FavoritesTab
-              userWallet={connectedWallet}
-              onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
-              isMobile={isMobile}
-            />
-          )}
+          {tab === "favorites" && <FollowingView />}
           {tab === "consensus" && (
             <ConsensusTable
               consensus={consensus}

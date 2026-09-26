@@ -1,6 +1,9 @@
 import { useTheme } from "../ThemeContext.jsx";
 import RangeRuler from "./RangeRuler.js";
 import SpikeZone from "./SpikeZone.js";
+import TraderEntries from "./TraderEntries.jsx";
+import WalletOpens from "./WalletOpens.jsx";
+import useCoinTraders from "../hooks/useCoinTraders.js";
 import { candleChange } from "../utils/chartPresentation.js";
 import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
@@ -48,72 +51,6 @@ const RIBBON_LINES = [
 const ENTRY_COLOR = { long: "#7dd3fc", short: "#fda4af", exit: "#8b8f94" };
 const OPEN_LARGE_COLOR = { long: "#fcd34d", short: "#fb923c" };
 
-const fmtPx = v => new Intl.NumberFormat("en", { maximumSignificantDigits: 5 }).format(v);
-const fmtUsd = v => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`);
-const fmtWhen = t => new Date(t * 1000).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-
-function TraderEntries({ entries, onShow }) {
-  const traders = entries.traders || [];
-  const coin = entries.symbol;
-  const box = { padding: "10px 18px", fontSize: 12, color: T.text3, borderTop: `1px solid ${T.border}`, lineHeight: 1.6 };
-  if (!traders.length) return <div style={box}>No profitable traders hold {coin} right now.</div>;
-  const side = k => entries.sides?.[k] || { n: 0 };
-  const summary = ["long", "short"].filter(k => side(k).n)
-    .map(k => `${side(k).n} ${k}, median entry ${fmtPx(side(k).median_entry)}`).join(" · ");
-  return (
-    <div style={box}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 16px" }}>
-        <span><strong style={{ color: T.text2 }}>Profitable traders in {coin}</strong> · {summary}</span>
-        {onShow && <button type="button" onClick={onShow} style={{ background: "transparent", border: 0, borderBottom: `1px solid ${T.accent}`, padding: "2px 0", color: T.accent, fontSize: 12, cursor: "pointer" }}>Show entries</button>}
-      </div>
-      <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
-        {traders.map(tr => (
-          <li key={tr.label}>
-            <span style={{ fontFamily: T.mono, fontWeight: 700, color: col(ENTRY_COLOR[tr.side]) }}>{tr.label}</span>{" "}
-            {tr.side} {fmtUsd(tr.size_usd)} at {fmtPx(tr.entry_px)} average
-            {tr.pnl_pct != null && <> · {tr.pnl_pct >= 0 ? "+" : ""}{Math.round(tr.pnl_pct)}% on margin</>}
-            {" · "}{tr.opened_at ? `opened ${fmtWhen(tr.opened_at)}` : tr.covered_from ? `opened before ${fmtWhen(tr.covered_from)}` : tr.pending ? "" : "opening not found in their fills"}
-            {tr.pending && <span style={{ color: T.text4 }}> · loading fills…</span>}
-            {tr.buying_now && <strong style={{ color: T.text2 }}> · still {tr.side === "long" ? "buying" : "selling"} (timed order)</strong>}
-            {(tr.bursts || []).length > 0 && (
-              <div style={{ color: T.text4 }}>
-                {tr.bursts_total > 4 && <span>{tr.bursts_total - 4} earlier bursts; latest: </span>}
-                {tr.bursts.slice(-4).map((b, i) => (
-                  <span key={i}>{i ? "; " : ""}{b.kind === "close" ? "reduced" : (b.side === "long") ? "bought" : "sold"} {fmtWhen(b.t)}
-                    {b.t_end - b.t >= 600 ? ` to ${fmtWhen(b.t_end)}` : ""} at {fmtPx(b.px)} ({fmtUsd(b.usd)}{b.twap ? ", timed order" : ""})</span>
-                ))}
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div style={{ marginTop: 6, color: T.text4 }}>
-        From Hyperliquid's public fills (each trader's latest 2,000). Updated {fmtWhen(entries.updated_at)}.
-      </div>
-    </div>
-  );
-}
-
-function WalletOpens({ opens }) {
-  const list = opens.opens || [];
-  const prof = list.filter(o => o.cohort === "profitable").length;
-  const convs = opens.convergences || [];
-  return (
-    <div style={{ padding: "10px 18px", fontSize: 12, color: T.text3, borderTop: `1px solid ${T.border}`, lineHeight: 1.6 }}>
-      <div>
-        <strong style={{ color: T.text2 }}>New positions in {opens.symbol}</strong>
-        {" · "}{list.length ? `${prof} by profitable traders, ${list.length - prof} by large accounts` : "none seen yet"} since {fmtWhen(opens.tracking_since)}
-        <HelpTip title="New positions"><p>Every tracked wallet is read about every 30 minutes. A coin and side it did not hold at the previous reading is a new position, drawn at its entry price: circles for profitable traders, squares for large accounts, bigger for larger positions (over $50K, over $500K). Timing is to the nearest reading.</p><p>Converging: two or more profitable traders open the same side within 24 hours, all still holding, the latest entry within 5% of the first, and at most two others already on that side. It is being recorded to test whether it leads price; until then it is information, not a signal.</p></HelpTip>
-      </div>
-      {convs.map((c, i) => (
-        <div key={i}>
-          <strong style={{ color: col(ENTRY_COLOR[c.side]) }}>Converging</strong> · {fmtWhen(c.ts)} · {c.n} profitable traders opened {c.side} at {fmtPx(Math.min(c.first_px, c.last_px))} to {fmtPx(Math.max(c.first_px, c.last_px))}{c.others ? `, ${c.others} already on that side` : ""}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
 
 // ─── Timeframe options ────────────────────────────────────────────────────────
@@ -136,6 +73,8 @@ export default function BMSBChart({
   floorConfirmed,
   momentum,
   timeframeControl = true,   // false when the page owns the timeframe (coin page)
+  traders = null,            // {entries, opens} when the page loads and shows the traders itself
+  traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -159,8 +98,6 @@ export default function BMSBChart({
   const [showMean, setShowMean] = useState(false);
   const [spike, setSpike] = useState(null);
   const [showEntries, setShowEntries] = useState(true);
-  const [entries, setEntries] = useState(null);
-  const [opens, setOpens] = useState(null);
   const [candleTimes, setCandleTimes] = useState(null);
   const meanSeriesRef = useRef([]);
   const zoneEndRef = useRef(null);
@@ -598,28 +535,11 @@ export default function BMSBChart({
     });
   }, [showPatterns, patterns, mode]);
 
-  // Profitable traders holding this coin: when and where they got in (Hyperliquid fills)
-  useEffect(() => {
-    setEntries(null);
-    setOpens(null);
-    if (!showEntries || !symbol) return;
-    let cancelled = false, timer = null, tries = 0;
-    // Fills for large holders load in the background; ask again while some are pending.
-    const load = () => fetch(`${API_BASE}/api/hyperlens/entries/${encodeURIComponent(getBaseSymbol(symbol))}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (cancelled) return;
-        setEntries(d);
-        if (d?.pending && ++tries < 12) timer = setTimeout(load, 10000);
-      })
-      .catch(() => {});
-    load();
-    fetch(`${API_BASE}/api/hyperlens/opens/${encodeURIComponent(getBaseSymbol(symbol))}?days=60`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (!cancelled) setOpens(d); })
-      .catch(() => {});
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [showEntries, symbol]);
+  // Profitable traders holding this coin: the page passes them in (it shows them in its own
+  // card); elsewhere the chart loads them itself.
+  const ownTraders = useCoinTraders(symbol, showEntries && !traders);
+  const entries = showEntries ? (traders ? traders.entries : ownTraders.entries) : null;
+  const opens = showEntries ? (traders ? traders.opens : ownTraders.opens) : null;
 
   useEffect(() => {
     const series = candleSeriesRef.current;
@@ -679,6 +599,8 @@ export default function BMSBChart({
     const last = candleTimes.length - 1;
     chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, Math.min(i, last - 20) - 12), to: last + 4 });
   } : null;
+
+  useEffect(() => { if (traderApi) traderApi.current = { showEntries: showEntriesRange }; });
 
   // Pressure levels overlay — fetch + render price lines
   useEffect(() => {
@@ -1059,8 +981,8 @@ export default function BMSBChart({
             </HelpTip></>
           : <>Spike detected; no history for this timeframe yet.</>}
       </div>}
-      {!loading && !error && showEntries && entries && <TraderEntries entries={entries} onShow={showEntriesRange} />}
-      {!loading && !error && showEntries && opens && <WalletOpens opens={opens} />}
+      {!traders && !loading && !error && showEntries && entries && <TraderEntries entries={entries} onShow={showEntriesRange} />}
+      {!traders && !loading && !error && showEntries && opens && <WalletOpens opens={opens} />}
       {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",flexWrap:"wrap",gap:"8px 20px",padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
         <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex === -1 ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
         {signalMarkerIndex != null && signalMarkerIndex >= 0 && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}

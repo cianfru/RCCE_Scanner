@@ -580,3 +580,78 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .pos-match-narrow{display:block;}
  .pos-table td,.pos-table th{padding:8px 6px;}
 }
+
+/* Coin chart: profitable traders grid */
+.te{padding:10px 18px;border-top:1px solid var(--t-border);font-size:12px;color:var(--t-text3);line-height:1.5;}
+.te-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-bottom:6px;}
+.te-head strong{color:var(--t-text2);}
+.te-link{background:transparent;border:0;border-bottom:1px solid var(--t-accent);padding:2px 0;color:var(--t-accent);font-size:12px;cursor:pointer;}
+.te-table{width:100%;border-collapse:collapse;font:500 12px var(--font-geist-mono),monospace;}
+.te-table th{text-align:left;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);padding:6px 8px;border-bottom:1px solid var(--t-border);white-space:nowrap;}
+.te-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--t-overlay06,rgba(255,255,255,.06));color:var(--t-text2);}
+.te-table th:first-child,.te-table td:first-child{padding-left:0;}
+.te-table tbody tr:not(.te-detail){cursor:pointer;}
+.te-table tbody tr:not(.te-detail):hover td,.te-open td{background:var(--t-overlay04,rgba(255,255,255,.04));}
+.te-label{font-family:var(--font-geist-mono),monospace;margin-right:8px;}
+.te-addr{color:var(--t-text3);}
+.te-up{color:var(--t-accent);}
+.te-down{color:#cf9185;}
+[data-theme="light"] .te-down{color:#b4533f;}
+.te-dim{color:var(--t-text4);}
+.te-live{color:var(--t-text1);font-weight:600;font-family:var(--font-geist-sans),sans-serif;}
+.te-follow{background:transparent;border:0;border-bottom:2px solid transparent;padding:2px 0;font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);cursor:pointer;}
+.te-follow:hover{color:var(--t-text1);}
+.te-follow.on{color:var(--t-accent);border-bottom-color:var(--t-accent);}
+.te-detail td{background:var(--t-overlay04,rgba(255,255,255,.03));cursor:default;}
+.te-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.te-cols h4{margin:0 0 4px;font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.te-cols ul{margin:0;padding:0;list-style:none;display:grid;gap:3px;}
+.te-note{margin:6px 0 0;color:var(--t-text4);font-family:var(--font-geist-sans),sans-serif;}
+.te-mobile{display:none;}
+@media(max-width:767px){
+ .te{padding:10px 16px;}
+ .te-wide{display:none;}
+ .te-mobile{display:block;margin:0 0 4px;}
+ .te-cols{grid-template-columns:1fr;}
+ .te-addr{display:block;}
+}
+
+/* Coin page: Traders card */
+.tc{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:20px 24px;}
+.tc-head h3{margin:0 0 8px;font:600 16px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.tc-summary{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-bottom:6px;}
+.tc-label{font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text2);margin-bottom:6px;}
+.tc-dim{font-weight:400;color:var(--t-text4);}
+.tc-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:6px;}
+.tc-bar i{display:block;}
+.tc-split{display:flex;justify-content:space-between;font:500 12px var(--font-geist-mono),monospace;}
+.tc-note{margin:4px 0 0;font-size:12px;color:var(--t-text4);}
+.tc .te{padding-left:0;padding-right:0;}
+@media(max-width:767px){
+ .tc{padding:16px;}
+ .tc-summary{grid-template-columns:1fr;}
+}
+.te .te-cols li{margin:0;padding:0;font:500 12px var(--font-geist-mono),monospace;line-height:1.55;color:var(--t-text2);}
+.te .te-cols li::before{display:none;}
+.te p.te-note,.te p.te-mobile{font-size:12px;line-height:1.5;}
+.te-follow{white-space:nowrap;}
+.te-addr{white-space:nowrap;}
+.te-up,.te-down{white-space:nowrap;}
+.te-table td.te-up,.te-table .te-up{color:var(--t-accent);}
+.te-table td.te-down,.te-table .te-down{color:#cf9185;}
+[data-theme="light"] .te-table td.te-down,[data-theme="light"] .te-table .te-down{color:#b4533f;}
+
+/* HyperLens Following tab */
+.fol{display:flex;flex-direction:column;gap:14px;padding:16px;}
+.fol-add{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;}
+.fol-add input{flex:0 1 360px;min-width:0;background:transparent;color:var(--t-text1);border:1px solid var(--t-border);border-radius:6px;padding:7px 10px;font:500 12px var(--font-geist-mono),monospace;}
+.fol-msg{font-size:12px;color:#cf9185;}
+.fol-card{border-top:1px solid var(--t-border);padding-top:12px;}
+.fol-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:6px;}
+.fol-name{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.fol-note{font-weight:400;color:var(--t-text3);}
+.fol-meta{flex:1;font-size:12px;color:var(--t-text3);}
+.fol .te-table tbody tr{cursor:pointer;}
+.fol .te-table tbody tr:hover td{background:var(--t-overlay04,rgba(255,255,255,.04));}
+.fol-events{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:2px;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text2);}
+@media(max-width:767px){.fol{padding:12px 16px;}.fol-meta{order:3;flex-basis:100%;}}
