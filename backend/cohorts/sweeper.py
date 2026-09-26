@@ -3,7 +3,7 @@ fixed share of Hyperliquid's per-IP weight budget (1,200/min, shared with the sc
 candles and HyperLens).
 
 - Focus set (assign.in_focus): $100K+ perp equity, or $100K+ all-time PnL with $10K+
-  perp equity. Polled every sweep (at most one sweep per 20 min).
+  perp equity (~3,100 wallets). Polled every sweep (at most one sweep per 30 min).
 - Every other $10K+ leaderboard wallet: one check a day (jittered 18-30h) to see
   whether it has joined the focus set. Largest accounts are checked first.
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 MIN_EQUITY_FLOOR = 10_000          # discovery floor on leaderboard account value
 CHECK_EVERY_S = 24 * 3600          # wallets outside the focus set
 CHECK_JITTER_S = 6 * 3600
-MIN_SWEEP_GAP_S = 20 * 60
+MIN_SWEEP_GAP_S = 30 * 60           # ~3,100 focus wallets take ~15 min of budget
 QUIET_AFTER_CLOSE_S = 20 * 60
 STATE_MAX_AGE_S = 2 * 3600         # focus wallets are polled every sweep
 BATCH = 200
