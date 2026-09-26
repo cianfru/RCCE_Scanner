@@ -88,4 +88,5 @@ Z0 reproduces the replay baseline (+43.1% on the primary set).
 - **Returns scale with size, with no gain in quality.** Z1's median Sharpe (0.37 against 0.32, and -0.77 against -0.80) is only marginally better than Z0's, while return and drawdown both double. Sizing by signal strength, as today, does not pick better trades. It only takes smaller ones.
 - **No rule for putting more on some coins than others (calmer coins, stronger entry checks) improved risk-adjusted results.**
 - **How big to trade is therefore a risk-appetite choice, not an edge found here.** A fixed drawdown budget should set it.
-- **The live executor sizes differently from this backtest** (it uses 3-5× leverage per signal, per `_LEVERAGE_MAP`). Its real risk per trade should be reviewed against these drawdowns before any change.
+- **The live executor sizes the same way in dollars.** Its order is allocation × size, as here. Leverage (`_LEVERAGE_MAP`, 1-5×) only lowers the margin posted, not the position's size, so its exposure is comparable to Z0.
+- It differs from this backtest in two ways: it also trades Accumulate entries (15-25% of a slot) and Light short, both of which the backtest leaves out.

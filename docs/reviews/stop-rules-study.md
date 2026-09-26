@@ -86,7 +86,7 @@ Whether anything ships depends on the 30-coin confirmation set, which is more vo
 
 ## Results: confirmation set (30 coins)
 
-The first run stopped in January 2025. The replay followed the first coin's timeline (FTM, delisted), because the set has no BTC. That was fixed and the set replayed in full before any secondary result was scored.
+The first run stopped in January 2025. The replay followed the first coin's timeline (FTM, delisted), because the set has no BTC. That was fixed and the set replayed in full before any secondary result was scored. Earlier studies were not affected: the exit-scenario search adds BTC and ETH to its replays as references (its 30-coin replay runs to 28 March 2026), and the sector tilt test used the primary coins.
 
 Median ATR14 on 4H is 1.1% (TRX) to 3.7% (FET), and 3×ATR is 6-11%.
 
