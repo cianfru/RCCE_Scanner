@@ -22,6 +22,26 @@ const OVERLAYS = () => [                             // a function: T is repaint
   { key: "fg", label: "Fear & Greed", color: "var(--t-text3)", dash: "1 3" },
 ];
 
+// Runs of days with BTC below the lower edge of its weekly band: [firstDay, lastDay + 1].
+function belowRuns(rows) {
+  const out = [];
+  for (const r of rows) {
+    const below = r.bandLo != null && r.btc > 0 && r.btc < r.bandLo;
+    if (!below) continue;
+    const last = out[out.length - 1];
+    if (last && r.day - last[1] <= 1) last[1] = r.day + 1; else out.push([r.day, r.day + 1]);
+  }
+  return out;
+}
+
+// The band itself: lower edge forward, upper edge back.
+function bandArea(rows, x, y) {
+  const pts = rows.filter(r => r.bandLo != null && r.bandHi != null);
+  if (pts.length < 2) return "";
+  return `M${pts.map(r => `${x(r.day).toFixed(1)},${y(r.bandLo).toFixed(1)}`).join("L")}` +
+    `L${[...pts].reverse().map(r => `${x(r.day).toFixed(1)},${y(r.bandHi).toFixed(1)}`).join("L")}Z`;
+}
+
 // BTC (log) over a 0-100 panel with a hover readout. Series: [{key, color, dash, axis, width}].
 function HistoryChart({ rows, series, band, lines, markers, aria, axis = pctLabel }) {
   const box = useRef(null);
@@ -38,7 +58,7 @@ function HistoryChart({ rows, series, band, lines, markers, aria, axis = pctLabe
   const padL = 8, padR = 44, topH = 120, gap = 14, botH = 170, H = topH + gap + botH + 22;
   const d0 = rows[0].day, d1 = rows[rows.length - 1].day;
   const x = day => padL + ((day - d0) / (d1 - d0)) * (W - padL - padR);
-  const btc = rows.map(r => r.btc).filter(v => v > 0);
+  const btc = rows.flatMap(r => [r.btc, r.bandLo, r.bandHi]).filter(v => v > 0);
   const lo = Math.min(...btc), hi = Math.max(...btc);
   const yb = v => 4 + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo) || 1)) * (topH - 8);
   const y0 = topH + gap;
@@ -77,8 +97,11 @@ function HistoryChart({ rows, series, band, lines, markers, aria, axis = pctLabe
         <line className="mh-grid" x1={padL} x2={W - padR} y1={yb(v)} y2={yb(v)} />
         <text className="mh-tick" x={W - padR + 6} y={yb(v) + 4}>{compactUsd(v)}</text>
       </g>)}
+      {belowRuns(rows).map(([a, b]) => <rect key={a} className="mh-below" x={x(a)} width={Math.max(1, x(b) - x(a))} y={0} height={topH} />)}
+      <path className="mh-bandfill" d={bandArea(rows, x, yb)} />
+      <path className="mh-bandline" d={path(r => r.bandLo, yb)} />
       <path className="mh-btc" d={path(r => r.btc || null, yb)} />
-      <text className="mh-panel-label" x={padL + 2} y={14}>BTC (log)</text>
+      <text className="mh-panel-label" x={padL + 2} y={14}>BTC (log) · weekly support band; shaded where BTC is below it</text>
       {band && <rect className="mh-band" x={padL} width={W - padL - padR} y={yp(Math.min(1, band.hi))} height={yp(band.lo) - yp(Math.min(1, band.hi))} />}
       {[0, 0.25, 0.5, 0.75, 1].map(v => <g key={v}>
         <line className="mh-grid" x1={padL} x2={W - padR} y1={yp(v)} y2={yp(v)} />
@@ -97,7 +120,7 @@ function HistoryChart({ rows, series, band, lines, markers, aria, axis = pctLabe
     <div className="mh-readout" aria-live="off">
       {h ? <>
         <b>{dayDate(h.day)}</b>
-        <span>BTC {h.btc ? `$${Math.round(h.btc).toLocaleString("en-US")}` : "—"}</span>
+        <span>BTC {h.btc ? `$${Math.round(h.btc).toLocaleString("en-US")}` : "—"}{h.bandLo != null ? (h.btc < h.bandLo ? " · below its weekly band" : h.btc > h.bandHi ? " · above its weekly band" : " · inside its weekly band") : ""}</span>
         {series.map(s => h[s.key] == null ? null : <span key={s.key} style={{ color: s.color }}>
           {s.label} {s.axis === "z" ? h[s.key].toFixed(2) : s.key === "fg" ? h[s.key] : axis(h[s.key])}</span>)}
       </> : <span>Hover the chart for a day's reading.{hasZ ? " The z-score uses its own −3 to +3 scale." : ""}</span>}
@@ -162,7 +185,36 @@ function BreadthTab({ data, rows, range, setRange }) {
       </div>
       <p className="mh-muted">An episode is a run of days in the same band (gaps of up to 5 days joined); outcomes are measured from its first day. Episodes, not days, are counted because neighbouring days share the same future. Outcomes are scored only up to {dayDate(data.end_day)}, the end of the study window; later episodes are listed without them. The coin list is today's, so coins that died are missing and early years are thinner. No probabilities are shown.</p>
     </section>
+    {data.forward_test && <ForwardTest ft={data.forward_test} base={data.base} />}
   </>;
+}
+
+// Declared 26 Sep 2026 (docs/reviews/btc-band-breadth-forward-test.md): new episodes are
+// listed and scored as they complete; the historical table is where the idea came from.
+function ForwardTest({ ft, base }) {
+  const b60 = base?.["60"]?.alt?.median;
+  const scored = ft.episodes.filter(e => e.h60);
+  return <section className="mh-episodes" aria-labelledby="mh-ft-title">
+    <div className="mh-section-head"><h3 id="mh-ft-title">Forward test: BTC below its band while breadth is high</h3></div>
+    <p>An episode starts when BTC closes below the lower edge of its weekly support band while {Math.round(100 * ft.share)}% or more of coins are in Uptrend or Overheated. The idea is that alts react late: BTC's band breaks first. Declared on {dayDate(ft.declared_day)} with fixed rules; only episodes after that date count.</p>
+    <p className="mh-muted">{ft.episodes.length === 0 ? "No episode since the declaration." : `${ft.episodes.length} episode${ft.episodes.length > 1 ? "s" : ""} since the declaration, ${scored.length} scored over 60 days.`} No verdict before 6 scored episodes; then it holds if at least 75% saw the typical alt do worse than an ordinary 60 days{b60 != null ? ` (${signedPct(b60)})` : ""}.</p>
+    {ft.episodes.length > 0 && <div className="mh-table-wrap"><table className="mh-table">
+      <thead><tr><th scope="col">Started</th><th scope="col">Days</th><th scope="col">Share</th><th scope="col">BTC 30d</th><th scope="col">Typical alt 30d</th><th scope="col">Typical alt 60d</th></tr></thead>
+      <tbody>{[...ft.episodes].reverse().map(e => <tr key={e.start}>
+        <td>{dayDate(e.start)}</td><td>{e.end - e.start + 1}</td><td>{Math.round(100 * e.share)}%</td>
+        <td>{e.h30 ? signedPct(e.h30.btc) : "pending"}</td><td>{e.h30 ? signedPct(e.h30.alt) : "pending"}</td>
+        <td className={e.h60 && b60 != null ? (e.h60.alt < b60 ? "mh-worse" : "mh-better") : ""}>{e.h60 ? signedPct(e.h60.alt) : "pending"}</td>
+      </tr>)}</tbody></table></div>}
+    <details className="mh-details"><summary>Where the idea came from: {ft.history.length} past episodes (exploratory)</summary>
+      <div className="mh-table-wrap"><table className="mh-table">
+        <thead><tr><th scope="col">Started</th><th scope="col">Days</th><th scope="col">Share</th><th scope="col">BTC 30d</th><th scope="col">Typical alt 30d</th><th scope="col">Typical alt 60d</th></tr></thead>
+        <tbody>{[...ft.history].reverse().map(([start, days, share, b30, a30, a60]) => <tr key={start}>
+          <td>{dayDate(start)}</td><td>{days}</td><td>{Math.round(100 * share)}%</td><td>{signedPct(b30, 0)}</td><td>{signedPct(a30, 0)}</td>
+          <td className={b60 != null ? (a60 < b60 ? "mh-worse" : "mh-better") : ""}>{signedPct(a60, 0)}</td>
+        </tr>)}</tbody></table></div>
+      <p className="mh-muted">Found by looking at the same history, so it is a hypothesis. Over 60 days the typical alt did worse than an ordinary period in {ft.history.filter(h => b60 != null && h[5] < b60).length} of {ft.history.length}; over 30 days the record is mixed. Five of these come from the 2022 bear market.</p>
+    </details>
+  </section>;
 }
 
 function FearGreedTab({ rows, range, setRange, fg }) {
@@ -210,7 +262,9 @@ export default function MarketHistoryDrawer({ tab, onTab, onClose }) {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = overflow; prev?.focus?.(); };
   }, [onClose]);
   const fg = useMemo(() => fearGreedByDay(data), [data]);
-  const rows = useMemo(() => rowsOf(data).map(r => ({ ...r, fg: fg.get(r.day) ?? null })), [data, fg]);
+  const band = useMemo(() => new Map((data?.btc_band || []).map(([d, lo, hi]) => [d, [lo, hi]])), [data]);
+  const rows = useMemo(() => rowsOf(data).map(r => ({ ...r, fg: fg.get(r.day) ?? null,
+    bandLo: band.get(r.day)?.[0] ?? null, bandHi: band.get(r.day)?.[1] ?? null })), [data, fg, band]);
   return createPortal(<div className="reflex-terminal">
     <div className="mh-backdrop" onClick={onClose} />
     <aside className="mh-drawer" role="dialog" aria-modal="true" aria-labelledby="mh-title">

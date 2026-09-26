@@ -550,3 +550,8 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .coh-legend i{display:inline-block;width:10px;height:2px;margin-right:6px;vertical-align:middle;}
 .coh-empty{margin:0;padding:24px 0;font-size:13px;color:var(--t-text3);}
 @media(max-width:767px){.coh-wide{display:none;} .coh-bar{width:48px;}}   /* phones: group, positioned, lean */
+.mh-bandfill{fill:var(--t-accent);opacity:.10;}
+.mh-bandline{fill:none;stroke:var(--t-accent);stroke-width:1;opacity:.55;}
+.mh-below{fill:#e5484d;opacity:.08;}
+.mh-details{margin-top:8px;font-size:13px;color:var(--t-text2);}
+.mh-details summary{cursor:pointer;padding:4px 0;color:var(--t-text2);}

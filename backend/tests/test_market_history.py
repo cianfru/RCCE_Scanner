@@ -66,3 +66,38 @@ class MarketHistoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForwardTestTests(unittest.TestCase):
+    def setUp(self):
+        mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
+        mh._closes.clear()
+
+    def tearDown(self):
+        mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
+        mh._closes.clear()
+
+    def test_band_uses_completed_weeks(self):
+        # Flat BTC at 100 for 30 weeks: both averages are 100 once 21 weeks exist.
+        days = [[d, 50, 0.5, 0.0, 0.0, 0.5, 0.0, 100.0] for d in range(3, 3 + 7 * 30)]
+        band = mh.btc_band(days)
+        self.assertNotIn(3 + 7 * 10, band)
+        lo, hi = band[3 + 7 * 25]
+        self.assertAlmostEqual(lo, 100.0)
+        self.assertAlmostEqual(hi, 100.0)
+
+    def test_episodes_after_declaration_with_outcomes(self):
+        d0 = mh.FT_DECLARED_DAY + 1
+        days = [[d0 + i, 60, 0.50, 0.10, 0.0, 0.40, 1.0, 90.0] for i in range(61)]
+        band = {d[0]: (100.0, 110.0) for d in days}
+        for d in days:
+            mh._closes[d[0]] = {"BTCUSDT": 90.0, **{f"C{j}USDT": 100.0 for j in range(25)}}
+        mh._closes[d0 + 60] = {"BTCUSDT": 90.0, **{f"C{j}USDT": 80.0 for j in range(25)}}
+        ft = mh.forward_test(days, band)
+        self.assertEqual(len(ft["episodes"]), 1)
+        e = ft["episodes"][0]
+        self.assertEqual((e["start"], e["share"]), (d0, 0.6))      # Uptrend + Overheated
+        self.assertEqual(e["h60"], {"btc": 0.0, "alt": -20.0})
+        # Before the declaration nothing counts.
+        old = [[mh.FT_DECLARED_DAY - 5, 60, 0.9, 0.0, 0.0, 0.1, 1.0, 90.0]]
+        self.assertEqual(mh.forward_test(old, {old[0][0]: (100.0, 110.0)})["episodes"], [])
