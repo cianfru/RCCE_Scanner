@@ -7,7 +7,7 @@ const explanations = {
   LIGHT_LONG: 'A long setup has support, but it does not meet the stricter Strong long criteria or a caution reduces its strength. Reasons can include a more extended price, crowded funding, unstable market phases or weaker confirmation.',
   ACCUMULATE: 'The engine sees potential basing, absorption or reaccumulation, without full confirmation for a stronger long label. It can also result when a reaccumulation setup lacks demand confirmation. This is an early setup to investigate, not a confirmed breakout.',
   WAIT: 'No entry or exit label on this timeframe.',
-  TRIM: 'The engine detects overextension or a blowoff phase that triggers its reduction rules. This count includes Trim and the more urgent Trim hard. An exit warning on either timeframe takes priority over entry signals.',
+  TRIM: 'The engine detects overextension or a blowoff phase that triggers its reduction rules. It also fires as a forced exit when price is far below the weekly band. This count includes Trim and the more urgent Trim hard. An exit warning on either timeframe takes priority over entry signals.',
   RISK_OFF: 'The engine identifies a markdown phase together with risk-off market consensus, triggering its defensive exit label. This is not the same as a short-entry signal. Exit warnings take priority across timeframes.',
 };
 

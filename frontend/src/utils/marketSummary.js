@@ -30,6 +30,15 @@ export const CONSENSUS_BUCKETS = {
 const BUCKET_NAMES = { "RISK-ON": "in Uptrend", EUPHORIA: "Overheated", "RISK-OFF": "in Downtrend", ACCUMULATION: "basing" };
 const BUCKET_SHORT = { "RISK-ON": "Uptrend", EUPHORIA: "Overheated", "RISK-OFF": "Downtrend", ACCUMULATION: "basing" };
 
+// Whole percent, but one decimal within a point of the 55% line so "55%" never sits under "more than 55%".
+export function sharePct(n, N) {
+  if (!N) return 0;
+  const x = (100 * n) / N;
+  if (Math.abs(x - CONSENSUS_LINE) >= 1) return Math.round(x);
+  const r = x > CONSENSUS_LINE ? Math.ceil(x * 10) / 10 : Math.floor(x * 10) / 10;   // round away from the line
+  return r.toFixed(1);
+}
+
 export function regimeMix(rows, label) {
   const counts = {};
   for (const r of rows) {
@@ -47,15 +56,15 @@ export function regimeMix(rows, label) {
   const known = [...REGIME_ORDER, ...Object.keys(counts).filter(k => !REGIME_ORDER.includes(k))];
   const order = [...anchor.filter(r => counts[r]), ...known.filter(r => counts[r] && !anchor.includes(r))];
   return { N, counts, bucket, anchor, anchorName: BUCKET_NAMES[bucket], anchorShort: BUCKET_SHORT[bucket],
-           n, p: N ? Math.round((100 * n) / N) : 0, order };
+           n, p: sharePct(n, N), order };
 }
 
 export const CONSENSUS_NOTES = {
-  "RISK-ON": "More than 55% in Uptrend: the consensus check passes for long signals.",
-  ACCUMULATION: "More than 55% basing: the consensus check passes for long signals.",
-  EUPHORIA: "More than 55% Overheated: the consensus check fails for long signals.",
-  "RISK-OFF": "More than 55% in Downtrend: the consensus check fails, Accumulate is blocked and Risk-off exits can fire.",
-  MIXED: "No group above 55%: the consensus check fails for long signals.",
+  "RISK-ON": "More than 55% in Uptrend: the consensus check (one of nine) passes for long signals.",
+  ACCUMULATION: "More than 55% basing: the consensus check passes, but Light long in Uptrend and the Re-accumulating paths need RISK-ON or MIXED.",
+  EUPHORIA: "More than 55% Overheated: the consensus check (one of nine) fails for long signals.",
+  "RISK-OFF": "More than 55% in Downtrend: the consensus check fails, most Accumulate paths are blocked and Risk-off exits can fire.",
+  MIXED: "No group above 55%: the consensus check (one of nine) fails. Light long in Uptrend and the Re-accumulating paths stay open.",
 };
 
 // Fear & Greed: bands mirror backend market_data._fng_label; the lines are the engine's.
@@ -72,10 +81,10 @@ export function fgBand(v) {
 
 export function fgNote(v, loaded) {
   if (!loaded) return "Waiting for today's reading.";
-  if (v == null || !Number.isFinite(v)) return "No reading: the Not greedy check counts as failed.";
-  if (v >= FNG_GREED) return "70 or above: the Not greedy check fails on every market.";
-  if (v <= FNG_FEAR) return "40 or below: the fear gate is open. Not greedy passes.";
-  return "Not greedy passes. The fear gate opens at 40 or below.";
+  if (v == null || !Number.isFinite(v)) return "No reading: the Not\u00a0greedy check counts as failed.";
+  if (v >= FNG_GREED) return "70 or above: the Not\u00a0greedy check fails on every market.";
+  if (v <= FNG_FEAR) return "40 or below: the fear gate is open. Not\u00a0greedy passes.";
+  return "Not\u00a0greedy passes. The fear gate opens at 40 or below.";
 }
 
 export const dialRotation = v => Math.round((1.8 * Math.max(0, Math.min(100, v)) - 90) * 100) / 100;

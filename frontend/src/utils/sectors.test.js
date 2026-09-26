@@ -99,3 +99,10 @@ test("race lines against BTC and pocket grid", () => {
   assert.deepEqual([g.rows, g.cols], [["AI"], ["Solana"]]);
   assert.equal(Math.round(g.cells["AI|Solana"].rel), 50); // 180 / 120 - 1
 });
+
+test('typical alt leaves out BTC by base (UBTC on spot) and pegged markets', () => {
+  const rows = [mv('UBTC/USDC', 'Majors', 50), mv('USDT0/USDC', 'RWA & Stablecoins', 0), mv('A/USDC', 'X', 10), mv('B/USDC', 'X', 30)];
+  const b = altBaseline(rows);
+  assert.equal(b.nAlts, 2);
+  assert.ok(b.vsBtc != null);
+});

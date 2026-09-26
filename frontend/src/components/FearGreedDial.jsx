@@ -27,13 +27,12 @@ export default function FearGreedDial({ value, loaded }) {
     return () => cancelAnimationFrame(id);
   }, []);
   const word = band == null ? null : FG_NAMES[band];
-  const aria = v == null ? `Fear and Greed: no reading. ${note}`
-    : `Fear and Greed ${Math.round(v)} of 100, ${word}. Lines at 40 and 70. ${note}`;
+  const aria = v == null ? "Fear and Greed dial, no reading" : "Fear and Greed dial, lines at 40 and 70";
   return <div className="ms-dial">
     <div className="ms-eyebrow"><span className="ms-eyebrow-text">Fear &amp; Greed<span className="ms-long"> · daily</span></span>
       <HelpTip title="Fear & Greed" width={400}>
         <p>The crypto Fear &amp; Greed index from alternative.me, with CoinGlass as a fallback: 0 is extreme fear, 100 extreme greed. It updates once a day and is the same for every market and both timeframes.</p>
-        <p>Bands: 0–20 Extreme fear, 21–40 Fear, 41–60 Neutral, 61–80 Greed, 81–100 Extreme greed.</p>
+        <p>Band names are the scanner's own cut-offs (0–20 Extreme fear, 21–40 Fear, 41–60 Neutral, 61–80 Greed, 81–100 Extreme greed); alternative.me's site uses slightly different ones.</p>
         <p>The two lines are where the engine uses it. Below 70 the Not greedy check passes; at 70 or above it fails for every market. It is one of nine core checks, so Strong long signals can still appear. At 40 or below the fear gate opens: Accumulate setups in the Accumulation regime and Capitulation revivals can fire. Accumulate from absorption does not need it.</p>
       </HelpTip>
     </div>
@@ -44,8 +43,8 @@ export default function FearGreedDial({ value, loaded }) {
           <line className="fg-tick-halo" x1={t.line[0]} y1={t.line[1]} x2={t.line[2]} y2={t.line[3]} />
           <line className="fg-tick" x1={t.line[0]} y1={t.line[1]} x2={t.line[2]} y2={t.line[3]} />
         </g>)}
-        {v != null && <polygon className="fg-needle" points="110,36 106.8,110 113.2,110"
-          style={{ transform: `rotate(${dialRotation(ready ? v : 0)}deg)` }} />}
+        <polygon className="fg-needle" points="110,36 106.8,110 113.2,110"
+          style={{ opacity: v == null ? 0 : 1, transform: `rotate(${dialRotation(ready && v != null ? v : 0)}deg)` }} />
         <circle className="fg-hub" cx="110" cy="110" r="7" />
         <circle className="fg-hub-hole" cx="110" cy="110" r="2.5" />
       </svg>

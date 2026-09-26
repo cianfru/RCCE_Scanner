@@ -66,7 +66,7 @@ export default function SectorRace({ data, rows, by, value, leaders: chipLeaders
   // Direct labels at the right edge, nudged apart so they never overlap.
   const labels = [
     ...(mode === "abs" ? [{ name: "BTC", v: btc[btc.length - 1], color: "var(--t-text1)" }] : [{ name: "BTC", v: 100, color: "var(--t-text3)" }]),
-    ...shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => ({ name: tag(l.name), v: l.last, color: colorOf(l.name) })),
+    ...shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => ({ name: short(l.name), v: l.last, color: colorOf(l.name) })),
   ].map(l => ({ ...l, yy: y(l.v) })).sort((a, b) => a.yy - b.yy);
   for (let i = 1; i < labels.length; i++) labels[i].yy = Math.max(labels[i].yy, labels[i - 1].yy + 14);
 
