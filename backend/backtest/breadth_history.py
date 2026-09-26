@@ -188,6 +188,32 @@ def study(src, out_name):
     return out
 
 
+def export(study_name="breadth_study", src="breadth_history", out=None):
+    """Seed for the live market history (backend/data/market_history_seed.json): per-day
+    aggregates, BTC close, the coin list, and the study's episodes. Episode outcomes stop
+    at END_DAY; later days are appended live without outcomes."""
+    from pathlib import Path
+    data = json.loads((RUNS_DIR / f"{src}.json").read_text())
+    st = json.loads((RUNS_DIR / f"{study_name}.json").read_text())
+    btc = data["closes"]["BTCUSDT"]
+    pct = lambda x: None if x is None else round(100 * x, 1)
+    days = [[d["day"], d["n"], d["uptrend"], d["overheated"], d["downtrend"], d["basing"], d["median_z"], btc.get(str(d["day"]))]
+            for d in data["days"]]
+    bands = {}
+    for label, b in st["bands"].items():
+        eps = [[e["start"], e["end"], e["breadth"], *[pct((e.get(f"h{h}") or {}).get(k)) for h in HORIZONS for k in ("btc", "alt")]]
+               for e in b["episodes"]]
+        bands[label] = {"days": b["days"], "h30": b["h30"], "verdict": b["verdict"], "episodes": eps}
+    seed = {"version": 1, "end_day": END_DAY, "min_coins": MIN_COINS, "window": WINDOW, "min_bars": MIN_BARS,
+            "pairs": sorted(data["closes"]), "bands_def": [[lo, hi, label] for lo, hi, label in BANDS],
+            "days_cols": ["day", "n", "uptrend", "overheated", "downtrend", "basing", "median_z", "btc"],
+            "episode_cols": ["start", "end", "breadth", "btc10", "alt10", "btc30", "alt30", "btc60", "alt60"],
+            "days": days, "base": st["base"], "bands": bands}
+    path = Path(out) if out else Path(__file__).resolve().parent.parent / "data" / "market_history_seed.json"
+    path.write_text(json.dumps(seed, separators=(",", ":")))
+    print(f"{len(days)} days, {len(seed['pairs'])} pairs -> {path} ({path.stat().st_size // 1024} KB)")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -196,8 +222,11 @@ def main(argv=None):
     st = sub.add_parser("study")
     st.add_argument("--src", default="breadth_history")
     st.add_argument("--out", required=True)
+    sub.add_parser("export")
     args = ap.parse_args(argv)
-    if args.cmd == "rebuild":
+    if args.cmd == "export":
+        export()
+    elif args.cmd == "rebuild":
         rebuild(args.out)
     else:
         o = study(args.src, args.out)

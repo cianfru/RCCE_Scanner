@@ -12,6 +12,7 @@ backend/feature_flags.json
 *.db
 *.db-shm
 *.db-wal
+market_history_live.json
 *.pkl
 
 # Larsson study: paid third-party data and research notes stay out of this

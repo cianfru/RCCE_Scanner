@@ -45,3 +45,7 @@ Thrusts (breadth up 25 points in 10 days, 11 cases) and fades (down 20 from abov
 - **Today's band has no direction.** In the 18 past episodes at 70-85% Uptrend, the typical alt beat an ordinary 30 days 9 times and BTC 10 times. This band preceded both the November 2021 top (typical alt -31% over 30 days) and the late-October 2024 rally (+65%).
 - **85% and over technically meets the rule for alts (7 of 9), but it is fragile:** three of the nine episodes are 1-4 day fragments of one early-2023 stretch, and "beat the base" there often means falling less than usual (e.g. -5%). Recommendation: the product states the count ("in 7 of 9 past episodes above 85% the typical alt did better than an ordinary 30 days") rather than the word "continuation".
 - **What the data does support showing:** where today sits in the history (percentile, the chart), and the list of past episodes at similar readings with what followed, unfiltered. No probabilities, no direction for the 70-85% band.
+
+## In the product (26 September 2026)
+
+The scanner's history drawer (chart icon beside Market consensus) shows this history: the share of coins in Uptrend with BTC, today's percentile, and the episode table for each band with the counts above. It never states a direction. The seed is `backend/data/market_history_seed.json` (`python -m backtest.breadth_history export`); one row is appended after each daily close with the same method (checked equal to the rebuild on 23-25 September). Episode outcomes stop at 2026-03-29; later episodes are listed without them.
