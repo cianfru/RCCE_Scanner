@@ -627,12 +627,14 @@ export default function TradingPanel({ api }) {
 
     const fastInterval   = setInterval(fetchFast, 15_000);
     const medInterval    = setInterval(fetchMedium, 30_000);
+    const slowInterval   = setInterval(fetchSlow, 120_000);
     const scanInterval   = setInterval(fetchScannerContext, 60_000);
     const warnInterval   = setInterval(fetchWarnings, 60_000);
 
     return () => {
       clearInterval(fastInterval);
       clearInterval(medInterval);
+      clearInterval(slowInterval);
       clearInterval(scanInterval);
       clearInterval(warnInterval);
     };

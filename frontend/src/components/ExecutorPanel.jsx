@@ -46,13 +46,7 @@ function pnlColor(pct) {
 }
 
 function sideBadge(side) {
-  const isLong = side === "LONG";
-  return {
-    bg: isLong ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.12)",
-    color: isLong ? T.green : T.red,
-    border: isLong ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.25)",
-    label: side,
-  };
+  return { color: side === "LONG" ? T.green : T.red, label: side };
 }
 
 function signalColor(sig) {
@@ -104,38 +98,20 @@ const S = {
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
+  // Flat text buttons; used with className="terminal-status"
   btn: {
-    padding: "6px 14px",
-    borderRadius: 6,
-    border: `1px solid ${T.overlay12}`,
-    background: T.overlay04,
     color: T.text1,
     fontSize: T.textXs,
     fontFamily: T.mono,
     fontWeight: 600,
     cursor: "pointer",
-    letterSpacing: "0.02em",
-    transition: "all 0.15s",
   },
   btnPrimary: {
-    background: T.accentDim,
-    borderColor: T.accent,
     color: T.accent,
   },
-  // Getters: T.red is repainted in place by applyTheme, so read it at render time
-  get btnLive() {
-    return {
-      background: "rgba(248,113,113,0.12)",
-      borderColor: "rgba(248,113,113,0.3)",
-      color: T.red,
-    };
-  },
+  // Getter: T.red is repainted in place by applyTheme, so read it at render time
   get btnDanger() {
-    return {
-      background: "rgba(248,113,113,0.08)",
-      borderColor: "rgba(248,113,113,0.2)",
-      color: T.red,
-    };
+    return { color: T.red };
   },
   label: {
     fontSize: T.textXs,
@@ -149,13 +125,9 @@ const S = {
     color: T.text1,
     fontWeight: 600,
   },
-  badge: (bg, color, border) => ({
+  badge: (color) => ({
     display: "inline-block",
-    padding: 0,
-    borderRadius: 0,
-    background: "transparent",
     color: color,
-    border: "none",
     fontSize: T.textXs,
     fontFamily: T.mono,
     fontWeight: 700,
@@ -168,17 +140,17 @@ const S = {
 // ---------------------------------------------------------------------------
 
 function ModeBadge({ mode, enabled }) {
-  let bg, color, border, label;
+  let color, label;
   if (!enabled && mode !== "disabled") {
-    bg = "rgba(82,82,91,0.15)"; color = T.text3; border = T.border; label = "PAUSED";
+    color = T.text3; label = "PAUSED";
   } else if (mode === "paper") {
-    bg = "rgba(52,211,153,0.12)"; color = T.green; border = "rgba(52,211,153,0.3)"; label = "PAPER";
+    color = T.green; label = "PAPER";
   } else if (mode === "live") {
-    bg = "rgba(248,113,113,0.12)"; color = T.red; border = "rgba(248,113,113,0.3)"; label = "LIVE";
+    color = T.red; label = "LIVE";
   } else {
-    bg = "rgba(82,82,91,0.1)"; color = T.text4; border = T.border; label = "DISABLED";
+    color = T.text4; label = "DISABLED";
   }
-  return <span style={S.badge(bg, color, border)}>{label}</span>;
+  return <span style={S.badge(color)}>{label}</span>;
 }
 
 function ReasonBlock({ reason, warnings }) {
@@ -272,12 +244,6 @@ function PositionRow({ pos, expanded, onToggle }) {
 
 function HLPositionCard({ pos }) {
   const side = sideBadge(pos.side);
-  const pnlPct = pos.entry_price > 0
-    ? ((pos.side === "LONG"
-        ? (pos.unrealized_pnl / (Math.abs(pos.size) * pos.entry_price))
-        : (pos.unrealized_pnl / (Math.abs(pos.size) * pos.entry_price))
-      ) * 100)
-    : null;
 
   return (
     <div style={{
@@ -290,13 +256,9 @@ function HLPositionCard({ pos }) {
         <span style={{ fontSize: 15, fontFamily: T.mono, fontWeight: 700, color: T.text1 }}>
           {pos.coin}
         </span>
-        <span style={S.badge(side.bg, side.color, side.border)}>{side.label}</span>
-        <span style={S.badge(null, T.purple, null)}>{pos.leverage}x</span>
-        <span style={S.badge(
-          "rgba(82,82,91,0.12)",
-          T.text3,
-          T.border,
-        )}>{pos.leverage_type || "cross"}</span>
+        <span style={S.badge(side.color)}>{side.label}</span>
+        <span style={S.badge(T.purple)}>{pos.leverage}x</span>
+        <span style={S.badge(T.text3)}>{pos.leverage_type || "cross"}</span>
         <span style={{
           marginLeft: "auto",
           fontSize: 14,
@@ -361,7 +323,7 @@ function TradeRow({ trade, expanded, onToggle }) {
           {trade.quality_issue && <small title={trade.quality_issue} style={{display:'block',fontWeight:400,color:T.text3,marginTop:5}}>Price-unit error</small>}
         </td>
         <td style={cellStyle}>
-          <span style={S.badge(side.bg, side.color, side.border)}>{side.label}</span>
+          <span style={S.badge(side.color)}>{side.label}</span>
         </td>
         <td style={cellStyle}>
           <span style={{ color: signalColor(trade.entry_signal), fontWeight: 600 }}>{signalLabel(trade.entry_signal)}</span>
@@ -579,15 +541,15 @@ export default function ExecutorPanel({ api }) {
           <div style={{ display: "flex", gap: 8 }}>
             {(!status?.initialized) && (
               <>
-                <button
+                <button type="button" className="terminal-status"
                   style={{ ...S.btn, ...S.btnPrimary }}
                   onClick={() => callApi("/api/executor/init")}
                   disabled={loading}
                 >
                   Paper Mode
                 </button>
-                <button
-                  style={{ ...S.btn, ...S.btnLive }}
+                <button type="button" className="terminal-status"
+                  style={{ ...S.btn, ...S.btnDanger }}
                   onClick={initLive}
                   disabled={loading}
                 >
@@ -596,8 +558,8 @@ export default function ExecutorPanel({ api }) {
               </>
             )}
             {status?.initialized && !status?.enabled && (
-              <button
-                style={{ ...S.btn, ...(isLive ? S.btnLive : S.btnPrimary) }}
+              <button type="button" className="terminal-status"
+                style={{ ...S.btn, ...(isLive ? S.btnDanger : S.btnPrimary) }}
                 onClick={() => callApi("/api/executor/enable")}
                 disabled={loading}
               >
@@ -605,7 +567,7 @@ export default function ExecutorPanel({ api }) {
               </button>
             )}
             {status?.initialized && status?.enabled && (
-              <button
+              <button type="button" className="terminal-status"
                 style={S.btn}
                 onClick={() => callApi("/api/executor/disable")}
                 disabled={loading}
@@ -614,7 +576,7 @@ export default function ExecutorPanel({ api }) {
               </button>
             )}
             {status?.initialized && (
-              <button
+              <button type="button" className="terminal-status"
                 style={{ ...S.btn, ...S.btnDanger }}
                 onClick={() => {
                   const msg = isLive
@@ -680,11 +642,7 @@ export default function ExecutorPanel({ api }) {
               <span style={{ ...S.sectionTitle, color: T.red }}>
                 Hyperliquid Positions {hlPositions.length > 0 && `(${hlPositions.length})`}
               </span>
-              <span style={S.badge(
-                "rgba(248,113,113,0.12)",
-                T.red,
-                "rgba(248,113,113,0.3)",
-              )}>LIVE</span>
+              <span style={S.badge(T.red)}>LIVE</span>
             </div>
             {hlAccount && (
               <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text3 }}>
@@ -720,8 +678,8 @@ export default function ExecutorPanel({ api }) {
                 {whitelist.whitelist_count}/{whitelist.available_count} pairs active
               </span>
             </div>
-            {getAdminKey() && <button
-              style={S.btn}
+            {getAdminKey() && <button type="button" className="terminal-status"
+              style={{ ...S.btn, ...S.btnDanger }}
               onClick={resetWhitelist}
               disabled={wlLoading}
               title="Replace the enabled pairs with the 10 default majors"
@@ -729,31 +687,33 @@ export default function ExecutorPanel({ api }) {
               Reset to 10 defaults
             </button>}
           </div>
+          {/* Flat mono grid: enabled pairs in the accent colour, disabled pairs dimmed */}
           <div style={{
             padding: "14px 20px",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 6,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
+            gap: "4px 12px",
           }}>
             {(whitelist.available_pairs || []).map(sym => {
               const active = whitelist.whitelist.includes(sym);
               const base = sym.replace("/USDT", "");
               return (
                 <button
+                  type="button"
                   key={sym}
                   onClick={() => toggleWhitelist(sym, !active)}
                   disabled={wlLoading || !getAdminKey()}   // read-only without the admin key
+                  aria-pressed={active}
                   style={{
-                    padding: "4px 10px",
-                    borderRadius: 6,
-                    border: `1px solid ${active ? T.accent : T.border}`,
-                    background: active ? T.accentDim : T.overlay02,
-                    color: active ? T.accent : T.text3,
+                    padding: "4px 0",
+                    border: 0,
+                    background: "transparent",
+                    textAlign: "left",
+                    color: active ? T.accent : T.text4,
                     fontSize: T.textXs,
                     fontFamily: T.mono,
-                    fontWeight: active ? 700 : 500,
+                    fontWeight: active ? 600 : 400,
                     cursor: wlLoading ? "not-allowed" : getAdminKey() ? "pointer" : "default",
-                    transition: "all 0.15s",
                     opacity: wlLoading ? 0.5 : 1,
                   }}
                 >
@@ -812,7 +772,7 @@ export default function ExecutorPanel({ api }) {
             </table>
             {shownPositions.length > POSITION_CAP && (
               <div style={{ padding: 16 }}>
-                <button style={S.btn} onClick={() => setShowAllPositions(v => !v)}>
+                <button type="button" className="terminal-status" style={S.btn} onClick={() => setShowAllPositions(v => !v)}>
                   {showAllPositions ? `Show first ${POSITION_CAP}` : `Show all ${shownPositions.length}`}
                 </button>
               </div>
@@ -876,7 +836,7 @@ export default function ExecutorPanel({ api }) {
                 ))}
               </tbody>
             </table>
-            <div style={{padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}><button style={S.btn} disabled={tradePage===0} onClick={()=>{setTradePage(p=>p-1);setExpandedTrade(null)}}>Previous</button><span style={S.label}>Page {tradePage+1} of {Math.ceil(trades.length/25)}</span><button style={S.btn} disabled={(tradePage+1)*25>=trades.length} onClick={()=>{setTradePage(p=>p+1);setExpandedTrade(null)}}>Next</button></div>
+            <div style={{padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}><button type="button" className="terminal-status" style={S.btn} disabled={tradePage===0} onClick={()=>{setTradePage(p=>p-1);setExpandedTrade(null)}}>Previous</button><span style={S.label}>Page {tradePage+1} of {Math.ceil(trades.length/25)}</span><button type="button" className="terminal-status" style={S.btn} disabled={(tradePage+1)*25>=trades.length} onClick={()=>{setTradePage(p=>p+1);setExpandedTrade(null)}}>Next</button></div>
           </div>
         )}
       </div>
