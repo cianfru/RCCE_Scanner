@@ -143,6 +143,14 @@ class Store:
         row = self.db.execute("SELECT MAX(ts) FROM cohort_snapshots").fetchone()
         return row[0] if row and row[0] else None
 
+    def latest_symbol_ts(self) -> Optional[int]:
+        row = self.db.execute("SELECT MAX(ts) FROM cohort_snapshots WHERE symbol != ''").fetchone()
+        return row[0] if row and row[0] else None
+
+    def latest_symbol_snapshot_ts(self, symbol: str) -> Optional[int]:
+        row = self.db.execute("SELECT MAX(ts) FROM cohort_snapshots WHERE symbol = ?", (symbol,)).fetchone()
+        return row[0] if row and row[0] else None
+
     def snapshot(self, ts: int, dimension: Optional[str] = None, symbol: Optional[str] = None) -> List[dict]:
         q, args = "SELECT dimension, cohort, symbol, data FROM cohort_snapshots WHERE ts = ?", [ts]
         if dimension:

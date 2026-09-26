@@ -168,6 +168,11 @@ class Sweeper:
     def aggregate(self, now: float) -> List[dict]:
         states = self.store.load_states(now, STATE_MAX_AGE_S)
         rows = aggregate(states, now)
+        # All-market rows every sweep; per-symbol rows once per 4h candle (keeps the file ~1 MB/day).
+        from scan_schedule import BAR_SECONDS
+        last_sym = self.store.latest_symbol_ts()
+        if last_sym is not None and last_sym // BAR_SECONDS == now // BAR_SECONDS:
+            rows = [r for r in rows if r["symbol"] is None]
         hist = self.store.bias_history(now - Z_WINDOW_S)
         for r in rows:
             h = hist.get((r["dimension"], r["cohort"], r["symbol"]), [])

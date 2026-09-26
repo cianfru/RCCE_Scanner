@@ -195,3 +195,21 @@ class EndpointTests(unittest.TestCase):
                 self.assertIn("cohorts", c.get("/api/hyperlens/consensus?symbol=BTC&cohorts=true").json())
             finally:
                 mod._store = old
+
+
+class SymbolCadenceTests(unittest.TestCase):
+    def test_symbol_rows_once_per_4h(self):
+        with tempfile.TemporaryDirectory() as d:
+            st = Store(os.path.join(d, "c.db"))
+            st.update_registry([("0xa1", 50_000.0, 2e6)], now=0)
+            clk = Clock(14400 * 1000 + 100.0)
+            sw = Sweeper(st, FakeSource(), TokenBucket(6000, clock=clk, sleep=clk.sleep), clock=clk, sleep=clk.sleep,
+                         respect_quiet=False)
+            counts = []
+            for step in (0, 3000, 12000):          # two sweeps in one candle, then the next candle
+                clk.t += step
+                st.db.execute("UPDATE wallets SET next_poll_at = 0")
+                asyncio.run(sw.run_once())
+                ts = st.latest_ts()
+                counts.append(len([r for r in st.snapshot(ts) if r["symbol"]]))
+            self.assertEqual(counts, [2, 0, 2])      # BTC rows for equity and pnl

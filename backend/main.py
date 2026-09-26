@@ -4021,6 +4021,10 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
     if ts is None:
         return {"ts": None, "rows": [], "note": "No completed sweep yet."}
     sym = _normalize_coin(symbol) if symbol else None
+    if sym:                       # per-symbol rows are written once per 4h candle
+        ts = st.latest_symbol_snapshot_ts(sym)
+        if ts is None:
+            return {"ts": None, "symbol": sym, "rows": [], "note": "Symbol not among the 40 largest cohort positions yet."}
     rows = st.snapshot(ts, dimension=dimension, symbol=sym or "")
     return {"ts": ts, "age_s": int(time.time()) - ts, "symbol": sym, "rows": rows,
             "divergence": divergence(st.snapshot(ts, dimension="pnl", symbol=sym or ""), sym),
