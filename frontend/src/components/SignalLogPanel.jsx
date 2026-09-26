@@ -30,11 +30,11 @@ function fmtUsd(v) {
 }
 
 const SIGNAL_SHORT = {
-  // Heatmap cells are narrow; these are the first word of the grid's labels.
-  STRONG_LONG: "STRONG", LIGHT_LONG: "LIGHT", ACCUMULATE: "ACCUM",
-  REVIVAL_SEED: "REVIVE", REVIVAL_SEED_CONFIRMED: "REVIVE",
-  WAIT: "", TRIM: "TRIM", TRIM_HARD: "TRIM!", RISK_OFF: "RISK", NO_LONG: "NO",
-  LIGHT_SHORT: "SHORT", STRONG_SHORT: "SHORT!",
+  // Heatmap cells are narrow; these are the first word of the grid's labels (sentence case fits 12px bold).
+  STRONG_LONG: "Strong", LIGHT_LONG: "Light", ACCUMULATE: "Accum",
+  REVIVAL_SEED: "Revive", REVIVAL_SEED_CONFIRMED: "Revive",
+  WAIT: "", TRIM: "Trim", TRIM_HARD: "Trim!", RISK_OFF: "Risk", NO_LONG: "No",
+  LIGHT_SHORT: "Short", STRONG_SHORT: "Short!",
 };
 
 // "7/9" -> "7 of 9 entry checks met"; the totals differ between coins (9 or 11).
@@ -131,7 +131,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
   }
 
   // Cells fit a six-letter label at 12px; narrow screens scroll sideways.
-  const cellMinSize = 46;
+  const cellMinSize = 52;
   const labelW = isMobile ? 60 : 76;
   // Size the table from its columns so narrow screens scroll instead of squeezing cells
   const colW = cellMinSize + 2;
@@ -145,7 +145,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
           <tr>
             <th style={{ position: "sticky", left: 0, top: 0, zIndex: 4, background: T.selectBg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: T.textXs, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
             {data.days.map((day, i) => (
-              <th key={i} style={{ position: "sticky", top: 0, zIndex: 3, background: T.selectBg, boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: T.textXs, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
+              <th key={i} style={{ position: "sticky", top: 0, zIndex: 3, background: T.selectBg, boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: T.textXs, color: T.text4, fontWeight: 600, lineHeight: 1.25, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{String(day).split(" ").map((part, j) => <span key={j} style={{ display: "block" }}>{part}</span>)}</th>
             ))}
           </tr>
         </thead>
@@ -168,7 +168,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
                   return (
                     <td key={colIdx} title={tooltip} style={{ padding: 1, borderBottom: `1px solid ${T.overlay04}` }}>
                       <div style={{ minWidth: cellMinSize, height: cellMinSize, borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "default" }}>
-                        {!isWait && shortLabel && <span style={{ fontSize: T.textXs, fontWeight: 700, color, lineHeight: 1 }}>{shortLabel}</span>}
+                        {!isWait && shortLabel && <span style={{ fontSize: T.textXs, fontWeight: 700, color, lineHeight: 1, letterSpacing: "-0.02em" }}>{shortLabel}</span>}
                       </div>
                     </td>
                   );
