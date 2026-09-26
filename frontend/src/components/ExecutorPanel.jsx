@@ -740,13 +740,13 @@ export default function ExecutorPanel({ api }) {
                 {whitelist.whitelist_count}/{whitelist.available_count} pairs active
               </span>
             </div>
-            <button
+            {getAdminKey() && <button
               style={S.btn}
               onClick={resetWhitelist}
               disabled={wlLoading}
             >
               Reset Default
-            </button>
+            </button>}
           </div>
           <div style={{
             padding: "14px 20px",
@@ -761,7 +761,7 @@ export default function ExecutorPanel({ api }) {
                 <button
                   key={sym}
                   onClick={() => toggleWhitelist(sym, !active)}
-                  disabled={wlLoading}
+                  disabled={wlLoading || !getAdminKey()}   // read-only without the admin key
                   style={{
                     padding: "4px 10px",
                     borderRadius: 6,
@@ -771,7 +771,7 @@ export default function ExecutorPanel({ api }) {
                     fontSize: 11,
                     fontFamily: T.mono,
                     fontWeight: active ? 700 : 500,
-                    cursor: wlLoading ? "not-allowed" : "pointer",
+                    cursor: wlLoading ? "not-allowed" : getAdminKey() ? "pointer" : "default",
                     transition: "all 0.15s",
                     opacity: wlLoading ? 0.5 : 1,
                   }}
