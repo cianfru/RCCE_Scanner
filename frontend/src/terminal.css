@@ -262,11 +262,12 @@
 /* Race vs BTC and pockets (sector strip charts). Series slots validated for CVD in both themes. */
 .sector-strip{--race-1:#3987e5;--race-2:#d95926;--race-3:#199e70;--pocket-up:#97FCE4;--pocket-down:#e0806c;}
 [data-theme="light"] .sector-strip{--race-1:#2a78d6;--race-2:#eb6834;--race-3:#1baf7a;--pocket-up:#0e7490;--pocket-down:#c2410c;}
-.sector-views{margin-left:auto;display:flex;gap:6px;}
+.sector-views{margin-left:auto;display:flex;gap:4px;}
 .sector-views + .sector-clear{margin-left:10px;}
-.sector-views button{white-space:nowrap;background:transparent;border:1px solid var(--t-border);color:var(--t-text3);border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
-.sector-views button:hover{border-color:var(--t-borderH);color:var(--t-text2);}
-.sector-views button[aria-pressed="true"]{border-color:var(--t-accent);color:var(--t-accent);background:var(--t-accentDim);}
+/* Chart toggles use the shared underlined tab style (no pills). */
+.sector-views button{white-space:nowrap;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--t-text3);font-family:inherit;font-weight:600;font-size:12px;padding:6px 8px;cursor:pointer;transition:color .15s,border-color .15s;}
+.sector-views button:hover{color:var(--t-text1);}
+.sector-views button[aria-pressed="true"]{color:var(--t-accent);border-bottom-color:var(--t-accent);}
 .race,.pockets{margin:12px 0 4px;padding:14px 16px;border:1px solid var(--t-border);border-radius:10px;}
 .race-controls{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:10px;}
 .race-hint{font-size:11px;color:var(--t-text3);}
@@ -319,7 +320,7 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .pocket[aria-pressed="true"]{border-color:var(--t-accent);box-shadow:0 0 0 1px var(--t-accent) inset;}
 .pocket.thin{opacity:.55;border-style:dashed;border-color:var(--t-border);}
 .pocket-none{width:92px;height:46px;}
-@media (max-width:900px){.race-body{grid-template-columns:1fr;}.pocket,.pocket-none{width:76px;}.race,.pockets{padding:12px 10px;}.race-legend .race-hint{display:none;}.sector-views button{padding:4px 9px;font-size:11px;}}
+@media (max-width:900px){.race-body{grid-template-columns:1fr;}.pocket,.pocket-none{width:76px;}.race,.pockets{padding:12px 10px;}.race-legend .race-hint{display:none;}.sector-views button{padding:6px 6px;}}
 
 /* Title row: timeframe tabs and search sit beside the page title. */
 .scanner-head .scanner-timeframes{order:2;}
