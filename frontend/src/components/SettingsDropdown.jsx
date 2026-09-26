@@ -9,10 +9,11 @@
  * effect within ~30s without redeploy. Designed for the user's flow:
  *   - "Idle" when not actively trading (only core scanner runs)
  *   - "Normal" sentiment-mode default
- *   - "Power" everything on (HyperLens full + pressure + whale + monitor)
+ *   - "Power" everything on (HyperLens full + pressure + on-chain tracker + monitor)
  */
 import { useState, useEffect, useRef } from "react";
 import { T } from "../theme.js";
+import Tabs from "./Tabs.jsx";
 
 import { getAdminKey, setAdminKey } from "../auth.js";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -22,16 +23,16 @@ const FLAG_META = [
   {
     key: "hyperlens_enabled",
     label: "HyperLens",
-    desc: "Smart-money sentiment (50 wallets, 10-min poll)",
+    desc: "Hyperliquid trader positioning",
   },
   {
     key: "hyperlens_pressure_map",
     label: "Pressure Map",
-    desc: "L2 order-book polling for top 15 coins (~80K calls/day when on)",
+    desc: "L2 order-book polling for the most-held coins",
   },
   {
     key: "whale_tracker",
-    label: "On-chain Whale Tracker",
+    label: "On-chain Transfer Tracker",
     desc: "Etherscan/BSCscan/Solscan polling every 2 min",
   },
   {
@@ -46,19 +47,16 @@ const PRESETS = [
     key: "idle",
     label: "Idle",
     desc: "Scanner only — auxiliaries off",
-    color: "#6b7280",
   },
   {
     key: "normal",
     label: "Normal",
     desc: "Sentiment mode (default)",
-    color: T.accent,
   },
   {
     key: "power",
     label: "Power",
     desc: "Everything on",
-    color: "#fbbf24",
   },
 ];
 
@@ -245,7 +243,7 @@ export default function SettingsDropdown() {
               Runtime Settings
             </span>
             {flags === null && (
-              <span style={{ fontSize: 10, color: T.text4, fontFamily: T.mono }}>
+              <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono }}>
                 loading…
               </span>
             )}
@@ -269,19 +267,19 @@ export default function SettingsDropdown() {
               marginBottom: 6,
             }}>
               <span style={{
-                fontSize: 9, color: T.text4, fontFamily: T.mono,
+                fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
                 fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
               }}>
                 Power State
               </span>
               {activity && (() => {
                 const isActive = !!activity.active;
-                const color = isActive ? "#34d399" : "#6b7280";
+                const color = isActive ? T.green : T.text4;
                 const label = isActive ? "ACTIVE" : "IDLE";
                 return (
                   <span style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
-                    fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+                    fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
                     letterSpacing: "0.06em", color,
                   }}>
                     <span style={{
@@ -310,14 +308,14 @@ export default function SettingsDropdown() {
                   Keep Awake
                 </div>
                 <div style={{
-                  fontSize: 10, color: T.text4, fontFamily: T.font, lineHeight: 1.35,
+                  fontSize: T.textXs, color: T.text4, fontFamily: T.font, lineHeight: 1.35,
                 }}>
                   Pin full-speed scanning on. Off: auto-idle when no dashboard is open (wakes instantly on reload).
                 </div>
               </div>
               <ToggleSwitch
                 checked={flags?.keep_active ?? false}
-                color="#34d399"
+                color={T.green}
                 onChange={() => updateFlag("keep_active", !(flags?.keep_active ?? false))}
               />
             </div>
@@ -326,47 +324,22 @@ export default function SettingsDropdown() {
           {/* Presets */}
           <div style={{ marginBottom: 14 }}>
             <div style={{
-              fontSize: 9, color: T.text4, fontFamily: T.mono,
+              fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
               fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-              marginBottom: 6,
+              marginBottom: 2,
             }}>
               Presets
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {PRESETS.map(p => {
-                const active = activePreset === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    onClick={() => applyPreset(p.key)}
-                    disabled={busy || flags === null}
-                    title={p.desc}
-                    style={{
-                      flex: 1,
-                      padding: "8px 6px",
-                      border: `1px solid ${active ? p.color : T.border}`,
-                      borderRadius: 8,
-                      background: active ? `${p.color}22` : "transparent",
-                      color: active ? p.color : T.text3,
-                      fontFamily: T.mono,
-                      fontSize: T.textSm,
-                      fontWeight: 700,
-                      letterSpacing: "0.04em",
-                      cursor: busy ? "wait" : "pointer",
-                      transition: "all 0.15s",
-                      opacity: flags === null ? 0.5 : 1,
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
+            <div style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null ? "none" : "auto" }}>
+              <Tabs small label="Presets" value={activePreset}
+                items={PRESETS.map(p => ({ key: p.key, label: p.label, title: p.desc }))}
+                onChange={applyPreset} />
             </div>
           </div>
 
           {/* Per-flag toggles */}
           <div style={{
-            fontSize: 9, color: T.text4, fontFamily: T.mono,
+            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
             fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
             marginBottom: 6,
           }}>
@@ -396,7 +369,7 @@ export default function SettingsDropdown() {
                       {f.label}
                     </div>
                     <div style={{
-                      fontSize: 10, color: T.text4, fontFamily: T.font,
+                      fontSize: T.textXs, color: T.text4, fontFamily: T.font,
                       lineHeight: 1.35,
                     }}>
                       {f.desc}
@@ -415,7 +388,7 @@ export default function SettingsDropdown() {
           <div style={{
             marginTop: 12, paddingTop: 10,
             borderTop: `1px solid ${T.overlay06}`,
-            fontSize: 9, color: T.text4, fontFamily: T.mono,
+            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
             lineHeight: 1.5,
           }}>
             Toggles persist on disk. Background loops pick up changes within ~30s — no redeploy needed.

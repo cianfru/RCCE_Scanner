@@ -103,7 +103,7 @@ const COLUMN_INFO = {
   },
   SM: {
     title: "Profitable Traders",
-    desc: "How Hyperliquid's proven profitable traders are positioned here: the top 300 by monthly return that were also in profit before this month. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's whale check still uses all tracked wallets weighted by size (shown in the tooltip).",
+    desc: "How Hyperliquid's proven profitable traders are positioned here: the top 300 by monthly return that were also in profit before this month. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's tracked-wallet check still uses all tracked wallets weighted by size (shown in the tooltip).",
   },
   OI: {
     title: "Open Interest Trend",
@@ -117,11 +117,11 @@ const COLUMN_INFO = {
   },
   CVD: {
     title: "Cumulative Volume Delta",
-    desc: "Net taker buy/sell pressure from futures markets. Measures whether buyers or sellers are initiating trades — a leading indicator of price direction. Can upgrade or downgrade signals post-condition scoring.",
+    desc: "Net taker buying minus selling on this market (spot or perp). Shows whether buyers or sellers are initiating trades; it can upgrade or downgrade signals.",
     values: [
       ["▲ BUY", "Takers net buyers — bullish pressure. Can upgrade ACCUMULATE → LIGHT_LONG when combined with SPOT_LED"],
       ["▼ SELL", "Takers net sellers — bearish pressure. Can downgrade STRONG_LONG → TRIM when diverging from price"],
-      ["⚡ DIV", "CVD direction diverges from price — potential reversal. Shown as a yellow spark badge"],
+      ["DIV", "CVD direction diverges from price. Shown as a yellow 'div' marker"],
     ],
   },
   CONF: {

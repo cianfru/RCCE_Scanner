@@ -659,20 +659,20 @@ export default function App() {
           transform: scale(0.98);
         }
         .apple-btn-accent {
-          background: linear-gradient(180deg, #2ee0f8 0%, #1ab8d4 100%);
-          border: 1px solid rgba(151,252,228,0.5);
-          color: #000;
-          box-shadow: 0 1px 3px var(--t-shadow), inset 0 1px 0 var(--t-overlay20);
+          background: var(--t-accent);
+          border: 1px solid var(--t-accent);
+          color: var(--t-bg);
+          box-shadow: none;
         }
         .apple-btn-accent:hover {
-          background: linear-gradient(180deg, #40e8ff 0%, #97FCE4 100%);
-          border-color: rgba(151,252,228,0.7);
-          box-shadow: 0 2px 12px rgba(151,252,228,0.25), inset 0 1px 0 var(--t-overlay25);
-          color: #000;
+          background: var(--t-accent);
+          border-color: var(--t-accent);
+          filter: brightness(1.08);
+          color: var(--t-bg);
         }
         .apple-btn-accent:active {
-          background: linear-gradient(180deg, #18b8d0 0%, #1aa8c0 100%);
-          box-shadow: 0 0px 1px var(--t-shadow), inset 0 1px 3px var(--t-shadow);
+          background: var(--t-accent);
+          box-shadow: none;
           transform: scale(0.98);
         }
         .apple-select {
@@ -799,7 +799,7 @@ export default function App() {
           flexShrink: 0,
         }}>
           {!isMobile && lastRefresh && (
-            <span style={{ fontSize: 11, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
+            <span style={{ fontSize: 12, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
               {lastRefresh.toLocaleTimeString()}
             </span>
           )}
@@ -918,7 +918,7 @@ export default function App() {
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
         {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
@@ -998,11 +998,8 @@ export default function App() {
               data4h={dataTradfi4h}
               data1d={dataTradfi1d}
               tfView={tradfiTf}
-              sortKey={sortKey}
-              onSort={setSortKey}
               selected={selected}
               onSelect={setSelected}
-              visibleColumns={visibleColumns}
               isMobile={isMobile}
               loading={loading}
             />

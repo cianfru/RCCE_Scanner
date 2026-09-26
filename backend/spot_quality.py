@@ -4,13 +4,24 @@ import os
 import time
 
 MIN_SPOT_VOLUME = max(0, float(os.environ.get('REFLEX_SPOT_MIN_VOLUME_USD', '25000')))
+# Dollar-pegged tokens have no trend to read: a regime or entry signal on them is noise.
+STABLECOINS = frozenset({'USDT0', 'USDE', 'USDH', 'USDHL', 'USDXL', 'FEUSD', 'USDT', 'DAI', 'USDS',
+                         'PYUSD', 'FDUSD', 'RLUSD', 'USD1', 'EURC'})
+
+
+def is_stablecoin(base):
+    name = str(base or '').split('~')[0].upper()
+    return name in STABLECOINS or name.startswith('USD')
 
 
 def volume_reason(market):
+    """Why a spot market is left out of the scan (None when it is eligible)."""
     if market.get('kind') != 'spot':
         return None
     if market.get('quote') != 'USDC':
         return 'Only USDC-quoted spot markets are currently supported'
+    if is_stablecoin(market.get('base')):
+        return 'Stablecoin: pegged price, no trend to read'
     try:
         volume = float(market.get('volume_24h_usd'))
     except (ValueError, TypeError):

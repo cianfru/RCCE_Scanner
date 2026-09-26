@@ -359,10 +359,9 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           }}>
             <div style={{
               padding: isMobile ? "14px 16px" : "14px 18px",
-              borderRadius: isMobile ? 18 : 16,
+              borderRadius: 8,
               background: msg.role === "user" ? T.accentDim : T.overlay04,
-              border: `1px solid ${msg.role === "user"
-                ? "rgba(151,252,228,0.2)" : T.border}`,
+              border: `1px solid ${msg.role === "user" ? T.borderH : T.border}`,
               maxWidth: isMobile ? "90%" : "82%",
             }}>
               <div style={{
@@ -391,7 +390,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           }}>
             <div style={{
               padding: isMobile ? "14px 18px" : "14px 18px",
-              borderRadius: isMobile ? 18 : 16,
+              borderRadius: 8,
               background: T.overlay04, border: `1px solid ${T.border}`,
             }}>
               <span style={{
@@ -429,7 +428,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           style={{
             flex: 1, resize: "none",
             padding: isMobile ? "12px 16px" : "10px 16px",
-            borderRadius: isMobile ? 20 : 12,
+            borderRadius: 8,
             border: `1px solid ${T.border}`,
             background: T.overlay04, color: T.text1,
             fontFamily: T.font, fontSize: isMobile ? 16 : T.textBase, lineHeight: 1.5,
@@ -445,16 +444,16 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
           style={{
             padding: isMobile ? "12px 24px" : "10px 26px",
-            borderRadius: isMobile ? 20 : 12,
+            borderRadius: 8,
             fontFamily: T.font, fontSize: m(T.textBase, isMobile), fontWeight: 700,
             letterSpacing: "0.02em",
             cursor: loading || !input.trim() ? "default" : "pointer",
-            color: loading || !input.trim() ? "rgba(151,252,228,0.45)" : undefined,
-            background: loading || !input.trim() ? "rgba(151,252,228,0.06)" : undefined,
-            border: loading || !input.trim() ? "1px solid rgba(151,252,228,0.15)" : undefined,
+            color: loading || !input.trim() ? T.text4 : T.bg,
+            background: loading || !input.trim() ? "transparent" : T.accent,
+            border: `1px solid ${loading || !input.trim() ? T.border : T.accent}`,
             opacity: 1,
             transition: "all 0.15s ease",
-            boxShadow: loading || !input.trim() ? "none" : "0 0 16px rgba(151,252,228,0.25)",
+            boxShadow: "none",
           }}
         >
           Send
@@ -466,9 +465,9 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         <div style={{
           marginTop: 8, padding: isMobile ? "10px 14px" : "10px 16px",
           borderRadius: T.radiusXs,
-          background: "rgba(248,113,113,0.1)",
-          border: "1px solid rgba(248,113,113,0.2)",
-          fontSize: m(T.textSm, isMobile), color: "#f87171", fontFamily: T.font,
+          background: `${T.red}1a`,
+          border: `1px solid ${T.red}33`,
+          fontSize: m(T.textSm, isMobile), color: T.red, fontFamily: T.font,
           flexShrink: 0,
         }}>
           Error: {error}

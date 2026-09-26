@@ -155,7 +155,7 @@
 .executor-list-tools {display:flex;gap:16px;flex-wrap:wrap;align-items:center;}
 .executor-list-tools input {min-width:180px;flex:1;background:transparent;color:inherit;border:1px solid var(--t-border);padding:10px 12px;border-radius:6px;}
 @media(max-width:800px){.executor-performance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}.executor-history-grid{grid-template-columns:1fr}.executor-performance{padding:20px}.executor-performance-grid strong{font-size:24px}}
-.notification-trigger{display:flex;align-items:center;gap:5px;background:none;border:0;color:var(--t-text3);cursor:pointer;min-width:36px;min-height:36px;font-size:10px}
+.notification-trigger{display:flex;align-items:center;gap:5px;background:none;border:0;color:var(--t-text3);cursor:pointer;min-width:36px;min-height:36px;font-size:12px}
 .notification-panel{position:fixed;top:66px;right:16px;width:420px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 90px);overflow-y:auto;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:12px;box-shadow:0 20px 70px #0005;z-index:9999;text-align:left;color:var(--t-text1);font-family:var(--font-geist-sans),sans-serif;}
 /* Notifications: one row per coin, logo | title, what happened, when (like a feed's notification list). */
 .notif-head{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--t-border);}

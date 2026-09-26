@@ -4,6 +4,14 @@ export function formatPercent(value, { ratio = false, digits = 0 } = {}) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   return `${(Number(value) * (ratio ? 100 : 1)).toFixed(digits)}%`;
 }
+// Prices: two decimals with thousands separators from $1 up; four significant digits below.
+const PRICE_2DP = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const PRICE_SIG = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 4 });
+export function formatPrice(value) {
+  const v = Number(value);
+  if (value == null || !Number.isFinite(v)) return '—';
+  return `$${Math.abs(v) >= 1 ? PRICE_2DP.format(v) : PRICE_SIG.format(v)}`;
+}
 // The backend stores funding as an hourly fraction; exchanges quote it per 8h in percent.
 export const funding8hPct = r => (r == null || !Number.isFinite(Number(r)) ? null : Number(r) * 8 * 100);
 // CoinGlass-derived fields (top-trader L/S, liquidations, spot share) hold placeholders

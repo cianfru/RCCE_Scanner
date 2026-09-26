@@ -3796,6 +3796,13 @@ async def auth_login(payload: dict):
     return {"ok": True, "enforced": True, "token": access.issue_token()}
 
 
+@app.get("/api/auth/status")
+async def auth_status():
+    """Whether an access code is required; the login screen is skipped when it is not."""
+    import access
+    return {"enforced": access.enforced()}
+
+
 _PREVIEW_COINS = {"BTC", "ETH", "SOL", "HYPE", "LINK"}
 
 

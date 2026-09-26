@@ -29,7 +29,7 @@ export function ZScoreBar({ z, isMobile }) {
         }} />
       </div>
       <span style={{ color: T.text1, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
-        {fmt(z, 2)}
+        {fmt(Math.round(z * 100) / 100 || 0, 2)}
       </span>
     </div>
   );
@@ -226,7 +226,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
     }}>
       {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
       {divergence && (
-        <span style={{ fontSize: 9, color: "#f59e0b", marginLeft: 2 }} title="CVD/Price divergence">{"\u26a1"}</span>
+        <span style={{ fontSize: 12, color: T.yellow, marginLeft: 2 }} title="CVD/Price divergence">div</span>
       )}
       {bsr != null && (
         <span style={{ fontSize: 9, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>
