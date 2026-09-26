@@ -90,3 +90,21 @@ Z0 reproduces the replay baseline (+43.1% on the primary set).
 - **How big to trade is therefore a risk-appetite choice, not an edge found here.** A fixed drawdown budget should set it.
 - **The live executor sizes the same way in dollars.** Its order is allocation × size, as here. Leverage (`_LEVERAGE_MAP`, 1-5×) only lowers the margin posted, not the position's size, so its exposure is comparable to Z0.
 - It differs from this backtest in two ways: it also trades Accumulate entries (15-25% of a slot) and Light short, both of which the backtest leaves out.
+
+## Risk budget (for a decision, not a test)
+
+Return and worst-window drawdown scale almost in step with position size: full slots (Z1) roughly double both.
+
+| | Worst-window drawdown at today's sizes (Z0) | At full slots (Z1) |
+|---|---:|---:|
+| 10 primary coins | -10.4% | -19.1% |
+| 30 confirmation coins | -14.6% | -22.5% |
+
+To pick a size from a drawdown budget, scale today's sizes by roughly the budget divided by today's drawdown on the broader set (-14.6%).
+- **About -15%:** keep today's sizes.
+- **About -20%:** about 1.4× today's sizes.
+- **About -25%:** close to full slots.
+
+These are past windows. A future drawdown can be deeper.
+
+Sizing up raises the return by about the same factor and adds no edge. Adding Accumulate entries, as the executor does today, deepens drawdowns *and* lowers the return (entry-quality study, E2).
