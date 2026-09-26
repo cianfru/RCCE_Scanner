@@ -42,6 +42,12 @@ Z_CAPITULATION: float = -1.0
 Z_TRIM: float = 3.0
 Z_TRIM_HARD: float = 3.5
 MIN_REGIME_BARS: int = 5
+# Overheated fix (docs/reviews/overheated-regime.md). Above the engine's own z line
+# MARKUP's weight passes to BLOWOFF (before this, MARKUP outscored BLOWOFF at every z,
+# so BLOWOFF and its z-based TRIM exits never fired), and entering BLOWOFF needs
+# BLOWOFF_ENTRY_BARS instead of MIN_REGIME_BARS: it is a caution state.
+BLOWOFF_TAKEOVER: bool = True
+BLOWOFF_ENTRY_BARS: int = 2
 
 # Regime label ordering (index -> name)
 _REGIME_LABELS: List[str] = [
@@ -522,8 +528,14 @@ def _calc_regime_probabilities(
     energy_boost = 0.5 + 0.5 * _soft_gate(energy_safe, 1.0, 0.2)
     p_markup = np.maximum(0.0, z_markup_view) * energy_boost
 
-    # BLOWOFF: ramps up beyond z_blowoff (smooth onset) — unchanged, uses raw z
+    # BLOWOFF: ramps up beyond z_blowoff (smooth onset), uses raw z
     p_blowoff = np.maximum(0.0, z_safe - z_blowoff) * _soft_gate(z_safe, z_blowoff, 0.2)
+    if BLOWOFF_TAKEOVER:
+        # Above the line the trend is overextended, not healthier: hand MARKUP's weight
+        # to BLOWOFF through the same smooth gate. Below the line nothing changes.
+        takeover = _soft_gate(z_safe, z_blowoff, 0.2)
+        p_blowoff = p_blowoff + p_markup * takeover
+        p_markup = p_markup * (1.0 - takeover)
 
     # REACC: smooth ramp for shifted z < 0, boosted by NOT high-vol
     p_reacc = np.maximum(0.0, -z_reacc_view) * _soft_gate(-z_reacc_view, 0.0, 0.2) * not_vh_boost
@@ -612,6 +624,13 @@ def _resolve_regime_with_persistence(
     # roughly halves that while still releasing every genuine case measured.
     _DOMINANCE_BARS = 2
 
+    def _required_bars(current: int, candidate: int) -> int:
+        """Bars a switch needs. Entering BLOWOFF (index 1) from the bullish family is a
+        caution state and confirms faster than an ordinary regime change."""
+        if candidate == 1 and current in BULLISH_FAMILY:
+            return BLOWOFF_ENTRY_BARS
+        return MIN_REGIME_BARS
+
     def _pick_candidate(current: int, probs: np.ndarray) -> int:
         """Apply hysteresis: within bullish family, current regime gets a boost."""
         if current not in BULLISH_FAMILY:
@@ -678,12 +697,15 @@ def _resolve_regime_with_persistence(
                 pending_count = 0
             elif candidate == pending_regime:
                 pending_count += 1
-                if pending_count >= MIN_REGIME_BARS:
+                if pending_count >= _required_bars(current_regime, pending_regime):
                     current_regime = pending_regime
                     pending_count = 0
             else:
                 pending_regime = candidate
                 pending_count = 1
+                if _required_bars(current_regime, pending_regime) <= 1:
+                    current_regime = pending_regime
+                    pending_count = 0
 
         regimes[i] = current_regime
         confidences[i] = float(prob_stack[current_regime, i])
@@ -693,7 +715,7 @@ def _resolve_regime_with_persistence(
         transition = {
             "candidate": ["MARKUP", "BLOWOFF", "REACC", "MARKDOWN", "CAP", "ACCUM"][pending_regime],
             "observed_bars": pending_count,
-            "required_bars": MIN_REGIME_BARS,
+            "required_bars": _required_bars(current_regime, pending_regime),
             "includes_latest_candle": True,
         }
     return (regimes, confidences, transition) if with_transition else (regimes, confidences)

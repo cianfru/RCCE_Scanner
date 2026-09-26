@@ -1,7 +1,7 @@
 """
 Replay one version of the live signal logic on 4h Binance history (step 1 of 2).
 
-    python backtest/live_logic_replay.py --backend <path to a backend/ checkout> --out <file.pkl> [--gate on|off]
+    python backtest/live_logic_replay.py --backend <path to a backend/ checkout> --out <file.pkl> [--gate on|off] [--blowoff off|takeover|full]
 
 The 4h timeframe is what the executor trades. The script imports the replay engine,
 engines and synthesizer from ``--backend``, so the same data can be run through an
@@ -49,6 +49,8 @@ def main(argv=None):
     ap.add_argument("--backend", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--gate", choices=("on", "off"))
+    ap.add_argument("--blowoff", choices=("off", "takeover", "full"),
+                    help="Overheated fix (docs/reviews/overheated-regime.md): off, score only, or score + 2-bar entry")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
@@ -62,6 +64,10 @@ def main(argv=None):
     if args.gate:
         import engines.rcce_engine as rcce
         rcce.MARKDOWN_TREND_GATE = args.gate == "on"
+    if args.blowoff:
+        import engines.rcce_engine as rcce
+        rcce.BLOWOFF_TAKEOVER = args.blowoff != "off"
+        rcce.BLOWOFF_ENTRY_BARS = 2 if args.blowoff == "full" else rcce.MIN_REGIME_BARS
     from backtest.replay_engine import run_replay
     t0 = time.time()
     res = asyncio.run(run_replay(list(data["4h"]), data["4h"], data["1d"], data["1w"], fng, warmup_bars=500))
