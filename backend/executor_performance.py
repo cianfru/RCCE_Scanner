@@ -25,6 +25,11 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
     wins = sum(float(t['pnl_usd']) > 0 for t in closed)
     losses = sum(float(t['pnl_usd']) < 0 for t in closed)
     flat = len(closed) - wins - losses
+    # Break-even-stop exits close at or just below entry. They are scratch trades,
+    # so the headline win rate is shown with and without them.
+    be_stops = [t for t in closed if t.get('exit_signal') == 'BE_STOP' and float(t['pnl_usd']) <= 0]
+    be_stop_losses = sum(float(t['pnl_usd']) < 0 for t in be_stops)
+    decided = wins + losses - be_stop_losses
     gain = sum(max(0, float(t['pnl_usd'])) for t in closed)
     loss = -sum(min(0, float(t['pnl_usd'])) for t in closed)
     valued = []
@@ -105,6 +110,11 @@ def performance(positions, trades, marks, initial_balance, now=None, portfolio=N
         'closed_trades': len(closed), 'unusable_closed_records': len(trades)-len(recorded_closed),
         'wins': wins, 'losses': losses, 'breakeven': flat,
         'closed_win_rate': wins / len(closed) * 100 if closed else None,
+        'break_even_stops': len(be_stops),
+        'break_even_stop_pnl_usd': sum(float(t['pnl_usd']) for t in be_stops),
+        'losses_excluding_break_even_stops': losses - be_stop_losses,
+        'win_rate_excluding_break_even_pct': wins / decided * 100 if decided else None,
+        'realized_return_pct': realized / initial_balance * 100 if initial_balance > 0 else None,
         'profit_factor': gain / loss if loss else None,
         'exit_reasons': dict(Counter(t.get('exit_signal', 'UNKNOWN') for t in closed)),
         'monthly_realized': [{'month': key, **value} for key, value in sorted(months.items())],

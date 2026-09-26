@@ -20,6 +20,16 @@ class PerformanceTests(unittest.TestCase):
         self.assertEqual(p['realized_curve'][-1]['pnl_usd'],10)
         self.assertEqual(sum(m['pnl_usd'] for m in p['monthly_realized']),10)
 
+    def test_break_even_stops_are_reported_apart_from_losses(self):
+        stop=dict(trade(-30),exit_signal='STOP_LOSS')
+        p=performance([], [trade(20),trade(-1),trade(0),stop],{},1000,NOW)
+        self.assertEqual((p['wins'],p['losses'],p['breakeven']),(1,2,1))
+        self.assertEqual(p['break_even_stops'],2)
+        self.assertEqual(p['break_even_stop_pnl_usd'],-1)
+        self.assertEqual(p['losses_excluding_break_even_stops'],1)
+        self.assertEqual(p['win_rate_excluding_break_even_pct'],50)
+        self.assertAlmostEqual(p['realized_return_pct'],-1.1)
+
     def test_short_mark_and_unpriced_prevents_false_total(self):
         p=performance([pos(side='SHORT'),pos('OLD/USDT')],[],{'BTC/USDT':{'price':8,'observed_at':NOW}},1000,NOW)
         self.assertAlmostEqual(p['unrealized_pnl_usd'],20)
