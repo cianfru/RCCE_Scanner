@@ -24,7 +24,7 @@ export default function RegimeTransition({ data, compact = false }) {
   const odds = transition ? completionOdds(data.timeframe, data.regime, transition.candidate, observed) : null;
   return <span className={compact ? 'regime-note regime-note-compact' : 'regime-note'} onClick={event => event.stopPropagation()}
     style={{ display: 'inline-flex', flexWrap: compact ? 'nowrap' : 'wrap', alignItems: 'center', gap: compact ? 6 : 8,
-      fontSize: compact ? 10 : 11, lineHeight: compact ? '14px' : 1.6, height: compact ? 14 : undefined, fontFamily: T.mono,
+      fontSize: 12, lineHeight: compact ? '16px' : 1.6, height: compact ? 16 : undefined, fontFamily: T.mono,
       color: T.text3, maxWidth: '100%', whiteSpace: compact ? 'nowrap' : undefined }}>
     {transition && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: target.color, minWidth: 0 }}>
       <span aria-hidden="true">→</span>

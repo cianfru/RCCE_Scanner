@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { T, getBaseSymbol } from "../theme.js";
+import { Search } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -176,8 +177,8 @@ export default function GroupModal({
               />
               <span style={{
                 position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
-                fontSize: 14, color: T.text4,
-              }}>{"\ud83d\udd0d"}</span>
+                display: "flex", color: T.text4,
+              }}><Search size={14} aria-hidden="true" /></span>
             </div>
 
             {watchlistSearch && watchlistResults.length > 0 && (

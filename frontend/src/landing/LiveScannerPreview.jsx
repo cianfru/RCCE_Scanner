@@ -1,9 +1,11 @@
 import { formatPercent, signalAgreement } from "../utils/marketPresentation.js";
+import { friendlyReason } from "../utils/signalPresentation.js";
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../components/DataTable.jsx';
 import { Mark } from './Mark';
 import { SCANNER_COLUMNS } from '../scannerColumns.js';
+import useViewport from '../hooks/useViewport.js';
 import { REGIME_META, themeVars } from '../theme.js';
 import '../terminal.css';
 
@@ -18,6 +20,9 @@ export default function LiveScannerPreview() {
   const [state, setState] = useState({ rows: [], loading: true, error: '', updated: null });
   const [sort, setSort] = useState('priority_score');
   const navigate = useNavigate();
+  const { width, isMobile } = useViewport();
+  // Phones get the scanner's own narrow column set instead of all 16 columns.
+  const columns = isMobile ? SCANNER_COLUMNS.filter(([, , minW]) => width >= (minW || 0)) : SCANNER_COLUMNS;
   useEffect(() => {
     let disposed = false, timer;
     const controller = new AbortController();
@@ -56,10 +61,10 @@ export default function LiveScannerPreview() {
     <div className="r-terminal-bar"><span className="r-terminal-title"><Mark size={22}/> reflex <i/> scanner</span><span className="r-terminal-data">{state.error ? 'Feed unavailable' : state.loading ? 'Connecting to scanner' : 'Latest scanner snapshot'}</span></div>
     <div style={{ padding: '24px clamp(12px, 3vw, 32px)' }}>
       <div className="r-terminal-heading"><div><span className="r-meta">THE MAIN MARKETS</span><h3>Inside the terminal</h3></div><span className="r-meta">DAILY · 1D</span></div>
-      <p className="r-scroll-hint">Scroll horizontally to explore all 16 columns. The symbol stays in view.</p>
+      <p className="r-scroll-hint">{isMobile ? `Showing ${columns.length} of ${SCANNER_COLUMNS.length} columns at this width.` : `Scroll horizontally to explore all ${SCANNER_COLUMNS.length} columns. The symbol stays in view.`}</p>
       <div className="reflex-terminal" style={{ ...DARK_VARS, marginTop: 24 }}>
         {state.error && <p role="status" style={{ padding: '16px 0' }}>{state.error}{state.rows.length > 0 ? ' Showing the last received snapshot.' : ' Open the terminal to check the connection.'}</p>}
-        {!state.loading && !state.error && !rows.length ? <p role="status">The next scan will populate these markets.</p> : (!state.error || rows.length > 0) && <DataTable results={rows} sortKey={sort} onSort={setSort} visibleColumns={SCANNER_COLUMNS} loading={state.loading} isMobile={false} onSelect={row => navigate(`/scanner/${row.symbol.split('/')[0]}`)} onToggleFavorite={() => navigate('/scanner')}/>}
+        {!state.loading && !state.error && !rows.length ? <p role="status">The next scan will populate these markets.</p> : (!state.error || rows.length > 0) && <DataTable results={rows} sortKey={sort} onSort={setSort} visibleColumns={columns} loading={state.loading} isMobile={isMobile} onSelect={row => navigate(`/scanner/${row.symbol.split('/')[0]}`)}/>}
       </div>
       <div className="r-terminal-bottom"><span>{state.updated ? `Received ${state.updated.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} · refreshes every minute` : 'Signals from the same API as the terminal'}</span><a href="/scanner">Open full scanner ↗</a></div>
     </div></div>
@@ -69,7 +74,7 @@ export default function LiveScannerPreview() {
       <div className="r-reading-grid">
         <article><span>01 / What is the phase?</span><h4>{REGIME_META[example.regime]?.name ?? example.regime}</h4><p>{exampleCoin} is classified in this daily regime, with a Z-score of {example.zscore?.toFixed(2) ?? '—'}. The phase describes structure; it is not a forecast.</p></article>
         <article><span>02 / What supports it?</span><h4>{example.conditions_met} / {example.conditions_total} checks</h4><p>{formatPercent(example.signal_confidence)} of entry conditions are met. The current signal is {String(example.signal || 'WAIT').replaceAll('_',' ').toLowerCase()}; this percentage is not a probability of profit.</p></article>
-        <article><span>03 / What needs checking?</span><h4>{example.confluence ? `${Math.round(example.confluence.score)} / 100 agreement` : 'Inspect the counter-evidence'}</h4><p>{example.confluence ? ({waiting:'Both timeframes are waiting. ', agree:'The 4H and daily signals agree. ', differ:'The 4H and daily signals differ. '})[signalAgreement(example.confluence)] : ''}{example.signal_warnings?.length ? `${example.signal_warnings.length} engine warning${example.signal_warnings.length===1?'':'s'} accompany this snapshot.` : 'Review positioning and entry conditions before interpreting the signal.'}</p></article>
+        <article><span>03 / What needs checking?</span><h4>{example.confluence ? `${Math.round(example.confluence.score)} / 100 agreement` : 'Inspect the counter-evidence'}</h4><p>{example.confluence ? ({waiting:'Both timeframes are waiting. ', agree:'The 4H and daily signals agree. ', differ:'The 4H and daily signals differ. '})[signalAgreement(example.confluence)] : ''}{example.signal_warnings?.length ? `${example.signal_warnings.length} engine warning${example.signal_warnings.length===1?' accompanies':'s accompany'} this snapshot: ${friendlyReason(example.signal_warnings[0]?.message ?? example.signal_warnings[0]).replace(/[^.!?]$/, '$&.')}` : 'Review positioning and entry conditions before interpreting the signal.'}</p></article>
       </div><a href={`/scanner/${exampleCoin}`}>Inspect the full {exampleCoin} setup ↗</a><p className="r-reading-footnote">Uses the same received daily snapshot as the table above.</p>
     </section>}
     </div>;

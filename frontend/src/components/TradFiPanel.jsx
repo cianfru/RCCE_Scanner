@@ -5,6 +5,7 @@ import {
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import GlassCard from "./GlassCard.jsx";
+import InfoButton from "./InfoPopover.jsx";
 import Tabs from "./Tabs.jsx";
 import { getAdminKey } from "../auth.js";
 import { formatPrice } from "../utils/marketPresentation.js";
@@ -113,10 +114,13 @@ export default function TradFiPanel({
 
   const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
   // Every sort is descending; the active column carries the arrow.
-  const sortTh = (key, label) => (
+  // info: the scanner's column-help key (same explanations as the crypto table).
+  const sortTh = (key, label, info = label) => (
     <th key={key} style={{ ...thStyle(isMobile), cursor: "pointer", color: sortKey === key ? T.text2 : T.text4 }}
       aria-sort={sortKey === key ? "descending" : "none"} onClick={() => setSortKey(key)}>
-      {label}{sortKey === key ? " \u25bc" : ""}
+      <span style={{ display: "inline-flex", alignItems: "center" }}>
+        {label}{sortKey === key ? " \u25bc" : ""}{info && <InfoButton label={info} />}
+      </span>
     </th>
   );
 
@@ -308,12 +312,12 @@ export default function TradFiPanel({
                   <th style={{ ...thStyle(isMobile), width: 28 }}>#</th>
                   <th style={thStyle(isMobile)}>ASSET</th>
                   {!isMobile && <th style={thStyle(isMobile)}>CATEGORY</th>}
-                  {isMobile ? sortTh("regime", "REGIME / SIGNAL") : <>{sortTh("regime", "REGIME")}{sortTh("signal", "SIGNAL")}</>}
+                  {isMobile ? sortTh("regime", "REGIME / SIGNAL", "REGIME") : <>{sortTh("regime", "REGIME")}{sortTh("signal", "SIGNAL")}</>}
                   {!isMobile && <th style={thStyle(isMobile)}>SPARK</th>}
                   {!isMobile && sortTh("zscore", "Z-SCORE")}
                   {sortTh("momentum", "MOM")}
                   {!isMobile && sortTh("heat", "HEAT")}
-                  {!isMobile && <th style={thStyle(isMobile)}>CONF</th>}
+                  {!isMobile && <th style={thStyle(isMobile)}><span style={{ display: "inline-flex", alignItems: "center" }}>CONF<InfoButton label="CONF" /></span></th>}
                   {sortTh("priority_score", "PRI")}
                 </tr>
               </thead>

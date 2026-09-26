@@ -195,16 +195,23 @@ function getSessionId() {
   return id;
 }
 
+// The server keeps the conversation per session and timeframe, so the visible
+// messages are kept per timeframe for the same browser session.
+const messagesKey = (tf) => `rcce-chat-messages:${tf}`;
+function loadMessages(tf) {
+  try { return JSON.parse(sessionStorage.getItem(messagesKey(tf))) || []; } catch { return []; }
+}
+
 const QUICK_ACTIONS = [
   { label: "Briefing", msg: "Give me a daily market briefing." },
   { label: "Entry conditions", msg: "Explain what the entry conditions mean for BTC and which currently pass." },
-  { label: "Top Signals", msg: "What are the strongest signals right now?" },
-  { label: "Risk Check", msg: "Are there any risk warnings I should know about?" },
+  { label: "Top signals", msg: "What are the strongest signals right now?" },
+  { label: "Risk check", msg: "Are there any risk warnings I should know about?" },
 ];
 
-export default function ChatPanel({ isMobile, selectedSymbol }) {
+export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }) {
   const { address: walletAddress } = useWallet();
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => loadMessages(timeframe));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -216,6 +223,10 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(messagesKey(timeframe), JSON.stringify(messages)); } catch { /* storage unavailable */ }
+  }, [messages, timeframe]);
 
   // Scroll chat to bottom only when new messages arrive
   useEffect(() => {
@@ -240,7 +251,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
           message: text,
           session_id: sessionId.current,
           symbol: selectedSymbol || null,
-          timeframe: "1d",
+          timeframe,
           wallet_address: walletAddress || null,
         }),
       });
@@ -255,7 +266,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedSymbol, walletAddress, loading]);
+  }, [selectedSymbol, walletAddress, loading, timeframe]);
 
   const handleKey = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -268,6 +279,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
     setMessages([]);
     setError(null);
     sessionStorage.removeItem("rcce-chat-session");
+    ["4h", "1d"].forEach(tf => sessionStorage.removeItem(messagesKey(tf)));
     sessionId.current = getSessionId();
   };
 
@@ -287,12 +299,12 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
       {/* ── Top bar: model + clear ── */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: isMobile ? "4px 4px" : "10px 0",
+        padding: isMobile ? "4px 16px" : "10px 0",
         flexShrink: 0,
         position: "relative",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{color:T.text3,fontSize:13}}>AI Assist · Scanner analysis · 1D</span>
+          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · Scanner analysis · {timeframe.toUpperCase()}</span>
         </div>
         <button onClick={clearChat} className="apple-btn" style={{
           padding: isMobile ? "8px 16px" : "6px 14px",
@@ -306,7 +318,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
       {/* ── Messages area (fills available space) ── */}
       <div style={{
         flex: 1, overflowY: "auto", minHeight: 0,
-        padding: isMobile ? "8px 2px" : "12px 0",
+        padding: isMobile ? "8px 16px" : "12px 0",
         scrollbarWidth: "thin",
         scrollbarColor: `${T.scrollThumb} transparent`,
         WebkitOverflowScrolling: "touch",
@@ -355,7 +367,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
             marginBottom: isMobile ? 18 : 16,
             display: "flex",
             justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-            padding: isMobile ? "0 6px" : "0 4px",
+            padding: isMobile ? 0 : "0 4px",
           }}>
             <div style={{
               padding: isMobile ? "14px 16px" : "14px 18px",
@@ -386,7 +398,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
         {loading && (
           <div style={{
             display: "flex", justifyContent: "flex-start",
-            marginBottom: 16, padding: isMobile ? "0 6px" : "0 4px",
+            marginBottom: 16, padding: isMobile ? 0 : "0 4px",
           }}>
             <div style={{
               padding: isMobile ? "14px 18px" : "14px 18px",
@@ -408,7 +420,7 @@ export default function ChatPanel({ isMobile, selectedSymbol }) {
 
       {/* ── Input bar (pinned to bottom) ── */}
       <div style={{
-        padding: isMobile ? "10px 8px 12px" : "12px 0 4px",
+        padding: isMobile ? "10px 16px 12px" : "12px 0 4px",
         borderTop: `1px solid ${T.border}`,
         display: "flex", gap: isMobile ? 8 : 10, alignItems: "flex-end",
         flexShrink: 0,

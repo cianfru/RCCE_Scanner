@@ -42,6 +42,9 @@
 .r-sculpture canvas,.r-sculpture>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;}
 .r-sculpture[data-rendered=false] canvas{visibility:hidden;}
 .refined .r-motion-toggle{border-radius:5px;background:#0f393388;color:#f5fefd;}
+/* Desktop: the toggle sits below the example card, clear of the sculpture (phones: see the 800px block). */
+@media(min-width:801px){.refined .r-motion-toggle{top:auto;bottom:-32px;right:35px;}}
+@media(min-width:801px) and (max-width:1150px){.refined .r-motion-toggle{right:0;}}
 .r-scroll-hint{font-size:12px!important;color:#b2c4c0!important;margin:12px 0 0!important;}
 .r-reading-example{margin:52px 0 0;padding:28px 0;border-block:1px solid #97fce426;}
 .r-reading-heading{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:28px;}

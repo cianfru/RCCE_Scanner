@@ -1,4 +1,19 @@
 const severityRank = {critical:0, high:1, medium:2, low:3, positive:2};
+// Plain titles for anomaly codes; value-aware where the code hides the direction.
+const TYPE_TITLES = {
+  OI_SURGE: v => v < 0 ? 'Open interest drop' : 'Open interest jump',
+  CVD_EXTREME: 'Taker flow extreme',
+  VOLUME_SPIKE: 'Volume spike',
+  EXTREME_FUNDING: 'Funding extreme',
+  LSR_EXTREME: 'Long/short ratio extreme',
+  VPIN_TOXIC: 'Order flow imbalance',
+};
+function typeTitle(item) {
+  const code = item.anomaly_type || item.type;
+  const t = TYPE_TITLES[code];
+  if (t) return typeof t === 'function' ? t(Number(item.current_value) || 0) : t;
+  return code?.replaceAll('_',' ').toLowerCase();
+}
 export function notificationDigest({warnings=[], anomalies=[], setups=[], opportunities=[], insights=[]}, dismissed=new Set()) {
   const items = [
     ...warnings.map(x=>({...x,key:`warn:${x.type}:${x.symbol}`,category:'Position risk',rank:0})),
@@ -11,7 +26,7 @@ export function notificationDigest({warnings=[], anomalies=[], setups=[], opport
   for (const item of items) {
     const key = `${item.category}:${item.symbol || item.key}`;
     const text = String(item.detail || item.context || item.message || item.title || item.type || 'Market update').trim();
-    const title = String(item.title || (item.type || item.anomaly_type)?.replaceAll('_',' ').toLowerCase() || 'Research update').replace(/^\[Agent\]\s*/, '');
+    const title = String(item.title || typeTitle(item) || 'Research update').replace(/^\[Agent\]\s*/, '');
     const summary = item.anomaly_type ? text.split('|')[0].replace(/\s*\(z=.*?\)/g,'').trim() : text;
     const entry = {...item, title, text, summary, priority:item.rank*10+(severityRank[item.severity] ?? 3)};
     if (!groups.has(key)) groups.set(key,{key, ...entry, entries:[], keys:[]});
