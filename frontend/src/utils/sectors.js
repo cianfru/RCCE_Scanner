@@ -8,6 +8,13 @@ const median = xs => { const v = xs.filter(Number.isFinite).sort((a, b) => a - b
 
 const oi = r => r.positioning?.oi_value || 0;
 
+// by: "sector" | "ecosystem" | "pocket" (name "Sector|Ecosystem").
+export function inGroup(r, by, name) {
+  if (by !== "pocket") return r[by] === name;
+  const [sector, eco] = name.split("|");
+  return r.sector === sector && r.ecosystem === eco;
+}
+
 // Where profitable traders put their money compared with the market: the group's
 // share of their gross exposure over its share of open interest. 2x = they hold
 // twice the market's weight there. Null when either side is too thin to read.
@@ -17,7 +24,7 @@ export function traderWeight(lean, rows, by, name) {
   const book = Object.entries(groups).filter(([k]) => k.startsWith("sector:")).reduce((a, [, g]) => a + gross(g), 0);
   const market = rows.reduce((a, r) => a + oi(r), 0);
   const mine = gross(groups[`${by}:${name}`]);
-  const theirs = rows.filter(r => r[by] === name).reduce((a, r) => a + oi(r), 0);
+  const theirs = rows.filter(r => inGroup(r, by, name)).reduce((a, r) => a + oi(r), 0);
   if (!book || !market || !theirs || theirs / market < 0.002) return null;
   return (mine / book) / (theirs / market);
 }

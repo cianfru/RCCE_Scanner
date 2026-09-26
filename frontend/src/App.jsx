@@ -1,6 +1,7 @@
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
+import { inGroup } from "./utils/sectors.js";
 import BestSetups from "./components/BestSetups.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
@@ -581,7 +582,7 @@ export default function App() {
   }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey]);
 
   // Apply stat card signal filter to table data
-  const inSector = (data) => sectorFilter ? data.filter(r => r[sectorBy] === sectorFilter) : data;
+  const inSector = (data) => sectorFilter ? data.filter(r => inGroup(r, sectorFilter.includes("|") ? "pocket" : sectorBy, sectorFilter)) : data;
   const applyStatFilter = (rows) => {
     const data = inSector(rows);
     if (!statCardFilter) return data;

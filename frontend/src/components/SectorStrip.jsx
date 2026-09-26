@@ -2,11 +2,17 @@ import { groupStats, SECTOR_SHORT } from "../utils/sectors.js";
 import HelpTip from "./HelpTip.jsx";
 import Tabs from "./Tabs.jsx";
 import useSectors from "../hooks/useSectors.js";
+import { useState } from "react";
+import SectorRace from "./SectorRace.jsx";
+import PocketMatrix from "./PocketMatrix.jsx";
+
+const VIEWS = [{ key: "race", label: "Race vs BTC" }, { key: "pockets", label: "Pockets" }];
 
 // Which parts of the market are moving: one chip per sector (or chain), strongest
 // against BTC first. Clicking a chip filters the grid and the best setups.
 export default function SectorStrip({ rows, by, onByChange, value, onChange, timeframe }) {
   const sectors = useSectors();
+  const [view, setView] = useState(null);             // null | "race" | "pockets"
   const groups = groupStats(rows, by, sectors?.lean);
   if (!groups.length) return null;
   const span = timeframe === "4h" ? "4d" : "24d";
@@ -18,7 +24,10 @@ export default function SectorStrip({ rows, by, onByChange, value, onChange, tim
         <p>Uptrend counts markets in the Uptrend regime; locked counts setups where the trend and an entry signal agree. Grouping is a curated label, not a signal input.</p>
         <p>The last line is where profitable traders put their money: the group's share of their positions against its share of the market's open interest (1.0x is market weight, 2.0x twice it), then the share of them positioned long. Profitable traders are the top 300 Hyperliquid wallets by monthly return that were also in profit before this month. Because they are picked by this month's result, they tend to be long in a rising month, so the weight says more than the direction.</p>
       </HelpTip>
-      {value && <button type="button" className="sector-clear" onClick={() => onChange(null)}>Show all</button>}
+      <div className="sector-views" role="group" aria-label="Charts">
+        {VIEWS.map(v => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setView(view === v.key ? null : v.key)}>{v.label}</button>)}
+      </div>
+      {value && <button type="button" className="sector-clear" onClick={() => onChange(null)}>{value.includes("|") ? `${value.replace("|", " on ")} · show all` : "Show all"}</button>}
     </div>
     <div className="sector-chips">
       {groups.map(g => {
@@ -36,5 +45,7 @@ export default function SectorStrip({ rows, by, onByChange, value, onChange, tim
         </button>;
       })}
     </div>
+    {view === "race" && <SectorRace data={sectors} rows={rows} by={by} value={value} />}
+    {view === "pockets" && <PocketMatrix data={sectors} rows={rows} value={value} onSelect={onChange} />}
   </section>;
 }

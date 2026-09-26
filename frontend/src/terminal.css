@@ -267,7 +267,7 @@
 .setup-pair-head{padding-inline:0 10px;}
 /* Sector strip: which parts of the market are moving. */
 .sector-strip{margin:4px 0 18px;}
-.sector-strip-head{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.sector-strip-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px;}
 .sector-clear{margin-left:auto;background:transparent;border:0;border-bottom:1px solid var(--t-accent);color:var(--t-accent);font-size:12px;padding:2px 0;cursor:pointer;}
 .sector-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
 .sector-chip{flex:0 0 auto;display:grid;grid-template-columns:auto auto;column-gap:10px;row-gap:2px;align-items:baseline;text-align:left;padding:8px 12px;border:1px solid var(--t-border);border-radius:8px;background:transparent;color:var(--t-text2);cursor:pointer;transition:border-color .15s,background .15s;}
@@ -285,3 +285,64 @@
 .sector-traders b{font:600 11px var(--font-geist-mono),monospace;color:var(--t-text2);}
 .sector-traders b.over{color:var(--t-accent);}
 .sector-traders b.under{color:var(--t-text4);}
+/* Race vs BTC and pockets (sector strip charts). Series slots validated for CVD in both themes. */
+.sector-strip{--race-1:#3987e5;--race-2:#d95926;--race-3:#199e70;--pocket-up:#97FCE4;--pocket-down:#e0806c;}
+[data-theme="light"] .sector-strip{--race-1:#2a78d6;--race-2:#eb6834;--race-3:#1baf7a;--pocket-up:#0e7490;--pocket-down:#c2410c;}
+.sector-views{margin-left:auto;display:flex;gap:6px;}
+.sector-views + .sector-clear{margin-left:10px;}
+.sector-views button{white-space:nowrap;background:transparent;border:1px solid var(--t-border);color:var(--t-text3);border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+.sector-views button:hover{border-color:var(--t-borderH);color:var(--t-text2);}
+.sector-views button[aria-pressed="true"]{border-color:var(--t-accent);color:var(--t-accent);background:var(--t-accentDim);}
+.race,.pockets{margin:12px 0 4px;padding:14px 16px;border:1px solid var(--t-border);border-radius:10px;}
+.race-controls{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:10px;}
+.race-hint{font-size:11px;color:var(--t-text3);}
+.race-empty{font-size:12px;color:var(--t-text3);margin:12px 0;}
+.race-body{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;align-items:start;}
+.race-chart{position:relative;margin:0;min-width:0;}
+.race-chart svg{display:block;overflow:visible;}
+.race-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:6px;font-size:12px;color:var(--t-text2);}
+.race-legend button{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;}
+.race-legend span{display:inline-flex;align-items:center;gap:6px;}
+.race-legend i,.race-tip i{display:inline-block;width:12px;height:2px;border-radius:1px;}
+.race-legend .race-hint{margin-left:auto;}
+i.race-btc{background:var(--t-text1);height:2px;}
+.race-grid{stroke:var(--t-border);stroke-width:1;opacity:.5;}
+.race-base{stroke:var(--t-text3);stroke-width:1.5;stroke-dasharray:4 4;}
+.race-tick{fill:var(--t-text3);font:10px var(--font-geist-mono),monospace;}
+.race-label{font:600 11px var(--font-geist-sans),sans-serif;}
+.race-btc-line{fill:none;stroke:var(--t-text1);stroke-width:2;}
+.race-muted path{fill:none;stroke:var(--t-text4);stroke-width:1;opacity:.28;cursor:pointer;transition:opacity .15s;}
+.race-muted:hover path{opacity:.8;}
+.race-on path{fill:none;stroke-width:2;cursor:pointer;}
+.race-muted path.race-hit,.race-on path.race-hit{stroke:transparent;stroke-width:10;opacity:1;}
+.race-cross{stroke:var(--t-text3);stroke-width:1;opacity:.6;pointer-events:none;}
+.race-tip{position:absolute;top:34px;min-width:160px;padding:8px 10px;border:1px solid var(--t-border);border-radius:8px;background:var(--t-bg);box-shadow:0 4px 16px rgba(0,0,0,.25);font-size:12px;color:var(--t-text2);pointer-events:none;}
+.race-tip strong{display:block;margin-bottom:4px;color:var(--t-text1);font-weight:600;}
+.race-tip div{display:flex;justify-content:space-between;gap:12px;}
+.race-tip div span{display:inline-flex;align-items:center;gap:6px;}
+.race-tip b{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.race-tip em{display:block;margin-top:4px;font-style:normal;font-size:10px;color:var(--t-text3);}
+.race-weights h4{margin:0 0 2px;font-size:12px;font-weight:600;color:var(--t-text1);}
+.race-weights p{margin:0 0 10px;font-size:11px;line-height:1.4;color:var(--t-text3);}
+.race-weight{display:grid;grid-template-columns:78px minmax(0,1fr) 38px;align-items:center;gap:8px;font-size:11px;color:var(--t-text2);padding:3px 0;}
+.race-weight > span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.race-weight b{font:600 11px var(--font-geist-mono),monospace;color:var(--t-text2);text-align:right;}
+.race-weight-bar{position:relative;height:8px;}
+.race-weight-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:0 4px 4px 0;background:var(--t-text4);opacity:.45;}
+.race-weight-bar i.over{background:var(--t-accent);opacity:.9;}
+.race-weight-bar i.under{opacity:.25;}
+.race-weight-bar em{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--t-text3);}
+.pockets-scroll{overflow-x:auto;}
+.pockets-table{border-collapse:separate;border-spacing:3px;font-size:11px;}
+.pockets-table th{font-weight:600;color:var(--t-text3);padding:2px 6px;white-space:nowrap;}
+.pockets-table thead th{text-align:center;}
+.pockets-table tbody th{text-align:right;color:var(--t-text2);}
+.pockets-table td{padding:0;}
+.pocket{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:92px;height:46px;border:1px solid transparent;border-radius:6px;color:var(--t-text1);cursor:pointer;transition:border-color .15s,transform .15s;}
+.pocket b{font:600 12px var(--font-geist-mono),monospace;}
+.pocket span{font-size:10px;color:var(--t-text2);}
+.pocket:hover{border-color:var(--t-borderH);}
+.pocket[aria-pressed="true"]{border-color:var(--t-accent);box-shadow:0 0 0 1px var(--t-accent) inset;}
+.pocket.thin{opacity:.55;border-style:dashed;border-color:var(--t-border);}
+.pocket-none{width:92px;height:46px;}
+@media (max-width:900px){.race-body{grid-template-columns:1fr;}.pocket,.pocket-none{width:76px;}.race,.pockets{padding:12px 10px;}.race-legend .race-hint{display:none;}.sector-views button{padding:4px 9px;font-size:11px;}}
