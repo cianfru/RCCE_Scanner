@@ -83,7 +83,7 @@ export default function SectorRace({ data, rows, by, value }) {
       {picked.length > 0 && <button type="button" className="sector-clear" onClick={() => setPicked([])}>Show leaders</button>}
       <HelpTip title="Race against BTC" width={400}>
         <p>Each line is a group's median daily move, chained and started at 100, so one coin cannot drag it. Against BTC divides by Bitcoin: above 100 the group is beating BTC. Closed daily candles, perpetual markets only.</p>
-        <p>Tested on 2021 to March 2026: the sector leading over 30 days went on to beat the weakest sector over the next 10 days in 8 of 9 test periods (+3.8% on average). It beat BTC itself only 42% of the time, so leadership is a guide to which altcoins, not a long-altcoins / short-BTC trade. Seven-day leadership and ecosystems showed no persistence. Not yet a ranking input.</p>
+        <p>Tested on 2021 to March 2026: the sector leading over 30 days went on to beat the weakest sector over the next 10 days in 8 of 9 test periods (+3.8% on average). It beat BTC itself only 42% of the time, so leadership is a guide to which altcoins, not a long-altcoins / short-BTC trade. Seven-day leadership and ecosystems showed no persistence. Used as an entry filter on the RCCE signals, it lowered returns (it mostly meant trading less), so it stays a view, not an input.</p>
       </HelpTip>
     </div>
     <div className="race-body">
