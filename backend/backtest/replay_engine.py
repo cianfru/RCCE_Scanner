@@ -161,8 +161,10 @@ async def run_replay(
     eth_sym = "ETH/USDT"
 
     # Use the reference symbol (BTC) to drive the replay timeline.
-    # Other symbols join when their data becomes available.
-    ref_sym = btc_sym if btc_sym in ohlcv_4h else valid_symbols[0]
+    # Other symbols join when their data becomes available. Without BTC, the symbol whose
+    # data runs latest (then longest) drives it, so one delisted coin cannot end the replay.
+    ref_sym = btc_sym if btc_sym in ohlcv_4h else max(
+        valid_symbols, key=lambda s: (float(ohlcv_4h[s]["timestamp"][-1]), len(ohlcv_4h[s]["timestamp"])))
     ref_data = ohlcv_4h[ref_sym]
     ref_bars = len(ref_data["timestamp"])
 
