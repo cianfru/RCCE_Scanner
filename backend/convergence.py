@@ -27,6 +27,7 @@ MAX_MOVE = 0.05
 MAX_OTHERS = 2
 MAX_GAP_S = 2 * 3600       # an open seen after a longer gap (e.g. a restart) is not timed well enough
 RETENTION_DAYS = 180
+PRUNE_EVERY_S = 6 * 3600
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS position_opens (
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS position_opens (
     size_usd REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_opens_coin_ts ON position_opens(coin, ts);
+CREATE INDEX IF NOT EXISTS idx_opens_ts ON position_opens(ts);
 CREATE TABLE IF NOT EXISTS convergences (
     ts REAL NOT NULL,
     coin TEXT NOT NULL,
@@ -93,6 +95,7 @@ class Tracker:
         self.opens: List[dict] = []                    # last WINDOW_S of opens, all cohorts
         self.fired: Dict[Key, Tuple[float, int]] = {}  # key -> (when, n) of the last alert
         self.started = clock()
+        self.pruned_at = 0.0
         if conn is not None:
             conn.executescript(_SCHEMA)
             since = self.started - WINDOW_S
@@ -162,9 +165,11 @@ class Tracker:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(c["ts"], c["coin"], c["side"], c["n"], c["first_ts"], c["first_px"], c["last_px"], c["mark_px"],
                   c["others"], json.dumps(c["wallets"])) for c in convs])
-            cutoff = self.clock() - RETENTION_DAYS * 86400
-            self.conn.execute("DELETE FROM position_opens WHERE ts < ?", (cutoff,))
-            self.conn.execute("DELETE FROM convergences WHERE ts < ?", (cutoff,))
+            if self.clock() - self.pruned_at >= PRUNE_EVERY_S:
+                cutoff = self.clock() - RETENTION_DAYS * 86400
+                self.conn.execute("DELETE FROM position_opens WHERE ts < ?", (cutoff,))
+                self.conn.execute("DELETE FROM convergences WHERE ts < ?", (cutoff,))
+                self.pruned_at = self.clock()
             self.conn.commit()
         except Exception as exc:
             logger.warning("convergence: save failed: %s", exc)

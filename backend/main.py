@@ -4191,7 +4191,7 @@ async def hyperlens_opens(symbol: str, days: int = Query(30, ge=1, le=180)):
     opens = [{"t": o["ts"], "prev_t": o["prev_ts"], "cohort": o["cohort"], "side": o["side"],
               "px": o["entry_px"], "usd": round(o["size_usd"])} for o in tr.opens_for(coin, since)]
     return {"symbol": coin, "tracking_since": tr.tracking_since(), "opens": opens,
-            "convergences": tr.convergences_since(since, coin)}
+            "convergences": tr.convergences_since(since, coin), "opens_24h_all_coins": len(tr.opens)}
 
 
 @app.get("/api/hyperlens/wallet/{address}")
