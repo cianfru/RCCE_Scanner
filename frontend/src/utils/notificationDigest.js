@@ -14,11 +14,12 @@ function typeTitle(item) {
   if (t) return typeof t === 'function' ? t(Number(item.current_value) || 0) : t;
   return code?.replaceAll('_',' ').toLowerCase();
 }
-export function notificationDigest({warnings=[], anomalies=[], setups=[], opportunities=[], insights=[]}, dismissed=new Set()) {
+export function notificationDigest({warnings=[], anomalies=[], setups=[], opportunities=[], insights=[], convergence=[]}, dismissed=new Set()) {
   const items = [
     ...warnings.map(x=>({...x,key:`warn:${x.type}:${x.symbol}`,category:'Position risk',rank:0})),
     ...setups.map(x=>({...x,key:`setup:${x.type}:${x.symbol}`,category:'Setup',rank:1})),
     ...opportunities.map(x=>({...x,key:`opp:${x.type}:${x.symbol}`,category:'Setup',rank:1})),
+    ...convergence.map(x=>({...x,key:x.dedup_key,category:'Traders',rank:1})),
     ...anomalies.map(x=>({...x,key:`anom:${x.dedup_key}`,category:'Market change',rank:x.severity==='critical' ? 0.5 : 2})),
     ...insights.map(x=>({...x,category:'Research',rank:3})),
   ].filter(x=>!dismissed.has(x.key));
