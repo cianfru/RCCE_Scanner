@@ -1,5 +1,6 @@
 import Tabs from "./Tabs.jsx";
 import CohortsView from "./CohortsView.jsx";
+import PositioningView from "./PositioningView.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { T } from "../theme.js";
@@ -1722,6 +1723,7 @@ const VIEW_TABS = [
   { key: "consensus", label: "Consensus" },
   { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
   { key: "cohorts", label: "Cohorts", title: "How groups of wallets lean, now and over time" },
+  { key: "positioning", label: "Positioning", title: "Where tracked traders are positioned, next to the engine's reading" },
 ];
 
 function TabSwitcher({ active, onChange }) {
@@ -1836,7 +1838,7 @@ export default function HyperLensPanel({ isMobile }) {
           gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
-          {tab !== "cohorts" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
+          {tab !== "cohorts" && tab !== "positioning" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
 
           {tab === "consensus" && (
             <input
@@ -1881,7 +1883,7 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Main content */}
       {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
-      {loading && tab !== "cohorts" ? (
+      {loading && tab !== "cohorts" && tab !== "positioning" ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           <TableSkeleton rows={10} cols={6} />
         </GlassCard>
@@ -1911,6 +1913,7 @@ export default function HyperLensPanel({ isMobile }) {
             />
           )}
           {tab === "cohorts" && <CohortsView />}
+          {tab === "positioning" && <PositioningView />}
         </GlassCard>
       )}
     </div>

@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import re
+import statistics
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -1399,6 +1400,50 @@ def get_wallet_positions(address: str) -> Optional[dict]:
             for p in latest.positions
         ],
     }
+
+
+def positioning_map(cohort: str = "profitable") -> dict:
+    """Where one group of tracked wallets is positioned, per coin: counts, dollars and the
+    median entry per side, and how many of them are in profit at the current mark.
+
+    Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
+    "profitable" (money printers) or "large" (largest accounts).
+    """
+    group = {w.address for w in (_roster_money_printers if cohort == "profitable" else _roster_smart_money)}
+    now = time.time()
+    raw: Dict[str, dict] = {}
+    wallets = 0
+    for wallet in _roster:
+        if wallet.address not in group:
+            continue
+        snaps = _snapshots.get(wallet.address)
+        if not snaps:
+            continue
+        latest = snaps[-1]
+        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS:
+            continue
+        if 0 < latest.account_value < _DISPLAY_MIN_AV:
+            continue
+        wallets += 1
+        for p in latest.positions:
+            if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size:
+                continue
+            coin = _normalize_coin(p.coin)
+            side = p.side.lower()
+            mark = p.size_usd / abs(p.size)
+            d = raw.setdefault(coin, {"marks": [], "long": [], "short": []})
+            d["marks"].append(mark)
+            d[side].append((p.entry_px, p.size_usd, (mark > p.entry_px) if side == "long" else (mark < p.entry_px)))
+    out: Dict[str, dict] = {}
+    for coin, d in raw.items():
+        row = {"mark": statistics.median(d["marks"])}
+        for side in ("long", "short"):
+            xs = d[side]
+            row[side] = {"n": len(xs), "usd": round(sum(x[1] for x in xs)),
+                         "median_entry": statistics.median(x[0] for x in xs) if xs else None,
+                         "in_profit": sum(1 for x in xs if x[2])}
+        out[coin] = row
+    return {"wallets": wallets, "coins": out}
 
 
 def get_symbol_positions(symbol: str) -> List[dict]:
