@@ -4,7 +4,7 @@ import { candleChange } from "../utils/chartPresentation.js";
 import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import RegimeIcon from "./RegimeIcon.jsx";
-import { formatPercent } from "../utils/marketPresentation.js";
+import Tabs from "./Tabs.jsx";
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
   createChart,
@@ -22,6 +22,7 @@ import { col, T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbo
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ─── Signal → marker mapping ──────────────────────────────────────────────────
+// Dark-theme hues: pass through col() when drawn so light mode gets readable ones.
 
 const SIGNAL_MARKER = {
   STRONG_LONG:  { color: "#34d399", shape: "arrowUp",   position: "belowBar", text: "STRONG LONG" },
@@ -61,13 +62,10 @@ export default function BMSBChart({
   signalTimeframe,
   regime,
   heat,
-  conditions,
-  conditionsTotal,
   exhaustionState,
   floorConfirmed,
-  signalConfidence,
   momentum,
-  onTimeframeChange,
+  timeframeControl = true,   // false when the page owns the timeframe (coin page)
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -108,7 +106,7 @@ export default function BMSBChart({
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: resolveToken("chartText"),
         fontFamily: "'SF Mono', 'Fira Code', monospace",
-        fontSize: 10,
+        fontSize: 12,
         attributionLogo: false,
       },
       grid: {
@@ -121,13 +119,13 @@ export default function BMSBChart({
           color: "rgba(151,252,228,0.15)",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#1a1a1e",
+          labelBackgroundColor: resolveToken("chartLabel"),
         },
         horzLine: {
           color: "rgba(151,252,228,0.15)",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#1a1a1e",
+          labelBackgroundColor: resolveToken("chartLabel"),
         },
       },
       timeScale: {
@@ -195,7 +193,7 @@ export default function BMSBChart({
 
     // ── CTO ribbon (rendered behind BMSB; display only) ──
     const ribbonSeries = RIBBON_LINES.map(l => chart.addSeries(LineSeries, {
-      color: RIBBON_COLOR.grey,
+      color: col(RIBBON_COLOR.grey),
       lineWidth: l.width,
       lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: false,
@@ -237,7 +235,7 @@ export default function BMSBChart({
 
     // Mid (main BMSB line — solid, prominent)
     const bmsbMidSeries = chart.addSeries(LineSeries, {
-      color: "#97FCE4",
+      color: col("#97FCE4"),
       lineWidth: 2,
       lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: true,
@@ -323,7 +321,7 @@ export default function BMSBChart({
             const markers = markerTime == null ? [] : [{
               time: markerTime,
               position: markerDef.position,
-              color: markerDef.color,
+              color: col(markerDef.color),
               shape: markerDef.shape,
               text: markerDef.text,
             }];
@@ -332,7 +330,7 @@ export default function BMSBChart({
               markers.push({
                 time: last.time,
                 position: "belowBar",
-                color: "#34d399",
+                color: col("#34d399"),
                 shape: "circle",
                 text: "FLOOR · current",
               });
@@ -341,7 +339,7 @@ export default function BMSBChart({
               markers.push({
                 time: last.time,
                 position: "aboveBar",
-                color: "#fbbf24",
+                color: col("#fbbf24"),
                 shape: "circle",
                 text: "CLIMAX · current",
               });
@@ -386,7 +384,7 @@ export default function BMSBChart({
         if (lr?.time?.length > 0) {
           RIBBON_LINES.forEach((l, k) => {
             ribbonSeries[k].setData(lr.time.map((t, i) => ({
-              time: t, value: lr[l.key][i], color: `${RIBBON_COLOR[lr.state[i]]}${l.alpha}`,
+              time: t, value: lr[l.key][i], color: `${col(RIBBON_COLOR[lr.state[i]])}${l.alpha}`,
             })));
           });
         }
@@ -467,7 +465,7 @@ export default function BMSBChart({
     });
     patterns.forEach(p => {
       const label = labelled.find(q => q.p === p);
-      const color = PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0];
+      const color = col(PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0]);
       const pts = [];
       p.anchors.forEach(a => { if (!pts.length || a.time > pts[pts.length - 1].time) pts.push(a); });
       if (pts.length > 1) add({ color: `${color}99`, lineStyle: LineStyle.Dotted }, pts);
@@ -483,7 +481,7 @@ export default function BMSBChart({
         }
       });
     });
-  }, [showPatterns, patterns]);
+  }, [showPatterns, patterns, mode]);
 
   // Pressure levels overlay — fetch + render price lines
   useEffect(() => {
@@ -637,7 +635,9 @@ export default function BMSBChart({
   const rm = regime ? REGIME_META[regime] || REGIME_META.FLAT : null;
   const sm = signal ? SIGNAL_META[signal] || SIGNAL_META.WAIT : null;
   const hColor = heatColor(heat);
-  const momColor = momentum != null ? (momentum >= 0 ? "#22c55e" : "#ef4444") : null;
+  const momColor = momentum != null ? (momentum >= 0 ? T.green : T.red) : null;
+  // Failed patterns stay listed but are not counted as something current.
+  const activePatterns = patterns.filter(p => p.status === "forming" || p.status === "confirmed").length;
 
   return (
     <div className="price-chart-panel" style={{
@@ -660,7 +660,7 @@ export default function BMSBChart({
             <span className="terminal-status" style={{
               padding: "2px 7px", borderRadius: 0,
               background: rm.bg, color: rm.color,
-              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
               letterSpacing: "0.04em",
               border: `1px solid ${rm.color}20`,
               display: "inline-flex", alignItems: "center", gap: 3,
@@ -675,7 +675,7 @@ export default function BMSBChart({
             <span className="terminal-status" style={{
               padding: "2px 7px", borderRadius: 0,
               background: `${sm.color}12`, color: sm.color,
-              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
+              fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
               letterSpacing: "0.04em",
               border: `1px solid ${sm.color}18`,
               display: "inline-flex", alignItems: "center", gap: 3,
@@ -684,55 +684,30 @@ export default function BMSBChart({
             </span>
           )}
 
-          {/* CTO ribbon state (display only) */}
+          {/* CTO ribbon state (display only): flat text, explained in a tip touch users can open */}
           {ribbon && (
-            <span title={`CTO ${ribbon.current} (closed candles)${ribbon.current === "grey" && ribbon.last_actionable ? ` (last trend ${ribbon.last_actionable})` : ""}. Display only; not used by signals.`} style={{
-              padding: "2px 7px", fontSize: 9, fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-              color: RIBBON_COLOR[ribbon.current], border: `1px solid ${RIBBON_COLOR[ribbon.current]}40`,
-            }}>
-              CTO {ribbon.current.toUpperCase()}
-            </span>
-          )}
-
-          {/* Conditions */}
-          {conditions != null && conditionsTotal != null && (
-            <span style={{
-              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-              color: conditions >= 8 ? "#22c55e" : conditions >= 5 ? "#fbbf24" : "rgba(255,255,255,0.3)",
-              padding: "2px 5px",
-            }}>
-              {conditions}/{conditionsTotal}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <span style={{ fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em", color: col(RIBBON_COLOR[ribbon.current]) }}>
+                CTO {ribbon.current.toUpperCase()}
+              </span>
+              <HelpTip title="CTO ribbon" width={300}>
+                <p>Four moving averages coloured by trend state on closed candles: gold is an uptrend, blue a downtrend, grey no clear trend.{ribbon.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""}</p>
+                <p>Display only; not used by signals.</p>
+              </HelpTip>
             </span>
           )}
 
           {/* Heat */}
           {heat != null && (
-            <span style={{
-              fontSize: 9, fontFamily: T.mono, fontWeight: 700,
-              color: hColor, opacity: 0.9,
-            }}>
-              H:{Math.round(heat)}
+            <span style={{ fontFamily: T.mono, fontWeight: 700, color: hColor }}>
+              Heat {Math.round(heat)}
             </span>
           )}
 
           {/* Momentum */}
           {momentum != null && (
-            <span style={{
-              fontSize: 9, fontFamily: T.mono, fontWeight: 600,
-              color: momColor, opacity: 0.9,
-            }}>
-              {momentum >= 0 ? "+" : ""}{momentum.toFixed(1)}%
-            </span>
-          )}
-
-          {/* Confidence */}
-          {signalConfidence != null && signal !== "WAIT" && (
-            <span style={{
-              fontSize: 8, fontFamily: T.mono, fontWeight: 500,
-              color: signalConfidence >= 80 ? col("#34d399") : signalConfidence >= 50 ? T.text2 : T.text4,
-              opacity: 0.7,
-            }}>
-              Checks {formatPercent(signalConfidence)}
+            <span style={{ fontFamily: T.mono, fontWeight: 600, color: momColor }}>
+              Momentum {momentum >= 0 ? "+" : ""}{momentum.toFixed(1)}%
             </span>
           )}
         </div>
@@ -746,17 +721,9 @@ export default function BMSBChart({
             aria-pressed={showPressure}
             title="Toggle tracked liquidation levels, stops, take-profits and limit orders"
             style={{
-              padding: "3px 8px",
-              borderRadius: 4,
-              border: `1px solid ${showPressure ? "rgba(251,191,36,0.3)" : "rgba(255,255,255,0.08)"}`,
-              cursor: "pointer",
-              fontFamily: T.mono,
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              transition: "all 0.15s ease",
-              background: showPressure ? "rgba(251,191,36,0.12)" : "transparent",
-              color: showPressure ? "#fbbf24" : "rgba(255,255,255,0.3)",
+              padding: "3px 2px", border: 0, borderBottom: "2px solid transparent", borderRadius: 0,
+              cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
+              background: "transparent", color: T.text4,
               display: "flex", alignItems: "center", gap: 3,
             }}
           >
@@ -771,56 +738,20 @@ export default function BMSBChart({
               aria-pressed={showPatterns}
               title="Toggle detected chart patterns with their measured track record. Display only; never used by signals."
               style={{
-                padding: "3px 8px",
-                borderRadius: 4,
-                border: `1px solid ${showPatterns ? "rgba(196,181,253,0.35)" : "rgba(255,255,255,0.08)"}`,
-                cursor: "pointer",
-                fontFamily: T.mono,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.04em",
-                transition: "all 0.15s ease",
-                background: showPatterns ? "rgba(196,181,253,0.12)" : "transparent",
-                color: showPatterns ? "#c4b5fd" : "rgba(255,255,255,0.3)",
+                padding: "3px 2px", border: 0, borderBottom: "2px solid transparent", borderRadius: 0,
+                cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
+                background: "transparent", color: T.text4,
               }}
             >
-              Patterns{patterns.length ? ` (${patterns.length})` : ""}
+              Patterns{activePatterns ? ` (${activePatterns})` : ""}
             </button>
           )}
 
-          {/* Timeframe toggle */}
-          <div style={{
-            display: "flex", gap: 2,
-            background: "rgba(255,255,255,0.04)",
-            borderRadius: 6, padding: 2,
-          }}>
-            {TIMEFRAMES.map(tf => (
-              <button
-                key={tf.key}
-                aria-label={`Chart timeframe ${tf.label}`} aria-pressed={activeTimeframe === tf.key}
-                onClick={() => { setActiveTimeframe(tf.key); onTimeframeChange?.(tf.key); }}
-                style={{
-                  padding: "3px 10px",
-                  borderRadius: 4,
-                  border: "none",
-                  cursor: "pointer",
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                  transition: "all 0.15s ease",
-                  background: activeTimeframe === tf.key
-                    ? "rgba(151,252,228,0.15)"
-                    : "transparent",
-                  color: activeTimeframe === tf.key
-                    ? "#97FCE4"
-                    : "rgba(255,255,255,0.3)",
-                }}
-              >
-                {tf.label}
-              </button>
-            ))}
-          </div>
+          {/* Timeframe toggle, only where the chart owns its timeframe */}
+          {timeframeControl && (
+            <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
+              value={activeTimeframe} onChange={setActiveTimeframe} />
+          )}
         </div>
       </div>
 
@@ -842,8 +773,8 @@ export default function BMSBChart({
               animation: "spin 0.8s linear infinite",
             }} />
             <span style={{
-              color: "rgba(255,255,255,0.3)",
-              fontFamily: T.mono, fontSize: 9,
+              color: T.text4,
+              fontFamily: T.mono, fontSize: T.textXs,
               letterSpacing: "0.1em",
             }}>
               LOADING
@@ -868,13 +799,13 @@ export default function BMSBChart({
         </div>
       )}
 
-      <div className="candle-inspector" aria-label="Candle details" style={{padding:'8px 18px',minHeight:44,borderBottom:`1px solid ${T.border}`,fontFamily:T.mono,fontSize:11,color:T.text3,display:'flex',flexDirection:'column',gap:7}}>
+      <div className="candle-inspector" aria-label="Candle details" style={{padding:'8px 18px',minHeight:44,borderBottom:`1px solid ${T.border}`,fontFamily:T.mono,fontSize:T.textXs,color:T.text3,display:'flex',flexDirection:'column',gap:7}}>
         {hoverCandle ? <>
           <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
             <span>{new Date(hoverCandle.time*1000).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} UTC · {activeTimeframe.toUpperCase()}</span>
-            <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? '#97FCE4' : '#d8a094'}}>Candle {hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
+            <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? col('#97FCE4') : col('#d8a094')}}>Candle {hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
             <span>Volume {Number.isFinite(hoverCandle.volume) ? new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(hoverCandle.volume) : '—'} {hoverCandle.volumeUnit}</span>
-            {hoverCandle.live && <span style={{color:'#91b9e8'}}>Live candle</span>}
+            {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live candle</span>}
           </div>
           <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{['open','high','low','close'].map(key=><span key={key}>{key[0].toUpperCase()} <span style={{color:T.text2}}>{new Intl.NumberFormat('en',{maximumSignificantDigits:7}).format(hoverCandle[key])}</span></span>)}</div>
         </> : <span>Move over a candle to inspect its change and volume.</span>}
@@ -882,13 +813,13 @@ export default function BMSBChart({
 
       {/* ── Chart container ── */}
       <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
-      {!loading && !error && <div style={{padding:'10px 18px',fontSize:11,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
-        {chartRange ? <><strong style={{color:'#91b9e8'}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong>
+      {!loading && !error && <div style={{padding:'10px 18px',fontSize:T.textXs,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
+        {chartRange ? <><strong style={{color:col('#91b9e8')}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong>
           {chartRange.probability != null && <span style={{marginLeft:8}}>{Math.round(chartRange.probability*100)}% chance of an unusually wide candle (usual: 25%)</span>} <HelpTip title="Range ruler" width={360}>
           <p>The ruler's full height represents the estimated true-range magnitude ({chartRange.atr_mult} × ATR14). It is centred on the reference price for illustration; its ends are not forecast highs or lows.</p>
           <p>Chance of a top-quartile range: {Math.round(chartRange.probability*100)}%, compared with a 25% baseline. This is not directional confidence or a price containment interval.</p>
           <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()} from the last closed candle, the same input as the coin page's range card.</p>
-        </HelpTip><span style={{marginLeft:8,fontSize:10}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
+        </HelpTip><span style={{marginLeft:8}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
       </div>}
       {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",flexWrap:"wrap",gap:"8px 20px",padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
         <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex == null ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
@@ -901,7 +832,7 @@ export default function BMSBChart({
             <ul style={{margin:0,padding:0,listStyle:"none",display:"grid",gap:6}}>
               {patterns.map((p, i) => (
                 <li key={i}>
-                  <span style={{color: PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0], fontFamily:T.mono, fontSize:11, fontWeight:700}}>
+                  <span style={{color: col(PATTERN_COLOR[p.status === "failed" ? 0 : p.direction] || PATTERN_COLOR[0]), fontFamily:T.mono, fontWeight:700}}>
                     {p.name} · {p.status} · {new Date(p.end * 1000).toLocaleDateString()}
                   </span>{" "}
                   {p.track_record}
@@ -909,7 +840,7 @@ export default function BMSBChart({
               ))}
             </ul>
           )}
-          <p style={{margin:"8px 0 0",fontSize:11}}>Measured on 40 coins, Oct 2021 to Mar 2026. Recognition works; no pattern showed an edge over a plain breakout. Display only; patterns never trigger or block a signal.</p>
+          <p style={{margin:"8px 0 0"}}>Measured on 40 coins, Oct 2021 to Mar 2026. Recognition works; no pattern showed an edge over a plain breakout. Display only; patterns never trigger or block a signal.</p>
         </div>
       )}
 

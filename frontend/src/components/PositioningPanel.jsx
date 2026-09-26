@@ -17,8 +17,6 @@ import HelpTip from "./HelpTip.jsx";
  *   cvdDiv      — bool
  *   bsr         — number (buy/sell ratio)
  *   vpin        — number 0..1 (volume-synchronized probability of informed trading)
- *   vpinLabel   — "BALANCED" | "ELEVATED" | "TOXIC"
- *   vpinHistory — number[] (rolling 48-tick history 0..1)
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
 import { T } from "../theme.js";
@@ -247,7 +245,7 @@ const OI_CTX_COLOR = {
   "capitulation": "#fbbf24",
 };
 
-export default function PositioningPanel({ positioning, hasCoinglass = false, cvdTrend, cvdDiv, bsr, vpin, vpinLabel, vpinHistory, oiContext }) {
+export default function PositioningPanel({ positioning, hasCoinglass = false, cvdTrend, cvdDiv, bsr, vpin, oiContext }) {
   if (!positioning) return null;
 
   const {
@@ -321,7 +319,7 @@ export default function PositioningPanel({ positioning, hasCoinglass = false, cv
             border: `1px solid ${T.accent}20`,
             letterSpacing: "0.06em",
           }}>
-            {source.slice(0, 3).toUpperCase()}
+            {{ binance: "Binance", hyperliquid: "Hyperliquid" }[source] || source}
           </span>
         )}
       </div>
@@ -337,7 +335,7 @@ export default function PositioningPanel({ positioning, hasCoinglass = false, cv
       </div>
 
       {/* VPIN flow toxicity gauge */}
-      <FlowToxicity vpin={vpin} vpinLabel={vpinLabel} vpinHistory={vpinHistory} />
+      <FlowToxicity vpin={vpin} />
 
       {/* Numbers strip */}
       {stats.length > 0 && (

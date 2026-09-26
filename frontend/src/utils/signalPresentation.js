@@ -1,6 +1,6 @@
 // Presentation only: never changes eligibility, engine scores, or signal output.
 export function signalDirection(signal) {
-  if (['STRONG_LONG', 'LIGHT_LONG', 'ACCUMULATE', 'REVIVAL_SEED', 'REVIVAL_SEED_CONF'].includes(signal)) return 'bullish';
+  if (['STRONG_LONG', 'LIGHT_LONG', 'ACCUMULATE', 'REVIVAL_SEED', 'REVIVAL_SEED_CONFIRMED'].includes(signal)) return 'bullish';
   if (['STRONG_SHORT', 'LIGHT_SHORT'].includes(signal)) return 'bearish';
   return null; // Exit instructions are not short entries.
 }
@@ -8,7 +8,18 @@ export function signalDirection(signal) {
 export function friendlyReason(text = '') {
   return String(text).replace(/core context unavailable/gi, 'Required market context is missing; Strong Long is unavailable')
     .replace(/final eligibility cap/gi, 'Entry restrictions applied')
-    .replace(/final eligibility:/gi, 'Entry restriction:');
+    .replace(/final eligibility:/gi, 'Entry restriction:')
+    .replace(/\w+ LIGHT_LONG demoted: no CVD\/spot confirmation.*/, 'Held at Accumulate: no taker-buying confirmation')
+    // Engine win-rate notes come from small in-sample tallies; they are not a forecast.
+    .replace(/\s*\(\d+(\.\d+)?% WR[^)]*\)/g, '');
+}
+
+// Why the engine blocked long entries, in plain words. Most blocks come
+// from the weekly BMSB gate, which is not one of the entry checks.
+function blockedText(reason = '') {
+  if (/BMSB data unavailable/i.test(reason)) return 'Long entries blocked: not enough weekly history to compute the BMSB.';
+  if (/Macro blocked/i.test(reason)) return 'Long entries blocked: price is below the weekly bull-market support band (BMSB).';
+  return 'Long entries blocked by the engine. Inspect the entry checks for the blocking condition.';
 }
 
 // Spot markets have no funding rate: the Funding check is never available there, which is
@@ -46,13 +57,13 @@ export function signalContext(row = {}, { marketWide = [] } = {}) {
   if (missing.length || (!onlyMarketWide && messages.some(w => /core context unavailable/i.test(w)))) {
     items.push({kind:'missing', text:`Assessment incomplete — ${missing.length ? missing.map(c => c.label || c.name).join(', ') : 'required market context'} unavailable. Strong Long cannot be confirmed.`});
   }
-  if (row.entry_blocked && row.signal_status !== 'unavailable') items.push({kind:'caution', text:'Long entries blocked by the engine. Inspect the entry checks for the blocking condition.'});
+  if (row.entry_blocked && row.signal_status !== 'unavailable') items.push({kind:'caution', text:blockedText(row.signal_reason)});
   for (const raw of messages) {
     if (/core context unavailable/i.test(raw)) continue;
     const text = friendlyReason(raw);
     let kind = 'info';
     // Restrictions take precedence over directional words inside the same message.
-    if ((row.strong_long_blockers || []).includes(raw) || /blocked|downgrade|risk|overextension|escalation|euphoria|may not sustain|cascade|contracting|capped|limit|unstable|outside strict|waiting for|demoted|forced exit|extreme funding: \+/.test(text.toLowerCase())) kind = 'caution';
+    if ((row.strong_long_blockers || []).includes(raw) || /blocked|downgrade|risk|overextension|escalation|euphoria|may not sustain|cascade|contracting|capped|limit|unstable|outside strict|waiting for|demoted|held at|forced exit|extreme funding: \+/.test(text.toLowerCase())) kind = 'caution';
     else if (/unavailable|missing|pipeline failed/i.test(text)) kind = 'missing';
     else if (/bearish|BEAR-DIV|heavy_short/i.test(text)) kind = 'bearish';
     else if (/bullish|BULL-DIV|Floor confirmed|Absorption detected|spot_led_demand|top_trader_long|smart_money_long|rally fuel|potential bottom/i.test(text)) kind = 'bullish';

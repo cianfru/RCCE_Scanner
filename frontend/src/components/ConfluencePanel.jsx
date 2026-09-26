@@ -106,13 +106,14 @@ export default function ConfluencePanel({ confluence }) {
             {regime_aligned ? "\u2713" : "\u2717"}
             <span style={{ fontSize: T.textXs, color: T.text4 }}>Regime</span>
           </span>
+          {/* null: both timeframes WAIT, which is neither agreement nor disagreement */}
           <span style={{
             fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
-            color: signal_aligned ? "#34d399" : "#f87171",
+            color: signal_aligned == null ? T.text3 : signal_aligned ? "#34d399" : "#f87171",
             display: "flex", alignItems: "center", gap: 4,
           }}>
-            {signal_aligned ? "\u2713" : "\u2717"}
-            <span style={{ fontSize: T.textXs, color: T.text4 }}>Signal</span>
+            {signal_aligned == null ? "\u2013" : signal_aligned ? "\u2713" : "\u2717"}
+            <span style={{ fontSize: T.textXs, color: T.text4 }}>{signal_aligned == null ? "Both waiting" : "Signal"}</span>
           </span>
         </div>
       </div>

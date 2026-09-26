@@ -340,6 +340,7 @@ class SignalAnalytics:
 
             # Iterate combos, dedup by matching row count
             combo_stats: Dict[frozenset, Dict] = {}
+            tested = 0  # combos with enough samples: the pool the top ones are picked from
             seen_counts: Dict[int, int] = {}  # match_count -> how many combos have it
 
             for combo in itertools.combinations(selective_conditions, combo_size):
@@ -355,6 +356,7 @@ class SignalAnalytics:
                 n = len(outcomes)
                 if n < min_samples:
                     continue
+                tested += 1
 
                 # Dedup: skip combos that match the exact same row count
                 # (likely the same rows, just different always-true conditions swapped)
@@ -382,6 +384,8 @@ class SignalAnalytics:
                 key=lambda x: (x["lift"], x["count"]),
                 reverse=True,
             )
+            for c in ranked:
+                c["tested"] = tested
             return ranked[:15]
 
         return await self._cached(f"combo:{timeframe}:{combo_size}:{min_samples}", _compute)
@@ -408,7 +412,7 @@ class SignalAnalytics:
             result: Dict[str, List[Dict]] = defaultdict(list)
             for (signal, regime), entries in groups.items():
                 count = len(entries)
-                if count < 2:
+                if count < 10:  # smaller cells are noise, not a win rate
                     continue
                 wins = sum(1 for _, w in entries if w)
                 avg_7d = sum(o for o, _ in entries) / count
@@ -434,31 +438,37 @@ class SignalAnalytics:
     async def confluence_stratified_scorecard(
         self, timeframe: str = "4h",
     ) -> List[Dict[str, Any]]:
-        """Performance by conditions_met bucket (long entries only)."""
+        """Performance by share of entry checks met (long entries only).
+
+        Coins are scored out of different totals (9 or 11 today, 14-15 in older
+        events), so buckets use met/total; rows without a total are skipped.
+        """
 
         async def _compute():
             rows = [r for r in await self._fetch_rows_with_outcomes(timeframe)
                     if r["signal"] in _LONG_SIGNALS]
 
-            def _bucket(met: int) -> str:
-                if met >= 12:
-                    return "12+"
-                elif met >= 10:
-                    return "10-11"
-                elif met >= 8:
-                    return "8-9"
+            def _bucket(share: float) -> str:
+                if share >= 1.0:
+                    return "100%"
+                elif share >= 0.8:
+                    return "80-99%"
+                elif share >= 0.6:
+                    return "60-79%"
                 else:
-                    return "<8"
+                    return "<60%"
 
             buckets: Dict[str, list] = defaultdict(list)
             for r in rows:
-                met = r["conditions_met"] or 0
-                b = _bucket(met)
+                total = r["conditions_total"]
+                if not total:
+                    continue
+                b = _bucket((r["conditions_met"] or 0) / total)
                 buckets[b].append(
                     (r["outcome_7d_pct"], _is_win(r["signal"], r["outcome_7d_pct"]), r["signal"])
                 )
 
-            bucket_order = ["12+", "10-11", "8-9", "<8"]
+            bucket_order = ["100%", "80-99%", "60-79%", "<60%"]
             results = []
             for b in bucket_order:
                 entries = buckets.get(b, [])

@@ -14,6 +14,6 @@ export default function SignalContext({ row, marketWide }) {
   return <div style={{display:'grid',gap:10}}>{items.length ? items.map((item,i) => {
     const {Icon,color:base,label} = CONTEXT_META[item.kind];
     const color = col(base);
-    return <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',fontSize:12,lineHeight:1.55}}><Icon size={15} color={color} style={{flexShrink:0,marginTop:2}} aria-label={label}/><span><strong style={{color,display:'block',fontSize:11}}>{label}</strong>{item.text}</span></div>;
+    return <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',fontSize:12,lineHeight:1.55}}><Icon size={15} color={color} style={{flexShrink:0,marginTop:2}} aria-label={label}/><span><strong style={{color,display:'block',fontSize:T.textXs}}>{label}</strong>{item.text}</span></div>;
   }) : <span style={{color:T.text3}}>No additional context returned.</span>}</div>;
 }
