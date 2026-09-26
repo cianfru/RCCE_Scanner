@@ -83,3 +83,38 @@ On this set:
 - The live +5% breakeven is slightly better than none here (+3 points), unlike in the executor reconstruction.
 
 Whether anything ships depends on the 30-coin confirmation set, which is more volatile; its replay is running.
+
+## Results: confirmation set (30 coins)
+
+The first run stopped in January 2025. The replay followed the first coin's timeline (FTM, delisted), because the set has no BTC. That was fixed and the set replayed in full before any secondary result was scored. Earlier studies were not affected: the exit-scenario search adds BTC and ETH to its replays as references (its 30-coin replay runs to 28 March 2026), and the sector tilt test used the primary coins.
+
+Median ATR14 on 4H is 1.1% (TRX) to 3.7% (FET), and 3×ATR is 6-11%.
+
+| | Rule | Compounded | Worst-window DD | Trades | Win rate | Worst 3 trades | P&L by volatility third (low / mid / high), $ |
+|---|---|---:|---:|---:|---:|---|---|
+| S0 | 8%, no BE | +45.3% | -14.6% | 725 | 35% | -42, -41, -36 | 600 / 1,659 / 2,575 |
+| S1 | **8%, BE +5% (live)** | +42.1% | -14.2% | 917 | 23% | -42, -41, -36 | 610 / 1,582 / 2,404 |
+| S2 | 8%, BE +10% | +42.1% | -15.0% | 794 | 29% | -42, -41, -36 | 551 / 1,561 / 2,487 |
+| S3 | 12%, no BE | +42.5% | -15.0% | 652 | 38% | -57, -52, -47 | 483 / 1,599 / 2,563 |
+| S4 | 16%, no BE | +43.5% | -15.1% | 616 | 39% | -57, -52, -47 | 623 / 1,525 / 2,586 |
+| S5 | no stop | +46.6% | -14.1% | 590 | 40% | -71, -69, -65 | 648 / 1,759 / 2,582 |
+| S6 | 3×ATR (6-25%), no BE | +44.3% | -15.0% | 701 | 36% | -55, -42, -41 | 494 / 1,667 / 2,578 |
+| S7 | 3×ATR (6-25%), BE +10% | +43.4% | -15.5% | 764 | 30% | -55, -41, -36 | 434 / 1,610 / 2,604 |
+
+## Verdict: nothing ships
+
+- **Against the live rules (S1: +42.1%), no variant gains the required 5 points on the confirmation set.**
+  - The volatility stops that led on the primary set add only +2.2 (S6) and +1.3 (S7) points.
+  - No stop at all (S5) adds +4.5, with the largest single losses.
+- The executor keeps its 8% stop and +5% breakeven.
+
+**What the two sets say together:**
+- **Plain wider stops (12%, 16%) do not help on either set.** The intuition that 8% is too tight for crypto is not borne out by these signals.
+- **The volatility-scaled stop's lead on the 10 primary coins (+9.8 points) did not carry over** to the 30 others (+2.2). The primary result was mostly those coins, not a general effect.
+- **The breakeven at +5% is close to neutral.** It helps by 3 points on the primary set and costs 3 on the secondary set.
+- **The stop choice moves compounded return by only a few points** on the secondary set (+42% to +47%). Exits here are driven mostly by the signal decay and the engine's own exits, not the stop.
+- **By volatility third, the high-volatility coins earn about the same under every rule.** Nothing in this study says volatile coins need a different stop.
+
+Leads for later, not tested here:
+- **Exits.** Decay exits are the most common exit on both sets, and the earlier scenario search pointed to holding longer.
+- **Position sizing.** Scaling size to volatility (rather than the stop) is a different question from this study.
