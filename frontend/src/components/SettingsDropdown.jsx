@@ -9,7 +9,7 @@
  * effect within ~30s without redeploy. Designed for the user's flow:
  *   - "Idle" when not actively trading (only core scanner runs)
  *   - "Normal" sentiment-mode default
- *   - "Power" everything on (HyperLens full + pressure + on-chain tracker + monitor)
+ *   - "Power" HyperLens, on-chain tracker and monitor (order-book polling stays off: no page shows it)
  */
 import { useState, useEffect, useRef } from "react";
 import { T } from "../theme.js";
@@ -24,11 +24,6 @@ const FLAG_META = [
     key: "hyperlens_enabled",
     label: "HyperLens",
     desc: "Hyperliquid trader positioning",
-  },
-  {
-    key: "hyperlens_pressure_map",
-    label: "Pressure Map",
-    desc: "L2 order-book polling for the most-held coins",
   },
   {
     key: "whale_tracker",
@@ -177,7 +172,7 @@ export default function SettingsDropdown() {
       const presets = {
         idle:   { hyperlens_enabled: false, hyperlens_pressure_map: false, whale_tracker: false, market_monitor: false },
         normal: { hyperlens_enabled: true,  hyperlens_pressure_map: false, whale_tracker: false, market_monitor: false },
-        power:  { hyperlens_enabled: true,  hyperlens_pressure_map: true,  whale_tracker: true,  market_monitor: true },
+        power:  { hyperlens_enabled: true,  hyperlens_pressure_map: false, whale_tracker: true,  market_monitor: true },
       };
       const target = presets[preset];
       if (!target) return false;
