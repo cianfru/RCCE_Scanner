@@ -189,7 +189,7 @@ def study(src, out_name):
 
 
 def export(study_name="breadth_study", src="breadth_history", out=None):
-    """Seed for the live market history (backend/data/market_history_seed.json): per-day
+    """Seed for the live market history (backend/seeds/market_history_seed.json): per-day
     aggregates, BTC close, the coin list, and the study's episodes. Episode outcomes stop
     at END_DAY; later days are appended live without outcomes."""
     from pathlib import Path
@@ -209,7 +209,7 @@ def export(study_name="breadth_study", src="breadth_history", out=None):
             "days_cols": ["day", "n", "uptrend", "overheated", "downtrend", "basing", "median_z", "btc"],
             "episode_cols": ["start", "end", "breadth", "btc10", "alt10", "btc30", "alt30", "btc60", "alt60"],
             "days": days, "base": st["base"], "bands": bands}
-    path = Path(out) if out else Path(__file__).resolve().parent.parent / "data" / "market_history_seed.json"
+    path = Path(out) if out else Path(__file__).resolve().parent.parent / "seeds" / "market_history_seed.json"
     path.write_text(json.dumps(seed, separators=(",", ":")))
     print(f"{len(days)} days, {len(seed['pairs'])} pairs -> {path} ({path.stat().st_size // 1024} KB)")
 

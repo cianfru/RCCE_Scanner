@@ -2,7 +2,7 @@
 Market history: the share of coins in each regime on every day since 2019, for the
 scanner's history drawer (declared in docs/reviews/market-breadth-study.md).
 
-The seed (data/market_history_seed.json, written by `python -m backtest.breadth_history
+The seed (seeds/market_history_seed.json, written by `python -m backtest.breadth_history
 export`) holds the rebuilt days and the study's episodes. Once a day the same method runs
 on the last closed daily candle: Binance USDT spot closes for the seed's coin list, the
 live engine on each coin's trailing 600 candles. New days are appended to a file next to
@@ -25,7 +25,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 DAY_MS = 86_400_000
-SEED_PATH = Path(__file__).resolve().parent / "data" / "market_history_seed.json"
+SEED_PATH = Path(__file__).resolve().parent / "seeds" / "market_history_seed.json"   # data/ is not in the image
 KLINES_URL = "https://data-api.binance.vision/api/v3/klines?symbol={pair}&interval=1d&limit=1000"
 FNG_URL = "https://api.alternative.me/fng/?limit=0&format=json"
 UPDATE_AFTER_S = 18 * 60         # run 18 minutes after the daily close

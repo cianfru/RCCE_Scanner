@@ -48,4 +48,4 @@ Thrusts (breadth up 25 points in 10 days, 11 cases) and fades (down 20 from abov
 
 ## In the product (26 September 2026)
 
-The scanner's history drawer (chart icon beside Market consensus) shows this history: the share of coins in Uptrend with BTC, today's percentile, and the episode table for each band with the counts above. It never states a direction. The seed is `backend/data/market_history_seed.json` (`python -m backtest.breadth_history export`); one row is appended after each daily close with the same method (checked equal to the rebuild on 23-25 September). Episode outcomes stop at 2026-03-29; later episodes are listed without them.
+The scanner's history drawer (chart icon beside Market consensus) shows this history: the share of coins in Uptrend with BTC, today's percentile, and the episode table for each band with the counts above. It never states a direction. The seed is `backend/seeds/market_history_seed.json` (`python -m backtest.breadth_history export`); one row is appended after each daily close with the same method (checked equal to the rebuild on 23-25 September). Episode outcomes stop at 2026-03-29; later episodes are listed without them.
