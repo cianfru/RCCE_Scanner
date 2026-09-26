@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SIGNAL_KEYS, matchesSignal, signalCounts, regimeMix, fgBand, fgNote, dialRotation } from './marketSummary.js';
+import { SIGNAL_KEYS, matchesSignal, signalCounts, regimeMix, fgBand, fgNote, dialRotation, sharePct } from './marketSummary.js';
 
 const rows = (spec, field) => Object.entries(spec).flatMap(([k, n]) => Array.from({ length: n }, () => ({ [field]: k })));
 
@@ -34,8 +34,8 @@ test('Fear & Greed bands match the backend labels', () => {
 
 test('Fear & Greed notes follow the engine thresholds', () => {
   assert.match(fgNote(40, true), /fear gate is open/);
-  assert.match(fgNote(41, true), /Not greedy passes/);
-  assert.match(fgNote(69, true), /Not greedy passes/);
+  assert.match(fgNote(41, true), /Not\u00a0greedy passes/);
+  assert.match(fgNote(69, true), /Not\u00a0greedy passes/);
   assert.match(fgNote(70, true), /fails on every market/);
   assert.match(fgNote(null, true), /No reading/);
   assert.match(fgNote(null, false), /Waiting/);
@@ -43,4 +43,11 @@ test('Fear & Greed notes follow the engine thresholds', () => {
 
 test('dial rotation', () => {
   assert.deepEqual([0, 50, 74, 100, -5, 120].map(dialRotation), [-90, 0, 43.2, 90, -90, 90]);
+});
+
+test('share near the 55% line keeps a decimal and rounds away from it', () => {
+  assert.equal(sharePct(77, 100), 77);
+  assert.equal(sharePct(5455, 10000), '54.5');
+  assert.equal(sharePct(5501, 10000), '55.1');
+  assert.equal(sharePct(5499, 10000), '54.9');
 });

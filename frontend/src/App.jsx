@@ -93,16 +93,6 @@ export default function App() {
     setStatCardFilter(null);
     navigate(`/scanner?market=${kind}${activeTab === "4h" ? "&tf=4h" : ""}`);
   };
-  const [marketConsensus, setMarketConsensus] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    setMarketConsensus(null);
-    const tf = new URLSearchParams(location.search).get("tf") === "4h" ? "4h" : "1d";
-    const load = () => fetch(`${API_BASE}/api/consensus?timeframe=${tf}&market=${marketKind}`).then(r => r.ok ? r.json() : null).then(d => {if (!cancelled) setMarketConsensus(d);}).catch(() => {});
-    load(); const timer = setInterval(load, 60000);
-    return () => {cancelled = true; clearInterval(timer);};
-  }, [marketKind, location.search]);
-
   // Derive activeTab from URL
   const activeTab = useMemo(() => {
     const p = location.pathname.replace(/\/$/, "") || "/scanner";
@@ -601,7 +591,9 @@ export default function App() {
   const display1d = applyStatFilter(sorted1d);
   const displayTradfi = applyStatFilter(sortedTradfi);
 
-  const activeConsensus = marketConsensus;
+  // The engine consensus (every scanned market, perps and spot) and the rows it was counted on.
+  const activeConsensus = activeTab === "4h" ? consensus4h : consensus1d;
+  const consensusRows = activeTab === "4h" ? data4h : data1d;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
   const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
@@ -931,13 +923,13 @@ export default function App() {
       {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
         {showDashboard && tfMarketRows.length > 0 && (
-          <MarketSummary regimeRows={tfMarketRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
+          <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
             timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel}
             activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
         {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>

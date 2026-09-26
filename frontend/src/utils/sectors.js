@@ -45,10 +45,15 @@ export const MIN_RANK_N = 3;       // fewer markets: listed after the ranked gro
 export const EX_TOP_MIN = 1.5;     // show the lead without the best market when it adds this much
 export const TAIL_NAMES = new Set(["Other"]);
 
+// BTC by base (spot lists it as UBTC); pegged markets (stablecoins, gold) are not alts.
+const BTC_BASES = new Set(["BTC", "UBTC"]);
+const isBtc = r => BTC_BASES.has(String(r.symbol || "").split("/")[0]);
+const PEGGED = "RWA & Stablecoins";
+
 export function altBaseline(rows) {
-  const btcRow = rows.find(r => r.symbol === "BTC/USDT");
+  const btcRow = rows.find(isBtc);
   const btc = btcRow ? change(btcRow) : null;
-  const alts = rows.filter(r => r.symbol !== "BTC/USDT").map(change).filter(Number.isFinite);
+  const alts = rows.filter(r => !isBtc(r) && r.sector !== PEGGED).map(change).filter(Number.isFinite);
   const M = median(alts);
   const gaps = M == null ? [] : alts.map(x => Math.abs(100 * (x - M))).sort((a, b) => a - b);
   const p90 = gaps.length ? gaps[Math.ceil(0.9 * gaps.length) - 1] : 0;
