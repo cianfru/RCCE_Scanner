@@ -3,6 +3,8 @@
 // reads all tracked wallets weighted by size.
 export const LEAN_MIN_WALLETS = 3;
 export const LEAN_THRESHOLD = 0.15;
+// Conviction the signal's tracked-wallet check needs (signal_synthesizer HL_CONFIDENCE_THRESHOLD).
+export const WALLET_CHECK_CONFIDENCE = 0.15;
 
 // { n, long, short, lean in [-1, 1], side: "long" | "short" | "mixed" | null }
 export function traderLean(p) {

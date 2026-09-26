@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, m } from "../theme.js";
+import { T, m, getBaseSymbol } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -79,8 +79,9 @@ const QUICK_ACTIONS = [
 
 // ── Session management ──────────────────────────────────────────────────────
 
-function getCoinSessionId(symbol) {
-  const base = (symbol || "").replace("/USDT", "").replace("/USD", "");
+// Spot and perp chats keep separate histories.
+function getCoinSessionId(symbol, marketKind) {
+  const base = `${getBaseSymbol(symbol || "")}-${marketKind}`;
   const key = `rcce-coin-chat-${base}`;
   let id = sessionStorage.getItem(key);
   if (!id) {
@@ -92,7 +93,7 @@ function getCoinSessionId(symbol) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
+export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKind = "perpetual" }) {
   const { address: walletAddress } = useWallet();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -102,16 +103,16 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
   const inputRef = useRef(null);
   const panelRef = useRef(null);
   const btnRef = useRef(null);
-  const sessionId = useRef(getCoinSessionId(symbol));
+  const sessionId = useRef(getCoinSessionId(symbol, marketKind));
 
-  const coin = (symbol || "").replace("/USDT", "").replace("/USD", "");
+  const coin = getBaseSymbol(symbol || "");
 
-  // Reset session when symbol changes
+  // Reset session when the market changes
   useEffect(() => {
-    sessionId.current = getCoinSessionId(symbol);
+    sessionId.current = getCoinSessionId(symbol, marketKind);
     setMessages([]);
     setInput("");
-  }, [symbol]);
+  }, [symbol, marketKind]);
 
   // Auto-scroll
   useEffect(() => {
@@ -181,27 +182,19 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
         style={{
           position: "fixed", bottom: isMobile ? 16 : 24, right: isMobile ? 16 : 24,
           width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: "50%",
-          background: "rgba(10, 10, 20, 0.5)",
+          background: T.popoverBg,
           backdropFilter: "blur(20px) saturate(1.5)",
           WebkitBackdropFilter: "blur(20px) saturate(1.5)",
-          border: "2px solid rgba(151,252,228, 0.4)",
+          border: `2px solid ${open ? T.accent : T.border}`,
           cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 2px 16px rgba(0,0,0,0.3)",
+          boxShadow: `0 2px 16px ${T.shadow}`,
           transition: "all 0.25s ease",
           zIndex: 1000,
           overflow: "visible",
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "#97FCE4";
-          e.currentTarget.style.boxShadow = "0 4px 24px rgba(151,252,228,0.4)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) {
-            e.currentTarget.style.background = "rgba(10, 10, 20, 0.5)";
-            e.currentTarget.style.boxShadow = "0 2px 16px rgba(0,0,0,0.3)";
-          }
-        }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent; }}
+        onMouseLeave={(e) => { if (!open) e.currentTarget.style.borderColor = T.border; }}
       >
         {open ? (
           <span style={{ color: T.text2, fontSize: 20, lineHeight: 1 }}>{"\u2715"}</span>
@@ -220,9 +213,11 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
           ref={panelRef}
           style={{
             position: "fixed",
-            bottom: 92,
-            right: 24,
-            width: isMobile ? "calc(100vw - 32px)" : 400,
+            bottom: isMobile ? 72 : 92,
+            // Phones: centred within the 16px gutters.
+            left: isMobile ? 16 : "auto",
+            right: isMobile ? 16 : 24,
+            width: isMobile ? "auto" : 400,
             height: isMobile ? "60vh" : 520,
             background: T.popoverBg,
             border: `1px solid ${T.border}`,

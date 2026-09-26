@@ -14,7 +14,8 @@ import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
-import { traderLean, longShare, usd } from "../utils/traders.js";
+import PanelHeader from "../components/PanelHeader.jsx";
+import { traderLean, longShare, usd, WALLET_CHECK_CONFIDENCE } from "../utils/traders.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -68,7 +69,7 @@ function ConfluenceCard({ confluence }) {
   return (
     <div style={{
       background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "16px 20px",
+      borderRadius: T.radius, padding: "16px 20px",
       backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
@@ -94,16 +95,7 @@ function ConfluenceSection({ confluence }) {
 
   return (
     <>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-        <span style={{
-          fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-          fontFamily: T.font, fontWeight: 700, textTransform: "uppercase",
-        }}>Timeframe agreement <HelpTip title="Confluence"><p>A 0–100 score describing how the four-hour and daily signals, regimes and supporting factors align. Higher agreement means more shared evidence across timeframes. It is not a win rate or a probability of profit.</p></HelpTip></span>
-      </div>
+      <PanelHeader title={<>Timeframe agreement <HelpTip title="Confluence"><p>A 0–100 score describing how the four-hour and daily signals, regimes and supporting factors align. Higher agreement means more shared evidence across timeframes. It is not a win rate or a probability of profit.</p></HelpTip></>} />
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{ flex: 1, height: 5, background: T.overlay04, borderRadius: 3, overflow: "hidden" }}>
@@ -197,10 +189,6 @@ function MetricsPanel({ data }) {
     hasCoinglass(data) && { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
   ].filter(m => m && m.history && m.history.length >= 2);
 
-  // Determine accent color from confidence
-  const conf = data.confidence;
-  const accent = conf >= 60 ? T.green : conf >= 40 ? T.yellow : T.red;
-
   // ── Engine scalar rows (merged from EngineMetrics) ────────────────────────
   const engineRows = [
     ["Z-Score",    fmt(data.zscore, 3),                                                          zBar(data.zscore)?.color],
@@ -226,25 +214,17 @@ function MetricsPanel({ data }) {
   return (
     <div style={{
       background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "14px 20px",
+      borderRadius: T.radius, padding: "14px 20px",
       backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 12, paddingBottom: 8,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ width: 3, height: 14, borderRadius: 2, background: accent, flexShrink: 0 }} />
-        <span style={{ fontSize: T.textBase, color: T.text2, letterSpacing: "0.1em", fontFamily: T.mono, fontWeight: 700, textTransform: "uppercase" }}>
-          Engine values
-        </span>
+      <PanelHeader title="Engine values">
         {metrics.length > 0 && (
-          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono, marginLeft: "auto" }}>
+          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono }}>
             {metrics[0].history.length} ticks
           </span>
         )}
-      </div>
+      </PanelHeader>
 
       {/* Sparklines */}
       {metrics.length > 0 && (
@@ -299,11 +279,14 @@ function MetricsPanel({ data }) {
 // Trader positioning: profitable traders first, then all tracked wallets
 // ---------------------------------------------------------------------------
 
-function SmartMoneyPanel({ data }) {
+function SmartMoneyPanel({ data, spot }) {
   const sm = data?.smart_money;
   if (!sm) return null;
 
   const trendColor = sm.trend === "BULLISH" ? T.green : sm.trend === "BEARISH" ? T.red : T.text4;
+  // Below the conviction the signal's wallet check needs, the lean is not a reading: grey it.
+  const leanColor = (sm.confidence ?? 0) < WALLET_CHECK_CONFIDENCE ? T.text3 : trendColor;
+  const leanLabel = sm.trend === "BULLISH" ? "Lean long" : sm.trend === "BEARISH" ? "Lean short" : "Mixed";
   const longPct = sm.long_count + sm.short_count > 0
     ? Math.round(sm.long_count / (sm.long_count + sm.short_count) * 100)
     : 50;
@@ -313,27 +296,16 @@ function SmartMoneyPanel({ data }) {
   return (
     <div style={{
       background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: 12, padding: "16px 20px",
+      borderRadius: T.radius, padding: "16px 20px",
       backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        marginBottom: 14, paddingBottom: 10,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ width: 3, height: 14, borderRadius: 2, background: col("#a78bfa"), flexShrink: 0 }} />
-        <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
-          Trader positioning
+      {/* Spot pages: the wallets hold Hyperliquid perps, not the spot pair. */}
+      <PanelHeader title={spot ? "Trader positioning (Hyperliquid perps)" : "Trader positioning"}>
+        <span style={{ fontSize: T.textSm, fontWeight: 700, color: leanColor, fontFamily: T.mono, whiteSpace: "nowrap" }}>
+          {leanLabel} · {sm.long_count + sm.short_count} wallets
         </span>
-        <span className="terminal-status" style={{
-          fontSize: T.textSm, fontWeight: 700, color: trendColor, fontFamily: T.mono,
-          marginLeft: "auto", padding: "3px 10px", borderRadius: 20,
-          background: `${trendColor}15`, border: `1px solid ${trendColor}28`,
-        }}>
-          {sm.trend}
-        </span>
-      </div>
+      </PanelHeader>
 
       <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, marginBottom: 6 }}>Profitable traders</div>
       {pro.n > 0 ? <>
@@ -393,7 +365,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => r.json()).then(d => {
       const sym = (urlSymbol || "").toUpperCase();
       const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
-      if (!cancelled) setAvailability(market || {exclusion_reason: "This market is not in the Hyperliquid universe."});
+      if (!cancelled) setAvailability(market || {unlisted: true});
     }).catch(() => {});
     load(); const timer = setInterval(load, 60000);
     return () => {cancelled = true; clearInterval(timer);};
@@ -418,16 +390,16 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   // Set document title
   useEffect(() => {
     if (data) {
-      document.title = `${getBaseSymbol(data.symbol)} | RCCE Scanner`;
+      document.title = `${getBaseSymbol(data.symbol)} · Reflex`;
     }
-    return () => { document.title = "RCCE Scanner"; };
+    return () => { document.title = "Reflex"; };
   }, [data]);
 
-  if (!data || availability?.exclusion_reason) {
+  if (!data || availability?.unlisted || availability?.exclusion_reason) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 16, color: T.text3, fontFamily: T.mono, marginBottom: 16 }}>
-          {availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
+          {availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
         </div>
         <button
           onClick={() => navigate(`/scanner?market=${marketKind}`)}
@@ -442,6 +414,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
   const isWide = !isMobile && !isTablet;
   const coin = getBaseSymbol(data.symbol);
+  // Hyperliquid-only markets have no Binance ticker for TradingView to open.
+  const tvSymbol = getTVSymbol(data.symbol, data.positioning?.source === "binance");
 
   return (
     <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
@@ -518,8 +492,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           >
             Trade on Hyperliquid {"\u2197"}
           </a>
-          <a
-            href={`https://www.tradingview.com/chart/?symbol=${getTVSymbol(data.symbol)}`}
+          {tvSymbol && <a
+            href={`https://www.tradingview.com/chart/?symbol=${tvSymbol}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -534,7 +508,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
           >
             Open in TradingView {"\u2197"}
-          </a>
+          </a>}
         </div>
       </div>
 
@@ -567,13 +541,13 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <div className="analysis-grid analysis-grid-three">
           <PositioningPanel positioning={data.positioning} hasCoinglass={hasCoinglass(data)} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} oiContext={data.oi_context}/>
           <CrossExchangePanel symbol={data.symbol}/>
-          <SmartMoneyPanel data={data}/>
+          <SmartMoneyPanel data={data} spot={marketKind === "spot"}/>
         </div>
       </section>
       <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Underlying engine values for this timeframe.</p><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
-      <CoinChat symbol={data.symbol} timeframe={timeframe} isMobile={isMobile} />
+      <CoinChat symbol={data.symbol} timeframe={timeframe} marketKind={marketKind} isMobile={isMobile} />
     </div>
   );
 }

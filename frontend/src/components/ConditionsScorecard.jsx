@@ -1,14 +1,9 @@
 import HelpTip from "./HelpTip.jsx";
+import PanelHeader, { scoreColor } from "./PanelHeader.jsx";
 import { T } from "../theme.js";
 
-// Getters: T.green/T.red/T.yellow are repainted in place for the light theme.
-const C = { get met() { return T.green; }, get unmet() { return T.red; }, get mid() { return T.yellow; } };
-
-function scoreColor(pct) {
-  if (pct >= 75) return C.met;
-  if (pct >= 50) return C.mid;
-  return C.unmet;
-}
+// Getters: T.green/T.red are repainted in place for the light theme.
+const C = { get met() { return T.green; }, get unmet() { return T.red; } };
 
 function ConditionPill({ c }) {
   return (
@@ -22,7 +17,7 @@ function ConditionPill({ c }) {
 export default function ConditionsScorecard({ conditions, met, total }) {
   if (!conditions || conditions.length === 0) return null;
   const pct = total > 0 ? (met / total) * 100 : 0;
-  const color = scoreColor(pct);
+  const color = scoreColor(met, total);
 
   const core = conditions.filter(c => c.group !== "coinglass");
   const cg = conditions.filter(c => c.group === "coinglass");
@@ -33,34 +28,22 @@ export default function ConditionsScorecard({ conditions, met, total }) {
     <div style={{
       background: T.glassBg,
       border: `1px solid ${T.border}`,
-      borderRadius: 12,
+      borderRadius: T.radius,
       padding: "16px 20px",
       backdropFilter: "blur(20px) saturate(1.3)",
       WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
-      {/* Header */}
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 14, paddingBottom: 10,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 3, height: 14, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-          <span style={{
-            fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "none",
-          }}>
-            Entry Conditions <HelpTip title="Entry conditions"><p>The individual checks used by the signal engine: regime, market consensus, price deviation, heat, funding and other available inputs. A checkmark means the condition is met in the current snapshot. Unknown inputs earn no points. The percentage shows checklist alignment, not the probability of a profitable trade.</p></HelpTip>
-          </span>
-        </div>
+      <PanelHeader title={<>
+        Entry conditions <HelpTip title="Entry conditions"><p>The individual checks used by the signal engine: regime, market consensus, price deviation, heat, funding and other available inputs. A checkmark means the condition is met in the current snapshot. Unknown inputs earn no points. The percentage shows checklist alignment, not the probability of a profitable trade.</p></HelpTip>
+      </>}>
         <span style={{ fontFamily: T.mono, fontSize: T.textLg, fontWeight: 700, color }}>
           {met}/{total}
           <span style={{ fontSize: T.textSm, fontWeight: 400, color: T.text4, marginLeft: 6 }}>
             ({Math.round(pct)}%)
           </span>
         </span>
-      </div>
+      </PanelHeader>
 
       {conditions.some(c => c.available === false) && (
         <p style={{ color: T.text4, marginBottom: 10 }}>
@@ -74,9 +57,9 @@ export default function ConditionsScorecard({ conditions, met, total }) {
       }}>
         <div style={{
           width: `${pct}%`, height: "100%",
-          background: `linear-gradient(90deg, ${color}88, ${color})`,
+          // Solid fill: the score colour can be a CSS variable, which takes no alpha suffix.
+          background: color,
           borderRadius: 3, transition: "width 0.4s ease",
-          boxShadow: `0 0 8px ${color}30`,
         }} />
       </div>
 
@@ -86,8 +69,8 @@ export default function ConditionsScorecard({ conditions, met, total }) {
         fontFamily: T.font, fontWeight: 600, textTransform: "none",
         marginBottom: 8, display: "flex", justifyContent: "space-between",
       }}>
-        <span>Core Engine</span>
-        <span style={{ color: coreMet >= 7 ? C.met : coreMet >= 5 ? C.mid : C.unmet, fontFamily: T.mono }}>
+        <span>Core engine</span>
+        <span style={{ color: scoreColor(coreMet, core.length), fontFamily: T.mono }}>
           {coreMet}/{core.length}
         </span>
       </div>
@@ -106,8 +89,8 @@ export default function ConditionsScorecard({ conditions, met, total }) {
             fontFamily: T.font, fontWeight: 600, textTransform: "none",
             marginBottom: 8, display: "flex", justifyContent: "space-between",
           }}>
-            <span>Market Context</span>
-            <span style={{ color: cgMet >= 3 ? C.met : cgMet >= 2 ? C.mid : C.unmet, fontFamily: T.mono }}>
+            <span>Market context</span>
+            <span style={{ color: scoreColor(cgMet, cg.length), fontFamily: T.mono }}>
               {cgMet}/{cg.length}
             </span>
           </div>

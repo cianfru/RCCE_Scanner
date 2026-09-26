@@ -1,5 +1,5 @@
 import Tabs from "./Tabs.jsx";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { T, SIGNAL_META, REGIME_META, TRANSITION_META, col } from "../theme.js";
 
 // ---------------------------------------------------------------------------
@@ -79,13 +79,18 @@ const S = {
   },
 };
 
-function Badge({ bg, color, border, children }) {
+// Flat coloured text, as the scanner's status labels.
+function Badge({ color, children }) {
+  return <span style={{ fontSize: T.textXs, fontWeight: 700, color }}>{children}</span>;
+}
+
+// A failed request is not an empty history: say so and offer a retry.
+function LoadError({ onRetry }) {
   return (
-    <span style={{
-      display: "inline-block", padding: "2px 7px", borderRadius: 6,
-      fontSize: T.textXs, fontWeight: 700, letterSpacing: "0.04em",
-      background: bg, color, border: `1px solid ${border}`,
-    }}>{children}</span>
+    <div style={S.empty}>
+      Could not load.{" "}
+      <button type="button" onClick={onRetry} style={{ background: "transparent", border: 0, borderBottom: `1px solid ${T.accent}`, padding: 0, color: T.accent, fontSize: 13, fontFamily: T.mono, cursor: "pointer" }}>Retry</button>
+    </div>
   );
 }
 
@@ -133,13 +138,14 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
   const tableW = labelW + 12 + data.days.length * colW;
 
   return (
-    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
+    // Bounded height so the day header stays in view (sticky) down all rows.
+    <div style={{ overflow: "auto", maxHeight: "70vh", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
       <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: T.textXs, width: tableW, minWidth: "100%", tableLayout: "fixed" }}>
         <thead>
           <tr>
-            <th style={{ position: "sticky", left: 0, zIndex: 2, background: T.bg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: T.textXs, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
+            <th style={{ position: "sticky", left: 0, top: 0, zIndex: 4, background: T.selectBg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: T.textXs, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
             {data.days.map((day, i) => (
-              <th key={i} style={{ boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: T.textXs, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
+              <th key={i} style={{ position: "sticky", top: 0, zIndex: 3, background: T.selectBg, boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: T.textXs, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
             ))}
           </tr>
         </thead>
@@ -149,7 +155,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
             if (!row) return null;
             return (
               <tr key={sym} style={{ background: rowIdx % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? T.overlay02 : T.bg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW }}>{stripSymbol(sym)}</td>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? `linear-gradient(${T.overlay02}, ${T.overlay02}), ${T.selectBg}` : T.selectBg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW }}>{stripSymbol(sym)}</td>
                 {row.map((cell, colIdx) => {
                   const signal = cell?.signal || "WAIT";
                   const checks = checksText(cell?.cond);
@@ -233,13 +239,13 @@ function DivergenceView({ data, isMobile }) {
               }}>
                 <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(p.symbol)}</td>
                 <td style={S.td}>
-                  <Badge bg={`${sigColor}18`} color={sigColor} border={`${sigColor}40`}>
+                  <Badge color={sigColor}>
                     {signalLabel(p.signal)}
                   </Badge>
                 </td>
                 <td style={{ ...S.td, textAlign: "center", color: T.text4 }}>against</td>
                 <td style={S.td}>
-                  <Badge bg={`${walletColor}18`} color={walletColor} border={`${walletColor}40`}>
+                  <Badge color={walletColor}>
                     {sm.trend}
                   </Badge>
                 </td>
@@ -313,7 +319,7 @@ function TransitionsView({ events, isMobile }) {
                 <td style={{ ...S.td, color: tt.color, fontSize: 12, textAlign: "center", padding: "7px 4px" }}>{tt.glyph}</td>
                 <td style={{ ...S.td, color: sigColor, fontWeight: 600 }}>{signalLabel(ev.signal)}</td>
                 <td style={S.td}>
-                  <Badge bg={`${tt.color}15`} color={tt.color} border={`${tt.color}30`}>{tt.label}</Badge>
+                  <Badge color={tt.color}>{tt.label}</Badge>
                 </td>
                 {!isMobile && <td style={{ ...S.td, color: T.text3 }}>{ev.regime ? (REGIME_META[ev.regime]?.name || ev.regime) : "\u2014"}</td>}
               </tr>
@@ -384,7 +390,7 @@ function StreaksView({ data, isMobile }) {
               <tr key={s.symbol} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
                 <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(s.symbol)}</td>
                 <td style={S.td}>
-                  <Badge bg={`${sigColor}18`} color={sigColor} border={`${sigColor}40`}>
+                  <Badge color={sigColor}>
                     {signalLabel(s.signal)}
                   </Badge>
                 </td>
@@ -421,6 +427,10 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
   const [loading, setLoading] = useState(false);
   const [sortMode, setSortMode] = useState("bullish");
   const [transitions, setTransitions] = useState([]);
+  const [heatmapError, setHeatmapError] = useState(false);
+  const [transitionsError, setTransitionsError] = useState(false);
+  const [reload, setReload] = useState(0);
+  const retry = () => setReload(n => n + 1);
 
   const scanData = timeframe === "4h" ? scanData4h : scanData1d;
   const presentSignals = useMemo(() => {
@@ -429,30 +439,31 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
     return seen;
   }, [heatmap]);
 
-  const fetchHeatmap = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${api}/api/signals/heatmap?timeframe=${timeframe}&days=14&limit=100`);
-      const data = await res.json();
-      setHeatmap(data);
-    } catch (e) {
-      console.error("SignalLogPanel fetch error:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [api, timeframe]);
-
+  // A late response for the previous timeframe must not overwrite the current one.
+  const needsHeatmap = activeView === "heatmap" || activeView === "streaks";
   useEffect(() => {
-    if (activeView === "heatmap" || activeView === "streaks") fetchHeatmap();
-  }, [activeView, fetchHeatmap]);
+    if (!needsHeatmap) return;
+    let cancelled = false;
+    setLoading(true);
+    setHeatmapError(false);
+    fetch(`${api}/api/signals/heatmap?timeframe=${timeframe}&days=14&limit=100`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { if (!cancelled) setHeatmap(d); })
+      .catch(e => { if (!cancelled) { console.error("SignalLogPanel fetch error:", e); setHeatmap(null); setHeatmapError(true); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [needsHeatmap, api, timeframe, reload]);
 
   useEffect(() => {
     if (activeView !== "transitions") return;
+    let cancelled = false;
+    setTransitionsError(false);
     fetch(`${api}/api/signals/recent?timeframe=${timeframe}&limit=50`)
-      .then(r => r.json())
-      .then(d => setTransitions(d.changes || []))
-      .catch(() => {});
-  }, [activeView, timeframe, api]);
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { if (!cancelled) setTransitions(d.changes || []); })
+      .catch(() => { if (!cancelled) { setTransitions([]); setTransitionsError(true); } });
+    return () => { cancelled = true; };
+  }, [activeView, timeframe, api, reload]);
 
   const VIEWS = [
     { key: "heatmap", label: "Heatmap" },
@@ -462,8 +473,9 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
   ];
 
   const SORTS = [
-    { key: "bullish", label: "Bullish first" },
-    { key: "bearish", label: "Bearish first" },
+    { key: "bullish", label: "Most bullish" },
+    // The 14-day grid holds long and exit signals only: this reverses the bullish score.
+    { key: "bearish", label: "Least bullish" },
     { key: "default", label: "Priority" },
   ];
 
@@ -475,7 +487,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
         alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8,
       }}>
         <Tabs label="Signal log view" items={VIEWS} value={activeView} onChange={setActiveView} />
-        <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", width: isMobile ? "100%" : undefined }}>
           {activeView === "heatmap" && <Tabs small label="Sort" items={SORTS} value={sortMode} onChange={setSortMode} />}
           {activeView === "heatmap" && <span style={{ width: 1, alignSelf: "stretch", background: T.border, margin: "0 4px" }} />}
           <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />
@@ -495,7 +507,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
                 </span>
               </div>
               <p style={{ margin: "-8px 0 12px", fontSize: T.textXs, color: T.text3 }}>Cells show the signal; hover a cell for the entry checks met.</p>
-              <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} />
+              {heatmapError ? <LoadError onRetry={retry} /> : <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} />}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.overlay04}` }}>
                 {/* Only signals that appear in the grid */}
                 {Object.entries(SIGNAL_META).filter(([key]) => presentSignals.has(key)).map(([key, meta]) => {
@@ -534,7 +546,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
               last 50
             </span>
           </div>
-          <TransitionsView events={transitions} isMobile={isMobile} />
+          {transitionsError ? <LoadError onRetry={retry} /> : <TransitionsView events={transitions} isMobile={isMobile} />}
         </div>
       )}
 
@@ -550,7 +562,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
                   consecutive days on same signal
                 </span>
               </div>
-              <StreaksView data={heatmap} isMobile={isMobile} />
+              {heatmapError ? <LoadError onRetry={retry} /> : <StreaksView data={heatmap} isMobile={isMobile} />}
             </div>
           )}
         </>
