@@ -52,3 +52,40 @@ The same as the stop study:
 - **If several pass,** the one with the higher median Sharpe on the primary set wins.
 - **If none pass,** nothing changes.
 - **No variants are added** after seeing results.
+
+## Results
+
+Z0 reproduces the replay baseline (+43.1% on the primary set).
+
+**Primary set (10 coins)**
+
+| | Compounded | Worst-window DD | Median Sharpe | Avg exposure | Trades | Worst 3 trades ($) |
+|---|---:|---:|---:|---:|---:|---|
+| Z0 | +43.1% | -10.4% | 0.32 | 9.6% | 314 | -153, -96, -87 |
+| Z1 | +86.9% | -19.1% | 0.37 | 18.3% | 314 | -306, -192, -173 |
+| Z2 | +34.2% | -13.9% | 0.18 | 12.0% | 314 | -192, -129, -120 |
+| Z3 | +37.9% | -10.2% | 0.16 | 8.8% | 314 | -149, -93, -63 |
+| Z4 | +84.6% | -19.9% | 0.37 | 18.1% | 314 | -306, -192, -173 |
+
+**Confirmation set (30 coins)**
+
+| | Compounded | Worst-window DD | Median Sharpe | Avg exposure | Trades | Worst 3 trades ($) |
+|---|---:|---:|---:|---:|---:|---|
+| Z0 | +45.3% | -14.6% | -0.80 | 7.5% | 725 | -42, -41, -36 |
+| Z1 | +82.5% | -22.5% | -0.77 | 14.4% | 725 | -84, -81, -73 |
+| Z2 | +40.8% | -12.0% | -0.66 | 7.7% | 725 | -45, -45, -34 |
+| Z3 | +39.5% | -13.1% | -0.83 | 6.8% | 725 | -34, -34, -30 |
+| Z4 | +30.1% | -44.6% | -0.52 | 27.4% | 554 | -252, -218, -213 |
+
+## Verdict: nothing ships
+
+- **Z1 (full slots) roughly doubles the return on both sets (+87% and +83%), but the worst-window drawdown also doubles** (to -19% and -23%). That is 8-9 points deeper, well past the 3-point limit.
+- **Z2 (volatility parity) and Z3 (entry-check conviction) lower both return and Sharpe.**
+- **Z4 (five big slots) collapses on the 30-coin set.** It reached -45% drawdown, because a few large positions carried whole windows.
+
+**What this shows:**
+- **The backtest is mostly in cash.** Average exposure is 10% of capital on the primary set and 8% on the secondary set: small partial slots, and one slot per coin whether or not it has a signal.
+- **Returns scale with size, with no gain in quality.** Z1's median Sharpe (0.37 against 0.32, and -0.77 against -0.80) is only marginally better than Z0's, while return and drawdown both double. Sizing by signal strength, as today, does not pick better trades. It only takes smaller ones.
+- **No rule for putting more on some coins than others (calmer coins, stronger entry checks) improved risk-adjusted results.**
+- **How big to trade is therefore a risk-appetite choice, not an edge found here.** A fixed drawdown budget should set it.
+- **The live executor sizes differently from this backtest** (it uses 3-5× leverage per signal, per `_LEVERAGE_MAP`). Its real risk per trade should be reviewed against these drawdowns before any change.
