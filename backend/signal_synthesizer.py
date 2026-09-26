@@ -331,7 +331,10 @@ def _synthesize_signal(
         prev_heat = result.get("previous_heat")
 
     out = SynthesizedSignal(raw_signal=raw_signal)
-    out.entry_blocked = bool(macro_blocked or is_climax or result.get("engine_errors"))
+    # Cool-off after a spike (docs/reviews/after-the-spike-study.md): no new longs while the
+    # last spike is still unwinding. Exits are unaffected.
+    cooling = bool((result.get("cool_off") or {}).get("active"))
+    out.entry_blocked = bool(macro_blocked or is_climax or result.get("engine_errors") or cooling)
     reasons: list = []
     warnings: list = []
 

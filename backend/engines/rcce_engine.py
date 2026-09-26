@@ -48,6 +48,13 @@ MIN_REGIME_BARS: int = 5
 # BLOWOFF_ENTRY_BARS instead of MIN_REGIME_BARS: it is a caution state.
 BLOWOFF_TAKEOVER: bool = True
 BLOWOFF_ENTRY_BARS: int = 2
+# Cool-off after a spike (docs/reviews/after-the-spike-study.md). None = off; otherwise no new
+# long entries after the last bar with z >= Z_BLOWOFF until z closes below this level or price
+# closes above the spike's peak.
+COOL_OFF_RELEASE_Z: Optional[float] = None
+# "own": each timeframe judges its own spike; "daily": 4H entries follow the daily cool-off
+# (a spike unwinds over weeks, while 4H z returns to its mean within days).
+COOL_OFF_SOURCE: str = "own"
 
 # Regime label ordering (index -> name)
 _REGIME_LABELS: List[str] = [
@@ -721,6 +728,29 @@ def _resolve_regime_with_persistence(
     return (regimes, confidences, transition) if with_transition else (regimes, confidences)
 
 
+def _cool_off(z: np.ndarray, close: np.ndarray, release_z: float) -> dict:
+    """Is the market still unwinding its last spike? Computed from the window alone.
+
+    The spike is the last bar with z >= Z_BLOWOFF; its run is the consecutive bars around it
+    with z >= 2.0 and its peak the highest close in that run. Cooling off holds until a later
+    close has z < ``release_z`` (back toward the mean) or closes above that peak (trend resumed).
+    """
+    idx = np.where(np.nan_to_num(z, nan=-np.inf) >= Z_BLOWOFF)[0]
+    if len(idx) == 0:
+        return {"active": False}
+    s = int(idx[-1])
+    a, b = s, s
+    while a > 0 and np.isfinite(z[a - 1]) and z[a - 1] >= 2.0:
+        a -= 1
+    while b + 1 < len(z) and np.isfinite(z[b + 1]) and z[b + 1] >= 2.0:
+        b += 1
+    peak = float(np.nanmax(close[a:b + 1]))
+    after_z, after_c = z[b + 1:], close[b + 1:]
+    released = bool(np.any(np.nan_to_num(after_z, nan=np.inf) < release_z) or np.any(after_c > peak))
+    return {"active": not released, "bars_since_spike": int(len(z) - 1 - s), "spike_peak": round(peak, 8),
+            "release_z": release_z}
+
+
 # ---------------------------------------------------------------------------
 # Signal generation (Module 14)
 # ---------------------------------------------------------------------------
@@ -1056,6 +1086,8 @@ def compute_rcce(
         "warmup_quality": round(warmup_ratio, 2),
         "baseline_type": baseline_type,
         "z_declining": z_declining,
+        "cool_off": (_cool_off(z_series, close, COOL_OFF_RELEASE_Z) if COOL_OFF_RELEASE_Z is not None
+                     else {"active": False}),
         "regime_probabilities": {
             "markup": round(float(np.nan_to_num(p_markup[-1], nan=0.0)), 4),
             "blowoff": round(float(np.nan_to_num(p_blowoff[-1], nan=0.0)), 4),

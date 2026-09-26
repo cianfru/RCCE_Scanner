@@ -324,7 +324,11 @@ async def run_replay(
                 logger.exception("Daily synthesis unavailable for %s", daily.get("symbol"))
 
         # --- Step 7: Synthesize signals ---
+        import engines.rcce_engine as _rcce
+        daily_cool = _rcce.COOL_OFF_RELEASE_Z is not None and _rcce.COOL_OFF_SOURCE == "daily"
         for r in bar_results_raw:
+            if daily_cool:   # 4H entries wait while the daily chart is still unwinding its spike
+                r["cool_off"] = (cached_1d_results.get(r["symbol"]) or {}).get("cool_off", {"active": False})
             try:
                 evaluate_decision(r, {"consensus": consensus, "sentiment": sentiment_dict}, decision_state,
                                   as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",

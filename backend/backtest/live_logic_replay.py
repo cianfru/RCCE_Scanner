@@ -49,12 +49,19 @@ def main(argv=None):
     ap.add_argument("--backend", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--gate", choices=("on", "off"))
+    ap.add_argument("--cooloff", type=float, help="cool-off release z (after-the-spike study): 0 or 1; omit for off")
+    ap.add_argument("--cooloff-source", choices=("own", "daily"), default="own")
+    ap.add_argument("--symbols", choices=("primary", "secondary"), default="primary")
     ap.add_argument("--blowoff", choices=("off", "takeover", "full"),
                     help="Overheated fix (docs/reviews/overheated-regime.md): off, score only, or score + 2-bar entry")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
-    for s in SYMBOLS:
+    symbols = SYMBOLS
+    if args.symbols == "secondary":
+        from backtest.larsson_scenarios import SECONDARY_FILE
+        symbols = json.loads(SECONDARY_FILE.read_text())["symbols"]
+    for s in symbols:
         for tf in data:
             d = bh.load(f"{s}USDT", tf, DATA_START if tf != "1w" else "2019-01-07", DATA_END)
             if d is not None:
@@ -68,6 +75,10 @@ def main(argv=None):
         import engines.rcce_engine as rcce
         rcce.BLOWOFF_TAKEOVER = args.blowoff != "off"
         rcce.BLOWOFF_ENTRY_BARS = 2 if args.blowoff == "full" else rcce.MIN_REGIME_BARS
+    if args.cooloff is not None:
+        import engines.rcce_engine as rcce
+        rcce.COOL_OFF_RELEASE_Z = args.cooloff
+        rcce.COOL_OFF_SOURCE = args.cooloff_source
     from backtest.replay_engine import run_replay
     t0 = time.time()
     res = asyncio.run(run_replay(list(data["4h"]), data["4h"], data["1d"], data["1w"], fng, warmup_bars=500))
