@@ -1,7 +1,7 @@
 import ReflexBrand from "./ReflexBrand.jsx";
 import { useEffect, useState } from "react";
 import { T } from "../theme.js";
-import { isAuthenticated, login } from "../auth.js";
+import { authStatus, isAuthenticated, login } from "../auth.js";
 
 export { isAuthenticated };
 
@@ -12,6 +12,19 @@ export default function AuthGate({ children }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [shaking, setShaking] = useState(false);
+  const [checking, setChecking] = useState(!authed);
+
+  // With no access code configured on the server there is nothing to enter: skip the form.
+  useEffect(() => {
+    if (authed) return;
+    let live = true;
+    authStatus().then(enforced => {
+      if (!live) return;
+      if (enforced === false) setAuthed(true);
+      setChecking(false);
+    });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A 401 from any API call (expired token, code changed) returns here.
   useEffect(() => {
@@ -21,6 +34,7 @@ export default function AuthGate({ children }) {
   }, []);
 
   if (authed) return children;
+  if (checking) return <div style={{ minHeight: "100vh", background: T.bg }} />;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -92,7 +106,7 @@ export default function AuthGate({ children }) {
         animation: shaking ? "shake 0.4s ease-in-out" : undefined,
       }}>
         <label style={{
-          display: "block", fontSize: 11, fontFamily: T.mono,
+          display: "block", fontSize: 12, fontFamily: T.mono,
           color: T.text4, letterSpacing: "0.1em", marginBottom: 10,
           textTransform: "uppercase",
         }}>
@@ -103,7 +117,7 @@ export default function AuthGate({ children }) {
           value={value}
           onChange={e => { setValue(e.target.value); setError(false); }}
           autoFocus
-          placeholder="Enter password"
+          placeholder="Access code"
           style={{
             width: "100%", padding: "12px 14px",
             fontSize: 14, fontFamily: T.mono,
@@ -138,6 +152,9 @@ export default function AuthGate({ children }) {
         >
           Enter
         </button>
+        <p style={{ fontSize: 12, color: T.text4, marginTop: 14, lineHeight: 1.5 }}>
+          The terminal is in private preview. Codes are shared by the Reflex team.
+        </p>
       </form>
 
       {/* Shake animation */}

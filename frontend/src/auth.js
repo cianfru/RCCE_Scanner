@@ -35,6 +35,19 @@ export async function login(code) {
   return true;
 }
 
+// Whether the server asks for a code at all; null when it cannot be reached.
+export async function authStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/status`);
+    if (!res.ok) return null;
+    const { enforced } = await res.json();
+    write(ENFORCED_KEY, enforced ? "1" : null);
+    return !!enforced;
+  } catch {
+    return null;
+  }
+}
+
 export function logout() {
   write(TOKEN_KEY, null);
   write(AUTH_KEY, null);

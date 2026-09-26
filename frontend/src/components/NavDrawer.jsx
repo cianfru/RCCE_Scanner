@@ -72,7 +72,7 @@ const NAV_SECTIONS = [
       { key: "chat", label: "AI Assist", desc: "Explain the scanner’s market data" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
-      { key: "hyperlens", label: "HyperLens", desc: "Smart-money wallet tracking" },
+      { key: "hyperlens", label: "HyperLens", desc: "Positioning of profitable traders and large accounts" },
     ],
   },
   {
@@ -192,7 +192,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           {/* ── Scanner section (Hyperliquid + Watchlists) ── */}
           <div style={{ marginBottom: 20 }}>
             <div style={{
-              fontSize: 11, fontWeight: 700, color: T.text4,
+              fontSize: 12, fontWeight: 700, color: T.text4,
               fontFamily: T.font, letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "0 8px 8px",
@@ -218,7 +218,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           {NAV_SECTIONS.map((section) => (
             <div key={section.label} style={{ marginBottom: 20 }}>
               <div style={{
-                fontSize: 11, fontWeight: 700, color: T.text4,
+                fontSize: 12, fontWeight: 700, color: T.text4,
                 fontFamily: T.font, letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 padding: "0 8px 8px",

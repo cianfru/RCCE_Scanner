@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPercent, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass} from './marketPresentation.js';
+import {formatPercent, formatPrice, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass} from './marketPresentation.js';
 test('respects explicit API percentage units without multiplying twice',()=>{
  assert.equal(formatPercent(82),'82%');
  assert.equal(formatPercent(0.82,{ratio:true}),'82%');
@@ -31,4 +31,12 @@ test('CoinGlass fields count only when the feed is fresh and covers the market',
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:pos}),true);
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'stale'}},positioning:pos}),false);
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:{source_map:{}}}),false);
+});
+test('prices carry separators and no fake precision',()=>{
+ assert.equal(formatPrice(84131),'$84,131.00');
+ assert.equal(formatPrice(14.87),'$14.87');
+ assert.equal(formatPrice(99.175),'$99.18');
+ assert.equal(formatPrice(0.012345),'$0.01235');
+ assert.equal(formatPrice(0.0000000123),'$0.0000000123');
+ assert.equal(formatPrice(null),'—');
 });

@@ -31,6 +31,12 @@ class SpotQualityTests(unittest.TestCase):
         self.assertIsNone(volume_reason({'kind':'spot','quote':'USDC','volume_24h_usd':'25000'}))
         self.assertIsNone(volume_reason({'kind':'perpetual'}))
 
+    def test_stablecoins_are_left_out_of_the_spot_scan(self):
+        for base in ('USDT0','USDE','USDH','USDE~7'):
+            self.assertIn('Stablecoin',volume_reason({'kind':'spot','quote':'USDC','base':base,'volume_24h_usd':'9e9'}))
+        for base in ('HYPE','USUAL','PURR'):
+            self.assertIsNone(volume_reason({'kind':'spot','quote':'USDC','base':base,'volume_24h_usd':'9e9'}))
+
     def test_context_identity_and_eligibility_prune_cached_signals(self):
         meta={'universe':[{'name':'BTC'}]}
         spot={'tokens':[{'index':0,'name':'USDC'},{'index':1,'name':'BTC'},{'index':2,'name':'PICKL'}],

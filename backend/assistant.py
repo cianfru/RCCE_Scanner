@@ -398,7 +398,7 @@ class AssistantManager:
                 f"timeframe. Walk through the conditions supplied in the snapshot, "
                 f"explain which pass and fail, show the weighted score, and explain "
                 f"the specific reason the signal is what it is. Include how CVD, "
-                f"smart money LSR, and macro data influenced the outcome. Be precise with numbers."
+                f"the top-trader long/short ratio, and macro data influenced the outcome. Be precise with numbers."
             ),
             symbol=symbol,
             timeframe=timeframe,

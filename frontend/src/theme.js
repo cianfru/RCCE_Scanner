@@ -133,6 +133,13 @@ export function applyTheme(mode) {
   root.dataset.theme = mode;
 }
 
+// The --t-* variables of one palette as an inline style, for a block that keeps its
+// colours whatever the app theme is (the always-dark landing embeds the terminal table).
+export function themeVars(mode) {
+  const tokens = mode === "light" ? LIGHT : DARK;
+  return Object.fromEntries(Object.entries(tokens).map(([key, val]) => [`--t-${key}`, val]));
+}
+
 
 // ─── DESIGN TOKENS (CSS variable references) ───────────────────────────────
 
