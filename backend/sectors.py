@@ -93,6 +93,9 @@ _S = {
 
 
 _S.update({"FART": _S["FARTCOIN"], "VIRT": _S["VIRTUAL"], "ZORA": ("Other", "Base")})   # spot tickers and alias
+# HyperLens reports some coins under exchange-neutral names (kPEPE -> PEPE, RENDER -> RNDR).
+_S.update({k: _S[f"k{k}"] for k in ("PEPE", "SHIB", "BONK", "FLOKI", "NEIRO", "LUNC")})
+_S.update({"RNDR": _S["RENDER"], "FTM": _S["S"], "MATIC": _S["POL"]})
 
 
 def _lookup(coin: str) -> Optional[Tuple[str, Optional[str]]]:
@@ -122,3 +125,11 @@ def size_tier(positioning: Optional[dict]) -> Optional[str]:
     if not size:
         return None
     return "Large" if size >= 100e6 else "Mid" if size >= 10e6 else "Small"
+
+
+def groups(coin: str) -> Tuple[str, ...]:
+    """Group keys for sector views: ("sector:AI", "ecosystem:Solana", "pocket:AI|Solana")."""
+    sector, eco = classify(coin, coin)
+    if not eco:
+        return (f"sector:{sector}",)
+    return (f"sector:{sector}", f"ecosystem:{eco}", f"pocket:{sector}|{eco}")

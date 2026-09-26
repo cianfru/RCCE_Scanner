@@ -3763,6 +3763,27 @@ async def auth_login(payload: dict):
 _PREVIEW_COINS = {"BTC", "ETH", "SOL", "HYPE", "LINK"}
 
 
+_SECTOR_SERIES_CACHE: Dict[tuple, dict] = {}
+
+
+@app.get("/api/sectors")
+async def sectors_view(days: int = Query(90, ge=7, le=180), history: str = Query("", description="sector, ecosystem or pocket")):
+    """Sector / ecosystem / pocket price races against BTC and profitable-trader lean (display only)."""
+    import sector_view
+    from data_fetcher import _ohlcv_store
+    rows = cache.get_results("1d")
+    key = (int(time.time()) // 86_400, days, len(rows))
+    body = _SECTOR_SERIES_CACHE.get(key)
+    if body is None:
+        body = sector_view.series(rows, _ohlcv_store, days)
+        _SECTOR_SERIES_CACHE.clear()
+        _SECTOR_SERIES_CACHE[key] = body
+    out = {**body, "lean": sector_view.lean()}
+    if history in ("sector", "ecosystem", "pocket"):
+        out["lean_history"] = sector_view.lean_history(f"{history}:")
+    return out
+
+
 @app.get("/api/public/preview")
 async def public_preview(timeframe: str = Query("1d", description="4h or 1d")):
     """The landing page's live preview: five large markets only, public by design."""

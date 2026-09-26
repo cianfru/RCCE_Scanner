@@ -281,3 +281,7 @@
 .sector-meta{grid-column:1 / -1;font-size:10px;color:var(--t-text3);white-space:nowrap;}
 .best-setup-sector{display:block;font-style:normal;font-size:11px;color:var(--t-text3);margin:-2px 0 6px;}
 .best-setups-grid button{align-content:start;}
+.sector-traders{grid-column:1 / -1;display:flex;gap:6px;align-items:baseline;font-size:10px;color:var(--t-text3);white-space:nowrap;border-top:1px solid var(--t-border);padding-top:4px;margin-top:2px;}
+.sector-traders b{font:600 11px var(--font-geist-mono),monospace;color:var(--t-text2);}
+.sector-traders b.over{color:var(--t-accent);}
+.sector-traders b.under{color:var(--t-text4);}

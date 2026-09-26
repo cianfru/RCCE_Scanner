@@ -966,7 +966,12 @@ async def _synthesize_and_enrich(
             r["smart_money"] = {"trend": hl_data.trend, "confidence": hl_data.confidence,
                                 "net_ratio": hl_data.net_ratio, "long_count": hl_data.long_count,
                                 "short_count": hl_data.short_count,
-                                "long_notional": hl_data.long_notional, "short_notional": hl_data.short_notional}
+                                "long_notional": hl_data.long_notional, "short_notional": hl_data.short_notional,
+                                # Profitable traders only (see hl_intelligence.refresh_leaderboard): display, not signal input.
+                                "profitable": {"long": hl_data.money_printer_long_count,
+                                               "short": hl_data.money_printer_short_count,
+                                               "long_usd": hl_data.money_printer_long_notional,
+                                               "short_usd": hl_data.money_printer_short_notional}}
         if r.get("symbol") in getattr(scan_cache, "anomaly_hot_symbols", set()):
             r["has_anomaly"] = True
 

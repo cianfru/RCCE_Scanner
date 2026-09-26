@@ -1,3 +1,4 @@
+import { traderLean } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import { useMemo, useState } from "react";
 import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.js";
@@ -22,7 +23,7 @@ import GlassCard from "./GlassCard.jsx";
 const EMPTY_WHEN = {
   DIV: r => !r.divergence,
   EXHAUST: r => !r.exhaustion_state || r.exhaustion_state === "NEUTRAL",
-  SM: r => !r.smart_money?.trend || r.smart_money.trend === "NEUTRAL",
+  SM: r => !["long", "short"].includes(traderLean(r.smart_money?.profitable).side),
   OI: r => !r.positioning?.oi_trend,
   CVD: r => !r.cvd_trend || ["NEUTRAL", "UNAVAILABLE"].includes(r.cvd_trend),
 };
