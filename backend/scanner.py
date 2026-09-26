@@ -2217,6 +2217,9 @@ async def run_rolling_scan(
         scan_cache.is_scanning = False
 
 
+_TRADFI_NO_FLOW_NOTE = "Held at Accumulate: order-flow confirmation is not available for this market."
+
+
 async def run_tradfi_scan(
     scan_cache: Optional[ScanCache] = None,
 ) -> None:
@@ -2378,6 +2381,11 @@ async def run_tradfi_scan(
             metadata = {"funding": {"source": "hyperliquid_xyz", "observed_at": getattr(xyz, "timestamp", None)}}
             evaluate_decision(r, {"consensus": tradfi_consensus, "positioning": r.get("positioning")},
                               scan_cache, as_of=time.time(), metadata=metadata)
+            # TradFi markets have no taker-flow or spot data, so this demotion note is reworded.
+            r["signal_warnings"] = [
+                _TRADFI_NO_FLOW_NOTE if "LIGHT_LONG demoted: no CVD/spot" in str(w) else w
+                for w in r.get("signal_warnings") or []
+            ]
 
         # 6. Compute priority scores
         for r in results:

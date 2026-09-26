@@ -279,13 +279,18 @@ def _get_positioning_field(result: dict, field: str, default=0.0):
 # Core detection
 # ---------------------------------------------------------------------------
 
+def _sigma_note(sig: float, label: str = "history") -> str:
+    """', 1.8\u03c3 vs history', or '' when there is not enough history (sigma 0)."""
+    return f", {abs(sig):.1f}\u03c3 vs {label}" if abs(sig) >= 0.05 else ""
+
+
 _METRIC_EXTRACTORS = {
     "EXTREME_FUNDING": {
         "extract": lambda r: _get_positioning_field(r, "funding_rate"),
         "history_key": "funding_history",
         "context_fn": lambda sym, val, z, sig: (
             f"{_annualized_funding(val):+.0f}% annualized funding "
-            f"(z={z:.1f}, {abs(sig):.1f}\u03c3 vs history)"
+            f"(z={z:.1f}{_sigma_note(sig)})"
         ),
         "direction_fn": lambda val: "SHORT" if val < 0 else "LONG",
         "filter_zero": True,
@@ -300,7 +305,7 @@ _METRIC_EXTRACTORS = {
         "history_key": "oi_change_history",
         "context_fn": lambda sym, val, z, sig: (
             f"OI {'+' if val > 0 else ''}{val:.1f}% change "
-            f"(z={z:.1f}, {abs(sig):.1f}\u03c3 vs history)"
+            f"(z={z:.1f}{_sigma_note(sig)})"
         ),
         "direction_fn": _direction_from_value,
         "filter_zero": True,
@@ -329,7 +334,7 @@ _METRIC_EXTRACTORS = {
         "context_fn": lambda sym, val, z, sig: (
             f"LSR {val:.2f} "
             f"({'crowd long' if val > 1.0 else 'crowd short'}, "
-            f"z={z:.1f}, {abs(sig):.1f}\u03c3 vs history)"
+            f"z={z:.1f}{_sigma_note(sig)})"
         ),
         "direction_fn": lambda val: "LONG" if val > 1.0 else "SHORT",
         "filter_zero": True,
@@ -343,7 +348,7 @@ _METRIC_EXTRACTORS = {
         "context_fn": lambda sym, val, z, sig: (
             f"Buy/sell ratio {val:.2f} "
             f"({'takers buying' if val > 1.0 else 'takers selling'}, "
-            f"z={z:.1f}, {abs(sig):.1f}\u03c3 vs history)"
+            f"z={z:.1f}{_sigma_note(sig)})"
         ),
         "direction_fn": lambda val: "LONG" if val > 1.0 else "SHORT",
         "filter_zero": True,
@@ -356,7 +361,7 @@ _METRIC_EXTRACTORS = {
         "history_key": "vpin_history",
         "context_fn": lambda sym, val, z, sig: (
             f"VPIN {val:.0%} — {'toxic' if val >= 0.55 else 'elevated'} informed flow "
-            f"(z={z:.1f}, {abs(sig):.1f}\u03c3 vs own history)"
+            f"(z={z:.1f}{_sigma_note(sig, 'own history')})"
         ),
         "direction_fn": lambda val: "NEUTRAL",  # VPIN is directionless — use CVD for direction
         "filter_zero": True,

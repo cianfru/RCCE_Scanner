@@ -345,7 +345,8 @@ function TradeForm({ selected, api, isMobile }) {
 export default function DetailPanel({ selected, isMobile, isTablet, onClose, api }) {
   if (!selected) return null;
 
-  const tvUrl = `https://www.tradingview.com/chart/?symbol=${getTVSymbol(selected.symbol)}`;
+  const tvSymbol = getTVSymbol(selected.symbol, selected.positioning?.source === "binance");
+  const tvUrl = tvSymbol && `https://www.tradingview.com/chart/?symbol=${tvSymbol}`;
   const hlCoin = selected.symbol.split("/")[0];
   const hlUrl = `https://app.hyperliquid.xyz/trade/${hlCoin}`;
 
@@ -618,7 +619,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           >
             Trade on Hyperliquid {"\u2197"}
           </a>
-          <a
+          {tvUrl && <a
             href={tvUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -632,7 +633,7 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
             }}
           >
             Open in TradingView {"\u2197"}
-          </a>
+          </a>}
         </div>
       </div>
     </>

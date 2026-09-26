@@ -49,7 +49,7 @@ export default function WarmingUp({ data, onSelect, isMobile }) {
             textTransform: "uppercase", flexShrink: 0,
             display: "flex", alignItems: "center", gap: 5,
           }}>
-            {"\ud83d\udd25"} Warming Up
+            Warming Up
           </span>
           {warmingUp.map(r => {
             const sm = SIGNAL_META[r.signal] || SIGNAL_META.WAIT;

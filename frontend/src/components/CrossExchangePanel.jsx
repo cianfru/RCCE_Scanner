@@ -11,6 +11,7 @@
 import { useState, useEffect } from "react";
 import { T, col } from "../theme.js";
 import useViewport from "../hooks/useViewport.js";
+import PanelHeader from "./PanelHeader.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -156,6 +157,8 @@ export default function CrossExchangePanel({ symbol }) {
 
   const exchanges = data?.exchanges || [];
   const live = exchanges.filter(e => e.available);
+  // No exchange has this market (e.g. a spot pair): nothing to compare.
+  if (!loading && live.length === 0) return null;
   const maxOi = live.reduce((m, e) => Math.max(m, e.open_interest_usd || 0), 0);
 
   // Spread summary
@@ -174,24 +177,7 @@ export default function CrossExchangePanel({ symbol }) {
       WebkitBackdropFilter: "blur(20px) saturate(1.3)",
       boxShadow: `0 2px 12px ${T.shadow}`,
     }}>
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        marginBottom: 12, paddingBottom: 10,
-        borderBottom: `1px solid ${T.overlay06}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 3, height: 14, borderRadius: 2,
-            background: T.accent, flexShrink: 0,
-          }} />
-          <span style={{
-            fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em",
-            fontFamily: T.font, fontWeight: 700, textTransform: "none",
-          }}>
-            Cross-Exchange
-          </span>
-        </div>
+      <PanelHeader title="Cross-exchange">
         {live.length > 1 && (
           <span style={{
             fontSize: T.textXs, fontFamily: T.mono, color: spreadColor,
@@ -200,7 +186,7 @@ export default function CrossExchangePanel({ symbol }) {
             Funding spread {spreadBp.toFixed(1)} bp
           </span>
         )}
-      </div>
+      </PanelHeader>
 
       {loading && (
         <div style={{

@@ -79,6 +79,7 @@ export default function SettingsDropdown() {
   const [flags, setFlags] = useState(null);
   const [activity, setActivity] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
   const popoverRef = useRef(null);
   const buttonRef = useRef(null);
 
@@ -126,8 +127,13 @@ export default function SettingsDropdown() {
   const updateFlag = async (key, value) => {
     if (busy) return;
     setBusy(true);
+    setErr(null);
     // Optimistic update
     setFlags(prev => ({ ...(prev || {}), [key]: value }));
+    const revert = () => {
+      setFlags(prev => ({ ...(prev || {}), [key]: !value }));
+      setErr("Not saved");
+    };
     try {
       const res = await fetch(`${API_BASE}/api/admin/features`, {
         method: "POST",
@@ -137,10 +143,11 @@ export default function SettingsDropdown() {
       if (res.ok) {
         const j = await res.json();
         if (j.flags) setFlags(j.flags);
+      } else {
+        revert();
       }
     } catch {
-      // Revert on error
-      setFlags(prev => ({ ...(prev || {}), [key]: !value }));
+      revert();
     } finally {
       setBusy(false);
     }
@@ -149,6 +156,7 @@ export default function SettingsDropdown() {
   const applyPreset = async (preset) => {
     if (busy) return;
     setBusy(true);
+    setErr(null);
     try {
       const res = await fetch(`${API_BASE}/api/admin/features`, {
         method: "POST",
@@ -158,7 +166,11 @@ export default function SettingsDropdown() {
       if (res.ok) {
         const j = await res.json();
         if (j.flags) setFlags(j.flags);
+      } else {
+        setErr("Preset not applied");
       }
+    } catch {
+      setErr("Preset not applied");
     } finally {
       setBusy(false);
     }
@@ -378,6 +390,12 @@ export default function SettingsDropdown() {
               );
             })}
           </div>
+
+          {err && (
+            <div style={{ marginTop: 10, fontSize: 12, color: T.red, fontFamily: T.font }}>
+              {err}
+            </div>
+          )}
 
           {/* Footer hint */}
           <div style={{

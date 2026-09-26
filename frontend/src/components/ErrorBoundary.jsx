@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { T } from "../theme.js";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -20,9 +21,9 @@ class ErrorBoundary extends Component {
         <div style={{
           padding: "2rem",
           textAlign: "center",
-          fontFamily: "'IBM Plex Mono', monospace",
-          color: "#e0e0e0",
-          background: "#0a0a0a",
+          fontFamily: T.font,
+          color: T.text1,
+          background: T.bg,
           minHeight: "100vh",
           display: "flex",
           flexDirection: "column",
@@ -30,8 +31,8 @@ class ErrorBoundary extends Component {
           justifyContent: "center",
           gap: "1rem",
         }}>
-          <h2 style={{ color: "#ff6b6b", margin: 0 }}>Something went wrong</h2>
-          <p style={{ color: "#888", maxWidth: 480, fontSize: "0.85rem" }}>
+          <h2 style={{ color: T.red, margin: 0 }}>Something went wrong</h2>
+          <p style={{ color: T.text3, maxWidth: 480, fontSize: T.textSm, fontFamily: T.mono }}>
             {this.state.error?.message || "An unexpected error occurred."}
           </p>
           <button
@@ -41,13 +42,13 @@ class ErrorBoundary extends Component {
             }}
             style={{
               padding: "0.5rem 1.5rem",
-              background: "#1a1a2e",
-              color: "#e0e0e0",
-              border: "1px solid #333",
+              background: "transparent",
+              color: T.text1,
+              border: `1px solid ${T.border}`,
               borderRadius: 6,
               cursor: "pointer",
               fontFamily: "inherit",
-              fontSize: "0.85rem",
+              fontSize: T.textSm,
             }}
           >
             Reload

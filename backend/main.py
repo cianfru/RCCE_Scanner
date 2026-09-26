@@ -3213,7 +3213,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "detail": (
                         f"Funding: {funding_rate*100:.4f}%/8h (shorts paying premium). "
                         f"Signal: {signal} | Regime: {regime}. "
-                        f"Shorts trapped — squeeze setup with bullish confirmation"
+                        f"Crowded shorts while the scanner shows an entry signal"
                     ),
                     "signal": signal, "regime": regime, "heat": heat,
                     "oi_trend": oi_trend, "funding_regime": funding_regime,
@@ -3255,7 +3255,7 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
                     "title": f"{base_coin}: Shorts into exhaustion {label}",
                     "detail": (
                         f"OI rising (shorts loading) while exhaustion engine shows {label}. "
-                        f"Sellers exhausted + crowd shorting = high-conviction reversal setup. "
+                        f"Selling looks exhausted while shorts keep adding. "
                         f"Signal: {signal} | Regime: {regime} | Heat: {heat}"
                     ),
                     "signal": signal, "regime": regime, "heat": heat,
