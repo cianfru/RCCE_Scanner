@@ -372,6 +372,60 @@ def load_trader_lean(prefix: str, since: float) -> List[tuple]:
     ).fetchall()
 
 
+# Position details are only needed for the last few hours (startup restore reads 6h);
+# account values stay for the 30-day equity curves. Older rows keep account_value
+# and drop positions_json, which was nearly all of the file (2.2 GB by September 2026).
+_POSITIONS_KEEP_HOURS = 24
+_PRUNE_CHUNK = 5000
+_VACUUM_MIN_FREE_MB = 100          # compact when the file exceeds twice the live data by this much
+
+
+def prune_positions(now: Optional[float] = None) -> int:
+    """Clear positions_json on snapshots older than _POSITIONS_KEEP_HOURS, in small
+    transactions with a WAL checkpoint after each, so the log never grows large."""
+    conn = _get_conn()
+    cutoff = (time.time() if now is None else now) - _POSITIONS_KEEP_HOURS * 3600
+    total, last_id = 0, 0
+    while True:                            # walk ids once (rows are appended in time order)
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM snapshots WHERE id > ? AND timestamp < ? ORDER BY id LIMIT ?",
+            (last_id, cutoff, _PRUNE_CHUNK))]
+        if not ids:
+            return total
+        last_id = ids[-1]
+        cur = conn.execute(
+            f"UPDATE snapshots SET positions_json = '[]' WHERE id IN ({','.join('?' * len(ids))}) "
+            "AND positions_json != '[]'", ids)
+        conn.commit()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        total += cur.rowcount
+
+
+def compact(force: bool = False) -> dict:
+    """VACUUM when the file is much larger than its live data (shrunk rows leave pages half
+    empty rather than free, so the free-page count alone misses it), and only if the disk
+    has room for the copy."""
+    import shutil
+    conn = _get_conn()
+    file_mb = os.path.getsize(_DB_PATH) / 1e6
+    snap_bytes, snap_rows = conn.execute("SELECT COALESCE(SUM(LENGTH(positions_json)), 0), COUNT(*) FROM snapshots").fetchone()
+    trade_rows = conn.execute("SELECT COUNT(*) FROM trade_log").fetchone()[0]
+    live_mb = (snap_bytes + 120 * snap_rows + 200 * trade_rows) / 1e6
+    out = {"file_mb": round(file_mb, 1), "live_mb": round(live_mb, 1), "vacuumed": False}
+    if file_mb < 2 * live_mb + _VACUUM_MIN_FREE_MB and not force:
+        return out
+    disk_free_mb = shutil.disk_usage(os.path.dirname(os.path.abspath(_DB_PATH))).free / 1e6
+    if disk_free_mb < 2 * live_mb + 200:      # VACUUM writes a copy of the live data (and its WAL)
+        out["skipped"] = f"only {disk_free_mb:.0f} MB free on disk"
+        return out
+    before = os.path.getsize(_DB_PATH)
+    conn.execute("VACUUM")
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    out.update(vacuumed=True, before_mb=round(before / 1e6, 1), after_mb=round(os.path.getsize(_DB_PATH) / 1e6, 1))
+    logger.info("HyperLens DB: compacted %.0f MB -> %.0f MB", out["before_mb"], out["after_mb"])
+    return out
+
+
 def cleanup_old_data() -> dict:
     """Remove data older than retention period.
 
@@ -415,7 +469,10 @@ def cleanup_old_data() -> dict:
 
         conn.commit()
 
-        if any(v > 0 for v in deleted.values()):
+        deleted["positions_pruned"] = prune_positions()
+        deleted["compact"] = compact()
+
+        if any(v for k, v in deleted.items() if k != "compact") or deleted["compact"].get("vacuumed"):
             logger.info("HyperLens DB cleanup: %s", deleted)
 
     except Exception as exc:
@@ -440,10 +497,13 @@ def get_db_stats() -> dict:
 
         # DB file size
         db_size_mb = os.path.getsize(_DB_PATH) / (1024 * 1024) if os.path.exists(_DB_PATH) else 0
+        page = conn.execute("PRAGMA page_size").fetchone()[0]
+        free_mb = conn.execute("PRAGMA freelist_count").fetchone()[0] * page / (1024 * 1024)
 
         return {
             "db_path": _DB_PATH,
             "db_size_mb": round(db_size_mb, 2),
+            "db_free_mb": round(free_mb, 2),
             "snapshots": snap_count,
             "snapshot_wallets": snap_wallets,
             "trades": trade_count,

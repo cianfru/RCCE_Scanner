@@ -37,8 +37,9 @@ def parse(data: dict) -> Raw:
 class ApiSource:
     weight = WEIGHT
 
-    def __init__(self, session: aiohttp.ClientSession):
+    def __init__(self, session: aiohttp.ClientSession, on_raw=None):
         self.session = session
+        self.on_raw = on_raw            # (address, raw response): lets HyperLens reuse the same poll
 
     async def fetch(self, address: str) -> Optional[Raw]:
         try:
@@ -47,7 +48,13 @@ class ApiSource:
                     raise RateLimited()
                 if resp.status != 200:
                     return None
-                return parse(await resp.json(content_type=None))
+                data = await resp.json(content_type=None)
+            if self.on_raw is not None:
+                try:
+                    self.on_raw(address, data)
+                except Exception:
+                    pass
+            return parse(data)
         except RateLimited:
             raise
         except Exception:

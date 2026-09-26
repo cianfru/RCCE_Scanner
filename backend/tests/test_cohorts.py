@@ -241,3 +241,48 @@ class RetryTests(unittest.TestCase):
                                 respect_quiet=False).run_once())
             run = st.runs(1)[0]
             self.assertEqual((run["polled"], run["errors"], run["weight"]), (1, 1, 8))   # a1 recovered, b1 gave up
+
+
+class HyperLensFeedTests(unittest.TestCase):
+    def test_pinned_wallets_are_due_every_sweep_and_old_db_migrates(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "old.db")
+            old = sqlite3.connect(path)
+            old.execute("CREATE TABLE wallets (address TEXT PRIMARY KEY, first_seen REAL NOT NULL, last_seen REAL NOT NULL, "
+                        "lb_value REAL, all_time_pnl REAL, active INTEGER NOT NULL DEFAULT 1, focus INTEGER NOT NULL DEFAULT 0, "
+                        "next_poll_at REAL NOT NULL DEFAULT 0)")
+            old.commit()
+            old.close()
+            st = Store(path)                                                      # adds the pinned column
+            st.update_registry([("0xa", 20_000.0, 0.0), ("0xb", 20_000.0, 0.0)], now=0)
+            st.db.execute("UPDATE wallets SET next_poll_at = 1e12")               # both checked recently
+            self.assertEqual(st.due(1000.0), [])
+            self.assertEqual(st.set_pinned(["0xB"]), 1)
+            self.assertEqual([a for a, _ in st.due(1000.0)], ["0xb"])
+
+    def test_sweep_responses_feed_hyperlens_roster(self):
+        import hl_intelligence as hl
+        from unittest import mock
+        roster = [hl.TrackedWallet(address="0xroster", account_value=1e6)]
+        data = {"marginSummary": {"accountValue": "250000"}, "assetPositions": [
+            {"position": {"coin": "ETH", "szi": "10", "entryPx": "2000", "positionValue": "21000", "leverage": {"type": "cross", "value": 3}}}]}
+        with mock.patch.object(hl, "_roster", roster), mock.patch.object(hl, "_snapshots", {}), \
+                mock.patch.object(hl, "_consensus", {}), mock.patch.object(hl, "_last_db_save_at", 1e18):
+            self.assertFalse(hl.ingest_state("0xstranger", data))
+            self.assertTrue(hl.ingest_state("0xROSTER", data))
+            hl.after_ingest()
+            self.assertEqual(roster[0].account_value, 250_000)
+            self.assertEqual(hl._consensus["ETH"].long_count, 1)
+
+    def test_hyperlens_skips_roster_poll_when_the_sweep_feeds_it(self):
+        import hl_intelligence as hl
+        from unittest import mock
+        roster = [hl.TrackedWallet(address=f"0x{i}", account_value=1e6) for i in range(3)]
+        fetch = mock.AsyncMock(return_value=None)
+        with mock.patch.object(hl, "_roster", roster), mock.patch.object(hl, "_asset_index_map", {"x": "y"}), \
+                mock.patch.object(hl, "_last_roster_poll_at", 0.0), mock.patch.object(hl, "_fetch_wallet_positions", fetch), \
+                mock.patch.object(hl, "_get_watchlist_addresses", return_value={"0x1"}), \
+                mock.patch.object(hl, "roster_via_cohorts", return_value=True):
+            asyncio.run(hl.poll_positions())
+        self.assertEqual([c.args[2].address for c in fetch.call_args_list], ["0x1"])     # followed wallet only

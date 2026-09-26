@@ -64,7 +64,7 @@ _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 _POSITION_HISTORY_LEN = 1
 
 # Staleness: skip snapshots older than this when computing consensus
-_SNAPSHOT_MAX_AGE_S = 20 * 60              # 20 minutes (covers roster interval)
+_SNAPSHOT_MAX_AGE_S = 75 * 60              # covers the cohort sweep cadence (30 min + sweep + post-close pause)
 
 # Live eviction: remove wallets whose AV drops below this during polling
 _EVICTION_THRESHOLD = 25_000               # $25K — half of MP minimum ($50K)
@@ -477,6 +477,11 @@ async def refresh_leaderboard() -> int:
             merged.append(w)
     _roster = merged
     _roster_updated_at = time.time()
+    try:                                   # the cohort sweep polls these every sweep
+        from cohorts.sweeper import pin_roster
+        await asyncio.to_thread(pin_roster, [w.address for w in _roster])
+    except Exception as exc:
+        logger.warning("Cohorts: roster pin failed: %s", exc)
 
     # Prune ghost wallets from _snapshots — addresses that were tracked in a
     # previous refresh but no longer qualify.  Consensus already iterates
@@ -508,6 +513,63 @@ async def refresh_leaderboard() -> int:
 # ---------------------------------------------------------------------------
 # Position polling
 # ---------------------------------------------------------------------------
+
+# Parse positions helper
+def _parse_positions(raw: dict, dex: str = "", asset_class: str = "crypto") -> List[WalletPosition]:
+    result: List[WalletPosition] = []
+    for ap in raw.get("assetPositions", []):
+        pos = ap.get("position", {})
+        szi = float(pos.get("szi", 0))
+        if szi == 0:
+            continue
+
+        entry_px = float(pos.get("entryPx", 0))
+        coin = pos.get("coin", "")
+        lev_val = pos.get("leverage", {})
+        lev = float(lev_val.get("value", 1)) if isinstance(lev_val, dict) else float(lev_val or 1)
+        lev_type = lev_val.get("type", "cross") if isinstance(lev_val, dict) else "cross"
+
+        liq_px = float(pos.get("liquidationPx", 0) or 0)
+        margin_used = float(pos.get("marginUsed", 0) or 0)
+        roe = float(pos.get("returnOnEquity", 0) or 0)
+
+        # Calculate liquidation distance percentage
+        liq_dist_pct = 0.0
+        if entry_px > 0 and liq_px > 0:
+            liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
+
+        # Determine asset class for xyz DEX instruments
+        ac = _classify_xyz_asset(coin) if dex == _XYZ_DEX else asset_class
+
+        result.append(WalletPosition(
+            coin=coin,
+            side="LONG" if szi > 0 else "SHORT",
+            size=abs(szi),
+            size_usd=abs(szi) * entry_px,
+            entry_px=entry_px,
+            unrealized_pnl=float(pos.get("unrealizedPnl", 0)),
+            leverage=lev,
+            liq_px=liq_px,
+            margin_used=margin_used,
+            return_on_equity=roe,
+            liq_distance_pct=round(liq_dist_pct, 2),
+            leverage_type=lev_type,
+            asset_class=ac,
+            dex=dex,
+        ))
+    return result
+
+
+def _snapshot_from_state(data: dict, xyz_data: Optional[dict] = None, ts: Optional[float] = None) -> PositionSnapshot:
+    """PositionSnapshot from a clearinghouseState response (and the xyz DEX one, if fetched)."""
+    positions = _parse_positions(data)
+    if xyz_data:
+        positions.extend(_parse_positions(xyz_data, dex=_XYZ_DEX))
+    av = float((data.get("marginSummary") or {}).get("accountValue", 0) or 0)
+    if xyz_data:
+        av += float((xyz_data.get("marginSummary") or {}).get("accountValue", 0) or 0)
+    return PositionSnapshot(timestamp=time.time() if ts is None else ts, positions=positions, account_value=av)
+
 
 async def _fetch_wallet_positions(
     session: aiohttp.ClientSession,
@@ -567,78 +629,10 @@ async def _fetch_wallet_positions(
 
     if not data:
         return None
-
-    # Parse positions helper
-    def _parse_positions(raw: dict, dex: str = "", asset_class: str = "crypto") -> List[WalletPosition]:
-        result: List[WalletPosition] = []
-        for ap in raw.get("assetPositions", []):
-            pos = ap.get("position", {})
-            szi = float(pos.get("szi", 0))
-            if szi == 0:
-                continue
-
-            entry_px = float(pos.get("entryPx", 0))
-            coin = pos.get("coin", "")
-            lev_val = pos.get("leverage", {})
-            lev = float(lev_val.get("value", 1)) if isinstance(lev_val, dict) else float(lev_val or 1)
-            lev_type = lev_val.get("type", "cross") if isinstance(lev_val, dict) else "cross"
-
-            liq_px = float(pos.get("liquidationPx", 0) or 0)
-            margin_used = float(pos.get("marginUsed", 0) or 0)
-            roe = float(pos.get("returnOnEquity", 0) or 0)
-
-            # Calculate liquidation distance percentage
-            liq_dist_pct = 0.0
-            if entry_px > 0 and liq_px > 0:
-                liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
-
-            # Determine asset class for xyz DEX instruments
-            ac = _classify_xyz_asset(coin) if dex == _XYZ_DEX else asset_class
-
-            result.append(WalletPosition(
-                coin=coin,
-                side="LONG" if szi > 0 else "SHORT",
-                size=abs(szi),
-                size_usd=abs(szi) * entry_px,
-                entry_px=entry_px,
-                unrealized_pnl=float(pos.get("unrealizedPnl", 0)),
-                leverage=lev,
-                liq_px=liq_px,
-                margin_used=margin_used,
-                return_on_equity=roe,
-                liq_distance_pct=round(liq_dist_pct, 2),
-                leverage_type=lev_type,
-                asset_class=ac,
-                dex=dex,
-            ))
-        return result
-
-    # Parse crypto positions (native HL)
-    positions = _parse_positions(data)
-
-    # Parse TradFi positions (xyz DEX)
-    if xyz_data:
-        xyz_positions = _parse_positions(xyz_data, dex=_XYZ_DEX)
-        if xyz_positions:
-            positions.extend(xyz_positions)
-            _xyz_active_wallets.add(wallet.address)
-            logger.debug("HyperLens: %s has %d xyz DEX positions", wallet.address[:8], len(xyz_positions))
-
-    # Extract account value (from native HL — xyz has separate margin)
-    margin = data.get("marginSummary", {})
-    av = float(margin.get("accountValue", 0) or 0)
-
-    # Add xyz account value if available
-    if xyz_data:
-        xyz_margin = xyz_data.get("marginSummary", {})
-        xyz_av = float(xyz_margin.get("accountValue", 0) or 0)
-        av += xyz_av
-
-    return PositionSnapshot(
-        timestamp=time.time(),
-        positions=positions,
-        account_value=av,
-    )
+    snap = _snapshot_from_state(data, xyz_data)
+    if xyz_data and any(p.dex == _XYZ_DEX for p in snap.positions):
+        _xyz_active_wallets.add(wallet.address)
+    return snap
 
 
 def _get_watchlist_addresses() -> Set[str]:
@@ -675,93 +669,10 @@ def _wallet_has_open_positions(address: str) -> bool:
     return len(dq[-1].positions) > 0
 
 
-async def poll_positions() -> int:
-    """Poll positions using tiered strategy.
-
-    - **Watchlist tier** (every 5 min): followed/watched wallets get full
-      polling — positions + orders + xyz DEX (3 API calls).
-    - **Active roster** (every 15 min): wallets with ≥1 open position —
-      positions only (1 API call).
-    - **Idle roster** (every 30 min): wallets with zero open positions —
-      they might open one, but no urgency.
-
-    In practice most wallets have zero positions at any given time, so
-    this reduces API volume significantly.
-    """
-    global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
-    global _last_idle_roster_poll_at
-    global _roster, _roster_money_printers, _roster_smart_money
-
-    # Refresh asset index map if empty (resolves @142 → PENGU etc.)
-    if not _asset_index_map:
-        await _refresh_asset_index_map()
-
-    if not _roster:
-        logger.debug("HyperLens: no roster — skipping poll")
-        return 0
-
-    now = time.time()
-    watchlist_addrs = _get_watchlist_addresses()
-    roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
-    # idle_roster_due kept as alias for backward-compat with logging below;
-    # in Sentiment Mode active/idle merged into single 10-min cadence.
-    idle_roster_due = roster_due
-
-    # Sentiment Mode: simplified split — watchlist (always) + roster (every
-    # _ROSTER_POLL_INTERVAL). No active/idle subdivision.
-    watchlist_wallets = []
-    roster_to_poll = []
-    for w in _roster:
-        if w.address.lower() in watchlist_addrs:
-            watchlist_wallets.append(w)
-        elif roster_due:
-            roster_to_poll.append(w)
-
-    # Backward-compat aliases for the rest of this function
-    active_roster_wallets = roster_to_poll
-    idle_roster_wallets: list = []
-
-    wallets_to_poll = watchlist_wallets + roster_to_poll
-    if not wallets_to_poll:
-        logger.debug("HyperLens: no wallets due for polling this cycle")
-        return 0
-
-    semaphore = asyncio.Semaphore(_CONCURRENCY)
-    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
-    success_count = 0
-
-    # "Sentiment Mode": always run light polling (positions only, no orders,
-    # no xyz DEX). Saves 2 of 3 API calls per wallet. Order-driven features
-    # (pressure map, smart orders) were already disabled.
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        tasks = [
-            _fetch_wallet_positions(session, semaphore, w, full=False)
-            for w in wallets_to_poll
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for wallet, result in zip(wallets_to_poll, results):
-        if isinstance(result, Exception) or result is None:
-            continue
-
-        # Store snapshot in ring buffer
-        if wallet.address not in _snapshots:
-            _snapshots[wallet.address] = deque(maxlen=_POSITION_HISTORY_LEN)
-        _snapshots[wallet.address].append(result)
-
-        # Update wallet account value from live data
-        if result.account_value > 0:
-            wallet.account_value = result.account_value
-
-        success_count += 1
-
-    _last_poll_at = now
-    _poll_count += 1
-    if roster_due:
-        _last_roster_poll_at = now
-    if idle_roster_due:
-        _last_idle_roster_poll_at = now
-
+def _after_positions_update() -> Set[str]:
+    """After new wallet snapshots (own poll or the cohort sweep): evict wallets that no
+    longer qualify, recompute consensus, persist at most hourly. Returns evicted addresses."""
+    global _roster, _roster_money_printers, _roster_smart_money, _consensus_updated_at, _last_db_save_at
     # --- Safe eviction: remove wallets that provide no value ---
     # Two categories:
     #   a) AV dropped below threshold (withdrew funds)
@@ -811,7 +722,6 @@ async def poll_positions() -> int:
     # _reconstruct_trades() removed; _trade_log / _last_positions /
     # _position_first_seen stay empty.
 
-    # Recompute consensus
     _recompute_consensus()
     _consensus_updated_at = time.time()
 
@@ -820,13 +730,146 @@ async def poll_positions() -> int:
     # cache (which Railway bills as memory). Wallet-detail page stays
     # accurate within the hour from in-memory state; on-disk persistence
     # is for surviving Railway redeploys.
-    global _last_db_save_at
     if (time.time() - _last_db_save_at) >= _DB_SAVE_INTERVAL_S:
         try:
             _db_save_snapshots(_snapshots)
             _last_db_save_at = time.time()
         except Exception as exc:
             logger.warning("HyperLens DB: save error: %s", exc)
+    return evicted_addrs
+
+
+# --- Roster fed by the cohort sweep (one poll per wallet serves both) ----------------
+
+def roster_via_cohorts() -> bool:
+    """True when the cohort sweep polls the roster (cohorts enabled); HyperLens then only
+    polls followed wallets itself."""
+    try:
+        from cohorts.sweeper import enabled
+        return enabled()
+    except Exception:
+        return False
+
+
+_roster_index: Dict[str, TrackedWallet] = {}
+_roster_index_of: int = 0
+
+
+def ingest_state(address: str, data: dict, ts: Optional[float] = None) -> bool:
+    """Store a clearinghouseState fetched by the cohort sweep, if the wallet is on the roster."""
+    global _roster_index, _roster_index_of
+    if _roster_index_of != id(_roster):
+        _roster_index = {w.address: w for w in _roster}
+        _roster_index_of = id(_roster)
+    wallet = _roster_index.get(address.lower())
+    if wallet is None:
+        return False
+    snap = _snapshot_from_state(data, ts=ts)
+    if wallet.address not in _snapshots:
+        _snapshots[wallet.address] = deque(maxlen=_POSITION_HISTORY_LEN)
+    _snapshots[wallet.address].append(snap)
+    if snap.account_value > 0:
+        wallet.account_value = snap.account_value
+    return True
+
+
+def after_ingest() -> None:
+    """Called by the cohort sweep after each batch."""
+    global _last_poll_at, _poll_count
+    _after_positions_update()
+    _last_poll_at = time.time()
+    _poll_count += 1
+
+
+async def poll_positions() -> int:
+    """Poll positions using tiered strategy.
+
+    - **Watchlist tier** (every 5 min): followed/watched wallets get full
+      polling — positions + orders + xyz DEX (3 API calls).
+    - **Active roster** (every 15 min): wallets with ≥1 open position —
+      positions only (1 API call).
+    - **Idle roster** (every 30 min): wallets with zero open positions —
+      they might open one, but no urgency.
+
+    In practice most wallets have zero positions at any given time, so
+    this reduces API volume significantly.
+    """
+    global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
+    global _last_idle_roster_poll_at
+    global _roster, _roster_money_printers, _roster_smart_money
+
+    # Refresh asset index map if empty (resolves @142 → PENGU etc.)
+    if not _asset_index_map:
+        await _refresh_asset_index_map()
+
+    if not _roster:
+        logger.debug("HyperLens: no roster — skipping poll")
+        return 0
+
+    now = time.time()
+    watchlist_addrs = _get_watchlist_addresses()
+    roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
+    # idle_roster_due kept as alias for backward-compat with logging below;
+    # in Sentiment Mode active/idle merged into single 10-min cadence.
+    idle_roster_due = roster_due
+
+    # Sentiment Mode: simplified split — watchlist (always) + roster (every
+    # _ROSTER_POLL_INTERVAL). No active/idle subdivision.
+    watchlist_wallets = []
+    roster_to_poll = []
+    delegated = roster_via_cohorts()      # the cohort sweep polls the roster
+    for w in _roster:
+        if w.address.lower() in watchlist_addrs:
+            watchlist_wallets.append(w)
+        elif roster_due and not delegated:
+            roster_to_poll.append(w)
+
+    # Backward-compat aliases for the rest of this function
+    active_roster_wallets = roster_to_poll
+    idle_roster_wallets: list = []
+
+    wallets_to_poll = watchlist_wallets + roster_to_poll
+    if not wallets_to_poll:
+        logger.debug("HyperLens: no wallets due for polling this cycle")
+        return 0
+
+    semaphore = asyncio.Semaphore(_CONCURRENCY)
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
+    success_count = 0
+
+    # "Sentiment Mode": always run light polling (positions only, no orders,
+    # no xyz DEX). Saves 2 of 3 API calls per wallet. Order-driven features
+    # (pressure map, smart orders) were already disabled.
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = [
+            _fetch_wallet_positions(session, semaphore, w, full=False)
+            for w in wallets_to_poll
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for wallet, result in zip(wallets_to_poll, results):
+        if isinstance(result, Exception) or result is None:
+            continue
+
+        # Store snapshot in ring buffer
+        if wallet.address not in _snapshots:
+            _snapshots[wallet.address] = deque(maxlen=_POSITION_HISTORY_LEN)
+        _snapshots[wallet.address].append(result)
+
+        # Update wallet account value from live data
+        if result.account_value > 0:
+            wallet.account_value = result.account_value
+
+        success_count += 1
+
+    _last_poll_at = now
+    _poll_count += 1
+    if roster_due:
+        _last_roster_poll_at = now
+    if idle_roster_due:
+        _last_idle_roster_poll_at = now
+
+    evicted_addrs = _after_positions_update()
 
     # Logging
     tier_info = f"watchlist={len(watchlist_wallets)}"
@@ -1109,7 +1152,7 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     bar = int(last_bar_close(time.time() if now is None else now)) - SETTLE_SECONDS
     if bar <= _last_lean_bar or not _roster:
         return False
-    if not is_active():
+    if not is_active() and not roster_via_cohorts():
         await poll_positions()
     rows = profitable_lean(_lean_groups)
     if not rows:
@@ -2505,7 +2548,7 @@ async def run_hyperlens_loop() -> None:
     from activity import is_active, idle_sleep
 
     last_roster_refresh = 0.0
-    last_cleanup = time.time()
+    last_cleanup = time.time() - 6 * 3600 + 600     # first cleanup ~10 min after start
     pressure_task: Optional[asyncio.Task] = None
 
     while True:
@@ -2552,7 +2595,7 @@ async def run_hyperlens_loop() -> None:
             # DB cleanup every 6 hours
             if time.time() - last_cleanup > 6 * 3600:
                 try:
-                    _db_cleanup()
+                    await asyncio.to_thread(_db_cleanup)      # may VACUUM: keep it off the event loop
                 except Exception as exc:
                     logger.warning("HyperLens DB cleanup error: %s", exc)
                 last_cleanup = time.time()
