@@ -66,6 +66,16 @@ _POSITION_HISTORY_LEN = 1
 
 # Staleness: skip snapshots older than this when computing consensus
 _SNAPSHOT_MAX_AGE_S = 75 * 60              # covers the cohort sweep cadence (30 min + sweep + post-close pause)
+# After a restart the restored readings are up to an hour or so old (saved hourly), and a
+# deploy starts the new copy before the old one saves on shutdown. Until the sweep has read
+# everyone again, restored readings count as current so HyperLens is not empty.
+_RESTORED_GRACE_S = 45 * 60
+_RESTORED_MAX_AGE_S = 6 * 3600
+_restored_until: float = 0.0
+
+
+def _fresh_limit(now: float) -> float:
+    return _RESTORED_MAX_AGE_S if now < _restored_until else _SNAPSHOT_MAX_AGE_S
 
 # Live eviction: remove wallets whose AV drops below this during polling
 _EVICTION_THRESHOLD = 25_000               # $25K — half of MP minimum ($50K)
@@ -330,6 +340,9 @@ def _restore_from_db() -> None:
     # disables trade reconstruction, so those structures stay empty).
     # _last_positions also unused; stays empty.
 
+    global _restored_until
+    if restored_count:
+        _restored_until = time.time() + _RESTORED_GRACE_S
     logger.info(
         "HyperLens DB restore: %d wallets (latest snapshot only, 6h window)",
         restored_count,
@@ -723,7 +736,7 @@ def _observe_opens(evicted: Set[str]) -> None:
             if not snaps:
                 continue
             latest = snaps[-1]
-            if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS:
+            if now - latest.timestamp > _fresh_limit(now) or len(latest.positions) > _MM_MAX_POSITIONS:
                 continue
             if 0 < latest.account_value < _DISPLAY_MIN_AV:
                 continue
@@ -1031,7 +1044,7 @@ def _recompute_consensus() -> None:
         latest = snapshots[-1]
 
         # Staleness check: skip wallets whose last snapshot is too old
-        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+        if now - latest.timestamp > _fresh_limit(now):
             continue
         recent_count += 1
 
@@ -1439,7 +1452,7 @@ def positioning_map(cohort: str = "profitable") -> dict:
         if not snaps:
             continue
         latest = snaps[-1]
-        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS:
+        if now - latest.timestamp > _fresh_limit(now) or len(latest.positions) > _MM_MAX_POSITIONS:
             continue
         if 0 < latest.account_value < _DISPLAY_MIN_AV:
             continue
@@ -1498,7 +1511,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
             continue
         latest = snaps[-1]
         # Staleness check — same as consensus
-        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+        if now - latest.timestamp > _fresh_limit(now):
             continue
         # MM filter — same as consensus
         if len(latest.positions) > _MM_MAX_POSITIONS:
@@ -2074,7 +2087,7 @@ async def _poll_order_books() -> None:
         if not dq:
             continue
         latest = dq[-1]
-        if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
+        if now - latest.timestamp > _fresh_limit(now):
             continue
         for pos in latest.positions:
             raw = pos.coin
@@ -2306,7 +2319,7 @@ def _compute_pressure(symbol: str) -> dict:
         if not snaps:
             continue
         latest = snaps[-1]
-        if (now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS
+        if (now - latest.timestamp > _fresh_limit(now) or len(latest.positions) > _MM_MAX_POSITIONS
                 or 0 < latest.account_value < _DISPLAY_MIN_AV):
             continue
         for pos in latest.positions:

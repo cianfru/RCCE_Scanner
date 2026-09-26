@@ -4254,15 +4254,13 @@ async def followed_list():
     """Followed traders with their current positions and recent changes."""
     import followed_traders as ft
     from hl_intelligence import _wallet_cohorts, wallet_positions
-    from telegram_bot import ALLOWED_CHAT_IDS, TELEGRAM_BOT_TOKEN
     traders = []
     for addr, meta in sorted(ft.items().items(), key=lambda kv: -kv[1]["added"]):
         w = wallet_positions(addr)
         cohorts = sorted(_wallet_cohorts.get(addr, set()))
         traders.append({"address": addr, **meta, "cohorts": cohorts, "tracked": bool(cohorts), **w,
                         "events": ft.events(addr, 10)})
-    return {"traders": traders, "events": ft.events(None, 50),
-            "telegram": bool(TELEGRAM_BOT_TOKEN and ALLOWED_CHAT_IDS)}
+    return {"traders": traders, "events": ft.events(None, 50), "telegram": ft.telegram_status()}
 
 
 @app.post("/api/hyperlens/followed")

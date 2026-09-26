@@ -155,7 +155,49 @@ def record(address: str, cohort: str, ts: float, changes: List[dict], holdings: 
     text = message(address, {"profitable": "profitable trader", "large": "large account"}.get(cohort, cohort),
                    changes, holdings)
     try:
-        from hl_bridge_alerts import _send_telegram
-        asyncio.get_running_loop().create_task(_send_telegram(text))
+        asyncio.get_running_loop().create_task(_send(text))
     except Exception as exc:
         logger.debug("followed traders: telegram not sent: %s", exc)
+
+
+def chat_ids() -> set:
+    """Where alerts go: TELEGRAM_ALLOWED_CHATS, plus every chat registered with /watch."""
+    ids = set()
+    try:
+        from telegram_bot import ALLOWED_CHAT_IDS
+        ids |= {int(c) for c in ALLOWED_CHAT_IDS}
+    except Exception:
+        pass
+    try:
+        from position_monitor import PositionMonitor
+        ids |= {int(w.chat_id) for w in PositionMonitor.get().watchers}
+    except Exception:
+        pass
+    return ids
+
+
+def telegram_status() -> str:
+    """"ready", "no-chat" (bot running but nobody to send to) or "off" (no bot)."""
+    try:
+        from telegram_bot import get_telegram_bot
+        bot = get_telegram_bot()
+        if not getattr(bot, "app", None) or not getattr(bot, "_running", False):
+            return "off"
+    except Exception:
+        return "off"
+    return "ready" if chat_ids() else "no-chat"
+
+
+async def _send(text: str) -> int:
+    from telegram_bot import get_telegram_bot
+    bot = get_telegram_bot()
+    if not getattr(bot, "app", None) or not getattr(bot, "_running", False):
+        return 0
+    sent = 0
+    for cid in chat_ids():
+        try:
+            await bot.app.bot.send_message(chat_id=cid, text=text)
+            sent += 1
+        except Exception as exc:
+            logger.debug("followed traders: send to %s failed: %s", cid, exc)
+    return sent
