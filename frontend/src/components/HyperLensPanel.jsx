@@ -1,4 +1,5 @@
 import Tabs from "./Tabs.jsx";
+import CohortsView from "./CohortsView.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { T } from "../theme.js";
@@ -1710,6 +1711,7 @@ const VIEW_TABS = [
   { key: "favorites", label: "Watchlist" },
   { key: "consensus", label: "Consensus" },
   { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
+  { key: "cohorts", label: "Cohorts", title: "How groups of wallets lean, now and over time" },
 ];
 
 function TabSwitcher({ active, onChange }) {
@@ -1824,7 +1826,7 @@ export default function HyperLensPanel({ isMobile }) {
           gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
-          <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />
+          {tab !== "cohorts" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
 
           {tab === "consensus" && (
             <input
@@ -1867,7 +1869,8 @@ export default function HyperLensPanel({ isMobile }) {
       )}
 
       {/* Main content */}
-      {loading ? (
+      {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
+      {loading && tab !== "cohorts" ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           <TableSkeleton rows={10} cols={6} />
         </GlassCard>
@@ -1896,6 +1899,7 @@ export default function HyperLensPanel({ isMobile }) {
               cohort={cohort}
             />
           )}
+          {tab === "cohorts" && <CohortsView />}
         </GlassCard>
       )}
     </div>

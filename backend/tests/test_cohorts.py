@@ -199,6 +199,13 @@ class EndpointTests(unittest.TestCase):
                 self.assertEqual(c.get("/api/cohorts/divergence").json()["winners"]["bias"], 1.0)
                 self.assertEqual(len(c.get("/api/cohorts/history?dimension=pnl&cohort=Money%20Printer&days=180").json()["points"]), 0)
                 self.assertEqual(c.get("/api/cohorts/status").json()["registry"], 1)
+                # The Cohorts tab: coins with per-coin rows, coverage, every cohort's history at once.
+                self.assertIn("BTC", body["symbols"])
+                self.assertEqual((body["readings"], body["symbol_readings"]), (1, 1))
+                allh = mod._store.history_all("pnl", None, 0)
+                self.assertEqual(list(allh), ["Money Printer"])
+                self.assertEqual(len(mod._store.history_all("pnl", "BTC", 0)["Money Printer"]), 1)
+                self.assertIn("cohorts", c.get("/api/cohorts/history?dimension=pnl&days=180").json())
                 self.assertIn("cohorts", c.get("/api/hyperlens/consensus?symbol=BTC&cohorts=true").json())
             finally:
                 mod._store = old

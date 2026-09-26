@@ -181,6 +181,25 @@ class Store:
             "SELECT ts, data FROM cohort_snapshots WHERE dimension = ? AND cohort = ? AND symbol = ? AND ts >= ? ORDER BY ts",
             (dimension, cohort, symbol or "", int(since)))]
 
+    def history_all(self, dimension: str, symbol: Optional[str], since: float) -> Dict[str, List[dict]]:
+        """Every cohort's rows for one dimension and market, oldest first."""
+        out: Dict[str, List[dict]] = {}
+        for ts, c, data in self.db.execute(
+                "SELECT ts, cohort, data FROM cohort_snapshots WHERE dimension = ? AND symbol = ? AND ts >= ? ORDER BY ts",
+                (dimension, symbol or "", int(since))):
+            out.setdefault(c, []).append({"ts": ts, **json.loads(data)})
+        return out
+
+    def coverage(self) -> dict:
+        """When collection started and how many all-market and per-symbol readings exist."""
+        first, n_all = self.db.execute("SELECT MIN(ts), COUNT(DISTINCT ts) FROM cohort_snapshots WHERE symbol = ''").fetchone()
+        n_sym = self.db.execute("SELECT COUNT(DISTINCT ts) FROM cohort_snapshots WHERE symbol != ''").fetchone()[0]
+        return {"since": first, "readings": n_all or 0, "symbol_readings": n_sym or 0}
+
+    def symbols_at(self, ts: int) -> List[str]:
+        return [r[0] for r in self.db.execute(
+            "SELECT DISTINCT symbol FROM cohort_snapshots WHERE ts = ? AND symbol != '' ORDER BY symbol", (ts,))]
+
     def bias_history(self, since: float) -> Dict[tuple, List[tuple]]:
         out: Dict[tuple, List[tuple]] = {}
         for ts, d, c, s, data in self.db.execute(
