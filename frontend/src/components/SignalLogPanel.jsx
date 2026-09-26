@@ -127,15 +127,18 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
 
   const cellMinSize = isMobile ? 28 : 36;
   const labelW = isMobile ? 54 : 70;
+  // Size the table from its columns so narrow screens scroll instead of squeezing cells
+  const colW = cellMinSize + 2;
+  const tableW = labelW + 12 + data.days.length * colW;
 
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
-      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: isMobile ? 9 : 10, width: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: isMobile ? 9 : 10, width: tableW, minWidth: "100%", tableLayout: "fixed" }}>
         <thead>
           <tr>
             <th style={{ position: "sticky", left: 0, zIndex: 2, background: T.bg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: 9, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
             {data.days.map((day, i) => (
-              <th key={i} style={{ padding: "4px 2px", textAlign: "center", fontSize: isMobile ? 8 : 9, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
+              <th key={i} style={{ boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: isMobile ? 8 : 9, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
             ))}
           </tr>
         </thead>

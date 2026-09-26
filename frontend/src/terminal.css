@@ -139,7 +139,8 @@
 .executor-performance-grid>div {display:flex;flex-direction:column;gap:9px;min-width:0;}
 .executor-performance-grid span {font-size:12px;color:var(--t-text3);}
 .executor-performance-grid strong {font-size:27px;letter-spacing:-.04em;font-variant-numeric:tabular-nums;}
-.executor-performance .positive {color:#97fce4}.executor-performance .negative {color:#e59a96}
+.executor-performance .positive {color:var(--t-accent)}.executor-performance .negative {color:#e59a96}
+[data-theme="light"] .executor-performance .negative {color:#b4533f}
 .executor-data-note {border-left:2px solid #cbb88d;padding:8px 16px;background:var(--t-overlay02);}
 .executor-history-grid {display:grid;grid-template-columns:1.5fr 1fr;gap:36px;border-top:1px solid var(--t-border);padding-top:24px;margin-top:16px;}
 .executor-history-grid svg {width:100%;height:auto;min-height:130px;}
