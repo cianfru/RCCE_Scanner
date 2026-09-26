@@ -13,6 +13,7 @@ import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
+import { traderLean, longShare, usd } from "../utils/traders.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -412,7 +413,7 @@ function MetricsPanel({ data }) {
 }
 
 // ---------------------------------------------------------------------------
-// Smart Money Panel (whale consensus for this symbol)
+// Trader positioning: profitable traders first, then all tracked wallets
 // ---------------------------------------------------------------------------
 
 function SmartMoneyPanel({ data }) {
@@ -423,6 +424,8 @@ function SmartMoneyPanel({ data }) {
   const longPct = sm.long_count + sm.short_count > 0
     ? Math.round(sm.long_count / (sm.long_count + sm.short_count) * 100)
     : 50;
+  const pro = traderLean(sm.profitable);
+  const proPct = longShare(pro);
 
   return (
     <div style={{
@@ -438,7 +441,7 @@ function SmartMoneyPanel({ data }) {
       }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: "#a78bfa", flexShrink: 0 }} />
         <span style={{ fontSize: T.textSm, color: T.text2, letterSpacing: "0.1em", fontFamily: T.font, fontWeight: 700, textTransform: "uppercase" }}>
-          Whale positioning
+          Trader positioning
         </span>
         <span className="terminal-status" style={{
           fontSize: T.textSm, fontWeight: 700, color: trendColor, fontFamily: T.mono,
@@ -449,7 +452,20 @@ function SmartMoneyPanel({ data }) {
         </span>
       </div>
 
-      <p className="analysis-explanation">The direction weights position value more heavily than wallet count. A smaller number of larger short positions can outweigh a majority of long wallets.</p>
+      <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, marginBottom: 6 }}>Profitable traders</div>
+      {pro.n > 0 ? <>
+        <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 8 }}>
+          <div style={{ width: `${proPct}%`, background: "#34d399" }} />
+          <div style={{ flex: 1, background: "#f87171" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: T.textSm, fontFamily: T.mono, marginBottom: 6 }}>
+          <span style={{ color: "#34d399" }}>{pro.long} long · {usd(sm.profitable.long_usd)}</span>
+          <span style={{ color: "#f87171" }}>{pro.short} short · {usd(sm.profitable.short_usd)}</span>
+        </div>
+      </> : <p className="analysis-explanation">No profitable trader holds this market right now.</p>}
+      <p className="analysis-explanation">Top 300 Hyperliquid wallets by monthly return, also in profit before this month. In a rising month most are long, so a market they avoid says more than one they hold.{pro.n > 0 && pro.n < 3 ? " Fewer than three hold it, too few to read." : ""}</p>
+      <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, margin: "14px 0 6px", paddingTop: 12, borderTop: `1px solid ${T.overlay06}` }}>All tracked wallets <span style={{ color: T.text4, fontWeight: 400 }}>(profitable traders and large accounts)</span></div>
+      <p className="analysis-explanation">The direction weights position value more heavily than wallet count, so the largest accounts dominate it. A smaller number of larger short positions can outweigh a majority of long wallets. This is the reading the signal's whale check uses.</p>
       <details className="analysis-method"><summary>How this is calculated</summary><p>The engine blends dollar imbalance (70%) and wallet-count imbalance (30%). Dollar weight rises to 85% when the notional imbalance exceeds 50%. A blended score above +0.15 is bullish, below −0.15 bearish. Conviction also accounts for wallet participation; it is not a probability of profit.</p></details>
       {/* L/S bar */}
       <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
@@ -667,7 +683,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           <h2>Signal context</h2>
           {data.confluence && <p className="analysis-lead">{data.confluence.signal_aligned ? 'The 4H and daily signals agree.' : 'The 4H and daily signals differ. Check both before interpreting the setup.'}</p>}
           <SignalContext row={data}/>
-          {data.smart_money && <p>The whale direction weights position sizes; the long/short bar below counts wallets. These can point in different directions.</p>}
+          {data.smart_money && <p>Trader positioning below shows profitable traders first, then all tracked wallets weighted by size (the reading the signal uses). These can point in different directions.</p>}
         </article>
       </section>
 

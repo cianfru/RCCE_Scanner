@@ -34,6 +34,7 @@ from hl_persistence import (
     load_equity_history as _db_load_equity,
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
+    save_trader_lean as _db_save_trader_lean,
     get_db_stats as _db_stats,
 )
 
@@ -86,7 +87,10 @@ _ROSTER_COHORTS = {
 }
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
-_MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum absolute PnL (rejects dust/lottery)
+_MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum monthly profit (rejects dust/lottery)
+# Profitable traders must also have been in profit before this month (all-time
+# PnL >= this month's PnL), so one lucky month is not enough. On the September
+# 2026 leaderboard ~1,000 wallets qualify; 115 of the old top 300 did not.
 _SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
@@ -146,6 +150,7 @@ class TrackedWallet:
     pnl: float = 0.0
     roi: float = 0.0              # Monthly percentage ROI
     score: float = 0.0            # monthly_roi * log(accountValue) ranking
+    all_time_pnl: float = 0.0
 
 
 @dataclass
@@ -197,6 +202,8 @@ class SymbolConsensus:
     money_printer_net_ratio: float = 0.0
     money_printer_long_count: int = 0
     money_printer_short_count: int = 0
+    money_printer_long_notional: float = 0.0
+    money_printer_short_notional: float = 0.0
     smart_money_trend: str = "NEUTRAL"
     smart_money_net_ratio: float = 0.0
     smart_money_long_count: int = 0
@@ -218,6 +225,9 @@ _snapshots: Dict[str, deque] = {}
 
 # Per-symbol consensus (recomputed after each poll)
 _consensus: Dict[str, SymbolConsensus] = {}
+# Profitable traders' open positions: address -> {coin: signed USD (+long / -short)}.
+# Lets sector views count each wallet once per group (see profitable_lean).
+_mp_book: Dict[str, Dict[str, float]] = {}
 _consensus_updated_at: float = 0.0
 
 # Module state
@@ -326,8 +336,9 @@ async def refresh_leaderboard() -> int:
     """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
 
     Two independent cohorts are built from the same leaderboard data:
-    - Money Printers: top 200 by ROI (>= 30%, AV >= $50k)
-    - Smart Money: top 200 by AV (>= $1M)
+    - Money Printers ("profitable traders" in the UI): top by monthly ROI
+      (>= 30%, >= $10k profit, AV >= $50k) that were also in profit before this month
+    - Smart Money ("large accounts" in the UI): top by AV (>= $1M), profit not checked
     - Elite: wallets in BOTH cohorts (auto-tagged)
 
     Returns the number of wallets in the merged roster.
@@ -371,6 +382,7 @@ async def refresh_leaderboard() -> int:
             pnl = 0.0
             roi = 0.0
             monthly_vlm = 0.0
+            all_time_pnl = 0.0
             window_perfs = entry.get("windowPerformances", [])
 
             if window_perfs and isinstance(window_perfs, list):
@@ -383,6 +395,8 @@ async def refresh_leaderboard() -> int:
                             pnl = float(metrics.get("pnl", 0) or 0)
                             roi = float(metrics.get("roi", 0) or 0) * 100
                             monthly_vlm = float(metrics.get("vlm", 0) or 0)
+                        elif window_name == "allTime":
+                            all_time_pnl = float(metrics.get("pnl", 0) or 0)
             else:
                 pnl = float(entry.get("pnl", 0) or 0)
                 roi = float(entry.get("roi", 0) or 0) * 100
@@ -401,6 +415,7 @@ async def refresh_leaderboard() -> int:
                 pnl=pnl,
                 roi=roi,
                 score=score,
+                all_time_pnl=all_time_pnl,
             ))
         except Exception:
             continue  # Skip malformed entries
@@ -412,7 +427,8 @@ async def refresh_leaderboard() -> int:
         w for w in all_wallets
         if (w.roi >= _MP_MIN_ROI_PCT
             and w.account_value >= _MP_MIN_ACCOUNT_VALUE
-            and abs(w.pnl) >= _MP_MIN_PNL)
+            and w.pnl >= _MP_MIN_PNL
+            and w.all_time_pnl >= w.pnl)
     ]
     mp_candidates.sort(key=lambda w: w.roi, reverse=True)
     _roster_money_printers = mp_candidates[:_ROSTER_COHORTS["money_printers"]]
@@ -868,9 +884,10 @@ def _recompute_consensus() -> None:
 
     Also computes per-cohort consensus (money_printer / smart_money).
     """
-    global _consensus
+    global _consensus, _mp_book
 
     now = time.time()
+    mp_book: Dict[str, Dict[str, float]] = {}
     score_map = {w.address: w.score for w in _roster}
     mp_addresses = {w.address for w in _roster_money_printers}
     sm_addresses = {w.address for w in _roster_smart_money}
@@ -928,6 +945,9 @@ def _recompute_consensus() -> None:
                 }
 
             d = sym_data[coin]
+            if is_mp and not coin.startswith("xyz:"):
+                book = mp_book.setdefault(addr, {})
+                book[coin] = book.get(coin, 0.0) + (pos.size_usd if pos.side == "LONG" else -pos.size_usd)
             w_score = score_map.get(wallet.address, 1.0)
             d["leverages"].append(pos.leverage)
 
@@ -1023,6 +1043,8 @@ def _recompute_consensus() -> None:
             money_printer_net_ratio=round(mp_net_ratio, 4),
             money_printer_long_count=d["mp_long"],
             money_printer_short_count=d["mp_short"],
+            money_printer_long_notional=round(d["mp_long_notional"], 2),
+            money_printer_short_notional=round(d["mp_short_notional"], 2),
             smart_money_trend=sm_trend,
             smart_money_net_ratio=round(sm_net_ratio, 4),
             smart_money_long_count=d["sm_long"],
@@ -1030,6 +1052,71 @@ def _recompute_consensus() -> None:
         )
 
     _consensus = new_consensus
+    _mp_book = mp_book
+
+
+def profitable_lean(groups_of) -> Dict[str, dict]:
+    """How profitable traders lean per group (sector, ecosystem, ...).
+
+    ``groups_of(coin)`` returns the group keys a coin belongs to. Each wallet is
+    counted once per group, on the side of its net dollar exposure there, so a
+    trader long five AI coins is one AI long, not five. ``lean`` is
+    (long - short) / (long + short) over wallets, in [-1, +1].
+    """
+    out: Dict[str, dict] = {}
+    for book in _mp_book.values():
+        net: Dict[str, float] = {}
+        for coin, usd in book.items():
+            for g in groups_of(coin):
+                net[g] = net.get(g, 0.0) + usd
+        for g, usd in net.items():
+            if not usd:
+                continue
+            o = out.setdefault(g, {"long": 0, "short": 0, "long_usd": 0.0, "short_usd": 0.0})
+            side = "long" if usd > 0 else "short"
+            o[side] += 1
+            o[f"{side}_usd"] += abs(usd)
+    for o in out.values():
+        n = o["long"] + o["short"]
+        o["lean"] = round((o["long"] - o["short"]) / n, 4) if n else 0.0
+        o["long_usd"], o["short_usd"] = round(o["long_usd"]), round(o["short_usd"])
+    return out
+
+
+_last_lean_bar: int = 0
+
+
+def _lean_groups(coin: str):
+    from sectors import groups
+    return (f"coin:{coin}",) + groups(coin)
+
+
+async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
+    """Once per 4h candle close: refresh positions (even when nobody is viewing)
+    and store how profitable traders lean. Six polls a day keep the record unbroken."""
+    global _last_lean_bar
+    from activity import is_active
+    from scan_schedule import SETTLE_SECONDS, last_bar_close
+    bar = int(last_bar_close(time.time() if now is None else now)) - SETTLE_SECONDS
+    if bar <= _last_lean_bar or not _roster:
+        return False
+    if not is_active():
+        await poll_positions()
+    rows = profitable_lean(_lean_groups)
+    if not rows:
+        return False
+    try:
+        _db_save_trader_lean(bar, rows)
+        _last_lean_bar = bar
+    except Exception as exc:
+        logger.warning("HyperLens DB: trader lean save error: %s", exc)
+        return False
+    logger.info("HyperLens: stored profitable-trader lean for %d groups at bar %d", len(rows), bar)
+    return True
+
+
+def profitable_traders_positioned() -> int:
+    return sum(1 for b in _mp_book.values() if b)
 
 
 # ---------------------------------------------------------------------------
@@ -2450,6 +2537,8 @@ async def run_hyperlens_loop() -> None:
             # bulk of HyperLens's cost. Resumes on the next active cycle.
             if _roster and is_active():
                 await poll_positions()
+            if _roster:
+                await record_lean_at_bar_close()
 
             # DB cleanup every 6 hours
             if time.time() - last_cleanup > 6 * 3600:

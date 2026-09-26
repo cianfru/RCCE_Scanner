@@ -1,3 +1,4 @@
+import { traderLean, usd } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import SignalContext, { CONTEXT_META } from "./SignalContext.jsx";
 import { signalContext, friendlyReason } from "../utils/signalPresentation.js";
@@ -231,32 +232,28 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   );
 }
 
+// Profitable traders on this market (grid column "SM"); all tracked wallets in the tooltip.
 export function SmartMoneyBadge({ sm }) {
   if (!sm) return null;
-  const { trend, long_count, short_count, confidence } = sm;
-  if (!trend || trend === "NEUTRAL") return (
-    <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>{"\u2014"}</span>
+  const l = traderLean(sm.profitable);
+  const all = sm.trend ? `All tracked wallets, weighted by size: ${sm.trend.toLowerCase()} (${sm.long_count} long / ${sm.short_count} short)` : "";
+  if (!l.side || l.side === "mixed") return (
+    <span title={[l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n")}
+      style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.6 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
   );
-
-  const color = trend === "BULLISH" ? T.green : T.red;
-  const icon = trend === "BULLISH" ? "\u25b2" : "\u25bc";
-  const count = long_count + short_count;
-
+  const color = l.side === "long" ? T.green : T.red;
   return (
     <span
-      title={`Smart Money: ${trend} (${long_count}L / ${short_count}S, conf ${Math.round((confidence || 0) * 100)}%)`}
+      title={`Profitable traders: ${l.long} long (${usd(l.longUsd)}) / ${l.short} short (${usd(l.shortUsd)})\n${all}`}
       className="terminal-status" style={{
-        display: "inline-flex", alignItems: "center", gap: 3,
+        display: "inline-flex", alignItems: "center", gap: 4,
         padding: "3px 7px", borderRadius: 20,
-        background: color + "14",
-        border: `1px solid ${color}25`,
-        fontFamily: T.mono, fontSize: 10,
-        color, fontWeight: 600,
-        letterSpacing: "0.04em",
+        background: color + "14", border: `1px solid ${color}25`,
+        fontFamily: T.mono, fontSize: 10, color, fontWeight: 600,
       }}
     >
-      {icon}
-      <span style={{ fontSize: 9, opacity: 0.7 }}>{count}</span>
+      {l.side === "long" ? "\u25b2" : "\u25bc"}
+      <span style={{ fontSize: 9, opacity: 0.8 }}>{l.side === "long" ? l.long : l.short}/{l.n}</span>
     </span>
   );
 }

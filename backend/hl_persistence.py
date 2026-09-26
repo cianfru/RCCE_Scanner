@@ -74,6 +74,19 @@ CREATE TABLE IF NOT EXISTS trade_log (
 );
 CREATE INDEX IF NOT EXISTS idx_tl_addr ON trade_log(address);
 
+-- How profitable traders leaned at each 4h candle close, per coin and per
+-- sector / ecosystem / pocket. Kept for a year: it is the forward record for
+-- testing whether their positioning predicts returns.
+CREATE TABLE IF NOT EXISTS trader_lean (
+    bar_close INTEGER NOT NULL,
+    grp TEXT NOT NULL,
+    long INTEGER NOT NULL,
+    short INTEGER NOT NULL,
+    long_usd REAL NOT NULL,
+    short_usd REAL NOT NULL,
+    PRIMARY KEY (bar_close, grp)
+);
+
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
     coin TEXT NOT NULL,
@@ -333,6 +346,31 @@ def load_position_first_seen() -> Dict[str, Dict[str, float]]:
 # ---------------------------------------------------------------------------
 # Cleanup (called periodically)
 # ---------------------------------------------------------------------------
+
+_LEAN_RETENTION_DAYS = 400
+
+
+def save_trader_lean(bar_close: int, rows: Dict[str, dict]) -> int:
+    """Store one candle close's profitable-trader lean (idempotent per bar)."""
+    conn = _get_conn()
+    conn.executemany(
+        "INSERT OR REPLACE INTO trader_lean (bar_close, grp, long, short, long_usd, short_usd) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(int(bar_close), g, r["long"], r["short"], r["long_usd"], r["short_usd"]) for g, r in rows.items()],
+    )
+    conn.execute("DELETE FROM trader_lean WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
+    conn.commit()
+    return len(rows)
+
+
+def load_trader_lean(prefix: str, since: float) -> List[tuple]:
+    """(bar_close, grp, long, short, long_usd, short_usd) rows for groups starting with prefix."""
+    return _get_conn().execute(
+        "SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
+        "WHERE grp >= ? AND grp < ? AND bar_close >= ? ORDER BY bar_close",
+        (prefix, prefix + "\uffff", int(since)),
+    ).fetchall()
+
 
 def cleanup_old_data() -> dict:
     """Remove data older than retention period.

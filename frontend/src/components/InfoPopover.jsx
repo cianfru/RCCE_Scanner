@@ -102,8 +102,8 @@ const COLUMN_INFO = {
     desc: "Perpetual futures funding rate from the exchange. Positive means longs pay shorts (bullish crowding), negative means shorts pay longs (bearish crowding).",
   },
   SM: {
-    title: "Smart Money Consensus",
-    desc: "HyperLens whale tracking — directional consensus of 500+ top Hyperliquid wallets (Money Printers + Smart Money cohorts). Display-only indicator, not wired into signal scoring.",
+    title: "Profitable Traders",
+    desc: "How Hyperliquid's proven profitable traders are positioned here: the top 300 by monthly return that were also in profit before this month. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's whale check still uses all tracked wallets weighted by size (shown in the tooltip).",
   },
   OI: {
     title: "Open Interest Trend",

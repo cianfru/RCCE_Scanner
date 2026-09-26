@@ -365,19 +365,19 @@ function StatusStrip({ status, cohort, roster }) {
           background: T.overlay04, border: `1px solid ${T.overlay06}`,
         }}>
           {mpCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.green }}>{mpCount} MP</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.green }}>{mpCount} profitable</span>
           )}
           {mpCount > 0 && smCount > 0 && (
             <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
           )}
           {smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.accent }}>{smCount} SM</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.accent }}>{smCount} large</span>
           )}
           {smCount > 0 && eliteCount > 0 && (
             <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
           )}
           {eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.yellow }}>{eliteCount} Elite</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.yellow }}>{eliteCount} both</span>
           )}
         </div>
       )}
@@ -808,14 +808,14 @@ function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
                           fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
                           color: T.green, background: `${T.green}12`,
                           fontFamily: T.mono, fontWeight: 600,
-                        }}>{"\uD83D\uDCB0"}</span>
+                        }} title="Profitable trader">P</span>
                       )}
                       {(w.cohorts || []).includes("smart_money") && (
                         <span className="terminal-status" style={{
                           fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
                           color: T.accent, background: `${T.accent}12`,
                           fontFamily: T.mono, fontWeight: 600,
-                        }}>{"\uD83D\uDC0B"}</span>
+                        }} title="Large account">L</span>
                       )}
                     </span>
                   )}
@@ -1046,7 +1046,7 @@ function WalletTags({ data }) {
   if (av >= 10e6) tags.push({ label: "Leviathan", color: "#a78bfa", emoji: "\ud83d\udc0b" });
   else if (av >= 1e6) tags.push({ label: "Whale", color: "#60a5fa", emoji: "\ud83d\udc33" });
   else if (av >= 100e3) tags.push({ label: "Dolphin", color: "#b8fff0", emoji: "\ud83d\udc2c" });
-  if (roi >= 100) tags.push({ label: "Money Printer", color: T.green, emoji: "\ud83d\udcb0" });
+  if (roi >= 100) tags.push({ label: "High return", color: T.green, emoji: "\ud83d\udcb0" });
   else if (roi >= 50) tags.push({ label: "Consistent", color: T.yellow, emoji: "\u2b50" });
   if (tags.length === 0) return null;
   return (
@@ -2768,7 +2768,7 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
                       background: c === "elite" ? "#fbbf2415" : c === "money_printer" ? "#34d39915" : "#c084fc15",
                       color: c === "elite" ? "#fbbf24" : c === "money_printer" ? "#34d399" : "#c084fc",
                       border: `1px solid ${c === "elite" ? "#fbbf2430" : c === "money_printer" ? "#34d39930" : "#c084fc30"}`,
-                    }}>{c.replace("_", " ")}</span>
+                    }}>{{ money_printer: "profitable", smart_money: "large", elite: "both" }[c] || c}</span>
                   ))}
                 </div>
               )}
@@ -2877,9 +2877,9 @@ function TabSwitcher({ active, onChange, isMobile }) {
 
 const COHORT_OPTIONS = [
   { key: "all", label: "ALL", color: T.text1 },
-  { key: "money_printers", label: "Money Printers", color: T.green, emoji: "\uD83D\uDCB0" },
-  { key: "smart_money", label: "Smart Money", color: T.accent, emoji: "\uD83D\uDC0B" },
-  { key: "elite", label: "Elite", color: T.yellow, emoji: "\u2B50" },
+  { key: "money_printers", label: "Profitable traders", color: T.green, title: "Top 300 by monthly return (at least 30% and $10K) that were also in profit before this month" },
+  { key: "smart_money", label: "Large accounts", color: T.accent, title: "The 300 largest accounts ($1M and up); profit is not checked" },
+  { key: "elite", label: "Both", color: T.yellow, title: "Wallets in both groups" },
 ];
 
 function CohortFilter({ active, onChange, isMobile }) {
@@ -2887,12 +2887,13 @@ function CohortFilter({ active, onChange, isMobile }) {
     <div style={{
       display: "flex", gap: 4, flexWrap: "wrap",
     }}>
-      {COHORT_OPTIONS.map(({ key, label, color, emoji }) => {
+      {COHORT_OPTIONS.map(({ key, label, color, title }) => {
         const isActive = active === key;
         return (
           <button
             key={key}
             onClick={() => onChange(key)}
+            title={title}
             style={{
               padding: isMobile ? "6px 12px" : "5px 14px", borderRadius: 20,
               fontFamily: T.font, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: 600,
@@ -2905,7 +2906,7 @@ function CohortFilter({ active, onChange, isMobile }) {
               whiteSpace: "nowrap",
             }}
           >
-            {emoji ? `${emoji} ${label}` : label}
+            {label}
           </button>
         );
       })}

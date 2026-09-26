@@ -1,0 +1,62 @@
+# Sector momentum study (declared 26 September 2026, before running)
+
+Question: when a sector or ecosystem has beaten BTC recently, does it keep beating BTC over the next 10 days? If yes, relative strength could become a ranking input (Best setups, priority). If not, the race chart and pockets stay descriptive.
+
+## Data
+
+- Coins: every coin in `backend/sectors.py` with a Binance USDT spot pair (k-prefixed Hyperliquid tickers map to the plain ticker, e.g. kPEPE to PEPEUSDT). BTC is the benchmark and is not in any group.
+- Daily closes, 2021-01-01 to 2026-03-29 (walk-forward windows 1 to 9). The holdout window (W10) is not touched.
+- Groups: the curated sector and ecosystem labels of today. A group counts on a day only when at least 3 of its members have prices that day.
+- Known bias: the coin list is today's Hyperliquid universe, so coins that died before 2026 are missing (survivorship). This flatters every group about equally; it does not by itself create momentum, but results should be read as optimistic.
+
+## Measures
+
+For each day t and each group, the group's move is the median daily log return of its members, chained. Its relative move is that minus BTC's log return.
+
+- Past strength: relative move over the L days to t, for L = 7 and L = 30.
+- Outcome: relative move over the next 10 days (t to t+10).
+
+Tests, each on non-overlapping 10-day steps (so every observation is independent in time), sectors and ecosystems separately:
+
+1. Rank correlation (Spearman) across groups between past strength and outcome, averaged over steps; t-statistic of the mean.
+2. Leader minus laggard: the outcome of the strongest group minus the weakest; mean, share positive, t-statistic.
+3. Leader against BTC: the strongest group's outcome alone; mean and share positive.
+4. Per window (1 to 9): the mean leader-minus-laggard spread, to see whether any effect is stable or one regime.
+
+## Decision rule (fixed now)
+
+Relative strength becomes a candidate ranking input only if, for at least one of L = 7 or 30, on sectors or ecosystems: the mean rank correlation is positive with t >= 2, the leader-minus-laggard spread is positive with t >= 2, and the spread is positive in at least 6 of the 9 windows. A candidate would still need a separate test inside the signal replay before it touches rankings. Otherwise the views remain descriptive, and the UI keeps saying so.
+
+## Results (run 26 September 2026, windows 1-9)
+
+149 of 183 listed coins had Binance daily history. Groups with 3+ members: 11 sectors (Majors has only ETH besides BTC and drops out), 7 ecosystems. Non-overlapping 10-day steps: ~190 for sectors (2021 onward), ~78 for ecosystems (most chains only have 3+ listed members from late 2023).
+
+| Test | Rank corr. (t) | Leader minus laggard, 10d (t) | Windows positive | Rule |
+|---|---:|---:|---:|---|
+| Sectors, 7-day strength | 0.02 (0.6) | +1.6% (1.5) | 6/9 | fails |
+| **Sectors, 30-day strength** | **0.13 (4.3)** | **+3.8% (3.7)**, positive 59% | **8/9** | **passes** |
+| Ecosystems, 7-day | -0.04 (-0.7) | +0.5% (0.5) | 2/5 | fails |
+| Ecosystems, 30-day | -0.02 (-0.3) | +1.1% (1.4) | 4/5 | fails |
+
+Per window, sectors 30-day spread (%): 6.0, 4.2, 1.1, 2.3, 8.2, 1.9, 6.9, 0.0, 7.9.
+
+Against BTC, as a trade (equal-weight basket of the leading sector, simple returns, before costs and funding):
+
+| | Sectors 30-day leader | Average sector |
+|---|---:|---:|
+| Mean 10-day return minus BTC | +2.7% | +0.2% |
+| Median | -1.9% | |
+| Share of 10-day periods beating BTC | 42% | |
+
+(The median-log index used for ranking understates basket returns by volatility drag, so it reads lower against BTC: leader -2.6%, average -4.6%. The basket numbers are the ones a trade would see.)
+
+## Reading
+
+- **30-day sector leadership persists against other sectors.** The strongest sector over the last 30 days beat the weakest over the next 10 days by 3.8% on average, in 8 of 9 windows. It meets the declared rule, so relative strength is a candidate ranking input for choosing *between* altcoins.
+- **It is not a reliable long-sector / short-BTC trade.** The leading sector beat BTC in only 42% of 10-day periods. The positive mean comes from a few large runs; the typical period lost about 2% to BTC before costs and funding.
+- **7-day strength and ecosystems show nothing.** Short bursts reverse as often as they continue; ecosystems have too little history and too few members per chain.
+- Survivorship: the coin list is today's universe, so absolute returns are flattering. The ranking result (leader against laggard, both drawn from the same survivors) is less affected.
+
+## Next step
+
+Per the declared rule, the candidate is sector 30-day strength as a tilt inside the signal replay (e.g. prefer setups in the top-third sectors, avoid the bottom third), scored by the same costed PositionManager. Until that passes, rankings are unchanged and the race chart and pockets stay descriptive; their help text notes the 30-day persistence finding.
