@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     lb_value REAL,
     all_time_pnl REAL,
     active INTEGER NOT NULL DEFAULT 1,
-    zero_streak INTEGER NOT NULL DEFAULT 0,
+    focus INTEGER NOT NULL DEFAULT 0,
     next_poll_at REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_wallets_due ON wallets(active, next_poll_at);
@@ -95,15 +95,18 @@ class Store:
         self.db.commit()
         return len(rows)
 
-    def due(self, now: float, polled_since: Optional[float] = None) -> List[Tuple[str, int]]:
-        """Wallets to poll. polled_since: skip wallets already polled since then (resuming a sweep)."""
+    def due(self, now: float, polled_since: Optional[float] = None) -> List[Tuple[str, Optional[float]]]:
+        """(address, all-time PnL) to poll. polled_since: skip wallets already polled since then (resuming a sweep)."""
         return self.db.execute(
-            "SELECT w.address, w.zero_streak FROM wallets w LEFT JOIN wallet_state_latest s ON s.address = w.address "
-            "WHERE w.active = 1 AND w.next_poll_at <= ? AND (s.ts IS NULL OR s.ts < ?) ORDER BY w.address",
+            "SELECT w.address, w.all_time_pnl FROM wallets w LEFT JOIN wallet_state_latest s ON s.address = w.address "
+            "WHERE w.active = 1 AND w.next_poll_at <= ? AND (s.ts IS NULL OR s.ts < ?) ORDER BY w.lb_value DESC",
             (now, polled_since if polled_since is not None else float("inf"))).fetchall()
 
     def registry_size(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1").fetchone()[0]
+
+    def focus_size(self) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1 AND focus = 1").fetchone()[0]
 
     # --- wallet state -------------------------------------------------------------
     def previous_first_seen(self, address: str) -> Dict[Tuple[str, bool], float]:
@@ -111,21 +114,21 @@ class Store:
         return {(c, bool(lg)): fs for c, _, lg, fs in json.loads(row[0])} if row else {}
 
     def save_states(self, items: List[tuple]) -> None:
-        """items: (address, ts, equity, [Position], zero_streak, next_poll_at)"""
+        """items: (address, ts, equity, [Position], focus, next_poll_at)"""
         self.db.executemany(
             "INSERT INTO wallet_state_latest (address, ts, equity, positions) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(address) DO UPDATE SET ts = excluded.ts, equity = excluded.equity, positions = excluded.positions",
             [(a, ts, eq, json.dumps([[p.coin, round(p.usd, 2), int(p.long), p.first_seen] for p in ps], separators=(",", ":")))
              for a, ts, eq, ps, _, _ in items])
-        self.db.executemany("UPDATE wallets SET zero_streak = ?, next_poll_at = ? WHERE address = ?",
-                            [(z, nxt, a) for a, _, _, _, z, nxt in items])
+        self.db.executemany("UPDATE wallets SET focus = ?, next_poll_at = ? WHERE address = ?",
+                            [(int(f), nxt, a) for a, _, _, _, f, nxt in items])
         self.db.commit()
 
     def load_states(self, now: float, max_age_s: float) -> List[WalletState]:
         out = []
         for a, eq, ps, pnl in self.db.execute(
                 "SELECT s.address, s.equity, s.positions, w.all_time_pnl FROM wallet_state_latest s "
-                "JOIN wallets w ON w.address = s.address WHERE w.active = 1 AND s.ts >= ?", (now - max_age_s,)):
+                "JOIN wallets w ON w.address = s.address WHERE w.active = 1 AND w.focus = 1 AND s.ts >= ?", (now - max_age_s,)):
             out.append(WalletState(a, eq, pnl, [Position(c, u, bool(lg), fs) for c, u, lg, fs in json.loads(ps)]))
         return out
 

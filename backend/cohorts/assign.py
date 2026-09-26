@@ -4,8 +4,10 @@ Equity cohorts use *perp* equity from clearinghouseState (the leaderboard's acco
 value includes spot, vaults and staking: for 37 of 40 sampled wallets it differed by
 more than 10%). PnL cohorts use the leaderboard's all-time PnL.
 
-Coverage: wallets come from the public leaderboard with an account value of $10K+,
-so small accounts and small-PnL cohorts are only partly sampled; they are flagged.
+Who is followed (the focus set, see in_focus): whales with $100K+ perp equity, and
+proven traders with $100K+ all-time PnL and $10K+ perp equity. Smaller accounts are not
+tracked: most leaderboard "shrimps" keep their money outside perps, and the real retail
+crowd is better read from funding, open interest and long/short ratios.
 """
 from __future__ import annotations
 
@@ -23,7 +25,12 @@ PNL_COHORTS = (
     ("Giga-Rekt", -INF, -1e6), ("Full Rekt", -1e6, -100e3), ("Semi-Rekt", -100e3, -10e3), ("Exit Liquidity", -10e3, 0),
     ("Humble Earner", 0, 10e3), ("Grinder", 10e3, 100e3), ("Smart Money", 100e3, 1e6), ("Money Printer", 1e6, INF),
 )
-PARTIAL = {"Shrimp", "Fish", "Exit Liquidity", "Humble Earner"}   # under-sampled by the $10K discovery floor
+WHALE_EQUITY = 100e3
+PROVEN_PNL = 100e3
+PROVEN_MIN_EQUITY = 10e3
+EQUITY_SHOWN = {"Small Whale", "Whale", "Tidal Whale", "Leviathan"}   # the equity view is whales only
+POPULATION = ("Hyperliquid leaderboard wallets with $100K+ perp equity, plus proven traders "
+              "($100K+ all-time PnL) with $10K+ perp equity. Market makers excluded.")
 YOUNG_S = 24 * 3600
 MAX_POSITIONS = 25            # more concurrent positions than this: market maker / vault, excluded
 
@@ -35,6 +42,11 @@ def _pick(table, value: Optional[float]) -> Optional[str]:
         if lo <= value < hi:
             return name
     return table[0][0] if value < table[0][1] else None
+
+
+def in_focus(perp_equity: float, all_time_pnl: Optional[float]) -> bool:
+    return perp_equity >= WHALE_EQUITY or (
+        all_time_pnl is not None and all_time_pnl >= PROVEN_PNL and perp_equity >= PROVEN_MIN_EQUITY)
 
 
 def equity_cohort(perp_equity: Optional[float]) -> Optional[str]:
@@ -105,7 +117,8 @@ def aggregate(states: Iterable[WalletState], now: float, top_symbols: int = 40) 
     for w in states:
         if len(w.positions) > MAX_POSITIONS:
             continue
-        cohorts = [("equity", equity_cohort(w.equity)), ("pnl", pnl_cohort(w.all_time_pnl))]
+        eq = equity_cohort(w.equity)
+        cohorts = [("equity", eq if eq in EQUITY_SHOWN else None), ("pnl", pnl_cohort(w.all_time_pnl))]
         by_sym: Dict[str, List[Position]] = {}
         for p in w.positions:
             by_sym.setdefault(p.coin, []).append(p)
@@ -157,7 +170,7 @@ def aggregate(states: Iterable[WalletState], now: float, top_symbols: int = 40) 
     for (dim, cohort, sym), a in acc.items():
         if sym is not None and sym not in keep:
             continue
-        rows.append({"dimension": dim, "cohort": cohort, "symbol": sym, "partial": cohort in PARTIAL, **a.row()})
+        rows.append({"dimension": dim, "cohort": cohort, "symbol": sym, **a.row()})
     return rows
 
 

@@ -1,14 +1,17 @@
-"""Tier 2 sweep: every leaderboard wallet with $10K+ account value, within a fixed share
-of Hyperliquid's per-IP weight budget (1,200/min, shared with the scanner's candles and
-HyperLens).
+"""Cohort sweep: whales and proven traders every sweep, everyone else once a day, within a
+fixed share of Hyperliquid's per-IP weight budget (1,200/min, shared with the scanner's
+candles and HyperLens).
 
-- Token bucket at COHORTS_WEIGHT_PER_MIN (default 500); halves for 5 min on a 429.
+- Focus set (assign.in_focus): $100K+ perp equity, or $100K+ all-time PnL with $10K+
+  perp equity. Polled every sweep (at most one sweep per 20 min).
+- Every other $10K+ leaderboard wallet: one check a day (jittered 18-30h) to see
+  whether it has joined the focus set. Largest accounts are checked first.
+
+- Token bucket at COHORTS_WEIGHT_PER_MIN (default 400); halves for 5 min on a 429.
 - Quiet for 20 min after each 4h candle close, when the scanner refreshes every market.
 - Resumable: states are saved every 200 wallets; after a restart the unfinished sweep
   continues, skipping wallets already polled since it started.
-- Adaptive: a wallet with no perp equity and no positions on 3 sweeps in a row is
-  polled every 6 hours instead of every sweep.
-- One sweep at most every 45 min. Off entirely with COHORTS_ENABLED=0.
+- Off entirely with COHORTS_ENABLED=0.
 
     python -m cohorts.sweeper --dry-run 200        (from backend/: sample, aggregate, print; no DB)
 """
@@ -25,18 +28,18 @@ from typing import Callable, List, Optional
 
 import aiohttp
 
-from cohorts.assign import Position, WalletState, aggregate, zscore
+from cohorts.assign import Position, WalletState, aggregate, in_focus, zscore
 from cohorts.source import ApiSource, RateLimited
 from cohorts.store import Store
 
 logger = logging.getLogger(__name__)
 
 MIN_EQUITY_FLOOR = 10_000          # discovery floor on leaderboard account value
-SLEEPY_AFTER = 3                   # empty sweeps before a wallet is polled less often
-SLEEPY_EVERY_S = 6 * 3600
-MIN_SWEEP_GAP_S = 45 * 60
+CHECK_EVERY_S = 24 * 3600          # wallets outside the focus set
+CHECK_JITTER_S = 6 * 3600
+MIN_SWEEP_GAP_S = 20 * 60
 QUIET_AFTER_CLOSE_S = 20 * 60
-STATE_MAX_AGE_S = SLEEPY_EVERY_S + 2 * 3600
+STATE_MAX_AGE_S = 2 * 3600         # focus wallets are polled every sweep
 BATCH = 200
 WORKERS = 4
 Z_WINDOW_S = 30 * 86400
@@ -88,11 +91,11 @@ def quiet_until(now: float) -> Optional[float]:
     return close + QUIET_AFTER_CLOSE_S if now - close < QUIET_AFTER_CLOSE_S else None
 
 
-def next_schedule(equity: float, positions: list, streak: int, now: float):
-    """(zero_streak, next_poll_at) after a poll."""
-    empty = equity < 250 and not positions
-    streak = streak + 1 if empty else 0
-    return streak, (now + SLEEPY_EVERY_S if streak >= SLEEPY_AFTER else 0.0)
+def schedule(equity: float, all_time_pnl: Optional[float], now: float, rng: Callable[[], float] = random.random):
+    """(in focus, next_poll_at) after a poll: focus wallets every sweep, others about daily."""
+    if in_focus(equity, all_time_pnl):
+        return True, 0.0
+    return False, now + CHECK_EVERY_S + (2 * rng() - 1) * CHECK_JITTER_S
 
 
 def with_first_seen(raw_positions, previous, now) -> List[Position]:
@@ -128,7 +131,7 @@ class Sweeper:
         async def worker():
             while True:
                 try:
-                    address, streak = queue.get_nowait()
+                    address, pnl = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
                 if self.respect_quiet:
@@ -142,7 +145,7 @@ class Sweeper:
                 except RateLimited:
                     stats["rate_limited"] += 1
                     self.bucket.penalize()
-                    queue.put_nowait((address, streak))
+                    queue.put_nowait((address, pnl))
                     continue
                 if raw is None:
                     stats["errors"] += 1
@@ -150,8 +153,8 @@ class Sweeper:
                 now = self.clock()
                 equity, positions = raw
                 ps = with_first_seen(positions, self.store.previous_first_seen(address), now)
-                z, nxt = next_schedule(equity, ps, streak, now)
-                done.append((address, now, equity, ps, z, nxt))
+                focus, nxt = schedule(equity, pnl, now)
+                done.append((address, now, equity, ps, focus, nxt))
                 stats["polled"] += 1
                 if len(done) >= BATCH:
                     await flush()
@@ -218,7 +221,7 @@ def registry_from_leaderboard(wallets, now: Optional[float] = None) -> int:
 
 
 async def run_forever() -> None:
-    per_min = float(os.environ.get("COHORTS_WEIGHT_PER_MIN", "500"))
+    per_min = float(os.environ.get("COHORTS_WEIGHT_PER_MIN", "400"))
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         await Sweeper(store(), ApiSource(session), TokenBucket(per_min)).loop()
@@ -274,16 +277,16 @@ async def _dry_run(n: int, per_min: float, seed: int, leaderboard: Optional[str]
     for dim in ("equity", "pnl"):
         print(f"\n{dim:<8}{'cohort':<16}{'wallets':>8}{'pos%':>7}{'long $M':>9}{'short $M':>9}{'bias':>7}{'lev':>6}")
         for r in sorted((r for r in snap if r["dimension"] == dim), key=lambda r: r["cohort"]):
-            print(f"{'':<8}{r['cohort'] + ('*' if r['partial'] else ''):<16}{r['wallets']:>8}{(r['positioned_pct'] or 0):>7.0f}"
+            print(f"{'':<8}{r['cohort']:<16}{r['wallets']:>8}{(r['positioned_pct'] or 0):>7.0f}"
                   f"{r['long_usd'] / 1e6:>9.2f}{r['short_usd'] / 1e6:>9.2f}{(r['bias'] if r['bias'] is not None else float('nan')):>7.2f}"
                   f"{(r['lev_median'] or 0):>6.1f}")
-    print("\n* partly sampled (discovery floor is a $10K leaderboard account value)")
+    print(f"\nfocus set: {st.focus_size()} of {len(sample)} sampled wallets")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", type=int, default=200)
-    ap.add_argument("--weight-per-min", type=float, default=500)
+    ap.add_argument("--weight-per-min", type=float, default=400)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--leaderboard", help="a saved leaderboard JSON instead of downloading it")
     args = ap.parse_args(argv)

@@ -262,7 +262,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
 
-    # Wallet cohorts: every $10K+ leaderboard wallet swept within a fixed share of the
+    # Wallet cohorts: whales and proven traders swept within a fixed share of the
     # Hyperliquid rate budget (COHORTS_WEIGHT_PER_MIN); COHORTS_ENABLED=0 turns it off.
     try:
         from cohorts.sweeper import enabled as cohorts_enabled, run_forever as run_cohorts
@@ -4013,7 +4013,7 @@ async def hyperlens_consensus(
 
 
 def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict:
-    from cohorts.assign import divergence
+    from cohorts.assign import POPULATION, divergence
     from cohorts.sweeper import store as cohort_store
     from hl_intelligence import _normalize_coin
     st = cohort_store()
@@ -4028,7 +4028,7 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
     rows = st.snapshot(ts, dimension=dimension, symbol=sym or "")
     return {"ts": ts, "age_s": int(time.time()) - ts, "symbol": sym, "rows": rows,
             "divergence": divergence(st.snapshot(ts, dimension="pnl", symbol=sym or ""), sym),
-            "coverage": "Hyperliquid leaderboard wallets with $10K+ account value; partial=true cohorts are under-sampled."}
+            "population": POPULATION}
 
 
 @app.get("/api/cohorts")
@@ -4058,7 +4058,8 @@ async def cohorts_divergence(symbol: Optional[str] = Query(None)):
 async def cohorts_status():
     from cohorts.sweeper import enabled, store as cohort_store
     st = cohort_store()
-    return {"enabled": enabled(), "registry": st.registry_size(), "latest_ts": st.latest_ts(), "runs": st.runs(10)}
+    return {"enabled": enabled(), "registry": st.registry_size(), "focus": st.focus_size(),
+            "latest_ts": st.latest_ts(), "runs": st.runs(10)}
 
 
 @app.get("/api/hyperlens/positions/{symbol}")

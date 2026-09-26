@@ -3,10 +3,10 @@ import os
 import tempfile
 import unittest
 
-from cohorts.assign import Position, WalletState, aggregate, divergence, equity_cohort, pnl_cohort, zscore
+from cohorts.assign import Position, WalletState, aggregate, divergence, equity_cohort, in_focus, pnl_cohort, zscore
 from cohorts.source import RateLimited, parse
 from cohorts.store import Store
-from cohorts.sweeper import SLEEPY_EVERY_S, Sweeper, TokenBucket, next_schedule, quiet_until
+from cohorts.sweeper import CHECK_EVERY_S, CHECK_JITTER_S, Sweeper, TokenBucket, quiet_until, schedule
 
 
 class AssignTests(unittest.TestCase):
@@ -46,7 +46,9 @@ class AssignTests(unittest.TestCase):
         self.assertEqual((btc["long_usd"], btc["short_usd"], btc["wallets"]), (300_000, 100_000, 2))
         self.assertAlmostEqual(btc["bias"], 0.5)
         self.assertNotIn(("equity", "Small Whale", "C1"), rows)                   # market maker excluded
-        self.assertTrue(all(not r["partial"] for r in rows.values()))
+        small = aggregate([WalletState("d", 40_000, 300_000, [Position("SOL", 50_000, True, old)])], now)
+        self.assertEqual({(r["dimension"], r["cohort"]) for r in small if r["symbol"] is None},
+                         {("pnl", "Smart Money")})                                # no equity row below $100K
 
     def test_divergence_and_z(self):
         rows = [{"dimension": "pnl", "cohort": c, "symbol": None, "long_usd": lo, "short_usd": sh, "positioned": 1}
@@ -102,13 +104,16 @@ class BucketTests(unittest.TestCase):
 
 
 class ScheduleTests(unittest.TestCase):
-    def test_sleepy_and_wake(self):
-        streak, nxt = 0, 0.0
-        for i in range(3):
-            streak, nxt = next_schedule(0.0, [], streak, 1000.0)
-        self.assertEqual((streak, nxt), (3, 1000.0 + SLEEPY_EVERY_S))            # demoted after 3 empty sweeps
-        streak, nxt = next_schedule(20_000.0, [], streak, 2000.0)
-        self.assertEqual((streak, nxt), (0, 0.0))                                # equity back: every sweep again
+    def test_focus_and_daily_checks(self):
+        self.assertTrue(in_focus(100_000, None))                                  # whale
+        self.assertTrue(in_focus(10_000, 100_000))                                # proven trader
+        self.assertFalse(in_focus(9_999, 5e6))                                    # proven, but too little in perps
+        self.assertFalse(in_focus(99_999, 99_999))
+        self.assertEqual(schedule(250_000, -3e6, 1000.0), (True, 0.0))            # big losers stay followed
+        focus, nxt = schedule(50_000, 20_000, 1000.0, rng=lambda: 1.0)
+        self.assertEqual((focus, nxt), (False, 1000.0 + CHECK_EVERY_S + CHECK_JITTER_S))
+        _, nxt = schedule(0, None, 1000.0, rng=lambda: 0.0)
+        self.assertEqual(nxt, 1000.0 + CHECK_EVERY_S - CHECK_JITTER_S)
 
     def test_quiet_window(self):
         self.assertEqual(quiet_until(14400 * 10 + 60), 14400 * 10 + 1200)
@@ -161,7 +166,9 @@ class SweepTests(unittest.TestCase):
             self.assertEqual(st.db.execute("SELECT COUNT(*) FROM wallet_state_latest").fetchone()[0], 10)
             snap = st.snapshot(st.latest_ts(), dimension="pnl", symbol="")
             sm = next(r for r in snap if r["cohort"] == "Smart Money")
-            self.assertEqual((sm["wallets"], sm["positioned"], sm["long_usd"]), (10, 5, 50_000))
+            self.assertEqual((sm["wallets"], sm["positioned"], sm["long_usd"]), (5, 5, 50_000))   # focus only
+            self.assertEqual(st.focus_size(), 5)
+            self.assertEqual(len(st.due(clk_after := c.t + 1)), 5)                 # the rest wait for their daily check
             self.assertEqual(st.runs(1)[0]["status"], "done")
             self.assertGreaterEqual(sum(r["rate_limited"] for r in st.runs(5)), 1)
 
@@ -212,4 +219,4 @@ class SymbolCadenceTests(unittest.TestCase):
                 asyncio.run(sw.run_once())
                 ts = st.latest_ts()
                 counts.append(len([r for r in st.snapshot(ts) if r["symbol"]]))
-            self.assertEqual(counts, [2, 0, 2])      # BTC rows for equity and pnl
+            self.assertEqual(counts, [1, 0, 1])      # a BTC row in the PnL view ($20K is below the equity view)
