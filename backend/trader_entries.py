@@ -161,7 +161,7 @@ async def entries_for(symbol: str) -> dict:
     _prune()
     hit = _result_cache.get(coin)
     if hit and time.time() - hit[0] < CACHE_S:
-        return hit[1]
+        return _with_others(hit[1])
     held = [p for p in get_symbol_positions(coin)
             if "money_printer" in p.get("cohorts", []) and not p.get("coin", "").startswith("xyz:")]
     held.sort(key=lambda p: -p["size_usd"])
@@ -192,4 +192,15 @@ async def entries_for(symbol: str) -> dict:
               "sides": _side_summary(traders), "pending": pending}
     if not pending:
         _result_cache[coin] = (now, result)
-    return result
+    return _with_others(result)
+
+
+def _with_others(result: dict) -> dict:
+    """Each trader's other positions, from the latest reading (not cached with the fills)."""
+    from hl_intelligence import wallet_positions
+    traders = []
+    for t in result["traders"]:
+        w = wallet_positions(t["address"])
+        traders.append({**t, "account_value": w["account_value"],
+                        "others": [p for p in w["positions"] if p["coin"] != result["symbol"]]})
+    return {**result, "traders": traders}

@@ -4249,6 +4249,38 @@ async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(pro
     return body
 
 
+@app.get("/api/hyperlens/followed")
+async def followed_list():
+    """Followed traders with their current positions and recent changes."""
+    import followed_traders as ft
+    from hl_intelligence import _wallet_cohorts, wallet_positions
+    from telegram_bot import ALLOWED_CHAT_IDS, TELEGRAM_BOT_TOKEN
+    traders = []
+    for addr, meta in sorted(ft.items().items(), key=lambda kv: -kv[1]["added"]):
+        w = wallet_positions(addr)
+        cohorts = sorted(_wallet_cohorts.get(addr, set()))
+        traders.append({"address": addr, **meta, "cohorts": cohorts, "tracked": bool(cohorts), **w,
+                        "events": ft.events(addr, 10)})
+    return {"traders": traders, "events": ft.events(None, 50),
+            "telegram": bool(TELEGRAM_BOT_TOKEN and ALLOWED_CHAT_IDS)}
+
+
+@app.post("/api/hyperlens/followed")
+async def followed_add(body: dict):
+    """Follow a trader. Body: {address, note?}. Needs the admin key once it is set."""
+    import followed_traders as ft
+    address = str(body.get("address", "")).strip()
+    if not (address.startswith("0x") and len(address) == 42):
+        raise HTTPException(status_code=400, detail="address must be a 0x wallet address")
+    return {"added": ft.add(address, str(body.get("note", ""))), "address": address.lower()}
+
+
+@app.delete("/api/hyperlens/followed/{address}")
+async def followed_remove(address: str):
+    import followed_traders as ft
+    return {"removed": ft.remove(address), "address": address.lower()}
+
+
 @app.get("/api/hyperlens/wallet/{address}")
 async def hyperlens_wallet(address: str):
     """Get comprehensive wallet profile with positions, trades, and stats."""

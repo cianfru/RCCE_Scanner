@@ -659,6 +659,14 @@ async def _fetch_wallet_positions(
     return snap
 
 
+def _followed_any() -> bool:
+    try:
+        import followed_traders
+        return bool(followed_traders.addresses())
+    except Exception:
+        return False
+
+
 def _get_watchlist_addresses() -> Set[str]:
     """Return the set of wallet addresses that should be polled at high frequency.
 
@@ -670,6 +678,11 @@ def _get_watchlist_addresses() -> Set[str]:
         import whale_follows as wf
         addrs.update(wf.get_all_followed_addresses())
     except ImportError:
+        pass
+    try:
+        import followed_traders
+        addrs.update(followed_traders.addresses())
+    except Exception:
         pass
     try:
         from position_monitor import PositionMonitor
@@ -697,9 +710,11 @@ def _observe_opens(evicted: Set[str]) -> None:
     """Feed each tracked wallet's latest reading to the open and convergence tracker
     (convergence.py). Same wallet filters as consensus; builder-dex markets are skipped."""
     try:
+        import followed_traders as ft
         from convergence import tracker
         tr = tracker()
         tr.forget(evicted)
+        followed = ft.addresses()
         now = time.time()
         mp = {w.address for w in _roster_money_printers}
         new = []
@@ -713,10 +728,14 @@ def _observe_opens(evicted: Set[str]) -> None:
             if 0 < latest.account_value < _DISPLAY_MIN_AV:
                 continue
             positions = [{"coin": _normalize_coin(p.coin), "side": p.side.lower(), "entry_px": p.entry_px,
-                          "size_usd": p.size_usd, "mark_px": p.size_usd / abs(p.size) if p.size else None}
+                          "size": p.size, "size_usd": p.size_usd,
+                          "mark_px": p.size_usd / abs(p.size) if p.size else None}
                          for p in latest.positions if not (p.coin.startswith("xyz:") or p.dex == _XYZ_DEX)]
-            new += tr.observe(wallet.address, "profitable" if wallet.address in mp else "large",
-                              latest.timestamp, positions)
+            cohort = "profitable" if wallet.address in mp else "large"
+            prev, seen = tr.held.get(wallet.address), tr.seen_ts.get(wallet.address, 0)
+            new += tr.observe(wallet.address, cohort, latest.timestamp, positions)
+            if wallet.address in followed and prev is not None and latest.timestamp > seen:
+                ft.record(wallet.address, cohort, latest.timestamp, ft.diff(prev, tr.held[wallet.address]), positions)
         for c in tr.check(new):
             logger.info("HyperLens: convergence %s %s, %d profitable traders", c["coin"], c["side"], c["n"])
     except Exception as exc:
@@ -1444,6 +1463,24 @@ def positioning_map(cohort: str = "profitable") -> dict:
                          "in_profit": sum(1 for x in xs if x[2])}
         out[coin] = row
     return {"wallets": wallets, "coins": out}
+
+
+def wallet_positions(address: str) -> dict:
+    """A tracked wallet's latest reading: every perpetual position, largest first."""
+    snaps = _snapshots.get(address) or _snapshots.get(address.lower())
+    if not snaps:
+        return {"ts": None, "account_value": None, "positions": []}
+    latest = snaps[-1]
+    out = []
+    for p in latest.positions:
+        if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX:
+            continue
+        roe = p.return_on_equity * 100 if p.return_on_equity else (
+            p.unrealized_pnl / p.margin_used * 100 if p.margin_used else 0.0)
+        out.append({"coin": _normalize_coin(p.coin), "side": p.side.lower(), "size_usd": round(p.size_usd),
+                    "entry_px": p.entry_px, "pnl_pct": round(roe, 1), "leverage": p.leverage})
+    out.sort(key=lambda x: -x["size_usd"])
+    return {"ts": latest.timestamp, "account_value": latest.account_value, "positions": out}
 
 
 def get_symbol_positions(symbol: str) -> List[dict]:
@@ -2707,7 +2744,9 @@ async def run_hyperlens_loop() -> None:
             # Poll positions — skip while idle (no viewer to serve); the poll
             # hits Hyperliquid once per roster member, so at rest this is the
             # bulk of HyperLens's cost. Resumes on the next active cycle.
-            if _roster and is_active():
+            # Followed traders are still read while idle (one request each) when the
+            # cohort sweep covers the roster, so their Telegram alerts stay timely.
+            if _roster and (is_active() or (roster_via_cohorts() and _followed_any())):
                 await poll_positions()
             if _roster:
                 await record_lean_at_bar_close()

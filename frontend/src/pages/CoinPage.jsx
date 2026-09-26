@@ -5,7 +5,7 @@ import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, evidenceSummary, funding8hPct, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
 import Tabs from "../components/Tabs.jsx";
 import TrendChart from "../components/TrendChart.jsx";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { col, T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import useViewport from "../hooks/useViewport.js";
@@ -15,7 +15,8 @@ import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import CoinChat from "../components/CoinChat.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
-import { traderLean, longShare, usd, WALLET_CHECK_CONFIDENCE } from "../utils/traders.js";
+import TradersCard from "../components/TradersCard.jsx";
+import useCoinTraders from "../hooks/useCoinTraders.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -276,79 +277,6 @@ function MetricsPanel({ data }) {
 }
 
 // ---------------------------------------------------------------------------
-// Trader positioning: profitable traders first, then all tracked wallets
-// ---------------------------------------------------------------------------
-
-function SmartMoneyPanel({ data, spot }) {
-  const sm = data?.smart_money;
-  if (!sm) return null;
-
-  const trendColor = sm.trend === "BULLISH" ? T.green : sm.trend === "BEARISH" ? T.red : T.text4;
-  // Below the conviction the signal's wallet check needs, the lean is not a reading: grey it.
-  const leanColor = (sm.confidence ?? 0) < WALLET_CHECK_CONFIDENCE ? T.text3 : trendColor;
-  const leanLabel = sm.trend === "BULLISH" ? "Lean long" : sm.trend === "BEARISH" ? "Lean short" : "Mixed";
-  const longPct = sm.long_count + sm.short_count > 0
-    ? Math.round(sm.long_count / (sm.long_count + sm.short_count) * 100)
-    : 50;
-  const pro = traderLean(sm.profitable);
-  const proPct = longShare(pro);
-
-  return (
-    <div style={{
-      background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: T.radius, padding: "16px 20px",
-      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-      boxShadow: `0 2px 12px ${T.shadow}`,
-    }}>
-      {/* Spot pages: the wallets hold Hyperliquid perps, not the spot pair. */}
-      <PanelHeader title={spot ? "Trader positioning (Hyperliquid perps)" : "Trader positioning"}>
-        <span style={{ fontSize: T.textSm, fontWeight: 700, color: leanColor, fontFamily: T.mono, whiteSpace: "nowrap" }}>
-          {leanLabel} · {sm.long_count + sm.short_count} wallets
-        </span>
-      </PanelHeader>
-
-      <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, marginBottom: 6 }}>Profitable traders</div>
-      {pro.n > 0 ? <>
-        <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 8 }}>
-          <div style={{ width: `${proPct}%`, background: T.green }} />
-          <div style={{ flex: 1, background: T.red }} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: T.textSm, fontFamily: T.mono, marginBottom: 6 }}>
-          <span style={{ color: T.green }}>{pro.long} long · {usd(sm.profitable.long_usd)}</span>
-          <span style={{ color: T.red }}>{pro.short} short · {usd(sm.profitable.short_usd)}</span>
-        </div>
-      </> : <p className="analysis-explanation">No profitable trader holds this market right now.</p>}
-      <p className="analysis-explanation">Top 300 Hyperliquid wallets by monthly return, also in profit before this month. In a rising month most are long, so a market they avoid says more than one they hold.{pro.n > 0 && pro.n < 3 ? " Fewer than three hold it, too few to read." : ""}</p>
-      <div style={{ fontSize: T.textSm, color: T.text2, fontFamily: T.font, fontWeight: 600, margin: "14px 0 6px", paddingTop: 12, borderTop: `1px solid ${T.overlay06}` }}>All tracked wallets <span style={{ color: T.text4, fontWeight: 400 }}>(profitable traders and large accounts)</span></div>
-      <p className="analysis-explanation">The direction weights position value more heavily than wallet count, so the largest accounts dominate it. A smaller number of larger short positions can outweigh a majority of long wallets. This is the reading the signal's tracked-wallet check uses.</p>
-      <details className="analysis-method"><summary>How this is calculated</summary><p>The engine blends dollar imbalance (70%) and wallet-count imbalance (30%). Dollar weight rises to 85% when the notional imbalance exceeds 50%. A blended score above +0.15 is bullish, below −0.15 bearish. Conviction also accounts for wallet participation; it is not a probability of profit.</p></details>
-      {/* L/S bar */}
-      <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
-        <div style={{ width: `${longPct}%`, background: T.green, transition: "width 0.3s" }} />
-        <div style={{ flex: 1, background: T.red }} />
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: T.textSm, fontFamily: T.mono, marginBottom: 10 }}>
-        <span style={{ color: T.green }}>{longPct}% of wallets long</span>
-        <span style={{ color: T.red }}>{100 - longPct}% short</span>
-      </div>
-
-      {/* Stats */}
-      {[
-        ["Wallets Long", sm.long_count, T.green],
-        ["Wallets Short", sm.short_count, T.red],
-        ["Directional conviction", formatPercent(sm.confidence, { ratio: true }), trendColor],
-        ["Wallet-count balance", sm.net_ratio > 0 ? `+${sm.net_ratio.toFixed(2)}` : sm.net_ratio.toFixed(2), sm.net_ratio > 0 ? T.green : T.red],
-      ].map(([label, val, color]) => (
-        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
-          <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.font }}>{label}</span>
-          <span style={{ fontSize: T.textBase, color, fontFamily: T.mono, fontWeight: 600 }}>{val}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // CoinPage — full analysis page for a single symbol
 // ---------------------------------------------------------------------------
 
@@ -386,6 +314,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
 
   // Scroll to top on open
   useEffect(() => { window.scrollTo(0, 0); }, [urlSymbol]);
+  // Tracked traders on this coin: loaded once, drawn on the chart and listed in the Traders card.
+  const traders = useCoinTraders(data?.symbol, !!data);
+  const traderApi = useRef(null);
 
   // Set document title
   useEffect(() => {
@@ -473,6 +404,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           exhaustionState={data.exhaustion_state}
           floorConfirmed={data.floor_confirmed}
           momentum={data.momentum}
+          traders={traders}
+          traderApi={traderApi}
         />
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           <a
@@ -512,6 +445,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </div>
 
+      <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"}
+        onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+
       <section className="analysis-evidence">
         <article className="analysis-card">
           <h2>Why this signal?</h2>
@@ -527,7 +463,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           <h2>Signal context</h2>
           {data.confluence && <p className="analysis-lead">{{waiting: 'Both timeframes are waiting.', agree: 'The 4H and daily signals agree.', differ: 'The 4H and daily signals differ. Check both before interpreting the setup.'}[signalAgreement(data.confluence)]}</p>}
           <SignalContext row={data}/>
-          {data.smart_money && <p>Trader positioning below shows profitable traders first, then all tracked wallets weighted by size (the reading the signal uses). These can point in different directions.</p>}
+          {data.smart_money && <p>The Traders card under the chart shows profitable traders and all tracked wallets weighted by size (the reading the signal uses). These can point in different directions.</p>}
         </article>
       </section>
 
@@ -538,10 +474,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </section>
       <section className="analysis-section"><h2>Positioning & counter-evidence</h2><p className="analysis-section-caption">Compare market structure, exchange data and tracked wallets.</p>
-        <div className="analysis-grid analysis-grid-three">
+        <div className="analysis-grid">
           <PositioningPanel positioning={data.positioning} hasCoinglass={hasCoinglass(data)} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} oiContext={data.oi_context}/>
           <CrossExchangePanel symbol={data.symbol}/>
-          <SmartMoneyPanel data={data} spot={marketKind === "spot"}/>
         </div>
       </section>
       <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Underlying engine values for this timeframe.</p><MetricsPanel data={data}/></section>
