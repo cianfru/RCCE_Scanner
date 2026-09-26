@@ -99,7 +99,7 @@ def q1(wallets, opens, candles, sp, lo, hi, cohort):
     by_coin = defaultdict(list)
     for o in opens:
         if o["addr"] in covers:
-            by_coin[(o["coin"], o["side"])].append(o["t"])
+            by_coin[(o["coin"], o["side"])].append((o["t"], o["addr"]))
     near = defaultdict(list)
     for s in sp:
         near[s["coin"]].append((s["start"] - QUIET, s["t"] + QUIET))
@@ -115,10 +115,11 @@ def q1(wallets, opens, candles, sp, lo, hi, cohort):
             continue
         wh = sum(n_cov(t) for t in span[::12]) * 12   # sample every 12h to keep it quick
         for side in ("long", "short"):
-            n = sum(1 for t in by_coin[(coin, side)] if lo <= t <= hi and not any(a <= t <= b for a, b in near[coin]))
+            n = sum(1 for t, _ in by_coin[(coin, side)] if lo <= t <= hi and not any(a <= t <= b for a, b in near[coin]))
             base[(coin, side)] = n / wh if wh else None
     labels = [f"-{72 - 12 * k}h" for k in range(NB)] + ["move"] + [f"+{12 * (k + 1)}h" for k in range(NB)]
     obs, exp = defaultdict(float), defaultdict(float)
+    who = defaultdict(lambda: defaultdict(int))        # bin -> wallet -> opens (concentration check)
     before_any = after_only = counted = 0
     for s in sp:
         side = "long" if s["dir"] == 1 else "short"
@@ -127,14 +128,22 @@ def q1(wallets, opens, candles, sp, lo, hi, cohort):
         bins = [(s["start"] - (NB - k) * BIN, s["start"] - (NB - k - 1) * BIN) for k in range(NB)]
         bins += [(s["start"], s["t"])] + [(s["t"] + k * BIN, s["t"] + (k + 1) * BIN) for k in range(NB)]
         counted += 1
-        pre = sum(1 for t in ts_o if bins[0][0] <= t < s["start"])
-        post = sum(1 for t in ts_o if s["t"] < t <= bins[-1][1])
+        pre = sum(1 for t, _ in ts_o if bins[0][0] <= t < s["start"])
+        post = sum(1 for t, _ in ts_o if s["t"] < t <= bins[-1][1])
         before_any += pre > 0
         after_only += pre == 0 and post > 0
         for lab, (a, b) in zip(labels, bins):
-            obs[lab] += sum(1 for t in ts_o if a <= t < b)
+            for t, w in ts_o:
+                if a <= t < b:
+                    obs[lab] += 1
+                    who[lab][w] += 1
             exp[lab] += rate * n_cov(a) * max(b - a, H) / H
+    pooled = lambda ls: round(sum(obs[l] for l in ls) / sum(exp[l] for l in ls), 2) if sum(exp[l] for l in ls) else None
+    top = lambda l: round(max(who[l].values()) / obs[l], 2) if obs[l] else None
     return {"spikes": counted, "ratio": {l: (round(obs[l] / exp[l], 2) if exp[l] else None) for l in labels},
+            "ratio_72h_before": pooled(labels[:NB]), "ratio_during_move": pooled([labels[NB]]),
+            "ratio_72h_after": pooled(labels[NB + 1:]),
+            "top_wallet_share": {l: top(l) for l in labels},
             "opens": {l: int(obs[l]) for l in labels},
             "share_with_open_before": round(before_any / counted, 3) if counted else None,
             "share_with_open_only_after": round(after_only / counted, 3) if counted else None}
