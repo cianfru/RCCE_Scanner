@@ -4194,6 +4194,51 @@ async def hyperlens_opens(symbol: str, days: int = Query(30, ge=1, le=180)):
             "convergences": tr.convergences_since(since, coin), "opens_24h_all_coins": len(tr.opens)}
 
 
+_POSITIONING_CACHE: dict = {}
+
+
+@app.get("/api/hyperlens/positioning")
+async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(profitable|large)$")):
+    """Per coin: where tracked wallets are positioned (counts, dollars, median entry per side),
+    new positions in the last 24h, recent convergences, and the engine's 4H and 1D reading.
+    Built from data already in memory; cached for a minute."""
+    hit = _POSITIONING_CACHE.get(cohort)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    from convergence import tracker
+    from hl_intelligence import _normalize_coin, positioning_map
+    pm = positioning_map(cohort)
+    tr = tracker()
+    now = time.time()
+    opens: dict = {}
+    for o in tr.opens:
+        if o["cohort"] == cohort and now - o["ts"] <= 86400:
+            opens.setdefault(o["coin"], {"long": 0, "short": 0})[o["side"]] += 1
+    convs: dict = {}
+    for c in tr.convergences_since(now - 48 * 3600):
+        convs.setdefault(c["coin"], {"side": c["side"], "n": c["n"], "ts": c["ts"]})
+    engine: dict = {}
+    for tf in ("4h", "1d"):
+        for r in cache.get_results(tf) or []:
+            sym = r.get("symbol") if isinstance(r, dict) else getattr(r, "symbol", None)
+            if not sym:
+                continue
+            get = (lambda k: r.get(k)) if isinstance(r, dict) else (lambda k: getattr(r, k, None))
+            coin = _normalize_coin(sym)
+            if coin in engine and tf in engine[coin]:
+                continue
+            engine.setdefault(coin, {})[tf] = {"symbol": sym, "signal": get("signal"), "regime": get("regime"),
+                                               "zscore": get("zscore"), "heat": get("heat"), "price": get("price")}
+    rows = []
+    for coin, d in pm["coins"].items():
+        rows.append({"coin": coin, **d, "opens_24h": opens.get(coin, {"long": 0, "short": 0}),
+                     "convergence": convs.get(coin), "engine": engine.get(coin)})
+    rows.sort(key=lambda r: -(r["long"]["n"] + r["short"]["n"]))
+    body = {"cohort": cohort, "wallets": pm["wallets"], "updated_at": now, "rows": rows}
+    _POSITIONING_CACHE[cohort] = (now, body)
+    return body
+
+
 @app.get("/api/hyperlens/wallet/{address}")
 async def hyperlens_wallet(address: str):
     """Get comprehensive wallet profile with positions, trades, and stats."""
