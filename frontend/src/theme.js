@@ -388,4 +388,4 @@ export const MCAP_RANK = {
 };
 
 // Apply on module load to prevent flash (after the colour tables exist).
-applyTheme(localStorage.getItem("rcce-theme") || "dark");
+if (typeof document !== "undefined") applyTheme(localStorage.getItem("rcce-theme") || "dark");   // no DOM under node tests

@@ -21,7 +21,7 @@ export default function PocketMatrix({ data, rows, value, onSelect }) {
   return <div className="pockets">
     <div className="race-controls">
       <Tabs small label="Range" items={RANGES} value={range} onChange={setRange} />
-      <span className="race-hint">Median move against BTC. Under each: markets · profitable traders' weight. Click a cell to filter.</span>
+      <span className="race-hint">Median move against BTC. Under each: markets · profitable traders' weight. Dashed: fewer than 3 markets. Click a cell to filter.</span>
     </div>
     <div className="pockets-scroll">
       <table className="pockets-table">

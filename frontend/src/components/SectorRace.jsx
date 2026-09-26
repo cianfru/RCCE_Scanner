@@ -27,7 +27,7 @@ function useWidth() {
   return [ref, w];
 }
 
-export default function SectorRace({ data, rows, by, value }) {
+export default function SectorRace({ data, rows, by, value, leaders: chipLeaders = [] }) {
   const [range, setRange] = useState(30);
   const [mode, setMode] = useState("rel");
   const [picked, setPicked] = useState([]);          // user-highlighted group names, in pick order
@@ -37,7 +37,12 @@ export default function SectorRace({ data, rows, by, value }) {
   useEffect(() => setPicked([]), [by]);
 
   const { dates, btc, lines } = useMemo(() => raceLines(data, by, range, mode), [data, by, range, mode]);
-  const leaders = lines.slice().sort((a, b) => b.last - a.last).slice(0, 3).map(l => l.name);
+  // Default highlights: the first three chips (size-adjusted lead over the typical alt), topped up
+  // from the lines' own leaders when a chip has no line.
+  const byLast = lines.slice().sort((a, b) => b.last - a.last).map(l => l.name);
+  const leaders = [...new Set([...chipLeaders.filter(n => lines.some(l => l.name === n)), ...byLast])].slice(0, 3);
+  const nOf = name => lines.find(l => l.name === name)?.n;
+  const tag = name => (nOf(name) ? `${short(name)} · ${nOf(name)}` : short(name));
   // A chip picked in the strip joins the highlighted lines.
   const chosen = value && lines.some(l => l.name === value) ? [value, ...leaders.filter(n => n !== value)].slice(0, 3) : leaders;
   const shown = picked.length ? picked : chosen;
@@ -61,7 +66,7 @@ export default function SectorRace({ data, rows, by, value }) {
   // Direct labels at the right edge, nudged apart so they never overlap.
   const labels = [
     ...(mode === "abs" ? [{ name: "BTC", v: btc[btc.length - 1], color: "var(--t-text1)" }] : [{ name: "BTC", v: 100, color: "var(--t-text3)" }]),
-    ...shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => ({ name: short(l.name), v: l.last, color: colorOf(l.name) })),
+    ...shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => ({ name: tag(l.name), v: l.last, color: colorOf(l.name) })),
   ].map(l => ({ ...l, yy: y(l.v) })).sort((a, b) => a.yy - b.yy);
   for (let i = 1; i < labels.length; i++) labels[i].yy = Math.max(labels[i].yy, labels[i - 1].yy + 14);
 
@@ -82,7 +87,7 @@ export default function SectorRace({ data, rows, by, value }) {
       <Tabs small label="Range" items={RANGES} value={range} onChange={setRange} />
       {picked.length > 0 && <button type="button" className="sector-clear" onClick={() => setPicked([])}>Show leaders</button>}
       <HelpTip title="Race against BTC" width={400}>
-        <p>Each line is a group's median daily move, chained and started at 100, so one coin cannot drag it. Against BTC divides by Bitcoin: above 100 the group is beating BTC. Closed daily candles, perpetual markets only.</p>
+        <p>Each line is a group's median daily move, chained and started at 100, so one coin cannot drag it. Against BTC divides by Bitcoin: above 100 the group is beating BTC. Closed daily candles, perpetual markets only. The highlighted lines start as the first three chips, which rank lead over the typical alt; these lines are against BTC. Dashed lines are groups of fewer than 10 markets.</p>
         <p>Tested on 2021 to March 2026: the sector leading over 30 days went on to beat the weakest sector over the next 10 days in 8 of 9 test periods (+3.8% on average). It beat BTC itself only 42% of the time, so leadership is a guide to which altcoins, not a long-altcoins / short-BTC trade. Seven-day leadership and ecosystems showed no persistence. Used as an entry filter on the RCCE signals, it lowered returns (it mostly meant trading less), so it stays a view, not an input.</p>
       </HelpTip>
     </div>
@@ -90,9 +95,9 @@ export default function SectorRace({ data, rows, by, value }) {
       <figure className="race-chart" ref={ref}>
         <figcaption className="race-legend">
           {shown.map(n => <button key={n} type="button" onClick={() => toggle(n)} title="Remove highlight">
-            <i style={{ background: colorOf(n) }} />{short(n)}</button>)}
+            <i style={{ background: colorOf(n) }} />{tag(n)}</button>)}
           <span><i className="race-btc" />BTC</span>
-          <span className="race-hint">{picked.length ? "Click a line to swap it in" : "Leaders shown · click a line to compare"}</span>
+          <span className="race-hint">{picked.length ? "Click a line to swap it in" : "First three chips highlighted · click a line to compare"}</span>
         </figcaption>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img"
           aria-label={`${by === "sector" ? "Sectors" : "Ecosystems"} ${mode === "rel" ? "against BTC" : "rebased to 100"} over ${range} days`}
@@ -109,7 +114,7 @@ export default function SectorRace({ data, rows, by, value }) {
           {lines.filter(l => !shown.includes(l.name)).map(l => <g key={l.name} className="race-muted" onClick={() => toggle(l.name)}>
             <path d={path(l.values)} className="race-hit" /><path d={path(l.values)}><title>{`${l.name}: ${pct(l.last - 100)}`}</title></path>
           </g>)}
-          {shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => <g key={l.name} onClick={() => toggle(l.name)} className="race-on">
+          {shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => <g key={l.name} onClick={() => toggle(l.name)} className={`race-on${l.n < 10 ? " race-small" : ""}`}>
             <path d={path(l.values)} className="race-hit" /><path d={path(l.values)} style={{ stroke: colorOf(l.name) }} />
           </g>)}
           {labels.map(l => <text key={l.name} x={W - padR + 34} y={l.yy + 3} className="race-label" style={{ fill: l.color }}>{l.name}</text>)}
@@ -119,7 +124,7 @@ export default function SectorRace({ data, rows, by, value }) {
           <strong>{fmtDate(dates[hi_])}</strong>
           {mode === "abs" && <div><span><i className="race-btc" />BTC</span><b>{pct(btc[hi_] - 100)}</b></div>}
           {shown.map(n => lines.find(l => l.name === n)).filter(Boolean).map(l => <div key={l.name}>
-            <span><i style={{ background: colorOf(l.name) }} />{short(l.name)}</span>
+            <span><i style={{ background: colorOf(l.name) }} />{tag(l.name)}</span>
             <b>{Number.isFinite(l.values[hi_]) ? pct(l.values[hi_] - 100) : "—"}</b>
           </div>)}
           <em>{mode === "rel" ? "Change against BTC since the start" : "Change since the start"}</em>

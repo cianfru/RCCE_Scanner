@@ -1,20 +1,73 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupStats } from './sectors.js';
+import { altBaseline, groupStats, median } from './sectors.js';
 import { bestEntrySetups } from './marketPresentation.js';
 
 const row = (symbol, sector, extra = {}) => ({ symbol, sector, regime: 'MARKUP', signal: 'LIGHT_LONG', priority_score: 60, sparkline: [100, 110], ...extra });
 
-test('groups rank by median move against BTC and count uptrend, longs and locked', () => {
-  const rows = [row('BTC/USDT', 'Majors', { sparkline: [100, 105] }), row('ETH/USDT', 'Majors'),
-    row('WIF/USDT', 'Memes', { sparkline: [100, 130] }), row('BONK/USDT', 'Memes', { sparkline: [100, 120], regime: 'ACCUM', signal: 'WAIT' }),
-    row('SOLO/USDT', 'Solo')];
-  const g = groupStats(rows);
-  assert.equal(g[0].name, 'Memes');
-  assert.equal(g[0].uptrend, 1);
-  assert.equal(g[0].longs, 1);
-  assert.ok(Math.abs(g[0].vsBtc - 0.25) < 1e-9);   // median of [+20%, +30%] -> upper median 30%, minus BTC 5%
-  assert.ok(!g.some(x => x.name === 'Solo'));          // single-market groups are hidden
+// A market whose 2-candle sparkline moves by pct percent.
+const mv = (symbol, sector, pct, extra = {}) => row(symbol, sector, { sparkline: [100, 100 + pct], ...extra });
+
+test('true median, and the baseline is the typical alt (BTC excluded)', () => {
+  assert.equal(median([20, 30]), 25);
+  assert.equal(median([3, 1, 2]), 2);
+  const rows = [mv('BTC/USDT', 'Majors', 100), mv('A/USDT', 'X', 10), mv('B/USDT', 'X', 20), mv('C/USDT', 'Y', 30)];
+  const b = altBaseline(rows);
+  assert.ok(Math.abs(b.M - 0.2) < 1e-9);          // median of the alts only
+  assert.ok(Math.abs(b.vsBtc - (20 - 100)) < 1e-9);
+});
+
+test('scale D from the 90th percentile gap, clamped to 10..60', () => {
+  const alts = Array.from({ length: 10 }, (_, i) => mv(`A${i}/USDT`, 'X', i < 9 ? 0 : 38));   // one market 38 points out
+  assert.equal(altBaseline([mv('BTC/USDT', 'Majors', 0), ...alts]).D, 10);
+  const wide = Array.from({ length: 10 }, (_, i) => mv(`W${i}/USDT`, 'X', i % 2 ? 38 : -38));
+  assert.equal(altBaseline(wide).D, 40);
+  const huge = Array.from({ length: 10 }, (_, i) => mv(`H${i}/USDT`, 'X', i % 2 ? 300 : -300));
+  assert.equal(altBaseline(huge).D, 60);
+});
+
+// Groups built around a typical alt of +0%: each member's move equals its gap in points.
+function scene(groups) {
+  const rows = [mv('BTC/USDT', 'Majors', -20)];
+  const pad = Array.from({ length: 41 }, (_, i) => mv(`PAD${i}/USDT`, undefined, 0));
+  for (const [name, es] of Object.entries(groups)) es.forEach((e, i) => rows.push(mv(`${name}${i}/USDT`, name, e)));
+  return [...rows, ...pad];
+}
+
+test('size shrinkage: a strong five-coin group ranks below larger, less extreme ones', () => {
+  const g = groupStats(scene({
+    Privacy: [64.1, 23.4, 16.4, 4.6, -13.8],
+    AI: Array.from({ length: 13 }, (_, i) => (i < 7 ? 13.9 + i : 13.9 - (i - 6))),
+    DeFi: Array.from({ length: 22 }, (_, i) => (i < 11 ? 9.2 + i : 9.2 - (i - 10))),
+  }));
+  const ranked = g.filter(x => !x.tail).map(x => [x.name, x.shown]);
+  assert.deepEqual(ranked.slice(0, 3).map(([n]) => n), ['AI', 'DeFi', 'Privacy']);
+  const privacy = g.find(x => x.name === 'Privacy');
+  assert.equal(privacy.shown, 5);                       // 16.4 x 5/15 = 5.47
+  assert.ok(privacy.small);
+  assert.deepEqual(privacy.exTop, { sym: 'Privacy0', shown: 3 });
+  assert.equal(privacy.ahead, 4);
+});
+
+test('ties go to the larger group; no ex-top note for an even group', () => {
+  const g = groupStats(scene({ Big: Array(20).fill(3), Small: Array(10).fill(4.5), Even: [5, 4, 3, 2, 1] }));
+  const big = g.findIndex(x => x.name === 'Big'), small = g.findIndex(x => x.name === 'Small');
+  assert.equal(g[big].shown, g[small].shown);
+  assert.ok(big < small);
+  assert.equal(g.find(x => x.name === 'Even').exTop, null);
+});
+
+test('Other and two-market groups follow the ranked ones; single markets are hidden', () => {
+  const g = groupStats(scene({ Other: [50, 40, 30, 20, 10, 5], Pair: [80, 70], Solo: [90], Main: [1, 2, 3, 4, 5] }));
+  assert.deepEqual(g.map(x => [x.name, x.tail]), [['Main', false], ['Other', true], ['Pair', true]]);
+});
+
+test('uptrend, long signals and locked setups are still counted', () => {
+  const rows = [mv('BTC/USDT', 'Majors', 5), mv('WIF/USDT', 'Memes', 30), mv('BONK/USDT', 'Memes', 20, { regime: 'ACCUM', signal: 'WAIT' }),
+    mv('PEPE/USDT', 'Memes', 10)];
+  const memes = groupStats(rows).find(x => x.name === 'Memes');
+  assert.equal(memes.uptrend, 2);
+  assert.equal(memes.longs, 2);
 });
 
 test('best setups take at most one market per sector', () => {
