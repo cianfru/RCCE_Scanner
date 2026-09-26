@@ -373,10 +373,16 @@ class ScanCache:
     ) -> List[dict]:
         """Return cached results for *timeframe*, optionally filtered."""
         from hyperliquid_universe import MARKETS
+        from sectors import classify, size_tier
         allowed = set(self.symbols)
-        items = [{**r, "market_kind": MARKETS.get(r.get("symbol"), {}).get("kind"),
-                  "market_coin": MARKETS.get(r.get("symbol"), {}).get("coin")}
-                 for r in self.results.get(timeframe, []) if r.get("symbol") in allowed
+
+        def _enrich(r):
+            market = MARKETS.get(r.get("symbol"), {})
+            sector, ecosystem = classify(r.get("symbol", ""), market.get("coin"))
+            return {**r, "market_kind": market.get("kind"), "market_coin": market.get("coin"),
+                    "sector": sector, "ecosystem": ecosystem, "size_tier": size_tier(r.get("positioning"))}
+
+        items = [_enrich(r) for r in self.results.get(timeframe, []) if r.get("symbol") in allowed
                  and not getattr(self, "spot_quality", {}).get((r.get("symbol"), timeframe))]
         if regime is not None:
             regime_upper = regime.upper()

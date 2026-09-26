@@ -1,5 +1,6 @@
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
+import SectorStrip from "./components/SectorStrip.jsx";
 import BestSetups from "./components/BestSetups.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
@@ -150,6 +151,8 @@ export default function App() {
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState("priority_score");
   const [statCardFilter, setStatCardFilter] = useState(null);
+  const [sectorBy, setSectorBy] = useState("sector");        // "sector" | "ecosystem"
+  const [sectorFilter, setSectorFilter] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // Price flash: symbol → "up" | "down" (cleared after 1.2s)
@@ -578,7 +581,9 @@ export default function App() {
   }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey]);
 
   // Apply stat card signal filter to table data
-  const applyStatFilter = (data) => {
+  const inSector = (data) => sectorFilter ? data.filter(r => r[sectorBy] === sectorFilter) : data;
+  const applyStatFilter = (rows) => {
+    const data = inSector(rows);
     if (!statCardFilter) return data;
     const getSig = r => r.signal;
     if (statCardFilter === "TRIM") return data.filter(r => { const s = getSig(r); return s === "TRIM" || s === "TRIM_HARD"; });
@@ -926,7 +931,8 @@ export default function App() {
         {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <BestSetups results={activeTab === "4h" ? filtered4h : filtered1d} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
+        {showDashboard && <SectorStrip rows={activeTab === "4h" ? sorted4h : sorted1d} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
+        {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>

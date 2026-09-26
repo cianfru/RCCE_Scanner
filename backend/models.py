@@ -71,6 +71,9 @@ class ConditionDetail(BaseModel):
 class ScanResult(BaseModel):
     market_kind: Optional[str] = None
     market_coin: Optional[str] = None
+    sector: Optional[str] = None              # sectors.py: what the project does (display only)
+    ecosystem: Optional[str] = None           # chain it lives on (Solana, Base...)
+    size_tier: Optional[str] = None           # Large / Mid / Small by open interest
     symbol: str
     timeframe: str
     price: float
