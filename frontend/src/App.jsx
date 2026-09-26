@@ -13,9 +13,9 @@ import useViewport from "./hooks/useViewport.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
-import SummaryBar from "./components/SummaryBar.jsx";
-import StatCards from "./components/StatCards.jsx";
-import ConsensusBar from "./components/ConsensusBar.jsx";
+import MarketSummary from "./components/MarketSummary.jsx";
+import ScannerControls from "./components/ScannerControls.jsx";
+import { matchesSignal } from "./utils/marketSummary.js";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
@@ -537,6 +537,14 @@ export default function App() {
     return d;
   }, [data1d, activeGroupSymbols, searchTerm, marketKind]);
 
+  // Summary card and sector strip: the whole market (or the watch group), never the search box.
+  const marketRows4h = useMemo(() => data4h.filter(r => r.market_kind === marketKind), [data4h, marketKind]);
+  const marketRows1d = useMemo(() => data1d.filter(r => r.market_kind === marketKind), [data1d, marketKind]);
+  const tfMarketRows = activeTab === "4h" ? marketRows4h : marketRows1d;
+  const tfScopeRows = useMemo(() => activeGroupSymbols ? tfMarketRows.filter(r => activeGroupSymbols.has(r.symbol)) : tfMarketRows,
+    [tfMarketRows, activeGroupSymbols]);
+  const scopeLabel = activeGroup ? `in ${activeGroup.name}` : marketKind === "spot" ? "spot markets" : "perps";
+
   const computeGroupPerf = useCallback((groupSymbols, scanData) => {
     if (!groupSymbols || groupSymbols.length === 0) return null;
     const symSet = new Set(groupSymbols);
@@ -586,9 +594,7 @@ export default function App() {
   const applyStatFilter = (rows) => {
     const data = inSector(rows);
     if (!statCardFilter) return data;
-    const getSig = r => r.signal;
-    if (statCardFilter === "TRIM") return data.filter(r => { const s = getSig(r); return s === "TRIM" || s === "TRIM_HARD"; });
-    return data.filter(r => getSig(r) === statCardFilter);
+    return data.filter(r => matchesSignal(r, statCardFilter));
   };
   const display4h = applyStatFilter(sorted4h);
   const display1d = applyStatFilter(sorted1d);
@@ -895,9 +901,9 @@ export default function App() {
 
       {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}
       {!coinPageSymbol && activeTab !== "chat" && (
-        <div style={{
+        <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
+          display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
         }}>
           <span style={{
             fontSize: isMobile ? 25 : 34,
@@ -915,6 +921,7 @@ export default function App() {
              activeTab === "hyperlens" ? "HyperLens" :
              activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
           </span>
+          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
 
         </div>
       )}
@@ -922,21 +929,18 @@ export default function App() {
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
       {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
-        {showDashboard && (data4h.length > 0 || data1d.length > 0) && (
-          <FadeIn>
-            <SummaryBar results={activeTab === "1d" ? sorted1d : sorted4h} />
-            <StatCards results={activeTab === "1d" ? sorted1d : sorted4h} isMobile={isMobile} isTablet={isTablet} activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
-          </FadeIn>
+        {showDashboard && tfMarketRows.length > 0 && (
+          <MarketSummary regimeRows={tfMarketRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
+            timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel}
+            activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
         )}
 
-        {showDashboard && <ConsensusBar consensus={activeConsensus} isMobile={isMobile} activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
-
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={activeTab === "4h" ? sorted4h : sorted1d} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
+        {showDashboard && <SectorStrip rows={tfScopeRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} />}
         {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
-        {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, sentiment, cross-timeframe signals and changes</span></summary>
-          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} sentiment={sentiment} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
+        {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
+          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
           <OpportunityActivity />
           <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={handleSelectCoin} />
           <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>

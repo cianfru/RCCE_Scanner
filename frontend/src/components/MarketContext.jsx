@@ -1,13 +1,12 @@
 import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
-import FearGreedGauge from "./FearGreedGauge.jsx";
 import StablecoinWidget from "./StablecoinWidget.jsx";
 import AltSeasonInfo from "./AltSeasonInfo.jsx";
 import BridgeFlowWidget from "./BridgeFlowWidget.jsx";
 
-export default function MarketContext({ globalMetrics, altSeason, sentiment, stablecoin, macro, isMobile }) {
-  if (!globalMetrics?.btc_dominance && !altSeason && !sentiment && !stablecoin && !macro) return null;
+export default function MarketContext({ globalMetrics, altSeason, stablecoin, macro, isMobile }) {
+  if (!globalMetrics?.btc_dominance && !altSeason && !stablecoin && !macro) return null;
 
   return (
     <FadeIn delay={380}>
@@ -17,18 +16,6 @@ export default function MarketContext({ globalMetrics, altSeason, sentiment, sta
         flexWrap: "wrap",
         alignItems: "center",
       }}>
-        {/* Fear & Greed */}
-        {sentiment?.fear_greed_value != null && (
-          <GlassCard style={{
-            padding: isMobile ? "10px 14px" : "10px 16px",
-            display: "flex", alignItems: "center",
-            flex: isMobile ? "1 1 calc(50% - 4px)" : "1 1 auto",
-            minWidth: isMobile ? undefined : 200,
-          }}>
-            <FearGreedGauge value={sentiment.fear_greed_value} />
-          </GlassCard>
-        )}
-
         {/* BTC Dominance */}
         {globalMetrics?.btc_dominance > 0 && (
           <GlassCard style={{
