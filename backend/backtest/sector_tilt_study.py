@@ -177,8 +177,8 @@ def score_all(paths, out_name):
         t["passes"] = (t["compounded_pct"] > b["compounded_pct"] and t["worst_dd_pct"] >= b["worst_dd_pct"] - 2
                        and t["windows_at_least_B"] >= 6)
     table["universe"] = universe()
-    (RUNS_DIR / f"{out_name}.json").write_text(json.dumps(table, indent=1))
-    print(json.dumps({k: v for k, v in table.items() if k != "universe"}, indent=1))
+    (RUNS_DIR / f"{out_name}.json").write_text(json.dumps(table, indent=1, default=float))
+    print(json.dumps({k: v for k, v in table.items() if k != "universe"}, indent=1, default=float))
 
 
 def main(argv=None):
