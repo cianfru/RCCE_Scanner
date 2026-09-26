@@ -420,6 +420,15 @@ async def refresh_leaderboard() -> int:
         except Exception:
             continue  # Skip malformed entries
 
+    # Wallet cohorts reuse this download (one 40MB leaderboard fetch a day serves both).
+    try:
+        from cohorts.sweeper import registry_from_leaderboard
+        n = await asyncio.to_thread(registry_from_leaderboard, all_wallets)
+        if n:
+            logger.info("Cohorts: registry refreshed with %d wallets", n)
+    except Exception as exc:
+        logger.warning("Cohorts: registry refresh failed: %s", exc)
+
     # --- Build Money Printers cohort ---
     # Require minimum ROI%, minimum AV, AND minimum absolute PnL so
     # lottery/dust wallets (162k% on $100) don't pollute the roster.

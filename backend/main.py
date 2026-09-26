@@ -262,6 +262,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("HyperLens init failed (non-fatal): %s", e)
 
+    # Wallet cohorts: every $10K+ leaderboard wallet swept within a fixed share of the
+    # Hyperliquid rate budget (COHORTS_WEIGHT_PER_MIN); COHORTS_ENABLED=0 turns it off.
+    try:
+        from cohorts.sweeper import enabled as cohorts_enabled, run_forever as run_cohorts
+        if cohorts_enabled():
+            asyncio.create_task(run_cohorts())
+            logger.info("Cohorts: ENABLED")
+    except Exception as e:
+        logger.warning("Cohorts init failed (non-fatal): %s", e)
+
     # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
     try:
         from exit_shadow import run_exit_shadow
@@ -3948,6 +3958,7 @@ async def hyperlens_roster(
 async def hyperlens_consensus(
     symbol: Optional[str] = Query(None),
     cohort: Optional[str] = Query(None),
+    cohorts: bool = Query(False, description="Add wallet-cohort bias for the symbol (display; weighting unchanged)"),
 ):
     """Per-symbol smart-money consensus.
 
@@ -3987,14 +3998,63 @@ async def hyperlens_consensus(
     if symbol:
         c = get_consensus(symbol.upper())
         if c is None:
-            return {"symbol": symbol.upper(), "trend": "NO_DATA", "wallets": 0}
-        return _consensus_to_dict(c)
+            out = {"symbol": symbol.upper(), "trend": "NO_DATA", "wallets": 0}
+        else:
+            out = _consensus_to_dict(c)
+        if cohorts:
+            out["cohorts"] = _cohort_view(symbol)
+        return out
 
     all_c = get_all_consensus()
     results = [_consensus_to_dict(c) for c in all_c.values()]
     # Sort by total positioned wallets
     results.sort(key=lambda x: x["long_count"] + x["short_count"], reverse=True)
     return {"count": len(results), "consensus": results}
+
+
+def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict:
+    from cohorts.assign import divergence
+    from cohorts.sweeper import store as cohort_store
+    from hl_intelligence import _normalize_coin
+    st = cohort_store()
+    ts = st.latest_ts()
+    if ts is None:
+        return {"ts": None, "rows": [], "note": "No completed sweep yet."}
+    sym = _normalize_coin(symbol) if symbol else None
+    rows = st.snapshot(ts, dimension=dimension, symbol=sym or "")
+    return {"ts": ts, "age_s": int(time.time()) - ts, "symbol": sym, "rows": rows,
+            "divergence": divergence(st.snapshot(ts, dimension="pnl", symbol=sym or ""), sym),
+            "coverage": "Hyperliquid leaderboard wallets with $10K+ account value; partial=true cohorts are under-sampled."}
+
+
+@app.get("/api/cohorts")
+async def cohorts_latest(dimension: Optional[str] = Query(None, pattern="^(equity|pnl)$"), symbol: Optional[str] = Query(None)):
+    """Latest wallet-cohort positioning (all markets, or one symbol)."""
+    return _cohort_view(symbol, dimension)
+
+
+@app.get("/api/cohorts/history")
+async def cohorts_history(dimension: str = Query(..., pattern="^(equity|pnl)$"), cohort: str = Query(...),
+                          symbol: Optional[str] = Query(None), days: float = Query(30, gt=0, le=180)):
+    from cohorts.sweeper import store as cohort_store
+    from hl_intelligence import _normalize_coin
+    sym = _normalize_coin(symbol) if symbol else None
+    return {"dimension": dimension, "cohort": cohort, "symbol": sym,
+            "points": cohort_store().history(dimension, cohort, sym, time.time() - days * 86400)}
+
+
+@app.get("/api/cohorts/divergence")
+async def cohorts_divergence(symbol: Optional[str] = Query(None)):
+    """Winning traders (Smart Money, Money Printer) against losing ones (Rekt cohorts, Exit Liquidity)."""
+    v = _cohort_view(symbol, "pnl")
+    return {"ts": v["ts"], **(v.get("divergence") or {})}
+
+
+@app.get("/api/cohorts/status")
+async def cohorts_status():
+    from cohorts.sweeper import enabled, store as cohort_store
+    st = cohort_store()
+    return {"enabled": enabled(), "registry": st.registry_size(), "latest_ts": st.latest_ts(), "runs": st.runs(10)}
 
 
 @app.get("/api/hyperlens/positions/{symbol}")
