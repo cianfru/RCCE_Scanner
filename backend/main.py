@@ -3989,13 +3989,17 @@ async def hyperlens_consensus(
             "long_count": c.long_count,
             "short_count": c.short_count,
             "net_ratio": round(c.net_ratio, 3),
+            # Size-weighted lean the trend is read from (+-0.15 thresholds)
+            "size_lean": round(c.net_score, 3),
             "long_notional": round(c.long_notional, 2),
             "short_notional": round(c.short_notional, 2),
+            "avg_leverage": round(c.avg_leverage, 2),
             "total_tracked": c.total_tracked,
             # Per-cohort consensus
             "money_printer": {
                 "trend": c.money_printer_trend,
                 "net_ratio": c.money_printer_net_ratio,
+                "size_lean": c.money_printer_net_ratio,   # cohort net_ratio is already the size-weighted blend
                 "long_count": c.money_printer_long_count,
                 "short_count": c.money_printer_short_count,
                 "long_notional": round(c.money_printer_long_notional, 2),
@@ -4004,6 +4008,7 @@ async def hyperlens_consensus(
             "smart_money": {
                 "trend": c.smart_money_trend,
                 "net_ratio": c.smart_money_net_ratio,
+                "size_lean": c.smart_money_net_ratio,
                 "long_count": c.smart_money_long_count,
                 "short_count": c.smart_money_short_count,
                 "long_notional": round(c.smart_money_long_notional, 2),
@@ -4185,12 +4190,12 @@ async def get_follows(user: str = Query(..., description="Connected wallet addre
             wallets.append({
                 "address": addr,
                 "account_value": profile.get("account_value", 0),
-                "roi": profile.get("roi", 0),
+                "roi": profile.get("monthly_roi"),
                 "cohorts": profile.get("cohorts", []),
-                "positions_count": len(profile.get("positions", [])),
+                "positions_count": len(profile.get("current_positions", [])),
             })
         except Exception:
-            wallets.append({"address": addr, "account_value": 0, "roi": 0, "cohorts": [], "positions_count": 0})
+            wallets.append({"address": addr, "account_value": 0, "roi": None, "cohorts": [], "positions_count": 0})
     return {"user": user.lower(), "count": len(wallets), "wallets": wallets}
 
 
