@@ -4067,7 +4067,9 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
         if ts is None:
             return {"ts": None, "symbol": sym, "rows": [], "note": "Symbol not among the 40 largest cohort positions yet."}
     rows = st.snapshot(ts, dimension=dimension, symbol=sym or "")
+    last_sym = st.latest_symbol_ts()
     return {"ts": ts, "age_s": int(time.time()) - ts, "symbol": sym, "rows": rows,
+            "symbols": st.symbols_at(last_sym) if last_sym else [], **st.coverage(),
             "divergence": divergence(st.snapshot(ts, dimension="pnl", symbol=sym or ""), sym),
             "population": POPULATION}
 
@@ -4089,13 +4091,17 @@ async def cohorts_latest(dimension: Optional[str] = Query(None, pattern="^(equit
 
 
 @app.get("/api/cohorts/history")
-async def cohorts_history(dimension: str = Query(..., pattern="^(equity|pnl)$"), cohort: str = Query(...),
+async def cohorts_history(dimension: str = Query(..., pattern="^(equity|pnl)$"), cohort: Optional[str] = Query(None),
                           symbol: Optional[str] = Query(None), days: float = Query(30, gt=0, le=180)):
+    """One cohort's points, or every cohort's (by cohort name) when none is given."""
     from cohorts.sweeper import store as cohort_store
     from hl_intelligence import _normalize_coin
     sym = _normalize_coin(symbol) if symbol else None
+    since = time.time() - days * 86400
+    if cohort is None:
+        return {"dimension": dimension, "symbol": sym, "cohorts": cohort_store().history_all(dimension, sym, since)}
     return {"dimension": dimension, "cohort": cohort, "symbol": sym,
-            "points": cohort_store().history(dimension, cohort, sym, time.time() - days * 86400)}
+            "points": cohort_store().history(dimension, cohort, sym, since)}
 
 
 @app.get("/api/cohorts/divergence")
@@ -4110,7 +4116,7 @@ async def cohorts_status():
     from cohorts.sweeper import enabled, store as cohort_store
     st = cohort_store()
     return {"enabled": enabled(), "registry": st.registry_size(), "focus": st.focus_size(),
-            "latest_ts": st.latest_ts(), "runs": st.runs(10)}
+            "latest_ts": st.latest_ts(), **st.coverage(), "runs": st.runs(10)}
 
 
 @app.get("/api/hyperlens/positions/{symbol}")
