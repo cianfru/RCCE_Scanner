@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     all_time_pnl REAL,
     active INTEGER NOT NULL DEFAULT 1,
     focus INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0,
     next_poll_at REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_wallets_due ON wallets(active, next_poll_at);
@@ -78,6 +79,9 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(_SCHEMA)
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(wallets)")}
+        if "pinned" not in cols:              # databases created before HyperLens was fed by the sweep
+            self.db.execute("ALTER TABLE wallets ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
         self.db.commit()
 
     # --- registry -----------------------------------------------------------------
@@ -99,11 +103,20 @@ class Store:
         """(address, all-time PnL) to poll. polled_since: skip wallets already polled since then (resuming a sweep)."""
         return self.db.execute(
             "SELECT w.address, w.all_time_pnl FROM wallets w LEFT JOIN wallet_state_latest s ON s.address = w.address "
-            "WHERE w.active = 1 AND w.next_poll_at <= ? AND (s.ts IS NULL OR s.ts < ?) ORDER BY w.lb_value DESC",
+            "WHERE w.active = 1 AND (w.next_poll_at <= ? OR w.pinned = 1) AND (s.ts IS NULL OR s.ts < ?) "
+            "ORDER BY w.pinned DESC, w.lb_value DESC",
             (now, polled_since if polled_since is not None else float("inf"))).fetchall()
 
     def registry_size(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1").fetchone()[0]
+
+    def set_pinned(self, addresses: Iterable[str]) -> int:
+        """Wallets polled every sweep whatever their size (the HyperLens roster)."""
+        addrs = [(a.lower(),) for a in addresses]
+        self.db.execute("UPDATE wallets SET pinned = 0 WHERE pinned = 1")
+        self.db.executemany("UPDATE wallets SET pinned = 1 WHERE address = ?", addrs)
+        self.db.commit()
+        return self.db.execute("SELECT COUNT(*) FROM wallets WHERE pinned = 1").fetchone()[0]
 
     def focus_size(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1 AND focus = 1").fetchone()[0]

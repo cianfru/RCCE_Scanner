@@ -6,6 +6,8 @@ candles and HyperLens).
   perp equity (~3,100 wallets). Polled every sweep (at most one sweep per 30 min).
 - Every other $10K+ leaderboard wallet: one check a day (jittered 18-30h) to see
   whether it has joined the focus set. Largest accounts are checked first.
+- HyperLens's roster is pinned: polled every sweep, and each response also feeds
+  HyperLens (ingest_state / after_ingest), which then polls only followed wallets.
 
 - Token bucket at COHORTS_WEIGHT_PER_MIN (default 400); halves for 5 min on a 429.
 - Quiet for 20 min after each 4h candle close, when the scanner refreshes every market.
@@ -104,8 +106,9 @@ def with_first_seen(raw_positions, previous, now) -> List[Position]:
 
 class Sweeper:
     def __init__(self, store: Store, source, bucket: TokenBucket, clock: Callable[[], float] = time.time,
-                 sleep=asyncio.sleep, respect_quiet: bool = True):
+                 sleep=asyncio.sleep, respect_quiet: bool = True, on_flush: Optional[Callable[[], None]] = None):
         self.store, self.source, self.bucket = store, source, bucket
+        self.on_flush = on_flush        # after each saved batch (HyperLens recomputes its consensus)
         self.clock, self.sleep, self.respect_quiet = clock, sleep, respect_quiet
         self.last: dict = {}
 
@@ -125,6 +128,11 @@ class Sweeper:
                 return
             self.store.save_states(list(done))
             self.store.progress(run_id, len(todo), stats["polled"], stats["errors"], stats["rate_limited"], stats["weight"])
+            if self.on_flush is not None:
+                try:
+                    self.on_flush()
+                except Exception:
+                    logger.exception("Cohorts: on_flush hook failed")
             for k in stats:
                 stats[k] = 0
             done.clear()
@@ -216,6 +224,11 @@ def store() -> Store:
     return _store
 
 
+def pin_roster(addresses) -> int:
+    """HyperLens's roster: polled every sweep so HyperLens needs no polling of its own."""
+    return store().set_pinned(addresses) if enabled() else 0
+
+
 def registry_from_leaderboard(wallets, now: Optional[float] = None) -> int:
     """Called by HyperLens after its daily leaderboard download (one download serves both).
     wallets: HyperLens TrackedWallet list (market makers already removed)."""
@@ -228,8 +241,10 @@ def registry_from_leaderboard(wallets, now: Optional[float] = None) -> int:
 async def run_forever() -> None:
     per_min = float(os.environ.get("COHORTS_WEIGHT_PER_MIN", "400"))
     timeout = aiohttp.ClientTimeout(total=20)
+    import hl_intelligence as hl
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        await Sweeper(store(), ApiSource(session), TokenBucket(per_min)).loop()
+        await Sweeper(store(), ApiSource(session, on_raw=hl.ingest_state), TokenBucket(per_min),
+                      on_flush=hl.after_ingest).loop()
 
 
 # --- dry run ------------------------------------------------------------------------
