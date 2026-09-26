@@ -9,6 +9,12 @@ const read = key => { try { return localStorage.getItem(key); } catch { return n
 const write = (key, value) => { try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* storage blocked */ } };
 
 export const getToken = () => read(TOKEN_KEY);
+
+// Changes (executor controls, TradFi markets, settings, chat...) need the admin key once
+// REFLEX_ADMIN_KEY is set on the server. It stays in this browser only.
+const ADMIN_KEY = "reflex_admin_key";
+export const getAdminKey = () => read(ADMIN_KEY) || "";
+export const setAdminKey = key => write(ADMIN_KEY, key ? String(key).trim() : null);
 export const authEnforced = () => read(ENFORCED_KEY) === "1";
 
 export function isAuthenticated() {
@@ -46,12 +52,18 @@ window.fetch = async (input, init = {}) => {
   const url = typeof input === "string" ? input : input?.url || "";
   const isApi = url.startsWith(API_BASE) && !url.includes("/api/auth/");
   const token = isApi ? getToken() : null;
-  if (token) {
+  const method = String(init.method || (typeof input !== "string" && input?.method) || "GET").toUpperCase();
+  const adminKey = isApi && method !== "GET" && method !== "HEAD" ? getAdminKey() : "";
+  if (token || adminKey) {
     const headers = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
-    if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+    if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+    if (adminKey) headers.set("X-Admin-Key", adminKey);
     init = { ...init, headers };
   }
   const res = await nativeFetch(input, init);
+  if (isApi && res.status === 403 && method !== "GET") {
+    window.dispatchEvent(new Event("reflex-admin-required"));
+  }
   if (isApi && res.status === 401) {
     write(ENFORCED_KEY, "1");
     logout();

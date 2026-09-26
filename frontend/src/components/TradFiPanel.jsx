@@ -5,6 +5,7 @@ import {
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import GlassCard from "./GlassCard.jsx";
+import Tabs from "./Tabs.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const CATEGORIES = ["ALL", "Commodities", "Indices", "Equities", "ETFs"];
@@ -160,20 +161,10 @@ export default function TradFiPanel({
         </div>
       </div>
 
-      {/* Category filter pills */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {CATEGORIES.map(cat => (
-          <button key={cat} onClick={() => setCategory(cat)} style={{
-            fontFamily: T.mono, fontSize: m(T.textXs, isMobile), fontWeight: 600,
-            padding: isMobile ? "6px 12px" : "4px 10px", borderRadius: 20, cursor: "pointer",
-            border: `1px solid ${category === cat ? T.cyan : T.border}`,
-            background: category === cat ? `${T.cyan}18` : "transparent",
-            color: category === cat ? T.cyan : T.text4,
-            transition: "all 0.15s ease",
-          }}>
-            {cat} {counts[cat] > 0 ? `(${counts[cat]})` : ""}
-          </button>
-        ))}
+      {/* Category filter: the shared tab style */}
+      <div style={{ marginBottom: 14 }}>
+        <Tabs small label="Category" value={category} onChange={setCategory}
+          items={CATEGORIES.map(cat => ({ key: cat, label: `${cat === "ALL" ? "All" : cat}${counts[cat] > 0 ? ` ${counts[cat]}` : ""}` }))} />
       </div>
 
       {/* Manage panel */}
@@ -269,7 +260,7 @@ export default function TradFiPanel({
               <div key={s.coin} style={{
                 display: "flex", alignItems: "center", gap: 6,
                 fontFamily: T.mono, fontSize: m(T.textXs, isMobile),
-                padding: "4px 10px", borderRadius: 20,
+                padding: "4px 10px", borderRadius: 4,
                 border: `1px solid ${T.border}`, background: T.surface,
                 color: T.text2,
               }}>

@@ -494,6 +494,9 @@ async def _activity_middleware(request, call_next):
         # browser to read the 401 and show the login screen.
         return JSONResponse({"detail": "Login required"}, status_code=401,
                             headers={"Access-Control-Allow-Origin": "*"})
+    if not access.write_allowed(request.method, path, request.headers):
+        return JSONResponse({"detail": "Admin key required for changes"}, status_code=403,
+                            headers={"Access-Control-Allow-Origin": "*"})
     if path.startswith("/api/") and path not in _NO_ACTIVITY_PATHS:
         try:
             from activity import mark_active

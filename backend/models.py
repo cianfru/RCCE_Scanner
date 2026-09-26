@@ -32,8 +32,9 @@ class PositioningResponse(BaseModel):
 
 
 class SentimentResponse(BaseModel):
-    fear_greed_value: int = 50
-    fear_greed_label: str = "Neutral"
+    # None when no reading is available: never stand in a neutral 50 (the dial would show it as real).
+    fear_greed_value: Optional[int] = None
+    fear_greed_label: Optional[str] = None
 
 
 class StablecoinResponse(BaseModel):
