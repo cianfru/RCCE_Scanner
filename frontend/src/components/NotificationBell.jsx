@@ -1,7 +1,8 @@
 import { notificationDigest } from "../utils/notificationDigest.js";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { T } from "../theme";
+import { T, getBaseSymbol } from "../theme";
+import TokenLogo from "./TokenLogo.jsx";
 import { useWallet } from "../WalletContext.jsx";
 import { useSharedWorker } from "../hooks/useSharedWorker.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
@@ -85,6 +86,7 @@ export default function NotificationBell() {
 
   const setupFilter = "HIGH";
   const [showAll, setShowAll] = useState(false);
+  const [openGroup, setOpenGroup] = useState(null);     // group whose supporting updates are expanded
 
   // ── SharedWorker integration ──────────────────────────────────────────────
 
@@ -214,27 +216,53 @@ export default function NotificationBell() {
 
   // --- Filtered lists ---
   const digest = notificationDigest({warnings, anomalies, setups:marketSetups, opportunities:exhaustionOpps, insights}, new Set(dismissed.map(x=>x.key)));
-  const shown = showAll ? digest : digest.slice(0, 6);
+  const shown = showAll ? digest : digest.slice(0, 8);
+  const important = shown.filter(g => g.priority < 10);        // position risks and critical market changes
+  const more = shown.filter(g => g.priority >= 10);
   const goToCoin = symbol => {
     setOpen(false);
     navigate(`/scanner/${encodeURIComponent(symbol)}`);
   };
+  const row = group => {
+    const base = group.symbol ? getBaseSymbol(group.symbol) : null;
+    const ago = group.timestamp > 0 ? (timeAgo(group.timestamp) === "now" ? "Just now" : `${timeAgo(group.timestamp)} ago`) : null;
+    const summary = group.entries[0].summary;
+    const expanded = openGroup === group.key;
+    const title = group.title.charAt(0).toUpperCase() + group.title.slice(1);
+    return <li key={group.key} className="notif-row" data-severity={group.severity || undefined}>
+      <button type="button" className="notif-main" disabled={!group.symbol} onClick={() => group.symbol && goToCoin(group.symbol)}
+        aria-label={`${base ? `${base}: ` : ""}${title}. ${summary}${group.symbol ? ". Open the coin page" : ""}`}>
+        <span className="notif-logo" aria-hidden="true">
+          {base ? <TokenLogo symbol={group.symbol.includes("/") ? group.symbol : `${base}/USDT`} size={36} /> : <span className="notif-logo-fallback">{group.category.charAt(0)}</span>}
+        </span>
+        <span className="notif-text">
+          <span className="notif-title">{base && <b>{base}</b>}{base ? " · " : ""}{title}</span>
+          <span className="notif-summary">{summary}</span>
+          <span className="notif-meta">{group.category}{ago ? ` · ${ago}` : ""}</span>
+        </span>
+      </button>
+      <button type="button" className="notif-dismiss" onClick={() => dismissMany(group.keys)} aria-label={`Dismiss ${base || title}`} title="Dismiss">
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+      </button>
+      {group.entries.length > 1 && <button type="button" className="notif-updates" aria-expanded={expanded}
+        onClick={() => setOpenGroup(expanded ? null : group.key)}>{expanded ? "Hide updates" : `${group.entries.length} updates`}</button>}
+      {expanded && <ul className="notif-entries">{group.entries.map((entry, i) => <li key={entry.key + i}>{entry.text}</li>)}</ul>}
+    </li>;
+  };
   return <div ref={panelRef} className="notification-digest">
-    <button className="notification-trigger" aria-label={`Notifications, ${digest.length} grouped updates`} aria-expanded={open} onClick={()=>setOpen(!open)}>
+    <button className="notification-trigger" aria-label={`Notifications, ${digest.length} updates`} aria-expanded={open} onClick={()=>setOpen(!open)}>
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M10 21h4"/></svg>
       {digest.length > 0 && <span>{digest.length}</span>}
     </button>
-    {open && <section className="notification-panel" aria-label="Notification digest" onKeyDown={e=>{if(e.key==='Escape')setOpen(false)}}>
-      <header><div><h2>Worth your attention</h2><p>{digest.length} grouped updates. Position risks appear first.</p></div><button onClick={()=>setOpen(false)} aria-label="Close notifications">×</button></header>
-      {digest.length > 0 && <div className="notification-actions"><span>High-priority setups</span><button onClick={clearAll}>Dismiss all</button></div>}
-      {shown.map(group=><article key={group.key}>
-        <div className="notification-meta"><span>{group.category}{group.symbol ? ` / ${group.symbol}` : ''}</span><button onClick={()=>dismissMany(group.keys)} aria-label={`Dismiss ${group.symbol || group.title}`}>Dismiss</button></div>
-        <h3>{group.title}</h3><p>{group.entries[0].summary.length>180 ? group.entries[0].summary.slice(0,177)+'…' : group.entries[0].summary}</p>
-        <div className="notification-footer">{group.symbol && <button onClick={()=>goToCoin(group.symbol)}>Review market ↗</button>}{group.timestamp > 0 && <time>{timeAgo(group.timestamp) === "now" ? "Just now" : `${timeAgo(group.timestamp)} ago`}</time>}</div>
-        <details><summary>{group.entries.length > 1 ? `${group.entries.length} supporting updates` : 'Full detail'}</summary>{group.entries.map((entry,index)=><p key={entry.key+index}>{entry.title}: {entry.text}</p>)}</details>
-      </article>)}
-      {!digest.length && <p className="notification-empty">No new updates to review.</p>}
-      {digest.length>6 && <button className="notification-more" onClick={()=>setShowAll(!showAll)}>{showAll ? 'Show priority summary' : `Show all ${digest.length} updates`}</button>}
+    {open && <section className="notification-panel" aria-label="Notifications" onKeyDown={e=>{if(e.key==='Escape')setOpen(false)}}>
+      <header className="notif-head">
+        <h2>Notifications</h2>
+        {digest.length > 0 && <button type="button" onClick={clearAll}>Dismiss all</button>}
+      </header>
+      {important.length > 0 && <><h3 className="notif-section">Needs attention</h3><ul className="notif-list">{important.map(row)}</ul></>}
+      {more.length > 0 && <><h3 className="notif-section">{important.length ? "More updates" : "Updates"}</h3><ul className="notif-list">{more.map(row)}</ul></>}
+      {!digest.length && <p className="notif-empty">Nothing needs your attention right now.</p>}
+      {digest.length > 8 && <button type="button" className="notif-more" onClick={()=>setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${digest.length}`}</button>}
     </section>}
   </div>;
 }
