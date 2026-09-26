@@ -60,3 +60,22 @@ Against BTC, as a trade (equal-weight basket of the leading sector, simple retur
 ## Next step
 
 Per the declared rule, the candidate is sector 30-day strength as a tilt inside the signal replay (e.g. prefer setups in the top-third sectors, avoid the bottom third), scored by the same costed PositionManager. Until that passes, rankings are unchanged and the race chart and pockets stay descriptive; their help text notes the 30-day persistence finding.
+
+# Sector tilt inside the signal replay (declared 26 September 2026, before running)
+
+The follow-up named above: does leaning entries toward strong sectors improve the tested strategy?
+
+## Setup
+
+- **Replay:** today's live logic (4h, what the executor trades) through the same replay engine and costed PositionManager as the signal integrity audit, windows 1-9, holdout untouched.
+- **Universe:** a new, sector-balanced set chosen by a fixed rule, not by results: BTC and ETH, plus for each other sector the 4 coins with the highest average daily USDT volume among those listed on Binance before July 2022 (stablecoin and gold tokens excluded). About 40 coins. The replay is run once; every variant is scored on the same signals.
+- **Sector strength at each bar:** as in the study: median daily log return of each sector's members minus BTC's, summed over the last 30 closed daily candles, using all 149 coins with history (not only the traded ones). Sectors need 3+ members that day. Ranked; top third and bottom third (rounded up).
+- **Variants** (exits, stops and open positions untouched; only new entries are filtered):
+  - B: no tilt.
+  - T1, avoid laggards: new entries in bottom-third sectors are skipped.
+  - T2, leaders only: new entries only in top-third sectors.
+  - BTC and ETH (Majors, not ranked) are always allowed.
+
+## Decision rule (fixed now)
+
+A variant passes if, against B: higher compounded return over windows 1-9, a worst-window drawdown no more than 2 points worse, and a return at least equal to B's in 6 or more of the 9 windows. A passing variant would first be shown in the product (e.g. Best setups preferring leading sectors) and run as a forward shadow before the executor uses it. If neither passes, sector strength stays descriptive.
