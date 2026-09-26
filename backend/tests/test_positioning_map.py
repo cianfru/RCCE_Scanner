@@ -29,3 +29,11 @@ def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
     assert sui["short"]["n"] == 0 and abs(sui["mark"] - 3.3) < 1e-9
     assert pm["coins"]["PEPE"]["short"]["in_profit"] == 0          # kPEPE normalised; short above entry
     assert hl.positioning_map("large")["coins"]["SUI"]["short"]["n"] == 1
+
+
+def test_restored_readings_count_as_current_for_a_while(monkeypatch):
+    now = time.time()
+    monkeypatch.setattr(hl, "_restored_until", now + 60)
+    assert hl._fresh_limit(now) == hl._RESTORED_MAX_AGE_S
+    monkeypatch.setattr(hl, "_restored_until", now - 1)
+    assert hl._fresh_limit(now) == hl._SNAPSHOT_MAX_AGE_S

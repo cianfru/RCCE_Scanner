@@ -27,9 +27,11 @@ export default function FollowingView() {
     <div className="fol">
       <p className="coh-intro">
         {traders.length ? `${traders.length} followed trader${traders.length > 1 ? "s" : ""}.` : "No followed traders yet."}{" "}
-        {data && (data.telegram
+        {data && (data.telegram === "ready"
           ? "Opens, closes, adds and cuts of $10K or more are sent to Telegram."
-          : "Telegram is not configured on the server, so changes show here only.")}
+          : data.telegram === "no-chat"
+          ? "Telegram has no chat to send to yet: send /watch followed by your wallet address to the bot once, and changes will arrive there."
+          : "The Telegram bot is not running on the server, so changes show here only.")}
         {" "}Follow a trader from a coin's chart, or add an address.
       </p>
       <form className="fol-add" onSubmit={add}>
