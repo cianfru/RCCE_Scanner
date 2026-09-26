@@ -17,6 +17,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from .heatmap_engine import bmsb_implausible
+
 # ---------------------------------------------------------------------------
 # Helper functions — vectorised where possible
 # ---------------------------------------------------------------------------
@@ -228,8 +230,8 @@ def compute_exhaustion(
 
     # === Weekly BMSB Anchor ===========================================
     w_mid = _weekly_bmsb_mid(c_w)
-    if np.isnan(w_mid):
-        # Not enough weekly data — fall back to neutral
+    if np.isnan(w_mid) or bmsb_implausible(w_mid, c, ohlcv.get("timestamp")):
+        # Not enough weekly data, or a band far from price (corrupt weekly series) — fall back to neutral
         return _empty_result()
 
     weekly_down_zone = c < w_mid                         # bool array

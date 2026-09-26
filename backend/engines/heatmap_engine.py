@@ -18,6 +18,7 @@ import numpy as np
 
 EMA_LEN = 21
 SMA_LEN = 20
+BMSB_MAX_RATIO = 3.0  # a band this far from recent price means a corrupt weekly series
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -171,7 +172,8 @@ def compute_heatmap(ohlcv_daily: dict, ohlcv_weekly: dict) -> dict:
 
     # Use the last valid weekly BMSB mid value
     bmsb_mid = _last_valid(bmsb_mid_series)
-    if np.isnan(bmsb_mid):
+    if np.isnan(bmsb_mid) or bmsb_implausible(bmsb_mid, d_close, ohlcv_daily.get("timestamp")):
+        # Unavailable rather than bearish: bmsb_mid 0 marks the band invalid downstream.
         return _default_result()
 
     # ---- Volatility components ---------------------------------------------
@@ -316,6 +318,25 @@ def compute_bmsb_series(
         "ema": _to_series(bmsb_ema),
         "sma": _to_series(bmsb_sma),
     }
+
+
+def bmsb_implausible(bmsb_mid: float, closes, timestamps=None, days: int = 20) -> bool:
+    """True when the band is more than BMSB_MAX_RATIO away from the median close
+    of the last *days* days (the last *days* closes when timestamps are missing)."""
+    closes = np.asarray(closes, dtype=np.float64)
+    if timestamps is not None and len(timestamps) == len(closes) and len(closes):
+        ts = np.asarray(timestamps, dtype=np.float64)
+        recent = closes[ts >= ts[-1] - (days - 1) * 86_400_000]
+    else:
+        recent = closes[-days:]
+    recent = recent[np.isfinite(recent)]
+    if len(recent) == 0:
+        return False
+    median = float(np.median(recent))
+    if median <= 0 or not np.isfinite(bmsb_mid) or bmsb_mid <= 0:
+        return True
+    ratio = bmsb_mid / median
+    return ratio > BMSB_MAX_RATIO or ratio < 1.0 / BMSB_MAX_RATIO
 
 
 # ---------------------------------------------------------------------------

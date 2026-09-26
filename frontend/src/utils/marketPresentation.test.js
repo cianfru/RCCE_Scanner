@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPercent, evidenceSummary, bestEntrySetups} from './marketPresentation.js';
+import {formatPercent, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass} from './marketPresentation.js';
 test('respects explicit API percentage units without multiplying twice',()=>{
  assert.equal(formatPercent(82),'82%');
  assert.equal(formatPercent(0.82,{ratio:true}),'82%');
@@ -22,4 +22,13 @@ test('ranks eligible entries by existing score, without changing input order',()
 test('shortlist respects lifecycle and includes confirmed shorts',()=>{
  const rows=[{symbol:'BTC',signal:'STRONG_LONG',priority_score:90,opportunity:{status:'expired'}},{symbol:'ETH',signal:'LIGHT_SHORT',priority_score:60,opportunity:{status:'confirmed'}},{symbol:'SOL',signal:'LIGHT_LONG',priority_score:70,signal_status:'unavailable'}];
  assert.deepEqual(bestEntrySetups(rows).map(r=>r.symbol),['ETH']);
+});
+test('hourly funding is shown per 8h in percent',()=>{
+ assert.ok(Math.abs(funding8hPct(0.0000125)-0.01)<1e-12);assert.equal(funding8hPct(null),null);
+});
+test('CoinGlass fields count only when the feed is fresh and covers the market',()=>{
+ const pos={source_map:{liq:'coinglass'}};
+ assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:pos}),true);
+ assert.equal(hasCoinglass({input_quality:{coinglass:{status:'stale'}},positioning:pos}),false);
+ assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:{source_map:{}}}),false);
 });
