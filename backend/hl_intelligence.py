@@ -692,6 +692,36 @@ def _wallet_has_open_positions(address: str) -> bool:
     return len(dq[-1].positions) > 0
 
 
+def _observe_opens(evicted: Set[str]) -> None:
+    """Feed each tracked wallet's latest reading to the open and convergence tracker
+    (convergence.py). Same wallet filters as consensus; builder-dex markets are skipped."""
+    try:
+        from convergence import tracker
+        tr = tracker()
+        tr.forget(evicted)
+        now = time.time()
+        mp = {w.address for w in _roster_money_printers}
+        new = []
+        for wallet in _roster:
+            snaps = _snapshots.get(wallet.address)
+            if not snaps:
+                continue
+            latest = snaps[-1]
+            if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS:
+                continue
+            if 0 < latest.account_value < _DISPLAY_MIN_AV:
+                continue
+            positions = [{"coin": _normalize_coin(p.coin), "side": p.side.lower(), "entry_px": p.entry_px,
+                          "size_usd": p.size_usd, "mark_px": p.size_usd / abs(p.size) if p.size else None}
+                         for p in latest.positions if not (p.coin.startswith("xyz:") or p.dex == _XYZ_DEX)]
+            new += tr.observe(wallet.address, "profitable" if wallet.address in mp else "large",
+                              latest.timestamp, positions)
+        for c in tr.check(new):
+            logger.info("HyperLens: convergence %s %s, %d profitable traders", c["coin"], c["side"], c["n"])
+    except Exception as exc:
+        logger.warning("HyperLens: open tracking failed: %s", exc)
+
+
 def _after_positions_update() -> Set[str]:
     """After new wallet snapshots (own poll or the cohort sweep): evict wallets that no
     longer qualify, recompute consensus, persist at most hourly. Returns evicted addresses."""
@@ -747,6 +777,7 @@ def _after_positions_update() -> Set[str]:
 
     _recompute_consensus()
     _consensus_updated_at = time.time()
+    _observe_opens(evicted_addrs)
 
     # Persist snapshots only — trade log + first-seen no longer populated.
     # Throttle DB writes to ≤1/hour: SQLite writes inflate the kernel page

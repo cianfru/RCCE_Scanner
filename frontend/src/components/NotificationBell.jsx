@@ -55,6 +55,7 @@ export default function NotificationBell() {
   const [exhaustionOpps, setExhaustionOpps] = useState([]);
   const [marketSetups, setMarketSetups] = useState([]);
   const [insights, setInsights] = useState([]);
+  const [convergence, setConvergence] = useState([]);
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissedState] = useState(getDismissed);
   const panelRef = useRef(null);
@@ -190,6 +191,15 @@ export default function NotificationBell() {
     } catch (_) {}
   }, [walletAddress, setupFilter, sw.supported]);
 
+  // Profitable traders converging on a coin: found once per wallet sweep (~30 min), polled directly
+  useEffect(() => {
+    const load = () => fetch(`${API_BASE}/api/notifications/convergence`)
+      .then(r => (r.ok ? r.json() : null)).then(d => d && setConvergence(d.items || [])).catch(() => {});
+    load();
+    const iv = setInterval(load, 300_000);
+    return () => clearInterval(iv);
+  }, []);
+
   // Fallback polling — only runs when SharedWorker unavailable
   useEffect(() => {
     if (sw.supported) return;
@@ -215,7 +225,7 @@ export default function NotificationBell() {
   }, [open]);
 
   // --- Filtered lists ---
-  const digest = notificationDigest({warnings, anomalies, setups:marketSetups, opportunities:exhaustionOpps, insights}, new Set(dismissed.map(x=>x.key)));
+  const digest = notificationDigest({warnings, anomalies, setups:marketSetups, opportunities:exhaustionOpps, insights, convergence}, new Set(dismissed.map(x=>x.key)));
   const shown = showAll ? digest : digest.slice(0, 8);
   const important = shown.filter(g => g.priority < 10);        // position risks and critical market changes
   const more = shown.filter(g => g.priority >= 10);

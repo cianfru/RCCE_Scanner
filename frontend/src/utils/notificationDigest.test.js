@@ -20,3 +20,10 @@ test('open interest anomalies are titled by direction',()=>{
  const [jump]=notificationDigest({anomalies:[{symbol:'Y/USDT',dedup_key:'y',anomaly_type:'OI_SURGE',current_value:6.1,context:'OI +6.1% change (z=3.0)'}]});
  assert.equal(drop.title,'Open interest drop');assert.equal(jump.title,'Open interest jump');
 });
+
+test('convergence alerts appear under Traders with their detail', () => {
+  const [g] = notificationDigest({convergence:[{type:'CONVERGENCE', symbol:'SUI/USDT', title:'Traders converging', detail:'2 profitable traders opened long within 6h at 3.41 to 3.46', severity:'medium', timestamp:1, dedup_key:'conv:SUI:long:1:2'}]});
+  assert.equal(g.category, 'Traders');
+  assert.equal(g.title, 'Traders converging');
+  assert.match(g.summary, /2 profitable traders opened long/);
+});

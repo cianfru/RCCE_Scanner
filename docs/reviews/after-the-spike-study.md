@@ -66,6 +66,24 @@ The rule follows the structure stage 1 shows (reversion to the mean), with no fi
 - If neither passes, nothing ships and the result is reported.
 
 
+## Stage 2 results (windows 1-9, 10 primary coins, 4H, costed PositionManager)
+
+| | C (today) | C + K0 | C + K1 | C + K0d |
+|---|---:|---:|---:|---:|
+| Compounded return | +43.1% | +26.1% | +32.4% | +16.6% |
+| Worst-window drawdown | -10.4% | -8.7% | -9.5% | -8.9% |
+| Trades | 314 | 310 | 337 | 255 |
+| Window 5 (the largest rally window) | +35.6% | +26.1% | +27.8% | +19.9% |
+
+**Verdict: nothing ships.** Every variant lowers the compounded return by far more than the 2-point limit on the primary set. The secondary confirmation could not change the outcome, so it was stopped. The cool-off stays off.
+
+Reading:
+- Holding back new longs after a spike softens the drawdowns a little.
+- On these coins, though, a spike was more often followed by further trend than by the deep unwind that stage 1 describes on average.
+- Missing those re-entries costs more than the unwinds it avoids.
+
+The XMR case is real; it is just not the typical case in the replay. Stage 1's picture stays on the chart (the after-the-spike box and the mean lines), as information only.
+
 ## Spike fan on the coin chart (declared 26 September 2026, before computing it)
 
 This is a picture of what past spikes did, not a forecast. It is drawn when the engine's cool-off spike definition applies (last bar with z ≥ 2.5, its run of bars with z ≥ 2.0).

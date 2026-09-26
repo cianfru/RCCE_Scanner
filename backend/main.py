@@ -3126,6 +3126,24 @@ async def exhaustion_opportunities(address: Optional[str] = Query(None)):
 # Anomaly Detection — Statistical Outliers (funding, OI, LSR, CVD, volume)
 # ---------------------------------------------------------------------------
 
+@app.get("/api/notifications/convergence")
+async def notifications_convergence(hours: int = Query(48, ge=1, le=168)):
+    """Profitable traders converging on a coin (docs/reviews/trader-convergence-forward-test.md)."""
+    from convergence import tracker
+    items = []
+    for c in tracker().convergences_since(time.time() - hours * 3600):
+        fmt = lambda v: f"{v:.4g}" if v < 1000 else f"{v:,.0f}"
+        span_h = max(1, round((c["wallets"][-1]["ts"] - c["first_ts"]) / 3600))
+        detail = (f"{c['n']} profitable traders opened {c['side']} within {span_h}h at "
+                  f"{fmt(min(c['first_px'], c['last_px']))} to {fmt(max(c['first_px'], c['last_px']))}")
+        if c.get("mark_px"):
+            detail += f"; price {fmt(c['mark_px'])} when detected"
+        items.append({"type": "CONVERGENCE", "symbol": f"{c['coin']}/USDT", "title": "Traders converging",
+                      "detail": detail, "severity": "medium", "timestamp": c["ts"], "side": c["side"], "n": c["n"],
+                      "dedup_key": f"conv:{c['coin']}:{c['side']}:{int(c['first_ts'])}:{c['n']}"})
+    return {"items": items}
+
+
 @app.get("/api/notifications/anomalies")
 async def active_anomalies():
     """Return currently active market anomalies (statistical outliers).
@@ -4159,6 +4177,21 @@ async def hyperlens_entries(symbol: str):
     """When and where the profitable traders holding this coin got in (fills fetched on demand, cached)."""
     from trader_entries import entries_for
     return await entries_for(symbol.upper())
+
+
+@app.get("/api/hyperlens/opens/{symbol}")
+async def hyperlens_opens(symbol: str, days: int = Query(30, ge=1, le=180)):
+    """Positions opened by tracked wallets on this coin (seen between sweep readings), and
+    profitable-trader convergences (docs/reviews/trader-convergence-forward-test.md)."""
+    from convergence import tracker
+    from hl_intelligence import _normalize_coin
+    coin = _normalize_coin(symbol.upper())
+    tr = tracker()
+    since = time.time() - days * 86400
+    opens = [{"t": o["ts"], "prev_t": o["prev_ts"], "cohort": o["cohort"], "side": o["side"],
+              "px": o["entry_px"], "usd": round(o["size_usd"])} for o in tr.opens_for(coin, since)]
+    return {"symbol": coin, "tracking_since": tr.tracking_since(), "opens": opens,
+            "convergences": tr.convergences_since(since, coin)}
 
 
 @app.get("/api/hyperlens/wallet/{address}")
