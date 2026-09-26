@@ -1,19 +1,19 @@
 import HelpTip from "./HelpTip.jsx";
 import { T } from "../theme.js";
 
-const MET_COLOR = "#34d399";
-const UNMET_COLOR = "#f87171";
+// Getters: T.green/T.red/T.yellow are repainted in place for the light theme.
+const C = { get met() { return T.green; }, get unmet() { return T.red; }, get mid() { return T.yellow; } };
 
 function scoreColor(pct) {
-  if (pct >= 75) return MET_COLOR;
-  if (pct >= 50) return "#fbbf24";
-  return UNMET_COLOR;
+  if (pct >= 75) return C.met;
+  if (pct >= 50) return C.mid;
+  return C.unmet;
 }
 
 function ConditionPill({ c }) {
   return (
     <div className="condition-item" title={`${c.desc} · ${c.source || "Source unavailable"} · ${c.freshness || "Unknown freshness"}${c.observed_at ? ` · ${new Date(c.observed_at * 1000).toISOString()}` : ""}`}>
-      <span aria-label={c.available === false ? 'Unknown' : c.met ? 'Met' : 'Not met'} style={{color:c.available === false ? T.text4 : c.met ? MET_COLOR : UNMET_COLOR}}>{c.available === false ? '?' : c.met ? '✓' : '✗'}</span>
+      <span aria-label={c.available === false ? 'Unknown' : c.met ? 'Met' : 'Not met'} style={{color:c.available === false ? T.text4 : c.met ? C.met : C.unmet}}>{c.available === false ? '?' : c.met ? '✓' : '✗'}</span>
       <div><strong>{c.label}</strong><p>{c.available === false ? "Data unavailable — not counted as confirmation" : c.desc}</p></div>
     </div>
   );
@@ -87,7 +87,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
         marginBottom: 8, display: "flex", justifyContent: "space-between",
       }}>
         <span>Core Engine</span>
-        <span style={{ color: coreMet >= 7 ? MET_COLOR : coreMet >= 5 ? "#fbbf24" : UNMET_COLOR, fontFamily: T.mono }}>
+        <span style={{ color: coreMet >= 7 ? C.met : coreMet >= 5 ? C.mid : C.unmet, fontFamily: T.mono }}>
           {coreMet}/{core.length}
         </span>
       </div>
@@ -107,7 +107,7 @@ export default function ConditionsScorecard({ conditions, met, total }) {
             marginBottom: 8, display: "flex", justifyContent: "space-between",
           }}>
             <span>Market Context</span>
-            <span style={{ color: cgMet >= 3 ? MET_COLOR : cgMet >= 2 ? "#fbbf24" : UNMET_COLOR, fontFamily: T.mono }}>
+            <span style={{ color: cgMet >= 3 ? C.met : cgMet >= 2 ? C.mid : C.unmet, fontFamily: T.mono }}>
               {cgMet}/{cg.length}
             </span>
           </div>

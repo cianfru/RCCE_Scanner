@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPercent, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass} from './marketPresentation.js';
+import {formatPercent, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass, signalAgreement} from './marketPresentation.js';
 test('respects explicit API percentage units without multiplying twice',()=>{
  assert.equal(formatPercent(82),'82%');
  assert.equal(formatPercent(0.82,{ratio:true}),'82%');
@@ -31,4 +31,13 @@ test('CoinGlass fields count only when the feed is fresh and covers the market',
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:pos}),true);
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'stale'}},positioning:pos}),false);
  assert.equal(hasCoinglass({input_quality:{coinglass:{status:'ready'}},positioning:{source_map:{}}}),false);
+});
+test('timeframe agreement is three-way and names the regimes',()=>{
+ assert.equal(signalAgreement({signal_aligned:null,signal_4h:'WAIT',signal_1d:'WAIT'}),'waiting');
+ assert.equal(signalAgreement({signal_aligned:false,signal_4h:'WAIT',signal_1d:'WAIT'}),'waiting');
+ assert.equal(signalAgreement({signal_aligned:true,signal_4h:'LIGHT_LONG',signal_1d:'ACCUMULATE'}),'agree');
+ assert.equal(signalAgreement({signal_aligned:false,signal_4h:'LIGHT_LONG',signal_1d:'TRIM'}),'differ');
+ const text=evidenceSummary({regime:'REACC',conditions_met:8,conditions_total:11,confluence:{regime_aligned:true,regime_4h:'REACC',regime_1d:'ACCUM',signal_aligned:null,signal_4h:'WAIT',signal_1d:'WAIT'}});
+ assert.match(text,/regimes agree \(both in the bullish family: Re-accumulating and Accumulation\)\. Both timeframes are waiting\./);
+ assert.doesNotMatch(text,/while/);
 });

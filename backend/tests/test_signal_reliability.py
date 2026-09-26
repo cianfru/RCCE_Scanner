@@ -257,7 +257,8 @@ class ReplayTests(unittest.TestCase):
                 {"BTC/USDT": candles(80, "1d")}, {}, {}, warmup_bars=399))
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].timestamp, 400 * TF_MS["4h"])
-        self.assertEqual(results[0].confluence_score, 90)
+        # 90 raw points is full agreement: published as 100.
+        self.assertEqual(results[0].confluence_score, 100)
 
 
 if __name__ == "__main__":

@@ -372,7 +372,7 @@ def _synthesize_signal(
     core_met = sum(core_conditions)
 
     _CORE_NAMES = [
-        ("bullish_regime", "Regime",      "MARKUP or ACCUM",         "core"),
+        ("bullish_regime", "Regime",      "Uptrend or Accumulation", "core"),
         ("consensus",      "Consensus",   "RISK-ON or ACCUMULATION", "core"),
         ("z_range",        "Z-Score",     "-0.5 to 2.5",             "core"),
         ("no_bear_div",    "No Bear Div", "No bearish divergence",   "core"),
@@ -412,8 +412,8 @@ def _synthesize_signal(
     hl_met = sum(hl_conditions)
 
     _HL_NAMES = [
-        ("hl_whale_aligned",  "Tracked wallets aligned",     f"HL {hl_consensus_trend} ({hl_consensus_confidence:.0%})", "hyperlens"),
-        ("hl_not_counter",    "Tracked wallets not bearish", f"HL not bearish (ratio={hl_consensus_net_ratio:+.2f})",   "hyperlens"),
+        ("hl_whale_aligned",  "Tracked wallets aligned",     f"Tracked wallets {str(hl_consensus_trend).lower()}, strength {hl_consensus_confidence * 100:.0f}", "hyperlens"),
+        ("hl_not_counter",    "Tracked wallets not bearish", f"Wallet-count balance {hl_consensus_net_ratio:+.2f}",   "hyperlens"),
     ]
 
     # Weighted scoring: core (1.0) + CoinGlass (0.75 each) + HyperLens (0.5 each)

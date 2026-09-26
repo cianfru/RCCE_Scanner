@@ -259,7 +259,7 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d" }) {
             </div>
             <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{
-                fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+                fontSize: T.textXs, fontFamily: T.mono, fontWeight: 600,
                 color: T.text4, letterSpacing: "0.12em", textTransform: "uppercase",
                 lineHeight: 1,
               }}>

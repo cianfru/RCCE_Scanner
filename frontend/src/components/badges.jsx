@@ -65,7 +65,7 @@ export function SignalDot({ signal, reason, warnings, context, isMobile, marketW
       buttonStyle={{width:'auto',minWidth:22,height:26,border:0,borderRadius:4,display:'inline-flex',alignItems:'center',gap:3,padding:'2px 3px'}}
       icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={col(color)}/>;})}</>}>
       <SignalContext row={row} marketWide={marketWide}/>
-      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:11,color:T.text3}}>{friendlyReason(reason)}</p>}
+      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:T.textXs,color:T.text3}}>{friendlyReason(reason)}</p>}
     </HelpTip>}
   </span>;
 }

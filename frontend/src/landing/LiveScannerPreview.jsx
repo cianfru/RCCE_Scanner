@@ -1,4 +1,4 @@
-import { formatPercent } from "../utils/marketPresentation.js";
+import { formatPercent, signalAgreement } from "../utils/marketPresentation.js";
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../components/DataTable.jsx';
@@ -66,7 +66,7 @@ export default function LiveScannerPreview() {
       <div className="r-reading-grid">
         <article><span>01 / What is the phase?</span><h4>{example.regime}</h4><p>{exampleCoin} is classified in this daily regime, with a Z-score of {example.zscore?.toFixed(2) ?? '—'}. The phase describes structure; it is not a forecast.</p></article>
         <article><span>02 / What supports it?</span><h4>{example.conditions_met} / {example.conditions_total} checks</h4><p>{formatPercent(example.signal_confidence)} of entry conditions are met. The current signal is {String(example.signal || 'WAIT').replaceAll('_',' ').toLowerCase()}; this percentage is not a probability of profit.</p></article>
-        <article><span>03 / What needs checking?</span><h4>{example.confluence ? `${Math.round(example.confluence.score)} / 100 agreement` : 'Inspect the counter-evidence'}</h4><p>{example.confluence ? `The 4H and daily signals ${example.confluence.signal_aligned ? 'agree' : 'differ'}. ` : ''}{example.signal_warnings?.length ? `${example.signal_warnings.length} engine warning${example.signal_warnings.length===1?'':'s'} accompany this snapshot.` : 'Review positioning and entry conditions before interpreting the signal.'}</p></article>
+        <article><span>03 / What needs checking?</span><h4>{example.confluence ? `${Math.round(example.confluence.score)} / 100 agreement` : 'Inspect the counter-evidence'}</h4><p>{example.confluence ? ({waiting:'Both timeframes are waiting. ', agree:'The 4H and daily signals agree. ', differ:'The 4H and daily signals differ. '})[signalAgreement(example.confluence)] : ''}{example.signal_warnings?.length ? `${example.signal_warnings.length} engine warning${example.signal_warnings.length===1?'':'s'} accompany this snapshot.` : 'Review positioning and entry conditions before interpreting the signal.'}</p></article>
       </div><a href={`/scanner/${exampleCoin}`}>Inspect the full {exampleCoin} setup ↗</a><p className="r-reading-footnote">Uses the same received daily snapshot as the table above.</p>
     </section>}
     </div>;

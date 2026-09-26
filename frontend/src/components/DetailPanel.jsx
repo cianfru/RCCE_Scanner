@@ -414,11 +414,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           signalTimeframe={selected.timeframe}
           regime={selected.regime}
           heat={selected.heat}
-          conditions={selected.conditions_met}
-          conditionsTotal={selected.conditions_total}
           exhaustionState={selected.exhaustion_state}
           floorConfirmed={selected.floor_confirmed}
-          signalConfidence={selected.signal_confidence}
           momentum={selected.momentum}
         />
 
@@ -538,8 +535,6 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           cvdDiv={selected.cvd_divergence}
           bsr={selected.buy_sell_ratio}
           vpin={selected.vpin}
-          vpinLabel={selected.vpin_label}
-          vpinHistory={selected.vpin_history}
           oiContext={selected.oi_context}
         />
 

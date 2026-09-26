@@ -9,7 +9,8 @@
  * backend. Refreshes when `symbol` changes.
  */
 import { useState, useEffect } from "react";
-import { T } from "../theme.js";
+import { T, col } from "../theme.js";
+import useViewport from "../hooks/useViewport.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -25,10 +26,10 @@ function fmtUsd(v) {
 
 function fundingColor(pct8h) {
   if (pct8h == null) return T.text4;
-  if (pct8h >= 0.03)  return "#f87171";  // very crowded long
-  if (pct8h >= 0.01)  return "#fbbf24";  // crowded long
-  if (pct8h <= -0.03) return "#34d399";  // very crowded short
-  if (pct8h <= -0.01) return "#a7f3d0";  // mild crowded short
+  if (pct8h >= 0.03)  return T.red;      // very crowded long
+  if (pct8h >= 0.01)  return T.yellow;   // crowded long
+  if (pct8h <= -0.03) return T.green;    // very crowded short
+  if (pct8h <= -0.01) return T.greenDim; // mild crowded short
   return T.text2;
 }
 
@@ -41,20 +42,21 @@ const EX_COLOR = {
 
 // ─── Row ─────────────────────────────────────────────────────────────────────
 
-function ExchangeRow({ ex, maxOi }) {
+function ExchangeRow({ ex, maxOi, isMobile }) {
   const available = ex.available;
-  const dot = EX_COLOR[ex.name] || T.text4;
+  const dot = EX_COLOR[ex.name] ? col(EX_COLOR[ex.name]) : T.text4;
   const fundingPct = available ? ex.funding_rate_8h_pct : null;
   const fc = fundingColor(fundingPct);
   const oi = available ? ex.open_interest_usd : 0;
   const barPct = maxOi > 0 ? (oi / maxOi) * 100 : 0;
 
   return (
+    // Phones: the exchange name on its own line, OI and funding side by side below.
     <div style={{
       display: "grid",
-      gridTemplateColumns: "100px 1fr 110px",
+      gridTemplateColumns: isMobile ? "1fr 1fr" : "minmax(80px,auto) minmax(0,1fr) minmax(90px,auto)",
       alignItems: "center",
-      gap: 12,
+      gap: isMobile ? "8px 12px" : 12,
       padding: "10px 12px",
       borderRadius: 8,
       background: T.overlay02,
@@ -62,7 +64,7 @@ function ExchangeRow({ ex, maxOi }) {
       opacity: available ? 1 : 0.45,
     }}>
       {/* Name + dot */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, gridColumn: isMobile ? "1 / -1" : undefined }}>
         <span style={{
           fontSize: T.textSm, fontFamily: T.mono,
           color: T.text1, fontWeight: 700, letterSpacing: "0.04em",
@@ -75,8 +77,8 @@ function ExchangeRow({ ex, maxOi }) {
       {/* OI bar */}
       <div style={{ minWidth: 0 }}>
         <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: 4, gap: 8,
+          display: "flex", flexDirection: "column", alignItems: "flex-start",
+          marginBottom: 4, gap: 2,
         }}>
           <span style={{
             fontSize: 12, fontFamily: T.mono, color: T.text4,
@@ -106,7 +108,7 @@ function ExchangeRow({ ex, maxOi }) {
       </div>
 
       {/* Funding */}
-      <div style={{ textAlign: "right" }}>
+      <div style={{ textAlign: isMobile ? "left" : "right" }}>
         <div style={{
           fontSize: 12, fontFamily: T.mono, color: T.text4,
           letterSpacing: "0.02em", textTransform: "none", marginBottom: 2,
@@ -127,6 +129,7 @@ function ExchangeRow({ ex, maxOi }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function CrossExchangePanel({ symbol }) {
+  const { isMobile } = useViewport();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -157,7 +160,7 @@ export default function CrossExchangePanel({ symbol }) {
 
   // Spread summary
   const spreadBp = data?.funding_spread_bp || 0;
-  const spreadColor = spreadBp >= 3 ? "#f87171" : spreadBp >= 1.5 ? "#fbbf24" : T.text3;
+  const spreadColor = spreadBp >= 3 ? T.red : spreadBp >= 1.5 ? T.yellow : T.text3;
   const dominantOi = data?.dominant_oi;
 
   return (
@@ -192,9 +195,9 @@ export default function CrossExchangePanel({ symbol }) {
         {live.length > 1 && (
           <span style={{
             fontSize: T.textXs, fontFamily: T.mono, color: spreadColor,
-            fontWeight: 700, letterSpacing: "0.06em",
-          }}>
-            SPREAD {spreadBp.toFixed(2)}bp
+            fontWeight: 700,
+          }} title="Largest difference in 8-hour funding between the exchanges, in basis points">
+            Funding spread {spreadBp.toFixed(1)} bp
           </span>
         )}
       </div>
@@ -211,7 +214,7 @@ export default function CrossExchangePanel({ symbol }) {
       {!loading && exchanges.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {exchanges.map(ex => (
-            <ExchangeRow key={ex.name} ex={ex} maxOi={maxOi} />
+            <ExchangeRow key={ex.name} ex={ex} maxOi={maxOi} isMobile={isMobile} />
           ))}
         </div>
       )}
@@ -226,7 +229,7 @@ export default function CrossExchangePanel({ symbol }) {
           Dominant OI: <span style={{ color: T.text2, fontWeight: 700 }}>{dominantOi}</span>
           {spreadBp >= 1.5 && (
             <span style={{ marginLeft: 10, color: spreadColor }}>
-              · funding arb window open
+              · funding differs across exchanges
             </span>
           )}
         </div>

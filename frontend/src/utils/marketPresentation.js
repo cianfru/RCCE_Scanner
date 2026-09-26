@@ -1,4 +1,5 @@
 import { ENTRY_SIGNALS } from "./opportunities.js";
+import { REGIME_META } from "../theme.js";
 // API contracts: signal_confidence/confidence are 0–100; smart-money confidence is 0–1.
 export function formatPercent(value, { ratio = false, digits = 0 } = {}) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -9,9 +10,24 @@ export const funding8hPct = r => (r == null || !Number.isFinite(Number(r)) ? nul
 // CoinGlass-derived fields (top-trader L/S, liquidations, spot share) hold placeholders
 // unless the feed is fresh and this market is covered by it.
 export const hasCoinglass = row => row?.input_quality?.coinglass?.status === 'ready' && row?.positioning?.source_map?.liq === 'coinglass';
+// Two WAITs neither agree nor differ: the backend sends signal_aligned null for them.
+export function signalAgreement(c) {
+  if (!c) return null;
+  if (c.signal_aligned === null || (c.signal_4h === 'WAIT' && c.signal_1d === 'WAIT')) return 'waiting';
+  return c.signal_aligned ? 'agree' : 'differ';
+}
+const SIGNAL_AGREEMENT_TEXT = { waiting: 'Both timeframes are waiting.', agree: 'Their signals agree.', differ: 'Their signals differ.' };
+const BULLISH_FAMILY = new Set(['MARKUP', 'REACC', 'ACCUM']);
+function regimeAgreement(c) {
+  const n4 = REGIME_META[c.regime_4h]?.name, n1 = REGIME_META[c.regime_1d]?.name;
+  if (!c.regime_aligned) return `The 4H and 1D regimes differ${n4 && n1 ? ` (${n4} and ${n1})` : ''}.`;
+  if (!n4 || !n1) return 'The 4H and 1D regimes agree.';
+  if (c.regime_4h === c.regime_1d) return `The 4H and 1D regimes agree (both ${n4}).`;
+  return `The 4H and 1D regimes agree (both in the ${BULLISH_FAMILY.has(c.regime_4h) ? 'bullish' : 'bearish'} family: ${n4} and ${n1}).`;
+}
 export function evidenceSummary(data) {
   const regime = ({MARKUP:'an upward market phase', ACCUM:'a base-building phase', REACC:'a pullback within an upward phase', MARKDOWN:'a downward market phase', BLOWOFF:'an extended upward phase', CAP:'a capitulation phase', FLAT:'a neutral market phase'})[data.regime] || String(data.regime || 'an unclassified phase').toLowerCase();
-  return `The scanner identifies ${regime}. ${data.conditions_total > 0 ? `${data.conditions_met} of ${data.conditions_total} entry checks are satisfied.` : 'Entry checks are not available for this snapshot.'} ${data.confluence ? `The 4H and 1D regimes ${data.confluence.regime_aligned ? 'agree' : 'differ'}, while their signals ${data.confluence.signal_aligned ? 'agree' : 'differ'}.` : ''}`;
+  return `The scanner identifies ${regime}. ${data.conditions_total > 0 ? `${data.conditions_met} of ${data.conditions_total} entry checks are satisfied.` : 'Entry checks are not available for this snapshot.'} ${data.confluence ? `${regimeAgreement(data.confluence)} ${SIGNAL_AGREEMENT_TEXT[signalAgreement(data.confluence)]}` : ''}`;
 }
 
 // Highest-priority setups, at most one per sector, so the shortlist is three
