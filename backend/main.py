@@ -4154,6 +4154,13 @@ async def hyperlens_symbol_positions(symbol: str):
     return {"symbol": symbol.upper(), "count": len(positions), "positions": positions}
 
 
+@app.get("/api/hyperlens/entries/{symbol}")
+async def hyperlens_entries(symbol: str):
+    """When and where the profitable traders holding this coin got in (fills fetched on demand, cached)."""
+    from trader_entries import entries_for
+    return await entries_for(symbol.upper())
+
+
 @app.get("/api/hyperlens/wallet/{address}")
 async def hyperlens_wallet(address: str):
     """Get comprehensive wallet profile with positions, trades, and stats."""
