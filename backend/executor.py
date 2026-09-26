@@ -40,7 +40,8 @@ _STATE_FILE = _PERSIST_DIR / "executor_state.json"
 _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
     "STRONG_LONG":  {"STRONG": 1.00, "MODERATE": 0.75, "WEAK": 0.50, "CONFLICTING": 0.50, "UNKNOWN": 0.50},
     "LIGHT_LONG":   {"STRONG": 0.50, "MODERATE": 0.50, "WEAK": 0.25, "CONFLICTING": 0.25, "UNKNOWN": 0.25},
-    "ACCUMULATE":   {"STRONG": 0.25, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},
+    # ACCUMULATE is not an entry: adding it as the executor did cost 18-19 points of compounded
+    # return on both replay coin sets (docs/reviews/entry-quality-study.md); the backtest never took it.
     "REVIVAL_SEED": {"STRONG": 0.10, "MODERATE": 0.10, "WEAK": 0.00, "CONFLICTING": 0.00, "UNKNOWN": 0.05},
     "LIGHT_SHORT":  {"STRONG": 0.30, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},
 }
