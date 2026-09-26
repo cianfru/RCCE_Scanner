@@ -42,12 +42,12 @@ Z_CAPITULATION: float = -1.0
 Z_TRIM: float = 3.0
 Z_TRIM_HARD: float = 3.5
 MIN_REGIME_BARS: int = 5
-# Overheated fix (docs/reviews/overheated-regime.md). Above the engine's own z line
-# MARKUP's weight passes to BLOWOFF (before this, MARKUP outscored BLOWOFF at every z,
-# so BLOWOFF and its z-based TRIM exits never fired), and entering BLOWOFF needs
-# BLOWOFF_ENTRY_BARS instead of MIN_REGIME_BARS: it is a caution state.
-BLOWOFF_TAKEOVER: bool = True
-BLOWOFF_ENTRY_BARS: int = 2
+# Overheated fix (docs/reviews/overheated-regime.md), tested and not shipped: it cost 8 to
+# 13 points of return. When on, MARKUP's weight passes to BLOWOFF above the engine's z
+# line (otherwise MARKUP outscores BLOWOFF at every z, so BLOWOFF and its z-based TRIM
+# exits never fire), and entering BLOWOFF takes BLOWOFF_ENTRY_BARS bars.
+BLOWOFF_TAKEOVER: bool = False
+BLOWOFF_ENTRY_BARS: int = MIN_REGIME_BARS
 # Cool-off after a spike (docs/reviews/after-the-spike-study.md). None = off; otherwise no new
 # long entries after the last bar with z >= Z_BLOWOFF until z closes below this level or price
 # closes above the spike's peak.

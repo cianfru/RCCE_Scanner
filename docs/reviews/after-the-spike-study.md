@@ -56,7 +56,7 @@ The rule follows the structure stage 1 shows (reversion to the mean), with no fi
 
 **Test.**
 - On the 4H replay harness, 10 primary coins, windows 1-9, costed PositionManager.
-- **Baseline:** whichever of C/E the Overheated study ships.
+- **Baseline:** whichever of C/E the Overheated study ships. (It shipped neither, so the baseline is C, today's logic.)
 - **Variants:** baseline + K0, baseline + K1, and baseline + K0d.
 - **Confirmation:** the same on the study's 30-coin secondary set.
 

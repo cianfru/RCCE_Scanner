@@ -27,3 +27,21 @@ Reported per variant: compounded return, worst-window drawdown, median Sharpe, t
 
 - A variant ships only if it flags the XMR spike (BLOWOFF on 4H before the $790 bar) and, against C, it does not lower the compounded return by more than 5 points and does not deepen the worst-window drawdown by more than 2 points.
 - If both D and E pass, E ships (it flags earlier). If neither passes, nothing ships and the results are reported as they are.
+
+## Results (windows 1-9, 10 primary coins, 4H, costed PositionManager)
+
+| | C (today) | D (C + F1) | E (C + F1 + F2) |
+|---|---:|---:|---:|
+| Compounded return | +43.1% | +35.3% | +30.3% |
+| Worst-window drawdown | -10.4% | -10.3% | -11.3% |
+| Median Sharpe | 0.32 | 0.38 | 0.19 |
+| Trades | 314 | 327 | 355 |
+| Overheated (BLOWOFF) bars | 0 | 1,353 | 2,603 |
+| TRIM / TRIM_HARD bars | 4,036 / 0 | 4,245 / 88 | 4,401 / 139 |
+| Window 7 (Oct 2024 to Apr 2025) | +11.8% | +7.8% | +0.8% |
+
+**Verdict: nothing ships.** D gives up 7.9 points of compounded return against C and E gives up 12.9, both beyond the 5-point limit. The XMR condition is therefore moot. The switch stays in the engine, off.
+
+Where the cost comes from: most of it is window 7, the late-2024 alt rally. There, strong trends kept z above 2.5 for weeks and kept going, and the earlier trims cut the winners (DOGE +$505 in C against +$170 in E, ADA +$330 against +$111, DOT +$196 against +$10). The Overheated state catches spikes like XMR, but on these coins it also fires inside trends that were not over. Nothing is tuned from this result: a new variant would need its own declaration and would be exploratory on these windows.
+
+What still holds: the diagnosis is real. The regime scoring cannot reach Overheated, so the scanner keeps calling these bars Uptrend. The after-the-spike cool-off (docs/reviews/after-the-spike-study.md) is tested next, on C as its baseline, since C is what stays live.
