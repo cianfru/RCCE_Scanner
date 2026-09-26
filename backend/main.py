@@ -272,6 +272,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Cohorts init failed (non-fatal): %s", e)
 
+    # Market history for the scanner's history drawer: one breadth row per closed day
+    try:
+        from market_history import run_forever as run_market_history
+        asyncio.create_task(run_market_history())
+    except Exception as e:
+        logger.warning("Market history init failed (non-fatal): %s", e)
+
     # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
     try:
         from exit_shadow import run_exit_shadow
@@ -4039,6 +4046,13 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
     return {"ts": ts, "age_s": int(time.time()) - ts, "symbol": sym, "rows": rows,
             "divergence": divergence(st.snapshot(ts, dimension="pnl", symbol=sym or ""), sym),
             "population": POPULATION}
+
+
+@app.get("/api/market-history")
+async def market_history_view():
+    """Share of coins in each regime on every day since 2019, today's percentile, past episodes."""
+    import market_history
+    return market_history.view()
 
 
 @app.get("/api/cohorts")

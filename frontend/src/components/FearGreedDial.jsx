@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import HelpTip from "./HelpTip.jsx";
+import HistoryButton from "./HistoryButton.jsx";
 import { FG_NAMES, dialRotation, fgBand, fgNote } from "../utils/marketSummary.js";
 
 // Fear & Greed as a dial: five bands on the backend's label cuts (20/40/60/80),
@@ -17,7 +18,7 @@ const TICKS = [
   { v: 70, line: [154.67, 48.51, 166.43, 32.33], label: { left: "78.59%", top: "19.53%" } },
 ];
 
-export default function FearGreedDial({ value, loaded }) {
+export default function FearGreedDial({ value, loaded, onHistory }) {
   const v = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
   const band = fgBand(v);
   const note = fgNote(v, loaded);
@@ -35,6 +36,7 @@ export default function FearGreedDial({ value, loaded }) {
         <p>Band names are the scanner's own cut-offs (0–20 Extreme fear, 21–40 Fear, 41–60 Neutral, 61–80 Greed, 81–100 Extreme greed); alternative.me's site uses slightly different ones.</p>
         <p>The two lines are where the engine uses it. Below 70 the Not greedy check passes; at 70 or above it fails for every market. It is one of nine core checks, so Strong long signals can still appear. At 40 or below the fear gate opens: Accumulate setups in the Accumulation regime and Capitulation revivals can fire. Accumulate from absorption does not need it.</p>
       </HelpTip>
+      {onHistory && <HistoryButton label="Fear & Greed through history" onClick={onHistory} />}
     </div>
     <div className="fg-face" role="img" aria-label={aria}>
       <svg viewBox="0 0 220 120" aria-hidden="true">
