@@ -44,3 +44,13 @@ test('a core input missing across the market is reported once, not per row',()=>
  assert.equal(signalContext(row).some(i=>i.kind==='missing'),true);
  assert.deepEqual(marketWideMissing(rows.slice(0,5)),[]);
 });
+test('spot funding is not applicable: no market-wide banner and no per-row missing note',()=>{
+ const row={market_kind:'spot',regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,name:'funding_ok',label:'Funding OK'}]};
+ const rows=Array.from({length:20},()=>row);
+ assert.deepEqual(marketWideMissing(rows),[]);
+ assert.equal(signalContext(row).some(i=>i.kind==='missing'),false);
+ assert.equal(setupAlignment(row).state,'bullish');
+ const perp={...row,market_kind:'perpetual'};
+ assert.deepEqual(marketWideMissing(Array.from({length:20},()=>perp)),['Funding OK']);
+ assert.equal(signalContext(perp).some(i=>i.kind==='missing'),true);
+});

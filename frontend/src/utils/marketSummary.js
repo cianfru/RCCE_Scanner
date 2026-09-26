@@ -39,7 +39,9 @@ export function sharePct(n, N) {
   return r.toFixed(1);
 }
 
-export function regimeMix(rows, label) {
+export function regimeMix(allRows, label) {
+  // Like the backend, markets without candle history have no measured regime and are not counted.
+  const rows = allRows.filter(r => r?.history_bars !== 0);
   const counts = {};
   for (const r of rows) {
     const k = r?.regime || "FLAT";

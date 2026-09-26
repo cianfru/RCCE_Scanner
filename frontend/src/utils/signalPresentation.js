@@ -11,13 +11,19 @@ export function friendlyReason(text = '') {
     .replace(/final eligibility:/gi, 'Entry restriction:');
 }
 
+// Spot markets have no funding rate: the Funding check is never available there, which is
+// not an outage (the spot page carries a permanent note instead).
+export function notApplicable(row = {}, c = {}) {
+  return row.market_kind === 'spot' && c.name === 'funding_ok';
+}
+
 // Core inputs missing on most rows are a market-wide outage (e.g. the Fear & Greed
 // feed), shown once above the grid rather than as an icon on every row.
 export function marketWideMissing(rows = [], share = 0.8) {
   if (rows.length < 10) return [];
   const counts = {};
   for (const r of rows) for (const c of r.conditions_detail || []) {
-    if (c.group === 'core' && c.available === false) { const k = c.label || c.name; counts[k] = (counts[k] || 0) + 1; }
+    if (c.group === 'core' && c.available === false && !notApplicable(r, c)) { const k = c.label || c.name; counts[k] = (counts[k] || 0) + 1; }
   }
   return Object.entries(counts).filter(([, n]) => n / rows.length >= share).map(([k]) => k);
 }
@@ -26,7 +32,7 @@ export function signalContext(row = {}, { marketWide = [] } = {}) {
   const signal = row.signal;
   const direction = signalDirection(signal);
   const allMissing = (row.conditions_detail || []).filter(c => c.group === 'core' && c.available === false);
-  const missing = allMissing.filter(c => !marketWide.includes(c.label || c.name));
+  const missing = allMissing.filter(c => !marketWide.includes(c.label || c.name) && !notApplicable(row, c));
   const onlyMarketWide = allMissing.length > 0 && missing.length === 0;
   const messages = [...new Set([...(row.signal_warnings || []), ...(row.strong_long_blockers || [])])];
   const items = [];

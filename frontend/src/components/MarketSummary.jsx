@@ -9,7 +9,7 @@ import { CONSENSUS_LINE, CONSENSUS_NOTES, regimeMix } from "../utils/marketSumma
 const CONSENSUS_COLORS = () => ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-OFF": T.red, ACCUMULATION: T.cyan, MIXED: T.text2 });
 
 // Market summary: consensus and regime mix | Fear & Greed dial | signal counts.
-export default function MarketSummary({ regimeRows, signalRows, consensus, sentiment, timeframe, scopeLabel,
+export default function MarketSummary({ regimeRows, signalRows, consensus, sentiment, timeframe, scopeLabel, spot = false,
                                         activeSignalFilter, onSignalFilter }) {
   const label = consensus?.consensus || null;
   const mix = regimeMix(regimeRows, label || "MIXED");
@@ -56,7 +56,7 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
         {label && <p className="ms-note">{CONSENSUS_NOTES[label] || CONSENSUS_NOTES.MIXED}</p>}
       </div>
       <FearGreedDial value={sentiment?.fear_greed_value} loaded={sentiment != null} />
-      <SignalLadder rows={signalRows} timeframe={timeframe} scopeLabel={scopeLabel}
+      <SignalLadder rows={signalRows} timeframe={timeframe} scopeLabel={scopeLabel} spot={spot}
         active={activeSignalFilter} onChange={onSignalFilter} />
     </GlassCard>
   </FadeIn>;

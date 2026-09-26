@@ -125,7 +125,11 @@ def compute_consensus(results: List[dict]) -> dict:
         ``strength``   -- 0-100 float indicating how dominant the winning
                           bucket is
         ``counts``     -- raw regime bucket counts
+
+    Markets with no candle history (``history_bars == 0``) have no measured
+    regime; they are left out of the counts and the denominator.
     """
+    results = [r for r in results if r.get("history_bars") != 0]
     total = len(results)
     if total == 0:
         return {"consensus": "MIXED", "strength": 0.0, "counts": {}}

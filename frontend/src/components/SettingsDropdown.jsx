@@ -62,30 +62,21 @@ const PRESETS = [
   },
 ];
 
+// Flat text on/off control: no pill switch.
 function ToggleSwitch({ checked, onChange, color = T.accent }) {
   return (
     <button
+      type="button"
       onClick={onChange}
+      aria-pressed={checked}
       style={{
-        position: "relative",
-        width: 36, height: 20,
-        borderRadius: 10,
-        border: "none",
-        cursor: "pointer",
-        padding: 0,
-        background: checked ? color : T.overlay15,
-        transition: "background 0.2s ease",
-        flexShrink: 0,
+        border: "none", background: "transparent", padding: 0,
+        cursor: "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
+        fontSize: 12, fontFamily: T.font, fontWeight: 600,
+        color: checked ? color : T.text4,
       }}
     >
-      <span style={{
-        position: "absolute",
-        top: 2, left: checked ? 18 : 2,
-        width: 16, height: 16, borderRadius: "50%",
-        background: "#fff",
-        transition: "left 0.2s ease",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-      }} />
+      {checked ? "On" : "Off"}
     </button>
   );
 }

@@ -34,6 +34,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import TradFiPanel from "./components/TradFiPanel.jsx";
+import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
 import HyperLensPanel from "./components/HyperLensPanel.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
@@ -175,6 +176,7 @@ export default function App() {
   // Nav drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [tradfiTf, setTradfiTf] = useState("1d");            // TradFi timeframe, in the title row
 
   // Favorites (persisted to localStorage)
   const [favorites, setFavorites] = useState(() => {
@@ -827,28 +829,15 @@ export default function App() {
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             style={{
-              position: "relative",
-              width: 44, height: 24,
-              borderRadius: 12,
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              background: mode === "dark" ? T.accent : T.overlay15,
-              transition: "background 0.3s ease",
-              flexShrink: 0,
+              border: "none", background: "transparent", padding: 0,
+              cursor: "pointer", flexShrink: 0,
+              fontSize: 12, fontFamily: T.font, color: T.text3,
+              transition: "color 0.15s ease",
             }}
+            onMouseEnter={e => { e.currentTarget.style.color = T.text1; }}
+            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
           >
-            <span style={{
-              position: "absolute",
-              top: 2, left: mode === "dark" ? 22 : 2,
-              width: 20, height: 20,
-              borderRadius: "50%",
-              background: mode === "dark" ? T.bg : "#fff",
-              boxShadow: `0 1px 3px ${T.shadow}`,
-              transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 10, lineHeight: 1,
-            }}>{mode === "dark" ? "\uD83C\uDF19" : "\u2600\uFE0F"}</span>
+            {mode === "dark" ? "Light" : "Dark"}
           </button>
         </div>
       </div>
@@ -879,7 +868,6 @@ export default function App() {
             border: "1px solid rgba(248,113,113,0.15)",
             display: "flex", alignItems: "center", gap: 10,
           }}>
-            <span style={{ color: "#f87171", fontSize: 14 }}>{"\u26a0"}</span>
             <span style={{ fontSize: 13, color: "#fca5a5", fontFamily: T.font }}>
               API Error: {error} {"\u2014"} ensure backend is running on {API_BASE}
             </span>
@@ -915,6 +903,7 @@ export default function App() {
              activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
           </span>
           {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
+          {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>
       )}
@@ -924,7 +913,7 @@ export default function App() {
 
         {showDashboard && tfMarketRows.length > 0 && (
           <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
-            timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel}
+            timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel} spot={marketKind === "spot"}
             activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
         )}
 
@@ -941,6 +930,12 @@ export default function App() {
         </details>}
 
         {showDashboard && <PositionAlerts isMobile={isMobile} />}
+
+        {showDashboard && marketKind === "spot" && (
+          <p style={{ margin: `${isMobile ? 12 : 16}px 0 0`, fontSize: 12, lineHeight: 1.5, color: T.text3, fontFamily: T.font }}>
+            Spot markets have no funding rate, so Strong long is not issued on spot.
+          </p>
+        )}
 
         {showDashboard && (
           <div style={{
@@ -1002,6 +997,7 @@ export default function App() {
               results={displayTradfi}
               data4h={dataTradfi4h}
               data1d={dataTradfi1d}
+              tfView={tradfiTf}
               sortKey={sortKey}
               onSort={setSortKey}
               selected={selected}
