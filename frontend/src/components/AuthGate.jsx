@@ -92,7 +92,7 @@ export default function AuthGate({ children }) {
         animation: shaking ? "shake 0.4s ease-in-out" : undefined,
       }}>
         <label style={{
-          display: "block", fontSize: 11, fontFamily: T.mono,
+          display: "block", fontSize: 12, fontFamily: T.mono,
           color: T.text4, letterSpacing: "0.1em", marginBottom: 10,
           textTransform: "uppercase",
         }}>

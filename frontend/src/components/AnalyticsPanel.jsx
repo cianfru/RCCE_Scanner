@@ -1,7 +1,7 @@
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect } from "react";
 import HelpTip from "./HelpTip.jsx";
-import { REGIME_META, T, m, SIGNAL_META } from "../theme.js";
+import { REGIME_META, T, m, SIGNAL_META, col } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -11,21 +11,44 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-function rateColor(rate) {
-  if (rate == null) return T.text4;
-  if (rate >= 70) return "#34d399";
-  if (rate >= 55) return "#fbbf24";
+// Below this many events a rate or average is shown but not coloured: it is noise.
+const MIN_N = 30;
+
+function rateColor(rate, n = MIN_N) {
+  if (rate == null || n < MIN_N) return T.text4;
+  if (rate >= 70) return col("#34d399");
+  if (rate >= 55) return col("#fbbf24");
   if (rate >= 40) return T.text3;
-  return "#f87171";
+  return col("#f87171");
 }
 
-function edgeColor(edge) {
-  if (edge == null) return T.text4;
-  if (edge > 3) return "#34d399";
-  if (edge > 0) return "#6ee7b7";
-  if (edge > -3) return "#fbbf24";
-  return "#f87171";
+function edgeColor(edge, n = MIN_N) {
+  if (edge == null || n < MIN_N) return T.text4;
+  if (edge > 3) return col("#34d399");
+  if (edge > 0) return col("#6ee7b7");
+  if (edge > -3) return col("#fbbf24");
+  return col("#f87171");
 }
+
+// Backend keys read as old jargon ("smart money", "whale"); say what each check measures.
+const CONDITION_LABEL = {
+  bullish_regime: "Uptrend or accumulation regime",
+  consensus: "Market consensus supportive",
+  z_range: "Z-score in range",
+  no_bear_div: "No bearish divergence",
+  heat_ok: "Not overheated",
+  no_climax: "No exhaustion climax",
+  funding_ok: "Funding not crowded",
+  not_greedy: "Fear & Greed below greed",
+  liquidity_ok: "Stablecoin supply not contracting",
+  oi_confirms: "Open interest confirms",
+  cvd_confirms: "Taker buying (CVD) confirms",
+  smart_money_ok: "Top-trader L/S ok (CoinGlass)",
+  macro_tailwind: "Macro tailwind (ETF flows)",
+  hl_whale_aligned: "Tracked wallets agree",
+  hl_not_counter: "Tracked wallets not opposed",
+};
+const conditionLabel = name => CONDITION_LABEL[name] || name.replace(/_/g, " ");
 
 // ---------------------------------------------------------------------------
 
@@ -63,12 +86,8 @@ function SectionHeader({ title, subtitle }) {
 }
 
 function GroupBadge({ group }) {
-  const colors = {
-    core: { bg: "#97FCE410", border: "#97FCE430", text: "#97FCE4" },
-    coinglass: { bg: "#a78bfa10", border: "#a78bfa30", text: "#a78bfa" },
-    hyperlens: { bg: "#fbbf2410", border: "#fbbf2430", text: "#fbbf24" },
-  };
-  const c = colors[group] || colors.core;
+  const hue = col({ core: "#97FCE4", coinglass: "#a78bfa", hyperlens: "#fbbf24" }[group] || "#97FCE4");
+  const c = { bg: `${hue}10`, border: `${hue}30`, text: hue };
   return (
     <span style={{
       fontSize: T.textXs,
@@ -103,7 +122,7 @@ const TH = {
   padding: "6px 10px",
   color: T.text4,
   fontWeight: 600,
-  fontSize: 9,
+  fontSize: T.textXs,
   fontFamily: T.mono,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
@@ -141,7 +160,7 @@ function ConditionValueTable({ conditions, isMobile }) {
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               Edge
-              <HelpTip width={240}>{"Difference in avg 7-day return between TRUE and FALSE. Positive means this condition predicts better outcomes."}</HelpTip>
+              <HelpTip width={240}>{"Difference in average 7-day return between TRUE and FALSE. Shown only when both sides have at least 30 events; a difference is not a causal effect."}</HelpTip>
             </th>
             <th style={{ ...TH, textAlign: "right" }}>
               WR (T)
@@ -154,7 +173,7 @@ function ConditionValueTable({ conditions, isMobile }) {
           {conditions.map(c => (
             <tr key={c.name} style={{ borderBottom: `1px solid ${T.border}22` }}>
               <td style={{ padding: "6px 10px", color: T.text2, textAlign: "left", fontWeight: 500, fontSize: fs }}>
-                {c.name.replace(/_/g, " ")}
+                {conditionLabel(c.name)}
               </td>
               <td style={{ padding: "6px 10px", textAlign: "right" }}>
                 <GroupBadge group={c.group} />
@@ -171,12 +190,12 @@ function ConditionValueTable({ conditions, isMobile }) {
                 padding: "6px 10px", textAlign: "right",
                 color: edgeColor(c.edge), fontWeight: 700, fontSize: fs,
               }}>
-                {c.edge != null ? `${c.edge > 0 ? "+" : ""}${c.edge}%` : "—"}
+                {c.edge != null && Math.min(c.true_count, c.false_count) >= MIN_N ? `${c.edge > 0 ? "+" : ""}${c.edge}%` : "—"}
               </td>
-              <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_true), fontWeight: 600, fontSize: fs }}>
+              <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_true, c.true_count), fontWeight: 600, fontSize: fs }}>
                 {c.win_rate_true != null ? `${c.win_rate_true}%` : "—"}
               </td>
-              <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_false), fontSize: fs }}>
+              <td style={{ padding: "6px 10px", textAlign: "right", color: rateColor(c.win_rate_false, c.false_count), fontSize: fs }}>
                 {c.win_rate_false != null ? `${c.win_rate_false}%` : "—"}
               </td>
             </tr>
@@ -205,7 +224,7 @@ function ComboCards({ combos, isMobile }) {
           gap: 10,
           padding: isMobile ? "8px 10px" : "8px 14px",
           borderRadius: T.radiusXs,
-          background: "rgba(255,255,255,0.02)",
+          background: T.overlay02,
           border: `1px solid ${T.border}`,
         }}>
           <span style={{
@@ -219,24 +238,24 @@ function ComboCards({ combos, isMobile }) {
               <span key={c} style={{
                 fontSize: fs, fontFamily: T.mono,
                 padding: "3px 8px", borderRadius: 5,
-                background: "#97FCE410", border: "1px solid #97FCE425",
-                color: "#97FCE4", fontWeight: 500,
+                background: `${col("#97FCE4")}10`, border: `1px solid ${col("#97FCE4")}25`,
+                color: col("#97FCE4"), fontWeight: 500,
               }}>
-                {c.replace(/_/g, " ")}
+                {conditionLabel(c)}
               </span>
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <span style={{
               fontSize: m(T.textSm, isMobile), fontFamily: T.mono,
-              color: rateColor(combo.win_rate), fontWeight: 700,
+              color: rateColor(combo.win_rate, combo.count), fontWeight: 700,
             }}>
               {combo.win_rate}%
             </span>
             {combo.lift != null && (
               <span style={{
                 fontSize: fs, fontFamily: T.mono,
-                color: combo.lift > 0 ? "#34d399" : combo.lift < -5 ? "#f87171" : T.text4,
+                color: combo.count < MIN_N ? T.text4 : combo.lift > 0 ? col("#34d399") : combo.lift < -5 ? col("#f87171") : T.text4,
                 fontWeight: 600,
               }}>
                 {combo.lift > 0 ? "+" : ""}{combo.lift}% lift
@@ -244,7 +263,7 @@ function ComboCards({ combos, isMobile }) {
             )}
             <span style={{
               fontSize: fs, fontFamily: T.mono,
-              color: edgeColor(combo.avg_7d),
+              color: edgeColor(combo.avg_7d, combo.count),
             }}>
               {combo.avg_7d > 0 ? "+" : ""}{combo.avg_7d}% avg
             </span>
@@ -310,7 +329,7 @@ function RegimeScorecard({ data, isMobile }) {
                   if (!cell) return <td key={r} style={{ padding: "6px 10px", textAlign: "center", color: T.text4 }}>—</td>;
                   return (
                     <td key={r} style={{ padding: "6px 10px", textAlign: "center" }}>
-                      <span style={{ color: rateColor(cell.win_rate), fontWeight: 700, fontSize: fs }}>
+                      <span style={{ color: rateColor(cell.win_rate, cell.count), fontWeight: cell.count < MIN_N ? 400 : 700, fontSize: fs }}>
                         {cell.win_rate}%
                       </span>
                       <span style={{ color: T.text4, fontSize: T.textXs, marginLeft: 4 }}>({cell.count})</span>
@@ -343,29 +362,29 @@ function ConfluenceScorecard({ buckets, isMobile }) {
           display: "flex", alignItems: "center", gap: 12,
           fontFamily: T.mono, fontSize: fs,
         }}>
-          <span style={{ color: T.text2, fontWeight: 700, minWidth: 44, fontSize: m(T.textSm, isMobile) }}>
+          <span style={{ color: T.text2, fontWeight: 700, minWidth: 64, fontSize: m(T.textSm, isMobile) }}>
             {b.bucket}
           </span>
           <div style={{
             flex: 1, height: 22,
-            background: "rgba(255,255,255,0.03)",
+            background: T.overlay04,
             borderRadius: 5, overflow: "hidden",
           }}>
             <div style={{
               width: `${(b.count / maxCount) * 100}%`,
               height: "100%",
-              background: b.win_rate != null ? `${rateColor(b.win_rate)}30` : "transparent",
+              background: b.win_rate != null && b.count >= MIN_N ? `${rateColor(b.win_rate)}30` : T.overlay06,
               borderRadius: 5,
             }} />
           </div>
           <span style={{
-            color: rateColor(b.win_rate), fontWeight: 700,
+            color: rateColor(b.win_rate, b.count), fontWeight: 700,
             minWidth: 44, textAlign: "right", fontSize: fs,
           }}>
             {b.win_rate != null ? `${b.win_rate}%` : "—"}
           </span>
           <span style={{
-            color: edgeColor(b.avg_7d), minWidth: 52,
+            color: edgeColor(b.avg_7d, b.count), minWidth: 52,
             textAlign: "right", fontSize: m(T.textXs, isMobile),
           }}>
             {b.avg_7d != null ? `${b.avg_7d > 0 ? "+" : ""}${b.avg_7d}%` : "—"}
@@ -404,7 +423,7 @@ function EdgeDecay({ periods, isMobile }) {
           flex: 1, textAlign: "center",
           padding: isMobile ? "12px 10px" : "16px 20px",
           borderRadius: T.radiusXs,
-          background: "rgba(255,255,255,0.02)",
+          background: T.overlay02,
           border: `1px solid ${T.border}`,
         }}>
           <div style={{
@@ -417,7 +436,7 @@ function EdgeDecay({ periods, isMobile }) {
           <div style={{
             fontSize: m(T.text2xl, isMobile),
             fontFamily: T.mono, fontWeight: 700,
-            color: p.avg_return != null ? edgeColor(p.avg_return) : T.text4,
+            color: p.avg_return != null ? edgeColor(p.avg_return, p.count) : T.text4,
           }}>
             {p.avg_return != null ? `${p.avg_return > 0 ? "+" : ""}${p.avg_return}%` : "—"}
           </div>
@@ -449,8 +468,8 @@ function HyperLensAttribution({ data, isMobile }) {
         flex: 1, textAlign: "center",
         padding: isMobile ? "12px 10px" : "16px 20px",
         borderRadius: T.radiusXs,
-        background: `${accent}08`,
-        border: `1px solid ${accent}20`,
+        background: T.overlay02,
+        border: `1px solid ${T.border}`,
       }}>
         <div style={{
           fontSize: m(T.textXs, isMobile), color: accent,
@@ -462,7 +481,7 @@ function HyperLensAttribution({ data, isMobile }) {
         <div style={{
           fontSize: m(T.text2xl, isMobile),
           fontFamily: T.mono, fontWeight: 700,
-          color: stats.avg_7d != null ? edgeColor(stats.avg_7d) : T.text4,
+          color: stats.avg_7d != null ? edgeColor(stats.avg_7d, stats.count) : T.text4,
         }}>
           {stats.avg_7d != null ? `${stats.avg_7d > 0 ? "+" : ""}${stats.avg_7d}%` : "—"}
         </div>
@@ -470,7 +489,7 @@ function HyperLensAttribution({ data, isMobile }) {
           fontSize: m(T.textSm, isMobile), color: T.text3,
           fontFamily: T.mono, marginTop: 6,
         }}>
-          Win rate: <span style={{ color: rateColor(stats.win_rate), fontWeight: 700 }}>
+          Win rate: <span style={{ color: rateColor(stats.win_rate, stats.count), fontWeight: 700 }}>
             {stats.win_rate != null ? `${stats.win_rate}%` : "—"}
           </span>
         </div>
@@ -487,17 +506,17 @@ function HyperLensAttribution({ data, isMobile }) {
   return (
     <div>
       <div style={{ display: "flex", gap: isMobile ? 10 : 16 }}>
-        <Side label="With Whale" stats={ww} accent="#fbbf24" />
-        <Side label="Without Whale" stats={wo} accent={T.text4} />
+        <Side label="Tracked wallets agreed" stats={ww} accent={col("#fbbf24")} />
+        <Side label="Did not agree" stats={wo} accent={T.text4} />
       </div>
       {edge_pct != null && (
         <div style={{
           textAlign: "center", marginTop: 12,
           fontSize: m(T.textSm, isMobile), fontFamily: T.mono,
-          color: edgeColor(edge_pct), fontWeight: 700,
+          color: edgeColor(edge_pct, Math.min(ww.count, wo.count)), fontWeight: 700,
         }}>
-          Whale edge: {edge_pct > 0 ? "+" : ""}{edge_pct}% avg 7d
-          <HelpTip width={240}>{"The additional average 7-day return gained when HyperLens whale consensus confirmed the signal direction."}</HelpTip>
+          Difference: {edge_pct > 0 ? "+" : ""}{edge_pct} pts avg 7d return
+          <HelpTip width={240}>{"Average 7-day return difference between the two groups; not a causal effect."}</HelpTip>
         </div>
       )}
     </div>
@@ -547,7 +566,7 @@ export default function AnalyticsPanel({ isMobile }) {
           <GlassCard style={{ padding: pad }}>
             <SectionHeader
               title="Condition Predictive Value"
-              subtitle="Average 7-day return of long signals when the condition was met vs not met (not a forecast). Edge is the difference."
+              subtitle="Average 7-day return of long signals when the condition was met vs not met (not a forecast). Edge is the difference, shown when both sides have 30 or more events; grey figures rest on fewer than 30."
             />
             <ConditionValueTable conditions={data.conditions} isMobile={isMobile} />
           </GlassCard>
@@ -556,7 +575,7 @@ export default function AnalyticsPanel({ isMobile }) {
           <GlassCard style={{ padding: pad }}>
             <SectionHeader
               title="Top Condition Combos"
-              subtitle="Combinations of 3 conditions ranked by lift (long-signal win rate above the long baseline). Only uses conditions that vary meaningfully — always-true conditions are excluded."
+              subtitle={`Combinations of 3 conditions ranked by lift (long-signal win rate above the long baseline). Only uses conditions that vary meaningfully — always-true conditions are excluded. Best of ${data.combos?.[0]?.tested ?? "the"} tested combinations; expect lower results out of sample.`}
             />
             <ComboCards combos={data.combos} isMobile={isMobile} />
           </GlassCard>
@@ -566,14 +585,14 @@ export default function AnalyticsPanel({ isMobile }) {
             <GlassCard style={{ padding: pad, flex: 1 }}>
               <SectionHeader
                 title="By Regime"
-                subtitle="Signal win rates broken down by the market regime active when the signal fired."
+                subtitle="Signal win rates broken down by the market regime active when the signal fired. Cells with fewer than 10 events are left out; grey figures rest on fewer than 30."
               />
               <RegimeScorecard data={data.regime_scorecard} isMobile={isMobile} />
             </GlassCard>
             <GlassCard style={{ padding: pad, flex: 1 }}>
               <SectionHeader
-                title="By Conviction Level"
-                subtitle="Win rate and average 7-day return of long signals, grouped by how many conditions were met (not a forecast)."
+                title="By share of entry checks met"
+                subtitle="Win rate and average 7-day return of long signals, grouped by the share of entry checks met (not a forecast). Coins are scored out of different totals, so shares are compared rather than counts."
               />
               <ConfluenceScorecard buckets={data.confluence_scorecard} isMobile={isMobile} />
             </GlassCard>
@@ -591,7 +610,7 @@ export default function AnalyticsPanel({ isMobile }) {
             <GlassCard style={{ padding: pad, flex: 1 }}>
               <SectionHeader
                 title="HyperLens Attribution"
-                subtitle="Compares performance of signals where HyperLens whale consensus confirmed the direction vs those without whale confirmation."
+                subtitle="Long signals where the tracked-wallet consensus (profitable traders and large accounts on Hyperliquid) agreed with the direction, against those where it did not."
               />
               <HyperLensAttribution data={data.hyperlens} isMobile={isMobile} />
             </GlassCard>

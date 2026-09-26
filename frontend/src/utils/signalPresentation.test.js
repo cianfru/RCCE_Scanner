@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {signalContext, setupAlignment, signalDirection, marketWideMissing} from './signalPresentation.js';
+import {signalContext, setupAlignment, signalDirection, marketWideMissing, friendlyReason} from './signalPresentation.js';
 import {candleChange, rangeRuler} from './chartPresentation.js';
 test('missing core names and consequences are visible without a bearish verdict',()=>{
  const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Tracked-wallet consensus BULLISH by position size (conviction 80%)']};
@@ -53,4 +53,16 @@ test('spot funding is not applicable: no market-wide banner and no per-row missi
  const perp={...row,market_kind:'perpetual'};
  assert.deepEqual(marketWideMissing(Array.from({length:20},()=>perp)),['Funding OK']);
  assert.equal(signalContext(perp).some(i=>i.kind==='missing'),true);
+});
+test('a BMSB block names the band, not the entry checks',()=>{
+ const macro=signalContext({signal:'WAIT',entry_blocked:true,signal_reason:'Macro blocked (BMSB bearish) — MARKUP regime, long entries blocked'});
+ assert.match(macro[0].text,/below the weekly bull-market support band/);
+ const nodata=signalContext({signal:'WAIT',entry_blocked:true,signal_reason:'BMSB data unavailable (weekly history too short) — ACCUM regime, all entries blocked'});
+ assert.match(nodata[0].text,/not enough weekly history/);
+ assert.match(signalContext({signal:'WAIT',entry_blocked:true,signal_reason:'Exhaustion climax detected'})[0].text,/Inspect the entry checks/);
+});
+test('engine codes and win-rate tallies are rewritten for readers',()=>{
+ const c=signalContext({signal:'ACCUMULATE',signal_warnings:['REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)']});
+ assert.equal(c[0].text,'Held at Accumulate: no taker-buying confirmation');assert.equal(c[0].kind,'caution');
+ assert.equal(friendlyReason('Late entry (40.7% WR zone) in MARKUP'),'Late entry in MARKUP');
 });

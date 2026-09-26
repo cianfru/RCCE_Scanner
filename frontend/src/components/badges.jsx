@@ -29,7 +29,7 @@ export function ZScoreBar({ z, isMobile }) {
         }} />
       </div>
       <span style={{ color: T.text1, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
-        {fmt(z, 2)}
+        {fmt(Math.round(z * 100) / 100 || 0, 2)}
       </span>
     </div>
   );
@@ -65,7 +65,7 @@ export function SignalDot({ signal, reason, warnings, context, isMobile, marketW
       buttonStyle={{width:'auto',minWidth:22,height:26,border:0,borderRadius:4,display:'inline-flex',alignItems:'center',gap:3,padding:'2px 3px'}}
       icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={col(color)}/>;})}</>}>
       <SignalContext row={row} marketWide={marketWide}/>
-      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:11,color:T.text3}}>{friendlyReason(reason)}</p>}
+      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:T.textXs,color:T.text3}}>{friendlyReason(reason)}</p>}
     </HelpTip>}
   </span>;
 }
@@ -226,7 +226,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
     }}>
       {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
       {divergence && (
-        <span style={{ fontSize: 9, color: "#f59e0b", marginLeft: 2 }} title="CVD/Price divergence">{"\u26a1"}</span>
+        <span style={{ fontSize: 12, color: T.yellow, marginLeft: 2 }} title="CVD/Price divergence">div</span>
       )}
       {bsr != null && (
         <span style={{ fontSize: 9, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>

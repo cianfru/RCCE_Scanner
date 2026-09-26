@@ -3,6 +3,7 @@ import HelpTip from "./HelpTip.jsx";
 import { useMemo, useState } from "react";
 import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.js";
 import { SECTOR_SHORT } from "../utils/sectors.js";
+import { formatPrice } from "../utils/marketPresentation.js";
 import SetupPair, { setupColor } from "./SetupPair.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import RegimeTransition from "./RegimeTransition.jsx";
@@ -42,7 +43,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
       const flash = priceFlash?.get?.(row.symbol);
       const isFav = favorites?.has(row.symbol);
       const priceStr = row.price
-        ? (row.price < 1 ? `$${fmt(row.price, 5)}` : `$${fmt(row.price, 2)}`)
+        ? formatPrice(row.price)
         : null;
       return (
         <td className="scanner-symbol" style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
@@ -97,7 +98,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
           color: pFlash === "up" ? T.green : pFlash === "down" ? T.red : T.text1,
           transition: "color 0.3s ease",
         }}>
-          {row.price ? `$${row.price < 1 ? fmt(row.price, 5) : fmt(row.price, 2)}` : "\u2014"}
+          {row.price ? formatPrice(row.price) : "\u2014"}
         </td>
       );
     }

@@ -49,7 +49,7 @@ class ConfluenceResponse(BaseModel):
     score: int = 0
     label: str = "UNKNOWN"
     regime_aligned: bool = False
-    signal_aligned: bool = False
+    signal_aligned: Optional[bool] = False   # None when both timeframes are WAIT
     regime_4h: str = ""
     regime_1d: str = ""
     signal_4h: str = ""

@@ -45,11 +45,14 @@ function chipAria(g) {
 
 // Which parts of the market are moving: one chip per sector (or chain), ranked by its
 // size-adjusted lead over the typical alt. Clicking a chip filters the grid and the best setups.
-export default function SectorStrip({ rows, baseRows, by, onByChange, value, onChange, timeframe }) {
+export default function SectorStrip({ rows, baseRows, by, onByChange, value, onChange, timeframe, spot = false }) {
   const sectors = useSectors();
   const [view, setView] = useState(null);             // null | "race" | "pockets"
   const base = altBaseline(baseRows || rows);           // zero stays the market's typical alt when a watch group is active
-  const groups = groupStats(rows, by, sectors?.lean, base);
+  // Trader positioning is measured on perps and weighted by perp open interest: it says
+  // nothing about the spot tokens in a chip, so spot chips leave that line out.
+  const lean = spot ? null : sectors?.lean;
+  const groups = groupStats(rows, by, lean, base);
   if (!groups.length) return null;
   const span = timeframe === "4h" ? "4d" : "24d";
   const ranked = groups.filter(g => !g.tail);
@@ -66,7 +69,7 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
         <MemberRug members={g.members} median={g.med} D={base.D} />
         <span className="sector-meta">{g.ahead}/{g.n} ahead{g.locked ? <>{" "}<span className="nowrap">· {g.locked} locked</span></> : ""}</span>
         {g.exTop && <span className="sector-extop">ex-{g.exTop.sym} {pct(g.exTop.shown)}</span>}
-        {sectors?.lean && <span className="sector-traders">
+        {lean && <span className="sector-traders">
           <b className={g.weight == null ? "" : g.weight >= 1.25 ? "over" : g.weight <= 0.8 ? "under" : ""}>{g.weight != null ? `${g.weight.toFixed(1)}x` : "—"}</b>
           <span>{g.traders.side ? `${Math.round((100 * g.traders.long) / g.traders.n)}% long` : "few traders"}</span>
         </span>}
@@ -82,7 +85,7 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
         <p>The number is the group's lead: its median move minus the typical alt's, in percentage points, scaled by n/(n+10) for a group of n markets. A group of 5 keeps a third of its lead, 10 keeps half, 30 three quarters. We use 10 because, over 276 past 24-day windows, the median of a few coins in a sector predicted the rest of that sector about that well. Chips are ordered by this number; ties go to the larger group.</p>
         <p>The strip has one tick per market, on the same ±{base.D}-point scale in every chip. The thin line is the typical alt, the bold mark is the group's median, and arrows at an end mark markets beyond the scale (up to three). "Ahead" counts markets that beat the typical alt. "ex-ZEC" style notes show the lead without the group's best market when that market adds 1.5 points or more.</p>
         <p>Dashed chips have fewer than 10 markets. Groups with fewer than 3 markets, and Other, come last without a rank. Locked counts setups where the trend and an entry signal agree.</p>
-        <p>The last line is where profitable traders put their money: the group's share of their positions against its share of the market's open interest (1.0x is market weight, 2.0x twice it), then the share of them positioned long. Profitable traders are the top 300 Hyperliquid wallets by monthly return that were also in profit before this month. Because they are picked by this month's result, they tend to be long in a rising month, so the weight says more than the direction.</p>
+        {!spot && <p>The last line is where profitable traders put their money: the group's share of their positions against its share of the market's open interest (1.0x is market weight, 2.0x twice it), then the share of them positioned long. Profitable traders are the top 300 Hyperliquid wallets by monthly return that were also in profit before this month. Because they are picked by this month's result, they tend to be long in a rising month, so the weight says more than the direction.</p>}
         <p>Sector strength is descriptive. In our tests, 30-day sector leaders kept beating the weakest sectors over the next 10 days, but not BTC; ecosystem leadership showed nothing. That test used 30-day leadership; this chip ranking ({span}) was not tested for persistence. Race vs BTC and Pockets use daily closes against BTC, so their numbers differ from the chips.</p>
       </HelpTip>
       <p className="sector-baseline">

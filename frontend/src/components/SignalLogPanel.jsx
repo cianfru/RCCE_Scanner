@@ -1,6 +1,6 @@
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { T, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
+import { T, SIGNAL_META, REGIME_META, TRANSITION_META, col } from "../theme.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,7 +34,14 @@ const SIGNAL_SHORT = {
   STRONG_LONG: "STRONG", LIGHT_LONG: "LIGHT", ACCUMULATE: "ACCUM",
   REVIVAL_SEED: "REVIVE", REVIVAL_SEED_CONFIRMED: "REVIVE",
   WAIT: "", TRIM: "TRIM", TRIM_HARD: "TRIM!", RISK_OFF: "RISK", NO_LONG: "NO",
+  LIGHT_SHORT: "SHORT", STRONG_SHORT: "SHORT!",
 };
+
+// "7/9" -> "7 of 9 entry checks met"; the totals differ between coins (9 or 11).
+function checksText(cond) {
+  const m = /^(\d+)\/(\d+)$/.exec(cond || "");
+  return m ? `${m[1]} of ${m[2]} entry checks met` : "";
+}
 
 const BULL_SIGNALS = new Set(["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"]);
 const EXIT_SIGNALS = new Set(["TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"]);
@@ -50,29 +57,22 @@ const S = {
     marginBottom: 16, boxShadow: T.glassShadow,
   },
   sectionTitle: {
-    fontSize: 11, fontWeight: 700, color: T.text3,
+    fontSize: T.textXs, fontWeight: 700, color: T.text3,
     letterSpacing: "0.1em", textTransform: "uppercase",
     marginBottom: 16, fontFamily: T.mono,
   },
-  pillBtn: (active) => ({
-    background: active ? T.accent : T.surface,
-    color: active ? "#000" : T.text3,
-    border: `1px solid ${active ? T.accent : T.border}`,
-    borderRadius: 6, padding: "4px 12px",
-    fontSize: 11, fontWeight: 600, fontFamily: T.mono,
-    cursor: "pointer", letterSpacing: "0.06em", transition: "all 0.15s",
-  }),
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: T.mono },
   th: {
     textAlign: "left", padding: "8px 10px",
     borderBottom: `1px solid ${T.border}`, color: T.text3,
-    fontSize: 10, fontWeight: 600, letterSpacing: "0.08em",
+    fontSize: T.textXs, fontWeight: 600, letterSpacing: "0.08em",
     textTransform: "uppercase", whiteSpace: "nowrap",
   },
   td: {
     padding: "7px 10px", borderBottom: `1px solid ${T.overlay04}`,
-    color: T.text2, whiteSpace: "nowrap",
+    color: T.text2, whiteSpace: "nowrap", fontSize: T.textXs,
   },
+  subtitle: { color: T.text4, fontWeight: 500, marginLeft: 8, fontSize: T.textXs, letterSpacing: "0.02em", textTransform: "none" },
   empty: {
     textAlign: "center", padding: "40px 20px",
     color: T.text4, fontSize: 13, fontFamily: T.mono,
@@ -83,7 +83,7 @@ function Badge({ bg, color, border, children }) {
   return (
     <span style={{
       display: "inline-block", padding: "2px 7px", borderRadius: 6,
-      fontSize: 9, fontWeight: 700, letterSpacing: "0.04em",
+      fontSize: T.textXs, fontWeight: 700, letterSpacing: "0.04em",
       background: bg, color, border: `1px solid ${border}`,
     }}>{children}</span>
   );
@@ -125,20 +125,21 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
     return <div style={S.empty}>No signal history yet.</div>;
   }
 
-  const cellMinSize = isMobile ? 28 : 36;
-  const labelW = isMobile ? 54 : 70;
+  // Cells fit a six-letter label at 12px; narrow screens scroll sideways.
+  const cellMinSize = 46;
+  const labelW = isMobile ? 60 : 76;
   // Size the table from its columns so narrow screens scroll instead of squeezing cells
   const colW = cellMinSize + 2;
   const tableW = labelW + 12 + data.days.length * colW;
 
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
-      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: isMobile ? 9 : 10, width: tableW, minWidth: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: T.textXs, width: tableW, minWidth: "100%", tableLayout: "fixed" }}>
         <thead>
           <tr>
-            <th style={{ position: "sticky", left: 0, zIndex: 2, background: T.bg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: 9, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
+            <th style={{ position: "sticky", left: 0, zIndex: 2, background: T.bg, padding: "4px 6px", width: labelW, minWidth: labelW, fontSize: T.textXs, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}></th>
             {data.days.map((day, i) => (
-              <th key={i} style={{ boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: isMobile ? 8 : 9, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
+              <th key={i} style={{ boxSizing: "border-box", width: colW, padding: "4px 0", textAlign: "center", fontSize: T.textXs, color: T.text4, fontWeight: 600, letterSpacing: "0.04em", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{day}</th>
             ))}
           </tr>
         </thead>
@@ -148,20 +149,20 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
             if (!row) return null;
             return (
               <tr key={sym} style={{ background: rowIdx % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? T.overlay02 : T.bg, padding: "2px 6px", fontSize: isMobile ? 9 : 10, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW }}>{stripSymbol(sym)}</td>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? T.overlay02 : T.bg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW }}>{stripSymbol(sym)}</td>
                 {row.map((cell, colIdx) => {
                   const signal = cell?.signal || "WAIT";
-                  const cond = cell?.cond || "";
+                  const checks = checksText(cell?.cond);
                   const meta = SIGNAL_META[signal] || SIGNAL_META.WAIT;
                   const color = meta.color;
-                  const shortLabel = SIGNAL_SHORT[signal] ?? "";
+                  const shortLabel = SIGNAL_SHORT[signal] ?? signal.split("_")[0].slice(0, 6);
                   const isWait = signal === "WAIT";
-                  const tooltip = `${stripSymbol(sym)} \u2014 ${data.days[colIdx]}: ${signalLabel(signal)}${cond ? ` (${cond})` : ""}`;
+                  // The checks count lives in the tooltip: on a WAIT cell "9/9" read as full conviction.
+                  const tooltip = `${stripSymbol(sym)} \u2014 ${data.days[colIdx]}: ${signalLabel(signal)}${checks ? ` \u00b7 ${checks}` : ""}`;
                   return (
                     <td key={colIdx} title={tooltip} style={{ padding: 1, borderBottom: `1px solid ${T.overlay04}` }}>
                       <div style={{ minWidth: cellMinSize, height: cellMinSize, borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "default" }}>
-                        {!isWait && shortLabel && <span style={{ fontSize: isMobile ? 7 : 8, fontWeight: 700, color, lineHeight: 1 }}>{shortLabel}</span>}
-                        {cond && <span style={{ fontSize: isMobile ? 7 : 8, color: isWait ? T.text4 : `${color}cc`, lineHeight: 1, marginTop: shortLabel && !isWait ? 1 : 0 }}>{cond}</span>}
+                        {!isWait && shortLabel && <span style={{ fontSize: T.textXs, fontWeight: 700, color, lineHeight: 1 }}>{shortLabel}</span>}
                       </div>
                     </td>
                   );
@@ -176,8 +177,12 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. DIVERGENCE — scanner signal vs whale consensus disagree
+// 2. DIVERGENCE — scanner signal vs tracked-wallet consensus disagree
 // ---------------------------------------------------------------------------
+
+// A stated rule instead of a strength cutoff no coin reached: the consensus
+// leans against the scanner and at least this many tracked wallets hold the coin.
+const MIN_POSITIONED_WALLETS = 10;
 
 function DivergenceView({ data, isMobile }) {
   const divergences = useMemo(() => {
@@ -185,19 +190,19 @@ function DivergenceView({ data, isMobile }) {
     return data
       .filter(p => {
         const sm = p.smart_money;
-        if (!sm || sm.confidence < 0.15) return false;
+        if (!sm || (sm.long_count || 0) + (sm.short_count || 0) < MIN_POSITIONED_WALLETS) return false;
         const sig = p.signal;
-        // Bull signal + bearish whales
-        if (BULL_SIGNALS.has(sig) && sm.trend === "BEARISH" && sm.confidence >= 0.20) return true;
-        // Bear/exit signal + bullish whales
-        if ((EXIT_SIGNALS.has(sig) || sig === "WAIT") && sm.trend === "BULLISH" && sm.confidence >= 0.20) return true;
+        // Bull signal + bearish tracked wallets
+        if (BULL_SIGNALS.has(sig) && sm.trend === "BEARISH") return true;
+        // Exit or waiting signal + bullish tracked wallets
+        if ((EXIT_SIGNALS.has(sig) || sig === "WAIT") && sm.trend === "BULLISH") return true;
         return false;
       })
       .sort((a, b) => (b.smart_money?.confidence || 0) - (a.smart_money?.confidence || 0));
   }, [data]);
 
   if (divergences.length === 0) {
-    return <div style={S.empty}>No divergences detected. Scanner signals and whale consensus are aligned.</div>;
+    return <div style={S.empty}>No coin where tracked wallets clearly oppose the scanner signal right now.</div>;
   }
 
   return (
@@ -208,23 +213,23 @@ function DivergenceView({ data, isMobile }) {
             <th style={S.th}>SYMBOL</th>
             <th style={S.th}>SCANNER</th>
             <th style={{ ...S.th, textAlign: "center" }}>VS</th>
-            <th style={S.th}>WHALES</th>
+            <th style={S.th}>TRACKED WALLETS</th>
             {!isMobile && <th style={{ ...S.th, textAlign: "right" }}>L / S</th>}
             {!isMobile && <th style={{ ...S.th, textAlign: "right" }}>NOTIONAL</th>}
-            <th style={{ ...S.th, textAlign: "right" }}>CONF</th>
+            <th style={{ ...S.th, textAlign: "right" }} title="Consensus strength, 0 to 100: a heuristic blend of position value and wallet count, not a probability">STRENGTH</th>
           </tr>
         </thead>
         <tbody>
           {divergences.map((p, i) => {
             const sigColor = signalColor(p.signal);
             const sm = p.smart_money;
-            const whaleColor = sm.trend === "BULLISH" ? "#34d399" : sm.trend === "BEARISH" ? "#f87171" : T.text3;
-            const isBullSignalBearWhale = BULL_SIGNALS.has(p.signal) && sm.trend === "BEARISH";
+            const walletColor = sm.trend === "BULLISH" ? col("#34d399") : sm.trend === "BEARISH" ? col("#f87171") : T.text3;
+            const bullSignalBearWallets = BULL_SIGNALS.has(p.signal) && sm.trend === "BEARISH";
 
             return (
               <tr key={p.symbol} style={{
                 background: i % 2 === 1 ? T.overlay02 : "transparent",
-                borderLeft: `3px solid ${isBullSignalBearWhale ? "#f87171" : "#fbbf24"}`,
+                borderLeft: `3px solid ${bullSignalBearWallets ? col("#f87171") : col("#fbbf24")}`,
               }}>
                 <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(p.symbol)}</td>
                 <td style={S.td}>
@@ -232,28 +237,28 @@ function DivergenceView({ data, isMobile }) {
                     {signalLabel(p.signal)}
                   </Badge>
                 </td>
-                <td style={{ ...S.td, textAlign: "center", color: "#fbbf24", fontSize: 14 }}>{"\u26A0"}</td>
+                <td style={{ ...S.td, textAlign: "center", color: T.text4 }}>against</td>
                 <td style={S.td}>
-                  <Badge bg={`${whaleColor}18`} color={whaleColor} border={`${whaleColor}40`}>
+                  <Badge bg={`${walletColor}18`} color={walletColor} border={`${walletColor}40`}>
                     {sm.trend}
                   </Badge>
                 </td>
                 {!isMobile && (
-                  <td style={{ ...S.td, textAlign: "right", fontSize: 10 }}>
-                    <span style={{ color: "#34d399" }}>{sm.long_count}</span>
+                  <td style={{ ...S.td, textAlign: "right" }}>
+                    <span style={{ color: col("#34d399") }}>{sm.long_count}</span>
                     <span style={{ color: T.text4 }}> / </span>
-                    <span style={{ color: "#f87171" }}>{sm.short_count}</span>
+                    <span style={{ color: col("#f87171") }}>{sm.short_count}</span>
                   </td>
                 )}
                 {!isMobile && (
-                  <td style={{ ...S.td, textAlign: "right", fontSize: 10, color: T.text3 }}>
-                    <span style={{ color: "#34d399" }}>{fmtUsd(sm.long_notional)}</span>
+                  <td style={{ ...S.td, textAlign: "right", color: T.text3 }}>
+                    <span style={{ color: col("#34d399") }}>{fmtUsd(sm.long_notional)}</span>
                     <span style={{ color: T.text4 }}> / </span>
-                    <span style={{ color: "#f87171" }}>{fmtUsd(sm.short_notional)}</span>
+                    <span style={{ color: col("#f87171") }}>{fmtUsd(sm.short_notional)}</span>
                   </td>
                 )}
-                <td style={{ ...S.td, textAlign: "right", fontSize: 10, fontWeight: 600, color: whaleColor }}>
-                  {(sm.confidence * 100).toFixed(0)}%
+                <td style={{ ...S.td, textAlign: "right", fontWeight: 600, color: walletColor }}>
+                  {Math.round(sm.confidence * 100)}
                 </td>
               </tr>
             );
@@ -302,15 +307,15 @@ function TransitionsView({ events, isMobile }) {
               : "\u2014";
             return (
               <tr key={`${ev.symbol}-${ev.timestamp}-${i}`} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ ...S.td, color: T.text3, fontSize: 10 }}>{ago}</td>
+                <td style={{ ...S.td, color: T.text3 }}>{ago}</td>
                 <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(ev.symbol)}</td>
-                <td style={{ ...S.td, color: prevColor, fontSize: 10 }}>{ev.prev_signal ? signalLabel(ev.prev_signal) : "\u2014"}</td>
+                <td style={{ ...S.td, color: prevColor }}>{ev.prev_signal ? signalLabel(ev.prev_signal) : "\u2014"}</td>
                 <td style={{ ...S.td, color: tt.color, fontSize: 12, textAlign: "center", padding: "7px 4px" }}>{tt.glyph}</td>
                 <td style={{ ...S.td, color: sigColor, fontWeight: 600 }}>{signalLabel(ev.signal)}</td>
                 <td style={S.td}>
                   <Badge bg={`${tt.color}15`} color={tt.color} border={`${tt.color}30`}>{tt.label}</Badge>
                 </td>
-                {!isMobile && <td style={{ ...S.td, color: T.text3, fontSize: 10 }}>{ev.regime || "\u2014"}</td>}
+                {!isMobile && <td style={{ ...S.td, color: T.text3 }}>{ev.regime ? (REGIME_META[ev.regime]?.name || ev.regime) : "\u2014"}</td>}
               </tr>
             );
           })}
@@ -387,13 +392,13 @@ function StreaksView({ data, isMobile }) {
                   <span style={{
                     display: "inline-flex", alignItems: "center", gap: 4,
                     fontSize: 14, fontWeight: 700,
-                    color: s.isBull ? "#34d399" : "#f87171",
+                    color: s.isBull ? col("#34d399") : col("#f87171"),
                   }}>
                     {s.days}
-                    <span style={{ fontSize: 9, fontWeight: 500, color: T.text4 }}>days</span>
+                    <span style={{ fontSize: T.textXs, fontWeight: 500, color: T.text4 }}>days</span>
                   </span>
                 </td>
-                <td style={{ ...S.td, fontSize: 10, color: s.isBull ? "#34d399" : "#f87171", fontWeight: 600 }}>
+                <td style={{ ...S.td, color: s.isBull ? col("#34d399") : col("#f87171"), fontWeight: 600 }}>
                   {s.isBull ? "\u2191 BULL" : "\u2193 EXIT"}
                 </td>
               </tr>
@@ -418,6 +423,11 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
   const [transitions, setTransitions] = useState([]);
 
   const scanData = timeframe === "4h" ? scanData4h : scanData1d;
+  const presentSignals = useMemo(() => {
+    const seen = new Set();
+    for (const row of Object.values(heatmap?.grid || {})) for (const cell of row || []) if (cell?.signal) seen.add(cell.signal);
+    return seen;
+  }, [heatmap]);
 
   const fetchHeatmap = useCallback(async () => {
     setLoading(true);
@@ -480,16 +490,17 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
             <div style={S.section}>
               <div style={S.sectionTitle}>
                 Signal Evolution — 14 Days
-                <span style={{ color: T.text4, fontWeight: 500, marginLeft: 8, fontSize: 10, letterSpacing: "0.02em" }}>
+                <span style={S.subtitle}>
                   {heatmap?.symbols?.length || 0} pairs
                 </span>
               </div>
+              <p style={{ margin: "-8px 0 12px", fontSize: T.textXs, color: T.text3 }}>Cells show the signal; hover a cell for the entry checks met.</p>
               <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} />
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.overlay04}` }}>
-                {Object.entries(SIGNAL_META).map(([key, meta]) => {
-                  if (key === "REVIVAL_SEED") return null;
+                {/* Only signals that appear in the grid */}
+                {Object.entries(SIGNAL_META).filter(([key]) => presentSignals.has(key)).map(([key, meta]) => {
                   return (
-                    <div key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontFamily: T.mono, color: T.text3 }}>
+                    <div key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: T.textXs, fontFamily: T.mono, color: T.text3 }}>
                       <div style={{ width: 10, height: 10, borderRadius: 2, background: key === "WAIT" ? T.overlay04 : `${meta.color}30`, border: `1px solid ${key === "WAIT" ? T.border : `${meta.color}50`}` }} />
                       {meta.label}
                     </div>
@@ -505,9 +516,9 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
       {activeView === "divergence" && (
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            Signal vs Whale Divergence
-            <span style={{ color: T.text4, fontWeight: 500, marginLeft: 8, fontSize: 10, letterSpacing: "0.02em" }}>
-              scanner disagrees with 500 tracked wallets
+            Scanner vs tracked wallets
+            <span style={S.subtitle}>
+              coins where the tracked-wallet consensus (profitable traders and large accounts) leans against the scanner, with at least {MIN_POSITIONED_WALLETS} wallets positioned
             </span>
           </div>
           <DivergenceView data={scanData} isMobile={isMobile} />
@@ -519,7 +530,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
         <div style={S.section}>
           <div style={S.sectionTitle}>
             Recent Signal Changes
-            <span style={{ color: T.text4, fontWeight: 500, marginLeft: 8, fontSize: 10, letterSpacing: "0.02em" }}>
+            <span style={S.subtitle}>
               last 50
             </span>
           </div>
@@ -535,7 +546,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
             <div style={S.section}>
               <div style={S.sectionTitle}>
                 Signal Persistence
-                <span style={{ color: T.text4, fontWeight: 500, marginLeft: 8, fontSize: 10, letterSpacing: "0.02em" }}>
+                <span style={S.subtitle}>
                   consecutive days on same signal
                 </span>
               </div>

@@ -23,6 +23,7 @@ _BULLISH = {"MARKUP", "REACC", "ACCUM"}
 _BEARISH = {"MARKDOWN", "CAP", "BLOWOFF"}
 _ENTRY_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"}
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+_MAX_POINTS = 90  # 40 + 5 regime, 30 signal, 15 heat
 
 
 def unified_signal(result_4h: Optional[dict], result_1d: Optional[dict]) -> str:
@@ -65,7 +66,7 @@ class ConfluenceResult:
     score: int = 0                       # 0-100 confluence score
     label: str = "UNKNOWN"               # STRONG | MODERATE | WEAK | CONFLICTING
     regime_aligned: bool = False         # Both TFs in same regime family
-    signal_aligned: bool = False         # Both TFs same signal direction
+    signal_aligned: Optional[bool] = False  # Both TFs same signal direction; None when both WAIT
     regime_4h: str = ""
     regime_1d: str = ""
     signal_4h: str = ""
@@ -82,13 +83,13 @@ def compute_confluence(
 ) -> ConfluenceResult:
     """Score how well 4h and 1d timeframes align for a symbol.
 
-    Scoring breakdown (100 points total):
-    - Regime family match: +40
+    Raw points (90 at most):
+    - Regime family match: +40 (+5 for the exact same regime)
     - Signal direction match: +30
-    - Consensus agreement: +15
     - Heat agreement: +15
 
-    Labels:
+    The published score is the raw points rescaled to 0-100. Labels are taken
+    from the raw points, so executor sizing is unchanged by the rescale:
     - STRONG: >= 75
     - MODERATE: >= 50
     - WEAK: >= 25
@@ -146,6 +147,7 @@ def compute_confluence(
         score += 10
     elif s4h_wait and s1d_wait:
         score += 15  # both neutral
+        out.signal_aligned = None  # neither agreeing nor differing: both waiting
     # entry vs exit = 0 (conflicting)
 
     # 3. Heat agreement (+15)
@@ -156,11 +158,10 @@ def compute_confluence(
     elif abs(heat_4h - heat_1d) < 20:
         score += 8  # close enough
 
-    # Clamp to 0-100
-    score = max(0, min(100, score))
-    out.score = score
+    score = max(0, min(_MAX_POINTS, score))
+    out.score = round(score * 100 / _MAX_POINTS)
 
-    # Label
+    # Label (raw points)
     if score >= 75:
         out.label = "STRONG"
     elif score >= 50:

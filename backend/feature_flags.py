@@ -168,7 +168,7 @@ PRESETS: Dict[str, Dict[str, bool]] = {
     },
     "power": {
         "hyperlens_enabled": True,
-        "hyperlens_pressure_map": True,
+        "hyperlens_pressure_map": False,   # the Pressure tab was removed; ~80K calls/day for nothing
         "whale_tracker": True,
         "market_monitor": True,
     },

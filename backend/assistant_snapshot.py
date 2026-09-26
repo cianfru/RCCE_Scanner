@@ -8,8 +8,11 @@ news item or wallet position. Null/missing fields mean unavailable, not zero or 
 Use the selected timeframe unless the user explicitly asks for another; label every timeframe.
 Quote the displayed signal exactly. Do not recompute or replace it with your own buy/sell opinion.
 Entry checks and regime confidence are 0–100 percentages, not probabilities of making money.
-Whale confidence is a 0–1 directional conviction, not wallet-count share or a win probability.
-Different timeframes and whale positioning can disagree without changing the scanner signal.
+tracked_wallets is the positioning of tracked Hyperliquid wallets (profitable traders and large
+accounts); its confidence is a 0–1 directional conviction, not wallet-count share or a win probability.
+Different timeframes and tracked-wallet positioning can disagree without changing the scanner signal.
+Call these accounts tracked wallets, profitable traders or large accounts; never whales or smart money.
+Do not state win rates, hit rates or probabilities of profit. Never use emojis.
 Prior conversation is not current market data. Refresh facts from this snapshot on every response.
 If the requested market has no analysis, say so. For best setups, use the supplied priority ranking,
 not an invented ranking. State the snapshot time and flag stale data (more than 15 minutes old).
@@ -21,6 +24,20 @@ FIELDS = ("regime_transition", "history_bars", "normalization_ready", "symbol", 
           "signal_confidence", "confidence", "signal_reason", "signal_warnings", "conditions_met",
           "conditions_total", "conditions_detail", "confluence", "positioning", "smart_money",
           "priority_score", "zscore", "heat", "cvd_trend", "divergence", "timestamp")
+# Internal keys keep their history; the model sees the product's names so its answers do not
+# bring back retired wording.
+RENAMED = {"smart_money": "tracked_wallets"}
+RENAMED_WALLET_KEYS = {"mp_trend": "profitable_traders_trend", "sm_trend": "large_accounts_trend"}
+
+
+def _market(r):
+    out = {}
+    for k in FIELDS:
+        v = r.get(k)
+        if k == "smart_money" and isinstance(v, dict):
+            v = {RENAMED_WALLET_KEYS.get(a, a): b for a, b in v.items()}
+        out[RENAMED.get(k, k)] = v
+    return out
 
 
 def snapshot(cache, symbols, timeframe):
@@ -30,7 +47,7 @@ def snapshot(cache, symbols, timeframe):
                       {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"} and isinstance(r.get("priority_score"), (int, float))],
                      key=lambda r: (-r["priority_score"], r["symbol"]))[:3]
     wanted = selected | {r["symbol"] for r in ranking} | {"BTC/USDT", "ETH/USDT", "SOL/USDT"}
-    markets = [{k: r.get(k) for k in FIELDS} for r in rows if r.get("symbol") in wanted]
+    markets = [_market(r) for r in rows if r.get("symbol") in wanted]
     return json.dumps({
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
         "scan_age_seconds": cache.get_cache_age(), "selected_timeframe": timeframe,

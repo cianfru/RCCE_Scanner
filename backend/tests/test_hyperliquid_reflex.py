@@ -44,6 +44,14 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(data['unavailable_symbols'],['MISSING/USDC'])
         self.assertEqual(data['best_setups_in_priority_order'],['BTC/USDT'])
 
+    def test_wallet_positioning_uses_product_wording(self):
+        cache=self.cache()
+        cache.get_results("1d")[0]["smart_money"]={"trend":"BULLISH","confidence":0.4,"mp_trend":"BULLISH","sm_trend":"NEUTRAL"}
+        row=json.loads(snapshot(cache,["BTC/USDT"],"1d"))['markets'][0]
+        self.assertNotIn('smart_money',row)
+        self.assertEqual(row['tracked_wallets']['profitable_traders_trend'],'BULLISH')
+        self.assertEqual(row['tracked_wallets']['large_accounts_trend'],'NEUTRAL')
+
     def test_public_model_mutation_is_rejected(self):
         manager=AssistantManager()
         original=manager.get_current_model()

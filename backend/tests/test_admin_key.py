@@ -30,6 +30,12 @@ class AdminKeyTests(unittest.TestCase):
             self.assertEqual(self.c.get("/health").status_code, 200)
             self.assertNotEqual(self.c.post("/api/auth/login", json={"code": "x"}).status_code, 403)
 
+    def test_auth_status_reports_enforcement(self):
+        with mock.patch.dict(os.environ, {"REFLEX_ACCESS_CODE": ""}):
+            self.assertEqual(self.c.get("/api/auth/status").json(), {"enforced": False})
+        with mock.patch.dict(os.environ, {"REFLEX_ACCESS_CODE": "s3cret"}):
+            self.assertEqual(self.c.get("/api/auth/status").json(), {"enforced": True})
+
     def test_no_stand_in_fear_and_greed(self):
         with mock.patch.object(main.cache, "sentiment", None):
             body = self.c.get("/api/sentiment").json()

@@ -103,6 +103,8 @@ const LIGHT_HUES = {
   "#fbbf24": "#b45309", "#97fce4": "#0e7490", "#b8fff0": "#0f766e", "#c084fc": "#7e22ce",
   "#d8b4fe": "#8b5cf6", "#fb923c": "#c2410c", "#52525b": "#6b7280", "#3f3f46": "#a1a1aa",
   "#71717a": "#6b7280", "#cf9185": "#b4533f", "#b5a5db": "#6d5bb0", "#91b9e8": "#2f6fb5",
+  "#e3b341": "#a16207", "#facc15": "#a16207", "#d8a094": "#b4533f", "#a78bfa": "#6d28d9",
+  "#c4b5fd": "#6d28d9", "#c6a46d": "#8a6a2f", "#b6a07c": "#7a6440",
 };
 let currentMode = "dark";
 export function col(hex) {
@@ -131,6 +133,13 @@ export function applyTheme(mode) {
     root.style.setProperty(`--t-${key}`, val);
   }
   root.dataset.theme = mode;
+}
+
+// The --t-* variables of one palette as an inline style, for a block that keeps its
+// colours whatever the app theme is (the always-dark landing embeds the terminal table).
+export function themeVars(mode) {
+  const tokens = mode === "light" ? LIGHT : DARK;
+  return Object.fromEntries(Object.entries(tokens).map(([key, val]) => [`--t-${key}`, val]));
 }
 
 
@@ -257,7 +266,7 @@ export const REGIME_META = {
 export const SIGNAL_META = {
   LIGHT_SHORT:  { color: "#cf9185", label: "LIGHT SHORT", dot: "\u25cf" },
   STRONG_SHORT: { color: "#f87171", label: "STRONG SHORT", dot: "\u25cf" },
-  REVIVAL_SEED_CONF: { color: "#b8fff0", label: "REVIVAL CONFIRMED", dot: "\u25cf" },
+  REVIVAL_SEED_CONFIRMED: { color: "#b8fff0", label: "REVIVAL CONFIRMED", dot: "\u25cf" },
   STRONG_LONG:  { color: "#34d399", label: "STRONG LONG",  dot: "\u25cf" },
   LIGHT_LONG:   { color: "#6ee7b7", label: "LIGHT LONG",   dot: "\u25cf" },
   ACCUMULATE:   { color: "#97FCE4", label: "ACCUMULATE",    dot: "\u25c6" },
@@ -284,17 +293,19 @@ export const TRANSITION_META = {
 
 // ─── COLOR HELPERS ──────────────────────────────────────────────────────────
 
+// Neutral readings use the secondary text colour: the old greys read as missing data.
 export function heatColor(heat) {
-  if (heat == null) return col("#3f3f46");
+  if (heat == null) return T.text3;
   if (heat >= 80) return col("#f87171");
   if (heat >= 60) return col("#fb923c");
   if (heat >= 40) return col("#fbbf24");
   if (heat >= 20) return col("#34d399");
-  return col("#3f3f46");
+  return T.text3;
 }
 
 export function phaseColor(phase) {
-  return col({ Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#97FCE4", Neutral: "#52525b" }[phase] || "#52525b");
+  const hue = { Exhaustion: "#fbbf24", Entry: "#34d399", Fading: "#fb923c", Extension: "#97FCE4" }[phase];
+  return hue ? col(hue) : T.text3;
 }
 
 export function exhaustMeta(state) {
@@ -303,9 +314,9 @@ export function exhaustMeta(state) {
     CLIMAX:          { color: "#fbbf24", text: "CLIMAX" },
     ABSORBING:       { color: "#b8fff0", text: "ABSORB" },
     BEAR_ZONE:       { color: "#f87171", text: "BEAR" },
-    NEUTRAL:         { color: "#3f3f46", text: "\u2014" },
-  }[state] || { color: "#3f3f46", text: "\u2014" };
-  return { ...meta, color: col(meta.color) };
+    NEUTRAL:         { color: null, text: "\u2014" },
+  }[state] || { color: null, text: "\u2014" };
+  return { ...meta, color: meta.color ? col(meta.color) : T.text3 };
 }
 
 // ─── FORMAT HELPERS ─────────────────────────────────────────────────────────

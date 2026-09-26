@@ -805,7 +805,8 @@ class SignalLog:
             rows = await cursor.fetchall()
             day_data = {r["symbol"]: {
                 "signal": r["signal"],
-                "cond": f"{r['conditions_met'] or 0}/{r['conditions_total'] or 14}",
+                # No total recorded: say nothing rather than guess a denominator.
+                "cond": f"{r['conditions_met'] or 0}/{r['conditions_total']}" if r["conditions_total"] else None,
             } for r in rows}
 
             for sym, val in day_data.items():

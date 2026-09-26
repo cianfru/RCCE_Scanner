@@ -7,18 +7,25 @@ import SparklineCell from "./SparklineCell.jsx";
 import GlassCard from "./GlassCard.jsx";
 import Tabs from "./Tabs.jsx";
 import { getAdminKey } from "../auth.js";
+import { formatPrice } from "../utils/marketPresentation.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const CATEGORIES = ["ALL", "Commodities", "Indices", "Equities", "ETFs"];
 const ADD_CATEGORIES = ["Equities", "Commodities", "Indices", "ETFs"];
+const REGIME_ORDER = ["MARKUP", "REACC", "BLOWOFF", "CAP", "MARKDOWN", "ACCUM", "ABSORBING", "FLAT"];
+// Strongest entries first, then WAIT, then exits.
+const SIGNAL_ORDER = ["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED_CONFIRMED", "REVIVAL_SEED", "WAIT",
+  "NO_LONG", "TRIM", "TRIM_HARD", "RISK_OFF", "LIGHT_SHORT", "STRONG_SHORT"];
+const rank = (order, v) => { const i = order.indexOf(v); return i < 0 ? order.length : i; };
 
 // The timeframe tabs sit in the page title row (App.jsx); tfView comes from there.
 export default function TradFiPanel({
   results, data4h, data1d, tfView = "1d",
-  sortKey, onSort, selected, onSelect,
-  visibleColumns, isMobile, loading,
+  selected, onSelect, isMobile, loading,
 }) {
   const [category, setCategory] = useState("ALL");
+  // Local sort: TradFi headers must not re-sort the perps and spot tables.
+  const [sortKey, setSortKey] = useState("priority_score");
   const [managing, setManaging] = useState(false);
   const [symbols, setSymbols] = useState([]);
   const [addForm, setAddForm] = useState({ coin: "", name: "", category: "Equities", yf: "" });
@@ -67,10 +74,20 @@ export default function TradFiPanel({
   // Pick the right dataset based on timeframe toggle
   const activeData = tfView === "4h" ? data4h : data1d;
 
+  // Category counts; only categories with markets get a tab.
+  const counts = useMemo(() => {
+    const c = { ALL: activeData.length };
+    for (const r of activeData) if (r.asset_class) c[r.asset_class] = (c[r.asset_class] || 0) + 1;
+    return c;
+  }, [activeData]);
+  const categories = ["ALL", ...CATEGORIES.slice(1).filter(cat => counts[cat] > 0),
+    ...Object.keys(counts).filter(cat => cat !== "ALL" && !CATEGORIES.includes(cat))];
+  const activeCategory = categories.includes(category) ? category : "ALL";
+
   const filtered = useMemo(() => {
-    if (category === "ALL") return activeData;
-    return activeData.filter(r => r.asset_class === category);
-  }, [activeData, category]);
+    if (activeCategory === "ALL") return activeData;
+    return activeData.filter(r => r.asset_class === activeCategory);
+  }, [activeData, activeCategory]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -78,22 +95,11 @@ export default function TradFiPanel({
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
       if (sortKey === "zscore") return (b.zscore || 0) - (a.zscore || 0);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
-      if (sortKey === "regime") {
-        const REGIME_ORDER = ["MARKUP", "REACCUMULATION", "BLOWOFF", "CAP_ZONE", "MARKDOWN", "ACCUMULATION", "FLAT"];
-        return REGIME_ORDER.indexOf(a.regime) - REGIME_ORDER.indexOf(b.regime);
-      }
+      if (sortKey === "regime") return rank(REGIME_ORDER, a.regime) - rank(REGIME_ORDER, b.regime);
+      if (sortKey === "signal") return rank(SIGNAL_ORDER, a.signal) - rank(SIGNAL_ORDER, b.signal);
       return 0;
     });
   }, [filtered, sortKey]);
-
-  // Category counts
-  const counts = useMemo(() => {
-    const c = { ALL: activeData.length };
-    for (const cat of CATEGORIES.slice(1)) {
-      c[cat] = activeData.filter(r => r.asset_class === cat).length;
-    }
-    return c;
-  }, [activeData]);
 
   // Regime summary (markets without candle history have no measured regime)
   const regimeSummary = useMemo(() => {
@@ -106,6 +112,13 @@ export default function TradFiPanel({
   }, [sorted]);
 
   const cellPad = isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`;
+  // Every sort is descending; the active column carries the arrow.
+  const sortTh = (key, label) => (
+    <th key={key} style={{ ...thStyle(isMobile), cursor: "pointer", color: sortKey === key ? T.text2 : T.text4 }}
+      aria-sort={sortKey === key ? "descending" : "none"} onClick={() => setSortKey(key)}>
+      {label}{sortKey === key ? " \u25bc" : ""}
+    </th>
+  );
 
   return (
     <div style={{ marginTop: isMobile ? 16 : 20 }}>
@@ -129,8 +142,8 @@ export default function TradFiPanel({
 
       {/* Category filter: the shared tab style */}
       <div style={{ marginBottom: 14 }}>
-        <Tabs small label="Category" value={category} onChange={setCategory}
-          items={CATEGORIES.map(cat => ({ key: cat, label: `${cat === "ALL" ? "All" : cat}${counts[cat] > 0 ? ` ${counts[cat]}` : ""}` }))} />
+        <Tabs small label="Category" value={activeCategory} onChange={setCategory}
+          items={categories.map(cat => ({ key: cat, label: `${cat === "ALL" ? "All" : cat}${counts[cat] > 0 ? ` ${counts[cat]}` : ""}` }))} />
       </div>
 
       {/* Manage panel */}
@@ -282,7 +295,7 @@ export default function TradFiPanel({
             padding: 40, textAlign: "center", fontFamily: T.mono,
             fontSize: m(T.textSm, isMobile), color: T.text4,
           }}>
-            No TradFi data yet — waiting for first scan
+            {activeData.length ? "No markets in this category." : "No TradFi data yet — waiting for first scan"}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -294,21 +307,22 @@ export default function TradFiPanel({
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                   <th style={{ ...thStyle(isMobile), width: 28 }}>#</th>
                   <th style={thStyle(isMobile)}>ASSET</th>
-                  <th style={thStyle(isMobile)}>CATEGORY</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("regime")}>REGIME</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("signal")}>SIGNAL</th>
-                  <th style={thStyle(isMobile)}>SPARK</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("zscore")}>Z-SCORE</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("momentum")}>MOM</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("heat")}>HEAT</th>
-                  <th style={thStyle(isMobile)}>CONF</th>
-                  <th style={{ ...thStyle(isMobile), cursor: "pointer" }} onClick={() => onSort("priority_score")}>PRI</th>
+                  {!isMobile && <th style={thStyle(isMobile)}>CATEGORY</th>}
+                  {isMobile ? sortTh("regime", "REGIME / SIGNAL") : <>{sortTh("regime", "REGIME")}{sortTh("signal", "SIGNAL")}</>}
+                  {!isMobile && <th style={thStyle(isMobile)}>SPARK</th>}
+                  {!isMobile && sortTh("zscore", "Z-SCORE")}
+                  {sortTh("momentum", "MOM")}
+                  {!isMobile && sortTh("heat", "HEAT")}
+                  {!isMobile && <th style={thStyle(isMobile)}>CONF</th>}
+                  {sortTh("priority_score", "PRI")}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => {
                   const isSelected = selected?.symbol === r.symbol;
                   const noHistory = r.history_bars === 0;   // unmeasured, not zero
+                  // Colour follows the shown value: 0.03 prints as 0.0% and stays neutral.
+                  const mom1 = r.momentum == null ? null : Math.round(r.momentum * 10) / 10 || 0;
                   return (
                     <tr
                       key={r.symbol}
@@ -326,31 +340,48 @@ export default function TradFiPanel({
                         {i + 1}
                       </td>
                       <td style={{ padding: cellPad }}>
-                        <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textBase : T.textMd, isMobile) }}>
-                          {r.tradfi_coin || r.symbol.split("/")[0]}
-                        </div>
-                        <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2 }}>
-                          {r.tradfi_name || r.symbol} — ${fmt(r.price, r.price > 100 ? 2 : 4)}
-                        </div>
+                        {isMobile ? <>
+                          <div style={{ fontFamily: T.mono, whiteSpace: "nowrap" }}>
+                            <span style={{ fontWeight: 700, color: T.text1, fontSize: m(T.textBase, isMobile) }}>{r.tradfi_coin || r.symbol.split("/")[0]}</span>
+                            <span style={{ color: T.text3, fontSize: m(T.textXs, isMobile), marginLeft: 6 }}>{formatPrice(r.price)}</span>
+                          </div>
+                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {r.tradfi_name || r.symbol}
+                          </div>
+                        </> : <>
+                          <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(T.textMd, isMobile) }}>
+                            {r.tradfi_coin || r.symbol.split("/")[0]}
+                          </div>
+                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2 }}>
+                            {r.tradfi_name || r.symbol} — {formatPrice(r.price)}
+                          </div>
+                        </>}
                       </td>
-                      <td style={{ padding: cellPad, fontFamily: T.font, fontSize: m(T.textXs, isMobile), color: T.text3 }}>
+                      {!isMobile && <td style={{ padding: cellPad, fontFamily: T.font, fontSize: m(T.textXs, isMobile), color: T.text3 }}>
                         {r.asset_class}
-                      </td>
-                      <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} isMobile={isMobile} noHistory={noHistory} /></td>
-                      <td style={{ padding: cellPad }}><SignalDot signal={r.signal} reason={r.signal_reason} warnings={r.signal_warnings} isMobile={isMobile} /></td>
-                      <td style={{ padding: cellPad }}><SparklineCell data={r.sparkline} width={72} height={22} /></td>
-                      <td style={{ padding: cellPad }}>{noHistory ? <span style={{ color: T.text4 }}>—</span> : <ZScoreBar z={r.zscore} isMobile={isMobile} />}</td>
+                      </td>}
+                      {isMobile ? (
+                        <td style={{ padding: cellPad }}>
+                          <div><RegimeBadge regime={r.regime} isMobile={isMobile} noHistory={noHistory} /></div>
+                          <div style={{ marginTop: 4 }}><SignalDot signal={r.signal} reason={r.signal_reason} warnings={r.signal_warnings} isMobile={isMobile} /></div>
+                        </td>
+                      ) : <>
+                        <td style={{ padding: cellPad }}><RegimeBadge regime={r.regime} isMobile={isMobile} noHistory={noHistory} /></td>
+                        <td style={{ padding: cellPad }}><SignalDot signal={r.signal} reason={r.signal_reason} warnings={r.signal_warnings} isMobile={isMobile} /></td>
+                        <td style={{ padding: cellPad }}><SparklineCell data={r.sparkline} width={72} height={22} /></td>
+                        <td style={{ padding: cellPad }}>{noHistory ? <span style={{ color: T.text4 }}>—</span> : <ZScoreBar z={r.zscore} isMobile={isMobile} />}</td>
+                      </>}
                       <td style={{
                         padding: cellPad, fontFamily: T.mono,
                         fontSize: m(isMobile ? T.textBase : T.textMd, isMobile),
-                        color: noHistory ? T.text4 : (r.momentum || 0) > 0 ? T.green : (r.momentum || 0) < 0 ? T.red : T.text3,
+                        color: noHistory || mom1 == null ? T.text4 : mom1 > 0 ? T.green : mom1 < 0 ? T.red : T.text3,
                       }}>
-                        {noHistory ? "—" : `${fmt(r.momentum, 1)}%`}
+                        {noHistory ? "—" : `${fmt(mom1, 1)}%`}
                       </td>
-                      <td style={{ padding: cellPad }}><HeatCell heat={r.heat} phase={r.heat_phase} isMobile={isMobile} /></td>
-                      <td style={{ padding: cellPad }}>
+                      {!isMobile && <td style={{ padding: cellPad }}><HeatCell heat={r.heat} phase={r.heat_phase} isMobile={isMobile} /></td>}
+                      {!isMobile && <td style={{ padding: cellPad }}>
                         {r.confluence ? <ConfluenceBadge score={r.confluence.score} label={r.confluence.label} /> : <span style={{ color: T.text4 }}>—</span>}
-                      </td>
+                      </td>}
                       <td style={{
                         padding: cellPad, fontFamily: T.mono,
                         fontSize: m(T.textSm, isMobile), fontWeight: 600,
