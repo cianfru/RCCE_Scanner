@@ -293,11 +293,8 @@ export default function BridgeFlowWidget({ isMobile }) {
           background: `linear-gradient(135deg, ${calloutColor}1f 0%, transparent 65%)`,
           boxShadow: `0 0 10px ${calloutColor}33`,
         }} title={title}>
-          {/* Row 1: icon + headline + score (right-aligned) */}
+          {/* Row 1: headline + score (right-aligned) */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: m(12, isMobile), lineHeight: 1 }}>
-              {divDistribution ? "\u26a0\ufe0f" : "\ud83d\udce5"}
-            </span>
             <span style={{
               fontSize: m(11, isMobile), color: calloutColor,
               fontFamily: T.font, fontWeight: 700,

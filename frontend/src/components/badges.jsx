@@ -49,7 +49,8 @@ export function RegimeBadge({ regime, isMobile, noHistory = false }) {
       letterSpacing: "0.02em", whiteSpace: "nowrap",
     }}>
       <RegimeIcon regime={regime} size={m(14, isMobile)} />
-      {rm.name}
+      {/* Ellipsis when a narrow cell cannot fit the full phase name */}
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{rm.name}</span>
     </span>
   );
 }
@@ -79,7 +80,7 @@ export function DivergencePill({ div }) {
     <span className="terminal-status" style={{
       padding: "3px 8px", borderRadius: "20px",
       background: `${color}14`, color,
-      fontSize: 10, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 12, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.04em", border: `1px solid ${color}28`,
       whiteSpace: "nowrap",
     }}>
@@ -113,7 +114,7 @@ export function HeatCell({ heat, phase, isMobile }) {
       </div>
       {abbr && (
         <span style={{
-          fontFamily: T.mono, fontSize: 8, color: phaseColor(phase),
+          fontFamily: T.mono, fontSize: 12, color: phaseColor(phase),
           fontWeight: 700, letterSpacing: "0.06em", opacity: 0.75, lineHeight: 1,
         }}>
           {abbr}
@@ -144,7 +145,7 @@ export function ExhaustBadge({ state, floorConfirmed }) {
     <span className="terminal-status" style={{
       padding: "3px 9px", borderRadius: "20px",
       background: `${glowColor}14`, color: glowColor,
-      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 12, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.04em", border: `1px solid ${glowColor}25`,
     }}>
       {label}
@@ -184,7 +185,7 @@ export function OITrendBadge({ trend }) {
     <span className="terminal-status" style={{
       padding: "3px 8px", borderRadius: "20px",
       background: `${meta.color}14`, color: meta.color,
-      fontSize: 11, fontFamily: T.mono, fontWeight: 600,
+      fontSize: 12, fontFamily: T.mono, fontWeight: 600,
       letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
     }}>
       {meta.label}
@@ -196,7 +197,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
   if (!trend || trend === "NEUTRAL") return null;
   if (trend === "UNAVAILABLE") return (
     <span style={{
-      fontFamily: T.mono, fontSize: isMobile ? 10 : 11,
+      fontFamily: T.mono, fontSize: 12,
       color: T.text4, opacity: 0.5,
     }}>{"\u2014"}</span>
   );
@@ -219,7 +220,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
       padding: "3px 8px", borderRadius: 20,
       background: color + "14",
       border: `1px solid ${color}25`,
-      fontFamily: T.mono, fontSize: isMobile ? 10 : 11,
+      fontFamily: T.mono, fontSize: 12,
       color,
       fontWeight: 600,
       letterSpacing: "0.04em",
@@ -229,7 +230,7 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
         <span style={{ fontSize: 12, color: T.yellow, marginLeft: 2 }} title="CVD/Price divergence">div</span>
       )}
       {bsr != null && (
-        <span style={{ fontSize: 9, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>
+        <span style={{ fontSize: 12, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>
       )}
     </span>
   );
@@ -242,7 +243,7 @@ export function SmartMoneyBadge({ sm }) {
   const all = sm.trend ? `All tracked wallets, weighted by size: ${sm.trend.toLowerCase()} (${sm.long_count} long / ${sm.short_count} short)` : "";
   if (!l.side || l.side === "mixed") return (
     <span title={[l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n")}
-      style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.6 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
+      style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: 0.6 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
   );
   const color = l.side === "long" ? T.green : T.red;
   return (
@@ -252,11 +253,11 @@ export function SmartMoneyBadge({ sm }) {
         display: "inline-flex", alignItems: "center", gap: 4,
         padding: "3px 7px", borderRadius: 20,
         background: color + "14", border: `1px solid ${color}25`,
-        fontFamily: T.mono, fontSize: 10, color, fontWeight: 600,
+        fontFamily: T.mono, fontSize: 12, color, fontWeight: 600,
       }}
     >
       {l.side === "long" ? "\u25b2" : "\u25bc"}
-      <span style={{ fontSize: 9, opacity: 0.8 }}>{l.side === "long" ? l.long : l.short}/{l.n}</span>
+      <span style={{ fontSize: 12, opacity: 0.8 }}>{l.side === "long" ? l.long : l.short}/{l.n}</span>
     </span>
   );
 }

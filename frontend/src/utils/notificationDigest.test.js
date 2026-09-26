@@ -13,5 +13,10 @@ test('dismissals do not remove unrelated updates and exact spot identity survive
 });
 test('uses actual anomaly context and type rather than generic placeholder text',()=>{
  const [row]=notificationDigest({anomalies:[{symbol:'VVV/USDT',dedup_key:'vvv-volume',anomaly_type:'VOLUME_SPIKE',context:'Relative volume 4.1x normal (z=6.5)',severity:'high'}]});
- assert.equal(row.title,'volume spike');assert.equal(row.entries[0].summary,'Relative volume 4.1x normal');assert.match(row.entries[0].text,/z=6.5/);
+ assert.equal(row.title,'Volume spike');assert.equal(row.entries[0].summary,'Relative volume 4.1x normal');assert.match(row.entries[0].text,/z=6.5/);
+});
+test('open interest anomalies are titled by direction',()=>{
+ const [drop]=notificationDigest({anomalies:[{symbol:'X/USDT',dedup_key:'x',anomaly_type:'OI_SURGE',current_value:-7.2,context:'OI -7.2% change (z=3.1)'}]});
+ const [jump]=notificationDigest({anomalies:[{symbol:'Y/USDT',dedup_key:'y',anomaly_type:'OI_SURGE',current_value:6.1,context:'OI +6.1% change (z=3.0)'}]});
+ assert.equal(drop.title,'Open interest drop');assert.equal(jump.title,'Open interest jump');
 });

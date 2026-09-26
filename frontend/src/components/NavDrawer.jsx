@@ -105,6 +105,17 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
     }
   }, [isOpen]);
 
+  // Escape closes; focus moves into the drawer when it opens
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!isOpen) return;
+    navRef.current?.focus();
+    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen]);
+
   // Swipe left to close (works with 1 finger on mobile, 2 on trackpad)
   const handleTouchStart = useCallback((e) => {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -140,6 +151,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
       {/* Drawer */}
       <nav
         ref={navRef}
+        tabIndex={-1}
+        aria-label="Navigation"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{
@@ -156,6 +169,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
         transition: "transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
         display: "flex", flexDirection: "column",
         overflowY: "auto",
+        outline: "none",
       }}>
         {/* Drawer header */}
         <div style={{
@@ -171,6 +185,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           </span>
           <button
             onClick={onClose}
+            aria-label="Close navigation"
+            title="Close navigation"
             style={{
               width: 32, height: 32, borderRadius: 8,
               border: `1px solid ${T.border}`,
@@ -206,7 +222,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               return <button key={kind} aria-current={selected ? "page" : undefined}
                 onClick={() => {onMarketChange?.(kind); onClose();}}
                 style={{display:"flex",justifyContent:"space-between",width:"100%",padding:"14px 12px",textAlign:"left",border:0,borderLeft:`2px solid ${selected ? T.accent : "transparent"}`,background:selected ? T.accentDim : "transparent",color:selected ? T.accent : T.text1,fontSize:14,cursor:"pointer"}}>
-                {label}<span style={{color:T.text3,fontSize:12}}>{scanData?.filter(r=>r.market_kind===kind).length || 0}</span>
+                {label}<span title="markets scanned" style={{color:T.text3,fontSize:12}}>{scanData?.filter(r=>r.market_kind===kind).length || 0}</span>
               </button>;
             })}
 
@@ -237,8 +253,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
                         display: "flex", alignItems: "center", gap: 12,
                         width: "100%", textAlign: "left",
                         padding: "12px 12px",
-                        borderRadius: 10,
-                        border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
+                        border: 0,
+                        borderLeft: `2px solid ${isActive ? T.accent : "transparent"}`,
                         background: isActive ? T.accentDim : "transparent",
                         cursor: "pointer",
                         transition: "all 0.15s ease",

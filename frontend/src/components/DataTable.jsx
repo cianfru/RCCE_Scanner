@@ -47,18 +47,18 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         : null;
       return (
         <td className="scanner-symbol" style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-          <span
-            onClick={e => { e.stopPropagation(); onToggleFavorite?.(row.symbol); }}
+          {onToggleFavorite && <span
+            onClick={e => { e.stopPropagation(); onToggleFavorite(row.symbol); }}
             style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 20 : 22, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
             title={isFav ? "Remove from favorites" : "Add to favorites"}
-          >{isFav ? "\u2605" : "\u2606"}</span>
+          >{isFav ? "\u2605" : "\u2606"}</span>}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}><TokenLogo symbol={row.symbol} />{getBaseSymbol(row.symbol)}</span>
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
           {priceStr && (
             <div style={{
-              fontSize: isMobile ? 10 : 11, fontWeight: 500, letterSpacing: "0.01em", marginTop: 1,
+              fontSize: 12, fontWeight: 500, letterSpacing: "0.01em", marginTop: 1,
               color: flash === "up" ? T.green : flash === "down" ? T.red : T.text1,
               transition: "color 0.3s ease",
             }}>
@@ -207,7 +207,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
           textTransform: "uppercase",
         }}>{label}</div>
       )}
-      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}><button type="button" aria-pressed={alignedFirst} onClick={()=>setAlignedFirst(v=>!v)} title="Group aligned regime and signal setups first, preserving the selected order within each strength. Does not change engine scores." style={{background:alignedFirst ? T.accentDim : 'transparent',color:alignedFirst ? T.accent : T.text3,border:`1px solid ${T.border}`,borderRadius:6,padding:'6px 10px',fontSize:11,cursor:'pointer'}}>Aligned setups first</button></div>
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}><button type="button" aria-pressed={alignedFirst} onClick={()=>setAlignedFirst(v=>!v)} title="Group aligned regime and signal setups first, preserving the selected order within each strength. Does not change engine scores." style={{background:alignedFirst ? T.accentDim : 'transparent',color:alignedFirst ? T.accent : T.text3,border:`1px solid ${T.border}`,borderRadius:6,padding:'6px 10px',fontSize:12,cursor:'pointer'}}>Aligned setups first</button></div>
       {marketWide.length > 0 && <p role="status" style={{margin:"0 0 10px",padding:"10px 14px",border:`1px solid ${T.border}`,borderRadius:8,fontSize:12,lineHeight:1.6,color:T.text2}}>
         Market-wide input unavailable: {marketWide.join(", ")}. Strong Long cannot be confirmed on any market until it returns; other signals are unaffected.
       </p>}
@@ -237,7 +237,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
                       {paired ? <span className="setup-pair-head"><span>Regime</span><span aria-hidden="true" /><span>Signal</span></span> : colLabel}{key && sortKey === key ? " \u25bc" : ""}
-                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A locked, outlined pair means the trend supports the entry signal; a Strong signal gets the brighter outline. A broken link marks a countertrend setup; a dashed circle means required context is missing.</p><p>The highlight It describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
+                      {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A locked, outlined pair means the trend supports the entry signal; a Strong signal gets the brighter outline. A broken link marks a countertrend setup; a dashed circle means required context is missing.</p><p>The highlight describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
                     </span>
                   </th>
                 );})}

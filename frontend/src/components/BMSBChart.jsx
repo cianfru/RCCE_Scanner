@@ -156,7 +156,7 @@ export default function BMSBChart({
               text: baseSymbol,
               color: "rgba(255,255,255,0.04)",
               fontSize: 48,
-              fontFamily: "'Inter', sans-serif",
+              fontFamily: T.font,
               fontStyle: "bold",
             },
           ],

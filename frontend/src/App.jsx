@@ -111,6 +111,10 @@ export default function App() {
     return "1d";
   }, [location.pathname, location.search, isMobile]);
 
+  // The scanner timeframe last viewed, for AI Assist
+  const lastScannerTf = useRef("1d");
+  if (activeTab === "4h" || activeTab === "1d") lastScannerTf.current = activeTab;
+
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
     const m = location.pathname.match(/^\/scanner\/([^/]+)$/);
@@ -260,6 +264,7 @@ export default function App() {
     setConsensus1d(d.consensus_1d || null);
     setCacheAge(d.meta?.cache_age ?? null);
     setLastRefresh(new Date((d.meta?.timestamp || Date.now() / 1000) * 1000));
+    setScanRunning(false);
     setLoading(false);
     setError(null);
   }, [wsRef.connected, wsRef.synthesisData]);
@@ -369,6 +374,7 @@ export default function App() {
         if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
+      console.warn("Scanner feed error:", e.message, API_BASE);
       setError(e.message);
     } finally {
       setLoading(false);
@@ -397,8 +403,16 @@ export default function App() {
   }, [loadAll, sw.supported]);
 
   const triggerScan = async () => {
-    await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
+    if (scanRunning) return;
     setScanRunning(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      console.warn("Scan refresh failed:", e);
+      setScanRunning(false);
+      return;
+    }
     if (wsRef.connected) {
       setTimeout(() => wsRef.refresh(), 3000);
     } else if (sw.supported) {
@@ -599,17 +613,12 @@ export default function App() {
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
   const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
 
-  const tabOptions = isMobile
-    ? [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"]]
-    : [["4h", "4H"], ["1d", "1D"], ["tradfi", "TRADFI"], ["chat", "AI ASSIST"], ["backtest", "BACKTEST"], ["executor", "EXECUTOR"], ["trading", "PORTFOLIO"], ["signals", "SIGNALS"]];
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
         :where(.reflex-terminal), :where(.reflex-terminal *) { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
         body { background: var(--t-bg); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-family: var(--font-geist-sans), sans-serif; font-size: 14px; font-feature-settings: "tnum"; }
         table, th, td, span, div, button, select, input, textarea, p, label { font-family: inherit; }
@@ -700,19 +709,9 @@ export default function App() {
           filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite",
         }} />
         <div style={{
-          position: "absolute", top: "40%", right: "10%", width: 500, height: 500,
-          borderRadius: "50%", background: "radial-gradient(circle, rgba(168,85,247,0.04) 0%, transparent 70%)",
-          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 3s",
-        }} />
-        <div style={{
           position: "absolute", bottom: "10%", left: "30%", width: 450, height: 450,
           borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,0.04) 0%, transparent 70%)",
           filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 6s",
-        }} />
-        <div style={{
-          position: "absolute", top: "20%", left: "60%", width: 400, height: 400,
-          borderRadius: "50%", background: "radial-gradient(circle, rgba(251,191,36,0.03) 0%, transparent 70%)",
-          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 8s",
         }} />
       </div>
 
@@ -805,7 +804,9 @@ export default function App() {
           )}
           <button
             onClick={triggerScan}
-            title="Refresh scan"
+            disabled={scanRunning}
+            title={scanRunning ? "Scan running" : "Refresh scan"}
+            aria-label={scanRunning ? "Scan running" : "Refresh scan"}
             style={{
               width: 28, height: 28, borderRadius: 8,
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -813,13 +814,15 @@ export default function App() {
               border: "none",
               background: "transparent",
               color: T.text3,
-              cursor: "pointer",
+              cursor: scanRunning ? "default" : "pointer",
+              opacity: scanRunning ? 0.5 : 1,
               transition: "all 0.15s ease",
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.accent; }}
+            onMouseEnter={e => { if (!scanRunning) e.currentTarget.style.color = T.accent; }}
             onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+              style={scanRunning ? { animation: "spin 1s linear infinite" } : undefined}>
               <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
             </svg>
           </button>
@@ -868,8 +871,8 @@ export default function App() {
             border: "1px solid rgba(248,113,113,0.15)",
             display: "flex", alignItems: "center", gap: 10,
           }}>
-            <span style={{ fontSize: 13, color: "#fca5a5", fontFamily: T.font }}>
-              API Error: {error} {"\u2014"} ensure backend is running on {API_BASE}
+            <span style={{ fontSize: 13, color: T.red, fontFamily: T.font }}>
+              The scanner feed is unavailable. Retrying.
             </span>
           </GlassCard>
         </div>
@@ -1007,7 +1010,8 @@ export default function App() {
         )}
 
         {activeTab === "chat" && (
-          <ChatPanel isMobile={isMobile} selectedSymbol={selected?.symbol || null} />
+          <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
+            selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
         )}
 
         {activeTab === "hyperlens" && (
