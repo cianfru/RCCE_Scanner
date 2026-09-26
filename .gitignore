@@ -21,3 +21,4 @@ data/private/
 backend/data/private/
 backend/data/larsson_cache/
 backend/data/larsson_runs/
+backend/hyperliquid_universe.json

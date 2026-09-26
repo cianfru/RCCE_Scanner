@@ -34,6 +34,19 @@ FETCH_CONCURRENCY = 6
 _seed: Optional[dict] = None
 _live: List[list] = []
 _fng: Dict[int, int] = {}
+_closes: Dict[int, Dict[str, float]] = {}     # daily closes per coin for days added live (forward test outcomes)
+
+# Forward test (docs/reviews/btc-band-breadth-forward-test.md): BTC below its weekly band
+# while the Uptrend share is 55% or more. Only episodes starting after the declaration count.
+FT_DECLARED_DAY = 20722                       # 2026-09-26
+FT_SHARE = 0.55
+FT_MIN_COINS = 20
+# Exploratory episodes it was found on (windows 1-9): start day, days, share, BTC 30d, alt 30d, alt 60d (%).
+FT_HISTORY = [
+    [18965, 13, 0.77, -6, -4, -35], [18984, 11, 0.60, -31, -40, -44], [19009, 8, 0.56, 4, -20, -29],
+    [19088, 15, 0.64, -17, -28, -55], [19193, 143, 0.68, -10, -4, -14], [19998, 1, 0.83, 15, 1, 70],
+    [20005, 2, 0.83, 26, 10, 100], [20356, 3, 0.89, 2, -20, -40], [20372, 1, 0.86, -4, -1, -27],
+]
 _view: Optional[dict] = None
 
 
@@ -52,6 +65,7 @@ def _load() -> dict:
             last = _seed["days"][-1][0]
             _live = [r for r in saved.get("days", []) if r[0] > last]
             _fng = {int(k): v for k, v in saved.get("fear_greed", {}).items()}
+            _closes.update({int(k): v for k, v in saved.get("closes", {}).items()})
         except FileNotFoundError:
             pass
         except Exception as exc:
@@ -62,8 +76,8 @@ def _load() -> dict:
 def _save() -> None:
     path = Path(_live_path())
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"days": _live, "fear_greed": {str(k): v for k, v in _fng.items()}},
-                              separators=(",", ":")))
+    tmp.write_text(json.dumps({"days": _live, "fear_greed": {str(k): v for k, v in _fng.items()},
+                               "closes": {str(k): v for k, v in _closes.items()}}, separators=(",", ":")))
     os.replace(tmp, path)
 
 
@@ -148,6 +162,7 @@ async def update(now: Optional[float] = None) -> int:
                 row = aggregate(day, per_day[day])
                 if row and row[1] >= seed["min_coins"]:
                     _live.append(row)
+                    _closes[day] = {p: v[2] for p, v in per_day[day].items()}
                     added += 1
         fg = await _fetch_json(session, FNG_URL)
         if fg and fg.get("data"):
@@ -197,6 +212,56 @@ def episodes_after(days: List[list], start_after: int, bands_def) -> Dict[str, L
     return out
 
 
+def btc_band(days: List[list]) -> Dict[int, tuple]:
+    """BTC's weekly bull market support band per day: (lower, upper) from the 20-week SMA and
+    21-week EMA of completed weeks (Sunday closes), as in the forward test's rule."""
+    btc = {d[0]: d[7] for d in days if d[7]}
+    weeks = [d for d in sorted(btc) if (d + 4) % 7 == 3]           # day 3 (1970-01-04) was a Sunday
+    out: Dict[int, tuple] = {}
+    ema, closes, wi = None, [], -1
+    bands = []
+    for w in weeks:
+        c = btc[w]
+        closes.append(c)
+        ema = c if ema is None else (2 / 22) * c + (1 - 2 / 22) * ema
+        sma = sum(closes[-20:]) / 20 if len(closes) >= 20 else None
+        bands.append((w, None if sma is None or len(closes) < 21 else (min(sma, ema), max(sma, ema))))
+    for d in sorted(btc):
+        while wi + 1 < len(bands) and bands[wi + 1][0] < d:         # completed weeks only
+            wi += 1
+        if wi >= 0 and bands[wi][1]:
+            out[d] = bands[wi][1]
+    return out
+
+
+def forward_test(days: List[list], band: Dict[int, tuple]) -> dict:
+    """Episodes after the declaration: first day, length, share, and outcomes once they exist."""
+    btc = {d[0]: d[7] for d in days}
+    # Share = Uptrend + Overheated: the rule stays the same whether or not Overheated fires.
+    flagged = [d for d in days if d[0] > FT_DECLARED_DAY and d[0] in band and d[7] and d[7] < band[d[0]][0]
+               and d[2] + d[3] >= FT_SHARE]
+    eps: List[dict] = []
+    for d in flagged:
+        if eps and d[0] - eps[-1]["end"] <= 6:
+            eps[-1]["end"] = d[0]
+        else:
+            eps.append({"start": d[0], "end": d[0], "share": round(d[2] + d[3], 4)})
+
+    def outcome(t: int, h: int) -> Optional[dict]:
+        a, b = _closes.get(t), _closes.get(t + h)
+        if not a or not b or t not in btc or t + h not in btc:
+            return None
+        rs = [b[p] / a[p] - 1 for p in a if p != "BTCUSDT" and p in b and a[p] > 0]
+        if len(rs) < FT_MIN_COINS:
+            return None
+        return {"btc": round(100 * (btc[t + h] / btc[t] - 1), 1), "alt": round(100 * statistics.median(rs), 1)}
+
+    for e in eps:
+        e["h30"], e["h60"] = outcome(e["start"], 30), outcome(e["start"], 60)
+    return {"declared_day": FT_DECLARED_DAY, "share": FT_SHARE, "episodes": eps,
+            "history_columns": ["start", "days", "share", "btc30", "alt30", "alt60"], "history": FT_HISTORY}
+
+
 def view() -> dict:
     global _view
     if _view is not None:
@@ -206,6 +271,7 @@ def view() -> dict:
     today = days[-1]
     pct = round(100 * sum(d[2] < today[2] for d in days) / len(days))
     later = episodes_after(days, seed["end_day"], seed["bands_def"])
+    band = btc_band(all_days())
     bands = [{"label": label, "lo": lo, "hi": hi, "days": seed["bands"][label]["days"],
               "h30": seed["bands"][label]["h30"], "verdict": seed["bands"][label]["verdict"],
               "episodes": seed["bands"][label]["episodes"], "later": later.get(label, [])}
@@ -216,5 +282,7 @@ def view() -> dict:
         "today": {"day": today[0], "n": today[1], "uptrend": today[2], "overheated": today[3], "median_z": today[6],
                   "percentile": pct, "band": band_of(today[2], seed["bands_def"]), "since": days[0][0]},
         "fear_greed": sorted([k, v] for k, v in _fng.items()),
+        "btc_band": [[d, round(lo, 2), round(hi, 2)] for d, (lo, hi) in sorted(band.items()) if d >= days[0][0]],
+        "forward_test": forward_test(days, band),
     }
     return _view

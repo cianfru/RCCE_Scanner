@@ -1589,9 +1589,36 @@ async def chart_data(
                        "source_candle_time": int(closed_range["timestamp"][-1] / 1000), "as_of": int(time.time()),
                        "timeframe": timeframe}
 
+    # After a spike: where past spikes bottomed, and the engine's mean (z = 0 / 1) as prices.
+    mean_lines, spike = {"z0": [], "z1": []}, None
+    try:
+        from engines.spike_zone import mean_levels, last_spike, zone as spike_zone, HORIZON as SPIKE_HORIZON
+        from engines.rcce_engine import _calc_zscore_hybrid, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE
+        cc = np.asarray(closed_range["close"], dtype=np.float64)[-600:]
+        ct = [int(t / 1000) for t in closed_range["timestamp"][-600:]]
+        if len(cc) >= LEN_LONG:
+            lv = mean_levels(cc)
+            for key, k in (("z0", 0.0), ("z1", 1.0)):
+                mean_lines[key] = display([{"time": t, "value": round(float(v), interp_prec)}
+                                           for t, v in zip(ct, lv[k]) if np.isfinite(v)])
+            zz = _calc_zscore_hybrid(cc, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE)
+            zz = zz * min(1.0, max(0.0, (len(cc) - LEN_LONG) / LEN_LONG))
+            sp = last_spike(zz, cc)
+            if sp and (sp["anchor_index"] is None or sp["bars_since_anchor"] <= SPIKE_HORIZON):
+                spike = {"peak": sp["peak"], "peak_time": ct[sp["peak_index"]], "running": sp["anchor_index"] is None,
+                         "superseded": sp["superseded"]}
+                if sp["anchor_index"] is not None:
+                    spike.update(anchor_time=ct[sp["anchor_index"]], anchor_close=sp["anchor_close"],
+                                 bars_since=sp["bars_since_anchor"],
+                                 zone=None if sp["superseded"] else spike_zone(timeframe, sp["anchor_close"]))
+    except Exception:
+        logger.warning("Spike zone computation failed for %s", symbol)
+
     return {
         "symbol": symbol,
         "timeframe": timeframe,
+        "mean_lines": mean_lines,
+        "spike": spike,
         "expected_range": chart_range,
         "volume_unit": symbol.split("/")[0],
         "candles": candles[-limit:],
@@ -4125,6 +4152,13 @@ async def hyperlens_symbol_positions(symbol: str):
     from hl_intelligence import get_symbol_positions
     positions = get_symbol_positions(symbol.upper())
     return {"symbol": symbol.upper(), "count": len(positions), "positions": positions}
+
+
+@app.get("/api/hyperlens/entries/{symbol}")
+async def hyperlens_entries(symbol: str):
+    """When and where the profitable traders holding this coin got in (fills fetched on demand, cached)."""
+    from trader_entries import entries_for
+    return await entries_for(symbol.upper())
 
 
 @app.get("/api/hyperlens/wallet/{address}")

@@ -652,6 +652,7 @@ def _process_symbol(
         "history_bars": rcce.get("data_bars", 0),
         "normalization_ready": rcce.get("normalization_ready", False),
         "regime_probabilities": rcce.get("regime_probabilities", {}),
+        "cool_off": rcce.get("cool_off", {"active": False}),
     }
     return result
 
