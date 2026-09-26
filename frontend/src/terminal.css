@@ -240,7 +240,7 @@
 /* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
    with the column header, so each label sits over its value. */
 .setup-pair-wrap{display:inline-flex;flex-direction:column;gap:1px;max-width:100%;min-width:0;}
-.setup-pair,.setup-pair-head{display:inline-grid;grid-template-columns:128px 22px auto;align-items:center;column-gap:8px;padding:1px 10px 1px 8px;border:1px solid transparent;border-radius:6px;}
+.setup-pair,.setup-pair-head{display:inline-grid;grid-template-columns:142px 22px auto;align-items:center;column-gap:8px;padding:1px 10px 1px 8px;border:1px solid transparent;border-radius:6px;}
 .setup-pair{min-height:26px;transition:border-color .15s,background .15s,box-shadow .15s;}
 .setup-pair>.alt-season-info{margin-left:0;justify-self:center;}
 .setup-pair .terminal-status{font-size:12px!important;}
