@@ -280,3 +280,4 @@
 [data-theme="light"] .sector-rel.down{color:#b4533f;}
 .sector-meta{grid-column:1 / -1;font-size:10px;color:var(--t-text3);white-space:nowrap;}
 .best-setup-sector{display:block;font-style:normal;font-size:11px;color:var(--t-text3);margin:-2px 0 6px;}
+.best-setups-grid button{align-content:start;}
