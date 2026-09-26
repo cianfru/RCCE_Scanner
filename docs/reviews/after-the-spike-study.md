@@ -65,3 +65,17 @@ The rule follows the structure stage 1 shows (reversion to the mean), with no fi
 - If more than one passes, the one with the higher compounded return on the primary set ships.
 - If neither passes, nothing ships and the result is reported.
 
+
+## Spike fan on the coin chart (declared 26 September 2026, before computing it)
+
+This is a picture of what past spikes did, not a forecast. It is drawn when the engine's cool-off spike definition applies (last bar with z ≥ 2.5, its run of bars with z ≥ 2.0).
+
+- **Anchor:** the first bar after the run ends (z back below 2.0), at that bar's close. It is known at the time. The true peak is only known later, so anchoring on it would use hindsight.
+- **Paths:** each past spike's closes over the next 60 bars, divided by its anchor close.
+- **What is drawn:** per bar, the 10th, 25th, 50th, 75th and 90th percentiles across past spikes.
+  - Daily comes from the 151-coin rebuild.
+  - 4H comes from the replayed 10 primary and 30 secondary coins.
+  - Windows 1-9 only.
+- **Label:** the sample size and "half of past cases stayed in the darker band; not a forecast".
+- **The mean lines:** the price where z would be 0 and 1 today, from the engine's own regression and deviation, drawn with the fan.
+- **Calibration, forward:** each new spike after 26 September 2026 is recorded, and at 60 bars it is counted as inside or outside the 25-75 band on its final bar and on its lowest close. If far fewer than half end inside the darker band, the chart says the bands are too narrow.
