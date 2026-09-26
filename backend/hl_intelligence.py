@@ -88,6 +88,7 @@ _ROSTER_COHORTS = {
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
 _MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
 _MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum monthly profit (rejects dust/lottery)
+_MIN_ROI_BASE = 1_000                      # ROI is dropped when the implied starting equity (pnl / roi) is below this
 # Profitable traders must also have been in profit before this month (all-time
 # PnL >= this month's PnL), so one lucky month is not enough. On the September
 # 2026 leaderboard ~1,000 wallets qualify; 115 of the old top 300 did not.
@@ -148,7 +149,7 @@ class TrackedWallet:
     display_name: str = ""
     account_value: float = 0.0
     pnl: float = 0.0
-    roi: float = 0.0              # Monthly percentage ROI
+    roi: Optional[float] = 0.0    # Monthly percentage ROI; None when it means nothing (near-empty start)
     score: float = 0.0            # monthly_roi * log(accountValue) ranking
     all_time_pnl: float = 0.0
 
@@ -166,7 +167,7 @@ class WalletPosition:
     liq_px: float = 0.0
     margin_used: float = 0.0
     return_on_equity: float = 0.0
-    liq_distance_pct: float = 0.0   # abs(entry_px - liq_px) / entry_px * 100
+    liq_distance_pct: Optional[float] = None   # abs(mark - liq_px) / mark * 100; None without a liq price
     leverage_type: str = "cross"    # "cross" or "isolated"
     asset_class: str = "crypto"    # "crypto" | "commodity" | "equity" | "fx" | "index"
     dex: str = ""                  # "" = native HL, "xyz" = HIP-3 TradFi DEX
@@ -231,6 +232,10 @@ _consensus: Dict[str, SymbolConsensus] = {}
 # Lets sector views count each wallet once per group (see profitable_lean).
 _mp_book: Dict[str, Dict[str, float]] = {}
 _consensus_updated_at: float = 0.0
+# Wallets behind the last consensus: updated within _SNAPSHOT_MAX_AGE_S, and of
+# those, the ones that passed the MM and account-value filters.
+_fresh_wallets: int = 0
+_consensus_wallets: int = 0
 
 # Module state
 _initialized = False
@@ -303,7 +308,7 @@ def _restore_from_db() -> None:
                     liq_px=p.get("liq_px", 0),
                     margin_used=p.get("margin_used", 0),
                     return_on_equity=p.get("return_on_equity", 0),
-                    liq_distance_pct=p.get("liq_distance_pct", 0),
+                    liq_distance_pct=p.get("liq_distance_pct") or None,   # older rows stored 0 for "none"
                     leverage_type=p.get("leverage_type", "cross"),
                     asset_class=p.get("asset_class", "crypto"),
                     dex=p.get("dex", ""),
@@ -333,6 +338,15 @@ def _restore_from_db() -> None:
 # ---------------------------------------------------------------------------
 # Leaderboard fetch & roster building
 # ---------------------------------------------------------------------------
+
+def _meaningful_roi(pnl: float, roi_pct: float) -> Optional[float]:
+    """The leaderboard's monthly ROI in percent, or None when the wallet began the
+    month nearly empty: a modest profit then reads as thousands or millions of
+    percent (the ROI equals PnL/100), which says nothing about skill."""
+    if roi_pct and abs(pnl / (roi_pct / 100)) < _MIN_ROI_BASE:
+        return None
+    return roi_pct
+
 
 async def refresh_leaderboard() -> int:
     """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
@@ -407,8 +421,10 @@ async def refresh_leaderboard() -> int:
             if account_value > 0 and monthly_vlm / account_value > _MM_VLM_RATIO:
                 continue
 
+            roi = _meaningful_roi(pnl, roi)
+
             # Compute ranking score: monthly_roi * log(accountValue)
-            score = roi * math.log(max(account_value, 1))
+            score = (roi or 0.0) * math.log(max(account_value, 1))
 
             all_wallets.append(TrackedWallet(
                 address=address.lower(),
@@ -436,7 +452,8 @@ async def refresh_leaderboard() -> int:
     # lottery/dust wallets (162k% on $100) don't pollute the roster.
     mp_candidates = [
         w for w in all_wallets
-        if (w.roi >= _MP_MIN_ROI_PCT
+        if (w.roi is not None
+            and w.roi >= _MP_MIN_ROI_PCT
             and w.account_value >= _MP_MIN_ACCOUNT_VALUE
             and w.pnl >= _MP_MIN_PNL
             and w.all_time_pnl >= w.pnl)
@@ -535,10 +552,14 @@ def _parse_positions(raw: dict, dex: str = "", asset_class: str = "crypto") -> L
         margin_used = float(pos.get("marginUsed", 0) or 0)
         roe = float(pos.get("returnOnEquity", 0) or 0)
 
-        # Calculate liquidation distance percentage
-        liq_dist_pct = 0.0
-        if entry_px > 0 and liq_px > 0:
-            liq_dist_pct = abs(entry_px - liq_px) / entry_px * 100
+        # Distance to liquidation from the current price (positionValue / size is
+        # the mark at fetch time; entry is the fallback). None without a liq price,
+        # e.g. a well-collateralised cross position, which is not "0% away".
+        pos_value = abs(float(pos.get("positionValue", 0) or 0))
+        ref_px = pos_value / abs(szi) if pos_value > 0 else entry_px
+        liq_dist_pct = None
+        if ref_px > 0 and liq_px > 0:
+            liq_dist_pct = round(abs(ref_px - liq_px) / ref_px * 100, 2)
 
         # Determine asset class for xyz DEX instruments
         ac = _classify_xyz_asset(coin) if dex == _XYZ_DEX else asset_class
@@ -554,7 +575,7 @@ def _parse_positions(raw: dict, dex: str = "", asset_class: str = "crypto") -> L
             liq_px=liq_px,
             margin_used=margin_used,
             return_on_equity=roe,
-            liq_distance_pct=round(liq_dist_pct, 2),
+            liq_distance_pct=liq_dist_pct,
             leverage_type=lev_type,
             asset_class=ac,
             dex=dex,
@@ -938,7 +959,7 @@ def _recompute_consensus() -> None:
 
     Also computes per-cohort consensus (money_printer / smart_money).
     """
-    global _consensus, _mp_book
+    global _consensus, _mp_book, _fresh_wallets, _consensus_wallets
 
     now = time.time()
     mp_book: Dict[str, Dict[str, float]] = {}
@@ -949,6 +970,7 @@ def _recompute_consensus() -> None:
     # Collect per-symbol data (skip stale + MM-like wallets)
     sym_data: Dict[str, dict] = {}
     fresh_wallet_count = 0
+    recent_count = 0
 
     for wallet in _roster:
         snapshots = _snapshots.get(wallet.address)
@@ -960,6 +982,7 @@ def _recompute_consensus() -> None:
         # Staleness check: skip wallets whose last snapshot is too old
         if now - latest.timestamp > _SNAPSHOT_MAX_AGE_S:
             continue
+        recent_count += 1
 
         # Position-count MM filter: wallets with >25 positions are likely
         # market makers or vaults — skip from consensus
@@ -1109,6 +1132,8 @@ def _recompute_consensus() -> None:
 
     _consensus = new_consensus
     _mp_book = mp_book
+    _fresh_wallets = recent_count
+    _consensus_wallets = fresh_wallet_count
 
 
 def profitable_lean(groups_of) -> Dict[str, dict]:
@@ -1364,6 +1389,9 @@ def get_symbol_positions(symbol: str) -> List[dict]:
             continue
         # MM filter — same as consensus
         if len(latest.positions) > _MM_MAX_POSITIONS:
+            continue
+        # AV filter — same as consensus
+        if 0 < latest.account_value < _DISPLAY_MIN_AV:
             continue
         for pos in latest.positions:
             # Normalize pos.coin the same way as consensus
@@ -1842,7 +1870,7 @@ def get_wallet_profile(address: str) -> Optional[dict]:
             # Accumulate stats for leverage_stats and risk_score
             total_margin_used += p.margin_used
             leverages.append(p.leverage)
-            if p.liq_distance_pct > 0:
+            if p.liq_distance_pct:
                 liq_distances.append(p.liq_distance_pct)
             total_notional += p.size_usd
             if p.size_usd > max_position_usd:
@@ -2157,13 +2185,23 @@ def _compute_pressure(symbol: str) -> dict:
     # ---- (c) Liquidation Clusters ----
     liq_prices: List[dict] = []
 
+    # Same wallets and symbol names as the consensus, so the symbol pop-up agrees
+    # with the row it was opened from.
+    now = time.time()
     for wallet in _roster:
         snaps = _snapshots.get(wallet.address)
         if not snaps:
             continue
         latest = snaps[-1]
+        if (now - latest.timestamp > _SNAPSHOT_MAX_AGE_S or len(latest.positions) > _MM_MAX_POSITIONS
+                or 0 < latest.account_value < _DISPLAY_MIN_AV):
+            continue
         for pos in latest.positions:
-            if pos.coin == coin and pos.liq_px > 0:
+            if pos.coin.startswith("xyz:") or pos.dex == _XYZ_DEX:
+                pos_coin = f"xyz:{pos.coin.split(':', 1)[-1]}"
+            else:
+                pos_coin = _normalize_coin(pos.coin)
+            if pos_coin == coin and pos.liq_px > 0:
                 liq_prices.append({
                     "liq_px": pos.liq_px,
                     "side": pos.side,
@@ -2493,6 +2531,8 @@ def get_status() -> dict:
         "smart_money_count": len(_roster_smart_money),
         "elite_count": elite_count,
         "wallets_with_data": len(_snapshots),
+        "fresh_wallets": _fresh_wallets,            # updated within the staleness window
+        "consensus_wallets": _consensus_wallets,    # of those, the ones the consensus counts
         "consensus_symbols": len(_consensus),
         "last_poll": _last_poll_at or None,
         "last_roster_refresh": _roster_updated_at or None,

@@ -1,40 +1,15 @@
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { T } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
 import GlassCard from "./GlassCard.jsx";
 import { TableSkeleton } from "./Skeleton.jsx";
+import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-const fmt$ = (v) => {
-  if (v == null || isNaN(v)) return "--";
-  const abs = Math.abs(v);
-  if (abs >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
-  if (abs >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-};
-
-const fmtPct = (v) => {
-  if (v == null || isNaN(v)) return "--";
-  if (Math.abs(v) >= 1e6) return `${(v / 1e6).toFixed(1)}M%`;
-  if (Math.abs(v) >= 1e3) return `${(v / 1e3).toFixed(0)}K%`;
-  return `${v.toFixed(0)}%`;
-};
-
-const fmtAge = (seconds) => {
-  if (!seconds || seconds <= 0) return "--";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d`;
-  return `${Math.floor(seconds / 604800)}w`;
-};
 
 const fmtLev = (x) => {
   if (x == null || isNaN(x)) return "--";
@@ -77,41 +52,19 @@ const riskColor = (score) => {
   return T.red;
 };
 
-// Interpolate heatmap color: red (-1) <-> gray (0) <-> green (+1)
-const heatmapColor = (ratio) => {
-  if (ratio == null) return "rgba(82,82,91,0.3)";
-  const clamped = Math.max(-1, Math.min(1, ratio));
-  if (clamped > 0) {
-    const t = clamped;
-    const r = Math.round(82 * (1 - t) + 52 * t);
-    const g = Math.round(82 * (1 - t) + 211 * t);
-    const b = Math.round(91 * (1 - t) + 153 * t);
-    const a = 0.15 + t * 0.35;
-    return `rgba(${r},${g},${b},${a})`;
-  } else {
-    const t = Math.abs(clamped);
-    const r = Math.round(82 * (1 - t) + 248 * t);
-    const g = Math.round(82 * (1 - t) + 113 * t);
-    const b = Math.round(91 * (1 - t) + 113 * t);
-    const a = 0.15 + t * 0.35;
-    return `rgba(${r},${g},${b},${a})`;
-  }
-};
-
-const heatmapTextColor = (ratio) => {
-  if (ratio == null) return T.text4;
-  const clamped = Math.max(-1, Math.min(1, ratio));
-  if (Math.abs(clamped) < 0.15) return T.text4;
-  return clamped > 0 ? T.green : T.red;
-};
-
 // ─── MODAL OVERLAY ───────────────────────────────────────────────────────────
 
 // The portal lands outside App's .reflex-terminal wrapper, so it is wrapped again
 // here to pick up the terminal rules (flat .terminal-status, font reset).
 function ModalOverlay({ children, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return createPortal(
     <div className="reflex-terminal"><div
+      role="dialog" aria-modal="true"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
@@ -129,55 +82,6 @@ function ModalOverlay({ children, onClose }) {
       </div>
     </div></div>,
     document.body
-  );
-}
-
-// ─── SVG: MINI SPARKLINE ────────────────────────────────────────────────────
-
-function MiniSparkline({ data, width = 200, height = 60, color = T.green }) {
-  if (!data || data.length < 2) {
-    return (
-      <div style={{ width, height, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>No history</span>
-      </div>
-    );
-  }
-
-  const values = data.map(d => d.value ?? d.y ?? d);
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
-  const range = maxV - minV || 1;
-  const pad = 4;
-  const chartW = width - pad * 2;
-  const chartH = height - pad * 2;
-
-  const points = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * chartW;
-    const y = pad + chartH - ((v - minV) / range) * chartH;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const linePath = `M${points.join(" L")}`;
-  const areaPath = `${linePath} L${(pad + chartW).toFixed(1)},${(pad + chartH).toFixed(1)} L${pad},${(pad + chartH).toFixed(1)} Z`;
-
-  const gradId = `spark-grad-${Math.random().toString(36).slice(2, 8)}`;
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#${gradId})`} />
-      <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-      {/* Endpoint dot */}
-      {points.length > 0 && (() => {
-        const last = points[points.length - 1].split(",");
-        return <circle cx={last[0]} cy={last[1]} r="2.5" fill={color} />;
-      })()}
-    </svg>
   );
 }
 
@@ -210,7 +114,7 @@ function LeverageGauge({ value, size = 64 }) {
   const needleLen = r - 6;
   const nx = cx + needleLen * Math.cos(needleAngle);
   const ny = cy + needleLen * Math.sin(needleAngle);
-  const svgH = cy + 14;
+  const svgH = cy + 16;
 
   return (
     <svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
@@ -220,8 +124,8 @@ function LeverageGauge({ value, size = 64 }) {
       <line x1={cx} y1={cy} x2={nx.toFixed(1)} y2={ny.toFixed(1)}
         stroke={levColor(v)} strokeWidth="1.5" strokeLinecap="round" />
       <circle cx={cx} cy={cy} r="2.5" fill={levColor(v)} />
-      <text x={cx} y={cy + 12} textAnchor="middle" fill={T.text1}
-        fontFamily={T.mono} fontSize="10" fontWeight="700">
+      <text x={cx} y={cy + 14} textAnchor="middle" fill={T.text1}
+        fontFamily={T.mono} fontSize="12" fontWeight="700">
         {fmtLev(v)}
       </text>
     </svg>
@@ -236,33 +140,10 @@ function RiskBadge({ score }) {
   return (
     <span className="terminal-status" style={{
       fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-      padding: "4px 10px", borderRadius: 20,
-      color, background: `${color}12`,
-      border: `1px solid ${color}25`,
-      letterSpacing: "0.04em",
-      boxShadow: `0 0 8px ${color}10`,
+      color, letterSpacing: "0.04em",
     }}>
       RISK {Math.round(score)}
     </span>
-  );
-}
-
-// ─── CONFIDENCE BAR ─────────────────────────────────────────────────────────
-
-function ConfidenceBar({ confidence, trend }) {
-  const pct = Math.max(0, Math.min(1, confidence || 0)) * 100;
-  const color = trend === "BULLISH" ? T.green : trend === "BEARISH" ? T.red : T.text4;
-  return (
-    <div style={{
-      width: "100%", height: 2, borderRadius: 1,
-      background: T.overlay06, marginTop: 2,
-    }}>
-      <div style={{
-        width: `${pct}%`, height: "100%", borderRadius: 1,
-        background: color,
-        transition: "width 0.4s ease",
-      }} />
-    </div>
   );
 }
 
@@ -284,7 +165,7 @@ function NotionalBar({ long_notional, short_notional, maxNotional }) {
         <div style={{ width: `${longPct * pct / 100}%`, height: "100%", background: T.green, transition: "width 0.3s" }} />
         <div style={{ width: `${(100 - longPct) * pct / 100}%`, height: "100%", background: T.red, transition: "width 0.3s" }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text3, textAlign: "center" }}>
+      <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, textAlign: "center" }}>
         {fmt$(total)}
       </span>
     </div>
@@ -293,10 +174,11 @@ function NotionalBar({ long_notional, short_notional, maxNotional }) {
 
 // ─── SORTABLE TABLE HEADER ──────────────────────────────────────────────────
 
-function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w }) {
+function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, title }) {
   const active = currentKey === sortKey;
   return (
     <th
+      title={title}
       onClick={sortKey ? () => onSort(sortKey) : undefined}
       style={{
         padding: "12px 12px", textAlign: align,
@@ -317,17 +199,14 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w })
 
 // ─── STATUS STRIP ────────────────────────────────────────────────────────────
 
-function StatusStrip({ status, cohort, roster }) {
-  // Compute cohort counts from roster data
-  const mpCount = roster.filter(w => (w.cohorts || []).includes("money_printer")).length;
-  const smCount = roster.filter(w => (w.cohorts || []).includes("smart_money")).length;
-  const eliteCount = roster.filter(w =>
-    (w.cohorts || []).includes("money_printer") && (w.cohorts || []).includes("smart_money")
-  ).length;
+// Flat "LABEL value" pairs, like the scanner summary. Cohort sizes come from
+// /status, the same lists the consensus uses.
+function StatusStrip({ status, cohort }) {
+  const mpCount = status.money_printer_count || 0;
+  const smCount = status.smart_money_count || 0;
+  const bothCount = status.elite_count || 0;
 
-  const walletLabel = cohort === "all"
-    ? (status.tracked_wallets || 0)
-    : cohort === "money_printers" ? mpCount
+  const walletLabel = cohort === "money_printers" ? mpCount
     : cohort === "smart_money" ? smCount
     : (status.tracked_wallets || 0);
 
@@ -338,51 +217,31 @@ function StatusStrip({ status, cohort, roster }) {
     { label: "POLLS", value: status.poll_count || 0 },
     { label: "LAST POLL", value: timeAgo(status.last_poll) },
   ];
+  const sep = <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>;
 
   return (
     <div style={{
-      display: "flex", flexWrap: "wrap", gap: 6,
+      display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px",
       padding: "10px 16px",
+      borderTop: `1px solid ${T.overlay08}`,
       borderBottom: `1px solid ${T.overlay08}`,
-      background: T.overlay02,
     }}>
-      {items.map(({ label, value }) => (
-        <div key={label} style={{
-          display: "flex", alignItems: "center", gap: 5,
-          padding: "4px 10px", borderRadius: 8,
-          background: T.overlay04,
-          border: `1px solid ${T.overlay06}`,
-          backdropFilter: "blur(8px)",
-        }}>
-          <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
-          <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{value}</span>
-        </div>
+      {items.map(({ label, value }, i) => (
+        <span key={label} style={{ display: "inline-flex", alignItems: "baseline", gap: 10 }}>
+          {i > 0 && sep}
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+            <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{value}</span>
+          </span>
+        </span>
       ))}
       {/* Cohort breakdown counts */}
-      {cohort === "all" && (mpCount > 0 || smCount > 0 || eliteCount > 0) && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 5,
-          padding: "4px 10px", borderRadius: 8,
-          background: T.overlay04, border: `1px solid ${T.overlay06}`,
-        }}>
-          {mpCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.green }}>{mpCount} profitable</span>
-          )}
-          {mpCount > 0 && smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
-          )}
-          {smCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.accent }}>{smCount} large</span>
-          )}
-          {smCount > 0 && eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>
-          )}
-          {eliteCount > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color: T.yellow }}>{eliteCount} both</span>
-          )}
-        </div>
+      {cohort === "all" && (mpCount > 0 || smCount > 0) && (
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, fontSize: T.textSm, color: T.text2 }}>
+          {sep}
+          <span>{mpCount} profitable · {smCount} large{bothCount > 0 ? ` · ${bothCount} in both` : ""}</span>
+        </span>
       )}
-      {/* LIVE indicator removed — already shown in global header */}
     </div>
   );
 }
@@ -412,7 +271,7 @@ function ConsensusBar({ long_count, short_count }) {
           borderRadius: "0 3px 3px 0", transition: "width 0.4s ease",
         }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, whiteSpace: "nowrap", minWidth: 34, textAlign: "right" }}>
+      <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, whiteSpace: "nowrap", minWidth: 34, textAlign: "right" }}>
         {long_count}/{short_count}
       </span>
     </div>
@@ -421,35 +280,39 @@ function ConsensusBar({ long_count, short_count }) {
 
 // ─── CONSENSUS TABLE (enhanced) ─────────────────────────────────────────────
 
-// Helper to extract cohort-specific fields from a consensus entry. The API nests
-// them under c.money_printer / c.smart_money; the aggregate is only a fallback
-// for rows that lack the nested block.
-const COHORT_BLOCK = { money_printers: "money_printer", smart_money: "smart_money" };
+const NET_TITLE = "Long minus short wallets, as a share of positioned wallets. The trend weighs position size, so the two can point in different directions.";
 
-function getCohortFields(c, cohort) {
-  const k = COHORT_BLOCK[cohort];
-  const g = (k && c[k]) || c;
-  return {
-    long_count: g.long_count ?? 0,
-    short_count: g.short_count ?? 0,
-    net_ratio: g.net_ratio ?? 0,
-    trend: g.trend ?? "NEUTRAL",
-    long_notional: g.long_notional ?? 0,
-    short_notional: g.short_notional ?? 0,
-  };
+// Rows with fewer than MIN_WALLETS positioned wallets get no trend.
+function TrendCell({ trend }) {
+  if (trend === "THIN") {
+    return (
+      <span title={`Fewer than ${MIN_WALLETS} wallets hold a position, so no trend is shown`}
+        style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4, whiteSpace: "nowrap" }}>
+        Too few wallets
+      </span>
+    );
+  }
+  return (
+    <span className="terminal-status" style={{
+      fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
+      color: trendColor(trend), letterSpacing: "0.06em",
+    }}>
+      {trend}
+    </span>
+  );
 }
 
 function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) {
   const [sortKey, setSortKey] = useState("positioned");
   const [sortAsc, setSortAsc] = useState(false);
 
-  // Confidence and leverage exist only for all wallets, so they are hidden
-  // while a cohort is selected.
+  // Average leverage exists only for all wallets, so it is hidden while a
+  // cohort is selected.
   const allWallets = cohort === "all";
 
   const maxNotional = useMemo(() => {
     return Math.max(...consensus.map(c => {
-      const f = getCohortFields(c, cohort);
+      const f = cohortFields(c, cohort);
       return f.long_notional + f.short_notional;
     }), 1);
   }, [consensus, cohort]);
@@ -461,31 +324,30 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
       items = items.filter(c => c.symbol.includes(q));
     }
     // A hidden column cannot be the sort key.
-    const key = cohort !== "all" && (sortKey === "confidence" || sortKey === "leverage") ? "positioned" : sortKey;
+    const key = !allWallets && sortKey === "leverage" ? "positioned" : sortKey;
     items.sort((a, b) => {
-      const aF = getCohortFields(a, cohort);
-      const bF = getCohortFields(b, cohort);
+      const aF = cohortFields(a, cohort);
+      const bF = cohortFields(b, cohort);
       let va, vb;
       switch (key) {
         case "symbol": va = a.symbol; vb = b.symbol; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
         case "trend": va = aF.trend; vb = bF.trend; return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-        case "long": va = aF.long_count; vb = bF.long_count; break;
-        case "short": va = aF.short_count; vb = bF.short_count; break;
         case "notional": va = aF.long_notional + aF.short_notional; vb = bF.long_notional + bF.short_notional; break;
-        case "net": va = aF.net_ratio; vb = bF.net_ratio; break;
-        case "confidence": va = a.confidence || 0; vb = b.confidence || 0; break;
+        case "net": va = aF.net_wallets; vb = bF.net_wallets; break;
         case "leverage": va = a.avg_leverage || 0; vb = b.avg_leverage || 0; break;
-        default: va = aF.long_count + aF.short_count; vb = bF.long_count + bF.short_count;
+        default: va = aF.positioned; vb = bF.positioned;
       }
       return sortAsc ? va - vb : vb - va;
     });
     return items;
-  }, [consensus, filter, sortKey, sortAsc, cohort]);
+  }, [consensus, filter, sortKey, sortAsc, cohort, allWallets]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortAsc(!sortAsc);
     else { setSortKey(key); setSortAsc(false); }
   };
+
+  const netColor = (v) => v > 0.1 ? T.green : v < -0.1 ? T.red : T.text3;
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -493,19 +355,21 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
         <thead>
           <tr>
             <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={70} />
-            <SortTh label="TREND BY SIZE" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={96} />
-            <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: isMobile ? 90 : 130 }} title="Wallet count, long versus short. The trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
-            <SortTh label="NET" sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
-            {allWallets && <SortTh label="CONF" sortKey="confidence" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />}
-            {!isMobile && allWallets && <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />}
-            {!isMobile && <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />}
+            <SortTh label="TREND BY SIZE" sortKey="trend" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align={isMobile ? "right" : "center"} w={96} />
+            {!isMobile && (
+              <>
+                <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
+                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 130 }} title="Wallet count, long versus short. The trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
+                <SortTh label="NET WALLETS" title={NET_TITLE} sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
+                {allWallets && <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />}
+                <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
           {filtered.map((c, idx) => {
-            const cf = getCohortFields(c, cohort);
-            const positioned = cf.long_count + cf.short_count;
+            const cf = cohortFields(c, cohort);
             const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
             return (
               <tr
@@ -519,55 +383,44 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                   <div style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
                     {c.symbol}
                   </div>
-                  {allWallets && <ConfidenceBar confidence={c.confidence} trend={cf.trend} />}
+                  {/* Mobile: the wallet figures sit under the symbol instead of in off-screen columns */}
+                  {isMobile && (
+                    <div title={NET_TITLE} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, marginTop: 2 }}>
+                      L/S {cf.long_count}/{cf.short_count} · net {fmtSignedPct(cf.net_wallets * 100)} · {cf.positioned} wallets
+                    </div>
+                  )}
                 </td>
-                <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                  <span className="terminal-status" style={{
-                    fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
-                    padding: "4px 12px", borderRadius: 20,
-                    color: trendColor(cf.trend),
-                    background: `${trendColor(cf.trend)}10`,
-                    border: `1px solid ${trendColor(cf.trend)}25`,
-                    boxShadow: `0 0 12px ${trendColor(cf.trend)}10`,
-                    letterSpacing: "0.06em",
-                  }}>
-                    {cf.trend}
-                  </span>
+                <td style={{ padding: "10px 12px", textAlign: isMobile ? "right" : "center" }}>
+                  <TrendCell trend={cf.trend} />
                 </td>
-                <td style={{ padding: "10px 12px", textAlign: "center", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
-                  {positioned}
-                </td>
-                <td style={{ padding: "10px 12px" }}>
-                  <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
-                </td>
-                <td style={{
-                  padding: "10px 12px", textAlign: "center",
-                  fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
-                  color: cf.net_ratio > 0.1 ? T.green : cf.net_ratio < -0.1 ? T.red : T.text3,
-                }}>
-                  {cf.net_ratio > 0 ? "+" : ""}{(cf.net_ratio * 100).toFixed(0)}%
-                </td>
-                {allWallets && (
-                  <td style={{
-                    padding: "10px 12px", textAlign: "center",
-                    fontFamily: T.mono, fontSize: T.textBase, color: T.text3,
-                  }}>
-                    {c.confidence != null ? `${(c.confidence * 100).toFixed(0)}%` : "--"}
-                  </td>
-                )}
-                {!isMobile && allWallets && (
-                  <td style={{
-                    padding: "10px 12px", textAlign: "center",
-                    fontFamily: T.mono, fontSize: T.textBase, fontWeight: 600,
-                    color: levColor(c.avg_leverage),
-                  }}>
-                    {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
-                  </td>
-                )}
                 {!isMobile && (
-                  <td style={{ padding: "10px 12px" }}>
-                    <NotionalBar long_notional={cf.long_notional} short_notional={cf.short_notional} maxNotional={maxNotional} />
-                  </td>
+                  <>
+                    <td style={{ padding: "10px 12px", textAlign: "center", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
+                      {cf.positioned}
+                    </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
+                    </td>
+                    <td style={{
+                      padding: "10px 12px", textAlign: "center",
+                      fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700,
+                      color: netColor(cf.net_wallets),
+                    }}>
+                      {fmtSignedPct(cf.net_wallets * 100)}
+                    </td>
+                    {allWallets && (
+                      <td style={{
+                        padding: "10px 12px", textAlign: "center",
+                        fontFamily: T.mono, fontSize: T.textBase, fontWeight: 600,
+                        color: levColor(c.avg_leverage),
+                      }}>
+                        {c.avg_leverage ? fmtLev(c.avg_leverage) : "--"}
+                      </td>
+                    )}
+                    <td style={{ padding: "10px 12px" }}>
+                      <NotionalBar long_notional={cf.long_notional} short_notional={cf.short_notional} maxNotional={maxNotional} />
+                    </td>
+                  </>
                 )}
               </tr>
             );
@@ -583,326 +436,87 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
   );
 }
 
-// ─── HEATMAP TAB ────────────────────────────────────────────────────────────
+// ─── LEAN BY SIZE (view key "heatmap") ──────────────────────────────────────
 
+// One diverging bar per symbol: the size-weighted lean the Consensus trend comes
+// from (a trend needs more than 15% either way), so the two views cannot disagree.
 function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
-  const sorted = useMemo(() => {
-    return [...consensus].sort((a, b) => {
-      const aF = getCohortFields(a, cohort);
-      const bF = getCohortFields(b, cohort);
-      return (bF.long_count + bF.short_count) - (aF.long_count + aF.short_count);
-    });
+  const { rows, thin } = useMemo(() => {
+    const rows = [];
+    let thin = 0;
+    for (const c of consensus) {
+      const f = cohortFields(c, cohort);
+      if (f.positioned === 0) continue;
+      if (f.trend === "THIN") { thin += 1; continue; }
+      if (f.lean == null) continue;
+      rows.push({ symbol: c.symbol, ...f });
+    }
+    rows.sort((a, b) => b.lean - a.lean);
+    return { rows, thin };
   }, [consensus, cohort]);
 
-  if (sorted.length === 0) {
+  if (rows.length === 0) {
     return (
       <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-        Waiting for consensus data...
+        {thin > 0 ? `No symbol has ${MIN_WALLETS} or more wallets positioned yet.` : "Waiting for consensus data..."}
       </div>
     );
   }
 
-  // Bias categories
-  const categories = [
-    { key: "strong_bull", label: "STRONG BULL", test: (r) => r > 0.6 },
-    { key: "bull", label: "BULLISH", test: (r) => r > 0.2 && r <= 0.6 },
-    { key: "neutral", label: "NEUTRAL", test: (r) => r >= -0.2 && r <= 0.2 },
-    { key: "bear", label: "BEARISH", test: (r) => r < -0.2 && r >= -0.6 },
-    { key: "strong_bear", label: "STRONG BEAR", test: (r) => r < -0.6 },
-  ];
+  const grid = {
+    display: "grid", gridTemplateColumns: "72px minmax(0, 1fr) 52px 56px",
+    gap: 10, alignItems: "center", padding: "0 12px", minWidth: 320,
+  };
+  const head = { fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase" };
 
   return (
     <div style={{ overflowX: "auto", padding: "10px 0" }}>
-      {/* Column headers */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: `80px repeat(${categories.length}, 1fr)`,
-        gap: 3, padding: "0 12px", marginBottom: 6,
-      }}>
-        <div />
-        {categories.map(cat => (
-          <div key={cat.key} style={{
-            fontFamily: T.font, fontSize: T.textXs, fontWeight: 700,
-            color: T.text3, textAlign: "center",
-            letterSpacing: "0.08em", padding: "8px 2px",
-            textTransform: "uppercase",
-          }}>
-            {cat.label}
-          </div>
-        ))}
+      <div style={{ ...grid, marginBottom: 6 }}>
+        <span style={head}>Symbol</span>
+        <span style={{ ...head, display: "flex", justifyContent: "space-between" }}
+          title="Long minus short notional, blended with the wallet count the same way as the Consensus trend. Past 15% either way (the faint marks) the trend reads bullish or bearish.">
+          <span>More short</span><span>More long</span>
+        </span>
+        <span style={{ ...head, textAlign: "right" }}>Lean</span>
+        <span style={{ ...head, textAlign: "right" }}>Wallets</span>
       </div>
-
-      {/* Symbol rows */}
-      {sorted.map((c) => {
-        const cf = getCohortFields(c, cohort);
-        const ratio = cf.net_ratio || 0;
+      {rows.map((r) => {
+        const color = trendColor(r.trend);
+        const w = Math.min(Math.abs(r.lean), 1) * 50;
         return (
           <div
-            key={c.symbol}
-            onClick={() => onSymbolClick?.(c.symbol)}
-            style={{
-              display: "grid",
-              gridTemplateColumns: `80px repeat(${categories.length}, 1fr)`,
-              gap: 3, padding: "2px 12px",
-              cursor: "pointer",
-              transition: "background 0.15s",
-              borderRadius: 6,
-            }}
+            key={r.symbol}
+            onClick={() => onSymbolClick?.(r.symbol)}
+            style={{ ...grid, paddingTop: 6, paddingBottom: 6, cursor: "pointer", transition: "background 0.15s" }}
             onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >
-            {/* Symbol label */}
-            <div style={{
-              fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700,
-              color: T.text1, padding: "8px 4px",
-              display: "flex", alignItems: "center",
-            }}>
-              {c.symbol}
+            <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{r.symbol}</span>
+            <div style={{ position: "relative", height: 8, background: T.overlay04 }}>
+              <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: 1, background: T.overlay15 }} />
+              <div style={{ position: "absolute", top: 0, bottom: 0, left: "57.5%", width: 1, background: T.overlay15 }} />
+              <div style={{ position: "absolute", top: -2, bottom: -2, left: "50%", width: 1, background: T.overlay30 }} />
+              <div style={{
+                position: "absolute", top: 0, bottom: 0,
+                left: r.lean >= 0 ? "50%" : `${50 - w}%`, width: `${w}%`,
+                background: color, transition: "width 0.3s ease",
+              }} />
             </div>
-            {/* Category cells */}
-            {categories.map(cat => {
-              const isActive = cat.test(ratio);
-              return (
-                <div key={cat.key} style={{
-                  background: isActive ? heatmapColor(ratio) : T.overlay02,
-                  borderRadius: 6, padding: "7px 4px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "all 0.3s ease",
-                  border: isActive ? `1px solid ${heatmapTextColor(ratio)}25` : `1px solid ${T.overlay04}`,
-                  boxShadow: isActive ? `inset 0 1px 0 ${heatmapTextColor(ratio)}08` : "none",
-                }}>
-                  {isActive && (
-                    <span style={{
-                      fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                      color: heatmapTextColor(ratio),
-                    }}>
-                      {ratio > 0 ? "+" : ""}{(ratio * 100).toFixed(0)}%
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color, textAlign: "right" }}>
+              {fmtSignedPct(r.lean * 100)}
+            </span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textSm, color: T.text3, textAlign: "right" }}>{r.positioned}</span>
           </div>
         );
       })}
+      {thin > 0 && (
+        <div style={{ padding: "10px 12px 0", fontFamily: T.font, fontSize: T.textXs, color: T.text4 }}>
+          {thin} symbol{thin !== 1 ? "s" : ""} with fewer than {MIN_WALLETS} wallets positioned {thin !== 1 ? "are" : "is"} not shown.
+        </div>
+      )}
     </div>
   );
 }
-
-// ─── ROSTER TABLE (enhanced) ────────────────────────────────────────────────
-
-function RosterTable({ wallets, consensus, onWalletClick, isMobile, cohort }) {
-  const [sortKey, setSortKey] = useState("rank");
-  const [sortAsc, setSortAsc] = useState(true);
-
-  // Build wallet bias from consensus top_longs/top_shorts
-  const walletBias = useMemo(() => {
-    const bias = {};
-    for (const c of consensus) {
-      for (const addr of (c.top_longs || [])) {
-        if (!bias[addr]) bias[addr] = { longs: 0, shorts: 0 };
-        bias[addr].longs++;
-      }
-      for (const addr of (c.top_shorts || [])) {
-        if (!bias[addr]) bias[addr] = { longs: 0, shorts: 0 };
-        bias[addr].shorts++;
-      }
-    }
-    return bias;
-  }, [consensus]);
-
-  const sorted = useMemo(() => {
-    let items = [...wallets];
-    // Client-side cohort filtering
-    if (cohort === "money_printers") {
-      items = items.filter(w => (w.cohorts || []).includes("money_printer"));
-    } else if (cohort === "smart_money") {
-      items = items.filter(w => (w.cohorts || []).includes("smart_money"));
-    } else if (cohort === "elite") {
-      items = items.filter(w =>
-        (w.cohorts || []).includes("money_printer") && (w.cohorts || []).includes("smart_money")
-      );
-    }
-    items.sort((a, b) => {
-      let va, vb;
-      switch (sortKey) {
-        case "rank": va = a.rank; vb = b.rank; break;
-        case "av": va = a.account_value; vb = b.account_value; break;
-        case "roi": va = a.roi; vb = b.roi; break;
-        case "score": va = a.score; vb = b.score; break;
-        case "positions": va = a.position_count; vb = b.position_count; break;
-        default: va = a.rank; vb = b.rank;
-      }
-      return sortAsc ? va - vb : vb - va;
-    });
-    return items;
-  }, [wallets, sortKey, sortAsc, cohort]);
-
-  const handleSort = (key) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else { setSortKey(key); setSortAsc(key === "rank"); }
-  };
-
-  const getBias = (addr) => {
-    const b = walletBias[addr];
-    if (!b) return null;
-    if (b.longs > 0 && b.shorts > 0) return "MIXED";
-    if (b.longs > 0) return "LONG";
-    if (b.shorts > 0) return "SHORT";
-    return null;
-  };
-
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <SortTh label="#" sortKey="rank" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" w={36} />
-            <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 100, textAlign: "left" }}>WALLET</th>
-            <SortTh label="ACCT VALUE" sortKey="av" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={90} />
-            <SortTh label="ROI" sortKey="roi" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={70} />
-            {!isMobile && (
-              <>
-                <SortTh label="SCORE" sortKey="score" currentKey={sortKey} asc={sortAsc} onSort={handleSort} w={56} />
-                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 50, textAlign: "center" }}>BIAS</th>
-                <SortTh label="POS" sortKey="positions" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={44} />
-              </>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((w, idx) => {
-            const bias = getBias(w.address);
-            const biasColor = bias === "LONG" ? T.green : bias === "SHORT" ? T.red : bias === "MIXED" ? T.yellow : T.text4;
-            const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
-            return (
-              <tr
-                key={w.address}
-                onClick={() => onWalletClick?.(w.address)}
-                style={{ cursor: "pointer", transition: "background 0.15s", background: stripeBg }}
-                onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
-                onMouseLeave={e => e.currentTarget.style.background = stripeBg}
-              >
-                <td style={{ padding: "10px 12px", fontFamily: T.mono, fontSize: T.textBase, color: T.text4, textAlign: "left" }}>
-                  {w.rank}
-                </td>
-                <td style={{ padding: "10px 12px", textAlign: "left" }}>
-                  <span style={{
-                    fontFamily: T.mono, fontSize: T.textMd, color: T.accent,
-                    textDecoration: "underline", textDecorationColor: "rgba(99,179,237,0.35)",
-                    textUnderlineOffset: 3, cursor: "pointer", fontWeight: 600,
-                  }}>
-                    {truncAddr(w.address)} {"\u2192"}
-                  </span>
-                  {w.display_name && (
-                    <span style={{ fontFamily: T.font, fontSize: T.textBase, color: T.text4, marginLeft: 6 }}>
-                      {w.display_name.length > 12 ? w.display_name.slice(0, 12) + "..." : w.display_name}
-                    </span>
-                  )}
-                  {/* Cohort badges */}
-                  {(w.cohorts || []).length > 0 && (
-                    <span style={{ marginLeft: 6, display: "inline-flex", gap: 3 }}>
-                      {(w.cohorts || []).includes("money_printer") && (
-                        <span className="terminal-status" style={{
-                          fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
-                          color: T.green, background: `${T.green}12`,
-                          fontFamily: T.mono, fontWeight: 600,
-                        }} title="Profitable trader">P</span>
-                      )}
-                      {(w.cohorts || []).includes("smart_money") && (
-                        <span className="terminal-status" style={{
-                          fontSize: T.textSm, padding: "2px 6px", borderRadius: 20,
-                          color: T.accent, background: `${T.accent}12`,
-                          fontFamily: T.mono, fontWeight: 600,
-                        }} title="Large account">L</span>
-                      )}
-                    </span>
-                  )}
-                </td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 600, color: T.text1 }}>
-                  {fmt$(w.account_value)}
-                </td>
-                <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.green }}>
-                  {fmtPct(w.roi)}
-                </td>
-                {!isMobile && (
-                  <>
-                    <td style={{ padding: "7px 10px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text3 }}>
-                      {(w.score || 0).toFixed(0)}
-                    </td>
-                    <td style={{ padding: "7px 10px", textAlign: "center" }}>
-                      {bias ? (
-                        <span className="terminal-status" style={{
-                          fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                          padding: "3px 10px", borderRadius: 20,
-                          color: biasColor, background: `${biasColor}12`,
-                          border: `1px solid ${biasColor}25`,
-                        }}>
-                          {bias}
-                        </span>
-                      ) : (
-                        <span style={{ color: T.text4, fontFamily: T.mono, fontSize: T.textBase }}>--</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                      {w.position_count > 0 ? (
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                          <span style={{
-                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                            display: "inline-flex", alignItems: "center", justifyContent: "center",
-                            width: 22, height: 22, borderRadius: "50%",
-                            color: T.text1,
-                            background: w.position_count >= 5 ? `${T.accent}20` : T.overlay08,
-                            border: `1px solid ${w.position_count >= 5 ? T.accent : T.border}40`,
-                          }}>
-                            {w.position_count}
-                          </span>
-                          {w.tradfi_position_count > 0 && (
-                            <span style={{
-                              fontFamily: T.mono, fontSize: 9, fontWeight: 700,
-                              padding: "1px 3px", borderRadius: 3,
-                              color: "#F59E0B", background: "#F59E0B18",
-                            }}>
-                              +{w.tradfi_position_count} TF
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: T.text4, fontFamily: T.mono, fontSize: 12 }}>0</span>
-                      )}
-                    </td>
-                  </>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ─── STAT PILL ───────────────────────────────────────────────────────────────
-
-function StatPill({ label, value, color }) {
-  return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      padding: "7px 12px", borderRadius: 8,
-      background: T.overlay04, border: `1px solid ${T.overlay06}`,
-      minWidth: 64,
-    }}>
-      <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em", marginBottom: 2 }}>
-        {label}
-      </span>
-      <span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700, color: color || T.text1 }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-// ─── WALLET PROFILE MODAL (major upgrade) ───────────────────────────────────
 
 // ─── EQUITY CHART (full-width SVG like HyperTracker) ───────────────────────
 
@@ -919,7 +533,7 @@ function EquityChart({ data, width = 500, height = 120 }) {
   if (!data || data.length < 2) {
     return (
       <div ref={containerRef} style={{ width: "100%", height, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4 }}>Collecting equity data...</span>
+        <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>Collecting equity data...</span>
       </div>
     );
   }
@@ -928,7 +542,7 @@ function EquityChart({ data, width = 500, height = 120 }) {
   const minV = Math.min(...values);
   const maxV = Math.max(...values);
   const range = maxV - minV || 1;
-  const pad = { top: 6, right: 6, bottom: 6, left: 46 };
+  const pad = { top: 8, right: 6, bottom: 6, left: 54 };
   const chartW = cw - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   const isUp = values[values.length - 1] >= values[0];
@@ -961,16 +575,16 @@ function EquityChart({ data, width = 500, height = 120 }) {
             <g key={i}>
               <line x1={pad.left} y1={y} x2={cw - pad.right} y2={y}
                 stroke={T.border} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.5" />
-              <text x={pad.left - 4} y={y + 3} textAnchor="end" fill={T.text4}
-                fontFamily={T.mono} fontSize="9">{fmt$(v)}</text>
+              <text x={pad.left - 4} y={y + 4} textAnchor="end" fill={T.text4}
+                fontFamily={T.mono} fontSize="12">{fmt$(v)}</text>
             </g>
           );
         })}
         <path d={areaPath} fill={`url(#${gradId})`} />
         <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
         <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="3" fill={lineColor} />
-        <text x={cw - pad.right} y={points[points.length - 1].y - 6}
-          textAnchor="end" fill={lineColor} fontFamily={T.mono} fontSize="10" fontWeight="700">
+        <text x={cw - pad.right} y={Math.max(points[points.length - 1].y - 6, 12)}
+          textAnchor="end" fill={lineColor} fontFamily={T.mono} fontSize="12" fontWeight="700">
           {fmt$(values[values.length - 1])}
         </text>
       </svg>
@@ -994,12 +608,11 @@ function BiasGauge({ positions }) {
 
   return (
     <div style={{
-      padding: "10px 14px", borderRadius: 8,
-      background: T.overlay04, border: `1px solid ${T.overlay06}`,
+      padding: "8px 12px", borderTop: `1px solid ${T.overlay10}`,
       display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
       minWidth: 110,
     }}>
-      <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>PERP BIAS</span>
+      <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, letterSpacing: "0.06em" }}>PERP BIAS</span>
       <span style={{ fontFamily: T.mono, fontSize: 14, fontWeight: 700, color: biasColor, fontStyle: "italic" }}>
         {biasLabel}
       </span>
@@ -1008,7 +621,7 @@ function BiasGauge({ positions }) {
         <div style={{ width: `${(longVal / total) * 100}%`, height: "100%", background: T.green }} />
         <div style={{ width: `${(shortVal / total) * 100}%`, height: "100%", background: T.red }} />
       </div>
-      <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
+      <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
         L {fmt$(longVal)} / S {fmt$(shortVal)}
       </span>
     </div>
@@ -1023,7 +636,7 @@ function LiqDistBar({ pct }) {
   const color = clamped > 50 ? T.green : clamped > 25 ? T.yellow : T.red;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 80 }}>
-      <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color, minWidth: 32, textAlign: "right" }}>
+      <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color, minWidth: 32, textAlign: "right" }}>
         {clamped.toFixed(0)}%
       </span>
       <div style={{ flex: 1, height: 4, borderRadius: 2, background: T.overlay06, overflow: "hidden", minWidth: 40 }}>
@@ -1166,9 +779,7 @@ function WalletDetail({ address, onClose, userWallet }) {
             </span>
             {data.rank && (
               <span className="terminal-status" style={{
-                fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                padding: "3px 8px", borderRadius: 20,
-                color: T.accent, background: `${T.accent}12`, border: `1px solid ${T.accent}25`,
+                fontFamily: T.mono, fontSize: T.textXs, fontWeight: 700, color: T.accent,
               }}>
                 #{data.rank}
               </span>
@@ -1177,10 +788,10 @@ function WalletDetail({ address, onClose, userWallet }) {
           </div>
           {/* Full address + copy + snaps */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, opacity: 0.5 }}>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
               {data.snapshot_count} snaps
             </span>
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
               {address}
             </span>
             <button
@@ -1222,6 +833,8 @@ function WalletDetail({ address, onClose, userWallet }) {
             </button>
           )}
           <button
+            type="button"
+            aria-label="Close"
             onClick={onClose}
             style={{
               width: 30, height: 30, borderRadius: 8,
@@ -1252,10 +865,10 @@ function WalletDetail({ address, onClose, userWallet }) {
               fontFamily: T.mono, fontSize: 13, fontWeight: 700,
               color: sumPnl >= 0 ? T.green : T.red,
             }}>
-              {sumPnl >= 0 ? "+" : ""}{fmt$(sumPnl)}
+              {fmtSignedUsd(sumPnl)}
               {data.account_value > 0 && (
                 <span style={{ opacity: 0.7, marginLeft: 4 }}>
-                  ({sumPnl >= 0 ? "+" : ""}{((sumPnl / data.account_value) * 100).toFixed(2)}%)
+                  ({fmtSignedPct((sumPnl / data.account_value) * 100, 2)})
                 </span>
               )}
             </span>
@@ -1269,12 +882,12 @@ function WalletDetail({ address, onClose, userWallet }) {
             return (
               <div style={{ textAlign: "right" }}>
                 <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color }}>
-                  {pctChg >= 0 ? "+" : ""}{pctChg.toFixed(2)}%
+                  {fmtSignedPct(pctChg, 2)}
                 </span>
-                <span style={{ fontFamily: T.mono, fontSize: 11, color, opacity: 0.7, marginLeft: 4 }}>
-                  ({pnl >= 0 ? "+" : ""}{fmt$(pnl)})
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4 }}>
+                  ({fmtSignedUsd(pnl)})
                 </span>
-                <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, marginLeft: 4 }}>
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: 4 }}>
                   tracked
                 </span>
               </div>
@@ -1287,7 +900,7 @@ function WalletDetail({ address, onClose, userWallet }) {
       {/* ── STATS ROW (compact horizontal strip) ── */}
       <div style={{
         padding: "8px 12px",
-        display: "flex", gap: 4, flexWrap: "wrap", alignItems: "stretch",
+        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "stretch",
         borderBottom: `1px solid ${T.overlay08}`,
       }}>
         {/* Bias gauge */}
@@ -1295,86 +908,66 @@ function WalletDetail({ address, onClose, userWallet }) {
 
         {/* Leverage */}
         <div style={{
-          padding: "8px 12px", borderRadius: 8,
-          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+          padding: "8px 12px", borderTop: `1px solid ${T.overlay10}`,
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         }}>
-          <LeverageGauge value={levStats.avg_leverage} size={56} />
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4, letterSpacing: "0.06em", marginTop: -2 }}>
+          <LeverageGauge value={levStats.avg_leverage} size={60} />
+          <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, letterSpacing: "0.06em" }}>
             Leverage
           </span>
         </div>
 
-        {/* Stats grid */}
+        {/* Stats grid. ROI and PnL are the leaderboard's 30-day figures; ROI is
+            empty when the wallet started the month with almost no equity. */}
         <div style={{
           flex: 1, minWidth: 180,
-          padding: "6px 12px", borderRadius: 8,
-          background: T.overlay04, border: `1px solid ${T.overlay06}`,
+          padding: "6px 12px", borderTop: `1px solid ${T.overlay10}`,
           display: "grid", gridTemplateColumns: "1fr 1fr",
           gap: "2px 16px", alignContent: "center",
         }}>
           {[
-            ["ROI", `+${fmtPct(data.monthly_roi || 0)}`, T.green],
-            ["PnL", `${(data.monthly_pnl || 0) >= 0 ? "+" : ""}${fmt$(data.monthly_pnl || 0)}`, (data.monthly_pnl || 0) >= 0 ? T.green : T.red],
+            ["30d ROI", fmtSignedPct(data.monthly_roi), data.monthly_roi == null ? T.text4 : data.monthly_roi >= 0 ? T.green : T.red],
+            ["30d PnL", fmtSignedUsd(data.monthly_pnl || 0), (data.monthly_pnl || 0) >= 0 ? T.green : T.red],
             ["Score", (data.score || 0).toFixed(0), T.text1],
             ...(s.total_trades > 0 ? [
               ["Win", `${s.win_rate}% (${s.wins}/${s.total_trades})`, s.win_rate > 50 ? T.green : T.red],
-              ["Avg", `${s.avg_pnl_pct > 0 ? "+" : ""}${s.avg_pnl_pct}%`, s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4],
+              ["Avg", fmtSignedPct(s.avg_pnl_pct, 2), s.avg_pnl_pct > 0 ? T.green : s.avg_pnl_pct < 0 ? T.red : T.text4],
             ] : []),
           ].map(([label, val, color]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>{label}</span>
-              <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 700, color }}>{val}</span>
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>{label}</span>
+              <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 700, color }}>{val}</span>
             </div>
           ))}
         </div>
 
-        {/* Best/Worst trades */}
-        {(s.best_trade || s.worst_trade) && (
-          <div style={{
-            display: "flex", flexDirection: "column", gap: 3, justifyContent: "center",
-          }}>
-            {s.best_trade && (
-              <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.green, whiteSpace: "nowrap" }}>
-                {s.best_trade.coin} {s.best_trade.side} +{fmt$(Math.abs(s.best_trade.pnl))} ({s.best_trade.pnl_pct > 0 ? "+" : ""}{s.best_trade.pnl_pct}%)
-              </span>
-            )}
-            {s.worst_trade && (
-              <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.red, whiteSpace: "nowrap" }}>
-                {s.worst_trade.coin} {s.worst_trade.side} -{fmt$(Math.abs(s.worst_trade.pnl))} ({s.worst_trade.pnl_pct}%)
-              </span>
-            )}
-          </div>
-        )}
+        {/* Best/Worst trades: a win is never shown as the worst trade */}
+        {(() => {
+          const best = s.best_trade?.pnl > 0 ? s.best_trade : null;
+          const worst = s.worst_trade?.pnl < 0 ? s.worst_trade : null;
+          if (!best && !worst) return null;
+          return (
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 3, justifyContent: "center",
+            }}>
+              {best && (
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.green, whiteSpace: "nowrap" }}>
+                  Best: {best.coin} {best.side} {fmtSignedUsd(best.pnl)} ({fmtSignedPct(best.pnl_pct, 1)})
+                </span>
+              )}
+              {worst && (
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600, color: T.red, whiteSpace: "nowrap" }}>
+                  Worst: {worst.coin} {worst.side} {fmtSignedUsd(worst.pnl)} ({fmtSignedPct(worst.pnl_pct, 1)})
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
-      {/* ── SECTION TABS (like HyperTracker: Perps / Trades / Coin Stats) ── */}
-      <div style={{
-        padding: "8px 16px",
-        display: "flex", gap: 2,
-        borderBottom: `1px solid ${T.overlay08}`,
-        background: T.overlay02,
-      }}>
-        {sections.map(({ key, label }) => {
-          const isActive = activeSection === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setActiveSection(key)}
-              style={{
-                padding: "7px 14px", borderRadius: 8,
-                border: isActive ? `1px solid ${T.accent}30` : "1px solid transparent",
-                fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                color: isActive ? T.accent : T.text4,
-                background: isActive ? `${T.accent}12` : "transparent",
-                cursor: "pointer", transition: "all 0.2s ease",
-                letterSpacing: "0.03em",
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
+      {/* ── SECTION TABS (Perps / Trades / Coin Stats) ── */}
+      <div style={{ padding: "0 12px", borderBottom: `1px solid ${T.overlay08}` }}>
+        <Tabs small label="Wallet sections" items={sections} value={activeSection} onChange={setActiveSection} />
       </div>
 
       {/* ── POSITION SUMMARY STRIP (like HyperTracker) ── */}
@@ -1402,7 +995,7 @@ function WalletDetail({ address, onClose, userWallet }) {
           <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Sum PNL: </span>
             <span style={{ color: sumPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>
-              {sumPnl >= 0 ? "+" : ""}{fmt$(Math.abs(sumPnl))}
+              {fmtSignedUsd(sumPnl)}
             </span>
           </span>
         </div>
@@ -1421,10 +1014,10 @@ function WalletDetail({ address, onClose, userWallet }) {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["TOKEN", "SIDE", "VALUE", "AVG ENTRY", "PNL/ROE", "LEV", "DIST. TO LIQ", "AGE"].map(h => (
+                    {["TOKEN", "SIDE", "VALUE", "AVG ENTRY", "PNL/ROE", "LEV", "DIST. TO LIQ"].map(h => (
                       <th key={h} style={{
                         padding: "8px 8px",
-                        fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                        fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
                         color: T.text4, letterSpacing: "0.05em",
                         borderBottom: `1px solid ${T.border}`,
                         textAlign: h === "TOKEN" || h === "SIDE" ? "left" : h === "DIST. TO LIQ" ? "left" : "right",
@@ -1450,17 +1043,14 @@ function WalletDetail({ address, onClose, userWallet }) {
                             </span>
                             {p.asset_class && p.asset_class !== "crypto" && (
                               <span style={{
-                                fontFamily: T.mono, fontSize: 9, fontWeight: 700,
-                                padding: "1px 4px", borderRadius: 3,
-                                color: ({ commodity: "#F59E0B", equity: "#3B82F6", index: "#8B5CF6", fx: "#10B981", tradfi: "#6B7280" })[p.asset_class] || T.text4,
-                                background: ({ commodity: "#F59E0B18", equity: "#3B82F618", index: "#8B5CF618", fx: "#10B98118", tradfi: "#6B728018" })[p.asset_class] || `${T.text4}15`,
-                                textTransform: "uppercase", letterSpacing: 0.5,
+                                fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
+                                color: T.text3, textTransform: "uppercase", letterSpacing: 0.5,
                               }}>
                                 {p.asset_class}
                               </span>
                             )}
                           </div>
-                          <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+                          <div style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
                             {p.leverage}x {p.leverage_type || "Cross"}{p.dex ? ` · ${p.dex}` : ""}
                           </div>
                         </td>
@@ -1481,7 +1071,7 @@ function WalletDetail({ address, onClose, userWallet }) {
                             {fmt$(p.size_usd)}
                           </div>
                           {p.size != null && (
-                            <div style={{ fontFamily: T.mono, fontSize: 10, color: p.side === "LONG" ? T.green : T.red }}>
+                            <div style={{ fontFamily: T.mono, fontSize: T.textXs, color: p.side === "LONG" ? T.green : T.red }}>
                               {p.side === "LONG" ? "+" : "-"}{Number(p.size).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                             </div>
                           )}
@@ -1496,14 +1086,14 @@ function WalletDetail({ address, onClose, userWallet }) {
                             fontFamily: T.mono, fontSize: 13, fontWeight: 700,
                             color: pnl >= 0 ? T.green : T.red,
                           }}>
-                            {pnl >= 0 ? "+" : ""}{fmt$(Math.abs(pnl))}
+                            {fmtSignedUsd(pnl)}
                           </div>
                           {roe != null && (
                             <div style={{
-                              fontFamily: T.mono, fontSize: 10,
+                              fontFamily: T.mono, fontSize: T.textXs,
                               color: roe >= 0 ? T.green : T.red,
                             }}>
-                              {(roe * 100).toFixed(2)}%
+                              {fmtSignedPct(roe * 100, 2)}
                             </div>
                           )}
                         </td>
@@ -1514,10 +1104,6 @@ function WalletDetail({ address, onClose, userWallet }) {
                         {/* DIST. TO LIQ (progress bar) */}
                         <td style={{ padding: "8px 8px" }}>
                           <LiqDistBar pct={p.liq_distance_pct} />
-                        </td>
-                        {/* AGE */}
-                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 12, color: T.text3 }}>
-                          {fmtAge(p.position_age_s)}
                         </td>
                       </tr>
                     );
@@ -1546,7 +1132,7 @@ function WalletDetail({ address, onClose, userWallet }) {
                     {["COIN", "SIDE", "SIZE", "ENTRY", "LEV", "PNL", "STATUS"].map(h => (
                       <th key={h} style={{
                         padding: "8px 8px",
-                        fontFamily: T.mono, fontSize: 11, fontWeight: 600,
+                        fontFamily: T.mono, fontSize: T.textXs, fontWeight: 600,
                         color: T.text4, letterSpacing: "0.06em",
                         borderBottom: `1px solid ${T.border}`,
                         textAlign: h === "COIN" || h === "SIDE" || h === "STATUS" ? "left" : "right",
@@ -1592,16 +1178,15 @@ function WalletDetail({ address, onClose, userWallet }) {
                           color: (t.pnl || 0) >= 0 ? T.green : T.red,
                         }}>
                           {t.status !== "OPENED" ? (
-                            <>{(t.pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(t.pnl || 0))} <span style={{ fontSize: 11, color: T.text4 }}>({(t.pnl_pct || 0) > 0 ? "+" : ""}{(t.pnl_pct || 0).toFixed(1)}%)</span></>
+                            <>{fmtSignedUsd(t.pnl || 0)} <span style={{ fontSize: T.textXs, color: T.text4 }}>({fmtSignedPct(t.pnl_pct || 0, 1)})</span></>
                           ) : (
                             <span style={{ color: T.text4 }}>--</span>
                           )}
                         </td>
                         <td style={{ padding: "7px 8px" }}>
                           <span style={{
-                            fontFamily: T.mono, fontSize: 11, fontWeight: 700,
-                            padding: "2px 6px", borderRadius: 3,
-                            color: statusColor, background: `${statusColor}15`,
+                            fontFamily: T.mono, fontSize: T.textXs, fontWeight: 700,
+                            color: statusColor,
                           }}>
                             {t.status}
                           </span>
@@ -1660,7 +1245,7 @@ function WalletDetail({ address, onClose, userWallet }) {
                         fontFamily: T.mono, fontSize: 13, fontWeight: 600,
                         color: c.pnl >= 0 ? T.green : T.red,
                       }}>
-                        {c.pnl >= 0 ? "+" : ""}{fmt$(Math.abs(c.pnl))}
+                        {fmtSignedUsd(c.pnl)}
                       </td>
                     </tr>
                   ))}
@@ -1676,12 +1261,21 @@ function WalletDetail({ address, onClose, userWallet }) {
 
 // ─── SYMBOL DETAIL MODAL (enhanced) ─────────────────────────────────────────
 
-function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
+const fmtPx = (v) => `$${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: v >= 100 ? 0 : 4 })}`;
+
+function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   const [data, setData] = useState(null);
+  const [liqClusters, setLiqClusters] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
+    // Liquidation clusters come from the positions already held in memory; the
+    // rest of the old Pressure payload (orders, book walls) is not polled.
+    fetch(`${API}/api/hyperlens/pressure?symbol=${encodeURIComponent(symbol)}`)
+      .then(r => r.json())
+      .then(d => setLiqClusters(d.liquidation_clusters || []))
+      .catch(() => setLiqClusters([]));
     fetch(`${API}/api/hyperlens/positions/${symbol}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
@@ -1706,14 +1300,15 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
   const totalLong = longs.reduce((s, p) => s + (p.size_usd || 0), 0);
   const totalShort = shorts.reduce((s, p) => s + (p.size_usd || 0), 0);
   const totalNotional = totalLong + totalShort;
-  const longPct = totalNotional > 0 ? (totalLong / totalNotional * 100) : 50;
+  const longPct = totalNotional > 0 ? (totalLong / totalNotional * 100) : null;
   const totalLongPnl = longs.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
   const totalShortPnl = shorts.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
   const avgLongLev = longs.length > 0 ? longs.reduce((s, p) => s + (p.leverage || 0), 0) / longs.length : 0;
   const avgShortLev = shorts.length > 0 ? shorts.reduce((s, p) => s + (p.leverage || 0), 0) / shorts.length : 0;
+  const trend = cData.symbol ? cohortFields(cData, "all").trend : null;
 
   // Wallet row renderer — shared between long/short columns
-  const WalletRow = ({ p, compact }) => (
+  const WalletRow = ({ p }) => (
     <div
       onClick={() => onWalletClick?.(p.address)}
       style={{
@@ -1727,18 +1322,15 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >
       {/* Row 1: address + size */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{
-          fontFamily: T.mono, fontSize: 11, color: T.accent,
-          cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+          fontFamily: T.mono, fontSize: T.textXs, color: T.accent,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
         }}>
           {truncAddr(p.address)}
-          {p.wallet_roi > 0 && (
-            <span style={{
-              fontSize: 9, color: T.green, fontWeight: 600,
-              padding: "1px 4px", borderRadius: 3, background: `${T.green}12`,
-            }}>
-              {fmtPct(p.wallet_roi)} ROI
+          {p.wallet_roi != null && (
+            <span title="The wallet's 30-day return on the Hyperliquid leaderboard" style={{ color: p.wallet_roi >= 0 ? T.green : T.red }}>
+              30d {fmtSignedPct(p.wallet_roi)}
             </span>
           )}
         </span>
@@ -1746,41 +1338,29 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
           {fmt$(p.size_usd)}
         </span>
       </div>
-      {/* Row 2: entry + pnl + leverage + age */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4 }}>
+      {/* Row 2: entry + pnl + leverage + distance to liquidation */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
           @ ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
         </span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{
-            fontFamily: T.mono, fontSize: 11, fontWeight: 600,
-            color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red,
-          }}>
-            {p.pnl_pct != null ? (
-              <>{p.pnl_pct >= 0 ? "+" : ""}{p.pnl_pct.toFixed(1)}%</>
-            ) : (
-              <>{(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}</>
-            )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: T.mono, fontSize: T.textXs }}>
+          <span style={{ fontWeight: 600, color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red }}>
+            {p.pnl_pct != null ? fmtSignedPct(p.pnl_pct, 1) : fmtSignedUsd(p.unrealized_pnl || 0)}
           </span>
           {p.pnl_pct != null && p.unrealized_pnl != null && (
-            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
-              {(p.unrealized_pnl || 0) >= 0 ? "+" : ""}{fmt$(Math.abs(p.unrealized_pnl || 0))}
+            <span style={{ color: T.text4 }}>
+              {fmtSignedUsd(p.unrealized_pnl)}
             </span>
           )}
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: levColor(p.leverage) }}>
+          <span style={{ color: levColor(p.leverage) }}>
             {p.leverage}x
           </span>
-          {p.liq_distance_pct != null && (
-            <span style={{
-              fontFamily: T.mono, fontSize: 9, color: pctColor(p.liq_distance_pct),
-              padding: "1px 3px", borderRadius: 2, background: T.overlay04,
-            }}>
+          {/* No liquidation price (e.g. well-collateralised cross margin) shows nothing, not 0% */}
+          {p.liq_distance_pct > 0 && (
+            <span title="Distance from the current price to the liquidation price" style={{ color: pctColor(p.liq_distance_pct) }}>
               LIQ {p.liq_distance_pct.toFixed(0)}%
             </span>
           )}
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>
-            {fmtAge(p.position_age_s)}
-          </span>
         </div>
       </div>
     </div>
@@ -1788,26 +1368,22 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
 
   // Side column — longs or shorts
   const SideColumn = ({ side, wallets, total, totalPnl, avgLev, color }) => (
-    <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
       {/* Column header */}
       <div style={{
         padding: "12px 12px 10px",
         borderBottom: `2px solid ${color}30`,
-        background: `${color}06`,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{
-              fontFamily: T.mono, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em",
+              fontFamily: T.mono, fontSize: T.textXs, fontWeight: 800, letterSpacing: "0.1em",
               color, textTransform: "uppercase",
             }}>
               {side}
             </span>
-            <span style={{
-              fontFamily: T.mono, fontSize: 10, color: T.text4,
-              padding: "1px 5px", borderRadius: 4, background: T.overlay06,
-            }}>
-              {wallets.length}
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
+              {wallets.length} wallet{wallets.length !== 1 ? "s" : ""}
             </span>
           </div>
           <span style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color }}>
@@ -1817,14 +1393,14 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
         {/* PnL + avg leverage */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{
-            fontFamily: T.mono, fontSize: 10, color: T.text4, display: "flex", alignItems: "center", gap: 4,
+            fontFamily: T.mono, fontSize: T.textXs, color: T.text4, display: "flex", alignItems: "center", gap: 4,
           }}>
             PNL
             <span style={{ fontWeight: 600, color: totalPnl >= 0 ? T.green : T.red }}>
-              {totalPnl >= 0 ? "+" : ""}{fmt$(Math.abs(totalPnl))}
+              {fmtSignedUsd(totalPnl)}
             </span>
           </span>
-          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, display: "flex", alignItems: "center", gap: 4 }}>
             AVG LEV
             <span style={{ fontWeight: 600, color: levColor(avgLev) }}>{avgLev.toFixed(1)}x</span>
           </span>
@@ -1834,7 +1410,7 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
       <div style={{ overflowY: "auto", maxHeight: 420 }}>
         {wallets.map((p, i) => <WalletRow key={i} p={p} />)}
         {wallets.length === 0 && (
-          <div style={{ padding: 20, textAlign: "center", fontFamily: T.mono, fontSize: 11, color: T.text4 }}>
+          <div style={{ padding: 20, textAlign: "center", fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
             No {side.toLowerCase()} positions
           </div>
         )}
@@ -1846,10 +1422,10 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
     <GlassCard style={{ padding: 0, overflow: "hidden" }}>
       {/* Header */}
       <div style={{
-        padding: "16px 20px",
+        padding: isMobile ? "14px 12px" : "16px 20px",
         borderBottom: `1px solid ${T.overlay08}`,
         background: T.overlay02,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
@@ -1858,90 +1434,98 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
           </span>
           <span className="terminal-status" style={{
             fontFamily: T.mono, fontSize: T.textSm, color: T.text4, fontWeight: 600,
-            padding: "3px 10px", borderRadius: 20, background: T.overlay06,
           }}>
             {positions.length} wallet{positions.length !== 1 ? "s" : ""}
           </span>
-          {cData.trend && (
-            <span className="terminal-status" style={{
-              fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-              padding: "4px 12px", borderRadius: 20,
-              color: trendColor(cData.trend),
-              background: `${trendColor(cData.trend)}15`,
-              border: `1px solid ${trendColor(cData.trend)}28`,
-              boxShadow: `0 0 10px ${trendColor(cData.trend)}12`,
-            }}>
-              {cData.trend}
-            </span>
-          )}
-          {cData.confidence > 0 && (
-            <span style={{ fontFamily: T.mono, fontSize: T.textSm, color: T.text4 }}>
-              {Math.round(cData.confidence * 100)}% conf
-            </span>
-          )}
+          {trend && <TrendCell trend={trend} />}
         </div>
         <button
+          type="button"
+          aria-label="Close"
           onClick={onClose}
           style={{
             width: 30, height: 30, borderRadius: 8,
             border: `1px solid ${T.overlay10}`, background: T.overlay04, color: T.text3,
             fontSize: 14, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "all 0.15s",
+            transition: "all 0.15s", flexShrink: 0,
           }}
           onMouseEnter={e => { e.currentTarget.style.background = T.overlay10; e.currentTarget.style.color = T.text1; }}
           onMouseLeave={e => { e.currentTarget.style.background = T.overlay04; e.currentTarget.style.color = T.text3; }}
         >
-          {"\u2715"}
+          {"✕"}
         </button>
       </div>
 
-      {/* Tug-of-war bar — visual long vs short dominance */}
-      <div style={{ padding: "10px 16px 8px", borderBottom: `1px solid ${T.overlay08}` }}>
-        <div style={{
-          height: 6, borderRadius: 3, overflow: "hidden",
-          background: T.overlay06, display: "flex",
-        }}>
+      {/* Tug-of-war bar — long vs short notional; nothing to draw without positions */}
+      {longPct != null && (
+        <div style={{ padding: "10px 16px 8px", borderBottom: `1px solid ${T.overlay08}` }}>
           <div style={{
-            width: `${longPct}%`, height: "100%",
-            background: `linear-gradient(90deg, ${T.green}90, ${T.green}60)`,
-            borderRadius: "3px 0 0 3px",
-            transition: "width 0.4s ease",
-          }} />
+            height: 6, borderRadius: 3, overflow: "hidden",
+            background: T.overlay06, display: "flex",
+          }}>
+            <div style={{
+              width: `${longPct}%`, height: "100%",
+              background: `linear-gradient(90deg, ${T.green}90, ${T.green}60)`,
+              borderRadius: "3px 0 0 3px",
+              transition: "width 0.4s ease",
+            }} />
+            <div style={{
+              width: `${100 - longPct}%`, height: "100%",
+              background: `linear-gradient(90deg, ${T.red}60, ${T.red}90)`,
+              borderRadius: "0 3px 3px 0",
+              transition: "width 0.4s ease",
+            }} />
+          </div>
           <div style={{
-            width: `${100 - longPct}%`, height: "100%",
-            background: `linear-gradient(90deg, ${T.red}60, ${T.red}90)`,
-            borderRadius: "0 3px 3px 0",
-            transition: "width 0.4s ease",
-          }} />
+            display: "flex", justifyContent: "space-between", marginTop: 4,
+          }}>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.green, fontWeight: 600 }}>
+              {longPct.toFixed(0)}% LONG
+            </span>
+            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.red, fontWeight: 600 }}>
+              {(100 - longPct).toFixed(0)}% SHORT
+            </span>
+          </div>
         </div>
-        <div style={{
-          display: "flex", justifyContent: "space-between", marginTop: 4,
-        }}>
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.green, fontWeight: 600 }}>
-            {longPct.toFixed(0)}% LONG
-          </span>
-          <span style={{ fontFamily: T.mono, fontSize: 9, color: T.red, fontWeight: 600 }}>
-            {(100 - longPct).toFixed(0)}% SHORT
-          </span>
-        </div>
-      </div>
+      )}
 
-      {/* Two-column layout: Longs | Shorts */}
-      <div style={{
-        display: "flex",
-        borderTop: `1px solid ${T.overlay06}`,
-      }}>
-        <SideColumn
-          side="LONG" wallets={longs} total={totalLong}
-          totalPnl={totalLongPnl} avgLev={avgLongLev} color={T.green}
-        />
-        <div style={{ width: 1, background: T.overlay10, flexShrink: 0 }} />
-        <SideColumn
-          side="SHORT" wallets={shorts} total={totalShort}
-          totalPnl={totalShortPnl} avgLev={avgShortLev} color={T.red}
-        />
-      </div>
+      {/* Longs | Shorts: side by side on desktop, stacked on a phone */}
+      {positions.length > 0 && (
+        <div style={{
+          display: "flex", flexDirection: isMobile ? "column" : "row",
+          borderTop: `1px solid ${T.overlay06}`,
+        }}>
+          <SideColumn
+            side="LONG" wallets={longs} total={totalLong}
+            totalPnl={totalLongPnl} avgLev={avgLongLev} color={T.green}
+          />
+          {!isMobile && <div style={{ width: 1, background: T.overlay10, flexShrink: 0 }} />}
+          <SideColumn
+            side="SHORT" wallets={shorts} total={totalShort}
+            totalPnl={totalShortPnl} avgLev={avgShortLev} color={T.red}
+          />
+        </div>
+      )}
+
+      {/* Liquidation prices within 1% of each other, held by two or more wallets */}
+      {liqClusters.length > 0 && (
+        <div style={{ padding: "12px 16px", borderTop: `1px solid ${T.overlay08}` }}>
+          <div style={{ fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}
+            title="Liquidation prices within 1% of each other, shared by two or more tracked wallets">
+            Liquidation clusters
+          </div>
+          {liqClusters.slice(0, 5).map((cl, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "4px 0", fontFamily: T.mono, fontSize: T.textXs, color: T.text2 }}>
+              <span>{cl.min_price === cl.max_price ? fmtPx(cl.avg_price) : `${fmtPx(cl.min_price)} to ${fmtPx(cl.max_price)}`}</span>
+              <span style={{ color: T.text3 }}>
+                {cl.wallet_count} wallets · {fmt$(cl.total_size_usd)} ·{" "}
+                <span style={{ color: cl.dominant_side === "LONG" ? T.green : T.red }}>mostly {String(cl.dominant_side).toLowerCase()}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {positions.length === 0 && (
         <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
@@ -1951,715 +1535,6 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick }) {
     </GlassCard>
   );
 }
-
-// ─── TAB SWITCHER ────────────────────────────────────────────────────────────
-
-// ─── PRESSURE MAP ────────────────────────────────────────────────────────────
-
-function PressureOverviewTable({ data, onSymbolSelect }) {
-  const [sortKey, setSortKey] = useState("total_notional");
-  const [sortAsc, setSortAsc] = useState(false);
-
-  const sorted = useMemo(() => {
-    if (!data?.symbols) return [];
-    const items = [...data.symbols];
-    items.sort((a, b) => {
-      if (sortKey === "symbol") {
-        return sortAsc ? a.symbol.localeCompare(b.symbol) : b.symbol.localeCompare(a.symbol);
-      }
-      const av = a[sortKey] || 0;
-      const bv = b[sortKey] || 0;
-      return sortAsc ? av - bv : bv - av;
-    });
-    return items;
-  }, [data, sortKey, sortAsc]);
-
-  const handleSort = (key) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else { setSortKey(key); setSortAsc(false); }
-  };
-
-  const biasColor = (bias) => {
-    if (bias > 0.3) return T.green;
-    if (bias < -0.3) return T.red;
-    return T.text4;
-  };
-
-  const biasLabel = (bias) => {
-    if (bias > 0.5) return "STRONG BUY";
-    if (bias > 0.2) return "BUY";
-    if (bias < -0.5) return "STRONG SELL";
-    if (bias < -0.2) return "SELL";
-    return "NEUTRAL";
-  };
-
-  // Summary strip at top
-  const totals = useMemo(() => {
-    if (!data?.symbols) return { stops: 0, tps: 0, limits: 0, notional: 0, wallets: 0 };
-    return data.symbols.reduce((acc, s) => ({
-      stops: acc.stops + (s.stop_count || 0),
-      tps: acc.tps + (s.tp_count || 0),
-      limits: acc.limits + (s.limit_count || 0),
-      notional: acc.notional + (s.total_notional || 0),
-      wallets: data.total_wallets_with_orders || 0,
-    }), { stops: 0, tps: 0, limits: 0, notional: 0, wallets: 0 });
-  }, [data]);
-
-  return (
-    <div>
-      {/* Summary strip */}
-      <div style={{
-        display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px",
-        borderBottom: `1px solid ${T.overlay08}`,
-        background: T.overlay02,
-      }}>
-        {[
-          { label: "WALLETS W/ ORDERS", value: totals.wallets, color: T.text1 },
-          { label: "SYMBOLS", value: sorted.length, color: T.accent },
-          { label: "STOP LOSSES", value: totals.stops, color: T.red },
-          { label: "TAKE PROFITS", value: totals.tps, color: T.green },
-          { label: "LIMIT ORDERS", value: totals.limits, color: T.accent },
-          { label: "TOTAL NOTIONAL", value: fmt$(totals.notional), color: T.text1, isText: true },
-        ].map(({ label, value, color, isText }) => (
-          <div key={label} style={{
-            flex: "1 1 100px", padding: "8px 12px", borderRadius: 10,
-            background: `${color}08`, border: `1px solid ${color}18`,
-            backdropFilter: "blur(8px)",
-          }}>
-            <div style={{ fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text4, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
-            <div style={{ fontFamily: T.mono, fontSize: isText ? T.textMd : T.textXl, fontWeight: 700, color }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {sorted.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-          No pressure data available
-        </div>
-      ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <SortTh label="SYMBOL" sortKey="symbol" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
-                <SortTh label="STOPS" sortKey="stop_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-                <SortTh label="TPs" sortKey="tp_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-                <SortTh label="LIMITS" sortKey="limit_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-                <SortTh label="WALLETS" sortKey="wallet_count" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-                <SortTh label="NOTIONAL" sortKey="total_notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-                <SortTh label="BIAS" sortKey="net_bias" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((s, idx) => {
-                const stripeBg = idx % 2 === 1 ? T.overlay02 : "transparent";
-                return (
-                <tr
-                  key={s.symbol}
-                  onClick={() => onSymbolSelect(s.symbol)}
-                  style={{ cursor: "pointer", transition: "background 0.15s", background: stripeBg }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.overlay06}
-                  onMouseLeave={e => e.currentTarget.style.background = stripeBg}
-                >
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
-                    {s.symbol}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.stop_count ? T.red : T.text4, textAlign: "right" }}>
-                    {s.stop_count || "-"}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.tp_count ? T.green : T.text4, textAlign: "right" }}>
-                    {s.tp_count || "-"}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: s.limit_count ? T.accent : T.text4, textAlign: "right" }}>
-                    {s.limit_count || "-"}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
-                    {s.wallet_count || 0}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
-                    {fmt$(s.total_notional)}
-                  </td>
-                  <td style={{ padding: "8px 10px", fontFamily: T.mono, fontSize: 11, fontWeight: 600, textAlign: "right", color: biasColor(s.net_bias) }}>
-                    {biasLabel(s.net_bias)}
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PressureSummaryStrip({ data }) {
-  const orders = data?.smart_money_orders || {};
-  const items = [
-    { label: "STOP ORDERS", count: orders.stops?.length || 0, total: (orders.stops || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.red },
-    { label: "TAKE PROFITS", count: orders.take_profits?.length || 0, total: (orders.take_profits || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.green },
-    { label: "LIMIT ORDERS", count: orders.limits?.length || 0, total: (orders.limits || []).reduce((s, o) => s + (o.total_size_usd || 0), 0), color: T.accent },
-  ];
-
-  return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
-      {items.map(({ label, count, total, color }) => (
-        <div key={label} style={{
-          flex: "1 1 120px", display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 12px", borderRadius: 8,
-          background: `${color}08`, border: `1px solid ${color}20`,
-        }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: "50%",
-            background: color, flexShrink: 0,
-          }} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text4, letterSpacing: "0.06em" }}>{label}</span>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color }}>{count}</span>
-              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.text3 }}>{fmt$(total)}</span>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PressureChart({ symbol, data }) {
-  const chartRef = useRef(null);
-  const containerRef = useRef(null);
-  const [candles, setCandles] = useState(null);
-  const [chartError, setChartError] = useState(false);
-
-  const [volume, setVolume] = useState(null);
-
-  // Fetch OHLCV candles for the symbol
-  useEffect(() => {
-    if (!symbol) return;
-    // For HL-native symbols, use the CCXT format the chart API expects
-    const chartSymbol = symbol.includes(":") ? symbol : `${symbol}/USDT:USDT`;
-    fetch(`${API}/api/chart/${encodeURIComponent(chartSymbol)}?timeframe=4h&limit=500`)
-      .then(r => r.json())
-      .then(d => {
-        if (d?.candles?.length) {
-          setCandles(d.candles);
-          setVolume(d.volume || null);
-        } else {
-          setChartError(true);
-        }
-      })
-      .catch(() => setChartError(true));
-  }, [symbol]);
-
-  // Build pressure levels from data
-  const levels = useMemo(() => {
-    if (!data) return [];
-    const result = [];
-    const orders = data.smart_money_orders || {};
-    const maxLimits = 20; // Only show top N limits by size to avoid clutter
-
-    (orders.stops || []).forEach(o => result.push({
-      price: o.price, type: "SL", label: `SL ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
-      color: "#F87171", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
-    }));
-    (orders.take_profits || []).forEach(o => result.push({
-      price: o.price, type: "TP", label: `TP ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
-      color: "#34D399", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
-    }));
-
-    // Top limits only (sorted by size)
-    const sortedLimits = [...(orders.limits || [])].sort((a, b) => b.total_size_usd - a.total_size_usd);
-    sortedLimits.slice(0, maxLimits).forEach(o => result.push({
-      price: o.price, type: "LMT", label: `LMT ${fmt$(o.total_size_usd)} (${o.wallet_count}w)`,
-      color: "#60A5FA", lineWidth: 1, lineStyle: 2, size: o.total_size_usd,
-    }));
-
-    // Book walls
-    const walls = data.order_book_walls || {};
-    (walls.bid_walls || []).forEach(o => result.push({
-      price: o.price, type: "WALL", label: `BID WALL ${fmt$(o.size_usd)} (${o.order_count})`,
-      color: "#6B7280", lineWidth: 1, lineStyle: 1, size: o.size_usd,
-    }));
-    (walls.ask_walls || []).forEach(o => result.push({
-      price: o.price, type: "WALL", label: `ASK WALL ${fmt$(o.size_usd)} (${o.order_count})`,
-      color: "#6B7280", lineWidth: 1, lineStyle: 1, size: o.size_usd,
-    }));
-
-    // Liq clusters
-    (data.liquidation_clusters || []).forEach(o => result.push({
-      price: o.avg_price, type: "LIQ", label: `LIQ ${fmt$(o.total_size_usd)} ${o.dominant_side} (${o.wallet_count}w)`,
-      color: "#FBBF24", lineWidth: 2, lineStyle: 0, size: o.total_size_usd,
-    }));
-
-    return result;
-  }, [data]);
-
-  const candleSeriesRef = useRef(null);
-  const priceLinesRef = useRef([]);
-
-  // Create chart once when candles load (don't recreate on level updates)
-  useEffect(() => {
-    if (!candles || !containerRef.current) return;
-
-    renderPressureChart(candles, volume, levels, containerRef, chartRef, candleSeriesRef, priceLinesRef);
-
-    return () => {
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-        candleSeriesRef.current = null;
-        priceLinesRef.current = [];
-      }
-    };
-  }, [candles, volume]); // Only recreate on candle/volume changes
-
-  // Update price lines when levels change (without recreating chart)
-  useEffect(() => {
-    const series = candleSeriesRef.current;
-    if (!series) return;
-
-    // Remove old price lines
-    priceLinesRef.current.forEach(pl => {
-      try { series.removePriceLine(pl); } catch {}
-    });
-    priceLinesRef.current = [];
-
-    // Add new price lines
-    levels.forEach(level => {
-      const pl = series.createPriceLine({
-        price: level.price,
-        color: level.color,
-        lineWidth: level.lineWidth,
-        lineStyle: level.lineStyle,
-        axisLabelVisible: true,
-        title: level.label,
-        axisLabelColor: level.color,
-        axisLabelTextColor: "#ffffff",
-      });
-      priceLinesRef.current.push(pl);
-    });
-  }, [levels]);
-
-  if (chartError) {
-    return (
-      <div style={{ padding: 30, textAlign: "center", fontFamily: T.mono, fontSize: 12, color: T.text4 }}>
-        Chart not available for {symbol}
-      </div>
-    );
-  }
-
-  if (!candles) {
-    return (
-      <div style={{ padding: 30, textAlign: "center", fontFamily: T.mono, fontSize: 12, color: T.text4 }}>
-        Loading chart...
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ padding: "10px 16px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
-          {symbol} — PRESSURE MAP
-        </span>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[
-            { label: "SL", color: "#F87171" },
-            { label: "TP", color: "#34D399" },
-            { label: "LMT", color: "#60A5FA" },
-            { label: "WALL", color: "#6B7280" },
-            { label: "LIQ", color: "#FBBF24" },
-          ].map(l => (
-            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <div style={{ width: 8, height: 3, borderRadius: 1, background: l.color }} />
-              <span style={{ fontFamily: T.mono, fontSize: 9, color: T.text4 }}>{l.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div ref={containerRef} style={{ width: "100%", height: 500 }} />
-    </div>
-  );
-}
-
-function renderPressureChart(candles, volumeData, levels, containerRef, chartRef, candleSeriesRef, priceLinesRef) {
-  // Clean up previous chart
-  if (chartRef.current) {
-    chartRef.current.remove();
-    chartRef.current = null;
-  }
-
-  const container = containerRef.current;
-  if (!container) return;
-
-  const chart = createChart(container, {
-    width: container.clientWidth,
-    height: 500,
-    layout: {
-      background: { type: "solid", color: "transparent" },
-      textColor: "#9CA3AF",
-      fontFamily: "'IBM Plex Mono', monospace",
-      fontSize: 11,
-    },
-    grid: {
-      vertLines: { color: "rgba(255,255,255,0.03)" },
-      horzLines: { color: "rgba(255,255,255,0.03)" },
-    },
-    crosshair: {
-      mode: 0,
-      vertLine: { color: "rgba(255,255,255,0.15)", labelBackgroundColor: "#1F2937" },
-      horzLine: { color: "rgba(255,255,255,0.15)", labelBackgroundColor: "#1F2937" },
-    },
-    rightPriceScale: {
-      borderColor: "rgba(255,255,255,0.06)",
-      scaleMargins: { top: 0.05, bottom: 0.05 },
-    },
-    timeScale: {
-      borderColor: "rgba(255,255,255,0.06)",
-      timeVisible: true,
-      secondsVisible: false,
-    },
-    handleScale: {
-      axisPressedMouseMove: true,
-      mouseWheel: true,
-      pinch: true,
-    },
-    handleScroll: {
-      mouseWheel: true,
-      pressedMouseMove: true,
-      horzTouchDrag: true,
-      vertTouchDrag: false,
-    },
-  });
-
-  // Candlestick series (v5 API)
-  const candleSeries = chart.addSeries(CandlestickSeries, {
-    upColor: "#34D399",
-    downColor: "#F87171",
-    borderUpColor: "#34D399",
-    borderDownColor: "#F87171",
-    wickUpColor: "#34D39980",
-    wickDownColor: "#F8717180",
-  });
-  candleSeries.setData(candles);
-
-  // Volume (v5 API)
-  const volSeries = chart.addSeries(HistogramSeries, {
-    priceFormat: { type: "volume" },
-    priceScaleId: "vol",
-  });
-  chart.priceScale("vol").applyOptions({
-    scaleMargins: { top: 0.85, bottom: 0 },
-  });
-  if (volumeData?.length) {
-    volSeries.setData(volumeData);
-  }
-
-  // Save series ref for price line updates
-  if (candleSeriesRef) candleSeriesRef.current = candleSeries;
-  if (priceLinesRef) priceLinesRef.current = [];
-
-  // Add initial pressure levels as price lines
-  // lineStyle: 0=Solid, 1=Dotted, 2=Dashed, 3=LargeDashed
-  levels.forEach(level => {
-    const pl = candleSeries.createPriceLine({
-      price: level.price,
-      color: level.color,
-      lineWidth: level.lineWidth,
-      lineStyle: level.lineStyle,
-      axisLabelVisible: true,
-      title: level.label,
-      axisLabelColor: level.color,
-      axisLabelTextColor: "#ffffff",
-    });
-    if (priceLinesRef) priceLinesRef.current.push(pl);
-  });
-
-  // Fit content
-  chart.timeScale().fitContent();
-
-  // Resize observer
-  const ro = new ResizeObserver(entries => {
-    for (const entry of entries) {
-      chart.applyOptions({ width: entry.contentRect.width });
-    }
-  });
-  ro.observe(container);
-
-  chartRef.current = chart;
-  chartRef.current._ro = ro;
-
-  // Override remove to also disconnect observer
-  const origRemove = chart.remove.bind(chart);
-  chart.remove = () => {
-    ro.disconnect();
-    origRemove();
-  };
-}
-
-function PressureOrderTable({ data }) {
-  const [sortKey, setSortKey] = useState("size");
-  const [sortAsc, setSortAsc] = useState(false);
-
-  const orders = useMemo(() => {
-    const rows = [];
-    const orders = data?.smart_money_orders || {};
-    (orders.stops || []).forEach(o => rows.push({ type: "SL", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
-    (orders.take_profits || []).forEach(o => rows.push({ type: "TP", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
-    (orders.limits || []).forEach(o => rows.push({ type: "LIMIT", side: o.side, price: o.price, size: o.total_size_usd, wallets: o.wallet_count }));
-    rows.sort((a, b) => {
-      const av = a[sortKey] || 0;
-      const bv = b[sortKey] || 0;
-      if (typeof av === "string") return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
-      return sortAsc ? av - bv : bv - av;
-    });
-    return rows;
-  }, [data, sortKey, sortAsc]);
-
-  const handleSort = (key) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else { setSortKey(key); setSortAsc(false); }
-  };
-
-  const typeBadge = (type) => {
-    const color = type === "SL" ? T.red : type === "TP" ? T.green : T.accent;
-    return (
-      <span style={{
-        fontFamily: T.mono, fontSize: 10, fontWeight: 700,
-        padding: "2px 6px", borderRadius: 4,
-        color, background: `${color}15`, border: `1px solid ${color}25`,
-        letterSpacing: "0.04em",
-      }}>
-        {type}
-      </span>
-    );
-  };
-
-  if (orders.length === 0) return null;
-
-  return (
-    <div style={{ borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ padding: "10px 16px 4px", fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
-        ORDER DETAILS
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <SortTh label="TYPE" sortKey="type" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
-              <SortTh label="SIDE" sortKey="side" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="left" />
-              <SortTh label="PRICE" sortKey="price" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-              <SortTh label="SIZE" sortKey="size" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-              <SortTh label="WALLETS" sortKey="wallets" currentKey={sortKey} asc={sortAsc} onSort={handleSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o, i) => (
-              <tr key={i}>
-                <td style={{ padding: "6px 10px" }}>{typeBadge(o.type)}</td>
-                <td style={{
-                  padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                  color: o.side === "BUY" ? T.green : T.red,
-                }}>
-                  {o.side}
-                </td>
-                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right" }}>
-                  ${o.price?.toLocaleString()}
-                </td>
-                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
-                  {fmt$(o.size)}
-                </td>
-                <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
-                  {o.wallets}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function PressureBookWalls({ walls }) {
-  if (!walls || (!walls.bid_walls?.length && !walls.ask_walls?.length)) return null;
-
-  const allWalls = [
-    ...(walls.bid_walls || []).map(w => ({ ...w, side: "BID" })),
-    ...(walls.ask_walls || []).map(w => ({ ...w, side: "ASK" })),
-  ];
-  const maxSize = Math.max(...allWalls.map(w => w.size_usd || 0), 1);
-
-  return (
-    <div style={{ borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ padding: "10px 16px 4px", fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em" }}>
-        BOOK WALLS
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "left", borderBottom: `1px solid ${T.border}` }}>SIDE</th>
-              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>PRICE</th>
-              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>SIZE</th>
-              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, textAlign: "right", borderBottom: `1px solid ${T.border}` }}>ORDERS</th>
-              <th style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}`, minWidth: 80 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {allWalls.map((w, i) => {
-              const pct = Math.min((w.size_usd / maxSize) * 100, 100);
-              const color = w.side === "BID" ? T.green : T.red;
-              return (
-                <tr key={i}>
-                  <td style={{
-                    padding: "6px 10px", fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                    color,
-                  }}>
-                    {w.side}
-                  </td>
-                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right" }}>
-                    ${w.price?.toLocaleString()}
-                  </td>
-                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text1, textAlign: "right", fontWeight: 600 }}>
-                    {fmt$(w.size_usd)}
-                  </td>
-                  <td style={{ padding: "6px 10px", fontFamily: T.mono, fontSize: 12, color: T.text3, textAlign: "right" }}>
-                    {w.order_count}
-                  </td>
-                  <td style={{ padding: "6px 10px" }}>
-                    <div style={{
-                      height: 4, borderRadius: 2, background: T.overlay06,
-                      overflow: "hidden",
-                    }}>
-                      <div style={{
-                        width: `${pct}%`, height: "100%", borderRadius: 2,
-                        background: color, opacity: 0.6,
-                        transition: "width 0.3s",
-                      }} />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function PressureLiqClusters({ clusters }) {
-  if (!clusters?.length) return null;
-
-  return (
-    <div style={{ padding: "12px 16px" }}>
-      <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text4, letterSpacing: "0.06em", marginBottom: 8 }}>
-        LIQUIDATION CLUSTERS
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {clusters.map((c, i) => (
-          <div key={i} style={{
-            padding: "10px 14px", borderRadius: 8,
-            background: `${T.yellow}08`,
-            border: `1px solid ${T.yellow}20`,
-            display: "flex", alignItems: "center", gap: 10,
-          }}>
-            <div style={{ flex: 1, fontFamily: T.mono, fontSize: 12, color: T.text2, lineHeight: 1.5 }}>
-              <span style={{ fontWeight: 700, color: T.yellow }}>{c.wallet_count} wallets</span>
-              {" with "}
-              <span style={{ fontWeight: 700, color: T.red }}>{fmt$(c.total_size_usd)}</span>
-              {" "}
-              <span style={{ color: c.dominant_side === "LONG" ? T.green : T.red, fontWeight: 600 }}>{c.dominant_side}</span>
-              {" positions have liquidation near "}
-              <span style={{ fontWeight: 700, color: T.text1 }}>${c.avg_price?.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PressureMap({ consensus, isMobile }) {
-  const [selectedSymbol, setSelectedSymbol] = useState(null);
-  const [pressureData, setPressureData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchPressure = useCallback(async () => {
-    try {
-      const url = selectedSymbol
-        ? `${API}/api/hyperlens/pressure?symbol=${selectedSymbol}`
-        : `${API}/api/hyperlens/pressure`;
-      const res = await fetch(url).then(r => r.json());
-      setPressureData(res);
-    } catch (err) {
-      console.warn("Pressure fetch failed:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSymbol]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchPressure();
-    const interval = setInterval(fetchPressure, 15_000);
-    return () => clearInterval(interval);
-  }, [fetchPressure]);
-
-  return (
-    <div>
-
-      {loading ? (
-        <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-          Loading pressure data...
-        </div>
-      ) : !selectedSymbol ? (
-        <PressureOverviewTable data={pressureData} onSymbolSelect={setSelectedSymbol} />
-      ) : (
-        <div>
-          {/* Back button */}
-          <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.overlay08}`, background: T.overlay02 }}>
-            <button
-              onClick={() => setSelectedSymbol(null)}
-              style={{
-                padding: "5px 12px", borderRadius: 8, border: `1px solid ${T.overlay10}`,
-                fontFamily: T.mono, fontSize: 12, fontWeight: 600,
-                color: T.accent, background: `${T.accent}08`,
-                cursor: "pointer", transition: "all 0.15s",
-              }}
-            >
-              {"\u2190"} All Symbols
-            </button>
-            <span style={{
-              marginLeft: 10, fontFamily: T.mono, fontSize: 14, fontWeight: 700,
-              color: T.text1,
-            }}>
-              {selectedSymbol}
-            </span>
-          </div>
-
-          {pressureData?.symbol ? (
-            <>
-              <PressureSummaryStrip data={pressureData} />
-              <PressureChart symbol={selectedSymbol} data={pressureData} />
-              <PressureOrderTable data={pressureData} />
-              <PressureBookWalls walls={pressureData.order_book_walls} />
-              <PressureLiqClusters clusters={pressureData.liquidation_clusters} />
-            </>
-          ) : (
-            <div style={{ padding: 40, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
-              No pressure data for {selectedSymbol}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── TAB SWITCHER ────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
 // Favorites / Watchlist tab
@@ -2705,7 +1580,7 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
   if (follows.length === 0) {
     return (
       <div style={{ padding: "40px 20px", textAlign: "center", fontFamily: T.mono, color: T.text4, fontSize: 13 }}>
-        No wallets followed yet. Open a wallet profile and click the star to follow.
+        No wallets followed yet. Open a wallet profile and choose Follow.
       </div>
     );
   }
@@ -2721,7 +1596,7 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
   return (
     <div style={{ padding: isMobile ? 12 : 16 }}>
       {/* Followed wallets */}
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
+      <div style={{ fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
         FOLLOWING {follows.length} WALLET{follows.length !== 1 ? "S" : ""}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 20 }}>
@@ -2737,22 +1612,14 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
           >
             <div>
               <div style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.accent }}>{fmtAddr(w.address)}</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: T.mono, fontSize: 10, color: T.text3 }}>
+              <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: T.mono, fontSize: T.textXs, color: T.text3 }}>
                 <span>AV: {fmtUsd(w.account_value)}</span>
-                <span>ROI: {w.roi ? `${Math.round(w.roi)}%` : "—"}</span>
+                <span>30d ROI: {fmtSignedPct(w.roi)}</span>
                 <span>{w.positions_count} pos</span>
               </div>
-              {w.cohorts && w.cohorts.length > 0 && (
-                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                  {w.cohorts.map(c => (
-                    <span key={c} style={{
-                      fontSize: 8, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-                      padding: "1px 6px", borderRadius: 4, fontFamily: T.mono,
-                      background: c === "elite" ? "#fbbf2415" : c === "money_printer" ? "#34d39915" : "#c084fc15",
-                      color: c === "elite" ? "#fbbf24" : c === "money_printer" ? "#34d399" : "#c084fc",
-                      border: `1px solid ${c === "elite" ? "#fbbf2430" : c === "money_printer" ? "#34d39930" : "#c084fc30"}`,
-                    }}>{{ money_printer: "profitable", smart_money: "large", elite: "both" }[c] || c}</span>
-                  ))}
+              {w.cohorts && w.cohorts.some(c => c !== "elite") && (
+                <div style={{ marginTop: 4, fontFamily: T.mono, fontSize: T.textXs, color: T.text3 }}>
+                  {w.cohorts.filter(c => c !== "elite").map(c => ({ money_printer: "Profitable trader", smart_money: "Large account" }[c] || c)).join(" · ")}
                 </div>
               )}
             </div>
@@ -2775,25 +1642,25 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
       {/* Recent trade events */}
       {events.length > 0 && (
         <>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
+          <div style={{ fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12, fontFamily: T.mono }}>
             RECENT TRADES
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.mono, fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>TIME</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>WALLET</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>ACTION</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>COIN</th>
-                  <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>SIZE</th>
-                  {!isMobile && <th style={{ textAlign: "right", padding: "6px 8px", fontSize: 10, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>PnL</th>}
+                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>TIME</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>WALLET</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>ACTION</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>COIN</th>
+                  <th style={{ textAlign: "right", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>SIZE</th>
+                  {!isMobile && <th style={{ textAlign: "right", padding: "6px 8px", fontSize: T.textXs, fontWeight: 600, color: T.text4, borderBottom: `1px solid ${T.border}` }}>PnL</th>}
                 </tr>
               </thead>
               <tbody>
                 {events.slice(0, 30).map((ev, i) => {
-                  const actionColor = ev.action === "OPENED" ? "#34d399" : ev.action === "CLOSED" ? "#f87171" : "#fbbf24";
-                  const sideColor = ev.side === "LONG" ? "#34d399" : "#f87171";
+                  const actionColor = ev.action === "OPENED" ? T.green : ev.action === "CLOSED" ? T.red : T.yellow;
+                  const sideColor = ev.side === "LONG" ? T.green : T.red;
                   const ago = ev.timestamp
                     ? (() => {
                         const diff = Date.now() / 1000 - ev.timestamp;
@@ -2806,25 +1673,22 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
                     <tr key={`${ev.wallet}-${ev.coin}-${ev.timestamp}-${i}`}
                         style={{ background: i % 2 === 1 ? T.overlay02 : "transparent", cursor: "pointer" }}
                         onClick={() => onWalletClick(ev.wallet)}>
-                      <td style={{ padding: "6px 8px", color: T.text4, fontSize: 10, borderBottom: `1px solid ${T.overlay04}` }}>{ago}</td>
-                      <td style={{ padding: "6px 8px", color: T.text2, fontSize: 10, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}` }}>{fmtAddr(ev.wallet)}</td>
+                      <td style={{ padding: "6px 8px", color: T.text4, fontSize: T.textXs, borderBottom: `1px solid ${T.overlay04}` }}>{ago}</td>
+                      <td style={{ padding: "6px 8px", color: T.text2, fontSize: T.textXs, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}` }}>{fmtAddr(ev.wallet)}</td>
                       <td style={{ padding: "6px 8px", borderBottom: `1px solid ${T.overlay04}` }}>
-                        <span style={{
-                          fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
-                          background: `${actionColor}15`, color: actionColor, border: `1px solid ${actionColor}30`,
-                        }}>{ev.action}</span>
+                        <span style={{ fontSize: T.textXs, fontWeight: 700, color: actionColor }}>{ev.action}</span>
                       </td>
                       <td style={{ padding: "6px 8px", fontWeight: 700, borderBottom: `1px solid ${T.overlay04}` }}>
                         <span style={{ color: sideColor }}>{ev.side}</span>
                         <span style={{ color: T.text2, marginLeft: 4 }}>{ev.coin}</span>
-                        <span style={{ color: T.text4, fontSize: 9, marginLeft: 4 }}>{ev.leverage}x</span>
+                        <span style={{ color: T.text4, fontSize: T.textXs, marginLeft: 4 }}>{ev.leverage}x</span>
                       </td>
                       <td style={{ padding: "6px 8px", textAlign: "right", color: T.text3, borderBottom: `1px solid ${T.overlay04}` }}>{fmtUsd(ev.size_usd)}</td>
                       {!isMobile && (
                         <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`,
-                          color: ev.pnl >= 0 ? "#34d399" : "#f87171",
+                          color: ev.pnl >= 0 ? T.green : T.red,
                         }}>
-                          {ev.action !== "OPENED" ? `${ev.pnl >= 0 ? "+" : ""}${fmtUsd(ev.pnl)}` : "—"}
+                          {ev.action !== "OPENED" ? fmtSignedUsd(ev.pnl) : "—"}
                         </td>
                       )}
                     </tr>
@@ -2840,17 +1704,22 @@ function FavoritesTab({ userWallet, onWalletClick, isMobile }) {
 }
 
 
-function TabSwitcher({ active, onChange, isMobile }) {
-  // Roster tab removed in "Sentiment Mode" \u2014 same data is on the HL
-  // leaderboard, and the in-app value lives in Consensus instead.
-  const tabs = [
-    { key: "favorites", label: "Watchlist" },
-    { key: "consensus", label: "Consensus" },
-    { key: "heatmap", label: "Heatmap" },
-    { key: "pressure", label: "Pressure" },
-  ];
+// View tabs. Keys are stable; to add a view, add an entry here and a matching
+// `tab === key` branch in the panel body.
+const VIEW_TABS = [
+  { key: "favorites", label: "Watchlist" },
+  { key: "consensus", label: "Consensus" },
+  { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
+];
 
-  return <Tabs label="HyperLens view" items={tabs} value={active} onChange={onChange} />;
+function TabSwitcher({ active, onChange }) {
+  // Roster tab removed in "Sentiment Mode": same data is on the HL leaderboard.
+  // Pressure tab removed: it needs order polling, which stays off.
+  return (
+    <div className="hl-view-tabs" style={{ minWidth: 0 }}>
+      <Tabs label="HyperLens view" items={VIEW_TABS} value={active} onChange={onChange} />
+    </div>
+  );
 }
 
 // ─── COHORT FILTER ──────────────────────────────────────────────────────────
@@ -2863,6 +1732,8 @@ const COHORT_OPTIONS = [
   { key: "smart_money", label: "Large accounts", title: "The 300 largest accounts ($1M and up); profit is not checked" },
 ];
 
+const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K in the account and no more than 25 open positions (market makers are left out).";
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2874,29 +1745,25 @@ export default function HyperLensPanel({ isMobile }) {
   const [cohort, setCohort] = useState("all");
   const [status, setStatus] = useState({});
   const [consensus, setConsensus] = useState([]);
-  const [roster, setRoster] = useState([]);
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
-      // Consensus rows carry every cohort's figures; only the roster is filtered.
-      const cohortParam = cohort !== "all" ? `?cohort=${cohort}` : "";
-      const [statusRes, consensusRes, rosterRes] = await Promise.all([
+      // Consensus rows carry every cohort's figures, so a cohort switch needs no refetch.
+      const [statusRes, consensusRes] = await Promise.all([
         fetch(`${API}/api/hyperlens/status`).then(r => r.json()),
         fetch(`${API}/api/hyperlens/consensus`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/roster${cohortParam}`).then(r => r.json()),
       ]);
       setStatus(statusRes);
       setConsensus(consensusRes.consensus || []);
-      setRoster(rosterRes.wallets || []);
     } catch (err) {
       console.warn("HyperLens fetch failed:", err);
     } finally {
       setLoading(false);
     }
-  }, [cohort]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -2904,9 +1771,12 @@ export default function HyperLensPanel({ isMobile }) {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  const bullish = consensus.filter(c => getCohortFields(c, cohort).trend === "BULLISH").length;
-  const bearish = consensus.filter(c => getCohortFields(c, cohort).trend === "BEARISH").length;
-  const neutral = consensus.filter(c => getCohortFields(c, cohort).trend === "NEUTRAL").length;
+  const counts = trendCounts(consensus, cohort);
+  const tracked = status.tracked_wallets || 0;
+  const basis = status.consensus_wallets ?? consensus[0]?.total_tracked ?? null;
+  const fresh = status.fresh_wallets;
+  // Under 60% of wallets updated recently, the summary rests on a partial set.
+  const partial = tracked > 0 && fresh != null && fresh < 0.6 * tracked;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2914,51 +1784,37 @@ export default function HyperLensPanel({ isMobile }) {
       <GlassCard style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
           padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          flexWrap: "wrap", gap: isMobile ? 8 : 10,
+          display: "flex", flexDirection: "column", gap: 4,
         }}>
           {consensus.length > 0 && (
-            <div style={{ display: "flex", gap: 6 }}>
-              {bullish > 0 && (
-                <span className="terminal-status" style={{
+            <div
+              title={`Symbols with ${MIN_WALLETS} or more wallets positioned, by the size-weighted trend`}
+              style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px", opacity: partial ? 0.55 : 1 }}
+            >
+              {[["BULLISH", T.green], ["BEARISH", T.red], ["NEUTRAL", T.text3]].map(([key, color]) => (
+                <span key={key} className="terminal-status" style={{
                   fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                  padding: "5px 14px", borderRadius: 20,
-                  color: T.green, background: `${T.green}15`,
-                  border: `1px solid ${T.green}28`,
-                  boxShadow: `0 0 12px ${T.green}12`,
-                  letterSpacing: "0.06em",
+                  color, letterSpacing: "0.06em",
                 }}>
-                  {bullish} BULL
+                  {counts[key]} {key}
                 </span>
-              )}
-              {bearish > 0 && (
-                <span className="terminal-status" style={{
-                  fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                  padding: "5px 14px", borderRadius: 20,
-                  color: T.red, background: `${T.red}15`,
-                  border: `1px solid ${T.red}28`,
-                  boxShadow: `0 0 12px ${T.red}12`,
-                  letterSpacing: "0.06em",
-                }}>
-                  {bearish} BEAR
-                </span>
-              )}
-              {neutral > 0 && (
-                <span className="terminal-status" style={{
-                  fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                  padding: "5px 14px", borderRadius: 20,
-                  color: T.text4, background: T.overlay04,
-                  border: `1px solid ${T.overlay10}`,
-                  letterSpacing: "0.06em",
-                }}>
-                  {neutral} FLAT
+              ))}
+              {counts.THIN > 0 && (
+                <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4 }}>
+                  {counts.THIN} with too few wallets
                 </span>
               )}
             </div>
           )}
+          {basis != null && tracked > 0 && (
+            <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: partial ? T.yellow : T.text3 }}>
+              Based on {basis} of {tracked} tracked wallets
+              {partial && `. Only ${fresh} were updated in the last 75 minutes, so these figures cover a partial set.`}
+            </div>
+          )}
         </div>
 
-        <StatusStrip status={status} cohort={cohort} roster={roster} />
+        <StatusStrip status={status} cohort={cohort} />
 
         {/* Controls bar */}
         <div style={{
@@ -2967,7 +1823,7 @@ export default function HyperLensPanel({ isMobile }) {
           flexDirection: isMobile ? "column" : "row",
           gap: isMobile ? 8 : 10, flexWrap: "wrap",
         }}>
-          <TabSwitcher active={tab} onChange={setTab} isMobile={isMobile} />
+          <TabSwitcher active={tab} onChange={setTab} />
           <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />
 
           {tab === "consensus" && (
@@ -2985,7 +1841,7 @@ export default function HyperLensPanel({ isMobile }) {
                 transition: "all 0.2s ease",
                 letterSpacing: "0.03em",
               }}
-              onFocus={e => { e.target.style.borderColor = T.accent; e.target.style.boxShadow = `0 0 0 2px ${T.accent}15`; }}
+              onFocus={e => { e.target.style.borderColor = T.accent; e.target.style.boxShadow = `0 0 0 2px ${T.accentDim}`; }}
               onBlur={e => { e.target.style.borderColor = T.overlay10; e.target.style.boxShadow = "none"; }}
             />
           )}
@@ -3005,6 +1861,7 @@ export default function HyperLensPanel({ isMobile }) {
             consensus={consensus}
             onClose={() => setSelectedSymbol(null)}
             onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+            isMobile={isMobile}
           />
         </ModalOverlay>
       )}
@@ -3037,13 +1894,6 @@ export default function HyperLensPanel({ isMobile }) {
               consensus={consensus}
               onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
               cohort={cohort}
-            />
-          )}
-          {/* Roster tab removed in Sentiment Mode — see TabSwitcher comment */}
-          {tab === "pressure" && (
-            <PressureMap
-              consensus={consensus}
-              isMobile={isMobile}
             />
           )}
         </GlassCard>
