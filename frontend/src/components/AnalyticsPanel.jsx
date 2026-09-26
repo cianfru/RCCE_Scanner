@@ -547,7 +547,7 @@ export default function AnalyticsPanel({ isMobile }) {
           <GlassCard style={{ padding: pad }}>
             <SectionHeader
               title="Condition Predictive Value"
-              subtitle="Average 7-day return when each condition is TRUE vs FALSE. Higher edge means the condition is a stronger predictor of good outcomes."
+              subtitle="Average 7-day return of long signals when the condition was met vs not met (not a forecast). Edge is the difference."
             />
             <ConditionValueTable conditions={data.conditions} isMobile={isMobile} />
           </GlassCard>
@@ -556,7 +556,7 @@ export default function AnalyticsPanel({ isMobile }) {
           <GlassCard style={{ padding: pad }}>
             <SectionHeader
               title="Top Condition Combos"
-              subtitle="Best-performing combinations of 3 conditions ranked by lift (WR above baseline). Only uses conditions that vary meaningfully — always-true conditions are excluded."
+              subtitle="Combinations of 3 conditions ranked by lift (long-signal win rate above the long baseline). Only uses conditions that vary meaningfully — always-true conditions are excluded."
             />
             <ComboCards combos={data.combos} isMobile={isMobile} />
           </GlassCard>
@@ -573,7 +573,7 @@ export default function AnalyticsPanel({ isMobile }) {
             <GlassCard style={{ padding: pad, flex: 1 }}>
               <SectionHeader
                 title="By Conviction Level"
-                subtitle="Performance grouped by how many conditions were met. Higher conviction should correlate with better outcomes."
+                subtitle="Win rate and average 7-day return of long signals, grouped by how many conditions were met (not a forecast)."
               />
               <ConfluenceScorecard buckets={data.confluence_scorecard} isMobile={isMobile} />
             </GlassCard>

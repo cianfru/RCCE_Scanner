@@ -34,6 +34,7 @@ _LONG_SIGNALS = {
     "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED",
 }
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "RISK_OFF", "NO_LONG"}
+_SHORT_SIGNALS = {"LIGHT_SHORT", "STRONG_SHORT"}
 _CACHE_TTL = 300  # 5 minutes
 
 # All known condition names (used for combo iteration)
@@ -81,11 +82,12 @@ def _extract_conditions(context_str: Optional[str]) -> Optional[Dict[str, bool]]
 def _is_win(signal: str, outcome_pct: float) -> bool:
     """Determine if a signal outcome was a 'win'.
 
-    LONG signals win when price goes up; EXIT signals win when price goes down.
+    LONG signals win when price goes up; EXIT and SHORT signals win when
+    price goes down.
     """
     if signal in _LONG_SIGNALS:
         return outcome_pct > 0
-    if signal in _EXIT_SIGNALS:
+    if signal in _EXIT_SIGNALS or signal in _SHORT_SIGNALS:
         return outcome_pct < 0
     return False
 
@@ -203,10 +205,15 @@ class SignalAnalytics:
     async def condition_predictive_value(
         self, timeframe: str = "4h",
     ) -> List[Dict[str, Any]]:
-        """For each condition: avg 7d return and win rate when TRUE vs FALSE."""
+        """For each condition: avg 7d return and win rate when TRUE vs FALSE.
+
+        Long entries only: a falling price is a loss for a long but a win for
+        an exit or short, so mixing directions makes the average meaningless.
+        """
 
         async def _compute():
-            rows = await self._fetch_rows_with_outcomes(timeframe)
+            rows = [r for r in await self._fetch_rows_with_outcomes(timeframe)
+                    if r["signal"] in _LONG_SIGNALS]
             # Buckets: condition_name -> {"true": [outcomes], "false": [outcomes]}
             buckets: Dict[str, Dict[str, list]] = {
                 c: {"true": [], "false": []} for c in _ALL_CONDITIONS
@@ -276,10 +283,12 @@ class SignalAnalytics:
         (always-true conditions don't differentiate). Ranks by lift
         (combo WR minus baseline WR) to surface truly predictive combos.
         Deduplicates combos that match the exact same set of rows.
+        Long entries only, as in condition_predictive_value.
         """
 
         async def _compute():
-            rows = await self._fetch_rows_with_outcomes(timeframe)
+            rows = [r for r in await self._fetch_rows_with_outcomes(timeframe)
+                    if r["signal"] in _LONG_SIGNALS]
 
             # Pre-compute met-condition sets per row
             row_data: List[Tuple[frozenset, float, bool]] = []
@@ -425,10 +434,11 @@ class SignalAnalytics:
     async def confluence_stratified_scorecard(
         self, timeframe: str = "4h",
     ) -> List[Dict[str, Any]]:
-        """Performance by conditions_met bucket."""
+        """Performance by conditions_met bucket (long entries only)."""
 
         async def _compute():
-            rows = await self._fetch_rows_with_outcomes(timeframe)
+            rows = [r for r in await self._fetch_rows_with_outcomes(timeframe)
+                    if r["signal"] in _LONG_SIGNALS]
 
             def _bucket(met: int) -> str:
                 if met >= 12:

@@ -520,14 +520,12 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
             onClick={startBacktest}
             disabled={isRunning || config.symbols.length === 0}
             className="terminal-status" style={{
-              padding: "8px 24px", borderRadius: "20px", border: "none",
-              background: (isRunning || config.symbols.length === 0) ? T.text4 : T.accent,
-              color: "#000", fontFamily: T.mono, fontSize: 11, fontWeight: 700,
+              color: (isRunning || config.symbols.length === 0) ? T.text4 : T.accent,
+              fontFamily: T.mono, fontSize: 12, fontWeight: 700,
               cursor: (isRunning || config.symbols.length === 0) ? "not-allowed" : "pointer",
-              letterSpacing: "0.06em",
             }}
           >
-            {isRunning ? "RUNNING..." : "RUN BACKTEST"}
+            {isRunning ? "Running…" : "Run backtest"}
           </button>
         </div>
 
