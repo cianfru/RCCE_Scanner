@@ -4052,7 +4052,10 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
 async def market_history_view():
     """Share of coins in each regime on every day since 2019, today's percentile, past episodes."""
     import market_history
-    return market_history.view()
+    try:
+        return market_history.view()
+    except FileNotFoundError:
+        return JSONResponse({"detail": "Market history seed missing from this deploy"}, status_code=503)
 
 
 @app.get("/api/cohorts")
