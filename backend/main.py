@@ -4207,6 +4207,18 @@ async def hyperlens_opens(symbol: str, days: int = Query(30, ge=1, le=180)):
 _POSITIONING_CACHE: dict = {}
 
 
+def _positioning_map_cached(cohort: str) -> dict:
+    """hl_intelligence.positioning_map, cached for a minute (it walks every wallet's reading)."""
+    from hl_intelligence import positioning_map
+    key = f"map:{cohort}"
+    hit = _POSITIONING_CACHE.get(key)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    pm = positioning_map(cohort)
+    _POSITIONING_CACHE[key] = (time.time(), pm)
+    return pm
+
+
 @app.get("/api/hyperlens/positioning")
 async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(profitable|large)$")):
     """Per coin: where tracked wallets are positioned (counts, dollars, median entry per side),
@@ -4216,8 +4228,8 @@ async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(pro
     if hit and time.time() - hit[0] < 60:
         return hit[1]
     from convergence import tracker
-    from hl_intelligence import _normalize_coin, positioning_map
-    pm = positioning_map(cohort)
+    from hl_intelligence import _normalize_coin
+    pm = _positioning_map_cached(cohort)
     tr = tracker()
     now = time.time()
     opens: dict = {}
@@ -4247,6 +4259,34 @@ async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(pro
     body = {"cohort": cohort, "wallets": pm["wallets"], "updated_at": now, "rows": rows}
     _POSITIONING_CACHE[cohort] = (now, body)
     return body
+
+
+@app.get("/api/hyperlens/intel")
+async def hyperlens_intel(coins: str = Query(..., max_length=200)):
+    """For a few coins (the scanner's best and forming setups): where profitable traders and
+    large accounts are positioned, who opened in the last 24h and 6h, and any convergence;
+    plus what profitable traders did overall in the last 6h. Data already in memory."""
+    from convergence import tracker
+    from hl_intelligence import _normalize_coin
+    from intel import coin_intel, pulse
+    wanted = []
+    for c in coins.split(","):
+        c = _normalize_coin(c.strip().upper().split("/")[0])
+        if c and c not in wanted:
+            wanted.append(c)
+    wanted = wanted[:10]
+    prof, large = _positioning_map_cached("profitable"), _positioning_map_cached("large")
+    tr = tracker()
+    now = time.time()
+    opens = [o for o in tr.opens if now - o["ts"] <= 86400]
+    convs: dict = {}
+    for c in tr.convergences_since(now - 48 * 3600):          # newest first
+        convs.setdefault(c["coin"], c)
+    return {"updated_at": now,
+            "pulse": pulse(prof["wallets"], prof.get("holding", 0), opens, now),
+            "large_wallets": large["wallets"],
+            "coins": {c: coin_intel(c, prof["coins"].get(c), large["coins"].get(c), opens, convs.get(c), now)
+                      for c in wanted}}
 
 
 @app.get("/api/hyperlens/followed")

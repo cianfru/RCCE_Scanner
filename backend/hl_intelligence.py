@@ -1439,12 +1439,13 @@ def positioning_map(cohort: str = "profitable") -> dict:
     median entry per side, and how many of them are in profit at the current mark.
 
     Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
-    "profitable" (money printers) or "large" (largest accounts).
+    "profitable" (money printers) or "large" (largest accounts). ``holding`` counts the
+    wallets with any position; the rest are flat.
     """
     group = {w.address for w in (_roster_money_printers if cohort == "profitable" else _roster_smart_money)}
     now = time.time()
     raw: Dict[str, dict] = {}
-    wallets = 0
+    wallets = holding = 0
     for wallet in _roster:
         if wallet.address not in group:
             continue
@@ -1457,15 +1458,18 @@ def positioning_map(cohort: str = "profitable") -> dict:
         if 0 < latest.account_value < _DISPLAY_MIN_AV:
             continue
         wallets += 1
+        held = False
         for p in latest.positions:
             if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size:
                 continue
+            held = True
             coin = _normalize_coin(p.coin)
             side = p.side.lower()
             mark = p.size_usd / abs(p.size)
             d = raw.setdefault(coin, {"marks": [], "long": [], "short": []})
             d["marks"].append(mark)
             d[side].append((p.entry_px, p.size_usd, (mark > p.entry_px) if side == "long" else (mark < p.entry_px)))
+        holding += held
     out: Dict[str, dict] = {}
     for coin, d in raw.items():
         row = {"mark": statistics.median(d["marks"])}
@@ -1475,7 +1479,7 @@ def positioning_map(cohort: str = "profitable") -> dict:
                          "median_entry": statistics.median(x[0] for x in xs) if xs else None,
                          "in_profit": sum(1 for x in xs if x[2])}
         out[coin] = row
-    return {"wallets": wallets, "coins": out}
+    return {"wallets": wallets, "holding": holding, "coins": out}
 
 
 def wallet_positions(address: str) -> dict:
