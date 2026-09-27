@@ -69,3 +69,17 @@ def test_watch_check_sends_once_per_change(tmp_path, monkeypatch):
     assert len(msgs) == 1 and "FET 1D: entered the box" in msgs[0]
     assert sm.check(maps) == []                               # no repeat
     assert (tmp_path / "w.json").exists()
+
+
+def test_build_reads_numpy_candles_from_the_store():
+    rng = np.random.default_rng(2)
+    close = np.exp(np.cumsum(rng.normal(0, 0.02, 700))) * 10
+    ts = np.array([NOW - (700 - k) * 86400 for k in range(700)], dtype=float) * 1000
+
+    class Store:
+        def get(self, sym, tf):
+            return {"timestamp": ts, "close": close}
+    out = sm.build([dict(row(), market_kind="perpetual")], "1d", Store(), {"FET": {"long": {"n": 2, "median_entry": 1.0}}}, {}, [], {}, NOW)
+    c = out["coins"][0]
+    assert c["coin"] == "FET" and len(c["trail"]["z"]) == sm.TRAIL["1d"] and c["trail"]["z"][-1] == 0.5
+    assert sm.closes({"timestamp": np.array([]), "close": np.array([])}, "1d", NOW) == ([], [])
