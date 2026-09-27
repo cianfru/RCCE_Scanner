@@ -1626,8 +1626,8 @@ export default function HyperLensPanel({ isMobile }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Header card */}
-      <GlassCard style={{ padding: 0, overflow: "hidden" }}>
+      {/* Header card (the page's hero card: it carries the one machined metal edge) */}
+      <GlassCard className="hyperlens-summary" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
           padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
           display: "flex", flexDirection: "column", gap: 4,

@@ -3,12 +3,12 @@ import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
 import { inGroup } from "./utils/sectors.js";
 import SetupMap from "./components/SetupMap.jsx";
-import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge, getBaseSymbol } from "./theme.js";
 import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
+import { activeMainTab as mainTabFor, mainTabTargets, readLastScanner, writeLastScanner } from "./utils/mainNav.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
@@ -25,8 +25,9 @@ import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
-import NotificationBell from "./components/NotificationBell.jsx";
-import SettingsDropdown from "./components/SettingsDropdown.jsx";
+import AppHeader from "./components/AppHeader.jsx";
+import MobileTabBar from "./components/MobileTabBar.jsx";
+import SettingsPage from "./pages/SettingsPage.jsx";
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
 import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
@@ -105,6 +106,7 @@ const TAB_TITLES = {
   notfound: "Page not found",
 };
 const DEFAULT_SORT = "priority_score";
+const RESCAN_KEY_FLAG = "rcce-rescan-needs-key";
 const cleanPath = pathname => pathname.replace(/\/$/, "") || "/scanner";
 
 export default function App() {
@@ -500,15 +502,43 @@ export default function App() {
     };
   }, [loadAll, sw.supported]);
 
+  // Rescan. Without the admin key the server refuses (403): stop, open Settings, and say so on
+  // the button for the rest of the session. "Scan already in progress" keeps the spinner until
+  // that scan's data arrives (the feed effects above clear it), for at most 90s.
+  const [rescanNeedsKey, setRescanNeedsKey] = useState(() => { try { return sessionStorage.getItem(RESCAN_KEY_FLAG) === "1"; } catch { return false; } });
+  const scanWait = useRef(0);
+  useEffect(() => () => clearTimeout(scanWait.current), []);
   const triggerScan = async () => {
     if (scanRunning) return;
     setScanRunning(true);
+    clearTimeout(scanWait.current);
+    let res;
     try {
-      const res = await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      res = await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
     } catch (e) {
       console.warn("Scan refresh failed:", e);
       setScanRunning(false);
+      return;
+    }
+    if (res.status === 403) {
+      setScanRunning(false);
+      setRescanNeedsKey(true);
+      try { sessionStorage.setItem(RESCAN_KEY_FLAG, "1"); } catch { /* storage blocked */ }
+      window.dispatchEvent(new Event("reflex-open-settings"));
+      return;
+    }
+    if (!res.ok) {
+      console.warn("Scan refresh failed: HTTP", res.status);
+      setScanRunning(false);
+      return;
+    }
+    if (rescanNeedsKey) {
+      setRescanNeedsKey(false);
+      try { sessionStorage.removeItem(RESCAN_KEY_FLAG); } catch { /* storage blocked */ }
+    }
+    const body = await res.json().catch(() => null);
+    if (body?.ok === false) {
+      scanWait.current = setTimeout(() => setScanRunning(false), 90 * 1000);
       return;
     }
     if (wsRef.connected) {
@@ -713,6 +743,21 @@ export default function App() {
   const scannerTitle = activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals";
   const radarTf = activeTab === "radar" ? timeframeFrom(location.search) : null;
 
+  // Main tabs: which is active, and where each goes. Scanner returns to the last scanner view
+  // (kept for the session); Radar opens on that view's timeframe.
+  const mainTab = mainTabFor(location.pathname, location.search);
+  const scannerTarget = onScanner ? `/scanner${location.search}` : (readLastScanner() || "/scanner");
+  useEffect(() => { if (onScanner) writeLastScanner(`/scanner${location.search}`); }, [onScanner, location.search]);
+  const tabTargets = mainTabTargets({ lastScanner: scannerTarget, lastScannerTf: timeframeFrom(scannerTarget.split("?")[1] || "") });
+
+  // The header's compact 4H | 1D drives the page's own timeframe (scanner or Radar).
+  const setHeaderTimeframe = (tf) => {
+    if (activeTab !== "radar") { setActiveTab(tf); return; }
+    const params = new URLSearchParams(location.search);
+    params.set("tf", tf);
+    navigate(`/radar?${params}`, { replace: true, state: location.state });
+  };
+
   // Browser tab title. The coin page refines its own ("BTC · Reflex") once its data is in.
   useEffect(() => {
     document.title = coinPageSymbol ? `${getBaseSymbol(coinPageSymbol)} · Reflex`
@@ -745,11 +790,9 @@ export default function App() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }
-        @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes anomalyDotPulse { 0%,100%{opacity:1; box-shadow: 0 0 4px rgba(239,68,68,0.6);} 50%{opacity:0.4; box-shadow: none;} }
         .fade-in-up { animation: fadeInUp 0.4s ease-out both; }
         .shimmer-loading {
           background: linear-gradient(90deg, var(--t-overlay04) 25%, var(--t-overlay10) 50%, var(--t-overlay04) 75%);
@@ -830,11 +873,11 @@ export default function App() {
         }} />
       </div>
 
-      {/* ── NAV DRAWER ── */}
+      {/* ── NAV DRAWER (More) ── */}
       <NavDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        activeTab={activeTab === "traders" ? "hyperlens" : activeTab}
+        activeTab={activeTab}
         onTabChange={setActiveTab}
         isMobile={isMobile}
         groups={groups}
@@ -846,135 +889,29 @@ export default function App() {
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
         onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d") setActiveTab("1d"); }}
         scanData={activeTab === "1d" ? data1d : data4h}
+        themeMode={mode}
+        onToggleTheme={toggle}
       />
 
+      {/* ── PHONE TAB BAR (below 900px; before the header so the header's menus open above it) ── */}
+      {width < 900 && activeTab !== "chat" && <MobileTabBar activeKey={mainTab} targets={tabTargets} />}
+
       {/* ── HEADER ── */}
-      <div className="terminal-header" style={{
-        padding: `0 ${hPad}px`,
-        borderBottom: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: mode === "dark"
-          ? "linear-gradient(90deg, rgba(10,10,14,0.82) 0%, rgba(12,12,18,0.78) 50%, rgba(10,10,14,0.82) 100%)"
-          : "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(248,248,252,0.84) 50%, rgba(255,255,255,0.88) 100%)",
-        backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)",
-        position: "sticky", top: 0, zIndex: 100,
-        height: isMobile ? 56 : 56,
-        overflow: "visible",
-        boxShadow: mode === "dark"
-          ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
-          : "0 1px 0 rgba(255,255,255,0.6), 0 4px 20px rgba(0,0,0,0.06)",
-      }}>
-        {/* Aura: cyan band across bottom edge */}
-        <div style={{
-          position: "absolute", bottom: 0, left: 0, right: 0,
-          height: "60%",
-          background: mode === "dark"
-            ? "linear-gradient(0deg, rgba(151,252,228,0.10) 0%, rgba(151,252,228,0.03) 60%, transparent 100%)"
-            : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
-          pointerEvents: "none",
-        }} />
-        {/* Aura: aquamarine accent band across full header */}
-        <div style={{
-          position: "absolute", top: 0, left: 0, right: 0,
-          height: "100%",
-          background: mode === "dark"
-            ? "linear-gradient(180deg, rgba(15,57,51,0.55) 0%, rgba(15,57,51,0.18) 60%, transparent 100%)"
-            : "linear-gradient(180deg, rgba(14,116,144,0.07) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
-          pointerEvents: "none",
-        }} />
-        {/* Left: hamburger + logo + scanning */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
-          <button
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open navigation"
-            style={{
-              width: 24, height: 24,
-              display: "flex",
-              flexDirection: "column", alignItems: "center", justifyContent: "center",
-              gap: 4, padding: 0, flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-            }}
-          >
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-          </button>
-          <ReflexBrand compact={isMobile} onClick={() => {
-            navigate("/scanner");
-            setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null);
-            setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
-          }} />
-
-        </div>
-
-        {/* Right: timestamp, refresh, cache, theme toggle */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
-          flexShrink: 0,
-        }}>
-          {!isMobile && lastRefresh && (
-            <span style={{ fontSize: 12, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
-              {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
-          <button
-            onClick={triggerScan}
-            disabled={scanRunning}
-            title={scanRunning ? "Scan running" : "Refresh scan"}
-            aria-label={scanRunning ? "Scan running" : "Refresh scan"}
-            style={{
-              width: 28, height: 28, borderRadius: 8,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              padding: 0, flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              color: T.text3,
-              cursor: scanRunning ? "default" : "pointer",
-              opacity: scanRunning ? 0.5 : 1,
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={e => { if (!scanRunning) e.currentTarget.style.color = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
-              style={scanRunning ? { animation: "spin 1s linear infinite" } : undefined}>
-              <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
-            </svg>
-          </button>
-          <NotificationBell />
-          <SettingsDropdown />
-          <button
-            onClick={toggle}
-            title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            style={{
-              border: "none", background: "transparent", padding: 0,
-              cursor: "pointer", flexShrink: 0,
-              fontSize: 12, fontFamily: T.font, color: T.text3,
-              transition: "color 0.15s ease",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.text1; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
-          >
-            {mode === "dark" ? "Light" : "Dark"}
-          </button>
-        </div>
-      </div>
-
-      {/* Header aura line — 1px gradient separator */}
-      <div style={{
-        height: 1, width: "100%",
-        background: mode === "dark"
-          ? "linear-gradient(90deg, transparent 0%, rgba(151,252,228,0.15) 25%, rgba(151,252,228,0.25) 50%, rgba(151,252,228,0.15) 75%, transparent 100%)"
-          : "linear-gradient(90deg, transparent 0%, rgba(14,116,144,0.12) 25%, rgba(14,116,144,0.18) 50%, rgba(14,116,144,0.12) 75%, transparent 100%)",
-        position: "sticky", top: isMobile ? 56 : 56, zIndex: 99,
-      }} />
-
-      {/* Controls bar removed — timeframe toggle moved into ConsensusBar,
-          regime/signal dropdowns removed (stat cards + column sort cover the need) */}
+      <AppHeader
+        width={width} isMobile={isMobile} mode={mode} onToggleTheme={toggle}
+        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets}
+        drawerOpen={drawerOpen} onOpenDrawer={() => setDrawerOpen(true)}
+        onBrand={() => {
+          navigate("/scanner");
+          setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null);
+          setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
+        }}
+        lastRefresh={lastRefresh} cacheAge={cacheAge} error={error} scanRunning={scanRunning}
+        onRefresh={triggerScan} rescanNeedsKey={rescanNeedsKey}
+        timeframe={activeTab === "radar" ? radarTf : activeTab === "4h" ? "4h" : "1d"}
+        onTimeframe={setHeaderTimeframe}
+        compactTfRoute={showDashboard ? "scanner" : activeTab === "radar" ? "radar" : null}
+      />
 
       {/* ── ERROR ── */}
       {error && (
@@ -997,7 +934,7 @@ export default function App() {
         </div>
       )}
 
-      <main id="content">
+      <main id="content" style={activeTab === "chat" ? undefined : { paddingBottom: "calc(var(--tabbar-space) + 16px)" }}>
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
         <Suspense fallback={<div style={{ padding: isMobile ? 16 : 24 }}><PageSkeleton /></div>}>
@@ -1151,6 +1088,8 @@ export default function App() {
             </FadeIn>
           </Suspense>
         )}
+
+        {activeTab === "settings" && <SettingsPage style={pageMargin} />}
 
         {activeTab === "notfound" && <NotFound />}
       </div>}

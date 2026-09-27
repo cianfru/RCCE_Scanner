@@ -180,7 +180,7 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKin
         ref={btnRef}
         onClick={() => setOpen(!open)}
         style={{
-          position: "fixed", bottom: isMobile ? 16 : 24, right: isMobile ? 16 : 24,
+          position: "fixed", bottom: `calc(var(--tabbar-space) + ${isMobile ? 16 : 24}px)`, right: isMobile ? 16 : 24,   // clear of the phone tab bar
           width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: "50%",
           background: T.popoverBg,
           backdropFilter: "blur(20px) saturate(1.5)",
@@ -213,7 +213,7 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKin
           ref={panelRef}
           style={{
             position: "fixed",
-            bottom: isMobile ? 72 : 92,
+            bottom: `calc(var(--tabbar-space) + ${isMobile ? 72 : 92}px)`,
             // Phones: centred within the 16px gutters.
             left: isMobile ? 16 : "auto",
             right: isMobile ? 16 : 24,

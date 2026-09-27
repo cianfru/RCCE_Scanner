@@ -1,91 +1,86 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme.js";
+import { NAV_ICONS } from "./navIcons.jsx";
+import Tabs from "./Tabs.jsx";
 
-// Simple 16x16 SVG icons for nav items
-const NAV_ICONS = {
-  "1d": (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M2 12L5 7L8 9L14 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M2 14h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  ),
-  chat: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 3V4a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-    </svg>
-  ),
-  signals: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M3 13V8M6 13V5M9 13V7M12 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  ),
-  hyperlens: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M12 4l2-2M4 12l-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  ),
-  backtest: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-    </svg>
-  ),
-  executor: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M5 2l8 6-8 6V2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-    </svg>
-  ),
-  trading: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M2 8h3l2-5 2 10 2-5h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
-  tradfi: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <rect x="2" y="6" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="6.5" y="3" width="3" height="10" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="11" y="5" width="3" height="8" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
-    </svg>
-  ),
-  analytics: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <path d="M3 10v3M6 7v6M9 5v8M12 3v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  ),
-};
-
+// More: the rarely used pages, one tap from the hamburger. The four main pages live in the
+// header tabs (and the phone tab bar), so they are not repeated here.
 const NAV_SECTIONS = [
   {
-    label: "Markets",
+    label: "Research",
     items: [
-      { key: "tradfi", label: "TradFi", desc: "Commodities, equities, indices (HIP-3)" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { key: "chat", label: "AI Assist", desc: "Explain the scanner’s market data" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
-      { key: "hyperlens", label: "HyperLens", desc: "Positioning of profitable traders and large accounts" },
     ],
   },
   {
-    label: "Trading",
+    label: "Tools",
     items: [
       { key: "backtest", label: "Backtest", desc: "Strategy backtesting" },
       { key: "executor", label: "Executor", desc: "Signal execution engine" },
-      { key: "trading", label: "Portfolio", desc: "Hyperliquid portfolio" },
+      { key: "chat", label: "AI Assist", desc: "Explain the scanner’s market data · limited daily use" },
     ],
   },
 ];
+const TRADFI = { key: "tradfi", label: "TradFi", desc: "Commodities, equities, indices (HIP-3)" };
+const SETTINGS = { key: "settings", label: "Settings", desc: "Admin key, power state and data features" };
+const THEMES = [{ key: "dark", label: "Dark" }, { key: "light", label: "Light" }];
 
-export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit, onWatchlistSelect, scanData, marketKind, onMarketChange }) {
+const sectionLabel = {
+  fontSize: 12, fontWeight: 600, color: T.text4, fontFamily: T.font, letterSpacing: 0,
+  padding: "0 8px 8px",
+};
+
+function NavRow({ item, active, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? "page" : undefined}
+      style={{
+        display: "flex", alignItems: "center", gap: 12,
+        width: "100%", textAlign: "left",
+        padding: "12px 12px",
+        border: 0,
+        borderLeft: `2px solid ${active ? T.accent : "transparent"}`,
+        background: active ? T.accentDim : "transparent",
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+        marginBottom: 2,
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.surface; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+    >
+      <div style={{
+        width: 20, height: 20,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: active ? T.accent : T.text3,
+        flexShrink: 0,
+      }}>
+        {NAV_ICONS[item.key] || null}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontFamily: T.font, fontSize: T.textLg, fontWeight: active ? 600 : 500,
+          color: active ? T.accent : T.text1,
+          letterSpacing: "-0.01em",
+        }}>
+          {item.label}
+        </div>
+        <div style={{
+          fontFamily: T.font, fontSize: T.textSm, color: T.text4,
+          marginTop: 1,
+        }}>
+          {item.desc}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Watch-group props (groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit,
+// onWatchlistSelect) are still accepted; the Lists section stays dormant (owner decision).
+export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, scanData, marketKind, onMarketChange, themeMode, onToggleTheme }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
@@ -105,16 +100,33 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
     }
   }, [isOpen]);
 
-  // Escape closes; focus moves into the drawer when it opens
+  // Keyboard and scroll: focus moves in and stays in (Tab wraps), the page behind does not
+  // scroll, Escape closes, and focus returns to what opened the drawer (the More button).
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !mounted) return;
+    const previous = document.activeElement;
+    const bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     navRef.current?.focus();
-    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); onCloseRef.current(); }
+      if (e.key !== "Tab") return;
+      const nodes = [...(navRef.current?.querySelectorAll('button:not([disabled]),a[href],input,[tabindex="0"]') || [])].filter(n => n.getClientRects().length);
+      const first = nodes[0], last = nodes.at(-1);
+      if (!first) { e.preventDefault(); return; }
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === navRef.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !navRef.current?.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen]);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = bodyOverflow;
+      const back = previous && previous !== document.body && previous.isConnected ? previous : document.querySelector(".header-more");
+      back?.focus?.();
+    };
+  }, [isOpen, mounted]);
 
   // Swipe left to close (works with 1 finger on mobile, 2 on trackpad)
   const handleTouchStart = useCallback((e) => {
@@ -134,6 +146,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
 
   if (!mounted && !isOpen) return null;
 
+  const go = key => () => { onTabChange(key); onClose(); };
+
   return (
     <>
       {/* Backdrop */}
@@ -152,7 +166,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
       <nav
         ref={navRef}
         tabIndex={-1}
-        aria-label="Navigation"
+        aria-label="More"
+        className="more-drawer"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{
@@ -169,24 +184,29 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
         transition: "transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
         display: "flex", flexDirection: "column",
         overflowY: "auto",
+        overscrollBehavior: "contain",
         outline: "none",
       }}>
-        {/* Drawer header */}
+        {/* Drawer header: the ribbon mark, "More", close */}
         <div style={{
           padding: "20px 20px 16px",
           borderBottom: `1px solid ${T.border}`,
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          <span style={{
-            fontFamily: T.font, fontSize: 15, fontWeight: 700,
-            color: T.text1, letterSpacing: "-0.01em",
-          }}>
-            Navigation
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <img src="/brand/reflex-ribbon-transparent.svg" width={24} height={24} alt="" />
+            <span style={{
+              fontFamily: T.font, fontSize: 15, fontWeight: 700,
+              color: T.text1, letterSpacing: "-0.01em",
+            }}>
+              More
+            </span>
           </span>
           <button
+            type="button"
             onClick={onClose}
-            aria-label="Close navigation"
-            title="Close navigation"
+            aria-label="Close More"
+            title="Close"
             style={{
               width: 32, height: 32, borderRadius: 8,
               border: `1px solid ${T.border}`,
@@ -199,27 +219,18 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
             onMouseEnter={e => { e.currentTarget.style.background = T.surfaceH; e.currentTarget.style.color = T.text1; }}
             onMouseLeave={e => { e.currentTarget.style.background = T.surface; e.currentTarget.style.color = T.text3; }}
           >
-            {"\u2715"}
+            {"✕"}
           </button>
         </div>
 
-        {/* Scanner + Watchlists + Nav sections */}
         <div style={{ padding: "12px 12px 24px", flex: 1 }}>
-          {/* ── Scanner section (Hyperliquid + Watchlists) ── */}
+          {/* ── Markets: the scanner's two markets, then TradFi ── */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{
-              fontSize: 12, fontWeight: 700, color: T.text4,
-              fontFamily: T.font, letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "0 8px 8px",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-            }}>
-              <span>Scanner</span>
-            </div>
+            <div style={sectionLabel}>Markets</div>
 
             {[["perpetual", "Perpetuals"], ["spot", "Spot markets"]].map(([kind, label]) => {
               const selected = ["4h", "1d"].includes(activeTab) && marketKind === kind;
-              return <button key={kind} aria-current={selected ? "page" : undefined}
+              return <button type="button" key={kind} aria-current={selected ? "page" : undefined}
                 onClick={() => {onMarketChange?.(kind); onClose();}}
                 style={{display:"flex",justifyContent:"space-between",width:"100%",padding:"14px 12px",textAlign:"left",border:0,borderLeft:`2px solid ${selected ? T.accent : "transparent"}`,background:selected ? T.accentDim : "transparent",color:selected ? T.accent : T.text1,fontSize:14,cursor:"pointer"}}>
                 {label}<span title="markets scanned" style={{color:T.text3,fontSize:12}}>{scanData?.filter(r=>r.market_kind===kind).length || 0}</span>
@@ -228,69 +239,37 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
 
             {/* Watchlists */}
 
+            <NavRow item={TRADFI} active={activeTab === TRADFI.key} onSelect={go(TRADFI.key)} />
           </div>
 
-          {/* ── Other nav sections ── */}
+          {/* ── Research, Tools ── */}
           {NAV_SECTIONS.map((section) => (
             <div key={section.label} style={{ marginBottom: 20 }}>
-              <div style={{
-                fontSize: 12, fontWeight: 700, color: T.text4,
-                fontFamily: T.font, letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                padding: "0 8px 8px",
-              }}>
-                {section.label}
-              </div>
-              {section.items
-                .filter(item => !item.desktopOnly || !isMobile)
-                .map((item) => {
-                  const isActive = activeTab === item.key;
-                  return (
-                    <button
-                      key={item.key}
-                      onClick={() => { onTabChange(item.key); onClose(); }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 12,
-                        width: "100%", textAlign: "left",
-                        padding: "12px 12px",
-                        border: 0,
-                        borderLeft: `2px solid ${isActive ? T.accent : "transparent"}`,
-                        background: isActive ? T.accentDim : "transparent",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                        marginBottom: 2,
-                      }}
-                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = T.surface; }}
-                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                    >
-                      <div style={{
-                        width: 20, height: 20,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        color: isActive ? T.accent : T.text3,
-                        flexShrink: 0,
-                      }}>
-                        {NAV_ICONS[item.key] || null}
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{
-                          fontFamily: T.font, fontSize: T.textLg, fontWeight: isActive ? 600 : 500,
-                          color: isActive ? T.accent : T.text1,
-                          letterSpacing: "-0.01em",
-                        }}>
-                          {item.label}
-                        </div>
-                        <div style={{
-                          fontFamily: T.font, fontSize: T.textSm, color: T.text4,
-                          marginTop: 1,
-                        }}>
-                          {item.desc}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div style={sectionLabel}>{section.label}</div>
+              {section.items.map(item => (
+                <NavRow key={item.key} item={item} active={activeTab === item.key} onSelect={go(item.key)} />
+              ))}
             </div>
           ))}
+
+          {/* ── Settings: the settings page and the theme ── */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={sectionLabel}>Settings</div>
+            <NavRow item={SETTINGS} active={activeTab === SETTINGS.key} onSelect={go(SETTINGS.key)} />
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              padding: "4px 12px 4px 14px",
+            }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ width: 20, flexShrink: 0 }} aria-hidden="true" />
+                <span style={{ fontFamily: T.font, fontSize: T.textLg, fontWeight: 500, color: T.text1, letterSpacing: "-0.01em" }}>
+                  Appearance
+                </span>
+              </span>
+              <Tabs small label="Appearance" items={THEMES} value={themeMode}
+                onChange={k => { if (k !== themeMode) onToggleTheme?.(); }} />
+            </div>
+          </div>
         </div>
       </nav>
     </>
