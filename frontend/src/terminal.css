@@ -1016,7 +1016,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-tile-top{grid-area:top;align-self:end;display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;}
 .radar-tile-top strong{font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);overflow:hidden;text-overflow:ellipsis;}
 .radar-tile-sub{grid-area:sub;align-self:start;display:block;min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.radar-tile-sub .trd::before{content:" \00b7 ";white-space:pre;}
+.radar-tile-sub .trd::before{content:" \00b7\0020";white-space:pre;}
 .radar-tile-sub em{font-style:normal;color:var(--t-accent);}
 .radar-strip-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-left:18px;border-left:1px solid var(--t-border);white-space:nowrap;}
 .radar-open{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-accent);text-decoration:underline;text-underline-offset:3px;}

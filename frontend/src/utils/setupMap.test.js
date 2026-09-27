@@ -140,6 +140,56 @@ test("labels: hidden when there is no room", () => {
   assert.equal(m.has("BBBB"), false);
 });
 
+test("labels: the followed coin always keeps its label", () => {
+  // The same boxed-in coin as above: followed, it still gets a label, on the first side
+  // clear of other labels (over a neighbour's dot) inside the plot.
+  const d = { coin: "PENDLE", x: 380, y: 100, r: 5 };
+  const around = [{ coin: "L", x: 340, y: 100, r: 30 }, { coin: "U", x: 380, y: 70, r: 18 }, { coin: "D", x: 380, y: 130, r: 18 }];
+  const m = placeLabels([d], { width: 390, height: 300, others: around, force: "PENDLE" });
+  assert.deepEqual(m.get("PENDLE"), { x: 371, y: 104, anchor: "end" });
+  // Boxed in by fixed text too: it still shows, inside the plot.
+  const walls = [{ x0: 0, y0: 0, x1: 390, y1: 300 }];
+  const w = placeLabels([d], { width: 390, height: 300, others: around, avoid: walls, force: "PENDLE" }).get("PENDLE");
+  assert.equal(w.anchor, "end");
+  // FARTCOIN, boxed in by PENDLE, LDO, JUP and CRV, stays unlabelled unless followed;
+  // followed, it keeps its label, and the other labels are placed around it.
+  const dots = ["FARTCOIN", ...LABELLED.filter(c => c !== "FARTCOIN")].map(c => FIXTURE.find(x => x.coin === c));
+  const others = FIXTURE.filter(x => !dots.includes(x));
+  const placed = placeLabels(dots, { bounds: PLOT, others, force: "FARTCOIN" });
+  assert.equal(placed.get("FARTCOIN").anchor, "start");
+  const boxes = [...placed].map(([c, p]) => ({ c, ...labelBox(p.x, p.y, p.anchor, 6.4 * c.length + 4) }));
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    assert.ok(!(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1), `${a.c} overlaps ${b.c}`);
+  }
+  // BTC sits on ETH: followed, it is labelled whatever else is around.
+  const btc = FIXTURE.find(x => x.coin === "BTC");
+  assert.ok(placeLabels([btc], { bounds: PLOT, others: FIXTURE.filter(x => x !== btc), force: "BTC" }).has("BTC"));
+});
+
+test("labels: small maps may cover a dot, never another label", () => {
+  // A coin in a tight cluster: strict placement drops it, relaxed placement names it.
+  const d = { coin: "TIA", x: 100, y: 100, r: 6 };
+  const around = [{ coin: "A", x: 124, y: 100, r: 6 }, { coin: "B", x: 76, y: 100, r: 6 }, { coin: "C", x: 100, y: 80, r: 6 }, { coin: "D", x: 100, y: 118, r: 6 }];
+  assert.equal(placeLabels([d], { width: 300, height: 300, others: around }).has("TIA"), false);
+  assert.deepEqual(placeLabels([d], { width: 300, height: 300, others: around, relax: true }).get("TIA"), { x: 110, y: 104, anchor: "start" });
+  // Only dots drawn under the label may be covered: A is drawn on top, so TIA goes left over B.
+  const under = (_, o) => o.coin !== "A";
+  assert.deepEqual(placeLabels([d], { width: 300, height: 300, others: around, relax: true, under }).get("TIA"), { x: 90, y: 104, anchor: "end" });
+  // Nothing drawn under it: no label unless the coin is followed.
+  assert.equal(placeLabels([d], { width: 300, height: 300, others: around, relax: true, under: () => false }).has("TIA"), false);
+  assert.equal(placeLabels([d], { width: 300, height: 300, others: around, under: () => false, force: "TIA" }).get("TIA").anchor, "start");
+  // Relaxed labels still never overlap each other.
+  const e = { coin: "ENA", x: 100, y: 100, r: 6 };
+  const m = placeLabels([d, e], { width: 140, height: 120, others: around, relax: true });
+  const [pa, pb] = [m.get("TIA"), m.get("ENA")];
+  if (pa && pb) {
+    const a = labelBox(pa.x, pa.y, pa.anchor, 6.4 * 3 + 4), b = labelBox(pb.x, pb.y, pb.anchor, 6.4 * 3 + 4);
+    assert.ok(!(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1));
+  }
+  assert.ok(m.has("TIA"));
+});
+
 test("label order: focused, watched, mine, box by priority, lean, movers", () => {
   const c = (coin, o = {}) => ({ coin, zone: "outside", priority: 0, traders: { pl: 0, ps: 0 }, ...o });
   const coins = [c("MOV"), c("BIG", { traders: { pl: 20, ps: 0 } }), c("SMALL", { traders: { pl: 3, ps: 0 } }), c("BOX1", { zone: "watch", priority: 60 }),

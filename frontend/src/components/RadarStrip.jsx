@@ -40,8 +40,8 @@ export default function RadarStrip({ results, timeframe, sector, sectorLabel }) 
 
   const head = <div className="radar-strip-id">
     <span className="radar-strip-title"><span className="radar-strip-glyph"><NavIcon name="radar" /></span>Radar<small>{tf.toUpperCase()}</small></span>
-    {!phone && !loading && <span className="radar-strip-count"><b>{inBox}</b> in the Watch box{scope}</span>}
-    {phone && !loading && <span className="radar-strip-count">· <b>{inBox}</b> in the box{scope}</span>}
+    {!phone && !loading && data && <span className="radar-strip-count"><b>{inBox}</b> in the Watch box{scope}</span>}
+    {phone && !loading && data && <span className="radar-strip-count">· <b>{inBox}</b> in the box{scope}</span>}
   </div>;
 
   return <section className="radar-strip" aria-label="Radar">

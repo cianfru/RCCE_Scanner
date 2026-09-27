@@ -127,7 +127,13 @@ const boxHitsCircle = (b, cx, cy, r) => {
 // out (hidden). Options: width/height (the plot, or bounds {x0,y0,x1,y1}), charW and h
 // (text size), widthOf(coin) for measured widths, others (dots that take no label but
 // must not be covered) and avoid (fixed text boxes on the plot).
-export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, widthOf, others = [], avoid = [] } = {}) {
+// force: the followed coin, whose label always shows (the other dots are dimmed). When no
+// side is free it takes the first side clear of other labels that covers only dots drawn
+// under it, else the first clear of other labels, else the first inside the plot, else the
+// right. relax (small maps):
+// a label with no free side may cover the cores of dots drawn under it (under(d, o), by
+// default every dot), never another label or the fixed text.
+export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, widthOf, others = [], avoid = [], force = null, relax = false, under = () => true } = {}) {
   const B = bounds || { x0: 0, y0: 0, x1: width, y1: height };
   const cores = [...dots, ...others];
   const placed = [...avoid];
@@ -139,16 +145,16 @@ export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, 
       [d.x - d.r - 4, d.y + 4, "end"],
       [d.x, d.y - d.r - 6, "middle"],
       [d.x, d.y + d.r + 12, "middle"],
-    ];
-    for (const [x, y, anchor] of cands) {
-      const b = labelBox(x, y, anchor, w, h);
-      if (b.x0 < B.x0 || b.x1 > B.x1 || b.y0 < B.y0 || b.y1 > B.y1) continue;
-      if (placed.some(p => boxesOverlap(b, p))) continue;
-      if (cores.some(o => o !== d && o.coin !== d.coin && boxHitsCircle(b, o.x, o.y, o.r + 2))) continue;
-      placed.push(b);
-      out.set(d.coin, { x, y, anchor });
-      break;
-    }
+    ].map(([x, y, anchor]) => ({ x, y, anchor, b: labelBox(x, y, anchor, w, h) }));
+    const inside = ({ b }) => b.x0 >= B.x0 && b.x1 <= B.x1 && b.y0 >= B.y0 && b.y1 <= B.y1;
+    const clearOfLabels = ({ b }) => !placed.some(p => boxesOverlap(b, p));
+    const clearOfCores = ({ b }, soft) => !cores.some(o => o !== d && o.coin !== d.coin && !(soft && under(d, o)) && boxHitsCircle(b, o.x, o.y, o.r + 2));
+    let pick = cands.find(c => inside(c) && clearOfLabels(c) && clearOfCores(c, false));
+    if (!pick && (relax || force === d.coin)) pick = cands.find(c => inside(c) && clearOfLabels(c) && clearOfCores(c, true));
+    if (!pick && force === d.coin) pick = cands.find(c => inside(c) && clearOfLabels(c)) || cands.find(inside) || cands[0];
+    if (!pick) continue;
+    placed.push(pick.b);
+    out.set(d.coin, { x: pick.x, y: pick.y, anchor: pick.anchor });
   }
   return out;
 }
