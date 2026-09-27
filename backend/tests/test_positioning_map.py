@@ -6,8 +6,10 @@ from hl_intelligence import PositionSnapshot, TrackedWallet, WalletPosition
 
 
 def pos(coin, side, size, entry, mark):
-    return WalletPosition(coin=coin, side=side, size=size, size_usd=abs(size) * mark, entry_px=entry,
-                          unrealized_pnl=0.0, leverage=3.0)
+    # As parsed from Hyperliquid: size_usd is valued at entry; the mark shows only in unrealised PnL.
+    pnl = (mark - entry) * size * (1 if side == "LONG" else -1)
+    return WalletPosition(coin=coin, side=side, size=size, size_usd=abs(size) * entry, entry_px=entry,
+                          unrealized_pnl=pnl, leverage=3.0)
 
 
 def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
@@ -26,7 +28,7 @@ def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
     pm = hl.positioning_map("profitable")
     assert pm["wallets"] == 3 and pm["holding"] == 2
     sui = pm["coins"]["SUI"]
-    assert sui["long"] == {"n": 2, "usd": 495, "median_entry": 3.25, "in_profit": 1}
+    assert sui["long"] == {"n": 2, "usd": 475, "median_entry": 3.25, "in_profit": 1}
     assert sui["short"]["n"] == 0 and abs(sui["mark"] - 3.3) < 1e-9
     assert pm["coins"]["PEPE"]["short"]["in_profit"] == 0          # kPEPE normalised; short above entry
     assert hl.positioning_map("large")["coins"]["SUI"]["short"]["n"] == 1

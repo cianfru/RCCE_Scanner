@@ -1465,7 +1465,8 @@ def positioning_map(cohort: str = "profitable") -> dict:
             held = True
             coin = _normalize_coin(p.coin)
             side = p.side.lower()
-            mark = p.size_usd / abs(p.size)
+            # Current price from the position's unrealised PnL (size_usd is valued at entry).
+            mark = p.entry_px + (p.unrealized_pnl if side == "long" else -p.unrealized_pnl) / abs(p.size)
             d = raw.setdefault(coin, {"marks": [], "long": [], "short": []})
             d["marks"].append(mark)
             d[side].append((p.entry_px, p.size_usd, (mark > p.entry_px) if side == "long" else (mark < p.entry_px)))
