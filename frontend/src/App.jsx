@@ -2,7 +2,7 @@ import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
 import { inGroup } from "./utils/sectors.js";
-import BestSetups from "./components/BestSetups.jsx";
+import SetupMap from "./components/SetupMap.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -922,7 +922,7 @@ export default function App() {
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
         {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
-        {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
+        {showDashboard && <SetupMap results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>

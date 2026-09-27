@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barsLeft, brief, cardLine, crowdRead, fmtIn, formingSetups, nextCloses, setupSide } from "./intel.js";
+import { brief, crowdRead, fmtIn, nextCloses, setupSide } from "./intel.js";
 
 const side = (n, entry) => ({ n, usd: n * 1e5, median_entry: entry, in_profit: 0 });
 const intel = (o = {}) => ({ mark: 1.0, profitable: { long: side(0, null), short: side(0, null) },
@@ -33,20 +33,9 @@ test("next closes are UTC-aligned", () => {
   assert.equal(fmtIn(26 * 3600000), "1d 2h");
 });
 
-test("forming setups: into Uptrend, nearest first, excluding shown ones", () => {
-  const r = (symbol, regime, observed, required, extra = {}) => ({ symbol, regime, timeframe: "1d", signal: "WAIT", priority_score: 50,
-    regime_transition: { candidate: "MARKUP", observed_bars: observed, required_bars: required }, ...extra });
-  const rows = [r("A", "ACCUM", 1, 5), r("B", "ACCUM", 3, 5), r("C", "REACC", 4, 5), r("D", "MARKUP", 4, 5),
-    { symbol: "E", regime: "ACCUM", regime_transition: { candidate: "MARKDOWN", observed_bars: 4, required_bars: 5 } }];
-  assert.deepEqual(formingSetups(rows).map(x => x.row.symbol), ["C", "B", "A"]);
-  assert.deepEqual(formingSetups(rows, new Set(["C"]), 1).map(x => x.row.symbol), ["B"]);
-  assert.equal(barsLeft(rows[1]), 2);
-});
-
-test("card line and brief read plainly", () => {
+test("brief reads plainly", () => {
   const i = intel({ mark: 0.71, profitable: { long: side(4, 0.68), short: side(0, null) },
     new_24h: { profitable: { long: 2, short: 0 } }, recent: [{ t: 1e9, side: "long", cohort: "profitable", px: 0.67, usd: 1e5 }] });
-  assert.equal(cardLine(i), "Profitable traders 4 long · 0 short · 2 new in 24h");
   const row = { regime: "ACCUM", signal: "WAIT", timeframe: "4h", conditions_met: 5, conditions_total: 9,
     regime_transition: { candidate: "MARKUP", observed_bars: 3, required_bars: 5 } };
   const lines = brief(row, i, 1e9 * 1000 + 2 * 3600e3, { regimeName: k => ({ ACCUM: "Accumulation", MARKUP: "Uptrend" })[k],

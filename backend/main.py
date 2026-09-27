@@ -287,6 +287,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Exit shadow log init failed (non-fatal): %s", e)
 
     # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
+    asyncio.create_task(run_setup_watch())
     asyncio.create_task(WebSocketHub.get().run_heartbeat())
 
     # Start Binance price ticker relay (sub-second price updates)
@@ -4287,6 +4288,118 @@ async def hyperlens_intel(coins: str = Query(..., max_length=200)):
             "large_wallets": large["wallets"],
             "coins": {c: coin_intel(c, prof["coins"].get(c), large["coins"].get(c), opens, convs.get(c), now)
                       for c in wanted}}
+
+
+_SETUP_MAP_CACHE: dict = {}
+
+
+def _setup_map_build(tf: str) -> dict:
+    """setup_map.build from memory: scan results, candles, positioning, opens, 4H trader record."""
+    import setup_map
+    from convergence import tracker
+    from data_fetcher import _ohlcv_store
+    from hl_persistence import load_trader_lean
+    now = time.time()
+    lean: dict = {}
+    try:
+        for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 8 * 86400):
+            lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
+    except Exception as exc:
+        logger.debug("setup map: no trader record: %s", exc)
+    prof, large = _positioning_map_cached("profitable"), _positioning_map_cached("large")
+    opens = [o for o in tracker().opens if now - o["ts"] <= 86400]
+    return setup_map.build(cache.get_results(tf) or [], tf, _ohlcv_store, prof["coins"], large["coins"], opens, lean, now)
+
+
+async def _setup_map_cached(tf: str) -> dict:
+    hit = _SETUP_MAP_CACHE.get(tf)
+    if hit and time.time() - hit[0] < 120:
+        return hit[1]
+    body = await asyncio.to_thread(_setup_map_build, tf)
+    _SETUP_MAP_CACHE[tf] = (time.time(), body)
+    return body
+
+
+@app.get("/api/setup-map")
+async def setup_map_view(tf: str = Query("1d", pattern="^(4h|1d)$")):
+    """Every coin by stretch (z-score) and profitable-trader lean, with trails of the last
+    closes (docs in setup_map.py). Built from data in memory; cached for two minutes."""
+    return await _setup_map_cached(tf)
+
+
+@app.get("/api/setup-map/watch")
+async def setup_map_watched():
+    import setup_map
+    import followed_traders as ft
+    return {"coins": [{"coin": c, **w} for c, w in setup_map.watched().items()], "telegram": ft.telegram_status()}
+
+
+@app.post("/api/setup-map/watch")
+async def setup_map_watch(body: dict):
+    """Watch a coin: Telegram alerts when it enters or leaves the box, confirms Uptrend,
+    turns crowded or gets an exit signal. Body: {coin, tf}. Needs the admin key once set."""
+    import setup_map
+    from hl_intelligence import _normalize_coin
+    coin = _normalize_coin(str(body.get("coin", "")).strip().upper())
+    if not coin or len(coin) > 20:
+        raise HTTPException(status_code=400, detail="coin is required")
+    if not setup_map.watch(coin, str(body.get("tf", "1d"))):
+        raise HTTPException(status_code=400, detail=f"at most {setup_map.MAX_WATCHED} coins can be watched")
+    return {"watching": coin}
+
+
+@app.delete("/api/setup-map/watch/{coin}")
+async def setup_map_unwatch(coin: str):
+    import setup_map
+    from hl_intelligence import _normalize_coin
+    setup_map.unwatch(_normalize_coin(coin.upper()))
+    return {"removed": coin.upper()}
+
+
+@app.get("/api/setup-map/mine")
+async def setup_map_mine(address: Optional[str] = Query(None, pattern="^0x[0-9a-fA-F]{40}$")):
+    """Open positions to mark on the map: a Hyperliquid address's (read-only, public data),
+    or the executor's when no address is given."""
+    out = []
+    if address:
+        from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
+        from hl_intelligence import _normalize_coin
+        state = await fetch_clearinghouse_state(address)
+        for p in parse_open_positions(state or {}):
+            if ":" in p["coin"]:
+                continue
+            out.append({"coin": _normalize_coin(p["coin"]), "side": p["side"].lower(), "entry": p["entry_px"],
+                        "usd": round(p["size_usd"])})
+        return {"source": "address", "positions": out}
+    from executor import get_executor
+    from hl_intelligence import _normalize_coin
+    ex = get_executor()
+    if ex:
+        status = await ex.get_status()
+        for sym, p in (status.get("positions") or {}).items():
+            if not sym.endswith("/USDT"):
+                continue
+            out.append({"coin": _normalize_coin(sym), "side": str(p.get("side", "")).lower(), "entry": p.get("entry_price"),
+                        "usd": round(p.get("cost_usd") or 0)})
+    return {"source": "executor", "positions": out}
+
+
+async def run_setup_watch(interval: int = 300):
+    """Every five minutes, while any coin is watched: compare with its last reading and
+    send what changed to Telegram."""
+    import setup_map
+    import followed_traders as ft
+    await asyncio.sleep(120)
+    while True:
+        try:
+            tfs = {w["tf"] for w in setup_map.watched().values()}
+            if tfs:
+                maps = {tf: await _setup_map_cached(tf) for tf in tfs}
+                for text in setup_map.check(maps):
+                    await ft._send(text)
+        except Exception as exc:
+            logger.warning("setup watch: %s", exc)
+        await asyncio.sleep(interval)
 
 
 @app.get("/api/hyperlens/followed")
