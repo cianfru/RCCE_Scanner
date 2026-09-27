@@ -1,5 +1,5 @@
 // Setup intel: the scanner's setups read together with what tracked traders are doing.
-// Pure helpers for BestSetups and SetupIntelDrawer (tested in intel.test.js).
+// Pure helpers for SetupIntelDrawer and SetupMap (tested in intel.test.js).
 import { ENTRY_SIGNALS } from "./opportunities.js";
 import { completionOdds } from "./regimeOdds.js";
 
@@ -22,17 +22,6 @@ export function barsLeft(row) {
   const t = row?.regime_transition;
   if (!t) return 0;
   return Math.max(0, (t.required_bars || 0) - Math.min(t.observed_bars || 0, t.required_bars || 0));
-}
-
-// Coins close to changing into an uptrend, nearest first: the setups that may fire next.
-export function formingSetups(rows, exclude = new Set(), limit = 3) {
-  return (rows || [])
-    .filter(r => r?.regime_transition?.candidate === "MARKUP" && r.regime !== "MARKUP" && r.history_bars !== 0
-      && r.signal_status !== "unavailable" && !exclude.has(r.symbol) && barsLeft(r) > 0)
-    .map(r => ({ row: r, left: barsLeft(r),
-      odds: completionOdds(r.timeframe, r.regime, "MARKUP", Math.min(r.regime_transition.observed_bars, r.regime_transition.required_bars)) }))
-    .sort((a, b) => a.left - b.left || (b.odds ?? -1) - (a.odds ?? -1) || (b.row.priority_score || 0) - (a.row.priority_score || 0))
-    .slice(0, limit);
 }
 
 // Next candle closes (ms), UTC-aligned as on the exchanges.
@@ -92,14 +81,6 @@ export function crowdRead(side, intel) {
     return { key: "early", label: "Early", text: `${plural(fresh, "profitable trader")} opened ${side} in the last 24h, near today's price.` };
   }
   return { key: "holding", label: "Holding", text: `${w} profitable trader${w === 1 ? " is" : "s are"} ${side}${a ? `, ${a} ${opp(side)}` : ""}.` };
-}
-
-// One line for a best-setup card.
-export function cardLine(intel) {
-  if (!intel) return null;
-  const p = intel.profitable || {};
-  const fresh = (intel.new_24h?.profitable?.long || 0) + (intel.new_24h?.profitable?.short || 0);
-  return `Profitable traders ${p.long?.n || 0} long · ${p.short?.n || 0} short${fresh ? ` · ${fresh} new in 24h` : ""}`;
 }
 
 const sentence = s => (s ? s.charAt(0) + s.slice(1).toLowerCase() : s);
