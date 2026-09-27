@@ -43,7 +43,8 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
     # ACCUMULATE is not an entry: adding it as the executor did cost 18-19 points of compounded
     # return on both replay coin sets (docs/reviews/entry-quality-study.md); the backtest never took it.
     "REVIVAL_SEED": {"STRONG": 0.10, "MODERATE": 0.10, "WEAK": 0.00, "CONFLICTING": 0.00, "UNKNOWN": 0.05},
-    "LIGHT_SHORT":  {"STRONG": 0.30, "MODERATE": 0.25, "WEAK": 0.15, "CONFLICTING": 0.15, "UNKNOWN": 0.15},
+    # LIGHT_SHORT is not an entry: shorting on it lost money on both replay coin sets
+    # (docs/reviews/timing-and-exits-study.md, X1). Open shorts, if any, keep their exits.
 }
 
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
