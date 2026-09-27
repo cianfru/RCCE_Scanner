@@ -5,9 +5,10 @@ import { inGroup } from "./utils/sectors.js";
 import SetupMap from "./components/SetupMap.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
-import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
+import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge, getBaseSymbol } from "./theme.js";
+import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
@@ -26,20 +27,26 @@ import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import SettingsDropdown from "./components/SettingsDropdown.jsx";
-import BacktestPanel from "./components/BacktestPanel.jsx";
-import ExecutorPanel from "./components/ExecutorPanel.jsx";
-import TradingPanel from "./components/TradingPanel.jsx";
-import SignalLogPanel from "./components/SignalLogPanel.jsx";
-import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
-import ChatPanel from "./components/ChatPanel.jsx";
-import TradFiPanel from "./components/TradFiPanel.jsx";
 import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
-import HyperLensPanel from "./components/HyperLensPanel.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
 import ChangesTicker from "./components/ChangesTicker.jsx";
-import CoinPage from "./pages/CoinPage.jsx";
+import PageTitle from "./components/PageTitle.jsx";
+import PageSkeleton from "./components/PageSkeleton.jsx";
+import NotFound from "./components/NotFound.jsx";
+
+// Pages load their code on first visit; the shell and the scanner stay in the main bundle.
+const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
+const ExecutorPanel = lazy(() => import("./components/ExecutorPanel.jsx"));
+const TradingPanel = lazy(() => import("./components/TradingPanel.jsx"));
+const SignalLogPanel = lazy(() => import("./components/SignalLogPanel.jsx"));
+const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
+const ChatPanel = lazy(() => import("./components/ChatPanel.jsx"));
+const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
+const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
+const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
+const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -58,27 +65,47 @@ import { SCANNER_COLUMNS as COLUMNS } from "./scannerColumns.js";
 // ─── ROUTE MAPS ──────────────────────────────────────────────────────────────
 const ROUTE_TO_TAB = {
   "/scanner": "1d",
+  "/radar": "radar",
+  "/traders": "traders",
   "/signals": "signals",
   "/analytics": "analytics",
-  "/hyperlens": "hyperlens",
   "/tradfi": "tradfi",
   "/ai": "chat",
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
+  "/settings": "settings",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
   "4h": "/scanner?tf=4h",
+  radar: "/radar",
+  traders: "/traders",
+  hyperlens: "/traders",
   signals: "/signals",
   analytics: "/analytics",
-  hyperlens: "/hyperlens",
   tradfi: "/tradfi",
   chat: "/ai",
   backtest: "/backtest",
   executor: "/executor",
   trading: "/portfolio",
+  settings: "/settings",
 };
+// Page titles (h1 and browser tab) of the pages without their own title logic.
+const TAB_TITLES = {
+  traders: "Traders",
+  trading: "Portfolio",
+  signals: "Signal Log",
+  analytics: "Analytics",
+  tradfi: "TradFi",
+  backtest: "Backtest",
+  executor: "Executor",
+  chat: "AI Assist",
+  settings: "Settings",
+  notfound: "Page not found",
+};
+const DEFAULT_SORT = "priority_score";
+const cleanPath = pathname => pathname.replace(/\/$/, "") || "/scanner";
 
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
@@ -87,29 +114,35 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const path = cleanPath(location.pathname);
+  const onScanner = path === "/scanner";
   const marketKind = new URLSearchParams(location.search).get("market") === "spot" ? "spot" : "perpetual";
+  // The scanner's query (filters, search, sort) as last seen, so leaving and coming back keeps it.
+  const lastScannerSearch = useRef(onScanner ? location.search : "");
+  const scannerParams = () => new URLSearchParams(onScanner ? location.search : lastScannerSearch.current);
   const changeMarket = (kind) => {
     setActiveGroupId(null);
     setSearchTerm("");
     setStatCardFilter(null);
-    navigate(`/scanner?market=${kind}${activeTab === "4h" ? "&tf=4h" : ""}`);
+    const params = scannerParams();
+    for (const k of ["q", "signal", "from"]) params.delete(k);
+    params.set("market", kind);
+    if (activeTab !== "4h") params.delete("tf");
+    navigate(`/scanner?${params}`);
   };
   // Derive activeTab from URL
   const activeTab = useMemo(() => {
-    const p = location.pathname.replace(/\/$/, "") || "/scanner";
     // Scanner route — check tf query param first
-    if (p === "/scanner") {
+    if (path === "/scanner") {
       const sp = new URLSearchParams(location.search);
       const tf = sp.get("tf");
       if (tf === "4h") return "4h";
       return "1d";
     }
-    // Check known routes (non-scanner)
-    for (const [route, tab] of Object.entries(ROUTE_TO_TAB)) {
-      if (p === route || p.startsWith(route + "/")) return tab;
-    }
-    return "1d";
-  }, [location.pathname, location.search, isMobile]);
+    if (/^\/scanner\/[^/]+$/.test(path)) return "1d";      // coin page
+    if (path === "/hyperlens") return "traders";            // redirected below
+    return ROUTE_TO_TAB[path] || "notfound";
+  }, [path, location.search]);
 
   // The scanner timeframe last viewed, for AI Assist
   const lastScannerTf = useRef("1d");
@@ -117,23 +150,41 @@ export default function App() {
 
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
-    const m = location.pathname.match(/^\/scanner\/([^/]+)$/);
-    return m ? decodeURIComponent(m[1]) : null;
-  }, [location.pathname]);
+    const m = path.match(/^\/scanner\/([^/]+)$/);
+    if (!m) return null;
+    try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+  }, [path]);
 
-  // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
-  const handleSelectCoin = useCallback((row, event) => {
+  // Navigate to coin page on row click (shift+click → DetailPanel slide-out).
+  // The coin page gets the timeframe and the view to return to (?from=), plus the scroll position.
+  const handleSelectCoin = useCallback((row, event, fromHref) => {
     if (event?.shiftKey) {
       setSelected(row);
-    } else {
-      const base = encodeURIComponent(row.market_kind === "spot" ? row.symbol : (row.symbol || "").split("/")[0]);
-      navigate(`/scanner/${base}?market=${row.market_kind === "spot" ? "spot" : "perpetual"}`);
+      return;
     }
-  }, [navigate]);
+    const tf = row.timeframe === "4h" || row.timeframe === "1d" ? row.timeframe : timeframeFrom(location.search);
+    const from = fromHref || (onScanner ? `/scanner${location.search}` : "/scanner");
+    const scroll = window.scrollY;
+    // The browser's Back button returns to the same spot too.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...location.state, restoreScroll: scroll } });
+    navigate(`${marketHref(row, tf)}&from=${encodeURIComponent(from)}`, { state: { scannerScroll: scroll } });
+  }, [navigate, location.pathname, location.search, location.state, onScanner]);
 
   const setActiveTab = useCallback((tab) => {
-    navigate(["4h", "1d"].includes(tab) ? `/scanner?market=${marketKind}${tab === "4h" ? "&tf=4h" : ""}` : TAB_TO_ROUTE[tab] || "/scanner");
-  }, [navigate, marketKind]);
+    if (tab === "4h" || tab === "1d") {
+      // Switching timeframe keeps the scanner's filters, search and sort.
+      const params = new URLSearchParams(onScanner ? location.search : lastScannerSearch.current);
+      params.delete("from");
+      if (onScanner || !params.get("market")) params.set("market", marketKind);
+      tab === "4h" ? params.set("tf", "4h") : params.delete("tf");
+      navigate(`/scanner?${params}`);
+    } else {
+      navigate(TAB_TO_ROUTE[tab] || "/scanner");
+    }
+  }, [navigate, marketKind, onScanner, location.search]);
+
+  // Scanner state that lives in the address: ?q, sort, dir, signal, sector, by.
+  const [initialQuery] = useState(() => new URLSearchParams(onScanner ? location.search : ""));
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -146,10 +197,11 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [sortKey, setSortKey] = useState("priority_score");
-  const [statCardFilter, setStatCardFilter] = useState(null);
-  const [sectorBy, setSectorBy] = useState("sector");        // "sector" | "ecosystem"
-  const [sectorFilter, setSectorFilter] = useState(null);
+  const [sortKey, setSortKey] = useState(() => initialQuery.get("sort") || DEFAULT_SORT);
+  const [sortDir, setSortDir] = useState(() => initialQuery.get("dir"));   // "asc" | "desc"; its default per key arrives with the grid work
+  const [statCardFilter, setStatCardFilter] = useState(() => initialQuery.get("signal"));
+  const [sectorBy, setSectorBy] = useState(() => initialQuery.get("by") === "ecosystem" ? "ecosystem" : "sector");        // "sector" | "ecosystem"
+  const [sectorFilter, setSectorFilter] = useState(() => initialQuery.get("sector"));
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // Price flash: symbol → "up" | "down" (cleared after 1.2s)
@@ -179,8 +231,54 @@ export default function App() {
 
   // Nav drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => initialQuery.get("q") || "");
   const [tradfiTf, setTradfiTf] = useState("1d");            // TradFi timeframe, in the title row
+
+  // Write one scanner setting into the address (replace, so Back still leaves the scanner).
+  // Several writes in one event (Sectors/Ecosystems also clears the sector) build on each other.
+  const pendingSearch = useRef(null);
+  useEffect(() => { pendingSearch.current = null; }, [location.key, location.search]);
+  const updateScannerQuery = useCallback((key, value) => {
+    const params = new URLSearchParams(pendingSearch.current ?? location.search);
+    value ? params.set(key, value) : params.delete(key);
+    const qs = params.toString();
+    pendingSearch.current = qs ? `?${qs}` : "";
+    // A scroll position to restore belongs to the arrival only, not to later filter changes.
+    const { restoreScroll, ...state } = location.state || {};
+    navigate(`${location.pathname}${pendingSearch.current}`, { replace: true, state });
+  }, [navigate, location.pathname, location.search, location.state]);
+
+  // The address drives the scanner: arriving from a back link, a pasted link or history restores it.
+  useEffect(() => {
+    if (!onScanner) return;
+    const params = new URLSearchParams(location.search);
+    setSearchTerm(params.get("q") || "");
+    setSortKey(params.get("sort") || DEFAULT_SORT);
+    setSortDir(params.get("dir"));
+    setStatCardFilter(params.get("signal"));
+    setSectorFilter(params.get("sector"));
+    setSectorBy(params.get("by") === "ecosystem" ? "ecosystem" : "sector");
+    lastScannerSearch.current = location.search;
+  }, [onScanner, location.search]);
+
+  // Coming back from a coin page: return to the scroll position the coin was opened from.
+  // Cards above the grid can settle a moment later, so the position is held briefly unless the user scrolls.
+  useEffect(() => {
+    const target = location.state?.restoreScroll;
+    if (target == null || !(onScanner || path === "/radar")) return undefined;
+    let frame = 0, stopped = false;
+    const t0 = performance.now();
+    const stop = () => { stopped = true; cancelAnimationFrame(frame); };
+    const events = ["wheel", "touchstart", "keydown", "pointerdown"];
+    events.forEach(e => window.addEventListener(e, stop, { passive: true }));
+    const hold = () => {
+      if (stopped) return;
+      if (Math.abs(window.scrollY - target) > 1) window.scrollTo(0, target);
+      if (performance.now() - t0 < 1500) frame = requestAnimationFrame(hold);
+    };
+    frame = requestAnimationFrame(hold);
+    return () => { stop(); events.forEach(e => window.removeEventListener(e, stop)); };
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Favorites (persisted to localStorage)
   const [favorites, setFavorites] = useState(() => {
@@ -611,9 +709,26 @@ export default function App() {
   const activeConsensus = activeTab === "4h" ? consensus4h : consensus1d;
   const consensusRows = activeTab === "4h" ? data4h : data1d;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab === "4h" || activeTab === "1d";
+  const scannerTitle = activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals";
+  const radarTf = activeTab === "radar" ? timeframeFrom(location.search) : null;
+
+  // Browser tab title. The coin page refines its own ("BTC · Reflex") once its data is in.
+  useEffect(() => {
+    document.title = coinPageSymbol ? `${getBaseSymbol(coinPageSymbol)} · Reflex`
+      : showDashboard ? `${scannerTitle} ${activeTab.toUpperCase()} · Reflex`
+      : activeTab === "radar" ? `Radar ${radarTf.toUpperCase()} · Reflex`
+      : `${TAB_TITLES[activeTab] || "Reflex"} · Reflex`;
+  }, [coinPageSymbol, showDashboard, scannerTitle, activeTab, radarTf]);
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const onSort = key => { setSortKey(key); updateScannerQuery("sort", key === DEFAULT_SORT ? null : key); };
+
+  // The old HyperLens address opens Traders, keeping its query.
+  if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
+
+  const pageMargin = { marginTop: isMobile ? 16 : 20 };
 
   return (
     <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
@@ -719,7 +834,7 @@ export default function App() {
       <NavDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        activeTab={activeTab}
+        activeTab={activeTab === "traders" ? "hyperlens" : activeTab}
         onTabChange={setActiveTab}
         isMobile={isMobile}
         groups={groups}
@@ -788,7 +903,11 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
-          <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
+          <ReflexBrand compact={isMobile} onClick={() => {
+            navigate("/scanner");
+            setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null);
+            setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
+          }} />
 
         </div>
 
@@ -878,34 +997,23 @@ export default function App() {
         </div>
       )}
 
+      <main id="content">
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
-        <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
+        <Suspense fallback={<div style={{ padding: isMobile ? 16 : 24 }}><PageSkeleton /></div>}>
+          <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
+        </Suspense>
       )}
 
-      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}
-      {!coinPageSymbol && activeTab !== "chat" && (
+      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode; Radar and 404 draw their own) ── */}
+      {!coinPageSymbol && activeTab !== "chat" && activeTab !== "radar" && activeTab !== "notfound" && (
         <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
         }}>
-          <span style={{
-            fontSize: isMobile ? 25 : 34,
-            fontWeight: 550,
-            color: T.text1,
-            fontFamily: "var(--font-display), sans-serif",
-            letterSpacing: "-0.035em",
-          }}>
-            {activeTab === "backtest" ? "Backtest" :
-             activeTab === "executor" ? "Executor" :
-             activeTab === "trading" ? "Portfolio" :
-             activeTab === "signals" ? "Signal Log" :
-             activeTab === "analytics" ? "Analytics" :
-             activeTab === "tradfi" ? "TradFi" :
-             activeTab === "hyperlens" ? "HyperLens" :
-             activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
-          </span>
-          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
+          <PageTitle>{showDashboard ? scannerTitle : TAB_TITLES[activeTab]}</PageTitle>
+          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm}
+            onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} />}
           {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>
@@ -917,11 +1025,13 @@ export default function App() {
         {showDashboard && tfMarketRows.length > 0 && (
           <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
             timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel} spot={marketKind === "spot"}
-            activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
+            activeSignalFilter={statCardFilter} onSignalFilter={v => { setStatCardFilter(v); updateScannerQuery("signal", v); }} />
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy}
+          onByChange={v => { setSectorBy(v); updateScannerQuery("by", v === "ecosystem" ? v : null); }}
+          value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
         {showDashboard && <SetupMap results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
@@ -948,7 +1058,7 @@ export default function App() {
             {(activeTab === "4h") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display4h} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
+                  sortKey={sortKey} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
@@ -956,7 +1066,7 @@ export default function App() {
             {(activeTab === "1d") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display1d} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
+                  sortKey={sortKey} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
                   favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
               </FadeIn>
@@ -964,38 +1074,55 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === "radar" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <RadarPage results4h={data4h} results1d={data1d} onSelect={handleSelectCoin} />
+          </Suspense>
+        )}
+
         {activeTab === "backtest" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "executor" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <ExecutorPanel api={API_BASE} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <ExecutorPanel api={API_BASE} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "trading" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <TradingPanel api={API_BASE} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <TradingPanel api={API_BASE} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "signals" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "analytics" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <AnalyticsPanel isMobile={isMobile} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <AnalyticsPanel isMobile={isMobile} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "tradfi" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+          <FadeIn delay={300} style={pageMargin}>
             <TradFiPanel
               results={displayTradfi}
               data4h={dataTradfi4h}
@@ -1007,19 +1134,27 @@ export default function App() {
               loading={loading}
             />
           </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "chat" && (
-          <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
-            selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
+              selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
+          </Suspense>
         )}
 
-        {activeTab === "hyperlens" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <HyperLensPanel isMobile={isMobile} />
-          </FadeIn>
+        {activeTab === "traders" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <HyperLensPanel isMobile={isMobile} />
+            </FadeIn>
+          </Suspense>
         )}
+
+        {activeTab === "notfound" && <NotFound />}
       </div>}
+      </main>
 
       {/* ── GROUP MODAL ── */}
       {showGroupModal && (

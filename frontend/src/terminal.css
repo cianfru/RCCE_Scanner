@@ -627,6 +627,7 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .te-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-bottom:6px;}
 .te-head strong{color:var(--t-text2);}
 .te-link{background:transparent;border:0;border-bottom:1px solid var(--t-accent);padding:2px 0;color:var(--t-accent);font-size:12px;cursor:pointer;}
+a.te-link{text-decoration:none;display:inline-block;}
 .te-table{width:100%;border-collapse:collapse;font:500 12px var(--font-geist-mono),monospace;}
 .te-table th{text-align:left;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);padding:6px 8px;border-bottom:1px solid var(--t-border);white-space:nowrap;}
 .te-table td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--t-overlay06,rgba(255,255,255,.06));color:var(--t-text2);}

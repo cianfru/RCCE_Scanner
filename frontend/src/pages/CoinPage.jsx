@@ -17,6 +17,7 @@ import CoinChat from "../components/CoinChat.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
+import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -283,8 +284,18 @@ function MetricsPanel({ data }) {
 export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
-  const [timeframe, setTimeframe] = useState("1d");
   const location = useLocation();
+  // The timeframe lives in the address (?tf=), so links and reloads keep it.
+  const timeframe = timeframeFrom(location.search);
+  const setTimeframe = (tf) => {
+    const params = new URLSearchParams(location.search);
+    params.set("tf", tf);
+    navigate(`${location.pathname}?${params}`, { replace: true, state: location.state });
+  };
+  // Back to the scanner or Radar view this coin was opened from, at the same scroll position.
+  const back = backHref(location.search);
+  const backLabel = back.startsWith("/radar") ? "Radar" : "Scanner";
+  const goBack = () => navigate(back, { state: { restoreScroll: location.state?.scannerScroll ?? 0 } });
   const marketKind = new URLSearchParams(location.search).get("market") === "spot" || (urlSymbol || "").includes("/USDC") ? "spot" : "perpetual";
   const [availability, setAvailability] = useState(null);
   useEffect(() => {
@@ -333,11 +344,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           {availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
         </div>
         <button
-          onClick={() => navigate(`/scanner?market=${marketKind}`)}
+          onClick={goBack}
           className="apple-btn"
           style={{ padding: "8px 20px", fontSize: 12, fontFamily: T.mono, borderRadius: 8 }}
         >
-          {"\u2190"} Back to Scanner
+          {"\u2190"} Back to {backLabel}
         </button>
       </div>
     );
@@ -355,11 +366,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
       }}>
         <button
-          onClick={() => navigate(`/scanner?market=${marketKind}`)}
+          onClick={goBack}
           className="apple-btn"
           style={{ padding: "7px 16px", fontSize: T.textSm, fontFamily: T.font, fontWeight: 600, borderRadius: 8, flexShrink: 0 }}
         >
-          {"\u2190"} Scanner
+          {"\u2190"} {backLabel}
         </button>
         <TokenLogo symbol={data.symbol} size={isMobile ? 32 : 40} />
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
