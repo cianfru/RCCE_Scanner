@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { at, inBox, movement, movers, picks, pnl, trailPoints, visible } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, movement, movers, picks, pnl, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -40,4 +40,28 @@ test("helpers", () => {
   assert.equal(inBox(BOX, 0, 1), true); assert.equal(inBox(BOX, 0, 9), false);
   assert.equal(Math.round(100 * pnl({ entry: 1, side: "long" }, 1.2)), 20);
   assert.equal(Math.round(100 * pnl({ entry: 1, side: "short" }, 1.2)), -20);
+});
+
+test("watch failures map to a reason and a message", () => {
+  assert.equal(watchReason(403), "admin");
+  assert.equal(watchReason(400), "cap");
+  assert.equal(watchReason(500), "error");
+  assert.equal(watchToast("TIA", { ok: false, reason: "admin" }), "Watching needs the admin key. Add it under Settings.");
+  assert.equal(watchToast("TIA", { ok: false, reason: "cap" }), "At most 30 coins can be watched.");
+  assert.equal(watchToast("TIA", { ok: false, reason: "error" }), WATCH_MESSAGES.error);
+  assert.equal(watchToast("TIA", null), "Could not change the watch list.");
+});
+
+test("watch success keeps today's texts", () => {
+  assert.equal(watchToast("TIA", { ok: true, watching: true }, "ready"), "Watching TIA. Alerts go to Telegram.");
+  assert.equal(watchToast("TIA", { ok: true, watching: true }, "no_chat"), "Watching TIA. Telegram has no chat yet: send /watch to the bot once.");
+  assert.equal(watchToast("TIA", { ok: true, watching: false }, "ready"), "Stopped watching TIA");
+});
+
+test("addresses are 0x plus 40 hex digits", () => {
+  assert.equal(isAddress("0x880ac484a1743862989a441d6d867238c7aa311c"), true);
+  assert.equal(isAddress("0x880AC484A1743862989A441D6D867238C7AA311C"), true);
+  assert.equal(isAddress("0x880ac484a1743862989a441d6d867238c7aa311"), false);
+  assert.equal(isAddress(""), false);
+  assert.equal(isAddress(null), false);
 });

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import HelpTip from "./HelpTip.jsx";
 import SetupIntelDrawer from "./SetupIntelDrawer.jsx";
 import useSetupMap from "../hooks/useSetupMap.js";
+import useMyPositions from "../hooks/useMyPositions.js";
 import useSetupIntel from "../hooks/useSetupIntel.js";
 import { col, getBaseSymbol } from "../theme.js";
 import { fmtPx } from "../utils/traderFormat.js";
 import { fmtIn, nextCloses } from "../utils/intel.js";
-import { CROWD_WORD, SIGNAL_SHORT, STAGES, ZONE_WORD, at, movement, movers, picks, pnl, symlog, trailPoints, visible } from "../utils/setupMap.js";
+import { CROWD_WORD, SIGNAL_SHORT, STAGES, ZONE_WORD, at, isAddress, movement, movers, picks, pnl, symlog, trailPoints, visible, watchToast } from "../utils/setupMap.js";
 
 const STAGE_COLOR = { forming: "#91b9e8", fresh: "#97FCE4", running: "#7d9b95", stretched: "#fbbf24", leaving: "#cf9185", waiting: "#52525b" };
 const CROWD_COLOR = { quiet: "var(--t-text3)", early: "var(--t-accent)", crowded: "#fbbf24", against: "#cf9185", holding: "var(--t-text2)" };
@@ -87,11 +88,13 @@ export default function SetupMap({ results, timeframe, onSelect }) {
   const [focus, setFocus] = useState(null);
   const [detail, setDetail] = useState(null);
   const [msg, setMsg] = useState("");
-  const { data, watched, telegram, toggleWatch, mine } = useSetupMap(tf, /^0x[0-9a-fA-F]{40}$/.test(address) ? address : "", mineOn);
+  const { data, watched, telegram, toggleWatch } = useSetupMap(tf);
+  // My trades: the typed address, else the executor's positions; nothing while the toggle is off.
+  const validAddress = isAddress(address) ? address : null;
+  const { byCoin: mineBy } = useMyPositions(mineOn ? validAddress : null, { executorFallback: mineOn && !validAddress });
   const allowed = useMemo(() => new Set((results || []).map(r => r.symbol)), [results]);
   const coins = useMemo(() => (data?.coins || []).filter(c => !allowed.size || allowed.has(c.symbol)), [data, allowed]);
   const box = data?.box || { z: [-0.5, 1.5], n: [1, 8] };
-  const mineBy = useMemo(() => new Map((mineOn ? mine || [] : []).map(m => [m.coin, m])), [mine, mineOn]);
   const keep = useMemo(() => new Set([...watched, ...mineBy.keys()]), [watched, mineBy]);
   const pts = useMemo(() => visible(coins, { all: showAll, keep }), [coins, showAll, keep]);
   const top = useMemo(() => picks(coins, box), [coins, box]);
@@ -177,11 +180,7 @@ export default function SetupMap({ results, timeframe, onSelect }) {
     return new Set([...inBoxTop, ...big, ...moving, ...keep]);
   }, [pts, mv, keep, small]);
 
-  const onWatch = async coin => {
-    const was = watched.has(coin);
-    const ok = await toggleWatch(coin);
-    setMsg(!ok ? "Could not change the watch list: set the admin key in Settings." : was ? `Stopped watching ${coin}` : telegram === "ready" ? `Watching ${coin}. Alerts go to Telegram.` : `Watching ${coin}. Telegram has no chat yet: send /watch to the bot once.`);
-  };
+  const onWatch = async coin => setMsg(watchToast(coin, await toggleWatch(coin), telegram));
   const pick = coin => setFocus(f => (f === coin ? null : coin));
 
   if (!results?.length) return null;

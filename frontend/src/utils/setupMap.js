@@ -78,3 +78,19 @@ export function at(p, t) {
 }
 
 export const pnl = (mine, price) => (mine && price && mine.entry ? (price / mine.entry - 1) * (mine.side === "short" ? -1 : 1) : null);
+
+// Watch toggles: why a change failed, and what to tell the user.
+export const WATCH_MESSAGES = {
+  admin: "Watching needs the admin key. Add it under Settings.",
+  cap: "At most 30 coins can be watched.",
+  error: "Could not change the watch list.",
+};
+export const watchReason = status => (status === 403 ? "admin" : status === 400 ? "cap" : "error");
+export function watchToast(coin, result, telegram) {
+  if (!result?.ok) return WATCH_MESSAGES[result?.reason] || WATCH_MESSAGES.error;
+  if (!result.watching) return `Stopped watching ${coin}`;
+  return telegram === "ready" ? `Watching ${coin}. Alerts go to Telegram.` : `Watching ${coin}. Telegram has no chat yet: send /watch to the bot once.`;
+}
+
+// A Hyperliquid address (0x and 40 hex digits).
+export const isAddress = v => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);

@@ -11,6 +11,7 @@ import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
 import { activeMainTab as mainTabFor, mainTabTargets, readLastScanner, writeLastScanner } from "./utils/mainNav.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
+import useFavorites from "./hooks/useFavorites.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
@@ -282,39 +283,8 @@ export default function App() {
     return () => { stop(); events.forEach(e => window.removeEventListener(e, stop)); };
   }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Favorites (persisted to localStorage)
-  const [favorites, setFavorites] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("reflex_favorites") || "[]")); } catch { return new Set(); }
-  });
-
-  // Hydrate favorites from backend on mount (backend is the source of truth for TG)
-  useEffect(() => {
-    fetch(`${API_BASE}/api/favorites`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data.symbols) && data.symbols.length > 0) {
-          setFavorites(prev => {
-            const merged = new Set([...prev, ...data.symbols]);
-            localStorage.setItem("reflex_favorites", JSON.stringify([...merged]));
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleFavorite = useCallback((symbol) => {
-    setFavorites(prev => {
-      const next = new Set(prev);
-      const wasFav = next.has(symbol);
-      wasFav ? next.delete(symbol) : next.add(symbol);
-      localStorage.setItem("reflex_favorites", JSON.stringify([...next]));
-      // Sync to backend — TG bot reads from here
-      const enc = encodeURIComponent(symbol);
-      fetch(`${API_BASE}/api/favorites/${enc}`, { method: wasFav ? "DELETE" : "POST" }).catch(() => {});
-      return next;
-    });
-  }, []);
+  // Favorites: pinned first, kept in localStorage and synced to /api/favorites (shared store)
+  const { favorites, toggle: toggleFavorite } = useFavorites();
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
