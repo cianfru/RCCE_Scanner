@@ -14,7 +14,7 @@
  *              callout when EXHAUSTION fires
  */
 import { useState, useEffect } from "react";
-import { T, m } from "../theme.js";
+import { T, m, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -325,7 +325,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           {/* Row 3: bridge flow context, single coherent line */}
           <div style={{
             display: "flex", alignItems: "center", gap: 8, marginTop: 2,
-            paddingTop: 4, borderTop: `1px solid ${T.border}40`,
+            paddingTop: 4, borderTop: `1px solid ${alpha(T.border, 25)}`,
           }}>
             <span style={{
               fontSize: m(9, isMobile), color: T.text4,

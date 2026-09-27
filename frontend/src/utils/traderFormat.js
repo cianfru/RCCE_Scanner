@@ -1,6 +1,10 @@
 // Shared wording for tracked traders (coin chart grid, Following tab).
 
+import { col } from "../theme.js";
+
 export const SIDE_COLOR = { long: "#7dd3fc", short: "#fda4af", exit: "#8b8f94" };
+// Theme-aware side colour for rendered UI (light mode maps to a darker hue).
+export const sideColor = s => col(SIDE_COLOR[s]);
 
 export const fmtPx = v => (v == null ? "—" : new Intl.NumberFormat("en", { maximumSignificantDigits: 5 }).format(v));
 export const fmtUsd = v => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v || 0)}`);

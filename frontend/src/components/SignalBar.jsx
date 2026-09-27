@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { T, m, SIGNAL_META, getBaseSymbol } from "../theme.js";
+import { T, m, SIGNAL_META, getBaseSymbol, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -162,7 +162,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
                     padding: "2px 7px",
                     borderRadius: 10,
                     border: `1px solid ${active ? T.accent : T.border}`,
-                    background: active ? `${T.accent}18` : "transparent",
+                    background: active ? alpha(T.accent, 9) : "transparent",
                     color: active ? T.accent : T.text4,
                     fontSize: 10,
                     fontFamily: T.mono,

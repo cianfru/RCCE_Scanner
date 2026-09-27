@@ -1,7 +1,7 @@
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect } from "react";
 import HelpTip from "./HelpTip.jsx";
-import { REGIME_META, T, m, SIGNAL_META, col } from "../theme.js";
+import { REGIME_META, T, m, SIGNAL_META, col, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -162,7 +162,7 @@ function ConditionValueTable({ conditions, isMobile }) {
         </thead>
         <tbody>
           {conditions.map(c => (
-            <tr key={c.name} style={{ borderBottom: `1px solid ${T.border}22` }}>
+            <tr key={c.name} style={{ borderBottom: `1px solid ${alpha(T.border, 13)}` }}>
               <td style={{ padding: "6px 10px", color: T.text2, textAlign: "left", fontWeight: 500, fontSize: fs, whiteSpace: "nowrap" }}>
                 {conditionLabel(c.name)}
               </td>
@@ -302,7 +302,7 @@ function RegimeScorecard({ data, isMobile }) {
             const byRegime = {};
             for (const e of (data[sig] || [])) byRegime[e.regime] = e;
             return (
-              <tr key={sig} style={{ borderBottom: `1px solid ${T.border}22` }}>
+              <tr key={sig} style={{ borderBottom: `1px solid ${alpha(T.border, 13)}` }}>
                 <td style={{ padding: "6px 10px", color: meta.color, fontWeight: 600, textAlign: "left", fontSize: fs, whiteSpace: "nowrap" }}>
                   {meta.label || sig}
                 </td>
@@ -355,7 +355,7 @@ function ConfluenceScorecard({ buckets, isMobile }) {
             <div style={{
               width: `${(b.count / maxCount) * 100}%`,
               height: "100%",
-              background: b.win_rate != null && b.count >= MIN_N ? `${rateColor(b.win_rate)}30` : T.overlay06,
+              background: b.win_rate != null && b.count >= MIN_N ? alpha(rateColor(b.win_rate), 19) : T.overlay06,
               borderRadius: 5,
             }} />
           </div>

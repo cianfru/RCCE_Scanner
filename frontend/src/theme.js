@@ -45,6 +45,10 @@ const DARK = {
   chartCross:  "rgba(151,252,228,0.35)",
   chartLabel:  "#04060C",
   chartText:   "rgba(245,254,253,0.60)",
+  // P&L and the opaque sticky-row background (surface tint composited over bg)
+  profit:      "#34d399",
+  loss:        "#f87171",
+  stickyBg:    "linear-gradient(rgba(15,57,51,0.32),rgba(15,57,51,0.32)), linear-gradient(rgba(15,57,51,0.30),rgba(15,57,51,0.30)), #04060C",
 };
 
 const LIGHT = {
@@ -90,6 +94,10 @@ const LIGHT = {
   chartCross:  "rgba(14,116,144,0.3)",
   chartLabel:  "#f5f5f7",
   chartText:   "#48484a",
+  // P&L and the opaque sticky-row background (surface tint composited over bg)
+  profit:      "#047857",
+  loss:        "#dc2626",
+  stickyBg:    "linear-gradient(rgba(0,0,0,0.04),rgba(0,0,0,0.04)), #ffffff",
 };
 
 // ─── APPLY THEME (sets CSS custom properties on :root) ──────────────────────
@@ -105,8 +113,17 @@ const LIGHT_HUES = {
   "#71717a": "#6b7280", "#cf9185": "#b4533f", "#b5a5db": "#6d5bb0", "#91b9e8": "#2f6fb5",
   "#e3b341": "#a16207", "#facc15": "#a16207", "#d8a094": "#b4533f", "#a78bfa": "#6d28d9",
   "#c4b5fd": "#6d28d9", "#c6a46d": "#8a6a2f", "#b6a07c": "#7a6440",
+  "#7dd3fc": "#0369a1", "#fda4af": "#be123c", "#fcd34d": "#a16207", "#8b8f94": "#52525b",
+  "#7d9b95": "#4f6f69", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
 };
 let currentMode = "dark";
+
+// A translucent version of any colour, including var(--t-*) tokens: `${T.x}NN` hex
+// suffixes only work on literal hex values and silently drop the whole declaration otherwise.
+export function alpha(color, pct) {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
+
 export function col(hex) {
   return currentMode === "light" ? (LIGHT_HUES[String(hex).toLowerCase()] || hex) : hex;
 }
@@ -133,6 +150,7 @@ export function applyTheme(mode) {
     root.style.setProperty(`--t-${key}`, val);
   }
   root.dataset.theme = mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", mode === "light" ? "#ffffff" : "#04060C");
 }
 
 // The --t-* variables of one palette as an inline style, for a block that keeps its
@@ -184,6 +202,9 @@ export const T = {
   selectBg:    "var(--t-selectBg)",
   scrollThumb: "var(--t-scrollThumb)",
   scrollHover: "var(--t-scrollHover)",
+  profit:      "var(--t-profit)",
+  loss:        "var(--t-loss)",
+  stickyBg:    "var(--t-stickyBg)",
   // Static (not theme-dependent)
   font:        "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
   mono:        "'Geist Mono', 'SF Mono', monospace",

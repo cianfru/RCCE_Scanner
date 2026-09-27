@@ -1,4 +1,10 @@
 /* Terminal presentation only. Existing routes, feeds, filters and trading logic are unchanged. */
+/* Layout tokens: one content gutter shared by the capsule, titles, cards and grid; header geometry for sticky offsets. */
+:root{--gutter:24px;--capsule-top:12px;--capsule-h:68px;--header-offset:calc(var(--capsule-top) + var(--capsule-h));--tabbar-space:0px;}
+@media(max-width:1023px){:root{--gutter:20px}}
+@media(max-width:767px){:root{--gutter:16px}}
+@media(max-width:640px){:root{--capsule-top:6px;--capsule-h:60px}}
+@media(max-width:899px){:root{--tabbar-space:calc(84px + env(safe-area-inset-bottom,0px))}}
 .reflex-terminal {font-variant-numeric:tabular-nums;}
 .reflex-terminal .terminal-header {background:var(--t-headerBg)!important;border-bottom:1px solid var(--t-border)!important;min-height:68px;}
 .reflex-terminal .terminal-header > div[style*="pointer-events"] {display:none;}

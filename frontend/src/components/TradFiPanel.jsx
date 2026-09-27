@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { T, m, fmt } from "../theme.js";
+import { T, m, fmt, alpha } from "../theme.js";
 import {
   RegimeBadge, SignalDot, ZScoreBar, HeatCell, ConfluenceBadge,
 } from "./badges.jsx";
@@ -333,7 +333,7 @@ export default function TradFiPanel({
                       onClick={() => onSelect(r)}
                       style={{
                         cursor: "pointer",
-                        borderBottom: `1px solid ${T.border}22`,
+                        borderBottom: `1px solid ${alpha(T.border, 13)}`,
                         background: isSelected ? `${T.cyan}0a` : "transparent",
                         transition: "background 0.15s ease",
                       }}

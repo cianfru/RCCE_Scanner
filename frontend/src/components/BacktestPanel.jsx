@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, SIGNAL_META, fmt, resolveToken, col } from "../theme.js";
+import { T, SIGNAL_META, fmt, resolveToken, col, alpha } from "../theme.js";
 import { useTheme } from "../ThemeContext.jsx";
 import Tabs from "./Tabs.jsx";
 
@@ -195,7 +195,7 @@ function ProgressBar({ progress, status, startedAt }) {
         ) : (
           <div style={{
             width: `${progress}%`, height: "100%",
-            background: `linear-gradient(90deg, ${T.accent}, ${T.accent}cc)`,
+            background: `linear-gradient(90deg, ${T.accent}, ${alpha(T.accent, 80)})`,
             borderRadius: 2, transition: "width 0.5s ease",
           }} />
         )}
