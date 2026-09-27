@@ -11,19 +11,20 @@ def pos(coin, side, size, entry, mark):
 
 
 def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
-    a, b, c = TrackedWallet("0xa"), TrackedWallet("0xb"), TrackedWallet("0xc")
+    a, b, c, d = TrackedWallet("0xa"), TrackedWallet("0xb"), TrackedWallet("0xc"), TrackedWallet("0xd")
     now = time.time()
     snaps = {
         "0xa": deque([PositionSnapshot(now, [pos("SUI", "LONG", 100, 3.0, 3.3), pos("kPEPE", "SHORT", 1e6, 0.01, 0.012)], 1e6)]),
         "0xb": deque([PositionSnapshot(now, [pos("SUI", "LONG", 50, 3.5, 3.3)], 1e6)]),
         "0xc": deque([PositionSnapshot(now, [pos("SUI", "SHORT", 10, 3.1, 3.3)], 1e6)]),   # large account
+        "0xd": deque([PositionSnapshot(now, [], 1e6)]),                                    # flat
     }
-    monkeypatch.setattr(hl, "_roster", [a, b, c])
-    monkeypatch.setattr(hl, "_roster_money_printers", [a, b])
+    monkeypatch.setattr(hl, "_roster", [a, b, c, d])
+    monkeypatch.setattr(hl, "_roster_money_printers", [a, b, d])
     monkeypatch.setattr(hl, "_roster_smart_money", [c])
     monkeypatch.setattr(hl, "_snapshots", snaps)
     pm = hl.positioning_map("profitable")
-    assert pm["wallets"] == 2
+    assert pm["wallets"] == 3 and pm["holding"] == 2
     sui = pm["coins"]["SUI"]
     assert sui["long"] == {"n": 2, "usd": 495, "median_entry": 3.25, "in_profit": 1}
     assert sui["short"]["n"] == 0 and abs(sui["mark"] - 3.3) < 1e-9
