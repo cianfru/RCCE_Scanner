@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /$
+Disallow: /scanner
+Disallow: /signals
+Disallow: /analytics
+Disallow: /hyperlens
+Disallow: /tradfi
+Disallow: /ai
+Disallow: /backtest
+Disallow: /executor
+Disallow: /portfolio
+Disallow: /admin
+Sitemap: https://reflexsignal.xyz/sitemap.xml

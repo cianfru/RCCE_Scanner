@@ -1,93 +1,256 @@
-import LogoSculpture from "./LogoSculpture.jsx";
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { MotionConfig, motion, useInView, useReducedMotion } from 'framer-motion';
+import { ArrowRight, ArrowUpRight, Check, CandlestickChart, Clock3, Menu, Minus, Pause, Play, X } from 'lucide-react';
+import LogoSculpture from './LogoSculpture.jsx';
 import LiveScannerPreview from './LiveScannerPreview.jsx';
-'use client';
-import { motion, useReducedMotion, MotionConfig, useMotionValue, useSpring, useTransform, useInView } from 'framer-motion';
-import { ArrowUpRight, ArrowRight, ChevronDown, Activity, ScanLine, Layers3, LockKeyhole, MoveUpRight, Check, Fingerprint, Pause, Play } from 'lucide-react';
 import { Mark, LogoLettering } from './Mark';
-import { useState, useEffect, useRef } from 'react';
-import { Tabs,TabsList,TabsTrigger } from './tabs';
+import TokenLogo from '../components/TokenLogo.jsx';
 import './base.css';
-import './refined-landing.css';
 import './palette.css';
-function Action({href,children,ghost=false,className=''}:{href:string;children:React.ReactNode;ghost?:boolean;className?:string}){const reduced=useReducedMotion();return <motion.a href={href} className={`r-action ${ghost?'r-action-ghost':''} ${className}`} whileHover={reduced?undefined:{scale:1.02}} whileTap={reduced?undefined:{scale:.98}}>{children}</motion.a>}
-function Reveal({children,className='',delay=0,id}:{children:React.ReactNode;className?:string;delay?:number;id?:string}){const reduced=useReducedMotion();return <motion.div id={id} className={className} initial={reduced?false:{opacity:0,y:24}} whileInView={{opacity:1,y:0}} viewport={{once:true,amount:.12}} transition={{duration:.7,delay,ease:[.22,1,.36,1]}}>{children}</motion.div>}
-function Wordmark(){return <motion.a href="/" className="r-brand" whileHover={{scale:1.02}} whileTap={{scale:.98}} aria-label="Reflex home"><Mark size={42}/><LogoLettering/></motion.a>}
-function MiniLine({index=0}:{index?:number}){return <svg width="80" height="28" viewBox="0 0 80 28" aria-hidden="true"><polyline points={Array.from({length:21},(_,i)=>`${i*4},${22-i*.72+Math.sin(i*1.8+index)*3.2}`).join(' ')} fill="none" stroke={index===3?'#c1b296':'#8adbbd'} strokeWidth="1.5"/></svg>}
-// scanner: the name the terminal shows for the same phase (REGIME_META.name); the engine has no Distribution regime.
-const cycleStages=[
- {name:'Accumulation',scanner:'Accumulation',x:63,y:182,text:'Price is near its baseline. Directional energy is limited. A quiet market is a condition to observe, not a reason to assume a reversal.'},
- {name:'Markup',scanner:'Uptrend',x:153,y:116,text:'Price and trend energy are moving higher together. Compare 4H and 1D to see whether the shorter move agrees with the broader cycle.'},
- {name:'Blowoff',scanner:'Overheated',x:251,y:36,text:'Price is unusually extended. Strong momentum can continue, but the distance from the baseline deserves attention.'},
- {name:'Distribution',scanner:'',x:342,y:84,text:'Price remains elevated as energy fades. The move may be losing support even before the price makes it obvious.'},
- {name:'Markdown',scanner:'Downtrend',x:438,y:165,text:'Price and energy point lower. Look for a change in the underlying conditions before changing the interpretation.'},
- {name:'Capitulation',scanner:'Capitulation',x:520,y:200,text:'Price is depressed and energy is strongly negative. An extreme reading alone is not evidence of a bottom.'},
-];
-function CycleExplorer(){const[stage,setStage]=useState('Markup');const current=cycleStages.find(s=>s.name===stage)!;return <div className="r-cycle-card glass"><div className="r-card-top"><span className="r-meta">THE CYCLE ENGINE</span><Layers3 size={18}/></div><h3>A name for the<br/>phase you’re in.</h3><div className="r-cycle-visual"><svg viewBox="0 0 590 240" role="img" aria-label={`Conceptual market cycle. Selected phase: ${stage}.`}><defs><linearGradient id="r-cycle-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b1e8db" stopOpacity=".16"/><stop offset="1" stopColor="#b1e8db" stopOpacity="0"/></linearGradient><linearGradient id="r-cycle-stroke"><stop stopColor="#80bbbd"/><stop offset=".4" stopColor="#cfffe4"/><stop offset="1" stopColor="#698897"/></linearGradient></defs>{[60,110,160,210].map(y=><line key={y} x1="15" x2="575" y1={y} y2={y} stroke="#b5dde510" strokeDasharray="3 6"/>)}<path d="M15 183 C60 183 85 195 115 165 S165 102 189 66 S228 30 251 36 S300 79 342 84 S399 134 438 165 S500 210 520 200 S555 185 575 185 L575 230 H15Z" fill="url(#r-cycle-fill)"/><path d="M15 183 C60 183 85 195 115 165 S165 102 189 66 S228 30 251 36 S300 79 342 84 S399 134 438 165 S500 210 520 200 S555 185 575 185" stroke="url(#r-cycle-stroke)" strokeWidth="2" fill="none"/>{cycleStages.map(c=><circle key={c.name} cx={c.x} cy={c.y} r={c.name===stage?5:3} fill={c.name===stage?'#d8ffed':'#517b89'}/>)}<line x1={current.x} x2={current.x} y1={current.y+12} y2="228" stroke="#bce6e840" strokeDasharray="2 6"/><circle cx={current.x} cy={current.y} r="14" fill="#b4f2df09" stroke="#b4f2df30"/></svg><span className="r-chart-note">Conceptual cycle · not a price forecast</span></div><Tabs value={stage} onValueChange={v=>setStage(String(v))}><TabsList className="r-cycle-tabs" aria-label="Explore a market cycle phase">{cycleStages.map(c=><TabsTrigger key={c.name} value={c.name}>{c.name}</TabsTrigger>)}</TabsList></Tabs><p className="r-cycle-explanation" aria-live="polite">{current.text} {current.scanner?`In the terminal this phase is labelled ${current.scanner}.`:'The terminal has no separate label for this phase.'}</p></div>}
-function BelowFold(){return <>
-<section className="r-width r-story" id="engine"><Reveal className="r-section-heading"><div><span className="r-kicker">BUILT FOR THE WAY YOU RESEARCH</span><h2>The move is visible.<br/><span>The context takes work.</span></h2></div><p>A chart shows you price. Reflex adds the cycle, the strength behind it, and the positioning around it.</p></Reveal><div className="r-bento"><Reveal><CycleExplorer/></Reveal><Reveal delay={.12} className="r-bento-right"><div className="r-timeframe-card glass"><div className="r-card-top"><span className="r-meta">MULTIPLE TIMEFRAMES</span><Activity size={18}/></div><h3>A move. Or a shift?</h3><p>See the four-hour move alongside the daily regime before you decide.</p><div className="r-timeframe-visual"><div className="r-timeframe-row"><span className="r-time-chip r-mono">4H</span><div><span>Short-term structure</span><MiniLine index={1}/></div><span className="r-regime green">Uptrend</span></div><div className="r-alignment-join"><i/><span><Check size={12}/> In agreement</span><i/></div><div className="r-timeframe-row"><span className="r-time-chip r-mono">1D</span><div><span>Broader cycle</span><MiniLine index={2}/></div><span className="r-regime green">Uptrend</span></div></div><span className="r-chart-note">Illustrative timeframe alignment</span></div><div className="r-hyperlens-card glass"><div className="r-card-top"><span className="r-meta">HYPERLENS</span><ScanLine size={18}/></div><h3>The other side<br/>of the trade.</h3><p>Bring Hyperliquid positioning into the same conversation as price.</p><div className="r-position-track" aria-hidden="true">{Array.from({length:30},(_,i)=><i key={i} style={{height:Number((18+Math.sin(i*.6)**2*36).toFixed(2)),opacity:Number((.3+Math.sin(i*.18)**2*.7).toFixed(3))}}/>)}</div><div className="r-position-foot"><span>Positioning</span><i/><span>Market structure</span></div></div></Reveal></div><Reveal className="r-workflow" id="workflow">{[['01','Scan the market','Start with regimes and signal conditions.'],['02','Follow the evidence','Compare timeframes and inspect the setup.'],['03','Make your own call','Put the signal inside your risk framework.']].map(([n,t,p])=><div key={n}><span className="r-mono">{n}</span><div><h3>{t}</h3><p>{p}</p></div></div>)}</Reveal></section>
-<section className="r-token-section" id="token"><div className="r-width r-token-inner"><Reveal className="r-token-art"><motion.div className="r-pass glass" whileHover={{rotateY:-7,rotateX:5,scale:1.02}} whileTap={{scale:.98}} transition={{type:'spring',stiffness:100,damping:20}}><div className="r-pass-top"><span><Mark size={23}/> reflex</span><span className="r-meta">PLATFORM ACCESS</span></div><div className="r-pass-mark"><Mark size={170}/></div><div className="r-pass-main"><span className="r-meta">HOLDING REQUIREMENT</span><strong>TBA <span>minimum balance</span></strong></div><div className="r-pass-bottom"><span><Fingerprint size={20}/> PROPOSED MODEL</span><span className="r-mono">01 / 01</span></div></motion.div><span className="r-token-art-caption r-meta">YOUR WALLET IS YOUR ACCESS PASS.</span></Reveal><Reveal className="r-token-copy" delay={.1}><span className="r-kicker"><LockKeyhole size={14}/> THE TOKEN HAS A JOB</span><h2>Hold the token.<br/><span>You’re in.</span></h2><p>Hold the required amount of Reflex tokens in your wallet to unlock the platform. Keep the balance, keep the access.</p><div className="r-token-details"><span><Check size={15}/> No staking</span><span><Check size={15}/> No spending</span><span><Check size={15}/> Your custody</span></div><Action href="#faq">How access works <ArrowUpRight size={17}/></Action><p className="r-token-note">Proposed access model. Token details and the minimum balance will be published before launch.</p></Reveal></div></section>
-<section className="r-width r-launch"><Reveal className="r-launch-inner"><span className="r-kicker">THE LAUNCH PATH</span><div className="r-launch-steps"><div><span className="r-stage-now">Now</span><h3>The live scanner</h3><p>Explore production market data and inspect individual setups.</p></div><div><span>Next</span><h3>Token-gated access</h3><p>Wallet verification and access rules are the next step.</p></div><div><span>Before launch</span><h3>The token details</h3><p>Threshold, eligible balances, and terms.</p></div></div></Reveal></section>
-<section className="r-width r-faq" id="faq"><Reveal><span className="r-kicker">A FEW THINGS TO KNOW</span><h2>Before you<br/><span>open the terminal.</span></h2><Action href="https://github.com/cianfru/RCCE_Scanner" ghost className="r-source-link">Explore the source <ArrowUpRight size={15}/></Action></Reveal><Reveal className="r-faq-list" delay={.1}>{[
-['What does Reflex do?','It brings market regimes, signal conditions, and Hyperliquid intelligence into one research workspace. The Reflexive Crypto Cycle Engine uses price deviation and trend energy to classify the market cycle.'],
-['How does the token unlock access?','The proposed model is simple: hold at least a minimum balance in a supported wallet and verify ownership. The platform checks your balance and grants access while you qualify. The minimum and the supported token balances are not set yet.'],
-['Do the tokens leave my wallet?','No. The access model does not require staking, a deposit, or spending tokens. Authentication proves that you own the wallet; it does not transfer your assets.'],
-['What if I sell some tokens?','If your eligible balance drops below the minimum, access ends after the next successful balance check. You can re-verify after restoring the balance. A verification outage is treated as an unknown status, not a zero balance.'],
-['Where does the preview data come from?','The preview reads the same scanner API as the terminal and refreshes every minute. Cycle diagrams and the floating transition card remain illustrative.'],
-['Is this a trading recommendation?','No. A market regime describes conditions, not a guaranteed outcome. Signals can be wrong. Use the information alongside your own research and risk limits.']
-].map(([q,a],i)=><motion.details key={q} initial={{opacity:0}} whileInView={{opacity:1}} viewport={{once:true}} transition={{delay:i*.04}}><summary><span>{q}</span><span className="r-faq-plus">+</span></summary><p>{a}</p></motion.details>)}</Reveal></section>
-<section className="r-width r-final"><Reveal><span className="r-kicker"> THE TERMINAL</span><h2>Have a look.<br/><span>Form your own view.</span></h2><Action href="/scanner">Explore Reflex <ArrowUpRight size={18}/></Action><p>Explore market cycles and signals.</p></Reveal></section>
-</>}
-function DynamicHero(){
-  const heroRef=useRef<HTMLElement>(null);
-  const reduced=useReducedMotion();
-  const inView=useInView(heroRef,{amount:.08});
-  const [paused,setPaused]=useState(false);
-  const [ready,setReady]=useState(false);
-  const [visible,setVisible]=useState(true);
-  const px=useMotionValue(0), py=useMotionValue(0);
-  const sx=useSpring(px,{stiffness:38,damping:22,mass:1.4});
-  const sy=useSpring(py,{stiffness:38,damping:22,mass:1.4});
-  const artX=useTransform(sx,[-1,1],[-16,16]);
-  const artY=useTransform(sy,[-1,1],[-11,11]);
-  const artRotate=useTransform(sx,[-1,1],[-.8,.8]);
-  const cardX=useTransform(sx,[-1,1],[7,-7]);
-  const cardY=useTransform(sy,[-1,1],[5,-5]);
-  const active=ready&&!reduced&&!paused&&visible&&inView;
-  useEffect(()=>{
-    setReady(true);
-    const update=()=>setVisible(!document.hidden);
-    update();document.addEventListener('visibilitychange',update);
-    return()=>document.removeEventListener('visibilitychange',update);
-  },[]);
-  useEffect(()=>{if(!active){px.set(0);py.set(0)}},[active,px,py]);
-  const reset=()=>{px.set(0);py.set(0)};
-  const track=(event:React.PointerEvent<HTMLElement>)=>{
-    if(!active||event.pointerType!=='mouse')return;
-    const b=event.currentTarget.getBoundingClientRect();
-    px.set(Math.max(-1,Math.min(1,((event.clientX-b.left)/b.width-.5)*2)));
-    py.set(Math.max(-1,Math.min(1,((event.clientY-b.top)/b.height-.5)*2)));
-  };
-  return <section ref={heroRef} className="r-hero r-width" data-moving={active?'true':'false'} onPointerMove={track} onPointerLeave={reset}>
-    <motion.div className="r-hero-art r-art-stage r-logo-stage" style={{x:artX,y:artY,rotate:artRotate}} aria-hidden="true">
-      <div className="r-logo-halo"/><div className="r-logo-shadow"/>
-      <LogoSculpture active={active}/>
-    </motion.div>
-    <Reveal className="r-hero-copy">
-      <span className="r-kicker"> MARKET INTELLIGENCE FOR HYPERLIQUID</span>
-      <h1>Price is only<br/><span>part of the story.</span></h1>
-      <p>Reflex brings market cycles and Hyperliquid positioning into the same view, so you can see what’s behind the move.</p>
-      <div className="r-hero-actions"><Action href="/scanner">Explore the platform <ArrowUpRight size={19}/></Action><motion.a className="r-quiet-link" href="#platform" whileHover={{scale:1.02}} whileTap={{scale:.98}}>Take a closer look <ChevronDown size={15}/></motion.a></div>
-    </Reveal>
-    <div className="r-hero-side" aria-label="Example market signal">
-      <motion.div className="r-floating-signal glass r-dynamic-card" style={{x:cardX,y:cardY}}>
-        <div><span className="r-meta">EXAMPLE TRANSITION · ILLUSTRATIVE</span></div>
-        <h3>Accumulation <MoveUpRight size={19}/> Uptrend</h3>
-        <div className="r-floating-bottom"><span>SOL <span className="r-muted">/ USDT</span></span><span className="r-mono">1D</span></div>
-        <span className="r-card-glint" aria-hidden="true"/>
-      </motion.div>
-      {!reduced&&<motion.button className="r-motion-toggle" type="button" onClick={()=>setPaused(p=>!p)} aria-label={paused?'Play decorative motion':'Pause decorative motion'} aria-pressed={paused} whileHover={{scale:1.02}} whileTap={{scale:.98}}>{paused?<Play size={12}/>:<Pause size={12}/>}<span>{paused?'Play motion':'Pause motion'}</span></motion.button>}
-    </div>
-  </section>
+import './refined-landing.css';
+
+function Action({ href, children, secondary = false, liquid = false }: { href: string; children: ReactNode; secondary?: boolean; liquid?: boolean }) {
+  const reduced = useReducedMotion();
+  return <motion.a href={href} className={`rx-action${secondary ? ' rx-action-secondary' : ''}${liquid ? ' rx-action-liquid' : ''}`}
+    whileHover={reduced || liquid ? undefined : { scale: 1.02 }} whileTap={reduced ? undefined : { scale: .98 }}>
+    <span className="rx-action-label">{children}</span><span className="rx-action-icon"><ArrowUpRight size={18} /></span>
+    {liquid && <span className="rx-action-surface" aria-hidden="true"><i /><i /></span>}
+  </motion.a>;
 }
 
-export function RefinedLanding(){return <MotionConfig reducedMotion="user"><div className="refined"><a href="#main" className="skip">Skip to content</a><div className="r-top"><header className="r-nav glass"><Wordmark/><nav aria-label="Main navigation"><motion.a whileHover={{scale:1.02}} whileTap={{scale:.98}} href="#platform">Platform</motion.a><motion.a whileHover={{scale:1.02}} whileTap={{scale:.98}} href="#engine">The engine</motion.a><motion.a whileHover={{scale:1.02}} whileTap={{scale:.98}} href="#token">Token access</motion.a></nav><Action href="/scanner" ghost>Enter app <ArrowUpRight size={16}/></Action></header></div><main id="main"><DynamicHero/><section id="platform" className="r-width r-platform"><Reveal><LiveScannerPreview/></Reveal></section><BelowFold/></main><footer className="r-width r-footer"><div className="r-footer-top"><Wordmark/><nav aria-label="Footer navigation"><motion.a href="#engine" whileHover={{scale:1.02}} whileTap={{scale:.98}}>The engine</motion.a><motion.a href="#token" whileHover={{scale:1.02}} whileTap={{scale:.98}}>Token access</motion.a><motion.a href="#faq" whileHover={{scale:1.02}} whileTap={{scale:.98}}>FAQ</motion.a><motion.a href="https://github.com/cianfru/RCCE_Scanner" whileHover={{scale:1.02}} whileTap={{scale:.98}}>GitHub ↗</motion.a></nav></div><div className="r-footer-word" aria-hidden="true">reflex<span>↗</span></div><div className="r-footer-bottom"><span>© 2026 Reflex</span><span>Market intelligence. No token sale is live here.</span></div></footer></div></MotionConfig>}
+function LiquidFilter() {
+  return <svg className="rx-action-filters" aria-hidden="true" focusable="false"><defs>
+    <filter id="reflex-cta-liquid" x="-20%" y="-50%" width="150%" height="200%" colorInterpolationFilters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -10" result="liquid" />
+      <feBlend in="SourceGraphic" in2="liquid" />
+    </filter>
+  </defs></svg>;
+}
+
+function Wordmark() {
+  return <a href="/" className="rx-brand" aria-label="Reflex home"><Mark size={37} /><LogoLettering /></a>;
+}
+
+const navigation = [['Platform', '#platform'], ['The engine', '#engine'], ['Access', '#access'], ['FAQ', '#faq']];
+
+function Header() {
+  const [open, setOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setOpen(false); toggle.current?.focus(); }
+    };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [open]);
+  return <header className="rx-header">
+    <div className="rx-nav rx-width">
+      <Wordmark />
+      <nav className="rx-desktop-nav" aria-label="Main navigation">{navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}</nav>
+      <a href="/scanner" className="rx-enter">Enter app <ArrowUpRight size={17} /></a>
+      <button ref={toggle} className="rx-menu-toggle" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="mobile-navigation" onClick={() => setOpen(!open)}>{open ? <X size={22} /> : <Menu size={22} />}</button>
+    </div>
+    <nav id="mobile-navigation" className="rx-mobile-nav" aria-label="Mobile navigation" hidden={!open}>
+      {navigation.map(([label, href]) => <a key={href} href={href} onClick={() => setOpen(false)}>{label}<ArrowUpRight size={16} /></a>)}
+    </nav>
+  </header>;
+}
+
+function Hero() {
+  const hero = useRef<HTMLElement>(null);
+  const inView = useInView(hero, { amount: .1 });
+  const reduced = useReducedMotion();
+  const [paused, setPaused] = useState(false);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setVisible(!document.hidden);
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      document.removeEventListener('visibilitychange', update);
+    };
+  }, []);
+  return <section className="rx-hero" ref={hero}>
+    <div className="rx-hero-grid" aria-hidden="true" />
+    <div className="rx-hero-main rx-width">
+      <div className="rx-hero-content">
+        <p className="rx-eyebrow">Market intelligence for Hyperliquid</p>
+        <h1>Price is only<br /><span>part of the story.</span></h1>
+        <p className="rx-hero-description">Market cycles. Signals. Onchain positioning.<br className="rx-desktop-break" /> A clearer view of what’s behind the move.</p>
+        <div className="rx-hero-actions"><Action href="/scanner" liquid>Explore Reflex</Action></div>
+      </div>
+      <div className="rx-hero-visual">
+        <div className="rx-hero-art" aria-hidden="true"><LogoSculpture active={inView && !reduced && !paused && visible} /></div>
+        {!reduced && <button className="rx-motion" onClick={() => setPaused(!paused)} aria-label={paused ? 'Play logo animation' : 'Pause logo animation'} aria-pressed={paused}>{paused ? <Play size={12} /> : <Pause size={12} />}<span>{paused ? 'Play motion' : 'Pause motion'}</span></button>}
+      </div>
+    </div>
+    <div className="rx-capabilities rx-width" aria-label="Platform capabilities">
+      <span>One connected view</span><div><CandlestickChart size={21} strokeWidth={1.5} aria-hidden="true" /> Market regimes</div><div><Clock3 size={21} strokeWidth={1.5} aria-hidden="true" /> Timeframe alignment</div><div><Mark size={21} /> Hyperliquid intelligence</div>
+    </div>
+  </section>;
+}
+
+// These miniatures explain the product; only LiveScannerPreview fetches live data.
+const scannerExamples = [
+  { coin: 'BTC', regime: 'Uptrend', color: 'mint', signal: 'Wait' },
+  { coin: 'ETH', regime: 'Accumulation', color: 'blue', signal: 'Wait' },
+  { coin: 'SOL', regime: 'Uptrend', color: 'mint', signal: 'Wait' },
+];
+
+function TraderPositioning() {
+  const [cohort, setCohort] = useState('All traders');
+  const exampleSplits: Record<string, number[]> = { 'All traders': [64, 42, 71], 'Profitable traders': [58, 55, 63] };
+  return <div className="rx-mini-position">
+    <div className="rx-mini-label"><span>Trader positioning</span><span>Long / short wallets</span></div>
+    <div className="rx-cohort-switch" role="group" aria-label="Example trader cohort">
+      {Object.keys(exampleSplits).map(label => <button key={label} aria-pressed={cohort === label} onClick={() => setCohort(label)}>{label}</button>)}
+    </div>
+    <div className="rx-trader-rows" aria-live="polite">
+      {scannerExamples.map(({ coin }, index) => {
+        const long = exampleSplits[cohort][index];
+        return <div className="rx-trader-row" key={coin}>
+          <span className="rx-mini-coin"><TokenLogo symbol={`${coin}/USDT`} size={19} />{coin}</span>
+          <div className="rx-trader-split" role="img" aria-label={`${coin}: ${long}% long wallets, ${100 - long}% short wallets. Illustrative data.`}>
+            <span className="rx-trader-values"><span>{long}%</span><span>{100 - long}%</span></span>
+            <span className="rx-trader-bar"><i style={{ width: `${long}%` }} /><i style={{ width: `${100 - long}%` }} /></span>
+          </div>
+        </div>;
+      })}
+    </div>
+    <div className="rx-trader-key"><span><i /> Long wallets</span><span><i /> Short wallets</span></div>
+  </div>;
+}
+
+function ProductVisual({ type }: { type: 'scanner' | 'cycle' | 'positioning' }) {
+  if (type === 'scanner') return <div className="rx-mini-markets">
+    <div className="rx-mini-label"><span>Scanner watchlist</span><span>Daily · 1D</span></div>
+    <table className="rx-mini-table" aria-label="Illustrative scanner watchlist">
+      <thead><tr><th scope="col">Market</th><th scope="col">Regime</th><th scope="col">Signal</th></tr></thead>
+      <tbody>{scannerExamples.map(({ coin, regime, color, signal }) => <tr key={coin}>
+        <th scope="row"><span className="rx-mini-coin"><TokenLogo symbol={`${coin}/USDT`} size={22} />{coin}</span></th>
+        <td><span className={`rx-chip ${color}`}>{regime}</span></td><td><span className="rx-mini-signal">{signal}</span></td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
+  if (type === 'cycle') return <div className="rx-mini-cycle" aria-hidden="true"><div className="rx-mini-label"><span>Price + trend energy</span><span>4H · 1D</span></div><svg viewBox="0 0 320 122"><path className="rx-chart-grid" d="M0 30H320M0 70H320M0 110H320" /><path d="M0 102 C22 105 30 87 46 89 S65 109 86 76 S108 94 128 55 S151 68 170 31 S193 64 211 43 S238 10 258 29 S283 15 320 8" fill="none" stroke="#97FCE4" strokeWidth="2" /><path d="M0 109 C55 110 84 94 120 80 S184 48 224 37 S287 22 320 17" fill="none" stroke="#648b86" strokeDasharray="4 5" /></svg><span className="rx-chart-key"><i /> Price <i /> Baseline</span></div>;
+  return <TraderPositioning />;
+}
+
+function Platform() {
+  return <section id="platform" className="rx-section rx-products">
+    <div className="rx-width">
+      <div className="rx-section-heading rx-centered"><p className="rx-eyebrow">The Reflex platform</p><h2>Connect the dots.<br />See the whole setup.</h2><p>From the market’s direction to the positions behind it.<br className="rx-desktop-break" /> Three perspectives, brought into one research workspace.</p></div>
+      <div className="rx-product-grid">
+        {[
+          { type: 'scanner' as const, name: 'Market Scanner', description: 'Find the markets worth a closer look. Compare regimes and signal conditions across the watchlist.', href: '#preview', link: 'See the scanner' },
+          { type: 'cycle' as const, name: 'Cycle Engine', description: 'Put each move in context. Read price deviation and trend energy across the four-hour and daily timeframes.', href: '#engine', link: 'Explore the engine' },
+          { type: 'positioning' as const, name: 'Hyperlens', description: 'See how traders are positioned. Compare long and short wallets across all traders and profitable traders on Hyperliquid.', href: '/hyperlens', link: 'Explore Hyperlens' },
+        ].map(product => <article className="rx-product" key={product.type}><ProductVisual type={product.type} /><span className="rx-example-label">Illustrative view</span><h3>{product.name}</h3><p>{product.description}</p><a href={product.href} className="rx-text-link">{product.link}<ArrowUpRight size={16} /></a></article>)}
+      </div>
+      <div className="rx-product-foot"><span>Built for research. Designed to keep you in control.</span><a href="/scanner">Open the platform <ArrowRight size={16} /></a></div>
+    </div>
+  </section>;
+}
+
+function Scanner() {
+  return <section id="preview" className="rx-section rx-preview"><div className="rx-width">
+    <div className="rx-section-heading rx-split-heading"><div><p className="rx-eyebrow">Inside Reflex</p><h2>The market,<br />in perspective.</h2></div><p>Go from a broad view to an individual setup. The preview below uses the same scanner feed as the terminal.</p></div>
+    <LiveScannerPreview />
+  </div></section>;
+}
+
+function Comparison() {
+  const rows = [
+    ['Open charts one at a time', 'Scan market regimes in one view'],
+    ['Switch between timeframes', 'Compare four-hour and daily conditions'],
+    ['Read price in isolation', 'Add cycle and positioning context'],
+    ['Follow a signal without the detail', 'Inspect its conditions and counter-evidence'],
+  ];
+  return <section className="rx-section rx-comparison"><div className="rx-width">
+    <div className="rx-section-heading rx-centered"><h2>Less chart-hopping.<br />More context.</h2><p>Spend less time assembling the picture.<br className="rx-desktop-break" /> Spend more time understanding it.</p></div>
+    <div className="rx-compare-table" role="table" aria-label="Research workflows compared">
+      <div className="rx-compare-head" role="row"><div role="columnheader">A fragmented workflow</div><div role="columnheader"><Mark size={26} /> With Reflex</div></div>
+      {rows.map(([before, after]) => <div className="rx-compare-row" role="row" key={before}><div role="cell"><Minus size={16} />{before}</div><div role="cell"><Check size={17} />{after}</div></div>)}
+    </div>
+  </div></section>;
+}
+
+const cycleStages = [
+  { name: 'Accumulation', x: 76, y: 166, description: 'Price is close to its baseline and directional energy is limited. Watch for evidence of a shift; a quiet market alone does not establish a reversal.' },
+  { name: 'Uptrend', x: 188, y: 94, description: 'Price and trend energy are moving higher together. Compare the four-hour move with the daily regime to see whether the timeframes agree.' },
+  { name: 'Overheated', x: 306, y: 34, description: 'Price is unusually extended above its baseline. Momentum may continue, but the distance from the mean deserves closer attention.' },
+  { name: 'Downtrend', x: 445, y: 135, description: 'Price and trend energy point lower. Look for a change in the underlying conditions before changing your interpretation.' },
+  { name: 'Capitulation', x: 556, y: 192, description: 'Price is depressed and directional energy is strongly negative. An extreme reading alone is not evidence of a bottom.' },
+];
+
+function CycleExplorer() {
+  const [selected, setSelected] = useState(1);
+  const current = cycleStages[selected];
+  return <section className="rx-section rx-engine" id="engine"><div className="rx-width rx-engine-layout">
+    <div className="rx-engine-copy"><p className="rx-eyebrow">The cycle engine</p><h2>Every move<br />has a context.</h2><p>Price tells you where a market is. The Reflexive Crypto Cycle Engine helps describe the conditions around it.</p><p>Explore five phases of a conceptual cycle, then compare them with the regimes in the terminal.</p><a href="/scanner" className="rx-text-link">Explore market regimes <ArrowUpRight size={16} /></a></div>
+    <div className="rx-cycle-panel">
+      <div className="rx-cycle-top"><span>A market cycle</span><span className="rx-chip mint">{current.name}</span></div>
+      <svg className="rx-cycle-chart" viewBox="0 0 640 230" role="img" aria-label={`Illustrative market cycle, highlighting ${current.name}`}>
+        <defs><linearGradient id="rx-cycle-area" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#97FCE4" stopOpacity=".16" /><stop offset="1" stopColor="#97FCE4" stopOpacity="0" /></linearGradient></defs>
+        <path className="rx-chart-grid" d="M16 50H624M16 100H624M16 150H624M16 200H624" />
+        <path d="M16 175 C46 175 56 163 76 166 S120 178 153 126 S176 112 188 94 S261 15 306 34 S355 64 384 72 S422 106 445 135 S520 212 556 192 S598 168 624 172 V225 H16Z" fill="url(#rx-cycle-area)" />
+        <path d="M16 175 C46 175 56 163 76 166 S120 178 153 126 S176 112 188 94 S261 15 306 34 S355 64 384 72 S422 106 445 135 S520 212 556 192 S598 168 624 172" stroke="#97FCE4" strokeWidth="2" fill="none" />
+        <line x1={current.x} x2={current.x} y1={current.y} y2="225" stroke="#97FCE466" strokeDasharray="3 5" />
+        {cycleStages.map((stage, index) => <circle key={stage.name} cx={stage.x} cy={stage.y} r={index === selected ? 5 : 3} fill={index === selected ? '#97FCE4' : '#526f69'} />)}
+        <circle cx={current.x} cy={current.y} r="13" fill="#97FCE410" stroke="#97FCE455" />
+      </svg>
+      <div className="rx-cycle-controls" role="group" aria-label="Explore market cycle phases">{cycleStages.map((stage, index) => <button key={stage.name} aria-pressed={selected === index} onClick={() => setSelected(index)}>{stage.name}</button>)}</div>
+      <div className="rx-cycle-description" aria-live="polite"><h3>{current.name}</h3><p>{current.description}</p></div>
+      <p className="rx-chart-note">Conceptual illustration, not a forecast. The terminal also identifies other regimes.</p>
+    </div>
+  </div></section>;
+}
+
+function Workflow() {
+  return <section className="rx-section rx-workflow" id="workflow"><div className="rx-width">
+    <div className="rx-section-heading rx-centered"><h2>From a signal<br />to your own view.</h2><p>A research workflow that keeps the decision with you.</p></div>
+    <div className="rx-steps">{[
+      ['01', 'Scan the market', 'Start with the watchlist. Find the regimes and signal conditions that deserve your attention.'],
+      ['02', 'Follow the evidence', 'Compare timeframes, review the conditions, and inspect the positioning around the setup.'],
+      ['03', 'Make your own call', 'Weigh the evidence against your strategy, research, and risk limits before deciding.'],
+    ].map(([number, title, description]) => <article key={number}><span className="rx-step-number">{number}</span><h3>{title}</h3><p>{description}</p></article>)}</div>
+  </div></section>;
+}
+
+const questions = [
+  ['What does Reflex do?', 'Reflex brings market regimes, signal conditions, and Hyperliquid intelligence into one research workspace. Its cycle engine uses price deviation and trend energy to classify market conditions.'],
+  ['Where does the scanner preview get its data?', 'It reads the same public scanner API as the terminal and refreshes every minute. If the feed is unavailable, the preview says so. The small product graphics and cycle diagram are illustrative.'],
+  ['Can I use Reflex today?', 'Reflex is currently a private product preview. The app requires an access code while the product is being refined.'],
+  ['How will token access work?', 'The proposed model is to hold a minimum eligible token balance in your own wallet and verify ownership. The threshold, supported balances, and access terms will be published before launch.'],
+  ['Will I need to stake or spend tokens?', 'The proposed access model does not require staking, depositing, or spending tokens. Wallet verification is intended to prove ownership, with access based on your eligible balance.'],
+  ['Does a signal tell me what to trade?', 'No. A regime describes conditions, and a signal summarises the engine’s checks. Neither guarantees an outcome. Use them alongside your own research and risk limits.'],
+];
+
+function AccessAndFAQ() {
+  return <>
+    <section className="rx-section rx-access" id="access"><div className="rx-width rx-access-layout">
+      <div><p className="rx-eyebrow">Platform access</p><h2>Research now.<br />Know what’s next.</h2><p>Reflex is in a password-protected preview while we refine the product. Future access details will be published before launch.</p><Action href="/scanner">Open the scanner</Action></div>
+      <div className="rx-access-stages">
+        <article><span className="rx-status rx-status-now">Private preview</span><h3>The Reflex scanner</h3><p>Explore market regimes, signal conditions, and individual setups with your access code.</p><Check size={22} /></article>
+        <article><span className="rx-status">Proposed model</span><h3>Your wallet. Your access.</h3><p>Hold the required balance to unlock the platform. No staking or spending proposed.</p><span className="rx-access-note">Token details, minimum balance, and terms: to be announced.</span></article>
+      </div>
+    </div></section>
+    <section className="rx-section rx-faq" id="faq"><div className="rx-width rx-faq-layout">
+      <div><p className="rx-eyebrow">A little more context</p><h2>Good questions.<br />Clear answers.</h2><a href="https://github.com/cianfru/RCCE_Scanner" className="rx-text-link">Explore the source <ArrowUpRight size={16} /></a></div>
+      <div className="rx-faq-list">{questions.map(([question, answer]) => <details key={question}><summary>{question}<span className="rx-faq-icon" aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div>
+    </div></section>
+  </>;
+}
+
+function Footer() {
+  return <>
+    <section className="rx-final"><div className="rx-width"><Mark size={54} /><h2>See what’s<br />behind the move.</h2><p>The next perspective is yours.</p><Action href="/scanner" liquid>Explore Reflex</Action></div></section>
+    <footer className="rx-footer rx-width"><div className="rx-footer-main"><div><Wordmark /><p>Market intelligence.<br />Independent thinking.</p></div><nav aria-label="Footer navigation"><div><span>Explore</span><a href="#platform">Platform</a><a href="#engine">The engine</a><a href="/hyperlens">Hyperlens</a></div><div><span>Learn more</span><a href="#access">Access</a><a href="#faq">FAQ</a><a href="https://github.com/cianfru/RCCE_Scanner">GitHub <ArrowUpRight size={13} /></a></div></nav></div><div className="rx-footer-bottom"><span>© {new Date().getFullYear()} Reflex</span><span>Research tools. Not investment advice.</span><a href="#main">Back to top ↑</a></div></footer>
+  </>;
+}
+
+export function RefinedLanding() {
+  return <MotionConfig reducedMotion="user"><div className="refined"><LiquidFilter /><a href="#main" className="skip">Skip to content</a><Header /><main id="main"><Hero /><Platform /><Scanner /><Comparison /><CycleExplorer /><Workflow /><AccessAndFAQ /></main><Footer /></div></MotionConfig>;
+}

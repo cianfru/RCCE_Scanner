@@ -1,3 +1,5 @@
+import DataStatus from "./DataStatus.jsx";
+import { fetchJson } from "../utils/executionOutcome.js";
 import Tabs from "./Tabs.jsx";
 import CohortsView from "./CohortsView.jsx";
 import PositioningView from "./PositioningView.jsx";
@@ -200,7 +202,7 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, t
   return (
     <th
       title={title}
-      onClick={sortKey ? () => onSort(sortKey) : undefined}
+      aria-sort={active ? (asc ? "ascending" : "descending") : undefined}
       style={{
         padding: "12px 12px", textAlign: align,
         fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
@@ -213,7 +215,7 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, t
         transition: "color 0.2s",
       }}
     >
-      {label}{active && (asc ? " \u25B2" : " \u25BC")}
+      {sortKey ? <button className="table-sort" onClick={() => onSort(sortKey)}>{label}{active && (asc ? " ▴" : " ▾")}</button> : label}
     </th>
   );
 }
@@ -232,9 +234,9 @@ function StatusStrip({ status, cohort }) {
     : (status.tracked_wallets || 0);
 
   const items = [
-    { label: "WALLETS", value: walletLabel },
-    { label: "ACTIVE", value: status.active_wallets || 0 },
-    { label: "SYMBOLS", value: status.consensus_symbols || 0 },
+    { label: cohort === "all" ? "Tracked wallets" : "Selected cohort", value: walletLabel },
+    { label: "Active · all cohorts", value: status.active_wallets ?? "—" },
+    { label: "Symbols · all cohorts", value: status.consensus_symbols ?? "—" },
     { label: "POLLS", value: status.poll_count || 0 },
     { label: "LAST POLL", value: timeAgo(status.last_poll) },
   ];
@@ -1590,6 +1592,8 @@ export default function HyperLensPanel({ isMobile }) {
   const [filter, setFilter] = useState("");
   const [cohort, setCohort] = useState("all");
   const [status, setStatus] = useState({});
+  const [dataError, setDataError] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const [consensus, setConsensus] = useState([]);
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
@@ -1599,13 +1603,14 @@ export default function HyperLensPanel({ isMobile }) {
     try {
       // Consensus rows carry every cohort's figures, so a cohort switch needs no refetch.
       const [statusRes, consensusRes] = await Promise.all([
-        fetch(`${API}/api/hyperlens/status`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/consensus`).then(r => r.json()),
+        fetchJson(`${API}/api/hyperlens/status`),
+        fetchJson(`${API}/api/hyperlens/consensus`),
       ]);
+      setDataError(false); setUpdatedAt(Date.now());
       setStatus(statusRes);
       setConsensus(consensusRes.consensus || []);
     } catch (err) {
-      console.warn("HyperLens fetch failed:", err);
+      setDataError(true);
     } finally {
       setLoading(false);
     }
@@ -1627,7 +1632,7 @@ export default function HyperLensPanel({ isMobile }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Header card */}
-      <GlassCard style={{ padding: 0, overflow: "hidden" }}>
+      <GlassCard className="hyperlens-summary" style={{ padding: 0, minWidth: 0 }}>
         <div style={{
           padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
           display: "flex", flexDirection: "column", gap: 4,
@@ -1654,13 +1659,15 @@ export default function HyperLensPanel({ isMobile }) {
           )}
           {basis != null && tracked > 0 && (
             <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: partial ? T.yellow : T.text3 }}>
-              Based on {basis} of {tracked} tracked wallets
+              Eligibility across all cohorts: {basis} of {tracked} tracked wallets
               {partial && `. Only ${fresh} were updated in the last 75 minutes, so these figures cover a partial set.`}
             </div>
           )}
         </div>
 
-        <StatusStrip status={status} cohort={cohort} />
+        <DataStatus label="Wallet readings" loading={loading} error={dataError} updatedAt={updatedAt} onRetry={loadData}/>
+        {!loading && updatedAt && <StatusStrip status={status} cohort={cohort} />}
+        <p className="section-note" style={{padding:"0 16px"}}>Wallet count measures participation; trend and lean weigh position value. Activity and eligibility cover all cohorts.</p>
 
         {/* Controls bar */}
         <div style={{

@@ -1,3 +1,4 @@
+import { displaySymbol, divergenceKind } from "../utils/researchNavigation.js";
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { T, SIGNAL_META, REGIME_META, TRANSITION_META, col } from "../theme.js";
@@ -19,7 +20,7 @@ function transitionMeta(tt) {
   return TRANSITION_META[tt] || TRANSITION_META.LATERAL;
 }
 function stripSymbol(sym) {
-  return (sym || "").replace("/USDT", "").replace("/USD", "");
+  return displaySymbol(sym);
 }
 function fmtUsd(v) {
   if (!v && v !== 0) return "—";
@@ -57,9 +58,9 @@ const S = {
     marginBottom: 16, boxShadow: T.glassShadow,
   },
   sectionTitle: {
-    fontSize: T.textXs, fontWeight: 700, color: T.text3,
-    letterSpacing: "0.1em", textTransform: "uppercase",
-    marginBottom: 16, fontFamily: T.mono,
+    fontSize: 18, fontWeight: 600, color: T.text1,
+    letterSpacing: "-.02em",
+    marginBottom: 16, fontFamily: T.font,
   },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: T.mono },
   th: {
@@ -118,6 +119,7 @@ function scoreBullishHistory(row) {
 // ---------------------------------------------------------------------------
 
 function SignalHeatmap({ data, isMobile, sortMode }) {
+  const [selectedCell, setSelectedCell] = useState(null);
   const sortedSymbols = useMemo(() => {
     if (!data || !data.grid) return [];
     const syms = [...(data.symbols || Object.keys(data.grid))];
@@ -139,7 +141,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
 
   return (
     // Bounded height so the day header stays in view (sticky) down all rows.
-    <div style={{ overflow: "auto", maxHeight: "70vh", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
+    <div><p role="status" className="heatmap-readout">{selectedCell || "Select a cell to inspect its signal and entry checks."}</p><div style={{ overflow: "auto", maxHeight: "70vh", WebkitOverflowScrolling: "touch" }} className="notable-scroll">
       <table style={{ borderCollapse: "collapse", fontFamily: T.mono, fontSize: T.textXs, width: tableW, minWidth: "100%", tableLayout: "fixed" }}>
         <thead>
           <tr>
@@ -167,9 +169,9 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
                   const tooltip = `${stripSymbol(sym)} \u2014 ${data.days[colIdx]}: ${signalLabel(signal)}${checks ? ` \u00b7 ${checks}` : ""}`;
                   return (
                     <td key={colIdx} title={tooltip} style={{ padding: 1, borderBottom: `1px solid ${T.overlay04}` }}>
-                      <div style={{ minWidth: cellMinSize, height: cellMinSize, borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "default" }}>
+                      <button type="button" aria-label={tooltip} onClick={() => setSelectedCell(tooltip)} style={{ width:"100%", minWidth: cellMinSize, height: cellMinSize, borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                         {!isWait && shortLabel && <span style={{ fontSize: T.textXs, fontWeight: 700, color, lineHeight: 1, letterSpacing: "-0.02em" }}>{shortLabel}</span>}
-                      </div>
+                      </button>
                     </td>
                   );
                 })}
@@ -178,7 +180,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
           })}
         </tbody>
       </table>
-    </div>
+    </div></div>
   );
 }
 
@@ -198,17 +200,13 @@ function DivergenceView({ data, isMobile }) {
         const sm = p.smart_money;
         if (!sm || (sm.long_count || 0) + (sm.short_count || 0) < MIN_POSITIONED_WALLETS) return false;
         const sig = p.signal;
-        // Bull signal + bearish tracked wallets
-        if (BULL_SIGNALS.has(sig) && sm.trend === "BEARISH") return true;
-        // Exit or waiting signal + bullish tracked wallets
-        if ((EXIT_SIGNALS.has(sig) || sig === "WAIT") && sm.trend === "BULLISH") return true;
-        return false;
+        return divergenceKind(sig, sm.trend) != null;
       })
       .sort((a, b) => (b.smart_money?.confidence || 0) - (a.smart_money?.confidence || 0));
   }, [data]);
 
   if (divergences.length === 0) {
-    return <div style={S.empty}>No coin where tracked wallets clearly oppose the scanner signal right now.</div>;
+    return <div style={S.empty}>No opposing readings or bullish wallet activity without an engine entry in this snapshot.</div>;
   }
 
   return (
@@ -243,7 +241,7 @@ function DivergenceView({ data, isMobile }) {
                     {signalLabel(p.signal)}
                   </Badge>
                 </td>
-                <td style={{ ...S.td, textAlign: "center", color: T.text4 }}>against</td>
+                <td style={{ ...S.td, textAlign: "center", color: T.text4 }}>{p.signal === "WAIT" ? "No engine entry" : "Opposite direction"}</td>
                 <td style={S.td}>
                   <Badge color={walletColor}>
                     {sm.trend}
@@ -369,7 +367,7 @@ function StreaksView({ data, isMobile }) {
   }, [data]);
 
   if (streaks.length === 0) {
-    return <div style={S.empty}>No active streaks (2+ consecutive days on same signal).</div>;
+    return <div style={S.empty}>No active streaks (2+ consecutive daily snapshots on the same signal; this does not imply every intraday reading was unchanged).</div>;
   }
 
   return (
@@ -506,7 +504,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
                   {heatmap?.symbols?.length || 0} pairs
                 </span>
               </div>
-              <p style={{ margin: "-8px 0 12px", fontSize: T.textXs, color: T.text3 }}>Cells show the signal; hover a cell for the entry checks met.</p>
+              <p style={{ margin: "-8px 0 12px", fontSize: T.textXs, color: T.text3 }}>Daily snapshots of the selected engine timeframe. Select a cell for its signal and entry checks; the legend below explains the colors.</p>
               {heatmapError ? <LoadError onRetry={retry} /> : <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} />}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.overlay04}` }}>
                 {/* Only signals that appear in the grid */}
@@ -530,7 +528,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
           <div style={S.sectionTitle}>
             Scanner vs tracked wallets
             <span style={S.subtitle}>
-              coins where the tracked-wallet consensus (profitable traders and large accounts) leans against the scanner, with at least {MIN_POSITIONED_WALLETS} wallets positioned
+              Opposite-direction readings and bullish wallet activity without an engine entry are distinguished below. At least {MIN_POSITIONED_WALLETS} wallets must be positioned.
             </span>
           </div>
           <DivergenceView data={scanData} isMobile={isMobile} />
@@ -559,7 +557,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
               <div style={S.sectionTitle}>
                 Signal Persistence
                 <span style={S.subtitle}>
-                  consecutive days on same signal
+                  consecutive daily snapshots on the same signal; this does not imply every intraday reading was unchanged
                 </span>
               </div>
               {heatmapError ? <LoadError onRetry={retry} /> : <StreaksView data={heatmap} isMobile={isMobile} />}

@@ -1,3 +1,4 @@
+import DataStatus from "./DataStatus.jsx";
 import ExecutorPerformance, { exitLabel } from "./ExecutorPerformance.jsx";
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback } from "react";
@@ -390,6 +391,8 @@ export default function ExecutorPanel({ api }) {
   const [positionQuery, setPositionQuery] = useState("");
   const [tradePage, setTradePage] = useState(0);
   const [fetchError, setFetchError] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [actionMessage, setActionMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState(null);
   const [expandedPosition, setExpandedPosition] = useState(null);
@@ -414,7 +417,7 @@ export default function ExecutorPanel({ api }) {
       if (!statusResp.ok || !tradesResp.ok) throw new Error("Executor data is unavailable");
       const statusData = await statusResp.json();
       const tradesData = await tradesResp.json();
-      setFetchError(null);
+      setFetchError(null); setUpdatedAt(Date.now());
       setStatus(statusData);
       setTrades(tradesData.trades || []);
       if (wlResp?.ok) {
@@ -461,10 +464,12 @@ export default function ExecutorPanel({ api }) {
         opts.headers = { "Content-Type": "application/json" };
         opts.body = JSON.stringify(body);
       }
-      await fetch(`${api}${endpoint}`, opts);
+      const response = await fetch(`${api}${endpoint}`, opts);
+      if (!response.ok) throw new Error(`Change was not accepted (${response.status})`);
+      setActionMessage("Change accepted. Refreshing engine status.");
       await fetchData();
     } catch (e) {
-      console.error("Executor API error:", e);
+      setActionMessage(e.message || "Change could not be confirmed. Refresh before trying again.");
     }
     setLoading(false);
   };
@@ -484,18 +489,20 @@ export default function ExecutorPanel({ api }) {
     setWlLoading(true);
     try {
       if (shouldAdd) {
-        await fetch(`${api}/api/executor/whitelist/add`, {
+        const response = await fetch(`${api}/api/executor/whitelist/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbol }),
         });
+        if (!response.ok) throw new Error(`Pair change not accepted (${response.status})`);
       } else {
         const encoded = encodeURIComponent(symbol);
-        await fetch(`${api}/api/executor/whitelist/${encoded}`, { method: "DELETE" });
+        const response = await fetch(`${api}/api/executor/whitelist/${encoded}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(`Pair change not accepted (${response.status})`);
       }
       await fetchData();
     } catch (e) {
-      console.error("Whitelist toggle error:", e);
+      setActionMessage(e.message || "Pair change could not be confirmed. Refresh before trying again.");
     }
     setWlLoading(false);
   };
@@ -505,10 +512,11 @@ export default function ExecutorPanel({ api }) {
     if (!window.confirm(`Replace the ${whitelist?.whitelist_count ?? 0} enabled pairs with the 10 default majors? The engine will stop opening trades on every other pair.`)) return;
     setWlLoading(true);
     try {
-      await fetch(`${api}/api/executor/whitelist/reset`, { method: "POST" });
+      const response = await fetch(`${api}/api/executor/whitelist/reset`, { method: "POST" });
+      if (!response.ok) throw new Error(`Reset not accepted (${response.status})`);
       await fetchData();
     } catch (e) {
-      console.error("Whitelist reset error:", e);
+      setActionMessage(e.message || "Reset could not be confirmed. Refresh before trying again.");
     }
     setWlLoading(false);
   };
@@ -523,14 +531,16 @@ export default function ExecutorPanel({ api }) {
   const POSITION_CAP = 20;
 
 
+  if (!status) return <DataStatus label="Executor" loading={!fetchError} error={fetchError} onRetry={fetchData}/>;
   return (
-    <div style={S.panel}>
-      {fetchError && <p role="status" style={{color:T.text3,fontSize:12,lineHeight:1.6}}>{fetchError}</p>}
+    <div className="executor-panel" style={S.panel}>
+      <DataStatus label={`${isLive ? "Live" : "Paper"} engine`} updatedAt={updatedAt} error={fetchError} onRetry={fetchData}/>
+      {actionMessage && <p role="status" className="section-note">{actionMessage}</p>}
       <ExecutorPerformance performance={status?.performance} mode={status?.mode} />
 
       {/* ─── CONTROLS (admin key only; the server rejects changes without it) ─── */}
       {!getAdminKey() ? (
-        <p style={{ color: T.text3, fontSize: 12, lineHeight: 1.6 }}>Engine controls need the admin key (Settings).</p>
+        <p style={{ color: T.text3, fontSize: 12, lineHeight: 1.6 }}>Engine controls require an admin key. Configure it in Administration.</p>
       ) : (
       <details className="executor-controls" style={S.section}><summary>Engine controls and configuration</summary>
         <div style={S.sectionHeader}>

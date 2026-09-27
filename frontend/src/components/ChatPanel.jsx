@@ -218,6 +218,8 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
   const endRef = useRef(null);
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
+  const requestRef = useRef(null);
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   // Scroll window to top on mount
   useEffect(() => {
@@ -243,8 +245,10 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
     setLoading(true);
     setError(null);
 
+    const controller = new AbortController(); requestRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 90000);
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetch(`${API_BASE}/api/chat`, { signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -262,9 +266,10 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (e) {
-      setError(e.message);
+      setInput(text);
+      setError(e.name === "AbortError" ? "Response stopped or timed out. Your prompt is restored below; the server may have received it." : e.message);
     } finally {
-      setLoading(false);
+      clearTimeout(timeout); requestRef.current = null; setLoading(false);
     }
   }, [selectedSymbol, walletAddress, loading, timeframe]);
 
@@ -304,7 +309,7 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
         position: "relative",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · Scanner analysis · {timeframe.toUpperCase()}</span>
+          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · {selectedSymbol || "Scanner universe"} · {timeframe.toUpperCase()}</span>
         </div>
         <button onClick={clearChat} className="apple-btn" style={{
           padding: isMobile ? "8px 16px" : "6px 14px",
@@ -315,6 +320,8 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
         </button>
       </div>
 
+      <p className="section-note">Context: {selectedSymbol || "the scanner universe"}, {timeframe.toUpperCase()}. The assistant retrieves scanner data when you send a question. Check the source timestamps in its answer before comparing readings.</p>
+      {loading && <button type="button" className="stop-response" onClick={() => requestRef.current?.abort()}>Stop response</button>}
       {/* ── Messages area (fills available space) ── */}
       <div style={{
         flex: 1, overflowY: "auto", minHeight: 0,
@@ -482,7 +489,7 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
           fontSize: m(T.textSm, isMobile), color: T.red, fontFamily: T.font,
           flexShrink: 0,
         }}>
-          Error: {error}
+          {error} Your prompt remains editable below.
         </div>
       )}
     </div>

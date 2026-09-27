@@ -59,20 +59,13 @@ const conditionLabel = name => CONDITION_LABEL[name] || name.replace(/_/g, " ");
 function SectionHeader({ title, subtitle }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{
-        fontSize: T.textXs,
-        color: T.text3,
-        fontFamily: T.mono,
-        fontWeight: 700,
-        letterSpacing: "0.1em",
-        textTransform: "uppercase",
-      }}>
+      <div className="module-section-title" style={{fontSize:18,color:T.text1,fontFamily:T.font,fontWeight:600,lineHeight:1.4}}>
         {title}
       </div>
       {subtitle && (
         <div style={{
-          fontSize: T.textXs,
-          color: T.text4,
+          fontSize: 14,
+          color: T.text3,
           fontFamily: T.font,
           fontWeight: 400,
           lineHeight: 1.5,
@@ -112,9 +105,8 @@ const TH = {
   color: T.text4,
   fontWeight: 600,
   fontSize: T.textXs,
-  fontFamily: T.mono,
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
+  fontFamily: T.font,
+  letterSpacing: "0.01em",
   whiteSpace: "nowrap",
 };
 
@@ -210,7 +202,7 @@ function ComboCards({ combos, isMobile }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {combos.slice(0, 10).map((combo, i) => (
         <div key={i} style={{
-          display: "flex",
+          display: "flex", flexWrap: "wrap", minWidth: 0,
           alignItems: "center",
           gap: 10,
           padding: isMobile ? "8px 10px" : "8px 14px",
@@ -227,7 +219,7 @@ function ComboCards({ combos, isMobile }) {
           <span style={{ flex: 1, minWidth: 0, fontSize: fs, fontFamily: T.mono, color: T.text2, fontWeight: 500 }}>
             {combo.conditions.map(conditionLabel).join(" + ")}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, maxWidth: "100%" }}>
             <span style={{
               fontSize: m(T.textSm, isMobile), fontFamily: T.mono,
               color: rateColor(combo.win_rate, combo.count), fontWeight: 700,
@@ -252,7 +244,7 @@ function ComboCards({ combos, isMobile }) {
             <span style={{
               fontSize: fs, fontFamily: T.mono, color: T.text4,
             }}>
-              n={combo.count}
+              n={combo.count}{combo.count < MIN_N ? " · Limited sample" : ""}
             </span>
           </div>
         </div>
@@ -515,6 +507,7 @@ export default function AnalyticsPanel({ isMobile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [reload, setReload] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   // A late response for the previous timeframe must not overwrite the current one.
   useEffect(() => {
@@ -526,7 +519,7 @@ export default function AnalyticsPanel({ isMobile }) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(d => { if (!cancelled) { setData(d); setLoading(false); } })
+      .then(d => { if (!cancelled) { setData(d); setUpdatedAt(Date.now()); setLoading(false); } })
       .catch(() => { if (!cancelled) { setData(null); setError(true); setLoading(false); } });
     return () => { cancelled = true; };
   }, [tf, reload]);
@@ -534,7 +527,7 @@ export default function AnalyticsPanel({ isMobile }) {
   const pad = isMobile ? 14 : 20;
 
   return (
-    <div>
+    <div className="analytics-panel">
       {/* Timeframe toggle */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
@@ -544,10 +537,11 @@ export default function AnalyticsPanel({ isMobile }) {
           fontSize: m(T.textXs, isMobile), color: T.text4,
           fontFamily: T.mono, marginLeft: "auto",
         }}>
-          {loading ? "Loading..." : data ? "Live signal data" : error ? "" : "No data"}
+          {loading ? "Loading..." : data ? `Read ${new Date(updatedAt).toLocaleTimeString()}` : error ? "" : "No data"}
         </span>
       </div>
 
+      <p className="section-note">Historical signal outcomes. Period: available recorded history (date range not reported). Compare sample counts and data coverage before interpreting differences.</p>
       {!loading && data && (
         <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18 }}>
           {/* Condition Predictive Value */}
@@ -570,14 +564,14 @@ export default function AnalyticsPanel({ isMobile }) {
 
           {/* Regime + Confluence row */}
           <div style={{ display: "flex", gap: isMobile ? 14 : 18, flexDirection: isMobile ? "column" : "row" }}>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="By Regime"
                 subtitle="Signal win rates broken down by the market regime active when the signal fired. Cells with fewer than 10 events are left out; grey figures rest on fewer than 30."
               />
               <RegimeScorecard data={data.regime_scorecard} isMobile={isMobile} />
             </GlassCard>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="By share of entry checks met"
                 subtitle="Win rate and average 7-day return of long signals, grouped by the share of entry checks met (not a forecast). Coins are scored out of different totals, so shares are compared rather than counts."
@@ -588,14 +582,14 @@ export default function AnalyticsPanel({ isMobile }) {
 
           {/* Edge Decay + HyperLens row */}
           <div style={{ display: "flex", gap: isMobile ? 14 : 18, flexDirection: isMobile ? "column" : "row" }}>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="Average return by holding window"
                 subtitle="Average price return of signals over each window after they fired, and the share of them that rose."
               />
               <EdgeDecay periods={data.edge_decay} isMobile={isMobile} />
             </GlassCard>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="HyperLens Attribution"
                 subtitle="Long signals where the tracked-wallet consensus (profitable traders and large accounts on Hyperliquid) agreed with the direction, against those where it did not."

@@ -9,7 +9,7 @@ export default function LogoSculpture({ active }) {
   useEffect(() => { activeRef.current = active; control.current?.(); }, [active]);
   useEffect(() => {
     let disposed = false, renderer, observer, frame, environment, geometry, face, edge, texture, scene, camera, sculpture;
-    let last = 0;
+    let last = 0, elapsed = 0;
     const render = () => {
       cancelAnimationFrame(frame);
       if (disposed || !renderer) return;
@@ -18,7 +18,8 @@ export default function LogoSculpture({ active }) {
     };
     const tick = now => {
       if (disposed || !activeRef.current) return;
-      sculpture.rotation.y += Math.min((now-last)/1000, .05) * Math.PI / 18;
+      elapsed += Math.min((now-last)/1000, .05);
+      sculpture.rotation.y = -.25 + Math.sin(elapsed * .28) * .32;
       last = now;
       renderer.render(scene, camera);
       frame = requestAnimationFrame(tick);
@@ -64,14 +65,19 @@ export default function LogoSculpture({ active }) {
         renderer.domElement.addEventListener('webglcontextlost',()=>{cancelAnimationFrame(frame);setReady(false);});
         resize(); setReady(true);
         // Retain the original ribbon's surface detail on the front and back of the solid.
-        new THREE.TextureLoader().load('/brand/reflex-logo-surface.png', loaded => {
+        new THREE.TextureLoader().load('/brand/reflex-logo-surface.webp', loaded => {
           if(disposed) {loaded.dispose();return;}
           texture=loaded; texture.colorSpace=THREE.SRGBColorSpace; face.map=texture; face.color.set('#f5fefd');face.needsUpdate=true;render();
         });
       } catch { if(!disposed) setReady(false); }
     }
-    init();
-    return () => { disposed=true; control.current=null;cancelAnimationFrame(frame);observer?.disconnect();geometry?.dispose();face?.dispose();edge?.dispose();texture?.dispose();environment?.dispose();renderer?.dispose();renderer?.domElement.remove(); };
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let initialized = false;
+    const start = () => { if (!media.matches && !initialized && !disposed) { initialized = true; init(); } };
+    const visibility = new IntersectionObserver(entries => { if(entries.some(entry => entry.isIntersecting)) { start(); visibility.disconnect(); } }, {rootMargin:'160px'});
+    visibility.observe(mount.current);
+    media.addEventListener('change', start);
+    return () => { visibility.disconnect(); media.removeEventListener("change", start); disposed=true; control.current=null;cancelAnimationFrame(frame);observer?.disconnect();geometry?.dispose();face?.dispose();edge?.dispose();texture?.dispose();environment?.dispose();renderer?.dispose();renderer?.domElement.remove(); };
   }, []);
   return <div ref={mount} className="r-sculpture" data-rendered={ready}>
     {!ready && <img src="/brand/reflex-ribbon-transparent.svg" width="535" height="555" alt=""/>}
