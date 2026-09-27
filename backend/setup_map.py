@@ -141,7 +141,7 @@ def trader_trail(times: List[int], record: Dict[int, tuple], now_net: int) -> Li
 
 def closes(ohlcv: Optional[dict], tf: str, now: float) -> tuple:
     """(close times, closes) of finished candles only."""
-    if not ohlcv or not ohlcv.get("close"):
+    if not ohlcv or ohlcv.get("close") is None or len(ohlcv["close"]) == 0:    # numpy arrays in the store
         return [], []
     step = TF_S[tf]
     ts, cs = [], []
@@ -180,13 +180,16 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
             "traders": t,
         }
         if st != "waiting" or t["pl"] or t["ps"]:
-            ts, cs = closes(store.get(r["symbol"], tf) if store else None, tf, now)
-            zs = z_trail(cs, n - 1, z) if cs else None
-            if zs:
-                times = ts[-(n - 1):] + [int(now)]
-                zs = zs + [z]
-                ns = trader_trail(times, lean.get(coin, {}), net)
-                item["trail"] = {"t": times, "z": zs, "n": ns}
+            try:
+                ts, cs = closes(store.get(r["symbol"], tf) if store else None, tf, now)
+                zs = z_trail(cs, n - 1, z) if cs else None
+                if zs:
+                    times = ts[-(n - 1):] + [int(now)]
+                    zs = zs + [z]
+                    ns = trader_trail(times, lean.get(coin, {}), net)
+                    item["trail"] = {"t": times, "z": zs, "n": ns}
+            except Exception as exc:                  # one market's history never blanks the map
+                logger.debug("setup map: no trail for %s: %s", coin, exc)
         out.append(item)
     return {"tf": tf, "updated_at": now, "box": {"z": [BOX_Z0, BOX_Z1], "n": [BOX_N0, BOX_N1]},
             "stretched_z": STRETCHED_Z, "coins": out}
