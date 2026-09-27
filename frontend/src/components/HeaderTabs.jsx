@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { MAIN_TABS } from "../utils/mainNav.js";
 import { NavIcon } from "./navIcons.jsx";
+import useSetupMap from "../hooks/useSetupMap.js";
 
 const prefetchRadar = () => { import("../pages/RadarPage.jsx").catch(() => {}); };
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 // The main tabs inside the capsule (900px and wider). One lit indicator slides under the active
 // tab's icon and label and sits on the capsule's bottom edge; none shows on More pages.
-export default function HeaderTabs({ activeKey, targets, showIcons, radarCount }) {
+// "Radar 19": coins in the Watch box on the last scanner timeframe, from the shared setup-map
+// store (no extra request). Hidden while unknown or zero.
+export default function HeaderTabs({ activeKey, targets, showIcons, radarTf = "1d" }) {
   const location = useLocation();
+  const { data: radarMap } = useSetupMap(radarTf === "4h" ? "4h" : "1d");
+  const radarCount = useMemo(() => (radarMap?.coins ? radarMap.coins.filter(c => c.zone === "watch").length : 0), [radarMap]);
   const navRef = useRef(null);
   const [bar, setBar] = useState({ x: 0, w: 0, visible: false, animate: false });
 

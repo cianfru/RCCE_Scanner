@@ -5,15 +5,13 @@ import SetupPair from "./SetupPair.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { REGIME_META, SIGNAL_META, col, getBaseSymbol } from "../theme.js";
-import { formatPrice } from "../utils/marketPresentation.js";
 import { SIDE_COLOR, fmtPx, fmtUsd } from "../utils/traderFormat.js";
-import { brief, crowdRead, fmtAgo, setupSide } from "../utils/intel.js";
-
-export const CROWD_COLOR = { quiet: "var(--t-text3)", early: "var(--t-accent)", crowded: "#fbbf24", against: "#cf9185", holding: "var(--t-text2)" };
+import { briefRows, fmtAgo, medianGap, setupSide } from "../utils/intel.js";
+import { CROWD_COLOR, Pin, WATCH_TIP } from "./radar/shared.jsx";
 
 // Current price against where each group got in: median entries per side and the
 // profitable traders' opens of the last 24h. Log scale so a wide range still reads.
-function PriceRuler({ intel, mark }) {
+function PriceRuler({ intel, mark, gap }) {
   const p = intel.profitable || {}, l = intel.large || {};
   const marks = [
     p.long?.median_entry && { v: p.long.median_entry, label: `Profitable long ${fmtPx(p.long.median_entry)}`, color: SIDE_COLOR.long, row: 0 },
@@ -29,6 +27,7 @@ function PriceRuler({ intel, mark }) {
   const x = v => `${(((Math.log(v) - (lo - pad)) / (hi - lo + 2 * pad)) * 100).toFixed(2)}%`;
   return (
     <figure className="si-ruler" aria-label="Current price against traders' entries">
+      {gap && <p className="si-gap">{gap}</p>}
       <div className="si-track">
         <div className="si-lane si-lane-pro" />
         <div className="si-lane si-lane-large" />
@@ -37,6 +36,7 @@ function PriceRuler({ intel, mark }) {
         {marks.map((m, i) => <i key={i} className={m.row ? "si-med si-med-large" : "si-med"} style={{ left: x(m.v), background: col(m.color) }} />)}
         <i className="si-now" style={{ left: x(mark) }} />
       </div>
+      <div className="si-ends" aria-hidden="true"><span>{fmtPx(Math.exp(lo - pad))}</span><span>{fmtPx(Math.exp(hi + pad))}</span></div>
       <figcaption>
         <span><i className="si-key si-key-mark" />Price {fmtPx(mark)}</span>
         {marks.map((m, i) => <span key={i}><i className="si-key" style={{ background: col(m.color) }} />{m.label}</span>)}
@@ -59,9 +59,10 @@ function SideBar({ label, group }) {
   );
 }
 
-// Everything behind a best or forming setup, in one place: the engine's reading and
-// timing, and what tracked traders hold and opened. Opens from the Best setups cards.
-export default function SetupIntelDrawer({ row, intel, pulse, onOpenChart, onClose }) {
+// Everything behind a setup, in one place: the engine's reading and timing as key/value
+// rows (named like the Radar's focus panel), and what tracked traders hold and opened.
+// Opens from the Radar's "Full detail". Watch and the chart link sit at the top.
+export default function SetupIntelDrawer({ row, intel, updatedAt, watching = false, onWatch, onOpenChart, onClose }) {
   const closeRef = useRef(null);
   const opener = useRef(typeof document !== "undefined" ? document.activeElement : null);
   useEffect(() => {
@@ -77,39 +78,47 @@ export default function SetupIntelDrawer({ row, intel, pulse, onOpenChart, onClo
   const coin = getBaseSymbol(row.symbol);
   const now = Date.now();
   const side = setupSide(row);
-  const read = crowdRead(side, intel);
-  const lines = brief(row, intel, now, {
+  const rows = briefRows(row, intel, now, {
     regimeName: k => (REGIME_META[k] || REGIME_META.FLAT).name,
     signalLabel: k => SIGNAL_META[k]?.label || k,
     fmt: fmtPx,
   });
   const warnings = row.signal_warnings || [];
+  // One price: the live mark with its reading time when traders' data is in, else the scan's.
+  const price = intel?.mark || row.price;
+  const at = intel?.mark ? updatedAt : row.evaluated_at;
+  const atText = at ? new Date(at * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : null;
 
   return createPortal(<div className="reflex-terminal">
     <div className="mh-backdrop" onClick={onClose} />
     <aside className="mh-drawer si" role="dialog" aria-modal="true" aria-labelledby="si-title">
       <header className="mh-head">
-        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()} · {formatPrice(row.price)}</span></h2>
+        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()} · {fmtPx(price)}{atText && <em> at {atText}</em>}</span></h2>
         <button ref={closeRef} type="button" className="mh-close" onClick={onClose}>Close</button>
       </header>
       <div className="mh-body">
+        <div className="si-actions">
+          {onWatch && <button type="button" className="smap-watch" aria-pressed={watching} title={WATCH_TIP} onClick={onWatch}>
+            <Pin color={watching ? "var(--t-bg)" : "var(--t-accent)"} />{watching ? "Watching" : "Watch"}</button>}
+          <button type="button" className="te-link" onClick={() => onOpenChart(row)}>Open {coin} chart</button>
+        </div>
         <div className="si-top">
           <SetupPair row={row} transition />
           {row.sparkline?.length > 1 && <SparklineCell data={row.sparkline} width={120} height={32} />}
         </div>
 
-        {read && <p className="si-read"><strong style={{ color: CROWD_COLOR[read.key] }}>{read.label}</strong> {read.text}
-          <HelpTip title="How the crowd is read">
-            <p>Profitable traders relative to this setup{side ? ` (${side})` : ""}. Quiet: none hold it. Against: two or more hold the other side and outnumber this side. Crowded: eight or more on this side, or three or more with price 15% or more past their median entry. Early: at least one opened on this side in the last 24 hours, near today's price. Holding: anything else.</p>
-            <p>Over the last 180 days, profitable traders mostly opened after moves rather than before them, and two of them converging on a coin did not lead price. This describes the crowd; it is not a signal.</p>
-          </HelpTip>
-        </p>}
-
-        <ul className="si-brief">{lines.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        <dl className="smap-kv smap-kv-rows si-rows">
+          {rows.map(r => <div key={r.k}><dt>{r.k}</dt><dd>
+            {r.k === "Crowd" && r.label ? <><strong style={{ color: col(CROWD_COLOR[r.key] || CROWD_COLOR.holding) }}>{r.label}</strong> {r.v} <HelpTip title="How the crowd is read">
+              <p>Profitable traders relative to this setup{side ? ` (${side})` : ""}. Quiet: none hold it. Against: two or more hold the other side and outnumber this side. Crowded: eight or more on this side, or three or more with price 15% or more past their median entry. Early: at least one opened on this side in the last 24 hours, near today's price. Holding: anything else.</p>
+              <p>Over the last 180 days, profitable traders mostly opened after moves rather than before them, and two of them converging on a coin did not lead price. This describes the crowd; it is not a signal.</p>
+            </HelpTip></> : r.v}
+          </dd></div>)}
+        </dl>
 
         {intel && <>
           <h3 className="si-h">Where they got in</h3>
-          <PriceRuler intel={intel} mark={intel.mark || row.price} />
+          <PriceRuler intel={intel} mark={intel.mark || row.price} gap={medianGap(row, intel)} />
           <div className="si-sides">
             <SideBar label="Profitable traders" group={intel.profitable} />
             <SideBar label="Large accounts" group={intel.large} />
@@ -126,24 +135,14 @@ export default function SetupIntelDrawer({ row, intel, pulse, onOpenChart, onClo
             </li>)}
           </ul> : <p className="si-dim">No tracked wallet opened a position here in the last 24h.</p>}
         </>}
-        {!intel && <p className="si-dim">Trader positioning is loading or unavailable.</p>}
+        {!intel && <p className="si-dim">Trader positioning is not in yet.</p>}
 
         {warnings.length > 0 && <>
           <h3 className="si-h">Context notes</h3>
           <ul className="si-brief si-notes">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
         </>}
 
-        {pulse && <>
-          <h3 className="si-h">All coins, last {pulse.hours}h</h3>
-          <p className="si-pulse">
-            {pulse.opens ? `${pulse.traders} profitable trader${pulse.traders === 1 ? "" : "s"} opened ${pulse.opens} position${pulse.opens === 1 ? "" : "s"} on ${pulse.coins} coin${pulse.coins === 1 ? "" : "s"}. ` : "No profitable trader opened a position. "}
-            {pulse.wallets ? `${pulse.flat} of ${pulse.wallets} hold nothing at all.` : ""}
-            {pulse.clusters?.length > 0 && <> Two or more on the same side: {pulse.clusters.map((c, i) => <span key={c.coin + c.side}>{i ? ", " : ""}<b>{c.coin}</b> {c.side} {c.n}</span>)}.</>}
-          </p>
-        </>}
-
         <div className="si-foot">
-          <button type="button" className="te-link" onClick={() => onOpenChart(row)}>Open {coin} chart and full setup</button>
           <p className="si-dim">Positions are what these wallets hold at their latest reading (about every 30 minutes); opens are timed to the nearest reading. You decide the trade.</p>
         </div>
       </div>

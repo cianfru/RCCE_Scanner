@@ -16,7 +16,7 @@ const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
 // hides rows scrolling up once the page moves.
 export default function AppHeader({
   width, isMobile, mode, onToggleTheme,
-  activeTab, activeMainTab, tabTargets, radarCount,
+  activeTab, activeMainTab, tabTargets, radarTf,
   drawerOpen, onOpenDrawer, onBrand,
   lastRefresh, cacheAge, error, scanRunning, onRefresh, rescanNeedsKey,
   timeframe, onTimeframe, compactTfRoute,
@@ -77,7 +77,7 @@ export default function AppHeader({
 
         {showTabs && <>
           <span className="header-divider" aria-hidden="true" />
-          <HeaderTabs activeKey={activeMainTab} targets={tabTargets} showIcons={width >= 1280} radarCount={radarCount} />
+          <HeaderTabs activeKey={activeMainTab} targets={tabTargets} showIcons={width >= 1280} radarTf={radarTf} />
         </>}
 
         <div className="header-spacer" />

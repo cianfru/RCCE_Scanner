@@ -1,8 +1,8 @@
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
-import { inGroup } from "./utils/sectors.js";
-import SetupMap from "./components/SetupMap.jsx";
+import { inGroup, SECTOR_SHORT } from "./utils/sectors.js";
+import RadarStrip from "./components/RadarStrip.jsx";
 import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
@@ -718,7 +718,8 @@ export default function App() {
   const mainTab = mainTabFor(location.pathname, location.search);
   const scannerTarget = onScanner ? `/scanner${location.search}` : (readLastScanner() || "/scanner");
   useEffect(() => { if (onScanner) writeLastScanner(`/scanner${location.search}`); }, [onScanner, location.search]);
-  const tabTargets = mainTabTargets({ lastScanner: scannerTarget, lastScannerTf: timeframeFrom(scannerTarget.split("?")[1] || "") });
+  const lastTf = timeframeFrom(scannerTarget.split("?")[1] || "");
+  const tabTargets = mainTabTargets({ lastScanner: scannerTarget, lastScannerTf: lastTf });
 
   // The header's compact 4H | 1D drives the page's own timeframe (scanner or Radar).
   const setHeaderTimeframe = (tf) => {
@@ -869,7 +870,7 @@ export default function App() {
       {/* ── HEADER ── */}
       <AppHeader
         width={width} isMobile={isMobile} mode={mode} onToggleTheme={toggle}
-        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets}
+        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets} radarTf={lastTf}
         drawerOpen={drawerOpen} onOpenDrawer={() => setDrawerOpen(true)}
         onBrand={() => {
           navigate("/scanner");
@@ -939,7 +940,8 @@ export default function App() {
         {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy}
           onByChange={v => { setSectorBy(v); updateScannerQuery("by", v === "ecosystem" ? v : null); }}
           value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
-        {showDashboard && <SetupMap results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
+        {showDashboard && marketKind === "perpetual" && <RadarStrip results={inSector(tfScopeRows)} timeframe={activeTab === "4h" ? "4h" : "1d"}
+          sector={sectorFilter} sectorLabel={sectorFilter ? sectorFilter.split("|").map(n => SECTOR_SHORT[n] || n).join(" · ") : null} />}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
@@ -983,7 +985,7 @@ export default function App() {
 
         {activeTab === "radar" && (
           <Suspense fallback={<PageSkeleton style={pageMargin} />}>
-            <RadarPage results4h={data4h} results1d={data1d} onSelect={handleSelectCoin} />
+            <RadarPage results4h={data4h} results1d={data1d} onSelect={row => handleSelectCoin(row, null, `${location.pathname}${location.search}`)} />
           </Suspense>
         )}
 
