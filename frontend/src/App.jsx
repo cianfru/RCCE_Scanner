@@ -19,6 +19,7 @@ import MarketSummary from "./components/MarketSummary.jsx";
 import ScannerControls from "./components/ScannerControls.jsx";
 import AdminNotice from "./components/AdminNotice.jsx";
 import { matchesSignal } from "./utils/marketSummary.js";
+import { ladderItems } from "./components/SignalLadder.jsx";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
@@ -107,6 +108,10 @@ const TAB_TITLES = {
   notfound: "Page not found",
 };
 const DEFAULT_SORT = "priority_score";
+// A header's first click sorts this way; a second click flips it. Symbol is by market cap, regime by cycle order.
+const SORT_DEFAULT_DIR = { priority_score: "desc", zscore: "desc", heat: "desc", conditions: "desc", energy: "desc", momentum: "desc", symbol: "asc", mcap: "asc", regime: "asc" };
+const defaultDir = key => SORT_DEFAULT_DIR[key] || "desc";
+const validDir = d => (d === "asc" || d === "desc" ? d : null);
 const RESCAN_KEY_FLAG = "rcce-rescan-needs-key";
 const cleanPath = pathname => pathname.replace(/\/$/, "") || "/scanner";
 
@@ -201,7 +206,7 @@ export default function App() {
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState(() => initialQuery.get("sort") || DEFAULT_SORT);
-  const [sortDir, setSortDir] = useState(() => initialQuery.get("dir"));   // "asc" | "desc"; its default per key arrives with the grid work
+  const [sortDir, setSortDir] = useState(() => validDir(initialQuery.get("dir")));   // "asc" | "desc"; null = the key's default
   const [statCardFilter, setStatCardFilter] = useState(() => initialQuery.get("signal"));
   const [sectorBy, setSectorBy] = useState(() => initialQuery.get("by") === "ecosystem" ? "ecosystem" : "sector");        // "sector" | "ecosystem"
   const [sectorFilter, setSectorFilter] = useState(() => initialQuery.get("sector"));
@@ -257,7 +262,7 @@ export default function App() {
     const params = new URLSearchParams(location.search);
     setSearchTerm(params.get("q") || "");
     setSortKey(params.get("sort") || DEFAULT_SORT);
-    setSortDir(params.get("dir"));
+    setSortDir(validDir(params.get("dir")));
     setStatCardFilter(params.get("signal"));
     setSectorFilter(params.get("sector"));
     setSectorBy(params.get("by") === "ecosystem" ? "ecosystem" : "sector");
@@ -660,13 +665,12 @@ export default function App() {
     return { beating, total: members.length };
   }, []);
 
+  // The direction in effect: the address's ?dir, or the key's default.
+  const activeDir = sortDir || defaultDir(sortKey);
   const sortResults = (results) => {
-    return [...results].sort((a, b) => {
-      // Favorites always first
-      const fa = favorites.has(a.symbol) ? 0 : 1;
-      const fb = favorites.has(b.symbol) ? 0 : 1;
-      if (fa !== fb) return fa - fb;
-
+    const flip = activeDir === defaultDir(sortKey) ? 1 : -1;
+    const condRatio = r => (r.conditions_total ? (r.conditions_met || 0) / r.conditions_total : 0);
+    const compare = (a, b) => {
       if (sortKey === "mcap" || sortKey === "symbol") {
         return (MCAP_RANK[a.symbol] ?? 999) - (MCAP_RANK[b.symbol] ?? 999);
       }
@@ -678,9 +682,17 @@ export default function App() {
       if (sortKey === "zscore") return (b.zscore || 0) - (a.zscore || 0);
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
-      if (sortKey === "conditions") return (b.conditions_met || 0) - (a.conditions_met || 0);
+      if (sortKey === "energy") return (b.energy || 0) - (a.energy || 0);
+      if (sortKey === "conditions") return condRatio(b) - condRatio(a);
       if (sortKey === "priority_score") return (b.priority_score || 0) - (a.priority_score || 0);
       return 0;
+    };
+    return [...results].sort((a, b) => {
+      // Favorites always first, in either direction
+      const fa = favorites.has(a.symbol) ? 0 : 1;
+      const fb = favorites.has(b.symbol) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return flip * compare(a, b);
     });
   };
 
@@ -692,7 +704,7 @@ export default function App() {
     let d = activeTab === "tradfi" ? dataTradfi1d : dataTradfi4h;
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
     return sortResults(d);
-  }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey]);
+  }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey, activeDir]);
 
   // Apply stat card signal filter to table data
   const inSector = (data) => sectorFilter ? data.filter(r => inGroup(r, sectorFilter.includes("|") ? "pocket" : sectorBy, sectorFilter)) : data;
@@ -708,7 +720,6 @@ export default function App() {
   // The engine consensus (every scanned market, perps and spot) and the rows it was counted on.
   const activeConsensus = activeTab === "4h" ? consensus4h : consensus1d;
   const consensusRows = activeTab === "4h" ? data4h : data1d;
-  const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
   const showDashboard = activeTab === "4h" || activeTab === "1d";
   const scannerTitle = activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals";
   const radarTf = activeTab === "radar" ? timeframeFrom(location.search) : null;
@@ -739,7 +750,25 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const onSort = key => { setSortKey(key); updateScannerQuery("sort", key === DEFAULT_SORT ? null : key); };
+  // Same header again flips the direction; a new header starts from its default. Both live in the address.
+  const onSort = key => {
+    const next = key === sortKey ? (activeDir === "desc" ? "asc" : "desc") : defaultDir(key);
+    const dir = next === defaultDir(key) ? null : next;
+    setSortKey(key); setSortDir(dir);
+    updateScannerQuery("sort", key === DEFAULT_SORT ? null : key);
+    updateScannerQuery("dir", dir);
+  };
+  // The grid toolbar: what the view is narrowed by, in each filter's own colour, and one Clear.
+  const signalWord = statCardFilter && ladderItems().find(([k]) => k === statCardFilter);
+  const filterWords = [
+    statCardFilter && { text: signalWord ? signalWord[1] : statCardFilter.replaceAll("_", " ").toLowerCase(), color: signalWord ? signalWord[2] : T.text1 },
+    sectorFilter && { text: sectorFilter.split("|").map(n => SECTOR_SHORT[n] || n).join(" · "), color: T.accent },
+    searchTerm && { text: `\u201c${searchTerm.trim().toLowerCase()}\u201d`, color: T.text1 },
+  ].filter(Boolean);
+  const clearGridFilters = () => {
+    setStatCardFilter(null); setSectorFilter(null); setSearchTerm("");
+    updateScannerQuery("signal", null); updateScannerQuery("sector", null); updateScannerQuery("q", null);
+  };
 
   // The old HyperLens address opens Traders, keeping its query.
   if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
@@ -960,24 +989,17 @@ export default function App() {
         )}
 
         {showDashboard && (
-          <div style={{
+          <div id="market-grid" style={{ scrollMarginTop: 100,
             display: "flex", flexDirection: isDesktop ? "row" : "column",
-            gap: isDesktop ? 16 : 12, marginTop: isMobile ? 12 : 16,
+            gap: isDesktop ? 16 : 12,
           }}>
-            {(activeTab === "4h") && (
-              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display4h} label={null}
-                  sortKey={sortKey} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
-              </FadeIn>
-            )}
-            {(activeTab === "1d") && (
-              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display1d} label={null}
-                  sortKey={sortKey} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
+            {(activeTab === "4h" || activeTab === "1d") && (
+              <FadeIn key={activeTab} delay={150} style={{ flex: 1, minWidth: 0 }}>
+                <DataTable variant="scanner" tf={activeTab} results={activeTab === "4h" ? display4h : display1d} label={null}
+                  sortKey={sortKey} sortDir={activeDir} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
+                  visibleColumns={COLUMNS} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash}
+                  totalCount={tfScopeRows.length} scopeLabel={scopeLabel} filterWords={filterWords} onClear={clearGridFilters} />
               </FadeIn>
             )}
           </div>

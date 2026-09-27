@@ -13,12 +13,73 @@
 .reflex-terminal .terminal-data-table tbody tr {transition:background .15s ease;}
 .reflex-terminal .terminal-data-table tbody tr:hover {background:var(--t-accentDim)!important;}
 .reflex-terminal .terminal-data-table td {border-bottom:1px solid var(--t-overlay04);}
-@media(max-width:640px){.reflex-terminal .terminal-data-table th{letter-spacing:.03em;}}
+@media(max-width:640px){.reflex-terminal .terminal-data-table th{letter-spacing:.02em;}}
 @media(prefers-reduced-motion:reduce){.reflex-terminal *{animation:none!important;transition:none!important;}}
 
 .reflex-terminal .terminal-data-table{box-shadow:inset 0 1px 0 var(--t-overlay04),0 20px 60px var(--t-shadow);}
 .reflex-terminal .terminal-data-table td{padding-top:15px!important;padding-bottom:15px!important;}
 @media(max-width:640px){.reflex-terminal .terminal-data-table td{padding-top:12px!important;padding-bottom:12px!important;}}
+
+/* ── Scanner grid (spec 4.5-4.10) ─────────────────────────────────────────────────────────── */
+/* Fitting grid: the wrapper clips instead of scrolling, so the header row can stick under the capsule.
+   Collapsed borders do not stick, so the header rule is an inset shadow. */
+@supports not (overflow-x:clip){.reflex-terminal .grid-fits{overflow-x:visible!important;}}
+.reflex-terminal .terminal-data-table .grid-fits thead tr{border-bottom:0!important;}
+.reflex-terminal .terminal-data-table .grid-fits thead th{position:sticky;top:var(--header-offset);z-index:3;background:var(--t-stickyBg);border-bottom:0!important;box-shadow:inset 0 -2px 0 var(--t-border);}
+.reflex-terminal .terminal-data-table .grid-fits thead th.scanner-symbol{z-index:4;background:var(--t-selectBg);box-shadow:1px 0 var(--t-border),inset 0 -2px 0 var(--t-border);}
+.reflex-terminal .terminal-data-table .grid-fits thead th:first-child{border-top-left-radius:16px;}
+.reflex-terminal .terminal-data-table .grid-fits thead th:last-child{border-top-right-radius:16px;}
+/* Stuck under the capsule: square corners, and a page-colour band above the row that fills the capsule's
+   rounded bottom corners, so no row shows between the capsule and the header. */
+.reflex-terminal .terminal-data-table .grid-fits[data-stuck] thead th{border-radius:0;}
+.reflex-terminal .terminal-data-table .grid-fits[data-stuck] thead th::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:16px;background:var(--t-bg);pointer-events:none;}
+/* Hover and selection tint reach the opaque sticky symbol cell too. */
+.reflex-terminal .terminal-data-table tbody tr{--row-tint:transparent;}
+.reflex-terminal .terminal-data-table tbody tr:hover,.reflex-terminal .terminal-data-table tbody tr[aria-selected="true"]{--row-tint:var(--t-accentDim);}
+.reflex-terminal .terminal-data-table td.scanner-symbol{background:linear-gradient(var(--row-tint),var(--row-tint)),var(--t-selectBg);}
+.reflex-terminal .terminal-data-table tbody tr:focus-visible{outline:2px solid var(--t-accent);outline-offset:-2px;}
+/* Favourite star: a 16px glyph with a 28px hit area that does not widen the column. */
+.reflex-terminal .fav-star{position:relative;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-right:6px;padding:0;border:0;background:none;color:var(--t-text4);cursor:pointer;transition:color .15s;}
+.reflex-terminal .fav-star::before{content:"";position:absolute;inset:-6px;}
+.reflex-terminal .fav-star:hover{color:var(--t-text2);}
+.reflex-terminal .scanner-ticker:focus-visible{outline:2px solid var(--t-accent);outline-offset:3px;border-radius:2px;}
+/* Header labels: uppercase header type with a permanent dotted underline; help on hover, focus or hold. */
+.reflex-terminal .th-help-wrap{display:inline-flex;align-items:center;min-width:0;}
+.reflex-terminal .table-sort,.reflex-terminal .th-help{padding:0;margin:0;border:0;background:none;font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;white-space:nowrap;cursor:pointer;text-align:left;
+ text-decoration:underline dotted var(--t-text4) 1px;text-underline-offset:4px;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;transition:color .15s;}
+.reflex-terminal .th-help{cursor:help;}
+.reflex-terminal .table-sort:hover,.reflex-terminal .th-help:hover{color:var(--t-text1);}
+.reflex-terminal .setup-pair-head .th-help-wrap{justify-self:start;}
+/* Grid toolbar: count and filters on the left, text toggles on the right. */
+.grid-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 24px;min-height:40px;margin:16px 0 8px;font:13px var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.grid-toolbar-count{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 4px;min-width:0;}
+.grid-toolbar-num{font-family:var(--font-geist-mono),monospace;font-weight:600;color:var(--t-text1);}
+.grid-toolbar-sep{color:var(--t-text4);}
+.grid-toolbar .grid-toolbar-clear{margin-left:12px;font-size:13px;}
+.grid-toolbar-actions{display:flex;align-items:center;gap:20px;margin-left:auto;}
+.te-toggle{padding:4px 0;margin:0;border:0;background:none;font:inherit;font-size:13px;color:var(--t-text2);cursor:pointer;white-space:nowrap;
+ text-decoration:underline solid var(--t-border) 1px;text-underline-offset:6px;transition:color .15s,text-decoration-color .15s;}
+.te-toggle:hover{color:var(--t-text1);text-decoration-color:var(--t-borderH);}
+.te-toggle[aria-pressed="true"],.te-toggle[aria-expanded="true"]{color:var(--t-accent);text-decoration-color:var(--t-accent);text-decoration-thickness:2px;}
+.grid-guide-count{color:var(--t-text3);}
+.te-toggle[aria-expanded="true"] .grid-guide-count{color:inherit;}
+.alt-season-explanation .grid-guide-hidden{color:var(--t-text1);}
+.alt-season-explanation .grid-guide-col{border-top:1px solid var(--t-border);padding-top:12px;}
+.alt-season-explanation .grid-guide-col>*{display:block;margin:0 0 8px;}
+.alt-season-explanation .grid-guide-col>:last-child{margin-bottom:0;}
+/* Signal popover: the engine's own string, one click deeper. */
+.alt-season-explanation .engine-detail{border-top:1px solid var(--t-border);padding-top:8px;font-size:12px;color:var(--t-text3);}
+.alt-season-explanation .engine-detail summary{cursor:pointer;color:var(--t-text2);}
+.alt-season-explanation .engine-detail p{margin:6px 0 0;font:12px/1.6 var(--font-geist-mono),monospace;overflow-wrap:anywhere;}
+/* Phones: rank, symbol and the pair; Z and the sparkline as a second line under the pair. */
+.setup-phone-line{display:flex;align-items:center;gap:6px;margin-top:4px;}
+.reflex-terminal .terminal-data-table .grid-phone td.setup-cell{padding-left:4px!important;}
+.reflex-terminal .terminal-data-table .grid-phone td.setup-cell .setup-pair{padding-inline:0;}
+.reflex-terminal .terminal-data-table .grid-phone .fav-star{margin-right:4px;}
+.reflex-terminal .terminal-data-table .grid-phone .scanner-ticker{gap:6px!important;}
+.reflex-terminal .table-sort-compact{position:relative;}
+.reflex-terminal .table-sort-compact .sort-ind-hang{position:absolute;left:100%;top:0;white-space:pre;}
+@media(max-width:640px){.grid-toolbar{margin:12px 0 8px;}.grid-toolbar-actions{margin-left:0;width:100%;}}
 
 /* ── Shell (spec 2.2-2.8) ─────────────────────────────────────────────────────────────────── */
 /* Brushed metal (metal_rules.md): the header plate is the one filled metal surface; the wordmark,
@@ -215,7 +276,7 @@
 .analysis-method summary{cursor:pointer;color:var(--t-text2);font-size:13px;}
 .analysis-method .analysis-raw{font:12px/1.7 var(--font-geist-mono),monospace;overflow-wrap:anywhere;}
 .metric-history-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:30px;}
-.reflex-terminal .terminal-data-table th{font-size:12px!important;letter-spacing:.045em;}
+.reflex-terminal .terminal-data-table th{font-size:12px!important;letter-spacing:.02em;}
 .reflex-terminal .terminal-data-table .scanner-symbol{position:sticky;left:0;z-index:2;background:var(--t-selectBg);box-shadow:1px 0 var(--t-border);min-width:110px;}
 @media(max-width:900px){.analysis-grid-three{grid-template-columns:repeat(2,minmax(0,1fr));}.analysis-evidence{grid-template-columns:1fr;}.metric-history-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:600px){.analysis-grid,.analysis-grid-three,.metric-history-grid{grid-template-columns:1fr;}.analysis-card{padding:20px;}.analysis-definitions{grid-template-columns:1fr;gap:8px;}.scanner-context>summary span{display:block;margin:8px 0 0 16px;}}
@@ -400,7 +461,7 @@
 .setup-pair[data-strength="2"]{border-color:color-mix(in srgb,var(--setup-color) 75%,transparent);background:color-mix(in srgb,var(--setup-color) 13%,transparent);box-shadow:0 0 16px -6px var(--setup-color);}
 .reflex-terminal .setup-pair[data-locked="true"] .setup-pair-link>button{background:color-mix(in srgb,var(--setup-color) 18%,transparent)!important;border-radius:50%!important;}
 .setup-pair-head{border-color:transparent;}
-@media(max-width:640px){.terminal-data-table .setup-pair{grid-template-columns:auto;row-gap:2px;padding:3px 6px;}.terminal-data-table .setup-pair>.alt-season-info{display:none;}.setup-pair-head{grid-template-columns:auto;}.setup-pair-head>span:nth-child(2){display:none;}}
+@media(max-width:640px){.terminal-data-table .setup-pair{grid-template-columns:auto minmax(0,1fr);column-gap:4px;row-gap:2px;padding:3px 6px;}.terminal-data-table .setup-pair>.setup-pair-regime{grid-column:1 / -1;}.setup-pair-head{grid-template-columns:auto;}.setup-pair-head>span:nth-child(2){display:none;}}
 /* Pending regime change: one square per candle, filled in the incoming regime's colour. */
 .regime-progress{display:inline-flex;gap:2px;align-items:center;margin-left:2px;}
 .regime-progress i{display:block;width:6px;height:6px;border:1px solid;border-radius:1.5px;box-sizing:border-box;}
@@ -595,8 +656,8 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .signal-row:hover:not(:disabled){background:var(--t-overlay04);}
 .signal-row[aria-pressed="true"]{background:color-mix(in srgb,var(--signal-color) 10%,transparent);box-shadow:inset 2px 0 0 var(--signal-color);}
 .signal-row:disabled{opacity:.45;cursor:default;}
-.signal-label{grid-area:label;font-size:13px;color:var(--t-text2);white-space:nowrap;}
-.signal-row[aria-pressed="true"] .signal-label{color:var(--t-text1);}
+.ladder-label{grid-area:label;font-size:13px;color:var(--t-text2);white-space:nowrap;}
+.signal-row[aria-pressed="true"] .ladder-label{color:var(--t-text1);}
 .signal-bar{grid-area:bar;height:6px;border-radius:3px;background:var(--t-overlay06);overflow:hidden;}
 .signal-bar i{display:block;height:100%;border-radius:3px;background:var(--signal-color);transition:width .4s ease;}
 .signal-count{grid-area:count;text-align:right;font:600 15px var(--font-geist-mono),monospace;color:var(--signal-color);}
@@ -621,7 +682,7 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .fg-readout b{font-size:24px;}.fg-readout span{font-size:13px;}
  .signal-rows{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 8px;margin:10px -8px 0;}
  .signal-row{grid-template-columns:1fr;grid-template-areas:"count" "label";align-content:center;row-gap:2px;min-height:52px;margin:0;padding:6px 8px;}
- .signal-bar{display:none;} .signal-count{text-align:left;font-size:20px;} .signal-label{font-size:12px;}
+ .signal-bar{display:none;} .signal-count{text-align:left;font-size:20px;} .ladder-label{font-size:12px;}
  .signal-row[aria-pressed="true"]{background:var(--t-overlay06);box-shadow:inset 0 -2px 0 var(--signal-color);}
 }
 @media(max-width:767px){.ms-tf{display:none;} .ms-dial .history-btn{display:none;}}   /* room for the history icon; Signals names the timeframe, the drawer has a Fear & Greed tab */

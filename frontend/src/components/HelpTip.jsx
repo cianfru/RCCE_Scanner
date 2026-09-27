@@ -13,18 +13,36 @@ import { clampLeft, placeVertical, TOOLTIP_MARGIN } from '../utils/tooltipPositi
  *   trigger  'hover' (default; also focus) or 'click' (toggles, stays open)
  *   size     the "i" button size (px)
  *   label    accessible name override for the "i" button
+ *
+ * Label mode (grid headers, toolbar links), all optional:
+ *   anchor       render this content as the button instead of the "i" circle (no circle size)
+ *   anchorClass  class for that button
+ *   hoverDelay   ms of hover before the card opens (hover trigger)
+ *   onActivate   a click runs this instead of opening the card (e.g. sort)
+ *   longPress    holding a touch 500ms opens the card
  */
-export default function HelpTip({ title, children, width = 400, trigger = 'hover', size = 14, label, icon, buttonStyle, className = "" }) {
+export default function HelpTip({ title, children, width = 400, trigger = 'hover', size = 14, label, icon, buttonStyle, className = "",
+  anchor: anchorContent, anchorClass, hoverDelay = 0, onActivate, longPress = false, buttonProps }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState(null);
   const anchor = useRef(null);
   const tooltip = useRef(null);
   const closeTimer = useRef(null);
+  const openTimer = useRef(null);
+  const pressTimer = useRef(null);
+  const pressed = useRef(false);
   const id = useId();
   const hover = trigger === 'hover';
-  const show = () => { clearTimeout(closeTimer.current); setOpen(true); };
-  const hide = () => { closeTimer.current = setTimeout(() => setOpen(false), 150); };
-  const toggle = e => { e.stopPropagation(); clearTimeout(closeTimer.current); setOpen(o => !o); };
+  const labelMode = anchorContent != null;
+  const show = () => { clearTimeout(closeTimer.current); clearTimeout(openTimer.current); setOpen(true); };
+  const showSoon = () => {
+    clearTimeout(closeTimer.current);
+    if (!hoverDelay) return show();
+    clearTimeout(openTimer.current);
+    openTimer.current = setTimeout(() => setOpen(true), hoverDelay);
+  };
+  const hide = () => { clearTimeout(openTimer.current); closeTimer.current = setTimeout(() => setOpen(false), 150); };
+  const toggle = e => { e.stopPropagation(); clearTimeout(closeTimer.current); clearTimeout(openTimer.current); setOpen(o => !o); };
 
   useLayoutEffect(() => {
     if (!open) { setPosition(null); return; }
@@ -50,16 +68,49 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
       document.removeEventListener('pointerdown', dismiss);
     };
   }, [open, width]);
+  useLayoutEffect(() => () => { clearTimeout(openTimer.current); clearTimeout(pressTimer.current); clearTimeout(closeTimer.current); }, []);
 
-  const hoverProps = hover ? { onMouseEnter: show, onMouseLeave: hide } : {};
+  const hoverProps = hover ? { onMouseEnter: showSoon, onMouseLeave: hide } : {};
+  const tip = open && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`alt-season-explanation${width < 300 ? ' is-compact' : ''}`} {...(hover ? { onMouseEnter: show, onMouseLeave: hide } : {})}
+    style={{ ...position, visibility: position ? 'visible' : 'hidden' }}>
+    {title && <strong>{title}</strong>}
+    {children}
+  </div>, document.body);
+
+  if (labelMode) {
+    // Touch: a held press opens the card; the click that ends it is then swallowed.
+    const pressProps = longPress ? {
+      onPointerDown: e => {
+        pressed.current = false;
+        if (e.pointerType === 'mouse') return;
+        clearTimeout(pressTimer.current);
+        pressTimer.current = setTimeout(() => { pressed.current = true; show(); }, 500);
+      },
+      onPointerUp: () => clearTimeout(pressTimer.current),
+      onPointerCancel: () => clearTimeout(pressTimer.current),
+      onPointerLeave: () => clearTimeout(pressTimer.current),
+      onContextMenu: e => { if (pressed.current || open) e.preventDefault(); },
+    } : {};
+    const onClick = e => {
+      e.stopPropagation();
+      if (pressed.current) { pressed.current = false; return; }
+      if (onActivate) { clearTimeout(openTimer.current); setOpen(false); onActivate(e); return; }
+      if (hover) show(); else toggle(e);
+    };
+    // Keyboard focus opens the card; a mouse click that focuses the button does not.
+    const onFocus = e => { if (hover && e.currentTarget.matches?.(':focus-visible')) show(); };
+    return <span className={className} {...hoverProps}>
+      <button ref={anchor} type="button" className={anchorClass} aria-label={label} aria-expanded={onActivate ? undefined : open}
+        aria-describedby={open ? id : undefined} style={buttonStyle}
+        onFocus={onFocus} onBlur={hover ? hide : undefined} onClick={onClick} {...pressProps} {...buttonProps}>{anchorContent}</button>
+      {tip}
+    </span>;
+  }
+
   return <span className={`alt-season-info ${className}`} {...hoverProps}>
     <button ref={anchor} type="button" aria-label={label || `About ${title || 'this'}`} aria-expanded={open} aria-describedby={open ? id : undefined}
       style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.7)), ...buttonStyle }}
       onFocus={hover ? show : undefined} onBlur={hover ? hide : undefined} onClick={hover ? (e => { e.stopPropagation(); show(); }) : toggle}>{icon || 'i'}</button>
-    {open && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`alt-season-explanation${width < 300 ? ' is-compact' : ''}`} {...hoverProps}
-      style={{ ...position, visibility: position ? 'visible' : 'hidden' }}>
-      {title && <strong>{title}</strong>}
-      {children}
-    </div>, document.body)}
+    {tip}
   </span>;
 }

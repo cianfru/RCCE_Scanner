@@ -2,7 +2,7 @@ import { REGIME_META } from "../theme.js";
 import RegimeIcon from "./RegimeIcon.jsx";
 import HelpTip from "./HelpTip.jsx";
 
-const COLUMN_INFO = {
+export const COLUMN_INFO = {
   PRI: {
     title: "Priority Score",
     desc: "Composite 0\u2013100 ranking that helps identify which symbols to focus on first. Combines six weighted factors from all three engines.",
@@ -46,7 +46,7 @@ const COLUMN_INFO = {
   },
   SPARK: {
     title: "Sparkline",
-    desc: "Mini price chart showing recent price action. Green means price is up, red means price is down over the displayed period.",
+    desc: "Mini price chart of the last 24 closes. Mint when the last close is at or above the first, terracotta when below. 24 closes: 24 days on 1D, 4 days on 4H.",
   },
   "Z-SCORE": {
     title: "Z-Score",
@@ -109,10 +109,10 @@ const COLUMN_INFO = {
     title: "Open Interest Trend",
     desc: "Direction and behavior of open interest in perpetual futures. Reveals positioning dynamics.",
     values: [
-      ["BUILDING", "OI rising \u2014 new positions being opened"],
-      ["SQUZ", "Squeeze \u2014 forced liquidations likely"],
-      ["LIQ", "Liquidations occurring \u2014 cascading closes"],
-      ["SHORT", "Short interest dominant"],
+      ["Building", "OI rising \u2014 new positions being opened"],
+      ["Squeeze", "Forced liquidations likely"],
+      ["Liquidating", "Liquidations occurring \u2014 cascading closes"],
+      ["Shorting", "Short interest dominant"],
     ],
   },
   CVD: {
@@ -156,6 +156,31 @@ const COLUMN_INFO = {
   },
 };
 
+// One column's legend: the COLUMN_INFO copy, with real regime icons in the regime legend.
+// Rendered inside a HelpTip whose title is COLUMN_INFO[label].title.
+export function ColumnHelp({ label }) {
+  const info = COLUMN_INFO[label];
+  if (!info) return null;
+  return <>
+    <p>{info.desc}</p>
+    {info.values && (
+      <div className="help-legend">
+        {info.values.map(([key, desc]) => {
+          const rm = REGIME_META[key];
+          return (
+            <div key={key}>
+              {rm
+                ? <span title={key} style={{ color: rm.color }}><RegimeIcon regime={key} size={12} />{rm.name}</span>
+                : <span className="help-legend-key">{key}</span>}
+              <span>{desc}</span>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </>;
+}
+
 // Column-header help: the COLUMN_INFO copy rendered through the shared tooltip
 // (click-to-open so it can be read at leisure).
 export default function InfoButton({ label }) {
@@ -164,22 +189,7 @@ export default function InfoButton({ label }) {
   return (
     <span style={{ display: "inline-flex", marginLeft: 4 }}>
       <HelpTip title={info.title} width={280} trigger="click">
-        <p>{info.desc}</p>
-        {info.values && (
-          <div className="help-legend">
-            {info.values.map(([key, desc]) => {
-              const rm = REGIME_META[key];
-              return (
-                <div key={key}>
-                  {rm
-                    ? <span title={key} style={{ color: rm.color }}><RegimeIcon regime={key} size={12} />{rm.name}</span>
-                    : <span className="help-legend-key">{key}</span>}
-                  <span>{desc}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <ColumnHelp label={label} />
       </HelpTip>
     </span>
   );

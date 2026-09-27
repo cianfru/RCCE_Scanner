@@ -2,16 +2,17 @@ import { traderLean, usd } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import SignalContext, { CONTEXT_META } from "./SignalContext.jsx";
 import { signalContext, friendlyReason } from "../utils/signalPresentation.js";
-import { col, T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
+import { col, alpha, T, m, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar } from "../theme.js";
 import RegimeIcon from "./RegimeIcon.jsx";
 
-export function ZScoreBar({ z, isMobile }) {
+export function ZScoreBar({ z, isMobile, compact = false }) {
   const bar = zBar(z);
   if (!bar) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  // compact: the phone grid's second line, a 48px track with the value in 12px mono.
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: isMobile ? 90 : 110 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 8, minWidth: compact ? undefined : isMobile ? 90 : 110 }}>
       <div style={{
-        flex: 1, height: isMobile ? 4 : 3, background: T.overlay04, borderRadius: 2,
+        flex: compact ? "0 0 48px" : 1, width: compact ? 48 : undefined, height: isMobile ? 4 : 3, background: T.overlay04, borderRadius: 2,
         overflow: "hidden", position: "relative"
       }}>
         <div style={{
@@ -28,7 +29,7 @@ export function ZScoreBar({ z, isMobile }) {
           width: 1, background: T.overlay08
         }} />
       </div>
-      <span style={{ color: T.text1, fontFamily: T.mono, fontSize: m(isMobile ? 12 : 13, isMobile), minWidth: 40, textAlign: "right", fontWeight: 600 }}>
+      <span style={{ color: T.text1, fontFamily: T.mono, fontSize: compact ? 12 : m(isMobile ? 12 : 13, isMobile), minWidth: compact ? undefined : 40, textAlign: "right", fontWeight: 600 }}>
         {fmt(Math.round(z * 100) / 100 || 0, 2)}
       </span>
     </div>
@@ -66,7 +67,7 @@ export function SignalDot({ signal, reason, warnings, context, isMobile, marketW
       buttonStyle={{width:'auto',minWidth:22,height:26,border:0,borderRadius:4,display:'inline-flex',alignItems:'center',gap:3,padding:'2px 3px'}}
       icon={<>{(kinds.length ? kinds.slice(0,2) : ['info']).map(k=>{const {Icon,color}=CONTEXT_META[k];return <Icon key={k} size={13} color={col(color)}/>;})}</>}>
       <SignalContext row={row} marketWide={marketWide}/>
-      {reason && <p style={{borderTop:`1px solid ${T.border}`,paddingTop:8,fontSize:T.textXs,color:T.text3}}>{friendlyReason(reason)}</p>}
+      {reason && <details className="engine-detail"><summary>Engine detail</summary><p>{friendlyReason(reason)}</p></details>}
     </HelpTip>}
   </span>;
 }
@@ -91,11 +92,12 @@ export function DivergencePill({ div }) {
 
 const PHASE_ABBR = { Entry: "ENTR", Extension: "EXT", Exhaustion: "EXHS", Fading: "FADE" };
 
-export function HeatCell({ heat, phase, isMobile }) {
+export function HeatCell({ heat, phase, isMobile, exhaust }) {
   if (heat == null) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const color = heatColor(heat);
   const pct = Math.min(heat, 100);
   const abbr = phase && phase !== "Neutral" ? PHASE_ABBR[phase] || phase.slice(0, 4).toUpperCase() : null;
+  // exhaust: { text, color } when the EXHAUST column is hidden and this row has a state.
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 55 }}>
@@ -112,12 +114,11 @@ export function HeatCell({ heat, phase, isMobile }) {
           {Math.round(heat)}
         </span>
       </div>
-      {abbr && (
-        <span style={{
-          fontFamily: T.mono, fontSize: 12, color: phaseColor(phase),
-          fontWeight: 700, letterSpacing: "0.06em", opacity: 0.75, lineHeight: 1,
-        }}>
-          {abbr}
+      {(abbr || exhaust) && (
+        <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", lineHeight: 1, whiteSpace: "nowrap" }}>
+          {abbr && <span style={{ color: phaseColor(phase), opacity: 0.75 }}>{abbr}</span>}
+          {abbr && exhaust && <span style={{ color: T.text4 }}> · </span>}
+          {exhaust && <span style={{ color: exhaust.color }}>{exhaust.text}</span>}
         </span>
       )}
     </div>
@@ -137,10 +138,11 @@ export function ExhaustBadge({ state, floorConfirmed }) {
   const meta = exhaustMeta(state);
   if (meta.text === "\u2014") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   // "FLOOR ✓" when confirmed, "FLOOR" when forming-but-unconfirmed
-  const label = state === "FLOOR"
+  const floor = state === "FLOOR" || state === "EXHAUSTED_FLOOR";
+  const label = floor
     ? (floorConfirmed ? "FLOOR \u2713" : "FLOOR")
     : meta.text;
-  const glowColor = state === "FLOOR" && floorConfirmed ? "#34d399" : meta.color;
+  const glowColor = floor && floorConfirmed ? col("#34d399") : meta.color;
   return (
     <span className="terminal-status" style={{
       padding: "3px 9px", borderRadius: "20px",
@@ -173,77 +175,59 @@ export function FundingCell({ rate }) {
   );
 }
 
+const OI_WORDS = {
+  BUILDING:    { color: "#34d399", label: "Building" },
+  SQUEEZE:     { color: "#fbbf24", label: "Squeeze" },
+  LIQUIDATING: { color: "#f87171", label: "Liquidating" },
+  SHORTING:    { color: "#c084fc", label: "Shorting" },
+};
 export function OITrendBadge({ trend }) {
-  if (!trend) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const meta = {
-    BUILDING:    { color: "#34d399", label: "BUILD" },
-    SQUEEZE:     { color: "#fbbf24", label: "SQUZ" },
-    LIQUIDATING: { color: "#f87171", label: "LIQ" },
-    SHORTING:    { color: "#c084fc", label: "SHORT" },
-  }[trend] || { color: T.text4, label: trend.slice(0, 5) };
+  if (!trend || trend === "UNKNOWN") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  const word = OI_WORDS[trend];
+  const color = word ? col(word.color) : T.text4;
+  const label = word ? word.label : trend.charAt(0) + trend.slice(1).toLowerCase();
   return (
     <span className="terminal-status" style={{
       padding: "3px 8px", borderRadius: "20px",
-      background: `${meta.color}14`, color: meta.color,
+      background: alpha(color, 8), color,
       fontSize: 12, fontFamily: T.mono, fontWeight: 600,
-      letterSpacing: "0.04em", border: `1px solid ${meta.color}25`,
+      letterSpacing: "0.04em", border: `1px solid ${alpha(color, 15)}`, whiteSpace: "nowrap",
     }}>
-      {meta.label}
+      {label}
     </span>
   );
 }
 
 export function CVDBadge({ trend, divergence, bsr, isMobile }) {
-  if (!trend || trend === "NEUTRAL") return null;
-  if (trend === "UNAVAILABLE") return (
-    <span style={{
-      fontFamily: T.mono, fontSize: 12,
-      color: T.text4, opacity: 0.5,
-    }}>{"\u2014"}</span>
-  );
-
-  const COLORS = {
-    BULLISH: T.green,
-    BEARISH: T.red,
-  };
-  const ICONS = {
-    BULLISH: "\u25b2",
-    BEARISH: "\u25bc",
-  };
-
-  const color = COLORS[trend] || T.text4;
-  const icon = ICONS[trend] || "\u25cf";
-
+  if (!trend || trend === "NEUTRAL" || trend === "UNAVAILABLE") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  const color = trend === "BULLISH" ? T.green : trend === "BEARISH" ? T.red : T.text4;
+  const icon = trend === "BULLISH" ? "\u25b2" : trend === "BEARISH" ? "\u25bc" : "\u25cf";
+  // Line 1: direction (plus the yellow divergence marker); line 2: the buy/sell ratio.
   return (
     <span className="terminal-status" style={{
-      display: "inline-flex", alignItems: "center", gap: 3,
+      display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 1,
       padding: "3px 8px", borderRadius: 20,
-      background: color + "14",
-      border: `1px solid ${color}25`,
-      fontFamily: T.mono, fontSize: 12,
-      color,
-      fontWeight: 600,
-      letterSpacing: "0.04em",
+      background: alpha(color, 8), border: `1px solid ${alpha(color, 15)}`,
+      fontFamily: T.mono, fontSize: 12, color, fontWeight: 600,
+      letterSpacing: "0.04em", lineHeight: 1.25,
     }}>
-      {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
-      {divergence && (
-        <span style={{ fontSize: 12, color: T.yellow, marginLeft: 2 }} title="CVD/Price divergence">div</span>
-      )}
-      {bsr != null && (
-        <span style={{ fontSize: 12, color, opacity: 0.7, marginLeft: 2 }}>{bsr.toFixed(2)}x</span>
-      )}
+      <span style={{ whiteSpace: "nowrap" }}>
+        {icon} {trend === "BULLISH" ? "BUY" : "SELL"}
+        {divergence && <span style={{ fontSize: 12, color: T.yellow, marginLeft: 4 }} title="CVD/Price divergence">div</span>}
+      </span>
+      {bsr != null && <span style={{ whiteSpace: "nowrap", fontSize: 12, opacity: 0.7 }}>{bsr.toFixed(2)}x</span>}
     </span>
   );
 }
 
 // Profitable traders on this market (grid column "SM"); all tracked wallets in the tooltip.
 export function SmartMoneyBadge({ sm }) {
-  if (!sm) return null;
+  if (!sm) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const l = traderLean(sm.profitable);
   const all = sm.trend ? `All tracked wallets, weighted by size: ${sm.trend.toLowerCase()} (${sm.long_count} long / ${sm.short_count} short)` : "";
   if (!l.side || l.side === "mixed") return (
     <span title={[l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n")}
-      style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: 0.6 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
+      style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: l.side === "mixed" ? 0.6 : 1 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
   );
   const color = l.side === "long" ? T.green : T.red;
   return (

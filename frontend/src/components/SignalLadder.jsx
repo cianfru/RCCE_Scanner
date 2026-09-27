@@ -11,18 +11,23 @@ const explanations = {
   RISK_OFF: 'The engine identifies a markdown phase together with risk-off market consensus, triggering its defensive exit label. This is not the same as a short-entry signal. Exit warnings take priority across timeframes.',
 };
 
-// One row per signal: label, share-of-market bar, count. Each row filters the grid.
-// Spot hides Strong long: without a funding rate the engine never issues it there.
-export default function SignalLadder({ rows, timeframe, scopeLabel, active, onChange, spot = false }) {
-  const { n, counts, other } = signalCounts(rows);
-  const items = [
+// The ladder's rows: key, label and colour (read at render, so the theme's hues apply).
+export function ladderItems() {
+  return [
     ["STRONG_LONG", "Strong long", T.green],
     ["LIGHT_LONG", "Light long", T.greenDim],
     ["ACCUMULATE", "Accumulate", col("#91b9e8")],
     ["WAIT", "Wait", "var(--t-text3)"],
     ["TRIM", "Trim", T.yellow],
     ["RISK_OFF", "Risk-off", T.red],
-  ].filter(([key]) => !(spot && key === "STRONG_LONG"));
+  ];
+}
+
+// One row per signal: label, share-of-market bar, count. Each row filters the grid.
+// Spot hides Strong long: without a funding rate the engine never issues it there.
+export default function SignalLadder({ rows, timeframe, scopeLabel, active, onChange, spot = false }) {
+  const { n, counts, other } = signalCounts(rows);
+  const items = ladderItems().filter(([key]) => !(spot && key === "STRONG_LONG"));
   const tf = String(timeframe || "").toUpperCase();
   return <div className="ms-signals">
     <div className="ms-eyebrow"><span className="ms-eyebrow-text">Signals · {tf}</span>
@@ -43,7 +48,7 @@ export default function SignalLadder({ rows, timeframe, scopeLabel, active, onCh
           aria-label={`${label}: ${c} of ${n} markets. Filter the grid.`}
           title={pressed ? `Showing only ${label}. Click to show all.` : `${c} of ${n} ${scopeLabel} (${Math.round(pct)}%). Click to show only these in the grid.`}
           onClick={() => onChange?.(pressed ? null : key)}>
-          <span className="signal-label">{label}</span>
+          <span className="ladder-label">{label}</span>
           <span className="signal-bar" aria-hidden="true"><i style={{ width: c ? `max(3px, ${pct}%)` : 0 }} /></span>
           <span className="signal-count">{c}</span>
         </button>;

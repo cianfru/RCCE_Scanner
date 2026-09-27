@@ -15,5 +15,5 @@ export default function SignalContext({ row, marketWide }) {
     const {Icon,color:base,label} = CONTEXT_META[item.kind];
     const color = col(base);
     return <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',fontSize:12,lineHeight:1.55}}><Icon size={15} color={color} style={{flexShrink:0,marginTop:2}} aria-label={label}/><span><strong style={{color,display:'block',fontSize:T.textXs}}>{label}</strong>{item.text}</span></div>;
-  }) : <span style={{color:T.text3}}>No additional context returned.</span>}</div>;
+  }) : <span style={{color:T.text3}}>No cautions or notes on this signal.</span>}</div>;
 }
