@@ -17,7 +17,7 @@ export default function TraderEntries({ entries, onShow }) {
   return (
     <div className="te">
       <div className="te-head">
-        <span><strong>Profitable traders in {coin}</strong> · {summary}</span>
+        <span><strong>Selected trader entries in {coin}</strong> · {summary}</span>
         {onShow && <button type="button" className="te-link" onClick={onShow}>Show entries</button>}
       </div>
       <table className="te-table">
@@ -101,7 +101,7 @@ export default function TraderEntries({ entries, onShow }) {
           })}
         </tbody>
       </table>
-      <p className="te-note">From Hyperliquid's public fills (each trader's latest 2,000). P&amp;L is on margin. Click a trader for the fills and their other positions; Follow sends their changes to Telegram.</p>
+      <p className="te-note">Selected entries are a subset of positioned traders. From Hyperliquid's public fills (each trader's latest 2,000). P&amp;L is on margin. Click a trader for the fills and their other positions; Follow sends their changes to Telegram.</p>
     </div>
   );
 }

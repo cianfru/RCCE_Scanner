@@ -9,7 +9,7 @@ import useViewport from '../hooks/useViewport.js';
 import { REGIME_META, themeVars } from '../theme.js';
 import '../terminal.css';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const COINS = new Set(['BTC', 'ETH', 'SOL', 'HYPE', 'LINK']);
 // The landing is always dark, so the embedded table keeps the dark palette even when the app is in light mode.
 const DARK_VARS = themeVars('dark');
@@ -18,6 +18,7 @@ export default function LiveScannerPreview() {
   const tf = '1d';
   const [exampleCoin, setExampleCoin] = useState('BTC');
   const [state, setState] = useState({ rows: [], loading: true, error: '', updated: null });
+  const [attempt, setAttempt] = useState(0);
   const [sort, setSort] = useState('priority_score');
   const navigate = useNavigate();
   const { width, isMobile } = useViewport();
@@ -54,7 +55,7 @@ export default function LiveScannerPreview() {
     }
     refresh();
     return () => { disposed = true; controller.abort(); clearTimeout(timer); };
-  }, [tf]);
+  }, [tf, attempt]);
   const rows = [...state.rows].sort((a,b) => sort === 'symbol' ? a.symbol.localeCompare(b.symbol) : sort === 'regime' ? String(a.regime).localeCompare(String(b.regime)) : (b[sort] || 0) - (a[sort] || 0));
   const example = state.rows.find(row => row.symbol.split('/')[0] === exampleCoin);
   return <div className="r-terminal-wrap"><div className="r-terminal glass">
@@ -63,7 +64,7 @@ export default function LiveScannerPreview() {
       <div className="r-terminal-heading"><div><span className="r-meta">THE MAIN MARKETS</span><h3>Inside the terminal</h3></div><span className="r-meta">DAILY · 1D</span></div>
       <p className="r-scroll-hint">{isMobile ? `Showing ${columns.length} of ${SCANNER_COLUMNS.length} columns at this width.` : `Scroll horizontally to explore all ${SCANNER_COLUMNS.length} columns. The symbol stays in view.`}</p>
       <div className="reflex-terminal" style={{ ...DARK_VARS, marginTop: 24 }}>
-        {state.error && <p role="status" style={{ padding: '16px 0' }}>{state.error}{state.rows.length > 0 ? ' Showing the last received snapshot.' : ' Open the terminal to check the connection.'}</p>}
+        {state.error && <p role="status" style={{ padding: '16px 0' }}>{state.error}{state.rows.length > 0 ? ' Showing the last received snapshot.' : ' Please try again shortly.'} <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry feed</button></p>}
         {!state.loading && !state.error && !rows.length ? <p role="status">The next scan will populate these markets.</p> : (!state.error || rows.length > 0) && <DataTable results={rows} sortKey={sort} onSort={setSort} visibleColumns={columns} loading={state.loading} isMobile={isMobile} onSelect={row => navigate(`/scanner/${row.symbol.split('/')[0]}`)}/>}
       </div>
       <div className="r-terminal-bottom"><span>{state.updated ? `Received ${state.updated.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} · refreshes every minute` : 'Signals from the same API as the terminal'}</span><a href="/scanner">Open full scanner ↗</a></div>

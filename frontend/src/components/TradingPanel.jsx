@@ -1,3 +1,5 @@
+import DataStatus from "./DataStatus.jsx";
+import { executeAndJournal } from "../utils/executionOutcome.js";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   createChart, AreaSeries, ColorType, LineStyle, CrosshairMode,
@@ -538,46 +540,57 @@ export default function TradingPanel({ api }) {
   const [activeSection, setActiveSection] = useState("positions");
   const [closing, setClosing]     = useState(null);
   const [cancelling, setCancelling] = useState(null);
+  const [feedState, setFeedState] = useState({});
+  const accountScope = useRef(null);
+  useEffect(() => { const scope = {address, isConnected}; accountScope.current = scope; return () => { if(accountScope.current === scope) accountScope.current = null; }; }, [address, isConnected]);
+  const [actionNotice, setActionNotice] = useState(null);
+  const recordFeed = (name, ok) => setFeedState(prev => ({...prev,[name]:{error:!ok,updatedAt:ok ? Date.now() : prev[name]?.updatedAt}}));
+
+  useEffect(() => { setFeedState({}); setActionNotice(null); setChState(null); setOpenOrders([]); setXyzChState(null); setSpotState(null); setFills([]); setFunding([]); setPortfolio(null); setFees(null); setHistory({trades:[],stats:{}}); }, [address]);
 
   // --- Data fetching ---
 
   const fetchFast = useCallback(async () => {
     if (!isConnected || !address) return;
+    const scope = accountScope.current;
     try {
-      const [state, orders, xyzState, spot] = await Promise.all([
-        hlClient.getClearinghouseState(address).catch(() => null),
-        hlClient.getOpenOrders(address).catch(() => null),
-        hlClient.getXyzClearinghouseState(address).catch(() => null),
-        hlClient.getSpotState(address).catch(() => null),
-      ]);
-      if (state) setChState(state);
-      if (orders) setOpenOrders(orders);
-      if (xyzState) setXyzChState(xyzState);
-      if (spot) setSpotState(spot);
+      const requests = [
+        ["Perpetual account", () => hlClient.getClearinghouseState(address), setChState],
+        ["Open orders", () => hlClient.getOpenOrders(address), setOpenOrders],
+        ["HIP-3 account", () => hlClient.getXyzClearinghouseState(address), setXyzChState],
+        ["Spot account", () => hlClient.getSpotState(address), setSpotState],
+      ];
+      await Promise.all(requests.map(async ([name, load, apply]) => {
+        try { const value = await load(); if (value == null) throw new Error("No reading"); if (accountScope.current !== scope) return; apply(value); recordFeed(name, true); }
+        catch { if(accountScope.current === scope) recordFeed(name, false); }
+      }));
     } catch (e) { console.error("Portfolio fast fetch:", e); }
   }, [address, isConnected]);
 
   const fetchMedium = useCallback(async () => {
     if (!isConnected || !address) return;
+    const scope = accountScope.current;
     try {
-      const f = await hlClient.getUserFills(address).catch(() => []);
-      setFills(f || []);
-    } catch (e) { console.error("Portfolio medium fetch:", e); }
+      const f = await hlClient.getUserFills(address);
+      if(accountScope.current !== scope) return;
+      setFills(f || []); recordFeed("Trade fills", true);
+    } catch { if(accountScope.current === scope) recordFeed("Trade fills", false); }
   }, [address, isConnected]);
 
   const fetchSlow = useCallback(async () => {
     if (!isConnected || !address) return;
+    const scope = accountScope.current;
     try {
-      const [p, fund, fe, histResp] = await Promise.all([
-        hlClient.getPortfolio(address).catch(() => null),
-        hlClient.getUserFunding(address).catch(() => []),
-        hlClient.getUserFees(address).catch(() => null),
-        fetch(`${api}/api/trade/history`).then(r => r.ok ? r.json() : { trades: [], stats: {} }).catch(() => ({ trades: [], stats: {} })),
-      ]);
-      if (p) setPortfolio(p);
-      setFunding(fund || []);
-      if (fe) setFees(fe);
-      setHistory(histResp);
+      const requests = [
+        ["Portfolio history", () => hlClient.getPortfolio(address), setPortfolio],
+        ["Funding", () => hlClient.getUserFunding(address), setFunding],
+        ["Fees", () => hlClient.getUserFees(address), setFees],
+        ["Trade journal", async () => { const r = await fetch(`${api}/api/trade/history`); if (!r.ok) throw new Error("Journal unavailable"); return r.json(); }, setHistory],
+      ];
+      await Promise.all(requests.map(async ([name, load, apply]) => {
+        try { const value = await load(); if (value == null) throw new Error("No reading"); if (accountScope.current !== scope) return; apply(value); recordFeed(name, true); }
+        catch { if(accountScope.current === scope) recordFeed(name, false); }
+      }));
     } catch (e) { console.error("Portfolio slow fetch:", e); }
   }, [address, isConnected, api]);
 
@@ -647,8 +660,7 @@ export default function TradingPanel({ api }) {
     if (!window.confirm(`Close ${coin} position?`)) return;
     setClosing(coin);
     try {
-      const result = await hlClient.closePosition(walletClient, { coin, size, isLong, slippage: 0.02 });
-      await fetch(`${api}/api/trade/log-close`, {
+      const outcome = await executeAndJournal(() => hlClient.closePosition(walletClient, { coin, size, isLong, slippage: 0.02 }), result => fetch(`${api}/api/trade/log-close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -656,11 +668,12 @@ export default function TradingPanel({ api }) {
           exit_price: result.avgPx,
           close_order_id: String(result.oid || ""),
         }),
-      });
+      }));
+      setActionNotice(`${coin} closed. Order ${outcome.execution.oid || "accepted"}.${outcome.journalPending ? " Journal sync pending; do not close again." : " Journal synced."}`);
       await fetchFast();
     } catch (e) {
       console.error("Close error:", e);
-      alert(e.message || "Failed to close position");
+      setActionNotice(`Close could not be confirmed: ${e.message || "connection failed"}. Refresh positions and check the exchange before trying again.`);
     }
     setClosing(null);
   };
@@ -673,7 +686,7 @@ export default function TradingPanel({ api }) {
       await fetchFast();
     } catch (e) {
       console.error("Cancel error:", e);
-      alert(e.message || "Failed to cancel order");
+      setActionNotice(`Cancellation could not be confirmed: ${e.message || "connection failed"}. Refresh orders before trying again.`);
     }
     setCancelling(null);
   };
@@ -725,13 +738,19 @@ export default function TradingPanel({ api }) {
 
   return (
     <div style={{ ...S.panel, padding: "0 4px" }}>
+      {actionNotice && <p role="status" className="section-note">{actionNotice}</p>}
+      {isConnected && <DataStatus label="Perpetual account" loading={!chState && !feedState["Perpetual account"]?.error} {...feedState["Perpetual account"]} onRetry={fetchFast}/>}
+      {Object.entries(feedState).filter(([name, state]) => name !== "Perpetual account" && state.error).map(([name, state]) => <DataStatus key={name} label={name} {...state} onRetry={() => { fetchFast(); fetchMedium(); fetchSlow(); }} />)}
 
+
+      {isConnected && (() => { const name = ({orders:"Open orders",fills:"Trade fills",funding:"Funding",fees:"Fees"})[activeSection]; return name && !feedState[name] && <DataStatus loading label={name}/>; })()}
       {/* ─── NOT CONNECTED ─── */}
       {!isConnected && (
         <div style={{ ...S.section, padding: "48px 24px", textAlign: "center" }}>
           <div style={{ fontSize: T.textBase, fontFamily: T.font, color: T.text3, marginBottom: 16 }}>
             Connect your wallet to view your Hyperliquid portfolio
           </div>
+          <p className="section-note" style={{margin:"0 auto 24px",maxWidth:460}}>View positions, open orders, fills and funding for your connected account. Connecting does not place an order. Trading and cancellation actions request a separate wallet signature.</p>
           <button
             onClick={connect}
             className="terminal-status"
@@ -748,7 +767,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── ACCOUNT SUMMARY BAR ─── */}
-      {isConnected && (
+      {isConnected && chState && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -793,7 +812,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── SECTION TABS ─── */}
-      {isConnected && (
+      {isConnected && chState && (
         <div style={{ marginBottom: 16 }}>
           <Tabs label="Portfolio sections" value={activeSection} onChange={setActiveSection}
             items={SECTION_TABS.map(tab => ({
@@ -804,7 +823,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── OPEN POSITIONS ─── */}
-      {isConnected && activeSection === "positions" && (
+      {isConnected && chState && activeSection === "positions" && (
         <>
           {/* Scanner check: only when there are positions + scanner data */}
           {positions.length > 0 && Object.keys(scanMap4h).length > 0 && (
@@ -837,7 +856,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── OPEN ORDERS ─── */}
-      {isConnected && activeSection === "orders" && (
+      {isConnected && feedState["Open orders"]?.updatedAt && activeSection === "orders" && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <span style={S.title}>
@@ -905,7 +924,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── TRADE FILLS ─── */}
-      {isConnected && activeSection === "fills" && (
+      {isConnected && feedState["Trade fills"]?.updatedAt && activeSection === "fills" && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <span style={S.title}>
@@ -963,7 +982,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── FUNDING HISTORY ─── */}
-      {isConnected && activeSection === "funding" && (
+      {isConnected && feedState["Funding"]?.updatedAt && activeSection === "funding" && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1013,7 +1032,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── FEE TIER INFO ─── */}
-      {isConnected && activeSection === "fees" && (
+      {isConnected && fees && activeSection === "fees" && (
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <span style={S.title}>Fee tier</span>

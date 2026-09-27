@@ -1,3 +1,7 @@
+import DataStatus from "./components/DataStatus.jsx";
+import WorkspaceIntro from "./components/WorkspaceIntro.jsx";
+import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
+import WorkspaceNav from "./components/WorkspaceNav.jsx";
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
@@ -5,7 +9,7 @@ import { inGroup } from "./utils/sectors.js";
 import BestSetups from "./components/BestSetups.jsx";
 import ReflexBrand from "./components/ReflexBrand.jsx";
 import "./terminal.css";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
 import { useTheme } from "./ThemeContext";
@@ -21,25 +25,25 @@ import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
 import DataTable from "./components/DataTable.jsx";
-import DetailPanel from "./components/DetailPanel.jsx";
+const DetailPanel = lazy(() => import("./components/DetailPanel.jsx"));
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import SettingsDropdown from "./components/SettingsDropdown.jsx";
-import BacktestPanel from "./components/BacktestPanel.jsx";
-import ExecutorPanel from "./components/ExecutorPanel.jsx";
-import TradingPanel from "./components/TradingPanel.jsx";
-import SignalLogPanel from "./components/SignalLogPanel.jsx";
-import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
+const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
+const ExecutorPanel = lazy(() => import("./components/ExecutorPanel.jsx"));
+const TradingPanel = lazy(() => import("./components/TradingPanel.jsx"));
+const SignalLogPanel = lazy(() => import("./components/SignalLogPanel.jsx"));
+const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
-import ChatPanel from "./components/ChatPanel.jsx";
-import TradFiPanel from "./components/TradFiPanel.jsx";
+const ChatPanel = lazy(() => import("./components/ChatPanel.jsx"));
+const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
 import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
-import HyperLensPanel from "./components/HyperLensPanel.jsx";
+const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
 import HitRateStrip from "./components/HitRateStrip.jsx";
 import ChangesTicker from "./components/ChangesTicker.jsx";
-import CoinPage from "./pages/CoinPage.jsx";
+const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -66,6 +70,7 @@ const ROUTE_TO_TAB = {
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
+  "/admin": "admin",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
@@ -78,6 +83,7 @@ const TAB_TO_ROUTE = {
   backtest: "/backtest",
   executor: "/executor",
   trading: "/portfolio",
+  admin: "/admin",
 };
 
 export default function App() {
@@ -113,7 +119,7 @@ export default function App() {
 
   // The scanner timeframe last viewed, for AI Assist
   const lastScannerTf = useRef("1d");
-  if (activeTab === "4h" || activeTab === "1d") lastScannerTf.current = activeTab;
+  if (location.pathname.startsWith("/scanner")) lastScannerTf.current = timeframeFrom(location.search);
 
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
@@ -121,19 +127,16 @@ export default function App() {
     return m ? decodeURIComponent(m[1]) : null;
   }, [location.pathname]);
 
-  // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
-  const handleSelectCoin = useCallback((row, event) => {
-    if (event?.shiftKey) {
-      setSelected(row);
-    } else {
-      const base = encodeURIComponent(row.market_kind === "spot" ? row.symbol : (row.symbol || "").split("/")[0]);
-      navigate(`/scanner/${base}?market=${row.market_kind === "spot" ? "spot" : "perpetual"}`);
-    }
-  }, [navigate]);
-
   const setActiveTab = useCallback((tab) => {
-    navigate(["4h", "1d"].includes(tab) ? `/scanner?market=${marketKind}${tab === "4h" ? "&tf=4h" : ""}` : TAB_TO_ROUTE[tab] || "/scanner");
-  }, [navigate, marketKind]);
+    if (["4h", "1d"].includes(tab)) {
+      const params = new URLSearchParams(location.search); params.delete("from");
+      params.set("market", marketKind); params.set("tf", tab);
+      navigate(`/scanner?${params}`);
+    } else {
+      const context = tab === "chat" ? `?tf=${timeframeFrom(location.search)}${coinPageSymbol ? `&symbol=${encodeURIComponent(coinPageSymbol)}` : ""}` : "";
+      navigate((TAB_TO_ROUTE[tab] || "/scanner") + context);
+    }
+  }, [navigate, marketKind, location.search, coinPageSymbol]);
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -146,10 +149,10 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [sortKey, setSortKey] = useState("priority_score");
-  const [statCardFilter, setStatCardFilter] = useState(null);
-  const [sectorBy, setSectorBy] = useState("sector");        // "sector" | "ecosystem"
-  const [sectorFilter, setSectorFilter] = useState(null);
+  const [sortKey, setSortKey] = useState(() => new URLSearchParams(location.search).get("sort") || "priority_score");
+  const [statCardFilter, setStatCardFilter] = useState(() => new URLSearchParams(location.search).get("signal"));
+  const [sectorBy, setSectorBy] = useState(() => new URLSearchParams(location.search).get("by") === "ecosystem" ? "ecosystem" : "sector");        // "sector" | "ecosystem"
+  const [sectorFilter, setSectorFilter] = useState(() => new URLSearchParams(location.search).get("sector"));
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // Price flash: symbol → "up" | "down" (cleared after 1.2s)
@@ -179,8 +182,43 @@ export default function App() {
 
   // Nav drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(location.search).get("q") || "");
   const [tradfiTf, setTradfiTf] = useState("1d");            // TradFi timeframe, in the title row
+
+  // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
+  const handleSelectCoin = useCallback((row, event) => {
+    if (event?.shiftKey) {
+      setSelected(row);
+    } else {
+      const params = new URLSearchParams(location.search);
+      params.set("q", searchTerm); params.set("sort", sortKey);
+      if (statCardFilter) params.set("signal", statCardFilter);
+      if (sectorFilter) params.set("sector", sectorFilter);
+      params.set("by", sectorBy);
+      const from = `/scanner?${params}`;
+      navigate(`${marketHref(row, row.timeframe || timeframeFrom(location.search))}&from=${encodeURIComponent(from)}`, { state: { scannerScroll: window.scrollY } });
+    }
+  }, [navigate, location.search, searchTerm, sortKey, statCardFilter, sectorFilter, sectorBy]);
+
+  useEffect(() => {
+    if (location.pathname === "/scanner" && location.state?.restoreScroll != null) {
+      const frame = requestAnimationFrame(() => window.scrollTo(0, location.state.restoreScroll));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [location.key]);
+
+  const updateScannerQuery = (key, value) => {
+    const params = new URLSearchParams(location.search);
+    value ? params.set(key, value) : params.delete(key);
+    navigate(`${location.pathname}?${params}`, { replace: true, state: location.state });
+  };
+  useEffect(() => {
+    if (location.pathname !== "/scanner") return;
+    const params = new URLSearchParams(location.search);
+    setSearchTerm(params.get("q") || ""); setSortKey(params.get("sort") || "priority_score");
+    setStatCardFilter(params.get("signal")); setSectorFilter(params.get("sector"));
+    setSectorBy(params.get("by") === "ecosystem" ? "ecosystem" : "sector");
+  }, [location.pathname, location.search]);
 
   // Favorites (persisted to localStorage)
   const [favorites, setFavorites] = useState(() => {
@@ -429,7 +467,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/groups`);
       if (!res.ok) return;
       const data = await res.json();
-      setGroups(data || []);
+      setGroups(Array.isArray(data) ? data : []);
       // Keep activeGroupId as null (All Assets) by default — only preserve existing selection
       setActiveGroupId(null);
     } catch (_) {}
@@ -611,12 +649,12 @@ export default function App() {
   const activeConsensus = activeTab === "4h" ? consensus4h : consensus1d;
   const consensusRows = activeTab === "4h" ? data4h : data1d;
   const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab === "4h" || activeTab === "1d";
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal workspace-app" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         :where(.reflex-terminal), :where(.reflex-terminal *) { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
@@ -733,6 +771,7 @@ export default function App() {
         scanData={activeTab === "1d" ? data1d : data4h}
       />
 
+      <WorkspaceNav activeTab={activeTab} marketKind={marketKind} onNavigate={setActiveTab} onMarketChange={changeMarket} onOpenWatchlists={() => setDrawerOpen(true)} />
       {/* ── HEADER ── */}
       <div className="terminal-header" style={{
         padding: `0 ${hPad}px`,
@@ -788,7 +827,7 @@ export default function App() {
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
             <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
           </button>
-          <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
+          <span className="header-brand"><ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} /></span><span className="workspace-header-label">Reflex <span>/</span> Research workspace</span>
 
         </div>
 
@@ -827,7 +866,7 @@ export default function App() {
             </svg>
           </button>
           <NotificationBell />
-          <SettingsDropdown />
+
           <button
             onClick={toggle}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -880,7 +919,7 @@ export default function App() {
 
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
-        <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
+        <Suspense fallback={<DataStatus loading label="Market analysis"/>}><CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} /></Suspense>
       )}
 
       {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}
@@ -889,14 +928,14 @@ export default function App() {
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
         }}>
-          <span style={{
+          <h1 style={{
             fontSize: isMobile ? 25 : 34,
             fontWeight: 550,
             color: T.text1,
             fontFamily: "var(--font-display), sans-serif",
             letterSpacing: "-0.035em",
           }}>
-            {activeTab === "backtest" ? "Backtest" :
+            {activeTab === "admin" ? "Administration" : activeTab === "backtest" ? "Backtest" :
              activeTab === "executor" ? "Executor" :
              activeTab === "trading" ? "Portfolio" :
              activeTab === "signals" ? "Signal Log" :
@@ -904,24 +943,27 @@ export default function App() {
              activeTab === "tradfi" ? "TradFi" :
              activeTab === "hyperlens" ? "HyperLens" :
              activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
-          </span>
-          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
+          </h1>
+          {showDashboard && <a className="grid-jump" href="#market-grid">Jump to markets</a>}
+          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} />}
           {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>
       )}
 
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
-      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
+      {!coinPageSymbol && <div className={`workspace-content module-${activeTab}`} style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
+        <WorkspaceIntro section={activeTab}/>
+        <Suspense fallback={<DataStatus loading label="Research view"/>}>
         {showDashboard && tfMarketRows.length > 0 && (
-          <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
+          <details className="scanner-context scanner-overview"><summary>Market overview <span>Global consensus, sentiment and signal totals</span></summary><p className="section-note">Consensus covers the full scanner universe. Signal totals follow the selected market and filters.</p><MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
             timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel} spot={marketKind === "spot"}
-            activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
+            activeSignalFilter={statCardFilter} onSignalFilter={v => { setStatCardFilter(v); updateScannerQuery("signal", v); }} /></details>
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
+        {showDashboard && <details className="scanner-context"><summary>Sectors & ecosystems <span>Relative performance and market groups</span></summary><SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={v => { setSectorBy(v); updateScannerQuery("by", v); }} value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} /></details>}
         {showDashboard && <BestSetups results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
@@ -941,29 +983,30 @@ export default function App() {
         )}
 
         {showDashboard && (
-          <div style={{
+          <div id="market-grid" style={{ scrollMarginTop: 100,
             display: "flex", flexDirection: isDesktop ? "row" : "column",
             gap: isDesktop ? 16 : 12, marginTop: isMobile ? 12 : 16,
           }}>
             {(activeTab === "4h") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display4h} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
+                  sortKey={sortKey} onSort={v => { setSortKey(v); updateScannerQuery("sort", v); }} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} timeframe={activeTab} />
               </FadeIn>
             )}
             {(activeTab === "1d") && (
               <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
                 <DataTable results={display1d} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
+                  sortKey={sortKey} onSort={v => { setSortKey(v); updateScannerQuery("sort", v); }} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} timeframe={activeTab} />
               </FadeIn>
             )}
           </div>
         )}
 
+        {activeTab === "admin" && <SettingsDropdown embedded />}
         {activeTab === "backtest" && (
           <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
             <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
@@ -1010,8 +1053,8 @@ export default function App() {
         )}
 
         {activeTab === "chat" && (
-          <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
-            selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
+          <ChatPanel key={new URLSearchParams(location.search).get("tf") || lastScannerTf.current} isMobile={isMobile} timeframe={new URLSearchParams(location.search).has("tf") ? timeframeFrom(location.search) : lastScannerTf.current}
+            selectedSymbol={new URLSearchParams(location.search).get("symbol") || (selected && !selected.tradfi_coin ? selected.symbol : null)} />
         )}
 
         {activeTab === "hyperlens" && (
@@ -1019,6 +1062,7 @@ export default function App() {
             <HyperLensPanel isMobile={isMobile} />
           </FadeIn>
         )}
+        </Suspense>
       </div>}
 
       {/* ── GROUP MODAL ── */}
@@ -1034,7 +1078,7 @@ export default function App() {
 
       {/* ── DETAIL PANEL ── */}
       <AdminNotice />
-      <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
+      {selected && <Suspense fallback={<DataStatus loading label="Setup details"/>}><DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} /></Suspense>}
     </div>
   );
 }

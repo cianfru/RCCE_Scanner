@@ -1,3 +1,4 @@
+import { marketHref } from "../utils/researchNavigation.js";
 import { traderLean } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import { useMemo, useState } from "react";
@@ -29,7 +30,7 @@ const EMPTY_WHEN = {
   CVD: r => !r.cvd_trend || ["NEUTRAL", "UNAVAILABLE"].includes(r.cvd_trend),
 };
 
-function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash }) {
+function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect }) {
   const cellPad = isMobile ? `${T.sp2}px ${T.sp2}px` : `${T.sp3}px ${T.sp3}px`;
   const noHistory = row.history_bars === 0;   // unmeasured, not zero
   switch (colLabel) {
@@ -47,12 +48,12 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
         : null;
       return (
         <td className="scanner-symbol" style={{ padding: cellPad, fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(isMobile ? T.textMd : T.textLg, isMobile), letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-          {onToggleFavorite && <span
+          {onToggleFavorite && <button type="button" aria-label={`${isFav ? "Remove" : "Add"} ${getBaseSymbol(row.symbol)} ${isFav ? "from" : "to"} favorites`} aria-pressed={isFav}
             onClick={e => { e.stopPropagation(); onToggleFavorite(row.symbol); }}
-            style={{ cursor: "pointer", marginRight: 6, fontSize: isMobile ? 20 : 22, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
+            style={{ border: 0, background: "transparent", minWidth: 28, minHeight: 32, cursor: "pointer", marginRight: 6, fontSize: isMobile ? 20 : 22, color: isFav ? "#facc15" : T.text4, transition: "color 0.15s", lineHeight: 1, verticalAlign: "middle" }}
             title={isFav ? "Remove from favorites" : "Add to favorites"}
-          >{isFav ? "\u2605" : "\u2606"}</span>}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle" }}><TokenLogo symbol={row.symbol} />{getBaseSymbol(row.symbol)}</span>
+          >{isFav ? "\u2605" : "\u2606"}</button>}
+          <a href={marketHref(row, timeframe)} onClick={e => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey) return; e.preventDefault(); e.stopPropagation(); onSelect(row, e); }} style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle", color: "inherit", textDecoration: "none" }}><TokenLogo symbol={row.symbol} />{getBaseSymbol(row.symbol)}</a>
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
@@ -161,7 +162,7 @@ function CellContent({ colLabel, row, index, isMobile, backtestSymbols, favorite
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide }) {
+function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
   // out; every other row keeps just its regime stripe on the left.
@@ -173,7 +174,7 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
   return (
     <tr
       data-locked={alignment.strength > 0}
-      onClick={(e) => onSelect(row, e)}
+      onClick={(e) => { if (!e.target.closest("button,a,input,summary")) onSelect(row, e); }}
       style={{
         cursor: "pointer",
         borderBottom: `1px solid ${T.border}`,
@@ -187,13 +188,13 @@ function SymbolRow({ row, index, selected, onSelect, visibleColumns, isMobile, b
       {visibleColumns.map(([, label], colIndex) => {
         if (label === "SIGNAL" && visibleColumns[colIndex - 1]?.[1] === "REGIME") return null;
         if (label === "REGIME" && visibleColumns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} className="setup-cell" data-strength={alignment.strength} style={{padding:isMobile ? 8 : 12, ...lockedCell}}><SetupPair row={row} isMobile={isMobile} transition compact marketWide={marketWide}/></td>;
-        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} />;
+        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} />;
       })}
     </tr>
   );
 }
 
-export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash }) {
+export default function DataTable({ results, label, sortKey, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash, timeframe = "1d" }) {
   const [alignedFirst, setAlignedFirst] = useState(false);
   const marketWide = useMemo(() => marketWideMissing(results), [results]);
   const shownColumns = useMemo(() => results.length < 10 ? visibleColumns : visibleColumns.filter(([, label]) => !(EMPTY_WHEN[label] && results.every(EMPTY_WHEN[label]))), [visibleColumns, results]);
@@ -222,7 +223,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   return (
                   <th colSpan={paired ? 2 : 1} className={colLabel === "SYMBOL" ? "scanner-symbol" : undefined}
                     key={colLabel}
-                    onClick={() => key && onSort(key)}
+                    aria-sort={key && sortKey === key ? (["symbol", "mcap", "regime"].includes(key) ? "ascending" : "descending") : undefined}
                     style={{
                       padding: isMobile ? `${T.sp2 + 2}px ${T.sp2 + 2}px` : `${T.sp3}px ${T.sp3}px`,
                       textAlign: colLabel === "CVD" ? "center" : "left",
@@ -236,7 +237,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     }}
                   >
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
-                      {paired ? <span className="setup-pair-head"><span>Regime</span><span aria-hidden="true" /><span>Signal</span></span> : colLabel}{key && sortKey === key ? " \u25bc" : ""}
+                      {key && !paired ? <button type="button" className="table-sort" onClick={() => onSort(key)}>{colLabel}{sortKey === key ? " ▾" : ""}</button> : paired ? <button type="button" className="table-sort setup-pair-head" onClick={() => onSort(key)} aria-label="Sort by regime"><span>Regime</span><span aria-hidden="true" /><span>Signal</span></button> : colLabel}
                       {paired ? <HelpTip title="Structure meets signal" width={320}><p>Read left to right: the regime describes the broader trend; the signal describes the current setup.</p><p>A locked, outlined pair means the trend supports the entry signal; a Strong signal gets the brighter outline. A broken link marks a countertrend setup; a dashed circle means required context is missing.</p><p>The highlight describes agreement, not the probability of a profitable trade.</p></HelpTip> : colLabel !== "SYMBOL" && colLabel !== "SPARK" && colLabel !== "PRICE" && <InfoButton label={colLabel} />}
                     </span>
                   </th>
@@ -253,7 +254,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                   padding: "60px 14px", textAlign: "center",
                   color: T.text4, fontFamily: T.mono, fontSize: T.textBase,
                 }}>
-                  NO DATA
+                  No markets match this view. Clear the search or filters to broaden it.
                 </td></tr>
               ) : (
                 displayedResults.map((row, idx) => (
@@ -265,6 +266,7 @@ export default function DataTable({ results, label, sortKey, onSort, selected, o
                     onSelect={onSelect}
                     visibleColumns={shownColumns}
                     marketWide={marketWide}
+                    timeframe={timeframe}
                     isMobile={isMobile}
                     backtestSymbols={backtestSymbols}
                     favorites={favorites}

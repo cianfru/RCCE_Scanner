@@ -427,54 +427,74 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
     timeframe: "4h",
     leverage: "1",
   });
-  const [btId, setBtId] = useState(null);
+  const [btId, setBtId] = useState(() => { try { return localStorage.getItem("reflex-backtest-id"); } catch { return null; } });
   const [result, setResult] = useState(null);
-  const [polling, setPolling] = useState(false);
+  const [polling, setPolling] = useState(() => { try { return !!localStorage.getItem("reflex-backtest-id"); } catch { return false; } });
+  const [starting, setStarting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [jobListError, setJobListError] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [presets, setPresets] = useState(() => { try { return JSON.parse(localStorage.getItem("reflex-backtest-presets") || "[]"); } catch { return []; } });
   const [error, setError] = useState(null);
   const [showTrades, setShowTrades] = useState(false);
-  const pollRef = useRef(null);
 
-  // Poll for results (silently retry on network errors during replay)
-  const pollFailCount = useRef(0);
-  const poll = useCallback(async (id) => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const resp = await fetch(`${API}/api/backtest/${id}`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!resp.ok) throw new Error("Poll failed");
-      const data = await resp.json();
-      setResult(data);
-      pollFailCount.current = 0;
-      if (data.status === "complete" || data.status === "error") {
-        setPolling(false);
-        if (data.error) setError(data.error);
-        if (data.status === "complete" && onBacktestComplete) onBacktestComplete();
-      }
-    } catch (e) {
-      // Server may be temporarily busy — silently retry (backtests can take 15+ min)
-      pollFailCount.current += 1;
-      if (pollFailCount.current > 600) {
-        setError("Server unresponsive — backtest may still be running in the background");
-        setPolling(false);
-      }
-    }
+  const onCompleteRef = useRef(onBacktestComplete);
+  onCompleteRef.current = onBacktestComplete;
+  const loadJobs = useCallback(async () => {
+    try { const r = await fetch(`${API}/api/backtests`); if (!r.ok) throw new Error(); const d = await r.json(); setJobs(d.backtests || []); setJobListError(false); }
+    catch { setJobListError(true); }
   }, []);
-
+  useEffect(() => { loadJobs(); }, [loadJobs]);
   useEffect(() => {
-    if (polling && btId) {
-      pollRef.current = setInterval(() => poll(btId), 3000);
-      return () => clearInterval(pollRef.current);
-    }
-  }, [polling, btId, poll]);
+    if (!polling || !btId) return;
+    let stopped = false, timer, controller, failures = 0;
+    const read = async () => {
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      let finished = false;
+      try {
+        const r = await fetch(`${API}/api/backtest/${encodeURIComponent(btId)}`, { signal: controller.signal });
+        if (!r.ok) {
+          if (r.status === 404) { finished = true; if (!stopped) { setPolling(false); setError("This job is no longer available on the server. Choose another run below or start a new one."); } }
+          throw new Error();
+        }
+        const data = await r.json();
+        if (stopped) return;
+        setResult(data); setConnectionError(null); failures = 0;
+        finished = ["complete", "error"].includes(data.status);
+        if (finished) {
+          setPolling(false); if (data.error) setError(data.error);
+          if (data.status === "complete") onCompleteRef.current?.();
+          loadJobs();
+        }
+      } catch {
+        failures += 1;
+        if (!stopped && !finished) setConnectionError("Connection interrupted. The job may still be running; reconnecting without starting another run.");
+      } finally {
+        clearTimeout(timeout);
+        if (!stopped && !finished) timer = setTimeout(read, Math.min(30000, 3000 * 2 ** Math.min(failures, 4)));
+      }
+    };
+    read();
+    return () => { stopped = true; clearTimeout(timer); controller?.abort(); };
+  }, [polling, btId, loadJobs]);
+  const openJob = (id) => { setBtId(id); setResult(null); setError(null); setPolling(true); try {localStorage.setItem("reflex-backtest-id", id);} catch {} };
+  const savePreset = () => {
+    if (!presetName.trim()) return;
+    const next = [{ name: presetName.trim(), config }, ...presets.filter(p => p.name !== presetName.trim())].slice(0, 10);
+    setPresets(next); try { localStorage.setItem("reflex-backtest-presets", JSON.stringify(next)); } catch {} setPresetName("");
+  };
 
   const startBacktest = async () => {
+    if (starting || polling) return;
     setError(null);
     const capital = Number(config.initial_capital);
     const leverage = Number(config.leverage);
-    if (!(capital > 0)) { setError("Capital must be greater than 0."); return; }
+    if (!Number.isFinite(capital) || !(capital > 0)) { setError("Capital must be greater than 0."); return; }
     if (!(leverage >= 0.1 && leverage <= 10)) { setError("Leverage must be between 0.1 and 10."); return; }
-    setResult(null); setShowTrades(false);
+    if (!config.start_date || (config.end_date && config.end_date < config.start_date)) {setError("Choose a valid date range; end must follow start.");return;}
+    setStarting(true); setResult(null); setShowTrades(false);
     try {
       const resp = await fetch(`${API}/api/backtest`, {
         method: "POST",
@@ -483,15 +503,14 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
       });
       if (!resp.ok) throw new Error("Failed to start backtest");
       const data = await resp.json();
-      setBtId(data.id);
-      setPolling(true);
+      openJob(data.id); loadJobs();
       setResult({ status: "fetching", progress: 0 });
     } catch (e) {
-      setError(e.message);
-    }
+      setError(`${e.message}. Check recent runs before submitting again; the server may have accepted the request.`); loadJobs();
+    } finally { setStarting(false); }
   };
 
-  const isRunning = result && !["complete", "error"].includes(result.status);
+  const isRunning = starting || polling;
   const m = result?.metrics;
   const isDone = result?.status === "complete";
 
@@ -504,6 +523,18 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: 0 }}>
 
+      <div className="tool-intro"><h2>Model assumptions</h2><p>Runs the historical cycle strategy for your chosen markets and timeframe. This replay uses bar prices and the historical position manager. Fees, funding and slippage are not deducted in this runner; returns are gross simulated results. External feeds may be unavailable in historical replay.</p><p>Large runs can take 15 minutes or longer. Starting a backtest temporarily pauses live scanner updates on this server.</p></div>
+      {connectionError && <p role="status" className="section-note">{connectionError}</p>}
+      {starting && <p role="status" className="section-note">Waiting for the server to accept this run. Keep this page open until its job reference appears.</p>}
+      {btId && <p className="section-note">Job reference: {btId}. Once accepted, you can leave and return to this page.</p>}
+      <details className="scanner-context"><summary>Recent runs & saved configurations</summary>
+        <div className="preset-controls"><input aria-label="Configuration name" placeholder="Name this configuration" value={presetName} onChange={e=>setPresetName(e.target.value)}/><button onClick={savePreset} disabled={!presetName.trim()}>Save configuration</button></div>
+        {presets.map(p=><button className="saved-run" key={p.name} disabled={isRunning} onClick={()=>setConfig(p.config)}>{p.name} · {p.config.timeframe.toUpperCase()}</button>)}
+        <button className="saved-run" onClick={loadJobs}>Refresh recent runs</button>
+        {jobListError && <p role="status" className="section-note">Could not load server history. Retry before starting a duplicate run.</p>}
+        {jobs.length === 0 && !jobListError && <p className="section-note">No saved runs are available on this server.</p>}
+        {[...jobs].sort((a,b)=>(b.started_at||0)-(a.started_at||0)).slice(0,10).map(job=><button className="saved-run" key={job.id} disabled={starting} onClick={()=>openJob(job.id)}>{job.start_date} → {job.end_date || "today"} · {job.symbols} markets · {job.status}</button>)}
+      </details>
       {/* ── CONFIG FORM ── */}
       <div style={{
         background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius,

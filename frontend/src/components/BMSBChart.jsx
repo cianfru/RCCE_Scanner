@@ -97,7 +97,7 @@ export default function BMSBChart({
   const [showPatterns, setShowPatterns] = useState(false);
   const [showMean, setShowMean] = useState(false);
   const [spike, setSpike] = useState(null);
-  const [showEntries, setShowEntries] = useState(true);
+  const [showEntries, setShowEntries] = useState(false);
   const [candleTimes, setCandleTimes] = useState(null);
   const meanSeriesRef = useRef([]);
   const zoneEndRef = useRef(null);
@@ -766,6 +766,11 @@ export default function BMSBChart({
       position: "relative",
     }}>
       {/* ── Top bar: info strip + timeframe toggle ── */}
+      <div className="chart-presets" role="group" aria-label="Chart layers">
+        <button aria-pressed={!showEntries && !showPatterns && !showMean && !showPressure} onClick={() => {setShowEntries(false);setShowPatterns(false);setShowMean(false);setShowPressure(false);}}>Price</button>
+        <button aria-pressed={showMean && !showEntries} onClick={() => {setShowMean(true);setShowPatterns(true);setShowEntries(false);setShowPressure(false);}}>Structure</button>
+        <button aria-pressed={showEntries} onClick={() => {setShowEntries(true);setShowMean(false);setShowPatterns(false);setShowPressure(false);}}>Trader positioning</button>
+      </div>
       <div className="chart-toolbar" style={{
         position: "relative", zIndex: 5,
         display: "flex", alignItems: "center", justifyContent: "space-between",

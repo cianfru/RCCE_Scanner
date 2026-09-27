@@ -1,3 +1,4 @@
+import DataStatus from "./DataStatus.jsx";
 /**
  * SettingsDropdown — runtime feature toggles + presets.
  *
@@ -56,11 +57,11 @@ const PRESETS = [
 ];
 
 // Flat text on/off control: no pill switch.
-function ToggleSwitch({ checked, onChange, color = T.accent }) {
+function ToggleSwitch({ checked, onChange, color = T.accent, disabled = false, label }) {
   return (
     <button
       type="button"
-      onClick={onChange}
+      onClick={onChange} disabled={disabled} aria-label={label}
       aria-pressed={checked}
       style={{
         border: "none", background: "transparent", padding: 0,
@@ -74,8 +75,11 @@ function ToggleSwitch({ checked, onChange, color = T.accent }) {
   );
 }
 
-export default function SettingsDropdown() {
-  const [open, setOpen] = useState(false);
+export default function SettingsDropdown({ embedded = false }) {
+  const [open, setOpen] = useState(embedded);
+  const [hasAdminKey, setHasAdminKey] = useState(() => Boolean(getAdminKey()));
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [flags, setFlags] = useState(null);
   const [activity, setActivity] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -87,14 +91,15 @@ export default function SettingsDropdown() {
   useEffect(() => {
     if (open && flags === null) {
       fetch(`${API_BASE}/api/admin/features`)
-        .then(r => r.ok ? r.json() : null)
+        .then(r => { if (!r.ok) throw new Error("Unavailable"); return r.json(); })
         .then(j => {
-          if (j?.flags) setFlags(j.flags);
+          if (!j?.flags) throw new Error("Configuration unavailable");
+          setReadError(false); setFlags(j.flags);
           if (j?.activity) setActivity(j.activity);
         })
-        .catch(() => {});
+        .catch(() => setReadError(true));
     }
-  }, [open, flags]);
+  }, [open, readAttempt]);
 
   // Live activity badge — poll while the panel is open. This endpoint is
   // excluded from activity tracking, so polling it never keeps the app awake.
@@ -114,7 +119,7 @@ export default function SettingsDropdown() {
 
   // Close on outside click
   useEffect(() => {
-    if (!open) return;
+    if (!open || embedded) return;
     const onDown = (e) => {
       if (popoverRef.current?.contains(e.target)) return;
       if (buttonRef.current?.contains(e.target)) return;
@@ -195,7 +200,7 @@ export default function SettingsDropdown() {
 
   return (
     <div style={{ position: "relative" }}>
-      <button
+      {!embedded && <button
         ref={buttonRef}
         onClick={() => setOpen(o => !o)}
         title="Settings"
@@ -217,16 +222,16 @@ export default function SettingsDropdown() {
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
-      </button>
+      </button>}
 
       {open && (
         <div
           ref={popoverRef}
           style={{
-            position: "absolute",
-            top: "calc(100% + 8px)",
+            position: embedded ? "relative" : "absolute",
+            top: embedded ? 0 : "calc(100% + 8px)",
             right: 0,
-            width: 320,
+            width: embedded ? "100%" : 320, maxWidth: 760,
             background: T.popoverBg,
             backdropFilter: "blur(20px) saturate(1.3)",
             WebkitBackdropFilter: "blur(20px) saturate(1.3)",
@@ -249,24 +254,27 @@ export default function SettingsDropdown() {
             }}>
               Runtime Settings
             </span>
-            {flags === null && (
+            {flags === null && !readError && (
               <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono }}>
                 loading…
               </span>
             )}
           </div>
 
+          <DataStatus label="Runtime configuration" loading={!flags && !readError} error={readError} onRetry={() => setReadAttempt(n => n + 1)}/>
           {/* Admin key: needed for changes once REFLEX_ADMIN_KEY is set on the server */}
           <label style={{ display: "block", marginBottom: 14 }}>
             <span style={{ display: "block", fontSize: 12, color: T.text3, fontFamily: T.font, marginBottom: 6 }}>
               Admin key <span style={{ color: T.text4 }}>(for changes; stored in this browser only)</span>
             </span>
             <input type="password" autoComplete="off" defaultValue={getAdminKey()} placeholder="Not set"
-              onChange={e => setAdminKey(e.target.value)}
+              onChange={e => { setAdminKey(e.target.value); setHasAdminKey(Boolean(e.target.value.trim())); }}
               style={{ width: "100%", boxSizing: "border-box", height: 34, padding: "0 10px", borderRadius: 6,
                 border: `1px solid ${T.border}`, background: T.overlay04, color: T.text1, fontFamily: T.mono, fontSize: 12 }} />
           </label>
 
+          {flags && <fieldset disabled={busy || !hasAdminKey} style={{border:0,minWidth:0,opacity:flags === null ? 0.5 : 1}} aria-label="Server controls">
+          {!hasAdminKey && <p className="section-note">Read-only. An administrator key is required to change server behavior.</p>}
           {/* Power state — active/idle throttle */}
           <div style={{ marginBottom: 14 }}>
             <div style={{
@@ -321,6 +329,7 @@ export default function SettingsDropdown() {
                 </div>
               </div>
               <ToggleSwitch
+                label="Keep scanning awake" disabled={busy || !flags}
                 checked={flags?.keep_active ?? false}
                 color={T.green}
                 onChange={() => updateFlag("keep_active", !(flags?.keep_active ?? false))}
@@ -383,6 +392,7 @@ export default function SettingsDropdown() {
                     </div>
                   </div>
                   <ToggleSwitch
+                    label={f.label} disabled={busy || !flags}
                     checked={checked}
                     onChange={() => updateFlag(f.key, !checked)}
                   />
@@ -391,6 +401,7 @@ export default function SettingsDropdown() {
             })}
           </div>
 
+          </fieldset>}
           {err && (
             <div style={{ marginTop: 10, fontSize: 12, color: T.red, fontFamily: T.font }}>
               {err}

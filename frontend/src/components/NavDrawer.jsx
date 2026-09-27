@@ -75,6 +75,7 @@ const NAV_SECTIONS = [
       { key: "hyperlens", label: "HyperLens", desc: "Positioning of profitable traders and large accounts" },
     ],
   },
+  { label: "Workspace", items: [{key:"admin",label:"Administration",desc:"Server controls for administrators"}] },
   {
     label: "Trading",
     items: [
@@ -105,16 +106,26 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
     }
   }, [isOpen]);
 
-  // Escape closes; focus moves into the drawer when it opens
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !mounted) return;
+    const previous = document.activeElement;
+    const bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     navRef.current?.focus();
-    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); onCloseRef.current(); }
+      if (e.key !== "Tab") return;
+      const nodes = [...(navRef.current?.querySelectorAll('button:not([disabled]),a[href],input,[tabindex="0"]') || [])].filter(n => n.getClientRects().length);
+      const first = nodes[0], last = nodes.at(-1);
+      if (!first) { e.preventDefault(); return; }
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === navRef.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !navRef.current?.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen]);
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = bodyOverflow; if (previous?.isConnected) previous.focus(); };
+  }, [isOpen, mounted]);
 
   // Swipe left to close (works with 1 finger on mobile, 2 on trackpad)
   const handleTouchStart = useCallback((e) => {

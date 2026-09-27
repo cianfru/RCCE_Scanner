@@ -96,8 +96,8 @@ export default function PositioningView() {
                 const m = matchOf(r);
                 const o = r.opens_24h || {};
                 return (
-                  <tr key={r.coin} onClick={() => navigate(`/scanner/${encodeURIComponent(r.coin)}`)} tabIndex={0}
-                    onKeyDown={e => { if (e.key === "Enter") navigate(`/scanner/${encodeURIComponent(r.coin)}`); }}>
+                  <tr key={r.coin} onClick={() => navigate(`/scanner/${encodeURIComponent(r.coin)}?market=perp&tf=4h`)} tabIndex={0}
+                    onKeyDown={e => { if (e.key === "Enter") navigate(`/scanner/${encodeURIComponent(r.coin)}?market=perp&tf=4h`); }}>
                     <td>
                       <span className="pos-coin"><TokenLogo symbol={`${r.coin}/USDT`} size={20} /> {r.coin}</span>
                       {r.convergence && <div className="pos-sub" style={{ color: col(SIDE_COLOR[r.convergence.side]) }}>Converging {r.convergence.side} · {r.convergence.n}</div>}

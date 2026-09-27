@@ -86,12 +86,13 @@ export default function AuthGate({ children }) {
         background: T.cardBg || T.overlay04,
         border: `1px solid ${T.border}`,
         borderRadius: 16, padding: "32px 36px",
-        width: 340, maxWidth: "90vw",
+        width: 400, maxWidth: "90vw", boxSizing: "border-box",
         backdropFilter: "blur(20px)",
         boxShadow: `0 8px 32px rgba(0,0,0,0.4)`,
         animation: shaking ? "shake 0.4s ease-in-out" : undefined,
       }}>
-        <label style={{
+        <p style={{color:T.text2,fontSize:14,lineHeight:1.6,marginBottom:20}}>Private product preview. Enter your access code to continue.</p>
+        <label htmlFor="reflex-access-code" style={{
           display: "block", fontSize: 12, fontFamily: T.mono,
           color: T.text4, letterSpacing: "0.1em", marginBottom: 10,
           textTransform: "uppercase",
@@ -99,11 +100,11 @@ export default function AuthGate({ children }) {
           Access Code
         </label>
         <input
-          type="password"
+          id="reflex-access-code" aria-invalid={error} aria-describedby={error ? "access-error" : undefined} autoComplete="current-password" required type="password"
           value={value}
           onChange={e => { setValue(e.target.value); setError(false); }}
           autoFocus
-          placeholder="Enter password"
+          placeholder="Enter access code"
           style={{
             width: "100%", padding: "12px 14px",
             fontSize: 14, fontFamily: T.mono,
@@ -117,13 +118,13 @@ export default function AuthGate({ children }) {
           onBlur={e => e.target.style.borderColor = error ? "#ef4444" : T.border}
         />
         {error && (
-          <p style={{
+          <p id="access-error" role="alert" style={{
             fontSize: 12, color: "#ef4444", marginTop: 8, fontFamily: T.mono,
           }}>
             {message || "Incorrect access code"}
           </p>
         )}
-        <button type="submit" style={{
+        <button type="submit" disabled={busy || !value.trim()} aria-busy={busy} style={{
           width: "100%", marginTop: 16, padding: "12px 0",
           boxSizing: "border-box",
           fontSize: 13, fontWeight: 600, fontFamily: T.font,
@@ -136,12 +137,14 @@ export default function AuthGate({ children }) {
           onMouseEnter={e => e.target.style.filter = "brightness(1.15)"}
           onMouseLeave={e => e.target.style.filter = "none"}
         >
-          Enter
+          {busy ? "Checking access…" : "Enter Reflex"}
         </button>
+      <a href="/" style={{display:"block",marginTop:20,color:T.accent,fontSize:14,textAlign:"center"}}>Back to the public website</a>
       </form>
 
       {/* Shake animation */}
       <style>{`
+        @media (prefers-reduced-motion: reduce) { form { animation: none !important; } }
         @keyframes shake {
           0%, 100% { transform: translateX(0); }
           20% { transform: translateX(-8px); }

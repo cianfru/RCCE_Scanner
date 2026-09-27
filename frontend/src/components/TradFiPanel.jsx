@@ -39,9 +39,10 @@ export default function TradFiPanel({
   const loadSymbols = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/tradfi/symbols`);
+      if(!res.ok) throw new Error("Instrument list unavailable");
       const data = await res.json();
       setSymbols(data.symbols || []);
-    } catch (_) {}
+    } catch (_) { setAddError("Could not load instruments. Try again."); }
   }, []);
 
   useEffect(() => { if (managing) loadSymbols(); }, [managing, loadSymbols]);
@@ -67,9 +68,10 @@ export default function TradFiPanel({
 
   const handleRemove = async (coin) => {
     try {
-      await fetch(`${API_BASE}/api/tradfi/symbols/${encodeURIComponent(coin)}`, { method: "DELETE" });
+      const response = await fetch(`${API_BASE}/api/tradfi/symbols/${encodeURIComponent(coin)}`, { method: "DELETE" });
+      if(!response.ok) throw new Error("Remove was not accepted");
       await loadSymbols();
-    } catch (_) {}
+    } catch (_) { setAddError("Could not confirm removal. Refresh instruments before trying again."); }
   };
 
   // Pick the right dataset based on timeframe toggle
@@ -117,15 +119,16 @@ export default function TradFiPanel({
   // info: the scanner's column-help key (same explanations as the crypto table).
   const sortTh = (key, label, info = label) => (
     <th key={key} style={{ ...thStyle(isMobile), cursor: "pointer", color: sortKey === key ? T.text2 : T.text4 }}
-      aria-sort={sortKey === key ? "descending" : "none"} onClick={() => setSortKey(key)}>
+      aria-sort={sortKey === key ? "descending" : "none"}>
       <span style={{ display: "inline-flex", alignItems: "center" }}>
-        {label}{sortKey === key ? " \u25bc" : ""}{info && <InfoButton label={info} />}
+        <button className="table-sort" type="button" onClick={() => setSortKey(key)}>{label}{sortKey === key ? " \u25bc" : ""}</button>{info && <InfoButton label={info} />}
       </span>
     </th>
   );
 
   return (
     <div style={{ marginTop: isMobile ? 16 : 20 }}>
+      <p className="section-note">HIP-3 is Hyperliquid’s builder-deployed perpetual market framework. This view also includes reference instruments. Prices and histories can use different sources; open an instrument to inspect its available context. “No history” means the engine cannot yet classify its regime.</p>
       {/* Subtitle + Manage (admin only) */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -330,7 +333,8 @@ export default function TradFiPanel({
                   return (
                     <tr
                       key={r.symbol}
-                      onClick={() => onSelect(r)}
+                      onClick={e => { if(!e.target.closest("button")) onSelect(r); }}
+                      tabIndex={0} onKeyDown={e => { if(e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {e.preventDefault();onSelect(r);} }}
                       style={{
                         cursor: "pointer",
                         borderBottom: `1px solid ${T.border}22`,

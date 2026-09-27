@@ -5,7 +5,7 @@ export default function GlassCard({ children, style = {}, glow = null, hoverable
   const [hovered, setHovered] = useState(false);
   return (
     <div
-      className={className}
+      className={`research-surface ${className}`}
       onClick={onClick}
       onMouseEnter={() => hoverable && setHovered(true)}
       onMouseLeave={() => hoverable && setHovered(false)}

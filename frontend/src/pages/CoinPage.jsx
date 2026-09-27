@@ -1,3 +1,4 @@
+import { timeframeFrom, scannerHref } from "../utils/researchNavigation.js";
 import SetupPair from "../components/SetupPair.jsx";
 import SignalContext from "../components/SignalContext.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
@@ -283,21 +284,28 @@ function MetricsPanel({ data }) {
 export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
   const { isMobile, isTablet } = useViewport();
-  const [timeframe, setTimeframe] = useState("1d");
   const location = useLocation();
+  const timeframe = timeframeFrom(location.search);
+  const setTimeframe = (tf) => {
+    const params = new URLSearchParams(location.search); params.set("tf", tf);
+    navigate(`${location.pathname}?${params}`, { replace: true, state: location.state });
+  };
+  const backToScanner = () => navigate(scannerHref(location.search), { state: { restoreScroll: location.state?.scannerScroll || 0 } });
   const marketKind = new URLSearchParams(location.search).get("market") === "spot" || (urlSymbol || "").includes("/USDC") ? "spot" : "perpetual";
   const [availability, setAvailability] = useState(null);
+  const [availabilityError, setAvailabilityError] = useState(false);
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setAvailability(null);
-    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => r.json()).then(d => {
+    setAvailability(null); setAvailabilityError(false);
+    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => { if(!r.ok) throw new Error("Unavailable"); return r.json(); }).then(d => {
       const sym = (urlSymbol || "").toUpperCase();
       const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
-      if (!cancelled) setAvailability(market || {unlisted: true});
-    }).catch(() => {});
+      if (!cancelled) { setAvailability(market || {unlisted: true}); setAvailabilityError(false); }
+    }).catch(() => { if(!cancelled) setAvailabilityError(true); });
     load(); const timer = setInterval(load, 60000);
     return () => {cancelled = true; clearInterval(timer);};
-  }, [urlSymbol, timeframe, marketKind]);
+  }, [urlSymbol, timeframe, marketKind, availabilityAttempt]);
 
 
   // Find scan result matching URL symbol
@@ -330,10 +338,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 16, color: T.text3, fontFamily: T.mono, marginBottom: 16 }}>
-          {availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
+          {availabilityError ? "Market availability could not refresh. Please retry." : availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
         </div>
+        {availabilityError && <button className="apple-btn" onClick={() => setAvailabilityAttempt(n => n + 1)}>Retry availability</button>}
         <button
-          onClick={() => navigate(`/scanner?market=${marketKind}`)}
+          onClick={backToScanner}
           className="apple-btn"
           style={{ padding: "8px 20px", fontSize: 12, fontFamily: T.mono, borderRadius: 8 }}
         >
@@ -354,8 +363,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       <div style={{
         display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
       }}>
+        {availabilityError && <button className="apple-btn" onClick={() => setAvailabilityAttempt(n => n + 1)}>Retry availability</button>}
         <button
-          onClick={() => navigate(`/scanner?market=${marketKind}`)}
+          onClick={backToScanner}
           className="apple-btn"
           style={{ padding: "7px 16px", fontSize: T.textSm, fontFamily: T.font, fontWeight: 600, borderRadius: 8, flexShrink: 0 }}
         >
@@ -389,6 +399,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </div>
 
+      <div className="research-context"><span>{coin} · {marketKind === "spot" ? "Spot" : "Perpetual"} · {timeframe.toUpperCase()}</span><button onClick={() => navigate(`/ai?symbol=${encodeURIComponent(data.symbol)}&tf=${timeframe}`)}>Ask AI about this setup</button></div>
       {/* Chart — full width */}
       <div style={{ marginBottom: 20 }}>
         <BMSBChart

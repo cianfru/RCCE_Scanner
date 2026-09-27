@@ -1,3 +1,4 @@
+import { executeAndJournal } from "../utils/executionOutcome.js";
 import SetupPair from "./SetupPair.jsx";
 import SignalContext from "./SignalContext.jsx";
 import TokenLogo from "./TokenLogo.jsx";
@@ -68,16 +69,12 @@ function TradeForm({ selected, api, isMobile }) {
       // 2. Place market order (wallet popup)
       setLoadingMsg("Awaiting signature...");
       const isBuy = side === "LONG";
-      const result = await hlClient.placeMarketOrder(walletClient, {
+      const outcome = await executeAndJournal(() => hlClient.placeMarketOrder(walletClient, {
         coin,
         isBuy,
         sizeUsd: estimatedUsd,
         slippage: 0.01,
-      });
-
-      // 3. Report to backend for trade journal
-      setLoadingMsg("Logging trade...");
-      await fetch(`${api}/api/trade/log`, {
+      }), result => fetch(`${api}/api/trade/log`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -91,11 +88,12 @@ function TradeForm({ selected, api, isMobile }) {
           entry_price: result.avgPx,
           order_id: String(result.oid || ""),
         }),
-      });
+      }));
+      const result = outcome.execution;
 
       setFeedback({
         ok: true,
-        msg: `${side} ${coin} $${estimatedUsd.toFixed(0)} @ $${result.avgPx.toFixed(2)} (${leverage}x)`,
+        msg: `${side} ${coin} $${estimatedUsd.toFixed(0)} @ $${Number.isFinite(Number(result.avgPx)) ? Number(result.avgPx).toFixed(2) : "pending"} (${leverage}x). Order ${result.oid || "accepted"}.${outcome.journalPending ? " Executed; journal sync pending. Do not repeat the order." : " Journal synced."}`,
       });
       setSizeValue("");
     } catch (e) {
@@ -104,13 +102,13 @@ function TradeForm({ selected, api, isMobile }) {
       if (msg.includes("rejected") || msg.includes("denied") || msg.includes("User rejected")) {
         setFeedback({ ok: false, msg: "Signature rejected" });
       } else {
-        setFeedback({ ok: false, msg });
+        setFeedback({ ok: false, msg: `${msg}. If you signed an order, check your exchange activity before submitting again.` });
       }
     }
     setLoading(false);
     setLoadingMsg("");
     setConfirm(false);
-    setTimeout(() => setFeedback(null), 6000);
+    // Keep the exchange outcome visible until the user changes the setup.
   };
 
   const cancelConfirm = () => setConfirm(false);
