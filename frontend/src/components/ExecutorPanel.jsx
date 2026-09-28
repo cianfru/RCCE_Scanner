@@ -3,6 +3,7 @@ import TokenLogo from "./TokenLogo.jsx";
 import { plainReason } from "../utils/signalPresentation.js";
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
 import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { T, SIGNAL_META } from "../theme.js";
 import { getAdminKey } from "../auth.js";
@@ -587,7 +588,7 @@ export default function ExecutorPanel({ api }) {
 
       {/* ─── CONTROLS (admin key only; the server rejects changes without it) ─── */}
       {!getAdminKey() ? (
-        <p style={{ color: T.text3, fontSize: 12, lineHeight: 1.6 }}>Engine controls need the admin key (Settings).</p>
+        <p style={{ color: T.text3, fontSize: 12, lineHeight: 1.6 }}>Engine controls need the admin key, entered on the <Link className="te-link" to="/settings">settings page</Link>.</p>
       ) : (
       <details className="executor-controls" style={S.section}><summary>Engine controls and configuration</summary>
         <div style={S.sectionHeader}>
