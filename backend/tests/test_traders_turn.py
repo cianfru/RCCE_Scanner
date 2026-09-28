@@ -1,9 +1,11 @@
 import unittest
+import warnings
 
 import numpy as np
 
-from research.traders_turn import (BAR, CAP, COOL, H, compare, coverage_start, four_hour_closes, position_at,
-                                   positions, recent_any, run_starts, stretch, turn_test)
+from research.traders_turn import (BAR, CAP, COOL, DAY, H, Study, compare, coverage_start, four_hour_closes,
+                                   market_verdict, position_at, positions, primary_verdict, recent_any, run_starts,
+                                   stretch, summarize, turn_test)
 
 
 def fill(coin, t, sz, side, start, twap=0):
@@ -42,6 +44,20 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(position_at(s, [550]).tolist(), [1.0])                 # rule applied literally
         self.assertEqual(position_at(s, [550], cover=500).tolist(), [4.0])
         self.assertEqual(position_at(s, [300, 700], cover=500).tolist(), [1.0, 3.0])
+
+    def test_float_leftovers_of_a_close_are_flat(self):
+        # two sells at one millisecond close a 0.3 long: 0.3 - 0.1 - 0.2 leaves -5.6e-17 in floats
+        s = positions([fill("BTC", 100, 0.2, "A", 0.2), fill("BTC", 100, 0.1, "A", 0.3)])["BTC"]
+        self.assertEqual(position_at(s, [101]).tolist(), [0.0])
+        # the API's merged size carries noise: closing -58457.1 with 58457.0999999998 leaves -2e-10
+        s = positions([fill("HYPE", 200, "58457.0999999998", "B", "-58457.1")])["HYPE"]
+        self.assertEqual(position_at(s, [201]).tolist(), [0.0])
+        r = compare(np.array([[1.0, position_at(s, [201])[0]]]), np.ones((1, 2), bool),
+                    np.array([10.0, 10.0]), np.array([0]), np.array([1]))
+        self.assertEqual((int(r["Ln"][0]), int(r["Sn"][0])), (0, 0))
+        # the smallest real position (BTC's size step) stays
+        s = positions([fill("BTC", 300, "0.00001", "B", "0")])["BTC"]
+        self.assertEqual(position_at(s, [301]).tolist(), [1e-5])
 
     def test_coverage_is_later_of_the_two_capped_lists(self):
         reg = [fill("BTC", 1000 + i, 1, "B", 0) for i in range(CAP)]
@@ -117,6 +133,87 @@ class TurnTests(unittest.TestCase):
         t = np.zeros(12, bool)
         t[3] = True
         self.assertEqual(np.where(recent_any(t, 6))[0].tolist(), [3, 4, 5, 6, 7, 8, 9])
+
+
+def tiny_study(wallets, n_hours=240, drop_stale=False, coins=("BTC",)):
+    """A flat-price study over 10 days (the 7-day forward returns need more than 42 bars)."""
+    candles = {c: [[t * H, 100.0] for t in range(n_hours)] for c in coins}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return Study(wallets, candles, n_hours * H, drop_stale=drop_stale)
+
+
+class MatchTests(unittest.TestCase):
+    def setUp(self):
+        self.s = tiny_study({}, coins=("AAA", "BBB", "CCC"))
+
+    def test_same_bar_first_and_event_coin_excluded(self):
+        qual = np.zeros((3, len(self.s.grid)), bool)
+        qual[:, 5] = True                                   # every coin qualifies at bar 5
+        qual[2, 4] = True
+        how, m = self.s.match(qual, 0, 5)
+        self.assertEqual((how, m), ("bar", [(1, 5), (2, 5)]))
+
+    def test_same_day_fallback_uses_each_coins_first_qualifying_bar(self):
+        qual = np.zeros((3, len(self.s.grid)), bool)
+        day = np.where(self.s.days == self.s.days[8])[0]
+        qual[1, day[-1]] = True
+        qual[2, day[1]] = qual[2, day[3]] = True
+        b = int(day[2])
+        how, m = self.s.match(qual, 0, b)
+        self.assertEqual(how, "day")
+        self.assertEqual(m, [(1, int(day[-1])), (2, int(day[1]))])
+        qual[:] = False
+        qual[0, b] = True                                   # only the event coin itself qualifies
+        self.assertEqual(self.s.match(qual, 0, b), ("none", []))
+
+
+class StaleSensitivityTests(unittest.TestCase):
+    def test_last_fill_older_than_coverage_counts_flat_from_coverage_on(self):
+        pos = positions([fill("BTC", 2 * H, 1, "B", 0)])
+        w = {"0xabc": {"cohorts": {"money_printer"}, "cover": 20 * H, "pos": pos}}
+        base, drop = tiny_study(w), tiny_study(w, drop_stale=True)
+        g = base.grid
+        self.assertTrue((base.P["BTC"][0, g >= 20 * H] == 1.0).all())      # declared rule: carried forward
+        self.assertTrue((drop.P["BTC"][0, g >= 20 * H] == 0.0).all())
+        self.assertTrue((drop.P["BTC"][0, (g > 2 * H) & (g < 20 * H)] == 1.0).all())
+
+
+class VerdictTests(unittest.TestCase):
+    @staticmethod
+    def stats(n, m3, m7, neg3, neg7, hi7):
+        mk = lambda m, neg, hi: {"n": n, "median": m, "neg_pct": neg, "ci90_median": [m - 1, hi]}
+        return {"events": n, "3d": {"excess": mk(m3, neg3, 0)}, "7d": {"excess": mk(m7, neg7, hi7)}}
+
+    def test_primary_thresholds_are_inclusive_where_declared(self):
+        ok = self.stats(30, -1.5, -1.5, 60.0, 60.0, -0.01)
+        ctrl = {"7d": {"n": 30, "gap_pts": -1.5}}
+        self.assertTrue(primary_verdict(ok, ctrl)["informative"])
+        self.assertFalse(primary_verdict(self.stats(29, -1.5, -1.5, 60, 60, -0.01), ctrl)["informative"])
+        self.assertFalse(primary_verdict(self.stats(30, -1.49, -1.5, 60, 60, -0.01), ctrl)["informative"])
+        self.assertFalse(primary_verdict(self.stats(30, -1.5, -1.5, 59.9, 60, -0.01), ctrl)["informative"])
+        self.assertFalse(primary_verdict(self.stats(30, -1.5, -1.5, 60, 60, 0.0), ctrl)["informative"])
+        self.assertFalse(primary_verdict(ok, {"7d": {"n": 29, "gap_pts": -5.0}})["informative"])
+        self.assertFalse(primary_verdict(ok, {"7d": {"n": 30, "gap_pts": -1.49}})["informative"])
+
+    def test_market_thresholds(self):
+        mk = lambda m, neg, hi: {"n": 30, "median": m, "neg_pct": neg, "ci90_median": [m - 1, hi]}
+        st = {"turns": 30, "btc": {"3d": mk(-1.5, 60, 0), "7d": mk(-1.5, 60, -0.1)}}
+        self.assertTrue(market_verdict(st, {"btc": {"7d": {"n": 900, "median": 0.0}}})["informative"])
+        self.assertFalse(market_verdict(st, {"btc": {"7d": {"n": 900, "median": -0.01}}})["informative"])
+        self.assertFalse(market_verdict({**st, "turns": 29}, {"btc": {"7d": {"n": 900, "median": 0.0}}})["informative"])
+
+    def test_summary_interval_resamples_whole_days(self):
+        # two days: one all negative, one all positive; resampled medians come only from those days' values
+        v = [-0.02, -0.02, -0.02, 0.04]
+        out = summarize(v, [1, 1, 1, 2])
+        self.assertEqual((out["n"], out["days"]), (4, 2))
+        self.assertAlmostEqual(out["median"], -2.0)
+        self.assertEqual(out["neg_pct"], 75.0)
+        lo, hi = out["ci90_median"]
+        self.assertAlmostEqual(lo, -2.0)
+        self.assertAlmostEqual(hi, 4.0)
+        self.assertEqual(DAY, 24 * H)
 
 
 if __name__ == "__main__":
