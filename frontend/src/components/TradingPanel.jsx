@@ -836,7 +836,7 @@ export default function TradingPanel({ api }) {
       {/* ─── READ-ONLY BANNER ─── */}
       {readOnly && (
         <div className="pf-viewing" role="status">
-          <span>Viewing <b>{shortAddr(viewAddress)}</b> <WalletTag address={viewAddress} size={12} className="pf-view-tag" /></span>
+          <span>Viewing <b>{shortAddr(viewAddress)}</b> <WalletTag address={viewAddress} size={20} className="pf-view-tag" /></span>
           <span className="pf-dot" aria-hidden="true">·</span>
           <span>read-only</span>
           <span className="pf-dot" aria-hidden="true">·</span>

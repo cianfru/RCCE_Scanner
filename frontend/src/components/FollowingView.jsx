@@ -45,7 +45,7 @@ export default function FollowingView() {
       {traders.map(t => (
         <section key={t.address} className="fol-card">
           <div className="fol-top">
-            <span className="fol-name"><WalletTag address={t.address} name={nameIn(names, t.address)} addr />{t.note ? <span className="fol-note"> · {t.note}</span> : null}</span>
+            <span className="fol-name"><WalletTag address={t.address} name={nameIn(names, t.address)} size={28} addr />{t.note ? <span className="fol-note"> · {t.note}</span> : null}</span>
             <span className="fol-meta">
               {t.tracked ? t.cohorts.map(c => COHORT_NAME[c] || c).filter(c => c !== "both").join(", ") : "not in the tracked roster"}
               {t.account_value ? ` · account ${fmtUsd(t.account_value)}` : ""}

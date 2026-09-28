@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import TokenLogo from "./TokenLogo.jsx";
-import WalletTag from "./WalletTag.jsx";
+import WalletTag, { WalletAvatar } from "./WalletTag.jsx";
 import useFollowed from "../hooks/useFollowed.js";
 import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
@@ -804,9 +804,11 @@ function WalletDetail({ address, onClose, isMobile }) {
         background: T.overlay02,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <WalletAvatar address={address} size={44} />
+          <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <WalletTag address={address} size={20} className="wtag-head" />
+            <span className="wtag wtag-head" title={address}><span className="wtag-name">{codename(address)}</span></span>
             <RiskBadge score={data.risk_score} />
           </div>
           {/* Full address + copy */}
@@ -837,6 +839,7 @@ function WalletDetail({ address, onClose, isMobile }) {
           {/* Tags */}
           <div style={{ marginTop: 6 }}>
             <WalletTags data={data} />
+          </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>

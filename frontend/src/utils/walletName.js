@@ -64,10 +64,14 @@ function fmix(h) {
 }
 const norm = a => String(a || "").trim().toLowerCase();
 
-// Three independent 32-bit draws per address: adjective, noun, avatar colour.
+// The address's seed, and independent 32-bit draws from it (one salt per use).
+export const walletSeed = address => fnv1a(norm(address));
+export const draw = (seed, salt) => fmix((seed ^ salt) >>> 0);
+
+// Three independent draws per address: adjective, noun, avatar.
 export function walletHashes(address) {
-  const h = fnv1a(norm(address));
-  return [fmix(h ^ 0x9e3779b9), fmix(h ^ 0x7f4a7c15), fmix(h ^ 0x94d049bb)];
+  const h = walletSeed(address);
+  return [draw(h, 0x9e3779b9), draw(h, 0x7f4a7c15), draw(h, 0x94d049bb)];
 }
 
 export function codename(address) {
@@ -80,17 +84,6 @@ export const shortAddr = a => {
   const s = String(a || "");
   return s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
 };
-
-// Two hues 60 to 150 degrees apart, as in Block0's avatar.
-export function avatarHues(address) {
-  const c = walletHashes(address)[2];
-  const h1 = c % 360;
-  return [h1, (h1 + 60 + ((c >>> 9) % 91)) % 360];
-}
-export function avatarGradient(address) {
-  const [h1, h2] = avatarHues(address);
-  return `linear-gradient(135deg, hsl(${h1} 90% 60%), hsl(${h2} 85% 52%))`;
-}
 
 // Display names for the wallets shown together: a codename that two wallets in this view share
 // gets the address's last characters ("Cobalt Heron ·3fa2"), the fewest that tell them apart.
@@ -114,3 +107,17 @@ export function viewNames(addresses) {
 
 // One name from a viewNames map, falling back to the plain codename.
 export const nameIn = (names, address) => (names && names.get(norm(address))) || codename(address);
+
+// Chart tags for the wallets shown together: the codename's initials ("Arctic Mako" is "AM"),
+// numbered when two wallets in the view share them ("AM", "AM2").
+export function markerTags(addresses) {
+  const out = new Map(), used = new Map();
+  for (const a of (addresses || []).filter(Boolean).map(norm)) {
+    if (out.has(a)) continue;
+    const base = codename(a).split(" ").map(w => w[0]).join("");
+    const k = (used.get(base) || 0) + 1;
+    used.set(base, k);
+    out.set(a, k === 1 ? base : `${base}${k}`);
+  }
+  return out;
+}

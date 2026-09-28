@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { ADJECTIVES, NOUNS, avatarGradient, avatarHues, codename, nameIn, shortAddr, viewNames } from './walletName.js';
+import { ADJECTIVES, NOUNS, codename, nameIn, shortAddr, viewNames } from './walletName.js';
 
 // Measured once against GET /api/hyperlens/roster (517 wallets, 2026-09-28):
 // 136 x 128 words give 514 distinct codenames, 3 names shared by 2 wallets each
@@ -26,11 +26,7 @@ test('codename is deterministic and ignores case and spaces', () => {
   assert.equal(codename(A1), codename(A1));
   assert.equal(codename(A1.toUpperCase().replace('0X', '0x')), 'Opal Reindeer');
   assert.equal(codename(` ${A1} `), 'Opal Reindeer');
-  assert.equal(avatarGradient(A1), avatarGradient(A1.toUpperCase()));
   assert.equal(codename(''), '');
-  const [h1, h2] = avatarHues(A1);
-  const d = (h2 - h1 + 360) % 360;
-  assert.ok(d >= 60 && d <= 150);
 });
 
 test('codenames spread over the lists', () => {

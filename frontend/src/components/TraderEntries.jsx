@@ -46,17 +46,14 @@ export default function TraderEntries({ entries, onShow, loading = false, limit 
               <Fragment key={tr.address}>
                 <tr className={isOpen ? "te-open" : ""} onClick={() => setOpen(isOpen ? null : tr.address)} tabIndex={0}
                   onKeyDown={e => { if (e.key === "Enter") setOpen(isOpen ? null : tr.address); }} aria-expanded={isOpen}>
-                  <td>
-                    <span className="te-who">
-                      <b className="te-label" style={{ color: sideColor(tr.side) }} title={`${tr.label} on the chart`}>{tr.label}</b>
-                      <WalletTag className="te-addr" address={tr.address} name={nameIn(names, tr.address)} />
-                    </span>
+                  <td className="te-who">
+                    <WalletTag className="te-addr" address={tr.address} name={nameIn(names, tr.address)} size={28} sub />
                   </td>
-                  <td><span style={{ color: sideColor(tr.side) }}>{tr.side === "long" ? "Long" : "Short"}</span> {fmtUsd(tr.size_usd)}</td>
+                  <td className="te-pos"><span style={{ color: sideColor(tr.side) }}>{tr.side === "long" ? "Long" : "Short"}</span> {fmtUsd(tr.size_usd)}</td>
                   <td className="te-wide">{fmtPx(tr.entry_px)}</td>
-                  <td className={tr.pnl_pct >= 0 ? "te-up" : "te-down"}>{tr.pnl_pct >= 0 ? "+" : ""}{Math.round(tr.pnl_pct)}%</td>
+                  <td className={`te-pnl ${tr.pnl_pct >= 0 ? "te-up" : "te-down"}`}>{tr.pnl_pct >= 0 ? "+" : ""}{Math.round(tr.pnl_pct)}%</td>
                   <td className="te-wide">{tr.pending ? "loading…" : tr.opened_at ? fmtWhen(tr.opened_at) : tr.covered_from ? `before ${fmtWhen(tr.covered_from)}` : "—"}</td>
-                  <td>
+                  <td className="te-fol">
                     <button type="button" className={`te-follow${isFollowed ? " on" : ""}`} aria-pressed={isFollowed}
                       title={isFollowed ? "Stop following this trader" : "Follow: Telegram alert when this trader opens, closes, adds or cuts a position"}
                       onClick={e => { e.stopPropagation(); toggle(tr.address, `${tr.side} ${coin}`); }}>

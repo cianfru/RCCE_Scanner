@@ -140,7 +140,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
           {!g.ws.length && <text className="rl-axl" x={g.mid} y={g.T + 40} textAnchor="middle">No profitable wallet holds {c.coin}</text>}
         </svg>}
       {d && tipBox && <div className="rl-tip" style={tipBox} role="status">
-        <div className="row"><b><WalletTag address={d.w.address} name={nameIn(names, d.w.address)} size={12} /></b><span style={{ color: d.col, fontWeight: 600 }}>{d.w.side === "long" ? "Long" : "Short"}</span></div>
+        <div className="row"><b><WalletTag address={d.w.address} name={nameIn(names, d.w.address)} size={20} /></b><span style={{ color: d.col, fontWeight: 600 }}>{d.w.side === "long" ? "Long" : "Short"}</span></div>
         <div className="rl-tip-addr m">{shortAddr(d.w.address)}</div>
         <div className="row"><span>Size</span><span className="m">{fmtUsd(d.w.size_usd)}{d.w.leverage ? ` · ${Math.round(d.w.leverage)}x` : ""}</span></div>
         <div className="row"><span>Entry</span><span className="m">{fmtLadderPx(d.w.entry)}</span></div>
