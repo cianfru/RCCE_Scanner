@@ -40,9 +40,9 @@ function RunsChart({ cycle, since }) {
   if (!m) return null;
   const on = cycle.type === "on";
   const cols = [...m.columns, { start: cycle.start, len: cycle.day, today: true }];
-  const phone = W < 520;
-  const padL = 30, padR = phone ? 78 : 96, top = 6, h = 90;
-  const slot = Math.min(phone ? 20 : 40, (W - padL - padR) / cols.length);
+  const phone = W < 520, wide = W >= 900;
+  const padL = 30, padR = phone ? 78 : 96, top = 6, h = wide ? 120 : 90;
+  const slot = Math.min(phone ? 20 : wide ? 64 : 40, (W - padL - padR) / cols.length);
   const cw = Math.max(4, slot * 0.62);
   const maxY = Math.max(...cols.map(c => c.len), cycle.day + cycle.more) * 1.04;
   const y = v => top + (1 - v / maxY) * h;
@@ -87,11 +87,11 @@ function RunsChart({ cycle, since }) {
 
 function EpisodeStrip({ eps, base, label }) {
   const [box, W] = useWidth();
-  const phone = W < 520;
+  const phone = W < 520, wide = W >= 900;
   const padR = phone ? 86 : 104;                        // room for the "ordinary" label right of the columns
-  const slot = Math.min(28, (W - padR) / Math.max(1, eps.length));
+  const slot = Math.min(wide ? 44 : 28, (W - padR) / Math.max(1, eps.length));
   const cw = Math.max(4, slot * 0.66);
-  const h = phone ? 56 : 72, H = h + 4;
+  const h = phone ? 56 : wide ? 96 : 72, H = h + 4;
   // Symmetric around 0, sized to the 90th percentile of the columns (15 to 30 points); taller ones get a notch.
   const m = stripScale(eps.filter(e => !e.due30).map(e => e.alt30), base);
   const y = v => 2 + ((m - clip(v, m)) / (2 * m)) * h;

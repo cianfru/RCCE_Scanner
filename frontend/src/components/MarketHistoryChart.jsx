@@ -98,9 +98,11 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
   const padL = 8, padR = 44, gap = 12, axisH = 18;
   const showAlt = future && range === "3m";
   // At 3M the typical-alt panel (the one series whose bands passed) takes room from the Uptrend panel.
-  const hB = phone ? 84 : 110;
-  const hU = showAlt ? (phone ? 96 : 130) : (phone ? 110 : 150);
-  const hA = phone ? 76 : 96;
+  // A wide drawer gets taller panels so the chart keeps its shape.
+  const k = W >= 960 ? 1.35 : 1;
+  const hB = phone ? 84 : Math.round(110 * k);
+  const hU = showAlt ? (phone ? 96 : Math.round(130 * k)) : (phone ? 110 : Math.round(150 * k));
+  const hA = phone ? 76 : Math.round(96 * k);
   const yU0 = hB + gap, yA0 = yU0 + hU + gap;
   const bottom = showAlt ? yA0 + hA : yU0 + hU;
   const H = bottom + axisH;
