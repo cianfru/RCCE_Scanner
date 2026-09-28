@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, m } from "../theme.js";
+import { T, m, getBaseSymbol } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -214,10 +214,13 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
   const [messages, setMessages] = useState(() => loadMessages(timeframe));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // { text, tone }: "stopped" after the user's own Stop (neutral), "error" for failures and timeouts.
   const [error, setError] = useState(null);
-  const endRef = useRef(null);
+  const listRef = useRef(null);
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
+  const requestRef = useRef(null);   // the answer in flight, so it can be stopped
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   // Scroll window to top on mount
   useEffect(() => {
@@ -228,12 +231,12 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
     try { sessionStorage.setItem(messagesKey(timeframe), JSON.stringify(messages)); } catch { /* storage unavailable */ }
   }, [messages, timeframe]);
 
-  // Scroll chat to bottom only when new messages arrive
+  // New messages scroll the thread only, never the window (scrollIntoView would also scroll the
+  // page and slide the top row under the capsule).
   useEffect(() => {
-    if (messages.length > 0) {
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
+    const list = listRef.current;
+    if (list && (messages.length > 0 || loading)) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
   const send = useCallback(async (text) => {
     if (!text.trim() || loading) return;
@@ -243,8 +246,14 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
     setLoading(true);
     setError(null);
 
+    // Stop button or 90s without an answer: abort, and give the prompt back.
+    const controller = new AbortController();
+    requestRef.current = controller;
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 90000);
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
+        signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -262,8 +271,18 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (e) {
-      setError(e.message);
+      // The unanswered question leaves the thread and returns to the input box.
+      setMessages(prev => (prev[prev.length - 1] === userMsg ? prev.slice(0, -1) : prev));
+      setInput(text);
+      // The notice sits under the input, so the question is "above" it.
+      setError(e.name === "AbortError" && !timedOut
+        ? { tone: "stopped", text: "Response stopped. Your question is back in the box above." }
+        : { tone: "error", text: timedOut
+          ? "No answer after 90 seconds. Your question is back in the box above."
+          : `${e.message}. Your question is back in the box above.` });
     } finally {
+      clearTimeout(timeout);
+      if (requestRef.current === controller) requestRef.current = null;
       setLoading(false);
     }
   }, [selectedSymbol, walletAddress, loading, timeframe]);
@@ -303,8 +322,10 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
         flexShrink: 0,
         position: "relative",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · Scanner analysis · {timeframe.toUpperCase()}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <span style={{ color: T.text3, fontSize: m(T.textSm, isMobile), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>AI Assist · {selectedSymbol ? getBaseSymbol(selectedSymbol) : "Scanner analysis"} · {timeframe.toUpperCase()}</span>
+          {/* On phone, Stop takes the Send button's place instead (the row has no room). */}
+          {loading && !isMobile && <button type="button" className="te-link" style={{ whiteSpace: "nowrap", flexShrink: 0 }} onClick={() => requestRef.current?.abort()}>Stop response</button>}
         </div>
         <button onClick={clearChat} className="apple-btn" style={{
           padding: isMobile ? "8px 16px" : "6px 14px",
@@ -316,7 +337,7 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
       </div>
 
       {/* ── Messages area (fills available space) ── */}
-      <div style={{
+      <div ref={listRef} style={{
         flex: 1, overflowY: "auto", minHeight: 0,
         padding: isMobile ? "8px 16px" : "12px 0",
         scrollbarWidth: "thin",
@@ -415,7 +436,6 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
           </div>
         )}
 
-        <div ref={endRef} />
       </div>
 
       {/* ── Input bar (pinned to bottom) ── */}
@@ -450,7 +470,23 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
           onFocus={(e) => e.target.style.borderColor = T.accent}
           onBlur={(e) => e.target.style.borderColor = T.border}
         />
-        <button
+        {loading && isMobile ? (
+          <button
+            type="button"
+            onClick={() => requestRef.current?.abort()}
+            aria-label="Stop response"
+            className="apple-btn"
+            style={{
+              padding: "12px 24px", borderRadius: 8,
+              fontFamily: T.font, fontSize: m(T.textBase, isMobile), fontWeight: 700,
+              letterSpacing: "0.02em", cursor: "pointer",
+              color: T.text2, background: "transparent", border: `1px solid ${T.borderH}`,
+              boxShadow: "none",
+            }}
+          >
+            Stop
+          </button>
+        ) : <button
           onClick={() => send(input)}
           disabled={loading || !input.trim()}
           className={loading || !input.trim() ? "apple-btn" : "apple-btn apple-btn-accent"}
@@ -469,20 +505,26 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
           }}
         >
           Send
-        </button>
+        </button>}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div style={{
-          marginTop: 8, padding: isMobile ? "10px 14px" : "10px 16px",
+      {/* A deliberate Stop is a flat neutral line; failures and timeouts keep the red box. Both keep the phone gutter. */}
+      {error?.tone === "stopped" && (
+        <div className="tool-notice" role="status" data-chat-notice="stopped"
+          style={{ margin: isMobile ? "0 16px 12px" : "8px 0 0", flexShrink: 0 }}>
+          {error.text}
+        </div>
+      )}
+      {error?.tone === "error" && (
+        <div role="alert" data-chat-notice="error" style={{
+          margin: isMobile ? "0 16px 12px" : "8px 0 0", padding: isMobile ? "10px 14px" : "10px 16px",
           borderRadius: T.radiusXs,
           background: `${T.red}1a`,
           border: `1px solid ${T.red}33`,
           fontSize: m(T.textSm, isMobile), color: T.red, fontFamily: T.font,
           flexShrink: 0,
         }}>
-          Error: {error}
+          {error.text}
         </div>
       )}
     </div>

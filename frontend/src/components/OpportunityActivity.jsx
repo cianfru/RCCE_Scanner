@@ -1,7 +1,40 @@
 import { useEffect, useState } from "react";
-import { T } from "../theme.js";
+import { col, getBaseSymbol } from "../theme.js";
+import TokenLogo from "./TokenLogo.jsx";
+import { OPP_STATUS_HEX, ageShort, oppReasonShort, oppStatusWord } from "../utils/opportunityRows.js";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
-export default function OpportunityActivity() {
+const PREVIEW = 3;          // three rows a list, the rest behind "Show all N": glanceable, not a wall of reasons
+
+// One compact row: logo, ticker, timeframe, status word in its colour, reason, age.
+export function OppRow({ symbol, timeframe, status, reason, ts, onClick }) {
+  const hex = OPP_STATUS_HEX[status];
+  const body = <>
+    <TokenLogo symbol={symbol} size={16} />
+    <b className="opp-sym">{getBaseSymbol(symbol || "?")}</b>
+    <span className="opp-tf">{String(timeframe || "").toUpperCase()}</span>
+    <span className="opp-status" data-status={status} style={hex ? { color: col(hex) } : undefined}>{oppStatusWord(status)}</span>
+    <span className="opp-reason">{oppReasonShort(reason)}</span>
+    <span className="opp-age">{ageShort(ts)}</span>
+  </>;
+  return onClick
+    ? <button type="button" className="opp-row" title={reason} onClick={onClick}>{body}</button>
+    : <div className="opp-row" title={reason}>{body}</div>;
+}
+
+// A titled block of rows showing the first few, with "Show all N" for the rest.
+export function OppList({ title, items, render }) {
+  const [all, setAll] = useState(false);
+  if (!items.length) return null;
+  const preview = PREVIEW;
+  return <section className="opp-list" aria-label={title}>
+    <h3 className="opp-list-head">{title} <span>{items.length}</span></h3>
+    <div className="opp-rows">{(all ? items : items.slice(0, preview)).map(render)}</div>
+    {items.length > preview && <button type="button" className="te-link opp-more" aria-expanded={all} onClick={() => setAll(a => !a)}>
+      {all ? "Show fewer" : `Show all ${items.length}`}</button>}
+  </section>;
+}
+
+export default function OpportunityActivity({ onSelect }) {
   const [events, setEvents] = useState([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -15,9 +48,7 @@ export default function OpportunityActivity() {
     const timer = setInterval(refresh, 30000);
     return () => { controller.abort(); clearInterval(timer); };
   }, []);
-  if (!events.length) return null;
-  return <details style={{ color: T.text2, margin: "8px 0", padding: 10, border: `1px solid ${T.border}`, borderRadius: 8 }}>
-    <summary>Recent opportunity changes ({events.length})</summary>
-    <ul>{events.map(e => <li key={e.id}>{e.symbol} · {e.timeframe} · {e.status.replaceAll("_", " ")} · {new Date(e.observed_at * 1000).toLocaleString()} — {e.opportunity.reason}</li>)}</ul>
-  </details>;
+  return <OppList title="Recent opportunity changes" items={events} render={e =>
+    <OppRow key={e.id} symbol={e.symbol} timeframe={e.timeframe} status={e.status} reason={e.opportunity?.reason} ts={e.observed_at}
+      onClick={onSelect ? () => onSelect({ symbol: e.symbol, timeframe: e.timeframe }) : undefined} />} />;
 }

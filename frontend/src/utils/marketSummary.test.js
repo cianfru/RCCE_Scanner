@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SIGNAL_KEYS, matchesSignal, signalCounts, regimeMix, fgBand, fgNote, dialRotation, sharePct } from './marketSummary.js';
+import { SIGNAL_KEYS, matchesSignal, signalCounts, regimeMix, fgBand, fgNote, dialRotation, sharePct, dialVerdict } from './marketSummary.js';
 
 const rows = (spec, field) => Object.entries(spec).flatMap(([k, n]) => Array.from({ length: n }, () => ({ [field]: k })));
 
@@ -56,4 +56,21 @@ test('share near the 55% line keeps a decimal and rounds away from it', () => {
   assert.equal(sharePct(5455, 10000), '54.5');
   assert.equal(sharePct(5501, 10000), '55.1');
   assert.equal(sharePct(5499, 10000), '54.9');
+});
+
+test('phone dial verdict follows the Not greedy line', () => {
+  assert.equal(dialVerdict(null), '\u2014');
+  assert.equal(dialVerdict(undefined), '\u2014');
+  assert.equal(dialVerdict(NaN), '\u2014');
+  assert.equal(dialVerdict(0), 'Not greedy: passes');
+  assert.equal(dialVerdict(40), 'Not greedy: passes');
+  assert.equal(dialVerdict(69.9), 'Not greedy: passes');
+  assert.equal(dialVerdict(70), 'Not greedy: fails');
+  assert.equal(dialVerdict(100), 'Not greedy: fails');
+});
+
+test('phone consensus sub-line pieces', () => {
+  const m = regimeMix(rows({ MARKUP: 154, REACC: 24, ACCUM: 13 }, 'regime'), 'RISK-ON');
+  assert.equal(`${m.n}/${m.N} ${m.anchorShort} \u00b7 ${m.p}%`, '154/191 Uptrend \u00b7 81%');
+  assert.equal(regimeMix(rows({ ACCUM: 60, MARKUP: 40 }, 'regime'), 'ACCUMULATION').anchorShort, 'basing');
 });

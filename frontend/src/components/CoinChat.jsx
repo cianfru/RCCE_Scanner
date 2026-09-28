@@ -93,16 +93,20 @@ function getCoinSessionId(symbol, marketKind) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKind = "perpetual" }) {
+// Opened from the page (the "Ask AI about BTC" link at the end of "Why this signal?"):
+// `open` and `onOpenChange` are owned by the page; without them it keeps its own state.
+export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKind = "perpetual", open: openProp, onOpenChange }) {
   const { address: walletAddress } = useWallet();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = useCallback(v => { if (onOpenChange) onOpenChange(v); else setOpenState(v); }, [onOpenChange]);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const panelRef = useRef(null);
-  const btnRef = useRef(null);
+  const returnFocus = useRef(null);
   const sessionId = useRef(getCoinSessionId(symbol, marketKind));
 
   const coin = getBaseSymbol(symbol || "");
@@ -119,21 +123,30 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKin
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  // Focus input on open
+  // Focus the input on open; give focus back to whatever opened it on close.
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100);
+    if (!open) return undefined;
+    returnFocus.current = document.activeElement;
+    const t = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => {
+      clearTimeout(t);
+      const el = returnFocus.current;
+      if (el && document.contains(el)) el.focus?.({ preventScroll: true });
+    };
   }, [open]);
 
-  // Close on outside click (but not on the floating button itself)
+  // Close on an outside click (not on the link that opens it) or on Escape.
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     const handler = (e) => {
-      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      if (e.target.closest?.("[data-coinchat-trigger]")) return;
       if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false);
     };
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("keydown", onKey); };
+  }, [open, setOpen]);
 
   const send = useCallback(async (text) => {
     if (!text?.trim() || loading) return;
@@ -175,51 +188,23 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKin
 
   return (
     <>
-      {/* Floating button */}
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(!open)}
-        style={{
-          position: "fixed", bottom: isMobile ? 16 : 24, right: isMobile ? 16 : 24,
-          width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: "50%",
-          background: T.popoverBg,
-          backdropFilter: "blur(20px) saturate(1.5)",
-          WebkitBackdropFilter: "blur(20px) saturate(1.5)",
-          border: `2px solid ${open ? T.accent : T.border}`,
-          cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 2px 16px ${T.shadow}`,
-          transition: "all 0.25s ease",
-          zIndex: 1000,
-          overflow: "visible",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent; }}
-        onMouseLeave={(e) => { if (!open) e.currentTarget.style.borderColor = T.border; }}
-      >
-        {open ? (
-          <span style={{ color: T.text2, fontSize: 20, lineHeight: 1 }}>{"\u2715"}</span>
-        ) : (
-          <img
-            src="/brand/reflex-ribbon-transparent.svg"
-            alt="AI Assistant"
-            style={{ width: isMobile ? 26 : 32, height: isMobile ? 29 : 36, objectFit: "contain", opacity: 1 }}
-          />
-        )}
-      </button>
-
       {/* Chat popover */}
       {open && (
         <div
           ref={panelRef}
+          role="dialog"
+          aria-label={`Ask AI about ${coin}`}
           style={{
             position: "fixed",
-            bottom: isMobile ? 72 : 92,
+            // Above the phone tab bar (--tabbar-space is 0 on desktop).
+            bottom: `calc(var(--tabbar-space) + ${isMobile ? 16 : 24}px)`,
             // Phones: centred within the 16px gutters.
             left: isMobile ? 16 : "auto",
             right: isMobile ? 16 : 24,
             width: isMobile ? "auto" : 400,
             height: isMobile ? "60vh" : 520,
-            background: T.popoverBg,
+            // Opaque like the Radar sheet: the page must not show through the conversation.
+            backgroundColor: T.bg, backgroundImage: T.popoverBg,
             border: `1px solid ${T.border}`,
             borderRadius: 16,
             boxShadow: T.shadowHeavy,

@@ -1,0 +1,70 @@
+import { useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import useSetupMap from "../hooks/useSetupMap.js";
+import useViewport from "../hooks/useViewport.js";
+import TokenLogo from "./TokenLogo.jsx";
+import { NavIcon } from "./navIcons.jsx";
+import RadarThumb from "./radar/RadarThumb.jsx";
+import { Crowd, Pin, Progress, hrs } from "./radar/shared.jsx";
+import { CROWD_WORD, SIGNAL_SHORT, picks, radarHref } from "../utils/setupMap.js";
+
+// Profitable traders long: a small person glyph before the count (the tile's title spells it out).
+const Person = () => <svg className="radar-person" width="10" height="11" viewBox="0 0 10 11" aria-hidden="true">
+  <circle cx="5" cy="3" r="2.2" fill="currentColor" /><path d="M1 10.5a4 4 0 0 1 8 0Z" fill="currentColor" />
+</svg>;
+
+function Tile({ x, box, tf, phone, onClick }) {
+  const c = x.c, t = c.transition, n = c.traders?.pl || 0, arrived = x.m?.dn > 0 ? x.m.dn : 0;
+  const forming = c.stage === "forming" && t;
+  const sig = `${SIGNAL_SHORT[c.signal] || c.signal || ""}${c.trigger_at ? ` ${hrs(Date.now() / 1000 - c.trigger_at)}` : ""}`;
+  const who = `${n} profitable trader${n === 1 ? "" : "s"} long${arrived ? `, ${arrived} arrived in the last ${tf === "4h" ? "24 hours" : "5 days"}` : ""}`;
+  return <button type="button" className="radar-tile" onClick={onClick}
+    aria-label={`${c.coin} on the Radar: ${CROWD_WORD[c.crowd] || ""}${forming ? `, forming ${Math.min(t.seen, t.need)} of ${t.need}` : sig ? `, ${sig}` : ""}, ${who}`}>
+    <RadarThumb c={c} box={box} fit="trail" W={phone ? 64 : 80} H={phone ? 32 : 40} />
+    <span className="radar-tile-top"><TokenLogo symbol={c.symbol} size={16} /><strong>{c.coin}</strong><Crowd k={c.crowd} /></span>
+    <span className="radar-tile-sub">
+      <span className="sig">{forming ? <Progress t={t} /> : sig}</span>
+      <span className="trd" title={who}><Person />{n}{arrived ? <em>+{arrived}</em> : null}</span>
+    </span>
+  </button>;
+}
+
+// The scanner's entry to the Radar (perps only): today's picks in the Watch box as small
+// trail thumbnails, the in-box count and the watch count. Follows the pressed sector chip.
+// Up to six picks; on desktop the strip shows as many as fit at 240px or more each (a
+// container query), so each tile keeps its whole second line.
+export default function RadarStrip({ results, timeframe, sector, sectorLabel }) {
+  const tf = timeframe === "4h" ? "4h" : "1d";
+  const { width } = useViewport();
+  const phone = width < 768;
+  const navigate = useNavigate();
+  const { data, error, watched } = useSetupMap(tf);
+  const allowed = useMemo(() => new Set((results || []).map(r => r.symbol)), [results]);
+  const coins = useMemo(() => (data?.coins || []).filter(c => allowed.has(c.symbol)), [data, allowed]);
+  const box = data?.box || { z: [-0.5, 1.5], n: [1, 8] };
+  const top = useMemo(() => picks(coins, box, 6), [coins, box]);
+  const inBox = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
+  const open = radarHref({ tf, sector });
+  const scope = sector ? ` · ${sectorLabel || sector}` : "";
+  const loading = !error && (!data || !(results || []).length);
+  const n = watched.size;
+
+  const head = <div className="radar-strip-id">
+    <span className="radar-strip-title"><span className="radar-strip-glyph"><NavIcon name="radar" /></span>Radar<small>{tf.toUpperCase()}</small></span>
+    {!phone && !loading && data && <span className="radar-strip-count"><b>{inBox}</b> in the Watch box{scope}</span>}
+    {phone && !loading && data && <span className="radar-strip-count">· <b>{inBox}</b> in the box{scope}</span>}
+  </div>;
+
+  return <section className="radar-strip" aria-label="Radar">
+    {phone ? <div className="radar-strip-row1">{head}<Link className="radar-open" to={open}>Open →</Link></div> : head}
+    {loading ? <div className="radar-strip-loading shimmer-loading" aria-hidden="true" />
+      : error && !data ? <p className="radar-strip-empty">The Radar is not available right now.</p>
+      : top.length === 0 ? <p className="radar-strip-empty">No coin sits in the Watch box on {tf.toUpperCase()}{scope ? ` in ${sectorLabel || sector}` : ""} right now.</p>
+      : <div className="radar-tiles">{top.map(x => <Tile key={x.c.coin} x={x} box={box} tf={tf} phone={phone} onClick={() => navigate(radarHref({ tf, focus: x.c.coin, sector }))} />)}</div>}
+    {!phone && <div className="radar-strip-end">
+      <Link className="radar-open" to={open}>Open Radar →</Link>
+      {n > 0 && <span className="radar-strip-watching"><Pin size={8} color="var(--t-text3)" />Watching {n}</span>}
+    </div>}
+  </section>;
+}
+

@@ -5,13 +5,15 @@ export function formatPercent(value, { ratio = false, digits = 0 } = {}) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   return `${(Number(value) * (ratio ? 100 : 1)).toFixed(digits)}%`;
 }
-// Prices: two decimals with thousands separators from $1 up; four significant digits below.
+// Prices: two decimals with thousands separators from $1 up; four significant digits below
+// (the grid's tight symbol cell). A price read on its own (coin page, Radar focus, Full detail)
+// passes { sig: 5 } to match the chart and the traders' entry prices beside it.
 const PRICE_2DP = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const PRICE_SIG = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 4 });
-export function formatPrice(value) {
+const PRICE_SIG = { 4: new Intl.NumberFormat('en-US', { maximumSignificantDigits: 4 }), 5: new Intl.NumberFormat('en-US', { maximumSignificantDigits: 5 }) };
+export function formatPrice(value, { sig = 4 } = {}) {
   const v = Number(value);
   if (value == null || !Number.isFinite(v)) return '—';
-  return `$${Math.abs(v) >= 1 ? PRICE_2DP.format(v) : PRICE_SIG.format(v)}`;
+  return `$${Math.abs(v) >= 1 ? PRICE_2DP.format(v) : (PRICE_SIG[sig] || PRICE_SIG[4]).format(v)}`;
 }
 // The backend stores funding as an hourly fraction; exchanges quote it per 8h in percent.
 export const funding8hPct = r => (r == null || !Number.isFinite(Number(r)) ? null : Number(r) * 8 * 100);

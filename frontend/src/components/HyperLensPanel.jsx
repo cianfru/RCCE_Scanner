@@ -4,8 +4,10 @@ import PositioningView from "./PositioningView.jsx";
 import FollowingView from "./FollowingView.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
+import TokenLogo from "./TokenLogo.jsx";
+import useFollowed from "../hooks/useFollowed.js";
 import { T } from "../theme.js";
-import { useWallet } from "../WalletContext.jsx";
 import GlassCard from "./GlassCard.jsx";
 import { TableSkeleton } from "./Skeleton.jsx";
 import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
@@ -27,7 +29,13 @@ const timeAgo = (ts) => {
   return `${Math.floor(sec / 3600)}h ago`;
 };
 
+// Logo key for a Hyperliquid coin name; HIP-3 names ("xyz:TSLA") drop the dex prefix.
+const logoKey = (coin) => `${String(coin || "").split(":").pop()}/USDT`;
+
 const truncAddr = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
+// "26 Sep": fixed English month names (en-GB would write "26 Sept").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (tSec) => { const d = new Date(tSec * 1000); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
 const trendColor = (trend) =>
   trend === "BULLISH" ? T.green :
@@ -76,6 +84,7 @@ function ModalOverlay({ children, onClose }) {
     <div className="reflex-terminal"><div
       ref={dialogRef} tabIndex={-1}
       role="dialog" aria-modal="true"
+      className="hl-modal"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
@@ -85,7 +94,8 @@ function ModalOverlay({ children, onClose }) {
         padding: 20, outline: "none",
       }}
     >
-      <div style={{
+      {/* Below 768px the dialog is a full-screen sheet with one scroll (terminal.css .hl-modal). */}
+      <div className="hl-modal-sheet" style={{
         width: "100%", maxWidth: 900, maxHeight: "88vh",
         overflowY: "auto",
       }}>
@@ -195,12 +205,15 @@ function NotionalBar({ long_notional, short_notional, maxNotional }) {
 
 // ─── SORTABLE TABLE HEADER ──────────────────────────────────────────────────
 
+// A real button inside the header cell (keyboard and screen readers), styled to look
+// exactly like today's uppercase header text; the padding around it sorts too.
 function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, title }) {
   const active = currentKey === sortKey;
   return (
     <th
       title={title}
-      onClick={sortKey ? () => onSort(sortKey) : undefined}
+      aria-sort={sortKey ? (active ? (asc ? "ascending" : "descending") : "none") : undefined}
+      onClick={sortKey ? (e) => { if (e.target === e.currentTarget) onSort(sortKey); } : undefined}
       style={{
         padding: "12px 12px", textAlign: align,
         fontFamily: T.font, fontSize: T.textBase, fontWeight: 700,
@@ -213,7 +226,9 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, t
         transition: "color 0.2s",
       }}
     >
-      {label}{active && (asc ? " \u25B2" : " \u25BC")}
+      {sortKey
+        ? <button type="button" className="table-sort hl-sort" onClick={() => onSort(sortKey)}>{label}{active && (asc ? " \u25B2" : " \u25BC")}</button>
+        : label}
     </th>
   );
 }
@@ -267,11 +282,45 @@ function StatusStrip({ status, cohort }) {
   );
 }
 
+// ─── LEAN BAR (the Lean view's diverging bar) ────────────────────────────────
+
+// Size-weighted lean, -1..+1, drawn from the centre: faint marks at ±15% (past them the
+// trend reads bullish or bearish), a stronger centre line. The Lean view draws it full
+// width; the Consensus table draws the same bar at 48px, where minPx keeps a small
+// lean visible as a stub past the centre line.
+// compact (the Consensus mini bar): the ±15% neutral zone is one faint band instead of two
+// marks, so a small bar never reads as three hairlines.
+function LeanBar({ lean, color, height = 8, width, title, minPx = 0, compact = false }) {
+  const w = lean == null ? 0 : Math.min(Math.abs(lean), 1) * 50;
+  const fillW = minPx && lean ? `max(${w}%, ${minPx}px)` : `${w}%`;
+  const ext = height >= 8 ? 2 : 1;
+  return (
+    <div title={title} aria-hidden={title ? undefined : true}
+      style={{ position: "relative", height, width, flexShrink: width ? 0 : undefined, background: T.overlay04 }}>
+      {compact
+        ? <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: "15%", background: T.overlay06 }} />
+        : <>
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: 1, background: T.overlay15 }} />
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: "57.5%", width: 1, background: T.overlay15 }} />
+        </>}
+      <div style={{ position: "absolute", top: -ext, bottom: -ext, left: "50%", width: 1, background: T.overlay30 }} />
+      {lean != null && (
+        <div style={{
+          position: "absolute", top: 0, bottom: 0,
+          left: lean >= 0 ? "50%" : `calc(50% - ${fillW})`, width: fillW,
+          background: color, transition: "width 0.3s ease",
+        }} />
+      )}
+    </div>
+  );
+}
+
 // ─── CONSENSUS BAR ───────────────────────────────────────────────────────────
 
-function ConsensusBar({ long_count, short_count }) {
+function ConsensusBar({ long_count, short_count, lean, trend }) {
   const total = long_count + short_count;
   if (total === 0) return <span style={{ color: T.text4 }}>--</span>;
+  const thin = trend === "THIN";
   const longPct = (long_count / total) * 100;
   const shortPct = (short_count / total) * 100;
 
@@ -295,6 +344,12 @@ function ConsensusBar({ long_count, short_count }) {
       <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, whiteSpace: "nowrap", minWidth: 34, textAlign: "right" }}>
         {long_count}/{short_count}
       </span>
+      {/* Size lean: the Lean view's bar at 48px, so wallet count and dollars read side by side */}
+      <span style={{ width: 4, flexShrink: 0 }} />
+      <LeanBar width="clamp(48px, 28%, 96px)" height={8} minPx={3} compact lean={thin ? null : lean} color={trendColor(trend)}
+        title={thin || lean == null
+          ? `Size lean: fewer than ${MIN_WALLETS} wallets, not drawn`
+          : `Size lean ${fmtSignedPct(lean * 100)} (long minus short dollars, blended with the wallet count). Past the marks at ±15% the trend reads bullish or bearish.`} />
     </div>
   );
 }
@@ -380,7 +435,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
             {!isMobile && (
               <>
                 <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 130 }} title="Wallet count, long versus short. The trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
+                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 190 }} title="Wallet count, long versus short. The small bar after it is the size lean from the Lean view: the trend column weighs position size, so the two can point in different directions."><span className="hl-ls-head"><span>WALLETS L / S</span><span className="hl-ls-lean">SIZE LEAN</span></span></th>
                 <SortTh label="NET WALLETS" title={NET_TITLE} sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
                 {allWallets && <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />}
                 <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />
@@ -402,13 +457,15 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                 onMouseLeave={e => e.currentTarget.style.background = stripeBg}
               >
                 <td style={{ padding: "10px 12px" }}>
-                  <div style={{ fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: T.mono, fontSize: T.textMd, fontWeight: 700, color: T.text1 }}>
+                    <TokenLogo symbol={logoKey(c.symbol)} size={20} />
                     {c.symbol}
                   </div>
                   {/* Mobile: the wallet figures sit under the symbol instead of in off-screen columns */}
                   {isMobile && (
-                    <div title={NET_TITLE} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, marginTop: 2 }}>
-                      L/S {cf.long_count}/{cf.short_count} · net {fmtSignedPct(cf.net_wallets * 100)} · {cf.positioned} wallets
+                    <div className="hl-subline" title={NET_TITLE} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, marginTop: 2 }}>
+                      {/* Each reading stays whole; a wrap never leaves a separator at a line end. */}
+                      <span>L/S {cf.long_count}/{cf.short_count}</span><span>net {fmtSignedPct(cf.net_wallets * 100)}</span><span>{cf.positioned} wallets</span>
                     </div>
                   )}
                 </td>
@@ -421,7 +478,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                       {cf.positioned}
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} />
+                      <ConsensusBar long_count={cf.long_count} short_count={cf.short_count} lean={cf.lean} trend={cf.trend} />
                     </td>
                     <td style={{
                       padding: "10px 12px", textAlign: "center",
@@ -462,7 +519,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
 
 // One diverging bar per symbol: the size-weighted lean the Consensus trend comes
 // from (a trend needs more than 15% either way), so the two views cannot disagree.
-function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
+function HeatmapGrid({ consensus, onSymbolClick, cohort, isMobile }) {
   const { rows, thin } = useMemo(() => {
     const rows = [];
     let thin = 0;
@@ -486,8 +543,9 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
   }
 
   const grid = {
-    display: "grid", gridTemplateColumns: "72px minmax(0, 1fr) 52px 56px",
-    gap: 10, alignItems: "center", padding: "0 12px", minWidth: 320,
+    // Phones keep the bar at today's width: a narrower symbol column with a 16px logo.
+    display: "grid", gridTemplateColumns: isMobile ? "80px minmax(0, 1fr) 44px 48px" : "100px minmax(0, 1fr) 52px 56px",
+    gap: isMobile ? 8 : 10, alignItems: "center", padding: "0 12px", minWidth: 320,
   };
   const head = { fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase" };
 
@@ -497,14 +555,13 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
         <span style={head}>Symbol</span>
         <span style={{ ...head, display: "flex", justifyContent: "space-between" }}
           title="Long minus short notional, blended with the wallet count the same way as the Consensus trend. Past 15% either way (the faint marks) the trend reads bullish or bearish.">
-          <span>More short</span><span>More long</span>
+          {isMobile ? <><span>{"←"} Short</span><span>Long {"→"}</span></> : <><span>More short</span><span>More long</span></>}
         </span>
         <span style={{ ...head, textAlign: "right" }}>Lean</span>
         <span style={{ ...head, textAlign: "right" }}>Wallets</span>
       </div>
       {rows.map((r) => {
         const color = trendColor(r.trend);
-        const w = Math.min(Math.abs(r.lean), 1) * 50;
         return (
           <div
             key={r.symbol}
@@ -514,17 +571,11 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
             onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >
-            <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{r.symbol}</span>
-            <div style={{ position: "relative", height: 8, background: T.overlay04 }}>
-              <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: 1, background: T.overlay15 }} />
-              <div style={{ position: "absolute", top: 0, bottom: 0, left: "57.5%", width: 1, background: T.overlay15 }} />
-              <div style={{ position: "absolute", top: -2, bottom: -2, left: "50%", width: 1, background: T.overlay30 }} />
-              <div style={{
-                position: "absolute", top: 0, bottom: 0,
-                left: r.lean >= 0 ? "50%" : `${50 - w}%`, width: `${w}%`,
-                background: color, transition: "width 0.3s ease",
-              }} />
-            </div>
+            <span style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 8, minWidth: 0, fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>
+              <TokenLogo symbol={logoKey(r.symbol)} size={isMobile ? 16 : 20} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{r.symbol}</span>
+            </span>
+            <LeanBar lean={r.lean} color={color} />
             <span style={{ fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700, color, textAlign: "right" }}>
               {fmtSignedPct(r.lean * 100)}
             </span>
@@ -692,39 +743,54 @@ function WalletTags({ data }) {
   );
 }
 
+// LONG / SHORT tag used in the wallet modal's rows.
+function SideTag({ side, pad = "2px 7px" }) {
+  const color = side === "LONG" ? T.green : T.red;
+  return (
+    <span style={{
+      fontFamily: T.mono, fontSize: 12, fontWeight: 700,
+      padding: pad, borderRadius: 3,
+      color, background: `${color}15`,
+    }}>
+      {side}
+    </span>
+  );
+}
+
+// Phone: one position or trade as two lines (coin, side, value and P&L; then the detail),
+// so the sheet scrolls in one direction only.
+function PhoneRow({ children, stripe }) {
+  return (
+    <div style={{ padding: "10px 12px", borderBottom: `1px solid ${T.overlay06}`, background: stripe ? T.overlay02 : "transparent", display: "flex", flexDirection: "column", gap: 4 }}>
+      {children}
+    </div>
+  );
+}
+const phoneLine = { display: "flex", alignItems: "center", gap: 8, minWidth: 0 };
+
 // ─── WALLET PROFILE MODAL (HyperTracker-style layout) ──────────────────────
 
-function WalletDetail({ address, onClose, userWallet }) {
+function WalletDetail({ address, onClose, isMobile }) {
   const [data, setData] = useState(null);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState("positions");
-  const [isFollowing, setIsFollowing] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The same followed list the Following tab and the Telegram alerts read.
+  const { followed, toggle } = useFollowed();
+  const isFollowing = followed.has(String(address).toLowerCase());
+  const [followBusy, setFollowBusy] = useState(false);
+  const [followFailed, setFollowFailed] = useState(false);
 
-  // Check follow state on mount
-  useEffect(() => {
-    if (!userWallet) return;
-    fetch(`${API}/api/hyperlens/follows/check/${address}?user=${userWallet}`)
-      .then(r => r.json())
-      .then(d => setIsFollowing(d.following || false))
-      .catch(() => {});
-  }, [address, userWallet]);
-
-  const toggleFollow = () => {
-    if (!userWallet) return;
-    if (isFollowing) {
-      fetch(`${API}/api/hyperlens/follows/${address}?user=${userWallet}`, { method: "DELETE" })
-        .then(() => setIsFollowing(false))
-        .catch(() => {});
-    } else {
-      fetch(`${API}/api/hyperlens/follows`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: userWallet, address }),
-      })
-        .then(() => setIsFollowing(true))
-        .catch(() => {});
+  const toggleFollow = async () => {
+    if (followBusy) return;
+    setFollowBusy(true);
+    setFollowFailed(false);
+    const ok = await toggle(address);
+    setFollowBusy(false);
+    if (!ok) {
+      setFollowFailed(true);
+      setTimeout(() => setFollowFailed(false), 2500);
     }
   };
 
@@ -791,7 +857,7 @@ function WalletDetail({ address, onClose, userWallet }) {
         background: T.overlay02,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
             <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
@@ -801,7 +867,7 @@ function WalletDetail({ address, onClose, userWallet }) {
           </div>
           {/* Full address + copy */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
+            <span title={address} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {address}
             </span>
             <button
@@ -827,21 +893,24 @@ function WalletDetail({ address, onClose, userWallet }) {
             <WalletTags data={data} />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          {userWallet && (
-            <button
-              onClick={toggleFollow}
-              title={isFollowing ? "Unfollow wallet" : "Follow wallet for trade alerts"}
-              aria-pressed={isFollowing}
-              style={{
-                height: 30, padding: "0 4px", background: "none", border: 0,
-                fontFamily: T.font, fontSize: T.textSm, fontWeight: 600,
-                color: isFollowing ? T.accent : T.text3, cursor: "pointer",
-              }}
-            >
-              {isFollowing ? "Following" : "Follow"}
-            </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {followFailed && (
+            <span role="status" style={{ fontFamily: T.font, fontSize: T.textXs, color: T.yellow }}>Not saved</span>
           )}
+          <button
+            type="button"
+            onClick={toggleFollow}
+            disabled={followBusy}
+            title={isFollowing ? "Unfollow: stop the Telegram alerts for this wallet" : "Follow: list this wallet under Following and send its changes to Telegram"}
+            aria-pressed={isFollowing}
+            style={{
+              height: 30, padding: "0 4px", background: "none", border: 0,
+              fontFamily: T.font, fontSize: T.textSm, fontWeight: 600,
+              color: isFollowing ? T.accent : T.text3, cursor: followBusy ? "wait" : "pointer",
+            }}
+          >
+            {isFollowing ? "Following" : "Follow"}
+          </button>
           <button
             type="button"
             aria-label="Close"
@@ -889,19 +958,18 @@ function WalletDetail({ address, onClose, userWallet }) {
             const pnl = last - first;
             const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
             const color = pnl >= 0 ? T.green : T.red;
-            const since = avHistory[0]?.timestamp
-              ? new Date(avHistory[0].timestamp * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-              : null;
+            const since = avHistory[0]?.timestamp ? shortDate(avHistory[0].timestamp) : null;
             return (
               <div style={{ textAlign: "right" }}>
-                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color }}>
+                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color, whiteSpace: "nowrap" }}>
                   {fmtSignedPct(pctChg, 2)}
                 </span>
-                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4 }}>
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4, whiteSpace: "nowrap" }}>
                   ({fmtSignedUsd(pnl)})
                 </span>
+                {/* Phones: "since" on its own line under the change, never split mid-phrase. */}
                 {since && (
-                  <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: 4 }}>
+                  <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: isMobile ? 0 : 4, whiteSpace: "nowrap", display: isMobile ? "block" : undefined }}>
                     since {since}
                   </span>
                 )}
@@ -986,7 +1054,7 @@ function WalletDetail({ address, onClose, userWallet }) {
 
       {/* ── POSITION SUMMARY STRIP (like HyperTracker) ── */}
       {activeSection === "positions" && positions.length > 0 && (
-        <div style={{
+        <div className="hl-valsum" style={{
           padding: "10px 16px",
           display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
           borderBottom: `1px solid ${T.overlay08}`,
@@ -996,17 +1064,17 @@ function WalletDetail({ address, onClose, userWallet }) {
             <span style={{ color: T.text4 }}>Long Value: </span>
             <span style={{ color: T.green, fontWeight: 600 }}>{fmt$(longValue)}</span>
           </span>
-          <span style={{ color: T.text4 }}>|</span>
+          <span className="hl-valsep" style={{ color: T.text4 }}>|</span>
           <span style={{ fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Short Value: </span>
             <span style={{ color: T.red, fontWeight: 600 }}>{fmt$(shortValue)}</span>
           </span>
-          <span style={{ color: T.text4 }}>|</span>
+          <span className="hl-valsep" style={{ color: T.text4 }}>|</span>
           <span style={{ fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Total: </span>
             <span style={{ color: T.text1, fontWeight: 600 }}>{fmt$(totalValue)}</span>
           </span>
-          <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
+          <span className="hl-valsum-pnl" style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Sum PNL: </span>
             <span style={{ color: sumPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>
               {fmtSignedUsd(sumPnl)}
@@ -1023,6 +1091,40 @@ function WalletDetail({ address, onClose, userWallet }) {
             {positions.length === 0 ? (
               <div style={{ padding: 16, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                 No open positions
+              </div>
+            ) : isMobile ? (
+              <div>
+                {positions.map((p, i) => {
+                  const roe = p.return_on_equity;
+                  const pnl = p.unrealized_pnl || 0;
+                  return (
+                    <PhoneRow key={i} stripe={i % 2 === 1}>
+                      <div style={phoneLine}>
+                        <TokenLogo symbol={logoKey(p.coin)} size={20} />
+                        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.coin}</span>
+                        <SideTag side={p.side} pad="1px 5px" />
+                        <span style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: T.mono }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text1 }}>{fmt$(p.size_usd)}</span>
+                          {p.size != null && (
+                            <span style={{ fontSize: T.textXs, color: p.side === "LONG" ? T.green : T.red }}>
+                              {p.side === "LONG" ? "+" : "-"}{Math.abs(Number(p.size)).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                            </span>
+                          )}
+                        </span>
+                        <span style={{ alignSelf: "flex-start", fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: pnl >= 0 ? T.green : T.red, minWidth: 56, textAlign: "right" }}>{fmtSignedUsd(pnl)}</span>
+                      </div>
+                      <div style={{ ...phoneLine, paddingLeft: 28, fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
+                        <span style={{ whiteSpace: "nowrap" }}>
+                          <span style={{ color: levColor(p.leverage) }}>{p.leverage}x</span> {p.leverage_type || "Cross"} · @ ${(p.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </span>
+                        {roe != null && <span style={{ color: roe >= 0 ? T.green : T.red }}>{fmtSignedPct(roe * 100, 1)}</span>}
+                        <div style={{ marginLeft: "auto", width: 96, flexShrink: 0, display: "flex", justifyContent: "flex-end" }} title="Distance to liquidation">
+                          <LiqDistBar pct={p.liq_distance_pct} />
+                        </div>
+                      </div>
+                    </PhoneRow>
+                  );
+                })}
               </div>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1052,7 +1154,8 @@ function WalletDetail({ address, onClose, userWallet }) {
                         {/* TOKEN — coin name + leverage type + asset class badge */}
                         <td style={{ padding: "8px 8px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1 }}>
+                            <TokenLogo symbol={logoKey(p.coin)} size={20} />
+                            <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1, marginLeft: 3 }}>
                               {p.coin}
                             </span>
                             {p.asset_class && p.asset_class !== "crypto" && (
@@ -1064,20 +1167,13 @@ function WalletDetail({ address, onClose, userWallet }) {
                               </span>
                             )}
                           </div>
-                          <div style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
+                          <div style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, paddingLeft: 28 }}>
                             {p.leverage}x {p.leverage_type || "Cross"}{p.dex ? ` · ${p.dex}` : ""}
                           </div>
                         </td>
                         {/* SIDE */}
                         <td style={{ padding: "8px 8px" }}>
-                          <span style={{
-                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                            padding: "2px 7px", borderRadius: 3,
-                            color: p.side === "LONG" ? T.green : T.red,
-                            background: `${p.side === "LONG" ? T.green : T.red}15`,
-                          }}>
-                            {p.side}
-                          </span>
+                          <SideTag side={p.side} />
                         </td>
                         {/* VALUE */}
                         <td style={{ padding: "8px 8px", textAlign: "right" }}>
@@ -1135,6 +1231,34 @@ function WalletDetail({ address, onClose, userWallet }) {
               <div style={{ padding: 24, textAlign: "center", fontFamily: T.mono, fontSize: 13, color: T.text4 }}>
                 No trades detected yet — trades appear as positions open and close over time.
               </div>
+            ) : isMobile ? (
+              <div>
+                {trades.map((t, i) => {
+                  const statusColor =
+                    t.status === "OPENED" ? T.accent :
+                    t.status === "CLOSED" ? T.text3 :
+                    t.status === "FLIPPED" ? T.yellow : T.text4;
+                  return (
+                    <PhoneRow key={i}>
+                      <div style={phoneLine}>
+                        <TokenLogo symbol={logoKey(t.coin)} size={20} />
+                        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.coin}</span>
+                        <SideTag side={t.side} pad="1px 5px" />
+                        <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>{fmt$(t.size_usd)}</span>
+                        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 600, minWidth: 56, textAlign: "right", color: t.status !== "OPENED" ? ((t.pnl || 0) >= 0 ? T.green : T.red) : T.text4 }}>
+                          {t.status !== "OPENED" ? fmtSignedUsd(t.pnl || 0) : "--"}
+                        </span>
+                      </div>
+                      <div style={{ ...phoneLine, paddingLeft: 28, fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
+                        <span>@ ${(t.entry_px || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: levColor(t.leverage) }}>{t.leverage ? `${t.leverage}x` : "--"}</span>
+                        {t.status !== "OPENED" && <span>{fmtSignedPct(t.pnl_pct || 0, 1)}</span>}
+                        <span style={{ marginLeft: "auto", fontWeight: 700, color: statusColor }}>{t.status}</span>
+                      </div>
+                    </PhoneRow>
+                  );
+                })}
+              </div>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
@@ -1161,17 +1285,13 @@ function WalletDetail({ address, onClose, userWallet }) {
                     return (
                       <tr key={i}>
                         <td style={{ padding: "7px 8px", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>
-                          {t.coin}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <TokenLogo symbol={logoKey(t.coin)} size={20} />
+                            {t.coin}
+                          </span>
                         </td>
                         <td style={{ padding: "7px 8px" }}>
-                          <span style={{
-                            fontFamily: T.mono, fontSize: 12, fontWeight: 700,
-                            padding: "2px 6px", borderRadius: 3,
-                            color: t.side === "LONG" ? T.green : T.red,
-                            background: `${t.side === "LONG" ? T.green : T.red}15`,
-                          }}>
-                            {t.side}
-                          </span>
+                          <SideTag side={t.side} pad="2px 6px" />
                         </td>
                         <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: T.mono, fontSize: 13, color: T.text1 }}>
                           {fmt$(t.size_usd)}
@@ -1271,15 +1391,19 @@ function WalletDetail({ address, onClose, userWallet }) {
 
 // ─── SYMBOL DETAIL MODAL (enhanced) ─────────────────────────────────────────
 
+const PHONE_SIDE_N = 10;
 const fmtPx = (v) => `$${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: v >= 100 ? 0 : 4 })}`;
 
 function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   const [data, setData] = useState(null);
   const [liqClusters, setLiqClusters] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Phone: each side opens on its largest wallets so both sides and the clusters stay in reach.
+  const [showAllSide, setShowAllSide] = useState({ LONG: false, SHORT: false });
 
   useEffect(() => {
     setLoading(true);
+    setShowAllSide({ LONG: false, SHORT: false });
     // Liquidation clusters come from the positions already held in memory; the
     // rest of the old Pressure payload (orders, book walls) is not polled.
     fetch(`${API}/api/hyperlens/pressure?symbol=${encodeURIComponent(symbol)}`)
@@ -1417,29 +1541,42 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
           </span>
         </div>
       </div>
-      {/* Wallet list */}
-      <div style={{ overflowY: "auto", maxHeight: 420 }}>
-        {wallets.map((p, i) => <WalletRow key={i} p={p} />)}
+      {/* Wallet list: its own scroll beside the other side on desktop; one page scroll on a
+          phone, where each side opens on its top wallets by value */}
+      <div style={isMobile ? undefined : { overflowY: "auto", maxHeight: 420 }}>
+        {(isMobile && !showAllSide[side] ? wallets.slice(0, PHONE_SIDE_N) : wallets).map((p, i) => <WalletRow key={i} p={p} />)}
         {wallets.length === 0 && (
           <div style={{ padding: 20, textAlign: "center", fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
             No {side.toLowerCase()} positions
           </div>
         )}
       </div>
+      {isMobile && wallets.length > PHONE_SIDE_N && (
+        <div className="pos-more" style={{ padding: "10px 12px" }}>
+          {!showAllSide[side] && <span className="pos-dim">Top {PHONE_SIDE_N} by value</span>}
+          <button type="button" className="te-link" aria-expanded={showAllSide[side]}
+            onClick={() => setShowAllSide(v => ({ ...v, [side]: !v[side] }))}>
+            {showAllSide[side] ? `Show top ${PHONE_SIDE_N}` : `Show all ${wallets.length}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 
   return (
-    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
-      {/* Header */}
+    // overflow: clip (not hidden) on a phone so the header can stick to the top of the sheet
+    <GlassCard style={{ padding: 0, overflow: isMobile ? "clip" : "hidden" }}>
+      {/* Header: stays at the top of the phone sheet so Close is always in reach */}
       <div style={{
         padding: isMobile ? "14px 12px" : "16px 20px",
         borderBottom: `1px solid ${T.overlay08}`,
-        background: T.overlay02,
+        background: isMobile ? T.stickyBg : T.overlay02,
+        ...(isMobile ? { position: "sticky", top: 0, zIndex: 3 } : null),
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ width: 3, height: 20, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
+          <TokenLogo symbol={logoKey(symbol)} size={20} />
           <span style={{ fontFamily: T.mono, fontSize: T.textXl, fontWeight: 700, color: T.text1 }}>
             {symbol}
           </span>
@@ -1561,8 +1698,19 @@ const VIEW_TABS = [
 function TabSwitcher({ active, onChange }) {
   // Roster tab removed in "Sentiment Mode": same data is on the HL leaderboard.
   // Pressure tab removed: it needs order polling, which stays off.
+  // On phones the row scrolls sideways; the chosen view is scrolled into sight (a link to
+  // ?view=positioning must not open on a tab past the edge).
+  const ref = useRef(null);
+  useEffect(() => {
+    const row = ref.current?.querySelector(".reflex-tabs");
+    const btn = row?.querySelector('button[aria-pressed="true"]');
+    if (!row || !btn || row.scrollWidth <= row.clientWidth) return;
+    const left = btn.offsetLeft - row.offsetLeft, right = left + btn.offsetWidth;
+    if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 8);
+    else if (right > row.scrollLeft + row.clientWidth - 24) row.scrollLeft = right - row.clientWidth + 32;
+  }, [active]);
   return (
-    <div className="hl-view-tabs" style={{ minWidth: 0 }}>
+    <div ref={ref} className="hl-view-tabs" style={{ minWidth: 0 }}>
       <Tabs label="HyperLens view" items={VIEW_TABS} value={active} onChange={onChange} />
     </div>
   );
@@ -1584,9 +1732,43 @@ const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K 
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const VIEW_KEYS = new Set(VIEW_TABS.map(v => v.key));
+const VIEW_STORE = "rcce-traders-view";
+// The address names a view by its tab label (?view=lean, ?view=following); the older internal
+// names still open the same views.
+const VIEW_SLUG = { favorites: "following", heatmap: "lean" };
+const SLUG_VIEW = { following: "favorites", lean: "heatmap" };
+const viewFromUrl = v => (v ? SLUG_VIEW[v] || (VIEW_KEYS.has(v) ? v : null) : null);
+const slugOf = k => VIEW_SLUG[k] || k;
+function storedView() {
+  try { const v = localStorage.getItem(VIEW_STORE); return VIEW_KEYS.has(v) ? v : null; } catch { return null; }
+}
+
 export default function HyperLensPanel({ isMobile }) {
-  const { address: connectedWallet } = useWallet();
-  const [tab, setTab] = useState("consensus");
+  // The view comes from ?view=, else the last one used here, else Consensus.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawView = searchParams.get("view");
+  const urlView = viewFromUrl(rawView);
+  const [tab, setTabState] = useState(() => urlView || storedView() || "consensus");
+  const setTab = useCallback((v) => {
+    setTabState(v);
+    try { localStorage.setItem(VIEW_STORE, v); } catch { /* storage blocked: the address still carries it */ }
+  }, []);
+  // A link or back/forward that changes ?view= moves the view; otherwise ?view= follows the
+  // view (Consensus, the default, keeps a clean /traders).
+  const lastUrlView = useRef(rawView);
+  useEffect(() => {
+    if (rawView !== lastUrlView.current) {
+      lastUrlView.current = rawView;
+      if (urlView && urlView !== tab) { setTabState(urlView); return; }
+    }
+    const want = tab === "consensus" ? null : slugOf(tab);
+    if ((rawView || null) === want) return;
+    const next = new URLSearchParams(searchParams);
+    if (want) next.set("view", want); else next.delete("view");
+    lastUrlView.current = want;
+    setSearchParams(next, { replace: true });
+  }, [tab, rawView]);  // eslint-disable-line react-hooks/exhaustive-deps
   const [filter, setFilter] = useState("");
   const [cohort, setCohort] = useState("all");
   const [status, setStatus] = useState({});
@@ -1626,8 +1808,8 @@ export default function HyperLensPanel({ isMobile }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Header card */}
-      <GlassCard style={{ padding: 0, overflow: "hidden" }}>
+      {/* Header card (the page's hero card: it carries the one machined metal edge) */}
+      <GlassCard className="hyperlens-summary" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
           padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
           display: "flex", flexDirection: "column", gap: 4,
@@ -1667,7 +1849,9 @@ export default function HyperLensPanel({ isMobile }) {
           padding: isMobile ? "10px 12px" : "12px 16px",
           display: "flex", alignItems: isMobile ? "stretch" : "center",
           flexDirection: isMobile ? "column" : "row",
-          gap: isMobile ? 8 : 10, flexWrap: "wrap",
+          // A wrapping column sizes its line to the widest tab row, so phones do not wrap:
+          // each tab row then keeps the card width and scrolls on its own.
+          gap: isMobile ? 8 : 10, flexWrap: isMobile ? "nowrap" : "wrap",
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
           {tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
@@ -1698,7 +1882,7 @@ export default function HyperLensPanel({ isMobile }) {
       {/* Modals */}
       {selectedWallet && (
         <ModalOverlay onClose={() => setSelectedWallet(null)}>
-          <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} userWallet={connectedWallet} />
+          <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} isMobile={isMobile} />
         </ModalOverlay>
       )}
       {selectedSymbol && (
@@ -1736,6 +1920,7 @@ export default function HyperLensPanel({ isMobile }) {
               consensus={consensus}
               onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
               cohort={cohort}
+              isMobile={isMobile}
             />
           )}
           {tab === "cohorts" && <CohortsView />}

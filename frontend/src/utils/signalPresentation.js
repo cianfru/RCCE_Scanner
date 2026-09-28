@@ -14,6 +14,111 @@ export function friendlyReason(text = '') {
     .replace(/\s*\(\d+(\.\d+)?% WR[^)]*\)/g, '');
 }
 
+// Engine reason strings ("MARKUP + z=2.14 + conf=100% + consensus=RISK-ON [8/9 cond, ...]")
+// in plain words, for places that show one position's rationale (the executor rows).
+const REGIME_WORDS = {MARKUP:'Uptrend', BLOWOFF:'Overheated', REACC:'Re-accumulating', MARKDOWN:'Downtrend',
+  CAP:'Capitulation', ACCUM:'Accumulation', ABSORBING:'Absorbing', FLAT:'Flat'};
+const regimeWord = r => REGIME_WORDS[r] || r;
+const lowerWords = v => String(v).replace(/_/g, ' ').toLowerCase();
+const sentence = t => t ? t[0].toUpperCase() + t.slice(1) : t;
+
+function zWords(z) {
+  const a = Math.abs(z), side = z >= 0 ? 'above' : 'below';
+  if (a < 1) return 'Near its mean';
+  return `${a >= 2 ? 'Stretched' : 'Trading'} ${side} its mean`;
+}
+
+function termWords(term) {
+  const kv = /^([A-Za-z]+)=(.+)$/.exec(term);
+  if (!kv) return REGIME_WORDS[term] ? regimeWord(term) : sentence(lowerWords(term));
+  const [, k, v] = kv;
+  const trend = /^([A-Z]+)\((\d+%)\)$/.exec(v);
+  switch (k.toLowerCase()) {
+    case 'z': return Number.isFinite(+v) ? zWords(+v) : null;
+    case 'conf': return `${v} regime confidence`;
+    case 'confidence': return `${v} confidence`;
+    case 'consensus': return `Market ${lowerWords(v).replace('risk on', 'risk-on').replace('risk off', 'risk-off')}`;
+    case 'heat': return `Heat ${v}`;
+    case 'div': return /BEAR/.test(v) ? 'Bearish divergence' : /BULL/.test(v) ? 'Bullish divergence' : `Divergence ${lowerWords(v)}`;
+    case 'funding': return `${sentence(lowerWords(v))} funding`;
+    case 'oi': return `Open interest ${lowerWords(v)}`;
+    case 'vs': return null; // volatility scaling of the engine's own thresholds, not a reading
+    case 'wallets': return trend ? `Tracked wallets ${trend[1].toLowerCase()} (${trend[2]})` : `Tracked wallets ${lowerWords(v)}`;
+    case 'whales': return trend ? `Whales ${trend[1].toLowerCase()} (${trend[2]})` : `Whales ${lowerWords(v)}`;
+    case 'f&g': return `Fear & Greed ${v}`;
+    default: return `${sentence(lowerWords(k))} ${lowerWords(v)}`;
+  }
+}
+
+function tagWords(tag) {
+  let m;
+  if ((m = /^(\d+)\/(\d+) cond/.exec(tag))) return `${m[1]} of ${m[2]} entry checks`;
+  if ((m = /^(\d+)\/(\d+) raw\b/.exec(tag))) return `${m[1]} of ${m[2]} entry checks`;
+  if ((m = /^([\d.]+)\/([\d.]+) effective(?: \((\d+)%\))?(.*)$/.exec(tag))) {
+    const pct = m[3] ?? Math.round(100 * m[1] / m[2]);
+    return `Entry checks ${pct}%${/insufficient/.test(m[4]) ? ', not enough for an entry' : ''}`;
+  }
+  if ((m = /^([A-Z]+) downgrade:/.exec(tag))) return `Outside the strict ${regimeWord(m[1]).toLowerCase()} entry band`;
+  if ((m = /^([A-Z]+) extended$/.exec(tag))) return `${regimeWord(m[1])} extended`;
+  if (/no CVD demand/.test(tag)) return 'No taker-buying demand: held at Accumulate';
+  if (/\+ CVD demand/.test(tag)) return 'Taker-buying demand confirmed';
+  if (/^downgraded: /.test(tag)) return sentence(tag.replace(/^downgraded: /, 'downgraded: '));
+  if (/tracked_wallets_bullish/.test(tag)) return 'Upgraded: tracked wallets bullish';
+  if (/tracked_wallets_loading/.test(tag)) return 'Tracked wallets accumulating';
+  if ((m = /^ACCUM \+ F&G=(\d+)/.exec(tag))) return `Fear & Greed ${m[1]}`;
+  if ((m = /^CAP revival \+ F&G=(\d+)/.exec(tag))) return `Capitulation revival, Fear & Greed ${m[1]}`;
+  if ((m = /^absorption in ([A-Z]+)/.exec(tag))) return `Absorption in ${regimeWord(m[1]).toLowerCase()}`;
+  if (/^CAP absorption/.test(tag)) return 'Capitulation absorption';
+  if (/macro blocked bear rally short/.test(tag)) return 'Bear-rally short while longs are blocked';
+  if ((m = /^cvd:\s*(.*)$/.exec(tag))) return `Taker flow: ${lowerWords(m[1]).replace(/\bcvd\s*/g, '').replace(/\s*\+\s*/g, ' with ')
+    .replace(/\s*→\s*accum\w*/g, ', upgraded to Accumulate').replace(/\s*→\s*(up|down)grade/g, ', $1graded')}`;
+  if ((m = /^([A-Z]+) \+ ([A-Z-]+)$/.exec(tag))) return `${regimeWord(m[1])} with market ${lowerWords(m[2])}`;
+  if ((m = /^regime chop: (\d+) changes\/(\d+)d.*capped (\w+)/.exec(tag))) return `Regime flipped ${m[1]} times in ${m[2]} days: capped at ${signalWords(m[3])}`;
+  return sentence(cleanEngineText(tag));
+}
+
+const SIGNAL_WORDS = {STRONG_LONG:'Strong long', LIGHT_LONG:'Light long', ACCUMULATE:'Accumulate', REVIVAL_SEED_CONFIRMED:'Revival confirmed',
+  REVIVAL_SEED:'Revival', WAIT:'Wait', TRIM_HARD:'Trim hard', TRIM:'Trim', RISK_OFF:'Risk-off', NO_LONG:'No long',
+  LIGHT_SHORT:'Light short', STRONG_SHORT:'Strong short'};
+const signalWords = s => SIGNAL_WORDS[s] || lowerWords(s);
+
+// Leftover engine notation: key=value pairs, snake_case and σ-vs-history notes.
+function cleanEngineText(t) {
+  return String(t)
+    .replace(/^(\[(Agent|inertia)\]\s*)+/i, '')
+    .replace(/\s*\((?:z=[^)]*|[^)]*σ vs history)\)/g, '')
+    .replace(/\bBEAR-DIV\b/g, 'Bearish divergence').replace(/\bBULL-DIV\b/g, 'Bullish divergence')
+    .replace(/,\s*ratio=[-+\d.]+/g, '')
+    .replace(/\s*\|\s*confirmed:\s*/gi, ' · confirmed on ')
+    .replace(/\s*\|\s*/g, ' · ')
+    .replace(/\b(hyperliquid|binance|bybit|okx)\b/g, w => w[0].toUpperCase() + w.slice(1))
+    .replace(/\b(BULLISH|BEARISH|NEUTRAL)\b/g, w => w.toLowerCase())
+    .replace(/\b(STRONG_LONG|LIGHT_LONG|ACCUMULATE|REVIVAL_SEED_CONFIRMED|REVIVAL_SEED|TRIM_HARD|RISK_OFF|NO_LONG|LIGHT_SHORT|STRONG_SHORT)\b/g, signalWords)
+    .replace(/([a-z])\(/g, '$1 (')
+    .replace(/\s*\[absolute threshold\]/g, '')
+    .replace(/\blsr=([\d.]+)/g, 'long/short $1')
+    .replace(/\bF&G=(\d+)/g, 'Fear & Greed $1')
+    .replace(/\bz=(-?[\d.]+)/g, 'z-score $1')
+    .replace(/\bconf(?:idence)?=(\d+%)/g, '$1 confidence')
+    .replace(/→\s*downgrade/g, ': downgrade')
+    .replace(/\b([a-z]+(?:_[a-z]+)+)\b/g, w => w.replace(/_/g, ' '))
+    .replace(/\s{2,}/g, ' ').trim();
+}
+
+export function plainReason(text = '') {
+  const t = friendlyReason(text).trim();
+  if (!t) return '';
+  if (/^(BMSB data unavailable|Macro blocked)/i.test(t)) return blockedText(t);
+  const md = /^([A-Z]+) regime \(consensus=([A-Z-]+)\)$/.exec(t);
+  if (md) return `${regimeWord(md[1])} \u00b7 ${termWords(`consensus=${md[2]}`)}`;
+  if (!/^[A-Z]+ \+ z=/.test(t)) return sentence(cleanEngineText(t));
+  const tags = [];
+  const body = t.replace(/\s*\[([^\]]*)\]/g, (_, tag) => { tags.push(tag.trim()); return ''; });
+  const parts = body.split(' + ').map(s => s.trim()).filter(Boolean).map(termWords).filter(Boolean);
+  const extra = tags.map(tagWords).filter(Boolean);
+  return [...parts, ...extra].join(' · ');
+}
+
 // Why the engine blocked long entries, in plain words. Most blocks come
 // from the weekly BMSB gate, which is not one of the entry checks.
 function blockedText(reason = '') {

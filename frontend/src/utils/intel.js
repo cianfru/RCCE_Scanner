@@ -1,5 +1,5 @@
 // Setup intel: the scanner's setups read together with what tracked traders are doing.
-// Pure helpers for SetupIntelDrawer and SetupMap (tested in intel.test.js).
+// Pure helpers for SetupIntelDrawer and the Radar (tested in intel.test.js).
 import { ENTRY_SIGNALS } from "./opportunities.js";
 import { completionOdds } from "./regimeOdds.js";
 
@@ -83,48 +83,51 @@ export function crowdRead(side, intel) {
   return { key: "holding", label: "Holding", text: `${w} profitable trader${w === 1 ? " is" : "s are"} ${side}${a ? `, ${a} ${opp(side)}` : ""}.` };
 }
 
-const sentence = s => (s ? s.charAt(0) + s.slice(1).toLowerCase() : s);
-
-// The drawer's opening summary, as short sentences.
-// names: { regime(key) -> name, signal(key) -> label }; fmt: price formatter.
-export function brief(row, intel, nowMs, { regimeName, signalLabel, fmt }) {
+// The drawer's readings as key/value rows, named like the Radar's focus panel: Entry checks,
+// Crowd, Their entry, Candles to confirm, Completion odds, Converged, Next close. Regime and
+// signal are not repeated here: the drawer's SetupPair capsule above the rows shows them, and
+// names the regime the odds are for ("→ Uptrend"). fmt: price formatter.
+export function briefRows(row, intel, nowMs, { fmt }) {
   const out = [];
   const tf = String(row.timeframe || "4h").toUpperCase();
-  const sig = signalLabel(row.signal);
-  out.push(`${regimeName(row.regime)} on the ${tf}, ${sig && row.signal !== "WAIT" ? `signal ${sentence(sig)}` : "no entry signal yet"}`
-    + (row.conditions_total ? `; ${row.conditions_met} of ${row.conditions_total} entry checks met.` : "."));
+  if (row.conditions_total) {
+    const met = Math.min(row.conditions_met || 0, row.conditions_total);
+    out.push({ k: "Entry checks", met, total: row.conditions_total, v: `${met} of ${row.conditions_total}` });
+  }
+  const side = setupSide(row);
+  if (intel) {
+    const p = intel.profitable || {};
+    const read = crowdRead(side, intel);
+    out.push({ k: "Crowd", key: read?.key, label: read?.label, v: `${p.long?.n || 0} long · ${p.short?.n || 0} short` });
+    const s = side || ((p.short?.n || 0) > (p.long?.n || 0) ? "short" : "long");
+    const past = pastEntry(s, intel.mark, p[s]?.median_entry);
+    if (p[s]?.median_entry) out.push({ k: "Their entry", v: `${s} ${fmt(p[s].median_entry)}${past != null ? ` · ${past >= 0 ? "+" : ""}${Math.round(100 * past)}% for them` : ""}` });
+  }
   const t = row.regime_transition;
   if (t) {
     const left = barsLeft(row);
     const closes = nextCloses(row.timeframe, nowMs, Math.max(1, left));
+    out.push({ k: "Candles to confirm", v: `${Math.min(t.observed_bars, t.required_bars)} of ${t.required_bars} · `
+      + (left ? `last in ${fmtIn(closes[closes.length - 1] - nowMs)}` : "the next close confirms") });
     const odds = completionOdds(row.timeframe, row.regime, t.candidate, Math.min(t.observed_bars, t.required_bars));
-    out.push(`It is ${t.observed_bars} of ${t.required_bars} candles into a change to ${regimeName(t.candidate)}: `
-      + (left ? `${plural(left, `more ${tf} close`)} decide${left === 1 ? "s" : ""} it, the last in ${fmtIn(closes[closes.length - 1] - nowMs)}.` : "the next close confirms it.")
-      + (odds != null ? ` In the past, ${odds}% of changes at this point completed.` : ""));
+    if (odds != null) out.push({ k: "Completion odds", v: `${odds}% completed from here` });
   }
-  if (intel) {
-    const p = intel.profitable || {};
-    const parts = ["long", "short"].map(s => {
-      const n = p[s]?.n || 0;
-      if (!n) return `0 ${s}`;
-      const past = pastEntry(s, intel.mark, p[s].median_entry);
-      return `${n} ${s} (median entry ${fmt(p[s].median_entry)}${past != null ? `, ${past >= 0 ? "+" : ""}${Math.round(100 * past)}% for them` : ""})`;
-    });
-    out.push(`Profitable traders: ${parts.join(", ")}.`);
-    const nl = intel.new_24h?.profitable?.long || 0, ns = intel.new_24h?.profitable?.short || 0;
-    const last = (intel.recent || []).find(o => o.cohort === "profitable");
-    out.push(nl || ns
-      ? `In the last 24h ${[nl && `${nl} opened long`, ns && `${ns} opened short`].filter(Boolean).join(" and ")}; the latest ${fmtAgo(last.t, nowMs)} at ${fmt(last.px)}.`
-      : "No profitable trader opened a position here in the last 24h.");
-    const l = intel.large || {};
-    const ln = l.long?.n || 0, sn = l.short?.n || 0;
-    if (ln || sn) out.push(`Large accounts: ${ln} long, ${sn} short.`);
-    if (intel.convergence) {
-      const c = intel.convergence;
-      out.push(`${c.n} profitable traders converged ${c.side} ${fmtAgo(c.ts, nowMs)}, entries ${fmt(Math.min(c.first_px, c.last_px))} to ${fmt(Math.max(c.first_px, c.last_px))}.`);
-    }
+  if (intel?.convergence) {
+    const c = intel.convergence;
+    out.push({ k: "Converged", v: `${c.n} ${c.side} ${fmtAgo(c.ts, nowMs)}, ${fmt(Math.min(c.first_px, c.last_px))} to ${fmt(Math.max(c.first_px, c.last_px))}` });
   }
   const [next] = nextCloses(row.timeframe, nowMs, 1);
-  out.push(`Next ${tf} close in ${fmtIn(next - nowMs)}.`);
+  out.push({ k: "Next close", v: `${tf} in ${fmtIn(next - nowMs)}` });
   return out;
+}
+
+// Price against the profitable traders' median entry on the setup's side: "+29% above their median".
+export function medianGap(row, intel) {
+  if (!intel) return null;
+  const p = intel.profitable || {};
+  const side = setupSide(row) || ((p.short?.n || 0) > (p.long?.n || 0) ? "short" : "long");
+  const e = p[side]?.median_entry, mark = intel.mark || row?.price;
+  if (!e || !mark) return null;
+  const g = mark / e - 1, n = Math.round(100 * Math.abs(g));
+  return n === 0 ? "At their median" : `${g >= 0 ? "+" : "−"}${n}% ${g >= 0 ? "above" : "below"} their median`;
 }

@@ -1,6 +1,7 @@
-// Setup map: pure helpers for SetupMap.jsx (tested in setupMap.test.js). The server
-// decides each coin's stage, zone and crowd read (backend/setup_map.py); this file only
-// shapes trails, movement and the day's shortlist.
+// Radar (the setup map): pure helpers for the Radar page, its map and the scanner strip
+// (tested in setupMap.test.js). The server decides each coin's stage, zone and crowd read
+// (backend/setup_map.py); this file only shapes trails, movement, the day's shortlist,
+// thumbnail extents and map label placement.
 
 export const STAGES = [
   { key: "forming", name: "Forming" },
@@ -78,3 +79,120 @@ export function at(p, t) {
 }
 
 export const pnl = (mine, price) => (mine && price && mine.entry ? (price / mine.entry - 1) * (mine.side === "short" ? -1 : 1) : null);
+
+// Watch toggles: why a change failed, and what to tell the user.
+export const WATCH_MESSAGES = {
+  admin: "Watching needs the admin key. Add it under Settings.",
+  cap: "At most 30 coins can be watched.",
+  error: "Could not change the watch list.",
+};
+export const watchReason = status => (status === 403 ? "admin" : status === 400 ? "cap" : "error");
+export function watchToast(coin, result, telegram) {
+  if (!result?.ok) return WATCH_MESSAGES[result?.reason] || WATCH_MESSAGES.error;
+  if (!result.watching) return `Stopped watching ${coin}`;
+  return telegram === "ready" ? `Watching ${coin}. Alerts go to Telegram.` : `Watching ${coin}. Telegram has no chat yet: send /watch to the bot once.`;
+}
+
+// A Hyperliquid address (0x and 40 hex digits).
+export const isAddress = v => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+
+// A thumbnail zoomed to the coin's own trail: x in z units, y in symlog units. The trail sets
+// the scale, at least minZ / minN wide so a coin that barely moved is not blown up. A Watch box
+// edge joins the view only when it sits close (the view stays within 1.5x the trail's span), so
+// the box reads as a tinted area or one edge and never shrinks the trail: the trail always spans
+// at least half the thumbnail once it moved minZ. Padded by 14% each side for the dots.
+export function thumbExtent(points, box, { minZ = 0.25, minN = 0.3 } = {}) {
+  const axis = (vals, edges, min) => {
+    edges = edges.filter(Number.isFinite);
+    vals = vals.filter(Number.isFinite);
+    if (!vals.length) vals = edges.length ? edges : [0];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < min) { const m = (lo + hi) / 2; lo = m - min / 2; hi = m + min / 2; }
+    const cap = 1.5 * (hi - lo);
+    for (const e of [...edges].sort((a, b) => Math.max(lo - a, a - hi) - Math.max(lo - b, b - hi))) {
+      if (e < lo && hi - e <= cap) lo = e;
+      else if (e > hi && e - lo <= cap) hi = e;
+    }
+    const p = 0.14 * (hi - lo);
+    return [lo - p, hi + p];
+  };
+  const p = points || [];
+  return { x: axis(p.map(v => v.z), box.z, minZ), y: axis(p.map(v => symlog(v.n)), box.n.map(symlog), minN) };
+}
+
+// The box a label's text takes: w wide by h tall around its baseline point (x, y).
+export function labelBox(x, y, anchor, w, h = 13) {
+  const x0 = anchor === "start" ? x - 2 : anchor === "end" ? x - w + 2 : x - w / 2;
+  return { x0, x1: x0 + w, y0: y - h + 3, y1: y + 3 };
+}
+
+const boxesOverlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+const boxHitsCircle = (b, cx, cy, r) => {
+  const dx = cx - Math.max(b.x0, Math.min(cx, b.x1)), dy = cy - Math.max(b.y0, Math.min(cy, b.y1));
+  return dx * dx + dy * dy < r * r;
+};
+
+// Map labels without collisions. dots {coin, x, y, r} come in priority order (focused,
+// watched, mine, in the box by engine priority, largest trader lean, movers); each takes
+// the first of right, left, above, below that stays inside the plot, clears every label
+// already placed and clears every other dot's core by 2px. A label with no room is left
+// out (hidden). Options: width/height (the plot, or bounds {x0,y0,x1,y1}), charW and h
+// (text size), widthOf(coin) for measured widths, others (dots that take no label but
+// must not be covered) and avoid (fixed text boxes on the plot).
+// force: the followed coin, whose label always shows (the other dots are dimmed). When no
+// side is free it takes the first side clear of other labels that covers only dots drawn
+// under it, else the first clear of other labels, else the first inside the plot, else the
+// right. relax (small maps):
+// a label with no free side may cover the cores of dots drawn under it (under(d, o), by
+// default every dot), never another label or the fixed text.
+export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, widthOf, others = [], avoid = [], force = null, relax = false, under = () => true } = {}) {
+  const B = bounds || { x0: 0, y0: 0, x1: width, y1: height };
+  const cores = [...dots, ...others];
+  const placed = [...avoid];
+  const out = new Map();
+  for (const d of dots) {
+    const w = (widthOf && widthOf(d.coin)) || charW * String(d.coin).length + 4;
+    const cands = [
+      [d.x + d.r + 4, d.y + 4, "start"],
+      [d.x - d.r - 4, d.y + 4, "end"],
+      [d.x, d.y - d.r - 6, "middle"],
+      [d.x, d.y + d.r + 12, "middle"],
+    ].map(([x, y, anchor]) => ({ x, y, anchor, b: labelBox(x, y, anchor, w, h) }));
+    const inside = ({ b }) => b.x0 >= B.x0 && b.x1 <= B.x1 && b.y0 >= B.y0 && b.y1 <= B.y1;
+    const clearOfLabels = ({ b }) => !placed.some(p => boxesOverlap(b, p));
+    const clearOfCores = ({ b }, soft) => !cores.some(o => o !== d && o.coin !== d.coin && !(soft && under(d, o)) && boxHitsCircle(b, o.x, o.y, o.r + 2));
+    let pick = cands.find(c => inside(c) && clearOfLabels(c) && clearOfCores(c, false));
+    if (!pick && (relax || force === d.coin)) pick = cands.find(c => inside(c) && clearOfLabels(c) && clearOfCores(c, true));
+    if (!pick && force === d.coin) pick = cands.find(c => inside(c) && clearOfLabels(c)) || cands.find(inside) || cands[0];
+    if (!pick) continue;
+    placed.push(pick.b);
+    out.set(d.coin, { x: pick.x, y: pick.y, anchor: pick.anchor });
+  }
+  return out;
+}
+
+// The order labels are placed in: focused, watched, mine, in the box by engine priority,
+// the largest trader lean, then movers. Only coins in `labelled` (plus the focus) count.
+export function labelOrder(coins, { labelled, focus = null, watched = new Set(), mine = new Set(), movers = new Set() } = {}) {
+  const rank = c => (c.coin === focus ? 0 : watched.has(c.coin) ? 1 : mine.has(c.coin) ? 2 : c.zone === "watch" ? 3 : movers.has(c.coin) ? 5 : 4);
+  return coins.filter(c => c.coin === focus || labelled.has(c.coin)).sort((a, b) => rank(a) - rank(b)
+    || (rank(a) === 3 ? (b.priority || 0) - (a.priority || 0) : Math.abs(net(b)) - Math.abs(net(a)))
+    || a.coin.localeCompare(b.coin));
+}
+
+// The market-wide pulse from /api/hyperlens/intel, as one short line.
+export function pulseLine(pulse) {
+  if (!pulse) return null;
+  const h = pulse.hours || 6;
+  if (!pulse.opens) return `Last ${h}h: no opens by profitable traders`;
+  return `Last ${h}h: ${pulse.opens} open${pulse.opens === 1 ? "" : "s"} by ${pulse.traders} profitable trader${pulse.traders === 1 ? "" : "s"}, on ${pulse.coins} coin${pulse.coins === 1 ? "" : "s"}`;
+}
+
+// A Radar address: timeframe, then the optional focus, sector and view.
+export function radarHref({ tf = "1d", focus, sector, view } = {}) {
+  const p = new URLSearchParams({ tf: tf === "4h" ? "4h" : "1d" });
+  if (focus) p.set("focus", focus);
+  if (sector) p.set("sector", sector);
+  if (view === "all") p.set("view", "all");
+  return `/radar?${p}`;
+}

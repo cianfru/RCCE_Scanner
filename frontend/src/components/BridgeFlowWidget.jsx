@@ -14,7 +14,7 @@
  *              callout when EXHAUSTION fires
  */
 import { useState, useEffect } from "react";
-import { T, m } from "../theme.js";
+import { T, m, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -296,7 +296,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           {/* Row 1: headline + score (right-aligned) */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{
-              fontSize: m(11, isMobile), color: calloutColor,
+              fontSize: Math.max(12, m(11, isMobile)), color: calloutColor,
               fontFamily: T.font, fontWeight: 700,
               letterSpacing: "0.08em", textTransform: "uppercase",
               whiteSpace: "nowrap",
@@ -311,7 +311,7 @@ export default function BridgeFlowWidget({ isMobile }) {
               }}>{scoreText}</span>
               {div.confirmed && (
                 <span style={{
-                  fontSize: m(9, isMobile), color: calloutColor,
+                  fontSize: Math.max(12, m(9, isMobile)), color: calloutColor,
                   fontWeight: 600, opacity: 0.7, letterSpacing: "0.06em",
                 }}>{"\u2713 CONFIRMED"}</span>
               )}
@@ -319,21 +319,21 @@ export default function BridgeFlowWidget({ isMobile }) {
           </div>
           {/* Row 2: plain-English sentence */}
           <div style={{
-            fontSize: m(11, isMobile), color: T.text2,
+            fontSize: Math.max(12, m(11, isMobile)), color: T.text2,
             fontFamily: T.font, lineHeight: 1.35,
           }}>{sentence}</div>
           {/* Row 3: bridge flow context, single coherent line */}
           <div style={{
             display: "flex", alignItems: "center", gap: 8, marginTop: 2,
-            paddingTop: 4, borderTop: `1px solid ${T.border}40`,
+            paddingTop: 4, borderTop: `1px solid ${alpha(T.border, 25)}`,
           }}>
             <span style={{
-              fontSize: m(9, isMobile), color: T.text4,
+              fontSize: Math.max(12, m(9, isMobile)), color: T.text4,
               letterSpacing: "0.08em", fontFamily: T.font,
               fontWeight: 600, textTransform: "uppercase",
             }}>HL Bridge {displayLabel}{partial ? "*" : ""}</span>
             <span style={{
-              fontFamily: T.mono, fontSize: m(11, isMobile), fontWeight: 600,
+              fontFamily: T.mono, fontSize: Math.max(12, m(11, isMobile)), fontWeight: 600,
               color,
             }}>{fmtUsd(net)}</span>
             {flowSeries.length >= 2 && (
@@ -368,7 +368,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           />
         )}
         <span style={{
-          fontSize: m(11, isMobile), color: T.text3,
+          fontSize: Math.max(12, m(11, isMobile)), color: T.text3,
           letterSpacing: "0.08em", fontFamily: T.font,
           fontWeight: 600, textTransform: "uppercase",
         }}>
@@ -378,7 +378,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",
           background: bgTint,
           color,
-          fontSize: m(11, isMobile), fontFamily: T.mono, fontWeight: 700,
+          fontSize: Math.max(12, m(11, isMobile)), fontFamily: T.mono, fontWeight: 700,
           letterSpacing: "0.06em",
         }}>
           {label}
@@ -404,7 +404,7 @@ export default function BridgeFlowWidget({ isMobile }) {
       flexWrap: "wrap",
     }} title={title}>
       <span style={{
-        fontSize: m(11, isMobile), color: T.text3,
+        fontSize: Math.max(12, m(11, isMobile)), color: T.text3,
         letterSpacing: "0.08em", fontFamily: T.font,
         fontWeight: 600, textTransform: "uppercase",
       }}>
@@ -414,7 +414,7 @@ export default function BridgeFlowWidget({ isMobile }) {
         padding: isMobile ? "3px 10px" : "2px 10px", borderRadius: "20px",
         background: bgTint,
         color,
-        fontSize: m(11, isMobile), fontFamily: T.mono, fontWeight: 700,
+        fontSize: Math.max(12, m(11, isMobile)), fontFamily: T.mono, fontWeight: 700,
         letterSpacing: "0.06em",
       }}>
         {label}
@@ -437,13 +437,13 @@ export default function BridgeFlowWidget({ isMobile }) {
             background: `${divColor}1a`,
             border: `1px solid ${divColor}40`,
             color: divColor,
-            fontSize: m(10, isMobile), fontFamily: T.mono, fontWeight: 700,
+            fontSize: Math.max(12, m(10, isMobile)), fontFamily: T.mono, fontWeight: 700,
             letterSpacing: "0.06em",
           }}>
             {divShortLabel}{div.confirmed ? "\u2713" : ""}
           </span>
           <span style={{
-            fontFamily: T.mono, fontSize: m(11, isMobile), fontWeight: 600,
+            fontFamily: T.mono, fontSize: Math.max(12, m(11, isMobile)), fontWeight: 600,
             color: divColor,
           }}>
             {divScore >= 0 ? "+" : ""}{divAbs >= 10 ? divScore.toFixed(0) : divScore.toFixed(1)}σ

@@ -89,4 +89,10 @@ export function fgNote(v, loaded) {
   return "Not\u00a0greedy passes. The fear gate opens at 40 or below.";
 }
 
+// Phone dial note: the engine's Not greedy check as a two-word verdict.
+export function dialVerdict(value) {
+  if (value == null || !Number.isFinite(value)) return "\u2014";
+  return value >= FNG_GREED ? "Not greedy: fails" : "Not greedy: passes";
+}
+
 export const dialRotation = v => Math.round((1.8 * Math.max(0, Math.min(100, v)) - 90) * 100) / 100;

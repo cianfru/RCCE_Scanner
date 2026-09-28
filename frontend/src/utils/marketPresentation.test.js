@@ -39,6 +39,10 @@ test('prices carry separators and no fake precision',()=>{
  assert.equal(formatPrice(0.012345),'$0.01235');
  assert.equal(formatPrice(0.0000000123),'$0.0000000123');
  assert.equal(formatPrice(null),'—');
+ // A single price read on its own keeps five significant digits below $1, like the chart.
+ assert.equal(formatPrice(0.52081,{sig:5}),'$0.52081');
+ assert.equal(formatPrice(0.52081),'$0.5208');
+ assert.equal(formatPrice(85003,{sig:5}),'$85,003.00');
 });
 test('timeframe agreement is three-way and names the regimes',()=>{
  assert.equal(signalAgreement({signal_aligned:null,signal_4h:'WAIT',signal_1d:'WAIT'}),'waiting');

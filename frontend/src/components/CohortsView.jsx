@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Tabs from "./Tabs.jsx";
+import DataStatus from "./DataStatus.jsx";
 import { T } from "../theme.js";
 import { displayName, gapSeries, leanPct, orderFor, orderedRows, usd } from "../utils/cohorts.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
+const fetchJson = url => fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
 const RANGES = [{ key: "1", label: "1D" }, { key: "7", label: "7D" }, { key: "30", label: "30D" }];
 const DIMENSIONS = [
   { key: "pnl", label: "By all-time profit", title: "Groups by all-time PnL on Hyperliquid" },
@@ -76,17 +78,28 @@ export default function CohortsView() {
   const [days, setDays] = useState("7");
   const [now, setNow] = useState(null);
   const [hist, setHist] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+  const viewKey = useRef(null);
   useEffect(() => {
     let alive = true;
     const q = `dimension=${dimension}${symbol ? `&symbol=${symbol}` : ""}`;
+    // A new group or market clears the old readings; a new range keeps them until the new ones land.
+    if (viewKey.current !== q) { viewKey.current = q; setNow(null); setHist(null); setUpdatedAt(null); }
+    setLoading(true);
+    setError(false);
     const load = () => Promise.all([
-      fetch(`${API_BASE}/api/cohorts?${q}`).then(r => (r.ok ? r.json() : null)),
-      fetch(`${API_BASE}/api/cohorts/history?${q}&days=${days}`).then(r => (r.ok ? r.json() : null)),
-    ]).then(([a, b]) => { if (alive) { setNow(a); setHist(b); } }).catch(() => {});
+      fetchJson(`${API_BASE}/api/cohorts?${q}`),
+      fetchJson(`${API_BASE}/api/cohorts/history?${q}&days=${days}`),
+    ]).then(([a, b]) => { if (alive) { setNow(a); setHist(b); setError(false); setUpdatedAt(Date.now()); } })
+      .catch(() => { if (alive) setError(true); })
+      .finally(() => { if (alive) setLoading(false); });
     load();
     const id = setInterval(load, 300_000);
     return () => { alive = false; clearInterval(id); };
-  }, [dimension, symbol, days]);
+  }, [dimension, symbol, days, attempt]);
   const rows = useMemo(() => orderedRows(now?.rows, dimension), [now, dimension]);
   const colors = colorsFor(dimension);
   const series = useMemo(() => orderFor(dimension).map(([k], i) => ({
@@ -110,7 +123,10 @@ export default function CohortsView() {
         </select>
       </label>
     </div>
-    {!now?.ts ? <p className="coh-empty">{now?.note || "No readings yet."}</p> : <>
+    {/* Status only while it matters: the first load, or a failed read (with Retry). */}
+    {(error || (loading && !now)) && <DataStatus label="Cohort readings" loading={loading && !now} error={error && !loading}
+      updatedAt={error && !loading ? updatedAt : null} onRetry={() => setAttempt(n => n + 1)} />}
+    {!now?.ts ? (loading || error ? null : <p className="coh-empty">{now?.note || "No readings for this view yet. All-market readings arrive every 30 minutes, per-coin readings every 4 hours."}</p>) : <>
       <table className="coh-table">
         <caption className="coh-caption">{symbol || "All markets"} · {when(now.ts)}</caption>
         <thead><tr><th scope="col">Group</th><th scope="col">Positioned</th><th scope="col" className="coh-wide">Long</th><th scope="col" className="coh-wide">Short</th><th scope="col">Lean</th><th scope="col" className="coh-wide">vs usual</th></tr></thead>

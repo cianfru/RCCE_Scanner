@@ -21,7 +21,8 @@ import {
   createTextWatermark,
   createSeriesMarkers,
 } from "lightweight-charts";
-import { col, T, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
+import { col, T, alpha, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
+import { sideColor } from "../utils/traderFormat.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -48,7 +49,7 @@ const RIBBON_LINES = [
   { key: "e58", width: 2, alpha: "" },
 ];
 
-const ENTRY_COLOR = { long: "#7dd3fc", short: "#fda4af", exit: "#8b8f94" };
+// Trader sides (long sky, short pink, exits grey) come from sideColor(), shared with the tables.
 const OPEN_LARGE_COLOR = { long: "#fcd34d", short: "#fb923c" };
 
 const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
@@ -75,6 +76,9 @@ export default function BMSBChart({
   timeframeControl = true,   // false when the page owns the timeframe (coin page)
   traders = null,            // {entries, opens} when the page loads and shows the traders itself
   traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
+  showSetup = true,          // false where the page header already shows the regime and signal (coin page)
+  myEntry = null,            // {price, side}: the shared address's open trade, drawn as a dashed "Your entry" line
+  toolbarAction = null,      // an extra control at the start of the toolbar's right cluster (the coin page's "Ask AI")
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -104,6 +108,7 @@ export default function BMSBChart({
   const patternSeriesRef = useRef([]);
   const entryMarkersRef = useRef(null);
   const entryLinesRef = useRef([]);
+  const myEntryLineRef = useRef(null);
 
   const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
@@ -348,7 +353,7 @@ export default function BMSBChart({
             setChartRange(forecast);
             candleSeries.attachPrimitive(new RangeRuler({reference:forecast.reference_price,
               percentage:forecast.expected_range_pct, lastIndex:data.candles.length-1,
-              horizon:apiTf === '1d' ? '24h' : '4h'}));
+              horizon:apiTf === '1d' ? '24h' : '4h', light: mode === 'light'}));
           }
 
           // Anchor the signal to its recorded first-seen candle, never the live bar.
@@ -478,6 +483,17 @@ export default function BMSBChart({
       cancelled = true;
       resetViewRef.current = null;
       ro.disconnect();
+      // Everything tied to this chart's series goes with it, so no effect touches a disposed object.
+      candleSeriesRef.current = null;
+      entryMarkersRef.current = null;
+      entryLinesRef.current = [];
+      myEntryLineRef.current = null;
+      pressureLinesRef.current = [];
+      patternSeriesRef.current = [];
+      // The mean-line effect runs before the rebuild on a timeframe switch; it must not reach
+      // this chart's series once the chart is gone (applyOptions there schedules a paint of a
+      // removed chart, which throws "Object is disposed" on the next frame).
+      meanSeriesRef.current = [];
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
@@ -563,7 +579,7 @@ export default function BMSBChart({
       markers.push({
         time, price: o.px, position: "atPriceMiddle", shape: o.cohort === "profitable" ? "circle" : "square",
         size: o.usd >= 500_000 ? 2 : o.usd >= 50_000 ? 1.4 : 0.9,
-        color: col(o.cohort === "profitable" ? ENTRY_COLOR[o.side] : OPEN_LARGE_COLOR[o.side]),
+        color: o.cohort === "profitable" ? sideColor(o.side) : col(OPEN_LARGE_COLOR[o.side]),
       });
     }
     for (const tr of entries?.traders || []) {
@@ -573,23 +589,40 @@ export default function BMSBChart({
         const buy = (b.kind === "open") === (b.side === "long");
         markers.push({
           time, price: b.px, position: buy ? "atPriceBottom" : "atPriceTop", shape: buy ? "arrowUp" : "arrowDown",
-          color: col(b.kind === "close" ? ENTRY_COLOR.exit : ENTRY_COLOR[b.side]),
+          color: sideColor(b.kind === "close" ? "exit" : b.side),
           text: b.kind === "close" ? `${tr.label} exit` : tr.label,
         });
       }
     }
     markers.sort((a, b) => a.time - b.time);
-    if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers);
-    else entryMarkersRef.current = createSeriesMarkers(series, markers);
+    // The markers belong to one series; after a rebuild the old one is disposed, so start anew.
+    try { if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers); else entryMarkersRef.current = createSeriesMarkers(series, markers); }
+    catch (_) { entryMarkersRef.current = null; try { entryMarkersRef.current = createSeriesMarkers(series, markers); } catch (__) { return; } }
     for (const side of ["long", "short"]) {
       const sd = entries?.sides?.[side];
       if (!sd?.n || !sd.median_entry) continue;
-      entryLinesRef.current.push(series.createPriceLine({
-        price: sd.median_entry, color: col(ENTRY_COLOR[side]), lineWidth: 1, lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true, title: `${sd.n} ${side} · median entry`,
-      }));
+      try {
+        entryLinesRef.current.push(series.createPriceLine({
+          price: sd.median_entry, color: sideColor(side), lineWidth: 1, lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true, title: `${sd.n} ${side} · median entry`,
+        }));
+      } catch (_) { /* the series was disposed by a rebuild */ }
     }
   }, [showEntries, entries, opens, candleTimes, mode]);
+
+  // Your entry: a thicker, longer-dashed line in the side colour, so it reads apart from the
+  // traders' median-entry lines. Redrawn when the chart is rebuilt (candleTimes) or the theme changes.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (myEntryLineRef.current) { try { series?.removePriceLine(myEntryLineRef.current); } catch (_) {} myEntryLineRef.current = null; }
+    if (!series || !candleTimes?.length || !myEntry?.price) return;
+    try {
+      myEntryLineRef.current = series.createPriceLine({
+        price: myEntry.price, color: sideColor(myEntry.side === "short" ? "short" : "long"), lineWidth: 2, lineStyle: LineStyle.LargeDashed,
+        axisLabelVisible: true, title: "Your entry",
+      });
+    } catch (_) { myEntryLineRef.current = null; }
+  }, [myEntry, candleTimes, mode]);
 
   // Zoom from a little before the earliest burst on the chart to the latest candle.
   const firstBurst = Math.min(...(entries?.traders || []).flatMap(tr => (tr.bursts || []).map(b => b.t)));
@@ -775,7 +808,7 @@ export default function BMSBChart({
         {/* Left: info pills */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
           {/* Regime pill */}
-          {rm && (
+          {showSetup && rm && (
             <span className="terminal-status" style={{
               padding: "2px 7px", borderRadius: 0,
               background: rm.bg, color: rm.color,
@@ -789,8 +822,17 @@ export default function BMSBChart({
             </span>
           )}
 
+          {/* Without the pills (coin page), the regime stays as a quiet anchor: icon and word only,
+              so the toolbar still says what the setup is once the page header scrolls away. */}
+          {!showSetup && rm && (
+            <span className="chart-regime" style={{ color: rm.color }}>
+              <RegimeIcon regime={regime} size={12} />
+              {rm.name}
+            </span>
+          )}
+
           {/* Signal pill */}
-          {sm && signal !== "WAIT" && (
+          {showSetup && sm && signal !== "WAIT" && (
             <span className="terminal-status" style={{
               padding: "2px 7px", borderRadius: 0,
               background: `${sm.color}12`, color: sm.color,
@@ -833,6 +875,7 @@ export default function BMSBChart({
 
         {/* Right: pressure toggle + timeframe toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {toolbarAction}
           <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price">Reset view</button>
           {/* Pressure levels toggle */}
           <button
@@ -877,7 +920,7 @@ export default function BMSBChart({
           >
             <span className="chart-levels-label">Trader entries</span><span className="chart-levels-label-short">Entries</span>
           </button>
-          <HelpTip title="Trader entries"><p>Profitable traders (see HyperLens) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid, placed at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry price per side. Fills come from Hyperliquid's public record and refresh every 10 minutes. Who holds a coin, and where they got in, is information, not a signal.</p></HelpTip>
+          <HelpTip title="Trader entries"><p>Profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid, placed at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry price per side. Fills come from Hyperliquid's public record and refresh every 10 minutes. Who holds a coin, and where they got in, is information, not a signal.</p></HelpTip>
 
           {activeTimeframe === "1d" && (
             <button
@@ -907,15 +950,15 @@ export default function BMSBChart({
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(9,22,25,0.8)", zIndex: 10,
+          background: alpha(T.bg, 80), zIndex: 10,
         }}>
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
           }}>
             <div style={{
               width: 20, height: 20,
-              border: "2px solid rgba(151,252,228,0.15)",
-              borderTopColor: "#97FCE4",
+              border: `2px solid ${alpha(T.accent, 15)}`,
+              borderTopColor: T.accent,
               borderRadius: "50%",
               animation: "spin 0.8s linear infinite",
             }} />
@@ -935,10 +978,10 @@ export default function BMSBChart({
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(9,22,25,0.9)", zIndex: 10,
+          background: alpha(T.bg, 90), zIndex: 10,
         }}>
           <span style={{
-            color: "rgba(239,68,68,0.7)", fontFamily: T.font, fontSize: 13, padding: "24px 32px", maxWidth: 560, textAlign: "center", lineHeight: 1.6,
+            color: alpha(T.red, 80), fontFamily: T.font, fontSize: 13, padding: "24px 32px", maxWidth: 560, textAlign: "center", lineHeight: 1.6,
             letterSpacing: "0.01em",
           }}>
             Chart unavailable ({error})
