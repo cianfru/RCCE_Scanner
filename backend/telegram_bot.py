@@ -12,6 +12,8 @@ import logging
 import time
 from typing import Dict, List, Optional
 
+from wallet_names import wallet_label
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -263,15 +265,15 @@ class TelegramBot:
                 pos_count = len(profile.get("positions", []))
                 await self._send(
                     update,
-                    f"Now following {address[:8]}...{address[-4:]}\n"
+                    f"Now following {wallet_label(address)}\n"
                     f"Cohort: {cohort_str}\n"
                     f"AV: ${av / 1e6:.1f}M | ROI: {roi:.0f}% | {pos_count} positions\n\n"
                     f"You'll be notified when this wallet trades."
                 )
             except Exception:
-                await self._send(update, f"Now following {address[:8]}...{address[-4:]}")
+                await self._send(update, f"Now following {wallet_label(address)}")
         else:
-            await self._send(update, f"Already following {address[:8]}...{address[-4:]}")
+            await self._send(update, f"Already following {wallet_label(address)}")
 
     async def _cmd_unfollow(self, update, context):
         """Stop following a whale wallet."""
@@ -287,9 +289,9 @@ class TelegramBot:
         removed = wf.remove_follow(user_key, address)
 
         if removed:
-            await self._send(update, f"Unfollowed {address[:8]}...{address[-4:]}")
+            await self._send(update, f"Unfollowed {wallet_label(address)}")
         else:
-            await self._send(update, f"Not following {address[:8]}...{address[-4:]}")
+            await self._send(update, f"Not following {wallet_label(address)}")
 
     async def _cmd_following(self, update, context):
         """List followed whale wallets."""
@@ -312,9 +314,9 @@ class TelegramBot:
                 cohorts = profile.get("cohorts", [])
                 cohort_str = ", ".join(c.replace("_", " ").title() for c in cohorts) if cohorts else "Tracked"
                 av = profile.get("account_value", 0)
-                lines.append(f"• {addr[:8]}...{addr[-4:]} ({cohort_str}, ${av / 1e6:.1f}M)")
+                lines.append(f"• {wallet_label(addr)} · {cohort_str}, ${av / 1e6:.1f}M")
             except Exception:
-                lines.append(f"• {addr[:8]}...{addr[-4:]}")
+                lines.append(f"• {wallet_label(addr)}")
         await self._send(update, "\n".join(lines))
 
     async def _handle_message(self, update, context):

@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import HelpTip from "../HelpTip.jsx";
+import WalletTag from "../WalletTag.jsx";
 import useLadder from "../../hooks/useLadder.js";
-import { bandInfo, beeswarm, fmtLadderPx, fmtUsd, ladderCounts, ladderDomain, ladderRadius, logScale, niceTicks, pctText, shortAddr, spreadLabels } from "../../utils/radarDepth.js";
+import { nameIn, shortAddr, viewNames } from "../../utils/walletName.js";
+import { bandInfo, beeswarm, fmtLadderPx, fmtUsd, ladderCounts, ladderDomain, ladderRadius, logScale, niceTicks, pctText, spreadLabels } from "../../utils/radarDepth.js";
 
 const TONE_COLOR = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "inherit", none: "inherit" };
 
@@ -83,10 +85,11 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
     return { ws, L, R, T, B, Y, mid, colL, colS, ticks, bandRect, meanY, med, dots, left, right: spreadLabels(right), py: Y(price) };
   }, [lad, price, band, bi.tone, W, H]);
 
+  const names = useMemo(() => viewNames((g?.ws || []).map(w => w.address)), [g]);
   const d = tip && g ? g.dots[tip.i] : null;
   const tipBox = useMemo(() => {
     if (!d) return null;
-    const tw = 200, th = 118;
+    const tw = 200, th = 136;
     let x = d.x + d.r + 10;
     if (x + tw > W - 6) x = d.x - d.r - 10 - tw;
     x = Math.max(6, Math.min(W - tw - 6, x));
@@ -127,7 +130,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
           <text className="rl-pxt" x={g.L - 6} y={g.py + 4} textAnchor="end">{fmtLadderPx(price)}</text>
           {g.dots.map((p, i) => <circle key={`${p.w.address}${p.w.side}`} className={`rl-dot${tip?.i === i ? " on" : ""}`} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r={p.r.toFixed(1)}
             style={{ fill: p.col }} fillOpacity={p.off ? 0.35 : 0.8} tabIndex={0} role="button"
-            aria-label={`${shortAddr(p.w.address)} ${p.w.side} ${fmtUsd(p.w.size_usd)}`}
+            aria-label={`${nameIn(names, p.w.address)} ${p.w.side} ${fmtUsd(p.w.size_usd)}`}
             onPointerEnter={e => { if (e.pointerType === "mouse" && !tip?.pinned) setTip({ i }); }}
             onPointerLeave={e => { if (e.pointerType === "mouse" && !tip?.pinned) setTip(null); }}
             onFocus={() => { if (!tip?.pinned) setTip({ i }); }} onBlur={() => { if (!tip?.pinned) setTip(null); }}
@@ -137,7 +140,8 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
           {!g.ws.length && <text className="rl-axl" x={g.mid} y={g.T + 40} textAnchor="middle">No profitable wallet holds {c.coin}</text>}
         </svg>}
       {d && tipBox && <div className="rl-tip" style={tipBox} role="status">
-        <div className="row"><b className="m">{shortAddr(d.w.address)}</b><span style={{ color: d.col, fontWeight: 600 }}>{d.w.side === "long" ? "Long" : "Short"}</span></div>
+        <div className="row"><b><WalletTag address={d.w.address} name={nameIn(names, d.w.address)} size={20} /></b><span style={{ color: d.col, fontWeight: 600 }}>{d.w.side === "long" ? "Long" : "Short"}</span></div>
+        <div className="rl-tip-addr m">{shortAddr(d.w.address)}</div>
         <div className="row"><span>Size</span><span className="m">{fmtUsd(d.w.size_usd)}{d.w.leverage ? ` · ${Math.round(d.w.leverage)}x` : ""}</span></div>
         <div className="row"><span>Entry</span><span className="m">{fmtLadderPx(d.w.entry)}</span></div>
         <div className="row"><span>Unrealised</span><span className="m" style={{ color: (d.w.upnl || 0) >= 0 ? "var(--rd-long)" : "var(--rd-short)" }}>{pctText((d.w.move || 0) / 100)} · {(d.w.upnl || 0) >= 0 ? "+" : ""}{fmtUsd(d.w.upnl || 0)}</span></div>

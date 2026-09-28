@@ -8,12 +8,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import TokenLogo from "./TokenLogo.jsx";
+import WalletTag, { WalletAvatar } from "./WalletTag.jsx";
 import useFollowed from "../hooks/useFollowed.js";
 import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import { TableSkeleton } from "./Skeleton.jsx";
 import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
 import { SUMMARY_MIN, summaryRows, sideCounts } from "../utils/traderSummary.js";
+import { codename, nameIn, shortAddr, viewNames } from "../utils/walletName.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -27,7 +29,6 @@ const fmtLev = (x) => {
 // Logo key for a Hyperliquid coin name; HIP-3 names ("xyz:TSLA") drop the dex prefix.
 const logoKey = (coin) => `${String(coin || "").split(":").pop()}/USDT`;
 
-const truncAddr = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 // "26 Sep": fixed English month names (en-GB would write "26 Sept").
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (tSec) => { const d = new Date(tSec * 1000); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
@@ -62,7 +63,7 @@ const riskColor = (score) => {
 
 // The portal lands outside App's .reflex-terminal wrapper, so it is wrapped again
 // here to pick up the terminal rules (flat .terminal-status, font reset).
-function ModalOverlay({ children, onClose }) {
+function ModalOverlay({ children, onClose, label }) {
   const dialogRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -78,7 +79,7 @@ function ModalOverlay({ children, onClose }) {
   return createPortal(
     <div className="reflex-terminal"><div
       ref={dialogRef} tabIndex={-1}
-      role="dialog" aria-modal="true"
+      role="dialog" aria-modal="true" aria-label={label}
       className="hl-modal"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
@@ -803,21 +804,22 @@ function WalletDetail({ address, onClose, isMobile }) {
         background: T.overlay02,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <WalletAvatar address={address} size={44} />
+          <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
-            <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
-              {truncAddr(address)}
-            </span>
+            <span className="wtag wtag-head" title={address}><span className="wtag-name">{codename(address)}</span></span>
             <RiskBadge score={data.risk_score} />
           </div>
           {/* Full address + copy */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span title={address} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {address}
+            <span title={address} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {shortAddr(address)}
             </span>
             <button
               type="button"
+              aria-label="Copy the full address"
+              title={address}
               onClick={(e) => {
                 e.stopPropagation();
                 navigator.clipboard?.writeText(address).then(() => {
@@ -837,6 +839,7 @@ function WalletDetail({ address, onClose, isMobile }) {
           {/* Tags */}
           <div style={{ marginTop: 6 }}>
             <WalletTags data={data} />
+          </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -1377,6 +1380,7 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   const positions = data?.positions || [];
   const longs = positions.filter(p => p.side === "LONG").sort((a, b) => (b.size_usd || 0) - (a.size_usd || 0));
   const shorts = positions.filter(p => p.side === "SHORT").sort((a, b) => (b.size_usd || 0) - (a.size_usd || 0));
+  const names = viewNames(positions.map(p => p.address));
   const totalLong = longs.reduce((s, p) => s + (p.size_usd || 0), 0);
   const totalShort = shorts.reduce((s, p) => s + (p.size_usd || 0), 0);
   const totalNotional = totalLong + totalShort;
@@ -1405,10 +1409,10 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
       {/* Row 1: address + size */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{
-          fontFamily: T.mono, fontSize: T.textXs, color: T.accent,
-          cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+          fontFamily: T.mono, fontSize: T.textXs, color: T.text1,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 8, minWidth: 0,
         }}>
-          {truncAddr(p.address)}
+          <WalletTag address={p.address} name={nameIn(names, p.address)} />
           {p.wallet_roi != null && (
             <span title="The wallet's 30-day return on the Hyperliquid leaderboard" style={{ color: p.wallet_roi >= 0 ? T.green : T.red }}>
               30d {fmtSignedPct(p.wallet_roi)}
@@ -1870,7 +1874,7 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Modals */}
       {selectedWallet && (
-        <ModalOverlay onClose={() => setSelectedWallet(null)}>
+        <ModalOverlay onClose={() => setSelectedWallet(null)} label={`Wallet ${codename(selectedWallet)}`}>
           <WalletDetail address={selectedWallet} onClose={() => setSelectedWallet(null)} isMobile={isMobile} />
         </ModalOverlay>
       )}

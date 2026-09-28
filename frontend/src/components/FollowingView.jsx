@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { col } from "../theme.js";
 import useFollowed from "../hooks/useFollowed.js";
-import { SIDE_COLOR, changeLine, fmtPx, fmtUsd, fmtWhen, shortAddr } from "../utils/traderFormat.js";
+import { SIDE_COLOR, changeLine, fmtPx, fmtUsd, fmtWhen } from "../utils/traderFormat.js";
+import { nameIn, viewNames } from "../utils/walletName.js";
+import WalletTag from "./WalletTag.jsx";
 
 const COHORT_NAME = { money_printer: "profitable trader", smart_money: "large account", elite: "both" };
 
@@ -13,6 +15,7 @@ export default function FollowingView() {
   const [msg, setMsg] = useState("");
   const navigate = useNavigate();
   const traders = data?.traders || [];
+  const names = useMemo(() => viewNames((data?.traders || []).map(t => t.address)), [data]);
 
   const add = async e => {
     e.preventDefault();
@@ -42,7 +45,7 @@ export default function FollowingView() {
       {traders.map(t => (
         <section key={t.address} className="fol-card">
           <div className="fol-top">
-            <span className="fol-name">{shortAddr(t.address)}{t.note ? <span className="fol-note"> · {t.note}</span> : null}</span>
+            <span className="fol-name"><WalletTag address={t.address} name={nameIn(names, t.address)} size={28} addr />{t.note ? <span className="fol-note"> · {t.note}</span> : null}</span>
             <span className="fol-meta">
               {t.tracked ? t.cohorts.map(c => COHORT_NAME[c] || c).filter(c => c !== "both").join(", ") : "not in the tracked roster"}
               {t.account_value ? ` · account ${fmtUsd(t.account_value)}` : ""}

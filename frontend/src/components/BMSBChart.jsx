@@ -22,6 +22,8 @@ import {
 } from "lightweight-charts";
 import { col, T, alpha, REGIME_META, SIGNAL_META, resolveToken, getBaseSymbol } from "../theme.js";
 import { sideColor } from "../utils/traderFormat.js";
+import { markerTags } from "../utils/walletName.js";
+import { walletColor } from "../utils/walletAvatar.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -580,15 +582,19 @@ export default function BMSBChart({
         color: o.cohort === "profitable" ? sideColor(o.side) : col(OPEN_LARGE_COLOR[o.side]),
       });
     }
+    // Each trader's arrows in their avatar colour, tagged with their codename's initials.
+    const tags = markerTags((entries?.traders || []).map(tr => tr.address));
+    const light = mode === "light";
     for (const tr of entries?.traders || []) {
+      const tag = tags.get(String(tr.address).toLowerCase()) || tr.label;
+      const color = walletColor(tr.address, light);
       for (const b of tr.bursts || []) {
         const time = barOf(b.t);
         if (time == null) continue;
         const buy = (b.kind === "open") === (b.side === "long");
         markers.push({
           time, price: b.px, position: buy ? "atPriceBottom" : "atPriceTop", shape: buy ? "arrowUp" : "arrowDown",
-          color: sideColor(b.kind === "close" ? "exit" : b.side),
-          text: b.kind === "close" ? `${tr.label} exit` : tr.label,
+          color, text: b.kind === "close" ? `${tag} exit` : tag,
         });
       }
     }
@@ -865,7 +871,7 @@ export default function BMSBChart({
             </button>
           ))}
           <HelpTip title="Chart layers" width={420}>
-            <p>Trader entries: profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry per side. Information, not a signal.</p>
+            <p>Trader entries: profitable traders (see Traders) who hold this coin now, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. The dashed line is the median entry per side. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
             <p>Mean lines: the price where this coin's z-score would be 0 (dashed) and 1 (dotted), the engine's mean. After a spike, the box shows where past spikes bottomed. A reference, not a target.</p>
             <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>

@@ -1871,7 +1871,8 @@ def _fire_tg_whale_alert(chat_id: int, event: dict) -> None:
     else:
         size_str = f"${size:.0f}"
 
-    wallet_short = f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet
+    from wallet_names import wallet_label
+    wallet_short = wallet_label(wallet) if len(wallet) > 10 else wallet
 
     if action == "OPENED":
         emoji = "🟢" if side == "LONG" else "🔴"

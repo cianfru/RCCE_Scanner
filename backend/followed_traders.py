@@ -19,6 +19,8 @@ from collections import deque
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from wallet_names import wallet_label
+
 logger = logging.getLogger(__name__)
 
 MIN_USD = 10_000
@@ -131,7 +133,7 @@ def _px(v) -> str:
 def message(address: str, cohort: str, changes: List[dict], holdings: Iterable[dict]) -> str:
     verb = {"open": "Opened", "close": "Closed", "add": "Added to", "cut": "Cut"}
     note = _items.get(address, {}).get("note")
-    head = f"Followed trader {address[:6]}…{address[-4:]}" + (f" ({note})" if note else "") + f" · {cohort}"
+    head = f"Followed trader {wallet_label(address)}" + (f" · {note}" if note else "") + f" · {cohort}"
     lines = [head]
     for c in changes:
         size = _usd(c["usd"]) if c["kind"] in ("open", "close") else f"{_usd(c['delta_usd'])}, now {_usd(c['usd'])}"

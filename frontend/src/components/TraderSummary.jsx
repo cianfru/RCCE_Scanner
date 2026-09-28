@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import TokenLogo from "./TokenLogo.jsx";
+import WalletTag from "./WalletTag.jsx";
 import { T } from "../theme.js";
 import { fmtUsd, fmtSignedUsd } from "../utils/hyperlens.js";
+import { nameIn, viewNames } from "../utils/walletName.js";
 import { summaryRows, entryGap, dayChange, moneyBar, topWallets, fmtDelta, fmtGap } from "../utils/traderSummary.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const logoKey = (coin) => `${String(coin || "").split(":").pop()}/USDT`;
-const truncAddr = (a) => (a ? `${a.slice(0, 6)}...${a.slice(-4)}` : "");
 const fmtPx = (v) => `$${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: v >= 100 ? 0 : v >= 1 ? 2 : 5 })}`;
 
 function Chevron({ open }) {
@@ -76,6 +77,7 @@ function TopWallets({ coin, cohortTag, isMobile, onWalletClick, onAllWallets }) 
     return () => { cancelled = true; };
   }, [coin]);
   const top = useMemo(() => topWallets(state.positions, cohortTag), [state.positions, cohortTag]);
+  const names = useMemo(() => viewNames([...top.long, ...top.short].map(p => p.address)), [top]);
 
   const side = (key, label, color) => {
     const list = top[key];
@@ -85,7 +87,7 @@ function TopWallets({ coin, cohortTag, isMobile, onWalletClick, onAllWallets }) 
         {list.length === 0 && <div className="ts-dim ts-wallet">None</div>}
         {list.map(p => (
           <button key={p.address} type="button" className="ts-wallet" onClick={() => onWalletClick(p.address)}>
-            <span className="ts-addr">{truncAddr(p.address)}</span>
+            <WalletTag className="ts-addr" address={p.address} name={nameIn(names, p.address)} />
             <span className="ts-size">{fmtUsd(p.size_usd)}</span>
             {!isMobile && <span className="ts-dim ts-entry">@ {fmtPx(p.entry_px)}</span>}
             <span className="ts-pnl" style={{ color: (p.unrealized_pnl || 0) >= 0 ? T.green : T.red }}>{fmtSignedUsd(p.unrealized_pnl || 0)}</span>
