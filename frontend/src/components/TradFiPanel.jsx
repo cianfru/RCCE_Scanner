@@ -4,6 +4,7 @@ import {
   RegimeBadge, SignalDot, ZScoreBar, HeatCell, ConfluenceBadge,
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
+import TokenLogo from "./TokenLogo.jsx";
 import GlassCard from "./GlassCard.jsx";
 import InfoButton from "./InfoPopover.jsx";
 import Tabs from "./Tabs.jsx";
@@ -30,7 +31,8 @@ export default function TradFiPanel({
   const [managing, setManaging] = useState(false);
   const [symbols, setSymbols] = useState([]);
   const [addForm, setAddForm] = useState({ coin: "", name: "", category: "Equities", yf: "" });
-  const [addError, setAddError] = useState("");
+  // Outcome of the last add, remove or list load: { tone: "error" | "ok", text }.
+  const [notice, setNotice] = useState(null);
   const canManage = !!getAdminKey();   // adding or removing markets needs the admin key
 
   // Clean coin input: strip common pair suffixes the user might add
@@ -39,18 +41,23 @@ export default function TradFiPanel({
   const loadSymbols = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/tradfi/symbols`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
       setSymbols(data.symbols || []);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      setNotice({ tone: "error", text: "Could not load the current markets. Close and reopen Manage to try again." });
+      return false;
+    }
   }, []);
 
   useEffect(() => { if (managing) loadSymbols(); }, [managing, loadSymbols]);
 
   const handleAdd = async () => {
-    setAddError("");
+    setNotice(null);
     const { coin, name, yf } = addForm;
     if (!coin.trim() || !name.trim() || !yf.trim()) {
-      setAddError("All fields required"); return;
+      setNotice({ tone: "error", text: "Fill in the ticker, the name and the YF ticker." }); return;
     }
     try {
       const res = await fetch(`${API_BASE}/api/tradfi/symbols`, {
@@ -58,18 +65,26 @@ export default function TradFiPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(addForm),
       });
-      const data = await res.json();
-      if (!res.ok) { setAddError(data.error || "Failed"); return; }
+      // A failed request may carry no JSON body.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice({ tone: "error", text: `${coin} was not added: ${data.error || data.detail || `the server refused it (${res.status})`}.` });
+        return;
+      }
       setAddForm({ coin: "", name: "", category: "Equities", yf: "" });
-      await loadSymbols();
-    } catch (_) { setAddError("Network error"); }
+      if (await loadSymbols()) setNotice({ tone: "ok", text: `${coin} added. It appears in the table after the next scan.` });
+    } catch (_) { setNotice({ tone: "error", text: `${coin} could not be added: the server did not answer. Try again.` }); }
   };
 
   const handleRemove = async (coin) => {
+    setNotice(null);
     try {
-      await fetch(`${API_BASE}/api/tradfi/symbols/${encodeURIComponent(coin)}`, { method: "DELETE" });
-      await loadSymbols();
-    } catch (_) {}
+      const res = await fetch(`${API_BASE}/api/tradfi/symbols/${encodeURIComponent(coin)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${coin} was not removed: the server refused it (${res.status}).`);
+      if (await loadSymbols()) setNotice({ tone: "ok", text: `${coin} removed.` });
+    } catch (e) {
+      setNotice({ tone: "error", text: e.message?.startsWith(coin) ? e.message : `${coin} could not be removed: the server did not answer. Try again.` });
+    }
   };
 
   // Pick the right dataset based on timeframe toggle
@@ -116,10 +131,10 @@ export default function TradFiPanel({
   // Every sort is descending; the active column carries the arrow.
   // info: the scanner's column-help key (same explanations as the crypto table).
   const sortTh = (key, label, info = label) => (
-    <th key={key} style={{ ...thStyle(isMobile), cursor: "pointer", color: sortKey === key ? T.text2 : T.text4 }}
-      aria-sort={sortKey === key ? "descending" : "none"} onClick={() => setSortKey(key)}>
+    <th key={key} style={{ ...thStyle(isMobile), color: sortKey === key ? T.text2 : T.text4 }}
+      aria-sort={sortKey === key ? "descending" : "none"}>
       <span style={{ display: "inline-flex", alignItems: "center" }}>
-        {label}{sortKey === key ? " \u25bc" : ""}{info && <InfoButton label={info} />}
+        <button type="button" className="table-sort tradfi-sort" onClick={() => setSortKey(key)}>{label}{sortKey === key ? " \u25bc" : ""}</button>{info && <InfoButton label={info} />}
       </span>
     </th>
   );
@@ -221,11 +236,10 @@ export default function TradFiPanel({
               Symbol will be: <span style={{ color: T.accent, fontWeight: 600 }}>{addForm.coin}/USD</span>
             </div>
           )}
-          {addError && (
-            <div style={{
-              fontFamily: T.mono, fontSize: T.textXs, color: T.red, marginBottom: 10,
-            }}>
-              {addError}
+          {notice && (
+            <div className="tool-notice" role={notice.tone === "error" ? "alert" : "status"} data-tone={notice.tone}>
+              <span>{notice.text}</span>
+              <button type="button" className="te-link" onClick={() => setNotice(null)}>Dismiss</button>
             </div>
           )}
 
@@ -330,7 +344,13 @@ export default function TradFiPanel({
                   return (
                     <tr
                       key={r.symbol}
-                      onClick={() => onSelect(r)}
+                      className="tradfi-row"
+                      tabIndex={0}
+                      aria-label={`Open ${r.tradfi_name || r.tradfi_coin || r.symbol}`}
+                      onClick={e => { if (!e.target.closest("button")) onSelect(r); }}
+                      onKeyDown={e => {
+                        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onSelect(r); }
+                      }}
                       style={{
                         cursor: "pointer",
                         borderBottom: `1px solid ${alpha(T.border, 13)}`,
@@ -345,7 +365,8 @@ export default function TradFiPanel({
                       </td>
                       <td style={{ padding: cellPad }}>
                         {isMobile ? <>
-                          <div style={{ fontFamily: T.mono, whiteSpace: "nowrap" }}>
+                          <div style={{ fontFamily: T.mono, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                            <TokenLogo symbol={r.symbol} size={16} />
                             <span style={{ fontWeight: 700, color: T.text1, fontSize: m(T.textBase, isMobile) }}>{r.tradfi_coin || r.symbol.split("/")[0]}</span>
                             <span style={{ color: T.text3, fontSize: m(T.textXs, isMobile), marginLeft: 6 }}>{formatPrice(r.price)}</span>
                           </div>
@@ -353,10 +374,11 @@ export default function TradFiPanel({
                             {r.tradfi_name || r.symbol}
                           </div>
                         </> : <>
-                          <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(T.textMd, isMobile) }}>
+                          <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(T.textMd, isMobile), display: "flex", alignItems: "center", gap: 8 }}>
+                            <TokenLogo symbol={r.symbol} size={18} />
                             {r.tradfi_coin || r.symbol.split("/")[0]}
                           </div>
-                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2 }}>
+                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2, marginLeft: 26 }}>
                             {r.tradfi_name || r.symbol} — {formatPrice(r.price)}
                           </div>
                         </>}

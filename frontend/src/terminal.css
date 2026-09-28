@@ -1284,3 +1284,19 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .coin-mytrade{margin:-4px 0 12px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .coin-mytrade b{font-weight:600;}
 .coin-mytrade .smap-mono{font-family:var(--font-geist-mono),monospace;font-weight:600;}
+/* More pages (Executor, TradFi, Backtest, AI Assist): the outcome of a change, flat, beside what was changed. */
+.tool-notice{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 0 12px;padding:8px 0 8px 12px;box-shadow:inset 2px 0 var(--t-accent);font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.tool-notice[data-tone="error"]{box-shadow:inset 2px 0 var(--t-loss);}
+.tool-notice.tool-notice-section{margin:12px 20px;}
+.tool-notice .te-link{font-size:13px;}
+.bt-runs{margin:0 0 16px;}
+.bt-run{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;padding:5px 0;font:12px var(--font-geist-mono),monospace;color:var(--t-text3);}
+.bt-run .te-link{font:600 13px var(--font-geist-mono),monospace;}
+.bt-run .te-link[aria-current]{color:var(--t-text1);border-bottom-color:transparent;cursor:default;}
+/* Signal Log heatmap cells and TradFi rows: a focus ring that does not spill onto the neighbours. */
+.reflex-terminal .heat-cell:focus-visible{outline:2px solid var(--t-accent);outline-offset:-2px;}
+.reflex-terminal .tradfi-row:focus-visible{outline:2px solid var(--t-accent);outline-offset:-2px;}
+/* Own layer for the sticky symbol column: without it Chromium repaints scrolled cells over it while a cell has focus. */
+.heat-sym{transform:translateZ(0);}
+/* TradFi sort labels keep today's plain look; its help sits in the (i) buttons. */
+.reflex-terminal .tradfi-sort{text-decoration:none;}

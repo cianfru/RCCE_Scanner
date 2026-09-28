@@ -427,71 +427,113 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
     timeframe: "4h",
     leverage: "1",
   });
-  const [btId, setBtId] = useState(null);
+  // The job id survives a reload: an accepted run can be left and picked up again.
+  const [btId, setBtId] = useState(() => readJobId());
   const [result, setResult] = useState(null);
-  const [polling, setPolling] = useState(false);
+  const [polling, setPolling] = useState(() => !!readJobId());
+  const [starting, setStarting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [jobListError, setJobListError] = useState(false);
   const [error, setError] = useState(null);
   const [showTrades, setShowTrades] = useState(false);
-  const pollRef = useRef(null);
+  const startingRef = useRef(false);   // guards a double click before the button re-renders
+  const onCompleteRef = useRef(onBacktestComplete);
+  onCompleteRef.current = onBacktestComplete;
 
-  // Poll for results (silently retry on network errors during replay)
-  const pollFailCount = useRef(0);
-  const poll = useCallback(async (id) => {
+  // Recent runs on this server (running and finished).
+  const loadJobs = useCallback(async () => {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const resp = await fetch(`${API}/api/backtest/${id}`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!resp.ok) throw new Error("Poll failed");
-      const data = await resp.json();
-      setResult(data);
-      pollFailCount.current = 0;
-      if (data.status === "complete" || data.status === "error") {
-        setPolling(false);
-        if (data.error) setError(data.error);
-        if (data.status === "complete" && onBacktestComplete) onBacktestComplete();
-      }
-    } catch (e) {
-      // Server may be temporarily busy — silently retry (backtests can take 15+ min)
-      pollFailCount.current += 1;
-      if (pollFailCount.current > 600) {
-        setError("Server unresponsive — backtest may still be running in the background");
-        setPolling(false);
-      }
-    }
+      const r = await fetch(`${API}/api/backtests`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      setJobs(d.backtests || []);
+      setJobListError(false);
+    } catch { setJobListError(true); }
   }, []);
+  useEffect(() => { loadJobs(); }, [loadJobs]);
 
+  // Poll the job: every 3s, backing off to 30s while the server does not answer
+  // (a replay can keep it busy for 15 minutes or more). A 404 means the job is gone.
   useEffect(() => {
-    if (polling && btId) {
-      pollRef.current = setInterval(() => poll(btId), 3000);
-      return () => clearInterval(pollRef.current);
-    }
-  }, [polling, btId, poll]);
+    if (!polling || !btId) return;
+    let stopped = false, timer, controller, failures = 0;
+    const read = async () => {
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      let finished = false;
+      try {
+        const r = await fetch(`${API}/api/backtest/${encodeURIComponent(btId)}`, { signal: controller.signal });
+        if (r.status === 404) {
+          finished = true;
+          if (!stopped) {
+            writeJobId(null); setPolling(false); setResult(null); setConnectionError(null);
+            setError("That run is no longer on the server. Pick a recent run or start a new one.");
+            loadJobs();
+          }
+          return;
+        }
+        if (!r.ok) throw new Error();
+        const data = await r.json();
+        if (stopped) return;
+        setResult(data); setConnectionError(null); failures = 0;
+        finished = data.status === "complete" || data.status === "error";
+        if (finished) {
+          setPolling(false);
+          if (data.error) setError(data.error);
+          if (data.status === "complete") onCompleteRef.current?.();
+          loadJobs();
+        }
+      } catch {
+        failures += 1;
+        if (!stopped) setConnectionError("Connection interrupted. The run may still be going; reconnecting without starting another.");
+      } finally {
+        clearTimeout(timeout);
+        if (!stopped && !finished) timer = setTimeout(read, Math.min(30000, 3000 * 2 ** Math.min(failures, 4)));
+      }
+    };
+    read();
+    return () => { stopped = true; clearTimeout(timer); controller?.abort(); };
+  }, [polling, btId, loadJobs]);
+
+  const openJob = (id) => {
+    setBtId(id); setResult(null); setError(null); setConnectionError(null); setShowTrades(false); setPolling(true);
+    writeJobId(id);
+  };
 
   const startBacktest = async () => {
+    if (startingRef.current || starting || polling) return;   // one run at a time, even on a double click
     setError(null);
     const capital = Number(config.initial_capital);
     const leverage = Number(config.leverage);
-    if (!(capital > 0)) { setError("Capital must be greater than 0."); return; }
+    if (!Number.isFinite(capital) || !(capital > 0)) { setError("Capital must be greater than 0."); return; }
     if (!(leverage >= 0.1 && leverage <= 10)) { setError("Leverage must be between 0.1 and 10."); return; }
-    setResult(null); setShowTrades(false);
+    if (!config.start_date) { setError("Choose a start date."); return; }
+    if (config.end_date && config.end_date <= config.start_date) { setError("The end date must come after the start date."); return; }
+    startingRef.current = true;
+    setStarting(true); setResult(null); setShowTrades(false);
     try {
       const resp = await fetch(`${API}/api/backtest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...config, initial_capital: capital, leverage }),
       });
-      if (!resp.ok) throw new Error("Failed to start backtest");
+      if (!resp.ok) throw new Error(`The server did not start the backtest (${resp.status})`);
       const data = await resp.json();
-      setBtId(data.id);
-      setPolling(true);
+      if (!data?.id) throw new Error("The server did not return a run id");
+      openJob(data.id);
       setResult({ status: "fetching", progress: 0 });
+      loadJobs();
     } catch (e) {
-      setError(e.message);
+      setError(`${e.message?.startsWith("The server") ? e.message : "The server did not answer"}. Check the recent runs before starting again.`);
+      loadJobs();
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
   };
 
-  const isRunning = result && !["complete", "error"].includes(result.status);
+  const isRunning = starting || polling;
   const m = result?.metrics;
   const isDone = result?.status === "complete";
 
@@ -532,7 +574,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
               cursor: (isRunning || config.symbols.length === 0) ? "not-allowed" : "pointer",
             }}
           >
-            {isRunning ? "Running…" : "Run backtest"}
+            {starting ? "Starting…" : isRunning ? "Running…" : "Run backtest"}
           </button>
         </div>
 
@@ -543,6 +585,33 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
           isMobile={isMobile}
         />
       </div>
+
+      {/* ── RECENT RUNS: flat link rows ── */}
+      {(jobs.length > 0 || jobListError) && (
+        <div className="bt-runs">
+          <div style={fieldLabel}>Recent runs</div>
+          {jobListError && (
+            <div className="bt-run">Could not load the recent runs. <button type="button" className="te-link" onClick={loadJobs}>Retry</button></div>
+          )}
+          {[...jobs].sort((a, b) => (b.started_at || 0) - (a.started_at || 0)).slice(0, 6).map(job => (
+            <div key={job.id} className="bt-run">
+              <button type="button" className="te-link" disabled={starting || job.id === btId} aria-current={job.id === btId ? "true" : undefined}
+                onClick={() => openJob(job.id)}>
+                {job.start_date} {"\u2192"} {job.end_date || "today"}
+              </button>
+              <span>{job.symbols} markets</span>
+              <span style={{ color: job.status === "complete" ? T.text3 : job.status === "error" ? T.red : T.accent }}>
+                {job.status === "complete" ? "Done" : job.status === "error" ? "Failed" : `Running ${Math.round(job.progress || 0)}%`}
+              </span>
+              {job.started_at && <span style={{ color: T.text4 }}>{new Date(job.started_at * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {connectionError && isRunning && (
+        <div className="tool-notice" role="status">{connectionError}</div>
+      )}
 
       {/* ── ERROR ── */}
       {error && (
@@ -797,5 +866,8 @@ function InputField({ label, value, onChange, type = "text", placeholder, hint, 
 }
 
 const sectionLabel = { fontSize: T.textXs, color: T.text3, marginBottom: 10 };
+const JOB_KEY = "reflex-backtest-id";
+function readJobId() { try { return localStorage.getItem(JOB_KEY); } catch { return null; } }
+function writeJobId(id) { try { id ? localStorage.setItem(JOB_KEY, id) : localStorage.removeItem(JOB_KEY); } catch { /* storage blocked */ } }
 const thStyle = { padding: "6px 10px", textAlign: "left", color: T.text3, fontSize: T.textXs, fontWeight: 500 };
 const signalLabel = sig => SIGNAL_META[sig]?.label ?? String(sig).replaceAll("_", " ");

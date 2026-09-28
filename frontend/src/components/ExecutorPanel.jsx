@@ -1,4 +1,6 @@
 import ExecutorPerformance, { exitLabel } from "./ExecutorPerformance.jsx";
+import TokenLogo from "./TokenLogo.jsx";
+import { plainReason } from "../utils/signalPresentation.js";
 import Tabs from "./Tabs.jsx";
 import { useState, useEffect, useCallback } from "react";
 import { T, SIGNAL_META } from "../theme.js";
@@ -153,14 +155,17 @@ function ModeBadge({ mode, enabled }) {
   return <span style={S.badge(color)}>{label}</span>;
 }
 
-function ReasonBlock({ reason, warnings }) {
-  if (!reason && (!warnings || !warnings.length)) return null;
+// Engine notation ("MARKUP + z=2.14 + conf=100%") is shown in plain words.
+function ReasonBlock({ reason: rawReason, warnings: rawWarnings }) {
+  const reason = rawReason ? plainReason(rawReason) : "";
+  const warnings = (rawWarnings || []).map(w => plainReason(w?.message ?? w)).filter(Boolean);
+  if (!reason && !warnings.length) return null;
   return (
     <div style={{ marginTop: 8 }}>
       {reason && (
         <div style={{
           fontSize: T.textXs,
-          fontFamily: T.mono,
+          fontFamily: T.font,
           color: T.text2,
           lineHeight: 1.5,
           padding: "6px 10px",
@@ -176,7 +181,7 @@ function ReasonBlock({ reason, warnings }) {
           {warnings.map((w, i) => (
             <div key={i} style={{
               fontSize: T.textXs,
-              fontFamily: T.mono,
+              fontFamily: T.font,
               color: T.yellow,
               padding: "4px 10px",
               borderRadius: 4,
@@ -188,6 +193,16 @@ function ReasonBlock({ reason, warnings }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// One flat line under the section that was changed: a coloured edge, the outcome, Dismiss.
+function ActionNotice({ message, onDismiss }) {
+  return (
+    <div className="tool-notice tool-notice-section" role={message.tone === "error" ? "alert" : "status"} data-tone={message.tone}>
+      <span>{message.text}</span>
+      <button type="button" className="te-link" onClick={onDismiss}>Dismiss</button>
     </div>
   );
 }
@@ -206,11 +221,14 @@ function PositionRow({ pos, expanded, onToggle }) {
     <>
       <tr>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <TokenLogo symbol={pos.symbol} size={18} />
           <button type="button" onClick={onToggle} aria-expanded={expanded}
             title="Show price source and entry rationale"
             style={{ background: "transparent", border: 0, padding: 0, font: "inherit", color: "inherit", cursor: "pointer", borderBottom: `1px dotted ${T.text3}` }}>
             {pos.symbol.replace("/USDT", "")}
           </button>
+          </span>
           {pos.side === "SHORT" && <span style={{ ...S.label, marginLeft: 8, color: T.red }}>Short</span>}
         </td>
         <td style={cellStyle}>
@@ -319,7 +337,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       >
         <td style={cellStyle} title={fullDate(trade.exit_time)}>{timeAgo(trade.exit_time)}<small style={{display:"block",marginTop:5,color:T.text3}} title={fullDate(trade.entry_time)}>Opened {timeAgo(trade.entry_time)}</small></td>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
-          {trade.symbol.replace("/USDT", "")}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><TokenLogo symbol={trade.symbol} size={18} />{trade.symbol.replace("/USDT", "")}</span>
           {trade.quality_issue && <small title={trade.quality_issue} style={{display:'block',fontWeight:400,color:T.text3,marginTop:5}}>Price-unit error</small>}
         </td>
         <td style={cellStyle}>
@@ -390,6 +408,8 @@ export default function ExecutorPanel({ api }) {
   const [positionQuery, setPositionQuery] = useState("");
   const [tradePage, setTradePage] = useState(0);
   const [fetchError, setFetchError] = useState(null);
+  // Outcome of the last control change, shown beside the section it came from.
+  const [actionMessage, setActionMessage] = useState(null);   // { where: "engine" | "universe", tone, text }
   const [loading, setLoading] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState(null);
   const [expandedPosition, setExpandedPosition] = useState(null);
@@ -401,6 +421,13 @@ export default function ExecutorPanel({ api }) {
   const [hlAccount, setHlAccount] = useState(null);
 
   const isLive = status?.mode === "live";
+
+  // A confirmation fades after a few seconds; a failure stays until dismissed or the next change.
+  useEffect(() => {
+    if (actionMessage?.tone !== "ok") return;
+    const t = setTimeout(() => setActionMessage(null), 5000);
+    return () => clearTimeout(t);
+  }, [actionMessage]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -455,16 +482,19 @@ export default function ExecutorPanel({ api }) {
 
   const callApi = async (endpoint, method = "POST", body = null) => {
     setLoading(true);
+    setActionMessage(null);
     try {
       const opts = { method };
       if (body) {
         opts.headers = { "Content-Type": "application/json" };
         opts.body = JSON.stringify(body);
       }
-      await fetch(`${api}${endpoint}`, opts);
+      const response = await fetch(`${api}${endpoint}`, opts);
+      if (!response.ok) throw new Error(`The engine did not accept this change (${response.status}). Nothing was changed.`);
+      setActionMessage({ where: "engine", tone: "ok", text: "Change accepted. Engine status refreshed." });
       await fetchData();
     } catch (e) {
-      console.error("Executor API error:", e);
+      setActionMessage({ where: "engine", tone: "error", text: e.message?.startsWith("The engine") ? e.message : "The change could not be confirmed. Refresh before trying again." });
     }
     setLoading(false);
   };
@@ -482,20 +512,24 @@ export default function ExecutorPanel({ api }) {
 
   const toggleWhitelist = async (symbol, shouldAdd) => {
     setWlLoading(true);
+    setActionMessage(null);
+    const base = symbol.replace("/USDT", "");
     try {
+      let response;
       if (shouldAdd) {
-        await fetch(`${api}/api/executor/whitelist/add`, {
+        response = await fetch(`${api}/api/executor/whitelist/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbol }),
         });
       } else {
         const encoded = encodeURIComponent(symbol);
-        await fetch(`${api}/api/executor/whitelist/${encoded}`, { method: "DELETE" });
+        response = await fetch(`${api}/api/executor/whitelist/${encoded}`, { method: "DELETE" });
       }
+      if (!response.ok) throw new Error(`${base} was not ${shouldAdd ? "enabled" : "disabled"}: the engine refused the change (${response.status}).`);
       await fetchData();
     } catch (e) {
-      console.error("Whitelist toggle error:", e);
+      setActionMessage({ where: "universe", tone: "error", text: e.message?.startsWith(base) ? e.message : `${base} could not be changed. Refresh before trying again.` });
     }
     setWlLoading(false);
   };
@@ -504,11 +538,14 @@ export default function ExecutorPanel({ api }) {
     // Replaces the live trading universe; the default list lives on the server.
     if (!window.confirm(`Replace the ${whitelist?.whitelist_count ?? 0} enabled pairs with the 10 default majors? The engine will stop opening trades on every other pair.`)) return;
     setWlLoading(true);
+    setActionMessage(null);
     try {
-      await fetch(`${api}/api/executor/whitelist/reset`, { method: "POST" });
+      const response = await fetch(`${api}/api/executor/whitelist/reset`, { method: "POST" });
+      if (!response.ok) throw new Error(`Reset was not accepted (${response.status}). The enabled pairs are unchanged.`);
+      setActionMessage({ where: "universe", tone: "ok", text: "Reset to the 10 default majors." });
       await fetchData();
     } catch (e) {
-      console.error("Whitelist reset error:", e);
+      setActionMessage({ where: "universe", tone: "error", text: e.message?.startsWith("Reset") ? e.message : "The reset could not be confirmed. Refresh before trying again." });
     }
     setWlLoading(false);
   };
@@ -595,6 +632,8 @@ export default function ExecutorPanel({ api }) {
         </div>
 
 
+
+        {actionMessage?.where === "engine" && <ActionNotice message={actionMessage} onDismiss={() => setActionMessage(null)} />}
 
         {/* Not initialized message */}
         {!status?.initialized && (
@@ -687,6 +726,7 @@ export default function ExecutorPanel({ api }) {
               Reset to 10 defaults
             </button>}
           </div>
+          {actionMessage?.where === "universe" && <ActionNotice message={actionMessage} onDismiss={() => setActionMessage(null)} />}
           {/* Flat mono grid: enabled pairs in the accent colour, disabled pairs dimmed */}
           <div style={{
             padding: "14px 20px",

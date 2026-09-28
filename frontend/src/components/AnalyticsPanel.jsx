@@ -210,7 +210,7 @@ function ComboCards({ combos, isMobile }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {combos.slice(0, 10).map((combo, i) => (
         <div key={i} style={{
-          display: "flex",
+          display: "flex", flexWrap: "wrap", minWidth: 0,
           alignItems: "center",
           gap: 10,
           padding: isMobile ? "8px 10px" : "8px 14px",
@@ -227,7 +227,7 @@ function ComboCards({ combos, isMobile }) {
           <span style={{ flex: 1, minWidth: 0, fontSize: fs, fontFamily: T.mono, color: T.text2, fontWeight: 500 }}>
             {combo.conditions.map(conditionLabel).join(" + ")}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, maxWidth: "100%" }}>
             <span style={{
               fontSize: m(T.textSm, isMobile), fontFamily: T.mono,
               color: rateColor(combo.win_rate, combo.count), fontWeight: 700,
@@ -252,7 +252,7 @@ function ComboCards({ combos, isMobile }) {
             <span style={{
               fontSize: fs, fontFamily: T.mono, color: T.text4,
             }}>
-              n={combo.count}
+              n={combo.count}{combo.count < MIN_N ? " \u00b7 Limited sample" : ""}
             </span>
           </div>
         </div>
@@ -402,8 +402,8 @@ function EdgeDecay({ periods, isMobile }) {
     }}>
       {periods.map(p => (
         <div key={p.period} style={{
-          flex: 1, textAlign: "center",
-          padding: isMobile ? "12px 10px" : "16px 20px",
+          flex: 1, minWidth: 0, textAlign: "center",
+          padding: isMobile ? "12px 8px" : "16px 20px",
           borderRadius: T.radiusXs,
           background: T.overlay02,
           border: `1px solid ${T.border}`,
@@ -416,7 +416,8 @@ function EdgeDecay({ periods, isMobile }) {
             {DECAY_LABELS[p.period] || p.period}
           </div>
           <div style={{
-            fontSize: m(T.text2xl, isMobile),
+            // Three tiles share a phone's width: a size that keeps "-0.55%" inside its tile.
+            fontSize: isMobile ? 20 : m(T.text2xl, isMobile),
             fontFamily: T.mono, fontWeight: 700,
             color: p.avg_return != null ? edgeColor(p.avg_return, p.count) : T.text4,
           }}>
@@ -426,8 +427,8 @@ function EdgeDecay({ periods, isMobile }) {
             fontSize: m(T.textXs, isMobile), color: T.text4,
             fontFamily: T.mono, marginTop: 6,
           }}>
-            {p.count > 0 && <div style={{ whiteSpace: "nowrap" }}>{p.positive_pct}% positive</div>}
-            <div>n={p.count}</div>
+            {p.count > 0 && <div style={{ whiteSpace: isMobile ? "normal" : "nowrap" }}>{p.positive_pct}% positive</div>}
+            <div>n={p.count}{p.count < MIN_N ? " \u00b7 Limited sample" : ""}</div>
           </div>
         </div>
       ))}
@@ -447,7 +448,7 @@ function HyperLensAttribution({ data, isMobile }) {
   function Side({ label, stats, accent }) {
     return (
       <div style={{
-        flex: 1, textAlign: "center",
+        flex: 1, minWidth: 0, textAlign: "center",
         padding: isMobile ? "12px 10px" : "16px 20px",
         borderRadius: T.radiusXs,
         background: T.overlay02,
@@ -479,7 +480,7 @@ function HyperLensAttribution({ data, isMobile }) {
           fontSize: m(T.textXs, isMobile), color: T.text4,
           fontFamily: T.mono, marginTop: 3,
         }}>
-          n={stats.count}
+          n={stats.count}{stats.count < MIN_N ? " \u00b7 Limited sample" : ""}
         </div>
       </div>
     );
@@ -570,14 +571,14 @@ export default function AnalyticsPanel({ isMobile }) {
 
           {/* Regime + Confluence row */}
           <div style={{ display: "flex", gap: isMobile ? 14 : 18, flexDirection: isMobile ? "column" : "row" }}>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="By Regime"
                 subtitle="Signal win rates broken down by the market regime active when the signal fired. Cells with fewer than 10 events are left out; grey figures rest on fewer than 30."
               />
               <RegimeScorecard data={data.regime_scorecard} isMobile={isMobile} />
             </GlassCard>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="By share of entry checks met"
                 subtitle="Win rate and average 7-day return of long signals, grouped by the share of entry checks met (not a forecast). Coins are scored out of different totals, so shares are compared rather than counts."
@@ -588,14 +589,14 @@ export default function AnalyticsPanel({ isMobile }) {
 
           {/* Edge Decay + HyperLens row */}
           <div style={{ display: "flex", gap: isMobile ? 14 : 18, flexDirection: isMobile ? "column" : "row" }}>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="Average return by holding window"
                 subtitle="Average price return of signals over each window after they fired, and the share of them that rose."
               />
               <EdgeDecay periods={data.edge_decay} isMobile={isMobile} />
             </GlassCard>
-            <GlassCard style={{ padding: pad, flex: 1 }}>
+            <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
                 title="HyperLens Attribution"
                 subtitle="Long signals where the tracked-wallet consensus (profitable traders and large accounts on Hyperliquid) agreed with the direction, against those where it did not."

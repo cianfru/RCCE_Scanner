@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {signalContext, setupAlignment, signalDirection, marketWideMissing, friendlyReason} from './signalPresentation.js';
+import {signalContext, setupAlignment, signalDirection, marketWideMissing, friendlyReason, plainReason} from './signalPresentation.js';
 import {candleChange, rangeRuler} from './chartPresentation.js';
 test('missing core names and consequences are visible without a bearish verdict',()=>{
  const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Tracked-wallet consensus BULLISH by position size (conviction 80%)']};
@@ -65,4 +65,18 @@ test('engine codes and win-rate tallies are rewritten for readers',()=>{
  const c=signalContext({signal:'ACCUMULATE',signal_warnings:['REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)']});
  assert.equal(c[0].text,'Held at Accumulate: no taker-buying confirmation');assert.equal(c[0].kind,'caution');
  assert.equal(friendlyReason('Late entry (40.7% WR zone) in MARKUP'),'Late entry in MARKUP');
+});
+test('plainReason turns engine reason strings into plain words', () => {
+ const a = plainReason('MARKUP + z=2.14 + conf=100% + consensus=RISK-ON + heat=5 + vs=1.15 [MARKUP extended]');
+ assert.equal(a, 'Uptrend · Stretched above its mean · 100% regime confidence · Market risk-on · Heat 5 · Uptrend extended');
+ const b = plainReason('ZEREBRO + z=0.10 + conf=41% [13/15 cond, 11.8/13 eff (90%) MARKUP-strict]'.replace('ZEREBRO', 'ACCUM'));
+ assert.equal(b, 'Accumulation · Near its mean · 41% regime confidence · 13 of 15 entry checks');
+ assert.match(plainReason('REACC + z=-1.24 + conf=92% + consensus=MIXED + heat=7 [REACC no CVD demand → ACCUMULATE]'), /held at Accumulate$/);
+ assert.match(plainReason('REACC + z=-0.28 + conf=32% + wallets=BULLISH(6%) [7.5/10 effective (75%) — insufficient]'), /Tracked wallets bullish \(6%\) · Entry checks 75%, not enough for an entry$/);
+ assert.equal(plainReason('Macro blocked (BMSB bearish) — REACC regime, long entries blocked'), 'Long entries blocked: price is below the weekly bull-market support band (BMSB).');
+ assert.equal(plainReason('[Agent] Squeeze setup: -73% annualized funding (z=-3.0, 14.1σ vs history) | confirmed: hyperliquid: -84%, binance: -73%'), 'Squeeze setup: -73% annualized funding · confirmed on Hyperliquid: -84%, Binance: -73%');
+ assert.equal(plainReason('smart_money_long(lsr=2.51)'), 'Smart money long (long/short 2.51)');
+ assert.equal(plainReason('REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)'), 'Held at Accumulate: no taker-buying confirmation');
+ assert.equal(plainReason(''), '');
+ for (const s of [a, b]) assert.doesNotMatch(s, /z=|conf=|\+ /);
 });

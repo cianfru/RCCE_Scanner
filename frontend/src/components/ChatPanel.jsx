@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, m } from "../theme.js";
+import { T, m, getBaseSymbol } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -218,6 +218,8 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
   const endRef = useRef(null);
   const sessionId = useRef(getSessionId());
   const inputRef = useRef(null);
+  const requestRef = useRef(null);   // the answer in flight, so it can be stopped
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   // Scroll window to top on mount
   useEffect(() => {
@@ -243,8 +245,14 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
     setLoading(true);
     setError(null);
 
+    // Stop button or 90s without an answer: abort, and give the prompt back.
+    const controller = new AbortController();
+    requestRef.current = controller;
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 90000);
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
+        signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -262,8 +270,15 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch (e) {
-      setError(e.message);
+      // The unanswered question leaves the thread and returns to the input box.
+      setMessages(prev => (prev[prev.length - 1] === userMsg ? prev.slice(0, -1) : prev));
+      setInput(text);
+      setError(e.name === "AbortError"
+        ? (timedOut ? "No answer after 90 seconds. Your question is back in the box below." : "Response stopped. Your question is back in the box below.")
+        : `${e.message}. Your question is back in the box below.`);
     } finally {
+      clearTimeout(timeout);
+      if (requestRef.current === controller) requestRef.current = null;
       setLoading(false);
     }
   }, [selectedSymbol, walletAddress, loading, timeframe]);
@@ -304,7 +319,8 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
         position: "relative",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · Scanner analysis · {timeframe.toUpperCase()}</span>
+          <span style={{color:T.text3,fontSize:m(T.textSm, isMobile)}}>AI Assist · {selectedSymbol ? getBaseSymbol(selectedSymbol) : "Scanner analysis"} · {timeframe.toUpperCase()}</span>
+          {loading && <button type="button" className="te-link" onClick={() => requestRef.current?.abort()}>Stop response</button>}
         </div>
         <button onClick={clearChat} className="apple-btn" style={{
           padding: isMobile ? "8px 16px" : "6px 14px",
@@ -482,7 +498,7 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
           fontSize: m(T.textSm, isMobile), color: T.red, fontFamily: T.font,
           flexShrink: 0,
         }}>
-          Error: {error}
+          {error}
         </div>
       )}
     </div>

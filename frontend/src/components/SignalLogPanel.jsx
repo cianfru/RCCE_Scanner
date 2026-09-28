@@ -1,4 +1,5 @@
 import Tabs from "./Tabs.jsx";
+import TokenLogo from "./TokenLogo.jsx";
 import { useState, useEffect, useMemo } from "react";
 import { T, SIGNAL_META, REGIME_META, TRANSITION_META, col } from "../theme.js";
 
@@ -38,9 +39,29 @@ const SIGNAL_SHORT = {
 };
 
 // "7/9" -> "7 of 9 entry checks met"; the totals differ between coins (9 or 11).
-function checksText(cond) {
+function checksText(cond, suffix = " met") {
   const m = /^(\d+)\/(\d+)$/.exec(cond || "");
-  return m ? `${m[1]} of ${m[2]} entry checks met` : "";
+  return m ? `${m[1]} of ${m[2]} entry checks${suffix}` : "";
+}
+// "Sep 24" -> "24 Sep" for the readout line.
+function dayText(day) {
+  const m = /^([A-Za-z]{3}) (\d{1,2})$/.exec(String(day || ""));
+  return m ? `${m[2]} ${m[1]}` : String(day || "");
+}
+// "LIGHT LONG" -> "Light long"
+function sentenceLabel(sig) {
+  const l = String(signalLabel(sig) || "").toLowerCase();
+  return l ? l[0].toUpperCase() + l.slice(1) : "";
+}
+
+// Ticker with its logo, as in the scanner grid.
+function Sym({ symbol, size = 18 }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
+      <TokenLogo symbol={symbol} size={size} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{stripSymbol(symbol)}</span>
+    </span>
+  );
 }
 
 const BULL_SIGNALS = new Set(["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED", "REVIVAL_SEED_CONFIRMED"]);
@@ -117,7 +138,7 @@ function scoreBullishHistory(row) {
 // 1. HEATMAP — sorted by best historical performers
 // ---------------------------------------------------------------------------
 
-function SignalHeatmap({ data, isMobile, sortMode }) {
+function SignalHeatmap({ data, isMobile, sortMode, picked, onPick }) {
   const sortedSymbols = useMemo(() => {
     if (!data || !data.grid) return [];
     const syms = [...(data.symbols || Object.keys(data.grid))];
@@ -132,7 +153,8 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
 
   // Cells fit a six-letter label at 12px; narrow screens scroll sideways.
   const cellMinSize = 52;
-  const labelW = isMobile ? 60 : 76;
+  // Logo (18) + gap + a seven-letter ticker.
+  const labelW = isMobile ? 84 : 100;
   // Size the table from its columns so narrow screens scroll instead of squeezing cells
   const colW = cellMinSize + 2;
   const tableW = labelW + 12 + data.days.length * colW;
@@ -155,7 +177,7 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
             if (!row) return null;
             return (
               <tr key={sym} style={{ background: rowIdx % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? `linear-gradient(${T.overlay02}, ${T.overlay02}), ${T.selectBg}` : T.selectBg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW }}>{stripSymbol(sym)}</td>
+                <td className="heat-sym" style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? `linear-gradient(${T.overlay02}, ${T.overlay02}), ${T.selectBg}` : T.selectBg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW, maxWidth: labelW, whiteSpace: "nowrap", overflow: "hidden" }}><Sym symbol={sym} /></td>
                 {row.map((cell, colIdx) => {
                   const signal = cell?.signal || "WAIT";
                   const checks = checksText(cell?.cond);
@@ -165,11 +187,15 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
                   const isWait = signal === "WAIT";
                   // The checks count lives in the tooltip: on a WAIT cell "9/9" read as full conviction.
                   const tooltip = `${stripSymbol(sym)} \u2014 ${data.days[colIdx]}: ${signalLabel(signal)}${checks ? ` \u00b7 ${checks}` : ""}`;
+                  const isPicked = picked?.sym === sym && picked?.idx === colIdx;
+                  // A button, so touch screens (no hover) can read the entry checks in the readout line.
                   return (
                     <td key={colIdx} title={tooltip} style={{ padding: 1, borderBottom: `1px solid ${T.overlay04}` }}>
-                      <div style={{ minWidth: cellMinSize, height: cellMinSize, borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "default" }}>
+                      <button type="button" className="heat-cell" aria-label={tooltip} aria-pressed={isPicked}
+                        onClick={() => onPick(isPicked ? null : { sym, idx: colIdx })}
+                        style={{ width: "100%", minWidth: cellMinSize, height: cellMinSize, padding: 0, font: "inherit", borderRadius: 4, background: isWait ? T.overlay04 : `${color}20`, border: `1px solid ${isWait ? "transparent" : `${color}35`}`, boxShadow: isPicked ? `inset 0 0 0 1.5px ${isWait ? T.text3 : color}` : "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                         {!isWait && shortLabel && <span style={{ fontSize: T.textXs, fontWeight: 700, color, lineHeight: 1, letterSpacing: "-0.02em" }}>{shortLabel}</span>}
-                      </div>
+                      </button>
                     </td>
                   );
                 })}
@@ -179,6 +205,32 @@ function SignalHeatmap({ data, isMobile, sortMode }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+// One line above the heatmap: the hint until a cell is picked, then that cell
+// ("BTC · 24 Sep · Light long · 8 of 9 entry checks"). Both keep one line's height,
+// so picking a cell never moves the grid.
+const READOUT_LINE = { margin: "-8px 0 12px", height: 18, lineHeight: "18px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+function HeatmapReadout({ data, picked, isMobile }) {
+  const row = picked && data?.grid?.[picked.sym];
+  if (!row) {
+    return <p style={{ ...READOUT_LINE, fontSize: T.textXs, color: T.text3 }}>
+      {isMobile ? "Tap a cell for its entry checks." : "Cells show the signal; hover or click a cell for the entry checks met."}
+    </p>;
+  }
+  const cell = row[picked.idx];
+  const signal = cell?.signal || "WAIT";
+  const checks = checksText(cell?.cond, "");
+  const dot = <span style={{ color: T.text4 }}>{" \u00b7 "}</span>;
+  return (
+    <p role="status" style={{ ...READOUT_LINE, fontSize: 13, color: T.text2 }}>
+      {!isMobile && <span style={{ marginRight: 6, verticalAlign: "-3px", display: "inline-flex" }}><TokenLogo symbol={picked.sym} size={16} /></span>}
+      <b style={{ fontWeight: 600, color: T.text1 }}>{stripSymbol(picked.sym)}</b>
+      {dot}{dayText(data.days?.[picked.idx])}
+      {dot}<span style={{ color: signal === "WAIT" ? T.text3 : signalColor(signal), fontWeight: 600 }}>{sentenceLabel(signal)}</span>
+      {checks && <>{dot}{checks}</>}
+    </p>
   );
 }
 
@@ -237,7 +289,7 @@ function DivergenceView({ data, isMobile }) {
                 background: i % 2 === 1 ? T.overlay02 : "transparent",
                 borderLeft: `3px solid ${bullSignalBearWallets ? col("#f87171") : col("#fbbf24")}`,
               }}>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(p.symbol)}</td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={p.symbol} /></td>
                 <td style={S.td}>
                   <Badge color={sigColor}>
                     {signalLabel(p.signal)}
@@ -314,7 +366,7 @@ function TransitionsView({ events, isMobile }) {
             return (
               <tr key={`${ev.symbol}-${ev.timestamp}-${i}`} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
                 <td style={{ ...S.td, color: T.text3 }}>{ago}</td>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(ev.symbol)}</td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={ev.symbol} /></td>
                 <td style={{ ...S.td, color: prevColor }}>{ev.prev_signal ? signalLabel(ev.prev_signal) : "\u2014"}</td>
                 <td style={{ ...S.td, color: tt.color, fontSize: 12, textAlign: "center", padding: "7px 4px" }}>{tt.glyph}</td>
                 <td style={{ ...S.td, color: sigColor, fontWeight: 600 }}>{signalLabel(ev.signal)}</td>
@@ -388,7 +440,7 @@ function StreaksView({ data, isMobile }) {
             const sigColor = signalColor(s.signal);
             return (
               <tr key={s.symbol} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}>{stripSymbol(s.symbol)}</td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={s.symbol} /></td>
                 <td style={S.td}>
                   <Badge color={sigColor}>
                     {signalLabel(s.signal)}
@@ -426,6 +478,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
   const [heatmap, setHeatmap] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sortMode, setSortMode] = useState("bullish");
+  const [picked, setPicked] = useState(null);   // heatmap cell shown in the readout line: { sym, idx }
   const [transitions, setTransitions] = useState([]);
   const [heatmapError, setHeatmapError] = useState(false);
   const [transitionsError, setTransitionsError] = useState(false);
@@ -448,7 +501,7 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
     setHeatmapError(false);
     fetch(`${api}/api/signals/heatmap?timeframe=${timeframe}&days=14&limit=100`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { if (!cancelled) setHeatmap(d); })
+      .then(d => { if (!cancelled) { setHeatmap(d); setPicked(null); } })
       .catch(e => { if (!cancelled) { console.error("SignalLogPanel fetch error:", e); setHeatmap(null); setHeatmapError(true); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -506,8 +559,8 @@ export default function SignalLogPanel({ api, isMobile, scanData4h, scanData1d }
                   {heatmap?.symbols?.length || 0} pairs
                 </span>
               </div>
-              <p style={{ margin: "-8px 0 12px", fontSize: T.textXs, color: T.text3 }}>Cells show the signal; hover a cell for the entry checks met.</p>
-              {heatmapError ? <LoadError onRetry={retry} /> : <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} />}
+              <HeatmapReadout data={heatmap} picked={picked} isMobile={isMobile} />
+              {heatmapError ? <LoadError onRetry={retry} /> : <SignalHeatmap data={heatmap} isMobile={isMobile} sortMode={sortMode} picked={picked} onPick={setPicked} />}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.overlay04}` }}>
                 {/* Only signals that appear in the grid */}
                 {Object.entries(SIGNAL_META).filter(([key]) => presentSignals.has(key)).map(([key, meta]) => {
