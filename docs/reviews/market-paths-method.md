@@ -108,4 +108,49 @@ While designing, two proposals ran walk-forward checks on this same history. Tho
 
 ## Official run
 
-Not run yet. The `fan_check` table from `python -m backtest.breadth_history export` is pasted here unedited when it runs.
+Run once on 28 September 2026, after this file was committed (declaration commit 508702f), with `python -m backtest.breadth_history export` (it calls `backtest.market_paths.calibrate`; `python -m backtest.market_paths calibrate --dry` prints the same table). Cache: the local rebuild, 151 coins, last close 25 Sep 2026 (day 20721). The typical alt's past paths come from the seed's `alt_paths` (whole %) for origins up to 29 Jan 2026 and from per-coin closes after, as in production.
+
+```
+fan_check through 20721: 82 of 118 episodes with a fan (16 runs), 52 scored with quantiles (12 runs), untested=False, median_vs_all=1.13
+series   h   middle half (hits/n, Wilson 90%)     10-90 (hits/n, Wilson 90%)      MAE fan / all   pass
+uptrend   30   18/52    35%  [0.25, 0.46]        39/52    75%  [0.64, 0.83]      0.2765 / 0.278   False
+uptrend   60   22/52    42%  [0.32, 0.54]        37/52    71%  [0.60, 0.80]      0.3513 / 0.3532   False
+btc       30   24/52    46%  [0.35, 0.57]        31/52    60%  [0.48, 0.70]      1.095e+04 / 9246   False
+btc       60   23/52    44%  [0.33, 0.56]        39/52    75%  [0.64, 0.83]      1.788e+04 / 1.589e+04   False
+alt       30   26/52    50%  [0.39, 0.61]        39/52    75%  [0.64, 0.83]      22.6 / 17.94   True
+alt       60   22/52    42%  [0.32, 0.54]        40/52    77%  [0.66, 0.85]      31.29 / 26.14   True
+```
+
+(The pass column is per series: both horizons must hold. The Uptrend 60-day outer interval's upper end is 0.802, so it contains 0.80.)
+
+**Per series and horizon**
+
+| Series | 30 days: middle half / 10-90 | 60 days: middle half / 10-90 | Result |
+|---|---|---|---|
+| Uptrend share | 35% (fails: interval 0.25-0.46 misses 0.50) / 75% (holds) | 42% (holds) / 71% (holds) | Fail |
+| BTC | 46% (holds) / 60% (fails: interval 0.48-0.70 misses 0.80) | 44% (holds) / 75% (holds) | Fail |
+| Typical alt | 50% (holds) / 75% (holds) | 42% (holds) / 77% (holds) | Pass |
+
+- Enough tests: 52 episodes scored with quantiles from 12 runs (82 had a fan, 30 of them from only 3-5 runs, which draw paths and are not scored). Both readings clear the 30-episode, 8-run bar.
+- `median_vs_all` = 1.13: the matched median was **further off than** the median of all earlier days. The fan's median is a description of what followed similar days, not a better guess than an ordinary stretch.
+
+**What the drawer shows as a result**
+
+- Typical alt: shaded middle half and 10-90 band, median, landing dots.
+- BTC and Uptrend share: every episode's path, median and landing dots, no shading; the readout shows lowest-highest instead of the middle half.
+- These modes are in the payload (`fan.show`), taken from the seed's `fan_check`, so they change only if the seed is rebuilt.
+
+**Today (27 Sep 2026, from the production days and closes)**: step 0 (within 5 points, BTC holding its band), 12 episodes from 8 runs.
+
+| | +30 days: median (middle half) | +60 days: median (middle half) |
+|---|---|---|
+| Uptrend share | 72% (33-89%) | 45% (6-90%) |
+| BTC | 84,836 (78,515-90,001) | 78,441 (67,572-109,775) |
+| Typical alt | -7.5% (-24.5% to +5.0%) | -22.7% (-37.5% to +29.5%) |
+| Ordinary stretch | BTC 84,725, alt -7.4% | BTC 85,486, alt -13.1% |
+
+**Deviations**
+
+- No rule or threshold changed. The counts above are what the first run gave.
+- After the first run, two count fields were added to `fan_check` (`scored`, `scored_runs`) because "tested" can be read two ways (days with any fan, or days with quantiles). The export was re-run once to write them; every other number in the seed came out identical.
+- The exploratory numbers seen before the declaration (52 of 118, 12 runs; alt passes, BTC 60% on the 30-day outer band, Uptrend 37% on the 30-day middle half, `median_vs_all` about 1.2) came out close to the official ones (Uptrend 35%, `median_vs_all` 1.13). Today's typical alt at +60 reads -22.7% against -22.6% seen earlier, because the seed stores past alt paths in whole percent.
