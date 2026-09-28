@@ -20,6 +20,10 @@ const FILTERS = [
   { key: "converging", label: "Converging", title: "Two or more profitable traders opened the same side within 24 hours" },
 ];
 const SIDE_COLOR = { long: "#7dd3fc", short: "#fda4af" };
+// The table opens on the coins most traders hold; "Show all" lists the rest.
+const TOP_N = 20;
+const traderCount = r => (r.long?.n || 0) + (r.short?.n || 0);
+const coinHref = coin => `/scanner/${encodeURIComponent(coin)}?market=perpetual&tf=4h`;
 
 const sentence = s => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "");
 const pct = v => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
@@ -47,6 +51,7 @@ export default function PositioningView() {
   const [filter, setFilter] = useState("all");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [showAll, setShowAll] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,7 +66,10 @@ export default function PositioningView() {
     return () => { cancelled = true; clearInterval(id); };
   }, [group]);
 
-  const rows = useMemo(() => (data?.rows || []).filter(MAP_FILTERS[filter]), [data, filter]);
+  // Most traders first (a stable sort keeps the server's order among equals).
+  const rows = useMemo(() => (data?.rows || []).filter(MAP_FILTERS[filter])
+    .map((r, i) => [r, i]).sort((a, b) => traderCount(b[0]) - traderCount(a[0]) || a[1] - b[1]).map(([r]) => r), [data, filter]);
+  const shown = showAll ? rows : rows.slice(0, TOP_N);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map(f => [f.key, (data?.rows || []).filter(MAP_FILTERS[f.key]).length])), [data]);
   const who = group === "profitable" ? "profitable traders" : "large accounts";
 
@@ -92,12 +100,12 @@ export default function PositioningView() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => {
+              {shown.map(r => {
                 const m = matchOf(r);
                 const o = r.opens_24h || {};
                 return (
-                  <tr key={r.coin} onClick={() => navigate(`/scanner/${encodeURIComponent(r.coin)}`)} tabIndex={0}
-                    onKeyDown={e => { if (e.key === "Enter") navigate(`/scanner/${encodeURIComponent(r.coin)}`); }}>
+                  <tr key={r.coin} onClick={() => navigate(coinHref(r.coin))} tabIndex={0}
+                    onKeyDown={e => { if (e.key === "Enter") navigate(coinHref(r.coin)); }}>
                     <td>
                       <span className="pos-coin"><TokenLogo symbol={`${r.coin}/USDT`} size={20} /> {r.coin}</span>
                       {r.convergence && <div className="pos-sub" style={{ color: col(SIDE_COLOR[r.convergence.side]) }}>Converging {r.convergence.side} · {r.convergence.n}</div>}
@@ -120,6 +128,14 @@ export default function PositioningView() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {rows.length > TOP_N && (
+        <div className="pos-more">
+          {!showAll && <span className="pos-dim">Top {TOP_N} by traders</span>}
+          <button type="button" className="te-link" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
+            {showAll ? `Show top ${TOP_N}` : `Show all ${rows.length}`}
+          </button>
         </div>
       )}
       <p className="coh-muted">New positions are counted since tracking began; convergences are shown for 48 hours. Tap a coin for its chart with the traders' entries.</p>

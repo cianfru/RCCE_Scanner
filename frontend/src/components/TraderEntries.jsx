@@ -38,7 +38,7 @@ export default function TraderEntries({ entries, onShow, loading = false }) {
         <tbody>
           {traders.map(tr => {
             const isOpen = open === tr.address;
-            const isFollowed = followed.has(tr.address);
+            const isFollowed = followed.has(String(tr.address).toLowerCase());
             return (
               <Fragment key={tr.address}>
                 <tr className={isOpen ? "te-open" : ""} onClick={() => setOpen(isOpen ? null : tr.address)} tabIndex={0}
