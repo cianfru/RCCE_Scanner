@@ -2,6 +2,7 @@
 Rebuild daily market breadth with the live engine (declared in docs/reviews/market-breadth-study.md).
 
     python -m backtest.breadth_history rebuild --out breadth_history      (from backend/)
+    python -m backtest.breadth_history ft-history                        (the forward test's exploratory table)
 
 At every closed daily candle compute_rcce runs on each coin's trailing window (up to 600
 candles, as the scanner does; coins with fewer than 200 candles are skipped that day).
@@ -188,11 +189,14 @@ def study(src, out_name):
     return out
 
 
-def export(study_name="breadth_study", src="breadth_history", out=None):
+def export(study_name="breadth_study", src="breadth_history", out=None, check=True):
     """Seed for the live market history (backend/seeds/market_history_seed.json): per-day
     aggregates, BTC close, the coin list, and the study's episodes. Episode outcomes stop
-    at END_DAY; later days are appended live without outcomes."""
+    at END_DAY; later days are appended live without outcomes. Past paths
+    (docs/reviews/market-paths-method.md): the typical alt's paths, the ordinary path and,
+    with `check`, the walk-forward check (backtest.market_paths)."""
     from pathlib import Path
+    from backtest import market_paths as mp
     data = json.loads((RUNS_DIR / f"{src}.json").read_text())
     st = json.loads((RUNS_DIR / f"{study_name}.json").read_text())
     btc = data["closes"]["BTCUSDT"]
@@ -209,9 +213,43 @@ def export(study_name="breadth_study", src="breadth_history", out=None):
             "days_cols": ["day", "n", "uptrend", "overheated", "downtrend", "basing", "median_z", "btc"],
             "episode_cols": ["start", "end", "breadth", "btc10", "alt10", "btc30", "alt30", "btc60", "alt60"],
             "days": days, "base": st["base"], "bands": bands}
+    seed["alt_paths"] = mp.alt_paths(data["closes"])
+    seed["base_path"] = mp.base_path(data)
+    if check:
+        seed["fan_check"] = mp.calibrate(data, days, seed["alt_paths"], seed["bands_def"])
     path = Path(out) if out else Path(__file__).resolve().parent.parent / "seeds" / "market_history_seed.json"
     path.write_text(json.dumps(seed, separators=(",", ":")))
     print(f"{len(days)} days, {len(seed['pairs'])} pairs -> {path} ({path.stat().st_size // 1024} KB)")
+
+
+def ft_history(src="breadth_history"):
+    """The forward test's exploratory table (docs/reviews/btc-band-breadth-forward-test.md, market_history.FT_HISTORY)
+    from the cache: episodes on the study's days (40+ coins, up to END_DAY) whose 60 days close by END_DAY, with the
+    production band (Sunday closes) and episode rule. Row: start day, days, share, BTC 30d, typical alt 30d and 60d
+    (whole %; the typical alt is the median return of 20+ coins other than BTC with both closes)."""
+    import market_history as mh
+    data = json.loads((RUNS_DIR / f"{src}.json").read_text())
+    closes = data["closes"]
+    btc = closes["BTCUSDT"]
+    alts = [closes[p] for p in closes if p != "BTCUSDT"]
+    rows = [[d["day"], d["n"], d["uptrend"], d["overheated"], d["downtrend"], d["basing"], d["median_z"], btc.get(str(d["day"]))]
+            for d in data["days"]]
+    band = mh.btc_band(rows)                       # every day, as view() computes it
+    days = [r for r in rows if r[1] >= MIN_COINS and r[0] <= END_DAY]
+
+    def alt(t, e):
+        rs = [c[str(e)] / c[str(t)] - 1 for c in alts if str(t) in c and str(e) in c and c[str(t)] > 0]
+        return None if len(rs) < MIN_COINS // 2 else statistics.median(rs)
+
+    out = []
+    for e in mh.ft_episodes(days, band):
+        t = e["start"]
+        if t + 60 > END_DAY:
+            continue
+        a30, a60 = alt(t, t + 30), alt(t, t + 60)
+        out.append([t, e["end"] - t + 1, round(e["share"], 2), round(100 * (btc[str(t + 30)] / btc[str(t)] - 1)),
+                    None if a30 is None else round(100 * a30), None if a60 is None else round(100 * a60)])
+    return out
 
 
 def main(argv=None):
@@ -222,10 +260,19 @@ def main(argv=None):
     st = sub.add_parser("study")
     st.add_argument("--src", default="breadth_history")
     st.add_argument("--out", required=True)
-    sub.add_parser("export")
+    ex = sub.add_parser("export")
+    ex.add_argument("--no-check", action="store_true", help="leave out the walk-forward check (fan_check)")
+    fh = sub.add_parser("ft-history", help="print the forward test's exploratory table (FT_HISTORY) from the cache")
+    fh.add_argument("--src", default="breadth_history")
     args = ap.parse_args(argv)
     if args.cmd == "export":
-        export()
+        export(check=not args.no_check)
+    elif args.cmd == "ft-history":
+        from datetime import date, timedelta
+        rows = ft_history(args.src)
+        for r in rows:
+            print(json.dumps(r), (date(1970, 1, 1) + timedelta(r[0])).isoformat())
+        print(f"{len(rows)} episodes")
     elif args.cmd == "rebuild":
         rebuild(args.out)
     else:
