@@ -34,10 +34,8 @@ export default function RadarPicks({ top, box, tf, focus, watched, inBox, loaded
     <div className="radar-picks-head">
       <h2 id="radar-picks-h">Look at these today <HelpTip title="Reading the Radar">
         <p>Each bubble is a coin. Left to right: how far price sits from its mean (the engine's z-score). Bottom to top: profitable Hyperliquid traders long minus short. Colour: where the setup is (forming, just fired, running, stretched, leaving).</p>
-        <p>Size: the dollars these traders hold in the coin, longs plus shorts; twice the dollars, twice the area. The pink slice is the short share. A small grey dot: none of them hold it.</p>
-        <p>Ring: the distance to the coin's weekly band (the 20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above the band, full at its top edge. Violet: inside the band, or under it now (a red tick). Red: the last weekly close ended under it.</p>
         <p>Early setups (the shaded box): a setup that has not run far, with a few profitable traders long and no crowd yet.</p>
-        <p>Click a bubble to see who holds it and at what price; click the same spot again to step through coins stacked there. Trails show the last {tf === "1d" ? "5 days" : "24 hours"}; press Play to watch them move.</p>
+        <p>Click a bubble to see who holds it and at what price; click the same spot again to step through coins stacked there. Trails show the last {tf === "1d" ? "5 days" : "24 hours"}; press Replay to watch them move. Size, rings and colours: the map key (i) under the map.</p>
         <p>Look at these today: early setups ranked by the engine's priority plus what moved. A shortlist for your eyes, not a forecast.</p>
       </HelpTip></h2>
       {loaded && <span className="radar-meta"><b>{inBox}</b> early setups</span>}

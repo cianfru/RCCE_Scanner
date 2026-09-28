@@ -13,7 +13,7 @@ import PanelHeader from "./PanelHeader.jsx";
  *
  * Props:
  *   positioning — PositioningResponse (Binance/HL native data + CoinGlass enrich)
- *   hasCoinglass — bool; without it the CoinGlass fields hold placeholders and read "Unavailable"
+ *   hasCoinglass — bool; without it the CoinGlass fields hold placeholders and are listed as not available
  *   cvdTrend    — "BULLISH" | "BEARISH" | "NEUTRAL"
  *   cvdDiv      — bool
  *   bsr         — number (buy/sell ratio)
@@ -35,19 +35,7 @@ function fmt(v) {
 
 // ─── Signal badge cell ────────────────────────────────────────────────────────
 
-function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor }) {
-  if (empty) {
-    return (
-      <div style={{
-        flex: "1 1 48%", padding: "10px 12px", borderRadius: 10,
-        background: T.overlay02,
-        border: `1px solid ${T.border}`,
-        display: "flex", flexDirection: "column", gap: 2, minWidth: 0,
-      }}>
-        <span style={{ fontSize: 12, color: T.text4, fontFamily: T.font, fontWeight: 600, textTransform: "none", letterSpacing: "0.02em" }}>{"\u2014"}</span>
-      </div>
-    );
-  }
+function Badge({ icon, label, sub, color, info, context, contextColor }) {
   // Readings carry dark-theme hexes; col() gives light mode its readable hue.
   const c = col(color || T.text2);
   return (
@@ -275,6 +263,11 @@ export default function PositioningPanel({ positioning, hasCoinglass = false, cv
   const b5 = topTraderBadge(top_trader_lsr, long_short_ratio, hasCoinglass);
   const b6 = liqBadge(liquidation_24h_usd, long_liq_usd, short_liq_usd, hasCoinglass);
 
+  const badges = [b1, b2, b3, b4, b5, b6];
+  const shown = badges.filter(b => !b.unavailable);
+  const vpinOk = Number.isFinite(vpin) && vpin >= 0 && vpin <= 1;
+  const missing = [...badges.filter(b => b.unavailable).map(b => b.label.toLowerCase().replace("l/s", "L/S")), ...(vpinOk ? [] : ["flow imbalance"])];
+
   // ── Secondary stats (funding, OI and L/S are already in the badges) ─────────
   const stats = [
     hasCoinglass && liquidation_24h_usd > 0 && { label: "LIQ 24H", value: fmt(liquidation_24h_usd), color: T.text3 },
@@ -305,18 +298,17 @@ export default function PositioningPanel({ positioning, hasCoinglass = false, cv
         )}
       </PanelHeader>
 
-      {/* Badge grid — 2 columns \u00d7 3 rows */}
+      {/* Badge grid: only the readings this market has */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-        <Badge {...b1} />
-        <Badge {...b2} />
-        <Badge {...b3} />
-        <Badge {...b4} />
-        <Badge {...b5} />
-        <Badge {...b6} />
+        {shown.map(b => <Badge key={b.label} {...b} />)}
       </div>
 
       {/* VPIN flow toxicity gauge */}
-      <FlowToxicity vpin={vpin} />
+      {vpinOk && <FlowToxicity vpin={vpin} />}
+      {/* The readings this market lacks, named in one line instead of a wall of empty tiles. */}
+      {missing.length > 0 && <p style={{ margin: "0 0 12px", fontSize: 12, lineHeight: 1.5, color: T.text3, fontFamily: T.font }}>
+        Not available for this market: {missing.join(", ")}.
+      </p>}
 
       {/* Numbers strip */}
       {stats.length > 0 && (

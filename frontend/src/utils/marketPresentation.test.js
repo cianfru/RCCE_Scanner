@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPercent, formatPrice, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass, signalAgreement} from './marketPresentation.js';
+import {formatPercent, formatPrice, evidenceSummary, bestEntrySetups, funding8hPct, hasCoinglass, signalAgreement, counterEvidence} from './marketPresentation.js';
 test('respects explicit API percentage units without multiplying twice',()=>{
  assert.equal(formatPercent(82),'82%');
  assert.equal(formatPercent(0.82,{ratio:true}),'82%');
@@ -52,4 +52,14 @@ test('timeframe agreement is three-way and names the regimes',()=>{
  const text=evidenceSummary({regime:'REACC',conditions_met:8,conditions_total:11,confluence:{regime_aligned:true,regime_4h:'REACC',regime_1d:'ACCUM',signal_aligned:null,signal_4h:'WAIT',signal_1d:'WAIT'}});
  assert.match(text,/regimes agree \(both in the bullish family: Re-accumulating and Accumulation\)\. Both timeframes are waiting\./);
  assert.doesNotMatch(text,/while/);
+});
+test('counter-evidence lists only readings against the signal side, never for WAIT or missing data',()=>{
+ const row={signal:'LIGHT_LONG',cvd_trend:'BEARISH',positioning:{funding_regime:'CROWDED_LONG',funding_rate:0.0000125,oi_trend:'BUILDING',spot_dominance:'FUTURES_LED'}};
+ const c=counterEvidence(row);
+ assert.equal(c.length,2);assert.match(c[0],/Longs are crowded: funding \(0\.0100% per 8h\)/);assert.equal(c[1],'Takers are selling');
+ assert.deepEqual(counterEvidence({...row,signal:'WAIT'}),[]);
+ assert.deepEqual(counterEvidence({signal:'ACCUMULATE',cvd_trend:'BULLISH',positioning:{funding_regime:'CROWDED_SHORT'}}),[]);
+ assert.deepEqual(counterEvidence({signal:'LIGHT_SHORT',cvd_trend:'BULLISH',positioning:{}}),['Takers are buying']);
+ const cg={input_quality:{coinglass:{status:'ready'}},positioning:{source_map:{liq:'coinglass'},spot_dominance:'FUTURES_LED',top_trader_lsr:0.7}};
+ assert.deepEqual(counterEvidence({signal:'STRONG_LONG',...cg}),['The move is led by futures, not spot','Top exchange traders lean short']);
 });

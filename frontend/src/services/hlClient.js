@@ -304,13 +304,6 @@ export async function getUserFunding(address, startTime) {
 }
 
 /**
- * Get fee schedule, current rates, volume history.
- */
-export async function getUserFees(address) {
-  return infoClient.userFees({ user: address });
-}
-
-/**
  * Cancel an open order (requires wallet signature).
  */
 export async function cancelOrder(walletClient, { coin, oid }) {

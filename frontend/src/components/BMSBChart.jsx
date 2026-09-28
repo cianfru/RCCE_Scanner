@@ -1,5 +1,4 @@
 import { useTheme } from "../ThemeContext.jsx";
-import RangeRuler from "./RangeRuler.js";
 import SpikeZone from "./SpikeZone.js";
 import TraderEntries from "./TraderEntries.jsx";
 import WalletOpens from "./WalletOpens.jsx";
@@ -21,7 +20,7 @@ import {
   createTextWatermark,
   createSeriesMarkers,
 } from "lightweight-charts";
-import { col, T, alpha, REGIME_META, SIGNAL_META, heatColor, resolveToken, getBaseSymbol } from "../theme.js";
+import { col, T, alpha, REGIME_META, SIGNAL_META, resolveToken, getBaseSymbol } from "../theme.js";
 import { sideColor } from "../utils/traderFormat.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -69,10 +68,8 @@ export default function BMSBChart({
   signalFirstSeenAt,
   signalTimeframe,
   regime,
-  heat,
   exhaustionState,
   floorConfirmed,
-  momentum,
   timeframeControl = true,   // false when the page owns the timeframe (coin page)
   traders = null,            // {entries, opens} when the page loads and shows the traders itself
   traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
@@ -88,8 +85,6 @@ export default function BMSBChart({
   const pressureLinesRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [hoverCandle, setHoverCandle] = useState(null);
-  const [chartRange, setChartRange] = useState(null);
-  const [signalMarkerIndex, setSignalMarkerIndex] = useState(null);
   const [error, setError] = useState(null);
   const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
   useEffect(() => { setActiveTimeframe(initialTimeframe === "1d" ? "1d" : "4h"); }, [initialTimeframe]);
@@ -100,10 +95,15 @@ export default function BMSBChart({
   const [patterns, setPatterns] = useState([]);
   const [showPatterns, setShowPatterns] = useState(false);
   const [showMean, setShowMean] = useState(false);
+  const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
   const [showEntries, setShowEntries] = useState(true);
   const [candleTimes, setCandleTimes] = useState(null);
   const meanSeriesRef = useRef([]);
+  const ribbonSeriesRef = useRef([]);
+  const spikeZoneRef = useRef(null);
+  const showMeanRef = useRef(false);
+  const showRibbonRef = useRef(false);
   const zoneEndRef = useRef(null);
   const patternSeriesRef = useRef([]);
   const entryMarkersRef = useRef(null);
@@ -154,7 +154,7 @@ export default function BMSBChart({
         borderColor: "rgba(255,255,255,0.06)",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 10,   // room for the range label right of the last candle
+        rightOffset: 10,   // room for the entry-line labels right of the last candle
         barSpacing: (TIMEFRAMES.find(t => t.key === tf) || {}).barSpace || 8,
         minBarSpacing: 3,
       },
@@ -221,7 +221,9 @@ export default function BMSBChart({
       crosshairMarkerVisible: false,
       lastValueVisible: false,
       priceLineVisible: false,
+      visible: showRibbonRef.current,
     }));
+    ribbonSeriesRef.current = ribbonSeries;
 
     // ── 200-day MA ──
     const ma200Series = chart.addSeries(LineSeries, {
@@ -270,7 +272,7 @@ export default function BMSBChart({
     // The engine's mean as prices: where z would be 0 and 1 (after-the-spike study).
     const meanSeries = [["z0", "Mean (z 0)", LineStyle.Dashed], ["z1", "z 1", LineStyle.Dotted]].map(([key, title, style]) =>
       [key, chart.addSeries(LineSeries, { color: col("#91b9e8"), lineWidth: 1, lineStyle: style, title,
-        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: false })]);
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: showMeanRef.current })]);
     meanSeriesRef.current = meanSeries;
 
     // ── Fetch data ──
@@ -279,8 +281,6 @@ export default function BMSBChart({
     const encoded = encodeURIComponent(symbol);
     setLoading(true);
     setHoverCandle(null);
-    setChartRange(null);
-    setSignalMarkerIndex(null);
     setRibbon(null);
     setPatterns([]);
     setSpike(null);
@@ -288,6 +288,7 @@ export default function BMSBChart({
     entryMarkersRef.current = null;
     entryLinesRef.current = [];
     zoneEndRef.current = null;
+    spikeZoneRef.current = null;
     patternSeriesRef.current = [];
     setError(null);
 
@@ -324,36 +325,28 @@ export default function BMSBChart({
           }
 
           const volumes = new Map((data.volume || []).map(v => [v.time, v.value]));
-          const latestCandle = data.candles.at(-1);
           const readCandle = candle => setHoverCandle(candle ? {
             ...candle, change:candleChange(candle), volume:volumes.get(candle.time),
-            volumeUnit:data.volume_unit || baseSymbol,
             live: candle.time <= Date.now()/1000 && candle.time + (apiTf === '1d' ? 86400 : 14400) > Date.now()/1000,
           } : null);
-          readCandle(latestCandle);
           chart.subscribeCrosshairMove(param => {
             if (cancelled) return;
             const candle = param.seriesData?.get(candleSeries);
-            readCandle(candle?.open != null ? candle : latestCandle);
+            readCandle(candle?.open != null ? candle : null);
           });
           for (const [key, ser] of meanSeries) ser.setData(data.mean_lines?.[key] || []);
           if (data.spike) {
             setSpike(data.spike);
             const anchorIndex = data.spike.anchor_time != null ? data.candles.findIndex(c => c.time === data.spike.anchor_time) : -1;
             if (anchorIndex >= 0 && data.spike.zone) {
-              // Room to the right so the part of the zone still ahead is visible (see reset view).
+              // Drawn with the Mean lines; the reset view then makes room for the part still ahead.
               zoneEndRef.current = anchorIndex + data.spike.zone.to_bar;
-              chart.timeScale().applyOptions({ rightOffset: Math.max(10, Math.min(60, zoneEndRef.current - (data.candles.length - 1) + 3)) });
-              candleSeries.attachPrimitive(new SpikeZone({ anchorIndex, anchorClose: data.spike.anchor_close, zone: data.spike.zone,
-                colors: { fill: "rgba(207,145,133,0.08)", line: col("#cf9185"), text: col("#cf9185") } }));
+              const zone = new SpikeZone({ anchorIndex, anchorClose: data.spike.anchor_close, zone: data.spike.zone,
+                colors: { fill: "rgba(207,145,133,0.08)", line: col("#cf9185"), text: col("#cf9185") } });
+              zone.setVisible(showMeanRef.current);
+              candleSeries.attachPrimitive(zone);
+              spikeZoneRef.current = zone;
             }
-          }
-          if (data.expected_range && data.expected_range.timeframe === apiTf) {
-            const forecast = data.expected_range;
-            setChartRange(forecast);
-            candleSeries.attachPrimitive(new RangeRuler({reference:forecast.reference_price,
-              percentage:forecast.expected_range_pct, lastIndex:data.candles.length-1,
-              horizon:apiTf === '1d' ? '24h' : '4h', light: mode === 'light'}));
           }
 
           // Anchor the signal to its recorded first-seen candle, never the live bar.
@@ -363,8 +356,6 @@ export default function BMSBChart({
             const markerTime = (!signalTimeframe || signalTimeframe === apiTf)
               ? signalCandleTime(data.candles, signalFirstSeenAt, apiTf === "4h" ? 14400 : 86400)
               : null;
-            // -1: looked up but outside the loaded candles. Null: no marker for this signal (e.g. WAIT).
-            setSignalMarkerIndex(markerTime == null ? -1 : data.candles.findIndex(c => c.time === markerTime));
             const markers = markerTime == null ? [] : [{
               time: markerTime,
               position: markerDef.position,
@@ -451,11 +442,11 @@ export default function BMSBChart({
           const plotWidth = Math.max(160, (containerRef.current?.clientWidth || 900) - 80);
           const preferredBars = tf === "1d" ? 150 : 180;
           const visibleBars = Math.min(preferredBars, Math.max(40, Math.floor(plotWidth / 4)));
-          // Keep ~110px empty right of the last candle for the range ruler's label,
+          // Keep ~100px empty right of the last candle for the entry-line labels,
           // whatever the width: p empty bars take p / (visibleBars + p) of the plot.
-          const pad = Math.max(6, Math.ceil(110 * visibleBars / Math.max(60, plotWidth - 110)));
-          // After a spike, extend the view to the end of the "where past spikes bottomed" zone.
-          const zoneEnd = zoneEndRef.current != null ? zoneEndRef.current + 3 : 0;
+          const pad = Math.max(6, Math.ceil(100 * visibleBars / Math.max(60, plotWidth - 100)));
+          // With the Mean lines on after a spike, extend the view to the end of the "where past spikes bottomed" zone.
+          const zoneEnd = zoneEndRef.current != null && showMeanRef.current ? zoneEndRef.current + 3 : 0;
           const to = Math.max(candleCount + pad, zoneEnd);
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(-1, to - pad - visibleBars),
@@ -494,17 +485,24 @@ export default function BMSBChart({
       // this chart's series once the chart is gone (applyOptions there schedules a paint of a
       // removed chart, which throws "Object is disposed" on the next frame).
       meanSeriesRef.current = [];
+      ribbonSeriesRef.current = [];
+      spikeZoneRef.current = null;
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
   }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode]);
 
-  // Build chart on mount and when dependencies change
+  // Overlay toggles: the mean lines (with the after-the-spike zone) and the trend ribbon, off by default.
   useEffect(() => {
+    showMeanRef.current = showMean;
     for (const [, ser] of meanSeriesRef.current) { try { ser.applyOptions({ visible: showMean }); } catch (_) {} }
+    spikeZoneRef.current?.setVisible(showMean);
+    if (zoneEndRef.current != null) resetViewRef.current?.();
   }, [showMean, activeTimeframe]);
-  // A fresh spike turns the mean lines on: they show where the unwind is heading.
-  useEffect(() => { if (spike && !spike.running && !spike.superseded) setShowMean(true); }, [spike]);
+  useEffect(() => {
+    showRibbonRef.current = showRibbon;
+    for (const ser of ribbonSeriesRef.current) { try { ser.applyOptions({ visible: showRibbon }); } catch (_) {} }
+  }, [showRibbon, activeTimeframe]);
 
   useEffect(() => {
     const cleanup = buildChart(activeTimeframe);
@@ -786,8 +784,6 @@ export default function BMSBChart({
   // ── Info strip data ──
   const rm = regime ? REGIME_META[regime] || REGIME_META.FLAT : null;
   const sm = signal ? SIGNAL_META[signal] || SIGNAL_META.WAIT : null;
-  const hColor = heatColor(heat);
-  const momColor = momentum != null ? (momentum >= 0 ? T.green : T.red) : null;
   // Failed patterns stay listed but are not counted as something current.
   const activePatterns = patterns.filter(p => p.status === "forming" || p.status === "confirmed").length;
 
@@ -845,97 +841,36 @@ export default function BMSBChart({
             </span>
           )}
 
-          {/* CTO ribbon state (display only): flat text, explained in a tip touch users can open */}
-          {ribbon && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-              <span style={{ fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em", color: col(RIBBON_COLOR[ribbon.current]) }}>
-                CTO {ribbon.current.toUpperCase()}
-              </span>
-              <HelpTip title="CTO ribbon" width={300}>
-                <p>Four moving averages coloured by trend state on closed candles: gold is an uptrend, blue a downtrend, grey no clear trend.{ribbon.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""}</p>
-                <p>Display only; not used by signals.</p>
-              </HelpTip>
-            </span>
-          )}
-
-          {/* Heat */}
-          {heat != null && (
-            <span style={{ fontFamily: T.mono, fontWeight: 700, color: hColor }}>
-              Heat {Math.round(heat)}
-            </span>
-          )}
-
-          {/* Momentum */}
-          {momentum != null && (
-            <span style={{ fontFamily: T.mono, fontWeight: 600, color: momColor }}>
-              Momentum {momentum >= 0 ? "+" : ""}{momentum.toFixed(1)}%
-            </span>
-          )}
         </div>
 
         {/* Right: pressure toggle + timeframe toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {toolbarAction}
           <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price">Reset view</button>
-          {/* Pressure levels toggle */}
-          <button
-            onClick={() => setShowPressure(p => !p)}
-            aria-pressed={showPressure}
-            title="Toggle tracked liquidation levels, stops, take-profits and limit orders"
-            style={{
-              padding: "3px 2px", border: 0, borderBottom: "2px solid transparent", borderRadius: 0,
-              cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-              background: "transparent", color: T.text4,
-              display: "flex", alignItems: "center", gap: 3,
-            }}
-          >
-            {pressureLoading ? "Loading…" : <><span className="chart-levels-label">Wallet levels</span><span className="chart-levels-label-short">Levels</span></>}
-          </button>
-
-          <HelpTip title="Wallet levels"><p>Shows available liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets in this market. These levels can highlight potential pressure areas; orders and positions can change or be cancelled.</p></HelpTip>
-
-          <button
-            onClick={() => setShowMean(m => !m)}
-            aria-pressed={showMean}
-            title="Show the price where the engine's z-score would be 0 (its mean) and 1"
-            style={{
-              padding: "3px 2px", border: 0, borderBottom: `2px solid ${showMean ? T.accent : "transparent"}`, borderRadius: 0,
-              cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-              background: "transparent", color: showMean ? T.text1 : T.text4,
-            }}
-          >
-            Mean lines
-          </button>
-          <HelpTip title="Mean lines"><p>The dashed line is the price at which this coin's z-score would be 0, the engine's mean. The dotted line is z = 1. They move with the coin. After a spike, prices have usually unwound toward the mean: z was back under 1 within about 18 days in 91% of past daily spikes. It is a reference, not a target.</p></HelpTip>
-
-          <button
-            onClick={() => setShowEntries(v => !v)}
-            aria-pressed={showEntries}
-            title="Show when and where the profitable traders holding this coin bought or sold"
-            style={{
-              padding: "3px 2px", border: 0, borderBottom: `2px solid ${showEntries ? T.accent : "transparent"}`, borderRadius: 0,
-              cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-              background: "transparent", color: showEntries ? T.text1 : T.text4,
-            }}
-          >
-            <span className="chart-levels-label">Trader entries</span><span className="chart-levels-label-short">Entries</span>
-          </button>
-          <HelpTip title="Trader entries"><p>Profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid, placed at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry price per side. Fills come from Hyperliquid's public record and refresh every 10 minutes. Who holds a coin, and where they got in, is information, not a signal.</p></HelpTip>
-
-          {activeTimeframe === "1d" && (
-            <button
-              onClick={() => setShowPatterns(p => !p)}
-              aria-pressed={showPatterns}
-              title="Toggle detected chart patterns with their measured track record. Display only; never used by signals."
+          {/* Overlays: Trader entries on, the rest off until asked for. One (i) explains them all. */}
+          {[
+            { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
+            { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
+            { key: "mean", on: showMean, set: setShowMean, long: "Mean lines", short: "Mean" },
+            { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
+            activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
+          ].filter(Boolean).map(t => (
+            <button key={t.key} type="button" onClick={() => t.set(v => !v)} aria-pressed={t.on}
               style={{
-                padding: "3px 2px", border: 0, borderBottom: "2px solid transparent", borderRadius: 0,
+                padding: "3px 2px", border: 0, borderBottom: `2px solid ${t.on ? T.accent : "transparent"}`, borderRadius: 0,
                 cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-                background: "transparent", color: T.text4,
-              }}
-            >
-              Patterns{activePatterns ? ` (${activePatterns})` : ""}
+                background: "transparent", color: t.on ? T.text1 : T.text4,
+              }}>
+              <span className="chart-levels-label">{t.long}</span><span className="chart-levels-label-short">{t.short}</span>
             </button>
-          )}
+          ))}
+          <HelpTip title="Chart layers" width={420}>
+            <p>Trader entries: profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry per side. Information, not a signal.</p>
+            <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
+            <p>Mean lines: the price where this coin's z-score would be 0 (dashed) and 1 (dotted), the engine's mean. After a spike, the box shows where past spikes bottomed. A reference, not a target.</p>
+            <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
+            {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
+          </HelpTip>
 
           {/* Timeframe toggle, only where the chart owns its timeframe */}
           {timeframeControl && (
@@ -989,34 +924,23 @@ export default function BMSBChart({
         </div>
       )}
 
-      <div className="candle-inspector" aria-label="Candle details" style={{padding:'8px 18px',minHeight:44,borderBottom:`1px solid ${T.border}`,fontFamily:T.mono,fontSize:T.textXs,color:T.text3,display:'flex',flexDirection:'column',gap:7}}>
-        {hoverCandle ? <>
-          <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
-            <span>{new Date(hoverCandle.time*1000).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} UTC · {activeTimeframe.toUpperCase()}</span>
-            <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? col('#97FCE4') : col('#d8a094')}}>Candle {hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
-            <span>Volume {Number.isFinite(hoverCandle.volume) ? new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(hoverCandle.volume) : '—'} {hoverCandle.volumeUnit}</span>
-            {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live candle</span>}
-          </div>
-          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{['open','high','low','close'].map(key=><span key={key}>{key[0].toUpperCase()} <span style={{color:T.text2}}>{new Intl.NumberFormat('en',{maximumSignificantDigits:7}).format(hoverCandle[key])}</span></span>)}</div>
-        </> : <span>Move over a candle to inspect its change and volume.</span>}
+      {/* ── Chart container; the candle readout floats over it only while the pointer is on a candle ── */}
+      <div style={{ position: "relative" }}>
+        <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
+        {hoverCandle && <div className="candle-inspector" aria-label="Candle details">
+          <span>{new Date(hoverCandle.time*1000).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})} UTC</span>
+          <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? col('#97FCE4') : col('#d8a094')}}>{hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
+          {['open','high','low','close'].map(key=><span key={key}>{key[0].toUpperCase()} <b>{new Intl.NumberFormat('en',{maximumSignificantDigits:7}).format(hoverCandle[key])}</b></span>)}
+          <span>Vol <b>{Number.isFinite(hoverCandle.volume) ? new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(hoverCandle.volume) : '—'}</b></span>
+          {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live</span>}
+        </div>}
       </div>
-
-      {/* ── Chart container ── */}
-      <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
-      {!loading && !error && <div style={{padding:'10px 18px',fontSize:T.textXs,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
-        {chartRange ? <><strong style={{color:col('#91b9e8')}}>Estimated true range {chartRange.expected_range_pct.toFixed(2)}% · next {activeTimeframe === '1d' ? '24h' : '4h'} candle</strong>
-          {chartRange.probability != null && <span style={{marginLeft:8}}>{Math.round(chartRange.probability*100)}% chance of an unusually wide candle (usual: 25%)</span>} <HelpTip title="Range ruler" width={360}>
-          <p>The ruler's full height represents the estimated true-range magnitude ({chartRange.atr_mult} × ATR14). It is centred on the reference price for illustration; its ends are not forecast highs or lows.</p>
-          <p>Chance of a top-quartile range: {Math.round(chartRange.probability*100)}%, compared with a 25% baseline. This is not directional confidence or a price containment interval.</p>
-          <p>Reference: {chartRange.reference_price}. Calculated {new Date(chartRange.as_of*1000).toISOString()} from the last closed candle, the same input as the coin page's range card.</p>
-        </HelpTip><span style={{marginLeft:8}}>Magnitude only</span></> : 'Range estimate unavailable for these chart data.'}
-      </div>}
-      {!loading && !error && spike && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
+      {!loading && !error && spike && showMean && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
         {spike.superseded
           ? <><strong style={{color:T.text2}}>Spike superseded</strong> · price has since closed above the spike's peak ({new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}), so the trend resumed and the after-the-spike zone no longer applies.</>
           : spike.running
           ? <><strong style={{color:col('#cf9185')}}>Spike in progress</strong> · z is still above 2 (peak so far {new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}). The zone appears once it ends.</>
-          : spike.zone ? <><strong style={{color:col('#cf9185')}}>After the spike</strong> · {spike.zone.n} past spikes on this timeframe: half bottomed {Math.round(-100*(1 - spike.zone.top/spike.anchor_close))}% to {Math.round(-100*(1 - spike.zone.bottom/spike.anchor_close))}% below the close where the spike ended, {spike.zone.from_bar} to {spike.zone.to_bar} {activeTimeframe === '1d' ? 'days' : 'bars'} later (median {Math.round(-100*(1 - spike.zone.median_price/spike.anchor_close))}% at {spike.zone.median_bar}). {Math.round(100*spike.zone.never_fell_5pct)}% never fell 5%. Not a forecast.
+          : spike.zone ? <><strong style={{color:col('#cf9185')}}>After the spike</strong> · {spike.zone.n} past spikes on this timeframe: half bottomed {Math.round(-100*(1 - spike.zone.top/spike.anchor_close))}% to {Math.round(-100*(1 - spike.zone.bottom/spike.anchor_close))}% below the close where the spike ended, {spike.zone.from_bar} to {spike.zone.to_bar} {activeTimeframe === '1d' ? 'days' : 'bars'} later (median {Math.round(-100*(1 - spike.zone.median_price/spike.anchor_close))}% at {spike.zone.median_bar}). {Math.round(100*spike.zone.never_fell_5pct)}% never fell 5%. Past spikes only.
             <HelpTip title="After the spike" width={380}>
               <p>A spike is the last time this coin's z-score reached 2.5; it ends when z drops back under 2. The box and the dashed path start from that bar's close, which is known at the time; the true peak is only known later.</p>
               <p>The box covers the middle half of past lows (depth and timing), measured on the study period only (to 29 March 2026). One in four past spikes fell deeper than the box, and one in four fell less.</p>
@@ -1026,10 +950,6 @@ export default function BMSBChart({
       </div>}
       {!traders && !loading && !error && showEntries && entries && <TraderEntries entries={entries} onShow={showEntriesRange} />}
       {!traders && !loading && !error && showEntries && opens && <WalletOpens opens={opens} />}
-      {!loading && !error && signal && <div style={{display:"flex",alignItems:"center",justifyContent:"flex-start",flexWrap:"wrap",gap:"8px 20px",padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>
-        <span>{signalTimeframe && signalTimeframe !== activeTimeframe ? `The current signal belongs to ${signalTimeframe.toUpperCase()}; switch back to see its origin.` : signalFirstSeenAt ? `First recorded ${new Date(signalFirstSeenAt * 1000).toLocaleString()}${signalMarkerIndex === -1 ? " · outside the loaded candle history" : ""}` : "Signal origin time unavailable; no historical marker is inferred."}</span>
-        {signalMarkerIndex != null && signalMarkerIndex >= 0 && <button type="button" onClick={() => chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,signalMarkerIndex-20),to:signalMarkerIndex+20})} style={{background:"transparent",border:0,borderBottom:`1px solid ${T.accent}`,padding:"4px 0",color:T.accent,fontSize:12,cursor:"pointer"}}>Show signal origin</button>}
-      </div>}
 
       {!loading && !error && showPatterns && activeTimeframe === "1d" && (
         <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`,color:T.text3,fontSize:12,lineHeight:1.6}}>

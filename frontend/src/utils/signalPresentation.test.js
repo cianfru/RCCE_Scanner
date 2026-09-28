@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {signalContext, setupAlignment, signalDirection, marketWideMissing, friendlyReason, plainReason} from './signalPresentation.js';
-import {candleChange, rangeRuler} from './chartPresentation.js';
+import {candleChange} from './chartPresentation.js';
 test('missing core names and consequences are visible without a bearish verdict',()=>{
  const row={regime:'MARKUP',signal:'LIGHT_LONG',strong_long_blockers:['core context unavailable'],conditions_detail:[{group:'core',available:false,label:'Funding'}],signal_warnings:['Tracked-wallet consensus BULLISH by position size (conviction 80%)']};
  const c=signalContext(row);assert.equal(c[0].kind,'missing');assert.match(c[0].text,/Funding/);assert.match(c[0].text,/Strong Long/);assert.equal(c[1].kind,'bullish');assert.equal(setupAlignment(row).state,'incomplete');
@@ -22,9 +22,6 @@ test('only actual entry signals earn directional alignment; transitions do not g
 });
 test('candle return is open to close and rejects invalid opens',()=>{
  assert.equal(candleChange({open:100,close:102}),2);assert.equal(candleChange({open:100,close:97}),-3);assert.equal(candleChange({open:0,close:10}),null);
-});
-test('range ruler illustrates total magnitude without doubling it',()=>{
- const r=rangeRuler(100,6);assert.equal(r.top-r.bottom,6);assert.equal(r.size,6);assert.equal(rangeRuler(0,6),null);assert.equal(rangeRuler(100,NaN),null);
 });
 test('stale candles read as a pause and withdrawn notes are not repeated',()=>{
  const c=signalContext({signal:'WAIT',signal_status:'unavailable',signal_reason:'Candle snapshot stale; new entries unavailable',signal_warnings:['REACC LIGHT_LONG demoted: no CVD/spot confirmation']});

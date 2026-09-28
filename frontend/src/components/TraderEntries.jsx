@@ -1,10 +1,12 @@
 import { Fragment, useState } from "react";
 import useFollowed from "../hooks/useFollowed.js";
-import { sideColor, activitySummary, fmtPx, fmtUsd, fmtWhen, holdingsLine, shortAddr } from "../utils/traderFormat.js";
+import { sideColor, fmtPx, fmtUsd, fmtWhen, shortAddr } from "../utils/traderFormat.js";
 
-// Profitable traders holding a coin: one row each, details on click.
-export default function TraderEntries({ entries, onShow, loading = false }) {
+// Profitable traders holding a coin: the largest few, one row each; their fills and other
+// positions on click, the rest behind "Show all".
+export default function TraderEntries({ entries, onShow, loading = false, limit = 5 }) {
   const [open, setOpen] = useState(null);
+  const [all, setAll] = useState(false);
   const { followed, toggle } = useFollowed();
   if (loading && !entries) {
     return (
@@ -18,25 +20,23 @@ export default function TraderEntries({ entries, onShow, loading = false }) {
   const traders = entries.traders || [];
   const coin = entries.symbol;
   if (!traders.length) return <div className="te"><p className="te-note">No profitable traders hold {coin} right now.</p></div>;
-  const side = k => entries.sides?.[k] || { n: 0 };
-  const summary = ["long", "short"].filter(k => side(k).n)
-    .map(k => `${side(k).n} ${k}, median entry ${fmtPx(side(k).median_entry)}`).join(" · ");
+  const shown = all ? traders : traders.slice(0, limit);
 
   return (
     <div className="te">
       <div className="te-head">
-        <span><strong>Profitable traders in {coin}</strong> · {summary}</span>
-        {onShow && <button type="button" className="te-link" onClick={onShow}>Show entries</button>}
+        <strong>Largest profitable traders</strong>
+        {onShow && <button type="button" className="te-link" onClick={onShow}>Show on chart</button>}
       </div>
       <table className="te-table">
         <thead>
           <tr>
             <th>Trader</th><th>Position</th><th className="te-wide">Avg entry</th><th>P&amp;L</th>
-            <th className="te-wide">Opened</th><th className="te-wide">On this coin</th><th className="te-wide">Also holds</th><th />
+            <th className="te-wide">Opened</th><th />
           </tr>
         </thead>
         <tbody>
-          {traders.map(tr => {
+          {shown.map(tr => {
             const isOpen = open === tr.address;
             const isFollowed = followed.has(String(tr.address).toLowerCase());
             return (
@@ -51,11 +51,6 @@ export default function TraderEntries({ entries, onShow, loading = false }) {
                   <td className="te-wide">{fmtPx(tr.entry_px)}</td>
                   <td className={tr.pnl_pct >= 0 ? "te-up" : "te-down"}>{tr.pnl_pct >= 0 ? "+" : ""}{Math.round(tr.pnl_pct)}%</td>
                   <td className="te-wide">{tr.pending ? "loading…" : tr.opened_at ? fmtWhen(tr.opened_at) : tr.covered_from ? `before ${fmtWhen(tr.covered_from)}` : "—"}</td>
-                  <td className="te-wide">
-                    {tr.pending ? "loading…" : activitySummary(tr.bursts)}
-                    {tr.buying_now && <div className="te-live">{tr.side === "long" ? "still buying" : "still selling"} (timed order)</div>}
-                  </td>
-                  <td className="te-wide">{holdingsLine(tr.others)}</td>
                   <td>
                     <button type="button" className={`te-follow${isFollowed ? " on" : ""}`} aria-pressed={isFollowed}
                       title={isFollowed ? "Stop following this trader" : "Follow: Telegram alert when this trader opens, closes, adds or cuts a position"}
@@ -66,10 +61,11 @@ export default function TraderEntries({ entries, onShow, loading = false }) {
                 </tr>
                 {isOpen && (
                   <tr className="te-detail">
-                    <td colSpan={8}>
+                    <td colSpan={6}>
                       <div className="te-cols">
                         <div>
                           <h4>{coin} fills</h4>
+                          {tr.buying_now && <p className="te-live">{tr.side === "long" ? "Still buying" : "Still selling"} (timed order)</p>}
                           <p className="te-mobile">Average entry {fmtPx(tr.entry_px)} · {tr.opened_at ? `opened ${fmtWhen(tr.opened_at)}` : tr.covered_from ? `opened before ${fmtWhen(tr.covered_from)}` : "opening not found"}</p>
                           {(tr.bursts || []).length ? (
                             <ul>
@@ -109,7 +105,7 @@ export default function TraderEntries({ entries, onShow, loading = false }) {
           })}
         </tbody>
       </table>
-      <p className="te-note">From Hyperliquid's public fills (each trader's latest 2,000). P&amp;L is on margin. Click a trader for the fills and their other positions; Follow sends their changes to Telegram.</p>
+      {traders.length > limit && <button type="button" className="te-link te-all" aria-expanded={all} onClick={() => setAll(v => !v)}>{all ? "Show fewer" : `Show all ${traders.length}`}</button>}
     </div>
   );
 }

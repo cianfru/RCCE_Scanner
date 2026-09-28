@@ -6,10 +6,12 @@ export default class SpikeZone {
     this.anchorClose = anchorClose;
     this.zone = zone;
     this.colors = colors;
+    this.visible = false;   // drawn with the chart's Mean lines
     this.view = { zOrder: () => "bottom", renderer: () => ({ draw: target => this.draw(target) }) };
   }
-  attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; requestUpdate(); }
-  detached() { this.chart = null; this.series = null; }
+  attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.requestUpdate = requestUpdate; requestUpdate(); }
+  detached() { this.chart = null; this.series = null; this.requestUpdate = null; }
+  setVisible(v) { this.visible = v; this.requestUpdate?.(); }
   updateAllViews() {}
   paneViews() { return [this.view]; }
   // A paint queued while the chart is being torn down finds a disposed chart: skip it.
@@ -17,7 +19,7 @@ export default class SpikeZone {
     try { this.paint(target); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
   }
   paint(target) {
-    if (!this.chart || !this.series || !this.zone) return;
+    if (!this.visible || !this.chart || !this.series || !this.zone) return;
     const ts = this.chart.timeScale();
     const z = this.zone;
     const xa = ts.logicalToCoordinate(this.anchorIndex);
