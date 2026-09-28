@@ -4,7 +4,7 @@ import FadeIn from "./FadeIn.jsx";
 import HelpTip from "./HelpTip.jsx";
 import FearGreedDial from "./FearGreedDial.jsx";
 import SignalLadder from "./SignalLadder.jsx";
-import HistoryButton from "./HistoryButton.jsx";
+import HistoryButton from "./SparkHistoryButton.jsx";   // the history button drawn as a sparkline (plain icon until it loads)
 import MarketHistoryDrawer from "./MarketHistoryDrawer.jsx";
 import { useState } from "react";
 import { CONSENSUS_LINE, CONSENSUS_NOTES, regimeMix } from "../utils/marketSummary.js";
