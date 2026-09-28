@@ -950,7 +950,7 @@ export default function App() {
         }}>
           <PageTitle>{showDashboard ? scannerTitle : TAB_TITLES[activeTab]}</PageTitle>
           {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm}
-            onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} />}
+            onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} marketKind={marketKind} onMarketChange={changeMarket} />}
           {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>
@@ -959,6 +959,12 @@ export default function App() {
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
       {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
+        {/* Until the first scan arrives, a glass placeholder holds the summary's space so nothing below jumps. */}
+        {showDashboard && tfMarketRows.length === 0 && (
+          <GlassCard className="ms-skeleton" style={{ position: "relative", overflow: "hidden" }}>
+            <div className="shimmer-loading" aria-hidden="true" />
+          </GlassCard>
+        )}
         {showDashboard && tfMarketRows.length > 0 && (
           <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
             timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel} spot={marketKind === "spot"}
@@ -966,7 +972,7 @@ export default function App() {
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} loading={tfMarketRows.length === 0} by={sectorBy}
           onByChange={v => { setSectorBy(v); updateScannerQuery("by", v === "ecosystem" ? v : null); }}
           value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
         {showDashboard && marketKind === "perpetual" && <RadarStrip results={inSector(tfScopeRows)} timeframe={activeTab === "4h" ? "4h" : "1d"}
@@ -974,8 +980,10 @@ export default function App() {
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
-          <OpportunityActivity />
-          <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={handleSelectCoin} />
+          <div className="opp-lists">
+            <OpportunityActivity onSelect={row => handleSelectCoin(row)} />
+            <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={row => handleSelectCoin(row)} />
+          </div>
           <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>
           <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh}/>
         </details>}

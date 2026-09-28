@@ -41,12 +41,14 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
             <p>Consensus is one of the nine core checks behind a long signal: it passes on RISK-ON or ACCUMULATION. Two paths read it the other way: Light long in Uptrend (moderate z) and the Re-accumulating setups need RISK-ON or MIXED. RISK-OFF also blocks most Accumulate paths (not Capitulation absorption or funding-squeeze setups) and lets Risk-off exits fire.</p>
           </HelpTip>
           <HistoryButton label="Uptrend share through history" onClick={() => setHistory("breadth")} />
+          <span className="ms-eyebrow-meta ms-all" title="Perps and spot together: the count the engine uses">all markets</span>
         </div>
         <strong className="ms-headline" style={{ "--consensus-color": color }}>{label || "Awaiting analysis"}</strong>
         {label && mix.N > 0 && <span className="ms-sub">
           {label === "MIXED"
             ? <>None above 55% · <span className="nowrap">largest: {bucketName[mix.bucket]} <b>{mix.p}%</b></span></>
-            : <><b>{mix.n}</b> of <b>{mix.N}</b> {mix.anchorName} <span className="nowrap">· <b>{mix.p}%</b></span></>}
+            : <><span className="ms-sub-long"><b>{mix.n}</b> of <b>{mix.N}</b> {mix.anchorName} <span className="nowrap">· <b>{mix.p}%</b></span></span>
+              <span className="ms-sub-short"><b>{mix.n}/{mix.N}</b> {mix.anchorShort} · <b>{mix.p}%</b></span></>}
         </span>}
         {mix.N > 0 && <div className="mix-bar" role="img" aria-label={aria}>
           {segs.map(s => <i key={s.r} title={`${name(s.r)}: ${s.c} of ${mix.N} (${Math.round((100 * s.c) / mix.N)}%)`}

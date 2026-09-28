@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { T, m, SIGNAL_META, REGIME_META, TRANSITION_META } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
@@ -46,6 +47,8 @@ function formatValue(val, eventType) {
 
 export default function ChangesTicker({ timeframe = "4h", isMobile, refreshKey }) {
   const [events, setEvents] = useState([]);
+  const strip = useRef(null);
+  const edges = useScrollEdges(strip, events.length);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/signals/recent-unified?timeframe=${timeframe}&limit=12`)
@@ -71,7 +74,7 @@ export default function ChangesTicker({ timeframe = "4h", isMobile, refreshKey }
           WebkitOverflowScrolling: "touch",
           scrollbarWidth: "none",
           msOverflowStyle: "none",
-        }} className="notable-scroll">
+        }} className="notable-scroll edge-fade" ref={strip} {...fadeAttrs(edges)}>
           {/* Label */}
           <span style={{
             fontSize: m(T.textXs, isMobile),
@@ -104,17 +107,17 @@ export default function ChangesTicker({ timeframe = "4h", isMobile, refreshKey }
                 whiteSpace: "nowrap",
                 flexShrink: 0,
               }}>
-                <span style={{ color, fontSize: "0.9em" }}>{glyph}</span>
+                <span style={{ color, fontSize: 12 }}>{glyph}</span>
                 <span style={{ color: T.text2, fontWeight: 600 }}>{symbol}</span>
                 <span style={{ color: T.text4 }}>
                   {formatValue(ev.prev, ev.event_type)}
                 </span>
-                <span style={{ color: T.text4, fontSize: "0.8em" }}>{"\u2192"}</span>
+                <span style={{ color: T.text4, fontSize: 12 }}>{"\u2192"}</span>
                 <span style={{ color, fontWeight: 600 }}>
                   {formatValue(ev.current, ev.event_type)}
                 </span>
                 {ago && (
-                  <span style={{ color: T.text4, fontSize: "0.8em", marginLeft: 1 }}>
+                  <span style={{ color: T.text4, fontSize: 12, marginLeft: 1 }}>
                     {ago}
                   </span>
                 )}

@@ -669,10 +669,11 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .signal-row[data-key="WAIT"] .signal-count{color:var(--t-text2);}
 .signal-row[data-key="WAIT"] .signal-bar i{background:var(--t-text4);}   /* "nothing to do" should not be the loudest bar */
 .nowrap{white-space:nowrap;}
-@media(min-width:768px) and (max-width:1023px){
- .market-summary{grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:auto 1fr auto;grid-template-areas:"regime dial" "detail dial" "signals signals";}
- .ms-signals{border-left:0;border-top:1px solid var(--t-overlay08);margin:16px 24px 0;padding:16px 0 0;}
- .signal-rows{grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,auto);grid-auto-flow:column;column-gap:40px;}
+@media(min-width:768px) and (max-width:1023px){   /* tablets keep the three columns: a 200px dial between consensus and the ladder */
+ .market-summary{grid-template-columns:minmax(0,1fr) 200px minmax(0,1fr);}
+ .ms-regime,.ms-detail,.ms-signals{padding-left:20px;padding-right:20px;}
+ .ms-dial{padding:0 14px;}
+ .regime-legend{grid-template-columns:minmax(0,1fr);}
 }
 @media(max-width:767px){
  .market-summary{padding:16px;column-gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto auto;grid-template-areas:"regime dial" "legend dial" "note note" "signals signals";}
@@ -1105,3 +1106,94 @@ a.te-link{text-decoration:none;display:inline-block;}
  .radar-strip-loading,.radar-strip-empty{margin:0;padding:0;}
  .radar-strip-loading{height:40px;}
 }
+
+/* ── Scanner top polish (WP7) ─────────────────────────────────────────────── */
+/* Summary card: desktop "all markets" meta; phone sub-line and dial verdict. */
+@media(max-width:1023px){.ms-all{display:none;}}   /* the tablet consensus column has no room for it beside the eyebrow */
+.ms-sub-short{display:none;}
+@media(max-width:767px){.ms-sub-long{display:none;} .ms-sub-short{display:inline;white-space:nowrap;}}
+.fg-verdict{white-space:nowrap;}
+/* Invisible 32px hit areas around the 20px (i) and history circles; the circles look the same. */
+.alt-season-info>button,.history-btn{position:relative;}
+.alt-season-info>button::before,.history-btn::before{content:"";position:absolute;inset:-6px;}
+/* Loading: glass placeholders hold the card's and the strip's space. */
+.ms-skeleton{height:265px;margin:12px 0 4px;}
+.ms-skeleton>.shimmer-loading{position:absolute;inset:0;border-radius:0;}
+@media(max-width:767px){.ms-skeleton{height:430px;}}   /* the phone card with its short dial verdict */
+.sector-skeleton{display:flex;flex-direction:column;gap:12px;height:172px;box-sizing:border-box;overflow:hidden;}
+.sector-skeleton .sk-head{flex:0 0 22px;width:min(460px,70%);margin-top:4px;}
+.sector-skeleton .sk-chips{flex:1;display:flex;gap:8px;min-height:0;padding-bottom:6px;}
+.sector-skeleton .sk-chips>div{flex:0 0 180px;border-radius:8px;}
+@media(max-width:767px){.sector-skeleton{height:212px;} .sector-skeleton .sk-head{flex-basis:62px;width:100%;} .sector-skeleton .sk-chips{padding-bottom:2px;} .sector-skeleton .sk-chips>div{flex-basis:164px;}}
+.universe-coverage-pending{height:32px;}
+
+/* Title row: Perps | Spot beside 4H/1D (768px and wider), and the "/" search hint. */
+.scanner-market{display:none;}
+@media(min-width:768px){
+ .scanner-head .scanner-market{order:2;display:flex;align-items:center;gap:8px;margin-left:-12px;}
+ .scanner-market-rule{flex:0 0 1px;height:16px;background:var(--t-border);}
+ .scanner-market .reflex-tabs{gap:4px;}
+ .scanner-market .reflex-tabs button{padding:12px 14px;}
+}
+.search-hint{display:none;flex:0 0 auto;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:4px;font:500 12px/1 var(--font-geist-mono),monospace;color:var(--t-text4);}
+@media(min-width:768px) and (hover:hover) and (pointer:fine){.search-hint{display:inline-flex;}}
+.scanner-search:focus-within .search-hint{display:none;}
+
+/* Coverage line: a 32px target; exceptions first; readable line length. */
+.universe-coverage{margin:9px 0 10px;}
+.universe-coverage>summary{min-height:32px;padding:6px 0;box-sizing:border-box;}
+.universe-coverage p{max-width:70ch;margin:12px 0 0;}
+.universe-coverage small{font-size:12px;color:var(--t-text4);}
+.universe-exceptions{display:grid;gap:6px;margin:4px 0 2px;}
+.universe-exception{display:grid;grid-template-columns:auto auto minmax(0,max-content) minmax(0,1fr);align-items:baseline;column-gap:10px;font-size:12px;color:var(--t-text3);}
+.universe-exception>b{font-weight:600;color:var(--t-text2);}
+.universe-exception>b[data-kind="excluded"]{color:var(--t-text2);}
+.universe-exception-count{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.universe-exception-names{min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:640px){.universe-exception{grid-template-columns:auto auto minmax(0,1fr);} .universe-exception-names{grid-column:1 / -1;}}
+
+/* Sector strip: fade edges while more chips sit past them, desktop chevrons, compact tail chips. */
+@property --fade-l{syntax:"<length>";inherits:false;initial-value:0px;}
+@property --fade-r{syntax:"<length>";inherits:false;initial-value:0px;}
+.edge-fade{--fade-l:0px;--fade-r:0px;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);transition:--fade-l .2s ease,--fade-r .2s ease;}
+.edge-fade[data-fade-l]{--fade-l:32px;}
+.edge-fade[data-fade-r]{--fade-r:32px;}
+.sector-scroll{position:relative;}
+.sector-chip-tip{display:contents;}
+.sector-chip{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+.sector-chip.tail{align-self:flex-start;min-height:48px;}
+.sector-divider{align-self:flex-start;margin-top:0;}
+.sector-chev{display:none;}
+@media(min-width:768px){
+ .sector-chev{position:absolute;top:calc((100% - 6px) / 2 - 14px);z-index:1;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--t-text3);cursor:pointer;transition:color .15s;}
+ .sector-chev:hover{color:var(--t-accent);}
+ .sector-chev.prev{left:-2px;}
+ .sector-chev.next{right:-2px;}
+}
+/* Phone: "Show all" leads the baseline line instead of taking a row of its own. */
+.sector-clear-inline{display:none;}
+.sector-clear-inline .sector-clear{margin:0;padding:0;font-size:12px;}
+@media(max-width:767px){.sector-clear-head{display:none;} .sector-clear-inline{display:inline;}}
+.chip-tip-lines{display:grid;gap:6px;}
+.chip-tip-lines p{margin:0;}
+
+/* Market context: compact opportunity rows (no boxed bullet lists). */
+.opp-lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px 32px;margin-top:16px;}
+.opp-list{min-width:0;}
+.opp-list-head{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;font:600 12px/1.4 var(--font-geist-sans),sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--t-text3);}
+.opp-list-head span{font:500 12px var(--font-geist-mono),monospace;letter-spacing:0;color:var(--t-text4);}
+.opp-rows{display:grid;}
+.opp-row{display:grid;grid-template-columns:16px 72px 24px 84px minmax(0,1fr) 30px;align-items:center;column-gap:8px;min-height:28px;padding:2px 6px;margin:0 -6px;border:0;border-radius:4px;background:none;text-align:left;font:inherit;font-size:12px;color:var(--t-text3);}
+button.opp-row{cursor:pointer;}
+button.opp-row:hover{background:var(--t-overlay04);}
+button.opp-row:hover .opp-sym{color:var(--t-accent);}
+.opp-row [aria-hidden="true"]{font-size:12px!important;}      /* a missing logo's monogram keeps the 12px minimum */
+.opp-sym{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.opp-tf{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);}
+.opp-status{font-weight:600;color:var(--t-text3);white-space:nowrap;}
+.opp-status[data-status="expired"],.opp-status[data-status="unavailable"]{color:var(--t-text4);}
+.opp-status[data-status="emerging"]{color:var(--t-accent);}
+.opp-reason{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t-text3);}
+.opp-age{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);text-align:right;}
+.opp-more{margin-top:6px;}
+@media(max-width:480px){.opp-row{grid-template-columns:16px 64px 22px 76px minmax(0,1fr) 28px;column-gap:6px;}}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import HelpTip from "./HelpTip.jsx";
 import HistoryButton from "./HistoryButton.jsx";
-import { FG_NAMES, dialRotation, fgBand, fgNote } from "../utils/marketSummary.js";
+import { FG_NAMES, dialRotation, dialVerdict, fgBand, fgNote } from "../utils/marketSummary.js";
 
 // Fear & Greed as a dial: five bands on the backend's label cuts (20/40/60/80),
 // lines where the engine uses it (40: fear gate, 70: Not greedy fails), a needle.
@@ -55,6 +55,6 @@ export default function FearGreedDial({ value, loaded, onHistory }) {
       <span className="fg-label fg-end" aria-hidden="true" style={{ left: "89.09%" }}>100</span>
     </div>
     <div className="fg-readout"><b>{v == null ? "—" : Math.round(v)}</b>{word && <span>{word}</span>}</div>
-    <p className="fg-note">{note}</p>
+    <p className="fg-note"><span className="ms-long">{note}</span><span className="ms-short fg-verdict">{dialVerdict(v)}</span></p>
   </div>;
 }
