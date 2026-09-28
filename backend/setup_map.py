@@ -7,6 +7,10 @@ enters or leaves the box, confirms Uptrend, turns crowded or gets an exit signal
 Built from data the server already holds: the scan results, the candles in the OHLCV
 store, the positioning map, the tracker's opens and the stored 4H record of profitable
 traders per coin. Nothing here calls an outside API.
+
+Each coin also carries the profitable cohort's dollars in it (``money``) and its own weekly
+bull market support band from the stored daily candles (``band``); ``ladder`` lists that
+cohort's positions in one coin for the Radar's price ladder.
 """
 from __future__ import annotations
 
@@ -153,6 +157,85 @@ def closes(ohlcv: Optional[dict], tf: str, now: float) -> tuple:
     return ts, cs
 
 
+# ------------------------------------------------------------------ money and the weekly band
+SUNDAY = 3               # day % 7 (day 3 = 1970-01-04 was a Sunday), as market_history.btc_band
+BAND_WEEKS = 21          # the band needs 21 completed weeks (20-week SMA, 21-week EMA)
+BAND_REACH = 0.30        # the halo is empty at 30% or more above the band's top
+BAND_STALE_DAYS = 14     # a last weekly close older than this (missing candles): no band
+
+
+def sig(x: Optional[float], n: int = 6) -> Optional[float]:
+    return None if x is None else float(f"{x:.{n}g}")
+
+
+def money(p: Optional[dict]) -> dict:
+    """Dollars the profitable cohort holds in a coin (valued at entry), from its positioning row."""
+    p = p or {}
+    lu = round((p.get("long") or {}).get("usd") or 0)
+    su = round((p.get("short") or {}).get("usd") or 0)
+    g = lu + su
+    return {"long_usd": lu, "short_usd": su, "gross_usd": g, "net_long_share": round(lu / g, 3) if g else None}
+
+
+def weekly_closes(ohlcv: Optional[dict], now: float) -> Dict[int, float]:
+    """Sunday closes by day number (day 0 = 1970-01-01), completed days only, from stored daily candles."""
+    ts, cs = closes(ohlcv, "1d", now)
+    return {t // 86400 - 1: c for t, c in zip(ts, cs) if (t // 86400 - 1) % 7 == SUNDAY}
+
+
+def band_state(lo: float, hi: float, week_close: float, price: Optional[float]) -> dict:
+    """Where price sits against the band, for the halo. closed_under: the last weekly close under the lower
+    edge (full red); under_now: under it now but not at the close (full violet, red tick); inside (full
+    violet); above: fill = clamp(1 - d / 0.30, 0, 1) with d = price / top - 1."""
+    px = price or week_close
+    d = px / hi - 1
+    if week_close < lo:
+        state = "closed_under"
+    elif px < lo:
+        state = "under_now"
+    elif px <= hi:
+        state = "inside"
+    else:
+        state = "above"
+    fill = 1.0 if state != "above" else max(0.0, min(1.0, 1 - d / BAND_REACH))
+    return {"state": state, "d": round(d, 4), "fill": round(fill, 3)}
+
+
+def weekly_band(ohlcv: Optional[dict], price: Optional[float], now: float) -> Optional[dict]:
+    """The coin's weekly bull market support band: [min, max] of the 20-week SMA and the 21-week EMA of its
+    Sunday closes (completed weeks only; the EMA starts at the first close, as backtest.risk_on_cycles.
+    weekly_rows). None with fewer than 21 weeks or when the last Sunday close in the store is stale."""
+    wk = weekly_closes(ohlcv, now)
+    if len(wk) < BAND_WEEKS:
+        return None
+    days = sorted(wk)
+    if now / 86400 - (days[-1] + 1) > BAND_STALE_DAYS:
+        return None
+    ema = None
+    for d in days:
+        ema = wk[d] if ema is None else (2 / 22) * wk[d] + (1 - 2 / 22) * ema
+    sma = sum(wk[d] for d in days[-20:]) / 20
+    lo, hi, wc = min(sma, ema), max(sma, ema), wk[days[-1]]
+    return {"lo": sig(lo, 5), "hi": sig(hi, 5), "sma20": sig(sma, 5), "ema21": sig(ema, 5), "week_close": sig(wc, 5),
+            "week": (days[-1] + 1) * 86400, **band_state(lo, hi, wc, price)}
+
+
+def ladder(item: dict, positions: List[dict], mean: Optional[float], now: float) -> dict:
+    """One coin's profitable wallets at their entry prices, for the Radar's price ladder: each position
+    (hl_intelligence.cohort_positions), counts and dollars per side, the median entry per side, the
+    engine's mean (the price at z = 0) and the coin's weekly band from the map."""
+    import statistics
+    sides = {s: [p for p in positions if p["side"] == s] for s in ("long", "short")}
+    med = {s: sig(statistics.median(p["entry"] for p in xs)) if xs else None for s, xs in sides.items()}
+    return {"coin": item["coin"], "symbol": item["symbol"], "price": item.get("price"), "stage": item.get("stage"),
+            "zscore": item.get("zscore"), "updated_at": now, "band": item.get("band"), "mean": sig(mean),
+            "counts": {"long": len(sides["long"]), "short": len(sides["short"]),
+                       "long_usd": sum(p["size_usd"] for p in sides["long"]),
+                       "short_usd": sum(p["size_usd"] for p in sides["short"])},
+            "median_entry": med,
+            "positions": [dict(p, entry=sig(p["entry"])) for p in positions]}
+
+
 # ------------------------------------------------------------------ the map
 def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List[dict],
           lean: Dict[str, Dict[int, tuple]], now: float) -> dict:
@@ -177,8 +260,13 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
             "checks": [r.get("conditions_met"), r.get("conditions_total")],
             "sparkline": [round(v, 8) for v in (r.get("sparkline") or [])] if st != "waiting" else [],
             "stage": st, "zone": zone(st, z, net), "crowd": crowd(r.get("signal") not in ("LIGHT_SHORT", "STRONG_SHORT"), t, r.get("price")),
-            "traders": t,
+            "traders": t, "money": money(prof.get(coin)),
         }
+        try:
+            item["band"] = weekly_band(store.get(r["symbol"], "1d") if store else None, r.get("price"), now)
+        except Exception as exc:                      # one market's history never blanks the map
+            item["band"] = None
+            logger.debug("setup map: no band for %s: %s", coin, exc)
         if st != "waiting" or t["pl"] or t["ps"]:
             try:
                 ts, cs = closes(store.get(r["symbol"], tf) if store else None, tf, now)

@@ -40,3 +40,25 @@ def test_restored_readings_count_as_current_for_a_while(monkeypatch):
     assert hl._fresh_limit(now) == hl._RESTORED_MAX_AGE_S
     monkeypatch.setattr(hl, "_restored_until", now - 1)
     assert hl._fresh_limit(now) == hl._SNAPSHOT_MAX_AGE_S
+
+
+def test_cohort_positions_match_the_positioning_map(monkeypatch):
+    a, b, c = TrackedWallet("0xa"), TrackedWallet("0xb"), TrackedWallet("0xc")
+    now = time.time()
+    snaps = {
+        "0xa": deque([PositionSnapshot(now, [pos("SUI", "LONG", 100, 3.0, 3.3), pos("BTC", "LONG", 1, 60000, 61000)], 1e6)]),
+        "0xb": deque([PositionSnapshot(now, [pos("SUI", "SHORT", 50, 3.5, 3.3)], 1e6)]),
+        "0xc": deque([PositionSnapshot(now, [pos("SUI", "LONG", 1000, 3.0, 3.3)], 1e6)]),   # large account only
+    }
+    monkeypatch.setattr(hl, "_roster", [a, b, c])
+    monkeypatch.setattr(hl, "_roster_money_printers", [a, b])
+    monkeypatch.setattr(hl, "_roster_smart_money", [c])
+    monkeypatch.setattr(hl, "_snapshots", snaps)
+    rows = hl.cohort_positions("SUI", "profitable")
+    assert [r["address"] for r in rows] == ["0xa", "0xb"]                  # largest first
+    assert rows[0] == {"address": "0xa", "side": "long", "size_usd": 300, "entry": 3.0, "leverage": 3.0,
+                       "upnl": 30, "roe": None, "move": 10.0}
+    assert rows[1]["side"] == "short" and rows[1]["move"] == round(100 * 10 / 175, 2)
+    sui = hl.positioning_map("profitable")["coins"]["SUI"]
+    assert sui["long"]["usd"] == sum(r["size_usd"] for r in rows if r["side"] == "long")
+    assert sui["short"]["n"] == sum(r["side"] == "short" for r in rows)

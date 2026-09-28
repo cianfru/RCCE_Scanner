@@ -1434,18 +1434,11 @@ def get_wallet_positions(address: str) -> Optional[dict]:
     }
 
 
-def positioning_map(cohort: str = "profitable") -> dict:
-    """Where one group of tracked wallets is positioned, per coin: counts, dollars and the
-    median entry per side, and how many of them are in profit at the current mark.
-
-    Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
-    "profitable" (money printers) or "large" (largest accounts). ``holding`` counts the
-    wallets with any position; the rest are flat.
-    """
+def _cohort_readings(cohort: str):
+    """(wallet, latest reading) for one group's wallets with a current reading, with the consensus's
+    filters (fresh, not a market maker, not a tiny account). ``cohort``: "profitable" or "large"."""
     group = {w.address for w in (_roster_money_printers if cohort == "profitable" else _roster_smart_money)}
     now = time.time()
-    raw: Dict[str, dict] = {}
-    wallets = holding = 0
     for wallet in _roster:
         if wallet.address not in group:
             continue
@@ -1457,6 +1450,40 @@ def positioning_map(cohort: str = "profitable") -> dict:
             continue
         if 0 < latest.account_value < _DISPLAY_MIN_AV:
             continue
+        yield wallet, latest
+
+
+def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
+    """Each position one group of tracked wallets holds in a coin, largest first. Same wallets and filters as
+    positioning_map, so the counts and dollars match it. ``size_usd`` is valued at entry (as Hyperliquid
+    reports it); ``move`` is the unrealised PnL over that, in percent (the price move in the holder's favour);
+    ``roe`` is the return on margin in percent."""
+    out = []
+    for wallet, latest in _cohort_readings(cohort):
+        for p in latest.positions:
+            if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size or _normalize_coin(p.coin) != coin:
+                continue
+            roe = p.return_on_equity * 100 if p.return_on_equity else (
+                p.unrealized_pnl / p.margin_used * 100 if p.margin_used else None)
+            out.append({"address": wallet.address, "side": p.side.lower(), "size_usd": round(p.size_usd),
+                        "entry": p.entry_px, "leverage": p.leverage, "upnl": round(p.unrealized_pnl),
+                        "roe": None if roe is None else round(roe, 1),
+                        "move": round(100 * p.unrealized_pnl / p.size_usd, 2) if p.size_usd else None})
+    out.sort(key=lambda x: -x["size_usd"])
+    return out
+
+
+def positioning_map(cohort: str = "profitable") -> dict:
+    """Where one group of tracked wallets is positioned, per coin: counts, dollars and the
+    median entry per side, and how many of them are in profit at the current mark.
+
+    Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
+    "profitable" (money printers) or "large" (largest accounts). ``holding`` counts the
+    wallets with any position; the rest are flat.
+    """
+    raw: Dict[str, dict] = {}
+    wallets = holding = 0
+    for wallet, latest in _cohort_readings(cohort):
         wallets += 1
         held = False
         for p in latest.positions:

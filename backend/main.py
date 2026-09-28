@@ -4337,6 +4337,50 @@ async def setup_map_view(tf: str = Query("1d", pattern="^(4h|1d)$")):
     return await _setup_map_cached(tf)
 
 
+_LADDER_CACHE: dict = {}
+
+
+def _ladder_build(tf: str, item: dict) -> dict:
+    """setup_map.ladder from memory: the profitable cohort's positions in the coin and the engine's mean."""
+    import numpy as np
+    import setup_map
+    from data_fetcher import _ohlcv_store
+    from hl_intelligence import cohort_positions
+    now = time.time()
+    mean = None
+    try:
+        from engines.rcce_engine import LEN_LONG
+        from engines.spike_zone import mean_levels
+        _, cs = setup_map.closes(_ohlcv_store.get(item["symbol"], tf), tf, now)
+        if len(cs) >= LEN_LONG:
+            v = float(mean_levels(np.asarray(cs[-600:], dtype=np.float64), ks=(0.0,))[0.0][-1])
+            mean = v if np.isfinite(v) else None
+    except Exception as exc:
+        logger.debug("ladder: no mean for %s: %s", item["coin"], exc)
+    return setup_map.ladder(item, cohort_positions(item["coin"], "profitable"), mean, now)
+
+
+@app.get("/api/setup-map/ladder")
+async def setup_map_ladder(coin: str = Query(..., min_length=1, max_length=40),
+                           tf: str = Query("1d", pattern="^(4h|1d)$")):
+    """One coin's profitable wallets at their entry prices (the Radar's price ladder), with the weekly band,
+    the engine's mean and the median entry per side. Data in memory; cached for 30 seconds."""
+    smap = await _setup_map_cached(tf)
+    item = next((c for c in smap["coins"] if c["coin"] == coin), None) \
+        or next((c for c in smap["coins"] if c["coin"].upper() == coin.upper()), None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="coin not on the map")
+    key = (tf, item["coin"])
+    hit = _LADDER_CACHE.get(key)
+    if hit and time.time() - hit[0] < 30:
+        return hit[1]
+    body = await asyncio.to_thread(_ladder_build, tf, item)
+    if len(_LADDER_CACHE) > 400:
+        _LADDER_CACHE.clear()
+    _LADDER_CACHE[key] = (time.time(), body)
+    return body
+
+
 @app.get("/api/setup-map/watch")
 async def setup_map_watched():
     import setup_map
