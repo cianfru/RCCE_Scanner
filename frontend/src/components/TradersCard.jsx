@@ -1,4 +1,4 @@
-import { sideColor } from "../utils/traderFormat.js";
+import { sideBarColor, sideColor } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
 import WalletOpens from "./WalletOpens.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
@@ -6,7 +6,7 @@ import { traderLean, longShare, usd, WALLET_CHECK_CONFIDENCE } from "../utils/tr
 
 function Split({ longPct, left, right }) {
   return <>
-    <div className="tc-bar"><i style={{ width: `${longPct}%`, background: sideColor("long") }} /><i style={{ flex: 1, background: sideColor("short") }} /></div>
+    <div className="tc-bar"><i style={{ width: `${longPct}%`, background: sideBarColor("long") }} /><i style={{ flex: 1, background: sideBarColor("short") }} /></div>
     <div className="tc-split"><span style={{ color: sideColor("long") }}>{left}</span><span style={{ color: sideColor("short") }}>{right}</span></div>
   </>;
 }

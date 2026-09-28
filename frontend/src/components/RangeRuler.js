@@ -22,7 +22,12 @@ export default class RangeRuler {
   detached() {this.chart=null;this.series=null;}
   updateAllViews() {}
   paneViews() {return [this.view];}
+  // A paint queued while the chart is being torn down (a timeframe switch) finds a disposed
+  // chart: skip it rather than throw "Object is disposed".
   draw(target) {
+    try { this.paint(target); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
+  }
+  paint(target) {
     if (!this.chart || !this.series || !this.range) return;
     // The library accepts integer logical indices; derive candle edges from centres.
     const lastX = this.chart.timeScale().logicalToCoordinate(this.lastIndex);

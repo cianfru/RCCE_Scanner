@@ -5,9 +5,10 @@ import SetupPair from "./SetupPair.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { REGIME_META, SIGNAL_META, col, getBaseSymbol } from "../theme.js";
-import { sideColor, fmtPx, fmtUsd } from "../utils/traderFormat.js";
+import { sideBarColor, sideColor, fmtPx, fmtUsd } from "../utils/traderFormat.js";
 import { briefRows, fmtAgo, medianGap, setupSide } from "../utils/intel.js";
-import { CROWD_COLOR, Pin, WATCH_TIP } from "./radar/shared.jsx";
+import { formatPrice } from "../utils/marketPresentation.js";
+import { CROWD_COLOR, WATCH_TIP, WatchMark } from "./radar/shared.jsx";
 
 // Current price against where each group got in: median entries per side and the
 // profitable traders' opens of the last 24h. Log scale so a wide range still reads.
@@ -52,7 +53,7 @@ function SideBar({ label, group }) {
     <div className="si-side">
       <div className="si-side-label">{label}</div>
       {n ? <>
-        <div className="tc-bar"><i style={{ width: `${Math.round((100 * L) / n)}%`, background: sideColor("long") }} /><i style={{ flex: 1, background: sideColor("short") }} /></div>
+        <div className="tc-bar"><i style={{ width: `${Math.round((100 * L) / n)}%`, background: sideBarColor("long") }} /><i style={{ flex: 1, background: sideBarColor("short") }} /></div>
         <div className="tc-split"><span>{L} long · {fmtUsd(group.long.usd)}</span><span>{S} short · {fmtUsd(group.short.usd)}</span></div>
       </> : <p className="si-dim">None hold it.</p>}
     </div>
@@ -93,13 +94,13 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
     <div className="mh-backdrop" onClick={onClose} />
     <aside className="mh-drawer si" role="dialog" aria-modal="true" aria-labelledby="si-title">
       <header className="mh-head">
-        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()} · {fmtPx(price)}{atText && <em> at {atText}</em>}</span></h2>
+        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()}{"\u2009·\u2009"}{formatPrice(price)}{atText && <em> at {atText}</em>}</span></h2>
         <button ref={closeRef} type="button" className="mh-close" onClick={onClose}>Close</button>
       </header>
       <div className="mh-body">
         <div className="si-actions">
           {onWatch && <button type="button" className="smap-watch" aria-pressed={watching} title={WATCH_TIP} onClick={onWatch}>
-            <Pin color={watching ? "var(--t-bg)" : "var(--t-accent)"} />{watching ? "Watching" : "Watch"}</button>}
+            <WatchMark color={watching ? "var(--t-bg)" : "var(--t-accent)"} />{watching ? "Watching" : "Watch"}</button>}
           <button type="button" className="te-link" onClick={() => onOpenChart(row)}>Open {coin} chart</button>
         </div>
         <div className="si-top">

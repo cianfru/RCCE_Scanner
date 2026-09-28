@@ -9,10 +9,9 @@ import { useWallet } from "../WalletContext.jsx";
 import * as hlClient from "../services/hlClient.js";
 import Tabs from "./Tabs.jsx";
 import TokenLogo from "./TokenLogo.jsx";
-import DataStatus from "./DataStatus.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 import { RegimeBadge, SignalDot, HeatCell } from "./badges.jsx";
-import { Pin, WATCH_TIP } from "./radar/shared.jsx";
+import { WATCH_TIP, WatchMark } from "./radar/shared.jsx";
 import useSetupMap from "../hooks/useSetupMap.js";
 import { compactUsd } from "../utils/money.js";
 import { watchToast } from "../utils/setupMap.js";
@@ -201,7 +200,7 @@ const PERIODS = [
   { key: "ALL", label: "All", sdk: "perpAllTime" },
 ];
 
-function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange }) {
+function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange, failed = false, onRetry }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const { mode: themeMode } = useTheme();
@@ -329,7 +328,8 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange 
       </div>
       <div style={{ position: "relative" }}>
         <div ref={containerRef} style={{ height: 280, width: "100%" }} />
-        {!portfolio && <div className="pf-chart-skel" aria-hidden="true"><Skeleton height="100%" borderRadius={0} /></div>}
+        {!portfolio && !failed && <div className="pf-chart-skel" aria-hidden="true"><Skeleton height="100%" borderRadius={0} /></div>}
+        {!portfolio && failed && <div className="pf-chart-failed" role="status"><span>The portfolio history could not load.</span>{onRetry && <button type="button" className="te-link" onClick={onRetry}>Retry</button>}</div>}
       </div>
     </div>
   );
@@ -390,13 +390,29 @@ function ScannerLine({ ctx4h, ctx1d, isLong, alignment }) {
       <span className="pf-scan-tf">4H</span>
       <SignalDot signal={ctx4h.signal} reason={ctx4h.signal_reason} warnings={ctx4h.signal_warnings} context={ctx4h} />
       <RegimeBadge regime={ctx4h.regime} noHistory={ctx4h.history_bars === 0} />
-      <HeatCell heat={ctx4h.heat} />
+      <span className="pf-heat" title="Heat: how stretched the move is (0-100)"><span className="pf-scan-lbl">Heat</span><HeatCell heat={ctx4h.heat} /></span>
       {ctx1d && ctx1d.signal !== ctx4h.signal && (
         <span className="pf-scan-1d"><span className="pf-scan-tf">1D</span><span style={{ color: signalColor(ctx1d.signal), fontFamily: T.mono, fontWeight: 600 }}>{signalLabel(ctx1d.signal)}</span></span>
       )}
       <span className="pf-verdict" style={{ color: alignColor(alignment) }}>
         {alignment === "NEUTRAL" ? ALIGN_TEXT.NEUTRAL : `${ALIGN_TEXT[alignment]} with this ${isLong ? "long" : "short"}`}
       </span>
+    </div>
+  );
+}
+
+// Failed feeds as one line inside the account card: how many readings did not answer, which,
+// whether older readings are still shown, and one Retry for all of them.
+function FeedsNotice({ failed, onRetry }) {
+  const names = failed.map(([name]) => name);
+  const kept = failed.some(([, st]) => st.updatedAt);
+  return (
+    <div className="pf-feeds" role="alert">
+      <span className="data-status-dot" style={{ background: T.yellow }} aria-hidden="true" />
+      <span>Hyperliquid did not answer for {names.length === 1 ? names[0].toLowerCase() : `${names.length} readings`}
+        {names.length > 1 && <span className="pf-feeds-names" title={names.join(", ")}> ({names.join(", ")})</span>}
+        {kept ? ". Older readings are kept where there is one." : "."}</span>
+      <button type="button" className="te-link" onClick={onRetry}>{names.length > 1 ? "Retry all" : "Retry"}</button>
     </div>
   );
 }
@@ -448,7 +464,7 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
   const coinWarnings = (posWarnings || []).filter(w => w.symbol === coin || w.symbol === `${coin}/USDT`);
 
   return (
-    <div className="pf-card" style={flag ? { boxShadow: `inset 3px 0 ${flag}` } : undefined} data-coin={coin}>
+    <div className="pf-card" style={flag ? { boxShadow: `inset 2px 0 color-mix(in srgb, ${flag} 55%, transparent)` } : undefined} data-coin={coin}>
       {/* Row 1: logo, coin, side, leverage, liquidation tag; P&L on the right */}
       <div className="pf-card-top">
         <TokenLogo symbol={ctx4h?.symbol || `${coin}/USDT`} size={24} />
@@ -483,8 +499,8 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
         ))}
         <div className="pf-card-actions">
           <Link className="te-link" to={`/radar?tf=4h&focus=${encodeURIComponent(coin)}`}>Open on Radar</Link>
-          <button type="button" className="te-toggle coin-watch" aria-pressed={watching} title={WATCH_TIP} onClick={() => onWatch(coin)}>
-            <Pin size={8} color={watching ? "var(--t-accent)" : "currentColor"} />{watching ? "Watching" : "Watch"}
+          <button type="button" className="te-link pf-watch" aria-pressed={watching} title={WATCH_TIP} onClick={() => onWatch(coin)}>
+            <WatchMark />{watching ? "Watching" : "Watch"}
           </button>
           {!readOnly && (
             <button type="button"
@@ -782,6 +798,10 @@ export default function TradingPanel({ api }) {
   const pending = name => !feedState[name];
   const chLoading = !chState && pending("Perpetual account");
   const failed = Object.entries(feedState).filter(([, st]) => st.error);
+  // The perps account feed failed with no reading yet: its figures are unknown, not $0.
+  const chMissing = !chState && !!feedState["Perpetual account"]?.error;
+  const chStale = !!chState && !!feedState["Perpetual account"]?.error;
+  const dashIf = (missing, v) => (missing ? "—" : v);
   const retryAll = () => { fetchFast(); fetchMedium(); fetchSlow(); };
   const dismissNotice = () => setActionNotice(null);
   // A close outcome sits inside that coin's card; once the card is gone (closed), above the cards.
@@ -790,21 +810,21 @@ export default function TradingPanel({ api }) {
 
   const signedUsd = v => compactUsd(v, { sign: true });
   const stats = [
-    { label: "Perps value", value: compactUsd(perpsAccountValue), exact: fmtUsd(perpsAccountValue), loading: chLoading },
-    { label: "Unrealized P&L", value: signedUsd(totalUnrealizedPnl), exact: fmtUsd(totalUnrealizedPnl), color: pnlColor(totalUnrealizedPnl), loading: chLoading },
+    { label: "Perps value", value: dashIf(chMissing, compactUsd(perpsAccountValue)), exact: chMissing ? undefined : fmtUsd(perpsAccountValue), color: chMissing ? T.text3 : undefined, loading: chLoading },
+    { label: "Unrealized P&L", value: dashIf(chMissing, signedUsd(totalUnrealizedPnl)), exact: chMissing ? undefined : fmtUsd(totalUnrealizedPnl), color: chMissing ? T.text3 : pnlColor(totalUnrealizedPnl), loading: chLoading },
     { label: "All-time P&L", value: totalPnl != null ? signedUsd(totalPnl) : "—", exact: totalPnl != null ? fmtUsd(totalPnl) : undefined, color: pnlColor(totalPnl), loading: totalPnl == null && pending("Portfolio history") },
-    { label: "Withdrawable", value: compactUsd(withdrawable), exact: fmtUsd(withdrawable), loading: chLoading },
+    { label: "Withdrawable", value: dashIf(chMissing, compactUsd(withdrawable)), exact: chMissing ? undefined : fmtUsd(withdrawable), color: chMissing ? T.text3 : undefined, loading: chLoading },
     { label: "TradFi (xyz)", value: xyzChState ? compactUsd(xyzAccountValue) : "—", exact: xyzChState ? fmtUsd(xyzAccountValue) : undefined, color: xyzAccountValue ? undefined : T.text3, loading: !xyzChState && pending("TradFi (xyz) account") },
     { label: "Spot", value: spotState ? compactUsd(spot.value) : "—", exact: spotState ? fmtUsd(spot.value) : undefined, color: spot.value ? undefined : T.text3, loading: !spotState && pending("Spot account") },
-    { label: "Margin used", value: compactUsd(marginUsedVal), exact: fmtUsd(marginUsedVal), color: marginUsedVal > 0 ? T.yellow : T.text3, loading: chLoading },
+    { label: "Margin used", value: dashIf(chMissing, compactUsd(marginUsedVal)), exact: chMissing ? undefined : fmtUsd(marginUsedVal), color: marginUsedVal > 0 ? T.yellow : T.text3, loading: chLoading },
   ];
 
   return (
-    <div className="pf-page" style={{ ...S.panel, padding: "0 4px" }}>
+    <div className="pf-page" style={S.panel}>
 
       {/* ─── NOT CONNECTED: connect, or look at any address read-only ─── */}
       {!account && (
-        <div style={{ ...S.section, padding: "48px 24px", textAlign: "center" }}>
+        <div className="pf-connect" style={{ ...S.section, padding: "48px 24px", textAlign: "center" }}>
           <div style={{ fontSize: T.textBase, fontFamily: T.font, color: T.text3, marginBottom: 16 }}>
             Connect your wallet to view your Hyperliquid portfolio
           </div>
@@ -846,7 +866,7 @@ export default function TradingPanel({ api }) {
 
       {/* ─── NOTICES: close/cancel outcomes and failed feeds, inline (no dialogs) ─── */}
       {actionNotice && actionNotice.section !== activeSection && <ActionNotice notice={actionNotice} onDismiss={dismissNotice} />}
-      {account && failed.map(([name, st]) => <DataStatus key={name} label={name} {...st} onRetry={retryAll} />)}
+
 
       {/* ─── ACCOUNT SUMMARY ─── */}
       {account && (
@@ -854,12 +874,16 @@ export default function TradingPanel({ api }) {
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={S.title}>Hyperliquid account</span>
-              <span className="terminal-status" style={S.badge(T.green)}>LIVE</span>
+              {/* LIVE only while the account feed answers; STALE keeps the last reading, OFFLINE has none. */}
+              {chMissing ? <span className="terminal-status" style={S.badge(T.text3)} title="Hyperliquid did not answer; no reading yet">OFFLINE</span>
+                : chStale ? <span className="terminal-status" style={S.badge(T.yellow)} title="Hyperliquid did not answer; showing the last reading">STALE</span>
+                : <span className="terminal-status" style={S.badge(T.green)}>LIVE</span>}
             </div>
             <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: T.text3 }}>
               {account.slice(0, 6)}...{account.slice(-4)}
             </span>
           </div>
+          {failed.length > 0 && <FeedsNotice failed={failed} onRetry={retryAll} />}
           <div className="pf-stats">
             {stats.map(st => <StatCell key={st.label} {...st} />)}
           </div>
@@ -875,13 +899,15 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── PORTFOLIO CHART ─── */}
-      {account && (portfolio || pending("Portfolio history")) && (
+      {account && (
         <PortfolioChart
           portfolio={portfolio}
           period={chartPeriod}
           onPeriodChange={setChartPeriod}
           mode={chartMode}
           onModeChange={setChartMode}
+          failed={!!feedState["Portfolio history"]?.error}
+          onRetry={fetchSlow}
         />
       )}
 
@@ -907,6 +933,8 @@ export default function TradingPanel({ api }) {
           {positionsNotice && !noticeCardShown && <ActionNotice notice={positionsNotice} onDismiss={dismissNotice} inSection />}
           {chLoading ? (
             <><PositionSkeleton /><PositionSkeleton /><PositionSkeleton /></>
+          ) : chMissing ? (
+            <div style={S.empty}>Positions could not load. <button type="button" className="te-link" onClick={retryAll}>Retry</button></div>
           ) : positions.length === 0 ? (
             <div style={S.empty}>No open positions</div>
           ) : (

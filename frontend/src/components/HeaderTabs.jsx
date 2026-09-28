@@ -61,7 +61,7 @@ export default function HeaderTabs({ activeKey, targets, showIcons, radarTf = "1
             <span className="tab-inner">
               {showIcons && <span className="tab-icon"><NavIcon name={t.icon} /></span>}
               <span className="tab-label" data-text={t.label}>{t.label}</span>
-              {radar && radarCount > 0 && <span className="tab-count" aria-label={`${radarCount} in the Watch box`}>{radarCount}</span>}
+              {radar && radarCount > 0 && <span className="tab-count" aria-label={`${radarCount} in the ${radarTf === "4h" ? "4H" : "1D"} Watch box`} title={`${radarCount} in the ${radarTf === "4h" ? "4H" : "1D"} Watch box`}>{radarCount}</span>}
             </span>
           </Link>
         );

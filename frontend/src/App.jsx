@@ -899,7 +899,7 @@ export default function App() {
       {/* ── HEADER ── */}
       <AppHeader
         width={width} isMobile={isMobile} mode={mode} onToggleTheme={toggle}
-        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets} radarTf={lastTf}
+        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets} radarTf={radarTf || lastTf}
         drawerOpen={drawerOpen} onOpenDrawer={() => setDrawerOpen(true)}
         onBrand={() => {
           navigate("/scanner");

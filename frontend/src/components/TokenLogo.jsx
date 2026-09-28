@@ -23,7 +23,23 @@ const SQUARE = new Set([
   '795389b642657c33', // TIA
   '98610772c13a2a3d', // ZRO
 ]);
+// Artwork that vanishes on one theme's canvas, measured from the same SVGs (luminance of the
+// opaque pixels and how much of the circle they fill). DARK_ART: near-black marks on a
+// transparent background (NEAR, ETH, XRP, WLD ...), backed by a light disc in dark theme.
+// LIGHT_ART: white or pale marks on transparent (HYPE, XPL ...), backed by a dark disc in light
+// theme. DARK_DISC: a full near-black disc (FARTCOIN), outlined more strongly in dark theme.
+// The artwork itself is never changed.
+const DARK_ART = new Set([
+  '4940286b73b2adfe', 'da698c1f88dfdfe0', '0196e1bbe11b6110', '1103c7a03e67c3ef', '1186309d94304915', 'b00c4723b2cb24c3',
+  '02419b220e441733', '6b7ba2fef66324ee', 'ee512442a4257951', '55c3afd659571ec1', '8ef1b7dc4a4b80a8', '7070b94594f959e6',
+]); // AR BIGTIME CFX DYM ETH GALA MEGA NEAR ONDO WLD XLM XRP
+const LIGHT_ART = new Set([
+  '4114ff162070e7f0', '9f52e8862e100903', '4ef1f539cdd3472f', 'b98fec0860869712', 'c66460b6de1635ad', '66f26beb272db287',
+  '24ef02b06b59ffbf', 'bdfd701af097640d', 'eca991175c53b0cd', '0531f02d8f9fecbf', '7b5ec3788b12796c',
+]); // ACE APEX HYPE IO REZ RUNE S SAGA SOPH STABLE XPL
+const DARK_DISC = new Set(['1db8c284aaa50a2f']); // FARTCOIN
 const logoId = src => src.slice(src.lastIndexOf('/') + 1).replace(/\.svg$/, '');
+const backing = id => (DARK_ART.has(id) ? ' token-logo-dk' : LIGHT_ART.has(id) ? ' token-logo-lt' : DARK_DISC.has(id) ? ' token-logo-dkdisc' : '');
 
 export default function TokenLogo({ symbol, size = 24 }) {
   const [failedSource, setFailedSource] = useState(null);
@@ -33,7 +49,7 @@ export default function TokenLogo({ symbol, size = 24 }) {
     const onError = () => setFailedSource(src);
     if (SQUARE.has(logoId(src))) return <img src={src} alt="" width={size} height={size}
       loading="lazy" style={{ ...box, objectFit: 'contain', boxShadow: RING }} onError={onError} />;
-    return <span className="token-logo" style={{ ...box, display: 'inline-flex', borderRadius: '50%', boxShadow: RING }}>
+    return <span className={`token-logo${backing(logoId(src))}`} style={{ ...box, display: 'inline-flex', borderRadius: '50%', boxShadow: RING }}>
       <img src={src} alt="" width={size} height={size} loading="lazy"
         style={{ display: 'block', width: size, height: size, objectFit: 'contain' }} onError={onError} />
     </span>;

@@ -20,7 +20,7 @@ import RadarPicks from "../components/radar/RadarPicks.jsx";
 import RadarMap from "../components/radar/RadarMap.jsx";
 import RadarRail, { FocusBody } from "../components/radar/RadarRail.jsx";
 import RadarSheet from "../components/radar/RadarSheet.jsx";
-import { store } from "../components/radar/shared.jsx";
+import { RM, store } from "../components/radar/shared.jsx";
 
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
 const VIEW_ITEMS = [{ key: "setups", label: "Setups with traders" }, { key: "all", label: "All coins" }];
@@ -139,8 +139,10 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const focusC = focus ? byCoin.get(focus) || null : null;
   const rowFor = useCallback(coin => results.find(r => getBaseSymbol(r.symbol) === coin) || null, [results]);
   const detailRow = detail ? rowFor(detail) : null;
-  // One request for the drawer's coin and the market-wide pulse in the rail.
-  const intel = useSetupIntel(detail ? [detail] : [], { pulse: true });
+  // One request for the followed coin (the drawer opens on it), plus the market-wide pulse in
+  // the rail. The focus panel, the sheet and the drawer show the same mark price and time.
+  const intelCoin = detail || (focusC ? focus : null);
+  const intel = useSetupIntel(intelCoin ? [intelCoin] : [], { pulse: true });
 
   useEffect(() => { if (!msg) return undefined; const t = setTimeout(() => setMsg(""), 3500); return () => clearTimeout(t); }, [msg]);
   const onWatch = useCallback(async coin => setMsg(watchToast(coin, await toggleWatch(coin), telegram)), [toggleWatch, telegram]);
@@ -148,16 +150,27 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const clear = useCallback(() => setFocus(null), [setFocus]);
   const openChart = useCallback(row => onSelect(row), [onSelect]);
 
-  // Map height: the viewport minus the header, title and picks on desktop; fixed below.
+  // Map height on desktop: what is left of the first screen under the header, title and picks,
+  // after the card's legend (44) and player (52) bands, its border and a 16px margin, so Play
+  // and the scrubber are in view on arrival. Fixed below 1200px.
   const [vh, setVh] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
   useEffect(() => { const on = () => setVh(window.innerHeight); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
-  const mapH = width >= 1200 ? Math.max(520, Math.min(760, vh - 380)) : width >= 768 ? 480 : 400;
+  const mainRef = useRef(null);
+  const [mainTop, setMainTop] = useState(318);
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const t = Math.round(el.getBoundingClientRect().top + window.scrollY);
+    if (t > 0 && Math.abs(t - mainTop) > 1) setMainTop(t);
+  });
+  const mapH = width >= 1200 ? Math.max(480, Math.min(760, vh - mainTop - 44 - 52 - 2 - 16)) : width >= 768 ? 480 : 400;
 
   const stripWatch = [...watched].map(c => byCoin.get(c)).filter(Boolean);
   const stripMine = [...mineBy.values()].map(m => [byCoin.get(m.coin), m]).filter(x => x[0]);
   const loaded = !!data && perps.length > 0;
+  const focusIntel = focusC ? intel?.coins?.[focusC.coin] || null : null;
   const focusProps = focusC && {
-    c: focusC, tf, box, row: rowFor(focusC.coin), watched, mine: mineBy.get(focusC.coin), starred: !!rowFor(focusC.coin) && isFav(rowFor(focusC.coin).symbol),
+    c: focusC, tf, box, row: rowFor(focusC.coin), intel: focusIntel, updatedAt: intel?.updated_at, watched, mine: mineBy.get(focusC.coin), starred: !!rowFor(focusC.coin) && isFav(rowFor(focusC.coin).symbol),
     onStar: toggleFav, onWatch, onClear: clear, onDetail: () => setDetail(focusC.coin), onChart: openChart,
   };
   const focusSlot = !phone && focusC
@@ -166,6 +179,20 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   // The sheet keeps showing its coin while it slides away.
   const sheetProps = useRef(null);
   if (focusProps) sheetProps.current = focusProps;
+  // Phone: the tapped dot (and its trail) stays in view in the band above the sheet.
+  useEffect(() => {
+    if (!phone || !focusC) return undefined;
+    let id = requestAnimationFrame(() => { id = requestAnimationFrame(() => {
+      const dot = document.querySelector(".radar-mapcard .smap-dot.on .smap-core");
+      const sheet = document.querySelector(".radar-sheet");
+      if (!dot || !sheet) return;
+      const top = Math.max(0, document.querySelector(".terminal-header")?.getBoundingClientRect().bottom || 0);
+      const sheetTop = window.innerHeight - (parseFloat(getComputedStyle(sheet).bottom) || 0) - sheet.offsetHeight;
+      const r = dot.getBoundingClientRect(), mid = r.top + r.height / 2;
+      if (mid < top + 48 || mid > sheetTop - 48) window.scrollBy({ top: mid - (top + sheetTop) / 2, behavior: RM ? "auto" : "smooth" });
+    }); });
+    return () => cancelAnimationFrame(id);
+  }, [phone, focus, !!focusC]);
   const toggleMine = () => { const v = !mineOn; setMineOn(v); store.set("smap-mine", v ? "1" : "0"); };
 
   return (
@@ -179,13 +206,16 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
         </div>
         <div className="radar-head-right">
           <SectorPicker rows={perps} value={sector} onChange={v => setParams({ sector: v, by: null })} />
-          <div className="smap-toggles" role="group" aria-label="Coins on the map">
-            {VIEW_ITEMS.map(v => <button key={v.key} type="button" aria-pressed={(v.key === "all") === showAll} onClick={() => setParams({ view: v.key === "all" ? "all" : null })}>{v.label}</button>)}
-          </div>
+          <Tabs small label="Coins on the map" items={VIEW_ITEMS} value={showAll ? "all" : "setups"} onChange={k => setParams({ view: k === "all" ? "all" : null })} />
           <span className="radar-divider" aria-hidden="true" />
-          <div className="smap-toggles" role="group" aria-label="My trades">
-            <button type="button" aria-pressed={mineOn} onClick={toggleMine}>My trades</button>
-          </div>
+          {/* An on/off switch, not a fourth tab: a check box before the words. */}
+          <button type="button" className="te-toggle radar-mine" aria-pressed={mineOn} onClick={toggleMine}>
+            <svg className="grid-aligned-box" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="1" y="1" width="10" height="10" rx="2" />
+              {mineOn && <path d="M3.4 6.2l1.8 1.8 3.5-3.8" />}
+            </svg>
+            <span>My trades</span>
+          </button>
         </div>
       </div>
       {mineOn && !effectiveAddress && <div className="radar-addr-row">
@@ -196,7 +226,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
 
       <RadarPicks top={top} box={box} tf={tf} focus={focusC ? focus : null} watched={watched} inBox={inBoxN} loaded={loaded} onPick={pick} />
 
-      <div className="radar-main">
+      <div className="radar-main" ref={mainRef}>
         <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
           mineBy={mineBy} mineOn={mineOn} mv={mv} keep={keep} onPick={pick} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}

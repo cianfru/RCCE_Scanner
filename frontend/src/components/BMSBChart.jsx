@@ -78,6 +78,7 @@ export default function BMSBChart({
   traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
   showSetup = true,          // false where the page header already shows the regime and signal (coin page)
   myEntry = null,            // {price, side}: the shared address's open trade, drawn as a dashed "Your entry" line
+  toolbarAction = null,      // an extra control at the start of the toolbar's right cluster (the coin page's "Ask AI")
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -482,6 +483,17 @@ export default function BMSBChart({
       cancelled = true;
       resetViewRef.current = null;
       ro.disconnect();
+      // Everything tied to this chart's series goes with it, so no effect touches a disposed object.
+      candleSeriesRef.current = null;
+      entryMarkersRef.current = null;
+      entryLinesRef.current = [];
+      myEntryLineRef.current = null;
+      pressureLinesRef.current = [];
+      patternSeriesRef.current = [];
+      // The mean-line effect runs before the rebuild on a timeframe switch; it must not reach
+      // this chart's series once the chart is gone (applyOptions there schedules a paint of a
+      // removed chart, which throws "Object is disposed" on the next frame).
+      meanSeriesRef.current = [];
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
@@ -583,15 +595,18 @@ export default function BMSBChart({
       }
     }
     markers.sort((a, b) => a.time - b.time);
-    if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers);
-    else entryMarkersRef.current = createSeriesMarkers(series, markers);
+    // The markers belong to one series; after a rebuild the old one is disposed, so start anew.
+    try { if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers); else entryMarkersRef.current = createSeriesMarkers(series, markers); }
+    catch (_) { entryMarkersRef.current = null; try { entryMarkersRef.current = createSeriesMarkers(series, markers); } catch (__) { return; } }
     for (const side of ["long", "short"]) {
       const sd = entries?.sides?.[side];
       if (!sd?.n || !sd.median_entry) continue;
-      entryLinesRef.current.push(series.createPriceLine({
-        price: sd.median_entry, color: sideColor(side), lineWidth: 1, lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true, title: `${sd.n} ${side} · median entry`,
-      }));
+      try {
+        entryLinesRef.current.push(series.createPriceLine({
+          price: sd.median_entry, color: sideColor(side), lineWidth: 1, lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true, title: `${sd.n} ${side} · median entry`,
+        }));
+      } catch (_) { /* the series was disposed by a rebuild */ }
     }
   }, [showEntries, entries, opens, candleTimes, mode]);
 
@@ -601,10 +616,12 @@ export default function BMSBChart({
     const series = candleSeriesRef.current;
     if (myEntryLineRef.current) { try { series?.removePriceLine(myEntryLineRef.current); } catch (_) {} myEntryLineRef.current = null; }
     if (!series || !candleTimes?.length || !myEntry?.price) return;
-    myEntryLineRef.current = series.createPriceLine({
-      price: myEntry.price, color: sideColor(myEntry.side === "short" ? "short" : "long"), lineWidth: 2, lineStyle: LineStyle.LargeDashed,
-      axisLabelVisible: true, title: "Your entry",
-    });
+    try {
+      myEntryLineRef.current = series.createPriceLine({
+        price: myEntry.price, color: sideColor(myEntry.side === "short" ? "short" : "long"), lineWidth: 2, lineStyle: LineStyle.LargeDashed,
+        axisLabelVisible: true, title: "Your entry",
+      });
+    } catch (_) { myEntryLineRef.current = null; }
   }, [myEntry, candleTimes, mode]);
 
   // Zoom from a little before the earliest burst on the chart to the latest candle.
@@ -805,6 +822,15 @@ export default function BMSBChart({
             </span>
           )}
 
+          {/* Without the pills (coin page), the regime stays as a quiet anchor: icon and word only,
+              so the toolbar still says what the setup is once the page header scrolls away. */}
+          {!showSetup && rm && (
+            <span className="chart-regime" style={{ color: rm.color }}>
+              <RegimeIcon regime={regime} size={12} />
+              {rm.name}
+            </span>
+          )}
+
           {/* Signal pill */}
           {showSetup && sm && signal !== "WAIT" && (
             <span className="terminal-status" style={{
@@ -849,6 +875,7 @@ export default function BMSBChart({
 
         {/* Right: pressure toggle + timeframe toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {toolbarAction}
           <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price">Reset view</button>
           {/* Pressure levels toggle */}
           <button

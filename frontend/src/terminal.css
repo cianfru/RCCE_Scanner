@@ -480,8 +480,15 @@
 /* Settings: the first preset label and the last appearance label sit flush with the column; the tab padding hangs outside. */
 .settings-tabs-start>.reflex-tabs-small{margin-left:-8px;}
 .settings-tabs-end>.reflex-tabs-small{margin-right:-8px;}
+/* Read-only server controls (no admin key): they look unavailable, not just say so. */
+.settings-server:disabled .reflex-tabs button{opacity:.55;cursor:not-allowed;}
+.settings-server:disabled .reflex-tabs button:not([aria-pressed="true"]):hover{color:var(--t-text3);}
+@media(max-width:640px){.settings-toggle{position:relative;}.settings-toggle::before{content:"";position:absolute;left:-12px;right:-8px;top:50%;height:44px;transform:translateY(-50%);}}
 /* HyperLens view tabs: a label clipped at the right edge fades out, so the row reads as scrollable. */
 .hl-view-tabs>.reflex-tabs{padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
+/* Phones: tighter view tabs, so the start of the fifth (Positioning) shows past the fourth and
+   the row visibly continues under the fade. */
+@media(max-width:480px){.hl-view-tabs>.reflex-tabs{gap:2px;}.hl-view-tabs>.reflex-tabs button{padding:10px 8px;}}
 /* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
    with the column header, so each label sits over its value. */
 .setup-pair-wrap{display:inline-flex;flex-direction:column;gap:1px;max-width:100%;min-width:0;}
@@ -532,7 +539,7 @@
 /* Setup intel drawer */
 .si .mh-body{font-size:13px;line-height:1.55;}
 .si-title{display:flex;align-items:center;gap:10px;}
-.si-title span{font:500 13px var(--font-geist-mono),monospace;color:var(--t-text3);}
+.si-title span{font:500 13px var(--font-geist-sans),sans-serif;font-variant-numeric:tabular-nums;color:var(--t-text3);}
 .si-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
 .si-title em{font-style:normal;color:var(--t-text4);}
 .si-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;margin:0 0 16px;}
@@ -849,7 +856,22 @@ i.race-btc{background:var(--t-text1);height:2px;}
    sheets on phones, with one scroll. */
 .reflex-terminal .table-sort.hl-sort{text-decoration:none;text-align:inherit;}
 .reflex-terminal .table-sort.hl-sort:hover{color:inherit;}
+/* Consensus phone sub-line: each reading stays whole; the separator before a reading that starts
+   a new line falls in the clipped strip left of the cell, so no line ends or starts on a dot. */
+.hl-subline{display:flex;flex-wrap:wrap;margin-left:-14px;clip-path:inset(0 0 0 14px);}
+.hl-subline>span{position:relative;white-space:nowrap;padding-left:14px;}
+.hl-subline>span::before{content:"\00b7";position:absolute;left:4px;}
+/* WALLETS L / S header: the size-lean mini bar gets its own label, over the bar. */
+.hl-ls-head{display:flex;justify-content:space-between;gap:12px;}
+.hl-ls-lean{font-size:10px;color:var(--t-text4);letter-spacing:.08em;align-self:flex-end;}
+/* Light theme: the dialogs are white cards over the dimmed page, not a washed grey glass. */
+[data-theme="light"] .reflex-terminal .hl-modal-sheet{background-color:var(--t-bg);border-radius:16px;}
 @media(max-width:767px){
+ .reflex-terminal .hl-modal-sheet{background-color:var(--t-bg);border-radius:0 0 16px 16px;padding-bottom:env(safe-area-inset-bottom);}
+ /* Wallet value summary as a 2x2 grid, no pipes. */
+ .reflex-terminal .hl-valsum{display:grid!important;grid-template-columns:1fr 1fr;gap:6px 12px!important;}
+ .reflex-terminal .hl-valsum .hl-valsep{display:none;}
+ .reflex-terminal .hl-valsum .hl-valsum-pnl{margin-left:0!important;}
  .reflex-terminal .hl-modal{padding:0!important;align-items:stretch!important;}
  .reflex-terminal .hl-modal-sheet{max-width:none!important;max-height:none!important;height:100%;overscroll-behavior:contain;}
  .reflex-terminal .hl-modal-sheet>div{min-height:100%;border-radius:0 0 16px 16px!important;border-top:0!important;border-left:0!important;border-right:0!important;}
@@ -959,7 +981,8 @@ a.te-link{text-decoration:none;display:inline-block;}
 /* Radar (spec 5): the setup map on its own page (.smap-* kept from the scanner's map), its rail
    and phone sheet (.radar-*), and the scanner's Radar strip. */
 .smap-note{margin:0;color:var(--t-text3);font-size:12px;}
-.smap-picks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+.smap-picks{display:flex;gap:10px;}
+.smap-picks>.smap-pick{flex:1 1 0;max-width:380px;}   /* four share the row; fewer (a sector) keep their width, left-aligned; never 460px wide at 1920 */
 .smap-pick{display:flex;flex-direction:column;gap:8px;text-align:left;background:var(--t-glassBg);border:1px solid var(--t-border);border-top:2px solid var(--t-accent);border-radius:6px;padding:12px 14px;color:var(--t-text2);font:13px var(--font-geist-sans),sans-serif;cursor:pointer;min-width:0;transition:background .15s,border-color .15s;}
 .smap-pick:hover{background:var(--t-surfaceH);}
 .smap-pick[aria-pressed="true"]{border-color:var(--t-accent);background:var(--t-accentDim);}
@@ -1001,6 +1024,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .smap-axl{fill:var(--t-text2);font:500 12px var(--font-geist-sans),sans-serif;}
 .smap-zonet{fill:var(--t-accent);font:600 12px var(--font-geist-sans),sans-serif;}
 .smap-regl{fill:var(--t-text3);font:500 11px var(--font-geist-sans),sans-serif;}
+.smap-captions text{paint-order:stroke;stroke:var(--t-bg);stroke-width:3px;stroke-linejoin:round;pointer-events:none;}   /* drawn over the dots, cut out of them */
 .smap-dot{cursor:pointer;transition:opacity .2s;}
 .smap-trail,.smap-minebox,.smap-pin{pointer-events:none;}   /* a dot is picked by its core, not by a trail crossing another dot */
 .smap-dot.dim{opacity:.12;}
@@ -1037,8 +1061,12 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-meta b{font:500 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
 .radar-sector-line .te-link{font-size:13px;}
 .radar-divider{width:1px;height:16px;background:var(--t-border);}
-.radar-sector-btn{border:0;background:none;padding:6px 0;color:var(--t-text2);font:500 13px var(--font-geist-sans),sans-serif;text-decoration:underline dotted;text-decoration-color:var(--t-text4);text-underline-offset:4px;cursor:pointer;}
-.radar-sector-btn:hover,.radar-sector-btn[aria-expanded="true"]{color:var(--t-text1);text-decoration-color:var(--t-accent);}
+.radar-sector-btn{border:0;border-bottom:2px dotted var(--t-text4);background:none;padding:6px 0;color:var(--t-text2);font:600 12px var(--font-geist-sans),sans-serif;cursor:pointer;}   /* same box as the small tabs beside it, so both underlines share one line */
+.radar-sector-btn:hover,.radar-sector-btn[aria-expanded="true"]{color:var(--t-text1);border-bottom-color:var(--t-accent);}
+.radar-mine{display:inline-flex;align-items:center;gap:6px;padding:6px 0 8px;font-size:12px;font-weight:600;color:var(--t-text3);text-decoration:none;}
+.radar-mine:hover{color:var(--t-text1);}
+.radar-mine[aria-pressed="true"]{color:var(--t-accent);}
+.radar-mine[aria-pressed="true"] .grid-aligned-box rect{fill:var(--t-accentDim);opacity:1;}
 .radar-sector-pop{position:fixed;z-index:100000;box-sizing:border-box;max-height:min(420px,calc(100dvh - 32px));overflow-y:auto;overscroll-behavior:contain;padding:6px;display:flex;flex-direction:column;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:8px;box-shadow:0 12px 40px var(--t-shadow);}
 .radar-sector-opt{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;background:none;padding:7px 10px;border-radius:4px;color:var(--t-text2);font:500 13px var(--font-geist-sans),sans-serif;cursor:pointer;text-align:left;--rel-color:var(--t-text2);}
 .radar-sector-opt small{margin-left:6px;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);}
@@ -1065,12 +1093,12 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-ticks{position:absolute;left:0;right:0;top:calc(100% + 2px);height:14px;pointer-events:none;}
 .radar-ticks span{position:absolute;top:0;transform:translateX(-50%);font:500 12px/14px var(--font-geist-sans),sans-serif;color:var(--t-text4);white-space:nowrap;}
 .radar-ticks.sparse span:nth-child(even):not(:last-child){visibility:hidden;}
-.radar-player .smap-when{align-self:center;}
+.radar-player .smap-when{align-self:center;min-width:17ch;}   /* "Wed 24 Sep close" fits, so the track never reflows on Play */
 .radar-rail-wrap{min-width:0;align-self:stretch;contain:size;}   /* the map card sets the row's height; a long rail scrolls inside it */
 .radar-rail{position:sticky;top:calc(var(--header-offset) + 16px);box-sizing:border-box;max-height:min(100%,calc(100dvh - 112px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:18px;min-width:0;}
 .radar-focus{backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:var(--t-glassShadow),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 1px 0 rgba(255,255,255,.04);}
 .radar-focus-coin{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.radar-focus-px{font:500 13px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;}
+.radar-focus-px{font:500 13px var(--font-geist-sans),sans-serif;font-variant-numeric:tabular-nums;color:var(--t-text3);white-space:nowrap;}
 .radar-star{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin:0 -2px 0 -4px;padding:0;border:0;background:none;border-radius:4px;cursor:pointer;}
 .radar-star:hover svg{color:#facc15;}
 .radar-hint{margin:0;font-size:13px;color:var(--t-text3);}
@@ -1082,15 +1110,21 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-rows .smap-srow > .smap-mono:first-of-type{margin-left:auto;}
 .radar-row-skel{height:28px;}
 .radar-rail .smap-strip{gap:4px 14px;}
+.radar-rail .smap-chip{align-items:center;gap:6px;}
+.radar-rail .smap-chip .smap-crowd{margin-left:2px;}
+.radar-more{font-size:12px;align-self:center;}
 .radar-rail .smap-slab{flex-basis:100%;min-width:0;font-weight:500;color:var(--t-text3);}
 .radar-pulse{margin:0;font-size:13px;line-height:1.45;color:var(--t-text3);}
-.radar-sheet{position:fixed;left:var(--gutter);right:var(--gutter);bottom:calc(var(--tabbar-space) + 8px);z-index:150;max-height:70dvh;display:flex;flex-direction:column;box-sizing:border-box;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:16px;box-shadow:0 12px 40px var(--t-shadow);transform:translateY(calc(100% + var(--tabbar-space) + 24px));visibility:hidden;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s linear .3s;}
-.radar-sheet[data-open]{transform:none;visibility:visible;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s;}
-.radar-sheet-grab{display:flex;justify-content:center;padding:8px 0 6px;touch-action:none;}
+.radar-sheet{position:fixed;left:var(--gutter);right:var(--gutter);bottom:calc(var(--tabbar-space) + 8px);z-index:150;max-height:44dvh;display:flex;flex-direction:column;box-sizing:border-box;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:16px;box-shadow:0 12px 40px var(--t-shadow);transform:translateY(calc(100% + var(--tabbar-space) + 24px));visibility:hidden;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s linear .3s;}
+.radar-sheet[data-open]{transform:none;visibility:visible;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s,max-height .3s cubic-bezier(.32,.72,0,1);}
+.radar-sheet[data-tall]{max-height:80dvh;}
+.radar-sheet-body .smap-fchart,.radar-sheet-body .smap-note{order:1;}   /* peek: readings and actions first, the chart under them */
+.radar-sheet-grab{display:flex;justify-content:center;padding:8px 0 6px;touch-action:none;cursor:grab;}
 .radar-sheet-grab i{display:block;width:36px;height:4px;border-radius:2px;background:var(--t-text4);opacity:.6;}
 .radar-sheet-body{overflow-y:auto;overscroll-behavior:contain;padding:2px 16px 16px;display:flex;flex-direction:column;gap:10px;}
 @media(max-width:1199px){
- .smap-picks{grid-template-columns:1fr 1fr;}
+ .smap-picks{flex-wrap:wrap;}
+ .smap-picks>.smap-pick{flex:1 1 calc(50% - 5px);max-width:none;}
  .radar-main{grid-template-columns:minmax(0,1fr);}
  .radar-rail-wrap{contain:none;}
  .radar-rail{position:static;max-height:none;overflow:visible;}
@@ -1098,10 +1132,14 @@ a.te-link{text-decoration:none;display:inline-block;}
 @media(max-width:767px){
  .radar-head-right{margin-left:0;gap:8px 12px;}
  .radar-head-right .smap-toggles{gap:12px;}
+ /* One line on phones: the view tabs keep their steel bar but lose their side padding. */
+ .radar-head-right .reflex-tabs{gap:12px;}
+ .radar-head-right .reflex-tabs button{padding:6px 0;}
  .radar-divider{display:none;}
  .smap-picks{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);}
  .smap-picks::-webkit-scrollbar{display:none;}
- .smap-pick{flex:0 0 264px;scroll-snap-align:start;}
+ .smap-picks{flex-wrap:nowrap;}
+ .smap-picks>.smap-pick{flex:0 0 264px;max-width:none;scroll-snap-align:start;}
  .radar-legend{padding:10px 12px;gap:6px 12px;}
  .radar-player{flex-wrap:wrap;padding:8px 12px 24px;gap:8px 12px;}
  .radar-player .smap-when{margin-left:auto;min-width:0;}
@@ -1275,17 +1313,46 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 
 /* Coin page header (spec 7.1): star before the logo; Watch, Trade and TradingView as flat text beside the timeframe tabs. */
 .reflex-terminal .coin-star{margin-right:-4px;}
+/* Token logos whose artwork would vanish on the canvas (TokenLogo.jsx): a backing disc in the
+   theme where they disappear, never in the other; the artwork is untouched. */
+.reflex-terminal .token-logo-dk{background:rgba(232,238,240,.92);}
+[data-theme="light"] .reflex-terminal .token-logo-dk{background:none;}
+[data-theme="light"] .reflex-terminal .token-logo-lt{background:#0f1f1a;}
+.reflex-terminal .token-logo.token-logo-dkdisc{box-shadow:0 0 0 1px rgba(232,238,240,.3)!important;}
+[data-theme="light"] .reflex-terminal .token-logo.token-logo-dkdisc{box-shadow:0 0 0 1px var(--t-overlay10)!important;}
+/* The landing page's scanner preview stays as it is. */
+.r-terminal-wrap .reflex-terminal .token-logo-dk,.r-terminal-wrap .reflex-terminal .token-logo-lt{background:none;}
+.r-terminal-wrap .reflex-terminal .token-logo.token-logo-dkdisc{box-shadow:0 0 0 1px var(--t-overlay10)!important;}
 .coin-head-actions{display:flex;align-items:center;gap:16px;margin-left:auto;min-width:0;}
+@media(min-width:768px){
+ /* Desktop: the tabs and the actions are items of the title line itself. The tabs take the
+    free space on their left; the actions follow them, or start a line of their own at the
+    left edge when the title line is full (the tabs never leave the title line). */
+ .coin-head-actions{display:contents;}
+ .coin-head .coin-tabs{margin-left:auto;}
+ .coin-head .coin-actions{flex-wrap:nowrap;}
+}
 .coin-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;min-width:0;}
 .coin-action{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);text-decoration:none;white-space:nowrap;border:0;padding:4px 0;transition:color .15s;}
 .coin-action:hover{color:var(--t-accent);}
 .coin-action:focus-visible,.coin-watch:focus-visible{outline:2px solid var(--t-accent);outline-offset:3px;border-radius:2px;}
 .te-toggle.coin-watch{display:inline-flex;align-items:center;gap:6px;font-weight:600;}
-.te-toggle.coin-watch .radar-pin{flex:none;}
+.radar-watchmark{flex:none;display:inline-block;vertical-align:-2px;overflow:visible;}
+.smap-watch .radar-watchmark{margin-top:-1px;}
+/* Chart toolbar on the coin page: the regime as a quiet anchor, and Ask AI with the R. */
+.chart-regime{display:inline-flex;align-items:center;gap:4px;margin-right:6px;font:700 12px var(--font-geist-mono),monospace;letter-spacing:.04em;white-space:nowrap;}
+.price-chart-panel .chart-ask{display:inline-flex;align-items:center;gap:6px;border:0;border-bottom:1px solid var(--t-border);background:transparent;border-radius:0;padding:3px 0;margin-right:10px;color:var(--t-text2);font:600 12px var(--font-geist-sans),sans-serif;cursor:pointer;white-space:nowrap;}
+.price-chart-panel .chart-ask img{display:block;width:16px;height:16px;object-fit:contain;}
+.price-chart-panel .chart-ask:hover,.price-chart-panel .chart-ask[aria-expanded="true"]{color:var(--t-accent);border-bottom-color:var(--t-accent);}
 .coin-availability-note{margin:0 0 16px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .analysis-card .analysis-ask{margin:16px 0 0;}
 .analysis-ask .te-link{font-size:13px;font-weight:600;}
-@media(max-width:767px){.coin-head-actions{flex-basis:100%;margin-left:0;justify-content:space-between;gap:12px;}.coin-actions{gap:4px 14px;}.coin-action-long{display:none;}}
+@media(max-width:767px){.coin-head-actions{flex-basis:100%;margin-left:0;justify-content:space-between;gap:12px;}.coin-actions{order:-1;gap:4px 14px;}.coin-action-long{display:none;}
+ /* 44px touch targets without moving anything: invisible hit areas around the small controls. */
+ .coin-action,.te-toggle.coin-watch{position:relative;}
+ .coin-action::after,.te-toggle.coin-watch::after{content:"";position:absolute;left:-6px;right:-6px;top:50%;height:44px;transform:translateY(-50%);}
+ .reflex-terminal .coin-star::before{inset:-13px;}
+}
 /* Traders table while its fills load: three skeleton rows under one quiet line. */
 .te-loading{margin:0 0 8px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .te-skel{height:28px;margin:0 0 6px;border-radius:3px;}
@@ -1329,6 +1396,24 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .pf-scan-1d{display:inline-flex;align-items:center;gap:8px;}
 .pf-verdict{margin-left:auto;font:700 12px var(--font-geist-sans),sans-serif;white-space:nowrap;}
 .pf-warning{margin-top:6px;font:12px/1.5 var(--font-geist-mono),monospace;color:var(--t-text2);}
+/* Not connected: a centred card for three short lines, not a full-width panel. */
+.pf-connect{max-width:640px;margin-left:auto!important;margin-right:auto!important;}
+/* Failed feeds: one line under the account card's header, one Retry for all. */
+.pf-feeds{padding:10px 20px;border-bottom:1px solid var(--t-border);font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.pf-feeds .data-status-dot{display:inline-block;margin-right:8px;vertical-align:1px;}
+.pf-feeds .pf-feeds-names{color:var(--t-text3);}
+.pf-feeds .te-link{font-size:13px;margin-left:10px;white-space:nowrap;}
+@media(max-width:767px){.pf-feeds{padding:10px 16px;}.pf-feeds .pf-feeds-names{display:none;}}
+/* The chart keeps its place when the history does not load. */
+.pf-chart-failed{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;font:13px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.pf-chart-failed .te-link{font-size:13px;}
+/* Watch in a card: the same te-link as Open on Radar, with the stemmed pin. */
+.pf-card-actions .pf-watch{display:inline-flex;align-items:center;gap:6px;}
+.pf-heat{display:inline-flex;align-items:center;gap:6px;}
+.pf-scan-lbl{font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+/* Wide screens: a card's figures, P&L and verdict stay within one reading span. */
+.pf-card-top,.pf-card-details,.pf-scan,.pf-warning{max-width:1360px;}
+.pf-stats{max-width:1400px;}
 @media(max-width:767px){
   .pf-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;padding:14px 16px 12px;}
   .pf-stat-value{font-size:18px;}

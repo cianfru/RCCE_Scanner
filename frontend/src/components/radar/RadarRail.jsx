@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Star } from "lucide-react";
 import TokenLogo from "../TokenLogo.jsx";
 import { col } from "../../theme.js";
 import { fmtPx } from "../../utils/traderFormat.js";
-import { fmtIn, nextCloses } from "../../utils/intel.js";
+import { fmtIn, nextCloses, pastEntry, setupSide } from "../../utils/intel.js";
+import { formatPrice } from "../../utils/marketPresentation.js";
 import { SIGNAL_SHORT, STAGES, ZONE_WORD, movement, pnl, pulseLine } from "../../utils/setupMap.js";
-import { Crowd, Pin, STAR_TIP, WATCH_TIP, sc, signed, zoneColor } from "./shared.jsx";
+import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, sc, signed, zoneColor } from "./shared.jsx";
 
 function FocusChart({ c }) {
   const s = c.sparkline || [];
@@ -25,10 +27,18 @@ export const hlTradeUrl = (c, row) => `https://app.hyperliquid.xyz/trade/${encod
 
 // One coin followed: where it sits, how it moved, the crowd, your trade, and what to do next.
 // Used in the rail (desktop and tablet) and in the phone's bottom sheet.
-export function FocusBody({ c, tf, box, row, watched, mine, starred, onStar, onWatch, onClear, onDetail, onChart, titleId }) {
+export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, starred, onStar, onWatch, onClear, onDetail, onChart, titleId }) {
   const mf = movement(c, box);
-  const past = c.traders?.ple ? c.price / c.traders.ple - 1 : null;
-  const my = mine ? pnl(mine, c.price) : null;
+  // One price everywhere: the live mark with its reading time once the traders' data is in
+  // (the same the Full detail drawer shows), else the map's own price.
+  const mark = intel?.mark || c.price;
+  const markAt = intel?.mark && updatedAt ? new Date(updatedAt * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : null;
+  // Their entry: the profitable traders' median entry on the setup's side, as in the drawer.
+  const pro = intel?.profitable || null;
+  const side = pro ? (row && setupSide(row)) || ((pro.short?.n || 0) > (pro.long?.n || 0) ? "short" : "long") : "long";
+  const entry = pro ? pro[side]?.median_entry : c.traders?.ple;
+  const past = entry ? pastEntry(side, mark, entry) : null;
+  const my = mine ? pnl(mine, mark) : null;
   const isWatched = watched.has(c.coin);
   return <>
     <div className="smap-focus-top radar-focus-top">
@@ -36,7 +46,7 @@ export function FocusBody({ c, tf, box, row, watched, mine, starred, onStar, onW
         title={STAR_TIP} onClick={() => onStar(row.symbol)}>
         <Star size={16} strokeWidth={1.75} fill={starred ? col("#facc15") : "none"} color={starred ? col("#facc15") : "var(--t-text3)"} aria-hidden="true" />
       </button>}
-      <h3 id={titleId}><TokenLogo symbol={c.symbol} size={24} /><span className="radar-focus-coin">{c.coin}</span><span className="radar-focus-px">{tf.toUpperCase()} · {fmtPx(c.price)}</span></h3>
+      <h3 id={titleId}><TokenLogo symbol={c.symbol} size={24} /><span className="radar-focus-coin">{c.coin}</span><span className="radar-focus-px" title={markAt ? `Mark price at ${markAt}` : undefined}>{tf.toUpperCase()}{"\u2009·\u2009"}{formatPrice(mark)}</span></h3>
       <button type="button" className="mh-close" onClick={onClear}>Clear</button>
     </div>
     <dl className="smap-kv smap-kv-rows">
@@ -44,14 +54,14 @@ export function FocusBody({ c, tf, box, row, watched, mine, starred, onStar, onW
       <div><dt>Zone</dt><dd style={{ color: zoneColor(c.zone) }}>{ZONE_WORD[c.zone]}</dd></div>
       <div><dt>Crowd</dt><dd><Crowd k={c.crowd} /> {c.traders?.pl || 0} long · {c.traders?.ps || 0} short</dd></div>
       {mf && <div><dt>{tf === "1d" ? "5 days" : "24 hours"}</dt><dd>stretch {mf.p[0].z.toFixed(1)} → {mf.p[mf.p.length - 1].z.toFixed(1)} · traders {signed(mf.p[0].n)} → {signed(mf.p[mf.p.length - 1].n)}</dd></div>}
-      {past != null && <div><dt>Their entry</dt><dd>{fmtPx(c.traders.ple)} · price {past >= 0 ? "+" : ""}{Math.round(100 * past)}%</dd></div>}
+      {past != null && <div><dt>Their entry</dt><dd>{side} {fmtPx(entry)} · {past >= 0 ? "+" : ""}{Math.round(100 * past)}% for them</dd></div>}
       {mine && <div><dt>Your trade</dt><dd>{mine.side} from {fmtPx(mine.entry)}{my != null && <> · <span className="smap-mono" style={{ color: my >= 0 ? "var(--t-profit)" : "var(--t-loss)" }}>{my >= 0 ? "+" : ""}{Math.round(100 * my)}%</span></>}</dd></div>}
       <div><dt>Next close</dt><dd>{fmtIn(nextCloses(tf, Date.now(), 1)[0] - Date.now())}</dd></div>
     </dl>
     <FocusChart c={c} />
     <div className="smap-actions">
       <button type="button" className="smap-watch" aria-pressed={isWatched} title={WATCH_TIP} onClick={() => onWatch(c.coin)}>
-        <Pin color={isWatched ? "var(--t-bg)" : "var(--t-accent)"} />{isWatched ? "Watching" : "Watch"}
+        <WatchMark color={isWatched ? "var(--t-bg)" : "var(--t-accent)"} />{isWatched ? "Watching" : "Watch"}
       </button>
       <button type="button" className="te-link" onClick={onDetail}>Full detail</button>
       {row && <button type="button" className="te-link" onClick={() => onChart(row)}>Chart</button>}
@@ -68,6 +78,17 @@ function StripRow({ c, mine, onClick }) {
     <span className="smap-mono">{SIGNAL_SHORT[c.signal] || c.signal}</span>
     {r != null && <span className="smap-mono" style={{ color: r >= 0 ? "var(--t-profit)" : "var(--t-loss)" }}>{r >= 0 ? "+" : ""}{Math.round(100 * r)}%</span>}
   </button>;
+}
+
+// One "Moving" list: logo, coin and crowd word per coin, the first six with "+5 more".
+const MOVER_CAP = 6;
+function MoverList({ label, xs, onPick }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? xs : xs.slice(0, MOVER_CAP);
+  return <div className="smap-strip"><span className="smap-slab">{label}</span>{shown.map(c =>
+    <button type="button" key={c.coin} className="smap-chip" onClick={() => onPick(c.coin)}><TokenLogo symbol={c.symbol} size={16} /><strong>{c.coin}</strong><Crowd k={c.crowd} /></button>)}
+    {xs.length > MOVER_CAP && <button type="button" className="te-link radar-more" aria-expanded={all} onClick={() => setAll(v => !v)}>{all ? "Fewer" : `+${xs.length - MOVER_CAP} more`}</button>}
+  </div>;
 }
 
 // The rail beside the map: the followed coin (or one line on how to follow one), the watch
@@ -90,8 +111,7 @@ export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mi
     {moving.length > 0 && <section className="radar-sec">
       <h3 className="radar-sec-h">Moving</h3>
       <div className="smap-movers">
-        {moving.map(([label, xs]) => <div key={label} className="smap-strip"><span className="smap-slab">{label}</span>{xs.map(c =>
-          <button type="button" key={c.coin} className="smap-chip" onClick={() => onPick(c.coin)}><strong>{c.coin}</strong><Crowd k={c.crowd} /></button>)}</div>)}
+        {moving.map(([label, xs]) => <MoverList key={label} label={label} xs={xs} onPick={onPick} />)}
       </div>
     </section>}
     {line && <p className="radar-pulse" title={pulse.clusters?.length ? `Two or more on the same side: ${pulse.clusters.map(k => `${k.coin} ${k.side} ${k.n}`).join(", ")}` : undefined}>{line}</p>}

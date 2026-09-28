@@ -163,7 +163,7 @@ const LIGHT_HUES = {
   "#e3b341": "#a16207", "#facc15": "#a16207", "#d8a094": "#b4533f", "#a78bfa": "#6d28d9",
   "#c4b5fd": "#6d28d9", "#c6a46d": "#8a6a2f", "#b6a07c": "#7a6440",
   "#7dd3fc": "#0369a1", "#fda4af": "#be123c", "#fcd34d": "#a16207", "#8b8f94": "#52525b",
-  "#7d9b95": "#4f6f69", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
+  "#7d9b95": "#7f9993", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
 };
 let currentMode = "dark";
 
@@ -172,6 +172,8 @@ let currentMode = "dark";
 export function alpha(color, pct) {
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 }
+
+export const isLightMode = () => currentMode === "light";
 
 export function col(hex) {
   return currentMode === "light" ? (LIGHT_HUES[String(hex).toLowerCase()] || hex) : hex;

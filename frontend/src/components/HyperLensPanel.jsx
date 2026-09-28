@@ -33,6 +33,9 @@ const timeAgo = (ts) => {
 const logoKey = (coin) => `${String(coin || "").split(":").pop()}/USDT`;
 
 const truncAddr = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
+// "26 Sep": fixed English month names (en-GB would write "26 Sept").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (tSec) => { const d = new Date(tSec * 1000); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
 const trendColor = (trend) =>
   trend === "BULLISH" ? T.green :
@@ -285,15 +288,21 @@ function StatusStrip({ status, cohort }) {
 // trend reads bullish or bearish), a stronger centre line. The Lean view draws it full
 // width; the Consensus table draws the same bar at 48px, where minPx keeps a small
 // lean visible as a stub past the centre line.
-function LeanBar({ lean, color, height = 8, width, title, minPx = 0 }) {
+// compact (the Consensus mini bar): the ±15% neutral zone is one faint band instead of two
+// marks, so a small bar never reads as three hairlines.
+function LeanBar({ lean, color, height = 8, width, title, minPx = 0, compact = false }) {
   const w = lean == null ? 0 : Math.min(Math.abs(lean), 1) * 50;
   const fillW = minPx && lean ? `max(${w}%, ${minPx}px)` : `${w}%`;
   const ext = height >= 8 ? 2 : 1;
   return (
     <div title={title} aria-hidden={title ? undefined : true}
       style={{ position: "relative", height, width, flexShrink: width ? 0 : undefined, background: T.overlay04 }}>
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: 1, background: T.overlay15 }} />
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: "57.5%", width: 1, background: T.overlay15 }} />
+      {compact
+        ? <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: "15%", background: T.overlay06 }} />
+        : <>
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: "42.5%", width: 1, background: T.overlay15 }} />
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: "57.5%", width: 1, background: T.overlay15 }} />
+        </>}
       <div style={{ position: "absolute", top: -ext, bottom: -ext, left: "50%", width: 1, background: T.overlay30 }} />
       {lean != null && (
         <div style={{
@@ -337,7 +346,7 @@ function ConsensusBar({ long_count, short_count, lean, trend }) {
       </span>
       {/* Size lean: the Lean view's bar at 48px, so wallet count and dollars read side by side */}
       <span style={{ width: 4, flexShrink: 0 }} />
-      <LeanBar width={48} height={8} minPx={2} lean={thin ? null : lean} color={trendColor(trend)}
+      <LeanBar width="clamp(48px, 28%, 96px)" height={8} minPx={3} compact lean={thin ? null : lean} color={trendColor(trend)}
         title={thin || lean == null
           ? `Size lean: fewer than ${MIN_WALLETS} wallets, not drawn`
           : `Size lean ${fmtSignedPct(lean * 100)} (long minus short dollars, blended with the wallet count). Past the marks at ±15% the trend reads bullish or bearish.`} />
@@ -426,7 +435,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
             {!isMobile && (
               <>
                 <SortTh label="WALLETS" sortKey="positioned" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={56} />
-                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 190 }} title="Wallet count, long versus short. The small bar after it is the size lean from the Lean view: the trend column weighs position size, so the two can point in different directions.">WALLETS L / S</th>
+                <th style={{ padding: "12px 12px", fontFamily: T.font, fontSize: T.textBase, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: `2px solid ${T.border}`, minWidth: 190 }} title="Wallet count, long versus short. The small bar after it is the size lean from the Lean view: the trend column weighs position size, so the two can point in different directions."><span className="hl-ls-head"><span>WALLETS L / S</span><span className="hl-ls-lean">SIZE LEAN</span></span></th>
                 <SortTh label="NET WALLETS" title={NET_TITLE} sortKey="net" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={48} />
                 {allWallets && <SortTh label="AVG LEV" sortKey="leverage" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={60} />}
                 <SortTh label="NOTIONAL" sortKey="notional" currentKey={sortKey} asc={sortAsc} onSort={handleSort} align="center" w={90} />
@@ -454,8 +463,9 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
                   </div>
                   {/* Mobile: the wallet figures sit under the symbol instead of in off-screen columns */}
                   {isMobile && (
-                    <div title={NET_TITLE} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, marginTop: 2, paddingLeft: 28 }}>
-                      L/S {cf.long_count}/{cf.short_count} · net {fmtSignedPct(cf.net_wallets * 100)} · {cf.positioned} wallets
+                    <div className="hl-subline" title={NET_TITLE} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text3, marginTop: 2 }}>
+                      {/* Each reading stays whole; a wrap never leaves a separator at a line end. */}
+                      <span>L/S {cf.long_count}/{cf.short_count}</span><span>net {fmtSignedPct(cf.net_wallets * 100)}</span><span>{cf.positioned} wallets</span>
                     </div>
                   )}
                 </td>
@@ -509,7 +519,7 @@ function ConsensusTable({ consensus, filter, onSymbolClick, isMobile, cohort }) 
 
 // One diverging bar per symbol: the size-weighted lean the Consensus trend comes
 // from (a trend needs more than 15% either way), so the two views cannot disagree.
-function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
+function HeatmapGrid({ consensus, onSymbolClick, cohort, isMobile }) {
   const { rows, thin } = useMemo(() => {
     const rows = [];
     let thin = 0;
@@ -533,8 +543,9 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
   }
 
   const grid = {
-    display: "grid", gridTemplateColumns: "100px minmax(0, 1fr) 52px 56px",
-    gap: 10, alignItems: "center", padding: "0 12px", minWidth: 320,
+    // Phones keep the bar at today's width: a narrower symbol column with a 16px logo.
+    display: "grid", gridTemplateColumns: isMobile ? "80px minmax(0, 1fr) 44px 48px" : "100px minmax(0, 1fr) 52px 56px",
+    gap: isMobile ? 8 : 10, alignItems: "center", padding: "0 12px", minWidth: 320,
   };
   const head = { fontFamily: T.font, fontSize: T.textXs, fontWeight: 700, color: T.text3, letterSpacing: "0.08em", textTransform: "uppercase" };
 
@@ -544,7 +555,7 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
         <span style={head}>Symbol</span>
         <span style={{ ...head, display: "flex", justifyContent: "space-between" }}
           title="Long minus short notional, blended with the wallet count the same way as the Consensus trend. Past 15% either way (the faint marks) the trend reads bullish or bearish.">
-          <span>More short</span><span>More long</span>
+          {isMobile ? <><span>{"←"} Short</span><span>Long {"→"}</span></> : <><span>More short</span><span>More long</span></>}
         </span>
         <span style={{ ...head, textAlign: "right" }}>Lean</span>
         <span style={{ ...head, textAlign: "right" }}>Wallets</span>
@@ -560,8 +571,8 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort }) {
             onMouseEnter={e => e.currentTarget.style.background = T.overlay04}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>
-              <TokenLogo symbol={logoKey(r.symbol)} size={20} />
+            <span style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 8, minWidth: 0, fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>
+              <TokenLogo symbol={logoKey(r.symbol)} size={isMobile ? 16 : 20} />
               <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{r.symbol}</span>
             </span>
             <LeanBar lean={r.lean} color={color} />
@@ -846,7 +857,7 @@ function WalletDetail({ address, onClose, isMobile }) {
         background: T.overlay02,
         display: "flex", alignItems: "flex-start", justifyContent: "space-between",
       }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ width: 3, height: 16, borderRadius: 2, background: T.accent, flexShrink: 0 }} />
             <span style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 700, color: T.accent }}>
@@ -856,7 +867,7 @@ function WalletDetail({ address, onClose, isMobile }) {
           </div>
           {/* Full address + copy */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", wordBreak: "break-all" }}>
+            <span title={address} style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, userSelect: "all", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {address}
             </span>
             <button
@@ -947,19 +958,18 @@ function WalletDetail({ address, onClose, isMobile }) {
             const pnl = last - first;
             const pctChg = first > 0 ? ((pnl / first) * 100) : 0;
             const color = pnl >= 0 ? T.green : T.red;
-            const since = avHistory[0]?.timestamp
-              ? new Date(avHistory[0].timestamp * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-              : null;
+            const since = avHistory[0]?.timestamp ? shortDate(avHistory[0].timestamp) : null;
             return (
               <div style={{ textAlign: "right" }}>
-                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color }}>
+                <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color, whiteSpace: "nowrap" }}>
                   {fmtSignedPct(pctChg, 2)}
                 </span>
-                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4 }}>
+                <span style={{ fontFamily: T.mono, fontSize: T.textXs, color, marginLeft: 4, whiteSpace: "nowrap" }}>
                   ({fmtSignedUsd(pnl)})
                 </span>
+                {/* Phones: "since" on its own line under the change, never split mid-phrase. */}
                 {since && (
-                  <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: 4 }}>
+                  <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4, marginLeft: isMobile ? 0 : 4, whiteSpace: "nowrap", display: isMobile ? "block" : undefined }}>
                     since {since}
                   </span>
                 )}
@@ -1044,7 +1054,7 @@ function WalletDetail({ address, onClose, isMobile }) {
 
       {/* ── POSITION SUMMARY STRIP (like HyperTracker) ── */}
       {activeSection === "positions" && positions.length > 0 && (
-        <div style={{
+        <div className="hl-valsum" style={{
           padding: "10px 16px",
           display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center",
           borderBottom: `1px solid ${T.overlay08}`,
@@ -1054,17 +1064,17 @@ function WalletDetail({ address, onClose, isMobile }) {
             <span style={{ color: T.text4 }}>Long Value: </span>
             <span style={{ color: T.green, fontWeight: 600 }}>{fmt$(longValue)}</span>
           </span>
-          <span style={{ color: T.text4 }}>|</span>
+          <span className="hl-valsep" style={{ color: T.text4 }}>|</span>
           <span style={{ fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Short Value: </span>
             <span style={{ color: T.red, fontWeight: 600 }}>{fmt$(shortValue)}</span>
           </span>
-          <span style={{ color: T.text4 }}>|</span>
+          <span className="hl-valsep" style={{ color: T.text4 }}>|</span>
           <span style={{ fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Total: </span>
             <span style={{ color: T.text1, fontWeight: 600 }}>{fmt$(totalValue)}</span>
           </span>
-          <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
+          <span className="hl-valsum-pnl" style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 12 }}>
             <span style={{ color: T.text4 }}>Sum PNL: </span>
             <span style={{ color: sumPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>
               {fmtSignedUsd(sumPnl)}
@@ -1688,8 +1698,19 @@ const VIEW_TABS = [
 function TabSwitcher({ active, onChange }) {
   // Roster tab removed in "Sentiment Mode": same data is on the HL leaderboard.
   // Pressure tab removed: it needs order polling, which stays off.
+  // On phones the row scrolls sideways; the chosen view is scrolled into sight (a link to
+  // ?view=positioning must not open on a tab past the edge).
+  const ref = useRef(null);
+  useEffect(() => {
+    const row = ref.current?.querySelector(".reflex-tabs");
+    const btn = row?.querySelector('button[aria-pressed="true"]');
+    if (!row || !btn || row.scrollWidth <= row.clientWidth) return;
+    const left = btn.offsetLeft - row.offsetLeft, right = left + btn.offsetWidth;
+    if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 8);
+    else if (right > row.scrollLeft + row.clientWidth - 24) row.scrollLeft = right - row.clientWidth + 32;
+  }, [active]);
   return (
-    <div className="hl-view-tabs" style={{ minWidth: 0 }}>
+    <div ref={ref} className="hl-view-tabs" style={{ minWidth: 0 }}>
       <Tabs label="HyperLens view" items={VIEW_TABS} value={active} onChange={onChange} />
     </div>
   );
@@ -1713,6 +1734,12 @@ const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K 
 
 const VIEW_KEYS = new Set(VIEW_TABS.map(v => v.key));
 const VIEW_STORE = "rcce-traders-view";
+// The address names a view by its tab label (?view=lean, ?view=following); the older internal
+// names still open the same views.
+const VIEW_SLUG = { favorites: "following", heatmap: "lean" };
+const SLUG_VIEW = { following: "favorites", lean: "heatmap" };
+const viewFromUrl = v => (v ? SLUG_VIEW[v] || (VIEW_KEYS.has(v) ? v : null) : null);
+const slugOf = k => VIEW_SLUG[k] || k;
 function storedView() {
   try { const v = localStorage.getItem(VIEW_STORE); return VIEW_KEYS.has(v) ? v : null; } catch { return null; }
 }
@@ -1720,27 +1747,28 @@ function storedView() {
 export default function HyperLensPanel({ isMobile }) {
   // The view comes from ?view=, else the last one used here, else Consensus.
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlView = searchParams.get("view");
-  const [tab, setTabState] = useState(() => (VIEW_KEYS.has(urlView) ? urlView : storedView() || "consensus"));
+  const rawView = searchParams.get("view");
+  const urlView = viewFromUrl(rawView);
+  const [tab, setTabState] = useState(() => urlView || storedView() || "consensus");
   const setTab = useCallback((v) => {
     setTabState(v);
     try { localStorage.setItem(VIEW_STORE, v); } catch { /* storage blocked: the address still carries it */ }
   }, []);
   // A link or back/forward that changes ?view= moves the view; otherwise ?view= follows the
   // view (Consensus, the default, keeps a clean /traders).
-  const lastUrlView = useRef(urlView);
+  const lastUrlView = useRef(rawView);
   useEffect(() => {
-    if (urlView !== lastUrlView.current) {
-      lastUrlView.current = urlView;
-      if (VIEW_KEYS.has(urlView) && urlView !== tab) { setTabState(urlView); return; }
+    if (rawView !== lastUrlView.current) {
+      lastUrlView.current = rawView;
+      if (urlView && urlView !== tab) { setTabState(urlView); return; }
     }
-    const want = tab === "consensus" ? null : tab;
-    if ((urlView || null) === want) return;
+    const want = tab === "consensus" ? null : slugOf(tab);
+    if ((rawView || null) === want) return;
     const next = new URLSearchParams(searchParams);
     if (want) next.set("view", want); else next.delete("view");
     lastUrlView.current = want;
     setSearchParams(next, { replace: true });
-  }, [tab, urlView]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rawView]);  // eslint-disable-line react-hooks/exhaustive-deps
   const [filter, setFilter] = useState("");
   const [cohort, setCohort] = useState("all");
   const [status, setStatus] = useState({});
@@ -1892,6 +1920,7 @@ export default function HyperLensPanel({ isMobile }) {
               consensus={consensus}
               onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
               cohort={cohort}
+              isMobile={isMobile}
             />
           )}
           {tab === "cohorts" && <CohortsView />}

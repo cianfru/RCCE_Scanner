@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { col } from "../../theme.js";
 import { STAGES, at, labelBox, labelOrder, placeLabels, symlog, trailPoints } from "../../utils/setupMap.js";
-import { Pin, RM, STAGE_COLOR, XS, sc } from "./shared.jsx";
+import { Pin, RM, XS, sc, stageColor, stepLabel } from "./shared.jsx";
 
 // The Radar's map: every coin placed by stretch (the engine's z-score) and profitable-trader
 // lean, with trails of the last closes and a playable timeline. Drawn by React, moved
-// imperatively while playing. Labels are placed without collisions at rest; while playing or
-// scrubbing only the focused, watched and mine labels show.
+// imperatively while playing. Labels are placed without collisions at rest and again at each
+// close the timeline passes; between two closes every label keeps its side and follows its dot.
 export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, watched, mineBy, mineOn, mv, keep, onPick }) {
   const host = useRef(null), svgRef = useRef(null), scrub = useRef(null), when = useRef(null);
   const [W, setW] = useState(800);
@@ -27,7 +26,8 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
   const Y = useCallback(v => T + (1 - (symlog(v) - ys[0]) / (ys[1] - ys[0])) * (H - T - B), [H, ys[0], ys[1]]);
   const u = useRef(last);
   const dt = tf === "1d" ? 86400 : 14400;
-  const fmtStep = t => new Date(t * 1000).toLocaleString(undefined, tf === "1d" ? { weekday: "short", day: "numeric", month: "short" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  // "Wed 24 Sep" (1D) or "Wed 16:00" (4H), with fixed English names ("Sep", never "Sept").
+  const fmtStep = t => stepLabel(t, tf);
 
   const labelled = useMemo(() => {
     const inBoxTop = pts.filter(c => c.zone === "watch").sort((a, b) => (b.priority || 0) - (a.priority || 0)).slice(0, small ? 4 : 8).map(c => c.coin);
@@ -35,7 +35,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     const moving = small ? [] : [...mv.entering, ...mv.leaving].map(c => c.coin);
     return { all: new Set([...inBoxTop, ...big, ...moving, ...keep]), named: new Set([...inBoxTop, ...big, ...moving]), movers: new Set(moving.filter(c => !big.includes(c))) };
   }, [pts, mv, keep, small]);
-  // Always shown, placed on the right, even while the trails move.
+  // Always shown while the trails move (on their right when they had no room at the last placement).
   const pinned = useMemo(() => new Set([...(focus ? [focus] : []), ...watched, ...mineBy.keys()]), [focus, watched, mineBy]);
   const order = useMemo(() => labelOrder(pts, { labelled: labelled.all, focus, watched, mine: new Set(mineBy.keys()), movers: labelled.movers }),
     [pts, labelled, focus, watched, mineBy]);
@@ -59,7 +59,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     const dots = [], texts = [], taken = keepClear ? [keepClear] : [];
     for (let k = p ? p.length - 1 : -1; k >= 0; k--) {
       if (k > t + 0.01) continue;
-      const x = X(p[k].z), y = Y(p[k].n), now = k === p.length - 1, s = now ? "now" : fmtStep(steps[k] - dt).split(",")[0];
+      const x = X(p[k].z), y = Y(p[k].n), now = k === p.length - 1, s = now ? "now" : tf === "1d" ? stepLabel(steps[k] - dt, tf).split(" ")[0] : stepLabel(steps[k] - dt, tf);
       dots.push(`<circle cx="${x}" cy="${y}" r="3" fill="var(--t-text1)"/>`);
       const w = 6.2 * s.length + 2;
       // "now" sits on the coin's own dot, so it clears that dot's ring; older marks sit on 3px dots.
@@ -74,46 +74,56 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     fm.innerHTML = dots.join("") + texts.join("");
   }, [focus, trails, X, Y, steps, dt, tf]);
 
-  // Labels: at rest, the collision-free layout; in motion, only the pinned ones on the right.
-  // The followed coin's label always shows: it is placed first, its dated marks keep clear
-  // of it, and every other label keeps clear of both.
-  const layoutLabels = useCallback((pos, full, t) => {
+  // Labels: placed without collisions at rest, when the dot set or the size changes, when the
+  // scrubber is released and each time the timeline passes a close. In between (playing or
+  // scrubbing), every label keeps the side it was given and follows its dot, so the names stay
+  // on the moving dots. The followed coin's label always shows: it is placed first, its dated
+  // marks keep clear of it, and every other label keeps clear of both.
+  const sides = useRef(new Map());   // coin -> {dx, dy, anchor} from the last placement
+  const placedStep = useRef(null);
+  const layoutLabels = useCallback((pos, place, t) => {
     const svg = svgRef.current;
     if (!svg) return;
     const labs = new Map([...svg.querySelectorAll(".smap-dot")].map(g => [g.dataset.coin, g.querySelector(".smap-lab")]));
-    const right = (lab, p) => { lab.setAttribute("x", p.x + p.r + 4); lab.setAttribute("y", p.y + 4); lab.setAttribute("text-anchor", "start"); };
+    const right = p => ({ x: p.x + p.r + 4, y: p.y + 4, anchor: "start" });
+    const follow = (coin, p) => { const s = sides.current.get(coin); return s ? { x: p.x + s.dx, y: p.y + s.dy, anchor: s.anchor } : null; };
     const bbox = el => { try { const b = el.getBBox(); return { x0: b.x - 1, y0: b.y - 1, x1: b.x + b.width + 1, y1: b.y + b.height + 1 }; } catch { return null; } };
     const widthOf = coin => { const el = labs.get(coin); try { const w = el?.getComputedTextLength(); return w ? w + 4 : 0; } catch { return 0; } };
     const bounds = { x0: L, y0: 0, x1: W, y1: H - B };
-    const fixed = [...svg.querySelectorAll(".smap-zonet,.smap-regl,.smap-axl")].map(bbox).filter(Boolean);
+    const fixed = place ? [...svg.querySelectorAll(".smap-zonet,.smap-regl,.smap-axl")].map(bbox).filter(Boolean) : [];
     const fp = focus && pos.get(focus);
     let fAt = null;
-    if (fp && full) {
+    if (fp && place) {
       const others = [...pos].filter(([coin]) => coin !== focus).map(([coin, p]) => ({ coin, ...p }));
       fAt = placeLabels([{ coin: focus, ...fp }], { bounds, widthOf, others, avoid: fixed, force: focus }).get(focus);
-    } else if (fp) fAt = { x: fp.x + fp.r + 4, y: fp.y + 4, anchor: "start" };
+    } else if (fp) fAt = follow(focus, fp) || right(fp);
     const fBox = fAt ? labelBox(fAt.x, fAt.y, fAt.anchor, widthOf(focus) || 6.4 * focus.length + 4) : null;
     drawMarks(t, fBox);
     let placed = null;
-    if (full) {
+    if (place) {
       const dots = order.filter(c => c.coin !== focus).map(c => pos.get(c.coin) && { coin: c.coin, ...pos.get(c.coin) }).filter(Boolean);
       const inOrder = new Set(dots.map(d => d.coin));
       const others = [...pos].filter(([coin]) => !inOrder.has(coin)).map(([coin, p]) => ({ coin, ...p }));
       const marks = [...svg.querySelectorAll(".smap-stepl")].map(bbox).filter(Boolean);
       placed = placeLabels(dots, { bounds, widthOf, others, avoid: [...fixed, ...marks, ...(fBox ? [fBox] : [])], relax: small, under });
       if (fAt) placed.set(focus, fAt);
+      sides.current = new Map([...placed].map(([coin, a]) => { const p = pos.get(coin); return [coin, { dx: a.x - p.x, dy: a.y - p.y, anchor: a.anchor }]; }));
     }
     for (const [coin, lab] of labs) {
       const p = pos.get(coin);
       if (!lab || !p) continue;
-      const at_ = coin === focus ? fAt : placed?.get(coin);
-      if (at_) { lab.setAttribute("x", at_.x); lab.setAttribute("y", at_.y); lab.setAttribute("text-anchor", at_.anchor); }
-      else right(lab, p);
-      lab.classList.toggle("off", full ? !at_ : !pinned.has(coin));
+      // Between placements: the kept side; a pinned coin (focused, watched, mine) that had no
+      // room at the last placement still shows, on its right.
+      // A hidden label still moves with its dot (on its right), for hover and focus.
+      const at_ = coin === focus ? fAt : place ? placed.get(coin) : (follow(coin, p) || (pinned.has(coin) ? right(p) : null));
+      const spot = at_ || right(p);
+      lab.setAttribute("x", spot.x); lab.setAttribute("y", spot.y); lab.setAttribute("text-anchor", spot.anchor);
+      lab.classList.toggle("off", !at_);
     }
   }, [order, pinned, focus, drawMarks, small, under, W, H]);
 
-  const setTime = useCallback(t => {
+  // t: the timeline position (0 .. last); settle: place the labels afresh now.
+  const setTime = useCallback((t, settle = false) => {
     u.current = t;
     const svg = svgRef.current;
     if (!svg) return;
@@ -134,14 +144,19 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
         path.setAttribute("d", "M" + [...p.slice(0, k + 1).map(v => `${X(v.z).toFixed(1)},${Y(v.n).toFixed(1)}`), `${cx.toFixed(1)},${cy.toFixed(1)}`].join("L"));
       }
     }
-    layoutLabels(pos, t >= last - 0.01, t);
+    const rest = t >= last - 0.01, step = rest ? last : Math.floor(t + 1e-6);
+    const place = settle || rest || step !== placedStep.current;
+    if (place) placedStep.current = step;
+    layoutLabels(pos, place, t);
     if (scrub.current && +scrub.current.value !== t) scrub.current.value = t;
-    if (when.current) when.current.textContent = t >= last - 0.01 ? "Now" : `${fmtStep(steps[Math.round(t)] - dt)} close`;
+    if (when.current) when.current.textContent = rest ? "Now" : `${fmtStep(steps[Math.round(t)] - dt)} close`;
   }, [byCoin, trails, X, Y, last, steps, tf, layoutLabels]);
   useEffect(() => { u.current = last; }, [last, tf]);
-  useLayoutEffect(() => { setTime(Math.min(u.current, last)); }, [setTime, last, pts, W, H]);
+  // A new dot set (sector, view, my trades, data) or size: the labels are placed afresh,
+  // wherever the timeline stands.
+  useLayoutEffect(() => { setTime(Math.min(u.current, last), true); }, [setTime, last, pts, W, H]);
   // Real text widths once the fonts are in.
-  useEffect(() => { document.fonts?.ready?.then(() => setTime(u.current)).catch(() => {}); }, [setTime]);
+  useEffect(() => { document.fonts?.ready?.then(() => setTime(u.current, true)).catch(() => {}); }, [setTime]);
 
   const playing = useRef(null);
   const [isPlaying, setPlaying] = useState(false);
@@ -161,30 +176,20 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
   useEffect(() => {
     const el = scrub.current;
     if (!el) return undefined;
-    const settle = () => {
-      const svg = svgRef.current;
-      if (!svg) return;
-      const pos = new Map();
-      for (const g of svg.querySelectorAll(".smap-dot")) {
-        const core = g.querySelector(".smap-core");
-        pos.set(g.dataset.coin, { x: +core.getAttribute("cx"), y: +core.getAttribute("cy"), r: +g.dataset.r });
-      }
-      layoutLabels(pos, true, u.current);
-    };
+    const settle = () => setTime(u.current, true);
     el.addEventListener("change", settle);
     el.addEventListener("pointerup", settle);
     return () => { el.removeEventListener("change", settle); el.removeEventListener("pointerup", settle); };
-  }, [layoutLabels, data]);
+  }, [setTime, data]);
 
-  // Day ticks under the scrubber, one per close ("Mon" ... "now").
-  const tickLabel = k => (k === last ? "now" : tf === "1d"
-    ? new Date((steps[k] - dt) * 1000).toLocaleString(undefined, { weekday: "short" })
-    : new Date((steps[k] - dt) * 1000).toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" }));
+  // Day ticks under the scrubber, one per close ("Mon", "Tue" ...). The latest close carries
+  // no word: the readout beside the scrubber already says "Now".
+  const tickLabel = k => (k === last ? "" : tf === "1d" ? stepLabel(steps[k] - dt, tf).split(" ")[0] : stepLabel(steps[k] - dt, "4h").split(" ")[1]);
   const sparse = last > 0 && (W - 200) / (last + 1) < 46;
 
   return <div className="radar-mapcard">
     <div className="smap-legend radar-legend">
-      {STAGES.map(s => <span key={s.key}><i style={{ background: col(STAGE_COLOR[s.key]) }} />{s.name}</span>)}
+      {STAGES.map(s => <span key={s.key}><i style={{ background: stageColor(s.key) }} />{s.name}</span>)}
       <span><i className="smap-ringkey" />Opened long in 24h</span>
       <span><Pin />Watching</span>
       {mineOn && <span><i className="radar-minekey" />My trade</span>}
@@ -194,14 +199,8 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
         <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Coins by stretch and profitable-trader lean">
           <rect x={X(box.z[1] + 0.5)} y={T} width={W - R - X(box.z[1] + 0.5)} height={H - B - T} className="smap-late" />
           <rect x={X(box.z[0])} y={Y(box.n[1])} width={X(box.z[1]) - X(box.z[0])} height={Y(box.n[0]) - Y(box.n[1])} className="smap-box" />
-          <text className="smap-zonet" x={X(box.z[0]) + 6} y={Y(box.n[1]) + 16}>Watch</text>
-          <text className="smap-regl" x={X(box.z[0]) + 6} y={Y(box.n[1]) - 10}>Crowded</text>
-          <text className="smap-regl" x={X(box.z[0]) + 6} y={Y(0) + 16}>Nobody in yet</text>
-          <text className="smap-regl" x={W - R - 6} y={Y(-2)} textAnchor="end">Stretched: late</text>
           {[-2, -1, 0, 1, 2, 3].map(t => <g key={`x${t}`}><line className="smap-ax" x1={X(t)} x2={X(t)} y1={T} y2={H - B} opacity=".5" /><text className="smap-axt" x={X(t)} y={H - B + 14} textAnchor="middle">{t > 0 ? "+" : ""}{t}</text></g>)}
           {[-3, 0, 1, 3, 8, 20].filter(t => symlog(t) >= ys[0] && symlog(t) <= ys[1]).map(t => <g key={`y${t}`}><line className="smap-ax" x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} opacity={t === 0 ? 1 : 0.5} /><text className="smap-axt" x={L - 6} y={Y(t) + 4} textAnchor="end">{t > 0 ? "+" : ""}{t}</text></g>)}
-          <text className="smap-axl" x={L} y={H - 6}>Near its mean</text><text className="smap-axl" x={W - R} y={H - 6} textAnchor="end">Stretched</text>
-          <text className="smap-axl" x={L + 4} y={T + 12}>More profitable traders long</text>
           <g className="smap-focusmarks" />
           {painted.map(c => {
             const r = 4.5 + Math.min(6, Math.sqrt((c.traders?.pl || 0) + (c.traders?.ps || 0)));
@@ -215,6 +214,15 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
               <text className="smap-lab off">{c.coin}</text>
             </g>;
           })}
+          {/* The plot's own captions sit above the dots, cut out of them by a halo in the page colour. */}
+          <g className="smap-captions" aria-hidden="true">
+            <text className="smap-zonet" x={X(box.z[0]) + 6} y={Y(box.n[1]) + 16}>Watch</text>
+            <text className="smap-regl" x={X(box.z[0]) + 6} y={Y(box.n[1]) - 10}>Crowded</text>
+            <text className="smap-regl" x={X(box.z[0]) + 6} y={Y(0) + 16}>Nobody in yet</text>
+            <text className="smap-regl" x={W - R - 6} y={Y(-2)} textAnchor="end">Stretched: late</text>
+            <text className="smap-axl" x={L} y={H - 6}>Near its mean</text><text className="smap-axl" x={W - R} y={H - 6} textAnchor="end">Stretched</text>
+            <text className="smap-axl" x={L + 4} y={T + 12}>More profitable traders long</text>
+          </g>
         </svg>}
     </div>
     <div className="smap-player radar-player">

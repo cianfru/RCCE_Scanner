@@ -33,7 +33,7 @@ test("light mode maps the new hues to their darker equivalents", () => {
     applyTheme("light");
     const expected = {
       "#7dd3fc": "#0369a1", "#fda4af": "#be123c", "#fcd34d": "#a16207", "#8b8f94": "#52525b",
-      "#7d9b95": "#4f6f69", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
+      "#7d9b95": "#7f9993", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
     };
     for (const [dark, light] of Object.entries(expected)) {
       assert.equal(col(dark), light, dark);

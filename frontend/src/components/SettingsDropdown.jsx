@@ -84,8 +84,9 @@ function ToggleSwitch({ checked, onChange, color = T.accent, disabled = false, l
       disabled={disabled}
       aria-label={label}
       aria-pressed={checked}
+      className="settings-toggle"
       style={{
-        border: "none", background: "transparent", padding: 0,
+        border: "none", background: "transparent", padding: 0, opacity: disabled ? 0.55 : 1,
         cursor: disabled ? "not-allowed" : "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
         fontSize: 12, fontFamily: T.font, fontWeight: 600,
         color: checked ? color : T.text4,
@@ -350,7 +351,7 @@ export default function SettingsDropdown({ embedded = false }) {
                 border: `1px solid ${T.border}`, background: T.overlay04, color: T.text1, fontFamily: T.mono, fontSize: 12 }} />
           </label>
 
-          <fieldset disabled={readOnly} aria-label="Server controls" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+          <fieldset className="settings-server" disabled={readOnly} aria-label="Server controls" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
           {readOnly && <p style={{ margin: "0 0 12px", fontSize: 12, color: T.text3, fontFamily: T.font }}>Read-only. Enter the admin key above to change these.</p>}
 
           {/* Power state — active/idle throttle */}
@@ -413,7 +414,7 @@ export default function SettingsDropdown({ embedded = false }) {
                 <p>{PERSIST}</p>
               </HelpTip>
             </div>
-            <div className="settings-tabs-start" style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null || readOnly ? "none" : "auto" }}>
+            <div className="settings-tabs-start" style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null ? "none" : "auto" }}>
               <Tabs small label="Presets" value={activePreset}
                 items={PRESETS.map(p => ({ key: p.key, label: p.label, title: p.desc }))}
                 onChange={applyPreset} />

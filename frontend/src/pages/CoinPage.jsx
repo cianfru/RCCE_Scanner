@@ -25,7 +25,7 @@ import { watchToast, pnl } from "../utils/setupMap.js";
 import { useWallet } from "../WalletContext.jsx";
 import useMyPositions from "../hooks/useMyPositions.js";
 import { sideColor, fmtPx } from "../utils/traderFormat.js";
-import { Pin, STAR_TIP, WATCH_TIP } from "../components/radar/shared.jsx";
+import { STAR_TIP, WATCH_TIP, WatchMark } from "../components/radar/shared.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -391,7 +391,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
       {/* Header */}
       <div className="coin-head" style={{
-        display: "flex", alignItems: "center", gap: 12, marginBottom: availabilityError ? 8 : 20, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: "6px 12px", marginBottom: availabilityError ? 8 : 20, flexWrap: "wrap",
       }}>
         <button
           onClick={goBack}
@@ -428,12 +428,17 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             Checks {formatPercent(data.signal_confidence)}
           </span>
         )}
-        {/* Actions and the timeframe tabs; on phones they form a second row. */}
+        {/* The timeframe tabs, then the actions. On desktop both join the title line; when the
+            actions do not fit they take a line of their own, left-aligned, and the tabs stay on
+            the title line. On phones they form one second row. */}
         <div className="coin-head-actions">
+          <div className="coin-tabs">
+            <Tabs small label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />
+          </div>
           <div className="coin-actions">
             {marketKind === "perpetual" && (
               <button type="button" className="te-toggle coin-watch" aria-pressed={isWatched} title={WATCH_TIP} onClick={() => onWatch(coin)}>
-                <Pin size={8} color={isWatched ? "var(--t-accent)" : "currentColor"} />{isWatched ? "Watching" : "Watch"}
+                <WatchMark />{isWatched ? "Watching" : "Watch"}
               </button>
             )}
             <a className="coin-action" href={`https://app.hyperliquid.xyz/trade/${encodeURIComponent(data.market_coin || data.symbol.split("/")[0])}`}
@@ -441,7 +446,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             {tvSymbol && <a className="coin-action" href={`https://www.tradingview.com/chart/?symbol=${tvSymbol}`}
               target="_blank" rel="noopener noreferrer">TradingView {"\u2197"}</a>}
           </div>
-          <Tabs small label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />
         </div>
       </div>
       {availabilityError && <p className="coin-availability-note">{retryAvailability}</p>}
@@ -472,6 +476,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           traderApi={traderApi}
           showSetup={false}
           myEntry={myEntry}
+          toolbarAction={<button type="button" className="chart-ask" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}
+            title={`Ask AI about ${coin}`}><img src="/brand/reflex-ribbon-transparent.svg" alt="" width="16" height="16" />Ask AI</button>}
         />
       </div>
 
