@@ -74,3 +74,10 @@ test('no usable storage: no dot, and nothing throws', () => {
   assert.equal(markHistorySeen(throws), false);
   assert.equal(markHistorySeen(null), false);
 });
+
+test('the area closes the line down to 0% under the history part only', () => {
+  const g = sparkGeometry(spark);
+  assert.ok(g.area.startsWith(g.line) && g.area.endsWith('Z'));
+  const p = pts(g.area.slice(g.line.length));
+  assert.deepEqual(p.slice(1), [[g.end[0], g.h - 1.5], [1.5, g.h - 1.5]]);
+});

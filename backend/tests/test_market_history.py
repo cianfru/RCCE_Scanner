@@ -652,12 +652,28 @@ class SparkTests(unittest.TestCase):
         last = v["days"][-1]
         self.assertEqual(s["days"][-1][1], round(last[2] + last[3], 3))
         self.assertTrue(all(len(d) == 2 and 0 <= d[1] <= 1 for d in s["days"]))
-        if s["stub"] is not None:
-            self.assertEqual(s["stub"]["k"][0], 0)
-            self.assertLessEqual(s["stub"]["k"][-1], 30)
-        self.assertIs(mh.spark(), mh.spark())                # cached with the view
+        st, f = s["stub"], v["fan"]
+        self.assertIsNotNone(st)                             # the checked-in seed has enough past runs
+        self.assertFalse(f["too_few"])
+        self.assertEqual(st["k"][0], 0)
+        self.assertLessEqual(st["k"][-1], 30)
+        self.assertEqual(st["lo"][0], s["days"][-1][1])      # anchored at today's share
+        for i, k in enumerate(st["k"]):                      # the real past paths' min and max at each knot
+            j = f["k"].index(k)
+            vals = [p[j] for p in f["paths"]["uptrend"] if p[j] is not None]
+            self.assertEqual((st["lo"][i], st["hi"][i]), (round(min(vals), 3), round(max(vals), 3)))
+            self.assertLessEqual(st["lo"][i], st["hi"][i])
+        first = mh.spark()
+        self.assertIs(mh.spark(), first)                     # cached with the view
         mh._view = None
-        self.assertIsNot(mh.spark(), s)                      # rebuilt when the view is
+        self.assertIsNot(mh.spark(), first)                  # rebuilt when the view is
+
+    def test_endpoint_503_without_the_seed(self):
+        from fastapi.testclient import TestClient
+        import main
+        with patch.object(mh, "spark", side_effect=FileNotFoundError):
+            r = TestClient(main.app).get("/api/market-history/spark")
+        self.assertEqual(r.status_code, 503)
 
     def test_stub_is_the_min_max_of_past_paths_anchored_at_today(self):
         k = list(range(0, 61, 5))

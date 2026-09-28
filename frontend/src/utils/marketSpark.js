@@ -8,7 +8,8 @@ export const SEEN_KEY = "reflex-market-history-seen";
 const r2 = v => Math.round(v * 100) / 100;
 const clamp01 = v => Math.min(1, Math.max(0, v));
 
-// Paths for an SVG of w x h: `line` (history), `stub` (closed polygon, or null) and `end` ([x, y] of today).
+// Paths for an SVG of w x h: `line` (history), `area` (under the line down to 0%, so it reads as a share like the
+// card's bar), `stub` (closed polygon, or null) and `end` ([x, y] of today).
 // One time scale for both parts, so the stub's width is its share of days (30 of 119 is about a quarter).
 // The y scale is the full 0-100% range: the share is a head count, a fixed scale keeps it honest. Null when
 // there is nothing to draw (the caller shows the plain icon).
@@ -24,13 +25,15 @@ export function sparkGeometry(spark, { w = SPARK.w, h = SPARK.h, pad = SPARK.pad
   const y = v => r2(pad + (1 - clamp01(v)) * (h - 2 * pad));
   const line = days.map((d, i) => `${i ? "L" : "M"}${x(d[0])},${y(d[1])}`).join("");
   const endDay = days[days.length - 1];
+  const base = y(0);
+  const area = `${line}L${x(endDay[0])},${base}L${x(days[0][0])},${base}Z`;
   let stub = null;
   if (st) {
     const hi = st.k.map((k, i) => `${x(today + k)},${y(st.hi[i])}`);
     const lo = st.k.map((k, i) => `${x(today + k)},${y(st.lo[i])}`).reverse();
     stub = `M${hi.join("L")}L${lo.join("L")}Z`;
   }
-  return { w, h, line, stub, end: [x(endDay[0]), y(endDay[1])] };
+  return { w, h, line, area, stub, end: [x(endDay[0]), y(endDay[1])] };
 }
 
 function validStub(s) {
