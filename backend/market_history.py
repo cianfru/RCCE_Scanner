@@ -318,9 +318,10 @@ def cycle(days: List[list]) -> Optional[dict]:
             "below_days": below, "since": ds[0], "past": len(past),
             "median": statistics.median(past) if past else None, "reached": len(reached),
             "more": 30, "lasted_more": sum(n >= day + 30 for n in reached),
-            # Ended runs of today's type, oldest first: start, length in days, highest share on the way.
-            "runs": [[r["start"], r["length"], round(max(share.get(d, 0.0) for d in range(r["start"], r["end"])), 2)]
-                     for r in ended]}
+            # Ended runs of today's type, oldest first: start, length in days, and the highest share on the way
+            # (risk-on) or the lowest (risk-off).
+            "runs": [[r["start"], r["length"], round((max if cur["type"] == "on" else min)(
+                share.get(d, 0.0) for d in range(r["start"], r["end"])), 2)] for r in ended]}
 
 
 def btc_band_rows(days: List[list]) -> List[tuple]:
@@ -604,7 +605,8 @@ def fan_check(days: List[list], band: Dict[int, tuple], alt_ret, last_closed: in
         if rec["series"]:                   # at least one series had quantiles (6+ runs) at T
             scored += 1
             scored_runs.add(states[T][1])
-    untested = tested < CHECK_MIN_TESTS or len(tested_runs) < CHECK_MIN_RUNS
+    # The bar counts the scored test days (quantiles from 6+ runs), the ones the hit rates are made of.
+    untested = scored < CHECK_MIN_TESTS or len(scored_runs) < CHECK_MIN_RUNS
     series = {}
     for s in FAN_SERIES:
         ok = not untested and all(
@@ -638,7 +640,8 @@ def fan_log_entry(f: dict) -> list:
 
 
 def live_check(log: List[list], days: List[list], alt_ret) -> Optional[dict]:
-    """Score logged fans whose windows have closed: middle-half and 10-90 hits per series, both horizons."""
+    """Score logged fans once their 60 days have closed (method doc, 'Clean check'): middle-half and 10-90 hits
+    per series over both horizons. An entry still inside its 60 days counts nowhere, not even at +30."""
     if not log:
         return None
     row = {d[0]: d for d in days}
@@ -647,13 +650,13 @@ def live_check(log: List[list], days: List[list], alt_ret) -> Optional[dict]:
     out = {s: [0, 0] for s in FAN_SERIES}
     scored = 0
     for T, qs in log:
-        if T not in row:
+        if T not in row or T + FAN_H > last:
             continue
-        scored += T + FAN_H <= last
+        scored += 1
         for s in FAN_SERIES:
             for h in FAN_CHECK_H:
                 q = (qs.get(s) or {}).get(str(h))
-                if T + h > last or not q:
+                if not q:
                     continue
                 y = _anchored(row, alt_ret, T, T, h)[s]
                 if y is None:
@@ -747,7 +750,16 @@ def view() -> dict:
         "btc_band_weekly": [[w, round(b[0], 2), round(b[1], 2)] for i, (w, b) in enumerate(rows)
                             if b and (i + 1 == len(rows) or rows[i + 1][0] >= days[0][0])],
         "forward_test": forward_test(days, band),
-        "fan": fan_view(seed, days, band),
-        "alt_recent": alt_recent(days),
+        "fan": _guarded("fan", lambda: fan_view(seed, days, band), None),
+        "alt_recent": _guarded("alt_recent", lambda: alt_recent(days), []),
     }
     return _view
+
+
+def _guarded(name: str, build, fallback):
+    """The fan and the recent alt line are extras: a failure there must not take the whole drawer down."""
+    try:
+        return build()
+    except Exception:
+        logger.warning("Market history: %s unavailable", name, exc_info=True)
+        return fallback

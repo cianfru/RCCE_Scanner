@@ -24,7 +24,8 @@ export const monthOf = day => MONTHS[new Date(day * DAY_MS).getUTCMonth()];
 export const yearOf = day => new Date(day * DAY_MS).getUTCFullYear();
 
 export const signedPct = (x, digits = 1) => (x == null ? "—" : `${x > 0 ? "+" : x < 0 ? MINUS : ""}${Math.abs(x).toFixed(digits)}%`);
-const signedInt = x => `${x > 0 ? "+" : x < 0 ? MINUS : ""}${Math.abs(Math.round(x))}`;
+// Rounded half away from zero on both sides (−24.5 -> −25, as +24.5 -> +25).
+const signedInt = x => { const r = Math.round(Math.abs(x)); return `${r && x > 0 ? "+" : r && x < 0 ? MINUS : ""}${r}`; };
 export const pctLabel = x => (x == null ? "—" : `${Math.round(100 * x)}%`);
 export const usd = v => (v == null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
 export const kUsd = v => {                            // 84,836 -> 84.8k; 109,775 -> 110k
@@ -71,7 +72,8 @@ export function bandOn(weekly, day) {
     const mid = (lo + hi) >> 1;
     if (weekly[mid][0] < day) { best = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  if (best < 0 || day - weekly[best][0] > 7) return null;
+  // No age limit: like the backend (risk_on_cycles.expand_weekly), a missing Sunday row keeps the last week's band.
+  if (best < 0) return null;
   return [weekly[best][1], weekly[best][2]];
 }
 
@@ -108,14 +110,25 @@ export function episodesOf(data, band) {
   return [...band.episodes.map(row(false)), ...(band.later || []).map(row(true))].sort((a, b) => b.start - a.start);
 }
 
-// Better / worse than an ordinary 30 days on the typical alt; pending episodes are left out.
-export function stripCounts(eps, baseAlt) {
-  let better = 0, worse = 0;
+// Better than an ordinary 30 days on the typical alt, counted apart for the study's episodes and the later ones.
+// Pending episodes are left out, and so is any episode inside today's run (from runStart on), as the fan does.
+export function stripCounts(eps, baseAlt, runStart = Infinity) {
+  const out = { study: { better: 0, n: 0 }, later: { better: 0, n: 0 } };
   for (const e of eps) {
-    if (e.due30 || e.alt30 == null || baseAlt == null) continue;
-    if (e.alt30 > baseAlt) better++; else worse++;
+    if (e.due30 || e.alt30 == null || baseAlt == null || e.start >= runStart) continue;
+    const c = e.later ? out.later : out.study;
+    c.n++;
+    if (e.alt30 > baseAlt) c.better++;
   }
-  return { better, worse };
+  return out;
+}
+
+// Half-height of an episode strip: the 90th percentile of the columns' size (at least 15, at most `cap`), so a
+// single outlier does not flatten the rest; columns beyond it get a notch.
+export function stripScale(values, base, cap = 30) {
+  const xs = values.filter(v => v != null).map(Math.abs).sort((a, b) => a - b);
+  const p90 = xs.length ? xs[Math.min(xs.length - 1, Math.ceil(0.9 * xs.length) - 1)] : 0;
+  return Math.min(cap, Math.max(15, p90, Math.abs(base ?? 0) * 1.3)) * 1.08;
 }
 
 // Shares of days at <=40, 41-69 and >=70, in whole % summing to 100 (largest remainder).
@@ -137,6 +150,7 @@ export function runsMarks(cycle) {
   return {
     now: { day: cycle.day, text: mark(cycle.reached, cycle.past) },
     later: cycle.reached > 0 ? { day: cycle.day + cycle.more, text: mark(cycle.lasted_more, cycle.reached) } : null,
+    // peak: the highest share of a risk-on run, the lowest of a risk-off stretch.
     columns: cycle.runs.map(([start, len, peak]) => ({ start, len, peak, reached: len >= cycle.day })),
   };
 }
@@ -167,23 +181,32 @@ export function fanMedian(fan, s) {
   return b.map((q, i) => (q ? [i, q[2]] : null)).filter(Boolean);
 }
 
+// The typical alt shows in whole % in the readout: past paths are stored in whole % (the seed's alt_paths).
 const fmt = {
   uptrend: { v: pctLabel, n: v => String(Math.round(100 * v)) },
   btc: { v: v => `$${kUsd(v)}`, n: kUsd },
-  alt: { v: v => signedPct(v, 1).replace(/^0\.0%$/, "0%"), n: signedInt },
+  alt: { v: v => `${signedInt(v)}%`, n: signedInt },
 };
 export const fmtSeries = (s, v) => (v == null ? "—" : fmt[s].v(v));
 
-// One readout cell at knot i: the median plus the middle half (bands) or the lowest-highest range (paths).
+// One readout cell at knot i: the median plus the middle half (bands, "mid") or the lowest-highest range (paths).
+// `lead` is false for a paths-mode series: its median is shown muted, since its bands did not pass the check.
 export function readoutCells(fan, s, i) {
-  if (!fan) return { median: null, spread: null };
+  if (!fan) return { median: null, spread: null, lead: false };
   const vals = (fan.paths?.[s] || []).map(p => p[i]).filter(v => v != null);
   const q = fan.too_few ? null : fan.bands?.[s]?.[i];
   const median = q ? fmt[s].v(q[2]) : null;
   const join = (a, b) => (s === "alt" ? `${fmt.alt.n(a)}/${fmt.alt.n(b)}` : `${fmt[s].n(a)}–${fmt[s].n(b)}`);
-  if (fan.show?.[s] === "bands" && q) return { median, spread: join(q[1], q[3]) };
-  if (!vals.length) return { median, spread: null };
-  return { median, spread: COPY.readout.range(join(Math.min(...vals), Math.max(...vals))) };
+  if (fan.show?.[s] === "bands" && q) return { median, spread: COPY.readout.mid(join(q[1], q[3])), lead: true };
+  if (!vals.length) return { median, spread: null, lead: false };
+  return { median, spread: COPY.readout.range(join(Math.min(...vals), Math.max(...vals))), lead: false };
+}
+
+// Today's values the fan starts from: the Uptrend + Overheated share (the 55% line's share), BTC, alt at 0.
+export function todayValues(data) {
+  const t = data.today;
+  const last = data.days?.[data.days.length - 1];
+  return { uptrend: t.uptrend + (t.overheated || 0), btc: last ? last[data.columns.indexOf("btc")] : null, alt: 0 };
 }
 
 // ---------------------------------------------------------------- copy
@@ -202,27 +225,74 @@ function fit(parts, max = 90) {
   return keep.map(p => p[1]).join(" ");
 }
 
+// Wilson interval (z = 1.645), as backend/backtest/risk_on_cycles.wilson.
+export function wilson(k, n, z = 1.645) {
+  if (!n) return null;
+  const p = k / n, z2 = z * z;
+  const c = (p + z2 / (2 * n)) / (1 + z2 / n);
+  const h = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+  return [c - h, c + h];
+}
+
+// Which way a failed series missed: "narrow" when a hit rate's interval sits below its target (the bands held
+// too few real moves), "wide" when it sits above (they were wider than needed).
+export function missDirection(series) {
+  for (const h of ["30", "60"]) {
+    const [mid, out, n] = series?.[h] || [];
+    for (const [k, target] of [[mid, 0.5], [out, 0.8]]) {
+      const w = wilson(k, n);
+      if (!w) continue;
+      if (w[1] < target) return "narrow";
+      if (w[0] > target) return "wide";
+    }
+  }
+  return "narrow";
+}
+
+const listWords = xs => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+function medianClause(m) {
+  if (m == null) return "";
+  const how = m < 0.9 ? "closer than" : m > 1.1 ? "further off than" : "about as close as";
+  return `; the median was ${how} the all-days median`;
+}
+
 function checkLine(ctx) {
   const c = ctx.check;
   if (ctx.tooFew) return `Only ${ctx.runs} runs: too few for a median or bands.`;
-  if (!c || c.untested) return "Too few past episodes to test the bands, so paths are drawn.";
-  const n = c.scored ?? c.tested;
-  const failed = ["btc", "uptrend", "alt"].filter(s => !c.series?.[s]?.pass).map(s => SERIES_NAME[s]);
-  if (!failed.length) {
-    const m = c.median_vs_all;
-    const how = m == null ? "about as close as" : m < 0.9 ? "closer than" : m > 1.1 ? "further off than" : "about as close as";
-    return `Tested on ${n} episodes with only earlier data, the bands held about as often as drawn; the median was ${how} all past days.`;
-  }
-  const names = failed.length === 1 ? failed[0] : `${failed.slice(0, -1).join(", ")} and ${failed[failed.length - 1]}`;
-  return `Tested on ${n} episodes with only earlier data, the ${names} bands held too few real moves, so ${failed.length === 1 ? "its" : "their"} paths are drawn.`;
+  if (!c || c.untested) return `Too few past episodes to test the bands, so paths are drawn${medianClause(c?.median_vs_all)}.`;
+  const runs = c.scored_runs ?? c.runs;
+  const lead = `Tested on ${c.scored ?? c.tested} past episodes${runs != null ? ` (${runs} runs)` : ""} with only earlier data:`;
+  const failed = ["btc", "uptrend", "alt"].filter(s => !c.series?.[s]?.pass);
+  if (!failed.length) return `${lead} the bands held about as often as drawn${medianClause(c.median_vs_all)}.`;
+  const by = dir => failed.filter(s => missDirection(c.series[s]) === dir).map(s => SERIES_NAME[s]);
+  const parts = [];
+  if (by("narrow").length) parts.push(`${listWords(by("narrow"))} bands caught too few moves`);
+  if (by("wide").length) parts.push(`${listWords(by("wide"))} bands were wider than needed`);
+  return `${lead} ${parts.join("; ")}, so paths are drawn${medianClause(c.median_vs_all)}.`;
 }
 
-function liveLine(live) {
+// The legend sentence, from what the chart actually draws: the median only with 6+ runs, shading only for a
+// series whose bands passed and whose panel is on screen (the typical alt shows at 3M only).
+function legendLine(ctx) {
+  const shaded = ctx.tooFew ? [] : FAN_SERIES.filter(s => ctx.show?.[s] === "bands" && (s !== "alt" || ctx.altShown));
+  const thin = ctx.tooFew || FAN_SERIES.some(s => ctx.show?.[s] !== "bands" && (s !== "alt" || ctx.altShown));
+  return [
+    !ctx.tooFew && "Dashed: median.",
+    thin && "Thin lines: past stretches.",
+    shaded.length && `Shading (${listWords(shaded.map(s => SERIES_NAME[s]))}): middle half and middle 8 in 10 of paths.`,
+    "Dotted: ordinary.",
+  ].filter(Boolean).join(" ");
+}
+
+// The clean check, once 12+ logged fans are scored: middle-half hits of the series drawn with bands only.
+function liveLine(live, show) {
   if (!live || live.scored < 12) return null;
+  const drawn = FAN_SERIES.filter(s => show?.[s] === "bands");
   let hit = 0, n = 0;
-  for (const s of FAN_SERIES) { hit += live.mid?.[s]?.[0] || 0; n += live.mid?.[s]?.[1] || 0; }
+  for (const s of drawn) { hit += live.mid?.[s]?.[0] || 0; n += live.mid?.[s]?.[1] || 0; }
   if (!n) return null;
-  return `Since ${dayDate(FAN_LOG_FROM)}: ${live.scored} new episodes, middle half held ${Math.round((100 * hit) / n)}%.`;
+  return `Since ${dayDate(FAN_LOG_FROM)}: ${live.scored} new episodes; ${listWords(drawn.map(s => SERIES_NAME[s]))} middle half held ${Math.round((100 * hit) / n)}%.`;
 }
 
 export const COPY = {
@@ -238,6 +308,7 @@ export const COPY = {
 
   caption: (paths, runs, tooFew) => `${plural(paths, "past path")} · ${plural(runs, "run")}${tooFew ? " · too few for a median" : ""}`,
   tooFewDays: "Too few similar days",
+  legend: { median: "median", ordinary: "ordinary" },
   axis: { today: "Today", h: k => `+${k}d` },
   panel: { btc: "BTC · weekly band", uptrend: "Uptrend share", alt: "Typical alt vs today", fg: "Fear & Greed" },
   riskOn: "55%: RISK-ON",
@@ -247,6 +318,8 @@ export const COPY = {
     today: "Today", uptrend: "Uptrend", btc: "BTC", alt: "Typical alt", ordinary: "ordinary",
     overheated: "Overheated", median_z: "Median z", fg: "Fear & Greed",
     range: s => `range ${s}`,
+    mid: s => `mid ${s}`,
+    fanHead: "Median of past paths",
     side: { above: "above band", inside: "inside band", below: "below band" },
     altVs: x => `${x} vs today`,
   },
@@ -264,13 +337,13 @@ export const COPY = {
   runs: {
     head: on => (on ? "Risk-on runs" : "Risk-off stretches"),
     mark: (a, b) => `${a} of ${b}${b < MIN_RUNS ? ", too few" : ""}`,
-    hover: (start, len, peak) => `${monthYear(start)} · ${len} days · peak ${Math.round(100 * peak)}%`,
+    hover: (start, len, peak, on = true) => `${monthYear(start)} · ${len} days · ${on ? "peak" : "low"} ${Math.round(100 * peak)}%`,
     now: "today",
   },
 
   episodes: {
     head: band => `Last times at ${band}`,
-    count: (b, w) => `${b} better · ${w} worse`,
+    count: ({ study, later }) => `${study.better} of ${study.n} better${later.n ? ` · later ${later.better} of ${later.n}` : ""}`,
     ordinary: x => `ordinary ${x}`,
     all: n => `All ${n} episodes`,
     fewer: "Newest 5",
@@ -285,7 +358,7 @@ export const COPY = {
   ft: {
     head: "Forward test",
     scored: n => `${n} of 6 scored`,
-    past: "Past cases",
+    past: "Past cases, exploratory",
     worse: (n, m) => `${n} of ${m} worse`,
     table: "Table",
     cols: ["Started", "Days", "Share", "BTC 30d", "Typical alt 30d", "Typical alt 60d"],
@@ -296,33 +369,33 @@ export const COPY = {
   // Popovers: HelpTip, width 320, each 90 words or fewer. Each returns paragraphs.
   pop: {
     fanTitle: "How this is drawn",
+    // The check line (with the median against all days) has the top priority: fit() never drops it first.
     fan: ctx => {
-      const stateWords = ctx.state === "on" ? "a risk-on run" : "a risk-off stretch";
+      const stateWords = ctx.state === "on" ? "risk-on run" : "risk-off stretch";
       const side = ctx.side === "holding" ? "BTC holding its weekly band" : ctx.side === "below" ? "BTC below its weekly band"
         : "BTC either side of its weekly band";
       const main = fit([
-        [9, `Days since ${ctx.since} in ${stateWords}, Uptrend within ${ctx.width} points of today's ${ctx.today}, ${side}, next 60 days closed; today's run left out.`],
-        [8, `Each stretch counts once, from its first day: ${ctx.paths} paths, ${ctx.runs} runs, started at today's values.`],
-        [5, "Line: median. Shading: middle half, 8 in 10. Dotted: an ordinary stretch."],
-        [7, checkLine(ctx)],
-        [9, liveLine(ctx.live)],
-        [6, "Coins that died are missing, so past alts look better."],
+        [9, `One path per similar stretch since ${ctx.since} (${stateWords}, Uptrend within ${ctx.width} points of ${ctx.today}, ${side}, not today's run), from its first day, shifted to today.`],
+        [8, legendLine(ctx)],
+        [10, checkLine(ctx)],
+        [9, liveLine(ctx.live, ctx.show)],
+        [7, "Dead coins are missing, flattering past alts."],
       ]);
       return [main];
     },
     fanNone: ctx => [`No stretch since ${ctx.since} was close enough to today, in at least 3 separate runs, to draw past paths.`],
     uptrendTitle: "Uptrend share",
-    uptrend: ctx => [`Share of ${ctx.coins} coins in Uptrend on Binance daily closes, run through the scanner's engine, on days with 40 or more coins since ${ctx.since}. The scanner's card counts its own markets, so the two can differ by a few points. Percentile: share of those days with a lower reading. The coin list is today's: coins that died are missing, and early years have fewer coins.`],
+    uptrend: ctx => [`Share of coins in Uptrend (${ctx.n} with a close today, of ${ctx.coins}) on Binance daily closes, run through the scanner's engine, on days with 40 or more coins since ${ctx.since}. The scanner's card counts its own markets, so the two can differ by a few points. Percentile: share of those days with a lower reading. The coin list is today's: coins that died are missing, and early years have fewer coins.`],
     bandTitle: "BTC weekly band",
     band: () => ["BTC's weekly bull market support band: the 20-week SMA and 21-week EMA of Sunday closes, each used from the day after its week closes. The figure is BTC's distance from the nearer edge. Red shading: days BTC closed below the band."],
     runsTitle: "Runs",
     runs: ctx => [ctx.on
       ? `A risk-on run starts on the first day with 55% or more of coins in Uptrend or Overheated and ends after 5 days in a row below 55%. Columns: runs that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's run. Solid line: today's day. Dotted line: 30 days later. Counts: runs that got that far.`
-      : `A risk-off stretch starts after 5 days in a row below 55% of coins in Uptrend or Overheated and ends on the next day at 55% or more. Columns: stretches that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's. Solid line: today's day. Dotted line: 30 days later. Counts: stretches that got that far.`],
+      : `A risk-off stretch starts on the first of 5 or more days in a row below 55% of coins in Uptrend or Overheated and ends on the next day at 55% or more. Columns: stretches that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's. Solid line: today's day. Dotted line: 30 days later. Counts: stretches that got that far.`],
     episodesTitle: "Episodes",
-    episodes: ctx => [`An episode is a stretch of days in this band (gaps of up to 5 days joined), measured from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: an ordinary 30 days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line is better than ordinary, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: later episodes.`],
+    episodes: ctx => [`An episode is a stretch of days in this band (gaps up to 5 days joined), from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: an ordinary 30 days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line is better than ordinary, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: later ones, counted apart; today's run left out.`],
     ftTitle: "Forward test",
-    ft: ctx => [`Declared ${ctx.declared} with fixed rules. An episode starts when BTC closes below the lower edge of its weekly band while ${ctx.share}% or more of coins are in Uptrend or Overheated. Only episodes after that date count. A square fills when an episode's 60 days close: red if the typical alt did worse than an ordinary 60 days (${ctx.base}). No verdict before 6; then it holds if at least 75% are red. Past cases were found on the same history, ${ctx.bear} of ${ctx.n} from the 2022 bear market.`],
+    ft: ctx => [`Declared ${ctx.declared} with fixed rules. An episode starts when BTC closes under its weekly band's lower edge while ${ctx.share}% or more of coins are in Uptrend or Overheated. Only later episodes count. A square fills when its 60 days close: red if the typical alt did worse than an ordinary 60 days (${ctx.base}). No verdict before 6; then it holds at 75% red or more and fails at half or fewer. Past cases come from the same history, ${ctx.bear} of ${ctx.n} from the late-2021 to 2022 bear market.`],
     pastTitle: "Past cases",
     past: ctx => [`Where the idea came from: ${ctx.n} earlier episodes found on the same history, so it is a hypothesis. Columns: the typical alt over the 60 days after each one's first day. Dotted line: an ordinary 60 days (${ctx.base}). Red: worse than ordinary.`],
     fgTitle: "Fear & Greed",
@@ -342,7 +415,7 @@ export const popWords = s => String(s).split(/\s+/).filter(Boolean).length;
 
 // ---------------------------------------------------------------- context shared by the drawer and the tests
 
-export function breadthContext(data) {
+export function breadthContext(data, { range = "3m" } = {}) {
   const t = data.today;
   const weekly = data.btc_band_weekly || [];
   const last = data.days?.[data.days.length - 1];
@@ -360,6 +433,7 @@ export function breadthContext(data) {
       state: fan.state, since: monthYear(t.since), width: Math.round(100 * (fan.rule?.width ?? 0.05)),
       today: pctLabel(t.uptrend + (t.overheated || 0)), side: fan.rule?.btc_side || "holding",
       paths: fan.episodes.length, runs: fan.runs, tooFew: fan.too_few, check: fan.check, live: fan.live_check,
+      show: fan.show, altShown: range === "3m",
     },
   };
 }
@@ -371,11 +445,11 @@ export function visibleTexts(tab, data, { range = "3m", band } = {}) {
     return [COPY.kpi.fg, COPY.kpi.pct(50), COPY.panel.btc, COPY.panel.fg, COPY.zones.greed, COPY.zones.fear,
       COPY.readout.btc, COPY.readout.fg, dayDate(data.today.day)];
   }
-  const x = breadthContext(data);
+  const x = breadthContext(data, { range });
   const b = band || data.bands.find(bb => bb.label === x.t.band) || data.bands[0];
   const eps = episodesOf(data, b);
   const base = data.base?.["30"]?.alt?.median;
-  const counts = stripCounts(eps, base);
+  const counts = stripCounts(eps, base, x.cycle?.start);
   const alt = range === "3m";
   const marks = runsMarks(x.cycle);
   const ft = data.forward_test;
@@ -385,11 +459,12 @@ export function visibleTexts(tab, data, { range = "3m", band } = {}) {
     x.cycle && COPY.kpi.day(x.cycle.day), x.cycle && COPY.kpi.run(x.on), x.cycle?.below_days > 0 && COPY.kpi.under(x.cycle.below_days),
     x.side && COPY.kpi.band(x.side),
     x.fan ? COPY.caption(x.fan.episodes.length, x.fan.runs, x.fan.too_few) : COPY.tooFewDays,
+    x.fan && !x.fan.too_few && COPY.legend.median, x.fan && COPY.legend.ordinary,
     COPY.panel.btc, COPY.panel.uptrend, alt && COPY.panel.alt, COPY.riskOn,
-    COPY.readout.today, COPY.axis.h(30), COPY.axis.h(60), COPY.readout.uptrend, COPY.readout.btc, COPY.readout.ordinary,
+    x.fan && COPY.readout.fanHead, COPY.readout.today, COPY.axis.h(30), COPY.axis.h(60), COPY.readout.uptrend, COPY.readout.btc, COPY.readout.ordinary,
     alt && COPY.readout.alt, alt && COPY.readout.ordinary,
     marks && COPY.runs.head(x.on), marks?.now.text, marks?.later?.text,
-    COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts.better, counts.worse),
+    COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts),
     base != null && COPY.episodes.ordinary(signedPct(base)), eps.length > 5 && COPY.episodes.all(eps.length),
   ];
   if (ft) {

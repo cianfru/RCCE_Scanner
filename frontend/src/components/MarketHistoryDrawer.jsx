@@ -5,7 +5,8 @@ import HelpTip from "./HelpTip.jsx";
 import MarketHistoryChart, { useWidth } from "./MarketHistoryChart.jsx";
 import { T } from "../theme.js";
 import { COPY, RANGES, bandHead, bandOn, bandShort, breadthContext, dayDate, episodesOf, fearGreedByDay, fgSplit,
-         inRange, monthYear, pctLabel, percentileOf, rowsOf, runsMarks, signedPct, stripCounts, yearOf } from "../utils/marketHistory.js";
+         inRange, monthYear, pctLabel, percentileOf, rowsOf, runsMarks, signedPct, stripCounts, stripScale, todayValues,
+         yearOf } from "../utils/marketHistory.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 let cached = null;                                   // { at, promise }: one fetch per hour per tab
@@ -59,7 +60,7 @@ function RunsChart({ cycle, since }) {
   return <section className="mh-section" aria-labelledby="mh-runs-title">
     <div className="mh-sec-head">
       <h3 id="mh-runs-title">{COPY.runs.head(on)}<Info title={COPY.pop.runsTitle} paras={COPY.pop.runs({ on, since })} /></h3>
-      <span className="mh-hint" aria-live="off">{hc ? (hc.today ? `${dayDate(hc.start)} · ${COPY.kpi.day(hc.len)}` : COPY.runs.hover(hc.start, hc.len, hc.peak)) : ""}</span>
+      <span className="mh-hint" aria-live="off">{hc ? (hc.today ? `${dayDate(hc.start)} · ${COPY.kpi.day(hc.len)}` : COPY.runs.hover(hc.start, hc.len, hc.peak, on)) : ""}</span>
     </div>
     <div ref={box} className="mh-mini">
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" onPointerMove={onMove} onPointerDown={onMove}
@@ -87,13 +88,14 @@ function RunsChart({ cycle, since }) {
 function EpisodeStrip({ eps, base, label }) {
   const [box, W] = useWidth();
   const phone = W < 520;
-  const padR = phone ? 0 : 104;
+  const padR = phone ? 86 : 104;                        // room for the "ordinary" label right of the columns
   const slot = Math.min(28, (W - padR) / Math.max(1, eps.length));
   const cw = Math.max(4, slot * 0.66);
-  const h = 56, H = h + 4;
-  // Symmetric around 0, just wide enough for the columns; clipped at ±60 with a notch.
-  const m = Math.min(60, Math.max(15, Math.abs(base ?? 0), ...eps.map(e => Math.abs(e.alt30 ?? 0))) * 1.08);
+  const h = phone ? 56 : 72, H = h + 4;
+  // Symmetric around 0, sized to the 90th percentile of the columns (15 to 30 points); taller ones get a notch.
+  const m = stripScale(eps.filter(e => !e.due30).map(e => e.alt30), base);
   const y = v => 2 + ((m - clip(v, m)) / (2 * m)) * h;
+  const endX = eps.length * slot;
   return <div ref={box} className="mh-mini">
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label}>
       {eps.map((e, i) => {
@@ -104,49 +106,52 @@ function EpisodeStrip({ eps, base, label }) {
         const v = e.alt30, top = Math.min(y(0), y(v)), ht = Math.max(1, Math.abs(y(v) - y(0)));
         return <g key={e.start} className={`${base != null && v > base ? "mh-ep-better" : "mh-ep-worse"}${e.later ? " is-later" : ""}`}>
           <rect x={x0} width={cw} y={top} height={ht}><title>{COPY.episodes.column(e.start, v)}</title></rect>
-          {Math.abs(v) > 60 && <line className="mh-notch" x1={x0 - 1} x2={x0 + cw + 1} y1={y(Math.sign(v) * m * 0.86)} y2={y(Math.sign(v) * m * 0.86)} />}
+          {Math.abs(v) > m && <line className="mh-notch" x1={x0 - 1} x2={x0 + cw + 1} y1={y(Math.sign(v) * m * 0.86)} y2={y(Math.sign(v) * m * 0.86)} />}
         </g>;
       })}
-      <line className="mh-zero" x1={0} x2={W} y1={y(0)} y2={y(0)} />
+      <line className="mh-zero" x1={0} x2={endX} y1={y(0)} y2={y(0)} />
       {base != null && <>
-        <line className="mh-ordinary" x1={0} x2={W - (phone ? 0 : padR - 4)} y1={y(base)} y2={y(base)} />
-        <text className="mh-line-label" x={W - 2} y={y(base) + 12} textAnchor="end">{COPY.episodes.ordinary(signedPct(base))}</text>
+        <line className="mh-ordinary" x1={0} x2={endX + 4} y1={y(base)} y2={y(base)} />
+        <text className="mh-line-label" x={endX + 8} y={y(base) + 4}>{COPY.episodes.ordinary(signedPct(base))}</text>
       </>}
     </svg>
   </div>;
 }
+
+// Columns hidden on a phone (Days, Uptrend, BTC 30d), so the scored ones show without side-scrolling.
+const OPT_COLS = [1, 2, 3];
 
 function Episodes({ data, band, setBandLabel, ctx }) {
   const [all, setAll] = useState(false);
   const eps = episodesOf(data, band);                     // newest first
   const base = data.base?.["30"];
   const baseAlt = base?.alt?.median;
-  const counts = stripCounts(eps, baseAlt);
-  const shown = all ? eps : eps.slice(0, 5);
   const t = data.today;
+  const counts = stripCounts(eps, baseAlt, data.cycle?.start);
+  const shown = all ? eps : eps.slice(0, 5);
   return <section className="mh-section" aria-labelledby="mh-ep-title">
     <div className="mh-sec-head">
       <h3 id="mh-ep-title">{COPY.episodes.head(bandHead(band))}<Info title={COPY.pop.episodesTitle} paras={COPY.pop.episodes({
         alt: signedPct(baseAlt), btc: signedPct(base?.btc?.median), from: ctx.from, to: ctx.to, end: ctx.end,
         better: band.verdict?.alt?.above_base ?? 0, n: band.verdict?.episodes ?? 0, verdict: band.verdict })} /></h3>
-      <span className="mh-count">{COPY.episodes.count(counts.better, counts.worse)}</span>
+      <span className="mh-count">{COPY.episodes.count(counts)}</span>
     </div>
     <div className="mh-bandtabs">
       <Tabs small label="Uptrend band" value={band.label} onChange={setBandLabel}
         items={data.bands.map(b => ({ key: b.label, title: bandHead(b),
-          label: <>{bandShort(b)}{b.label === t.band && <i className="mh-today-dot" aria-label="today" />}</> }))} />
+          label: <>{bandShort(b)}{b.label === t.band && <><i className="mh-today-dot" aria-hidden="true" /><span className="mh-sr">{COPY.runs.now}</span></>}</> }))} />
     </div>
-    <EpisodeStrip eps={[...eps].reverse()} base={baseAlt} label={`${COPY.episodes.head(bandHead(band))}: ${COPY.episodes.count(counts.better, counts.worse)}`} />
+    <EpisodeStrip eps={[...eps].reverse()} base={baseAlt} label={`${COPY.episodes.head(bandHead(band))}: ${COPY.episodes.count(counts)}`} />
     <div className="mh-table-wrap">
       <table className="mh-table">
-        <thead><tr>{COPY.episodes.cols.map(c => <th key={c} scope="col">{c}</th>)}</tr></thead>
+        <thead><tr>{COPY.episodes.cols.map((c, i) => <th key={c} scope="col" className={OPT_COLS.includes(i) ? "mh-opt" : undefined}>{c}</th>)}</tr></thead>
         <tbody>
           {shown.map(e => {
             const vs = e.alt30 != null && baseAlt != null ? e.alt30 - baseAlt : null;
             return <tr key={e.start}>
-              <td>{dayDate(e.start)}</td><td>{e.end >= t.day ? COPY.episodes.ongoing(e.end - e.start + 1) : e.end - e.start + 1}</td><td>{pctLabel(e.breadth)}</td>
-              {e.due30 ? <td colSpan={4} className="mh-muted">{COPY.episodes.due(dayDate(e.due30, false))}</td> : <>
-                <td>{signedPct(e.btc30)}</td><td>{signedPct(e.alt30)}</td>
+              <td>{dayDate(e.start)}</td><td className="mh-opt">{e.end >= t.day ? COPY.episodes.ongoing(e.end - e.start + 1) : e.end - e.start + 1}</td><td className="mh-opt">{pctLabel(e.breadth)}</td>
+              {e.due30 ? <><td className="mh-opt" /><td colSpan={3} className="mh-muted">{COPY.episodes.due(dayDate(e.due30, false))}</td></> : <>
+                <td className="mh-opt">{signedPct(e.btc30)}</td><td>{signedPct(e.alt30)}</td>
                 <td className={vs == null ? "" : vs > 0 ? "mh-better" : "mh-worse"}>{vs == null ? "—" : COPY.episodes.pts(vs)}</td>
                 {e.due60 ? <td className="mh-muted">{COPY.episodes.due(dayDate(e.due60, false))}</td> : <td>{signedPct(e.alt60)}</td>}
               </>}
@@ -173,7 +178,7 @@ function ForwardTest({ ft, base }) {
   const worse = hist.filter(h => b60 != null && h[5] < b60).length;
   const bear = hist.filter(h => h[0] < 19358).length;           // started before 1 Jan 2023
   const mw = 14 * hist.length, mh = 36;
-  const mm = Math.min(60, Math.max(15, ...hist.map(x => Math.abs(x[5]))) * 1.08);
+  const mm = stripScale(hist.map(x => x[5]), b60, 45);
   const my = v => 1 + ((mm - clip(v, mm)) / (2 * mm)) * (mh - 2);
   return <section className="mh-section" aria-labelledby="mh-ft-title">
     <div className="mh-sec-head">
@@ -197,8 +202,11 @@ function ForwardTest({ ft, base }) {
       <svg viewBox={`0 0 ${mw} ${mh}`} width={mw} height={mh} role="img" aria-label={COPY.ft.worse(worse, hist.length)}>
         {hist.map(([start, , , , , a60], i) => {
           const top = Math.min(my(0), my(a60));
-          return <rect key={start} className={b60 != null && a60 < b60 ? "mh-ep-worse" : "mh-ep-better"} x={i * 14 + 3} width={8}
-            y={top} height={Math.max(1, Math.abs(my(a60) - my(0)))}><title>{COPY.episodes.column(start, a60)}</title></rect>;
+          return <g key={start}>
+            <rect className={b60 != null && a60 < b60 ? "mh-ep-worse" : "mh-ep-better"} x={i * 14 + 3} width={8}
+              y={top} height={Math.max(1, Math.abs(my(a60) - my(0)))}><title>{COPY.episodes.column(start, a60)}</title></rect>
+            {Math.abs(a60) > mm && <line className="mh-notch" x1={i * 14 + 2} x2={i * 14 + 12} y1={my(Math.sign(a60) * mm * 0.86)} y2={my(Math.sign(a60) * mm * 0.86)} />}
+          </g>;
         })}
         <line className="mh-zero" x1={0} x2={mw} y1={my(0)} y2={my(0)} />
         {b60 != null && <line className="mh-ordinary" x1={0} x2={mw} y1={my(b60)} y2={my(b60)} />}
@@ -232,19 +240,19 @@ function BreadthTab({ data, rows, range, setRange }) {
   const [overlays, setOverlays] = useState([]);
   const [bandLabel, setBandLabel] = useState(data.today.band);
   const band = data.bands.find(b => b.label === bandLabel) || data.bands[0];
-  const ctx = breadthContext(data);
+  const ctx = breadthContext(data, { range });
   const t = data.today, c = data.cycle, fan = ctx.fan;
   const shown = useMemo(() => inRange(rows, range).map(r => ({ ...r, fg: r.fg == null ? null : r.fg / 100 })), [rows, range]);
   const ov = OVERLAYS().filter(o => overlays.includes(o.key));
   const last = rows[rows.length - 1];
-  const today = { uptrend: t.uptrend, btc: last?.btc, alt: 0, row: last };
+  const today = { ...todayValues(data), row: last };      // the fan's starting values (Uptrend + Overheated share)
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
   return <>
     <div className="mh-kpis">
       <div className="mh-kpi">
         <strong>{pctLabel(t.uptrend)}</strong>
-        <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, since: ctx.since })} /></span>
+        <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, n: t.n, since: ctx.since })} /></span>
         <em>{COPY.kpi.pct(t.percentile)}</em>
       </div>
       {c && <div className="mh-kpi" title={dayDate(c.start)}>
@@ -270,7 +278,9 @@ function BreadthTab({ data, rows, range, setRange }) {
 function FearGreedTab({ data, rows, range, setRange }) {
   const shown = inRange(rows, range);
   const all = data.fear_greed || [];
-  const latest = all[all.length - 1];
+  // The KPI reads the chart's last day, so it matches the readout under the chart (the index may have a newer day).
+  const lastFg = [...rows].reverse().find(r => r.fg != null);
+  const latest = lastFg ? [lastFg.day, lastFg.fg] : all[all.length - 1];
   const split = fgSplit(shown.map(r => r.fg));
   const last = rows[rows.length - 1];
   const since = all.length ? monthYear(all[0][0]) : "";

@@ -510,8 +510,10 @@ class CheckTests(unittest.TestCase):
                 mid, out, n = v[h]
                 self.assertLessEqual(mid, out)                 # the middle half sits inside the 10-90 band
                 self.assertLessEqual(out, n)
-        if c["tested"] < 30 or c["runs"] < 8:
-            self.assertTrue(c["untested"])
+        # The bar counts scored test days (with quantiles), not every day that had a fan.
+        self.assertLessEqual(c["scored"], c["tested"])
+        self.assertEqual(c["untested"], c["scored"] < 30 or c["scored_runs"] < 8)
+        if c["untested"]:
             self.assertEqual(mh.fan_show(c, False), {s: "paths" for s in mh.FAN_SERIES})
 
     def test_wilson_pass_rule(self):
@@ -571,6 +573,16 @@ class FanPayloadTests(unittest.TestCase):
         self.assertGreater(runs[0][0], v["days"][0][0])       # the first run (start unknown) is left out
         self.assertEqual(v["alt_recent"], [])                 # no per-coin closes loaded
 
+    def test_fan_failure_does_not_take_the_view_down(self):
+        with patch.object(mh, "fan_view", side_effect=ValueError("bad seed field")), \
+                patch.object(mh, "alt_recent", side_effect=KeyError("x")):
+            mh._view = None
+            v = mh.view()
+        self.assertIsNone(v["fan"])
+        self.assertEqual(v["alt_recent"], [])
+        self.assertIn("bands", v)
+        mh._view = None
+
     def test_alt_recent(self):
         days = [[d, 50, .5, 0, 0, .5, 0, 1.0] for d in range(100, 250)]
         for d in range(100, 250):
@@ -601,7 +613,7 @@ class FanPayloadTests(unittest.TestCase):
         all_d = days + [[T + i, 50, .8, 0, 0, .2, 0, 100.0] for i in range(1, 61)]
         lc = mh.live_check(mh._fan_log, all_d[:-31], NO_ALT)          # 29 days after T: nothing closed
         self.assertEqual((lc["logged"], lc["scored"], lc["mid"]["uptrend"][1]), (1, 0, 0))
-        lc = mh.live_check(mh._fan_log, all_d[:-30], NO_ALT)          # +30 closed
-        self.assertEqual((lc["scored"], lc["out"]["uptrend"][1]), (0, 1))
-        lc = mh.live_check(mh._fan_log, all_d, NO_ALT)                # +60 closed
+        lc = mh.live_check(mh._fan_log, all_d[:-30], NO_ALT)          # +30 closed, +60 not: still not scored
+        self.assertEqual((lc["scored"], lc["out"]["uptrend"][1], lc["mid"]["uptrend"][1]), (0, 0, 0))
+        lc = mh.live_check(mh._fan_log, all_d, NO_ALT)                # +60 closed: both horizons count
         self.assertEqual((lc["scored"], lc["out"]["uptrend"][1]), (1, 2))

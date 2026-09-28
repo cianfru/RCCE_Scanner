@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   COPY, RANGES, altTicks, bandDistance, bandHead, bandOn, bandShort, breadthContext, btcSide, countWords, dayDate, episodesOf,
   fanGeometry, fanMedian, fgSplit, inRange, logTicks, ordinal, percentileOf, popWords, readoutCells, rowsOf, runsMarks,
-  signedPct, stripCounts, visibleTexts, visibleWords,
+  missDirection, signedPct, stripCounts, stripScale, todayValues, visibleTexts, visibleWords, wilson,
 } from './marketHistory.js';
 
 const FORBIDDEN = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*)\b/i;
@@ -27,7 +27,10 @@ function makeFan(over = {}) {
     bands: { uptrend: band(0.8, 0.02), btc: band(84000, 400), alt: band(-3, 1.5) },
     ordinary: { btc: path(84000, 50), alt: path(0, -1.1) },
     show: { uptrend: 'paths', btc: 'paths', alt: 'bands' },
-    check: { scored: 52, tested: 82, series: { uptrend: { pass: false }, btc: { pass: false }, alt: { pass: true } }, median_vs_all: 1.13 },
+    // The official run's counts: [middle-half hits, 10-90 hits, n] per horizon.
+    check: { scored: 52, scored_runs: 12, tested: 82, runs: 16, median_vs_all: 1.13, series: {
+      uptrend: { 30: [18, 39, 52], 60: [22, 37, 52], pass: false }, btc: { 30: [24, 31, 52], 60: [23, 39, 52], pass: false },
+      alt: { 30: [26, 39, 52], 60: [22, 40, 52], pass: true } } },
     live_check: null,
     ...over,
   };
@@ -46,7 +49,7 @@ function makePayload(over = {}) {
     episode_columns: data.episode_columns, end_day: 600, coins: 151, scored_through: 1000,
     base: { 30: { btc: { median: 0.3 }, alt: { median: -7.4 } }, 60: { btc: { median: 1.2 }, alt: { median: -13.1 } } },
     base_period: [100, 600], bands,
-    today: { day: 1000, uptrend: 0.8207, overheated: 0, percentile: 77, band: '70-85%', since: 100 },
+    today: { day: 1000, n: 145, uptrend: 0.8207, overheated: 0, percentile: 77, band: '70-85%', since: 100 },
     cycle: { type: 'on', start: 962, day: 39, threshold: 0.55, off_days: 5, below_days: 0, past: 12, median: 47, reached: 7, more: 30, lasted_more: 5,
       runs: [[100, 41, 0.84], [150, 11, 0.71], [170, 8, 0.65], [200, 19, 0.65], [260, 143, 0.98], [420, 53, 0.86], [500, 101, 0.97],
         [620, 30, 0.79], [700, 119, 0.98], [830, 6, 0.58], [850, 96, 0.98], [950, 148, 0.96]] },
@@ -84,9 +87,25 @@ test('episodes: newest first, scored once 30 or 60 days have closed', () => {
   assert.deepEqual(pending.map(e => [e.start, e.due30, e.due60]), [[70, 100, 130], [40, null, 100], [10, null, null]]);
 });
 
-test('strip counts leave pending episodes out and compare with ordinary', () => {
-  const eps = [{ alt30: 5 }, { alt30: -7.4 }, { alt30: -8 }, { alt30: -2 }, { alt30: null, due30: 120 }, { alt30: 3, due30: 99 }];
-  assert.deepEqual(stripCounts(eps, -7.4), { better: 2, worse: 2 });
+test('strip counts: study and later apart, pending episodes and today\'s run left out, against ordinary', () => {
+  const eps = [{ start: 1, alt30: 5 }, { start: 2, alt30: -7.4 }, { start: 3, alt30: -8 }, { start: 4, alt30: -2 },
+    { start: 5, alt30: null, due30: 120 }, { start: 6, alt30: 3, due30: 99 },
+    { start: 50, alt30: 10, later: true }, { start: 60, alt30: -9, later: true }, { start: 90, alt30: 10.4, later: true }];
+  assert.deepEqual(stripCounts(eps, -7.4, 80), { study: { better: 2, n: 4 }, later: { better: 1, n: 2 } });
+  assert.deepEqual(stripCounts(eps, -7.4).later, { better: 2, n: 3 });
+  assert.equal(COPY.episodes.count(stripCounts(eps, -7.4, 80)), '2 of 4 better · later 1 of 2');
+  assert.equal(COPY.episodes.count({ study: { better: 9, n: 18 }, later: { better: 0, n: 0 } }), '9 of 18 better');
+  // Today's payload: 9 of 18 in the study, and the 24 Aug 2026 episode (in today's run) is not counted.
+  const p = makePayload();
+  const c = stripCounts(episodesOf(p, p.bands[4]), -7.4, p.cycle.start);
+  assert.deepEqual(c, { study: { better: 9, n: 18 }, later: { better: 3, n: 3 } });
+});
+
+test('strip scale: the 90th percentile of the columns, 15 to 30 points', () => {
+  assert.equal(stripScale([1, 2, 3], -7.4), 15 * 1.08);
+  assert.equal(stripScale([...Array(20).fill(10), 65], -7.4), 15 * 1.08);   // one outlier does not stretch the scale
+  assert.equal(stripScale([40, 45, 50, 55, 60], -13.1), 30 * 1.08);
+  assert.equal(stripScale([40, 45, 50, 55, 64], -13.1, 45), 45 * 1.08);
 });
 
 test('BTC band: the day after a Sunday close uses that week; the close day uses the previous one', () => {
@@ -96,7 +115,9 @@ test('BTC band: the day after a Sunday close uses that week; the close day uses 
   assert.deepEqual(bandOn(weekly, 1000), [3, 4]);
   assert.deepEqual(bandOn(weekly, 1001), [5, 6]);
   assert.equal(bandOn(weekly, 986), null);
-  assert.equal(bandOn(weekly, 1008), null);            // past the last week's reach
+  assert.deepEqual(bandOn(weekly, 1008), [5, 6]);      // no age limit, as the backend's expand_weekly
+  // A missing Sunday row: the last completed week's band carries on, as in the backend.
+  assert.deepEqual(bandOn([[986, 1, 2], [1000, 5, 6]], 996), [1, 2]);
   assert.equal(bandOn([], 5), null);
   assert.equal(btcSide(84472, [70254, 72617]), 'above');
   assert.equal(Math.round(bandDistance(84472, [70254, 72617]) * 10) / 10, 16.3);
@@ -132,11 +153,16 @@ test('fan geometry: the future zone is 60 of 150 days at 3M; knots sit at T + k;
 test('readout cells: middle half for bands series, lowest-highest range for paths series', () => {
   const fan = makeFan();
   const alt = readoutCells(fan, 'alt', 6);
-  assert.equal(alt.median, '−3.0%');
-  assert.equal(alt.spread, '−12/+6');
+  assert.equal(alt.median, '−3%');                     // whole %: past alt paths are stored in whole %
+  assert.equal(alt.spread, 'mid −12/+6');
+  assert.equal(alt.lead, true);
   const up = readoutCells(fan, 'uptrend', 6);
   assert.equal(up.median, '80%');
   assert.equal(up.spread, 'range 46–88');
+  assert.equal(up.lead, false);                        // paths mode: the median is not the lead number
+  // Half-points round away from zero on both sides.
+  const half = makeFan({ bands: { ...fan.bands, alt: K.map(() => [-40, -24.5, -7.46, 5, 30]) } });
+  assert.deepEqual([readoutCells(half, 'alt', 6).median, readoutCells(half, 'alt', 6).spread], ['−7%', 'mid −25/+5']);
   const btc = readoutCells(fan, 'btc', 12);
   assert.equal(btc.median, '$84k');
   assert.equal(btc.spread, 'range 78k–93.6k');
@@ -156,6 +182,26 @@ test('runs chart marks: counts at today and 30 days on, "too few" under 6', () =
   assert.equal(runsMarks({ ...c, past: 5, reached: 3 }).now.text, '3 of 5, too few');
   assert.equal(runsMarks({ ...c, reached: 0 }).later, null);
   assert.equal(runsMarks(null), null);
+});
+
+test('the fan starts from the Uptrend + Overheated share, which the readout\'s Today column shows', () => {
+  const p = makePayload({ today: { ...makePayload().today, uptrend: 0.8, overheated: 0.05 } });
+  const tv = todayValues(p);
+  assert.ok(Math.abs(tv.uptrend - 0.85) < 1e-9);
+  assert.equal(tv.btc, 80000 + 20 * 199);
+  assert.equal(tv.alt, 0);
+  // The fan's anchor (paths at knot 0) and the Today column are the same number.
+  for (const path of makeFan().paths.uptrend) assert.equal(path[0], todayValues(makePayload()).uptrend.toFixed(2) * 1);
+  assert.equal(breadthContext(p).fanCtx.today, '85%');
+});
+
+test('Wilson intervals and the direction of a failed check', () => {
+  const [lo, hi] = wilson(18, 52);
+  assert.ok(hi < 0.5 && Math.abs(lo - 0.25) < 0.01);
+  assert.equal(wilson(0, 0), null);
+  assert.equal(missDirection(makeFan().check.series.uptrend), 'narrow');   // 35% middle half
+  assert.equal(missDirection(makeFan().check.series.btc), 'narrow');       // 60% outer
+  assert.equal(missDirection({ 30: [40, 52, 52], 60: [26, 42, 52] }), 'wide');
 });
 
 test('Fear & Greed split sums to 100', () => {
@@ -187,15 +233,19 @@ function allCopy() {
     passSame: { scored: 52, series: { uptrend: { pass: true }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 1.0 },
     someFail: makeFan().check,
     oneFail: { scored: 52, series: { uptrend: { pass: true }, btc: { pass: false }, alt: { pass: true } }, median_vs_all: 1 },
+    wide: { scored: 52, scored_runs: 12, series: { uptrend: { 30: [40, 52, 52], 60: [40, 52, 52], pass: false },
+      btc: { 30: [24, 31, 52], 60: [23, 39, 52], pass: false }, alt: { pass: true } }, median_vs_all: 0.85 },
     untested: { untested: true, series: {} },
+    untestedMedian: { untested: true, series: {}, median_vs_all: 1.13 },
   };
   const live = { logged: 14, scored: 13, mid: { uptrend: [6, 13], btc: [7, 13], alt: [6, 12] }, out: {} };
+  const shows = [makeFan().show, { uptrend: 'bands', btc: 'bands', alt: 'bands' }, { uptrend: 'paths', btc: 'paths', alt: 'paths' }];
   for (const state of ['on', 'off']) for (const side of ['holding', 'below', 'either']) for (const ck of Object.values(checks))
-    for (const lv of [null, live, { ...live, scored: 3 }]) for (const tooFew of [false, true]) {
-      walk(c.pop.fan({ state, side, since: 'May 2021', width: 5, today: '82%', paths: 12, runs: tooFew ? 4 : 8, tooFew, check: ck, live: lv }));
+    for (const lv of [null, live, { ...live, scored: 3 }]) for (const tooFew of [false, true]) for (const show of shows) for (const altShown of [true, false]) {
+      walk(c.pop.fan({ state, side, since: 'May 2021', width: 5, today: '82%', paths: 12, runs: tooFew ? 4 : 8, tooFew, check: ck, live: lv, show, altShown }));
     }
   walk(c.pop.fanNone({ since: 'May 2021' }));
-  walk(c.pop.uptrend({ coins: 151, since: 'May 2021' }));
+  walk(c.pop.uptrend({ coins: 151, n: 145, since: 'May 2021' }));
   walk(c.pop.band());
   walk(c.pop.runs({ on: true, since: 'May 2021' }));
   walk(c.pop.runs({ on: false, since: 'May 2021' }));
@@ -209,7 +259,8 @@ function allCopy() {
   for (const [p, r, f] of [[12, 8, false], [4, 3, true], [1, 1, false]]) walk(c.caption(p, r, f));
   walk([c.axis.h(30), c.axis.h(60), c.readout.range('3–95'), c.readout.altVs('−6%'), c.kpi.pct(77), c.kpi.day(39), c.kpi.run(true), c.kpi.run(false),
     c.kpi.under(1), c.kpi.under(2), ...['above', 'below', 'inside'].map(c.kpi.band), c.runs.head(true), c.runs.head(false), c.runs.mark(7, 12),
-    c.runs.mark(2, 4), c.runs.hover(20280, 96, 0.98), c.episodes.head('70–85%'), c.episodes.count(13, 9), c.episodes.ordinary('−7.4%'),
+    c.runs.mark(2, 4), c.runs.hover(20280, 96, 0.98), c.runs.hover(20280, 30, 0.21, false), c.readout.mid('−24/+5'),
+    c.episodes.head('70–85%'), c.episodes.count({ study: { better: 9, n: 18 }, later: { better: 3, n: 3 } }), c.episodes.ordinary('−7.4%'),
     c.episodes.all(22), c.episodes.due('23 Oct'), c.episodes.pts(18), c.episodes.pts(-16), c.episodes.ongoing(35), c.episodes.column(20689, 10.4),
     c.episodes.pending(20689), c.ft.scored(0), c.ft.worse(7, 8), c.ft.square(20730, null), c.ft.square(20730, -20)]);
   for (const range of ['3m', '1y']) for (const cyc of [makePayload().cycle, { ...makePayload().cycle, type: 'off', below_days: 0 }, { ...makePayload().cycle, below_days: 2 }])
@@ -229,31 +280,48 @@ test('no forecast words, no "Larsson", no emojis in any copy or rendered templat
   }
 });
 
-test('each popover is 90 words or fewer', () => {
+test('each popover is 90 words or fewer, and the fan popover never drops the check or the median clause', () => {
   const live = { logged: 14, scored: 13, mid: { uptrend: [6, 13], btc: [7, 13], alt: [6, 12] }, out: {} };
+  const base = { since: 'May 2021', width: 5, today: '82%', paths: 12, runs: 8, tooFew: false, show: makeFan().show, altShown: true };
+  const fans = [];
+  for (const state of ['on', 'off']) for (const side of ['holding', 'below', 'either']) for (const lv of [null, live]) for (const altShown of [true, false])
+    for (const check of [makeFan().check, { ...makeFan().check, series: { uptrend: { pass: true }, btc: { pass: true }, alt: { pass: true } } },
+      { untested: true, median_vs_all: 1.13 }]) fans.push(COPY.pop.fan({ ...base, state, side, live: lv, altShown, check, width: side === 'either' ? 15 : 5 }));
+  for (const f of fans) {
+    assert.ok(popWords(f.join(' ')) <= 90, `${popWords(f.join(' '))}: ${f.join(' ')}`);
+    assert.match(f.join(' '), /the median was (closer than|about as close as|further off than) the all-days median/);
+  }
   const pops = [
-    COPY.pop.fan({ state: 'on', side: 'either', since: 'May 2021', width: 15, today: '82%', paths: 12, runs: 8, tooFew: false, check: makeFan().check, live }),
-    COPY.pop.fan({ state: 'off', side: 'holding', since: 'May 2021', width: 5, today: '82%', paths: 12, runs: 8, tooFew: false, check: makeFan().check, live: null }),
-    COPY.pop.fan({ state: 'on', side: 'below', since: 'May 2021', width: 5, today: '82%', paths: 12, runs: 8, tooFew: false,
-      check: { scored: 52, series: { uptrend: { pass: true }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 1.2 }, live }),
-    COPY.pop.uptrend({ coins: 151, since: 'May 2021' }), COPY.pop.band(), COPY.pop.runs({ on: true, since: 'May 2021' }), COPY.pop.runs({ on: false, since: 'May 2021' }),
+    COPY.pop.uptrend({ coins: 151, n: 145, since: 'May 2021' }), COPY.pop.band(), COPY.pop.runs({ on: true, since: 'May 2021' }), COPY.pop.runs({ on: false, since: 'May 2021' }),
     COPY.pop.episodes({ alt: '−7.4%', btc: '+0.3%', from: 'May 2021', to: 'Mar 2026', end: '29 Mar 2026', better: 9, n: 18,
       verdict: { episodes: 9, alt: { direction: 'continuation', above_base: 7 } } }),
     COPY.pop.ft({ declared: '26 Sep 2026', share: 55, base: '−13.1%', bear: 5, n: 8 }), COPY.pop.past({ n: 8, base: '−13.1%' }), COPY.pop.fg({ since: 'Feb 2018' }),
   ];
   for (const p of pops) assert.ok(popWords(p.join(' ')) <= 90, `${popWords(p.join(' '))}: ${p.join(' ')}`);
-  // The live line shows once 12 or more are scored, and the fan popover still fits.
-  assert.match(pops[0].join(' '), /Since 28 Sep 2026: 13 new episodes, middle half held 50%\./);
-  assert.doesNotMatch(pops[1].join(' '), /Since/);
+  // The live line shows once 12 or more are scored, pooling only the series drawn with bands (the alt here).
+  const withLive = COPY.pop.fan({ ...base, state: 'on', side: 'holding', check: makeFan().check, live });
+  assert.match(withLive.join(' '), /Since 28 Sep 2026: 13 new episodes; typical alt middle half held 50%\./);
+  assert.doesNotMatch(COPY.pop.fan({ ...base, state: 'on', side: 'holding', check: makeFan().check, live: null }).join(' '), /Since/);
+  assert.doesNotMatch(COPY.pop.fan({ ...base, show: { uptrend: 'paths', btc: 'paths', alt: 'paths' }, state: 'on', side: 'holding', check: makeFan().check, live }).join(' '), /Since/);
 });
 
-test('fan popover: check wording follows the official result', () => {
-  const ctx = { state: 'on', side: 'holding', since: 'May 2021', width: 5, today: '82%', paths: 12, runs: 8, tooFew: false, live: null };
-  assert.match(COPY.pop.fan({ ...ctx, check: makeFan().check })[0], /the BTC and Uptrend bands held too few real moves, so their paths are drawn/);
+test('fan popover: check wording follows the official result; the legend follows what is drawn', () => {
+  const ctx = { state: 'on', side: 'holding', since: 'May 2021', width: 5, today: '82%', paths: 12, runs: 8, tooFew: false, live: null,
+    show: makeFan().show, altShown: true };
+  const today = COPY.pop.fan({ ...ctx, check: makeFan().check })[0];
+  assert.match(today, /Tested on 52 past episodes \(12 runs\) with only earlier data: BTC and Uptrend bands caught too few moves, so paths are drawn; the median was further off than the all-days median\./);
+  assert.match(today, /Dashed: median\. Thin lines: past stretches\. Shading \(typical alt\): middle half and middle 8 in 10 of paths\. Dotted: ordinary\./);
   assert.match(COPY.pop.fan({ ...ctx, check: { scored: 52, series: { uptrend: { pass: true }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 1.13 } })[0],
-    /median was further off than all past days/);
+    /the bands held about as often as drawn; the median was further off than the all-days median/);
+  assert.match(COPY.pop.fan({ ...ctx, check: { scored: 52, series: { uptrend: { 30: [40, 52, 52], 60: [40, 52, 52], pass: false }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 0.85 } })[0],
+    /Uptrend bands were wider than needed, so paths are drawn; the median was closer than/);
   assert.match(COPY.pop.fan({ ...ctx, check: { untested: true } })[0], /Too few past episodes to test the bands/);
-  assert.match(COPY.pop.fan({ ...ctx, tooFew: true, runs: 5 })[0], /Only 5 runs: too few for a median or bands/);
+  const few = COPY.pop.fan({ ...ctx, tooFew: true, runs: 5 })[0];
+  assert.match(few, /Only 5 runs: too few for a median or bands/);
+  assert.doesNotMatch(few, /median\.|Shading/);                // no median line and no shading are drawn
+  assert.match(few, /Thin lines: past stretches/);
+  const oneYear = COPY.pop.fan({ ...ctx, altShown: false, check: makeFan().check })[0];   // 1Y: no alt panel, nothing shaded
+  assert.doesNotMatch(oneYear, /Shading/);
   assert.match(COPY.pop.fan({ ...ctx, side: 'either', check: null })[0], /BTC either side of its weekly band/);
 });
 
@@ -265,6 +333,8 @@ test('visible words stay within budget: 80 on the Uptrend tab, 20 on Fear & Gree
   assert.equal(countWords('82% Uptrend · +30d 7 of 12'), 3);
   const ctx = breadthContext(p);
   assert.equal(ctx.side, 'above');
+  assert.ok(visibleTexts('breadth', p).includes('Median of past paths'));
+  assert.ok(!visibleTexts('breadth', makePayload({ fan: null })).includes('Median of past paths'));
   assert.equal(ctx.fanCtx.paths, 3);
 });
 

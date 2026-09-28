@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import HelpTip from "./HelpTip.jsx";
 import { T as TH } from "../theme.js";
 import { COPY, FAN_H, FAN_MARKS, altTicks, btcSide, compactUsd, dayDate, fanGeometry, fanMedian, fmtSeries, logTicks,
-         monthOf, pctLabel, readoutCells, usd } from "../utils/marketHistory.js";
+         monthOf, pctLabel, readoutCells, signedPct, usd } from "../utils/marketHistory.js";
 
 // Width of an element, tracked with ResizeObserver.
 export function useWidth(initial = 680) {
@@ -34,6 +34,22 @@ function belowRuns(rows) {
 const pts = list => list.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join("L");
 const area = (poly, x, y) => (poly.length < 2 ? "" :
   `M${pts(poly.map(p => [x(p), y(p[1])]))}L${pts([...poly].reverse().map(p => [x(p), y(p[2])]))}Z`);
+// The same area in pixels, at least `min` px tall (BTC's band is only a few px high at 3M).
+function thickArea(poly, x, y, min = 3) {
+  if (poly.length < 2) return "";
+  const px = poly.map(p => {
+    const a = y(p[1]), b = y(p[2]), mid = (a + b) / 2, half = Math.max(min / 2, Math.abs(a - b) / 2);
+    return [x(p), mid + half, mid - half];
+  });
+  return `M${pts(px.map(p => [p[0], p[1]]))}L${pts([...px].reverse().map(p => [p[0], p[2]]))}Z`;
+}
+
+// A small flat key for the fan's lines: dashed median, dotted ordinary.
+function Legend({ median }) {
+  const sw = (cls, key) => <span key={key} className="mh-legend-item"><svg width="18" height="6" aria-hidden="true">
+    <line className={cls} x1="0" x2="18" y1="3" y2="3" /></svg>{COPY.legend[key]}</span>;
+  return <span className="mh-legend">{median && sw("mh-legend-median", "median")}{sw("mh-legend-ordinary", "ordinary")}</span>;
+}
 
 // Past ticks: months at 3M, quarters at 1Y, years beyond. Future ticks: Today, +30d, +60d; overlapping labels drop.
 function xTicks(range, d0, T, x, future, width, padR) {
@@ -80,8 +96,11 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
   const C = SERIES_COLOR();
   const phone = W < 520;
   const padL = 8, padR = 44, gap = 12, axisH = 18;
-  const hB = phone ? 84 : 110, hU = phone ? 110 : 150, hA = phone ? 60 : 72;
   const showAlt = future && range === "3m";
+  // At 3M the typical-alt panel (the one series whose bands passed) takes room from the Uptrend panel.
+  const hB = phone ? 84 : 110;
+  const hU = showAlt ? (phone ? 96 : 130) : (phone ? 110 : 150);
+  const hA = phone ? 76 : 96;
   const yU0 = hB + gap, yA0 = yU0 + hU + gap;
   const bottom = showAlt ? yA0 + hA : yU0 + hU;
   const H = bottom + axisH;
@@ -167,7 +186,8 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
 
   return <div ref={box} className="mh-chart">
     {future && <div className="mh-fan-cap" style={{ paddingRight: padR - 4 }}>
-      {capFits && <span>{caption}</span>}
+      {f && <Legend median={!f.too_few} />}
+      {capFits && <span className="mh-fan-caption">{caption}</span>}
       {fanPop}
     </div>}
     <div className="mh-chart-plot">
@@ -180,7 +200,7 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
           <text className="mh-tick" x={W - padR + 6} y={yb(v) + 4}>{compactUsd(v)}</text>
         </g>)}
         {belowRuns(rows).map(([a, b]) => <rect key={a} className="mh-below" x={x(a)} width={Math.max(1, x(b) - x(a))} y={0} height={hB} />)}
-        <path className="mh-bandfill" d={area(rows.filter(r => r.bandLo != null && r.bandHi != null).map(r => [r.day, r.bandLo, r.bandHi]), p => x(p[0]), yb)} />
+        <path className="mh-bandfill" d={thickArea(rows.filter(r => r.bandLo != null && r.bandHi != null).map(r => [r.day, r.bandLo, r.bandHi]), p => x(p[0]), yb)} />
         <path className="mh-bandline" d={line(r => r.bandLo, yb)} />
         <path className="mh-btc" d={line(r => r.btc || null, yb)} />
         {fanMarks("btc")}
@@ -195,22 +215,17 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
           <text className="mh-tick" x={W - padR + 6} y={yp(v) + 4}>{mode === "fear" ? Math.round(100 * v) : pctLabel(v)}</text>
         </g>)}
         {zOn && [-3, 0, 3].map(z => <text key={z} className="mh-tick mh-ztick" x={padL + 2} y={yz(z) + (z === 3 ? 10 : z === -3 ? -3 : 4)}>{z > 0 ? `+${z}` : z === 0 ? "0" : `−${-z}`}</text>)}
-        {mode === "breadth" && <>
-          <line className="mh-line" x1={padL} x2={W - padR} y1={yp(0.55)} y2={yp(0.55)} />
-          <text className="mh-line-label" x={labelX} y={yp(0.55) - 4}>{COPY.riskOn}</text>
-        </>}
-        {mode === "fear" && <>
-          <text className="mh-line-label mh-zone-label" x={labelX} y={yp(0.7) - 4}>{COPY.zones.greed}</text>
-          <text className="mh-line-label mh-zone-label" x={labelX} y={yp(0.4) + 13}>{COPY.zones.fear}</text>
-        </>}
+        {mode === "breadth" && <line className="mh-line" x1={padL} x2={W - padR} y1={yp(0.55)} y2={yp(0.55)} />}
         {overlays.map(s => <path key={s.key} className="mh-series" d={line(r => r[s.key], s.axis === "z" ? yz : yp)}
           style={{ stroke: s.color, strokeDasharray: s.dash, strokeWidth: s.width || 1.25 }} />)}
         {mode === "breadth"
           ? <path className="mh-series" d={line(r => r.uptrend, yp)} style={{ stroke: C.uptrend, strokeWidth: 1.75 }} />
           : <path className="mh-series" d={line(r => (r.fg == null ? null : r.fg / 100), yp)} style={{ stroke: "var(--t-accent)", strokeWidth: 1.5 }} />}
         {fanMarks("uptrend")}
+        {/* The fan starts from the Uptrend + Overheated share; when Overheated fires, join it to the plotted line. */}
+        {f && today?.row && Math.abs(today.uptrend - today.row.uptrend) > 0.002 &&
+          <line className="mh-series" x1={x(Td)} x2={x(Td)} y1={yp(today.row.uptrend)} y2={yp(today.uptrend)} style={{ stroke: C.uptrend, strokeWidth: 1.75 }} />}
         {markers.filter(m => m >= g.d0 && m <= Td).map(m => <line key={m} className="mh-marker" x1={x(m)} x2={x(m)} y1={yU0 + hU - 8} y2={yU0 + hU} />)}
-        <text className="mh-panel-label" x={labelX} y={yU0 + 14}>{mode === "fear" ? COPY.panel.fg : COPY.panel.uptrend}</text>
         {/* Typical alt vs today */}
         {showAlt && <>
           {altTicks(am).map(v => <g key={v}>
@@ -219,8 +234,15 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
           </g>)}
           <path className="mh-series" d={line(r => r.alt, ya)} style={{ stroke: C.alt, strokeWidth: 1.5 }} />
           {fanMarks("alt")}
-          <text className="mh-panel-label" x={padL + 2} y={yA0 + 12}>{COPY.panel.alt}</text>
         </>}
+        {/* Labels last, so their halo sits over the lines. */}
+        {mode === "breadth" && <text className="mh-line-label" x={labelX} y={yp(0.55) - 4}>{COPY.riskOn}</text>}
+        {mode === "fear" && <>
+          <text className="mh-line-label mh-zone-label" x={labelX} y={yp(0.7) - 4}>{COPY.zones.greed}</text>
+          <text className="mh-line-label mh-zone-label" x={labelX} y={yp(0.4) + 13}>{COPY.zones.fear}</text>
+        </>}
+        <text className="mh-panel-label" x={labelX} y={yU0 + 14}>{mode === "fear" ? COPY.panel.fg : COPY.panel.uptrend}</text>
+        {showAlt && <text className="mh-panel-label" x={padL + 2} y={yA0 + 12}>{COPY.panel.alt}</text>}
         {/* Today, +30, +60 */}
         {g.zone && <>
           <line className="mh-today-line" x1={x(Td)} x2={x(Td)} y1={0} y2={bottom} />
@@ -243,9 +265,11 @@ function Readout({ mode, h, hover, fan, today, showAlt, overlays }) {
   const cell = (s, i) => {
     if (i === 0) return <td key={i}><b>{fmtSeries(s, today[s])}</b></td>;
     const c = readoutCells(fan, s, i);
-    return <td key={i}><b>{c.median || "—"}</b>{c.spread && <span>{c.spread}</span>}</td>;
+    // A paths-mode median (its bands did not pass the check) is shown muted, not as the lead number.
+    return <td key={i}>{c.lead ? <b>{c.median || "—"}</b> : <i>{c.median || "—"}</i>}{c.spread && <span>{c.spread}</span>}</td>;
   };
-  const ord = (s, i) => <td key={i}>{i === 0 ? "" : fmtSeries(s, fan?.ordinary?.[s]?.[i])}</td>;
+  const ordFmt = (s, v) => (s === "alt" ? signedPct(v, 1) : fmtSeries(s, v));
+  const ord = (s, i) => <td key={i}>{i === 0 ? "" : ordFmt(s, fan?.ordinary?.[s]?.[i])}</td>;
   let head, body;
   if (h || mode === "fear") {
     const r = h || today.row;
@@ -255,7 +279,7 @@ function Readout({ mode, h, hover, fan, today, showAlt, overlays }) {
     if (mode === "fear") body.push([R.fg, r.fg ?? "—"]);
     if (showAlt && r.alt != null) body.push([R.alt, R.altVs(fmtSeries("alt", r.alt))]);
     for (const o of overlays) if (r[o.key] != null) body.push([R[o.key], o.axis === "z" ? r[o.key].toFixed(2) : o.key === "fg" ? Math.round(100 * r[o.key]) : pctLabel(r[o.key])]);
-    return <div className={`mh-readout-wrap mh-readout-${mode}`}><table className="mh-readout">
+    return <div className={`mh-readout-wrap mh-readout-${mode}${showAlt ? "" : " is-short"}`}><table className="mh-readout">
       <thead><tr><th scope="col" /><th scope="col">{head[0]}</th></tr></thead>
       <tbody>{body.map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td><b>{v}</b></td></tr>)}</tbody>
     </table></div>;
@@ -263,8 +287,8 @@ function Readout({ mode, h, hover, fan, today, showAlt, overlays }) {
   const idx = hover?.future ? [hover.i] : [0, ...FAN_MARKS.map(k => fan?.k.indexOf(k) ?? -1).filter(i => i > 0)];
   const label = i => (i === 0 ? R.today : COPY.axis.h(fan.k[i]));
   const cols = fan ? idx : [0];
-  return <div className="mh-readout-wrap"><table className="mh-readout">
-    <thead><tr><th scope="col" />{cols.map(i => <th key={i} scope="col">{label(i)}</th>)}</tr></thead>
+  return <div className={`mh-readout-wrap${showAlt ? "" : " is-short"}`}><table className="mh-readout">
+    <thead><tr><th scope="col" className="mh-readout-what">{fan ? R.fanHead : ""}</th>{cols.map(i => <th key={i} scope="col">{label(i)}</th>)}</tr></thead>
     <tbody>
       <tr><th scope="row">{R.uptrend}</th>{cols.map(i => cell("uptrend", i))}</tr>
       <tr><th scope="row">{R.btc}</th>{cols.map(i => cell("btc", i))}</tr>
