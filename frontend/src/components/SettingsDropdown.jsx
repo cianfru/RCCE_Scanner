@@ -13,7 +13,7 @@
  *   - "Normal" sentiment-mode default
  *   - "Power" HyperLens, on-chain tracker and monitor (order-book polling stays off: no page shows it)
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { T } from "../theme.js";
 import { useTheme } from "../ThemeContext";
@@ -150,6 +150,19 @@ export default function SettingsDropdown({ embedded = false }) {
     return () => { alive = false; clearInterval(id); };
   }, [open]);
 
+  // Fixed under the capsule like the notification panel, right edge on the gear's right edge.
+  const [anchorRight, setAnchorRight] = useState(16);
+  useLayoutEffect(() => {
+    if (!open || embedded) return undefined;
+    const place = () => {
+      const r = buttonRef.current?.getBoundingClientRect();
+      if (r) setAnchorRight(Math.max(8, Math.round(document.documentElement.clientWidth - r.right)));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, embedded, mode]); // mode: the theme button to the gear's right changes width
+
   // Close on Escape and on a pointer press outside (help tips open from inside stay allowed).
   useEffect(() => {
     if (!open || embedded) return undefined;
@@ -244,11 +257,11 @@ export default function SettingsDropdown({ embedded = false }) {
   const panelStyle = embedded
     ? { position: "relative", width: "100%" }
     : {
-        position: "absolute",
-        top: "calc(100% + 8px)",
-        right: 0,
+        position: "fixed",
+        top: "calc(var(--header-offset) + 8px)",
+        right: anchorRight,
         width: 320,
-        maxWidth: "calc(100vw - 32px)",
+        maxWidth: `calc(100vw - ${anchorRight + 16}px)`,
         maxHeight: "calc(100dvh - var(--header-offset) - var(--tabbar-space) - 20px)",
         overflowY: "auto",
         overscrollBehavior: "contain",
@@ -318,7 +331,9 @@ export default function SettingsDropdown({ embedded = false }) {
           {/* Appearance */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
             <span style={SECTION}>Appearance</span>
-            <Tabs small label="Appearance" items={THEMES} value={mode} onChange={k => { if (k !== mode) toggle(); }} />
+            <div className="settings-tabs-end">
+              <Tabs small label="Appearance" items={THEMES} value={mode} onChange={k => { if (k !== mode) toggle(); }} />
+            </div>
           </div>
 
           <DataStatus label="Runtime configuration" loading={!flags && !readError} error={readError}
@@ -398,7 +413,7 @@ export default function SettingsDropdown({ embedded = false }) {
                 <p>{PERSIST}</p>
               </HelpTip>
             </div>
-            <div style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null || readOnly ? "none" : "auto" }}>
+            <div className="settings-tabs-start" style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null || readOnly ? "none" : "auto" }}>
               <Tabs small label="Presets" value={activePreset}
                 items={PRESETS.map(p => ({ key: p.key, label: p.label, title: p.desc }))}
                 onChange={applyPreset} />

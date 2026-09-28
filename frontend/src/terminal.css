@@ -477,6 +477,9 @@
 .reflex-tabs button[aria-pressed="true"]{color:var(--t-accent);border-bottom-color:transparent;background:var(--metal-tab-bar);}
 .reflex-tabs button:hover{color:var(--t-text1);}
 .reflex-tabs-small button{font-size:12px;padding:6px 8px;}
+/* Settings: the first preset label and the last appearance label sit flush with the column; the tab padding hangs outside. */
+.settings-tabs-start>.reflex-tabs-small{margin-left:-8px;}
+.settings-tabs-end>.reflex-tabs-small{margin-right:-8px;}
 /* HyperLens view tabs: a label clipped at the right edge fades out, so the row reads as scrollable. */
 .hl-view-tabs>.reflex-tabs{padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
 /* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
