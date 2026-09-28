@@ -96,7 +96,9 @@ export const bandHead = b => (b.lo <= 0 ? `under ${Math.round(100 * b.hi)}%` : b
   : `${Math.round(100 * b.lo)}–${Math.round(100 * b.hi)}%`);
 
 // Episode rows as objects, newest first. A 30- or 60-day outcome still running carries the day it
-// scores (due30 / due60); one that has closed but has no data stays null. `later` marks rows after the study window.
+// scores (due30 / due60); one that has closed but has no data stays null. `later` marks rows outside the study's
+// record: the ones after its end day, and the study's own episodes whose 30 days closed after it (the study
+// verdict, band.verdict, leaves those out), so the strip's study count matches the verdict.
 export function episodesOf(data, band) {
   if (!band) return [];
   const cols = data.episode_columns;
@@ -104,7 +106,7 @@ export function episodesOf(data, band) {
   const row = later => e => {
     const o = Object.fromEntries(cols.map((c, i) => [c, e[i] ?? null]));
     for (const h of [30, 60]) o[`due${h}`] = o.start + h > last ? o.start + h : null;
-    o.later = later;
+    o.later = later || (data.end_day != null && o.start + 30 > data.end_day);
     return o;
   };
   return [...band.episodes.map(row(false)), ...(band.later || []).map(row(true))].sort((a, b) => b.start - a.start);
@@ -393,7 +395,7 @@ export const COPY = {
       ? `A risk-on run starts on the first day with 55% or more of coins in Uptrend or Overheated and ends after 5 days in a row below 55%. Columns: runs that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's run. Solid line: today's day. Dotted line: 30 days later. Counts: runs that got that far.`
       : `A risk-off stretch starts on the first of 5 or more days in a row below 55% of coins in Uptrend or Overheated and ends on the next day at 55% or more. Columns: stretches that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's. Solid line: today's day. Dotted line: 30 days later. Counts: stretches that got that far.`],
     episodesTitle: "Episodes",
-    episodes: ctx => [`An episode is a stretch of days in this band (gaps up to 5 days joined), from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: an ordinary 30 days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line is better than ordinary, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: later ones, counted apart; today's run left out.`],
+    episodes: ctx => [`An episode is a stretch of days in this band (gaps up to 5 days joined), from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: an ordinary 30 days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line is better than ordinary, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: closed later, counted apart; today's run left out.`],
     ftTitle: "Forward test",
     ft: ctx => [`Declared ${ctx.declared} with fixed rules. An episode starts when BTC closes under its weekly band's lower edge while ${ctx.share}% or more of coins are in Uptrend or Overheated. Only later episodes count. A square fills when its 60 days close: red if the typical alt did worse than an ordinary 60 days (${ctx.base}). No verdict before 6; then it holds at 75% red or more and fails at half or fewer. Past cases come from the same history, ${ctx.bear} of ${ctx.n} from the late-2021 to 2022 bear market.`],
     pastTitle: "Past cases",

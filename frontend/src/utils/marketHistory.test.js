@@ -101,6 +101,21 @@ test('strip counts: study and later apart, pending episodes and today\'s run lef
   assert.deepEqual(c, { study: { better: 9, n: 18 }, later: { better: 3, n: 3 } });
 });
 
+test('strip counts: a study episode whose 30 days closed after the end day counts as later, as the verdict does', () => {
+  // end_day 600: the 580 episode was in the study window but its 30 days closed on 610, after the study's record.
+  const band = { verdict: { episodes: 2, alt: { above_base: 1 } },
+    episodes: [[500, 505, 0.3, 1, 1, 2, 3, 3, 1], [540, 545, 0.3, 1, 1, 2, -20, 3, 1], [580, 590, 0.3, 1, 1, 2, -3.2, 3, 1]],
+    later: [[700, 705, 0.3, 1, 1, 2, -9, 3, 1]] };
+  const p = makePayload();
+  const eps = episodesOf(p, band);
+  assert.deepEqual(eps.map(e => [e.start, e.later]), [[700, true], [580, true], [540, false], [500, false]]);
+  const c = stripCounts(eps, -7.4, p.cycle.start);
+  assert.deepEqual(c, { study: { better: 1, n: 2 }, later: { better: 1, n: 2 } });
+  assert.deepEqual([c.study.better, c.study.n], [band.verdict.alt.above_base, band.verdict.episodes]);
+  const texts = visibleTexts('breadth', makePayload({ bands: p.bands.map(b => (b.label === '70-85%' ? { ...b, ...band } : b)) }));
+  assert.ok(texts.includes('1 of 2 better · later 1 of 2'));
+});
+
 test('strip scale: the 90th percentile of the columns, 15 to 30 points', () => {
   assert.equal(stripScale([1, 2, 3], -7.4), 15 * 1.08);
   assert.equal(stripScale([...Array(20).fill(10), 65], -7.4), 15 * 1.08);   // one outlier does not stretch the scale
