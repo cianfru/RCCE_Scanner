@@ -40,7 +40,7 @@ export default function NotFound({ targets = mainTabTargets(), radarTf = "1d" })
                   <span className="nf-label">{t.label}</span>
                   <span className="nf-desc">
                     {t.key === "radar" && watchCount > 0
-                      ? <><span className="nf-count">{watchCount}</span> in the Watch box</>
+                      ? <><span className="nf-count">{watchCount}</span> early setups</>
                       : DESC[t.key]}
                   </span>
                 </span>

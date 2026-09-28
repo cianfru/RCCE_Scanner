@@ -11,7 +11,8 @@ import { useWallet } from "../WalletContext.jsx";
 import { timeframeFrom } from "../utils/researchNavigation.js";
 import { altBaseline, groupStats, inGroup, SECTOR_SHORT } from "../utils/sectors.js";
 import { fmtIn, nextCloses } from "../utils/intel.js";
-import { isAddress, movers, picks, visible, watchToast } from "../utils/setupMap.js";
+import { isAddress, newEarly, picks, visible, watchToast } from "../utils/setupMap.js";
+import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
 import Tabs from "../components/Tabs.jsx";
@@ -19,6 +20,7 @@ import SetupIntelDrawer from "../components/SetupIntelDrawer.jsx";
 import RadarPicks from "../components/radar/RadarPicks.jsx";
 import RadarMap from "../components/radar/RadarMap.jsx";
 import RadarRail, { FocusBody } from "../components/radar/RadarRail.jsx";
+import RadarLadder from "../components/radar/RadarLadder.jsx";
 import RadarSheet from "../components/radar/RadarSheet.jsx";
 import { RM, store } from "../components/radar/shared.jsx";
 
@@ -134,7 +136,8 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const pts = useMemo(() => visible(coins, { all: showAll, keep }), [coins, showAll, keep]);
   const top = useMemo(() => picks(coins, box), [coins, box]);
   const inBoxN = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
-  const mv = useMemo(() => movers(coins, box), [coins, box]);
+  const fresh = useMemo(() => newEarly(coins, box, 6), [coins, box]);
+  const moneyOn = useMemo(() => moneyMode(coins), [coins]);
   const byCoin = useMemo(() => new Map(coins.map(c => [c.coin, c])), [coins]);
   const focusC = focus ? byCoin.get(focus) || null : null;
   const rowFor = useCallback(coin => results.find(r => getBaseSymbol(r.symbol) === coin) || null, [results]);
@@ -151,8 +154,8 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const openChart = useCallback(row => onSelect(row), [onSelect]);
 
   // Map height on desktop: what is left of the first screen under the header, title and picks,
-  // after the card's legend (44) and player (52) bands, its border and a 16px margin, so Play
-  // and the scrubber are in view on arrival. Fixed below 1200px.
+  // after the card's player band (52), its border and a 16px margin, so Play and the scrubber
+  // are in view on arrival (the key sits under the card). Fixed below 1200px.
   const [vh, setVh] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
   useEffect(() => { const on = () => setVh(window.innerHeight); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
   const mainRef = useRef(null);
@@ -163,7 +166,14 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
     const t = Math.round(el.getBoundingClientRect().top + window.scrollY);
     if (t > 0 && Math.abs(t - mainTop) > 1) setMainTop(t);
   });
-  const mapH = width >= 1200 ? Math.max(480, Math.min(760, vh - mainTop - 44 - 52 - 2 - 16)) : width >= 768 ? 480 : 400;
+  const mapH = width >= 1200 ? Math.max(480, Math.min(760, vh - mainTop - 52 - 2 - 16)) : width >= 768 ? 480 : 400;
+  // Where each coin sits on the map at rest, for the ladder's "Same spot" (coins stacked there).
+  const [restPos, setRestPos] = useState(null);
+  const onRest = useCallback(pos => setRestPos(prev => {
+    if (prev && prev.size === pos.size && [...pos].every(([k, p]) => { const q = prev.get(k); return q && Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5; })) return prev;
+    return new Map(pos);
+  }), []);
+  const stack = useMemo(() => (focusC && restPos ? sameSpot(restPos, focusC.coin) : []), [focusC, restPos]);
 
   const stripWatch = [...watched].map(c => byCoin.get(c)).filter(Boolean);
   const stripMine = [...mineBy.values()].map(m => [byCoin.get(m.coin), m]).filter(x => x[0]);
@@ -173,9 +183,15 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
     c: focusC, tf, box, row: rowFor(focusC.coin), intel: focusIntel, updatedAt: intel?.updated_at, watched, mine: mineBy.get(focusC.coin), starred: !!rowFor(focusC.coin) && isFav(rowFor(focusC.coin).symbol),
     onStar: toggleFav, onWatch, onClear: clear, onDetail: () => setDetail(focusC.coin), onChart: openChart,
   };
+  // The followed coin: its price ladder (as tall as the map card on wide screens, leaving the
+  // top of the readings in view under it), then its readings and actions.
+  const cardH = mapH + 52 + 2;
   const focusSlot = !phone && focusC
-    ? <section className="smap-focus radar-focus" aria-labelledby="radar-focus-h"><FocusBody {...focusProps} titleId="radar-focus-h" /></section>
-    : !focusC ? <p className="radar-hint">Tap a dot to follow one coin.</p> : null;
+    ? <>
+      <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} cardHeight={width >= 1200 ? Math.max(420, cardH - 88) : null} plotHeight={440} stack={stack} onPick={setFocus} />
+      <section className="smap-focus radar-focus" aria-labelledby="radar-focus-h"><FocusBody {...focusProps} withLadder titleId="radar-focus-h" /></section>
+    </>
+    : !focusC ? <p className="radar-hint">Tap a bubble to see who holds it.</p> : null;
   // The sheet keeps showing its coin while it slides away.
   const sheetProps = useRef(null);
   if (focusProps) sheetProps.current = focusProps;
@@ -228,13 +244,15 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
 
       <div className="radar-main" ref={mainRef}>
         <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
-          mineBy={mineBy} mineOn={mineOn} mv={mv} keep={keep} onPick={pick} />
+          mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          mv={mv} pulse={intel?.pulse} onPick={pick} />
+          fresh={fresh} pulse={intel?.pulse} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">
-        {sheetProps.current && <FocusBody {...sheetProps.current} titleId="radar-sheet-h" />}
+        {sheetProps.current && <FocusBody {...sheetProps.current} withLadder titleId="radar-sheet-h">
+          {focusC && <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} compact plotHeight={380} stack={stack} onPick={setFocus} />}
+        </FocusBody>}
       </RadarSheet>}
 
       {msg && <div className="smap-toast" role="status">{msg}</div>}

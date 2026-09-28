@@ -10,7 +10,7 @@ export const STAGES = [
   { key: "stretched", name: "Stretched" },
   { key: "leaving", name: "Leaving" },
 ];
-export const ZONE_WORD = { watch: "Watch", late: "Stretched: late", crowded: "Crowded", quiet: "Nobody in yet", outside: "Outside" };
+export const ZONE_WORD = { watch: "Early setup", late: "Stretched: late", crowded: "Crowded", quiet: "Nobody in yet", outside: "Outside" };
 export const CROWD_WORD = { quiet: "Quiet", early: "Early", crowded: "Crowded", against: "Against", holding: "Holding" };
 export const SIGNAL_SHORT = {
   STRONG_LONG: "Strong", LIGHT_LONG: "Light", ACCUMULATE: "Accumulate", REVIVAL_SEED: "Revival", REVIVAL_SEED_CONFIRMED: "Revival",
@@ -62,6 +62,23 @@ export function movers(coins, box) {
     leaving: mv.filter(x => x.m.was && !x.m.is).map(x => x.c),
     arriving: mv.filter(x => x.m.dn >= 2).sort((a, b) => b.m.dn - a.m.dn).slice(0, 8).map(x => x.c),
   };
+}
+
+// New early setups (coins that came into the box within the trail), newest first: the step
+// each one came in, then the engine's priority. At most `limit`.
+export function newEarly(coins, box, limit = 6) {
+  const out = [];
+  for (const c of coins) {
+    if (c.zone !== "watch") continue;
+    const p = trailPoints(c);
+    if (!p || p.length < 2) continue;
+    let k = p.length - 1;
+    while (k >= 0 && inBox(box, p[k].z, p[k].n)) k--;
+    if (k < 0) continue;                              // in the box for the whole trail: not new
+    out.push({ c, at: k + 1 });
+  }
+  return out.sort((a, b) => b.at - a.at || (b.c.priority || 0) - (a.c.priority || 0) || a.c.coin.localeCompare(b.c.coin))
+    .slice(0, limit).map(x => x.c);
 }
 
 // What the map shows by default: setups with at least one profitable trader, forming and
@@ -145,13 +162,25 @@ const boxHitsCircle = (b, cx, cy, r) => {
 // right. relax (small maps):
 // a label with no free side may cover the cores of dots drawn under it (under(d, o), by
 // default every dot), never another label or the fixed text.
-export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, widthOf, others = [], avoid = [], force = null, relax = false, under = () => true } = {}) {
+// insideMin: a dot with a core of at least this radius (d.core, else d.r) whose name fits
+// inside it takes the label at its centre first, clear of the smaller dots drawn over it.
+export function placeLabels(dots, { width, height, bounds, charW = 6.4, h = 13, widthOf, others = [], avoid = [], force = null, relax = false, under = () => true, insideMin = Infinity } = {}) {
   const B = bounds || { x0: 0, y0: 0, x1: width, y1: height };
   const cores = [...dots, ...others];
   const placed = [...avoid];
   const out = new Map();
   for (const d of dots) {
     const w = (widthOf && widthOf(d.coin)) || charW * String(d.coin).length + 4;
+    const core = d.core ?? d.r;
+    if (core >= insideMin && Math.hypot(w / 2, 6) < core - 1) {
+      const b = labelBox(d.x, d.y + 4, "middle", w, h);
+      const over = cores.filter(o => o.coin !== d.coin && (o.core ?? o.r) <= core && (o.core ?? o.r) > 3);
+      if (!placed.some(p => boxesOverlap(b, p)) && !over.some(o => boxHitsCircle(b, o.x, o.y, (o.core ?? o.r) + 2))) {
+        placed.push(b);
+        out.set(d.coin, { x: d.x, y: d.y + 4, anchor: "middle", inside: true });
+        continue;
+      }
+    }
     const cands = [
       [d.x + d.r + 4, d.y + 4, "start"],
       [d.x - d.r - 4, d.y + 4, "end"],

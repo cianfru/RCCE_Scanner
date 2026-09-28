@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Star } from "lucide-react";
 import TokenLogo from "../TokenLogo.jsx";
 import { col } from "../../theme.js";
@@ -27,7 +26,9 @@ export const hlTradeUrl = (c, row) => `https://app.hyperliquid.xyz/trade/${encod
 
 // One coin followed: where it sits, how it moved, the crowd, your trade, and what to do next.
 // Used in the rail (desktop and tablet) and in the phone's bottom sheet.
-export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, starred, onStar, onWatch, onClear, onDetail, onChart, titleId }) {
+// withLadder: the price ladder shows beside it, so the crowd, their entry and the small price
+// line (all on the ladder) are left out.
+export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, starred, onStar, onWatch, onClear, onDetail, onChart, titleId, withLadder = false, children }) {
   const mf = movement(c, box);
   // One price everywhere: the live mark with its reading time once the traders' data is in
   // (the same the Full detail drawer shows), else the map's own price.
@@ -52,13 +53,13 @@ export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, st
     <dl className="smap-kv smap-kv-rows">
       <div><dt>Setup</dt><dd style={{ color: sc(c) }}>{(STAGES.find(s => s.key === c.stage) || { name: "No setup" }).name} · {SIGNAL_SHORT[c.signal] || c.signal}</dd></div>
       <div><dt>Zone</dt><dd style={{ color: zoneColor(c.zone) }}>{ZONE_WORD[c.zone]}</dd></div>
-      <div><dt>Crowd</dt><dd><Crowd k={c.crowd} /> {c.traders?.pl || 0} long · {c.traders?.ps || 0} short</dd></div>
+      {!withLadder && <div><dt>Crowd</dt><dd><Crowd k={c.crowd} /> {c.traders?.pl || 0} long · {c.traders?.ps || 0} short</dd></div>}
       {mf && <div><dt>{tf === "1d" ? "5 days" : "24 hours"}</dt><dd>stretch {mf.p[0].z.toFixed(1)} → {mf.p[mf.p.length - 1].z.toFixed(1)} · traders {signed(mf.p[0].n)} → {signed(mf.p[mf.p.length - 1].n)}</dd></div>}
-      {past != null && <div><dt>Their entry</dt><dd>{side} {fmtPx(entry)} · {past >= 0 ? "+" : ""}{Math.round(100 * past)}% for them</dd></div>}
+      {past != null && !withLadder && <div><dt>Their entry</dt><dd>{side} {fmtPx(entry)} · {past >= 0 ? "+" : ""}{Math.round(100 * past)}% for them</dd></div>}
       {mine && <div><dt>Your trade</dt><dd>{mine.side} from {fmtPx(mine.entry)}{my != null && <> · <span className="smap-mono" style={{ color: my >= 0 ? "var(--t-profit)" : "var(--t-loss)" }}>{my >= 0 ? "+" : ""}{Math.round(100 * my)}%</span></>}</dd></div>}
       <div><dt>Next close</dt><dd>{fmtIn(nextCloses(tf, Date.now(), 1)[0] - Date.now())}</dd></div>
     </dl>
-    <FocusChart c={c} />
+    {!withLadder && <FocusChart c={c} />}
     <div className="smap-actions">
       <button type="button" className="smap-watch" aria-pressed={isWatched} title={WATCH_TIP} onClick={() => onWatch(c.coin)}>
         <WatchMark color={isWatched ? "var(--t-bg)" : "var(--t-accent)"} />{isWatched ? "Watching" : "Watch"}
@@ -68,6 +69,7 @@ export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, st
       <a className="te-link" href={hlTradeUrl(c, row)} target="_blank" rel="noopener noreferrer">Trade on Hyperliquid ↗</a>
     </div>
     {isWatched && <p className="smap-note">Telegram: enters the box · confirms Uptrend · turns crowded · leaves the box · exit signal</p>}
+    {children}
   </>;
 }
 
@@ -80,23 +82,19 @@ function StripRow({ c, mine, onClick }) {
   </button>;
 }
 
-// One "Moving" list: logo, coin and crowd word per coin, the first six with "+5 more".
-const MOVER_CAP = 6;
-function MoverList({ label, xs, onPick }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? xs : xs.slice(0, MOVER_CAP);
-  return <div className="smap-strip"><span className="smap-slab">{label}</span>{shown.map(c =>
+// New early setups: logo, coin and crowd word per coin (at most six, newest first).
+function FreshList({ xs, onPick }) {
+  return <div className="smap-strip">{xs.map(c =>
     <button type="button" key={c.coin} className="smap-chip" onClick={() => onPick(c.coin)}><TokenLogo symbol={c.symbol} size={16} /><strong>{c.coin}</strong><Crowd k={c.crowd} /></button>)}
-    {xs.length > MOVER_CAP && <button type="button" className="te-link radar-more" aria-expanded={all} onClick={() => setAll(v => !v)}>{all ? "Fewer" : `+${xs.length - MOVER_CAP} more`}</button>}
   </div>;
 }
 
-// The rail beside the map: the followed coin (or one line on how to follow one), the watch
-// list, your trades, what moved, and the market-wide pulse. Never an empty box.
-export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, mv, pulse, onPick }) {
-  const moving = [["Entering the box", mv.entering], ["Leaving the box", mv.leaving], ["Traders arriving", mv.arriving]].filter(([, xs]) => xs.length);
+// The rail beside the map: the followed coin (its price ladder and readings, or one line on how
+// to follow one), the watch list, your trades, the new early setups and the market-wide pulse.
+// Never an empty box.
+export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, pulse, onPick }) {
   const line = pulseLine(pulse);
-  return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label="Followed coin, watch list and movers">
+  return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label="Followed coin, watch list and new early setups">
     {focusSlot}
     {stripWatch.length > 0 && <section className="radar-sec">
       <h3 className="radar-sec-h"><Pin />Watching <span>({stripWatch.length})</span></h3>
@@ -108,11 +106,9 @@ export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mi
         ? <div className="radar-rows">{stripMine.map(([c, m]) => <StripRow key={c.coin} c={c} mine={m} onClick={() => onPick(c.coin)} />)}</div>
         : mineLoading ? <div className="radar-row-skel shimmer-loading" aria-hidden="true" /> : <p className="smap-note">No open perp positions on the map.</p>}
     </section>}
-    {moving.length > 0 && <section className="radar-sec">
-      <h3 className="radar-sec-h">Moving</h3>
-      <div className="smap-movers">
-        {moving.map(([label, xs]) => <MoverList key={label} label={label} xs={xs} onPick={onPick} />)}
-      </div>
+    {fresh.length > 0 && <section className="radar-sec">
+      <h3 className="radar-sec-h">New early setups</h3>
+      <FreshList xs={fresh} onPick={onPick} />
     </section>}
     {line && <p className="radar-pulse" title={pulse.clusters?.length ? `Two or more on the same side: ${pulse.clusters.map(k => `${k.coin} ${k.side} ${k.n}`).join(", ")}` : undefined}>{line}</p>}
   </aside></div>;
