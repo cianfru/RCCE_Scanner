@@ -222,7 +222,7 @@ function PositionRow({ pos, expanded, onToggle }) {
       <tr>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <TokenLogo symbol={pos.symbol} size={18} />
+          <TokenLogo symbol={pos.symbol} size={18} fallback="ring" />
           <button type="button" onClick={onToggle} aria-expanded={expanded}
             title="Show price source and entry rationale"
             style={{ background: "transparent", border: 0, padding: 0, font: "inherit", color: "inherit", cursor: "pointer", borderBottom: `1px dotted ${T.text3}` }}>
@@ -337,7 +337,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       >
         <td style={cellStyle} title={fullDate(trade.exit_time)}>{timeAgo(trade.exit_time)}<small style={{display:"block",marginTop:5,color:T.text3}} title={fullDate(trade.entry_time)}>Opened {timeAgo(trade.entry_time)}</small></td>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><TokenLogo symbol={trade.symbol} size={18} />{trade.symbol.replace("/USDT", "")}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><TokenLogo symbol={trade.symbol} size={18} fallback="ring" />{trade.symbol.replace("/USDT", "")}</span>
           {trade.quality_issue && <small title={trade.quality_issue} style={{display:'block',fontWeight:400,color:T.text3,marginTop:5}}>Price-unit error</small>}
         </td>
         <td style={cellStyle}>

@@ -41,7 +41,10 @@ const DARK_DISC = new Set(['1db8c284aaa50a2f']); // FARTCOIN
 const logoId = src => src.slice(src.lastIndexOf('/') + 1).replace(/\.svg$/, '');
 const backing = id => (DARK_ART.has(id) ? ' token-logo-dk' : LIGHT_ART.has(id) ? ' token-logo-lt' : DARK_DISC.has(id) ? ' token-logo-dkdisc' : '');
 
-export default function TokenLogo({ symbol, size = 24 }) {
+// fallback: what a coin with no artwork gets. 'monogram' (default) draws its first two letters;
+// 'ring' reserves the slot with an empty ring, for places where the ticker is printed right beside
+// it (the monogram would only repeat it); 'none' renders nothing.
+export default function TokenLogo({ symbol, size = 24, fallback = 'monogram' }) {
   const [failedSource, setFailedSource] = useState(null);
   const src = logos[symbol]?.src;
   const box = { width: size, height: size, flexShrink: 0, verticalAlign: 'middle' };
@@ -54,6 +57,8 @@ export default function TokenLogo({ symbol, size = 24 }) {
         style={{ display: 'block', width: size, height: size, objectFit: 'contain' }} onError={onError} />
     </span>;
   }
+  if (fallback === 'none') return null;
+  if (fallback === 'ring') return <span aria-hidden="true" style={{ ...box, display: 'inline-block', borderRadius: '50%', boxShadow: RING, background: T.overlay04 }} />;
   return <span aria-hidden="true" style={{ ...box, objectFit: 'contain', boxShadow: RING, display: 'inline-flex', alignItems: 'center',
     justifyContent: 'center', background: T.overlay04, color: T.text3, borderRadius: 6,
     fontFamily: T.mono, fontSize: Math.max(11, size * .38), fontWeight: 700, letterSpacing: 0 }}>

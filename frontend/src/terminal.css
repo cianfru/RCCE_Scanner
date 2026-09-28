@@ -476,6 +476,8 @@
 .reflex-tabs button{flex-shrink:0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--t-text3);font-family:inherit;font-weight:600;font-size:13px;padding:10px 12px;cursor:pointer;}
 .reflex-tabs button[aria-pressed="true"]{color:var(--t-accent);border-bottom-color:transparent;background:var(--metal-tab-bar);}
 .reflex-tabs button:hover{color:var(--t-text1);}
+/* A selected tab keeps its accent label while hovered (right after a click), above its steel bar. */
+.reflex-tabs button[aria-pressed="true"]:hover{color:var(--t-accent);}
 .reflex-tabs-small button{font-size:12px;padding:6px 8px;}
 /* Settings: the first preset label and the last appearance label sit flush with the column; the tab padding hangs outside. */
 .settings-tabs-start>.reflex-tabs-small{margin-left:-8px;}
