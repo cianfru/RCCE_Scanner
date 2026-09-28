@@ -211,7 +211,9 @@
  .terminal-header .header-more::before{inset:-4px;}
  .terminal-header .header-brand::before{inset:-7px 0;}
  .terminal-header .header-refresh::before,.terminal-header .header-gear::before{inset:-8px;}
- .terminal-header .notification-trigger::before{inset:-4px -7px;}
+ .terminal-header .notification-trigger::before{inset:-4px -6px;}
+ /* 14px between the right-hand controls, so the 44px hit areas above sit side by side without overlapping. */
+ .terminal-header .header-right{gap:14px;}
 }
 
 /* Below 900px: the floating tab bar, the capsule's twin at the bottom. Like the header plate it is opaque
@@ -422,7 +424,7 @@
 .notif-entries{grid-column:1 / -1;list-style:none;margin:0 0 12px 64px;padding:0 16px 0 0;display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:1.45;color:var(--t-text3);overflow-wrap:anywhere;}
 .notif-empty{padding:24px 16px;margin:0;font-size:13px;color:var(--t-text3);}
 .notif-more{width:100%;padding:14px 16px;border-top:1px solid var(--t-border);text-align:center;}
-@media(max-width:400px){.terminal-header .header-wordmark{width:62px;height:auto}.notification-trigger{gap:3px;min-width:30px}}
+@media(max-width:400px){.terminal-header .header-wordmark{width:62px;height:auto}.notification-trigger{gap:3px;min-width:32px}}
 
 .executor-return-grid {grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--t-border);}
 @media(max-width:480px){.executor-return-grid{grid-template-columns:1fr}}
@@ -872,7 +874,7 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .hl-subline>span::before{content:"\00b7";position:absolute;left:4px;}
 /* WALLETS L / S header: the size-lean mini bar gets its own label, over the bar. */
 .hl-ls-head{display:flex;justify-content:space-between;gap:12px;}
-.hl-ls-lean{font-size:10px;color:var(--t-text4);letter-spacing:.08em;align-self:flex-end;}
+.hl-ls-lean{font-size:12px;color:var(--t-text4);letter-spacing:.04em;align-self:flex-end;white-space:nowrap;}
 /* Light theme: the dialogs are white cards over the dimmed page, not a washed grey glass. */
 [data-theme="light"] .reflex-terminal .hl-modal-sheet{background-color:var(--t-bg);border-radius:16px;}
 @media(max-width:767px){
