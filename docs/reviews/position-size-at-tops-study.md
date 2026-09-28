@@ -117,3 +117,154 @@ Otherwise "not informative". The same four tests, with signs reversed, decide **
 ## Results
 
 To be added below after the run. Nothing above changes.
+
+### Run 28 September 2026 (data pulled 26 September)
+
+Result: `python research/position_size.py <data dir> <fear-greed file>`, saved as `size/result.json` in the session scratchpad. Changes are medians in %, the share in points, and [brackets] are 90% intervals. "Excess" means minus the matched baseline (same coin, bars within 15 days).
+
+**Verdicts against the declared bar:**
+
+| Test | BTC | Alt pool | Why |
+|---|---|---|---|
+| A. Size rises into tops / is cut after | not informative | not informative | 1 BTC top with z ≥ 2 and 9 alt tops, against 30 needed |
+| B. Size rises with greed (G2) | no clear relationship | no clear relationship | BTC ρ +0.13 [−0.11, +0.38]; alts ρ +0.13 [+0.05, +0.22], under 0.2 |
+| C. Size predicts the next 7–14 days (F1) | no predictive relationship shown | no predictive relationship shown | BTC ρ +0.04 and +0.10; alts +0.08 and +0.10 |
+
+Nothing met the bar. **Everything below is market context, not a trading signal.**
+
+#### Data
+
+- **Panel (fixed):** 181 profitable traders, of whom 161 hold perpetuals at some point from 25 March. The large-account panel has 196 wallets, but only **23** of them hold perpetuals.
+- **Alt pool (rule-picked):** ADA, ENA, ETH, HYPE, LIT, NEAR, SOL, SUI, TAO, ZEC.
+- **Daily samples:** 149 headline days for greed (1 April to 27 August), 142 days for 7-day forward returns and 135 for 14-day.
+- **Fear & Greed ≥ 70 is a late-sample event.** It happened on 17 days, all from 22 August on. Only 4 of those days fall in the headline sample, and none come before the event cut-off, so there are **0 headline high-greed start events**.
+- **Who holds BTC:** the top wallet has 31% of the panel's BTC long value, and the top 3 have **84%**.
+  - Those 3 wallets (0x2371...0883, 0x93ab...11f8, 0xec7f...df39) trade in lockstep: same 4-hour bars, round lots of 100–400 BTC, never another coin. Treat them as one entity.
+
+#### BTC, profitable traders
+
+**The whale entity.** It was not the one adding into greed:
+- It bought about 800 BTC between 25 June and 6 July at $58.6–63.5k, with Fear & Greed at 15–27.
+- It sold everything on 24–25 August at $79–80k, with F&G at 73. That bar is a hindsight local top (z 2.6).
+- It bought back on 28 August at $78.3k and added 300 BTC on 8 September.
+- It sold everything again on 22–23 September at $86.2–86.7k, with F&G at 70–78.
+
+**The rest of the panel** (top 3 removed, same wallets throughout), every 7 days:
+
+| | Apr–mid Aug | 26 Aug | 2 Sep | 16 Sep | 23 Sep |
+|---|---|---|---|---|---|
+| BTC price | $58.6–80.9k | $78.5k | $77.4k | $75.6k | $86.2k |
+| F&G (known) | 10–50 | 74 | 69 | 69 | 78 |
+| Long BTC (coins) | 31–62, one reading of 113 | 121 | 121 | 179 | 233 |
+| Wallets long | 6–14 | 18 | 24 | 23 | 21 |
+| BTC share of their exposure | 12–70%, drifting down | 21% | 17% | 18% | 15% |
+
+- On greed days (all days, biased), they held a median 122 BTC, against 56 on other days. Their USD long was $9.8M against $3.8M.
+- BTC's share of their book did not rise: 18% on greed days against 21% on other days. They grew everything, not BTC in particular.
+
+**Around the 17 headline local tops (any z)**, all panel wallets:
+
+| Window | BTC price | Long USD | Long coins | Coins, excess | Coins, excess, top 3 removed |
+|---|---|---|---|---|---|
+| 72h before | +2.6% | **+4.8%** [+1.2, +12.7] | **+0.9%** [−0.3, +7.4] | +2.5 [−0.8, +8.7] | +2.8 [−12.6, +8.7] |
+| 7d before | +3.8% | +5.5% [+3.2, +12.1] | +1.1% [−2.9, +13.2] | +1.1 [−4.0, +11.3] | +0.1 [−7.3, +11.3] |
+| 72h after | −2.6% | −4.5% [−8.9, −2.4] | −1.2% [−5.6, +0.3] | −1.8 [−5.5, −0.0] | −5.5 [−11.2, −2.6] |
+| 7d after | −3.2% | −3.4% [−7.2, −1.1] | −1.5% [−7.6, +1.5] | −2.9 [−10.6, +1.5] | −6.6 [−13.7, +4.8] |
+
+- The median per-wallet long value is +10.1% in the 72h before (on 17 events), and share of exposure +0.6 points [−1.9, +1.7].
+- The one z ≥ 2 top (15 June) had +30% coins in the 72h before. A single event decides nothing.
+
+**Correlations (headline, daily):**
+
+| | All panel | Top 3 removed (exploratory) |
+|---|---|---|
+| G1 F&G level vs long coins | +0.37 [−0.02, +0.66] | +0.47 [+0.16, +0.71] |
+| G1 F&G level vs long USD | +0.43 [+0.07, +0.69] | +0.54 [+0.24, +0.75] |
+| **G2 7d ΔF&G vs 7d Δ long coins** | **+0.13 [−0.11, +0.38]** (largest wallet removed: +0.14) | +0.33 [+0.11, +0.52] |
+| G3 7d ΔF&G vs 7d Δ long USD | +0.25 [+0.00, +0.47] | +0.42 [+0.22, +0.59] |
+| G3 7d ΔF&G vs 7d Δ share | +0.01 [−0.26, +0.30] | +0.25 [+0.04, +0.45] |
+| **F1 7d Δ long coins vs BTC next 7d / 14d** | **+0.04 [−0.21, +0.25] / +0.10 [−0.13, +0.33]** | −0.07 / +0.01 |
+
+- On all days (biased, includes the greed weeks), G2 is −0.07 [−0.33, +0.21] for the whole panel and +0.23 [−0.02, +0.46] with the top 3 removed.
+- F2 is exploratory, with 6 predictor-horizon pairs:
+  - BTC's share of exposure vs the next 14 days: +0.39 [+0.02, +0.60].
+  - F&G level vs BTC's next 7 / 14 days: −0.23 / −0.30, with both intervals touching 0.
+
+#### Alt pool, profitable traders
+
+- **Local tops, any z:** 75 events on 41 days. The declared rules applied to this secondary set give "not shown" both ways.
+
+| Window | Price | Long USD | Long coins | Coins, excess |
+|---|---|---|---|---|
+| 72h before | +6.0% | +10.2% [+6.4, +16.3] | +1.9% [+0.2, +6.2] | **0.0 [−1.3, +2.3]** |
+| 7d before | +6.1% | +29.1% | +14.1% [+5.0, +19.9] | +2.0 [−10.9, +13.7] |
+| 72h after | −5.2% | −4.0% | +0.6% [−1.0, +3.8] | −1.3 [−5.9, 0.0] |
+| 7d after | −6.2% | −5.2% | +1.5% | −2.9 [−15.3, +1.2] |
+
+- **Tops with z ≥ 2:** 9 events. In the 72h before, coins +6.2%, excess −0.7 [−7.8, +10.4].
+- **Correlations, pooled coin-days:**
+  - G2 +0.13 [+0.05, +0.22], and +0.13 [+0.01, +0.26] with the largest wallet removed. Positive, but under the declared 0.2.
+  - The pool-median series gives G2 +0.38 [+0.20, +0.55] (description).
+  - F1 +0.08 [+0.03, +0.13] at 7 days and +0.10 [+0.03, +0.16] at 14 days.
+
+#### Large-account control
+
+- Only 23 panel wallets hold perpetuals, 3 to 7 of them long BTC. The top 3 hold 86% of the BTC long.
+- They have essentially no alt positions.
+- G2 on BTC is +0.14 [−0.14, +0.39], and F1 is +0.18 and +0.14, with both intervals spanning 0.
+- **There is no usable contrast.**
+
+#### Sensitivities
+
+- **Market-maker filter:** it removes 1 profitable wallet and 0 large accounts, and no number moves.
+- **Per-event panels** (more of the active traders):
+  - BTC tops, long coins: +2.0% in the 72h before (fixed panel +0.9%), +3.3% in the 7d before (+1.1%), −2.8% in the 72h after (−1.2%), −3.3% in the 7d after (−1.5%).
+  - Same direction, a bit larger.
+
+### Plain reading
+
+- **Dollars rise into BTC tops mostly because price rises.**
+  - In the 72h before a local top, the cohort's BTC long value grew about 5% while BTC rose about 2.6%. The coin count grew about 1%, which cannot be told apart from zero.
+  - After tops, the dollars fall with price, plus a small cut in coins.
+  - With 17 tops (1 stretched), this is not enough to call.
+- **On alts it is the same.** Long dollars +10% into a top on +6% price, and coin size flat against its own recent trend.
+- **Greed: the observation is real for the recent rally, but it is one episode.**
+  - Leave out the one whale entity. The rest of the profitable panel roughly doubled its BTC coins and wallet count as Fear & Greed went above 70 in late August and September. Their 7-day coin changes track greed changes: ρ +0.33 on the headline sample, exploratory.
+  - They grew all their positions, so BTC's share of their book did not rise.
+  - Every greed reading falls in the month the roster was picked on. The list is chosen for being in profit now, so it is full of wallets that were long this rally.
+  - The largest holder did the opposite: it bought in fear and sold into both greed tops.
+- **Size does not predict the next 7–14 days.** BTC ρ is +0.04 to +0.10. Alts are +0.08 to +0.10, tiny, and in the direction the profit-based selection would create anyway.
+
+### Deviations from the declared rules
+
+1. **Added after seeing the first run (exploratory, no verdict uses them).**
+   - Top-3 removal: the declared "largest wallet removed" takes out only one of three lockstep wallets on BTC, so it cannot test one-entity dominance.
+   - Week-block intervals: 7-day windows of events 72 hours apart overlap. Drawing whole calendar weeks widens a few intervals slightly and changes no reading.
+   - A 7-day BTC timeline, all-days (biased) G2, and greed-day levels.
+   - The run was repeated with these added. Every declared number and verdict is identical to the first run (checked).
+2. **Matched baseline for headline events.** Baseline windows must also end by the headline cut-off. The declaration did not say so. It keeps the selection month out of the baseline.
+3. **Per-event panel sensitivity.** It reports raw changes only, without a matched baseline: earlier baseline bars would fall before those wallets' coverage.
+4. **Alt G2.** The declaration named both a pool-median series and pooled coin-days. The verdict uses pooled coin-days (the Correlations section), and the median series is description.
+
+### Caveats (skeptic's review)
+
+- **Lookahead.**
+  - Positions at T use fills strictly before T (tested), and Fear & Greed is lagged a day (tested).
+  - Hindsight tops, "after" windows and the matched baseline read later data. They are description only.
+  - The coverage rule reads a later fill's recorded start position. That reconstructs the true position at T. It is not information the traders lacked.
+- **Price.** Dollar size is mostly price. Only coins or share of exposure show adding.
+- **One entity.** Three wallets are 84% of the panel's BTC long value. Any BTC dollar or coin total in the product is mostly them.
+- **Survivorship and selection.**
+  - The roster requires profit this month and before, and at least $50k today. Wallets that added into a top and lost are not in it.
+  - The headline cut removes the last 30 days, but the "profit before this month" rule still spans the whole window.
+- **Fixed panel.** It keeps the less active traders (capped fill histories start late). The per-event panels agree in direction.
+- **Autocorrelation.** Daily 7- and 14-day changes overlap. The 14-day block bootstrap allows for this, but 149 days still hold only about 10 independent 14-day stretches.
+- **Many comparisons.** F2 and the exploratory cuts test many pairs. A single interval that just clears 0 there means little.
+- **No leverage data.** Share of exposure is the relative measure, not leverage on equity.
+
+### What this means for the product
+
+- **Show size in coins next to price, not dollars alone.** A size-versus-price overlay on the coin chart: the cohort's long size in coins, with the long value as a faint line, so rising dollars from a rising price are not read as conviction.
+- **Add a concentration badge,** for example "top 3 wallets = 84% of this".
+- **Show share of book,** so "they hold more BTC" is not confused with "they are more concentrated in BTC".
+- **Keep it as context.** Nothing here supports a greed or size alert.
