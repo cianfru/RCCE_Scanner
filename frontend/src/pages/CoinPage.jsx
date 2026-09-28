@@ -5,7 +5,7 @@ import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, formatPrice, evidenceSummary, funding8hPct, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
 import Tabs from "../components/Tabs.jsx";
 import TrendChart from "../components/TrendChart.jsx";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { Star } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { col, T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
@@ -349,6 +349,29 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       || null;
   }, [scanData4h, scanData1d, urlSymbol, timeframe, marketKind]);
 
+  // "Trade on Hyperliquid" drops "Trade on" only when the full label would push the actions off the
+  // title line (a long ticker, a two-line setup pair, the 4H+1D note). When even the short label does
+  // not fit, the actions take their own line and keep the full label there. Measured before paint.
+  const headRef = useRef(null);
+  const isWatchedNow = watched.has(getBaseSymbol(data?.symbol || ""));
+  useLayoutEffect(() => {
+    const head = headRef.current;
+    if (!head) return undefined;
+    const fit = () => {
+      const tabs = head.querySelector(".coin-tabs"), acts = head.querySelector(".coin-actions");
+      if (!tabs || !acts) return;
+      const wrapped = () => acts.getBoundingClientRect().top >= tabs.getBoundingClientRect().bottom - 1;
+      delete head.dataset.trade;
+      if (!wrapped()) return;
+      head.dataset.trade = "short";
+      if (wrapped()) delete head.dataset.trade;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    document.fonts?.ready?.then(fit).catch(() => {});
+    return () => window.removeEventListener("resize", fit);
+  }, [data, timeframe, isMobile, isWatchedNow, availabilityError]);
+
   // Scroll to top on open
   useEffect(() => { window.scrollTo(0, 0); }, [urlSymbol]);
   // Tracked traders on this coin: loaded once, drawn on the chart and listed in the Traders card.
@@ -390,7 +413,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   return (
     <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
       {/* Header */}
-      <div className="coin-head" style={{
+      <div ref={headRef} className="coin-head" style={{
         display: "flex", alignItems: "center", gap: "6px 12px", marginBottom: availabilityError ? 8 : 20, flexWrap: "wrap",
       }}>
         <button
@@ -428,9 +451,10 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             Checks {formatPercent(data.signal_confidence)}
           </span>
         )}
-        {/* The timeframe tabs, then the actions. On desktop both join the title line; when the
-            actions do not fit they take a line of their own, left-aligned, and the tabs stay on
-            the title line. On phones they form one second row. */}
+        {/* The timeframe tabs, then the actions. On desktop both join the title line (with the
+            short "Hyperliquid" label when that is what fits); when the actions still do not fit
+            they take a line of their own, left-aligned, and the tabs stay on the title line.
+            On phones they form one second row. */}
         <div className="coin-head-actions">
           <div className="coin-tabs">
             <Tabs small label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />

@@ -40,9 +40,10 @@ export async function toggleWatch(coin, tf = "1d") {
   const on = watchedNow().has(coin);
   let res;
   try {
+    // Every caller shows watchToast's own "Watching needs the admin key" on a 403 (adminNotice: false).
     res = await fetch(`${API_BASE}/api/setup-map/watch${on ? `/${encodeURIComponent(coin)}` : ""}`, on
-      ? { method: "DELETE" }
-      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ coin, tf }) });
+      ? { method: "DELETE", adminNotice: false }
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ coin, tf }), adminNotice: false });
   } catch {
     return { ok: false, reason: "error" };
   }

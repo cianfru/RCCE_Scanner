@@ -1344,6 +1344,13 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .coin-action:hover{color:var(--t-accent);}
 .coin-action:focus-visible,.coin-watch:focus-visible{outline:2px solid var(--t-accent);outline-offset:3px;border-radius:2px;}
 .te-toggle.coin-watch{display:inline-flex;align-items:center;gap:6px;font-weight:600;}
+/* Watch is one of the flat actions, not a tab: no underline at rest or on; its state is the accent
+   colour and the word "Watching", so only the 1D/4H steel bar reads as selected on this line. */
+.te-toggle.coin-watch,.te-toggle.coin-watch:hover,.te-toggle.coin-watch[aria-pressed="true"]{text-decoration:none;}
+.te-toggle.coin-watch:hover{color:var(--t-accent);}
+/* The Hyperliquid link drops "Trade on" when the full label would push the actions off the title
+   line (CoinPage measures it and sets data-trade="short"); its aria-label and title keep it. */
+.coin-head[data-trade="short"] .coin-action-long{display:none;}
 .radar-watchmark{flex:none;display:inline-block;vertical-align:-2px;overflow:visible;}
 .smap-watch .radar-watchmark{margin-top:-1px;}
 /* Chart toolbar on the coin page: the regime as a quiet anchor, and Ask AI with the R. */
@@ -1354,11 +1361,20 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .coin-availability-note{margin:0 0 16px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .analysis-card .analysis-ask{margin:16px 0 0;}
 .analysis-ask .te-link{font-size:13px;font-weight:600;}
-@media(max-width:767px){.coin-head-actions{flex-basis:100%;margin-left:0;justify-content:space-between;gap:12px;}.coin-actions{order:-1;gap:4px 14px;}.coin-action-long{display:none;}
+@media(max-width:767px){.coin-head-actions{flex-basis:100%;margin-left:0;justify-content:space-between;gap:8px;}.coin-actions{order:-1;gap:4px 12px;}.coin-action-long{display:none;}
+ /* Tight enough that the row holds one line at 390 with "Watching" and at 375 with "Watch". */
+ .coin-tabs .reflex-tabs-small button{padding:6px 7px;}
  /* 44px touch targets without moving anything: invisible hit areas around the small controls. */
  .coin-action,.te-toggle.coin-watch{position:relative;}
  .coin-action::after,.te-toggle.coin-watch::after{content:"";position:absolute;left:-6px;right:-6px;top:50%;height:44px;transform:translateY(-50%);}
  .reflex-terminal .coin-star::before{inset:-13px;}
+ /* The 4H/1D tabs: the two-tab row needs no scrolling, so it lets a 44px hit area out of the 30px tabs. */
+ .coin-tabs .reflex-tabs{overflow:visible;}
+ .coin-tabs .reflex-tabs button{position:relative;}
+ .coin-tabs .reflex-tabs button::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:44px;transform:translateY(-50%);}
+ /* Drawer Close / Clear: a 44px hit area around the text link. */
+ .mh-close{position:relative;}
+ .mh-close::after{content:"";position:absolute;left:-10px;right:-10px;top:50%;height:44px;transform:translateY(-50%);}
 }
 /* Traders table while its fills load: three skeleton rows under one quiet line. */
 .te-loading{margin:0 0 8px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
