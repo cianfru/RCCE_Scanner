@@ -62,3 +62,26 @@ def test_cohort_positions_match_the_positioning_map(monkeypatch):
     sui = hl.positioning_map("profitable")["coins"]["SUI"]
     assert sui["long"]["usd"] == sum(r["size_usd"] for r in rows if r["side"] == "long")
     assert sui["short"]["n"] == sum(r["side"] == "short" for r in rows)
+
+
+def test_positioning_endpoint_adds_the_count_a_day_ago(monkeypatch):
+    from fastapi.testclient import TestClient
+    import hl_persistence
+    import main
+    a, b = TrackedWallet("0x" + "a" * 40), TrackedWallet("0x" + "b" * 40)
+    now = time.time()
+    snaps = {a.address: deque([PositionSnapshot(now, [pos("SUI", "LONG", 100, 3.0, 3.3)], 1e6)]),
+             b.address: deque([PositionSnapshot(now, [pos("SUI", "LONG", 50, 3.5, 3.3)], 1e6)])}
+    monkeypatch.setattr(hl, "_roster", [a, b])
+    monkeypatch.setattr(hl, "_roster_money_printers", [a, b])
+    monkeypatch.setattr(hl, "_roster_smart_money", [b])
+    monkeypatch.setattr(hl, "_snapshots", snaps)
+    monkeypatch.setattr(hl_persistence, "load_trader_lean",
+                        lambda prefix, since: [(int(now - 86400), "coin:SUI", 1, 2, 300, 600)])
+    main._POSITIONING_CACHE.clear()
+    c = TestClient(main.app)
+    sui = next(r for r in c.get("/api/hyperlens/positioning?cohort=profitable").json()["rows"] if r["coin"] == "SUI")
+    assert sui["long"]["n"] == 2 and sui["day_ago"] == {"long": 1, "short": 2}
+    large = c.get("/api/hyperlens/positioning?cohort=large").json()["rows"]
+    assert large[0]["day_ago"] is None                                       # the record is profitable traders only
+    main._POSITIONING_CACHE.clear()
