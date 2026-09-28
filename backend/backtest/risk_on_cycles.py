@@ -13,8 +13,8 @@ Risk-on and risk-off cycles in market breadth: market context, not a signal
 Breadth is the Uptrend + Overheated share of the market-history rebuild (data/larsson_runs/breadth_history.json,
 days with 40+ coins). A risk-on run starts on the first day at 55% or more after 5+ days below, and ends on the
 first day of a stretch of 5+ days below; the days in between are a risk-off run. BTC's weekly bull market support
-band is the 20-week SMA and 21-week EMA of Sunday weekly closes, completed weeks only (as declared; note that
-market_history.btc_band's weekday filter selects Wednesdays, see `weekly_band`).
+band is the 20-week SMA and 21-week EMA of Sunday weekly closes, completed weeks only (as declared). When this
+study ran, market_history.btc_band selected Wednesday closes; since 28 Sep 2026 it uses Sunday closes too.
 
 The in-sample stage sees days up to 2026-03-29 only. The one exception, as declared: today's Uptrend share, BTC's
 side of its band and the current run's start, read from the production API to pick the analog buckets.
@@ -109,27 +109,37 @@ def whole_pct(x: float) -> int:
 # Data
 # ---------------------------------------------------------------------------
 
-def weekly_band(btc: Dict[int, float], weekday: int = SUNDAY) -> Dict[int, tuple]:
-    """BTC's weekly bull market support band per day: (lower, upper) = min/max of the 20-week SMA and the
-    21-week EMA of completed weeks, used from the day after the week's close. Same arithmetic as
-    market_history.btc_band, with the weekly close on `weekday` (day % 7). The declared band closes weeks on
-    Sundays; market_history.btc_band's filter ((d + 4) % 7 == 3) equals weekday=WEDNESDAY."""
-    days = sorted(btc)
-    bands, closes, ema = [], [], None
-    for w in (d for d in days if d % 7 == weekday):
+def weekly_rows(btc: Dict[int, float], weekday: int = SUNDAY) -> List[tuple]:
+    """BTC's weekly bull market support band at each weekly close: (close_day, (lower, upper) or None), where
+    lower/upper = min/max of the 20-week SMA and the 21-week EMA of the closes on `weekday` (day % 7), None
+    until 21 weeks exist. The declared band (and market_history.btc_band since 28 Sep 2026) closes weeks on
+    Sundays; before that date market_history.btc_band used WEDNESDAY by mistake."""
+    rows, closes, ema = [], [], None
+    for w in (d for d in sorted(btc) if d % 7 == weekday):
         c = btc[w]
         closes.append(c)
         ema = c if ema is None else (2 / 22) * c + (1 - 2 / 22) * ema
         sma = sum(closes[-20:]) / 20 if len(closes) >= 20 else None
-        bands.append((w, None if sma is None or len(closes) < 21 else (min(sma, ema), max(sma, ema))))
+        rows.append((w, None if sma is None or len(closes) < 21 else (min(sma, ema), max(sma, ema))))
+    return rows
+
+
+def expand_weekly(rows: List[tuple], days: Iterable[int]) -> Dict[int, tuple]:
+    """Per day, the band of the last weekly close strictly before it (completed weeks only: a close is used
+    from the next day). Days before the first band are left out."""
     out: Dict[int, tuple] = {}
     wi = -1
-    for d in days:
-        while wi + 1 < len(bands) and bands[wi + 1][0] < d:          # completed weeks only
+    for d in sorted(days):
+        while wi + 1 < len(rows) and rows[wi + 1][0] < d:
             wi += 1
-        if wi >= 0 and bands[wi][1]:
-            out[d] = bands[wi][1]
+        if wi >= 0 and rows[wi][1]:
+            out[d] = rows[wi][1]
     return out
+
+
+def weekly_band(btc: Dict[int, float], weekday: int = SUNDAY) -> Dict[int, tuple]:
+    """BTC's weekly bull market support band per day with a close: (lower, upper) of the last completed week."""
+    return expand_weekly(weekly_rows(btc, weekday), btc)
 
 
 def band_breaks(btc: Dict[int, float], band: Dict[int, tuple], gap: int = BREAK_GAP) -> List[int]:
@@ -781,8 +791,8 @@ def prior_dip(m: Market) -> Optional[dict]:
 
 def now_full(m: Market, full: dict, t: dict) -> dict:
     """Today's run with every day to the latest reading (API included), BTC's distance from its band (declared
-    Sunday band and the drawer's Wednesday band), and the pooled survival rows at today's age from `full`
-    (every run to the rebuild's last day). Descriptive: no verdicts."""
+    Sunday band, and the Wednesday band the drawer used until 28 Sep 2026), and the pooled survival rows at
+    today's age from `full` (every run to the rebuild's last day). Descriptive: no verdicts."""
     cur = [d for d in sorted(m.share) if d >= t["start"]]
     last, pk = cur[-1], max(m.share[d] for d in cur)
     btc = m.btc[last]
@@ -1038,7 +1048,7 @@ def main(argv=None):
     ap.add_argument("--api", help="path or URL of an /api/market-history snapshot (default: production)")
     ap.add_argument("--rebuild", help="rebuild JSON (default data/larsson_runs/breadth_history.json)")
     ap.add_argument("--weekday", choices=["sunday", "wednesday"], default="sunday",
-                    help="weekly close of the BTC band (declared: sunday; wednesday = market_history.btc_band)")
+                    help="weekly close of the BTC band (declared: sunday; wednesday = the drawer's band until 28 Sep 2026)")
     ap.add_argument("--markdown", action="store_true", help="print the report tables")
     args = ap.parse_args(argv)
     stage = {"insample": "in", "oos": "out"}.get(args.stage)

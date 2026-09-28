@@ -202,6 +202,8 @@ Run on 28 September 2026 with `python -m backtest.risk_on_cycles insample`, usin
 
 Runs, the run summaries, survival, 3b's case counts and both analog sets are identical. The drawer's band and the forward test's code also use Wednesday closes, while the forward test's declared rule says Sunday. Its exploratory table of 9 episodes matches the Wednesday band. On Sunday closes it would read 8 episodes, with 2024-10-01 lasting 10 days instead of 2024-10-02 and 2024-10-09, and 2025-09-25 lasting 1 day instead of 3. Nothing is changed here, and the forward test is not disturbed. This is for the owner to decide.
 
+Owner decision, 28 Sep 2026: the drawer and the forward test now use Sunday closes.
+
 ### Today's state (the one reading taken from after the holdout line)
 
 | | |

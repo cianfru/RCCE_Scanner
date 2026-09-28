@@ -43,11 +43,12 @@ _closes: Dict[int, Dict[str, float]] = {}     # daily closes per coin: live days
 FT_DECLARED_DAY = 20722                       # 2026-09-26
 FT_SHARE = 0.55
 FT_MIN_COINS = 20
-# Exploratory episodes it was found on (windows 1-9): start day, days, share, BTC 30d, alt 30d, alt 60d (%).
+# Exploratory episodes it was found on (windows 1-9, 60 days closed by 2026-03-29), on Sunday closes as the rule
+# says: start day, days, share, BTC 30d, alt 30d, alt 60d (%). Reproduce: python -m backtest.breadth_history ft-history
 FT_HISTORY = [
     [18965, 13, 0.77, -6, -4, -35], [18984, 11, 0.60, -31, -40, -44], [19009, 8, 0.56, 4, -20, -29],
-    [19088, 15, 0.64, -17, -28, -55], [19193, 143, 0.68, -10, -4, -14], [19998, 1, 0.83, 15, 1, 70],
-    [20005, 2, 0.83, 26, 10, 100], [20356, 3, 0.89, 2, -20, -40], [20372, 1, 0.86, -4, -1, -27],
+    [19088, 15, 0.64, -17, -28, -55], [19193, 143, 0.68, -10, -4, -14], [19997, 10, 0.83, 16, -1, 64],
+    [20356, 1, 0.89, 2, -20, -40], [20372, 1, 0.86, -4, -1, -27],
 ]
 # Episode outcomes as in backtest.breadth_history.study: BTC and the median alt (20+ alts with both closes).
 HORIZONS = (10, 30, 60)
@@ -307,33 +308,25 @@ def cycle(days: List[list]) -> Optional[dict]:
             "more": 30, "lasted_more": sum(n >= day + 30 for n in reached)}
 
 
+def btc_band_rows(days: List[list]) -> List[tuple]:
+    """BTC's weekly bull market support band at each Sunday close: (close_day, (lower, upper) or None), from the
+    20-week SMA and 21-week EMA of Sunday closes, as in the forward test's rule. A close's band applies from the
+    next day (completed weeks only)."""
+    from backtest.risk_on_cycles import SUNDAY, weekly_rows
+    return weekly_rows({d[0]: d[7] for d in days if d[7]}, SUNDAY)
+
+
 def btc_band(days: List[list]) -> Dict[int, tuple]:
-    """BTC's weekly bull market support band per day: (lower, upper) from the 20-week SMA and
-    21-week EMA of completed weeks (Sunday closes), as in the forward test's rule."""
-    btc = {d[0]: d[7] for d in days if d[7]}
-    weeks = [d for d in sorted(btc) if (d + 4) % 7 == 3]           # day 3 (1970-01-04) was a Sunday
-    out: Dict[int, tuple] = {}
-    ema, closes, wi = None, [], -1
-    bands = []
-    for w in weeks:
-        c = btc[w]
-        closes.append(c)
-        ema = c if ema is None else (2 / 22) * c + (1 - 2 / 22) * ema
-        sma = sum(closes[-20:]) / 20 if len(closes) >= 20 else None
-        bands.append((w, None if sma is None or len(closes) < 21 else (min(sma, ema), max(sma, ema))))
-    for d in sorted(btc):
-        while wi + 1 < len(bands) and bands[wi + 1][0] < d:         # completed weeks only
-            wi += 1
-        if wi >= 0 and bands[wi][1]:
-            out[d] = bands[wi][1]
-    return out
+    """BTC's weekly band per day with a close: (lower, upper) of the last completed week (Sunday closes)."""
+    from backtest.risk_on_cycles import SUNDAY, weekly_band
+    return weekly_band({d[0]: d[7] for d in days if d[7]}, SUNDAY)
 
 
-def forward_test(days: List[list], band: Dict[int, tuple]) -> dict:
-    """Episodes after the declaration: first day, length, share, and outcomes once they exist."""
-    btc = {d[0]: d[7] for d in days}
+def ft_episodes(days: List[list], band: Dict[int, tuple], after: int = -1) -> List[dict]:
+    """The forward test's episodes among days after `after`: BTC's daily close under the lower edge of its band
+    while the Uptrend + Overheated share is 55% or more; days with gaps of up to 5 days join one episode."""
     # Share = Uptrend + Overheated: the rule stays the same whether or not Overheated fires.
-    flagged = [d for d in days if d[0] > FT_DECLARED_DAY and d[0] in band and d[7] and d[7] < band[d[0]][0]
+    flagged = [d for d in days if d[0] > after and d[0] in band and d[7] and d[7] < band[d[0]][0]
                and d[2] + d[3] >= FT_SHARE]
     eps: List[dict] = []
     for d in flagged:
@@ -341,6 +334,13 @@ def forward_test(days: List[list], band: Dict[int, tuple]) -> dict:
             eps[-1]["end"] = d[0]
         else:
             eps.append({"start": d[0], "end": d[0], "share": round(d[2] + d[3], 4)})
+    return eps
+
+
+def forward_test(days: List[list], band: Dict[int, tuple]) -> dict:
+    """Episodes after the declaration: first day, length, share, and outcomes once they exist."""
+    btc = {d[0]: d[7] for d in days}
+    eps = ft_episodes(days, band, after=FT_DECLARED_DAY)
 
     def outcome(t: int, h: int) -> Optional[dict]:
         a, b = _closes.get(t), _closes.get(t + h)

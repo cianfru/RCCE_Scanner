@@ -3,9 +3,9 @@ import unittest
 
 import market_history as mh
 from backtest.risk_on_cycles import (SUNDAY, WEDNESDAY, Market, Sample, _f, age_bucket, band_breaks,
-                                     breadth_bucket, by_run, coins_short, detect_runs, end_within, freq, how_ended,
-                                     prior_dip, run_fields, run_of, survival_row, verdict_median, verdict_share,
-                                     weekly_band, wilson)
+                                     breadth_bucket, by_run, coins_short, detect_runs, end_within, expand_weekly,
+                                     freq, how_ended, prior_dip, run_fields, run_of, survival_row, verdict_median,
+                                     verdict_share, weekly_band, weekly_rows, wilson)
 
 
 def series(pattern, first=100):
@@ -85,11 +85,18 @@ class SurvivalTests(unittest.TestCase):
 
 
 class BandTests(unittest.TestCase):
-    def test_wednesday_band_equals_market_history(self):
+    def test_market_history_band_uses_sunday_closes(self):
         btc = {d: 100 + (d * 37 % 23) for d in range(18000, 18400)}
         rows = [[d, 50, .5, 0, 0, .5, 0, c] for d, c in btc.items()]
-        self.assertEqual(weekly_band(btc, WEDNESDAY), mh.btc_band(rows))
-        self.assertNotEqual(weekly_band(btc, SUNDAY), mh.btc_band(rows))
+        self.assertEqual(weekly_band(btc, SUNDAY), mh.btc_band(rows))
+        self.assertNotEqual(weekly_band(btc, WEDNESDAY), mh.btc_band(rows))
+
+    def test_weekly_rows_expand_to_the_daily_band(self):
+        btc = {d: 100 + (d * 37 % 23) for d in range(18000, 18400)}
+        rows = weekly_rows(btc, SUNDAY)
+        self.assertTrue(all(w % 7 == SUNDAY for w, _ in rows))
+        self.assertEqual(sum(b is None for _, b in rows), 20)            # 21 weeks before the first band
+        self.assertEqual(expand_weekly(rows, btc), weekly_band(btc, SUNDAY))
 
     def test_sunday_band_uses_completed_weeks(self):
         btc = {d: 100.0 for d in range(3, 3 + 7 * 30)}

@@ -200,6 +200,34 @@ class ForwardTestTests(unittest.TestCase):
         self.assertAlmostEqual(lo, 100.0)
         self.assertAlmostEqual(hi, 100.0)
 
+    def test_band_uses_sunday_closes(self):
+        # BTC at 100 every day except Sundays (day % 7 == 3), which close at 200: only a Sunday band reads 200.
+        days = [[d, 50, 0.5, 0.0, 0.0, 0.5, 0.0, 200.0 if d % 7 == 3 else 100.0] for d in range(0, 300)]
+        band = mh.btc_band(days)
+        sunday21 = 3 + 7 * 20                                        # the 21st Sunday close
+        self.assertNotIn(sunday21, band)                             # its week is completed only after the close
+        self.assertNotIn(sunday21 - 1, band)
+        self.assertEqual(band[sunday21 + 1], (200.0, 200.0))
+        self.assertEqual(band[sunday21 + 7], (200.0, 200.0))         # the next Sunday still uses the week before
+        self.assertEqual(band[sunday21 + 8], (200.0, 200.0))
+        from backtest.risk_on_cycles import WEDNESDAY, weekly_band
+        wed = weekly_band({d[0]: d[7] for d in days}, WEDNESDAY)
+        self.assertEqual(wed[sunday21 + 7], (100.0, 100.0))          # the old Wednesday filter would read 100
+
+    def test_band_rows_expand_to_the_daily_band(self):
+        from backtest.risk_on_cycles import expand_weekly
+        days = [[d, 50, 0.5, 0.0, 0.0, 0.5, 0.0, 100 + (d * 37 % 23)] for d in range(18000, 18400)]
+        rows = mh.btc_band_rows(days)
+        self.assertTrue(all(w % 7 == 3 for w, _ in rows))            # Sundays
+        self.assertEqual(expand_weekly(rows, [d[0] for d in days]), mh.btc_band(days))
+
+    def test_ft_history_is_the_sunday_recomputation(self):
+        from backtest.risk_on_cycles import RUNS_DIR
+        if not (RUNS_DIR / "breadth_history.json").exists():
+            self.skipTest("the local rebuild cache is not here (gitignored)")
+        from backtest import breadth_history as bh
+        self.assertEqual(bh.ft_history(), mh.FT_HISTORY)
+
     def test_episodes_after_declaration_with_outcomes(self):
         d0 = mh.FT_DECLARED_DAY + 1
         days = [[d0 + i, 60, 0.50, 0.10, 0.0, 0.40, 1.0, 90.0] for i in range(61)]
