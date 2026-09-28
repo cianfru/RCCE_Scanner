@@ -1088,21 +1088,6 @@ a.te-link{text-decoration:none;display:inline-block;}
  .te-cols{grid-template-columns:1fr;}
 }
 
-/* Coin page: Traders card */
-.tc{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:20px 24px;}
-.tc-head h3{margin:0 0 8px;font:600 16px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
-.tc-summary{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-bottom:6px;}
-.tc-label{font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text2);margin-bottom:6px;}
-.tc-dim{font-weight:400;color:var(--t-text4);}
-.tc-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:6px;}
-.tc-bar i{display:block;}
-.tc-split{display:flex;justify-content:space-between;font:500 12px var(--font-geist-mono),monospace;}
-.tc-note{margin:4px 0 0;font-size:12px;color:var(--t-text4);}
-.tc .te{padding-left:0;padding-right:0;}
-@media(max-width:767px){
- .tc{padding:16px;}
- .tc-summary{grid-template-columns:1fr;}
-}
 .te .te-cols li{margin:0;padding:0;font:500 12px var(--font-geist-mono),monospace;line-height:1.55;color:var(--t-text2);}
 .te .te-cols li::before{display:none;}
 .te p.te-note,.te p.te-mobile{font-size:12px;line-height:1.5;}
@@ -1585,8 +1570,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 .coin-more[open]>summary{padding-bottom:12px;}
 .coin-more>.analysis-grid{padding-bottom:20px;}
 .coin-more+.coin-more{margin-top:0;}
-.te-all{margin-top:10px;}
-.tc-more{align-self:flex-start;margin-top:12px;font-size:13px;}
 .tc-head h3 .alt-season-info{vertical-align:middle;margin-left:4px;}
 .coin-mytrade{margin:-4px 0 12px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .coin-mytrade b{font-weight:600;}
@@ -1655,30 +1638,117 @@ a.te-link{text-decoration:none;display:inline-block;}
 .reflex-terminal .analysis-evidence.coin-evidence{grid-template-columns:minmax(0,1fr);}
 .reflex-terminal .coin-evidence .analysis-definitions{max-width:880px;}
 @media(min-width:1680px){.reflex-terminal .analysis-evidence.coin-evidence{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);}}
-.coin-evidence .tc .tc-head h3{font-size:20px;margin-bottom:16px;}
-.coin-evidence .tc .tc-summary{gap:16px 48px;margin-bottom:14px;}
-.coin-evidence .tc .te{padding-top:18px;}
-.coin-evidence .tc .te-head{margin-bottom:10px;}
-.coin-evidence .tc .te-head strong{font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
-.tc .te-table{font-size:13px;}
-.tc .te-table th{padding:10px 14px;font-size:12px;}
-.tc .te-table td{padding:10px 14px;height:56px;box-sizing:border-box;vertical-align:middle;}
-.tc .te-table tr.te-detail td{height:auto;padding:14px;}
-.tc .te-table th:first-child,.tc .te-table td:first-child{padding-left:0;}
-.tc .te-table th:last-child,.tc .te-table td:last-child{padding-right:0;text-align:right;}
-.tc .te-addr .wtag-name{font-size:14px;color:var(--t-text1);}
-.tc .te-follow{font-size:13px;}
+
+/* Coin page: Traders card. A hero long/short split for profitable traders, a quieter line for
+   all tracked wallets, then the largest holders as a list (a table below 640px of width
+   folds into two-line cards). The list sits in the chart panel too, so it follows its own
+   width (container query), not the viewport. */
+.tc{display:flex;flex-direction:column;margin-top:20px;}
+.tc-head h3{margin:0 0 22px;font:600 20px/1.3 var(--font-geist-sans),sans-serif;letter-spacing:-.02em;color:var(--t-text1);}
+.tc-label{margin:0 0 12px;font:600 11px/1 var(--font-geist-sans),sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--t-text3);}
+.tc-nums{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:12px;}
+.tc-side{display:inline-flex;align-items:baseline;flex-wrap:wrap;font:500 14px var(--font-geist-sans),sans-serif;white-space:nowrap;}
+.tc-side b{margin-right:6px;font:600 28px/1 var(--font-geist-sans),sans-serif;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.tc-usd{font:500 15px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text1);}
+.tc-usd::before{content:"·";margin:0 8px;color:var(--t-text4);font-family:var(--font-geist-sans),sans-serif;}
+.tc-side-r{justify-content:flex-end;text-align:right;}
+.tc-zero{opacity:.45;}
+/* Split bar and its labels, also used by the setup drawer (SetupIntelDrawer). */
+.tc-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:6px;}
+.tc-bar i{display:block;}
+.tc-split{display:flex;justify-content:space-between;font:500 12px var(--font-geist-mono),monospace;}
+.tc .tc-bar{gap:3px;height:10px;margin:0;border-radius:5px;background:var(--t-overlay06);}
+.tc .tc-bar i{min-width:3px;}
+.tc .tc-bar i:first-child{border-radius:5px 1px 1px 5px;}
+.tc .tc-bar i:last-child{border-radius:1px 5px 5px 1px;}
+.tc .tc-bar i:only-child{border-radius:5px;}
+.tc-all{display:grid;grid-template-columns:auto auto minmax(60px,1fr) auto;align-items:center;gap:14px;margin-top:20px;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.tc-all-label{white-space:nowrap;}
+.tc-all-n{font:500 12px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;white-space:nowrap;opacity:.85;}
+.tc-all-n.tc-zero{opacity:.4;}
+.tc .tc-bar-thin{height:4px;gap:2px;border-radius:2px;opacity:.5;}
+.tc .tc-bar-thin i:first-child{border-radius:2px 0 0 2px;}.tc .tc-bar-thin i:last-child{border-radius:0 2px 2px 0;}.tc .tc-bar-thin i:only-child{border-radius:2px;}
+.tc-dim{font-weight:400;color:var(--t-text4);}
+.reflex-terminal .analysis-card p.tc-note{margin:10px 0 0;font:12px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text4);}
+.tc-head h3 .alt-season-info{vertical-align:middle;margin-left:4px;}
+.tc .te{margin-top:28px;padding:24px 0 0;}
+.tc .te-skel{height:60px;margin:0 0 4px;border-radius:8px;}
+.tc-foot{margin-top:24px;}
 @media(max-width:767px){
- .tc .te-table,.tc .te-table tbody{display:block;}
- .tc .te-table thead{display:none;}
- .tc .te-table tr:not(.te-detail){display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"who pnl" "pos fol";align-items:center;gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--t-overlay06,rgba(255,255,255,.06));}
- .tc .te-table tr:not(.te-detail) td{display:block;height:auto;padding:0;border:0;background:none;}
- .tc .te-table tr:not(.te-detail) td.te-wide{display:none;}
- .tc .te-table tr:not(.te-detail) td.te-who{grid-area:who;}
- .tc .te-table tr:not(.te-detail) td.te-pnl{grid-area:pnl;text-align:right;font-size:14px;}
- .tc .te-table tr:not(.te-detail) td.te-pos{grid-area:pos;padding-left:38px;}
- .tc .te-table tr:not(.te-detail) td.te-fol{grid-area:fol;text-align:right;}
- .tc .te-table tr.te-detail{display:block;}
- .tc .te-table tr.te-detail td{display:block;padding:12px 0;}
- .tc .te-table tbody tr:not(.te-detail):hover td{background:none;}
+ .tc-head h3{margin-bottom:18px;font-size:18px;}
+ .tc-side b{font-size:24px;}
+ .tc-usd{font-size:13px;}
+ .tc-usd::before{margin:0 6px;}
+ .tc-all{grid-template-columns:1fr auto;grid-template-areas:"label label" "l r" "bar bar";gap:6px 12px;}
+ .tc-all-label{grid-area:label;}
+ .tc-all .tc-all-n:nth-of-type(2){grid-area:l;}
+ .tc-all .tc-all-n:last-child{grid-area:r;}
+ .tc-all .tc-bar{grid-area:bar;}
+ .tc .te{margin-top:24px;padding-top:20px;}
+}
+
+/* Trader rows (Traders card and chart panel) */
+.te{container:te / inline-size;}
+.te-head{margin-bottom:14px;}
+.te-head strong{font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.te-head .te-link{font-size:12.5px;}
+.reflex-terminal .te-list,.te-list{list-style:none;margin:0;padding:0;display:grid;
+ grid-template-columns:minmax(200px,1.3fr) minmax(170px,1.3fr) minmax(100px,1fr) minmax(80px,.8fr) minmax(96px,.85fr) 92px;column-gap:28px;}
+.reflex-terminal .analysis-card .te-list>li,.te-list>li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;position:relative;margin:0;padding:0;}
+.te-cols-head{padding:0 0 10px;border-bottom:1px solid var(--t-border);}
+.te-cols-head span{font:600 10.5px/1 var(--font-geist-sans),sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--t-text4);white-space:nowrap;}
+.te-row{border-bottom:1px solid var(--t-overlay06);}
+.te-row::after{content:"";position:absolute;inset:3px -12px;border-radius:8px;background:transparent;pointer-events:none;transition:background .15s,box-shadow .15s;}
+.te-row:hover::after,.te-open::after{background:var(--t-overlay04);}
+.te-row:has(.te-main:focus-visible)::after{box-shadow:inset 0 0 0 1.5px var(--t-accent);}
+.te-open::after{bottom:auto;height:52px;}
+.te-main{grid-column:1/6;display:grid;grid-template-columns:subgrid;align-items:center;min-height:58px;cursor:pointer;outline:none;position:relative;z-index:1;}
+.te-c{min-width:0;}
+.te-r{text-align:right;justify-self:end;}
+.te-k{display:none;}
+.te .wtag-stack{gap:12px;}
+.te .te-who .wtag-name{font:500 15px/1.25 var(--font-geist-sans),sans-serif;letter-spacing:-.005em;color:var(--t-text1);}
+.te .te-who .wtag-addr{margin-top:2px;font-size:11px;color:var(--t-text4);}
+.te-pos{display:flex;flex-direction:column;gap:7px;}
+.te-pos-t{font:500 13px var(--font-geist-sans),sans-serif;white-space:nowrap;}
+.te-size{font:500 14px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text1);margin-left:2px;}
+.te-sbar{display:block;width:100%;max-width:280px;height:3px;border-radius:2px;background:var(--t-overlay06);overflow:hidden;}
+.te-sbar i{display:block;height:100%;border-radius:2px;}
+.te-entry{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+.te-num{font:500 14px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text1);}
+.te-vs{font:500 11px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text4);white-space:nowrap;}
+.te-main .te-pnl{font:600 16px var(--font-geist-mono),monospace;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.te-when{font:500 13px var(--font-geist-sans),sans-serif;font-variant-numeric:tabular-nums;color:var(--t-text2);white-space:nowrap;}
+.te-fbtn{grid-column:6;justify-self:end;position:relative;z-index:1;min-width:84px;padding:6px 12px;border:1px solid transparent;border-radius:6px;background:transparent;
+ font:500 12.5px/1.2 var(--font-geist-sans),sans-serif;color:var(--t-text4);cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s,background .15s;}
+.te-row:hover .te-fbtn,.te-fbtn:focus-visible{border-color:var(--t-borderH);color:var(--t-text1);}
+.te-fbtn:hover{border-color:var(--t-accent);color:var(--t-accent);}
+.te-fbtn:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
+.te-fbtn.on{border-color:var(--t-borderH);color:var(--t-accent);}
+@media(hover:none){.te-fbtn{border-color:var(--t-border);color:var(--t-text3);}}
+.te-detail{grid-column:1/-1;position:relative;z-index:1;margin:0 0 14px;padding:16px 18px;border:1px solid var(--t-overlay06);border-radius:10px;background:var(--t-overlay03);}
+.te-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 28px;margin-top:18px;}
+.te-foot .te-link{font-size:13px;font-weight:500;}
+@container te (max-width:640px){
+ .reflex-terminal .te-list,.te-list{display:block;}
+ .reflex-terminal .analysis-card .te-list>li.te-cols-head,.te-list>li.te-cols-head{display:none;}
+ .reflex-terminal .analysis-card .te-list>li,.te-list>li{grid-template-columns:minmax(0,1fr) 76px;padding:12px 0;}
+ .te-row::after{inset:2px -10px;}
+ .te-open::after{height:auto;bottom:auto;top:2px;height:calc(100% - 4px);}
+ .te-main{grid-column:1/-1;grid-row:1;grid-template-columns:minmax(0,1fr) auto 76px;grid-template-areas:"who who pnl" "who who when" "pos entry .";gap:2px 16px;min-height:0;}
+ .te-main .te-pos,.te-main .te-entry{margin-top:12px;}
+ .te-who{grid-area:who;}
+ .te-pos{grid-area:pos;gap:5px;}
+ .te-entry{grid-area:entry;flex-direction:row;align-items:baseline;gap:4px;justify-self:start;text-align:left;}
+ .te-main .te-pnl{grid-area:pnl;align-self:end;font-size:15px;}
+ .te-when{grid-area:when;align-self:start;font-size:12px;color:var(--t-text3);}
+ .te-k{display:inline;font:500 11px var(--font-geist-sans),sans-serif;color:var(--t-text4);}
+ .te-num{font-size:12px;}
+ .te-entry .te-vs{display:none;}
+ .te-pos-t{font-size:12px;}
+ .te-size{font-size:12px;}
+ .te-sbar{max-width:120px;height:2px;}
+ .te-fbtn{grid-column:2;grid-row:1;align-self:end;margin-bottom:-4px;min-width:0;padding:5px 10px;font-size:12px;}
+ .te-detail{grid-row:2;margin:14px 0 0;padding:12px 14px;}
+ .te-cols{grid-template-columns:1fr;}
 }
