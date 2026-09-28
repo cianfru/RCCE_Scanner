@@ -45,12 +45,6 @@ const GLYPHS = {
     <circle cx="6.5" cy="6.5" r="4.5" {...S}/>
     <path d="M11.2 5.6a4.5 4.5 0 11-5.6 5.6" {...S} strokeLinecap="round"/>
   </>,
-  settings: <>
-    <path d="M2 4h12M2 8h12M2 12h12" {...S} strokeLinecap="round"/>
-    <circle cx="5" cy="4" r="1.75" fill="currentColor"/>
-    <circle cx="10" cy="8" r="1.75" fill="currentColor"/>
-    <circle cx="7" cy="12" r="1.75" fill="currentColor"/>
-  </>,
 };
 
 // Aliases: the main tabs use the existing glyphs under their new names.

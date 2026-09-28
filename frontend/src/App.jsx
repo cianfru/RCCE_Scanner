@@ -109,7 +109,6 @@ const DEFAULT_SORT = "priority_score";
 const SORT_DEFAULT_DIR = { priority_score: "desc", zscore: "desc", heat: "desc", conditions: "desc", energy: "desc", momentum: "desc", symbol: "asc", mcap: "asc", regime: "asc" };
 const defaultDir = key => SORT_DEFAULT_DIR[key] || "desc";
 const validDir = d => (d === "asc" || d === "desc" ? d : null);
-const RESCAN_KEY_FLAG = "rcce-rescan-needs-key";
 const cleanPath = pathname => pathname.replace(/\/$/, "") || "/scanner";
 
 export default function App() {
@@ -452,10 +451,9 @@ export default function App() {
     };
   }, [loadAll, sw.supported]);
 
-  // Rescan. Without the admin key the server refuses (403): stop, open Settings, and say so on
-  // the button for the rest of the session. "Scan already in progress" keeps the spinner until
-  // that scan's data arrives (the feed effects above clear it), for at most 90s.
-  const [rescanNeedsKey, setRescanNeedsKey] = useState(() => { try { return sessionStorage.getItem(RESCAN_KEY_FLAG) === "1"; } catch { return false; } });
+  // Rescan (the watch-group dialog's "Scan now"). Without the admin key the server refuses (403).
+  // "Scan already in progress" keeps scanRunning until that scan's data arrives (the feed effects
+  // above clear it), for at most 90s.
   const scanWait = useRef(0);
   useEffect(() => () => clearTimeout(scanWait.current), []);
   const triggerScan = async () => {
@@ -470,21 +468,10 @@ export default function App() {
       setScanRunning(false);
       return;
     }
-    if (res.status === 403) {
-      setScanRunning(false);
-      setRescanNeedsKey(true);
-      try { sessionStorage.setItem(RESCAN_KEY_FLAG, "1"); } catch { /* storage blocked */ }
-      window.dispatchEvent(new Event("reflex-open-settings"));
-      return;
-    }
     if (!res.ok) {
       console.warn("Scan refresh failed: HTTP", res.status);
       setScanRunning(false);
       return;
-    }
-    if (rescanNeedsKey) {
-      setRescanNeedsKey(false);
-      try { sessionStorage.removeItem(RESCAN_KEY_FLAG); } catch { /* storage blocked */ }
     }
     const body = await res.json().catch(() => null);
     if (body?.ok === false) {
@@ -856,8 +843,6 @@ export default function App() {
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
         onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d") setActiveTab("1d"); }}
         scanData={activeTab === "1d" ? data1d : data4h}
-        themeMode={mode}
-        onToggleTheme={toggle}
       />
 
       {/* ── PHONE TAB BAR (below 900px; before the header so the header's menus open above it) ── */}
@@ -874,7 +859,6 @@ export default function App() {
           setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
         }}
         lastRefresh={lastRefresh} cacheAge={cacheAge} error={error} scanRunning={scanRunning}
-        onRefresh={triggerScan} rescanNeedsKey={rescanNeedsKey}
         timeframe={activeTab === "radar" ? radarTf : activeTab === "4h" ? "4h" : "1d"}
         onTimeframe={setHeaderTimeframe}
         compactTfRoute={showDashboard ? "scanner" : activeTab === "radar" ? "radar" : null}

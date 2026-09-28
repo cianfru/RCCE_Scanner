@@ -167,15 +167,10 @@
 .header-divider{flex:0 0 1px;width:1px;height:24px;margin:0 16px;align-self:center;background:var(--t-border);}
 .header-spacer{flex:1 1 auto;min-width:12px;}
 .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.header-refresh-wrap{position:relative;display:inline-flex;}
-.header-refresh{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;border:0;background:transparent;color:var(--t-text3);cursor:pointer;transition:all .15s ease;}
-.header-refresh:hover:not(:disabled){color:var(--t-accent);}
-.header-refresh:disabled{cursor:default;opacity:.5;}
 .header-theme{border:0;background:transparent;padding:0;cursor:pointer;flex-shrink:0;font-size:12px;font-family:var(--font-geist-sans),sans-serif;color:var(--t-text3);transition:color .15s ease;}
 .header-theme:hover{color:var(--t-text1);}
 .header-tf .reflex-tabs{gap:2px;}
 .header-tf .reflex-tabs button{padding:6px 7px;}
-@media(max-width:640px){.header-theme{display:none;}}
 
 /* Main tabs (900px and wider): the capsule's full inner height; one sliding lit steel indicator on its bottom edge. */
 .header-tabs{position:relative;display:flex;align-items:stretch;flex-shrink:0;}
@@ -197,20 +192,19 @@
 [data-theme="light"] .header-tab-indicator{box-shadow:0 0 10px color-mix(in srgb,var(--t-accent) 30%,transparent);}
 @media(max-width:1023px){.header-tabs a{padding:0 10px;}}
 
-/* Data clock: dot plus "Updated 15:31 · 2m"; on phones the dot sits on the refresh icon. */
+/* Data clock: dot plus "Updated 15:31 · 2m"; on phones the dot alone. */
 .freshness{display:inline-flex;align-items:center;gap:6px;font:12px var(--font-geist-sans),sans-serif;color:var(--t-text4);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .freshness-dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;}
 .freshness-dot.is-scanning{animation:freshPulse 1.2s ease-in-out infinite;}
-.freshness-phone{position:absolute;top:3px;right:2px;pointer-events:none;}
 @keyframes freshPulse{0%,100%{opacity:1}50%{opacity:.25}}
 
 /* Phones: every header control gets a 44px hit area without growing its glyph. */
 @media(max-width:767px){
- .terminal-header .header-more::before,.terminal-header .header-brand::before,.terminal-header .header-refresh::before,
- .terminal-header .notification-trigger::before,.terminal-header .header-gear::before{content:"";position:absolute;}
+ .terminal-header .header-more::before,.terminal-header .header-brand::before,
+ .terminal-header .notification-trigger::before,.terminal-header .header-theme::before{content:"";position:absolute;}
  .terminal-header .header-more::before{inset:-4px;}
  .terminal-header .header-brand::before{inset:-7px 0;}
- .terminal-header .header-refresh::before,.terminal-header .header-gear::before{inset:-8px;}
+ .terminal-header .header-theme::before{inset:-14px -8px;}   /* "Light" is about 28x16: 44px tall, 44px wide */
  .terminal-header .notification-trigger::before{inset:-4px -6px;}
  /* 14px between the right-hand controls, so the 44px hit areas above sit side by side without overlapping. */
  .terminal-header .header-right{gap:14px;}
@@ -1476,7 +1470,8 @@ a.te-link{text-decoration:none;display:inline-block;}
 .bridge-page{display:grid;gap:16px;max-width:760px;}
 .bridge-lead,.bridge-note{margin:0;max-width:62ch;font-size:14px;line-height:1.6;color:var(--t-text2);}
 .bridge-note b{font-weight:600;}
-.bridge-windows table{width:100%;border-collapse:collapse;font:500 13px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;}
+.bridge-windows table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
+.bridge-windows td{font-family:var(--font-geist-mono),monospace;}
 .bridge-windows th,.bridge-windows td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--t-border);color:var(--t-text2);white-space:nowrap;}
 .bridge-windows thead th{font:600 12px var(--font-geist-sans),sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--t-text3);}
 .bridge-windows th:first-child{text-align:left;padding-left:0;font-family:var(--font-geist-sans),sans-serif;}

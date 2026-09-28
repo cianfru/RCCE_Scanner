@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme.js";
 import { NAV_ICONS } from "./navIcons.jsx";
-import Tabs from "./Tabs.jsx";
 
 // More: the rarely used pages, one tap from the hamburger. The four main pages live in the
-// header tabs (and the phone tab bar), so they are not repeated here.
+// header tabs (and the phone tab bar), so they are not repeated here. The theme switch is in
+// the header; /settings is the owner's page, opened by its address, so it is not listed.
 const NAV_SECTIONS = [
   {
     label: "Research",
@@ -29,8 +29,6 @@ const MARKETS = [
   { kind: "perpetual", icon: "perps", label: "Perpetuals" },
   { kind: "spot", icon: "spot", label: "Spot markets" },
 ];
-const SETTINGS = { key: "settings", label: "Settings", desc: "Admin key, power state and data features" };
-const THEMES = [{ key: "dark", label: "Dark" }, { key: "light", label: "Light" }];
 
 // Section labels: sentence case, Geist 12/600, text3 (as in the gear popover).
 const sectionLabel = {
@@ -132,7 +130,7 @@ function NavRow({ item, active, onSelect }) {
 
 // Watch-group props (groups, activeGroupId, onGroupChange, onGroupCreate, onGroupEdit,
 // onWatchlistSelect) are still accepted; the Lists section stays dormant (owner decision).
-export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, scanData, marketKind, onMarketChange, themeMode, onToggleTheme }) {
+export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isMobile, scanData, marketKind, onMarketChange }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
@@ -301,25 +299,6 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               ))}
             </div>
           ))}
-
-          {/* ── Settings: the settings page and the theme ── */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={sectionLabel}>Settings</div>
-            <NavRow item={SETTINGS} active={activeTab === SETTINGS.key} onSelect={go(SETTINGS.key)} />
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-              padding: "4px 12px 4px 14px",
-            }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ width: 20, flexShrink: 0 }} aria-hidden="true" />
-                <span style={{ fontFamily: T.font, fontSize: T.textLg, fontWeight: 500, color: T.text1, letterSpacing: "-0.01em" }}>
-                  Appearance
-                </span>
-              </span>
-              <Tabs small label="Appearance" items={THEMES} value={themeMode}
-                onChange={k => { if (k !== themeMode) onToggleTheme?.(); }} />
-            </div>
-          </div>
         </div>
       </nav>
     </>
