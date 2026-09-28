@@ -81,29 +81,21 @@ async function pollMain() {
       fetchJSON(`${apiBase}/api/scan?${params1d}`),
     ]);
 
-    // Secondary metrics — fail silently
-    let gm = null, as = null, sent = null, stable = null, tf4h = null, tf1d = null, macroData = null;
+    // Secondary data (Fear & Greed, TradFi) — fail silently
+    let sent = null, tf4h = null, tf1d = null;
     try {
-      [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
-        fetchJSON(`${apiBase}/api/global-metrics`).catch(() => null),
-        fetchJSON(`${apiBase}/api/alt-season?timeframe=1d`).catch(() => null),
+      [sent, tf4h, tf1d] = await Promise.all([
         fetchJSON(`${apiBase}/api/sentiment`).catch(() => null),
-        fetchJSON(`${apiBase}/api/stablecoin`).catch(() => null),
         fetchJSON(`${apiBase}/api/tradfi?timeframe=4h`).catch(() => null),
         fetchJSON(`${apiBase}/api/tradfi?timeframe=1d`).catch(() => null),
-        fetchJSON(`${apiBase}/api/coinglass/macro`).catch(() => null),
       ]);
     } catch (_) {}
 
     latestMain = {
       r4h, r1d,
-      globalMetrics: gm,
-      altSeason: as,
       sentiment: sent,
-      stablecoin: stable,
       tradfi4h: tf4h,
       tradfi1d: tf1d,
-      macro: macroData,
       timestamp: Date.now(),
     };
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, picks, placeLabels, pnl, pulseLine, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, picks, placeLabels, pnl, pulseLine, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -237,4 +237,27 @@ test("pulse line and Radar addresses", () => {
   assert.equal(radarHref({ tf: "1d", focus: "TIA" }), "/radar?tf=1d&focus=TIA");
   assert.equal(radarHref({ tf: "4h", sector: "AI" }), "/radar?tf=4h&sector=AI");
   assert.equal(radarHref({ tf: "x", sector: "DeFi|Solana", view: "all" }), "/radar?tf=1d&sector=DeFi%7CSolana&view=all");
+});
+
+test("new early setups: newest first, never a coin that sat in the box all along", () => {
+  const cs = [
+    coin({ coin: "OLD", trail: { t: [1, 2, 3, 4], z: [0.5, 0.5, 0.5, 0.5], n: [3, 3, 3, 3] } }),          // in the box all along
+    coin({ coin: "EARLY", priority: 10, trail: { t: [1, 2, 3, 4], z: [2.5, 1.0, 1.0, 1.0], n: [3, 3, 3, 3] } }),
+    coin({ coin: "LATEST", priority: 1, trail: { t: [1, 2, 3, 4], z: [2.5, 2.5, 2.5, 1.0], n: [3, 3, 3, 3] } }),
+    coin({ coin: "LATE2", priority: 5, trail: { t: [1, 2, 3, 4], z: [0.5, 0.5, 0.5, 1.0], n: [0, 0, 0, 3] } }),
+    coin({ coin: "OUT", zone: "late" }),
+  ];
+  assert.deepEqual(newEarly(cs, BOX).map(c => c.coin), ["LATE2", "LATEST", "EARLY"]);
+  assert.deepEqual(newEarly(cs, BOX, 1).map(c => c.coin), ["LATE2"]);
+});
+
+test("labels: a big bubble takes its name inside, unless a smaller one covers it", () => {
+  const big = { coin: "BTC", x: 100, y: 100, r: 30, core: 28 };
+  const at1 = placeLabels([big], { width: 400, height: 400, insideMin: 13 }).get("BTC");
+  assert.deepEqual(at1, { x: 100, y: 104, anchor: "middle", inside: true });
+  const eth = { coin: "ETH", x: 104, y: 100, r: 10 };
+  const at2 = placeLabels([big], { width: 400, height: 400, insideMin: 13, others: [eth] }).get("BTC");
+  assert.notEqual(at2.inside, true);
+  const small = { coin: "LONGNAMECOIN", x: 100, y: 100, r: 14 };
+  assert.notEqual(placeLabels([small], { width: 400, height: 400, insideMin: 13 }).get("LONGNAMECOIN").inside, true);
 });

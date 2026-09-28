@@ -9,7 +9,7 @@ const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.
 
 // The main tabs inside the capsule (900px and wider). One lit indicator slides under the active
 // tab's icon and label and sits on the capsule's bottom edge; none shows on More pages.
-// "Radar 19": coins in the Watch box on the last scanner timeframe, from the shared setup-map
+// "Radar 19": early setups (coins in the box) on the last scanner timeframe, from the shared setup-map
 // store (no extra request). Hidden while unknown or zero.
 export default function HeaderTabs({ activeKey, targets, showIcons, radarTf = "1d" }) {
   const location = useLocation();
@@ -61,7 +61,7 @@ export default function HeaderTabs({ activeKey, targets, showIcons, radarTf = "1
             <span className="tab-inner">
               {showIcons && <span className="tab-icon"><NavIcon name={t.icon} /></span>}
               <span className="tab-label" data-text={t.label}>{t.label}</span>
-              {radar && radarCount > 0 && <span className="tab-count" aria-label={`${radarCount} in the ${radarTf === "4h" ? "4H" : "1D"} Watch box`} title={`${radarCount} in the ${radarTf === "4h" ? "4H" : "1D"} Watch box`}>{radarCount}</span>}
+              {radar && radarCount > 0 && <span className="tab-count" aria-label={`${radarCount} early setups on ${radarTf === "4h" ? "4H" : "1D"}`} title={`${radarCount} early setups on ${radarTf === "4h" ? "4H" : "1D"}`}>{radarCount}</span>}
             </span>
           </Link>
         );

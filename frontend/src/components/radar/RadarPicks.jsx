@@ -27,21 +27,24 @@ export function Pick({ x, box, tf, onClick, focused = false, watched = false }) 
   </button>;
 }
 
-// "Look at these today": up to four coins in the box, ranked by the engine's priority plus
-// what moved. The (i) explains the whole map.
+// "Look at these today": up to four early setups (coins in the box), ranked by the engine's
+// priority plus what moved. The (i) explains the whole map.
 export default function RadarPicks({ top, box, tf, focus, watched, inBox, loaded, onPick }) {
   return <section className="radar-picks" aria-labelledby="radar-picks-h">
     <div className="radar-picks-head">
       <h2 id="radar-picks-h">Look at these today <HelpTip title="Reading the Radar">
-        <p>Each dot is a coin. Left to right: how far price sits from its mean (the engine's z-score). Bottom to top: profitable Hyperliquid traders long minus short. Colour: where the setup is (forming, just fired, running, stretched, leaving). A ring: a profitable trader opened long in the last 24 hours.</p>
-        <p>Watch (the box): a setup that has not run far, with a few profitable traders long but no crowd. Stretched: late, two or more standard deviations above the mean. Trails show the last {tf === "1d" ? "5 days" : "24 hours"}; press Play to watch them move.</p>
-        <p>Look at these today: coins in the box, ranked by the engine's priority plus what moved (entering the box, traders arriving, a fresh signal, a close away from confirming). A shortlist for your eyes, not a forecast: in the past these traders mostly opened after moves.</p>
+        <p>Each bubble is a coin. Left to right: how far price sits from its mean (the engine's z-score). Bottom to top: profitable Hyperliquid traders long minus short. Colour: where the setup is (forming, just fired, running, stretched, leaving).</p>
+        <p>Size: the dollars these traders hold in the coin, longs plus shorts; twice the dollars, twice the area. The pink slice is the short share. A small grey dot: none of them hold it.</p>
+        <p>Ring: the distance to the coin's weekly band (the 20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above the band, full at its top edge. Violet: inside the band, or under it now (a red tick). Red: the last weekly close ended under it.</p>
+        <p>Early setups (the shaded box): a setup that has not run far, with a few profitable traders long and no crowd yet.</p>
+        <p>Click a bubble to see who holds it and at what price; click the same spot again to step through coins stacked there. Trails show the last {tf === "1d" ? "5 days" : "24 hours"}; press Play to watch them move.</p>
+        <p>Look at these today: early setups ranked by the engine's priority plus what moved. A shortlist for your eyes, not a forecast.</p>
       </HelpTip></h2>
-      {loaded && <span className="radar-meta"><b>{inBox}</b> in the Watch box</span>}
+      {loaded && <span className="radar-meta"><b>{inBox}</b> early setups</span>}
     </div>
     {!loaded ? <div className="smap-picks">{[0, 1, 2, 3].map(k => <div key={k} className="smap-pick radar-pick-skel shimmer-loading" aria-hidden="true" />)}</div>
       : top.length > 0 ? <div className="smap-picks">{top.map(x => <Pick key={x.c.coin} x={x} box={box} tf={tf} focused={focus === x.c.coin}
         watched={watched.has(x.c.coin)} onClick={() => onPick(x.c.coin)} />)}</div>
-      : <p className="smap-note">No coin sits in the box on this timeframe right now.</p>}
+      : <p className="smap-note">No early setups on this timeframe right now.</p>}
   </section>;
 }
