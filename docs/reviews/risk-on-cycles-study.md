@@ -467,3 +467,154 @@ Caveats that go with every number above:
 - The broad shape of this history had been seen before (see "What was already known"). These in-sample numbers are description; the out-of-sample check is the only clean test.
 
 **Out-of-sample stage (not run yet).** The run censored in-sample is the risk-on run that began 2026-03-20, 10 or more days old on 2026-03-29. In the out-of-sample stage it is marked, and it counts only where its outcome was unknown in-sample. The analog buckets stay those above: 80-90%, 30-60 days, BTC holding its band.
+
+## Out-of-sample check (Apr-Sep 2026)
+
+Run on 28 September 2026 with `python -m backtest.risk_on_cycles oos --insample in.json`. **Frozen code: commit 590c45d** (590c45dd5ad6b97cec6f0f84eec3c070d85081ff), the commit that also produced the revised in-sample numbers above. The in-sample JSON it compares against was rerun at that commit and matches the in-sample section.
+
+- **Data:** the rebuild to 2026-09-25, the last day with per-coin closes, as declared. The production API was fetched again on 28 September. Its last day is 2026-09-27, and its 1,974 days that overlap the rebuild match exactly. Its 26 and 27 September are used only for today's state.
+- **Counted, as declared:** runs, events and analog days that start after 2026-03-29, plus the run censored in-sample, marked "began in-sample".
+- **Buckets:** the analogs keep the in-sample buckets (80-90%, day 30-60, BTC holding its band).
+
+**The out-of-sample runs.** Returns run from start to end, or to 2026-09-25 for the censored run.
+
+| # | Type | Start | End | Days | Extreme | Days to it | BTC | Alt | BTC at start | BTC during / at end |
+|---:|---|---|---|---:|---:|---:|---:|---:|---|---|
+| 25 | on (began in-sample, marked) | 2026-03-20 | 2026-08-15 | 148 | 95.8% | 56 | -10.5% | -25.0% | below | 1 break (2026-05-22); btc first, lead 85d; below at end |
+| 26 | off | 2026-08-15 | 2026-08-20 | 5 | 53.5% | 1 | +15.8% | +10.9% | below | above at end, holding 2d |
+| 27 | on | 2026-08-20 | censored | 37+ | 81.4% | 20 | +15.2% | +33.0% | above | 0 breaks |
+
+What happened:
+
+- **The run that began on 2026-03-20 lasted 148 days.** That is longer than any in-sample run; the longest was 143 days, in 2022, and it also began with BTC below its band. Breadth first touched its peak of 95.8% on 2026-05-15, day 56.
+- **BTC broke its band on 2026-05-22, with breadth at 94.4%** (on the Wednesday band the drawer uses, on 2026-05-18). From then to 2026-08-18, BTC closed below its band on 85 of 89 days. Breadth stayed around 85-89% until late June, faded through July, and the run ended on 2026-08-15, 85 days after the break. In the 3 comparable in-sample runs, the latest break came 4-15 days before breadth's end.
+- **Returns.** From start to end, BTC returned -10.5% and the typical alt -25.0%. From the May peak to the end, they returned -20.3% and -31.7%.
+- **After the run.** The risk-off run that followed lasted the minimum 5 days, with a low of 53.5%. BTC reclaimed its band on 2026-08-19, and a new risk-on run began the next day.
+
+**Verdicts** (declared rule: "consistent" when the out-of-sample share lies inside the in-sample 90% range, or its median inside the in-sample quartiles):
+
+| Pattern | In-sample | Out-of-sample | Verdict |
+|---|---|---|---|
+| Risk-on run length, days | 41 (11 to 96), n = 11 | 148, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| Risk-off run length, days | 78.5 (26 to 156), n = 12 | 5, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| Risk-on runs reaching 85% | 5 of 11 (45%, 90% range 24-68%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Risk-on runs reaching 95% | 4 of 11 (36%, 90% range 18-61%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Survival: lasted 10 days, then 30 more | 6 of 9 (67%, 90% range 40-86%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Survival: lasted 20 days, then 30 more | 5 of 7 (71%, 90% range 41-90%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Survival: lasted 30 days, then 30 more | 4 of 7 (57%, 90% range 29-81%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Survival: lasted 38 days, then 30 more | 4 of 6 (67%, 90% range 35-88%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Survival: lasted 38 days, then 60 more | 3 of 6 (50%, 90% range 22-78%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| How runs ended: BTC broke first | 4 of 11 (36%, 90% range 18-61%) | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| How runs ended: lead, days | 14 (4 to 15), n = 4, too few to read | 85, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| How runs ended: lag, days | none | none | no out-of-sample case |
+| Band break while risk-on: run ended within 30d | 4 of 5 (80%, 90% range 44-95%), too few to read | 0 of 1 (0%) | did not hold out of sample (n = 1, too few to read) |
+| Band break while risk-on: typical alt 30d | -4.4% (-20.2% to -1.2%), n = 5, too few to read | -18.5%, n = 1 | consistent (n = 1, too few to read) |
+| Band break while risk-on: run ended within 60d | 4 of 5 (80%, 90% range 44-95%), too few to read | 0 of 1 (0%) | did not hold out of sample (n = 1, too few to read) |
+| Band break while risk-on: typical alt 60d | -34.9% (-40.4% to -27.1%), n = 5, too few to read | -20.8%, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| Set A, 30d: reached 90% | 3 of 4 (75%, 90% range 36-94%), too few to read | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Set A, 30d: run ended | 1 of 4 (25%, 90% range 6-64%), too few to read | 0 of 1 (0%) | did not hold out of sample (n = 1, too few to read) |
+| Set A, 30d: BTC | +8.4% (+0.2% to +13.3%), n = 4, too few to read | -3.4%, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| Set A, 30d: typical alt | +0.9% (-6.3% to +4.8%), n = 4, too few to read | -1.8%, n = 1 | consistent (n = 1, too few to read) |
+| Set A, 60d: reached 90% | 3 of 4 (75%, 90% range 36-94%), too few to read | 1 of 1 (100%) | did not hold out of sample (n = 1, too few to read) |
+| Set A, 60d: run ended | 3 of 4 (75%, 90% range 36-94%), too few to read | 0 of 1 (0%) | did not hold out of sample (n = 1, too few to read) |
+| Set A, 60d: BTC | +21.8% (-2.4% to +39.4%), n = 4, too few to read | -19.0%, n = 1 | did not hold out of sample (n = 1, too few to read) |
+| Set A, 60d: typical alt | +0.2% (-29.4% to +1.4%), n = 4, too few to read | -19.4%, n = 1 | consistent (n = 1, too few to read) |
+| Set B, 30d: reached 90% | 5 of 13 (38%, 90% range 20-61%) | 2 of 2 (100%) | did not hold out of sample (n = 2, too few to read) |
+| Set B, 30d: run ended | 5 of 13 (38%, 90% range 20-61%) | 0 of 2 (0%) | did not hold out of sample (n = 2, too few to read) |
+| Set B, 30d: BTC | +0.5% (-2.8% to +5.8%), n = 13 | +5.4%, n = 2 (+11.9%, -1.2%) | consistent (n = 2, too few to read) |
+| Set B, 30d: typical alt | -3.9% (-9.1% to +4.0%), n = 13 | +8.5%, n = 2 (+21.8%, -4.8%) | did not hold out of sample (n = 2, too few to read) |
+| Set B, 60d: reached 90% | 7 of 13 (54%, 90% range 32-74%) | 2 of 2 (100%) | did not hold out of sample (n = 2, too few to read) |
+| Set B, 60d: run ended | 8 of 13 (62%, 90% range 39-80%) | 0 of 2 (0%) | did not hold out of sample (n = 2, too few to read) |
+| Set B, 60d: BTC | -1.6% (-16.8% to +21.3%), n = 13 | -8.2%, n = 2 (-15.8%, -0.6%) | consistent (n = 2, too few to read) |
+| Set B, 60d: typical alt | -4.6% (-29.4% to +5.1%), n = 13 | -18.0%, n = 2 (-20.3%, -15.7%) | consistent (n = 2, too few to read) |
+
+Out-of-sample episodes behind the rows above:
+
+- Set A: 2026-04-22 (85.9%, day 33 of the March run, BTC inside its band).
+- Set B: 2026-04-11 (82.0%) and 2026-06-04 (89.6%), both from the March run.
+- Band break while risk-on (3c): 2026-05-22 (94.4%). The run did not end within 60 days. The typical alt returned -18.5% over 30 days and -20.8% over 60.
+
+**Reading the verdicts.** Every out-of-sample row has 1 or 2 cases, so every verdict carries "too few to read". Six months held:
+
+- one full risk-on run and one risk-off run;
+- one band break while risk-on;
+- one set A episode and two set B episodes, all from the same run.
+
+The check can neither confirm nor overturn any in-sample frequency. What it adds is one more case, at the edge of the in-sample range: the longest run in the record, and a band break 85 days before breadth's end. The in-sample lead row, 4 cases, was itself too few to read.
+
+After this check, April to September 2026 is no longer a clean holdout for questions about breadth cycles.
+
+## Where we are today
+
+As of 2026-09-27, the API's latest day. The frequencies below pool the in-sample and out-of-sample data, from 2021-05-01 to 2026-09-25, and come from `python -m backtest.risk_on_cycles --sample all` at 590c45d. Pooled figures are description, not a test: the out-of-sample check above is the only test, and it was too small to read. They are market context, not a signal.
+
+| | |
+|---|---|
+| Current risk-on run | began 2026-08-20; day 38 by the declared rule |
+| Breadth | 82.1% in Uptrend (119 of 145 coins), bucket 80-90%. This run's peak so far is 82.1% (2026-09-26); it has not reached 85% |
+| Percentile | higher than 77% of days since 2021-05-01 (as the drawer shows) |
+| BTC against its band | 84,472. Sunday band (declared) 70,254-72,617: 16.3% above the upper edge and 20.2% above the lower. Wednesday band (drawer) 69,624-72,874: 15.9% and 21.3% above |
+| BTC since the run began | reclaimed its band on 2026-08-19, the day before the run began; no band break since |
+| Before this run | a 5-day risk-off run (2026-08-15 to 08-19), after the 148-day run from 2026-03-20 |
+
+**The age caveat (exploratory).** On the 5 dip days, 78, 77, 77, 77 and 79 of 144 coins were in Uptrend; 55% needed 80. On its last day, 2026-08-19, the dip was one coin short of merging.
+
+- With that coin, today would be day 191 of the run that began 2026-03-20. Breadth's lowest reading since 20 March was 53.5% (77 of 144 coins).
+- No ended run in the record lasted 191 days; the longest is that same March run, at 148. So at 191 days the survival row has no runs at risk, and set A's 120+ day bucket has no comparable history.
+- Everything below that uses today's age (day 38) depends on that one coin.
+
+**How long runs lasted (pooled).** 12 ended risk-on runs: median 47 days (quartiles 11-101). 13 ended risk-off runs: median 67 days (26-156). The five longest risk-on runs lasted 148, 143, 119, 101 and 96 days.
+
+| Of runs that lasted at least d days | In-sample | Pooled (in and out of sample) |
+|---|---|---|
+| 10: lasted 30 more | 6 of 9 (67%, 90% range 40-86%) | 7 of 10 (70%, 90% range 44-87%) |
+| 20: lasted 30 more | 5 of 7 (71%, 90% range 41-90%) | 6 of 8 (75%, 90% range 46-91%) |
+| 30: lasted 30 more | 4 of 7 (57%, 90% range 29-81%) | 5 of 8 (63%, 90% range 35-84%) |
+| **38 (today): lasted 30 more** | 4 of 6 (67%, 90% range 35-88%) | **5 of 7 (71%, 90% range 41-90%)** |
+| **38 (today): lasted 60 more** | 3 of 6 (50%, 90% range 22-78%) | **4 of 7 (57%, 90% range 29-81%)** |
+| 45: lasted 30 more | 4 of 5, too few to read | 5 of 6 (83%, 90% range 50-96%) |
+| 60, 90, 120: lasted 30 more | 4 of 4, 1 of 4, 0 of 1, too few to read | 5 of 5, 2 of 5, 0 of 2, too few to read |
+| Ended runs at least as long as today's | 6 of 11 | 7 of 12 |
+
+In each pooled row, the censored run (today's) is left out: its outcome is not known. No ended run had a length of exactly 38 days.
+
+**Moments like today (pooled analogs).** Set A matches on breadth 80-90%, day 30-60 of a risk-on run and BTC holding its band. Set B matches on breadth 80-90% only. Windows had to close by 2026-09-25, so today's own run adds no outcome.
+
+| Over the next 30 / 60 days | Set A (full match) | Set B (breadth only) | Set B, first episode of each run (exploratory) | All days (overlap) |
+|---|---|---|---|---|
+| Episodes | 5 / 5 (5 runs), too few to read | 15 / 15 (7 runs) | 7 / 7 | 1,940 / 1,910 days |
+| Breadth reached 90% | 4 of 5 / 4 of 5 | 7 of 15 (47%, 90% range 28-67%) / 9 of 15 (60%, 39-78%) | 4 of 7 (57%, 29-81%) / 5 of 7 (71%, 41-90%) | 23% / 33% |
+| Run ended | 1 of 5 / 3 of 5 | 5 of 15 (33%, 17-54%) / 8 of 15 (53%, 33-72%) | 1 of 7 (14%, 3-45%) / 2 of 7 (29%, 10-59%) | 18% / 33% |
+| BTC, median (quartiles) | +3.5% (+0.2 to +13.3) / +4.2% (-2.4 to +39.4) | +0.5% (-2.8 to +5.8) / -1.6% (-16.8 to +15.4) | +5.8% (-5.2 to +10.6) / -1.6% (-16.8 to +21.3) | +0.6% / +1.5% |
+| Typical alt, median (quartiles) | -1.8% (-2.9 to +4.8) / -1.0% (-19.4 to +1.4) | -3.9% (-9.1 to +4.0) / -13.8% (-29.4 to +3.9) | -1.8% (-3.9 to +14.6) / -4.6% (-20.3 to +3.9) | -6.8% / -12.4% |
+
+- Set B's 15 episodes come from 7 runs, and its "run ended within 60 days" count of 8 holds only 6 distinct run ends. Its 90% ranges treat the episodes as independent, so they understate the uncertainty. The one-per-run column shows how much the unit matters.
+- Set A has 5 episodes from 5 runs, too few to read: 2023-02-12, 2023-12-05, 2024-10-25, 2025-08-29 and 2026-04-22.
+- Breadth touching 90% and the run ending often fell in the same 60-day window. Peaks came early (median day 16, in-sample) and then faded.
+
+**BTC's band and breadth (pooled days).** With BTC above its band, breadth was 55% or more on 486 of 985 days. With BTC below, it was 55% or more on 311 of 907 days, against 204 of 794 in-sample. Most of the difference is 2026's run, which spent 85 days risk-on with BTC below its band.
+
+**Where in the waves.** The record since 2025:
+
+| Wave | Dates | Days | Breadth | BTC and its band |
+|---|---|---:|---|---|
+| Risk-on | 2025-07-11 to 2025-10-15 | 96 | peak 98.2% | broke its band 4 days before the end |
+| Risk-off | 2025-10-15 to 2026-03-20 | 156 | low 4.7% | below its band at the end |
+| Risk-on | 2026-03-20 to 2026-08-15 | 148 | peak 95.8% (May) | broke its band on 22 May; breadth faded over the next 85 days |
+| Risk-off | 2026-08-15 to 2026-08-20 | 5 | low 53.5% | reclaimed its band on 19 August |
+| Risk-on (today) | since 2026-08-20 | 38 so far | 82.1% | 16% above its band |
+
+There are two ways to read today:
+
+- **By the declared rule,** today is day 38 of a new run that began as BTC reclaimed its band.
+- **Without the one-coin dip,** today is day 191 of a run that began on 20 March, longer than any run in the record, with breadth above 53% throughout.
+
+The study uses the declared rule. The survival rows and set A above hold only under it.
+
+### Summary for the owner (market context, not a signal)
+
+- **Where we are.** Breadth is risk-on at 82% (119 of 145 coins), on day 38 of a run that began on 2026-08-20. That was the day after BTC reclaimed its weekly bull market support band. BTC is now 16% above the band's upper edge and has not broken it since. "Day 38" hangs on one coin: a 5-day dip in mid-August missed 55% by one coin on its last day. Counted without that dip, today is day 191 of a run that began on 20 March, longer than any run in the record, with breadth above 53% throughout.
+- **How long runs lasted.** Across the 12 ended risk-on runs since 2021, the median lasted 47 days (quartiles 11-101). Of the 7 that reached 38 days, 5 lasted at least 30 more and 4 at least 60 more (90% ranges 41-90% and 29-81%). The 4 short runs (6-19 days) peaked at 58-71%. Every run that reached 85% lasted 53 days or more.
+- **Grinding toward 100%, or rolling over.** After readings of 80-90%, breadth touched 90% within 60 days in 9 of 15 past episodes. The run ended within 60 days in 8 of 15. Both often happened in the same window, because peaks came early and then faded. The 15 episodes come from only 7 runs. Counting one per run, 5 of 7 touched 90% and 2 of 7 ended within 60 days. So the record gives a wide range, not a number.
+- **BTC's band.** In-sample, breadth's run ended 4-15 days after a BTC band break in 3 of 11 runs, and 4 of 11 ended with no band break within 60 days. 2026 was the outlier. BTC broke its band on 22 May with breadth at 94% and stayed below it for almost three months. Breadth took 85 days to roll over, and the typical alt fell 32% from the May peak to the run's end. BTC being above its band at a run's start did not separate long runs from short ones.
+- **What the out-of-sample check says.** April to September 2026 added one full risk-on run (148 days, peak 95.8%), one 5-day risk-off run and three analog episodes, all from that run. Every out-of-sample verdict rests on 1 or 2 cases, too few to read, so the check neither confirms nor overturns the in-sample frequencies. The record holds about two market cycles plus 2026, and 12 ended risk-on runs. These are counts of what happened, not odds.
