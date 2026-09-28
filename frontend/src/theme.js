@@ -437,12 +437,6 @@ export function getTVSymbol(sym, onBinance = true) {
   return `${exchange}:${base}${quote}`;
 }
 
-export function formatCacheAge(seconds) {
-  if (!seconds) return "\u2014";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  return `${Math.round(seconds / 60)}m`;
-}
-
 // ─── MARKET CAP RANK (static lookup for default sort) ──────────────────────
 
 export const MCAP_RANK = {

@@ -8,7 +8,7 @@ import SettingsDropdown from "./SettingsDropdown.jsx";
 import Tabs from "./Tabs.jsx";
 
 // Pages reached through More: the hamburger's bars turn accent while one is open.
-const MORE_PAGES = new Set(["signals", "analytics", "tradfi", "backtest", "executor", "chat", "settings"]);
+const MORE_PAGES = new Set(["signals", "analytics", "tradfi", "bridge", "backtest", "executor", "chat"]);
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
 
 // The floating metal capsule: More, the brand, the main tabs (900px and wider), and the

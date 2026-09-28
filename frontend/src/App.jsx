@@ -1,12 +1,9 @@
-import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
-import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
 import { inGroup, SECTOR_SHORT } from "./utils/sectors.js";
-import RadarStrip from "./components/RadarStrip.jsx";
 import "./terminal.css";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
-import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
-import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge, getBaseSymbol } from "./theme.js";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
+import { T, REGIME_ORDER, MCAP_RANK, getBaseSymbol } from "./theme.js";
 import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
 import { activeMainTab as mainTabFor, mainTabTargets, readLastScanner, writeLastScanner } from "./utils/mainNav.js";
 import { useTheme } from "./ThemeContext";
@@ -20,8 +17,6 @@ import ScannerControls from "./components/ScannerControls.jsx";
 import AdminNotice from "./components/AdminNotice.jsx";
 import { matchesSignal } from "./utils/marketSummary.js";
 import { ladderItems } from "./components/SignalLadder.jsx";
-import MarketContext from "./components/MarketContext.jsx";
-import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
@@ -30,11 +25,9 @@ import GlassCard from "./components/GlassCard.jsx";
 import AppHeader from "./components/AppHeader.jsx";
 import MobileTabBar from "./components/MobileTabBar.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import UniverseCoverage from "./components/UniverseCoverage.jsx";
 import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
-import ChangesTicker from "./components/ChangesTicker.jsx";
 import PageTitle from "./components/PageTitle.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
 import NotFound from "./components/NotFound.jsx";
@@ -50,6 +43,7 @@ const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
 const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
 const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
 const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
+const BridgePage = lazy(() => import("./pages/BridgePage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +67,7 @@ const ROUTE_TO_TAB = {
   "/signals": "signals",
   "/analytics": "analytics",
   "/tradfi": "tradfi",
+  "/bridge": "bridge",
   "/ai": "chat",
   "/backtest": "backtest",
   "/executor": "executor",
@@ -88,6 +83,7 @@ const TAB_TO_ROUTE = {
   signals: "/signals",
   analytics: "/analytics",
   tradfi: "/tradfi",
+  bridge: "/bridge",
   chat: "/ai",
   backtest: "/backtest",
   executor: "/executor",
@@ -101,6 +97,7 @@ const TAB_TITLES = {
   signals: "Signal Log",
   analytics: "Analytics",
   tradfi: "TradFi",
+  bridge: "Bridge",
   backtest: "Backtest",
   executor: "Executor",
   chat: "AI Assist",
@@ -191,7 +188,7 @@ export default function App() {
     }
   }, [navigate, marketKind, onScanner, location.search]);
 
-  // Scanner state that lives in the address: ?q, sort, dir, signal, sector, by.
+  // Scanner state that lives in the address: ?q, sort, dir, signal, sector.
   const [initialQuery] = useState(() => new URLSearchParams(onScanner ? location.search : ""));
 
   const [data4h, setData4h] = useState([]);
@@ -208,7 +205,6 @@ export default function App() {
   const [sortKey, setSortKey] = useState(() => initialQuery.get("sort") || DEFAULT_SORT);
   const [sortDir, setSortDir] = useState(() => validDir(initialQuery.get("dir")));   // "asc" | "desc"; null = the key's default
   const [statCardFilter, setStatCardFilter] = useState(() => initialQuery.get("signal"));
-  const [sectorBy, setSectorBy] = useState(() => initialQuery.get("by") === "ecosystem" ? "ecosystem" : "sector");        // "sector" | "ecosystem"
   const [sectorFilter, setSectorFilter] = useState(() => initialQuery.get("sector"));
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -220,16 +216,8 @@ export default function App() {
   const [dataTradfi4h, setDataTradfi4h] = useState([]);
   const [dataTradfi1d, setDataTradfi1d] = useState([]);
 
-  // Global metrics & alt season
-  const [globalMetrics, setGlobalMetrics] = useState(null);
-  const [altSeason, setAltSeason] = useState(null);
-
-  // Sentiment & stablecoin
+  // Fear & Greed, for the summary card
   const [sentiment, setSentiment] = useState(null);
-  const [stablecoin, setStablecoin] = useState(null);
-
-  // CoinGlass macro (ETF flows + Coinbase premium)
-  const [macro, setMacro] = useState(null);
 
   // Portfolio groups
   const [groups, setGroups] = useState([]);
@@ -243,7 +231,7 @@ export default function App() {
   const [tradfiTf, setTradfiTf] = useState("1d");            // TradFi timeframe, in the title row
 
   // Write one scanner setting into the address (replace, so Back still leaves the scanner).
-  // Several writes in one event (Sectors/Ecosystems also clears the sector) build on each other.
+  // Several writes in one event (a sort writes sort and dir) build on each other.
   const pendingSearch = useRef(null);
   useEffect(() => { pendingSearch.current = null; }, [location.key, location.search]);
   const updateScannerQuery = useCallback((key, value) => {
@@ -265,7 +253,6 @@ export default function App() {
     setSortDir(validDir(params.get("dir")));
     setStatCardFilter(params.get("signal"));
     setSectorFilter(params.get("sector"));
-    setSectorBy(params.get("by") === "ecosystem" ? "ecosystem" : "sector");
     lastScannerSearch.current = location.search;
   }, [onScanner, location.search]);
 
@@ -309,13 +296,9 @@ export default function App() {
     setScanRunning(d.r4h?.scan_running || false);
     setCacheAge(d.r4h?.cache_age_seconds ?? null);
     setLastRefresh(new Date(d.timestamp));
-    if (d.globalMetrics) setGlobalMetrics(d.globalMetrics);
-    if (d.altSeason) setAltSeason(d.altSeason);
     if (d.sentiment) setSentiment(d.sentiment);
-    if (d.stablecoin) setStablecoin(d.stablecoin);
     if (d.tradfi4h) setDataTradfi4h(d.tradfi4h.results || []);
     if (d.tradfi1d) setDataTradfi1d(d.tradfi1d.results || []);
-    if (d.macro?.etf_flow_usd_7d != null) setMacro(d.macro);
     setLoading(false);
     setError(null);
   }, [sw.supported, sw.mainData]);
@@ -431,22 +414,14 @@ export default function App() {
       setLastRefresh(new Date());
 
       try {
-        const [gm, as, sent, stable, tf4h, tf1d, macroData] = await Promise.all([
-          fetch(`${API_BASE}/api/global-metrics`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/alt-season?timeframe=1d`).then(r => r.json()).catch(() => null),
+        const [sent, tf4h, tf1d] = await Promise.all([
           fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/stablecoin`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
           fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/coinglass/macro`).then(r => r.json()).catch(() => null),
         ]);
-        if (gm) setGlobalMetrics(gm);
-        if (as) setAltSeason(as);
         if (sent) setSentiment(sent);
-        if (stable) setStablecoin(stable);
         if (tf4h) setDataTradfi4h(tf4h.results || []);
         if (tf1d) setDataTradfi1d(tf1d.results || []);
-        if (macroData?.etf_flow_usd_7d != null) setMacro(macroData);
       } catch (_) {}
     } catch (e) {
       console.warn("Scanner feed error:", e.message, API_BASE);
@@ -655,16 +630,6 @@ export default function App() {
     [tfMarketRows, activeGroupSymbols]);
   const scopeLabel = activeGroup ? `in ${activeGroup.name}` : marketKind === "spot" ? "spot markets" : "perps";
 
-  const computeGroupPerf = useCallback((groupSymbols, scanData) => {
-    if (!groupSymbols || groupSymbols.length === 0) return null;
-    const symSet = new Set(groupSymbols);
-    const btcMom = scanData.find(r => r.symbol === "BTC/USDT")?.momentum ?? 0;
-    const members = scanData.filter(r => symSet.has(r.symbol));
-    if (members.length === 0) return null;
-    const beating = members.filter(r => (r.momentum ?? 0) > btcMom).length;
-    return { beating, total: members.length };
-  }, []);
-
   // The direction in effect: the address's ?dir, or the key's default.
   const activeDir = sortDir || defaultDir(sortKey);
   const sortResults = (results) => {
@@ -707,7 +672,7 @@ export default function App() {
   }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey, activeDir]);
 
   // Apply stat card signal filter to table data
-  const inSector = (data) => sectorFilter ? data.filter(r => inGroup(r, sectorFilter.includes("|") ? "pocket" : sectorBy, sectorFilter)) : data;
+  const inSector = (data) => sectorFilter ? data.filter(r => inGroup(r, sectorFilter.includes("|") ? "pocket" : "sector", sectorFilter)) : data;
   const applyStatFilter = (rows) => {
     const data = inSector(rows);
     if (!statCardFilter) return data;
@@ -973,22 +938,8 @@ export default function App() {
             activeSignalFilter={statCardFilter} onSignalFilter={v => { setStatCardFilter(v); updateScannerQuery("signal", v); }} />
         )}
 
-        {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} loading={tfMarketRows.length === 0} by={sectorBy}
-          onByChange={v => { setSectorBy(v); updateScannerQuery("by", v === "ecosystem" ? v : null); }}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} loading={tfMarketRows.length === 0}
           value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
-        {showDashboard && marketKind === "perpetual" && <RadarStrip results={inSector(tfScopeRows)} timeframe={activeTab === "4h" ? "4h" : "1d"}
-          sector={sectorFilter} sectorLabel={sectorFilter ? sectorFilter.split("|").map(n => SECTOR_SHORT[n] || n).join(" · ") : null} />}
-
-        {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
-          <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
-          <div className="opp-lists">
-            <OpportunityActivity onSelect={row => handleSelectCoin(row)} />
-            <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={row => handleSelectCoin(row)} />
-          </div>
-          <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>
-          <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh}/>
-        </details>}
 
         {showDashboard && <PositionAlerts isMobile={isMobile} />}
 
@@ -1075,6 +1026,12 @@ export default function App() {
               loading={loading}
             />
           </FadeIn>
+          </Suspense>
+        )}
+
+        {activeTab === "bridge" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <BridgePage style={pageMargin} />
           </Suspense>
         )}
 

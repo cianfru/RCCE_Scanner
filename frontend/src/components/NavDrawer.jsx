@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
     items: [
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
+      { key: "bridge", label: "Bridge", desc: "USDC in and out of Hyperliquid" },
     ],
   },
   {
