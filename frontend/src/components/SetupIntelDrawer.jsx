@@ -5,7 +5,7 @@ import SetupPair from "./SetupPair.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { REGIME_META, SIGNAL_META, col, getBaseSymbol } from "../theme.js";
-import { SIDE_COLOR, fmtPx, fmtUsd } from "../utils/traderFormat.js";
+import { sideColor, fmtPx, fmtUsd } from "../utils/traderFormat.js";
 import { briefRows, fmtAgo, medianGap, setupSide } from "../utils/intel.js";
 import { CROWD_COLOR, Pin, WATCH_TIP } from "./radar/shared.jsx";
 
@@ -14,10 +14,10 @@ import { CROWD_COLOR, Pin, WATCH_TIP } from "./radar/shared.jsx";
 function PriceRuler({ intel, mark, gap }) {
   const p = intel.profitable || {}, l = intel.large || {};
   const marks = [
-    p.long?.median_entry && { v: p.long.median_entry, label: `Profitable long ${fmtPx(p.long.median_entry)}`, color: SIDE_COLOR.long, row: 0 },
-    p.short?.median_entry && { v: p.short.median_entry, label: `Profitable short ${fmtPx(p.short.median_entry)}`, color: SIDE_COLOR.short, row: 0 },
-    l.long?.median_entry && { v: l.long.median_entry, label: `Large long ${fmtPx(l.long.median_entry)}`, color: SIDE_COLOR.long, row: 1, square: true },
-    l.short?.median_entry && { v: l.short.median_entry, label: `Large short ${fmtPx(l.short.median_entry)}`, color: SIDE_COLOR.short, row: 1, square: true },
+    p.long?.median_entry && { v: p.long.median_entry, label: `Profitable long ${fmtPx(p.long.median_entry)}`, color: sideColor("long"), row: 0 },
+    p.short?.median_entry && { v: p.short.median_entry, label: `Profitable short ${fmtPx(p.short.median_entry)}`, color: sideColor("short"), row: 0 },
+    l.long?.median_entry && { v: l.long.median_entry, label: `Large long ${fmtPx(l.long.median_entry)}`, color: sideColor("long"), row: 1, square: true },
+    l.short?.median_entry && { v: l.short.median_entry, label: `Large short ${fmtPx(l.short.median_entry)}`, color: sideColor("short"), row: 1, square: true },
   ].filter(Boolean);
   const dots = (intel.recent || []).filter(o => o.px > 0);
   const vals = [mark, ...marks.map(m => m.v), ...dots.map(o => o.px)].filter(v => v > 0);
@@ -32,7 +32,7 @@ function PriceRuler({ intel, mark, gap }) {
         <div className="si-lane si-lane-pro" />
         <div className="si-lane si-lane-large" />
         {dots.map((o, i) => <i key={i} className={o.cohort === "profitable" ? "si-dot" : "si-dot si-dot-large"}
-          style={{ left: x(o.px), background: col(SIDE_COLOR[o.side]) }} />)}
+          style={{ left: x(o.px), background: sideColor(o.side) }} />)}
         {marks.map((m, i) => <i key={i} className={m.row ? "si-med si-med-large" : "si-med"} style={{ left: x(m.v), background: col(m.color) }} />)}
         <i className="si-now" style={{ left: x(mark) }} />
       </div>
@@ -52,7 +52,7 @@ function SideBar({ label, group }) {
     <div className="si-side">
       <div className="si-side-label">{label}</div>
       {n ? <>
-        <div className="tc-bar"><i style={{ width: `${Math.round((100 * L) / n)}%`, background: col(SIDE_COLOR.long) }} /><i style={{ flex: 1, background: col(SIDE_COLOR.short) }} /></div>
+        <div className="tc-bar"><i style={{ width: `${Math.round((100 * L) / n)}%`, background: sideColor("long") }} /><i style={{ flex: 1, background: sideColor("short") }} /></div>
         <div className="tc-split"><span>{L} long · {fmtUsd(group.long.usd)}</span><span>{S} short · {fmtUsd(group.short.usd)}</span></div>
       </> : <p className="si-dim">None hold it.</p>}
     </div>
@@ -129,7 +129,7 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
             {intel.recent.map((o, i) => <li key={i}>
               <span className="si-dim">{fmtAgo(o.t, now)}</span>
               <span>{o.cohort === "profitable" ? "Profitable" : "Large"}</span>
-              <span style={{ color: col(SIDE_COLOR[o.side]) }}>{o.side}</span>
+              <span style={{ color: sideColor(o.side) }}>{o.side}</span>
               <span>{fmtPx(o.px)}</span>
               <span className="si-dim">{fmtUsd(o.usd)}</span>
             </li>)}

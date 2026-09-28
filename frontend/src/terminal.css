@@ -853,9 +853,8 @@ a.te-link{text-decoration:none;display:inline-block;}
 .te-table tbody tr:not(.te-detail):hover td,.te-open td{background:var(--t-overlay04,rgba(255,255,255,.04));}
 .te-label{font-family:var(--font-geist-mono),monospace;margin-right:8px;}
 .te-addr{color:var(--t-text3);}
-.te-up{color:var(--t-accent);}
-.te-down{color:#cf9185;}
-[data-theme="light"] .te-down{color:#b4533f;}
+.te-up{color:var(--t-profit);}
+.te-down{color:var(--t-loss);}
 .te-dim{color:var(--t-text4);}
 .te-live{color:var(--t-text1);font-weight:600;font-family:var(--font-geist-sans),sans-serif;}
 .te-follow{background:transparent;border:0;border-bottom:2px solid transparent;padding:2px 0;font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);cursor:pointer;}
@@ -896,9 +895,8 @@ a.te-link{text-decoration:none;display:inline-block;}
 .te-follow{white-space:nowrap;}
 .te-addr{white-space:nowrap;}
 .te-up,.te-down{white-space:nowrap;}
-.te-table td.te-up,.te-table .te-up{color:var(--t-accent);}
-.te-table td.te-down,.te-table .te-down{color:#cf9185;}
-[data-theme="light"] .te-table td.te-down,[data-theme="light"] .te-table .te-down{color:#b4533f;}
+.te-table td.te-up,.te-table .te-up{color:var(--t-profit);}
+.te-table td.te-down,.te-table .te-down{color:var(--t-loss);}
 
 /* HyperLens Following tab */
 .fol{display:flex;flex-direction:column;gap:14px;padding:16px;}
@@ -1201,3 +1199,21 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .opp-age{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);text-align:right;}
 .opp-more{margin-top:6px;}
 @media(max-width:480px){.opp-row{grid-template-columns:16px 64px 22px 76px minmax(0,1fr) 28px;column-gap:6px;}}
+
+/* Coin page header (spec 7.1): star before the logo; Watch, Trade and TradingView as flat text beside the timeframe tabs. */
+.reflex-terminal .coin-star{margin-right:-4px;}
+.coin-head-actions{display:flex;align-items:center;gap:16px;margin-left:auto;min-width:0;}
+.coin-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;min-width:0;}
+.coin-action{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);text-decoration:none;white-space:nowrap;border:0;padding:4px 0;transition:color .15s;}
+.coin-action:hover{color:var(--t-accent);}
+.coin-action:focus-visible,.coin-watch:focus-visible{outline:2px solid var(--t-accent);outline-offset:3px;border-radius:2px;}
+.te-toggle.coin-watch{display:inline-flex;align-items:center;gap:6px;font-weight:600;}
+.te-toggle.coin-watch .radar-pin{flex:none;}
+.coin-availability-note{margin:0 0 16px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.analysis-card .analysis-ask{margin:16px 0 0;}
+.analysis-ask .te-link{font-size:13px;font-weight:600;}
+@media(max-width:767px){.coin-head-actions{flex-basis:100%;margin-left:0;justify-content:space-between;gap:12px;}.coin-actions{gap:4px 14px;}.coin-action-long{display:none;}}
+/* Traders table while its fills load: three skeleton rows under one quiet line. */
+.te-loading{margin:0 0 8px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.te-skel{height:28px;margin:0 0 6px;border-radius:3px;}
+

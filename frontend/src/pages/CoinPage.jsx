@@ -2,10 +2,11 @@ import SetupPair from "../components/SetupPair.jsx";
 import SignalContext from "../components/SignalContext.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import HelpTip from "../components/HelpTip.jsx";
-import { formatPercent, evidenceSummary, funding8hPct, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
+import { formatPercent, formatPrice, evidenceSummary, funding8hPct, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
 import Tabs from "../components/Tabs.jsx";
 import TrendChart from "../components/TrendChart.jsx";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Star } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { col, T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
 import useViewport from "../hooks/useViewport.js";
@@ -18,6 +19,10 @@ import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
+import useFavorites from "../hooks/useFavorites.js";
+import useSetupMap from "../hooks/useSetupMap.js";
+import { watchToast } from "../utils/setupMap.js";
+import { Pin, STAR_TIP, WATCH_TIP } from "../components/radar/shared.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -196,7 +201,7 @@ function MetricsPanel({ data }) {
     ["Z-Score",    fmt(data.zscore, 3),                                                          zBar(data.zscore)?.color],
     ["Energy",     fmt(data.energy, 3),                                                          null],
     ["Momentum",   `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%`,                  data.momentum >= 0 ? T.green : T.red],
-    ["Price",      data.price ? `$${data.price < 1 ? fmt(data.price, 5) : fmt(data.price, 2)}`  : "\u2014", null],
+    ["Price",      data.price ? formatPrice(data.price) : "\u2014",                                   null],
     ["Divergence", data.divergence || "None",                                                    data.divergence ? T.yellow : null],
     ["Heat",       data.heat != null ? Math.round(data.heat) : "\u2014",                         heatColor(data.heat)],
     ["Heat phase", data.heat_phase || "\u2014",                                                  phaseColor(data.heat_phase)],
@@ -257,7 +262,8 @@ function MetricsPanel({ data }) {
                   fontSize: 12, color: T.text3, fontFamily: T.mono,
                   fontWeight: 600, letterSpacing: "0.08em",
                   textTransform: "uppercase",
-                  whiteSpace: "nowrap",
+                  // Long labels ("Distance from BMSB") wrap instead of pushing the phone page sideways.
+                  overflowWrap: "anywhere",
                 }}>
                   {label}
                 </span>
@@ -298,17 +304,29 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const goBack = () => navigate(back, { state: { restoreScroll: location.state?.scannerScroll ?? 0 } });
   const marketKind = new URLSearchParams(location.search).get("market") === "spot" || (urlSymbol || "").includes("/USDC") ? "spot" : "perpetual";
   const [availability, setAvailability] = useState(null);
+  // A failed refresh keeps the last reading and says so, with a Retry.
+  const [availabilityError, setAvailabilityError] = useState(false);
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    setAvailability(null);
-    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => r.json()).then(d => {
+    setAvailability(null); setAvailabilityError(false);
+    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => { if (!r.ok) throw new Error("Unavailable"); return r.json(); }).then(d => {
       const sym = (urlSymbol || "").toUpperCase();
       const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
-      if (!cancelled) setAvailability(market || {unlisted: true});
-    }).catch(() => {});
+      if (!cancelled) { setAvailability(market || {unlisted: true}); setAvailabilityError(false); }
+    }).catch(() => { if (!cancelled) setAvailabilityError(true); });
     load(); const timer = setInterval(load, 60000);
     return () => {cancelled = true; clearInterval(timer);};
-  }, [urlSymbol, timeframe, marketKind]);
+  }, [urlSymbol, timeframe, marketKind, availabilityAttempt]);
+  const retryAvailability = <>Market availability could not refresh.{" "}<button type="button" className="te-link" onClick={() => setAvailabilityAttempt(n => n + 1)}>Retry</button></>;
+
+  // Star (pinned in the scanner) and Watch (Telegram setup messages): the same stores as the grid and the Radar.
+  const { isFav, toggle: toggleFav } = useFavorites();
+  const { watched, telegram, toggleWatch } = useSetupMap(null);
+  const [watchMsg, setWatchMsg] = useState("");
+  useEffect(() => { if (!watchMsg) return undefined; const t = setTimeout(() => setWatchMsg(""), 3500); return () => clearTimeout(t); }, [watchMsg]);
+  const onWatch = useCallback(async c => setWatchMsg(watchToast(c, await toggleWatch(c, timeframe), telegram)), [toggleWatch, timeframe, telegram]);
+  const [chatOpen, setChatOpen] = useState(false);
 
 
   // Find scan result matching URL symbol
@@ -341,7 +359,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <div style={{ fontSize: 16, color: T.text3, fontFamily: T.mono, marginBottom: 16 }}>
-          {availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
+          {availabilityError && !availability ? retryAvailability : availability?.unlisted ? `${urlSymbol} is not listed on Hyperliquid.` : availability?.exclusion_reason ? `${urlSymbol}: ${availability.exclusion_reason.replace(/\.$/, "")}. Analysis is withheld until market quality recovers.` : availability ? `Waiting for usable ${timeframe.toUpperCase()} analysis for ${urlSymbol}.` : `Checking ${urlSymbol || "market"} availability…`}
         </div>
         <button
           onClick={goBack}
@@ -358,12 +376,14 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const coin = getBaseSymbol(data.symbol);
   // Hyperliquid-only markets have no Binance ticker for TradingView to open.
   const tvSymbol = getTVSymbol(data.symbol, data.positioning?.source === "binance");
+  const starred = isFav(data.symbol);
+  const isWatched = watched.has(coin);
 
   return (
     <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
       {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap",
+      <div className="coin-head" style={{
+        display: "flex", alignItems: "center", gap: 12, marginBottom: availabilityError ? 8 : 20, flexWrap: "wrap",
       }}>
         <button
           onClick={goBack}
@@ -371,6 +391,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           style={{ padding: "7px 16px", fontSize: T.textSm, fontFamily: T.font, fontWeight: 600, borderRadius: 8, flexShrink: 0 }}
         >
           {"\u2190"} {backLabel}
+        </button>
+        <button type="button" className="fav-star coin-star" aria-pressed={starred}
+          aria-label={`${starred ? "Remove" : "Add"} ${coin} ${starred ? "from" : "to"} favorites`}
+          title={STAR_TIP} onClick={() => toggleFav(data.symbol)}>
+          <Star size={isMobile ? 18 : 20} strokeWidth={1.75} aria-hidden="true" {...(starred ? { color: col("#facc15"), fill: col("#facc15") } : { fill: "none" })} />
         </button>
         <TokenLogo symbol={data.symbol} size={isMobile ? 32 : 40} />
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
@@ -395,10 +420,23 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             Checks {formatPercent(data.signal_confidence)}
           </span>
         )}
-        <div style={{ marginLeft: "auto" }}>
+        {/* Actions and the timeframe tabs; on phones they form a second row. */}
+        <div className="coin-head-actions">
+          <div className="coin-actions">
+            {marketKind === "perpetual" && (
+              <button type="button" className="te-toggle coin-watch" aria-pressed={isWatched} title={WATCH_TIP} onClick={() => onWatch(coin)}>
+                <Pin size={8} color={isWatched ? "var(--t-accent)" : "currentColor"} />{isWatched ? "Watching" : "Watch"}
+              </button>
+            )}
+            <a className="coin-action" href={`https://app.hyperliquid.xyz/trade/${encodeURIComponent(data.market_coin || data.symbol.split("/")[0])}`}
+              target="_blank" rel="noopener noreferrer" aria-label="Trade on Hyperliquid" title="Trade on Hyperliquid"><span className="coin-action-long">Trade on </span>Hyperliquid {"\u2197"}</a>
+            {tvSymbol && <a className="coin-action" href={`https://www.tradingview.com/chart/?symbol=${tvSymbol}`}
+              target="_blank" rel="noopener noreferrer">TradingView {"\u2197"}</a>}
+          </div>
           <Tabs small label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={timeframe} onChange={setTimeframe} />
         </div>
       </div>
+      {availabilityError && <p className="coin-availability-note">{retryAvailability}</p>}
 
       {/* Chart — full width */}
       <div style={{ marginBottom: 20 }}>
@@ -417,43 +455,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           momentum={data.momentum}
           traders={traders}
           traderApi={traderApi}
+          showSetup={false}
         />
-        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          <a
-            href={`https://app.hyperliquid.xyz/trade/${encodeURIComponent(data.market_coin || data.symbol.split("/")[0])}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 12px", borderRadius: 8,
-              fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
-              color: T.text4, textDecoration: "none",
-              border: `1px solid ${T.border}`, background: "transparent",
-              transition: "color 0.15s, border-color 0.15s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
-          >
-            Trade on Hyperliquid {"\u2197"}
-          </a>
-          {tvSymbol && <a
-            href={`https://www.tradingview.com/chart/?symbol=${tvSymbol}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 12px", borderRadius: 8,
-              fontSize: T.textSm, fontFamily: T.font, fontWeight: 600,
-              color: T.text4, textDecoration: "none",
-              border: `1px solid ${T.border}`, background: "transparent",
-              transition: "color 0.15s, border-color 0.15s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.accent; e.currentTarget.style.borderColor = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text4; e.currentTarget.style.borderColor = T.border; }}
-          >
-            Open in TradingView {"\u2197"}
-          </a>}
-        </div>
       </div>
 
       <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"}
@@ -469,6 +472,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             <div><span>Timeframe agreement</span><strong>{data.confluence?.score != null ? `${Math.round(data.confluence.score)} / 100` : '—'}</strong><p>Confluence between the 4H and daily views.</p></div>
           </div>
           {data.signal_reason && <details className="analysis-method"><summary>Inspect the engine calculation</summary><p className="analysis-raw">{data.signal_reason}</p></details>}
+          <p className="analysis-ask"><button type="button" className="te-link" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}>Ask AI about {coin}</button></p>
         </article>
         <article className="analysis-card">
           <h2>Signal context</h2>
@@ -493,7 +497,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Underlying engine values for this timeframe.</p><MetricsPanel data={data}/></section>
 
       {/* Per-coin AI chat popover */}
-      <CoinChat symbol={data.symbol} timeframe={timeframe} marketKind={marketKind} isMobile={isMobile} />
+      <CoinChat symbol={data.symbol} timeframe={timeframe} marketKind={marketKind} isMobile={isMobile} open={chatOpen} onOpenChange={setChatOpen} />
+      {watchMsg && <div className="smap-toast" role="status">{watchMsg}</div>}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import HelpTip from "./HelpTip.jsx";
-import { col } from "../theme.js";
-import { SIDE_COLOR, fmtPx, fmtWhen } from "../utils/traderFormat.js";
+import { sideColor, fmtPx, fmtWhen } from "../utils/traderFormat.js";
 
 // New positions seen by the wallet sweep on one coin, and profitable-trader convergences.
 export default function WalletOpens({ opens }) {
@@ -16,7 +15,7 @@ export default function WalletOpens({ opens }) {
       </div>
       {convs.map((c, i) => (
         <div key={i}>
-          <strong style={{ color: col(SIDE_COLOR[c.side]) }}>Converging</strong> · {fmtWhen(c.ts)} · {c.n} profitable traders opened {c.side} at {fmtPx(Math.min(c.first_px, c.last_px))} to {fmtPx(Math.max(c.first_px, c.last_px))}{c.others ? `, ${c.others} already on that side` : ""}
+          <strong style={{ color: sideColor(c.side) }}>Converging</strong> · {fmtWhen(c.ts)} · {c.n} profitable traders opened {c.side} at {fmtPx(Math.min(c.first_px, c.last_px))} to {fmtPx(Math.max(c.first_px, c.last_px))}{c.others ? `, ${c.others} already on that side` : ""}
         </div>
       ))}
     </div>

@@ -1,12 +1,20 @@
 import { Fragment, useState } from "react";
-import { T, col } from "../theme.js";
 import useFollowed from "../hooks/useFollowed.js";
-import { SIDE_COLOR, activitySummary, fmtPx, fmtUsd, fmtWhen, holdingsLine, shortAddr } from "../utils/traderFormat.js";
+import { sideColor, activitySummary, fmtPx, fmtUsd, fmtWhen, holdingsLine, shortAddr } from "../utils/traderFormat.js";
 
 // Profitable traders holding a coin: one row each, details on click.
-export default function TraderEntries({ entries, onShow }) {
+export default function TraderEntries({ entries, onShow, loading = false }) {
   const [open, setOpen] = useState(null);
   const { followed, toggle } = useFollowed();
+  if (loading && !entries) {
+    return (
+      <div className="te" aria-busy="true">
+        <p className="te-loading">Loading fills…</p>
+        {[0, 1, 2].map(i => <div key={i} className="te-skel shimmer-loading" aria-hidden="true" />)}
+      </div>
+    );
+  }
+  if (!entries) return null;
   const traders = entries.traders || [];
   const coin = entries.symbol;
   if (!traders.length) return <div className="te"><p className="te-note">No profitable traders hold {coin} right now.</p></div>;
@@ -36,10 +44,10 @@ export default function TraderEntries({ entries, onShow }) {
                 <tr className={isOpen ? "te-open" : ""} onClick={() => setOpen(isOpen ? null : tr.address)} tabIndex={0}
                   onKeyDown={e => { if (e.key === "Enter") setOpen(isOpen ? null : tr.address); }} aria-expanded={isOpen}>
                   <td>
-                    <b className="te-label" style={{ color: col(SIDE_COLOR[tr.side]) }}>{tr.label}</b>
+                    <b className="te-label" style={{ color: sideColor(tr.side) }}>{tr.label}</b>
                     <span className="te-addr">{shortAddr(tr.address)}</span>
                   </td>
-                  <td><span style={{ color: col(SIDE_COLOR[tr.side]) }}>{tr.side === "long" ? "Long" : "Short"}</span> {fmtUsd(tr.size_usd)}</td>
+                  <td><span style={{ color: sideColor(tr.side) }}>{tr.side === "long" ? "Long" : "Short"}</span> {fmtUsd(tr.size_usd)}</td>
                   <td className="te-wide">{fmtPx(tr.entry_px)}</td>
                   <td className={tr.pnl_pct >= 0 ? "te-up" : "te-down"}>{tr.pnl_pct >= 0 ? "+" : ""}{Math.round(tr.pnl_pct)}%</td>
                   <td className="te-wide">{tr.pending ? "loading…" : tr.opened_at ? fmtWhen(tr.opened_at) : tr.covered_from ? `before ${fmtWhen(tr.covered_from)}` : "—"}</td>
@@ -84,7 +92,7 @@ export default function TraderEntries({ entries, onShow }) {
                             <ul>
                               {tr.others.slice(0, 8).map(p => (
                                 <li key={`${p.coin}-${p.side}`}>
-                                  <span style={{ color: col(SIDE_COLOR[p.side]) }}>{p.side}</span> {p.coin} {fmtUsd(p.size_usd)} at {fmtPx(p.entry_px)}
+                                  <span style={{ color: sideColor(p.side) }}>{p.side}</span> {p.coin} {fmtUsd(p.size_usd)} at {fmtPx(p.entry_px)}
                                   <span className={p.pnl_pct >= 0 ? "te-up" : "te-down"}> {p.pnl_pct >= 0 ? "+" : ""}{Math.round(p.pnl_pct)}%</span>
                                 </li>
                               ))}
