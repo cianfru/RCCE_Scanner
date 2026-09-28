@@ -434,13 +434,14 @@
 .price-chart-panel{border:1px solid var(--t-border);border-radius:14px;background:linear-gradient(145deg,#0d2527 0%,#091c20 44%,#07131a 100%);box-shadow:inset 0 1px 0 rgba(190,255,240,.08),0 18px 48px rgba(0,0,0,.22);}
 .price-chart-panel .chart-toolbar{background:linear-gradient(180deg,rgba(151,252,228,.055),rgba(151,252,228,.015))!important;border-bottom-color:rgba(151,252,228,.10);}
 .price-chart-canvas{background:radial-gradient(ellipse at 44% 0%,rgba(43,105,102,.12),transparent 65%),linear-gradient(180deg,rgba(20,48,54,.22),rgba(5,15,23,.16));}
-.price-chart-panel .candle-inspector{background:rgba(4,12,18,.24);padding-top:10px!important;padding-bottom:10px!important;}
+.price-chart-panel .candle-inspector{position:absolute;top:8px;left:12px;z-index:4;display:flex;flex-wrap:wrap;gap:4px 10px;max-width:calc(100% - 100px);box-sizing:border-box;padding:6px 10px;border:1px solid var(--t-border);border-radius:6px;background:rgba(4,12,18,.78);font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);pointer-events:none;}
+.price-chart-panel .candle-inspector b{font-weight:500;color:var(--t-text2);}
 .price-chart-panel .chart-reset{border:0;border-bottom:1px solid var(--t-border);background:transparent;border-radius:0;padding:4px 0;margin-right:8px;color:var(--t-text3);font:12px var(--font-geist-sans),sans-serif;cursor:pointer;}
 .price-chart-panel .chart-reset:hover{color:var(--t-accent)!important;border-bottom-color:var(--t-accent);}
 .price-chart-panel .chart-reset:disabled{opacity:.4;cursor:default;}
 [data-theme="light"] .price-chart-panel{background:linear-gradient(145deg,#f4faf9,#edf3f5);box-shadow:inset 0 1px 0 #fff,0 12px 36px rgba(20,48,54,.07);}
 [data-theme="light"] .price-chart-canvas{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
-[data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.4);}
+[data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.9);}
 .price-chart-panel .chart-levels-label-short{display:none;}
 @media(max-width:600px){.price-chart-panel .chart-levels-label{display:none;}.price-chart-panel .chart-levels-label-short{display:inline;}.price-chart-panel .chart-toolbar{padding:10px 14px!important;gap:8px;}.price-chart-panel .chart-toolbar>div{gap:6px!important;}}
 
@@ -1497,6 +1498,39 @@ a.te-link{text-decoration:none;display:inline-block;}
 /* Grid: a coin held by the shared address, the Radar's dashed "my trade" square in the side colour. */
 .held-mark{display:inline-block;width:10px;height:10px;box-sizing:border-box;border:1.4px dashed currentColor;border-radius:1px;margin-left:6px;vertical-align:middle;flex:none;}
 /* Coin page: the shared address's trade in this perp, one line under the header. */
+.coin-price{font:500 20px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text2);white-space:nowrap;}
+@media(max-width:767px){.coin-price{font-size:16px;}}
+/* Coin page: Why and Traders side by side, then two quiet disclosures one click deeper. */
+.coin-evidence{margin-top:4px;}
+.coin-evidence .tc{margin-top:0;}
+.reflex-terminal .coin-evidence .analysis-definitions{margin:20px 0 4px;}
+.reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+@media(max-width:600px){.reflex-terminal .coin-evidence .analysis-definitions strong{font-size:18px;}}
+.analysis-card>h2 .alt-season-info{vertical-align:middle;margin-left:6px;}
+.coin-against{margin:18px 0 0;padding:10px 0 2px 12px;box-shadow:inset 2px 0 #b6a07c;font:13px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.coin-against>span{display:block;font-size:12px;font-weight:600;color:var(--t-text1);}
+.reflex-terminal .analysis-card .coin-against ul{margin:4px 0 0;padding:0;list-style:none;}
+.reflex-terminal .analysis-card .coin-against li{margin:2px 0;padding:0;}
+[data-theme="light"] .coin-against{box-shadow:inset 2px 0 #9a7b3f;}
+.analysis-engine{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px 16px;margin:12px 0 0;}
+.analysis-engine div{min-width:0;}
+.analysis-engine dt{font:12px var(--font-geist-sans),sans-serif;color:var(--t-text3);overflow-wrap:anywhere;}
+.analysis-engine dd{margin:2px 0 0;font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.coin-more{margin-top:20px;border-top:1px solid var(--t-border);}
+.coin-more:last-of-type{border-bottom:1px solid var(--t-border);}
+.coin-more>summary{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;padding:16px 0;cursor:pointer;list-style:none;font:600 16px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.coin-more>summary::-webkit-details-marker{display:none;}
+.coin-more>summary::before{content:"";flex:none;align-self:center;width:7px;height:7px;border-right:1.5px solid var(--t-text3);border-bottom:1.5px solid var(--t-text3);transform:rotate(-45deg);transition:transform .2s;margin-right:4px;}
+.coin-more[open]>summary::before{transform:rotate(45deg);}
+.coin-more>summary small{font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.coin-more>summary:hover span{color:var(--t-accent);}
+.coin-more>summary:focus-visible{outline:1px solid var(--t-accent);outline-offset:2px;}
+.coin-more[open]>summary{padding-bottom:12px;}
+.coin-more>.analysis-grid{padding-bottom:20px;}
+.coin-more+.coin-more{margin-top:0;}
+.te-all{margin-top:10px;}
+.tc-more{align-self:flex-start;margin-top:12px;font-size:13px;}
+.tc-head h3 .alt-season-info{vertical-align:middle;margin-left:4px;}
 .coin-mytrade{margin:-4px 0 12px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .coin-mytrade b{font-weight:600;}
 .coin-mytrade .smap-mono{font-family:var(--font-geist-mono),monospace;font-weight:600;}

@@ -414,10 +414,8 @@ export default function DetailPanel({ selected, isMobile, isTablet, onClose, api
           signalFirstSeenAt={selected.signal_first_seen_at}
           signalTimeframe={selected.timeframe}
           regime={selected.regime}
-          heat={selected.heat}
           exhaustionState={selected.exhaustion_state}
           floorConfirmed={selected.floor_confirmed}
-          momentum={selected.momentum}
         />
 
         {/* Regime + Signal badges */}
