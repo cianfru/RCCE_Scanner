@@ -38,18 +38,15 @@ function groupBy(rows, name, hint) {
   return rows.some(r => r.sector === name) || !rows.some(r => r.ecosystem === name) ? "sector" : "ecosystem";
 }
 
-// "All sectors": a list of the sectors with their member count and lead, in the chip colours.
-function SectorPicker({ rows, value, onChange }) {
-  const [open, setOpen] = useState(false);
+// A small list under a button (the sector and the view pickers): placed inside the viewport,
+// closed by Escape or a tap outside.
+function usePopover(open, setOpen, anchor, pop, width = 280) {
   const [pos, setPos] = useState(null);
-  const anchor = useRef(null), pop = useRef(null);
-  const id = useId();
-  const groups = useMemo(() => (open ? groupStats(rows, "sector", null, altBaseline(rows)).filter(g => !g.tail || g.rows >= 2) : []), [open, rows]);
   useLayoutEffect(() => {
     if (!open) { setPos(null); return undefined; }
     const place = () => {
       const r = anchor.current.getBoundingClientRect();
-      const w = Math.min(280, window.innerWidth - 24);
+      const w = Math.min(width, window.innerWidth - 24);
       const h = pop.current?.getBoundingClientRect().height || 320;
       setPos({ left: clampLeft(r.left, r.width, w, window.innerWidth), ...placeVertical(r.top, r.bottom, h, window.innerHeight, 8), width: w });
     };
@@ -67,7 +64,17 @@ function SectorPicker({ rows, value, onChange }) {
       document.removeEventListener("keydown", dismiss);
       document.removeEventListener("pointerdown", dismiss);
     };
-  }, [open]);
+  }, [open, setOpen, anchor, pop, width]);
+  return pos;
+}
+
+// "All sectors": a list of the sectors with their member count and lead, in the chip colours.
+function SectorPicker({ rows, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef(null), pop = useRef(null);
+  const id = useId();
+  const pos = usePopover(open, setOpen, anchor, pop);
+  const groups = useMemo(() => (open ? groupStats(rows, "sector", null, altBaseline(rows)).filter(g => !g.tail || g.rows >= 2) : []), [open, rows]);
   const pick = v => { setOpen(false); onChange(v); };
   return <>
     <button ref={anchor} type="button" className="radar-sector-btn" aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined}
@@ -80,6 +87,31 @@ function SectorPicker({ rows, value, onChange }) {
         <span>{SECTOR_SHORT[g.name] || g.name}<small>{g.tail ? g.rows : g.n}</small></span>
         {!g.tail && <b>{g.shown == null ? "—" : pct(g.shown)}</b>}
       </button>)}
+    </div>, document.body)}
+  </>;
+}
+
+// Which coins the map shows: the setups with traders (default) or all coins, and your trades
+// on or off. One button with the current view; the choices one click deeper.
+function ViewPicker({ showAll, onView, mineOn, onMine }) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef(null), pop = useRef(null);
+  const id = useId();
+  const pos = usePopover(open, setOpen, anchor, pop, 240);
+  return <>
+    <button ref={anchor} type="button" className="radar-sector-btn" aria-haspopup="true" aria-expanded={open} aria-controls={open ? id : undefined}
+      onClick={() => setOpen(o => !o)}>{showAll ? "All coins" : "Setups with traders"}{mineOn ? " · My trades" : ""}</button>
+    {open && createPortal(<div ref={pop} id={id} className="radar-sector-pop reflex-terminal" role="group" aria-label="Coins on the map"
+      style={{ ...pos, visibility: pos ? "visible" : "hidden" }}>
+      {VIEW_ITEMS.map(v => <button key={v.key} type="button" aria-pressed={(v.key === "all") === showAll} className="radar-sector-opt"
+        onClick={() => { setOpen(false); onView(v.key); }}><span>{v.label}</span></button>)}
+      <span className="radar-pop-rule" aria-hidden="true" />
+      <button type="button" aria-pressed={mineOn} className="radar-sector-opt radar-mine-opt" onClick={onMine}>
+        <span><svg className="grid-aligned-box" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <rect x="1" y="1" width="10" height="10" rx="2" />
+          {mineOn && <path d="M3.4 6.2l1.8 1.8 3.5-3.8" />}
+        </svg>My trades</span>
+      </button>
     </div>, document.body)}
   </>;
 }
@@ -142,10 +174,10 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const focusC = focus ? byCoin.get(focus) || null : null;
   const rowFor = useCallback(coin => results.find(r => getBaseSymbol(r.symbol) === coin) || null, [results]);
   const detailRow = detail ? rowFor(detail) : null;
-  // One request for the followed coin (the drawer opens on it), plus the market-wide pulse in
-  // the rail. The focus panel, the sheet and the drawer show the same mark price and time.
+  // One request for the followed coin (the drawer opens on it). The focus panel, the sheet and
+  // the drawer show the same mark price and time.
   const intelCoin = detail || (focusC ? focus : null);
-  const intel = useSetupIntel(intelCoin ? [intelCoin] : [], { pulse: true });
+  const intel = useSetupIntel(intelCoin ? [intelCoin] : []);
 
   useEffect(() => { if (!msg) return undefined; const t = setTimeout(() => setMsg(""), 3500); return () => clearTimeout(t); }, [msg]);
   const onWatch = useCallback(async coin => setMsg(watchToast(coin, await toggleWatch(coin), telegram)), [toggleWatch, telegram]);
@@ -154,8 +186,8 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const openChart = useCallback(row => onSelect(row), [onSelect]);
 
   // Map height on desktop: what is left of the first screen under the header, title and picks,
-  // after the card's player band (52), its border and a 16px margin, so Play and the scrubber
-  // are in view on arrival (the key sits under the card). Fixed below 1200px.
+  // after the card's player band (52: Replay and the map key), its border and a 16px margin, so
+  // the whole card is in view on arrival. Fixed below 1200px.
   const [vh, setVh] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
   useEffect(() => { const on = () => setVh(window.innerHeight); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
   const mainRef = useRef(null);
@@ -222,16 +254,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
         </div>
         <div className="radar-head-right">
           <SectorPicker rows={perps} value={sector} onChange={v => setParams({ sector: v, by: null })} />
-          <Tabs small label="Coins on the map" items={VIEW_ITEMS} value={showAll ? "all" : "setups"} onChange={k => setParams({ view: k === "all" ? "all" : null })} />
-          <span className="radar-divider" aria-hidden="true" />
-          {/* An on/off switch, not a fourth tab: a check box before the words. */}
-          <button type="button" className="te-toggle radar-mine" aria-pressed={mineOn} onClick={toggleMine}>
-            <svg className="grid-aligned-box" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-              <rect x="1" y="1" width="10" height="10" rx="2" />
-              {mineOn && <path d="M3.4 6.2l1.8 1.8 3.5-3.8" />}
-            </svg>
-            <span>My trades</span>
-          </button>
+          <ViewPicker showAll={showAll} onView={k => setParams({ view: k === "all" ? "all" : null })} mineOn={mineOn} onMine={toggleMine} />
         </div>
       </div>
       {mineOn && !effectiveAddress && <div className="radar-addr-row">
@@ -246,7 +269,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
         <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
           mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          fresh={fresh} pulse={intel?.pulse} onPick={pick} />
+          fresh={fresh} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">

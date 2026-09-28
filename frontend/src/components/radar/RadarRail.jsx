@@ -4,7 +4,7 @@ import { col } from "../../theme.js";
 import { fmtPx } from "../../utils/traderFormat.js";
 import { fmtIn, nextCloses, pastEntry, setupSide } from "../../utils/intel.js";
 import { formatPrice } from "../../utils/marketPresentation.js";
-import { SIGNAL_SHORT, STAGES, ZONE_WORD, movement, pnl, pulseLine } from "../../utils/setupMap.js";
+import { SIGNAL_SHORT, STAGES, ZONE_WORD, movement, pnl } from "../../utils/setupMap.js";
 import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, sc, signed, zoneColor } from "./shared.jsx";
 
 function FocusChart({ c }) {
@@ -90,10 +90,9 @@ function FreshList({ xs, onPick }) {
 }
 
 // The rail beside the map: the followed coin (its price ladder and readings, or one line on how
-// to follow one), the watch list, your trades, the new early setups and the market-wide pulse.
+// to follow one), the watch list, your trades and the new early setups.
 // Never an empty box.
-export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, pulse, onPick }) {
-  const line = pulseLine(pulse);
+export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, onPick }) {
   return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label="Followed coin, watch list and new early setups">
     {focusSlot}
     {stripWatch.length > 0 && <section className="radar-sec">
@@ -110,6 +109,5 @@ export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mi
       <h3 className="radar-sec-h">New early setups</h3>
       <FreshList xs={fresh} onPick={onPick} />
     </section>}
-    {line && <p className="radar-pulse" title={pulse.clusters?.length ? `Two or more on the same side: ${pulse.clusters.map(k => `${k.coin} ${k.side} ${k.n}`).join(", ")}` : undefined}>{line}</p>}
   </aside></div>;
 }

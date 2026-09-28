@@ -209,14 +209,6 @@ export function labelOrder(coins, { labelled, focus = null, watched = new Set(),
     || a.coin.localeCompare(b.coin));
 }
 
-// The market-wide pulse from /api/hyperlens/intel, as one short line.
-export function pulseLine(pulse) {
-  if (!pulse) return null;
-  const h = pulse.hours || 6;
-  if (!pulse.opens) return `Last ${h}h: no opens by profitable traders`;
-  return `Last ${h}h: ${pulse.opens} open${pulse.opens === 1 ? "" : "s"} by ${pulse.traders} profitable trader${pulse.traders === 1 ? "" : "s"}, on ${pulse.coins} coin${pulse.coins === 1 ? "" : "s"}`;
-}
-
 // A Radar address: timeframe, then the optional focus, sector and view.
 export function radarHref({ tf = "1d", focus, sector, view } = {}) {
   const p = new URLSearchParams({ tf: tf === "4h" ? "4h" : "1d" });

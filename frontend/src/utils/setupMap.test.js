@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, picks, placeLabels, pnl, pulseLine, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -229,11 +229,7 @@ test("thumbnail extent: zoomed to the trail; a near box edge joins, a far one do
   assert.ok(Math.abs((one.x[0] + one.x[1]) / 2 - 0.4) < 1e-9 && one.x[1] - one.x[0] < 0.4);
 });
 
-test("pulse line and Radar addresses", () => {
-  assert.equal(pulseLine(null), null);
-  assert.equal(pulseLine({ hours: 6, opens: 31, traders: 28, coins: 19 }), "Last 6h: 31 opens by 28 profitable traders, on 19 coins");
-  assert.equal(pulseLine({ hours: 6, opens: 1, traders: 1, coins: 1 }), "Last 6h: 1 open by 1 profitable trader, on 1 coin");
-  assert.equal(pulseLine({ hours: 6, opens: 0 }), "Last 6h: no opens by profitable traders");
+test("Radar addresses", () => {
   assert.equal(radarHref({ tf: "1d", focus: "TIA" }), "/radar?tf=1d&focus=TIA");
   assert.equal(radarHref({ tf: "4h", sector: "AI" }), "/radar?tf=4h&sector=AI");
   assert.equal(radarHref({ tf: "x", sector: "DeFi|Solana", view: "all" }), "/radar?tf=1d&sector=DeFi%7CSolana&view=all");
