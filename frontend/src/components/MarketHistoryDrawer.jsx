@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Tabs from "./Tabs.jsx";
 import { T } from "../theme.js";
-import { RANGES, bandSummary, compactUsd, dayDate, episodesOf, fearGreedByDay, inRange, logTicks, monthYear,
+import { RANGES, bandSummary, compactUsd, cycleLine, dayDate, episodesOf, fearGreedByDay, inRange, logTicks, monthYear,
          percentileOf, rowsOf, signedPct } from "../utils/marketHistory.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -138,6 +138,8 @@ function BreadthTab({ data, rows, range, setRange }) {
     ...OVERLAYS().filter(o => overlays.includes(o.key))];
   const t = data.today;
   const base = data.base?.["30"];
+  const [from, to] = data.base_period || [t.since, data.end_day];
+  const run = cycleLine(data.cycle);
   const toggle = k => setOverlays(o => (o.includes(k) ? o.filter(x => x !== k) : [...o, k]));
   return <>
     <div className="mh-today">
@@ -162,28 +164,29 @@ function BreadthTab({ data, rows, range, setRange }) {
         <Tabs small label="Uptrend band" value={band.label} onChange={setBandLabel}
           items={data.bands.map(b => ({ key: b.label, label: b.label === t.band ? `${b.label} (today)` : b.label }))} />
       </div>
+      {run && <p>{run}</p>}
       <p>{bandSummary(band)}</p>
-      {base && <p className="mh-muted">An ordinary 30 days since {monthYear(t.since)}: BTC {signedPct(base.btc.median)}, typical alt {signedPct(base.alt.median)} (medians). Alts usually drift down against a flat BTC, so better than ordinary is not the same as up.</p>}
+      {base && <p className="mh-muted">An ordinary 30 days from {monthYear(from)} to {monthYear(to)}: BTC {signedPct(base.btc.median)}, typical alt {signedPct(base.alt.median)} (medians). Alts usually drift down against a flat BTC, so better than ordinary is not the same as up.</p>}
       <div className="mh-table-wrap">
         <table className="mh-table">
           <thead><tr><th scope="col">Started</th><th scope="col">Days</th><th scope="col">Uptrend</th>
             <th scope="col">BTC 30d</th><th scope="col">Typical alt 30d</th><th scope="col">vs ordinary</th><th scope="col">Typical alt 60d</th></tr></thead>
           <tbody>
             {eps.map(e => {
-              const vs = e.scored && e.alt30 != null && base ? e.alt30 - base.alt.median : null;
+              const vs = e.alt30 != null && base ? e.alt30 - base.alt.median : null;
               return <tr key={e.start}>
                 <td>{dayDate(e.start)}</td><td>{e.end - e.start + 1}{e.end >= t.day ? ", ongoing" : ""}</td><td>{pctLabel(e.breadth)}</td>
-                {e.scored ? <>
+                {e.due30 ? <td colSpan={4} className="mh-muted">Scores on {dayDate(e.due30, false)}</td> : <>
                   <td>{signedPct(e.btc30)}</td><td>{signedPct(e.alt30)}</td>
                   <td className={vs == null ? "" : vs > 0 ? "mh-better" : "mh-worse"}>{vs == null ? "—" : `${vs > 0 ? "better" : "worse"} ${signedPct(vs, 0).replace("%", " pts")}`}</td>
-                  <td>{signedPct(e.alt60)}</td>
-                </> : <td colSpan={4} className="mh-muted">Not scored (after {dayDate(data.end_day)})</td>}
+                  {e.due60 ? <td style={{ color: "var(--t-text3)" }}>scores on {dayDate(e.due60, false)}</td> : <td>{signedPct(e.alt60)}</td>}
+                </>}
               </tr>;
             })}
           </tbody>
         </table>
       </div>
-      <p className="mh-muted">An episode is a run of days in the same band (gaps of up to 5 days joined); outcomes are measured from its first day. Episodes, not days, are counted because neighbouring days share the same future. Outcomes are scored only up to {dayDate(data.end_day)}, the end of the study window; later episodes are listed without them. The coin list is today's, so coins that died are missing and early years are thinner. No probabilities are shown.</p>
+      <p className="mh-muted">An episode is a run of days in the same band (gaps of up to 5 days joined); outcomes are measured from its first day and filled in once 30 or 60 days have closed. Episodes, not days, are counted because neighbouring days share the same future. The band record and the ordinary 30 days cover the study window, up to {dayDate(data.end_day)}; later rows are scored but not counted in them. A risk-on run starts on the first day with 55% or more of coins in Uptrend or Overheated and ends after 5 days in a row below; past runs are the ones that ended since {monthYear(t.since)}. The coin list is today's, so coins that died are missing and early years are thinner. No probabilities are shown.</p>
     </section>
     {data.forward_test && <ForwardTest ft={data.forward_test} base={data.base} />}
   </>;

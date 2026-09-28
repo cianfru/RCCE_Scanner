@@ -38,13 +38,34 @@ export function percentileOf(values, v) {
   return xs.length ? Math.round((100 * xs.filter(x => x < v).length) / xs.length) : null;
 }
 
-// Episode rows as objects; later ones (after the study's end day) carry no outcomes.
+// Episode rows as objects, newest first. A 30- or 60-day outcome still running carries the day it
+// scores (due30 / due60); one that has closed but has no data stays null.
 export function episodesOf(data, band) {
   if (!band) return [];
   const cols = data.episode_columns;
-  const scored = band.episodes.map(e => ({ ...Object.fromEntries(cols.map((c, i) => [c, e[i]])), scored: true }));
-  const later = (band.later || []).map(([start, end, breadth]) => ({ start, end, breadth, scored: false }));
-  return [...scored, ...later].sort((a, b) => b.start - a.start);
+  const last = data.scored_through ?? data.today?.day ?? Infinity;
+  const row = e => {
+    const o = Object.fromEntries(cols.map((c, i) => [c, e[i] ?? null]));
+    for (const h of [30, 60]) o[`due${h}`] = o.start + h > last ? o.start + h : null;
+    return o;
+  };
+  return [...band.episodes, ...(band.later || [])].map(row).sort((a, b) => b.start - a.start);
+}
+
+// Today's risk-on run (or risk-off stretch) against past ones: counts, never a forecast
+// (docs/reviews/risk-on-cycles-study.md). Day 1 is the run's first day.
+export function cycleLine(c) {
+  if (!c) return null;
+  const on = c.type === "on";
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const dip = on && c.below_days > 0
+    ? `; under ${Math.round(100 * c.threshold)}% for ${plural(c.below_days, "day")}, ${c.off_days} in a row end it` : "";
+  const head = `This ${on ? "risk-on run" : "risk-off stretch"}: day ${c.day} (since ${dayDate(c.start)}${dip}).`;
+  if (!c.past) return head;
+  const median = Number.isInteger(c.median) ? c.median : c.median.toFixed(1);
+  const tail = c.reached === 0 ? `none reached day ${c.day}`
+    : `of those that reached day ${c.day}, ${c.lasted_more} of ${c.reached} lasted another ${c.more} days${c.reached < 6 ? " (too few to read)" : ""}`;
+  return `${head} Past ${on ? "runs" : "stretches"} (${c.past}): half lasted longer than ${median} days; ${tail}.`;
 }
 
 // The band's record in words: counts, never a forecast (docs/reviews/market-breadth-study.md).
