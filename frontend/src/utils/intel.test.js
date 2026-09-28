@@ -39,19 +39,24 @@ test("drawer rows read like the focus panel", () => {
   const row = { regime: "ACCUM", signal: "WAIT", timeframe: "4h", conditions_met: 5, conditions_total: 9,
     regime_transition: { candidate: "MARKUP", observed_bars: 3, required_bars: 5 } };
   const rows = briefRows(row, i, 1e9 * 1000 + 2 * 3600e3, { regimeName: k => ({ ACCUM: "Accumulation", MARKUP: "Uptrend" })[k],
-    signalLabel: () => "WAIT", fmt: v => String(v) });
+    fmt: v => String(v) });
   const kv = Object.fromEntries(rows.map(r => [r.k, r.v]));
-  assert.deepEqual(rows.map(r => r.k).slice(0, 4), ["Setup", "Crowd", "Their entry", "Candles to confirm"]);
-  assert.equal(kv.Setup, "Accumulation · no entry signal yet · 5 of 9 checks");
+  assert.deepEqual(rows.map(r => r.k).slice(0, 4), ["Entry checks", "Crowd", "Their entry", "Candles to confirm"]);
+  // Only the checks: regime and signal are the SetupPair capsule's, not repeated as a row.
+  assert.equal(kv["Entry checks"], "5 of 9");
+  assert.equal(rows[0].met, 5);
+  assert.equal(rows[0].total, 9);
   assert.equal(kv.Crowd, "4 long · 0 short");
   assert.equal(rows[1].key, "crowded");                                     // 4 long, price 29% past their entry
   assert.equal(kv["Their entry"], "long 0.55 · +29% for them");
   assert.match(kv["Candles to confirm"], /^3 of 5 · last in /);
   assert.match(kv["Next close"], /^4H in /);
   assert.equal(rows[rows.length - 1].k, "Next close");
-  // No trader reading: setup and timing only.
+  // No trader reading: checks and timing only; no checks row without a checks count.
+  assert.deepEqual(briefRows({ regime: "MARKUP", signal: "STRONG_LONG", timeframe: "1d", conditions_met: 9, conditions_total: 11 }, null, 0,
+    { regimeName: () => "Uptrend", fmt: String }).map(r => r.k), ["Entry checks", "Next close"]);
   assert.deepEqual(briefRows({ regime: "MARKUP", signal: "STRONG_LONG", timeframe: "1d" }, null, 0,
-    { regimeName: () => "Uptrend", signalLabel: () => "STRONG LONG", fmt: String }).map(r => r.k), ["Setup", "Next close"]);
+    { regimeName: () => "Uptrend", fmt: String }).map(r => r.k), ["Next close"]);
 });
 
 test("price against their median entry", () => {

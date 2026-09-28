@@ -548,6 +548,8 @@
 .si-rows dd{color:var(--t-text1);}
 .si-rows dd strong{font-weight:600;margin-right:4px;}
 .si-rows .alt-season-info{margin-left:6px;vertical-align:middle;}
+.si-checks{display:inline-flex;gap:2px;margin-right:8px;vertical-align:middle;}
+.si-checks i{display:block;width:6px;height:10px;border-radius:1px;background:var(--t-overlay15);}
 .si-gap{margin:0 0 6px;font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
 .si-ends{display:flex;justify-content:space-between;margin:2px 6px 0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);}
 .si-brief{margin:0 0 6px;padding-left:18px;color:var(--t-text2);}

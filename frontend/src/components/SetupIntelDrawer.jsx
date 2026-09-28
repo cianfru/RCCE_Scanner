@@ -4,7 +4,8 @@ import HelpTip from "./HelpTip.jsx";
 import SetupPair from "./SetupPair.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
-import { REGIME_META, SIGNAL_META, col, getBaseSymbol } from "../theme.js";
+import { REGIME_META, col, getBaseSymbol } from "../theme.js";
+import { scoreColor } from "./PanelHeader.jsx";
 import { sideBarColor, sideColor, fmtPx, fmtUsd } from "../utils/traderFormat.js";
 import { briefRows, fmtAgo, medianGap, setupSide } from "../utils/intel.js";
 import { formatPrice } from "../utils/marketPresentation.js";
@@ -60,6 +61,14 @@ function SideBar({ label, group }) {
   );
 }
 
+// Entry checks as one segment per check, the met ones in the score colour.
+function ChecksBar({ met, total }) {
+  const c = col(scoreColor(met, total));
+  return <span className="si-checks" aria-hidden="true">
+    {Array.from({ length: total }, (_, i) => <i key={i} style={i < met ? { background: c } : undefined} />)}
+  </span>;
+}
+
 // Everything behind a setup, in one place: the engine's reading and timing as key/value
 // rows (named like the Radar's focus panel), and what tracked traders hold and opened.
 // Opens from the Radar's "Full detail". Watch and the chart link sit at the top.
@@ -81,7 +90,6 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
   const side = setupSide(row);
   const rows = briefRows(row, intel, now, {
     regimeName: k => (REGIME_META[k] || REGIME_META.FLAT).name,
-    signalLabel: k => SIGNAL_META[k]?.label || k,
     fmt: fmtPx,
   });
   const warnings = row.signal_warnings || [];
@@ -113,7 +121,7 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
             {r.k === "Crowd" && r.label ? <><strong style={{ color: col(CROWD_COLOR[r.key] || CROWD_COLOR.holding) }}>{r.label}</strong> {r.v} <HelpTip title="How the crowd is read">
               <p>Profitable traders relative to this setup{side ? ` (${side})` : ""}. Quiet: none hold it. Against: two or more hold the other side and outnumber this side. Crowded: eight or more on this side, or three or more with price 15% or more past their median entry. Early: at least one opened on this side in the last 24 hours, near today's price. Holding: anything else.</p>
               <p>Over the last 180 days, profitable traders mostly opened after moves rather than before them, and two of them converging on a coin did not lead price. This describes the crowd; it is not a signal.</p>
-            </HelpTip></> : r.v}
+            </HelpTip></> : r.k === "Entry checks" ? <><ChecksBar met={r.met} total={r.total} />{r.v}</> : r.v}
           </dd></div>)}
         </dl>
 

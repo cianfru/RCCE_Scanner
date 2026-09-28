@@ -83,17 +83,17 @@ export function crowdRead(side, intel) {
   return { key: "holding", label: "Holding", text: `${w} profitable trader${w === 1 ? " is" : "s are"} ${side}${a ? `, ${a} ${opp(side)}` : ""}.` };
 }
 
-const sentence = s => (s ? s.charAt(0) + s.slice(1).toLowerCase() : s);
-
-// The drawer's readings as key/value rows, named like the Radar's focus panel: Setup,
-// Crowd, Their entry, Candles to confirm, Completion odds, Converged, Next close.
-// names: { regimeName(key), signalLabel(key) }; fmt: price formatter.
-export function briefRows(row, intel, nowMs, { regimeName, signalLabel, fmt }) {
+// The drawer's readings as key/value rows, named like the Radar's focus panel: Entry checks,
+// Crowd, Their entry, Candles to confirm, Completion odds, Converged, Next close. Regime and
+// signal are not repeated here: the drawer's SetupPair capsule above the rows shows them.
+// names: { regimeName(key) }; fmt: price formatter.
+export function briefRows(row, intel, nowMs, { regimeName, fmt }) {
   const out = [];
   const tf = String(row.timeframe || "4h").toUpperCase();
-  const sig = signalLabel(row.signal);
-  out.push({ k: "Setup", v: `${regimeName(row.regime)} · ${sig && row.signal !== "WAIT" ? sentence(sig) : "no entry signal yet"}`
-    + (row.conditions_total ? ` · ${row.conditions_met} of ${row.conditions_total} checks` : "") });
+  if (row.conditions_total) {
+    const met = Math.min(row.conditions_met || 0, row.conditions_total);
+    out.push({ k: "Entry checks", met, total: row.conditions_total, v: `${met} of ${row.conditions_total}` });
+  }
   const side = setupSide(row);
   if (intel) {
     const p = intel.profitable || {};

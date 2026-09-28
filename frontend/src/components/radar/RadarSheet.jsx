@@ -12,7 +12,11 @@ export default function RadarSheet({ open, onClose, labelledBy, children }) {
 
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = e => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    // Escape belongs to whatever sits above the sheet (the Full detail drawer, More): leave it be.
+    const onKey = e => {
+      if (e.key !== "Escape" || document.querySelector('[aria-modal="true"], .more-drawer')) return;
+      e.preventDefault(); onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
