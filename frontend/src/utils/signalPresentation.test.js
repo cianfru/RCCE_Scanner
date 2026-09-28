@@ -77,6 +77,7 @@ test('plainReason turns engine reason strings into plain words', () => {
  assert.equal(plainReason('[Agent] Squeeze setup: -73% annualized funding (z=-3.0, 14.1σ vs history) | confirmed: hyperliquid: -84%, binance: -73%'), 'Squeeze setup: -73% annualized funding · confirmed on Hyperliquid: -84%, Binance: -73%');
  assert.equal(plainReason('smart_money_long(lsr=2.51)'), 'Smart money long (long/short 2.51)');
  assert.equal(plainReason('REACC LIGHT_LONG demoted: no CVD/spot confirmation (34% WR zone)'), 'Held at Accumulate: no taker-buying confirmation');
+ assert.equal(plainReason('MARKUP + z=0.92 + conf=100% + consensus=RISK-ON [10/10 raw, 10 effective]'), 'Uptrend · Near its mean · 100% regime confidence · Market risk-on · 10 of 10 entry checks');
  assert.equal(plainReason(''), '');
  for (const s of [a, b]) assert.doesNotMatch(s, /z=|conf=|\+ /);
 });

@@ -53,6 +53,7 @@ function termWords(term) {
 function tagWords(tag) {
   let m;
   if ((m = /^(\d+)\/(\d+) cond/.exec(tag))) return `${m[1]} of ${m[2]} entry checks`;
+  if ((m = /^(\d+)\/(\d+) raw\b/.exec(tag))) return `${m[1]} of ${m[2]} entry checks`;
   if ((m = /^([\d.]+)\/([\d.]+) effective(?: \((\d+)%\))?(.*)$/.exec(tag))) {
     const pct = m[3] ?? Math.round(100 * m[1] / m[2]);
     return `Entry checks ${pct}%${/insufficient/.test(m[4]) ? ', not enough for an entry' : ''}`;

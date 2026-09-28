@@ -43,6 +43,12 @@ function checksText(cond, suffix = " met") {
   const m = /^(\d+)\/(\d+)$/.exec(cond || "");
   return m ? `${m[1]} of ${m[2]} entry checks${suffix}` : "";
 }
+// A WAIT cell: a full count would read as conviction, so it says the signal was held back anyway.
+function waitChecks(cond) {
+  const m = /^(\d+)\/(\d+)$/.exec(cond || "");
+  if (!m) return "";
+  return m[1] === m[2] ? "all checks met, held back" : `${m[1]} of ${m[2]} checks`;
+}
 // "Sep 24" -> "24 Sep" for the readout line.
 function dayText(day) {
   const m = /^([A-Za-z]{3}) (\d{1,2})$/.exec(String(day || ""));
@@ -55,9 +61,11 @@ function sentenceLabel(sig) {
 }
 
 // Ticker with its logo, as in the scanner grid.
-function Sym({ symbol, size = 18 }) {
+// Phone: a 14px logo with a 4px gap, so the tables and the heatmap label column stay as wide as before.
+function Sym({ symbol, compact = false }) {
+  const size = compact ? 14 : 18;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, minWidth: 0, maxWidth: "100%" }}>
       <TokenLogo symbol={symbol} size={size} />
       <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{stripSymbol(symbol)}</span>
     </span>
@@ -154,7 +162,7 @@ function SignalHeatmap({ data, isMobile, sortMode, picked, onPick }) {
   // Cells fit a six-letter label at 12px; narrow screens scroll sideways.
   const cellMinSize = 52;
   // Logo (18) + gap + a seven-letter ticker.
-  const labelW = isMobile ? 84 : 100;
+  const labelW = isMobile ? 92 : 100;
   // Size the table from its columns so narrow screens scroll instead of squeezing cells
   const colW = cellMinSize + 2;
   const tableW = labelW + 12 + data.days.length * colW;
@@ -177,7 +185,7 @@ function SignalHeatmap({ data, isMobile, sortMode, picked, onPick }) {
             if (!row) return null;
             return (
               <tr key={sym} style={{ background: rowIdx % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td className="heat-sym" style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? `linear-gradient(${T.overlay02}, ${T.overlay02}), ${T.selectBg}` : T.selectBg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW, maxWidth: labelW, whiteSpace: "nowrap", overflow: "hidden" }}><Sym symbol={sym} /></td>
+                <td className="heat-sym" style={{ position: "sticky", left: 0, zIndex: 1, background: rowIdx % 2 === 1 ? `linear-gradient(${T.overlay02}, ${T.overlay02}), ${T.selectBg}` : T.selectBg, padding: "2px 6px", fontSize: T.textXs, color: T.text2, fontWeight: 600, borderBottom: `1px solid ${T.overlay04}`, width: labelW, minWidth: labelW, maxWidth: labelW, whiteSpace: "nowrap", overflow: "hidden" }}><Sym symbol={sym} compact={isMobile} /></td>
                 {row.map((cell, colIdx) => {
                   const signal = cell?.signal || "WAIT";
                   const checks = checksText(cell?.cond);
@@ -229,7 +237,7 @@ function HeatmapReadout({ data, picked, isMobile }) {
       <b style={{ fontWeight: 600, color: T.text1 }}>{stripSymbol(picked.sym)}</b>
       {dot}{dayText(data.days?.[picked.idx])}
       {dot}<span style={{ color: signal === "WAIT" ? T.text3 : signalColor(signal), fontWeight: 600 }}>{sentenceLabel(signal)}</span>
-      {checks && <>{dot}{checks}</>}
+      {checks && <>{dot}{signal === "WAIT" ? waitChecks(cell?.cond) : checks}</>}
     </p>
   );
 }
@@ -289,7 +297,7 @@ function DivergenceView({ data, isMobile }) {
                 background: i % 2 === 1 ? T.overlay02 : "transparent",
                 borderLeft: `3px solid ${bullSignalBearWallets ? col("#f87171") : col("#fbbf24")}`,
               }}>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={p.symbol} /></td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={p.symbol} compact={isMobile} /></td>
                 <td style={S.td}>
                   <Badge color={sigColor}>
                     {signalLabel(p.signal)}
@@ -366,7 +374,7 @@ function TransitionsView({ events, isMobile }) {
             return (
               <tr key={`${ev.symbol}-${ev.timestamp}-${i}`} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
                 <td style={{ ...S.td, color: T.text3 }}>{ago}</td>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={ev.symbol} /></td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={ev.symbol} compact={isMobile} /></td>
                 <td style={{ ...S.td, color: prevColor }}>{ev.prev_signal ? signalLabel(ev.prev_signal) : "\u2014"}</td>
                 <td style={{ ...S.td, color: tt.color, fontSize: 12, textAlign: "center", padding: "7px 4px" }}>{tt.glyph}</td>
                 <td style={{ ...S.td, color: sigColor, fontWeight: 600 }}>{signalLabel(ev.signal)}</td>
@@ -440,7 +448,7 @@ function StreaksView({ data, isMobile }) {
             const sigColor = signalColor(s.signal);
             return (
               <tr key={s.symbol} style={{ background: i % 2 === 1 ? T.overlay02 : "transparent" }}>
-                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={s.symbol} /></td>
+                <td style={{ ...S.td, fontWeight: 700, fontSize: 12 }}><Sym symbol={s.symbol} compact={isMobile} /></td>
                 <td style={S.td}>
                   <Badge color={sigColor}>
                     {signalLabel(s.signal)}

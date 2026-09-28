@@ -365,8 +365,8 @@ export default function TradFiPanel({
                       </td>
                       <td style={{ padding: cellPad }}>
                         {isMobile ? <>
-                          <div style={{ fontFamily: T.mono, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-                            <TokenLogo symbol={r.symbol} size={16} />
+                          {/* No logo on phone: TradFi has no logo files, and the space belongs to REGIME / SIGNAL. */}
+                          <div style={{ fontFamily: T.mono, whiteSpace: "nowrap" }}>
                             <span style={{ fontWeight: 700, color: T.text1, fontSize: m(T.textBase, isMobile) }}>{r.tradfi_coin || r.symbol.split("/")[0]}</span>
                             <span style={{ color: T.text3, fontSize: m(T.textXs, isMobile), marginLeft: 6 }}>{formatPrice(r.price)}</span>
                           </div>
