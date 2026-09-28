@@ -22,3 +22,15 @@ export function ageShort(ts, now = Date.now() / 1000) {
   if (d < 86400) return `${Math.round(d / 3600)}h`;
   return `${Math.round(d / 86400)}d`;
 }
+
+// The row's reason, short. An emerging setup's reason is the engine's formula
+// ("MARKUP + z=-0.02 + conf=11% + … [7.0/9 effective (78%) — insufficient]"); the row shows
+// its count ("7 of 9 conditions, not enough yet") and keeps the formula for the tooltip.
+export function oppReasonShort(reason) {
+  const text = String(reason || "");
+  const m = text.match(/\[(\d+(?:\.\d+)?)\/(\d+) effective[^\]]*\]/);
+  if (!m) return text;
+  const met = Number(m[1]), of = Number(m[2]);
+  const count = `${Number.isInteger(met) ? met : met.toFixed(1)} of ${of} conditions`;
+  return /insufficient/i.test(m[0]) ? `${count}, not enough yet` : count;
+}

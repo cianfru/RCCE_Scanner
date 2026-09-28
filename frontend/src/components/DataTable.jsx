@@ -6,7 +6,7 @@ import { setupAlignment, marketWideMissing } from "../utils/signalPresentation.j
 import { SECTOR_SHORT } from "../utils/sectors.js";
 import { formatPrice } from "../utils/marketPresentation.js";
 import { marketHref } from "../utils/researchNavigation.js";
-import { fitColumns } from "../utils/gridFit.js";
+import { fitColumns, widthCaps } from "../utils/gridFit.js";
 import useElementWidth from "../hooks/useElementWidth.js";
 import { COLUMN_FIT } from "../scannerColumns.js";
 import SetupPair, { setupColor } from "./SetupPair.jsx";
@@ -241,7 +241,8 @@ const PAIR_HELP = <>
 </>;
 
 // A scanner header label: a sort button (sortable) or a help button, both with a dotted underline.
-// Help opens after 350ms of hover, on keyboard focus, or on a 500ms touch hold; a click sorts.
+// Help opens after 600ms of resting on the label (a sweep across the header opens nothing), on
+// keyboard focus, or on a 500ms touch hold; a click sorts.
 // compact (phone PRI): no help, and the arrow hangs in the cell padding so the column stays narrow.
 function HeaderLabel({ label, text, sortKey, active, dir, onSort, compact }) {
   const info = !compact && COLUMN_INFO[label];
@@ -252,7 +253,7 @@ function HeaderLabel({ label, text, sortKey, active, dir, onSort, compact }) {
     return <span>{text}</span>;
   }
   return <HelpTip title={info.title} width={280} anchor={content} anchorClass={sortKey ? "table-sort" : "th-help"} className="th-help-wrap"
-    hoverDelay={350} longPress onActivate={sortKey ? () => onSort(sortKey) : undefined} buttonProps={title ? { title } : undefined}>
+    hoverDelay={600} longPress onActivate={sortKey ? () => onSort(sortKey) : undefined} buttonProps={title ? { title } : undefined}>
     <ColumnHelp label={label} />
   </HelpTip>;
 }
@@ -298,6 +299,7 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
   const fit = useMemo(() => (scanner && W ? fitColumns(candidateKey ? candidateKey.split("|") : [], W, { extraDrops }) : null),
     [scanner, W, candidateKey, extraDrops, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const columns = fit ? shownColumns.filter(([, l]) => fit.visible.includes(l)) : shownColumns;
+  const caps = fit && !fit.phone ? widthCaps(fit.visible, W, fit.pad) : null;
   const phone = !!fit?.phone;
   const tight = !!fit?.tight;
   const line = fit?.line;
@@ -428,6 +430,7 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
       <GlassCard className="terminal-data-table" style={{ overflow: "visible" }}>
         <div ref={wrapRef} className={fits ? "grid-fits" : undefined} style={{ overflowX: scanner ? (fits ? "clip" : "auto") : "auto", WebkitOverflowScrolling: "touch" }}>
           <table ref={tableRef} className={phone ? (tight ? "grid-phone grid-tight" : "grid-phone") : line?.length ? "grid-folded" : undefined} style={{ width: "100%", borderCollapse: "collapse", ...(fit ? { "--cell-px": `${fit.pad}px` } : null) }}>
+            {caps && <colgroup>{columns.map(([, l]) => <col key={l} style={caps[l] ? { width: caps[l] } : undefined} />)}</colgroup>}
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
                 {renderHead()}

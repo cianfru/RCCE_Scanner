@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitColumns, neededWidth, RANKED, DROP_ORDER } from './gridFit.js';
+import { fitColumns, neededWidth, widthCaps, RANKED, DROP_ORDER } from './gridFit.js';
 import { SCANNER_COLUMNS } from '../scannerColumns.js';
 
 const ALL = SCANNER_COLUMNS.map(([, label]) => label);
@@ -136,4 +136,17 @@ test('safety net: extra drops remove the next column in drop order', () => {
   const folded = fitColumns(D1, 726, { extraDrops: 1 });
   assert.deepEqual(folded.visible, ['PRI', 'SYMBOL', 'REGIME', 'SIGNAL', 'COND', 'HEAT']);
   assert.deepEqual(folded.line, ['Z-SCORE', 'SPARK']);
+});
+
+test('wide grids cap the pair, Z and the symbol; narrower ones leave widths to the table', () => {
+  const cols = ['#', 'PRI', 'SYMBOL', 'REGIME', 'SIGNAL', 'Z-SCORE', 'SPARK', 'COND', 'HEAT', 'CVD', 'CONF', 'EXHAUST', 'ENERGY', 'SM'];
+  const wide = fitColumns(cols, 1870);                     // 1920 window
+  assert.equal(wide.pad, 12);
+  assert.deepEqual(widthCaps(wide.visible, 1870, wide.pad), { SYMBOL: 180, REGIME: 361, 'Z-SCORE': 160 });
+  const mid = fitColumns(cols, 1390);                      // 1440 window: no surplus to spare
+  assert.equal(widthCaps(mid.visible, 1390, mid.pad), null);
+  // Just fitting at 12px: the caps would push columns out, so none.
+  const need = neededWidth(cols, 12);
+  assert.equal(widthCaps(cols, need + 50, 12), null);
+  assert.ok(widthCaps(cols, need + 110, 12));
 });

@@ -76,6 +76,10 @@
    The line wraps only as a last resort. */
 .setup-phone-line{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin-top:4px;}
 .reflex-terminal .terminal-data-table .grid-phone td.setup-cell{padding-left:4px!important;}
+/* Phone rows carry three lines in the pair (regime, signal, Z and sparkline): 8px above and
+   below instead of 12 keeps them near today's height (about 83px against 73). */
+.reflex-terminal .terminal-data-table .grid-phone td{padding-top:8px!important;padding-bottom:8px!important;}
+.grid-phone .setup-phone-line{margin-top:3px;}
 .reflex-terminal .terminal-data-table .grid-phone td.setup-cell .setup-pair{padding-inline:0;}
 .reflex-terminal .terminal-data-table .grid-phone .fav-star{margin-right:4px;}
 .reflex-terminal .terminal-data-table .grid-phone .scanner-ticker{gap:6px!important;}
@@ -1079,7 +1083,10 @@ a.te-link{text-decoration:none;display:inline-block;}
 }
 
 /* Scanner Radar strip: the page's entry to the Radar (perps only). */
-.radar-strip{display:flex;align-items:center;margin-top:16px;padding:12px 18px;box-sizing:border-box;max-height:76px;overflow:hidden;background:var(--t-glassBg);border:1px solid var(--t-border);border-top:2px solid var(--t-accent);border-radius:14px;backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:var(--t-glassShadow),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 1px 0 rgba(255,255,255,.04);}
+.radar-strip{position:relative;display:flex;align-items:center;margin-top:16px;padding:12px 18px;box-sizing:border-box;max-height:76px;overflow:hidden;background:var(--t-glassBg);border:1px solid var(--t-border);border-radius:14px;backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:var(--t-glassShadow),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 1px 0 rgba(255,255,255,.04);}
+/* Its accent edge: 2px at 60%, stopping short of the corners and fading out by 70% of the width,
+   so the hero card's machined edge stays the brightest line on the page. */
+.radar-strip::before{content:"";position:absolute;top:0;left:14px;right:14px;height:2px;pointer-events:none;background:linear-gradient(90deg,color-mix(in srgb,var(--t-accent) 60%,transparent),color-mix(in srgb,var(--t-accent) 60%,transparent) 30%,transparent 70%);}
 .radar-strip-id{flex:none;min-width:150px;display:flex;flex-direction:column;gap:4px;padding-right:18px;}
 .radar-strip-title{display:inline-flex;align-items:center;gap:8px;font:600 15px var(--font-geist-sans),sans-serif;color:var(--t-text1);white-space:nowrap;}
 .radar-strip-glyph{display:inline-flex;color:var(--t-accent);}
@@ -1087,20 +1094,37 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-strip-count{font-size:13px;color:var(--t-text2);white-space:nowrap;}
 .radar-strip-count b{font:600 13px var(--font-geist-mono),monospace;color:var(--t-accent);}
 .radar-tiles{display:flex;flex:1;min-width:0;}
-.radar-tile{flex:1 1 0;min-width:0;display:grid;grid-template-columns:64px minmax(0,1fr);grid-template-areas:"thumb top" "thumb sub";column-gap:10px;row-gap:3px;align-items:center;padding:2px 14px;border:0;border-left:1px solid var(--t-border);background:none;text-align:left;cursor:pointer;color:var(--t-text2);font:inherit;}
-.radar-tile .smap-thumb{grid-area:thumb;width:64px;height:36px;}
+.radar-tile{position:relative;isolation:isolate;flex:1 1 0;min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"thumb top" "thumb sub";column-gap:8px;row-gap:3px;align-items:center;padding:2px 12px;border:0;border-left:1px solid var(--t-border);background:none;text-align:left;cursor:pointer;color:var(--t-text2);font:inherit;}
+/* Hover and keyboard focus: a rounded surface inside the tile (the dividers stay put). */
+.radar-tile::after{content:"";position:absolute;inset:-4px 4px;z-index:-1;border-radius:8px;pointer-events:none;transition:background .15s;}
+.radar-tile:hover::after{background:var(--t-overlay04);}
+.reflex-terminal .radar-tile:focus-visible,.radar-tile:focus-visible{outline:none;}
+.radar-tile:focus-visible::after{box-shadow:inset 0 0 0 2px var(--t-accent);}
+.radar-tile .smap-thumb{grid-area:thumb;width:80px;height:40px;}
+.radar-thumb{overflow:hidden;}
 .radar-tile:hover .radar-tile-top strong{color:var(--t-accent);}
-.radar-tile:focus-visible{outline-offset:-2px;}
 .radar-tile-top{grid-area:top;align-self:end;display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;}
 .radar-tile-top strong{font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);overflow:hidden;text-overflow:ellipsis;}
-.radar-tile-sub{grid-area:sub;align-self:start;display:block;min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.radar-tile-sub .trd::before{content:" \00b7\0020";white-space:pre;}
-.radar-tile-sub em{font-style:normal;color:var(--t-accent);}
+/* Line 2 keeps the trader count and its arrivals whole; only the signal words may shorten. */
+.radar-tile-sub{grid-area:sub;align-self:start;display:flex;align-items:center;gap:8px;min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;}
+.radar-tile-sub .sig{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.radar-tile-sub .trd{flex:none;display:inline-flex;align-items:center;gap:3px;}
+.radar-tile-sub em{font-style:normal;color:var(--t-accent);margin-left:3px;}
+.radar-person{flex:none;}
 .radar-strip-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-left:18px;border-left:1px solid var(--t-border);white-space:nowrap;}
 .radar-open{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-accent);text-decoration:underline;text-underline-offset:3px;}
 .radar-strip-watching{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--t-text3);}
-.radar-strip-loading{flex:1;height:41px;margin:0 16px;}   /* loaded strip is 68px tall; hold it */
+.radar-strip-loading{flex:1;height:44px;margin:0 16px;}   /* loaded strip is 70px tall; hold it */
 .radar-strip-empty{flex:1;margin:0;padding:0 16px;font-size:13px;color:var(--t-text3);}
+/* Desktop: as many tiles as fit at 240px or more each (up to six), so line 2 never cuts. */
+@media(min-width:768px){
+ .radar-tiles{container-type:inline-size;}
+ @container (max-width:479px){.radar-tile:nth-child(n+2){display:none;}}
+ @container (max-width:719px){.radar-tile:nth-child(n+3){display:none;}}
+ @container (max-width:959px){.radar-tile:nth-child(n+4){display:none;}}
+ @container (max-width:1199px){.radar-tile:nth-child(n+5){display:none;}}
+ @container (max-width:1439px){.radar-tile:nth-child(n+6){display:none;}}
+}
 @media(max-width:767px){
  .radar-strip{flex-direction:column;align-items:stretch;gap:6px;max-height:none;padding:8px 14px 10px;}
  .radar-strip-row1{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
@@ -1109,15 +1133,17 @@ a.te-link{text-decoration:none;display:inline-block;}
  .radar-tiles{overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
  .radar-tiles::-webkit-scrollbar{display:none;}
  .radar-tile{flex:0 0 168px;scroll-snap-align:start;padding:0 10px;grid-template-areas:"top top" "thumb sub";column-gap:8px;row-gap:5px;}
+ .radar-tile:nth-child(n+5){display:none;}
+ .radar-tile .smap-thumb{width:64px;height:32px;}
+ .radar-tile::after{inset:0 2px;}
  .radar-tile-top{align-self:center;}
- .radar-tile-sub{align-self:center;}
- .radar-tile-sub .sig,.radar-tile-sub .trd{display:block;overflow:hidden;text-overflow:ellipsis;}
- .radar-tile-sub .trd::before{content:none;}
+ .radar-tile-sub{flex-direction:column;align-items:flex-start;gap:2px;align-self:center;}
+ .radar-tile-sub .sig{max-width:100%;}
  .radar-tile:first-child{border-left:0;padding-left:0;}
  .radar-strip-loading,.radar-strip-empty{margin:0;padding:0;}
  .radar-strip-loading{height:40px;}
 }
-@media(max-width:767px){.radar-strip:has(.radar-strip-loading){min-height:108px;}}   /* hold the loaded strip height so the grid does not jump */
+@media(max-width:767px){.radar-strip:has(.radar-strip-loading){min-height:104px;}}   /* hold the loaded strip height so the grid does not jump */
 
 /* ── Scanner top polish (WP7) ─────────────────────────────────────────────── */
 /* Summary card: desktop "all markets" meta; phone sub-line and dial verdict. */
@@ -1149,6 +1175,9 @@ a.te-link{text-decoration:none;display:inline-block;}
  .scanner-market-rule{flex:0 0 1px;height:16px;background:var(--t-border);}
  .scanner-market .reflex-tabs{gap:4px;}
  .scanner-market .reflex-tabs button{padding:12px 14px;}
+ /* One steel bar in the title row (on 4H/1D): Perps | Spot marks its choice by ink alone. */
+ .scanner-market .reflex-tabs button[aria-pressed="true"]{background:none;color:var(--t-text1);}
+ .scanner-market .reflex-tabs button[aria-pressed="false"]:hover{color:var(--t-text2);}
 }
 .search-hint{display:none;flex:0 0 auto;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:4px;font:500 12px/1 var(--font-geist-mono),monospace;color:var(--t-text4);}
 @media(min-width:768px) and (hover:hover) and (pointer:fine){.search-hint{display:inline-flex;}}
@@ -1170,7 +1199,9 @@ a.te-link{text-decoration:none;display:inline-block;}
 /* Sector strip: fade edges while more chips sit past them, desktop chevrons, compact tail chips. */
 @property --fade-l{syntax:"<length>";inherits:false;initial-value:0px;}
 @property --fade-r{syntax:"<length>";inherits:false;initial-value:0px;}
-.edge-fade{--fade-l:0px;--fade-r:0px;-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);transition:--fade-l .2s ease,--fade-r .2s ease;}
+@property --pad-l{syntax:"<length>";inherits:false;initial-value:0px;}
+@property --pad-r{syntax:"<length>";inherits:false;initial-value:0px;}
+.edge-fade{--fade-l:0px;--fade-r:0px;--pad-l:0px;--pad-r:0px;-webkit-mask-image:linear-gradient(to right,transparent var(--pad-l),#000 calc(var(--pad-l) + var(--fade-l)),#000 calc(100% - var(--pad-r) - var(--fade-r)),transparent calc(100% - var(--pad-r)));mask-image:linear-gradient(to right,transparent var(--pad-l),#000 calc(var(--pad-l) + var(--fade-l)),#000 calc(100% - var(--pad-r) - var(--fade-r)),transparent calc(100% - var(--pad-r)));transition:--fade-l .2s ease,--fade-r .2s ease,--pad-l .2s ease,--pad-r .2s ease;}
 .edge-fade[data-fade-l]{--fade-l:32px;}
 .edge-fade[data-fade-r]{--fade-r:32px;}
 .sector-scroll{position:relative;}
@@ -1184,6 +1215,9 @@ a.te-link{text-decoration:none;display:inline-block;}
  .sector-chev:hover{color:var(--t-accent);}
  .sector-chev.prev{left:-2px;}
  .sector-chev.next{right:-2px;}
+ /* The chips fade out before the chevron's 28px, so no chip text ever sits under it. */
+ .sector-chips.edge-fade[data-fade-l]{--pad-l:28px;}
+ .sector-chips.edge-fade[data-fade-r]{--pad-r:28px;}
 }
 /* Phone: "Show all" leads the baseline line instead of taking a row of its own. */
 .sector-clear-inline{display:none;}

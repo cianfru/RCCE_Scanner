@@ -80,3 +80,17 @@ export function fitColumns(labels, W, { phone, extraDrops = 0 } = {}) {
   }
   return done(visible, pad);
 }
+
+// Wide grids: the pair, Z and the symbol stop a little past their fitted width instead of taking
+// a share of the surplus (at 1920 the pair grew to 470px, leaving an empty locked fill, and a
+// 190px Z pulled the bar away from its number); the evidence columns take the rest. Only at the
+// 12px tier, and only when the surplus covers the caps with room to spare, so a cap never forces
+// a column out. Returns {label: px} for <col> widths, or null.
+const CAP_EXTRA = { SYMBOL: 30, REGIME: 30, 'Z-SCORE': 10 };
+export function widthCaps(visible, W, pad) {
+  if (pad !== 12 || !W) return null;
+  const labels = Object.keys(CAP_EXTRA).filter(label => visible.includes(label));
+  const extra = labels.reduce((sum, label) => sum + CAP_EXTRA[label], 0);
+  if (!labels.length || W - neededWidth(visible, 12) < extra + 40) return null;
+  return Object.fromEntries(labels.map(label => [label, COLUMN_FIT[label].w[0] + CAP_EXTRA[label]]));
+}

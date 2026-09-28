@@ -21,6 +21,8 @@ import { clampLeft, placeVertical, TOOLTIP_MARGIN } from '../utils/tooltipPositi
  *   onActivate   a click runs this instead of opening the card (e.g. sort)
  *   longPress    holding a touch 500ms opens the card
  */
+const cardWidth = width => Math.min(width, (typeof window === 'undefined' ? 1440 : window.innerWidth) - TOOLTIP_MARGIN * 2);
+
 export default function HelpTip({ title, children, width = 400, trigger = 'hover', size = 14, label, icon, buttonStyle, className = "",
   anchor: anchorContent, anchorClass, hoverDelay = 0, onActivate, longPress = false, buttonProps }) {
   const [open, setOpen] = useState(false);
@@ -48,8 +50,10 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
     if (!open) { setPosition(null); return; }
     const place = () => {
       const rect = anchor.current.getBoundingClientRect();
-      const w = Math.min(width, window.innerWidth - TOOLTIP_MARGIN * 2);
-      const h = tooltip.current?.getBoundingClientRect().height || 300;
+      const w = cardWidth(width);
+      // The card already has its final width (set in render), so this is its real height;
+      // scrollHeight is the full height even while a maxHeight caps it.
+      const h = tooltip.current ? Math.max(tooltip.current.getBoundingClientRect().height, tooltip.current.scrollHeight) : 300;
       setPosition({ left: clampLeft(rect.left, rect.width, w, window.innerWidth), ...placeVertical(rect.top, rect.bottom, h, window.innerHeight), width: w });
     };
     const dismiss = e => {
@@ -72,7 +76,7 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
 
   const hoverProps = hover ? { onMouseEnter: showSoon, onMouseLeave: hide } : {};
   const tip = open && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`alt-season-explanation${width < 300 ? ' is-compact' : ''}`} {...(hover ? { onMouseEnter: show, onMouseLeave: hide } : {})}
-    style={{ ...position, visibility: position ? 'visible' : 'hidden' }}>
+    style={{ width: cardWidth(width), ...position, visibility: position ? 'visible' : 'hidden' }}>
     {title && <strong>{title}</strong>}
     {children}
   </div>, document.body);

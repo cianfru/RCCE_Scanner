@@ -199,17 +199,34 @@ test("label order: focused, watched, mine, box by priority, lean, movers", () =>
   assert.deepEqual(order, ["FOC", "WAT", "MINE", "BOX2", "BOX1", "BIG", "SMALL", "MOV"]);
 });
 
-test("thumbnail extent: the trail and the box, padded", () => {
+test("thumbnail extent: zoomed to the trail; a near box edge joins, a far one does not", () => {
   const box = { z: [-0.5, 1.5], n: [1, 8] };
-  const e = thumbExtent([], box);
-  assert.deepEqual(e.x.map(v => +v.toFixed(3)), [-0.8, 1.8]);                     // 12% of 2 is 0.24: the 0.3 floor
-  assert.deepEqual(e.y.map(v => +v.toFixed(3)), [+(symlog(1) - 0.3).toFixed(3), +(symlog(8) + 0.3).toFixed(3)]);
-  const far = thumbExtent([{ z: -2, n: 0 }, { z: 3, n: 20 }], box);
-  assert.deepEqual(far.x.map(v => +v.toFixed(3)), [-2.6, 3.6]);                   // span 5: 12% is 0.6
-  assert.ok(far.y[0] < 0 && far.y[1] > symlog(20));
-  // The box always shows: a tiny trail inside it still frames the whole box.
-  const tiny = thumbExtent([{ z: 0.40, n: 1 }, { z: 0.45, n: 1 }], box);
-  assert.ok(tiny.x[0] < -0.5 && tiny.x[1] > 1.5);
+  const r3 = v => v.map(x => +x.toFixed(3));
+  const frac = (e, lo, hi) => (hi - lo) / (e[1] - e[0]);
+  // No trail: the box itself, padded 14%.
+  assert.deepEqual(r3(thumbExtent([], box).x), [-0.78, 1.78]);
+  // A long trail sets the scale; the box edges sit inside it.
+  assert.deepEqual(r3(thumbExtent([{ z: -2, n: 0 }, { z: 3, n: 20 }], box).x), [-2.7, 3.7]);
+  // A small trail far from the box edges: the box does not set the scale (the old fit framed the
+  // whole box and left a 4px squiggle), and the trail takes most of the width.
+  const aztec = [0.13, 0.212, 0.222, 0.238, 0.281].map(z => ({ z, n: 2 }));
+  const e = thumbExtent(aztec, box);
+  assert.ok(e.x[0] > -0.5 && e.x[1] < 1.5);
+  assert.ok(frac(e.x, 0.13, 0.281) >= 0.45);
+  // Flat trader count: the minimum span centres it; the box floor (n 1) is close, so it shows.
+  assert.ok(e.y[0] < symlog(1) && e.y[1] < symlog(8));
+  assert.ok(symlog(2) > e.y[0] && symlog(2) < e.y[1]);
+  // A trail that moved at least minZ spans at least half the view even when a box edge joins.
+  const tia = [[0.342, 0], [0.616, 0], [0.65, 0], [0.583, 1], [0.594, 1]].map(([z, n]) => ({ z, n }));
+  const t = thumbExtent(tia, box);
+  assert.ok(frac(t.x, 0.342, 0.65) >= 0.5);
+  assert.ok(t.y[1] >= symlog(1));               // it climbed onto the box floor: the edge shows
+  const near = thumbExtent([{ z: 1.0, n: 3 }, { z: 1.4, n: 3 }], box);
+  assert.ok(near.x[1] > 1.5);                   // the right edge 0.1 away joins the view
+  assert.ok(frac(near.x, 1.0, 1.4) >= 0.5);
+  // A still coin: one point, centred in a minimum-size view.
+  const one = thumbExtent([{ z: 0.4, n: 1 }], box);
+  assert.ok(Math.abs((one.x[0] + one.x[1]) / 2 - 0.4) < 1e-9 && one.x[1] - one.x[0] < 0.4);
 });
 
 test("pulse line and Radar addresses", () => {

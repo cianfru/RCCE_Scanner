@@ -96,16 +96,28 @@ export function watchToast(coin, result, telegram) {
 // A Hyperliquid address (0x and 40 hex digits).
 export const isAddress = v => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
 
-// A thumbnail zoomed to the coin's own trail and the Watch box: x in z units, y in symlog
-// units, each padded by 12% of its span (at least 0.3) so the dots never touch the edge.
-export function thumbExtent(points, box) {
-  const zs = [...(points || []).map(p => p.z), box.z[0], box.z[1]].filter(Number.isFinite);
-  const ns = [...(points || []).map(p => symlog(p.n)), symlog(box.n[0]), symlog(box.n[1])].filter(Number.isFinite);
-  const pad = vs => {
-    const lo = Math.min(...vs), hi = Math.max(...vs), p = Math.max(0.3, 0.12 * (hi - lo));
+// A thumbnail zoomed to the coin's own trail: x in z units, y in symlog units. The trail sets
+// the scale, at least minZ / minN wide so a coin that barely moved is not blown up. A Watch box
+// edge joins the view only when it sits close (the view stays within 1.5x the trail's span), so
+// the box reads as a tinted area or one edge and never shrinks the trail: the trail always spans
+// at least half the thumbnail once it moved minZ. Padded by 14% each side for the dots.
+export function thumbExtent(points, box, { minZ = 0.25, minN = 0.3 } = {}) {
+  const axis = (vals, edges, min) => {
+    edges = edges.filter(Number.isFinite);
+    vals = vals.filter(Number.isFinite);
+    if (!vals.length) vals = edges.length ? edges : [0];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < min) { const m = (lo + hi) / 2; lo = m - min / 2; hi = m + min / 2; }
+    const cap = 1.5 * (hi - lo);
+    for (const e of [...edges].sort((a, b) => Math.max(lo - a, a - hi) - Math.max(lo - b, b - hi))) {
+      if (e < lo && hi - e <= cap) lo = e;
+      else if (e > hi && e - lo <= cap) hi = e;
+    }
+    const p = 0.14 * (hi - lo);
     return [lo - p, hi + p];
   };
-  return { x: pad(zs), y: pad(ns) };
+  const p = points || [];
+  return { x: axis(p.map(v => v.z), box.z, minZ), y: axis(p.map(v => symlog(v.n)), box.n.map(symlog), minN) };
 }
 
 // The box a label's text takes: w wide by h tall around its baseline point (x, y).
