@@ -181,3 +181,240 @@ The history drawer:
 ## Results
 
 To be added below after each stage. Nothing above changes.
+
+
+## In-sample results (outcomes up to 2026-03-29)
+
+Run on 28 September 2026 with `python -m backtest.risk_on_cycles insample`, using the code at commit 980a0bc. The sample is 1,794 days, from 2021-05-01 to 2026-03-29, and every window below ends by 2026-03-29. The latest reading came from the production API, fetched on 28 September with a last day of 2026-09-27. Its 1,974 days that overlap the rebuild match exactly (the largest difference is 0 points), and 26 and 27 September were appended. The out-of-sample stage has not been run.
+
+**One difference from the declaration: the band's weekday.** The declaration names `market_history.btc_band` and says weekly closes fall on Sundays, but that function's filter `(d + 4) % 7 == 3` picks Wednesday closes. This study follows the declared Sunday closes, using the same arithmetic (`weekly_band`). As a check, it also ran on the Wednesday band. Only band-dependent numbers move:
+
+- the band breaks while risk-on (3c) go from 5 to 6 events: 2024-10-01 becomes 2024-10-02, and 2024-10-09 is added;
+- run 19's lead goes from 113 to 105 days;
+- the day counts in 3a shift by 1 to 3 days.
+
+Runs, survival and both analog sets are identical. The drawer's band and the forward test's code also use Wednesday closes, while the forward test's declared rule says Sunday. Its exploratory table of 9 episodes matches the Wednesday band. On Sunday closes it would read 8 episodes, with 2024-10-01 lasting 10 days instead of 2024-10-02 and 2024-10-09, and 2025-09-25 lasting 1 day instead of 3. Nothing is changed here, and the forward test is not disturbed. This is for the owner to decide.
+
+### Today's state (the one reading taken from after the holdout line)
+
+| | |
+|---|---|
+| Day | 2026-09-27 |
+| Uptrend share | 82.1% (bucket 80-90%) |
+| Current risk-on run | began 2026-08-20; 38 days old (age bucket 30-60 days) |
+| BTC | 84,472, above its band (70,254-72,617) |
+| Percentile | higher than 79% of in-sample days. The drawer, counting every day up to today, shows 77% |
+
+The current run's peak so far, and any band breaks since 20 August, are after the holdout line. They are left to the out-of-sample stage.
+
+### 1. The runs
+
+| Run type | Runs (ended / censored / first) | Length, days: median (quartiles) |
+|---|---|---|
+| Risk-on | 13 (11 / 1 / 1) | 41 (11 to 96), n = 11 |
+| Risk-off | 12 (12 / 0 / 0) | 78.5 (26 to 156), n = 12 |
+
+| Risk-on runs (ended) | All ended | Lasted 30+ days |
+|---|---|---|
+| Reached 85% | 5 of 11 (46%, 90% range 24-68%) | 5 of 7 (71%, 90% range 41-90%) |
+| Reached 95% | 4 of 11 (36%, 90% range 18-61%) | 4 of 7 (57%, 90% range 29-81%) |
+
+| Risk-on runs (ended) | Median (quartiles) |
+|---|---|
+| Days from start to peak | 16 (4 to 19), n = 11 |
+| BTC, start to end | -5.8% (-12.4% to +11.4%), n = 11 |
+| Typical alt, start to end | -5.2% (-24.5% to +6.6%), n = 11 |
+| BTC, peak to end | -6.5% (-12.7% to +6.3%), n = 11 |
+| Typical alt, peak to end | -10.6% (-29.1% to -3.8%), n = 11 |
+
+| Risk-off runs (ended) | |
+|---|---|
+| Uptrend share fell to 15% or less | 7 of 12 (58%, 90% range 36-78%) |
+| Uptrend share fell to 5% or less | 5 of 12 (42%, 90% range 22-64%) |
+| Days from start to low | 22 (8 to 54), n = 12 |
+| BTC, start to end | +8.7% (-9.1% to +23.3%), n = 12 |
+| Typical alt, start to end | -21.7% (-44.7% to +4.3%), n = 12 |
+| BTC, low to end | +5.8% (-11.6% to +18.5%), n = 12 |
+| Typical alt, low to end | +3.6% (-23.3% to +22.1%), n = 12 |
+
+The timeline of the waves: every run, with fields as declared. Returns run from the start day to the end day, or to 2026-03-29 for the censored run. The first run's start is unknown: it is listed, but it counts in no run statistic.
+
+| # | Type | Start | End | Days | Extreme | Days to it | BTC | Alt | BTC at start | BTC during / at end |
+|---:|---|---|---|---:|---:|---:|---:|---:|---|---|
+| 1 | on (start unknown) | 2021-05-01 | 2021-05-14 | 13 | 62.5% | 0 | -13.8% | +8.1% | above | 0 break(s); breadth first, lag 3d |
+| 2 | off | 2021-05-14 | 2021-11-06 | 176 | 0.0% | 32 | +23.3% | -31.2% | above | above at end, holding 46d |
+| 3 | on | 2021-11-06 | 2021-12-17 | 41 | 83.7% | 18 | -25.0% | -33.3% | above | 1 break(s); btc first, lead 13d |
+| 4 | off | 2021-12-17 | 2021-12-23 | 6 | 50.0% | 4 | +10.2% | +14.3% | below | below at end, holding 0d |
+| 5 | on | 2021-12-23 | 2022-01-03 | 11 | 71.2% | 4 | -8.6% | -5.2% | below | 0 break(s); already below |
+| 6 | off | 2022-01-03 | 2022-01-17 | 14 | 44.2% | 8 | -9.1% | -12.2% | below | below at end, holding 0d |
+| 7 | on | 2022-01-17 | 2022-01-25 | 8 | 65.4% | 1 | -12.4% | -30.2% | below | 0 break(s); already below |
+| 8 | off | 2022-01-25 | 2022-04-02 | 67 | 13.5% | 2 | +24.0% | +22.9% | below | above at end, holding 10d |
+| 9 | on | 2022-04-02 | 2022-04-21 | 19 | 65.5% | 5 | -11.6% | -21.2% | above | 1 break(s); btc first, lead 15d |
+| 10 | off | 2022-04-21 | 2022-07-20 | 90 | 7.1% | 24 | -42.6% | -53.9% | below | below at end, holding 0d |
+| 11 | on | 2022-07-20 | 2022-12-10 | 143 | 98.3% | 20 | -26.2% | -24.0% | below | 0 break(s); already below |
+| 12 | off | 2022-12-10 | 2023-01-13 | 34 | 40.6% | 11 | +16.4% | +4.3% | below | above at end, holding 2d |
+| 13 | on | 2023-01-13 | 2023-03-07 | 53 | 85.9% | 16 | +11.4% | +6.6% | above | 0 break(s); no break 60d |
+| 14 | off | 2023-03-07 | 2023-10-22 | 229 | 1.5% | 101 | +35.1% | -32.7% | above | above at end, holding 7d |
+| 15 | on | 2023-10-22 | 2024-01-31 | 101 | 97.2% | 27 | +42.0% | +52.7% | above | 0 break(s); no break 60d |
+| 16 | off | 2024-01-31 | 2024-02-26 | 26 | 29.3% | 15 | +27.9% | +24.4% | above | above at end, holding 134d |
+| 17 | on | 2024-02-26 | 2024-03-27 | 30 | 78.7% | 19 | +27.5% | +19.3% | above | 0 break(s); no break 60d |
+| 18 | off | 2024-03-27 | 2024-09-25 | 182 | 0.0% | 54 | -9.1% | -44.7% | above | above at end, holding 8d |
+| 19 | on | 2024-09-25 | 2025-01-22 | 119 | 97.9% | 55 | +64.2% | +12.3% | above | 1 break(s); btc first, lead 113d |
+| 20 | off | 2025-01-22 | 2025-05-15 | 113 | 1.9% | 86 | +0.1% | -39.1% | above | above at end, holding 25d |
+| 21 | on | 2025-05-15 | 2025-05-21 | 6 | 57.6% | 2 | +5.7% | +0.5% | above | 0 break(s); no break 60d |
+| 22 | off | 2025-05-21 | 2025-07-11 | 51 | 45.4% | 20 | +7.2% | -10.7% | above | above at end, holding 82d |
+| 23 | on | 2025-07-11 | 2025-10-15 | 96 | 98.2% | 15 | -5.8% | -24.5% | above | 2 break(s); btc first, lead 4d |
+| 24 | off | 2025-10-15 | 2026-03-20 | 156 | 4.7% | 61 | -36.3% | -57.5% | below | below at end, holding 0d |
+| 25 | on | 2026-03-20 | censored | 10+ | 63.0% | 9 | -6.4% | -10.2% | below | 0 break(s) |
+
+### 2. Survival of risk-on runs
+
+The last two rows use today's run age (38 days).
+
+| Lasted at least d days | At risk | Known | Lasted d+30 | Left out (censored) |
+|---:|---:|---:|---|---:|
+| 10 (+30) | 10 | 9 | 6 of 9 (67%, 90% range 40-86%) | 1 |
+| 20 (+30) | 7 | 7 | 5 of 7 (71%, 90% range 41-90%) | 0 |
+| 30 (+30) | 7 | 7 | 4 of 7 (57%, 90% range 29-81%) | 0 |
+| 45 (+30) | 5 | 5 | 4 of 5 (80%, 90% range 44-95%), too few to read | 0 |
+| 60 (+30) | 4 | 4 | 4 of 4 (100%, 90% range 60-100%), too few to read | 0 |
+| 90 (+30) | 4 | 4 | 1 of 4 (25%, 90% range 6-64%), too few to read | 0 |
+| 120 (+30) | 1 | 1 | 0 of 1 (0%, 90% range 0-73%), too few to read | 0 |
+| 38 (+30) | 6 | 6 | 4 of 6 (67%, 90% range 35-88%) | 0 |
+| 38 (+60) | 6 | 6 | 3 of 6 (50%, 90% range 22-78%) | 0 |
+
+### 3. BTC band and breadth
+
+**3a. Days** (in-sample, 2021-05-01 to 2026-03-29; the days overlap, so no intervals):
+
+| BTC side | Days | Uptrend share 55%+ | Below 55% | Median Uptrend share |
+|---|---:|---:|---:|---:|
+| above | 932 | 434 | 498 | 51% |
+| inside | 68 | 11 | 57 | 26% |
+| below | 794 | 204 | 590 | 22% |
+
+**3b. How risk-on runs ended** (11 ended runs; the first run is not counted):
+
+| How risk-on runs ended | Runs |
+|---|---:|
+| btc first | 4 |
+| already below | 3 |
+| breadth first | 0 |
+| no break 60d | 4 |
+| not known yet | 0 |
+
+BTC broke first: 4 of 11 (36%, 90% range 18-61%). Ended without BTC breaking first: 4 of 11 (36%, 90% range 18-61%). Lead: 14 (4 to 15), n = 4, too few to read. Lag: none.
+
+**3c. After a band break while breadth is risk-on.** These events overlap the forward test's exploratory table, so they are not new evidence for it.
+
+| Band break while risk-on | Day | Share | Change 10d | Change 30d | Ended 30d | Ended 60d | BTC 30d | Alt 30d | BTC 60d | Alt 60d |
+|---|---|---:|---:|---:|---|---|---:|---:|---:|---:|
+| 1 | 2021-12-04 | 76.9% | -11.5 | -23.1 | yes | yes | -5.5% | -4.4% | -24.9% | -34.9% |
+| 2 | 2022-04-06 | 63.6% | -2.9 | -27.9 | yes | yes | -16.6% | -27.8% | -30.7% | -54.7% |
+| 3 | 2024-10-01 | 83.2% | -0.9 | +1.1 | no | no | +15.6% | -1.2% | +58.6% | +64.0% |
+| 4 | 2025-09-25 | 89.0% | +0.0 | -66.3 | yes | yes | +2.4% | -20.2% | -19.0% | -40.4% |
+| 5 | 2025-10-11 | 85.7% | -55.5 | -70.6 | yes | yes | -4.2% | -1.2% | -16.8% | -27.1% |
+
+| After a band break while risk-on | Events | All days 55%+ with BTC holding (days overlap) |
+|---|---|---|
+| Run ended within 30 days | 4 of 5 (80%, 90% range 44-95%), too few to read | 187 of 445 (42%) |
+| BTC 30d | -4.2% (-5.5% to +2.4%), n = 5, too few to read | +1.6% (-4.6% to +12.6%), n = 445 |
+| Typical alt 30d | -4.4% (-20.2% to -1.2%), n = 5, too few to read | -8.2% (-22.2% to +6.7%), n = 445 |
+| Run ended within 60 days | 4 of 5 (80%, 90% range 44-95%), too few to read | 314 of 445 (71%) |
+| BTC 60d | -19.0% (-24.9% to -16.8%), n = 5, too few to read | +6.1% (-8.3% to +24.0%), n = 445 |
+| Typical alt 60d | -34.9% (-40.4% to -27.1%), n = 5, too few to read | -12.4% (-38.3% to +10.1%), n = 445 |
+| Uptrend share change 10d (points) | -2.9 (-11.5 to -0.9), n = 5, too few to read | |
+| Uptrend share change 30d (points) | -27.9 (-66.3 to -23.1), n = 5, too few to read | |
+
+### 4. Moments like today (analogs)
+
+- Set A: Uptrend share 80-90%, day 30-60 of a risk-on run, BTC holding its band.
+- Set B: Uptrend share 80-90% only.
+- "Run ended" means a risk-on run's end day fell inside the window. In the all-days column this includes days that were already risk-off.
+
+| Analogs | Set A (full match) | Set B (breadth bucket only) | All in-sample days (overlap) |
+|---|---|---|---|
+| 30d: episodes | 4 | 13 | 1760 days |
+| 30d: Uptrend share reached 90% | 3 of 4 (75%, 90% range 36-94%), too few to read | 5 of 13 (38%, 90% range 20-61%) | 386 of 1760 (22%) |
+| 30d: run ended | 1 of 4 (25%, 90% range 6-64%), too few to read | 5 of 13 (38%, 90% range 20-61%) | 322 of 1760 (18%) |
+| 30d: BTC | +8.4% (+0.2% to +13.3%), n = 4, too few to read | +0.5% (-2.8% to +5.8%), n = 13 | +0.3% (-8.5% to +11.0%), n = 1760 |
+| 30d: typical alt | +0.9% (-6.3% to +4.8%), n = 4, too few to read | -3.9% (-9.1% to +4.0%), n = 13 | -7.4% (-20.3% to +6.3%), n = 1760 |
+| 60d: episodes | 4 | 13 | 1730 days |
+| 60d: Uptrend share reached 90% | 3 of 4 (75%, 90% range 36-94%), too few to read | 7 of 13 (54%, 90% range 32-74%) | 527 of 1730 (30%) |
+| 60d: run ended | 3 of 4 (75%, 90% range 36-94%), too few to read | 8 of 13 (62%, 90% range 39-80%) | 588 of 1730 (34%) |
+| 60d: BTC | +21.8% (-2.4% to +39.4%), n = 4, too few to read | -1.6% (-16.8% to +21.3%), n = 13 | +1.4% (-13.2% to +22.4%), n = 1730 |
+| 60d: typical alt | +0.2% (-29.4% to +1.4%), n = 4, too few to read | -4.6% (-29.4% to +5.1%), n = 13 | -13.1% (-28.0% to +9.5%), n = 1730 |
+
+| Set A episode | Share | Reached 90% 30d | Ended 30d | BTC 30d | Alt 30d | Reached 90% 60d | Ended 60d | BTC 60d | Alt 60d |
+|---|---:|---|---|---:|---:|---|---|---:|---:|
+| 2023-02-12 | 85.9% | no | yes | +13.3% | -2.9% | no | yes | +39.4% | +1.4% |
+| 2023-12-05 | 87.7% | yes | no | +0.2% | +4.8% | yes | yes | -2.4% | -1.0% |
+| 2024-10-25 | 85.1% | yes | no | +46.8% | +52.4% | yes | no | +47.9% | +41.9% |
+| 2025-08-29 | 88.0% | yes | no | +3.5% | -6.3% | yes | yes | +4.2% | -29.4% |
+
+| Set B episode | Share | Reached 90% 30d | Ended 30d | BTC 30d | Alt 30d | Reached 90% 60d | Ended 60d | BTC 60d | Alt 60d |
+|---|---:|---|---|---:|---:|---|---|---:|---:|
+| 2021-11-23 | 81.6% | no | yes | -11.6% | -18.3% | no | yes | -39.0% | -48.6% |
+| 2022-07-22 | 81.4% | yes | no | -5.2% | -1.8% | yes | no | -16.8% | -13.8% |
+| 2022-09-17 | 88.3% | no | no | -2.8% | -8.8% | yes | no | -17.2% | -26.7% |
+| 2022-11-13 | 87.1% | no | yes | +8.8% | +4.0% | no | yes | +15.4% | +5.1% |
+| 2023-01-24 | 81.2% | no | no | +5.8% | +14.6% | no | yes | +21.3% | -4.6% |
+| 2023-10-26 | 81.4% | yes | no | +10.6% | +25.8% | yes | no | +27.6% | +59.4% |
+| 2023-12-05 | 87.7% | yes | no | +0.2% | +4.8% | yes | yes | -2.4% | -1.0% |
+| 2024-01-05 | 89.0% | no | yes | -3.5% | -9.1% | no | yes | +44.4% | +31.1% |
+| 2024-09-30 | 80.7% | no | no | +14.2% | -3.9% | yes | no | +53.9% | +48.4% |
+| 2024-12-25 | 89.7% | no | yes | +5.5% | -16.9% | no | yes | -3.2% | -38.4% |
+| 2025-07-15 | 81.1% | yes | no | +0.5% | -3.7% | yes | no | -1.6% | +3.9% |
+| 2025-08-29 | 88.0% | yes | no | +3.5% | -6.3% | yes | yes | +4.2% | -29.4% |
+| 2025-09-23 | 89.0% | no | yes | -1.7% | -26.8% | no | yes | -24.3% | -46.6% |
+
+### 5. Where we are now
+
+- **Today's run:** began 2026-08-20 and is 38 days old. BTC is above its band. The Uptrend share is 82.1%, higher than 79% of in-sample days.
+- **Age:** 6 of the 11 ended in-sample runs lasted at least 38 days.
+- **Survival at 38 days:** of the 6 past runs that reached 38 days,
+  - 4 lasted at least 30 more (90% range 35-88%);
+  - 3 lasted at least 60 more (22-78%).
+- **Analogs:** in section 4. Set A has 4 episodes, too few to read.
+
+### Reading (in-sample; market context, not a signal)
+
+- **Two kinds of risk-on run.** Of the 11 ended runs:
+  - 4 were short (6-19 days), with peaks of 58-71%;
+  - 7 lasted 30 days or more. Of those 7, 5 reached 85% and 4 reached 95%.
+  - All 5 runs that reached 85% lasted at least 53 days. Median length is 41 days (quartiles 11-96).
+- **The high came early.** The first day at a run's peak came at a median of day 16 (quartiles 4-19). Only 1 of 11 runs, 2024-09, first touched its peak after day 30.
+  - From that peak to the run's end, the typical alt fell in 8 of 11 runs (median -10.6%) and BTC in 7 of 11 (median -6.5%).
+  - The long runs sat near their peak for weeks, so "early" means the first touch.
+- **How long after 38 days.** Of the 6 runs that reached today's age, 4 lasted at least another 30 days and 3 another 60. The ranges are wide (35-88% and 22-78%). The survival rows from 45 days on hold 5 runs or fewer, too few to read.
+- **BTC's band and breadth move together, loosely.**
+  - With BTC above its band, breadth was 55% or more on 434 of 932 days (median share 51%). With BTC below, it was 204 of 794 (median 22%).
+  - BTC above the band still left breadth under 55% on 498 of those 932 days.
+- **How runs ended (3b).** Of the 11 ended runs:
+  - in 4, BTC broke its band during the run. One of them is October 2024's brief dip, 113 days before that run ended in January 2025 (the lead row itself has 4 cases, too few to read);
+  - in 3, all in the 2021-22 bear market, BTC was already below;
+  - in 4 (March 2023, January 2024, March 2024, May 2025), there was no band break at all, during the run or within 60 days after;
+  - in none did breadth end first with BTC breaking within 60 days after.
+  - So in this history a band break came during the run, before it, or not at all, and never in the 60 days after. A run ended with no band break in 4 of 11.
+- **Band breaks while risk-on:** 5 events, too few to read.
+- **Moments like today:**
+  - Set A has 4 episodes, too few to read. They are listed above: 2023-02-12, 2023-12-05, 2024-10-25, 2025-08-29.
+  - Set B has 13 episodes. Within 30 days, breadth touched 90% or more in 5 of 13 (90% range 20-61%) and the run ended in 5 of 13 (20-61%). Within 60 days, the counts were 7 of 13 (32-74%) and 8 of 13 (39-80%). Both can happen in one window.
+  - The typical alt's 30-day median in set B was -3.9% (quartiles -9.1% to +4.0%), against -7.4% on all days. Over 60 days it was -4.6% (-29.4% to +5.1%), against -13.1%.
+  - Both directions occurred: 2021-11-23 was followed by -49% over 60 days, and 2023-10-26 by +59%.
+- **Where in the waves.** The in-sample record holds about two cycles.
+  - In 2021-22, 4 of 5 risk-on runs lasted 8-41 days. The exception, 2022-07 (143 days), began and ended with BTC below its band.
+  - In 2023-25, 5 of 6 runs lasted 30-119 days, and all 6 began with BTC above its band.
+  - Risk-off runs had a median of 78.5 days (quartiles 26-156). The last one before the holdout line ran from 2025-10-15 to 2026-03-20, 156 days, with breadth falling to 4.7%.
+  - Today's run is at day 38. 6 of 11 ended runs lasted that long.
+
+Caveats that go with every number above:
+
+- The universe is today's coin list. Coins that died are missing, so the typical alt looks better than it was.
+- There were fewer coins early on: 40 in May 2021 and 135 by March 2026.
+- The rebuild's universe is not the live scanner's: 81% against 77% on 25 September.
+- Prices are Binance spot closes, not Hyperliquid perps.
+- The units are runs and episodes: 11 ended runs, 13 set B episodes. Runs from the same cycle are not independent, and the history holds about two cycles.
+- The broad shape of this history had been seen before (see "What was already known"). These in-sample numbers are description; the out-of-sample check is the only clean test.
+
+**Out-of-sample stage (not run yet).** The run censored in-sample is the risk-on run that began 2026-03-20, 10 or more days old on 2026-03-29. In the out-of-sample stage it is marked, and it counts only where its outcome was unknown in-sample. The analog buckets stay those above: 80-90%, 30-60 days, BTC holding its band.
