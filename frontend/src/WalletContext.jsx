@@ -25,12 +25,12 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 function initialViewAddress() {
   try {
     const saved = localStorage.getItem(VIEW_KEY);
-    if (saved != null) return ADDRESS_RE.test(saved) ? saved : "";
+    if (saved != null) return ADDRESS_RE.test(saved) ? saved.toLowerCase() : "";
     // First load: take over a valid address typed into the Radar's box.
     const legacy = (localStorage.getItem(LEGACY_VIEW_KEY) || "").trim();
     if (ADDRESS_RE.test(legacy)) {
-      localStorage.setItem(VIEW_KEY, legacy);
-      return legacy;
+      localStorage.setItem(VIEW_KEY, legacy.toLowerCase());
+      return legacy.toLowerCase();
     }
   } catch { /* storage blocked */ }
   return "";
@@ -127,7 +127,8 @@ export function WalletProvider({ children }) {
 
   // A valid address or "" (stop viewing). Returns whether it was accepted.
   const setViewAddress = useCallback((value) => {
-    const v = String(value ?? "").trim();
+    // Lowercase: one address, one cache key and one banner spelling however it was typed.
+    const v = String(value ?? "").trim().toLowerCase();
     if (v && !ADDRESS_RE.test(v)) return false;
     setViewState(v);
     try { localStorage.setItem(VIEW_KEY, v); } catch { /* storage blocked */ }

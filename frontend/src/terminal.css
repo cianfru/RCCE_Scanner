@@ -1235,6 +1235,9 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .pf-dot{color:var(--t-text4);}
 .pf-notice{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 0 12px;padding:8px 0 8px 12px;box-shadow:inset 2px 0 var(--t-accent);font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .pf-notice[data-tone="error"]{box-shadow:inset 2px 0 var(--t-loss);}
+.pf-notice.pf-notice-section{margin:12px 16px;}
+.pf-notice:focus{outline:none;}
+.pf-notice:focus-visible{outline:1px solid var(--t-border-hover,var(--t-accent));outline-offset:2px;}
 .pf-view-form{display:flex;flex-direction:column;align-items:center;gap:8px;margin:22px auto 0;max-width:460px;font:13px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .pf-view-row{display:flex;align-items:center;gap:14px;width:100%;}
 .pf-view-input{flex:1 1 auto;max-width:none;}

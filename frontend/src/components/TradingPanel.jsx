@@ -401,7 +401,25 @@ function ScannerLine({ ctx4h, ctx1d, isLong, alignment }) {
   );
 }
 
-function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, posWarnings, watching, onWatch }) {
+// A close/cancel outcome, shown next to what was clicked and scrolled into view, so a failed
+// live action is never missed (it replaces alert()).
+function ActionNotice({ notice, onDismiss, inSection = false }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollIntoView?.({ block: "nearest" });
+    if (notice.tone === "error") el.focus?.({ preventScroll: true });
+  }, [notice]);
+  return (
+    <div ref={ref} tabIndex={-1} className={inSection ? "pf-notice pf-notice-section" : "pf-notice"} role={notice.tone === "error" ? "alert" : "status"} data-tone={notice.tone}>
+      <span>{notice.text}</span>
+      <button type="button" className="te-link" onClick={onDismiss}>Dismiss</button>
+    </div>
+  );
+}
+
+function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, posWarnings, watching, onWatch, notice, onDismissNotice }) {
   const szi = parseNum(pos.position?.szi ?? pos.szi);
   const isLong = szi > 0;
   const side = isLong ? "long" : "short";
@@ -437,7 +455,7 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
         <span className="pf-coin">{coin}</span>
         <span style={{ ...S.badge(sideColor(side)) }}>{side.toUpperCase()}</span>
         <span style={{ ...S.badge(T.text3), fontWeight: 500 }}>{leverage}x {leverageType}</span>
-        {liqDanger && <span className="pf-liq" style={S.badge(liqTone)}>Liquidation {liqDistPct.toFixed(1)}% away</span>}
+        {liqDanger && <span className="pf-liq" style={S.badge(T.red)}>Liquidation {liqDistPct.toFixed(1)}% away</span>}
         <div className="pf-pnl">
           <div title={fmtUsd(unrealizedPnl)} style={{ fontSize: 16, fontFamily: T.mono, fontWeight: 700, color: pnlColor(unrealizedPnl) }}>
             {compactUsd(unrealizedPnl, { sign: true })}
@@ -479,6 +497,8 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
           )}
         </div>
       </div>
+
+      {notice && <ActionNotice notice={notice} onDismiss={onDismissNotice} />}
 
       {/* Row 3: the scanner's reading of this coin */}
       <ScannerLine ctx4h={ctx4h} ctx1d={ctx1d} isLong={isLong} alignment={alignment} />
@@ -534,7 +554,6 @@ export default function TradingPanel({ api }) {
   const [fills, setFills]         = useState([]);
   const [funding, setFunding]     = useState([]);
   const [fees, setFees]           = useState(null);
-  const [, setHistory]            = useState({ trades: [], stats: {} });
 
   // Scanner context
   const [scanMap4h, setScanMap4h] = useState({});
@@ -563,7 +582,7 @@ export default function TradingPanel({ api }) {
   const recordFeed = (name, ok) => setFeedState(prev => ({ ...prev, [name]: { error: !ok, updatedAt: ok ? Date.now() : prev[name]?.updatedAt } }));
   useEffect(() => {
     setFeedState({}); setActionNotice(null); setChState(null); setOpenOrders([]); setXyzChState(null); setSpotState(null);
-    setFills([]); setFunding([]); setPortfolio(null); setFees(null); setHistory({ trades: [], stats: {} }); setPosWarnings([]);
+    setFills([]); setFunding([]); setPortfolio(null); setFees(null); setPosWarnings([]);
   }, [account]);
 
   // Watch (Telegram setup messages): the same store as the Radar and the coin page.
@@ -607,9 +626,8 @@ export default function TradingPanel({ api }) {
       ["Portfolio history", () => hlClient.getPortfolio(account), setPortfolio],
       ["Funding", () => hlClient.getUserFunding(account), f => setFunding(f || [])],
       ["Fees", () => hlClient.getUserFees(account), setFees],
-      ["Trade journal", async () => { const r = await fetch(`${api}/api/trade/history`); if (!r.ok) throw new Error("Journal unavailable"); return r.json(); }, setHistory],
     ]);
-  }, [account, api, loadFeeds]);
+  }, [account, loadFeeds]);
 
   // Fetch scanner context + position warnings
   const fetchScannerContext = useCallback(async () => {
@@ -685,11 +703,11 @@ export default function TradingPanel({ api }) {
           }),
         }),
       );
-      setActionNotice({ tone: "ok", text: `${coin} closed. Order ${outcome.execution?.oid || "accepted"}.${outcome.journalPending ? " Journal sync pending; do not close again." : " Journal synced."}` });
+      setActionNotice({ section: "positions", coin, tone: "ok", text: `${coin} closed. Order ${outcome.execution?.oid || "accepted"}.${outcome.journalPending ? " Journal sync pending; do not close again." : " Journal synced."}` });
       await fetchFast();
     } catch (e) {
       console.error("Close error:", e);
-      setActionNotice({ tone: "error", text: `Close could not be confirmed: ${e.message || "connection failed"}. Refresh positions and check the exchange before trying again.` });
+      setActionNotice({ section: "positions", coin, tone: "error", text: `Close could not be confirmed: ${e.message || "connection failed"}. Refresh positions and check the exchange before trying again.` });
     }
     setClosing(null);
   };
@@ -703,7 +721,7 @@ export default function TradingPanel({ api }) {
       await fetchFast();
     } catch (e) {
       console.error("Cancel error:", e);
-      setActionNotice({ tone: "error", text: `Cancellation could not be confirmed: ${e.message || "connection failed"}. Refresh orders before trying again.` });
+      setActionNotice({ section: "orders", coin, tone: "error", text: `Cancellation could not be confirmed: ${e.message || "connection failed"}. Refresh orders before trying again.` });
     }
     setCancelling(null);
   };
@@ -765,6 +783,10 @@ export default function TradingPanel({ api }) {
   const chLoading = !chState && pending("Perpetual account");
   const failed = Object.entries(feedState).filter(([, st]) => st.error);
   const retryAll = () => { fetchFast(); fetchMedium(); fetchSlow(); };
+  const dismissNotice = () => setActionNotice(null);
+  // A close outcome sits inside that coin's card; once the card is gone (closed), above the cards.
+  const positionsNotice = actionNotice?.section === "positions" ? actionNotice : null;
+  const noticeCardShown = !!positionsNotice && !chLoading && positions.some(ap => (ap.position?.coin || ap.coin) === positionsNotice.coin);
 
   const signedUsd = v => compactUsd(v, { sign: true });
   const stats = [
@@ -823,12 +845,7 @@ export default function TradingPanel({ api }) {
       )}
 
       {/* ─── NOTICES: close/cancel outcomes and failed feeds, inline (no dialogs) ─── */}
-      {actionNotice && (
-        <div className="pf-notice" role={actionNotice.tone === "error" ? "alert" : "status"} data-tone={actionNotice.tone}>
-          <span>{actionNotice.text}</span>
-          <button type="button" className="te-link" onClick={() => setActionNotice(null)}>Dismiss</button>
-        </div>
-      )}
+      {actionNotice && actionNotice.section !== activeSection && <ActionNotice notice={actionNotice} onDismiss={dismissNotice} />}
       {account && failed.map(([name, st]) => <DataStatus key={name} label={name} {...st} onRetry={retryAll} />)}
 
       {/* ─── ACCOUNT SUMMARY ─── */}
@@ -887,6 +904,7 @@ export default function TradingPanel({ api }) {
               Open perps positions {positions.length > 0 && `(${positions.length})`}
             </span>
           </div>
+          {positionsNotice && !noticeCardShown && <ActionNotice notice={positionsNotice} onDismiss={dismissNotice} inSection />}
           {chLoading ? (
             <><PositionSkeleton /><PositionSkeleton /><PositionSkeleton /></>
           ) : positions.length === 0 ? (
@@ -904,6 +922,8 @@ export default function TradingPanel({ api }) {
                 posWarnings={posWarnings}
                 watching={watched.has(ap.position?.coin || ap.coin)}
                 onWatch={onWatch}
+                notice={noticeCardShown && positionsNotice.coin === (ap.position?.coin || ap.coin) ? positionsNotice : null}
+                onDismissNotice={dismissNotice}
               />
             ))
           )}
@@ -918,6 +938,7 @@ export default function TradingPanel({ api }) {
               Open orders {openOrders.length > 0 && `(${openOrders.length})`}
             </span>
           </div>
+          {actionNotice?.section === "orders" && <ActionNotice notice={actionNotice} onDismiss={dismissNotice} inSection />}
           {pending("Open orders") ? <TableRowsSkeleton /> : openOrders.length === 0 ? (
             <div style={S.empty}>No open orders</div>
           ) : (

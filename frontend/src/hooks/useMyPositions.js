@@ -22,12 +22,16 @@ if (typeof document !== "undefined") {
 const noop = () => {};
 const NONE = Object.freeze({ data: undefined, error: null, loading: false });
 const NO_POSITIONS = new Map();
+const EMPTY = Object.freeze([]);
 
 export default function useMyPositions(address, { executorFallback = false } = {}) {
-  const key = isAddress(address) ? address : executorFallback ? EXECUTOR : null;
+  const key = isAddress(address) ? address.toLowerCase() : executorFallback ? EXECUTOR : null;
   const sub = useCallback(fn => (key ? cache.subscribe(key, fn) : noop), [key]);
   const snap = useSyncExternalStore(sub, () => (key ? cache.get(key) : NONE));
-  const positions = snap.data?.positions || null;
+  // An address was asked for: trust only an answer about that address. A backend that ignores
+  // ?address answers with the executor's positions, which must never read as "yours".
+  const foreign = key && key !== EXECUTOR && snap.data && snap.data.source !== "address";
+  const positions = foreign ? EMPTY : snap.data?.positions || null;
   const byCoin = useMemo(() => (positions ? new Map(positions.map(p => [p.coin, p])) : NO_POSITIONS), [positions]);
   return { positions, byCoin, loading: !!key && snap.data === undefined && !snap.error, source: snap.data?.source || null };
 }
