@@ -22,12 +22,16 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
   const closeTimer = useRef(null);
   const id = useId();
   const hover = trigger === 'hover';
+  // A tap pins the card open: touch browsers send mouseleave right after the tap, which would close it.
+  // It closes on a tap outside or Escape.
+  const touch = useRef(false);
+  const pinned = useRef(false);
   const show = () => { clearTimeout(closeTimer.current); setOpen(true); };
-  const hide = () => { closeTimer.current = setTimeout(() => setOpen(false), 150); };
+  const hide = () => { if (!pinned.current) closeTimer.current = setTimeout(() => setOpen(false), 150); };
   const toggle = e => { e.stopPropagation(); clearTimeout(closeTimer.current); setOpen(o => !o); };
 
   useLayoutEffect(() => {
-    if (!open) { setPosition(null); return; }
+    if (!open) { setPosition(null); pinned.current = false; return; }
     const place = () => {
       const rect = anchor.current.getBoundingClientRect();
       const w = Math.min(width, window.innerWidth - TOOLTIP_MARGIN * 2);
@@ -55,7 +59,9 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
   return <span className={`alt-season-info ${className}`} {...hoverProps}>
     <button ref={anchor} type="button" aria-label={label || `About ${title || 'this'}`} aria-expanded={open} aria-describedby={open ? id : undefined}
       style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.7)), ...buttonStyle }}
-      onFocus={hover ? show : undefined} onBlur={hover ? hide : undefined} onClick={hover ? (e => { e.stopPropagation(); show(); }) : toggle}>{icon || 'i'}</button>
+      onPointerDown={e => { touch.current = e.pointerType !== 'mouse'; }}
+      onFocus={hover ? show : undefined} onBlur={hover ? hide : undefined}
+      onClick={hover ? (e => { e.stopPropagation(); if (touch.current) pinned.current = true; show(); }) : toggle}>{icon || 'i'}</button>
     {open && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`alt-season-explanation${width < 300 ? ' is-compact' : ''}`} {...hoverProps}
       style={{ ...position, visibility: position ? 'visible' : 'hidden' }}>
       {title && <strong>{title}</strong>}
