@@ -617,3 +617,75 @@ class FanPayloadTests(unittest.TestCase):
         self.assertEqual((lc["scored"], lc["out"]["uptrend"][1], lc["mid"]["uptrend"][1]), (0, 0, 0))
         lc = mh.live_check(mh._fan_log, all_d, NO_ALT)                # +60 closed: both horizons count
         self.assertEqual((lc["scored"], lc["out"]["uptrend"][1]), (1, 2))
+
+
+class SparkTests(unittest.TestCase):
+    """The scanner card's sparkline: last 90 days of Uptrend share, and the min-max stub of the fan's past paths."""
+    def setUp(self):
+        mh._seed, mh._live, mh._fng, mh._view, mh._spark = None, [], {}, None, None
+        mh._closes.clear()
+        self.tmp = patch.object(mh, "_live_path", return_value="/tmp/mh_test_live_spark.json")
+        self.tmp.start()
+
+    def tearDown(self):
+        self.tmp.stop()
+        mh._seed, mh._live, mh._fng, mh._view, mh._spark = None, [], {}, None, None
+        mh._closes.clear()
+
+    @staticmethod
+    def fake_view(fan):
+        days = [[d, 50, .4 + (d % 7) / 100, .1, 0, .5, 0, 1.0] for d in range(1000, 1200)]
+        return {"days": days, "today": {"day": 1199}, "fan": fan}
+
+    def test_endpoint_shape_and_size(self):
+        from fastapi.testclient import TestClient
+        import main
+        r = TestClient(main.app).get("/api/market-history/spark")
+        self.assertEqual(r.status_code, 200)
+        s = r.json()
+        self.assertEqual(set(s), {"days", "today", "stub"})
+        self.assertLess(len(r.content), 3_000)
+        v = mh.view()
+        self.assertEqual(s["today"], v["today"]["day"])
+        self.assertEqual(len(s["days"]), 90)
+        self.assertEqual(s["days"][-1][0], s["today"])
+        last = v["days"][-1]
+        self.assertEqual(s["days"][-1][1], round(last[2] + last[3], 3))
+        self.assertTrue(all(len(d) == 2 and 0 <= d[1] <= 1 for d in s["days"]))
+        if s["stub"] is not None:
+            self.assertEqual(s["stub"]["k"][0], 0)
+            self.assertLessEqual(s["stub"]["k"][-1], 30)
+        self.assertIs(mh.spark(), mh.spark())                # cached with the view
+        mh._view = None
+        self.assertIsNot(mh.spark(), s)                      # rebuilt when the view is
+
+    def test_stub_is_the_min_max_of_past_paths_anchored_at_today(self):
+        k = list(range(0, 61, 5))
+        now = .52                                            # day 1199: .40 + .02 Uptrend, .10 Overheated
+        paths = [[now + .01 * i * j if i < 9 else None for i in range(13)] for j in (-3, 1, 2)]
+        paths.append([now] + [None] * 12)                    # a path with no later knots does not cut the stub
+        v = self.fake_view({"too_few": False, "k": k, "paths": {"uptrend": paths}})
+        s = mh.spark_payload(v)
+        st = s["stub"]
+        self.assertEqual(st["k"], [0, 5, 10, 15, 20, 25, 30])
+        self.assertEqual(st["lo"][0], st["hi"][0])
+        self.assertEqual(st["lo"][0], now)
+        self.assertEqual(s["days"][-1], [1199, now])
+        self.assertTrue(all(lo <= hi for lo, hi in zip(st["lo"], st["hi"])))
+        self.assertEqual(st["lo"][6], round(now - .18, 3))
+        self.assertEqual(st["hi"][6], round(now + .12, 3))
+        self.assertNotIn("median", st)
+        self.assertEqual(len(s["days"]), 90)
+        self.assertEqual(s["days"][0][0], 1110)
+
+    def test_no_stub_when_the_fan_is_missing_or_has_too_few_runs(self):
+        self.assertIsNone(mh.spark_payload(self.fake_view(None))["stub"])
+        paths = [[.44] * 13 for _ in range(4)]
+        self.assertIsNone(mh.spark_payload(self.fake_view({"too_few": True, "k": list(range(0, 61, 5)),
+                                                           "paths": {"uptrend": paths}}))["stub"])
+
+    def test_stub_stops_at_the_first_knot_without_values(self):
+        paths = [[.44, .5, None] + [None] * 10, [.44, .4, None] + [None] * 10]
+        st = mh.spark_payload(self.fake_view({"too_few": False, "k": list(range(0, 61, 5)),
+                                              "paths": {"uptrend": paths}}))["stub"]
+        self.assertEqual(st, {"k": [0, 5], "lo": [.44, .4], "hi": [.44, .5]})

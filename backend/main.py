@@ -4140,6 +4140,16 @@ async def market_history_view():
         return JSONResponse({"detail": "Market history seed missing from this deploy"}, status_code=503)
 
 
+@app.get("/api/market-history/spark")
+async def market_history_spark():
+    """The scanner card's sparkline: the last 90 days of Uptrend share and the spread of past paths to +30 days."""
+    import market_history
+    try:
+        return market_history.spark()
+    except FileNotFoundError:
+        return JSONResponse({"detail": "Market history seed missing from this deploy"}, status_code=503)
+
+
 @app.get("/api/cohorts")
 async def cohorts_latest(dimension: Optional[str] = Query(None, pattern="^(equity|pnl)$"), symbol: Optional[str] = Query(None)):
     """Latest wallet-cohort positioning (all markets, or one symbol)."""

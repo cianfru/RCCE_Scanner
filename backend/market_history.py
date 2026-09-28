@@ -57,6 +57,9 @@ FT_HISTORY = [
 HORIZONS = (10, 30, 60)
 MIN_ALTS = 20
 _view: Optional[dict] = None
+_spark: Optional[tuple] = None                # (the view it was built from, the sparkline payload)
+SPARK_DAYS = 90
+SPARK_STUB_K = 30
 
 
 def _live_path() -> str:
@@ -754,6 +757,40 @@ def view() -> dict:
         "alt_recent": _guarded("alt_recent", lambda: alt_recent(days), []),
     }
     return _view
+
+
+def spark_payload(v: dict) -> dict:
+    """The scanner card's sparkline: the Uptrend share (Uptrend + Overheated, 3 dp) over the last 90 days, and a
+    short stub from today, the min to max of the fan's past Uptrend paths up to +30 days. No median: the walk-forward
+    check did not pass for the Uptrend bands (method doc). The stub is None when the fan is None or has too few runs,
+    and stops at the first knot with no path value."""
+    T = v["today"]["day"]
+    days = [[d[0], round(_share(d), 3)] for d in v["days"] if d[0] > T - SPARK_DAYS]
+    stub = None
+    f = v.get("fan")
+    if f and not f.get("too_few") and f.get("paths", {}).get("uptrend"):
+        ks, lo, hi = [], [], []
+        for i, k in enumerate(f["k"]):
+            if k > SPARK_STUB_K:
+                break
+            vals = [p[i] for p in f["paths"]["uptrend"] if p[i] is not None]
+            if not vals:
+                break
+            ks.append(k)
+            lo.append(round(min(vals), 3))
+            hi.append(round(max(vals), 3))
+        if len(ks) >= 2:
+            stub = {"k": ks, "lo": lo, "hi": hi}
+    return {"days": days, "today": T, "stub": stub}
+
+
+def spark() -> dict:
+    """spark_payload of the current view, rebuilt only when the view is."""
+    global _spark
+    v = view()
+    if _spark is None or _spark[0] is not v:
+        _spark = (v, spark_payload(v))
+    return _spark[1]
 
 
 def _guarded(name: str, build, fallback):
