@@ -204,7 +204,7 @@ function MetricsPanel({ data }) {
     ["Z-Score",    fmt(data.zscore, 3),                                                          zBar(data.zscore)?.color],
     ["Energy",     fmt(data.energy, 3),                                                          null],
     ["Momentum",   `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%`,                  data.momentum >= 0 ? T.green : T.red],
-    ["Price",      data.price ? formatPrice(data.price) : "\u2014",                                   null],
+    ["Price",      data.price ? formatPrice(data.price, { sig: 5 }) : "\u2014",                       null],
     ["Divergence", data.divergence || "None",                                                    data.divergence ? T.yellow : null],
     ["Heat",       data.heat != null ? Math.round(data.heat) : "\u2014",                         heatColor(data.heat)],
     ["Heat phase", data.heat_phase || "\u2014",                                                  phaseColor(data.heat_phase)],

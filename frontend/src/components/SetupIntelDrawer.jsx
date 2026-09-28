@@ -4,12 +4,18 @@ import HelpTip from "./HelpTip.jsx";
 import SetupPair from "./SetupPair.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
-import { REGIME_META, col, getBaseSymbol } from "../theme.js";
+import { col, getBaseSymbol } from "../theme.js";
 import { scoreColor } from "./PanelHeader.jsx";
 import { sideBarColor, sideColor, fmtPx, fmtUsd } from "../utils/traderFormat.js";
 import { briefRows, fmtAgo, medianGap, setupSide } from "../utils/intel.js";
 import { formatPrice } from "../utils/marketPresentation.js";
 import { CROWD_COLOR, WATCH_TIP, WatchMark } from "./radar/shared.jsx";
+
+// Both ruler ends in one precision: five significant digits of the higher end.
+function rulerEndFormat(vmax) {
+  const d = Math.min(10, Math.max(0, 4 - Math.floor(Math.log10(vmax))));
+  return new Intl.NumberFormat("en", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
 
 // Current price against where each group got in: median entries per side and the
 // profitable traders' opens of the last 24h. Log scale so a wide range still reads.
@@ -24,9 +30,14 @@ function PriceRuler({ intel, mark, gap }) {
   const dots = (intel.recent || []).filter(o => o.px > 0);
   const vals = [mark, ...marks.map(m => m.v), ...dots.map(o => o.px)].filter(v => v > 0);
   if (!mark || vals.length < 2) return null;
-  const lo = Math.log(Math.min(...vals)), hi = Math.log(Math.max(...vals));
+  const vmin = Math.min(...vals), vmax = Math.max(...vals);
+  const lo = Math.log(vmin), hi = Math.log(vmax);
   const pad = (hi - lo) * 0.08 || 0.02;
-  const x = v => `${(((Math.log(v) - (lo - pad)) / (hi - lo + 2 * pad)) * 100).toFixed(2)}%`;
+  const pct = v => ((Math.log(v) - (lo - pad)) / (hi - lo + 2 * pad)) * 100;
+  const x = v => `${pct(v).toFixed(2)}%`;
+  // The ends are the lowest and highest real marks, each under its own tick and reading
+  // outward from it, so a price line at either extreme ends at the label's edge, never on it.
+  const endFmt = rulerEndFormat(vmax);
   return (
     <figure className="si-ruler" aria-label="Current price against traders' entries">
       {gap && <p className="si-gap">{gap}</p>}
@@ -38,7 +49,10 @@ function PriceRuler({ intel, mark, gap }) {
         {marks.map((m, i) => <i key={i} className={m.row ? "si-med si-med-large" : "si-med"} style={{ left: x(m.v), background: col(m.color) }} />)}
         <i className="si-now" style={{ left: x(mark) }} />
       </div>
-      <div className="si-ends" aria-hidden="true"><span>{fmtPx(Math.exp(lo - pad))}</span><span>{fmtPx(Math.exp(hi + pad))}</span></div>
+      {vmax > vmin && <div className="si-ends" aria-hidden="true">
+        <span style={{ left: x(vmin) }}>{endFmt.format(vmin)}</span>
+        <span style={{ right: `${(100 - pct(vmax)).toFixed(2)}%` }}>{endFmt.format(vmax)}</span>
+      </div>}
       <figcaption>
         <span><i className="si-key si-key-mark" />Price {fmtPx(mark)}</span>
         {marks.map((m, i) => <span key={i}><i className="si-key" style={{ background: col(m.color) }} />{m.label}</span>)}
@@ -88,10 +102,7 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
   const coin = getBaseSymbol(row.symbol);
   const now = Date.now();
   const side = setupSide(row);
-  const rows = briefRows(row, intel, now, {
-    regimeName: k => (REGIME_META[k] || REGIME_META.FLAT).name,
-    fmt: fmtPx,
-  });
+  const rows = briefRows(row, intel, now, { fmt: fmtPx });
   const warnings = row.signal_warnings || [];
   // One price: the live mark with its reading time when traders' data is in, else the scan's.
   const price = intel?.mark || row.price;
@@ -102,7 +113,7 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
     <div className="mh-backdrop" onClick={onClose} />
     <aside className="mh-drawer si" role="dialog" aria-modal="true" aria-labelledby="si-title">
       <header className="mh-head">
-        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()}{"\u2009·\u2009"}{formatPrice(price)}{atText && <em> at {atText}</em>}</span></h2>
+        <h2 id="si-title" className="si-title"><TokenLogo symbol={row.symbol} size={24} />{coin}<span>{String(row.timeframe || "").toUpperCase()}{"\u2009·\u2009"}{formatPrice(price, { sig: 5 })}{atText && <em> at {atText}</em>}</span></h2>
         <button ref={closeRef} type="button" className="mh-close" onClick={onClose}>Close</button>
       </header>
       <div className="mh-body">

@@ -545,13 +545,18 @@
 .si-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;margin:0 0 16px;}
 .si-actions .te-link{font-size:13px;}
 .si-rows{margin:0 0 6px;}
+/* The drawer is wide: labels in a fixed column with the values left-aligned beside them, so the
+   eye does not cross the drawer (the narrow focus panel keeps its right-aligned values). */
+.smap-kv.si-rows div{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px;align-items:baseline;}
+.smap-kv.si-rows dd{text-align:left;}
 .si-rows dd{color:var(--t-text1);}
 .si-rows dd strong{font-weight:600;margin-right:4px;}
 .si-rows .alt-season-info{margin-left:6px;vertical-align:middle;}
 .si-checks{display:inline-flex;gap:2px;margin-right:8px;vertical-align:middle;}
 .si-checks i{display:block;width:6px;height:10px;border-radius:1px;background:var(--t-overlay15);}
 .si-gap{margin:0 0 6px;font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
-.si-ends{display:flex;justify-content:space-between;margin:2px 6px 0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);}
+.si-ends{position:relative;height:16px;margin:5px 6px 0;font:500 12px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text4);}
+.si-ends span{position:absolute;top:0;white-space:nowrap;line-height:16px;}
 .si-brief{margin:0 0 6px;padding-left:18px;color:var(--t-text2);}
 .si-brief li{margin:3px 0;}
 .si-notes{color:var(--t-text3);}
@@ -578,7 +583,7 @@
 .si-pulse{margin:0;color:var(--t-text2);}
 .si-pulse b{color:var(--t-text1);font-weight:600;}
 .si-foot{margin-top:24px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
-@media(max-width:600px){.si-sides{grid-template-columns:1fr;}.si-opens li{grid-template-columns:60px 76px 44px 1fr 56px;}}
+@media(max-width:600px){.smap-kv.si-rows div{grid-template-columns:120px minmax(0,1fr);}.si-sides{grid-template-columns:1fr;}.si-opens li{grid-template-columns:60px 76px 44px 1fr 56px;}}
 
 .sector-traders{grid-column:1 / -1;grid-row:5;display:flex;gap:6px;align-items:baseline;font-size:12px;color:var(--t-text3);white-space:nowrap;border-top:1px solid var(--t-border);padding-top:4px;margin-top:2px;}
 .sector-traders b{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text2);}

@@ -85,9 +85,9 @@ export function crowdRead(side, intel) {
 
 // The drawer's readings as key/value rows, named like the Radar's focus panel: Entry checks,
 // Crowd, Their entry, Candles to confirm, Completion odds, Converged, Next close. Regime and
-// signal are not repeated here: the drawer's SetupPair capsule above the rows shows them.
-// names: { regimeName(key) }; fmt: price formatter.
-export function briefRows(row, intel, nowMs, { regimeName, fmt }) {
+// signal are not repeated here: the drawer's SetupPair capsule above the rows shows them, and
+// names the regime the odds are for ("→ Uptrend"). fmt: price formatter.
+export function briefRows(row, intel, nowMs, { fmt }) {
   const out = [];
   const tf = String(row.timeframe || "4h").toUpperCase();
   if (row.conditions_total) {
@@ -110,7 +110,7 @@ export function briefRows(row, intel, nowMs, { regimeName, fmt }) {
     out.push({ k: "Candles to confirm", v: `${Math.min(t.observed_bars, t.required_bars)} of ${t.required_bars} · `
       + (left ? `last in ${fmtIn(closes[closes.length - 1] - nowMs)}` : "the next close confirms") });
     const odds = completionOdds(row.timeframe, row.regime, t.candidate, Math.min(t.observed_bars, t.required_bars));
-    if (odds != null) out.push({ k: "Completion odds", v: `${odds}% of changes to ${regimeName(t.candidate)} completed from here` });
+    if (odds != null) out.push({ k: "Completion odds", v: `${odds}% completed from here` });
   }
   if (intel?.convergence) {
     const c = intel.convergence;

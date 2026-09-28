@@ -38,8 +38,7 @@ test("drawer rows read like the focus panel", () => {
     new_24h: { profitable: { long: 2, short: 0 } }, recent: [{ t: 1e9, side: "long", cohort: "profitable", px: 0.67, usd: 1e5 }] });
   const row = { regime: "ACCUM", signal: "WAIT", timeframe: "4h", conditions_met: 5, conditions_total: 9,
     regime_transition: { candidate: "MARKUP", observed_bars: 3, required_bars: 5 } };
-  const rows = briefRows(row, i, 1e9 * 1000 + 2 * 3600e3, { regimeName: k => ({ ACCUM: "Accumulation", MARKUP: "Uptrend" })[k],
-    fmt: v => String(v) });
+  const rows = briefRows(row, i, 1e9 * 1000 + 2 * 3600e3, { fmt: v => String(v) });
   const kv = Object.fromEntries(rows.map(r => [r.k, r.v]));
   assert.deepEqual(rows.map(r => r.k).slice(0, 4), ["Entry checks", "Crowd", "Their entry", "Candles to confirm"]);
   // Only the checks: regime and signal are the SetupPair capsule's, not repeated as a row.
@@ -50,13 +49,15 @@ test("drawer rows read like the focus panel", () => {
   assert.equal(rows[1].key, "crowded");                                     // 4 long, price 29% past their entry
   assert.equal(kv["Their entry"], "long 0.55 · +29% for them");
   assert.match(kv["Candles to confirm"], /^3 of 5 · last in /);
+  // Short: the SetupPair above names the regime ("→ Uptrend") the odds are for.
+  assert.equal(kv["Completion odds"], "81% completed from here");
   assert.match(kv["Next close"], /^4H in /);
   assert.equal(rows[rows.length - 1].k, "Next close");
   // No trader reading: checks and timing only; no checks row without a checks count.
   assert.deepEqual(briefRows({ regime: "MARKUP", signal: "STRONG_LONG", timeframe: "1d", conditions_met: 9, conditions_total: 11 }, null, 0,
-    { regimeName: () => "Uptrend", fmt: String }).map(r => r.k), ["Entry checks", "Next close"]);
+    { fmt: String }).map(r => r.k), ["Entry checks", "Next close"]);
   assert.deepEqual(briefRows({ regime: "MARKUP", signal: "STRONG_LONG", timeframe: "1d" }, null, 0,
-    { regimeName: () => "Uptrend", fmt: String }).map(r => r.k), ["Next close"]);
+    { fmt: String }).map(r => r.k), ["Next close"]);
 });
 
 test("price against their median entry", () => {

@@ -46,7 +46,7 @@ export function FocusBody({ c, tf, box, row, intel, updatedAt, watched, mine, st
         title={STAR_TIP} onClick={() => onStar(row.symbol)}>
         <Star size={16} strokeWidth={1.75} fill={starred ? col("#facc15") : "none"} color={starred ? col("#facc15") : "var(--t-text3)"} aria-hidden="true" />
       </button>}
-      <h3 id={titleId}><TokenLogo symbol={c.symbol} size={24} /><span className="radar-focus-coin">{c.coin}</span><span className="radar-focus-px" title={markAt ? `Mark price at ${markAt}` : undefined}>{tf.toUpperCase()}{"\u2009·\u2009"}{formatPrice(mark)}</span></h3>
+      <h3 id={titleId}><TokenLogo symbol={c.symbol} size={24} /><span className="radar-focus-coin">{c.coin}</span><span className="radar-focus-px" title={markAt ? `Mark price at ${markAt}` : undefined}>{tf.toUpperCase()}{"\u2009·\u2009"}{formatPrice(mark, { sig: 5 })}</span></h3>
       <button type="button" className="mh-close" onClick={onClear}>Clear</button>
     </div>
     <dl className="smap-kv smap-kv-rows">
