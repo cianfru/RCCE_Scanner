@@ -23,7 +23,7 @@ export default function MarketContext({ globalMetrics, altSeason, stablecoin, ma
             display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
             flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
           }}>
-            <span style={{ fontSize: m(11, isMobile), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+            <span style={{ fontSize: Math.max(12, m(11, isMobile)), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
               BTC.D
             </span>
             <span style={{
@@ -35,7 +35,7 @@ export default function MarketContext({ globalMetrics, altSeason, stablecoin, ma
             {globalMetrics.eth_dominance > 0 && (
               <>
                 <div style={{ width: 1, height: 14, background: T.border }} />
-                <span style={{ fontSize: m(11, isMobile), color: T.text4, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
+                <span style={{ fontSize: Math.max(12, m(11, isMobile)), color: T.text4, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 500 }}>ETH.D</span>
                 <span style={{ fontFamily: T.mono, fontSize: m(13, isMobile), fontWeight: 600, color: T.text2 }}>
                   {globalMetrics.eth_dominance.toFixed(1)}%
                 </span>
@@ -52,7 +52,7 @@ export default function MarketContext({ globalMetrics, altSeason, stablecoin, ma
             flex: isMobile ? "1 1 calc(50% - 4px)" : undefined,
             border: `1px solid ${altSeason.label === "HOT" ? "#f8717120" : altSeason.label === "ACTIVE" ? "#34d39920" : T.border}`,
           }}>
-            <span style={{ fontSize: m(11, isMobile), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
+            <span style={{ fontSize: Math.max(12, m(11, isMobile)), color: T.text3, letterSpacing: "0.08em", fontFamily: T.font, fontWeight: 600, textTransform: "uppercase" }}>
               Alt Season
               <AltSeasonInfo gauge={altSeason} />
             </span>
@@ -65,7 +65,7 @@ export default function MarketContext({ globalMetrics, altSeason, stablecoin, ma
                      altSeason.label === "ACTIVE" ? "#34d399" :
                      altSeason.label === "NEUTRAL" ? "#fbbf24" :
                      altSeason.label === "WEAK" ? "#fb923c" : T.text4,
-              fontSize: m(11, isMobile), fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
+              fontSize: Math.max(12, m(11, isMobile)), fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.06em",
             }}>
               {altSeason.label}
             </span>

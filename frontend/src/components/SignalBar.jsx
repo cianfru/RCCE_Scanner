@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
-import { T, m, SIGNAL_META, getBaseSymbol } from "../theme.js";
+import { useState, useMemo, useRef } from "react";
+import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
+import { T, m, SIGNAL_META, getBaseSymbol, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import FadeIn from "./FadeIn.jsx";
 
@@ -84,6 +85,7 @@ export function computeConfluence(r, crossTfMatch = false) {
 /** Final cross-timeframe opportunities, plus independent exit warnings. */
 export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
   const [filter, setFilter] = useState("MED"); // HIGH | MED | ALL
+  const strip = useRef(null);
 
   const { chips, hiddenCount } = useMemo(() => {
     const map4h = new Map(data4h.map(r => [r.symbol, r]));
@@ -114,6 +116,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
     return { chips: visible.slice(0, 15), hiddenCount: hidden };
   }, [data4h, data1d, filter]);
 
+  const edges = useScrollEdges(strip, `${filter}:${chips.length}:${hiddenCount}`);
   if (chips.length === 0 && hiddenCount === 0) return null;
 
   const FILTER_OPTIONS = ["HIGH", "MED", "ALL"];
@@ -122,8 +125,9 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
   return (
     <FadeIn delay={420}>
       <div style={{ position: "relative", marginTop: isMobile ? T.sp2 : T.sp3 }}>
-        <GlassCard
-          className="notable-scroll"
+        <GlassCard style={{ overflow: "hidden" }}>
+        {/* The strip scrolls inside the card; its edges fade while more sits past them. */}
+        <div ref={strip} className="notable-scroll edge-fade" {...fadeAttrs(edges)}
           style={{
             padding: isMobile ? "6px 10px" : "6px 14px",
             display: "flex",
@@ -162,9 +166,9 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
                     padding: "2px 7px",
                     borderRadius: 10,
                     border: `1px solid ${active ? T.accent : T.border}`,
-                    background: active ? `${T.accent}18` : "transparent",
+                    background: active ? alpha(T.accent, 9) : "transparent",
                     color: active ? T.accent : T.text4,
-                    fontSize: 10,
+                    fontSize: 12,
                     fontFamily: T.mono,
                     fontWeight: 700,
                     cursor: "pointer",
@@ -183,7 +187,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
 
           {/* Chips */}
           {chips.length === 0 ? (
-            <span style={{ fontSize: 11, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
+            <span style={{ fontSize: 12, fontFamily: T.mono, color: T.text4, fontStyle: "italic" }}>
               No opportunities at this confluence level
             </span>
           ) : chips.map(r => {
@@ -242,7 +246,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
                 )}
 
                 {/* Confluence dots */}
-                <span style={{ fontSize: 10, opacity: 0.65 }}>
+                <span style={{ fontSize: 12, opacity: 0.65 }}>
                   {r.confluence}/7
                 </span>
 
@@ -265,7 +269,7 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
               style={{
                 padding: "2px 8px", borderRadius: 12, flexShrink: 0,
                 border: `1px solid ${T.border}`,
-                fontSize: 10, fontFamily: T.mono, color: T.text4,
+                fontSize: 12, fontFamily: T.mono, color: T.text4,
                 cursor: "pointer", whiteSpace: "nowrap",
               }}
               title="Click to show all signals"
@@ -273,15 +277,8 @@ export default function SignalBar({ data4h, data1d, onSelect, isMobile }) {
               +{hiddenCount} more
             </span>
           )}
+        </div>
         </GlassCard>
-
-        {/* Right fade edge */}
-        <div style={{
-          position: "absolute", top: 1, right: 1, bottom: 1,
-          width: 32, borderRadius: "0 13px 13px 0",
-          background: "linear-gradient(90deg, transparent, rgba(10,10,12,0.85))",
-          pointerEvents: "none",
-        }} />
       </div>
     </FadeIn>
   );

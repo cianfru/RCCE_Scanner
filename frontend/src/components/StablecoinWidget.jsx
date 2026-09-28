@@ -24,6 +24,8 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
   if (!trend && changePct == null && totalCap == null) return null;
 
   const meta = trendMeta(trend);
+  // A move that rounds to 0.00% is flat: no sign, no up/down colour.
+  const flat = changePct != null && Math.abs(changePct) < 0.005;
 
   return (
     <>
@@ -64,9 +66,9 @@ export default function StablecoinWidget({ trend, changePct, totalCap }) {
             fontFamily: T.mono,
             fontSize: T.textSm,
             fontWeight: 600,
-            color: changePct >= 0 ? T.green : T.red,
+            color: flat ? T.text2 : changePct > 0 ? T.green : T.red,
           }}>
-            {changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%
+            {flat ? "0.00" : `${changePct > 0 ? "+" : ""}${changePct.toFixed(2)}`}%
           </span>
         </>
       )}

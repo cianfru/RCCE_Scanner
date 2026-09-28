@@ -8,10 +8,13 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 export default function useCoinTraders(symbol, enabled = true) {
   const [entries, setEntries] = useState(null);
   const [opens, setOpens] = useState(null);
+  // True until the first answer (or failure) for this coin, so the table can show skeleton rows.
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     setEntries(null);
     setOpens(null);
-    if (!enabled || !symbol) return undefined;
+    if (!enabled || !symbol) { setLoading(false); return undefined; }
+    setLoading(true);
     const coin = encodeURIComponent(getBaseSymbol(symbol));
     let cancelled = false, timer = null, tries = 0;
     const load = () => fetch(`${API_BASE}/api/hyperlens/entries/${coin}`)
@@ -19,9 +22,10 @@ export default function useCoinTraders(symbol, enabled = true) {
       .then(d => {
         if (cancelled) return;
         setEntries(d);
+        setLoading(false);
         if (d?.pending && ++tries < 12) timer = setTimeout(load, 10000);
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setLoading(false); });
     load();
     fetch(`${API_BASE}/api/hyperlens/opens/${coin}?days=60`)
       .then(r => (r.ok ? r.json() : null))
@@ -29,5 +33,5 @@ export default function useCoinTraders(symbol, enabled = true) {
       .catch(() => {});
     return () => { cancelled = true; clearTimeout(timer); };
   }, [symbol, enabled]);
-  return { entries, opens };
+  return { entries, opens, loading };
 }

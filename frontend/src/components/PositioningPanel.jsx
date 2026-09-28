@@ -20,7 +20,7 @@ import PanelHeader from "./PanelHeader.jsx";
  *   vpin        — number 0..1 (volume-synchronized probability of informed trading)
  *   oiContext   — string (contextual OI interpretation from backend, e.g. "confirms entry")
  */
-import { T } from "../theme.js";
+import { T, col } from "../theme.js";
 import { funding8hPct } from "../utils/marketPresentation.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -48,7 +48,8 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
       </div>
     );
   }
-  const c = color || T.text2;
+  // Readings carry dark-theme hexes; col() gives light mode its readable hue.
+  const c = col(color || T.text2);
   return (
     <div style={{
       // Flat: the reading's colour is carried by the text alone.
@@ -78,7 +79,7 @@ function Badge({ icon, label, sub, color, bg, empty, info, context, contextColor
       )}
       {context && (
         <span style={{
-          fontSize: 12, color: contextColor || T.text4, fontFamily: T.mono,
+          fontSize: 12, color: contextColor ? col(contextColor) : T.text4, fontFamily: T.mono,
           fontWeight: 600, letterSpacing: "0.04em", opacity: 0.9,
         }}>
           {context}
@@ -227,7 +228,7 @@ function Stat({ label, value, color }) {
         {infoText && <HelpTip width={220}>{infoText}</HelpTip>}
       </div>
       <span style={{
-        fontSize: T.textSm, color: color || T.text2, fontFamily: T.mono,
+        fontSize: T.textSm, color: color ? col(color) : T.text2, fontFamily: T.mono,
         fontWeight: 700, whiteSpace: "nowrap",
       }}>{value}</span>
     </div>

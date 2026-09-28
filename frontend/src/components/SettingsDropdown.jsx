@@ -2,8 +2,10 @@
  * SettingsDropdown — runtime feature toggles + presets.
  *
  * Renders a gear icon in the header. Click → popover with:
- *   - Three preset buttons (Idle / Normal / Power)
- *   - Per-feature toggle switches
+ *   - Appearance (Dark | Light)
+ *   - Admin key, power state (Keep awake), presets (Idle / Normal / Power)
+ *   - Per-feature On/Off
+ * `embedded` renders the same form inline, for the /settings page.
  *
  * Reads/writes /api/admin/features. Toggles persist on disk and take
  * effect within ~30s without redeploy. Designed for the user's flow:
@@ -11,9 +13,13 @@
  *   - "Normal" sentiment-mode default
  *   - "Power" HyperLens, on-chain tracker and monitor (order-book polling stays off: no page shows it)
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { T } from "../theme.js";
+import { useTheme } from "../ThemeContext";
 import Tabs from "./Tabs.jsx";
+import HelpTip from "./HelpTip.jsx";
+import DataStatus from "./DataStatus.jsx";
 
 import { getAdminKey, setAdminKey } from "../auth.js";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -22,17 +28,17 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const FLAG_META = [
   {
     key: "hyperlens_enabled",
-    label: "HyperLens",
+    label: "Traders",
     desc: "Hyperliquid trader positioning",
   },
   {
     key: "whale_tracker",
-    label: "On-chain Transfer Tracker",
+    label: "On-chain transfer tracker",
     desc: "Etherscan/BSCscan/Solscan polling every 2 min",
   },
   {
     key: "market_monitor",
-    label: "Market Monitor",
+    label: "Market monitor",
     desc: "Diff scanner state every 5 min, push WebSocket insights",
   },
 ];
@@ -55,27 +61,49 @@ const PRESETS = [
   },
 ];
 
-// Flat text on/off control: no pill switch.
-function ToggleSwitch({ checked, onChange, color = T.accent }) {
+const THEMES = [{ key: "dark", label: "Dark" }, { key: "light", label: "Light" }];
+
+// Section labels: sentence case, Geist 12/600, text3.
+const SECTION = { fontSize: 12, fontWeight: 600, color: T.text3, fontFamily: T.font, letterSpacing: 0 };
+const ROW = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "8px 10px",
+  borderRadius: 8,
+  background: T.overlay02,
+  border: `1px solid ${T.overlay06}`,
+  gap: 10,
+};
+const PERSIST = "Changes are saved on the server and picked up by the background loops within about 30 seconds. No redeploy is needed.";
+
+// Flat text on/off control: no pill switch. checked === null while the flags load: a dash, not "Off".
+function ToggleSwitch({ checked, onChange, color = T.accent, disabled = false, label }) {
+  const unknown = checked === null;
   return (
     <button
       type="button"
       onClick={onChange}
-      aria-pressed={checked}
+      disabled={disabled || unknown}
+      aria-label={unknown ? `${label}: loading` : label}
+      aria-pressed={unknown ? undefined : checked}
+      className="settings-toggle"
       style={{
-        border: "none", background: "transparent", padding: 0,
-        cursor: "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
+        border: "none", background: "transparent", padding: 0, opacity: disabled ? 0.55 : 1,
+        cursor: disabled ? "not-allowed" : unknown ? "default" : "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
         fontSize: 12, fontFamily: T.font, fontWeight: 600,
         color: checked ? color : T.text4,
       }}
     >
-      {checked ? "On" : "Off"}
+      {unknown ? "\u2014" : checked ? "On" : "Off"}
     </button>
   );
 }
 
-export default function SettingsDropdown() {
-  const [open, setOpen] = useState(false);
+export default function SettingsDropdown({ embedded = false }) {
+  const { mode, toggle } = useTheme();
+  const [open, setOpen] = useState(embedded);
+  const [hasAdminKey, setHasAdminKey] = useState(() => Boolean(getAdminKey()));
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [flags, setFlags] = useState(null);
   const [activity, setActivity] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -83,18 +111,30 @@ export default function SettingsDropdown() {
   const popoverRef = useRef(null);
   const buttonRef = useRef(null);
 
-  // Load on first open
+  // Opened from elsewhere: a rescan refused for lack of the admin key.
   useEffect(() => {
-    if (open && flags === null) {
-      fetch(`${API_BASE}/api/admin/features`)
-        .then(r => r.ok ? r.json() : null)
-        .then(j => {
-          if (j?.flags) setFlags(j.flags);
-          if (j?.activity) setActivity(j.activity);
-        })
-        .catch(() => {});
-    }
-  }, [open, flags]);
+    if (embedded) return undefined;
+    const onOpen = () => setOpen(true);
+    window.addEventListener("reflex-open-settings", onOpen);
+    return () => window.removeEventListener("reflex-open-settings", onOpen);
+  }, [embedded]);
+
+  // Load on first open (again after Retry)
+  useEffect(() => {
+    if (!open || flags !== null) return undefined;
+    let alive = true;
+    setReadError(false);
+    fetch(`${API_BASE}/api/admin/features`)
+      .then(r => { if (!r.ok) throw new Error("Unavailable"); return r.json(); })
+      .then(j => {
+        if (!alive) return;
+        if (!j?.flags) throw new Error("Configuration unavailable");
+        setFlags(j.flags);
+        if (j.activity) setActivity(j.activity);
+      })
+      .catch(() => { if (alive) setReadError(true); });
+    return () => { alive = false; };
+  }, [open, flags, readAttempt]);
 
   // Live activity badge — poll while the panel is open. This endpoint is
   // excluded from activity tracking, so polling it never keeps the app awake.
@@ -112,17 +152,41 @@ export default function SettingsDropdown() {
     return () => { alive = false; clearInterval(id); };
   }, [open]);
 
-  // Close on outside click
+  // Fixed under the capsule like the notification panel, right edge on the gear's right edge.
+  // On phone it spans the capsule's gutters instead.
+  const [anchorRight, setAnchorRight] = useState(16);
+  const [phone, setPhone] = useState(false);
+  useLayoutEffect(() => {
+    if (!open || embedded) return undefined;
+    const place = () => {
+      const w = document.documentElement.clientWidth;
+      setPhone(w < 768);
+      const r = buttonRef.current?.getBoundingClientRect();
+      if (r) setAnchorRight(Math.max(8, Math.round(w - r.right)));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, embedded, mode]); // mode: the theme button to the gear's right changes width
+
+  // Close on Escape and on a pointer press outside (help tips open from inside stay allowed).
   useEffect(() => {
-    if (!open) return;
+    if (!open || embedded) return undefined;
     const onDown = (e) => {
       if (popoverRef.current?.contains(e.target)) return;
       if (buttonRef.current?.contains(e.target)) return;
+      if (e.target.closest?.(".alt-season-explanation")) return;
       setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open, embedded]);
 
   const updateFlag = async (key, value) => {
     if (busy) return;
@@ -193,17 +257,47 @@ export default function SettingsDropdown() {
     return PRESETS.find(p => match(p.key))?.key || null;
   })();
 
+  // The settings page is read-only until an admin key is entered; the popover keeps today's behaviour.
+  const readOnly = embedded && !hasAdminKey;
+
+  const panelStyle = embedded
+    ? { position: "relative", width: "100%" }
+    : {
+        position: "fixed",
+        top: "calc(var(--header-offset) + 8px)",
+        ...(phone
+          ? { left: "var(--gutter)", right: "var(--gutter)", width: "auto" }
+          : { right: anchorRight, width: 320, maxWidth: `calc(100vw - ${anchorRight + 16}px)` }),
+        maxHeight: "calc(100dvh - var(--header-offset) - var(--tabbar-space) - 20px)",
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+        backgroundColor: "var(--t-bg)",
+        backgroundImage: "var(--t-popoverBg)",
+        border: `1px solid ${T.border}`,
+        borderRadius: 12,
+        boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+        zIndex: 100,
+        padding: 14,
+        textAlign: "left",
+      };
+
   return (
     <div style={{ position: "relative" }}>
-      <button
+      {!embedded && <button
         ref={buttonRef}
+        type="button"
+        className="header-gear"
         onClick={() => setOpen(o => !o)}
         title="Settings"
+        aria-label="Settings"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         style={{
           width: 30, height: 30,
           padding: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
           background: open ? T.overlay06 : "transparent",
+          // The closed gear keeps today's 1px ring (owner decision g).
           border: `1px solid ${open ? T.accent : T.border}`,
           borderRadius: 8,
           color: open ? T.accent : T.text3,
@@ -213,48 +307,41 @@ export default function SettingsDropdown() {
         onMouseEnter={e => { if (!open) e.currentTarget.style.color = T.text1; }}
         onMouseLeave={e => { if (!open) e.currentTarget.style.color = T.text3; }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
-      </button>
+      </button>}
 
       {open && (
         <div
           ref={popoverRef}
-          style={{
-            position: "absolute",
-            top: "calc(100% + 8px)",
-            right: 0,
-            width: 320,
-            background: T.popoverBg,
-            backdropFilter: "blur(20px) saturate(1.3)",
-            WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-            border: `1px solid ${T.border}`,
-            borderRadius: 12,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-            zIndex: 100,
-            padding: 14,
-          }}
+          className={embedded ? "settings-form" : "settings-popover"}
+          role={embedded ? undefined : "dialog"}
+          aria-label={embedded ? undefined : "Settings"}
+          style={panelStyle}
         >
           {/* Header */}
-          <div style={{
+          {!embedded && <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             marginBottom: 10, paddingBottom: 8,
             borderBottom: `1px solid ${T.overlay06}`,
           }}>
-            <span style={{
-              fontSize: T.textSm, color: T.text2, fontFamily: T.font,
-              fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
-            }}>
-              Runtime Settings
+            <span style={{ fontSize: T.textSm, color: T.text1, fontFamily: T.font, fontWeight: 600 }}>
+              Runtime settings
             </span>
-            {flags === null && (
-              <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono }}>
-                loading…
-              </span>
-            )}
+          </div>}
+
+          {/* Appearance */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+            <span style={SECTION}>Appearance</span>
+            <div className="settings-tabs-end">
+              <Tabs small label="Appearance" items={THEMES} value={mode} onChange={k => { if (k !== mode) toggle(); }} />
+            </div>
           </div>
+
+          <DataStatus label="Runtime configuration" loading={!flags && !readError} error={readError}
+            onRetry={() => { setReadError(false); setReadAttempt(n => n + 1); }} />
 
           {/* Admin key: needed for changes once REFLEX_ADMIN_KEY is set on the server */}
           <label style={{ display: "block", marginBottom: 14 }}>
@@ -262,10 +349,13 @@ export default function SettingsDropdown() {
               Admin key <span style={{ color: T.text4 }}>(for changes; stored in this browser only)</span>
             </span>
             <input type="password" autoComplete="off" defaultValue={getAdminKey()} placeholder="Not set"
-              onChange={e => setAdminKey(e.target.value)}
+              onChange={e => { setAdminKey(e.target.value); setHasAdminKey(Boolean(e.target.value.trim())); }}
               style={{ width: "100%", boxSizing: "border-box", height: 34, padding: "0 10px", borderRadius: 6,
                 border: `1px solid ${T.border}`, background: T.overlay04, color: T.text1, fontFamily: T.mono, fontSize: 12 }} />
           </label>
+
+          <fieldset className="settings-server" disabled={readOnly} aria-label="Server controls" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+          {readOnly && <p style={{ margin: "0 0 12px", fontSize: 12, color: T.text3, fontFamily: T.font }}>Read-only. Enter the admin key above to change these.</p>}
 
           {/* Power state — active/idle throttle */}
           <div style={{ marginBottom: 14 }}>
@@ -273,12 +363,7 @@ export default function SettingsDropdown() {
               display: "flex", alignItems: "center", justifyContent: "space-between",
               marginBottom: 6,
             }}>
-              <span style={{
-                fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-                fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-              }}>
-                Power State
-              </span>
+              <span style={SECTION}>Power state</span>
               {activity && (() => {
                 const isActive = !!activity.active;
                 const color = isActive ? T.green : T.text4;
@@ -299,20 +384,13 @@ export default function SettingsDropdown() {
                 );
               })()}
             </div>
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: T.overlay02,
-              border: `1px solid ${T.overlay06}`,
-              gap: 10,
-            }}>
+            <div style={ROW}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{
                   fontSize: T.textSm, color: T.text1,
                   fontFamily: T.font, fontWeight: 600, marginBottom: 2,
                 }}>
-                  Keep Awake
+                  Keep awake
                 </div>
                 <div style={{
                   fontSize: T.textXs, color: T.text4, fontFamily: T.font, lineHeight: 1.35,
@@ -321,7 +399,9 @@ export default function SettingsDropdown() {
                 </div>
               </div>
               <ToggleSwitch
-                checked={flags?.keep_active ?? false}
+                label="Keep scanning awake"
+                disabled={busy || readOnly}
+                checked={flags ? (flags.keep_active ?? false) : null}
                 color={T.green}
                 onChange={() => updateFlag("keep_active", !(flags?.keep_active ?? false))}
               />
@@ -330,14 +410,14 @@ export default function SettingsDropdown() {
 
           {/* Presets */}
           <div style={{ marginBottom: 14 }}>
-            <div style={{
-              fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-              fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-              marginBottom: 2,
-            }}>
+            <div style={{ ...SECTION, display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
               Presets
+              <HelpTip title="Presets" width={280}>
+                <p>Idle: the scanner only, every other feature off. Normal: the default. Power: everything on.</p>
+                <p>{PERSIST}</p>
+              </HelpTip>
             </div>
-            <div style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null ? "none" : "auto" }}>
+            <div className="settings-tabs-start" style={{ opacity: flags === null ? 0.5 : 1, pointerEvents: busy || flags === null ? "none" : "auto" }}>
               <Tabs small label="Presets" value={activePreset}
                 items={PRESETS.map(p => ({ key: p.key, label: p.label, title: p.desc }))}
                 onChange={applyPreset} />
@@ -345,28 +425,15 @@ export default function SettingsDropdown() {
           </div>
 
           {/* Per-flag toggles */}
-          <div style={{
-            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-            fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-            marginBottom: 6,
-          }}>
+          <div style={{ ...SECTION, display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
             Features
+            <HelpTip title="Features" width={280}><p>{PERSIST}</p></HelpTip>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {FLAG_META.map(f => {
-              const checked = flags?.[f.key] ?? false;
+              const checked = flags ? (flags[f.key] ?? false) : null;
               return (
-                <div
-                  key={f.key}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: T.overlay02,
-                    border: `1px solid ${T.overlay06}`,
-                    gap: 10,
-                  }}
-                >
+                <div key={f.key} style={ROW}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{
                       fontSize: T.textSm, color: T.text1,
@@ -383,6 +450,8 @@ export default function SettingsDropdown() {
                     </div>
                   </div>
                   <ToggleSwitch
+                    label={f.label}
+                    disabled={busy || readOnly}
                     checked={checked}
                     onChange={() => updateFlag(f.key, !checked)}
                   />
@@ -390,6 +459,7 @@ export default function SettingsDropdown() {
               );
             })}
           </div>
+          </fieldset>
 
           {err && (
             <div style={{ marginTop: 10, fontSize: 12, color: T.red, fontFamily: T.font }}>
@@ -397,15 +467,11 @@ export default function SettingsDropdown() {
             </div>
           )}
 
-          {/* Footer hint */}
-          <div style={{
-            marginTop: 12, paddingTop: 10,
-            borderTop: `1px solid ${T.overlay06}`,
-            fontSize: T.textXs, color: T.text4, fontFamily: T.mono,
-            lineHeight: 1.5,
-          }}>
-            Toggles persist on disk. Background loops pick up changes within ~30s — no redeploy needed.
-          </div>
+          {!embedded && (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.overlay06}` }}>
+              <Link className="te-link" to="/settings" onClick={() => setOpen(false)}>Open settings page</Link>
+            </div>
+          )}
         </div>
       )}
     </div>

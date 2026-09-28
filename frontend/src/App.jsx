@@ -1,15 +1,17 @@
 import OpportunityWatchlist from "./components/OpportunityWatchlist.jsx";
 import OpportunityActivity from "./components/OpportunityActivity.jsx";
 import SectorStrip from "./components/SectorStrip.jsx";
-import { inGroup } from "./utils/sectors.js";
-import SetupMap from "./components/SetupMap.jsx";
-import ReflexBrand from "./components/ReflexBrand.jsx";
+import { inGroup, SECTOR_SHORT } from "./utils/sectors.js";
+import RadarStrip from "./components/RadarStrip.jsx";
 import "./terminal.css";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Routes, Route, Navigate, useParams } from "react-router-dom";
-import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge } from "./theme.js";
+import { T, m, REGIME_META, SIGNAL_META, REGIME_ORDER, MCAP_RANK, formatCacheAge, getBaseSymbol } from "./theme.js";
+import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
+import { activeMainTab as mainTabFor, mainTabTargets, readLastScanner, writeLastScanner } from "./utils/mainNav.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
+import useFavorites from "./hooks/useFavorites.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import FadeIn from "./components/FadeIn.jsx";
@@ -17,6 +19,7 @@ import MarketSummary from "./components/MarketSummary.jsx";
 import ScannerControls from "./components/ScannerControls.jsx";
 import AdminNotice from "./components/AdminNotice.jsx";
 import { matchesSignal } from "./utils/marketSummary.js";
+import { ladderItems } from "./components/SignalLadder.jsx";
 import MarketContext from "./components/MarketContext.jsx";
 import SignalBar from "./components/SignalBar.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
@@ -24,22 +27,29 @@ import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
 import GlassCard from "./components/GlassCard.jsx";
-import NotificationBell from "./components/NotificationBell.jsx";
-import SettingsDropdown from "./components/SettingsDropdown.jsx";
-import BacktestPanel from "./components/BacktestPanel.jsx";
-import ExecutorPanel from "./components/ExecutorPanel.jsx";
-import TradingPanel from "./components/TradingPanel.jsx";
-import SignalLogPanel from "./components/SignalLogPanel.jsx";
-import AnalyticsPanel from "./components/AnalyticsPanel.jsx";
+import AppHeader from "./components/AppHeader.jsx";
+import MobileTabBar from "./components/MobileTabBar.jsx";
+import SettingsPage from "./pages/SettingsPage.jsx";
 import UniverseCoverage from "./components/UniverseCoverage.jsx";
-import ChatPanel from "./components/ChatPanel.jsx";
-import TradFiPanel from "./components/TradFiPanel.jsx";
 import Tabs from "./components/Tabs.jsx";
 import NavDrawer from "./components/NavDrawer.jsx";
-import HyperLensPanel from "./components/HyperLensPanel.jsx";
 import HitRateStrip from "./components/HitRateStrip.jsx";
 import ChangesTicker from "./components/ChangesTicker.jsx";
-import CoinPage from "./pages/CoinPage.jsx";
+import PageTitle from "./components/PageTitle.jsx";
+import PageSkeleton from "./components/PageSkeleton.jsx";
+import NotFound from "./components/NotFound.jsx";
+
+// Pages load their code on first visit; the shell and the scanner stay in the main bundle.
+const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
+const ExecutorPanel = lazy(() => import("./components/ExecutorPanel.jsx"));
+const TradingPanel = lazy(() => import("./components/TradingPanel.jsx"));
+const SignalLogPanel = lazy(() => import("./components/SignalLogPanel.jsx"));
+const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
+const ChatPanel = lazy(() => import("./components/ChatPanel.jsx"));
+const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
+const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
+const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
+const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -58,27 +68,52 @@ import { SCANNER_COLUMNS as COLUMNS } from "./scannerColumns.js";
 // ─── ROUTE MAPS ──────────────────────────────────────────────────────────────
 const ROUTE_TO_TAB = {
   "/scanner": "1d",
+  "/radar": "radar",
+  "/traders": "traders",
   "/signals": "signals",
   "/analytics": "analytics",
-  "/hyperlens": "hyperlens",
   "/tradfi": "tradfi",
   "/ai": "chat",
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
+  "/settings": "settings",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
   "4h": "/scanner?tf=4h",
+  radar: "/radar",
+  traders: "/traders",
+  hyperlens: "/traders",
   signals: "/signals",
   analytics: "/analytics",
-  hyperlens: "/hyperlens",
   tradfi: "/tradfi",
   chat: "/ai",
   backtest: "/backtest",
   executor: "/executor",
   trading: "/portfolio",
+  settings: "/settings",
 };
+// Page titles (h1 and browser tab) of the pages without their own title logic.
+const TAB_TITLES = {
+  traders: "Traders",
+  trading: "Portfolio",
+  signals: "Signal Log",
+  analytics: "Analytics",
+  tradfi: "TradFi",
+  backtest: "Backtest",
+  executor: "Executor",
+  chat: "AI Assist",
+  settings: "Settings",
+  notfound: "Page not found",
+};
+const DEFAULT_SORT = "priority_score";
+// A header's first click sorts this way; a second click flips it. Symbol is by market cap, regime by cycle order.
+const SORT_DEFAULT_DIR = { priority_score: "desc", zscore: "desc", heat: "desc", conditions: "desc", energy: "desc", momentum: "desc", symbol: "asc", mcap: "asc", regime: "asc" };
+const defaultDir = key => SORT_DEFAULT_DIR[key] || "desc";
+const validDir = d => (d === "asc" || d === "desc" ? d : null);
+const RESCAN_KEY_FLAG = "rcce-rescan-needs-key";
+const cleanPath = pathname => pathname.replace(/\/$/, "") || "/scanner";
 
 export default function App() {
   const { width, isMobile, isTablet, isDesktop } = useViewport();
@@ -87,29 +122,35 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const path = cleanPath(location.pathname);
+  const onScanner = path === "/scanner";
   const marketKind = new URLSearchParams(location.search).get("market") === "spot" ? "spot" : "perpetual";
+  // The scanner's query (filters, search, sort) as last seen, so leaving and coming back keeps it.
+  const lastScannerSearch = useRef(onScanner ? location.search : "");
+  const scannerParams = () => new URLSearchParams(onScanner ? location.search : lastScannerSearch.current);
   const changeMarket = (kind) => {
     setActiveGroupId(null);
     setSearchTerm("");
     setStatCardFilter(null);
-    navigate(`/scanner?market=${kind}${activeTab === "4h" ? "&tf=4h" : ""}`);
+    const params = scannerParams();
+    for (const k of ["q", "signal", "from"]) params.delete(k);
+    params.set("market", kind);
+    if (activeTab !== "4h") params.delete("tf");
+    navigate(`/scanner?${params}`);
   };
   // Derive activeTab from URL
   const activeTab = useMemo(() => {
-    const p = location.pathname.replace(/\/$/, "") || "/scanner";
     // Scanner route — check tf query param first
-    if (p === "/scanner") {
+    if (path === "/scanner") {
       const sp = new URLSearchParams(location.search);
       const tf = sp.get("tf");
       if (tf === "4h") return "4h";
       return "1d";
     }
-    // Check known routes (non-scanner)
-    for (const [route, tab] of Object.entries(ROUTE_TO_TAB)) {
-      if (p === route || p.startsWith(route + "/")) return tab;
-    }
-    return "1d";
-  }, [location.pathname, location.search, isMobile]);
+    if (/^\/scanner\/[^/]+$/.test(path)) return "1d";      // coin page
+    if (path === "/hyperlens") return "traders";            // redirected below
+    return ROUTE_TO_TAB[path] || "notfound";
+  }, [path, location.search]);
 
   // The scanner timeframe last viewed, for AI Assist
   const lastScannerTf = useRef("1d");
@@ -117,23 +158,41 @@ export default function App() {
 
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
-    const m = location.pathname.match(/^\/scanner\/([^/]+)$/);
-    return m ? decodeURIComponent(m[1]) : null;
-  }, [location.pathname]);
+    const m = path.match(/^\/scanner\/([^/]+)$/);
+    if (!m) return null;
+    try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+  }, [path]);
 
-  // Navigate to coin page on row click (shift+click → DetailPanel slide-out)
-  const handleSelectCoin = useCallback((row, event) => {
+  // Navigate to coin page on row click (shift+click → DetailPanel slide-out).
+  // The coin page gets the timeframe and the view to return to (?from=), plus the scroll position.
+  const handleSelectCoin = useCallback((row, event, fromHref) => {
     if (event?.shiftKey) {
       setSelected(row);
-    } else {
-      const base = encodeURIComponent(row.market_kind === "spot" ? row.symbol : (row.symbol || "").split("/")[0]);
-      navigate(`/scanner/${base}?market=${row.market_kind === "spot" ? "spot" : "perpetual"}`);
+      return;
     }
-  }, [navigate]);
+    const tf = row.timeframe === "4h" || row.timeframe === "1d" ? row.timeframe : timeframeFrom(location.search);
+    const from = fromHref || (onScanner ? `/scanner${location.search}` : "/scanner");
+    const scroll = window.scrollY;
+    // The browser's Back button returns to the same spot too.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...location.state, restoreScroll: scroll } });
+    navigate(`${marketHref(row, tf)}&from=${encodeURIComponent(from)}`, { state: { scannerScroll: scroll } });
+  }, [navigate, location.pathname, location.search, location.state, onScanner]);
 
   const setActiveTab = useCallback((tab) => {
-    navigate(["4h", "1d"].includes(tab) ? `/scanner?market=${marketKind}${tab === "4h" ? "&tf=4h" : ""}` : TAB_TO_ROUTE[tab] || "/scanner");
-  }, [navigate, marketKind]);
+    if (tab === "4h" || tab === "1d") {
+      // Switching timeframe keeps the scanner's filters, search and sort.
+      const params = new URLSearchParams(onScanner ? location.search : lastScannerSearch.current);
+      params.delete("from");
+      if (onScanner || !params.get("market")) params.set("market", marketKind);
+      tab === "4h" ? params.set("tf", "4h") : params.delete("tf");
+      navigate(`/scanner?${params}`);
+    } else {
+      navigate(TAB_TO_ROUTE[tab] || "/scanner");
+    }
+  }, [navigate, marketKind, onScanner, location.search]);
+
+  // Scanner state that lives in the address: ?q, sort, dir, signal, sector, by.
+  const [initialQuery] = useState(() => new URLSearchParams(onScanner ? location.search : ""));
 
   const [data4h, setData4h] = useState([]);
   const [data1d, setData1d] = useState([]);
@@ -146,10 +205,11 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
-  const [sortKey, setSortKey] = useState("priority_score");
-  const [statCardFilter, setStatCardFilter] = useState(null);
-  const [sectorBy, setSectorBy] = useState("sector");        // "sector" | "ecosystem"
-  const [sectorFilter, setSectorFilter] = useState(null);
+  const [sortKey, setSortKey] = useState(() => initialQuery.get("sort") || DEFAULT_SORT);
+  const [sortDir, setSortDir] = useState(() => validDir(initialQuery.get("dir")));   // "asc" | "desc"; null = the key's default
+  const [statCardFilter, setStatCardFilter] = useState(() => initialQuery.get("signal"));
+  const [sectorBy, setSectorBy] = useState(() => initialQuery.get("by") === "ecosystem" ? "ecosystem" : "sector");        // "sector" | "ecosystem"
+  const [sectorFilter, setSectorFilter] = useState(() => initialQuery.get("sector"));
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // Price flash: symbol → "up" | "down" (cleared after 1.2s)
@@ -179,42 +239,57 @@ export default function App() {
 
   // Nav drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => initialQuery.get("q") || "");
   const [tradfiTf, setTradfiTf] = useState("1d");            // TradFi timeframe, in the title row
 
-  // Favorites (persisted to localStorage)
-  const [favorites, setFavorites] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("reflex_favorites") || "[]")); } catch { return new Set(); }
-  });
+  // Write one scanner setting into the address (replace, so Back still leaves the scanner).
+  // Several writes in one event (Sectors/Ecosystems also clears the sector) build on each other.
+  const pendingSearch = useRef(null);
+  useEffect(() => { pendingSearch.current = null; }, [location.key, location.search]);
+  const updateScannerQuery = useCallback((key, value) => {
+    const params = new URLSearchParams(pendingSearch.current ?? location.search);
+    value ? params.set(key, value) : params.delete(key);
+    const qs = params.toString();
+    pendingSearch.current = qs ? `?${qs}` : "";
+    // A scroll position to restore belongs to the arrival only, not to later filter changes.
+    const { restoreScroll, ...state } = location.state || {};
+    navigate(`${location.pathname}${pendingSearch.current}`, { replace: true, state });
+  }, [navigate, location.pathname, location.search, location.state]);
 
-  // Hydrate favorites from backend on mount (backend is the source of truth for TG)
+  // The address drives the scanner: arriving from a back link, a pasted link or history restores it.
   useEffect(() => {
-    fetch(`${API_BASE}/api/favorites`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data.symbols) && data.symbols.length > 0) {
-          setFavorites(prev => {
-            const merged = new Set([...prev, ...data.symbols]);
-            localStorage.setItem("reflex_favorites", JSON.stringify([...merged]));
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!onScanner) return;
+    const params = new URLSearchParams(location.search);
+    setSearchTerm(params.get("q") || "");
+    setSortKey(params.get("sort") || DEFAULT_SORT);
+    setSortDir(validDir(params.get("dir")));
+    setStatCardFilter(params.get("signal"));
+    setSectorFilter(params.get("sector"));
+    setSectorBy(params.get("by") === "ecosystem" ? "ecosystem" : "sector");
+    lastScannerSearch.current = location.search;
+  }, [onScanner, location.search]);
 
-  const toggleFavorite = useCallback((symbol) => {
-    setFavorites(prev => {
-      const next = new Set(prev);
-      const wasFav = next.has(symbol);
-      wasFav ? next.delete(symbol) : next.add(symbol);
-      localStorage.setItem("reflex_favorites", JSON.stringify([...next]));
-      // Sync to backend — TG bot reads from here
-      const enc = encodeURIComponent(symbol);
-      fetch(`${API_BASE}/api/favorites/${enc}`, { method: wasFav ? "DELETE" : "POST" }).catch(() => {});
-      return next;
-    });
-  }, []);
+  // Coming back from a coin page: return to the scroll position the coin was opened from.
+  // Cards above the grid can settle a moment later, so the position is held briefly unless the user scrolls.
+  useEffect(() => {
+    const target = location.state?.restoreScroll;
+    if (target == null || !(onScanner || path === "/radar")) return undefined;
+    let frame = 0, stopped = false;
+    const t0 = performance.now();
+    const stop = () => { stopped = true; cancelAnimationFrame(frame); };
+    const events = ["wheel", "touchstart", "keydown", "pointerdown"];
+    events.forEach(e => window.addEventListener(e, stop, { passive: true }));
+    const hold = () => {
+      if (stopped) return;
+      if (Math.abs(window.scrollY - target) > 1) window.scrollTo(0, target);
+      if (performance.now() - t0 < 1500) frame = requestAnimationFrame(hold);
+    };
+    frame = requestAnimationFrame(hold);
+    return () => { stop(); events.forEach(e => window.removeEventListener(e, stop)); };
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Favorites: pinned first, kept in localStorage and synced to /api/favorites (shared store)
+  const { favorites, toggle: toggleFavorite } = useFavorites();
 
   // Backtest badge tracking
   const [backtestSymbols, setBacktestSymbols] = useState(new Set());
@@ -402,15 +477,43 @@ export default function App() {
     };
   }, [loadAll, sw.supported]);
 
+  // Rescan. Without the admin key the server refuses (403): stop, open Settings, and say so on
+  // the button for the rest of the session. "Scan already in progress" keeps the spinner until
+  // that scan's data arrives (the feed effects above clear it), for at most 90s.
+  const [rescanNeedsKey, setRescanNeedsKey] = useState(() => { try { return sessionStorage.getItem(RESCAN_KEY_FLAG) === "1"; } catch { return false; } });
+  const scanWait = useRef(0);
+  useEffect(() => () => clearTimeout(scanWait.current), []);
   const triggerScan = async () => {
     if (scanRunning) return;
     setScanRunning(true);
+    clearTimeout(scanWait.current);
+    let res;
     try {
-      const res = await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      res = await fetch(`${API_BASE}/api/scan/refresh`, { method: "POST" });
     } catch (e) {
       console.warn("Scan refresh failed:", e);
       setScanRunning(false);
+      return;
+    }
+    if (res.status === 403) {
+      setScanRunning(false);
+      setRescanNeedsKey(true);
+      try { sessionStorage.setItem(RESCAN_KEY_FLAG, "1"); } catch { /* storage blocked */ }
+      window.dispatchEvent(new Event("reflex-open-settings"));
+      return;
+    }
+    if (!res.ok) {
+      console.warn("Scan refresh failed: HTTP", res.status);
+      setScanRunning(false);
+      return;
+    }
+    if (rescanNeedsKey) {
+      setRescanNeedsKey(false);
+      try { sessionStorage.removeItem(RESCAN_KEY_FLAG); } catch { /* storage blocked */ }
+    }
+    const body = await res.json().catch(() => null);
+    if (body?.ok === false) {
+      scanWait.current = setTimeout(() => setScanRunning(false), 90 * 1000);
       return;
     }
     if (wsRef.connected) {
@@ -562,13 +665,12 @@ export default function App() {
     return { beating, total: members.length };
   }, []);
 
+  // The direction in effect: the address's ?dir, or the key's default.
+  const activeDir = sortDir || defaultDir(sortKey);
   const sortResults = (results) => {
-    return [...results].sort((a, b) => {
-      // Favorites always first
-      const fa = favorites.has(a.symbol) ? 0 : 1;
-      const fb = favorites.has(b.symbol) ? 0 : 1;
-      if (fa !== fb) return fa - fb;
-
+    const flip = activeDir === defaultDir(sortKey) ? 1 : -1;
+    const condRatio = r => (r.conditions_total ? (r.conditions_met || 0) / r.conditions_total : 0);
+    const compare = (a, b) => {
       if (sortKey === "mcap" || sortKey === "symbol") {
         return (MCAP_RANK[a.symbol] ?? 999) - (MCAP_RANK[b.symbol] ?? 999);
       }
@@ -580,9 +682,17 @@ export default function App() {
       if (sortKey === "zscore") return (b.zscore || 0) - (a.zscore || 0);
       if (sortKey === "momentum") return (b.momentum || 0) - (a.momentum || 0);
       if (sortKey === "heat") return (b.heat || 0) - (a.heat || 0);
-      if (sortKey === "conditions") return (b.conditions_met || 0) - (a.conditions_met || 0);
+      if (sortKey === "energy") return (b.energy || 0) - (a.energy || 0);
+      if (sortKey === "conditions") return condRatio(b) - condRatio(a);
       if (sortKey === "priority_score") return (b.priority_score || 0) - (a.priority_score || 0);
       return 0;
+    };
+    return [...results].sort((a, b) => {
+      // Favorites always first, in either direction
+      const fa = favorites.has(a.symbol) ? 0 : 1;
+      const fb = favorites.has(b.symbol) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return flip * compare(a, b);
     });
   };
 
@@ -594,7 +704,7 @@ export default function App() {
     let d = activeTab === "tradfi" ? dataTradfi1d : dataTradfi4h;
     if (searchTerm) { const q = searchTerm.toUpperCase(); d = d.filter(r => r.symbol?.toUpperCase().includes(q)); }
     return sortResults(d);
-  }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey]);
+  }, [activeTab, dataTradfi1d, dataTradfi4h, searchTerm, sortKey, activeDir]);
 
   // Apply stat card signal filter to table data
   const inSector = (data) => sectorFilter ? data.filter(r => inGroup(r, sectorFilter.includes("|") ? "pocket" : sectorBy, sectorFilter)) : data;
@@ -610,13 +720,65 @@ export default function App() {
   // The engine consensus (every scanned market, perps and spot) and the rows it was counted on.
   const activeConsensus = activeTab === "4h" ? consensus4h : consensus1d;
   const consensusRows = activeTab === "4h" ? data4h : data1d;
-  const visibleColumns = COLUMNS.filter(([, , minW]) => width >= (minW || 0));
-  const showDashboard = activeTab !== "backtest" && activeTab !== "executor" && activeTab !== "trading" && activeTab !== "signals" && activeTab !== "analytics" && activeTab !== "chat" && activeTab !== "tradfi" && activeTab !== "hyperlens";
+  const showDashboard = activeTab === "4h" || activeTab === "1d";
+  const scannerTitle = activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals";
+  const radarTf = activeTab === "radar" ? timeframeFrom(location.search) : null;
+
+  // Main tabs: which is active, and where each goes. Scanner returns to the last scanner view
+  // (kept for the session); Radar opens on that view's timeframe.
+  const mainTab = mainTabFor(location.pathname, location.search);
+  const scannerTarget = onScanner ? `/scanner${location.search}` : (readLastScanner() || "/scanner");
+  useEffect(() => { if (onScanner) writeLastScanner(`/scanner${location.search}`); }, [onScanner, location.search]);
+  const lastTf = timeframeFrom(scannerTarget.split("?")[1] || "");
+  const tabTargets = mainTabTargets({ lastScanner: scannerTarget, lastScannerTf: lastTf });
+
+  // The header's compact 4H | 1D drives the page's own timeframe (scanner or Radar).
+  const setHeaderTimeframe = (tf) => {
+    if (activeTab !== "radar") { setActiveTab(tf); return; }
+    const params = new URLSearchParams(location.search);
+    params.set("tf", tf);
+    navigate(`/radar?${params}`, { replace: true, state: location.state });
+  };
+
+  // Browser tab title. The coin page refines its own ("BTC · Reflex") once its data is in.
+  useEffect(() => {
+    document.title = coinPageSymbol ? `${getBaseSymbol(coinPageSymbol)} · Reflex`
+      : showDashboard ? `${scannerTitle} ${activeTab.toUpperCase()} · Reflex`
+      : activeTab === "radar" ? `Radar ${radarTf.toUpperCase()} · Reflex`
+      : `${TAB_TITLES[activeTab] || "Reflex"} · Reflex`;
+  }, [coinPageSymbol, showDashboard, scannerTitle, activeTab, radarTf]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // Same header again flips the direction; a new header starts from its default. Both live in the address.
+  const onSort = key => {
+    const next = key === sortKey ? (activeDir === "desc" ? "asc" : "desc") : defaultDir(key);
+    const dir = next === defaultDir(key) ? null : next;
+    setSortKey(key); setSortDir(dir);
+    updateScannerQuery("sort", key === DEFAULT_SORT ? null : key);
+    updateScannerQuery("dir", dir);
+  };
+  // The grid toolbar: what the view is narrowed by, in each filter's own colour, and one Clear.
+  const signalWord = statCardFilter && ladderItems().find(([k]) => k === statCardFilter);
+  const filterWords = [
+    statCardFilter && { text: signalWord ? signalWord[1] : statCardFilter.replaceAll("_", " ").toLowerCase(), color: signalWord ? signalWord[2] : T.text1 },
+    sectorFilter && { text: sectorFilter.split("|").map(n => SECTOR_SHORT[n] || n).join(" · "), color: T.accent },
+    searchTerm && { text: `\u201c${searchTerm.trim().toLowerCase()}\u201d`, color: T.text1 },
+  ].filter(Boolean);
+  const clearGridFilters = () => {
+    setStatCardFilter(null); setSectorFilter(null); setSearchTerm("");
+    updateScannerQuery("signal", null); updateScannerQuery("sector", null); updateScannerQuery("q", null);
+  };
+
+  // The old HyperLens address opens Traders, keeping its query.
+  if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
+
+  const pageMargin = { marginTop: isMobile ? 16 : 20 };
+
+  // AI Assist fits the viewport and scrolls only its thread, so the page itself has nothing to scroll
+  // (a scrolled page slides the chat's top row under the floating capsule): no min-height, no bottom pad.
   return (
-    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal" style={{ minHeight: activeTab === "chat" ? undefined : "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         :where(.reflex-terminal), :where(.reflex-terminal *) { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
@@ -626,15 +788,13 @@ export default function App() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--t-scrollHover); }
-        tr:hover td { background: transparent !important; }
+        tr:hover td:not(.scanner-symbol) { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }
-        @keyframes livePulse { 0%,100%{opacity:1; text-shadow: 0 0 6px rgba(34,197,94,0.6);} 50%{opacity:0.3; text-shadow: none;} }
         @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes anomalyDotPulse { 0%,100%{opacity:1; box-shadow: 0 0 4px rgba(239,68,68,0.6);} 50%{opacity:0.4; box-shadow: none;} }
         .fade-in-up { animation: fadeInUp 0.4s ease-out both; }
         .shimmer-loading {
           background: linear-gradient(90deg, var(--t-overlay04) 25%, var(--t-overlay10) 50%, var(--t-overlay04) 75%);
@@ -715,7 +875,7 @@ export default function App() {
         }} />
       </div>
 
-      {/* ── NAV DRAWER ── */}
+      {/* ── NAV DRAWER (More) ── */}
       <NavDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -731,131 +891,29 @@ export default function App() {
         onGroupEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }}
         onWatchlistSelect={(gId) => { setActiveGroupId(gId); if (activeTab !== "4h" && activeTab !== "1d") setActiveTab("1d"); }}
         scanData={activeTab === "1d" ? data1d : data4h}
+        themeMode={mode}
+        onToggleTheme={toggle}
       />
 
+      {/* ── PHONE TAB BAR (below 900px; before the header so the header's menus open above it) ── */}
+      {width < 900 && activeTab !== "chat" && <MobileTabBar activeKey={mainTab} targets={tabTargets} />}
+
       {/* ── HEADER ── */}
-      <div className="terminal-header" style={{
-        padding: `0 ${hPad}px`,
-        borderBottom: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: mode === "dark"
-          ? "linear-gradient(90deg, rgba(10,10,14,0.82) 0%, rgba(12,12,18,0.78) 50%, rgba(10,10,14,0.82) 100%)"
-          : "linear-gradient(90deg, rgba(255,255,255,0.88) 0%, rgba(248,248,252,0.84) 50%, rgba(255,255,255,0.88) 100%)",
-        backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)",
-        position: "sticky", top: 0, zIndex: 100,
-        height: isMobile ? 56 : 56,
-        overflow: "visible",
-        boxShadow: mode === "dark"
-          ? "0 1px 0 rgba(255,255,255,0.04), 0 4px 30px rgba(0,0,0,0.4)"
-          : "0 1px 0 rgba(255,255,255,0.6), 0 4px 20px rgba(0,0,0,0.06)",
-      }}>
-        {/* Aura: cyan band across bottom edge */}
-        <div style={{
-          position: "absolute", bottom: 0, left: 0, right: 0,
-          height: "60%",
-          background: mode === "dark"
-            ? "linear-gradient(0deg, rgba(151,252,228,0.10) 0%, rgba(151,252,228,0.03) 60%, transparent 100%)"
-            : "linear-gradient(0deg, rgba(14,116,144,0.08) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
-          pointerEvents: "none",
-        }} />
-        {/* Aura: aquamarine accent band across full header */}
-        <div style={{
-          position: "absolute", top: 0, left: 0, right: 0,
-          height: "100%",
-          background: mode === "dark"
-            ? "linear-gradient(180deg, rgba(15,57,51,0.55) 0%, rgba(15,57,51,0.18) 60%, transparent 100%)"
-            : "linear-gradient(180deg, rgba(14,116,144,0.07) 0%, rgba(14,116,144,0.02) 60%, transparent 100%)",
-          pointerEvents: "none",
-        }} />
-        {/* Left: hamburger + logo + scanning */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
-          <button
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open navigation"
-            style={{
-              width: 24, height: 24,
-              display: "flex",
-              flexDirection: "column", alignItems: "center", justifyContent: "center",
-              gap: 4, padding: 0, flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-            }}
-          >
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-            <span style={{ width: 18, height: 1.5, background: T.text2, borderRadius: 1, transition: "background 0.15s" }} />
-          </button>
-          <ReflexBrand compact={isMobile} onClick={() => { navigate("/scanner"); setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null); }} />
-
-        </div>
-
-        {/* Right: timestamp, refresh, cache, theme toggle */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: isMobile ? 6 : 10,
-          flexShrink: 0,
-        }}>
-          {!isMobile && lastRefresh && (
-            <span style={{ fontSize: 12, color: T.text4, letterSpacing: "0.04em", fontFamily: T.font }}>
-              {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
-          <button
-            onClick={triggerScan}
-            disabled={scanRunning}
-            title={scanRunning ? "Scan running" : "Refresh scan"}
-            aria-label={scanRunning ? "Scan running" : "Refresh scan"}
-            style={{
-              width: 28, height: 28, borderRadius: 8,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              padding: 0, flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              color: T.text3,
-              cursor: scanRunning ? "default" : "pointer",
-              opacity: scanRunning ? 0.5 : 1,
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={e => { if (!scanRunning) e.currentTarget.style.color = T.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
-              style={scanRunning ? { animation: "spin 1s linear infinite" } : undefined}>
-              <path d="M13.65 2.35A7.96 7.96 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z" fill="currentColor" />
-            </svg>
-          </button>
-          <NotificationBell />
-          <SettingsDropdown />
-          <button
-            onClick={toggle}
-            title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            style={{
-              border: "none", background: "transparent", padding: 0,
-              cursor: "pointer", flexShrink: 0,
-              fontSize: 12, fontFamily: T.font, color: T.text3,
-              transition: "color 0.15s ease",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = T.text1; }}
-            onMouseLeave={e => { e.currentTarget.style.color = T.text3; }}
-          >
-            {mode === "dark" ? "Light" : "Dark"}
-          </button>
-        </div>
-      </div>
-
-      {/* Header aura line — 1px gradient separator */}
-      <div style={{
-        height: 1, width: "100%",
-        background: mode === "dark"
-          ? "linear-gradient(90deg, transparent 0%, rgba(151,252,228,0.15) 25%, rgba(151,252,228,0.25) 50%, rgba(151,252,228,0.15) 75%, transparent 100%)"
-          : "linear-gradient(90deg, transparent 0%, rgba(14,116,144,0.12) 25%, rgba(14,116,144,0.18) 50%, rgba(14,116,144,0.12) 75%, transparent 100%)",
-        position: "sticky", top: isMobile ? 56 : 56, zIndex: 99,
-      }} />
-
-      {/* Controls bar removed — timeframe toggle moved into ConsensusBar,
-          regime/signal dropdowns removed (stat cards + column sort cover the need) */}
+      <AppHeader
+        width={width} isMobile={isMobile} mode={mode} onToggleTheme={toggle}
+        activeTab={activeTab} activeMainTab={mainTab} tabTargets={tabTargets} radarTf={radarTf || lastTf}
+        drawerOpen={drawerOpen} onOpenDrawer={() => setDrawerOpen(true)}
+        onBrand={() => {
+          navigate("/scanner");
+          setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null);
+          setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
+        }}
+        lastRefresh={lastRefresh} cacheAge={cacheAge} error={error} scanRunning={scanRunning}
+        onRefresh={triggerScan} rescanNeedsKey={rescanNeedsKey}
+        timeframe={activeTab === "radar" ? radarTf : activeTab === "4h" ? "4h" : "1d"}
+        onTimeframe={setHeaderTimeframe}
+        compactTfRoute={showDashboard ? "scanner" : activeTab === "radar" ? "radar" : null}
+      />
 
       {/* ── ERROR ── */}
       {error && (
@@ -878,56 +936,56 @@ export default function App() {
         </div>
       )}
 
+      <main id="content" style={activeTab === "chat" ? undefined : { paddingBottom: "calc(var(--tabbar-space) + 16px)" }}>
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
-        <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
+        <Suspense fallback={<div style={{ padding: isMobile ? 16 : 24 }}><PageSkeleton /></div>}>
+          <CoinPage scanData4h={data4h} scanData1d={data1d} urlSymbol={coinPageSymbol} />
+        </Suspense>
       )}
 
-      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode) ── */}
-      {!coinPageSymbol && activeTab !== "chat" && (
+      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode; Radar and 404 draw their own) ── */}
+      {!coinPageSymbol && activeTab !== "chat" && activeTab !== "radar" && activeTab !== "notfound" && (
         <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
         }}>
-          <span style={{
-            fontSize: isMobile ? 25 : 34,
-            fontWeight: 550,
-            color: T.text1,
-            fontFamily: "var(--font-display), sans-serif",
-            letterSpacing: "-0.035em",
-          }}>
-            {activeTab === "backtest" ? "Backtest" :
-             activeTab === "executor" ? "Executor" :
-             activeTab === "trading" ? "Portfolio" :
-             activeTab === "signals" ? "Signal Log" :
-             activeTab === "analytics" ? "Analytics" :
-             activeTab === "tradfi" ? "TradFi" :
-             activeTab === "hyperlens" ? "HyperLens" :
-             activeGroup ? activeGroup.name : marketKind === "spot" ? "Spot markets" : "Perpetuals"}
-          </span>
-          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
+          <PageTitle>{showDashboard ? scannerTitle : TAB_TITLES[activeTab]}</PageTitle>
+          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm}
+            onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} marketKind={marketKind} onMarketChange={changeMarket} />}
           {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>
       )}
 
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
-      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
+      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: activeTab === "chat" ? 0 : isMobile ? 80 : 60, position: "relative" }}>
 
+        {/* Until the first scan arrives, a glass placeholder holds the summary's space so nothing below jumps. */}
+        {showDashboard && tfMarketRows.length === 0 && (
+          <GlassCard className="ms-skeleton" style={{ position: "relative", overflow: "hidden" }}>
+            <div className="shimmer-loading" aria-hidden="true" />
+          </GlassCard>
+        )}
         {showDashboard && tfMarketRows.length > 0 && (
           <MarketSummary regimeRows={consensusRows} signalRows={tfScopeRows} consensus={activeConsensus} sentiment={sentiment}
             timeframe={activeTab === "4h" ? "4h" : "1d"} scopeLabel={scopeLabel} spot={marketKind === "spot"}
-            activeSignalFilter={statCardFilter} onSignalFilter={setStatCardFilter} />
+            activeSignalFilter={statCardFilter} onSignalFilter={v => { setStatCardFilter(v); updateScannerQuery("signal", v); }} />
         )}
 
         {showDashboard && <UniverseCoverage marketKind={marketKind} timeframe={activeTab === "4h" ? "4h" : "1d"}/> }
-        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} by={sectorBy} onByChange={setSectorBy} value={sectorFilter} onChange={setSectorFilter} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
-        {showDashboard && <SetupMap results={inSector(activeTab === "4h" ? filtered4h : filtered1d)} timeframe={activeTab === "4h" ? "4h" : "1d"} onSelect={handleSelectCoin}/>}
+        {showDashboard && <SectorStrip rows={tfScopeRows} baseRows={tfMarketRows} loading={tfMarketRows.length === 0} by={sectorBy}
+          onByChange={v => { setSectorBy(v); updateScannerQuery("by", v === "ecosystem" ? v : null); }}
+          value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
+        {showDashboard && marketKind === "perpetual" && <RadarStrip results={inSector(tfScopeRows)} timeframe={activeTab === "4h" ? "4h" : "1d"}
+          sector={sectorFilter} sectorLabel={sectorFilter ? sectorFilter.split("|").map(n => SECTOR_SHORT[n] || n).join(" · ") : null} />}
 
         {showDashboard && <details className="scanner-context"><summary>Market context & recent activity <span>Dominance, alt season, cross-timeframe signals and changes</span></summary>
           <MarketContext globalMetrics={globalMetrics} altSeason={altSeason} stablecoin={stablecoin} macro={macro} isMobile={isMobile}/>
-          <OpportunityActivity />
-          <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={handleSelectCoin} />
+          <div className="opp-lists">
+            <OpportunityActivity onSelect={row => handleSelectCoin(row)} />
+            <OpportunityWatchlist rows={[...sorted4h, ...sorted1d]} onSelect={row => handleSelectCoin(row)} />
+          </div>
           <SignalBar data4h={sorted4h} data1d={sorted1d} onSelect={handleSelectCoin} isMobile={isMobile}/>
           <ChangesTicker timeframe={activeTab === "1d" ? "1d" : "4h"} isMobile={isMobile} refreshKey={lastRefresh}/>
         </details>}
@@ -941,61 +999,71 @@ export default function App() {
         )}
 
         {showDashboard && (
-          <div style={{
+          <div id="market-grid" style={{ scrollMarginTop: 100,
             display: "flex", flexDirection: isDesktop ? "row" : "column",
-            gap: isDesktop ? 16 : 12, marginTop: isMobile ? 12 : 16,
+            gap: isDesktop ? 16 : 12,
           }}>
-            {(activeTab === "4h") && (
-              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display4h} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
-              </FadeIn>
-            )}
-            {(activeTab === "1d") && (
-              <FadeIn delay={500} style={{ flex: 1, minWidth: 0 }}>
-                <DataTable results={display1d} label={null}
-                  sortKey={sortKey} onSort={setSortKey} selected={selected} onSelect={handleSelectCoin}
-                  visibleColumns={visibleColumns} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash} />
+            {(activeTab === "4h" || activeTab === "1d") && (
+              <FadeIn key={activeTab} delay={150} style={{ flex: 1, minWidth: 0 }}>
+                <DataTable variant="scanner" tf={activeTab} results={activeTab === "4h" ? display4h : display1d} label={null}
+                  sortKey={sortKey} sortDir={activeDir} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
+                  visibleColumns={COLUMNS} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash}
+                  totalCount={tfScopeRows.length} scopeLabel={scopeLabel} filterWords={filterWords} onClear={clearGridFilters} />
               </FadeIn>
             )}
           </div>
         )}
 
+        {activeTab === "radar" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <RadarPage results4h={data4h} results1d={data1d} onSelect={row => handleSelectCoin(row, null, `${location.pathname}${location.search}`)} />
+          </Suspense>
+        )}
+
         {activeTab === "backtest" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <BacktestPanel isMobile={isMobile} onBacktestComplete={refreshBacktestSymbols} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "executor" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <ExecutorPanel api={API_BASE} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <ExecutorPanel api={API_BASE} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "trading" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <TradingPanel api={API_BASE} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <TradingPanel api={API_BASE} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "signals" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <SignalLogPanel api={API_BASE} isMobile={isMobile} scanData4h={data4h} scanData1d={data1d} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "analytics" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <AnalyticsPanel isMobile={isMobile} />
-          </FadeIn>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <AnalyticsPanel isMobile={isMobile} />
+            </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "tradfi" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+          <FadeIn delay={300} style={pageMargin}>
             <TradFiPanel
               results={displayTradfi}
               data4h={dataTradfi4h}
@@ -1007,19 +1075,29 @@ export default function App() {
               loading={loading}
             />
           </FadeIn>
+          </Suspense>
         )}
 
         {activeTab === "chat" && (
-          <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
-            selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
+              selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
+          </Suspense>
         )}
 
-        {activeTab === "hyperlens" && (
-          <FadeIn delay={300} style={{ marginTop: isMobile ? 16 : 20 }}>
-            <HyperLensPanel isMobile={isMobile} />
-          </FadeIn>
+        {activeTab === "traders" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <FadeIn delay={300} style={pageMargin}>
+              <HyperLensPanel isMobile={isMobile} />
+            </FadeIn>
+          </Suspense>
         )}
+
+        {activeTab === "settings" && <SettingsPage style={pageMargin} />}
+
+        {activeTab === "notfound" && <NotFound targets={tabTargets} radarTf={lastTf} />}
       </div>}
+      </main>
 
       {/* ── GROUP MODAL ── */}
       {showGroupModal && (

@@ -4,12 +4,13 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const REFRESH_MS = 120_000;
 
 // Traders' positioning on a few coins (the best and forming setups), refreshed every two
-// minutes while shown. One small request for all of them.
-export default function useSetupIntel(coins) {
+// minutes while shown. One small request for all of them. With pulse, it also reads with no
+// coin at all, for the market-wide pulse the response always carries.
+export default function useSetupIntel(coins, { pulse = false } = {}) {
   const key = [...new Set(coins.filter(Boolean))].sort().join(",");
   const [data, setData] = useState(null);
   useEffect(() => {
-    if (!key) { setData(null); return undefined; }
+    if (!key && !pulse) { setData(null); return undefined; }
     let alive = true;
     const load = () => fetch(`${API_BASE}/api/hyperlens/intel?coins=${encodeURIComponent(key)}`)
       .then(r => (r.ok ? r.json() : null))
@@ -18,6 +19,6 @@ export default function useSetupIntel(coins) {
     load();
     const timer = setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
     return () => { alive = false; clearInterval(timer); };
-  }, [key]);
+  }, [key, pulse]);
   return data;
 }

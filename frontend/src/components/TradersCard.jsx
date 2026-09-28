@@ -1,4 +1,4 @@
-import { T } from "../theme.js";
+import { sideBarColor, sideColor } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
 import WalletOpens from "./WalletOpens.jsx";
 import { formatPercent } from "../utils/marketPresentation.js";
@@ -6,8 +6,8 @@ import { traderLean, longShare, usd, WALLET_CHECK_CONFIDENCE } from "../utils/tr
 
 function Split({ longPct, left, right }) {
   return <>
-    <div className="tc-bar"><i style={{ width: `${longPct}%`, background: T.green }} /><i style={{ flex: 1, background: T.red }} /></div>
-    <div className="tc-split"><span style={{ color: T.green }}>{left}</span><span style={{ color: T.red }}>{right}</span></div>
+    <div className="tc-bar"><i style={{ width: `${longPct}%`, background: sideBarColor("long") }} /><i style={{ flex: 1, background: sideBarColor("short") }} /></div>
+    <div className="tc-split"><span style={{ color: sideColor("long") }}>{left}</span><span style={{ color: sideColor("short") }}>{right}</span></div>
   </>;
 }
 
@@ -42,7 +42,7 @@ export default function TradersCard({ symbol, sm, traders, onShowEntries, spot }
           </div>
         )}
       </div>
-      {traders?.entries && <TraderEntries entries={traders.entries} onShow={onShowEntries} />}
+      {(traders?.entries || traders?.loading) && <TraderEntries entries={traders.entries} loading={traders.loading} onShow={onShowEntries} />}
       {traders?.opens && <WalletOpens opens={traders.opens} />}
       <details className="analysis-method">
         <summary>How this is read</summary>

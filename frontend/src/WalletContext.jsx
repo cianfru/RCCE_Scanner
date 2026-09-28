@@ -9,13 +9,37 @@ const WalletContext = createContext({
   connect: async () => {},
   disconnect: () => {},
   error: null,
+  viewAddress: "",
+  setViewAddress: () => false,
+  effectiveAddress: null,
+  readOnly: false,
 });
 
 const STORAGE_KEY = "rcce-wallet-address";
+// An address to look at without connecting (read-only): Portfolio, the Radar's My trades
+// and the coin page read it when no wallet is connected.
+const VIEW_KEY = "rcce-view-address";
+const LEGACY_VIEW_KEY = "smap-address";   // the Radar's own address box, before this
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+function initialViewAddress() {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved != null) return ADDRESS_RE.test(saved) ? saved.toLowerCase() : "";
+    // First load: take over a valid address typed into the Radar's box.
+    const legacy = (localStorage.getItem(LEGACY_VIEW_KEY) || "").trim();
+    if (ADDRESS_RE.test(legacy)) {
+      localStorage.setItem(VIEW_KEY, legacy.toLowerCase());
+      return legacy.toLowerCase();
+    }
+  } catch { /* storage blocked */ }
+  return "";
+}
 
 export function WalletProvider({ children }) {
   const [address, setAddress] = useState(null);
   const [error, setError] = useState(null);
+  const [viewAddress, setViewState] = useState(initialViewAddress);
   const walletClientRef = useRef(null);
 
   const hasProvider = typeof window !== "undefined" && !!window.ethereum;
@@ -101,6 +125,16 @@ export function WalletProvider({ children }) {
     }
   }, [hasProvider, buildClient]);
 
+  // A valid address or "" (stop viewing). Returns whether it was accepted.
+  const setViewAddress = useCallback((value) => {
+    // Lowercase: one address, one cache key and one banner spelling however it was typed.
+    const v = String(value ?? "").trim().toLowerCase();
+    if (v && !ADDRESS_RE.test(v)) return false;
+    setViewState(v);
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* storage blocked */ }
+    return true;
+  }, []);
+
   const disconnect = useCallback(() => {
     setAddress(null);
     walletClientRef.current = null;
@@ -117,6 +151,10 @@ export function WalletProvider({ children }) {
         connect,
         disconnect,
         error,
+        viewAddress,
+        setViewAddress,
+        effectiveAddress: address || viewAddress || null,
+        readOnly: !address && !!viewAddress,
       }}
     >
       {children}

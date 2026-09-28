@@ -45,6 +45,35 @@ const DARK = {
   chartCross:  "rgba(151,252,228,0.35)",
   chartLabel:  "#04060C",
   chartText:   "rgba(245,254,253,0.60)",
+  // P&L and the opaque sticky-row background (surface tint composited over bg)
+  profit:      "#34d399",
+  loss:        "#f87171",
+  stickyBg:    "linear-gradient(rgba(15,57,51,0.32),rgba(15,57,51,0.32)), linear-gradient(rgba(15,57,51,0.30),rgba(15,57,51,0.30)), #04060C",
+  // Brushed metal (metal_rules.md): the header plate, the wordmark, the selected-tab steel bar
+  // and the one machined edge on a page's hero card. Never on data. terminal.css composes them.
+  metalPlateHi:      "#0f1f1a",
+  metalPlateMid:     "#0a1613",
+  metalPlateLo:      "#060e0c",
+  metalSheen:        "rgba(200,255,236,.08)",
+  metalShadeTop:     "rgba(235,255,249,.045)",
+  metalShadeLo:      "rgba(0,0,0,.18)",
+  metalRim:          "rgba(170,252,231,.22)",
+  metalRimLo:        "rgba(151,252,228,.08)",
+  metalRimHot:       "rgba(222,255,247,.78)",
+  metalRimHotLo:     "rgba(222,255,247,0)",
+  metalRimFoot:      "rgba(151,252,228,0)",
+  metalBevel:        "inset 0 1px 0 rgba(225,255,247,.05), inset 0 -1px 0 rgba(0,0,0,.32)",
+  metalDrop:         "0 1px 0 rgba(0,0,0,.4), 0 12px 32px -12px rgba(0,0,0,.6)",
+  metalMarkShadow:   "drop-shadow(0 1px 1.5px rgba(0,0,0,.5))",
+  metalEdgeLo:       "rgba(70,120,108,.45)",
+  metalEdgeMid:      "rgba(120,172,158,.70)",
+  metalEdgeHi:       "rgba(186,232,217,.85)",
+  metalEdgeSpec:     "rgba(236,255,249,.95)",
+  metalEdgeShade:    "rgba(0,0,0,.40)",
+  metalBar:          "linear-gradient(90deg,#5fb3a0 0%,#97fce4 22%,#d2fff3 38%,#a9fce8 54%,#86e6cf 76%,#5fb3a0 100%)",
+  metalBarBevel:     "rgba(255,255,255,.34)",
+  metalType:         "linear-gradient(90deg,#c2ded6 0%,#f4fffc 14%,#d4ebe4 27%,#aecfc5 41%,#e6f8f3 56%,#f8fffd 63%,#bcd9d0 78%,#eefcf8 91%,#cfe6df 100%)",
+  metalTypeHorizon:  "linear-gradient(180deg,#fff 0%,#fff 42%,#d6e3df 58%,#f4f8f7 100%)",
 };
 
 const LIGHT = {
@@ -90,6 +119,34 @@ const LIGHT = {
   chartCross:  "rgba(14,116,144,0.3)",
   chartLabel:  "#f5f5f7",
   chartText:   "#48484a",
+  // P&L and the opaque sticky-row background (surface tint composited over bg)
+  profit:      "#047857",
+  loss:        "#dc2626",
+  stickyBg:    "linear-gradient(rgba(0,0,0,0.04),rgba(0,0,0,0.04)), #ffffff",
+  // Brushed metal, light: flat satin; highlights are a rise in the #0e7490 teal, never white on white.
+  metalPlateHi:      "#fdfefe",
+  metalPlateMid:     "#f8fbfa",
+  metalPlateLo:      "#f3f7f6",
+  metalSheen:        "rgba(255,255,255,.75)",
+  metalShadeTop:     "rgba(255,255,255,0)",
+  metalShadeLo:      "rgba(0,0,0,0)",
+  metalRim:          "rgba(0,30,26,.12)",
+  metalRimLo:        "rgba(0,30,26,.15)",
+  metalRimHot:       "rgba(14,116,144,.60)",
+  metalRimHotLo:     "rgba(14,116,144,0)",
+  metalRimFoot:      "rgba(14,116,144,.20)",
+  metalBevel:        "inset 0 1px 0 #fff",
+  metalDrop:         "0 8px 24px -14px rgba(0,40,30,.12)",
+  metalMarkShadow:   "none",
+  metalEdgeLo:       "rgba(14,116,144,.14)",
+  metalEdgeMid:      "rgba(14,116,144,.30)",
+  metalEdgeHi:       "rgba(14,116,144,.50)",
+  metalEdgeSpec:     "rgba(14,116,144,.72)",
+  metalEdgeShade:    "rgba(0,0,0,0)",
+  metalBar:          "linear-gradient(90deg,#0b5a69 0%,#1f7f91 24%,#5fb0bd 40%,#268a9c 56%,#0f6b7c 78%,#0b5a69 100%)",
+  metalBarBevel:     "rgba(255,255,255,.30)",
+  metalType:         "linear-gradient(90deg,#1d2a27 0%,#3a4c47 14%,#18231f 27%,#080d0c 41%,#2c3b37 56%,#34463f 63%,#121b19 78%,#2d3d38 91%,#1b2724 100%)",
+  metalTypeHorizon:  "linear-gradient(180deg,#fff 0%,#fff 44%,#dfe6e4 60%,#fff 100%)",
 };
 
 // ─── APPLY THEME (sets CSS custom properties on :root) ──────────────────────
@@ -105,8 +162,19 @@ const LIGHT_HUES = {
   "#71717a": "#6b7280", "#cf9185": "#b4533f", "#b5a5db": "#6d5bb0", "#91b9e8": "#2f6fb5",
   "#e3b341": "#a16207", "#facc15": "#a16207", "#d8a094": "#b4533f", "#a78bfa": "#6d28d9",
   "#c4b5fd": "#6d28d9", "#c6a46d": "#8a6a2f", "#b6a07c": "#7a6440",
+  "#7dd3fc": "#0369a1", "#fda4af": "#be123c", "#fcd34d": "#a16207", "#8b8f94": "#52525b",
+  "#7d9b95": "#7f9993", "#8b8f98": "#6b7280", "#f3ba2f": "#a16207", "#f7a600": "#b45309",
 };
 let currentMode = "dark";
+
+// A translucent version of any colour, including var(--t-*) tokens: `${T.x}NN` hex
+// suffixes only work on literal hex values and silently drop the whole declaration otherwise.
+export function alpha(color, pct) {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
+
+export const isLightMode = () => currentMode === "light";
+
 export function col(hex) {
   return currentMode === "light" ? (LIGHT_HUES[String(hex).toLowerCase()] || hex) : hex;
 }
@@ -133,6 +201,12 @@ export function applyTheme(mode) {
     root.style.setProperty(`--t-${key}`, val);
   }
   root.dataset.theme = mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", mode === "light" ? "#ffffff" : "#04060C");
+}
+
+// One palette's raw token value (for SVG paint that cannot use a CSS gradient, like the metal wordmark).
+export function themeToken(mode, key) {
+  return (mode === "light" ? LIGHT : DARK)[key];
 }
 
 // The --t-* variables of one palette as an inline style, for a block that keeps its
@@ -184,6 +258,9 @@ export const T = {
   selectBg:    "var(--t-selectBg)",
   scrollThumb: "var(--t-scrollThumb)",
   scrollHover: "var(--t-scrollHover)",
+  profit:      "var(--t-profit)",
+  loss:        "var(--t-loss)",
+  stickyBg:    "var(--t-stickyBg)",
   // Static (not theme-dependent)
   font:        "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
   mono:        "'Geist Mono', 'SF Mono', monospace",

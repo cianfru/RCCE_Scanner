@@ -47,8 +47,16 @@ export function withToken(url) {
 }
 
 // Attach the token to API calls and react to 401s, without touching every fetch site.
+// A caller that shows its own message for a refused change passes `adminNotice: false`
+// in the init, so the generic admin notice does not cover it (one message, not two).
 const nativeFetch = window.fetch.bind(window);
 window.fetch = async (input, init = {}) => {
+  let adminNotice = true;
+  if (init && "adminNotice" in init) {
+    adminNotice = init.adminNotice !== false;
+    init = { ...init };
+    delete init.adminNotice;
+  }
   const url = typeof input === "string" ? input : input?.url || "";
   const isApi = url.startsWith(API_BASE) && !url.includes("/api/auth/");
   const token = isApi ? getToken() : null;
@@ -61,7 +69,7 @@ window.fetch = async (input, init = {}) => {
     init = { ...init, headers };
   }
   const res = await nativeFetch(input, init);
-  if (isApi && res.status === 403 && method !== "GET") {
+  if (isApi && res.status === 403 && method !== "GET" && adminNotice) {
     window.dispatchEvent(new Event("reflex-admin-required"));
   }
   if (isApi && res.status === 401) {

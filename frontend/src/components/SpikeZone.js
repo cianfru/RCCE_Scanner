@@ -12,7 +12,11 @@ export default class SpikeZone {
   detached() { this.chart = null; this.series = null; }
   updateAllViews() {}
   paneViews() { return [this.view]; }
+  // A paint queued while the chart is being torn down finds a disposed chart: skip it.
   draw(target) {
+    try { this.paint(target); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
+  }
+  paint(target) {
     if (!this.chart || !this.series || !this.zone) return;
     const ts = this.chart.timeScale();
     const z = this.zone;

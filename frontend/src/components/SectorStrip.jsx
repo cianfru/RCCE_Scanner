@@ -3,7 +3,8 @@ import MemberRug from "./MemberRug.jsx";
 import HelpTip from "./HelpTip.jsx";
 import Tabs from "./Tabs.jsx";
 import useSectors from "../hooks/useSectors.js";
-import { useState } from "react";
+import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
+import { useRef, useState } from "react";
 import SectorRace from "./SectorRace.jsx";
 import PocketMatrix from "./PocketMatrix.jsx";
 
@@ -13,7 +14,8 @@ const MINUS = "\u2212";
 const signed = (x, digits = 0) => `${x >= 0 ? "+" : MINUS}${Math.abs(x).toFixed(digits)}`;
 const pct = x => (x === 0 ? "0%" : `${signed(x)}%`);
 
-function chipTitle(g, span) {
+// The chip's full breakdown ("one layer deeper"): a heading plus the lines of the hover / long-press card.
+function chipLines(g, span) {
   const lines = [`${g.name} · ${g.n} markets${g.small ? " (fewer than 10: read as tentative)" : ""}${g.missing ? ` (${g.missing} without price history)` : ""}`];
   if (g.tail) {
     lines.push(g.name === "Other" ? "Catch-all group, not ranked." : "Too few to rank.");
@@ -30,7 +32,7 @@ function chipTitle(g, span) {
   lines.push(`Median vs BTC ${g.vsBtc == null ? "—" : `${signed(g.vsBtc, 1)}%`} · ${g.uptrend} in Uptrend · ${g.longs} long signals · ${g.locked} locked`);
   if (g.traders.n) lines.push(`Profitable traders: ${g.traders.long} long / ${g.traders.short} short${g.weight != null ? `, ${g.weight.toFixed(1)}x market weight` : ""}`);
   lines.push(`Moves over the last ${span}.`);
-  return lines.join("\n");
+  return lines;
 }
 
 function chipAria(g) {
@@ -45,14 +47,28 @@ function chipAria(g) {
 
 // Which parts of the market are moving: one chip per sector (or chain), ranked by its
 // size-adjusted lead over the typical alt. Clicking a chip filters the grid and the best setups.
-export default function SectorStrip({ rows, baseRows, by, onByChange, value, onChange, timeframe, spot = false }) {
+const Chevron = ({ dir }) => <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <path d={dir < 0 ? "M10 3.5 5.5 8l4.5 4.5" : "M6 3.5 10.5 8 6 12.5"} /></svg>;
+
+// While the first scan loads: the strip's own footprint (header line and chip-sized blocks), so nothing below jumps.
+function StripSkeleton() {
+  return <section className="sector-strip sector-skeleton" aria-hidden="true">
+    <div className="sk-head shimmer-loading" />
+    <div className="sk-chips">{Array.from({ length: 9 }, (_, i) => <div key={i} className="shimmer-loading" />)}</div>
+  </section>;
+}
+
+export default function SectorStrip({ rows, baseRows, by, onByChange, value, onChange, timeframe, spot = false, loading = false }) {
   const sectors = useSectors();
   const [view, setView] = useState(null);             // null | "race" | "pockets"
+  const scroller = useRef(null);
   const base = altBaseline(baseRows || rows);           // zero stays the market's typical alt when a watch group is active
   // Trader positioning is measured on perps and weighted by perp open interest: it says
   // nothing about the spot tokens in a chip, so spot chips leave that line out.
   const lean = spot ? null : sectors?.lean;
   const groups = groupStats(rows, by, lean, base);
+  const edges = useScrollEdges(scroller, `${by}:${groups.length}:${spot}`);
+  if (loading && !groups.length) return <StripSkeleton />;
   if (!groups.length) return null;
   const span = timeframe === "4h" ? "4d" : "24d";
   const ranked = groups.filter(g => !g.tail);
@@ -60,9 +76,12 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
   const vsBtc = base.vsBtc == null ? null : `${signed(base.vsBtc, 1)}%`;
   const chip = g => {
     const active = value === g.name;
-    return <button key={g.name} type="button" aria-pressed={active} className={`sector-chip${g.tail ? " tail" : ""}`}
-      data-dir={g.dir} data-small={g.small && !g.tail ? "" : undefined} onClick={() => onChange(active ? null : g.name)}
-      title={chipTitle(g, span)} aria-label={chipAria(g)}>
+    const [head, ...lines] = chipLines(g, span);
+    // The breakdown opens after 400ms of hover, on keyboard focus or on a 500ms press; a click filters the grid.
+    return <HelpTip key={g.name} className="sector-chip-tip" anchorClass={`sector-chip${g.tail ? " tail" : ""}`} label={chipAria(g)}
+      title={head} width={340} hoverDelay={400} longPress onActivate={() => onChange(active ? null : g.name)}
+      buttonProps={{ "aria-pressed": active, "data-dir": g.dir, "data-small": g.small && !g.tail ? "" : undefined }}
+      anchor={<>
       <span className="sector-name">{SECTOR_SHORT[g.name] || g.name}<small>{g.tail ? g.rows : g.n}</small></span>
       {!g.tail && <>
         <span className="sector-rel">{g.shown == null ? "—" : pct(g.shown)}</span>
@@ -74,8 +93,11 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
           <span>{g.traders.side ? `${Math.round((100 * g.traders.long) / g.traders.n)}% long` : "few traders"}</span>
         </span>}
       </>}
-    </button>;
+      </>}>
+      <div className="chip-tip-lines">{lines.map((l, i) => <p key={i}>{l}</p>)}</div>
+    </HelpTip>;
   };
+  const clearLabel = value ? (value.includes("|") ? `${value.replace("|", " on ")} · show all` : "Show all") : null;
   return <section className="sector-strip" aria-label="Sectors">
     <div className="sector-strip-head">
       <Tabs small label="Group by" items={[{ key: "sector", label: "Sectors" }, { key: "ecosystem", label: "Ecosystems" }]} value={by} onChange={k => { onByChange(k); onChange(null); }} />
@@ -90,17 +112,22 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
       </HelpTip>
       <p className="sector-baseline">
         <span className="ms-long">Size-adjusted lead over the typical alt{vsBtc ? <> (itself <b>{vsBtc}</b> vs BTC over <b>{span}</b>)</> : ""} · dashed: under 10 markets</span>
+        {clearLabel && <span className="sector-clear-inline"><button type="button" className="sector-clear" onClick={() => onChange(null)}>{clearLabel}</button>{" · "}</span>}
         <span className="ms-short">vs typical alt{vsBtc ? <> (<b>{vsBtc}</b> vs BTC, <b>{span}</b>)</> : ""} · size-adjusted · {"dashed:\u00a0under\u00a010"}</span>
       </p>
       <div className="sector-views" role="group" aria-label="Charts">
         {VIEWS.map(v => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setView(view === v.key ? null : v.key)}>{v.label}</button>)}
       </div>
-      {value && <button type="button" className="sector-clear" onClick={() => onChange(null)}>{value.includes("|") ? `${value.replace("|", " on ")} · show all` : "Show all"}</button>}
+      {clearLabel && <button type="button" className="sector-clear sector-clear-head" onClick={() => onChange(null)}>{clearLabel}</button>}
     </div>
-    <div className="sector-chips">
-      {ranked.map(chip)}
-      {tail.length > 0 && <span className="sector-divider" aria-hidden="true" />}
-      {tail.map(chip)}
+    <div className="sector-scroll">
+      <div className="sector-chips edge-fade" ref={scroller} {...fadeAttrs(edges)}>
+        {ranked.map(chip)}
+        {tail.length > 0 && <span className="sector-divider" aria-hidden="true" />}
+        {tail.map(chip)}
+      </div>
+      {edges.left && <button type="button" className="sector-chev prev" aria-label="Scroll sectors left" onClick={() => edges.scrollPage(-1)}><Chevron dir={-1} /></button>}
+      {edges.right && <button type="button" className="sector-chev next" aria-label="Scroll sectors right" onClick={() => edges.scrollPage(1)}><Chevron dir={1} /></button>}
     </div>
     {view === "race" && <SectorRace data={sectors} rows={rows} by={by} value={value} leaders={ranked.slice(0, 3).map(g => g.name)} />}
     {view === "pockets" && <PocketMatrix data={sectors} rows={rows} value={value} onSelect={onChange} />}
