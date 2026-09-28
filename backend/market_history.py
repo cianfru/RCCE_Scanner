@@ -6,7 +6,8 @@ The seed (seeds/market_history_seed.json, written by `python -m backtest.breadth
 export`) holds the rebuilt days and the study's episodes. Once a day the same method runs
 on the last closed daily candle: Binance USDT spot closes for the seed's coin list, the
 live engine on each coin's trailing 600 candles. New days are appended to a file next to
-hyperlens.db. Episode outcomes stop at the study's end day; later episodes carry none.
+hyperlens.db. The study's counts (base rates, band records) stop at its end day; episodes are
+scored after it too, once their 30 or 60 days have closed (approved by the owner on 28 Sep 2026).
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import logging
 import os
 import statistics
 import time
+from bisect import bisect_right
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -34,7 +36,7 @@ FETCH_CONCURRENCY = 6
 _seed: Optional[dict] = None
 _live: List[list] = []
 _fng: Dict[int, int] = {}
-_closes: Dict[int, Dict[str, float]] = {}     # daily closes per coin for days added live (forward test outcomes)
+_closes: Dict[int, Dict[str, float]] = {}     # daily closes per coin: live days, and seed days from 60 before the end day
 
 # Forward test (docs/reviews/btc-band-breadth-forward-test.md): BTC below its weekly band
 # while the Uptrend share is 55% or more. Only episodes starting after the declaration count.
@@ -47,6 +49,9 @@ FT_HISTORY = [
     [19088, 15, 0.64, -17, -28, -55], [19193, 143, 0.68, -10, -4, -14], [19998, 1, 0.83, 15, 1, 70],
     [20005, 2, 0.83, 26, 10, 100], [20356, 3, 0.89, 2, -20, -40], [20372, 1, 0.86, -4, -1, -27],
 ]
+# Episode outcomes as in backtest.breadth_history.study: BTC and the median alt (20+ alts with both closes).
+HORIZONS = (10, 30, 60)
+MIN_ALTS = 20
 _view: Optional[dict] = None
 
 
@@ -108,6 +113,21 @@ def day_rows(klines, days: List[int], window: int, min_bars: int) -> Dict[int, t
     return out
 
 
+def day_closes(klines, days: List[int], min_bars: int) -> Dict[int, float]:
+    """Close on each requested day, from daily klines, where the coin had min_bars candles by then (as day_rows)."""
+    try:
+        kday = [int(r[0]) // DAY_MS for r in klines or []]
+        close = [float(r[4]) for r in klines or []]
+    except (TypeError, ValueError, IndexError):
+        return {}
+    out = {}
+    for day in days:
+        i = bisect_right(kday, day)
+        if i >= min_bars and kday[i - 1] == day:
+            out[day] = close[i - 1]
+    return out
+
+
 def aggregate(day: int, per_coin: Dict[str, tuple]) -> Optional[list]:
     """One seed-format row: [day, n, uptrend, overheated, downtrend, basing, median_z, btc]."""
     rs = list(per_coin.values())
@@ -137,25 +157,31 @@ async def _fetch_json(session, url: str):
 
 
 async def update(now: Optional[float] = None) -> int:
-    """Append every closed day missing since the last stored one. Returns the number added."""
+    """Append every closed day missing since the last stored one. Returns the number added. Also fills the
+    per-coin closes of seed days from 60 days before the study's end day, which score the episodes after it."""
     global _view
     import aiohttp
     seed = _load()
     now = time.time() if now is None else now
     yesterday = int(now * 1000) // DAY_MS - 1
     missing = list(range(all_days()[-1][0] + 1, yesterday + 1))
+    backfill = {d[0]: d[1] for d in seed["days"] if d[0] > seed["end_day"] - max(HORIZONS) and d[0] not in _closes}
     added = 0
     async with aiohttp.ClientSession() as session:
-        if missing:
+        if missing or backfill:
             sem = asyncio.Semaphore(FETCH_CONCURRENCY)
             per_day: Dict[int, Dict[str, tuple]] = {d: {} for d in missing}
+            filled: Dict[int, Dict[str, float]] = {d: {} for d in backfill}
 
             async def one(pair):
                 async with sem:
                     kl = await _fetch_json(session, KLINES_URL.format(pair=pair))
-                rows = await asyncio.to_thread(day_rows, kl, missing, seed["window"], seed["min_bars"])
-                for day, v in rows.items():
-                    per_day[day][pair] = v
+                if missing:
+                    rows = await asyncio.to_thread(day_rows, kl, missing, seed["window"], seed["min_bars"])
+                    for day, v in rows.items():
+                        per_day[day][pair] = v
+                for day, c in day_closes(kl, list(backfill), seed["min_bars"]).items():
+                    filled[day][pair] = c
 
             await asyncio.gather(*(one(p) for p in seed["pairs"]))
             for day in missing:
@@ -164,12 +190,16 @@ async def update(now: Optional[float] = None) -> int:
                     _live.append(row)
                     _closes[day] = {p: v[2] for p, v in per_day[day].items()}
                     added += 1
+            for day, n in backfill.items():
+                if len(filled[day]) >= 0.9 * n:              # a partial fetch is retried on the next update
+                    _closes[day] = filled[day]
         fg = await _fetch_json(session, FNG_URL)
         if fg and fg.get("data"):
             _fng.update({int(x["timestamp"]) // 86_400: int(x["value"]) for x in fg["data"]})
     _save()
     _view = None
-    logger.info("Market history: %d day(s) added, last %s, %d Fear & Greed days", added, all_days()[-1][0], len(_fng))
+    logger.info("Market history: %d day(s) added, last %s, %d Fear & Greed days, %d days of closes",
+                added, all_days()[-1][0], len(_fng), len(_closes))
     return added
 
 
@@ -194,7 +224,7 @@ def band_of(share: float, bands_def) -> str:
 
 
 def episodes_after(days: List[list], start_after: int, bands_def) -> Dict[str, List[list]]:
-    """Episodes after the study's end day, same merge rule (gaps of up to 5 days), no outcomes."""
+    """Episodes after the study's end day, same merge rule (gaps of up to 5 days): [start, last, breadth]."""
     out: Dict[str, List[list]] = {}
     cur = None
     for d in days:
@@ -210,6 +240,71 @@ def episodes_after(days: List[list], start_after: int, bands_def) -> Dict[str, L
     if cur:
         out.setdefault(cur["band"], []).append([cur["start"], cur["last"], cur["breadth"]])
     return out
+
+
+def _change(btc: Dict[int, float], t: int, e: int):
+    """(BTC %, typical alt %) from day t's close to day e's: the median over alts with both closes, as in
+    backtest.breadth_history.study; None where the closes are missing."""
+    b = round(100 * (btc[e] / btc[t] - 1), 1) + 0.0 if btc.get(t) and btc.get(e) else None
+    a0, a1 = _closes.get(t) or {}, _closes.get(e) or {}
+    rs = [a1[p] / a0[p] - 1 for p in a0 if p != "BTCUSDT" and p in a1 and a0[p] > 0]
+    return b, (round(100 * statistics.median(rs), 1) + 0.0 if len(rs) >= MIN_ALTS else None)       # + 0.0: no -0.0
+
+
+def score(row: list, btc: Dict[int, float], last: int, end_day: int) -> list:
+    """An episode row [start, end, breadth, btc10, alt10, btc30, alt30, btc60, alt60] with every horizon that
+    runs past the study's end day scored once it has closed (by `last`). The study's own outcomes stay."""
+    out = list(row[:3]) + (list(row[3:]) or [None] * 2 * len(HORIZONS))
+    t = out[0]
+    for i, h in enumerate(HORIZONS):
+        if end_day < t + h <= last:
+            out[3 + 2 * i], out[4 + 2 * i] = _change(btc, t, t + h)
+    return out
+
+
+def scored_bands(seed: dict, days: List[list], btc: Dict[int, float]) -> Dict[str, dict]:
+    """Per band: the study's episodes and the later ones, all scored up to the latest day. The episode running
+    on the study's end day continues into the days after it when the band holds (same merge rule)."""
+    end, last = seed["end_day"], days[-1][0]
+    eps = {label: [list(e) for e in seed["bands"][label]["episodes"]] for _, _, label in seed["bands_def"]}
+    later = episodes_after(days, end, seed["bands_def"])
+    tails = [(e[1], label, e) for label, es in eps.items() for e in es]
+    if tails and later:
+        _, label, tail = max(tails, key=lambda x: x[0])
+        first = min((e[0], lb) for lb, es in later.items() for e in es)
+        if first[1] == label and first[0] - tail[1] <= 6:
+            tail[1] = later[label].pop(0)[1]
+    return {label: {"episodes": [score(e, btc, last, end) for e in eps[label]],
+                    "later": [score(e, btc, last, end) for e in later.get(label, [])]} for label in eps}
+
+
+def cycle(days: List[list]) -> Optional[dict]:
+    """Today's risk-on run (or risk-off stretch) against the past ones, by the rules of
+    docs/reviews/risk-on-cycles-study.md (backtest.risk_on_cycles.detect_runs): breadth is the Uptrend +
+    Overheated share; a run starts on the first day at 55% or more and ends on the first of 5+ days below.
+    Day 1 is the run's first day, so a past run reached day N if it lasted N days or more. The first run
+    (start unknown) is left out."""
+    from backtest.risk_on_cycles import OFF_DAYS, THR, detect_runs
+    ds = [d[0] for d in days]
+    share = {d[0]: round(d[2] + d[3], 4) for d in days}
+    try:
+        runs = detect_runs(ds, share)
+    except KeyError:                                   # a missing day inside a run
+        logger.warning("Market history: gap in the days, no risk-on run shown")
+        return None
+    cur = runs[-1]
+    if cur["first"]:
+        return None
+    day = ds[-1] - cur["start"] + 1
+    past = sorted(r["length"] for r in runs if r["type"] == cur["type"] and not r["first"] and r["end"] is not None)
+    reached = [n for n in past if n >= day]
+    below = 0
+    while cur["type"] == "on" and below < len(ds) and share[ds[-1 - below]] < THR:
+        below += 1
+    return {"type": cur["type"], "start": cur["start"], "day": day, "threshold": THR, "off_days": OFF_DAYS,
+            "below_days": below, "since": ds[0], "past": len(past),
+            "median": statistics.median(past) if past else None, "reached": len(reached),
+            "more": 30, "lasted_more": sum(n >= day + 30 for n in reached)}
 
 
 def btc_band(days: List[list]) -> Dict[int, tuple]:
@@ -270,17 +365,20 @@ def view() -> dict:
     days = [d for d in all_days() if d[1] >= seed["min_coins"]]
     today = days[-1]
     pct = round(100 * sum(d[2] < today[2] for d in days) / len(days))
-    later = episodes_after(days, seed["end_day"], seed["bands_def"])
+    btc = {d[0]: d[7] for d in all_days() if d[7]}
+    eps = scored_bands(seed, days, btc)
     band = btc_band(all_days())
     bands = [{"label": label, "lo": lo, "hi": hi, "days": seed["bands"][label]["days"],
-              "h30": seed["bands"][label]["h30"], "verdict": seed["bands"][label]["verdict"],
-              "episodes": seed["bands"][label]["episodes"], "later": later.get(label, [])}
+              "h30": seed["bands"][label]["h30"], "verdict": seed["bands"][label]["verdict"], **eps[label]}
              for lo, hi, label in seed["bands_def"]]
     _view = {
         "columns": seed["days_cols"], "days": days, "episode_columns": seed["episode_cols"],
         "end_day": seed["end_day"], "coins": len(seed["pairs"]), "base": seed["base"], "bands": bands,
+        # The base rates and each band's record count days and episodes in this period only.
+        "base_period": [days[0][0], seed["end_day"]], "scored_through": today[0],
         "today": {"day": today[0], "n": today[1], "uptrend": today[2], "overheated": today[3], "median_z": today[6],
                   "percentile": pct, "band": band_of(today[2], seed["bands_def"]), "since": days[0][0]},
+        "cycle": cycle(days),
         "fear_greed": sorted([k, v] for k, v in _fng.items()),
         "btc_band": [[d, round(lo, 2), round(hi, 2)] for d, (lo, hi) in sorted(band.items()) if d >= days[0][0]],
         "forward_test": forward_test(days, band),
