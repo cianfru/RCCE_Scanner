@@ -283,9 +283,11 @@ function StatusStrip({ status, cohort }) {
 
 // Size-weighted lean, -1..+1, drawn from the centre: faint marks at ±15% (past them the
 // trend reads bullish or bearish), a stronger centre line. The Lean view draws it full
-// width; the Consensus table draws the same bar at 48px.
-function LeanBar({ lean, color, height = 8, width, title }) {
+// width; the Consensus table draws the same bar at 48px, where minPx keeps a small
+// lean visible as a stub past the centre line.
+function LeanBar({ lean, color, height = 8, width, title, minPx = 0 }) {
   const w = lean == null ? 0 : Math.min(Math.abs(lean), 1) * 50;
+  const fillW = minPx && lean ? `max(${w}%, ${minPx}px)` : `${w}%`;
   const ext = height >= 8 ? 2 : 1;
   return (
     <div title={title} aria-hidden={title ? undefined : true}
@@ -296,7 +298,7 @@ function LeanBar({ lean, color, height = 8, width, title }) {
       {lean != null && (
         <div style={{
           position: "absolute", top: 0, bottom: 0,
-          left: lean >= 0 ? "50%" : `${50 - w}%`, width: `${w}%`,
+          left: lean >= 0 ? "50%" : `calc(50% - ${fillW})`, width: fillW,
           background: color, transition: "width 0.3s ease",
         }} />
       )}
@@ -335,7 +337,7 @@ function ConsensusBar({ long_count, short_count, lean, trend }) {
       </span>
       {/* Size lean: the Lean view's bar at 48px, so wallet count and dollars read side by side */}
       <span style={{ width: 4, flexShrink: 0 }} />
-      <LeanBar width={48} height={6} lean={thin ? null : lean} color={trendColor(trend)}
+      <LeanBar width={48} height={8} minPx={2} lean={thin ? null : lean} color={trendColor(trend)}
         title={thin || lean == null
           ? `Size lean: fewer than ${MIN_WALLETS} wallets, not drawn`
           : `Size lean ${fmtSignedPct(lean * 100)} (long minus short dollars, blended with the wallet count). Past the marks at ±15% the trend reads bullish or bearish.`} />
@@ -1091,8 +1093,15 @@ function WalletDetail({ address, onClose, isMobile }) {
                         <TokenLogo symbol={logoKey(p.coin)} size={20} />
                         <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: T.text1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.coin}</span>
                         <SideTag side={p.side} pad="1px 5px" />
-                        <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.text1 }}>{fmt$(p.size_usd)}</span>
-                        <span style={{ fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: pnl >= 0 ? T.green : T.red, minWidth: 56, textAlign: "right" }}>{fmtSignedUsd(pnl)}</span>
+                        <span style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: T.mono }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: T.text1 }}>{fmt$(p.size_usd)}</span>
+                          {p.size != null && (
+                            <span style={{ fontSize: T.textXs, color: p.side === "LONG" ? T.green : T.red }}>
+                              {p.side === "LONG" ? "+" : "-"}{Math.abs(Number(p.size)).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                            </span>
+                          )}
+                        </span>
+                        <span style={{ alignSelf: "flex-start", fontFamily: T.mono, fontSize: 13, fontWeight: 700, color: pnl >= 0 ? T.green : T.red, minWidth: 56, textAlign: "right" }}>{fmtSignedUsd(pnl)}</span>
                       </div>
                       <div style={{ ...phoneLine, paddingLeft: 28, fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
                         <span style={{ whiteSpace: "nowrap" }}>
@@ -1372,15 +1381,19 @@ function WalletDetail({ address, onClose, isMobile }) {
 
 // ─── SYMBOL DETAIL MODAL (enhanced) ─────────────────────────────────────────
 
+const PHONE_SIDE_N = 10;
 const fmtPx = (v) => `$${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: v >= 100 ? 0 : 4 })}`;
 
 function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
   const [data, setData] = useState(null);
   const [liqClusters, setLiqClusters] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Phone: each side opens on its largest wallets so both sides and the clusters stay in reach.
+  const [showAllSide, setShowAllSide] = useState({ LONG: false, SHORT: false });
 
   useEffect(() => {
     setLoading(true);
+    setShowAllSide({ LONG: false, SHORT: false });
     // Liquidation clusters come from the positions already held in memory; the
     // rest of the old Pressure payload (orders, book walls) is not polled.
     fetch(`${API}/api/hyperlens/pressure?symbol=${encodeURIComponent(symbol)}`)
@@ -1518,25 +1531,37 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
           </span>
         </div>
       </div>
-      {/* Wallet list: its own scroll beside the other side on desktop; one page scroll on a phone */}
+      {/* Wallet list: its own scroll beside the other side on desktop; one page scroll on a
+          phone, where each side opens on its top wallets by value */}
       <div style={isMobile ? undefined : { overflowY: "auto", maxHeight: 420 }}>
-        {wallets.map((p, i) => <WalletRow key={i} p={p} />)}
+        {(isMobile && !showAllSide[side] ? wallets.slice(0, PHONE_SIDE_N) : wallets).map((p, i) => <WalletRow key={i} p={p} />)}
         {wallets.length === 0 && (
           <div style={{ padding: 20, textAlign: "center", fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>
             No {side.toLowerCase()} positions
           </div>
         )}
       </div>
+      {isMobile && wallets.length > PHONE_SIDE_N && (
+        <div className="pos-more" style={{ padding: "10px 12px" }}>
+          {!showAllSide[side] && <span className="pos-dim">Top {PHONE_SIDE_N} by value</span>}
+          <button type="button" className="te-link" aria-expanded={showAllSide[side]}
+            onClick={() => setShowAllSide(v => ({ ...v, [side]: !v[side] }))}>
+            {showAllSide[side] ? `Show top ${PHONE_SIDE_N}` : `Show all ${wallets.length}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 
   return (
-    <GlassCard style={{ padding: 0, overflow: "hidden" }}>
-      {/* Header */}
+    // overflow: clip (not hidden) on a phone so the header can stick to the top of the sheet
+    <GlassCard style={{ padding: 0, overflow: isMobile ? "clip" : "hidden" }}>
+      {/* Header: stays at the top of the phone sheet so Close is always in reach */}
       <div style={{
         padding: isMobile ? "14px 12px" : "16px 20px",
         borderBottom: `1px solid ${T.overlay08}`,
-        background: T.overlay02,
+        background: isMobile ? T.stickyBg : T.overlay02,
+        ...(isMobile ? { position: "sticky", top: 0, zIndex: 3 } : null),
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
