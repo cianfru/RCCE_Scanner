@@ -1501,6 +1501,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .coin-evidence .tc{margin-top:0;}
 .reflex-terminal .coin-evidence .analysis-definitions{margin:20px 0 4px;}
 .reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.reflex-terminal .coin-evidence .analysis-definitions>div{display:flex;flex-direction:column;justify-content:space-between;}
 @media(max-width:600px){.reflex-terminal .coin-evidence .analysis-definitions strong{font-size:18px;}}
 .analysis-card>h2 .alt-season-info{vertical-align:middle;margin-left:6px;}
 .coin-against{margin:18px 0 0;padding:10px 0 2px 12px;box-shadow:inset 2px 0 #b6a07c;font:13px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);}

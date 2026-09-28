@@ -49,7 +49,8 @@ export default function TradersCard({ symbol, sm, traders, onShowEntries, spot }
           </div>
         )}
       </div>
-      {(traders?.entries || traders?.loading) && <TraderEntries entries={traders.entries} loading={traders.loading} onShow={onShowEntries} />}
+      {/* The bar above already says when none hold it. */}
+      {(traders?.entries?.traders?.length > 0 || (traders?.loading && !traders.entries)) && <TraderEntries entries={traders.entries} loading={traders.loading} onShow={onShowEntries} />}
       {traders?.opens && <>
         <button type="button" className="te-link tc-more" aria-expanded={openings} onClick={() => setOpenings(v => !v)}>{openings ? "Hide new positions" : "New positions"}</button>
         {openings && <WalletOpens opens={traders.opens} />}
