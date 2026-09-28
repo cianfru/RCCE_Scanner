@@ -30,7 +30,7 @@ export default function FearGreedDial({ value, loaded, onHistory }) {
   const word = band == null ? null : FG_NAMES[band];
   const aria = v == null ? "Fear and Greed dial, no reading" : "Fear and Greed dial, lines at 40 and 70";
   return <div className="ms-dial">
-    <div className="ms-eyebrow"><span className="ms-eyebrow-text">Fear &amp; Greed<span className="ms-long"> · daily</span></span>
+    <div className="ms-eyebrow"><span className="ms-eyebrow-text">Fear &amp; Greed<span className="ms-long fg-daily"> · daily</span></span>
       <HelpTip title="Fear & Greed" width={400}>
         <p>The crypto Fear &amp; Greed index from alternative.me, with CoinGlass as a fallback: 0 is extreme fear, 100 extreme greed. It updates once a day and is the same for every market and both timeframes.</p>
         <p>Band names are the scanner's own cut-offs (0–20 Extreme fear, 21–40 Fear, 41–60 Neutral, 61–80 Greed, 81–100 Extreme greed); alternative.me's site uses slightly different ones.</p>

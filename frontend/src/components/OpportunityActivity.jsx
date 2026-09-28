@@ -4,6 +4,7 @@ import TokenLogo from "./TokenLogo.jsx";
 import { OPP_STATUS_HEX, ageShort, oppStatusWord } from "../utils/opportunityRows.js";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const PREVIEW = 5;
+const PREVIEW_PHONE = 3;
 
 // One compact row: logo, ticker, timeframe, status word in its colour, reason, age.
 export function OppRow({ symbol, timeframe, status, reason, ts, onClick }) {
@@ -24,11 +25,20 @@ export function OppRow({ symbol, timeframe, status, reason, ts, onClick }) {
 // A titled block of rows showing the first few, with "Show all N" for the rest.
 export function OppList({ title, items, render }) {
   const [all, setAll] = useState(false);
+  const [phone, setPhone] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 767px)");
+    if (!mq) return undefined;
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
   if (!items.length) return null;
+  const preview = phone ? PREVIEW_PHONE : PREVIEW;
   return <section className="opp-list" aria-label={title}>
     <h3 className="opp-list-head">{title} <span>{items.length}</span></h3>
-    <div className="opp-rows">{(all ? items : items.slice(0, PREVIEW)).map(render)}</div>
-    {items.length > PREVIEW && <button type="button" className="te-link opp-more" aria-expanded={all} onClick={() => setAll(a => !a)}>
+    <div className="opp-rows">{(all ? items : items.slice(0, preview)).map(render)}</div>
+    {items.length > preview && <button type="button" className="te-link opp-more" aria-expanded={all} onClick={() => setAll(a => !a)}>
       {all ? "Show fewer" : `Show all ${items.length}`}</button>}
   </section>;
 }

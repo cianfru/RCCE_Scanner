@@ -1088,7 +1088,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-strip-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-left:18px;border-left:1px solid var(--t-border);white-space:nowrap;}
 .radar-open{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-accent);text-decoration:underline;text-underline-offset:3px;}
 .radar-strip-watching{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--t-text3);}
-.radar-strip-loading{flex:1;height:44px;margin:0 16px;}
+.radar-strip-loading{flex:1;height:41px;margin:0 16px;}   /* loaded strip is 68px tall; hold it */
 .radar-strip-empty{flex:1;margin:0;padding:0 16px;font-size:13px;color:var(--t-text3);}
 @media(max-width:767px){
  .radar-strip{flex-direction:column;align-items:stretch;gap:6px;max-height:none;padding:8px 14px 10px;}
@@ -1106,10 +1106,14 @@ a.te-link{text-decoration:none;display:inline-block;}
  .radar-strip-loading,.radar-strip-empty{margin:0;padding:0;}
  .radar-strip-loading{height:40px;}
 }
+@media(max-width:767px){.radar-strip:has(.radar-strip-loading){min-height:108px;}}   /* hold the loaded strip height so the grid does not jump */
 
 /* ── Scanner top polish (WP7) ─────────────────────────────────────────────── */
 /* Summary card: desktop "all markets" meta; phone sub-line and dial verdict. */
-@media(max-width:1023px){.ms-all{display:none;}}   /* the tablet consensus column has no room for it beside the eyebrow */
+.ms-all{white-space:nowrap;}
+@media(max-width:1039px){.ms-all{display:none;}}   /* tablets and 1024 iPad landscape have no room for it beside the eyebrow */
+@media(min-width:768px) and (max-width:1023px){.fg-daily{display:none;}}   /* the 200px tablet dial column fits "Fear & Greed" and its two circles, not " · daily" */
+@media(min-width:768px){.fg-note{min-height:calc(2 * 12px * 1.45);}}   /* the card keeps its height while the reading loads */
 .ms-sub-short{display:none;}
 @media(max-width:767px){.ms-sub-long{display:none;} .ms-sub-short{display:inline;white-space:nowrap;}}
 .fg-verdict{white-space:nowrap;}
