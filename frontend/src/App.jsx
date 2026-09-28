@@ -786,7 +786,7 @@ export default function App() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--t-scrollThumb); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--t-scrollHover); }
-        tr:hover td { background: transparent !important; }
+        tr:hover td:not(.scanner-symbol) { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }

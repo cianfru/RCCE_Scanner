@@ -71,12 +71,17 @@
 .alt-season-explanation .engine-detail{border-top:1px solid var(--t-border);padding-top:8px;font-size:12px;color:var(--t-text3);}
 .alt-season-explanation .engine-detail summary{cursor:pointer;color:var(--t-text2);}
 .alt-season-explanation .engine-detail p{margin:6px 0 0;font:12px/1.6 var(--font-geist-mono),monospace;overflow-wrap:anywhere;}
-/* Phones: rank, symbol and the pair; Z and the sparkline as a second line under the pair. */
-.setup-phone-line{display:flex;align-items:center;gap:6px;margin-top:4px;}
+/* Phones: rank, symbol and the pair; Z and the sparkline as a second line under the pair.
+   Tablets and narrow windows (.grid-folded) keep the same line when Z and the sparkline leave the columns.
+   The line wraps only as a last resort. */
+.setup-phone-line{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin-top:4px;}
 .reflex-terminal .terminal-data-table .grid-phone td.setup-cell{padding-left:4px!important;}
 .reflex-terminal .terminal-data-table .grid-phone td.setup-cell .setup-pair{padding-inline:0;}
 .reflex-terminal .terminal-data-table .grid-phone .fav-star{margin-right:4px;}
 .reflex-terminal .terminal-data-table .grid-phone .scanner-ticker{gap:6px!important;}
+/* Narrow phones (375, 360): 20px logos and closer spacing so the row still fits without scrolling. */
+.reflex-terminal .terminal-data-table .grid-tight .fav-star{margin-right:2px;}
+.reflex-terminal .terminal-data-table .grid-tight .scanner-ticker{gap:5px!important;}
 .reflex-terminal .table-sort-compact{position:relative;}
 .reflex-terminal .table-sort-compact .sort-ind-hang{position:absolute;left:100%;top:0;white-space:pre;}
 @media(max-width:640px){.grid-toolbar{margin:12px 0 8px;}.grid-toolbar-actions{margin-left:0;width:100%;}}

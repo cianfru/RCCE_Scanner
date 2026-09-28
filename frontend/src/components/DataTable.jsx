@@ -62,7 +62,7 @@ function exhaustFold(row) {
   return floor && row.floor_confirmed ? { text: "FLOOR ✓", color: col("#34d399") } : { text: meta.text, color: meta.color };
 }
 
-function CellContent({ colLabel, row, index, isMobile, cellPad, phone, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect, folds }) {
+function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect, folds }) {
   const noHistory = row.history_bars === 0;   // unmeasured, not zero
   switch (colLabel) {
     case "#":
@@ -90,7 +90,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, backtestS
           <a className="scanner-ticker" href={marketHref(row, timeframe)}
             onClick={e => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey) return; e.preventDefault(); e.stopPropagation(); onSelect?.(row, e); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle", color: "inherit", font: "inherit", letterSpacing: "inherit", textDecoration: "none" }}>
-            <TokenLogo symbol={row.symbol} />{base}
+            <TokenLogo symbol={row.symbol} size={tight ? 20 : 24} />{base}
           </a>
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
@@ -175,7 +175,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, backtestS
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe, folds }) {
+function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, tight, line, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe, folds }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
   // out; every other row keeps just its regime stripe on the left.
@@ -210,13 +210,14 @@ function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner,
         if (label === "SIGNAL" && columns[colIndex - 1]?.[1] === "REGIME") return null;
         if (label === "REGIME" && columns[colIndex + 1]?.[1] === "SIGNAL") return <td key={label} colSpan={2} className="setup-cell" data-strength={alignment.strength} style={{padding:setupPad, ...lockedCell}}>
           <SetupPair row={row} isMobile={isMobile} transition compact marketWide={marketWide}/>
-          {/* Phones: Z and the sparkline survive as a second line under the pair. */}
-          {phone && <div className="setup-phone-line">
-            {noHistory ? DASH : <ZScoreBar z={row.zscore} compact />}
-            <span title={sparkTitle(row, timeframe, true)}><SparklineCell data={row.sparkline} width={56} height={16} /></span>
+          {/* Phones, tablets and narrow windows: Z and the sparkline, when they leave the columns,
+              survive compact on a second line under the pair. */}
+          {line?.length > 0 && <div className="setup-phone-line">
+            {line.includes("Z-SCORE") && (noHistory ? DASH : <ZScoreBar z={row.zscore} compact={tight ? 40 : true} />)}
+            {line.includes("SPARK") && <span title={sparkTitle(row, timeframe, folds?.energy)}><SparklineCell data={row.sparkline} width={tight ? 48 : 56} height={16} /></span>}
           </div>}
         </td>;
-        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} folds={folds} />;
+        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} tight={tight} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} folds={folds} />;
       })}
     </tr>
   );
@@ -250,7 +251,10 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
   const scanner = variant === "scanner";
   const [alignedFirst, setAlignedFirst] = useState(false);
   const marketWide = useMemo(() => marketWideMissing(results), [results]);
-  const shownColumns = useMemo(() => results.length < 10 ? visibleColumns : visibleColumns.filter(([, label]) => !(EMPTY_WHEN[label] && results.every(EMPTY_WHEN[label]))), [visibleColumns, results]);
+  // The landing keeps today's rule (only with 10 or more rows); the scanner drops a column that is
+  // empty on every row in view whatever the count, so a filtered view is not squeezed by dead columns.
+  const shownColumns = useMemo(() => (scanner ? results.length === 0 : results.length < 10) ? visibleColumns
+    : visibleColumns.filter(([, label]) => !(EMPTY_WHEN[label] && results.every(EMPTY_WHEN[label]))), [visibleColumns, results, scanner]);
   const displayedResults = alignedFirst ? [...results].sort((a,b) => setupAlignment(b, { marketWide }).strength - setupAlignment(a, { marketWide }).strength) : results;
 
   // ── Fit (scanner only): which columns fit the grid's own width, at which padding tier ──
@@ -280,6 +284,8 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
     [scanner, W, candidateKey, extraDrops, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const columns = fit ? shownColumns.filter(([, l]) => fit.visible.includes(l)) : shownColumns;
   const phone = !!fit?.phone;
+  const tight = !!fit?.tight;
+  const line = fit?.line;
   const folds = fit ? { energy: fit.hidden.includes("ENERGY"), exhaust: fit.hidden.includes("EXHAUST") } : null;
   useLayoutEffect(() => {
     if (!fit) return;
@@ -310,8 +316,8 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
     return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); wrap.removeAttribute("data-stuck"); };
   }, [fits]);
 
-  // Column guide: the columns hidden to fit (phones keep Z and the sparkline under the pair), then every legend.
-  const hiddenLabels = fit && results.length ? fit.hidden.filter(l => !(phone && (l === "Z-SCORE" || l === "SPARK"))) : [];
+  // Column guide: the columns hidden to fit (Z and the sparkline on the line under the pair are not hidden), then every legend.
+  const hiddenLabels = fit && results.length ? fit.hidden.filter(l => !fit.line.includes(l)) : [];
   const guideLabels = shownColumns.map(([, l]) => l).filter(l => COLUMN_INFO[l]);
   const filtered = filterWords.length > 0;
 
@@ -406,7 +412,7 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
       )}
       <GlassCard className="terminal-data-table" style={{ overflow: "visible" }}>
         <div ref={wrapRef} className={fits ? "grid-fits" : undefined} style={{ overflowX: scanner ? (fits ? "clip" : "auto") : "auto", WebkitOverflowScrolling: "touch" }}>
-          <table ref={tableRef} className={phone ? "grid-phone" : undefined} style={{ width: "100%", borderCollapse: "collapse", ...(fit ? { "--cell-px": `${fit.pad}px` } : null) }}>
+          <table ref={tableRef} className={phone ? (tight ? "grid-phone grid-tight" : "grid-phone") : line?.length ? "grid-folded" : undefined} style={{ width: "100%", borderCollapse: "collapse", ...(fit ? { "--cell-px": `${fit.pad}px` } : null) }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${T.borderH}` }}>
                 {renderHead()}
@@ -437,6 +443,8 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
                     isMobile={isMobile}
                     scanner={scanner}
                     phone={phone}
+                    tight={tight}
+                    line={line}
                     backtestSymbols={backtestSymbols}
                     favorites={favorites}
                     onToggleFavorite={onToggleFavorite}

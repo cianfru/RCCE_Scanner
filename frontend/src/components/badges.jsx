@@ -8,11 +8,12 @@ import RegimeIcon from "./RegimeIcon.jsx";
 export function ZScoreBar({ z, isMobile, compact = false }) {
   const bar = zBar(z);
   if (!bar) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  // compact: the phone grid's second line, a 48px track with the value in 12px mono.
+  // compact: the grid's second line under the pair, a 48px track (or the width given) with the value in 12px mono.
+  const track = compact === true ? 48 : compact || undefined;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 8, minWidth: compact ? undefined : isMobile ? 90 : 110 }}>
       <div style={{
-        flex: compact ? "0 0 48px" : 1, width: compact ? 48 : undefined, height: isMobile ? 4 : 3, background: T.overlay04, borderRadius: 2,
+        flex: compact ? `0 0 ${track}px` : 1, width: track, height: isMobile ? 4 : 3, background: T.overlay04, borderRadius: 2,
         overflow: "hidden", position: "relative"
       }}>
         <div style={{
@@ -182,7 +183,8 @@ const OI_WORDS = {
   SHORTING:    { color: "#c084fc", label: "Shorting" },
 };
 export function OITrendBadge({ trend }) {
-  if (!trend || trend === "UNKNOWN") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
+  // Stable and unknown read as empty, the same dash as every other empty cell.
+  if (!trend || trend === "UNKNOWN" || trend === "STABLE") return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const word = OI_WORDS[trend];
   const color = word ? col(word.color) : T.text4;
   const label = word ? word.label : trend.charAt(0) + trend.slice(1).toLowerCase();
@@ -225,10 +227,12 @@ export function SmartMoneyBadge({ sm }) {
   if (!sm) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
   const l = traderLean(sm.profitable);
   const all = sm.trend ? `All tracked wallets, weighted by size: ${sm.trend.toLowerCase()} (${sm.long_count} long / ${sm.short_count} short)` : "";
-  if (!l.side || l.side === "mixed") return (
-    <span title={[l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n")}
-      style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: l.side === "mixed" ? 0.6 : 1 }}>{l.side === "mixed" ? "mixed" : "\u2014"}</span>
-  );
+  if (!l.side || l.side === "mixed") {
+    const title = [l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n");
+    // Empty is the same dash as every other empty cell; "mixed" stays a word.
+    if (l.side !== "mixed") return <span title={title} style={{ color: T.text4 }}>{"\u2014"}</span>;
+    return <span title={title} style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: 0.6 }}>mixed</span>;
+  }
   const color = l.side === "long" ? T.green : T.red;
   return (
     <span

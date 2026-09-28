@@ -4,9 +4,18 @@ import { COLUMN_FIT } from '../scannerColumns.js';
 
 export const FIT_MARGIN = 8;          // slack for borders and rounding
 export const PHONE_MAX = 640;         // container widths below this get the phone rows
+export const TIGHT_MAX = 350;         // phones narrower than this (375, 360) get the tight phone rows
 const TIERS = [12, 10, 8];
 const CHEAP = ['OI', '#'];            // cheap columns leave before the 8px tier, OI first
 export const PHONE_SET = ['PRI', 'SYMBOL', 'REGIME', 'SIGNAL'];
+// Z and the sparkline never simply vanish: when they leave the columns they move, compact,
+// onto a second line under the Regime/Signal pair (phones, tablets, narrow windows).
+export const LINE = ['Z-SCORE', 'SPARK'];
+// Folded rows: once the full-width fit would hide a column ranked 9 or higher (HEAT, COND,
+// SPARK, Z-SCORE), Z and the sparkline move under the pair and the room they free goes back to
+// the evidence columns, by rank. Container widths below 886px (tablets, split windows); wider
+// grids always show Z, the sparkline, COND and HEAT as full columns.
+const FOLD_RANK = 9;
 // After the cheap ones, columns leave by rank: 3 (ENERGY) first, 12 (Z-SCORE) last.
 export const RANKED = Object.entries(COLUMN_FIT)
   .filter(([, f]) => typeof f.rank === 'number')
@@ -21,17 +30,23 @@ export function neededWidth(labels, pad) {
 }
 
 /**
- * fitColumns(labels, W, { phone, extraDrops }) -> { visible, pad, hidden, phone }
+ * fitColumns(labels, W, { phone, extraDrops }) -> { visible, pad, hidden, phone, tight, line }
  *   labels      candidate column labels, in display order (dead columns already removed)
  *   W           the grid wrapper's clientWidth
  *   phone       force the phone set (defaults to W < 640)
- *   extraDrops  columns to remove beyond the fit, next in drop order (runtime safety net)
+ *   extraDrops  columns to remove beyond the fit, next in drop order (runtime safety net);
+ *               on phones the first extra drop switches to the tight rows instead
+ * visible are the columns shown as columns; hidden the candidates that are not; line the
+ * hidden ones (Z-SCORE, SPARK) that still show, compact, on the second line under the pair.
  */
 export function fitColumns(labels, W, { phone, extraDrops = 0 } = {}) {
-  const hiddenFrom = visible => labels.filter(label => !visible.includes(label));
+  const done = (visible, pad, extra) => {
+    const hidden = labels.filter(label => !visible.includes(label));
+    return { visible, pad, hidden, phone: false, tight: false, line: LINE.filter(label => hidden.includes(label)), ...extra };
+  };
   if (phone ?? W < PHONE_MAX) {
-    const visible = labels.filter(label => PHONE_SET.includes(label));
-    return { visible, pad: 8, hidden: hiddenFrom(visible), phone: true };
+    const tight = W < TIGHT_MAX || extraDrops > 0;
+    return done(labels.filter(label => PHONE_SET.includes(label)), tight ? 6 : 8, { phone: true, tight });
   }
   let visible = [...labels];
   const fits = pad => neededWidth(visible, pad) <= W;
@@ -49,11 +64,19 @@ export function fitColumns(labels, W, { phone, extraDrops = 0 } = {}) {
       if (fits(8)) break;
       visible = visible.filter(l => l !== label);
     }
+    // Folded rows: Z and the sparkline go under the pair; refill by rank, highest first.
+    if (labels.some(label => COLUMN_FIT[label]?.rank >= FOLD_RANK && !visible.includes(label))) {
+      visible = labels.filter(label => !CHEAP.includes(label) && !LINE.includes(label));
+      for (const label of RANKED) {
+        if (fits(8)) break;
+        visible = visible.filter(l => l !== label);
+      }
+    }
   }
   for (let i = 0; i < extraDrops; i++) {
     const next = DROP_ORDER.find(label => visible.includes(label));
     if (!next) break;
     visible = visible.filter(l => l !== next);
   }
-  return { visible, pad, hidden: hiddenFrom(visible), phone: false };
+  return done(visible, pad);
 }
