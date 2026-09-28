@@ -6,6 +6,8 @@ Risk-on and risk-off cycles in market breadth: market context, not a signal
     python -m backtest.risk_on_cycles oos --insample in.json --out oos.json   (= --sample out; only after the
                                                                                in-sample results are committed)
     python -m backtest.risk_on_cycles --sample all --insample in.json         (every case to 2026-09-25,
+                                                                               pooled, with the latest
+                                                                               reading's buckets and age;
                                                                                descriptive, no verdicts)
 
 Breadth is the Uptrend + Overheated share of the market-history rebuild (data/larsson_runs/breadth_history.json,
@@ -98,6 +100,11 @@ def pct(x: Optional[float]) -> Optional[float]:
     return None if x is None else round(100 * x, 1)
 
 
+def whole_pct(x: float) -> int:
+    """A share as a whole percent, rounded half up from the unrounded value (no double rounding)."""
+    return int(math.floor(100 * x + 0.5))
+
+
 # ---------------------------------------------------------------------------
 # Data
 # ---------------------------------------------------------------------------
@@ -140,12 +147,13 @@ class Market:
     """The rebuild (breadth, BTC and per-coin closes) plus the API's days after it."""
 
     def __init__(self, share: Dict[int, float], btc: Dict[int, float], alt_closes: Dict[str, Dict[int, float]],
-                 weekday: int = SUNDAY, api: Optional[dict] = None):
+                 weekday: int = SUNDAY, api: Optional[dict] = None, n: Optional[Dict[int, int]] = None):
         self.share, self.btc = dict(share), dict(btc)
+        self.n = dict(n or {})                                  # coins per day (for the exploratory coin counts)
         self.rebuild_last = max(share)
         self.api_info = None
         if api is not None:
-            self.api_info = merge_api(self.share, self.btc, api)
+            self.api_info = merge_api(self.share, self.btc, api, self.n)
         self.band = weekly_band(self.btc, weekday)
         self.weekday = weekday
         self.pairs = sorted(alt_closes)
@@ -161,15 +169,18 @@ class Market:
     def load(cls, path: Optional[str] = None, weekday: int = SUNDAY, api: Optional[dict] = None) -> "Market":
         data = json.loads(Path(path or RUNS_DIR / "breadth_history.json").read_text())
         share = {x["day"]: round(x["uptrend"] + x["overheated"], 4) for x in data["days"] if x["n"] >= MIN_COINS}
+        n = {x["day"]: x["n"] for x in data["days"] if x["n"] >= MIN_COINS}
         btc = {int(d): c for d, c in data["closes"]["BTCUSDT"].items()}
         alts = {p: {int(d): c for d, c in v.items()} for p, v in data["closes"].items() if p != "BTCUSDT"}
-        return cls(share, btc, alts, weekday, api)
+        return cls(share, btc, alts, weekday, api, n)
 
 
-def merge_api(share: Dict[int, float], btc: Dict[int, float], api: dict) -> dict:
+def merge_api(share: Dict[int, float], btc: Dict[int, float], api: dict,
+              n: Optional[Dict[int, int]] = None) -> dict:
     """Append the API's days after the rebuild; stop if the overlap disagrees by more than 1 point."""
     cols = api["columns"]
     iu, io, ib = cols.index("uptrend"), cols.index("overheated"), cols.index("btc")
+    inn = cols.index("n") if "n" in cols else None
     last = max(share)
     worst, overlap, added = 0.0, 0, []
     for r in api["days"]:
@@ -181,6 +192,8 @@ def merge_api(share: Dict[int, float], btc: Dict[int, float], api: dict) -> dict
             share[r[0]] = x
             if r[ib]:
                 btc[r[0]] = r[ib]
+            if n is not None and inn is not None:
+                n[r[0]] = r[inn]
             added.append(r[0])
     if worst > AGREE:
         raise SystemExit(f"Rebuild and API disagree by {100 * worst:.1f} points of Uptrend share: stopping")
@@ -312,6 +325,10 @@ def run_fields(r: dict, s: Sample) -> dict:
                    last_break_to_end=stop - brk[-1] if brk else None, below_at_end=s.side(stop) == "below")
         if ended:
             out["how_ended"] = how_ended(r, s)
+            # Exploratory (added after review): days from the end day to the next band break, at any distance
+            # inside the sample. The declared case order hides a break after the end once one fell inside.
+            nxt = [b for b in s.breaks if b > r["end"]]
+            out["next_break_after_end"] = nxt[0] - r["end"] if nxt else None
     else:
         out.update(btc_at_end=s.side(stop), holding_days_at_end=s.holding_days(stop))
     return out
@@ -425,9 +442,19 @@ def run_ends(runs: List[dict], above: bool) -> List[int]:
     return sorted(r["end"] for r in runs if r["type"] == kind and r["end"] is not None)
 
 
-def ended_within(ends: List[int], t: int, h: int) -> bool:
+def end_within(ends: List[int], t: int, h: int) -> Optional[int]:
+    """The first end day in (t, t + h], or None."""
     i = bisect_right(ends, t)
-    return i < len(ends) and ends[i] <= t + h
+    return ends[i] if i < len(ends) and ends[i] <= t + h else None
+
+
+def ended_within(ends: List[int], t: int, h: int) -> bool:
+    return end_within(ends, t, h) is not None
+
+
+def run_of(runs: List[dict], d: int) -> int:
+    """Start day of the run (either type) that holds day d: the latest run start on or before d."""
+    return max(r["start"] for r in runs if r["start"] <= d)
 
 
 def forward(s: Sample, t: int, ends: List[int]) -> dict:
@@ -437,9 +464,27 @@ def forward(s: Sample, t: int, ends: List[int]) -> dict:
         if t + h + CONFIRM > s.last:
             out[str(h)] = None
             continue
+        e = end_within(ends, t, h)
         out[str(h)] = {"reached90": max(s.share[t + i] for i in range(1, h + 1)) >= .90,
-                       "ended": ended_within(ends, t, h),
+                       "ended": e is not None, "end_day": e,
                        "btc": pct(s.btc_ret(t, t + h)), "alt": pct(s.alt_ret(t, t + h))}
+    return out
+
+
+def by_run(rows: List[dict]) -> dict:
+    """Exploratory (added after review): episodes are not independent when several come from one run. Counts
+    the runs the episodes come from, the distinct run ends behind each 'ended' count, and the same measures
+    with one episode per run (its first). Rows carry 'run' (the start of the run holding their first day)."""
+    first: Dict[int, dict] = {}
+    for r in rows:
+        first.setdefault(r["run"], r)
+    out = {"episodes": len(rows), "runs": len(first), "per_run_days": [r["day"] for r in first.values()],
+           "per_run": summarize_forward(list(first.values()))}
+    for h in map(str, HORIZONS):
+        o = [r["fwd"][h] for r in rows if r["fwd"].get(h)]
+        out[h] = {"episodes": len(o), "runs": len({r["run"] for r in rows if r["fwd"].get(h)}),
+                  "distinct_ends": len({x["end_day"] for x in o if x["ended"]}),
+                  "ended": sum(x["ended"] for x in o)}
     return out
 
 
@@ -472,7 +517,7 @@ def break_event(s: Sample, t: int, on_ends: List[int]) -> dict:
 
 
 def summarize_events(rows: List[dict]) -> dict:
-    out = {"n": len(rows)}
+    out = {"n": len(rows), "runs": len({r["run"] for r in rows if "run" in r})}   # runs: exploratory
     for h in CHANGE_H:
         out[f"change{h}"] = dist(r[f"change{h}"] for r in rows)
     for h in HORIZONS:
@@ -511,8 +556,10 @@ def summarize_runs(rows: List[dict]) -> dict:
     return out
 
 
-def summarize_how_ended(rows: List[dict]) -> dict:
-    ended = [r for r in rows if r["type"] == "on" and not r["censored"] and not r["first"]]
+def summarize_how_ended(rows: List[dict], include_first: bool = False) -> dict:
+    """3b as declared (the first run left out). include_first=True is the exploratory sensitivity that also
+    counts the first run, whose start is unknown but whose end and the days after it are known."""
+    ended = [r for r in rows if r["type"] == "on" and not r["censored"] and (include_first or not r["first"])]
     cases = {c: sum(r["how_ended"]["case"] == c for r in ended)
              for c in ("btc_first", "already_below", "breadth_first", "no_break_60d", "not_known_yet")}
     known = len(ended) - cases["not_known_yet"]
@@ -520,7 +567,9 @@ def summarize_how_ended(rows: List[dict]) -> dict:
             "btc_first": freq(cases["btc_first"], known),
             "without_btc_first": freq(cases["breadth_first"] + cases["no_break_60d"], known),
             "lead": dist(r["how_ended"].get("lead") for r in ended),
-            "lag": dist(r["how_ended"].get("lag") for r in ended)}
+            "lag": dist(r["how_ended"].get("lag") for r in ended),
+            "next_break_after_end": [{"start": r["start"], "case": r["how_ended"]["case"],
+                                      "days": r.get("next_break_after_end")} for r in ended]}
 
 
 def band_days(s: Sample) -> dict:
@@ -529,7 +578,7 @@ def band_days(s: Sample) -> dict:
         ds = [d for d in s.days if s.side(d) == side]
         v = [s.share[d] for d in ds]
         out[side] = {"days": len(ds), "risk_on_days": sum(x >= THR for x in v), "below_55_days": sum(x < THR for x in v),
-                     "median_share": round(statistics.median(v), 3) if v else None}
+                     "median_share": round(statistics.median(v), 4) if v else None}
     return out
 
 
@@ -538,7 +587,8 @@ def describe(s: Sample, today: dict) -> dict:
     rows = [run_fields(r, s) for r in runs]
     on_ends = run_ends(runs, True)
 
-    events = [break_event(s, t, on_ends) for t in s.breaks if t in s.share and s.share[t] >= THR]
+    events = [dict(break_event(s, t, on_ends), run=run_of(runs, t))
+              for t in s.breaks if t in s.share and s.share[t] >= THR]
     base = [break_event(s, t, on_ends) for t in s.days if s.share[t] >= THR and s.side(t) not in (None, "below")]
     base_sum = {}
     for h in HORIZONS:
@@ -549,8 +599,10 @@ def describe(s: Sample, today: dict) -> dict:
     ends = run_ends(runs, today["above"])
     a, b = analog_days(s, today)
     ref = stretch_starts(s.days, s.share, today["above"])
-    set_a = [{"day": t, "run_start": ref[t], "share": s.share[t], "fwd": forward(s, t, ends)} for t in a]
-    set_b = [{"day": t, "share": s.share[t], "run_start": ref.get(t), "fwd": forward(s, t, ends)} for t in b]
+    set_a = [{"day": t, "run_start": ref[t], "run": run_of(runs, t), "share": s.share[t],
+              "fwd": forward(s, t, ends)} for t in a]
+    set_b = [{"day": t, "share": s.share[t], "run_start": ref.get(t), "run": run_of(runs, t),
+              "fwd": forward(s, t, ends)} for t in b]
     every = [{"fwd": forward(s, t, ends)} for t in s.days]
 
     ended_on = [r for r in rows if r["type"] == "on" and not r["censored"] and not r["first"]]
@@ -558,6 +610,9 @@ def describe(s: Sample, today: dict) -> dict:
     now = {**today, "age_bucket_label": age_label(today["age_bucket"]),
            "bucket_label": f"{10 * today['bucket']}-{10 * today['bucket'] + 10}%",
            "ended_runs_as_long": day_share(sum(r["length"] >= age for r in ended_on), len(ended_on)),
+           # The declared rows condition on length >= age; a run still open at age A already has A + 1 days.
+           # The two differ only through runs of length exactly A, counted here.
+           "ended_runs_of_length_age": sum(r["length"] == age for r in ended_on),
            "percentile_in_sample_days": round(100 * sum(s.share[d] < today["share"] for d in s.days) / len(s.days)),
            "survival_at_age": [survival_row(rows, age, 30), survival_row(rows, age, 60)]}
     if today["start"] is not None and today["start"] <= s.last:
@@ -570,10 +625,11 @@ def describe(s: Sample, today: dict) -> dict:
             "runs": rows, "summary": summarize_runs(rows),
             "survival": [survival_row(rows, d) for d in SURVIVAL_D],
             "band_days": band_days(s), "how_ended": summarize_how_ended(rows),
+            "how_ended_with_first": summarize_how_ended(rows, include_first=True),          # exploratory
             "break_events": {"rows": events, "summary": summarize_events(events), "comparison": base_sum,
                              "comparison_days": len(base)},
-            "analogs": {"A": {"rows": set_a, "summary": summarize_forward(set_a)},
-                        "B": {"rows": set_b, "summary": summarize_forward(set_b)},
+            "analogs": {"A": {"rows": set_a, "summary": summarize_forward(set_a), "by_run": by_run(set_a)},
+                        "B": {"rows": set_b, "summary": summarize_forward(set_b), "by_run": by_run(set_b)},
                         "all_days": summarize_forward(every, intervals=False)},
             "now": now}
 
@@ -590,7 +646,8 @@ def verdict_share(k: int, n: int, ref: Optional[dict]) -> dict:
     if not ref or ref.get("lo") is None:
         v = "no in-sample reference"
     else:
-        v = "consistent" if ref["lo"] <= k / n <= ref["hi"] else "did not hold out of sample"
+        lo, hi = wilson(ref["k"], ref["n"]) if "k" in ref else (ref["lo"], ref["hi"])   # exact, not rounded
+        v = "consistent" if lo <= k / n <= hi else "did not hold out of sample"
     out["verdict"] = v if n >= FEW else f"{v} (n = {n}, too few to read)"
     return out
 
@@ -680,6 +737,7 @@ def out_of_sample(full: dict, ins: dict) -> dict:
             rows = [r for r in full["analogs"][key]["rows"] if counts(r["day"], int(h)) and r["fwd"].get(h)]
             o = [r["fwd"][h] for r in rows]
             res[h] = {"days": [r["day"] for r in rows],
+                      "runs": len({r.get("run") for r in rows}),                           # exploratory
                       "marked": [r["day"] for r in rows if r["day"] <= END_DAY],
                       "reached90": verdict_share(sum(x["reached90"] for x in o), len(o), ref[h]["reached90"]),
                       "ended": verdict_share(sum(x["ended"] for x in o), len(o), ref[h]["ended"]),
@@ -687,6 +745,72 @@ def out_of_sample(full: dict, ins: dict) -> dict:
                       "alt": verdict_median([x["alt"] for x in o], ref[h]["alt"])}
         an[key] = res
     out["analogs"] = an
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Where we are today (every day to the latest reading; descriptive)
+# ---------------------------------------------------------------------------
+
+def coins_short(share: float, n: Optional[int]) -> Optional[int]:
+    """Coins more in Uptrend that a day needed to reach THR (0 or less = it was at or above THR)."""
+    if not n:
+        return None
+    return math.ceil(THR * n - 1e-9) - int(round(share * n))
+
+
+def prior_dip(m: Market) -> Optional[dict]:
+    """Exploratory (added after review). When today's risk-on run began right after a risk-off run of exactly
+    the minimum OFF_DAYS days, that dip's readings, how many coins each of its days was short of THR, and the
+    age today's run would have had that dip merged into the run before it."""
+    days = sorted(m.share)
+    runs = detect_runs(days, m.share)
+    if len(runs) < 3 or runs[-1]["type"] != "on" or runs[-1]["end"] is not None:
+        return None
+    off, prev = runs[-2], runs[-3]
+    if off.get("length") != OFF_DAYS:
+        return None
+    dip = list(range(off["start"], off["end"]))
+    return {"days": dip, "shares": [m.share[d] for d in dip], "coins": [m.n.get(d) for d in dip],
+            "coins_short": [coins_short(m.share[d], m.n.get(d)) for d in dip],
+            "previous_run": {"start": prev["start"], "end": prev["end"], "length": prev.get("length"),
+                             "first": prev["first"]},
+            "age_as_if_merged": days[-1] - prev["start"],
+            "min_share_since_previous_start": min(m.share[d] for d in days if d >= prev["start"])}
+
+
+def now_full(m: Market, full: dict, t: dict) -> dict:
+    """Today's run with every day to the latest reading (API included), BTC's distance from its band (declared
+    Sunday band and the drawer's Wednesday band), and the pooled survival rows at today's age from `full`
+    (every run to the rebuild's last day). Descriptive: no verdicts."""
+    cur = [d for d in sorted(m.share) if d >= t["start"]]
+    last, pk = cur[-1], max(m.share[d] for d in cur)
+    btc = m.btc[last]
+    wed = m.band if m.weekday == WEDNESDAY else weekly_band(m.btc, WEDNESDAY)
+
+    def edges(b):
+        lo, hi = b
+        return {"lower": round(lo, 2), "upper": round(hi, 2), "vs_upper": pct(btc / hi - 1), "vs_lower": pct(btc / lo - 1)}
+
+    rows = full["runs"]
+    ended_on = [r for r in rows if r["type"] == "on" and not r["censored"] and not r["first"]]
+
+    def at(age: int) -> dict:
+        return {"age": age, "ended_runs_as_long": day_share(sum(r["length"] >= age for r in ended_on), len(ended_on)),
+                "ended_runs_of_length_age": sum(r["length"] == age for r in ended_on),
+                "survival_at_age": [survival_row(rows, age, 30), survival_row(rows, age, 60)]}
+
+    out = {"last_day": last, "share": m.share[last], "coins": m.n.get(last), "start": t["start"],
+           "age": last - t["start"], "peak": pk, "peak_day": cur[[m.share[d] for d in cur].index(pk)],
+           "reached85": pk >= .85, "reached95": pk >= .95,
+           "band_breaks": [d for d in band_breaks(m.btc, m.band) if d >= t["start"]],
+           "btc": btc, "btc_side": t["btc_side"], "band": edges(m.band[last]), "band_wednesday": edges(wed[last]),
+           "drawer_percentile": (m.api_info or {}).get("drawer_percentile"),
+           "pooled_through": full["sample_last"], "pooled": at(last - t["start"])}
+    dip = prior_dip(m)
+    if dip:
+        out["prior_dip"] = dip
+        out["as_if_merged"] = at(dip["age_as_if_merged"])
     return out
 
 
@@ -700,14 +824,15 @@ def _date(d: Optional[int]) -> str:
 
 
 def _f(x: dict) -> str:
+    """'k of n (share%, 90% range lo-hi%)', each percent from the unrounded k / n and Wilson bounds."""
     if not x or x.get("n", 0) == 0:
         return "none"
-    s = f"{x['k']} of {x['n']}"
-    if "lo" in x and x["lo"] is not None:
-        s += f" ({round(100 * x['share'])}%, 90% range {round(100 * x['lo'])}-{round(100 * x['hi'])}%)"
-    else:
-        s += f" ({round(100 * x['share'])}%)"
-    return s + (", too few to read" if x.get("few") else "")
+    k, n = x["k"], x["n"]
+    s = f"{k} of {n} ({whole_pct(k / n)}%"
+    if x.get("lo") is not None:
+        lo, hi = wilson(k, n)
+        s += f", 90% range {whole_pct(lo)}-{whole_pct(hi)}%"
+    return s + ")" + (", too few to read" if x.get("few") else "")
 
 
 def _d(x: dict, unit: str = "%") -> str:
@@ -785,7 +910,7 @@ def markdown(res: dict) -> str:
     L.append("| BTC side | Days | Uptrend share 55%+ | Below 55% | Median Uptrend share |")
     L.append("|---|---:|---:|---:|---:|")
     for side, o in res["band_days"].items():
-        med = "" if o["median_share"] is None else f"{round(100 * o['median_share'])}%"
+        med = "" if o["median_share"] is None else f"{whole_pct(o['median_share'])}%"
         L.append(f"| {side} | {o['days']} | {o['risk_on_days']} | {o['below_55_days']} | {med} |")
     L.append("")
     H = res["how_ended"]
@@ -842,6 +967,49 @@ def markdown(res: dict) -> str:
     return "\n".join(L)
 
 
+def _v(x: dict, unit: str = "%") -> str:
+    """An out-of-sample value: 'k of n (share%)' or 'median (values)', with n."""
+    if "k" in x:
+        return "none" if x["n"] == 0 else f"{x['k']} of {x['n']} ({whole_pct(x['k'] / x['n'])}%)"
+    if not x["n"]:
+        return "none"
+    fmt = (lambda v: f"{v:+.1f}%") if unit == "%" else (lambda v: f"{v:g}")
+    vals = ", ".join(fmt(v) for v in x["values"]) if x["n"] <= 5 else ""
+    return f"{fmt(x['median'])}, n = {x['n']}" + (f" ({vals})" if vals and x["n"] > 1 else "")
+
+
+def markdown_oos(res: dict, ins: dict) -> str:
+    """The out-of-sample table: pattern, in-sample reference, out-of-sample value, verdict."""
+    o, S, L = res["out_of_sample"], ins["summary"], []
+    L.append("| Pattern | In-sample | Out-of-sample | Verdict |")
+    L.append("|---|---|---|---|")
+    row = lambda name, ref, x, unit="%": L.append(f"| {name} | {ref} | {_v(x, unit)} | {x['verdict']} |")
+    row("Risk-on run length, days", _d(S["on"]["length"], "d"), o["length"]["on"], "d")
+    row("Risk-off run length, days", _d(S["off"]["length"], "d"), o["length"]["off"], "d")
+    row("Risk-on runs reaching 85%", _f(S["on"]["reached85"]), o["reached85"])
+    row("Risk-on runs reaching 95%", _f(S["on"]["reached95"]), o["reached95"])
+    refs = {(r["d"], r["more"]): r for r in ins["survival"] + ins["now"]["survival_at_age"]}
+    for x in o["survival"]:
+        row(f"Survival: lasted {x['d']} days, then {x['more']} more", _f(refs[(x["d"], x["more"])]), x)
+    H = ins["how_ended"]
+    row("How runs ended: BTC broke first", _f(H["btc_first"]), o["how_ended"]["btc_first"])
+    row("How runs ended: lead, days", _d(H["lead"], "d"), o["how_ended"]["lead"], "d")
+    row("How runs ended: lag, days", _d(H["lag"], "d"), o["how_ended"]["lag"], "d")
+    E = ins["break_events"]["summary"]
+    for h in HORIZONS:
+        row(f"Band break while risk-on: run ended within {h}d", _f(E[f"ended{h}"]), o["break_events"][f"ended{h}"])
+        row(f"Band break while risk-on: typical alt {h}d", _d(E[f"alt{h}"]), o["break_events"][f"alt{h}"])
+    for key in ("A", "B"):
+        ref = ins["analogs"][key]["summary"]
+        for h in map(str, HORIZONS):
+            a = o["analogs"][key][h]
+            row(f"Set {key}, {h}d: reached 90%", _f(ref[h]["reached90"]), a["reached90"])
+            row(f"Set {key}, {h}d: run ended", _f(ref[h]["ended"]), a["ended"])
+            row(f"Set {key}, {h}d: BTC", _d(ref[h]["btc"]), a["btc"])
+            row(f"Set {key}, {h}d: typical alt", _d(ref[h]["alt"]), a["alt"])
+    return "\n".join(L)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -890,25 +1058,21 @@ def main(argv=None):
         res = describe(Sample(m, END_DAY), today)
     else:
         ins = json.loads(Path(args.insample).read_text())
-        # The analog buckets stay those chosen at the in-sample stage.
-        today = {k: ins["now"][k] for k in ("day", "share", "above", "bucket", "start", "age", "age_bucket",
-                                            "btc_side", "btc_holding", "btc", "band")}
+        latest = today
+        if sample == "out":
+            # The analog buckets stay those chosen at the in-sample stage.
+            today = {k: ins["now"][k] for k in ("day", "share", "above", "bucket", "start", "age", "age_bucket",
+                                                "btc_side", "btc_holding", "btc", "band")}
+        # (--sample all: every case to OOS_END_DAY, pooled, with the latest reading's buckets and age.)
         full = describe(Sample(m, OOS_END_DAY), today)
         res = full if sample == "all" else {"out_of_sample": out_of_sample(full, ins), "full": full}
-        # Where we are now, with every day to today (the API's days included)
-        cur = [d for d in sorted(m.share) if d >= today["start"]]
-        allb = band_breaks(m.btc, m.band)
-        pk = max(m.share[d] for d in cur)
-        res["now_full"] = {"last_day": cur[-1], "share": m.share[cur[-1]], "start": today["start"],
-                           "age": cur[-1] - today["start"], "peak": pk,
-                           "peak_day": cur[[m.share[d] for d in cur].index(pk)],
-                           "reached85": pk >= .85, "reached95": pk >= .95,
-                           "band_breaks": [d for d in allb if d >= today["start"]]}
+        # Where we are now, with every day to the latest reading (the API's days included)
+        res["now_full"] = now_full(m, full, latest)
     res["meta"] = meta
     if args.out:
         Path(args.out).write_text(json.dumps(res, indent=1))
-    if args.markdown and sample != "out":
-        print(markdown(res))
+    if args.markdown:
+        print(markdown(res) if sample != "out" else markdown_oos(res, ins))
     t = res.get("now") or res["full"]["now"]
     print(f"today {_date(t['day'])}: Uptrend share {round(100 * t['share'])}%, BTC {t['btc_side']} its band, "
           f"run since {_date(t['start'])} ({t['age']} days)", file=sys.stderr)

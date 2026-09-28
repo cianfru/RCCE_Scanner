@@ -2,8 +2,9 @@
 import unittest
 
 import market_history as mh
-from backtest.risk_on_cycles import (SUNDAY, WEDNESDAY, Market, Sample, age_bucket, band_breaks, breadth_bucket,
-                                     detect_runs, how_ended, survival_row, verdict_median, verdict_share,
+from backtest.risk_on_cycles import (SUNDAY, WEDNESDAY, Market, Sample, _f, age_bucket, band_breaks,
+                                     breadth_bucket, by_run, coins_short, detect_runs, end_within, freq, how_ended,
+                                     prior_dip, run_fields, run_of, survival_row, verdict_median, verdict_share,
                                      weekly_band, wilson)
 
 
@@ -146,6 +147,76 @@ class SmallTests(unittest.TestCase):
         self.assertEqual(verdict_share(0, 0, ref)["verdict"], "no out-of-sample case")
         self.assertEqual(verdict_median([5.0], {"n": 9, "q25": -3, "q75": 8})["verdict"],
                          "consistent (n = 1, too few to read)")
+
+    def test_percent_is_rounded_once(self):
+        # 5/11 = 45.45%: rounding the stored share (0.455) and then the percent gave 46%.
+        self.assertEqual(_f(freq(5, 11)), "5 of 11 (45%, 90% range 24-68%)")
+        self.assertEqual(_f(freq(1, 8)), "1 of 8 (13%, 90% range 3-41%)")   # 12.5% rounds half up, not to even
+        self.assertEqual(_f({"k": 187, "n": 445, "share": 0.42}), "187 of 445 (42%)")
+
+
+class ClusteringTests(unittest.TestCase):
+    def test_end_within_and_run_of(self):
+        ends = [10, 40, 90]
+        self.assertEqual(end_within(ends, 5, 30), 10)
+        self.assertEqual(end_within(ends, 10, 29), None)     # the end on day 10 is not after t = 10
+        self.assertEqual(end_within(ends, 10, 30), 40)
+        runs = [{"start": 0}, {"start": 10}, {"start": 40}]
+        self.assertEqual([run_of(runs, d) for d in (0, 9, 10, 39, 40, 99)], [0, 0, 10, 10, 40, 40])
+
+    def test_by_run_counts_runs_and_distinct_ends(self):
+        f = lambda ended, end, r90=False: {"30": {"reached90": r90, "ended": ended, "end_day": end, "btc": 1.0,
+                                                   "alt": 2.0}, "60": None}
+        rows = [{"day": 5, "run": 0, "fwd": f(True, 20, True)}, {"day": 12, "run": 0, "fwd": f(True, 20)},
+                {"day": 50, "run": 40, "fwd": f(False, None)}]
+        out = by_run(rows)
+        self.assertEqual((out["episodes"], out["runs"], out["per_run_days"]), (3, 2, [5, 50]))
+        self.assertEqual((out["30"]["ended"], out["30"]["distinct_ends"]), (2, 1))
+        self.assertEqual(out["per_run"]["30"]["ended"]["k"], 1)
+        self.assertEqual(out["per_run"]["30"]["reached90"]["k"], 1)
+        self.assertEqual(out["per_run"]["60"]["n"], 0)
+
+
+class NextBreakTests(unittest.TestCase):
+    def test_next_break_after_end_is_reported_even_when_btc_broke_first(self):
+        share = {d: 0.4 for d in range(0, 200)}
+        for d in range(20, 80):
+            share[d] = 0.6
+        btc = {d: 100.0 for d in share}
+        for d in (30, 110):                                # a dip inside the run, and a break 30 days after its end
+            btc[d] = 50.0
+        m = Market(share, btc, {})
+        m.band = {d: (80.0, 90.0) for d in share}
+        s = Sample(m, 199)
+        run = next(r for r in detect_runs(s.days, s.share) if r["type"] == "on" and not r["first"])
+        row = run_fields(run, s)
+        self.assertEqual(row["how_ended"], {"case": "btc_first", "lead": 50})
+        self.assertEqual(row["next_break_after_end"], 30)
+
+
+class PriorDipTests(unittest.TestCase):
+    def market(self, pattern):
+        days, share = series(pattern)
+        m = Market(share, {d: 100.0 for d in days}, {}, n={d: 144 for d in days})
+        m.band = {d: (80.0, 90.0) for d in days}
+        return m
+
+    def test_coins_short(self):
+        self.assertEqual(coins_short(79 / 144, 144), 1)       # 80 of 144 needed for 55%
+        self.assertEqual(coins_short(80 / 145, 145), 0)
+        self.assertEqual(coins_short(77 / 140, 140), 0)        # exactly 55%
+        self.assertIsNone(coins_short(0.5, None))
+
+    def test_minimum_dip_before_todays_run(self):
+        m = self.market("LLLLL" "HHHHHHHHHH" "LLLLL" "HHH")
+        dip = prior_dip(m)
+        self.assertEqual(dip["days"], [115, 116, 117, 118, 119])
+        self.assertEqual(dip["previous_run"]["start"], 105)
+        self.assertEqual(dip["age_as_if_merged"], 122 - 105)
+        self.assertEqual(dip["coins_short"][-1], coins_short(0.40, 144))
+        # A longer dip, or a risk-off run today, gives nothing.
+        self.assertIsNone(prior_dip(self.market("LLLLL" "HHHHHHHHHH" "LLLLLL" "HHH")))
+        self.assertIsNone(prior_dip(self.market("LLLLL" "HHHHHHHHHH" "LLLLL" "HHH" "LLLLL")))
 
 
 if __name__ == "__main__":
