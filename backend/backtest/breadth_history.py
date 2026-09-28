@@ -189,11 +189,14 @@ def study(src, out_name):
     return out
 
 
-def export(study_name="breadth_study", src="breadth_history", out=None):
+def export(study_name="breadth_study", src="breadth_history", out=None, check=True):
     """Seed for the live market history (backend/seeds/market_history_seed.json): per-day
     aggregates, BTC close, the coin list, and the study's episodes. Episode outcomes stop
-    at END_DAY; later days are appended live without outcomes."""
+    at END_DAY; later days are appended live without outcomes. Past paths
+    (docs/reviews/market-paths-method.md): the typical alt's paths, the ordinary path and,
+    with `check`, the walk-forward check (backtest.market_paths)."""
     from pathlib import Path
+    from backtest import market_paths as mp
     data = json.loads((RUNS_DIR / f"{src}.json").read_text())
     st = json.loads((RUNS_DIR / f"{study_name}.json").read_text())
     btc = data["closes"]["BTCUSDT"]
@@ -210,6 +213,10 @@ def export(study_name="breadth_study", src="breadth_history", out=None):
             "days_cols": ["day", "n", "uptrend", "overheated", "downtrend", "basing", "median_z", "btc"],
             "episode_cols": ["start", "end", "breadth", "btc10", "alt10", "btc30", "alt30", "btc60", "alt60"],
             "days": days, "base": st["base"], "bands": bands}
+    seed["alt_paths"] = mp.alt_paths(data["closes"])
+    seed["base_path"] = mp.base_path(data)
+    if check:
+        seed["fan_check"] = mp.calibrate(data, days, seed["alt_paths"], seed["bands_def"])
     path = Path(out) if out else Path(__file__).resolve().parent.parent / "seeds" / "market_history_seed.json"
     path.write_text(json.dumps(seed, separators=(",", ":")))
     print(f"{len(days)} days, {len(seed['pairs'])} pairs -> {path} ({path.stat().st_size // 1024} KB)")
@@ -253,12 +260,13 @@ def main(argv=None):
     st = sub.add_parser("study")
     st.add_argument("--src", default="breadth_history")
     st.add_argument("--out", required=True)
-    sub.add_parser("export")
+    ex = sub.add_parser("export")
+    ex.add_argument("--no-check", action="store_true", help="leave out the walk-forward check (fan_check)")
     fh = sub.add_parser("ft-history", help="print the forward test's exploratory table (FT_HISTORY) from the cache")
     fh.add_argument("--src", default="breadth_history")
     args = ap.parse_args(argv)
     if args.cmd == "export":
-        export()
+        export(check=not args.no_check)
     elif args.cmd == "ft-history":
         from datetime import date, timedelta
         rows = ft_history(args.src)
