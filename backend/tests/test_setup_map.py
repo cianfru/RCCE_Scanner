@@ -204,3 +204,11 @@ def test_ladder_endpoint_shape(monkeypatch):
     assert c.get("/api/setup-map/ladder?coin=NOPE&tf=1d").status_code == 404
     assert c.get("/api/setup-map/ladder?coin=SUI&tf=1w").status_code == 422
     main._LADDER_CACHE.clear()
+
+
+def test_day_ago_reads_the_close_nearest_24h_back():
+    now = 1_800_000_000
+    lean = {"SUI": {now - 86400 - 3600: (4, 1), now - 3600: (6, 1)}, "BTC": {now - 3600: (9, 2)}}
+    assert sm.day_ago(lean, ["SUI", "BTC"], now) == {"SUI": {"long": 4, "short": 1}, "BTC": {"long": 0, "short": 0}}
+    assert sm.day_ago({"SUI": {now - 3600: (6, 1)}}, ["SUI"], now) == {}       # no close near a day ago
+    assert sm.day_ago({}, ["SUI"], now) == {}

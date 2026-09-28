@@ -4262,9 +4262,23 @@ async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(pro
                 continue
             engine.setdefault(coin, {})[tf] = {"symbol": sym, "signal": get("signal"), "regime": get("regime"),
                                                "zscore": get("zscore"), "heat": get("heat"), "price": get("price")}
+    # Profitable traders only: the same coin's long and short counts a day ago, from the stored
+    # 4H record (the Traders page's 24h change). None when the record has no close near 24h ago.
+    before: dict = {}
+    if cohort == "profitable":
+        import setup_map
+        from hl_persistence import load_trader_lean
+        lean: dict = {}
+        try:
+            for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600):
+                lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
+        except Exception as exc:
+            logger.debug("positioning: no trader record: %s", exc)
+        before = setup_map.day_ago(lean, pm["coins"], now)
     rows = []
     for coin, d in pm["coins"].items():
         rows.append({"coin": coin, **d, "opens_24h": opens.get(coin, {"long": 0, "short": 0}),
+                     "day_ago": before.get(coin),
                      "convergence": convs.get(coin), "engine": engine.get(coin)})
     rows.sort(key=lambda r: -(r["long"]["n"] + r["short"]["n"]))
     body = {"cohort": cohort, "wallets": pm["wallets"], "updated_at": now, "rows": rows}

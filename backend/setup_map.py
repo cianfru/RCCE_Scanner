@@ -143,6 +143,21 @@ def trader_trail(times: List[int], record: Dict[int, tuple], now_net: int) -> Li
     return out
 
 
+def day_ago(lean: Dict[str, Dict[int, tuple]], coins: Iterable[str], now: float) -> Dict[str, dict]:
+    """Profitable traders long and short per coin at the stored 4H close nearest to 24 hours ago
+    (within 3 hours). A coin missing from that close had nobody in it (0 and 0). Empty when the
+    record has no close near enough."""
+    bars = {b for rec in lean.values() for b in rec}
+    best = min(bars, key=lambda b: abs(b - (now - 86400)), default=None)
+    if best is None or abs(best - (now - 86400)) > 3 * 3600:
+        return {}
+    out = {}
+    for c in coins:
+        lo, sh = lean.get(c, {}).get(best, (0, 0))
+        out[c] = {"long": lo, "short": sh}
+    return out
+
+
 def closes(ohlcv: Optional[dict], tf: str, now: float) -> tuple:
     """(close times, closes) of finished candles only."""
     if not ohlcv or ohlcv.get("close") is None or len(ohlcv["close"]) == 0:    # numpy arrays in the store
