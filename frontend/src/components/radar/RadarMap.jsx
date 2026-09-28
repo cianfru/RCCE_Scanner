@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { STAGES, at, labelBox, labelOrder, placeLabels, symlog, trailPoints } from "../../utils/setupMap.js";
 import { bandInfo, bubbleRadius, candidates, countRadius, fmtUsd, grossOf, haloRing, hasMoney, legendSizes, maxMoney, rmaxFor, shortSlice, stepPick } from "../../utils/radarDepth.js";
 import { Pin, RM, XS, sc, stageColor, stepLabel } from "./shared.jsx";
+import HelpTip from "../HelpTip.jsx";
 
 const TONE = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "var(--rd-halo)" };
 const net = c => (c.traders?.pl || 0) - (c.traders?.ps || 0);
@@ -20,7 +21,7 @@ function Ring({ f = 0, color, tick }) {
 // lean, with trails of the last closes and a playable timeline. Bubble area is the dollars the
 // profitable wallets hold in the coin (a pink slice for the short share; a small grey dot when
 // none hold it), and a ring tracks the distance to the coin's weekly band. Drawn by React,
-// moved imperatively while playing. A click picks the nearest centre and steps through coins
+// moved imperatively while playing (behind Replay). The key sits behind an (i). A click picks the nearest centre and steps through coins
 // stacked at one spot. Labels: the coins with the most money, placed without collisions at rest
 // and again at each close the timeline passes; between two closes every label keeps its side.
 export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, watched, mineBy, mineOn, keep, onPick, onRest, moneyOn = true }) {
@@ -204,6 +205,8 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
 
   const playing = useRef(null);
   const [isPlaying, setPlaying] = useState(false);
+  // The timeline is one click away: Replay opens the player, Close returns the map to now.
+  const [replay, setReplay] = useState(false);
   const stop = useCallback(() => { if (playing.current) { cancelAnimationFrame(playing.current); clearInterval(playing.current); } playing.current = null; setPlaying(false); }, []);
   const play = useCallback(() => {
     if (u.current >= last - 0.01) setTime(0);
@@ -215,6 +218,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     playing.current = requestAnimationFrame(step);
   }, [last, setTime, stop]);
   useEffect(() => stop, [stop, tf]);
+  const closeReplay = () => { stop(); setReplay(false); setTime(last, true); };
 
   // Releasing the scrubber settles the labels where the trails stopped.
   useEffect(() => {
@@ -224,7 +228,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     el.addEventListener("change", settle);
     el.addEventListener("pointerup", settle);
     return () => { el.removeEventListener("change", settle); el.removeEventListener("pointerup", settle); };
-  }, [setTime, data]);
+  }, [setTime, data, replay]);
 
   // Picking: the nearest centre (a small bubble over a big one wins), and a click on the same
   // spot again steps to the next coin stacked there. A mouse hover shows the coin's card.
@@ -319,34 +323,41 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
           {hStack.length > 0 && <div className="also">Also here: {hStack.join(", ")}. Click again to step.</div>}
         </div>}
       </div>
-      <div className="smap-player radar-player">
-        <button type="button" className="smap-play" onClick={() => (isPlaying ? stop() : play())} aria-label={isPlaying ? "Pause" : "Play the recent closes"}>{isPlaying ? "Pause" : "Play"}</button>
-        <div className="radar-scrub">
-          <input ref={scrub} type="range" min="0" max={last} step="0.01" defaultValue={last} aria-label="Time" onInput={e => { stop(); setTime(+e.target.value); }} />
-          {last > 0 && <div className={`radar-ticks${sparse ? " sparse" : ""}`} aria-hidden="true">
-            {steps.map((s, k) => <span key={s} style={{ left: `calc(8px + (100% - 16px) * ${k / last})` }}>{tickLabel(k)}</span>)}
-          </div>}
-        </div>
-        <span ref={when} className="smap-when">Now</span>
+      <div className={`smap-player radar-player${replay ? "" : " closed"}`}>
+        {replay ? <>
+          <button type="button" className="smap-play" onClick={() => (isPlaying ? stop() : play())} aria-label={isPlaying ? "Pause" : "Play the recent closes"}>{isPlaying ? "Pause" : "Play"}</button>
+          <div className="radar-scrub">
+            <input ref={scrub} type="range" min="0" max={last} step="0.01" defaultValue={u.current} aria-label="Time" onInput={e => { stop(); setTime(+e.target.value); }} />
+            {last > 0 && <div className={`radar-ticks${sparse ? " sparse" : ""}`} aria-hidden="true">
+              {steps.map((s, k) => <span key={s} style={{ left: `calc(8px + (100% - 16px) * ${k / last})` }}>{tickLabel(k)}</span>)}
+            </div>}
+          </div>
+          <span ref={when} className="smap-when">Now</span>
+          <button type="button" className="mh-close radar-replay-close" onClick={closeReplay}>Close</button>
+        </> : <button type="button" className="te-link radar-replay" disabled={!data || last < 1} onClick={() => setReplay(true)}>Replay</button>}
+        <HelpTip title="Map key" width={360} className="radar-keytip" label="Map key">
+          <div className="radar-key smap-legend radar-legend">
+            <div className="grp">{STAGES.map(s => <span key={s.key}><i style={{ background: stageColor(s.key) }} />{s.name}</span>)}</div>
+            {moneyOn ? <>
+              <div className="grp">
+                {sizes.map(s => <span key={s.v}><svg width={2 * s.r + 2} height={2 * s.r + 2} aria-hidden="true"><circle cx={s.r + 1} cy={s.r + 1} r={s.r} fill="none" stroke="var(--t-text3)" /></svg>{fmtUsd(s.v)}</span>)}
+                <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill={stageColor("running")} /><path d="M7,7 L7,1 A6,6 0 0 1 12.7,5.1 Z" fill="var(--rd-short)" fillOpacity=".85" /></svg>short</span>
+              </div>
+              <div className="grp">
+                <span><Ring f={0.5} color="var(--rd-halo)" />near band</span>
+                <span><Ring f={1} color="var(--rd-inband)" />in band</span>
+                <span><Ring f={1} color="var(--rd-red)" />closed under</span>
+              </div>
+            </> : <div className="grp"><span><i className="smap-ringkey" />Opened long in 24h</span></div>}
+            {(watched.size > 0 || mineOn) && <div className="grp">
+              {watched.size > 0 && <span><Pin />Watching</span>}
+              {mineOn && <span><i className="radar-minekey" />My trade</span>}
+            </div>}
+          </div>
+          <p>Size: the dollars profitable traders hold, longs plus shorts; the pink slice is the short share. A small grey dot: none hold it.</p>
+          <p>Ring: the distance to the coin's weekly band (20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above it, full at its top edge. Violet: inside the band. Red: the last weekly close ended under it.</p>
+        </HelpTip>
       </div>
-    </div>
-    <div className="smap-legend radar-legend">
-      <div className="grp">{STAGES.map(s => <span key={s.key}><i style={{ background: stageColor(s.key) }} />{s.name}</span>)}</div>
-      {moneyOn ? <>
-        <div className="grp">
-          {sizes.map(s => <span key={s.v}><svg width={2 * s.r + 2} height={2 * s.r + 2} aria-hidden="true"><circle cx={s.r + 1} cy={s.r + 1} r={s.r} fill="none" stroke="var(--t-text3)" /></svg>{fmtUsd(s.v)}</span>)}
-          <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill={stageColor("running")} /><path d="M7,7 L7,1 A6,6 0 0 1 12.7,5.1 Z" fill="var(--rd-short)" fillOpacity=".85" /></svg>short</span>
-        </div>
-        <div className="grp">
-          <span><Ring f={0.5} color="var(--rd-halo)" />near band</span>
-          <span><Ring f={1} color="var(--rd-inband)" />in band</span>
-          <span><Ring f={1} color="var(--rd-red)" />closed under</span>
-        </div>
-      </> : <div className="grp"><span><i className="smap-ringkey" />Opened long in 24h</span></div>}
-      {(watched.size > 0 || mineOn) && <div className="grp">
-        {watched.size > 0 && <span><Pin />Watching</span>}
-        {mineOn && <span><i className="radar-minekey" />My trade</span>}
-      </div>}
     </div>
   </div>;
 }

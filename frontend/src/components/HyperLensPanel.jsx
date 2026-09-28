@@ -2,6 +2,8 @@ import Tabs from "./Tabs.jsx";
 import CohortsView from "./CohortsView.jsx";
 import PositioningView from "./PositioningView.jsx";
 import FollowingView from "./FollowingView.jsx";
+import TraderSummary from "./TraderSummary.jsx";
+import HelpTip from "./HelpTip.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
@@ -11,6 +13,7 @@ import { T } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
 import { TableSkeleton } from "./Skeleton.jsx";
 import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
+import { SUMMARY_MIN, summaryRows, sideCounts } from "../utils/traderSummary.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -19,14 +22,6 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const fmtLev = (x) => {
   if (x == null || isNaN(x)) return "--";
   return `${Number(x).toFixed(1)}x`;
-};
-
-const timeAgo = (ts) => {
-  if (!ts) return "never";
-  const sec = Math.floor(Date.now() / 1000 - ts);
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  return `${Math.floor(sec / 3600)}h ago`;
 };
 
 // Logo key for a Hyperliquid coin name; HIP-3 names ("xyz:TSLA") drop the dex prefix.
@@ -230,55 +225,6 @@ function SortTh({ label, sortKey, currentKey, asc, onSort, align = "right", w, t
         ? <button type="button" className="table-sort hl-sort" onClick={() => onSort(sortKey)}>{label}{active && (asc ? " \u25B2" : " \u25BC")}</button>
         : label}
     </th>
-  );
-}
-
-// ─── STATUS STRIP ────────────────────────────────────────────────────────────
-
-// Flat "LABEL value" pairs, like the scanner summary. Cohort sizes come from
-// /status, the same lists the consensus uses.
-function StatusStrip({ status, cohort }) {
-  const mpCount = status.money_printer_count || 0;
-  const smCount = status.smart_money_count || 0;
-  const bothCount = status.elite_count || 0;
-
-  const walletLabel = cohort === "money_printers" ? mpCount
-    : cohort === "smart_money" ? smCount
-    : (status.tracked_wallets || 0);
-
-  const items = [
-    { label: "WALLETS", value: walletLabel },
-    { label: "ACTIVE", value: status.active_wallets || 0 },
-    { label: "SYMBOLS", value: status.consensus_symbols || 0 },
-    { label: "POLLS", value: status.poll_count || 0 },
-    { label: "LAST POLL", value: timeAgo(status.last_poll) },
-  ];
-  const sep = <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>·</span>;
-
-  return (
-    <div style={{
-      display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px",
-      padding: "10px 16px",
-      borderTop: `1px solid ${T.overlay08}`,
-      borderBottom: `1px solid ${T.overlay08}`,
-    }}>
-      {items.map(({ label, value }, i) => (
-        <span key={label} style={{ display: "inline-flex", alignItems: "baseline", gap: 10 }}>
-          {i > 0 && sep}
-          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
-            <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4, letterSpacing: "0.08em", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
-            <span style={{ fontFamily: T.mono, fontSize: T.textBase, fontWeight: 700, color: T.text1 }}>{value}</span>
-          </span>
-        </span>
-      ))}
-      {/* Cohort breakdown counts */}
-      {cohort === "all" && (mpCount > 0 || smCount > 0) && (
-        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, fontSize: T.textSm, color: T.text2 }}>
-          {sep}
-          <span>{mpCount} profitable · {smCount} large{bothCount > 0 ? ` · ${bothCount} in both` : ""}</span>
-        </span>
-      )}
-    </div>
   );
 }
 
@@ -1686,45 +1632,57 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
 
 
 // View tabs. Keys are stable; to add a view, add an entry here and a matching
-// `tab === key` branch in the panel body.
-const VIEW_TABS = [
-  { key: "favorites", label: "Following", title: "Traders you follow, with Telegram alerts on their changes" },
+// `tab === key` branch in the panel body. Two views show; the rest sit under "More views".
+const MAIN_TABS = [
   { key: "consensus", label: "Consensus" },
+  { key: "favorites", label: "Following", title: "Traders you follow, with Telegram alerts on their changes" },
+];
+const MORE_TABS = [
   { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
   { key: "cohorts", label: "Cohorts", title: "How groups of wallets lean, now and over time" },
   { key: "positioning", label: "Positioning", title: "Where tracked traders are positioned, next to the engine's reading" },
 ];
+const VIEW_TABS = [...MAIN_TABS, ...MORE_TABS];
+const MORE_KEYS = new Set(MORE_TABS.map(v => v.key));
 
+// Consensus and Following, then "More views", which opens a second row with the other three.
+// The row stays open while one of them is the view.
 function TabSwitcher({ active, onChange }) {
-  // Roster tab removed in "Sentiment Mode": same data is on the HL leaderboard.
-  // Pressure tab removed: it needs order polling, which stays off.
-  // On phones the row scrolls sideways; the chosen view is scrolled into sight (a link to
-  // ?view=positioning must not open on a tab past the edge).
-  const ref = useRef(null);
-  useEffect(() => {
-    const row = ref.current?.querySelector(".reflex-tabs");
-    const btn = row?.querySelector('button[aria-pressed="true"]');
-    if (!row || !btn || row.scrollWidth <= row.clientWidth) return;
-    const left = btn.offsetLeft - row.offsetLeft, right = left + btn.offsetWidth;
-    if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 8);
-    else if (right > row.scrollLeft + row.clientWidth - 24) row.scrollLeft = right - row.clientWidth + 32;
-  }, [active]);
+  const inMore = MORE_KEYS.has(active);
+  const [moreOpen, setMoreOpen] = useState(inMore);
+  const showMore = moreOpen || inMore;
   return (
-    <div ref={ref} className="hl-view-tabs" style={{ minWidth: 0 }}>
-      <Tabs label="HyperLens view" items={VIEW_TABS} value={active} onChange={onChange} />
+    <div className="tl-views-wrap" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div className="tl-views">
+        <Tabs label="Traders view" items={MAIN_TABS} value={inMore ? null : active} onChange={(k) => { setMoreOpen(false); onChange(k); }} />
+        <button type="button" className="tl-more" aria-expanded={showMore} aria-pressed={inMore}
+          onClick={() => { if (!inMore) setMoreOpen(v => !v); }}>
+          More views
+          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: showMore ? "rotate(180deg)" : "none", transition: "transform 0.2s ease" }}>
+            <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      {showMore && (
+        <div className="tl-sub">
+          <Tabs small label="More views" items={MORE_TABS} value={active} onChange={onChange} />
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── COHORT FILTER ──────────────────────────────────────────────────────────
+// ─── WALLET GROUP ───────────────────────────────────────────────────────────
 
 // No "Both" option: the consensus API has no per-symbol figures for wallets in
 // both groups, and showing all-wallet numbers under that label would mislead.
+// `api` is the positioning endpoint's name for the group.
 const COHORT_OPTIONS = [
+  { key: "money_printers", api: "profitable", label: "Profitable traders" },
+  { key: "smart_money", api: "large", label: "Large accounts" },
   { key: "all", label: "All wallets" },
-  { key: "money_printers", label: "Profitable traders", title: "Top 300 by monthly return (at least 30% and $10K) that were also in profit before this month" },
-  { key: "smart_money", label: "Large accounts", title: "The 300 largest accounts ($1M and up); profit is not checked" },
 ];
+const cohortApi = (k) => COHORT_OPTIONS.find(o => o.key === k)?.api || null;
 
 const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K in the account and no more than 25 open positions (market makers are left out).";
 
@@ -1770,12 +1728,16 @@ export default function HyperLensPanel({ isMobile }) {
     setSearchParams(next, { replace: true });
   }, [tab, rawView]);  // eslint-disable-line react-hooks/exhaustive-deps
   const [filter, setFilter] = useState("");
-  const [cohort, setCohort] = useState("all");
+  // Profitable traders by default: the per-coin summary. Large accounts use the same summary;
+  // all wallets keep the full consensus table.
+  const [cohort, setCohort] = useState("money_printers");
   const [status, setStatus] = useState({});
   const [consensus, setConsensus] = useState([]);
+  const [groupRows, setGroupRows] = useState({});
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [loading, setLoading] = useState(true);
+  const api = cohortApi(cohort);
 
   const loadData = useCallback(async () => {
     try {
@@ -1799,63 +1761,89 @@ export default function HyperLensPanel({ isMobile }) {
     return () => clearInterval(interval);
   }, [loadData]);
 
+  // The group's per-coin rows (counts, dollars, median entries, a day ago); cached a minute server side.
+  // undefined: loading; null: unavailable.
+  useEffect(() => {
+    if (!api) return undefined;
+    let cancelled = false;
+    const load = () => fetch(`${API}/api/hyperlens/positioning?cohort=${api}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: d.rows || [] })); })
+      .catch(() => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: g[api] || null })); });
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [api]);
+
+  const rows = api ? groupRows[api] : null;
+  const summary = useMemo(() => (rows ? summaryRows(rows).shown : []), [rows]);
+  const sides = sideCounts(summary);
   const counts = trendCounts(consensus, cohort);
   const tracked = status.tracked_wallets || 0;
-  const basis = status.consensus_wallets ?? consensus[0]?.total_tracked ?? null;
   const fresh = status.fresh_wallets;
   // Under 60% of wallets updated recently, the summary rests on a partial set.
   const partial = tracked > 0 && fresh != null && fresh < 0.6 * tracked;
+  const groupView = tab === "consensus" || tab === "heatmap";
+  const openSymbol = (sym) => { setSelectedSymbol(sym); setSelectedWallet(null); };
+  // The summary's counts (traders per side) on its own view; the size-weighted trend elsewhere.
+  const bySide = api && tab === "consensus";
+  const statusItems = bySide
+    ? [[sides.long, "BULLISH", T.green], [sides.short, "BEARISH", T.red], [sides.mixed, "MIXED", T.text3]]
+    : [[counts.BULLISH, "BULLISH", T.green], [counts.BEARISH, "BEARISH", T.red], [counts.NEUTRAL, "NEUTRAL", T.text3]];
+  const ready = bySide ? !!rows : consensus.length > 0;
+  const summaryLoading = api && rows === undefined;
+  // The wallet group: a quiet select, on the status line on a phone and beside the filter on desktop.
+  const groupSelect = (
+    <select className="tl-group" aria-label="Wallet group" value={cohort} onChange={e => setCohort(e.target.value)}>
+      {COHORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+    </select>
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Header card (the page's hero card: it carries the one machined metal edge) */}
       <GlassCard className="hyperlens-summary" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{
-          padding: isMobile ? "12px 12px 10px" : "14px 16px 12px",
-          display: "flex", flexDirection: "column", gap: 4,
-        }}>
-          {consensus.length > 0 && (
-            <div
-              title={`Symbols with ${MIN_WALLETS} or more wallets positioned, by the size-weighted trend`}
-              style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px", opacity: partial ? 0.55 : 1 }}
-            >
-              {[["BULLISH", T.green], ["BEARISH", T.red], ["NEUTRAL", T.text3]].map(([key, color]) => (
+        <div style={{ padding: isMobile ? "12px 16px 2px" : "14px 16px 2px", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="tl-status">
+            <div className="tl-counts" style={{ opacity: partial ? 0.55 : 1 }}>
+              {ready && statusItems.map(([n, key, color]) => (
                 <span key={key} className="terminal-status" style={{
                   fontFamily: T.mono, fontSize: T.textSm, fontWeight: 700,
-                  color, letterSpacing: "0.06em",
+                  color: n ? color : T.text4, letterSpacing: "0.06em",
                 }}>
-                  {counts[key]} {key}
+                  {n} {key}
                 </span>
               ))}
-              {counts.THIN > 0 && (
-                <span style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text4 }}>
-                  {counts.THIN} with too few wallets
-                </span>
-              )}
+              <HelpTip title="Traders" width={380} label="About this page">
+                {bySide ? <>
+                  <p>{cohort === "money_printers"
+                    ? "Profitable traders: the top 300 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
+                    : "Large accounts: the 300 largest Hyperliquid accounts ($1M and up); profit is not checked."}</p>
+                  <p>One row per coin held by {SUMMARY_MIN} or more of them, most traders first: how many are long and short, their dollars, and the price against the median entry of the side most of them are on (green when that side is in profit). 24h is the change in traders long and short since a day ago. Open a row for the largest wallets on each side.</p>
+                  <p>Bullish or bearish: at least 15% more of them long than short, or the reverse; otherwise mixed.</p>
+                </> : <>
+                  <p>{api ? (cohort === "money_printers" ? "Profitable traders" : "Large accounts") : "Every tracked wallet"}, per symbol. The trend weighs position size: past 15% either way it reads bullish or bearish. Symbols with fewer than {MIN_WALLETS} wallets positioned get no trend.</p>
+                  <p>{BASIS_TITLE}</p>
+                </>}
+              </HelpTip>
             </div>
-          )}
-          {basis != null && tracked > 0 && (
-            <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: partial ? T.yellow : T.text3 }}>
-              Based on {basis} of {tracked} tracked wallets
-              {partial && `. Only ${fresh} were updated in the last 75 minutes, so these figures cover a partial set.`}
+            {groupView && isMobile && groupSelect}
+          </div>
+          {partial && (
+            <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: T.yellow }}>
+              Only {fresh} of {tracked} wallets were updated in the last 75 minutes, so these figures cover a partial set.
             </div>
           )}
         </div>
 
-        <StatusStrip status={status} cohort={cohort} />
-
-        {/* Controls bar */}
+        {/* View tabs, and the symbol filter on desktop */}
         <div style={{
-          padding: isMobile ? "10px 12px" : "12px 16px",
-          display: "flex", alignItems: isMobile ? "stretch" : "center",
-          flexDirection: isMobile ? "column" : "row",
-          // A wrapping column sizes its line to the widest tab row, so phones do not wrap:
-          // each tab row then keeps the card width and scrolls on its own.
-          gap: isMobile ? 8 : 10, flexWrap: isMobile ? "nowrap" : "wrap",
+          padding: isMobile ? "0 4px" : "0 4px",
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10,
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
-          {tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" && <Tabs small label="Wallet group" items={COHORT_OPTIONS} value={cohort} onChange={setCohort} />}
-
+          {!isMobile && <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 12px 0 0" }}>
+          {groupView && groupSelect}
           {tab === "consensus" && (
             <input
               type="text"
@@ -1864,11 +1852,11 @@ export default function HyperLensPanel({ isMobile }) {
               value={filter}
               onChange={e => setFilter(e.target.value)}
               style={{
-                fontFamily: T.mono, fontSize: isMobile ? T.textBase : T.textSm, fontWeight: 500,
-                padding: isMobile ? "9px 12px" : "7px 12px", borderRadius: 8,
+                fontFamily: T.mono, fontSize: T.textSm, fontWeight: 500,
+                padding: "6px 12px", borderRadius: 8,
                 border: `1px solid ${T.overlay10}`,
                 background: T.overlay04, color: T.text1,
-                outline: "none", width: isMobile ? "100%" : 140,
+                outline: "none", width: 140,
                 transition: "all 0.2s ease",
                 letterSpacing: "0.03em",
               }}
@@ -1876,6 +1864,7 @@ export default function HyperLensPanel({ isMobile }) {
               onBlur={e => { e.target.style.borderColor = T.overlay10; e.target.style.boxShadow = "none"; }}
             />
           )}
+          </div>}
         </div>
       </GlassCard>
 
@@ -1899,18 +1888,28 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Main content */}
       {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
-      {loading && tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" ? (
+      {(tab === "consensus" && api ? summaryLoading : loading && tab !== "cohorts" && tab !== "positioning" && tab !== "favorites") ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
-          <TableSkeleton rows={10} cols={6} />
+          <TableSkeleton rows={10} cols={isMobile ? 3 : 5} />
         </GlassCard>
       ) : (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           {tab === "favorites" && <FollowingView />}
-          {tab === "consensus" && (
+          {tab === "consensus" && api && (rows === null
+            ? <div className="ts-empty">Positioning unavailable</div>
+            : <TraderSummary
+              rows={rows}
+              filter={isMobile ? "" : filter}
+              cohort={api}
+              isMobile={isMobile}
+              onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+              onSymbolClick={openSymbol}
+            />)}
+          {tab === "consensus" && !api && (
             <ConsensusTable
               consensus={consensus}
               filter={filter}
-              onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
+              onSymbolClick={openSymbol}
               isMobile={isMobile}
               cohort={cohort}
             />
@@ -1918,7 +1917,7 @@ export default function HyperLensPanel({ isMobile }) {
           {tab === "heatmap" && (
             <HeatmapGrid
               consensus={consensus}
-              onSymbolClick={(sym) => { setSelectedSymbol(sym); setSelectedWallet(null); }}
+              onSymbolClick={openSymbol}
               cohort={cohort}
               isMobile={isMobile}
             />

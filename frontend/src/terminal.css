@@ -434,13 +434,14 @@
 .price-chart-panel{border:1px solid var(--t-border);border-radius:14px;background:linear-gradient(145deg,#0d2527 0%,#091c20 44%,#07131a 100%);box-shadow:inset 0 1px 0 rgba(190,255,240,.08),0 18px 48px rgba(0,0,0,.22);}
 .price-chart-panel .chart-toolbar{background:linear-gradient(180deg,rgba(151,252,228,.055),rgba(151,252,228,.015))!important;border-bottom-color:rgba(151,252,228,.10);}
 .price-chart-canvas{background:radial-gradient(ellipse at 44% 0%,rgba(43,105,102,.12),transparent 65%),linear-gradient(180deg,rgba(20,48,54,.22),rgba(5,15,23,.16));}
-.price-chart-panel .candle-inspector{background:rgba(4,12,18,.24);padding-top:10px!important;padding-bottom:10px!important;}
+.price-chart-panel .candle-inspector{position:absolute;top:8px;left:12px;z-index:4;display:flex;flex-wrap:wrap;gap:4px 10px;max-width:calc(100% - 100px);box-sizing:border-box;padding:6px 10px;border:1px solid var(--t-border);border-radius:6px;background:rgba(4,12,18,.78);font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);pointer-events:none;}
+.price-chart-panel .candle-inspector b{font-weight:500;color:var(--t-text2);}
 .price-chart-panel .chart-reset{border:0;border-bottom:1px solid var(--t-border);background:transparent;border-radius:0;padding:4px 0;margin-right:8px;color:var(--t-text3);font:12px var(--font-geist-sans),sans-serif;cursor:pointer;}
 .price-chart-panel .chart-reset:hover{color:var(--t-accent)!important;border-bottom-color:var(--t-accent);}
 .price-chart-panel .chart-reset:disabled{opacity:.4;cursor:default;}
 [data-theme="light"] .price-chart-panel{background:linear-gradient(145deg,#f4faf9,#edf3f5);box-shadow:inset 0 1px 0 #fff,0 12px 36px rgba(20,48,54,.07);}
 [data-theme="light"] .price-chart-canvas{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
-[data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.4);}
+[data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.9);}
 .price-chart-panel .chart-levels-label-short{display:none;}
 @media(max-width:600px){.price-chart-panel .chart-levels-label{display:none;}.price-chart-panel .chart-levels-label-short{display:inline;}.price-chart-panel .chart-toolbar{padding:10px 14px!important;gap:8px;}.price-chart-panel .chart-toolbar>div{gap:6px!important;}}
 
@@ -463,11 +464,6 @@
 .settings-server:disabled .reflex-tabs button{opacity:.55;cursor:not-allowed;}
 .settings-server:disabled .reflex-tabs button:not([aria-pressed="true"]):hover{color:var(--t-text3);}
 @media(max-width:640px){.settings-toggle{position:relative;}.settings-toggle::before{content:"";position:absolute;left:-12px;right:-8px;top:50%;height:44px;transform:translateY(-50%);}}
-/* HyperLens view tabs: a label clipped at the right edge fades out, so the row reads as scrollable. */
-.hl-view-tabs>.reflex-tabs{padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
-/* Phones: tighter view tabs, so the start of the fifth (Positioning) shows past the fourth and
-   the row visibly continues under the fade. */
-@media(max-width:480px){.hl-view-tabs>.reflex-tabs{gap:2px;}.hl-view-tabs>.reflex-tabs button{padding:10px 8px;}}
 /* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
    with the column header, so each label sits over its value. */
 .setup-pair-wrap{display:inline-flex;flex-direction:column;gap:1px;max-width:100%;min-width:0;}
@@ -993,6 +989,72 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .pos-table td,.pos-table th{padding:8px 6px;}
 }
 
+/* Traders page: one row per coin for the chosen wallet group (TraderSummary). A row opens on
+   the group's largest wallets per side. Same header and row look as the all-wallets table. */
+.ts-table{width:100%;border-collapse:collapse;}
+.ts-table th{padding:12px;text-align:right;font:700 14px var(--font-geist-sans),sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--t-text3);border-bottom:2px solid var(--t-border);white-space:nowrap;}
+.ts-table td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 14px var(--font-geist-mono),monospace;color:var(--t-text2);white-space:nowrap;}
+.ts-table th:first-child,.ts-table td:first-child{text-align:left;}
+.ts-table th.ts-money-h{text-align:left;padding-left:36px;}
+.ts-coin-h{width:200px;}.ts-counts-h{width:130px;}.ts-gap-h{width:210px;}.ts-day-h{width:110px;}.ts-table th.ts-chev{width:20px;}
+.ts-row{cursor:pointer;transition:background .2s ease;}
+.ts-stripe{background:var(--t-overlay02,rgba(255,255,255,.02));}
+.ts-row:hover,.ts-row:focus-visible{background:var(--t-overlay06,rgba(255,255,255,.06));outline:none;}
+.ts-row-open,.ts-row-open.ts-stripe{background:var(--t-overlay04,rgba(255,255,255,.04));}
+.ts-row-open td{border-bottom-color:transparent;}
+.ts-coin{display:inline-flex;align-items:center;gap:8px;font:700 14px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.ts-counts{display:inline-flex;align-items:baseline;gap:6px;}
+.ts-counts b{font-weight:700;}
+.ts-slash,.ts-dim{color:var(--t-text4);}
+.ts-money{display:flex;align-items:center;gap:16px;padding-left:24px;}
+.ts-money-t{min-width:128px;font-size:13px;color:var(--t-text3);}
+.ts-bar{display:inline-flex;flex:1;max-width:440px;min-width:80px;height:6px;border-radius:3px;overflow:hidden;background:var(--t-overlay04,rgba(255,255,255,.04));}
+.ts-bar i{display:block;height:100%;opacity:.85;}
+.ts-chev{width:20px;color:var(--t-text4);}
+.ts-row:hover .ts-chev,.ts-row-open .ts-chev{color:var(--t-accent);}
+.ts-open-row td{padding:0 12px 14px;background:var(--t-overlay04,rgba(255,255,255,.04));border-bottom:1px solid var(--t-overlay08,rgba(255,255,255,.08));white-space:normal;text-align:left;}
+.ts-open{display:flex;flex-direction:column;gap:10px;padding:2px 0 0 28px;}
+.ts-sides{display:grid;grid-template-columns:repeat(2,minmax(0,520px));gap:8px 48px;}
+.ts-side{display:flex;flex-direction:column;min-width:0;}
+.ts-side-head{font:700 12px var(--font-geist-sans),sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--t-overlay08,rgba(255,255,255,.08));}
+.ts-wallet{display:grid;grid-template-columns:minmax(0,1fr) auto auto 88px;align-items:baseline;gap:14px;padding:7px 0;background:none;border:0;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 13px var(--font-geist-mono),monospace;color:var(--t-text2);text-align:left;cursor:pointer;}
+.ts-wallet:hover .ts-addr{text-decoration:underline;}
+.ts-addr{color:var(--t-accent);overflow:hidden;text-overflow:ellipsis;}
+.ts-size{color:var(--t-text1);font-weight:600;text-align:right;}
+.ts-entry{font-size:12px;text-align:right;}
+.ts-pnl{text-align:right;font-weight:600;}
+.ts-open-foot{display:flex;justify-content:flex-end;}
+.ts-note{padding:10px 0;font-size:13px;}
+.ts-more{display:flex;justify-content:center;padding:14px 12px;}
+.ts-more .te-link{font-size:13px;}
+.ts-empty{padding:32px;text-align:center;font:500 13px var(--font-geist-mono),monospace;color:var(--t-text4);}
+.ts-sub{margin-top:3px;padding-left:28px;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:767px){
+ .ts-table.ts-phone{table-layout:fixed;}
+ .ts-table th{padding:10px 6px;font-size:12px;letter-spacing:.06em;}
+ .ts-table td{padding:10px 6px;overflow:hidden;text-overflow:ellipsis;}
+ .ts-phone .ts-coin-h{width:auto;}.ts-phone .ts-counts-h{width:74px;}.ts-phone .ts-gap-h{width:92px;}.ts-phone th.ts-chev{width:36px;}
+ .ts-table th:first-child,.ts-table td:first-child{padding-left:16px;}
+ .ts-table th:last-child,.ts-table td:last-child{padding-right:14px;}
+ .ts-open{padding:0 0 0 4px;}
+ .ts-open-row td{padding:0 16px 12px;}
+ .ts-sides{grid-template-columns:1fr;gap:12px;}
+ .ts-wallet{grid-template-columns:minmax(0,1fr) auto 76px;gap:10px;}
+}
+
+/* Traders header: one status line with the group menu, then the view tabs and "More views". */
+.tl-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;}
+.tl-counts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;}
+.tl-group{appearance:none;-webkit-appearance:none;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 2px center;border:0;border-bottom:1px solid var(--t-border);border-radius:0;padding:4px 16px 4px 0;font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);cursor:pointer;}
+.tl-group:hover,.tl-group:focus-visible{color:var(--t-text1);border-bottom-color:var(--t-text3);outline:none;}
+.tl-group option{background:var(--t-bg);color:var(--t-text1);}
+.tl-views{display:flex;align-items:center;gap:4px;min-width:0;}
+.tl-more{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--t-text3);font:600 13px var(--font-geist-sans),sans-serif;padding:10px 12px;cursor:pointer;}
+.tl-more:hover{color:var(--t-text1);}
+.tl-more[aria-pressed="true"]{color:var(--t-accent);background:var(--metal-tab-bar);}
+.tl-sub{display:flex;align-items:center;gap:8px;min-width:0;padding:0 4px 6px;}
+@media(max-width:480px){.tl-more{padding:10px 8px;}}
+
 /* Coin chart: profitable traders grid */
 .te{padding:10px 18px;border-top:1px solid var(--t-border);font-size:12px;color:var(--t-text3);line-height:1.5;}
 .te-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-bottom:6px;}
@@ -1101,10 +1163,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 .smap-player{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;}
 .smap-play{border:1px solid var(--t-accent);background:transparent;color:var(--t-accent);font:600 13px var(--font-geist-sans),sans-serif;padding:5px 14px;border-radius:4px;cursor:pointer;min-width:72px;}
 .smap-when{font:500 13px var(--font-geist-mono),monospace;color:var(--t-text1);min-width:124px;text-align:right;white-space:nowrap;}
-.smap-toggles{display:flex;gap:16px;}
-.smap-toggles button{border:0;border-bottom:1px solid transparent;background:none;color:var(--t-text3);font:500 13px var(--font-geist-sans),sans-serif;padding:6px 0;cursor:pointer;}
-.smap-toggles button:hover{color:var(--t-text1);}
-.smap-toggles button[aria-pressed="true"]{color:var(--t-text1);border-bottom-color:var(--t-accent);}
 .smap-addr{flex:1 1 100%;width:100%;max-width:420px;background:transparent;border:0;border-bottom:1px solid var(--t-border);color:var(--t-text1);font:13px var(--font-geist-mono),monospace;padding:6px 0;}
 .smap-mapbox{min-width:0;overflow:hidden;}
 .smap-mapbox svg{display:block;}
@@ -1151,13 +1209,12 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-meta{font:400 13px var(--font-geist-sans),sans-serif;color:var(--t-text3);white-space:nowrap;}
 .radar-meta b{font:500 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
 .radar-sector-line .te-link{font-size:13px;}
-.radar-divider{width:1px;height:16px;background:var(--t-border);}
 .radar-sector-btn{border:0;border-bottom:2px dotted var(--t-text4);background:none;padding:6px 0;color:var(--t-text2);font:600 12px var(--font-geist-sans),sans-serif;cursor:pointer;}   /* same box as the small tabs beside it, so both underlines share one line */
 .radar-sector-btn:hover,.radar-sector-btn[aria-expanded="true"]{color:var(--t-text1);border-bottom-color:var(--t-accent);}
-.radar-mine{display:inline-flex;align-items:center;gap:6px;padding:6px 0 8px;font-size:12px;font-weight:600;color:var(--t-text3);text-decoration:none;}
-.radar-mine:hover{color:var(--t-text1);}
-.radar-mine[aria-pressed="true"]{color:var(--t-accent);}
-.radar-mine[aria-pressed="true"] .grid-aligned-box rect{fill:var(--t-accentDim);opacity:1;}
+.radar-sector-opt[aria-pressed="true"]{color:var(--t-accent);}
+.radar-mine-opt span{display:inline-flex;align-items:center;gap:8px;}
+.radar-mine-opt[aria-pressed="true"] .grid-aligned-box rect{fill:var(--t-accentDim);opacity:1;}
+.radar-pop-rule{display:block;height:1px;margin:4px 6px;background:var(--t-border);}
 .radar-sector-pop{position:fixed;z-index:100000;box-sizing:border-box;max-height:min(420px,calc(100dvh - 32px));overflow-y:auto;overscroll-behavior:contain;padding:6px;display:flex;flex-direction:column;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:8px;box-shadow:0 12px 40px var(--t-shadow);}
 .radar-sector-opt{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;background:none;padding:7px 10px;border-radius:4px;color:var(--t-text2);font:500 13px var(--font-geist-sans),sans-serif;cursor:pointer;text-align:left;--rel-color:var(--t-text2);}
 .radar-sector-opt small{margin-left:6px;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);}
@@ -1180,7 +1237,8 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-mapcard .smap-mapbox,.rl-plot{background:radial-gradient(ellipse at 44% 0%,rgba(43,105,102,.12),transparent 65%),linear-gradient(180deg,rgba(20,48,54,.22),rgba(5,15,23,.16));}
 [data-theme="light"] .radar-mapcard{background:linear-gradient(145deg,#f4faf9,#edf3f5);box-shadow:inset 0 1px 0 #fff,0 12px 36px rgba(20,48,54,.07);}
 [data-theme="light"] .radar-mapcard .smap-mapbox,[data-theme="light"] .rl-plot{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
-.radar-legend{align-items:center;gap:6px 22px;padding:0 2px;}
+/* The map key lives in the (i) card under the map. */
+.radar-legend{flex-direction:column;gap:8px;margin:8px 0 4px;}
 .radar-legend .grp{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;}
 .radar-legend svg{display:block;overflow:visible;}
 .radar-map-loading{border-radius:0;}
@@ -1192,6 +1250,11 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-ticks span{position:absolute;top:0;transform:translateX(-50%);font:500 12px/14px var(--font-geist-sans),sans-serif;color:var(--t-text4);white-space:nowrap;}
 .radar-ticks.sparse span:nth-child(even):not(:last-child){visibility:hidden;}
 .radar-player .smap-when{align-self:center;min-width:17ch;}   /* "Wed 24 Sep close" fits, so the track never reflows on Play */
+.radar-player.closed{align-items:center;padding-bottom:5px;}
+.radar-replay{font-size:13px;font-weight:600;}
+.radar-replay:disabled{opacity:.4;cursor:default;}
+.radar-replay-close{flex:none;align-self:center;}
+.radar-keytip{margin-left:auto;align-self:center;}
 .radar-rail-wrap{min-width:0;align-self:stretch;contain:size;}   /* the map card sets the row's height; a long rail scrolls inside it */
 .radar-rail{position:sticky;top:calc(var(--header-offset) + 16px);box-sizing:border-box;max-height:min(100%,calc(100dvh - 112px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:18px;min-width:0;}
 .radar-focus{backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:var(--t-glassShadow),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 1px 0 rgba(255,255,255,.04);}
@@ -1212,7 +1275,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 .radar-rail .smap-chip .smap-crowd{margin-left:2px;}
 .radar-more{font-size:12px;align-self:center;}
 .radar-rail .smap-slab{flex-basis:100%;min-width:0;font-weight:500;color:var(--t-text3);}
-.radar-pulse{margin:0;font-size:13px;line-height:1.45;color:var(--t-text3);}
 .radar-sheet{position:fixed;left:var(--gutter);right:var(--gutter);bottom:calc(var(--tabbar-space) + 8px);z-index:150;max-height:44dvh;display:flex;flex-direction:column;box-sizing:border-box;background-color:var(--t-bg);background-image:var(--t-popoverBg);border:1px solid var(--t-border);border-radius:16px;box-shadow:0 12px 40px var(--t-shadow);transform:translateY(calc(100% + var(--tabbar-space) + 24px));visibility:hidden;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s linear .3s;}
 .radar-sheet[data-open]{transform:none;visibility:visible;transition:transform .3s cubic-bezier(.32,.72,0,1),visibility 0s,max-height .3s cubic-bezier(.32,.72,0,1);}
 .radar-sheet[data-tall]{max-height:80dvh;}
@@ -1229,24 +1291,18 @@ a.te-link{text-decoration:none;display:inline-block;}
 }
 @media(max-width:767px){
  .radar-head-right{margin-left:0;gap:8px 12px;}
- .radar-head-right .smap-toggles{gap:12px;}
- /* One line on phones: the view tabs keep their steel bar but lose their side padding. */
- .radar-head-right .reflex-tabs{gap:12px;}
- .radar-head-right .reflex-tabs button{padding:6px 0;}
- .radar-divider{display:none;}
  .smap-picks{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);}
  .smap-picks::-webkit-scrollbar{display:none;}
  .smap-picks{flex-wrap:nowrap;}
  .smap-picks>.smap-pick{flex:0 0 264px;max-width:none;scroll-snap-align:start;}
- .radar-legend{gap:6px 16px;}
  .radar-player{flex-wrap:wrap;padding:8px 12px 24px;gap:8px 12px;}
  .radar-player .smap-when{margin-left:auto;min-width:0;}
  .radar-scrub{order:3;flex:1 1 100%;}
 }
 
 /* Radar depth: money bubbles, band halos and the price ladder of profitable wallets. */
-.radar-page{--rd-long:#34d399;--rd-short:#fda4af;--rd-red:#ef4444;--rd-inband:#c084fc;--rd-halo:rgba(245,254,253,.78);--rd-track:rgba(245,254,253,.13);--rd-band:rgba(192,132,252,.13);--rd-bandline:rgba(192,132,252,.5);--rd-col:rgba(15,57,51,.28);--rd-tip:#0a1512;}
-[data-theme="light"] .radar-page{--rd-long:#047857;--rd-short:#be123c;--rd-red:#dc2626;--rd-inband:#7c3aed;--rd-halo:#4b5a57;--rd-track:rgba(10,30,28,.13);--rd-band:rgba(124,58,237,.10);--rd-bandline:rgba(124,58,237,.5);--rd-col:rgba(10,40,36,.035);--rd-tip:#ffffff;}
+.radar-page,.radar-key{--rd-long:#34d399;--rd-short:#fda4af;--rd-red:#ef4444;--rd-inband:#c084fc;--rd-halo:rgba(245,254,253,.78);--rd-track:rgba(245,254,253,.13);--rd-band:rgba(192,132,252,.13);--rd-bandline:rgba(192,132,252,.5);--rd-col:rgba(15,57,51,.28);--rd-tip:#0a1512;}
+[data-theme="light"] .radar-page,[data-theme="light"] .radar-key{--rd-long:#047857;--rd-short:#be123c;--rd-red:#dc2626;--rd-inband:#7c3aed;--rd-halo:#4b5a57;--rd-track:rgba(10,30,28,.13);--rd-band:rgba(124,58,237,.10);--rd-bandline:rgba(124,58,237,.5);--rd-col:rgba(10,40,36,.035);--rd-tip:#ffffff;}
 .smap-mapbox{position:relative;}
 .smap-mapbox svg.pick{cursor:pointer;}
 .smap-dot.empty .smap-core{stroke:none;}
@@ -1436,8 +1492,10 @@ a.te-link{text-decoration:none;display:inline-block;}
 .pf-stat-value{font:600 22px/1.2 var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .pf-check{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 20px;padding:12px 0;border-top:1px solid var(--t-border);font:12px/1.6 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .pf-check-title{font-weight:600;color:var(--t-text1);white-space:nowrap;}
-.pf-cover{margin:0;padding:0 20px 14px;font:12px/1.6 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
-.pf-check+.pf-cover{padding-top:0;}
+.pf-more{display:flex;align-items:center;}
+.pf-more .te-link{font-size:13px;font-weight:600;}
+.pf-stats-more{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 24px;padding-top:14px;border-top:1px solid var(--t-border);}
+.pf-sub{font-size:13px;}
 .pf-chart-skel{position:absolute;inset:0;}
 .pf-chart-skel>.shimmer-loading{border-radius:0;opacity:.6;}
 .pf-viewing{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0 0 12px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
@@ -1489,7 +1547,7 @@ a.te-link{text-decoration:none;display:inline-block;}
   .pf-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;padding:14px 16px 12px;}
   .pf-stat-value{font-size:18px;}
   .pf-check{margin:0 16px;}
-  .pf-cover{padding:0 16px 12px;}
+  .pf-stats-more{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;}
   .pf-card{padding:14px 16px;}
   .pf-card-actions{margin-left:0;flex-basis:100%;}
   .pf-verdict{margin-left:0;flex-basis:100%;}
@@ -1497,6 +1555,40 @@ a.te-link{text-decoration:none;display:inline-block;}
 /* Grid: a coin held by the shared address, the Radar's dashed "my trade" square in the side colour. */
 .held-mark{display:inline-block;width:10px;height:10px;box-sizing:border-box;border:1.4px dashed currentColor;border-radius:1px;margin-left:6px;vertical-align:middle;flex:none;}
 /* Coin page: the shared address's trade in this perp, one line under the header. */
+.coin-price{font:500 20px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;color:var(--t-text2);white-space:nowrap;}
+@media(max-width:767px){.coin-price{font-size:16px;}}
+/* Coin page: Why and Traders side by side, then two quiet disclosures one click deeper. */
+.coin-evidence{margin-top:4px;}
+.coin-evidence .tc{margin-top:0;}
+.reflex-terminal .coin-evidence .analysis-definitions{margin:20px 0 4px;}
+.reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.reflex-terminal .coin-evidence .analysis-definitions>div{display:flex;flex-direction:column;justify-content:space-between;}
+@media(max-width:600px){.reflex-terminal .coin-evidence .analysis-definitions strong{font-size:18px;}}
+.analysis-card>h2 .alt-season-info{vertical-align:middle;margin-left:6px;}
+.coin-against{margin:18px 0 0;padding:10px 0 2px 12px;box-shadow:inset 2px 0 #b6a07c;font:13px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.coin-against>span{display:block;font-size:12px;font-weight:600;color:var(--t-text1);}
+.reflex-terminal .analysis-card .coin-against ul{margin:4px 0 0;padding:0;list-style:none;}
+.reflex-terminal .analysis-card .coin-against li{margin:2px 0;padding:0;}
+[data-theme="light"] .coin-against{box-shadow:inset 2px 0 #9a7b3f;}
+.analysis-engine{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px 16px;margin:12px 0 0;}
+.analysis-engine div{min-width:0;}
+.analysis-engine dt{font:12px var(--font-geist-sans),sans-serif;color:var(--t-text3);overflow-wrap:anywhere;}
+.analysis-engine dd{margin:2px 0 0;font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.coin-more{margin-top:20px;border-top:1px solid var(--t-border);}
+.coin-more:last-of-type{border-bottom:1px solid var(--t-border);}
+.coin-more>summary{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;padding:16px 0;cursor:pointer;list-style:none;font:600 16px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.coin-more>summary::-webkit-details-marker{display:none;}
+.coin-more>summary::before{content:"";flex:none;align-self:center;width:7px;height:7px;border-right:1.5px solid var(--t-text3);border-bottom:1.5px solid var(--t-text3);transform:rotate(-45deg);transition:transform .2s;margin-right:4px;}
+.coin-more[open]>summary::before{transform:rotate(45deg);}
+.coin-more>summary small{font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.coin-more>summary:hover span{color:var(--t-accent);}
+.coin-more>summary:focus-visible{outline:1px solid var(--t-accent);outline-offset:2px;}
+.coin-more[open]>summary{padding-bottom:12px;}
+.coin-more>.analysis-grid{padding-bottom:20px;}
+.coin-more+.coin-more{margin-top:0;}
+.te-all{margin-top:10px;}
+.tc-more{align-self:flex-start;margin-top:12px;font-size:13px;}
+.tc-head h3 .alt-season-info{vertical-align:middle;margin-left:4px;}
 .coin-mytrade{margin:-4px 0 12px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .coin-mytrade b{font-weight:600;}
 .coin-mytrade .smap-mono{font-family:var(--font-geist-mono),monospace;font-weight:600;}

@@ -1,10 +1,8 @@
 import SetupPair from "../components/SetupPair.jsx";
-import SignalContext from "../components/SignalContext.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import HelpTip from "../components/HelpTip.jsx";
-import { formatPercent, formatPrice, evidenceSummary, funding8hPct, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
+import { formatPercent, formatPrice, evidenceSummary, counterEvidence, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
 import Tabs from "../components/Tabs.jsx";
-import TrendChart from "../components/TrendChart.jsx";
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { Star } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -30,47 +28,7 @@ import { STAR_TIP, WATCH_TIP, WatchMark } from "../components/radar/shared.jsx";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
-// Generic Metric Sparkline — auto-scaled, compact
-// ---------------------------------------------------------------------------
-
-function MetricSparkline({ label, history, current, unit, colorFn }) {
-  if (!history || history.length < 2) return null;
-
-  const vals = history;
-  const color = colorFn ? colorFn(current) : col(current >= vals[0] ? "#97FCE4" : "#d8a094");
-  const fmtVal = (v) => {
-    if (v == null) return "\u2014";
-    if (unit === "%") {
-      // Use more decimals for very small values (e.g. funding rates)
-      const abs = Math.abs(v);
-      const decimals = abs > 0 && abs < 0.01 ? 4 : 2;
-      return `${v.toFixed(decimals)}%`;
-    }
-    if (unit === "$") return v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`;
-    if (unit === "x") return `${v.toFixed(3)}x`;
-    return String(v);
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: T.textSm, color: T.text3, fontFamily: T.mono, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          {label}
-        </span>
-        <span style={{ fontSize: T.textBase, color, fontFamily: T.mono, fontWeight: 700 }}>
-          {fmtVal(current)}
-        </span>
-      </div>
-      <TrendChart data={history} color={color} label={`${label} history`} />
-      <div style={{display:'flex', justifyContent:'space-between', fontFamily:T.mono, fontSize:T.textXs, color:T.text4}}>
-        <span>Low {fmtVal(Math.min(...history))}</span><span>High {fmtVal(Math.max(...history))}</span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Combined Confluence + Win Rate card
+// Timeframe agreement card
 // ---------------------------------------------------------------------------
 
 function ConfluenceCard({ confluence }) {
@@ -173,117 +131,30 @@ function ConfluenceSection({ confluence }) {
 }
 
 // ---------------------------------------------------------------------------
-// Metrics Panel — unified sparklines card
+// Engine values: the raw readings behind the signal, inside "Inspect the engine calculation"
 // ---------------------------------------------------------------------------
 
-function MetricsPanel({ data }) {
-  const pos = data.positioning || {};
-
-  // Color functions for each metric
-  const confColor = (v) => v >= 60 ? T.green : v >= 40 ? T.yellow : T.red;
-  const fundColor = (v) => v < 0 ? T.green : v > 0.01 ? T.red : T.text3;  // percent per 8h
-  const oiChgColor = (v) => v > 0 ? T.green : v < 0 ? T.red : T.text3;
-  const lsrColor = (v) => v < 0.9 ? T.green : v > 1.2 ? T.red : T.text3;
-  const bsrColor = (v) => v > 1 ? T.green : v < 1 ? T.red : T.text3;
-  const spotColor = (v) => v > 0.5 ? T.green : v < 0.3 ? T.red : T.text3;
-
-  const metrics = [
-    { label: "Regime confidence", history: data.confidence_history, current: data.confidence, unit: "%", colorFn: confColor },
-    // funding_history holds hourly percent; show it per 8h like the current value.
-    { label: "Funding /8h", history: data.funding_history?.map(v => v * 8), current: funding8hPct(pos.funding_rate), unit: "%", colorFn: fundColor },
-    { label: "Open Interest", history: data.oi_history, current: pos.oi_value, unit: "$", colorFn: null },
-    { label: "OI Change", history: data.oi_change_history, current: pos.oi_change_pct, unit: "%", colorFn: oiChgColor },
-    // Without CoinGlass these two hold placeholders (1.0 and 0), not readings.
-    hasCoinglass(data) && { label: "LSR", history: data.lsr_history, current: pos.long_short_ratio, unit: "x", colorFn: lsrColor },
-    { label: "Buy/Sell", history: data.bsr_history, current: data.buy_sell_ratio, unit: "x", colorFn: bsrColor },
-    hasCoinglass(data) && { label: "Spot Ratio", history: data.spot_ratio_history, current: pos.spot_futures_ratio, unit: "x", colorFn: spotColor },
-  ].filter(m => m && m.history && m.history.length >= 2);
-
-  // ── Engine scalar rows (merged from EngineMetrics) ────────────────────────
-  const engineRows = [
-    ["Z-Score",    fmt(data.zscore, 3),                                                          zBar(data.zscore)?.color],
-    ["Energy",     fmt(data.energy, 3),                                                          null],
-    ["Momentum",   `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%`,                  data.momentum >= 0 ? T.green : T.red],
-    ["Price",      data.price ? formatPrice(data.price, { sig: 5 }) : "\u2014",                       null],
-    ["Divergence", data.divergence || "None",                                                    data.divergence ? T.yellow : null],
-    ["Heat",       data.heat != null ? Math.round(data.heat) : "\u2014",                         heatColor(data.heat)],
-    ["Heat phase", data.heat_phase || "\u2014",                                                  phaseColor(data.heat_phase)],
-    ["ATR",        data.atr_regime || "\u2014",                                                  null],
+function EngineValues({ data }) {
+  if (data.zscore == null) return null;
+  const rows = [
+    ["Z-score", fmt(data.zscore, 3), zBar(data.zscore)?.color],
+    ["Energy", fmt(data.energy, 3), null],
+    ["Momentum", data.momentum != null ? `${data.momentum >= 0 ? "+" : ""}${fmt(data.momentum, 2)}%` : "\u2014", data.momentum == null ? null : data.momentum >= 0 ? T.green : T.red],
+    ["Heat", data.heat != null ? Math.round(data.heat) : "\u2014", heatColor(data.heat)],
+    ["Heat phase", data.heat_phase || "\u2014", phaseColor(data.heat_phase)],
+    ["Divergence", data.divergence || "None", data.divergence ? T.yellow : null],
+    ["ATR", data.atr_regime || "\u2014", null],
     ["Distance from BMSB", data.deviation_pct != null ? `${fmt(data.deviation_pct, 2)}%` : "\u2014", null],
-    ["Exhaust",    exhaustMeta(data.exhaustion_state).text,                                      exhaustMeta(data.exhaustion_state).color],
-    ["Floor",      data.floor_confirmed ? "Confirmed" : "No",                                    data.floor_confirmed ? T.green : null],
-    ["Absorb",     data.is_absorption ? "Yes" : "No",                                            data.is_absorption ? col("#b8fff0") : null],
-    ["Climax",     data.is_climax ? "Yes" : "No",                                                data.is_climax ? T.yellow : null],
-    ["Effort",     data.effort != null ? fmt(data.effort, 3) : "\u2014",                         null],
-    ["Rel Vol",    data.rel_vol != null ? fmt(data.rel_vol, 2) + "x" : "\u2014",                 null],
+    ["Exhaust", exhaustMeta(data.exhaustion_state).text, exhaustMeta(data.exhaustion_state).color],
+    ["Floor", data.floor_confirmed ? "Confirmed" : "No", data.floor_confirmed ? T.green : null],
+    ["Absorb", data.is_absorption ? "Yes" : "No", data.is_absorption ? col("#b8fff0") : null],
+    ["Climax", data.is_climax ? "Yes" : "No", data.is_climax ? T.yellow : null],
+    ["Effort", data.effort != null ? fmt(data.effort, 3) : "\u2014", null],
+    ["Rel vol", data.rel_vol != null ? fmt(data.rel_vol, 2) + "x" : "\u2014", null],
   ];
-
-  // Hide the whole card if neither sparklines nor engine scalars are available
-  if (metrics.length === 0 && data.zscore == null) return null;
-
-  return (
-    <div style={{
-      background: T.glassBg, border: `1px solid ${T.border}`,
-      borderRadius: T.radius, padding: "14px 20px",
-      backdropFilter: "blur(20px) saturate(1.3)", WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-      boxShadow: `0 2px 12px ${T.shadow}`,
-    }}>
-      <PanelHeader title="Engine values">
-        {metrics.length > 0 && (
-          <span style={{ fontSize: T.textXs, color: T.text4, fontFamily: T.mono }}>
-            {metrics[0].history.length} ticks
-          </span>
-        )}
-      </PanelHeader>
-
-      {/* Sparklines */}
-      {metrics.length > 0 && (
-        <div className="metric-history-grid">
-          {metrics.map(m => <MetricSparkline key={m.label} {...m} />)}
-        </div>
-      )}
-
-      {/* Engine scalars — compact 3-col grid */}
-      {data.zscore != null && (
-        <>
-          {metrics.length > 0 && (
-            <div style={{
-              height: 1, background: T.overlay06, margin: "14px 0 12px",
-            }} />
-          )}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-            rowGap: 8, columnGap: 14,
-          }}>
-            {engineRows.map(([label, value, valColor]) => (
-              <div key={label} style={{
-                display: "flex", flexDirection: "column", gap: 2,
-                minWidth: 0,
-              }}>
-                <span style={{
-                  fontSize: 12, color: T.text3, fontFamily: T.mono,
-                  fontWeight: 600, letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  // Long labels ("Distance from BMSB") wrap instead of pushing the phone page sideways.
-                  overflowWrap: "anywhere",
-                }}>
-                  {label}
-                </span>
-                <span style={{
-                  fontSize: T.textSm, color: valColor || T.text1,
-                  fontFamily: T.mono, fontWeight: 700,
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
+  return <dl className="analysis-engine">
+    {rows.map(([label, value, color]) => <div key={label}><dt>{label}</dt><dd style={color ? { color } : undefined}>{value}</dd></div>)}
+  </dl>;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +163,7 @@ function MetricsPanel({ data }) {
 
 export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
-  const { isMobile, isTablet } = useViewport();
+  const { isMobile } = useViewport();
   const location = useLocation();
   // The timeframe lives in the address (?tf=), so links and reloads keep it.
   const timeframe = timeframeFrom(location.search);
@@ -403,12 +274,14 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
     );
   }
 
-  const isWide = !isMobile && !isTablet;
   const coin = getBaseSymbol(data.symbol);
   // Hyperliquid-only markets have no Binance ticker for TradingView to open.
   const tvSymbol = getTVSymbol(data.symbol, data.positioning?.source === "binance");
   const starred = isFav(data.symbol);
   const isWatched = watched.has(coin);
+  const against = counterEvidence(data);
+  const unified = data.unified_signal && data.unified_complete !== false && data.unified_signal !== data.signal
+    ? (SIGNAL_META[data.unified_signal]?.label || data.unified_signal.replaceAll("_", " ")) : null;
 
   return (
     <div style={{ padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 80 : 96 }}>
@@ -432,25 +305,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <span style={{ fontSize: isMobile ? 24 : 32, fontWeight: 700, color: T.text1, fontFamily: T.font, letterSpacing: "-0.02em" }}>
           {coin}
         </span>
+        {data.price != null && <span className="coin-price">{formatPrice(data.price, { sig: 5 })}</span>}
         <SetupPair row={data} isMobile={isMobile} transition/>
-        {data.unified_signal && data.unified_complete !== false && data.unified_signal !== data.signal && (
-          <span title="Combined 4H and 1D decision used for alerts and the scanner counts. It can differ from this timeframe's signal." style={{
-            fontSize: T.textSm, fontFamily: T.mono, color: T.text3, whiteSpace: "nowrap",
-          }}>
-            4H+1D {(SIGNAL_META[data.unified_signal]?.label || data.unified_signal.replaceAll("_", " "))}
-          </span>
-        )}
-        {data.signal_confidence != null && (
-          <span className="terminal-status" style={{
-            padding: "4px 12px", borderRadius: 20,
-            background: T.surface, border: `1px solid ${T.border}`,
-            fontSize: T.textSm, fontFamily: T.mono, fontWeight: 600,
-            // A blocked WAIT is not a strong reading, however many checks pass.
-            color: data.entry_blocked ? T.text3 : data.signal_confidence >= 80 ? col("#34d399") : data.signal_confidence >= 50 ? T.text2 : T.text3,
-          }}>
-            Checks {formatPercent(data.signal_confidence)}
-          </span>
-        )}
         {/* The timeframe tabs, then the actions. On desktop both join the title line (with the
             short "Hyperliquid" label when that is what fits); when the actions still do not fit
             they take a line of their own, left-aligned, and the tabs stay on the title line.
@@ -492,10 +348,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           signalFirstSeenAt={data.signal_first_seen_at}
           signalTimeframe={data.timeframe}
           regime={data.regime}
-          heat={data.heat}
           exhaustionState={data.exhaustion_state}
           floorConfirmed={data.floor_confirmed}
-          momentum={data.momentum}
           traders={traders}
           traderApi={traderApi}
           showSetup={false}
@@ -505,42 +359,51 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         />
       </div>
 
-      <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"}
-        onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
-
-      <section className="analysis-evidence">
+      <section className="analysis-evidence coin-evidence">
         <article className="analysis-card">
-          <h2>Why this signal?</h2>
+          <h2>Why this signal? <HelpTip title="Reading these numbers" width={380}>
+            <p>Entry checks: how many of the engine's entry conditions are met now, not a win probability.</p>
+            <p>Regime confidence: the cycle engine's confidence in its phase classification.</p>
+            <p>Timeframe agreement: how far the 4H and daily views agree, 0 to 100.</p>
+          </HelpTip></h2>
           <p className="analysis-lead">{evidenceSummary(data)}</p>
           <div className="analysis-definitions">
-            <div><span>Entry checks</span><strong>{formatPercent(data.signal_confidence)}</strong><p>Share of entry conditions met, not a win probability.</p></div>
-            <div><span>Regime confidence</span><strong>{formatPercent(data.confidence)}</strong><p>The cycle engine’s confidence in its phase classification.</p></div>
-            <div><span>Timeframe agreement</span><strong>{data.confluence?.score != null ? `${Math.round(data.confluence.score)} / 100` : '—'}</strong><p>Confluence between the 4H and daily views.</p></div>
+            <div><span>Entry checks</span><strong>{data.conditions_total > 0 ? `${data.conditions_met}/${data.conditions_total}` : "\u2014"}</strong></div>
+            <div><span>Regime confidence</span><strong>{formatPercent(data.confidence)}</strong></div>
+            <div><span>Timeframe agreement</span><strong>{data.confluence?.score != null ? `${Math.round(data.confluence.score)}/100` : "\u2014"}</strong></div>
           </div>
-          {data.signal_reason && <details className="analysis-method"><summary>Inspect the engine calculation</summary><p className="analysis-raw">{data.signal_reason}</p></details>}
+          {against.length > 0 && <div className="coin-against">
+            <span>Against it now</span>
+            <ul>{against.map(t => <li key={t}>{t}</li>)}</ul>
+          </div>}
+          <details className="analysis-method">
+            <summary>Inspect the engine calculation</summary>
+            {data.signal_reason && <p className="analysis-raw">{data.signal_reason}</p>}
+            {unified && <p>Combined 4H and 1D decision (used for alerts and the scanner counts): {unified}.</p>}
+            {data.signal_first_seen_at && <p>Signal first recorded {new Date(data.signal_first_seen_at * 1000).toLocaleString()}.</p>}
+            <EngineValues data={data} />
+          </details>
           <p className="analysis-ask"><button type="button" className="te-link" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}>Ask AI about {coin}</button></p>
         </article>
-        <article className="analysis-card">
-          <h2>Signal context</h2>
-          {data.confluence && <p className="analysis-lead">{{waiting: 'Both timeframes are waiting.', agree: 'The 4H and daily signals agree.', differ: 'The 4H and daily signals differ. Check both before interpreting the setup.'}[signalAgreement(data.confluence)]}</p>}
-          <SignalContext row={data}/>
-          {data.smart_money && <p>The Traders card under the chart shows profitable traders and all tracked wallets weighted by size (the reading the signal uses). These can point in different directions.</p>}
-        </article>
+        <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"}
+          onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
 
-      <section className="analysis-section"><h2>Check the setup</h2><p className="analysis-section-caption">The conditions behind the signal and its agreement across timeframes.</p>
+      {/* One click deeper: the full checklist, and every market reading. */}
+      <details className="coin-more">
+        <summary><span>Check the setup</span>{data.conditions_total > 0 && <small>{data.conditions_met}/{data.conditions_total} checks</small>}</summary>
         <div className="analysis-grid">
           <ConditionsScorecard conditions={data.conditions_detail} met={data.conditions_met} total={data.conditions_total}/>
           <ConfluenceCard confluence={data.confluence}/>
         </div>
-      </section>
-      <section className="analysis-section"><h2>Positioning & counter-evidence</h2><p className="analysis-section-caption">Compare market structure, exchange data and tracked wallets.</p>
+      </details>
+      <details className="coin-more">
+        <summary><span>All market data</span><small>Funding, open interest, flow, exchanges</small></summary>
         <div className="analysis-grid">
           <PositioningPanel positioning={data.positioning} hasCoinglass={hasCoinglass(data)} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} oiContext={data.oi_context}/>
           <CrossExchangePanel symbol={data.symbol}/>
         </div>
-      </section>
-      <section className="analysis-section"><h2>Supporting metrics</h2><p className="analysis-section-caption">Underlying engine values for this timeframe.</p><MetricsPanel data={data}/></section>
+      </details>
 
       {/* Per-coin AI chat popover */}
       <CoinChat symbol={data.symbol} timeframe={timeframe} marketKind={marketKind} isMobile={isMobile} open={chatOpen} onOpenChange={setChatOpen} />

@@ -1,5 +1,6 @@
 import { ENTRY_SIGNALS } from "./opportunities.js";
 import { REGIME_META } from "../theme.js";
+import { signalDirection } from "./signalPresentation.js";
 // API contracts: signal_confidence/confidence are 0–100; smart-money confidence is 0–1.
 export function formatPercent(value, { ratio = false, digits = 0 } = {}) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -38,6 +39,27 @@ function regimeAgreement(c) {
 export function evidenceSummary(data) {
   const regime = ({MARKUP:'an upward market phase', ACCUM:'a base-building phase', REACC:'a pullback within an upward phase', MARKDOWN:'a downward market phase', BLOWOFF:'an extended upward phase', CAP:'a capitulation phase', FLAT:'a neutral market phase'})[data.regime] || String(data.regime || 'an unclassified phase').toLowerCase();
   return `The scanner identifies ${regime}. ${data.conditions_total > 0 ? `${data.conditions_met} of ${data.conditions_total} entry checks are satisfied.` : 'Entry checks are not available for this snapshot.'} ${data.confluence ? `${regimeAgreement(data.confluence)} ${SIGNAL_AGREEMENT_TEXT[signalAgreement(data.confluence)]}` : ''}`;
+}
+
+// Market readings that currently argue against the signal's side, in plain words. Only
+// readings the data actually has: a missing feed is never counter-evidence. Empty for WAIT
+// and exit signals, which take no side.
+export function counterEvidence(row = {}) {
+  const dir = signalDirection(row.signal);
+  if (!dir) return [];
+  const p = row.positioning || {};
+  const cg = hasCoinglass(row);
+  const long = dir === "bullish";
+  const out = [];
+  const f = funding8hPct(p.funding_rate);
+  const rate = f != null ? ` (${f.toFixed(4)}% per 8h)` : "";
+  if (p.funding_regime === (long ? "CROWDED_LONG" : "CROWDED_SHORT")) out.push(`${long ? "Longs" : "Shorts"} are crowded: funding${rate}`);
+  if (long && p.oi_trend === "LIQUIDATING") out.push("Open interest is falling with price");
+  if (long && p.oi_trend === "SHORTING") out.push("Shorts are opening as price falls");
+  if (row.cvd_trend === (long ? "BEARISH" : "BULLISH")) out.push(`Takers are ${long ? "selling" : "buying"}`);
+  if (cg && p.spot_dominance === (long ? "FUTURES_LED" : "SPOT_LED")) out.push(long ? "The move is led by futures, not spot" : "Spot buyers are leading");
+  if (cg && p.top_trader_lsr && p.top_trader_lsr !== 1 && (long ? p.top_trader_lsr < 0.8 : p.top_trader_lsr > 1.3)) out.push(`Top exchange traders lean ${long ? "short" : "long"}`);
+  return out;
 }
 
 // Highest-priority setups, at most one per sector, so the shortlist is three

@@ -8,6 +8,7 @@ import { useTheme } from "../ThemeContext.jsx";
 import { useWallet } from "../WalletContext.jsx";
 import * as hlClient from "../services/hlClient.js";
 import Tabs from "./Tabs.jsx";
+import HelpTip from "./HelpTip.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { Skeleton } from "./Skeleton.jsx";
 import { RegimeBadge, SignalDot, HeatCell } from "./badges.jsx";
@@ -53,12 +54,6 @@ function fmtVlm(v) {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
   return `$${v.toFixed(0)}`;
-}
-
-function fmtBps(rate) {
-  if (!rate) return "—";
-  const bps = parseFloat(rate) * 10000;
-  return `${bps.toFixed(2)} bps`;
 }
 
 // Profit and loss tokens (theme-aware CSS variables).
@@ -168,25 +163,6 @@ function StatCell({ label, value, exact, color, loading }) {
       <div className="pf-stat-label">{label}</div>
       {loading ? <Skeleton width="70%" height={22} style={{ marginTop: 2 }} />
         : <div className="pf-stat-value" title={exact} style={{ color: color || T.text1 }}>{value}</div>}
-    </div>
-  );
-}
-
-function StatBox({ label, value, color, small }) {
-  return (
-    <div style={{ minWidth: small ? 90 : 120, padding: small ? "8px 10px" : "10px 14px" }}>
-      <div style={{ fontSize: T.textXs, fontFamily: T.font, color: T.text3, marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: small ? 15 : 20,
-        fontFamily: T.mono,
-        fontWeight: 600,
-        color: color || T.text1,
-        lineHeight: 1.2,
-      }}>
-        {value}
-      </div>
     </div>
   );
 }
@@ -542,15 +518,13 @@ function TableRowsSkeleton({ rows = 4 }) {
 }
 
 // ---------------------------------------------------------------------------
-// Mobile section tabs
+// Section tabs (Funding opens from Fills, one click deeper)
 // ---------------------------------------------------------------------------
 
 const SECTION_TABS = [
   { key: "positions", label: "Positions" },
   { key: "orders",   label: "Orders" },
   { key: "fills",    label: "Fills" },
-  { key: "funding",  label: "Funding" },
-  { key: "fees",     label: "Fees" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -569,7 +543,6 @@ export default function TradingPanel({ api }) {
   const [openOrders, setOpenOrders] = useState([]);
   const [fills, setFills]         = useState([]);
   const [funding, setFunding]     = useState([]);
-  const [fees, setFees]           = useState(null);
 
   // Scanner context
   const [scanMap4h, setScanMap4h] = useState({});
@@ -580,6 +553,7 @@ export default function TradingPanel({ api }) {
   const [chartPeriod, setChartPeriod] = useState("ALL");
   const [chartMode, setChartMode]     = useState("value");
   const [activeSection, setActiveSection] = useState("positions");
+  const [moreStats, setMoreStats] = useState(false);
   const [closing, setClosing]     = useState(null);
   const [cancelling, setCancelling] = useState(null);
   const [viewDraft, setViewDraft] = useState("");
@@ -598,7 +572,7 @@ export default function TradingPanel({ api }) {
   const recordFeed = (name, ok) => setFeedState(prev => ({ ...prev, [name]: { error: !ok, updatedAt: ok ? Date.now() : prev[name]?.updatedAt } }));
   useEffect(() => {
     setFeedState({}); setActionNotice(null); setChState(null); setOpenOrders([]); setXyzChState(null); setSpotState(null);
-    setFills([]); setFunding([]); setPortfolio(null); setFees(null); setPosWarnings([]);
+    setFills([]); setFunding([]); setPortfolio(null); setPosWarnings([]);
   }, [account]);
 
   // Watch (Telegram setup messages): the same store as the Radar and the coin page.
@@ -638,12 +612,20 @@ export default function TradingPanel({ api }) {
 
   const fetchSlow = useCallback(async () => {
     if (!account) return;
-    await loadFeeds([
-      ["Portfolio history", () => hlClient.getPortfolio(account), setPortfolio],
-      ["Funding", () => hlClient.getUserFunding(account), f => setFunding(f || [])],
-      ["Fees", () => hlClient.getUserFees(account), setFees],
-    ]);
+    await loadFeeds([["Portfolio history", () => hlClient.getPortfolio(account), setPortfolio]]);
   }, [account, loadFeeds]);
+
+  // Funding payments load only while their view is open.
+  const fetchFunding = useCallback(async () => {
+    if (!account) return;
+    await loadFeeds([["Funding", () => hlClient.getUserFunding(account), f => setFunding(f || [])]]);
+  }, [account, loadFeeds]);
+  useEffect(() => {
+    if (activeSection !== "funding") return undefined;
+    fetchFunding();
+    const t = setInterval(fetchFunding, 120_000);
+    return () => clearInterval(t);
+  }, [activeSection, fetchFunding]);
 
   // Fetch scanner context + position warnings
   const fetchScannerContext = useCallback(async () => {
@@ -785,12 +767,6 @@ export default function TradingPanel({ api }) {
   const allTimePnl = portfolio?.perpAllTime?.pnlHistory;
   const totalPnl   = allTimePnl?.length > 0 ? allTimePnl[allTimePnl.length - 1].value : null;
 
-  // Fee rates
-  const takerRate = fees?.userCrossRate;
-  const makerRate = fees?.userAddRate;
-  const dailyVlm  = fees?.dailyUserVlm || [];
-  const volume30d = dailyVlm.slice(-30).reduce((s, d) => s + parseNum(d.userCross) + parseNum(d.userAdd), 0);
-
   // Funding summary
   const totalFunding = funding.reduce((s, f) => s + parseNum(f.delta?.usdc), 0);
 
@@ -802,7 +778,7 @@ export default function TradingPanel({ api }) {
   const chMissing = !chState && !!feedState["Perpetual account"]?.error;
   const chStale = !!chState && !!feedState["Perpetual account"]?.error;
   const dashIf = (missing, v) => (missing ? "—" : v);
-  const retryAll = () => { fetchFast(); fetchMedium(); fetchSlow(); };
+  const retryAll = () => { fetchFast(); fetchMedium(); fetchSlow(); if (activeSection === "funding") fetchFunding(); };
   const dismissNotice = () => setActionNotice(null);
   // A close outcome sits inside that coin's card; once the card is gone (closed), above the cards.
   const positionsNotice = actionNotice?.section === "positions" ? actionNotice : null;
@@ -810,7 +786,7 @@ export default function TradingPanel({ api }) {
 
   const signedUsd = v => compactUsd(v, { sign: true });
   const stats = [
-    { label: "Perps value", value: dashIf(chMissing, compactUsd(perpsAccountValue)), exact: chMissing ? undefined : fmtUsd(perpsAccountValue), color: chMissing ? T.text3 : undefined, loading: chLoading },
+    { label: "Account value", value: dashIf(chMissing, compactUsd(perpsAccountValue)), exact: chMissing ? undefined : fmtUsd(perpsAccountValue), color: chMissing ? T.text3 : undefined, loading: chLoading },
     { label: "Unrealized P&L", value: dashIf(chMissing, signedUsd(totalUnrealizedPnl)), exact: chMissing ? undefined : fmtUsd(totalUnrealizedPnl), color: chMissing ? T.text3 : pnlColor(totalUnrealizedPnl), loading: chLoading },
     { label: "All-time P&L", value: totalPnl != null ? signedUsd(totalPnl) : "—", exact: totalPnl != null ? fmtUsd(totalPnl) : undefined, color: pnlColor(totalPnl), loading: totalPnl == null && pending("Portfolio history") },
     { label: "Withdrawable", value: dashIf(chMissing, compactUsd(withdrawable)), exact: chMissing ? undefined : fmtUsd(withdrawable), color: chMissing ? T.text3 : undefined, loading: chLoading },
@@ -818,6 +794,9 @@ export default function TradingPanel({ api }) {
     { label: "Spot", value: spotState ? compactUsd(spot.value) : "—", exact: spotState ? fmtUsd(spot.value) : undefined, color: spot.value ? undefined : T.text3, loading: !spotState && pending("Spot account") },
     { label: "Margin used", value: dashIf(chMissing, compactUsd(marginUsedVal)), exact: chMissing ? undefined : fmtUsd(marginUsedVal), color: marginUsedVal > 0 ? T.yellow : T.text3, loading: chLoading },
   ];
+  // Three figures in view; the rest behind More.
+  const mainStats = stats.filter(st => ["Account value", "Unrealized P&L", "Withdrawable"].includes(st.label));
+  const moreList = stats.filter(st => !mainStats.includes(st));
 
   return (
     <div className="pf-page" style={S.panel}>
@@ -873,7 +852,12 @@ export default function TradingPanel({ api }) {
         <div style={S.section}>
           <div style={S.sectionHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={S.title}>Hyperliquid account</span>
+              <span style={S.title}>Hyperliquid account <HelpTip title="What this covers" width={380}>
+                <p>Account value, unrealized P&amp;L, positions and orders cover the main perps account.{xyzPositionCount > 0 && ` ${xyzPositionCount} TradFi (xyz) position${xyzPositionCount === 1 ? " is" : "s are"} held in the separate xyz account and not listed here.`}</p>
+                {spot.value > 0 && <p>{spot.atCost > 0
+                  ? `Spot tokens are valued at the scanner's last price; ${spot.atCost} without one ${spot.atCost === 1 ? "is" : "are"} shown at cost.`
+                  : "Spot tokens are valued at the scanner's last price."}</p>}
+              </HelpTip></span>
               {/* LIVE only while the account feed answers; STALE keeps the last reading, OFFLINE has none. */}
               {chMissing ? <span className="terminal-status" style={S.badge(T.text3)} title="Hyperliquid did not answer; no reading yet">OFFLINE</span>
                 : chStale ? <span className="terminal-status" style={S.badge(T.yellow)} title="Hyperliquid did not answer; showing the last reading">STALE</span>
@@ -885,16 +869,13 @@ export default function TradingPanel({ api }) {
           </div>
           {failed.length > 0 && <FeedsNotice failed={failed} onRetry={retryAll} />}
           <div className="pf-stats">
-            {stats.map(st => <StatCell key={st.label} {...st} />)}
+            {mainStats.map(st => <StatCell key={st.label} {...st} />)}
+            <div className="pf-stat pf-more">
+              <button type="button" className="te-link" aria-expanded={moreStats} aria-controls="pf-more-stats" aria-label={moreStats ? "Fewer account figures" : "More account figures"} onClick={() => setMoreStats(v => !v)}>{moreStats ? "Less" : "More"}</button>
+            </div>
+            {moreStats && <div id="pf-more-stats" className="pf-stats-more">{moreList.map(st => <StatCell key={st.label} {...st} />)}</div>}
           </div>
           <ScannerCheck positions={positions} scanMap4h={scanMap4h} />
-          <p className="pf-cover">
-            Positions, orders and unrealized P&L below cover the main perps account.
-            {xyzPositionCount > 0 && ` ${xyzPositionCount} TradFi (xyz) position${xyzPositionCount === 1 ? " is" : "s are"} held in the separate xyz account and not listed here.`}
-            {spot.value > 0 && (spot.atCost > 0
-              ? ` Spot tokens are valued at the scanner's last price; ${spot.atCost} without one ${spot.atCost === 1 ? "is" : "are"} shown at cost.`
-              : " Spot tokens are valued at the scanner's last price.")}
-          </p>
         </div>
       )}
 
@@ -914,7 +895,7 @@ export default function TradingPanel({ api }) {
       {/* ─── SECTION TABS ─── */}
       {account && (
         <div style={{ marginBottom: 16 }}>
-          <Tabs label="Portfolio sections" value={activeSection} onChange={setActiveSection}
+          <Tabs label="Portfolio sections" value={activeSection === "funding" ? "fills" : activeSection} onChange={setActiveSection}
             items={SECTION_TABS.map(tab => ({
               key: tab.key,
               label: `${tab.label}${tab.key === "positions" && positions.length > 0 ? ` (${positions.length})` : ""}${tab.key === "orders" && openOrders.length > 0 ? ` (${openOrders.length})` : ""}`,
@@ -1034,6 +1015,7 @@ export default function TradingPanel({ api }) {
             <span style={S.title}>
               Recent fills {fills.length > 0 && `(${fills.length})`}
             </span>
+            <button type="button" className="te-link pf-sub" onClick={() => setActiveSection("funding")}>Funding payments</button>
           </div>
           {pending("Trade fills") ? <TableRowsSkeleton /> : fills.length === 0 ? (
             <div style={S.empty}>No trade fills</div>
@@ -1097,6 +1079,7 @@ export default function TradingPanel({ api }) {
                 </span>
               )}
             </div>
+            <button type="button" className="te-link pf-sub" onClick={() => setActiveSection("fills")}>Back to fills</button>
           </div>
           {pending("Funding") ? <TableRowsSkeleton /> : funding.length === 0 ? (
             <div style={S.empty}>No funding payments</div>
@@ -1125,62 +1108,6 @@ export default function TradingPanel({ api }) {
                         <td style={{ ...cellStyle, textAlign: "right", color: T.text3 }}>
                           {(rate * 100).toFixed(4)}%
                         </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ─── FEE TIER INFO ─── */}
-      {account && activeSection === "fees" && (
-        <div style={S.section}>
-          <div style={S.sectionHeader}>
-            <span style={S.title}>Fee tier</span>
-          </div>
-          {!fees && pending("Fees") ? <TableRowsSkeleton rows={3} /> : <div style={{
-            display: "flex", justifyContent: "space-around",
-            padding: "18px 20px", gap: 12, flexWrap: "wrap",
-          }}>
-            <StatBox label="Taker rate" value={fmtBps(takerRate)} small />
-            <StatBox label="Maker rate" value={fmtBps(makerRate)} small />
-            <StatBox label="30-day volume" value={fmtVlm(volume30d)} small />
-            {fees?.activeReferralDiscount && parseNum(fees.activeReferralDiscount) > 0 && (
-              <StatBox label="Referral discount" value={`${(parseNum(fees.activeReferralDiscount) * 100).toFixed(1)}%`} color={T.purple} small />
-            )}
-          </div>}
-
-          {/* Fee tiers */}
-          {fees?.feeSchedule?.tiers?.vip && (
-            <div style={{ padding: "0 20px 16px", overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={headerCell}>Tier</th>
-                    <th style={headerCell}>Volume required</th>
-                    <th style={headerCell}>Taker</th>
-                    <th style={headerCell}>Maker</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fees.feeSchedule.tiers.vip.map((tier, i) => {
-                    const cutoff = parseNum(tier.ntlCutoff);
-                    const isCurrentTier = volume30d >= cutoff && (
-                      !fees.feeSchedule.tiers.vip[i + 1] || volume30d < parseNum(fees.feeSchedule.tiers.vip[i + 1].ntlCutoff)
-                    );
-                    return (
-                      <tr key={i} style={{
-                        background: isCurrentTier ? T.accentDim : "transparent",
-                      }}>
-                        <td style={{ ...cellStyle, fontWeight: isCurrentTier ? 700 : 400, color: isCurrentTier ? T.accent : T.text2 }}>
-                          VIP {i}{isCurrentTier ? " (current)" : ""}
-                        </td>
-                        <td style={cellStyle}>{fmtVlm(cutoff)}</td>
-                        <td style={cellStyle}>{fmtBps(tier.cross)}</td>
-                        <td style={cellStyle}>{fmtBps(tier.add)}</td>
                       </tr>
                     );
                   })}
