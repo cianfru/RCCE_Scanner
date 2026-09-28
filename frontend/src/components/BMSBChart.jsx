@@ -77,6 +77,7 @@ export default function BMSBChart({
   traders = null,            // {entries, opens} when the page loads and shows the traders itself
   traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
   showSetup = true,          // false where the page header already shows the regime and signal (coin page)
+  myEntry = null,            // {price, side}: the shared address's open trade, drawn as a dashed "Your entry" line
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -106,6 +107,7 @@ export default function BMSBChart({
   const patternSeriesRef = useRef([]);
   const entryMarkersRef = useRef(null);
   const entryLinesRef = useRef([]);
+  const myEntryLineRef = useRef(null);
 
   const buildChart = useCallback((tf) => {
     if (!containerRef.current || !symbol) return;
@@ -592,6 +594,18 @@ export default function BMSBChart({
       }));
     }
   }, [showEntries, entries, opens, candleTimes, mode]);
+
+  // Your entry: a thicker, longer-dashed line in the side colour, so it reads apart from the
+  // traders' median-entry lines. Redrawn when the chart is rebuilt (candleTimes) or the theme changes.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (myEntryLineRef.current) { try { series?.removePriceLine(myEntryLineRef.current); } catch (_) {} myEntryLineRef.current = null; }
+    if (!series || !candleTimes?.length || !myEntry?.price) return;
+    myEntryLineRef.current = series.createPriceLine({
+      price: myEntry.price, color: sideColor(myEntry.side === "short" ? "short" : "long"), lineWidth: 2, lineStyle: LineStyle.LargeDashed,
+      axisLabelVisible: true, title: "Your entry",
+    });
+  }, [myEntry, candleTimes, mode]);
 
   // Zoom from a little before the earliest burst on the chart to the latest candle.
   const firstBurst = Math.min(...(entries?.traders || []).flatMap(tr => (tr.bursts || []).map(b => b.t)));

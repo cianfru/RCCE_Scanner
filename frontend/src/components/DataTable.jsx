@@ -22,6 +22,10 @@ import {
 import SparklineCell from "./SparklineCell.jsx";
 import InfoButton, { COLUMN_INFO, ColumnHelp } from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
+import { useWallet } from "../WalletContext.jsx";
+import useMyPositions from "../hooks/useMyPositions.js";
+import { pnl } from "../utils/setupMap.js";
+import { sideColor, fmtPx } from "../utils/traderFormat.js";
 
 // Optional columns hidden while every row in view would show only a dash, so the
 // grid carries no dead columns (e.g. no divergences or exhaustion states today).
@@ -62,7 +66,13 @@ function exhaustFold(row) {
   return floor && row.floor_confirmed ? { text: "FLOOR ✓", color: col("#34d399") } : { text: meta.text, color: meta.color };
 }
 
-function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect, folds }) {
+// "Your short from 84,765 · +3.1%": the shared address's position in this perp.
+function heldTitle(mine, price) {
+  const r = pnl(mine, price);
+  return `Your ${mine.side} from ${fmtPx(mine.entry)}${r == null ? "" : ` · ${r >= 0 ? "+" : ""}${(100 * r).toFixed(1)}%`}`;
+}
+
+function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect, folds, held }) {
   const noHistory = row.history_bars === 0;   // unmeasured, not zero
   switch (colLabel) {
     case "#":
@@ -92,6 +102,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
             style={{ display: "inline-flex", alignItems: "center", gap: 8, verticalAlign: "middle", color: "inherit", font: "inherit", letterSpacing: "inherit", textDecoration: "none" }}>
             <TokenLogo symbol={row.symbol} size={tight ? 20 : 24} />{base}
           </a>
+          {held && <span className="held-mark" role="img" aria-label={heldTitle(held, row.price)} title={heldTitle(held, row.price)} style={{ color: sideColor(held.side) }} />}
           {backtestSymbols && backtestSymbols.has(row.symbol) && (
             <span style={{ fontSize: m(T.textXs, isMobile), fontWeight: 700, color: T.green, opacity: 0.6, marginLeft: 5, letterSpacing: "0.05em" }}>BT</span>
           )}
@@ -175,7 +186,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, tight, line, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe, folds }) {
+function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, tight, line, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe, folds, held }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
   // out; every other row keeps just its regime stripe on the left.
@@ -217,7 +228,7 @@ function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner,
             {line.includes("SPARK") && <span title={sparkTitle(row, timeframe, folds?.energy)}><SparklineCell data={row.sparkline} width={tight ? 48 : 56} height={16} /></span>}
           </div>}
         </td>;
-        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} tight={tight} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} folds={folds} />;
+        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} tight={tight} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} folds={folds} held={held} />;
       })}
     </tr>
   );
@@ -249,6 +260,10 @@ function HeaderLabel({ label, text, sortKey, active, dir, onSort, compact }) {
 export default function DataTable({ results, label, sortKey, sortDir, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash,
   variant = "embed", tf = "1d", totalCount, scopeLabel, filterWords = [], onClear }) {
   const scanner = variant === "scanner";
+  // Coins the shared address holds (connected wallet or read-only view); no executor fallback.
+  const { effectiveAddress } = useWallet();
+  const { byCoin: heldBy } = useMyPositions(scanner ? effectiveAddress : null);
+  const heldFor = row => ((row.market_kind || "perpetual") === "perpetual" ? heldBy.get(getBaseSymbol(row.symbol)) : undefined);
   const [alignedFirst, setAlignedFirst] = useState(false);
   const marketWide = useMemo(() => marketWideMissing(results), [results]);
   // The landing keeps today's rule (only with 10 or more rows); the scanner drops a column that is
@@ -436,6 +451,7 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
                     key={row.symbol}
                     row={row}
                     index={idx}
+                    held={heldFor(row)}
                     selected={selected?.symbol === row.symbol}
                     onSelect={onSelect}
                     columns={columns}

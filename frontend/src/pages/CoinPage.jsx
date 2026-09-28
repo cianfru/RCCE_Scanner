@@ -21,7 +21,10 @@ import useCoinTraders from "../hooks/useCoinTraders.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 import useFavorites from "../hooks/useFavorites.js";
 import useSetupMap from "../hooks/useSetupMap.js";
-import { watchToast } from "../utils/setupMap.js";
+import { watchToast, pnl } from "../utils/setupMap.js";
+import { useWallet } from "../WalletContext.jsx";
+import useMyPositions from "../hooks/useMyPositions.js";
+import { sideColor, fmtPx } from "../utils/traderFormat.js";
 import { Pin, STAR_TIP, WATCH_TIP } from "../components/radar/shared.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -327,6 +330,11 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   useEffect(() => { if (!watchMsg) return undefined; const t = setTimeout(() => setWatchMsg(""), 3500); return () => clearTimeout(t); }, [watchMsg]);
   const onWatch = useCallback(async c => setWatchMsg(watchToast(c, await toggleWatch(c, timeframe), telegram)), [toggleWatch, timeframe, telegram]);
   const [chatOpen, setChatOpen] = useState(false);
+  // The shared address's trade in this perp (connected wallet or read-only view).
+  const { effectiveAddress } = useWallet();
+  const { byCoin: myBy } = useMyPositions(marketKind === "perpetual" ? effectiveAddress : null);
+  const mine = marketKind === "perpetual" && urlSymbol ? myBy.get(getBaseSymbol(urlSymbol.toUpperCase())) || null : null;
+  const myEntry = useMemo(() => (mine?.entry ? { price: mine.entry, side: mine.side } : null), [mine?.entry, mine?.side]);
 
 
   // Find scan result matching URL symbol
@@ -437,6 +445,13 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </div>
       {availabilityError && <p className="coin-availability-note">{retryAvailability}</p>}
+      {mine && (() => {
+        const r = pnl(mine, data.price);
+        return <p className="coin-mytrade">
+          Your trade: <b style={{ color: sideColor(mine.side) }}>{mine.side === "short" ? "Short" : "Long"}</b> from <span className="smap-mono">{fmtPx(mine.entry)}</span>
+          {r != null && <> · <span className="smap-mono" style={{ color: r >= 0 ? "var(--t-profit)" : "var(--t-loss)" }}>{r >= 0 ? "+" : ""}{(100 * r).toFixed(1)}%</span></>}
+        </p>;
+      })()}
 
       {/* Chart — full width */}
       <div style={{ marginBottom: 20 }}>
@@ -456,6 +471,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           traders={traders}
           traderApi={traderApi}
           showSetup={false}
+          myEntry={myEntry}
         />
       </div>
 
