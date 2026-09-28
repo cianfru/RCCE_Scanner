@@ -463,11 +463,6 @@
 .settings-server:disabled .reflex-tabs button{opacity:.55;cursor:not-allowed;}
 .settings-server:disabled .reflex-tabs button:not([aria-pressed="true"]):hover{color:var(--t-text3);}
 @media(max-width:640px){.settings-toggle{position:relative;}.settings-toggle::before{content:"";position:absolute;left:-12px;right:-8px;top:50%;height:44px;transform:translateY(-50%);}}
-/* HyperLens view tabs: a label clipped at the right edge fades out, so the row reads as scrollable. */
-.hl-view-tabs>.reflex-tabs{padding-right:24px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
-/* Phones: tighter view tabs, so the start of the fifth (Positioning) shows past the fourth and
-   the row visibly continues under the fade. */
-@media(max-width:480px){.hl-view-tabs>.reflex-tabs{gap:2px;}.hl-view-tabs>.reflex-tabs button{padding:10px 8px;}}
 /* Regime -> signal pair: a fixed three-column grid (regime, link, signal) shared
    with the column header, so each label sits over its value. */
 .setup-pair-wrap{display:inline-flex;flex-direction:column;gap:1px;max-width:100%;min-width:0;}
@@ -992,6 +987,72 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .pos-match-narrow{display:block;}
  .pos-table td,.pos-table th{padding:8px 6px;}
 }
+
+/* Traders page: one row per coin for the chosen wallet group (TraderSummary). A row opens on
+   the group's largest wallets per side. Same header and row look as the all-wallets table. */
+.ts-table{width:100%;border-collapse:collapse;}
+.ts-table th{padding:12px;text-align:right;font:700 14px var(--font-geist-sans),sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--t-text3);border-bottom:2px solid var(--t-border);white-space:nowrap;}
+.ts-table td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 14px var(--font-geist-mono),monospace;color:var(--t-text2);white-space:nowrap;}
+.ts-table th:first-child,.ts-table td:first-child{text-align:left;}
+.ts-table th.ts-money-h{text-align:left;padding-left:36px;}
+.ts-coin-h{width:200px;}.ts-counts-h{width:130px;}.ts-gap-h{width:210px;}.ts-day-h{width:110px;}.ts-table th.ts-chev{width:20px;}
+.ts-row{cursor:pointer;transition:background .2s ease;}
+.ts-stripe{background:var(--t-overlay02,rgba(255,255,255,.02));}
+.ts-row:hover,.ts-row:focus-visible{background:var(--t-overlay06,rgba(255,255,255,.06));outline:none;}
+.ts-row-open,.ts-row-open.ts-stripe{background:var(--t-overlay04,rgba(255,255,255,.04));}
+.ts-row-open td{border-bottom-color:transparent;}
+.ts-coin{display:inline-flex;align-items:center;gap:8px;font:700 14px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.ts-counts{display:inline-flex;align-items:baseline;gap:6px;}
+.ts-counts b{font-weight:700;}
+.ts-slash,.ts-dim{color:var(--t-text4);}
+.ts-money{display:flex;align-items:center;gap:16px;padding-left:24px;}
+.ts-money-t{min-width:128px;font-size:13px;color:var(--t-text3);}
+.ts-bar{display:inline-flex;flex:1;max-width:440px;min-width:80px;height:6px;border-radius:3px;overflow:hidden;background:var(--t-overlay04,rgba(255,255,255,.04));}
+.ts-bar i{display:block;height:100%;opacity:.85;}
+.ts-chev{width:20px;color:var(--t-text4);}
+.ts-row:hover .ts-chev,.ts-row-open .ts-chev{color:var(--t-accent);}
+.ts-open-row td{padding:0 12px 14px;background:var(--t-overlay04,rgba(255,255,255,.04));border-bottom:1px solid var(--t-overlay08,rgba(255,255,255,.08));white-space:normal;text-align:left;}
+.ts-open{display:flex;flex-direction:column;gap:10px;padding:2px 0 0 28px;}
+.ts-sides{display:grid;grid-template-columns:repeat(2,minmax(0,520px));gap:8px 48px;}
+.ts-side{display:flex;flex-direction:column;min-width:0;}
+.ts-side-head{font:700 12px var(--font-geist-sans),sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--t-overlay08,rgba(255,255,255,.08));}
+.ts-wallet{display:grid;grid-template-columns:minmax(0,1fr) auto auto 88px;align-items:baseline;gap:14px;padding:7px 0;background:none;border:0;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 13px var(--font-geist-mono),monospace;color:var(--t-text2);text-align:left;cursor:pointer;}
+.ts-wallet:hover .ts-addr{text-decoration:underline;}
+.ts-addr{color:var(--t-accent);overflow:hidden;text-overflow:ellipsis;}
+.ts-size{color:var(--t-text1);font-weight:600;text-align:right;}
+.ts-entry{font-size:12px;text-align:right;}
+.ts-pnl{text-align:right;font-weight:600;}
+.ts-open-foot{display:flex;justify-content:flex-end;}
+.ts-note{padding:10px 0;font-size:13px;}
+.ts-more{display:flex;justify-content:center;padding:14px 12px;}
+.ts-more .te-link{font-size:13px;}
+.ts-empty{padding:32px;text-align:center;font:500 13px var(--font-geist-mono),monospace;color:var(--t-text4);}
+.ts-sub{margin-top:3px;padding-left:28px;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:767px){
+ .ts-table.ts-phone{table-layout:fixed;}
+ .ts-table th{padding:10px 6px;font-size:12px;letter-spacing:.06em;}
+ .ts-table td{padding:10px 6px;overflow:hidden;text-overflow:ellipsis;}
+ .ts-phone .ts-coin-h{width:auto;}.ts-phone .ts-counts-h{width:74px;}.ts-phone .ts-gap-h{width:92px;}.ts-phone th.ts-chev{width:36px;}
+ .ts-table th:first-child,.ts-table td:first-child{padding-left:16px;}
+ .ts-table th:last-child,.ts-table td:last-child{padding-right:14px;}
+ .ts-open{padding:0 0 0 4px;}
+ .ts-open-row td{padding:0 16px 12px;}
+ .ts-sides{grid-template-columns:1fr;gap:12px;}
+ .ts-wallet{grid-template-columns:minmax(0,1fr) auto 76px;gap:10px;}
+}
+
+/* Traders header: one status line with the group menu, then the view tabs and "More views". */
+.tl-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;}
+.tl-counts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;}
+.tl-group{appearance:none;-webkit-appearance:none;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 2px center;border:0;border-bottom:1px solid var(--t-border);border-radius:0;padding:4px 16px 4px 0;font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);cursor:pointer;}
+.tl-group:hover,.tl-group:focus-visible{color:var(--t-text1);border-bottom-color:var(--t-text3);outline:none;}
+.tl-group option{background:var(--t-bg);color:var(--t-text1);}
+.tl-views{display:flex;align-items:center;gap:4px;min-width:0;}
+.tl-more{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--t-text3);font:600 13px var(--font-geist-sans),sans-serif;padding:10px 12px;cursor:pointer;}
+.tl-more:hover{color:var(--t-text1);}
+.tl-more[aria-pressed="true"]{color:var(--t-accent);background:var(--metal-tab-bar);}
+.tl-sub{display:flex;align-items:center;gap:8px;min-width:0;padding:0 4px 6px;}
+@media(max-width:480px){.tl-more{padding:10px 8px;}}
 
 /* Coin chart: profitable traders grid */
 .te{padding:10px 18px;border-top:1px solid var(--t-border);font-size:12px;color:var(--t-text3);line-height:1.5;}
