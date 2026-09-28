@@ -5,6 +5,7 @@ import {
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import TokenLogo from "./TokenLogo.jsx";
+import logos from "../data/tokenLogos.json";
 import GlassCard from "./GlassCard.jsx";
 import InfoButton from "./InfoPopover.jsx";
 import Tabs from "./Tabs.jsx";
@@ -19,6 +20,8 @@ const REGIME_ORDER = ["MARKUP", "REACC", "BLOWOFF", "CAP", "MARKDOWN", "ACCUM", 
 const SIGNAL_ORDER = ["STRONG_LONG", "LIGHT_LONG", "ACCUMULATE", "REVIVAL_SEED_CONFIRMED", "REVIVAL_SEED", "WAIT",
   "NO_LONG", "TRIM", "TRIM_HARD", "RISK_OFF", "LIGHT_SHORT", "STRONG_SHORT"];
 const rank = (order, v) => { const i = order.indexOf(v); return i < 0 ? order.length : i; };
+// The name line lines up under the ticker, past the logo when there is one.
+const hasLogo = symbol => Boolean(logos[symbol]?.src);
 
 // The timeframe tabs sit in the page title row (App.jsx); tfView comes from there.
 export default function TradFiPanel({
@@ -365,7 +368,7 @@ export default function TradFiPanel({
                       </td>
                       <td style={{ padding: cellPad }}>
                         {isMobile ? <>
-                          {/* No logo on phone: TradFi has no logo files, and the space belongs to REGIME / SIGNAL. */}
+                          {/* No logo on phone: the space belongs to REGIME / SIGNAL. */}
                           <div style={{ fontFamily: T.mono, whiteSpace: "nowrap" }}>
                             <span style={{ fontWeight: 700, color: T.text1, fontSize: m(T.textBase, isMobile) }}>{r.tradfi_coin || r.symbol.split("/")[0]}</span>
                             <span style={{ color: T.text3, fontSize: m(T.textXs, isMobile), marginLeft: 6 }}>{formatPrice(r.price)}</span>
@@ -374,11 +377,12 @@ export default function TradFiPanel({
                             {r.tradfi_name || r.symbol}
                           </div>
                         </> : <>
+                          {/* A logo only when artwork exists: no TradFi market has any today, and a monogram would repeat the ticker. */}
                           <div style={{ fontFamily: T.mono, fontWeight: 700, color: T.text1, fontSize: m(T.textMd, isMobile), display: "flex", alignItems: "center", gap: 8 }}>
-                            <TokenLogo symbol={r.symbol} size={18} />
+                            <TokenLogo symbol={r.symbol} size={18} fallback="none" />
                             {r.tradfi_coin || r.symbol.split("/")[0]}
                           </div>
-                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2, marginLeft: 26 }}>
+                          <div style={{ fontFamily: T.mono, fontSize: m(T.textXs, isMobile), color: T.text4, marginTop: 2, marginLeft: hasLogo(r.symbol) ? 26 : 0 }}>
                             {r.tradfi_name || r.symbol} — {formatPrice(r.price)}
                           </div>
                         </>}

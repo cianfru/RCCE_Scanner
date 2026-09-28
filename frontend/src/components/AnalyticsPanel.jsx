@@ -85,12 +85,12 @@ function SectionHeader({ title, subtitle }) {
   );
 }
 
-// Flat coloured text, as the scanner's status labels.
+// Flat coloured text, as the scanner's status labels. The HyperLens group reads "traders", the product's name for it.
 function GroupBadge({ group }) {
   const hue = col({ core: "#97FCE4", coinglass: "#a78bfa", hyperlens: "#fbbf24" }[group] || "#97FCE4");
   return (
     <span style={{ fontSize: T.textXs, fontFamily: T.mono, color: hue, fontWeight: 600 }}>
-      {group}
+      {group === "hyperlens" ? "traders" : group}
     </span>
   );
 }
@@ -437,7 +437,7 @@ function EdgeDecay({ periods, isMobile }) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 6: HyperLens Attribution
+// Section 6: Traders attribution (the HyperLens wallet consensus; the product calls it Traders)
 // ---------------------------------------------------------------------------
 
 function HyperLensAttribution({ data, isMobile }) {
@@ -598,7 +598,7 @@ export default function AnalyticsPanel({ isMobile }) {
             </GlassCard>
             <GlassCard style={{ padding: pad, flex: 1, minWidth: 0 }}>
               <SectionHeader
-                title="HyperLens Attribution"
+                title="Traders attribution"
                 subtitle="Long signals where the tracked-wallet consensus (profitable traders and large accounts on Hyperliquid) agreed with the direction, against those where it did not."
               />
               <HyperLensAttribution data={data.hyperlens} isMobile={isMobile} />

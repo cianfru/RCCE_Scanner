@@ -2,7 +2,8 @@ import ExecutorPerformance, { exitLabel } from "./ExecutorPerformance.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import { plainReason } from "../utils/signalPresentation.js";
 import Tabs from "./Tabs.jsx";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { T, SIGNAL_META } from "../theme.js";
 import { getAdminKey } from "../auth.js";
 
@@ -72,10 +73,11 @@ function confluenceLabel(c) {
 // ---------------------------------------------------------------------------
 
 const S = {
+  // Left edge on the gutter, with the capsule and the page title.
   panel: {
     padding: 0,
     maxWidth: 1200,
-    margin: "0 auto",
+    margin: 0,
   },
   section: {
     background: T.surface,
@@ -245,10 +247,12 @@ function PositionRow({ pos, expanded, onToggle }) {
       {expanded && (
         <tr>
           <td colSpan={8} style={{ padding: "8px 14px 14px", background: T.overlay02, whiteSpace: "normal" }}>
+            <div style={detailStyle(14)}>
             {currentPrice && pos.mark_source && <p style={{ color: T.text3, fontSize: T.textXs, lineHeight: 1.6 }}>Price source: {pos.mark_source} · {fullDate(pos.mark_observed_at)}</p>}
             {pos.valuation_issue && <p style={{ color: T.text3, fontSize: T.textXs, lineHeight: 1.6 }}>{pos.valuation_issue}</p>}
             <ReasonBlock reason={pos.entry_reason} warnings={pos.entry_warnings} />
             {!pos.entry_reason && <div style={{ fontSize: T.textXs, color: T.text3, fontFamily: T.mono }}>No rationale captured for this position</div>}
+            </div>
           </td>
         </tr>
       )}
@@ -363,6 +367,7 @@ function TradeRow({ trade, expanded, onToggle }) {
       {expanded && (
         <tr>
           <td colSpan={7} style={{ padding: "8px 20px 14px", background: T.overlay02 }}>
+            <div style={detailStyle(20)}>
             {trade.quality_issue && <p style={{whiteSpace:'normal',lineHeight:1.6,color:T.text2}}>{trade.quality_issue}</p>}
             <ReasonBlock reason={trade.entry_reason} warnings={trade.entry_warnings} />
             {!trade.entry_reason && (
@@ -370,11 +375,26 @@ function TradeRow({ trade, expanded, onToggle }) {
                 No rationale captured for this trade
               </div>
             )}
+            </div>
           </td>
         </tr>
       )}
     </>
   );
+}
+
+// An expanded row's detail stays in view when the table is wider than the screen (phone): it sticks
+// to the scroller's left edge and wraps inside the visible width, clear of the right-edge fade.
+const detailStyle = padLeft => ({
+  position: "sticky", left: padLeft, whiteSpace: "normal",
+  maxWidth: "calc(100vw - 2 * var(--gutter) - 48px)",
+});
+
+// A sideways-scrolling table: a fade marks the edge that has more columns past it.
+function TableScroller({ contentKey, children }) {
+  const ref = useRef(null);
+  const edges = useScrollEdges(ref, contentKey);
+  return <div ref={ref} className="edge-fade" {...fadeAttrs(edges)} style={{ overflowX: "auto" }}>{children}</div>;
 }
 
 const cellStyle = {
@@ -785,7 +805,8 @@ export default function ExecutorPanel({ api }) {
             {status?.enabled ? "No open positions \u2014 waiting for entry signals" : "Executor paused \u2014 no positions being managed"}
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <>
+          <TableScroller contentKey={`${shownPositions.length}:${showAllPositions}:${expandedPosition}`}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -810,6 +831,7 @@ export default function ExecutorPanel({ api }) {
                 ))}
               </tbody>
             </table>
+          </TableScroller>
             {shownPositions.length > POSITION_CAP && (
               <div style={{ padding: 16 }}>
                 <button type="button" className="terminal-status" style={S.btn} onClick={() => setShowAllPositions(v => !v)}>
@@ -817,7 +839,7 @@ export default function ExecutorPanel({ api }) {
                 </button>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
       </>}
@@ -852,7 +874,8 @@ export default function ExecutorPanel({ api }) {
             No completed trades yet
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <>
+          <TableScroller contentKey={`${tradePage}:${expandedTrade}`}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -876,8 +899,9 @@ export default function ExecutorPanel({ api }) {
                 ))}
               </tbody>
             </table>
+          </TableScroller>
             <div style={{padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}><button type="button" className="terminal-status" style={S.btn} disabled={tradePage===0} onClick={()=>{setTradePage(p=>p-1);setExpandedTrade(null)}}>Previous</button><span style={S.label}>Page {tradePage+1} of {Math.ceil(trades.length/25)}</span><button type="button" className="terminal-status" style={S.btn} disabled={(tradePage+1)*25>=trades.length} onClick={()=>{setTradePage(p=>p+1);setExpandedTrade(null)}}>Next</button></div>
-          </div>
+          </>
         )}
       </div>
       )}

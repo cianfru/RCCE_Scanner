@@ -29,7 +29,7 @@ const FLAG_META = [
   {
     key: "hyperlens_enabled",
     label: "Traders",
-    desc: "Hyperliquid trader positioning (HyperLens)",
+    desc: "Hyperliquid trader positioning",
   },
   {
     key: "whale_tracker",
@@ -75,24 +75,25 @@ const ROW = {
 };
 const PERSIST = "Changes are saved on the server and picked up by the background loops within about 30 seconds. No redeploy is needed.";
 
-// Flat text on/off control: no pill switch.
+// Flat text on/off control: no pill switch. checked === null while the flags load: a dash, not "Off".
 function ToggleSwitch({ checked, onChange, color = T.accent, disabled = false, label }) {
+  const unknown = checked === null;
   return (
     <button
       type="button"
       onClick={onChange}
-      disabled={disabled}
-      aria-label={label}
-      aria-pressed={checked}
+      disabled={disabled || unknown}
+      aria-label={unknown ? `${label}: loading` : label}
+      aria-pressed={unknown ? undefined : checked}
       className="settings-toggle"
       style={{
         border: "none", background: "transparent", padding: 0, opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? "not-allowed" : "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
+        cursor: disabled ? "not-allowed" : unknown ? "default" : "pointer", flexShrink: 0, minWidth: 24, textAlign: "right",
         fontSize: 12, fontFamily: T.font, fontWeight: 600,
         color: checked ? color : T.text4,
       }}
     >
-      {checked ? "On" : "Off"}
+      {unknown ? "\u2014" : checked ? "On" : "Off"}
     </button>
   );
 }
@@ -152,12 +153,16 @@ export default function SettingsDropdown({ embedded = false }) {
   }, [open]);
 
   // Fixed under the capsule like the notification panel, right edge on the gear's right edge.
+  // On phone it spans the capsule's gutters instead.
   const [anchorRight, setAnchorRight] = useState(16);
+  const [phone, setPhone] = useState(false);
   useLayoutEffect(() => {
     if (!open || embedded) return undefined;
     const place = () => {
+      const w = document.documentElement.clientWidth;
+      setPhone(w < 768);
       const r = buttonRef.current?.getBoundingClientRect();
-      if (r) setAnchorRight(Math.max(8, Math.round(document.documentElement.clientWidth - r.right)));
+      if (r) setAnchorRight(Math.max(8, Math.round(w - r.right)));
     };
     place();
     window.addEventListener("resize", place);
@@ -260,9 +265,9 @@ export default function SettingsDropdown({ embedded = false }) {
     : {
         position: "fixed",
         top: "calc(var(--header-offset) + 8px)",
-        right: anchorRight,
-        width: 320,
-        maxWidth: `calc(100vw - ${anchorRight + 16}px)`,
+        ...(phone
+          ? { left: "var(--gutter)", right: "var(--gutter)", width: "auto" }
+          : { right: anchorRight, width: 320, maxWidth: `calc(100vw - ${anchorRight + 16}px)` }),
         maxHeight: "calc(100dvh - var(--header-offset) - var(--tabbar-space) - 20px)",
         overflowY: "auto",
         overscrollBehavior: "contain",
@@ -398,7 +403,7 @@ export default function SettingsDropdown({ embedded = false }) {
               <ToggleSwitch
                 label="Keep scanning awake"
                 disabled={busy || readOnly}
-                checked={flags?.keep_active ?? false}
+                checked={flags ? (flags.keep_active ?? false) : null}
                 color={T.green}
                 onChange={() => updateFlag("keep_active", !(flags?.keep_active ?? false))}
               />
@@ -428,7 +433,7 @@ export default function SettingsDropdown({ embedded = false }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {FLAG_META.map(f => {
-              const checked = flags?.[f.key] ?? false;
+              const checked = flags ? (flags[f.key] ?? false) : null;
               return (
                 <div key={f.key} style={ROW}>
                   <div style={{ minWidth: 0, flex: 1 }}>

@@ -436,6 +436,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   const [jobs, setJobs] = useState([]);
   const [jobListError, setJobListError] = useState(false);
   const [error, setError] = useState(null);
+  const [invalidField, setInvalidField] = useState(null);   // the input a validation error points at
   const [showTrades, setShowTrades] = useState(false);
   const startingRef = useRef(false);   // guards a double click before the button re-renders
   const onCompleteRef = useRef(onBacktestComplete);
@@ -497,19 +498,20 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
   }, [polling, btId, loadJobs]);
 
   const openJob = (id) => {
-    setBtId(id); setResult(null); setError(null); setConnectionError(null); setShowTrades(false); setPolling(true);
+    setBtId(id); setResult(null); setError(null); setInvalidField(null); setConnectionError(null); setShowTrades(false); setPolling(true);
     writeJobId(id);
   };
 
   const startBacktest = async () => {
     if (startingRef.current || starting || polling) return;   // one run at a time, even on a double click
-    setError(null);
+    setError(null); setInvalidField(null);
     const capital = Number(config.initial_capital);
     const leverage = Number(config.leverage);
-    if (!Number.isFinite(capital) || !(capital > 0)) { setError("Capital must be greater than 0."); return; }
-    if (!(leverage >= 0.1 && leverage <= 10)) { setError("Leverage must be between 0.1 and 10."); return; }
-    if (!config.start_date) { setError("Choose a start date."); return; }
-    if (config.end_date && config.end_date <= config.start_date) { setError("The end date must come after the start date."); return; }
+    const invalid = (field, text) => { setInvalidField(field); setError(text); };
+    if (!Number.isFinite(capital) || !(capital > 0)) { invalid("capital", "Capital must be greater than 0."); return; }
+    if (!(leverage >= 0.1 && leverage <= 10)) { invalid("leverage", "Leverage must be between 0.1 and 10."); return; }
+    if (!config.start_date) { invalid("start", "Choose a start date."); return; }
+    if (config.end_date && config.end_date <= config.start_date) { invalid("end", "The end date must come after the start date."); return; }
     startingRef.current = true;
     setStarting(true); setResult(null); setShowTrades(false);
     try {
@@ -543,8 +545,15 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
     return sym.replace("/USDT", "");
   };
 
+  // Editing the field an error points at clears the mark.
+  const edit = (key, field) => v => {
+    setConfig(c => ({ ...c, [key]: v }));
+    if (invalidField === field) setInvalidField(null);
+  };
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 0 }}>
+    // Left edge on the gutter, with the capsule and the page title.
+    <div style={{ maxWidth: 1200, margin: 0, padding: 0 }}>
 
       {/* ── CONFIG FORM ── */}
       <div style={{
@@ -555,14 +564,14 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
           Backtest configuration
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <InputField label="Start" type="date" value={config.start_date}
-            onChange={v => setConfig(c => ({ ...c, start_date: v }))} isMobile={isMobile} />
-          <InputField label="End" type="date" value={config.end_date} hint="blank for today"
-            onChange={v => setConfig(c => ({ ...c, end_date: v }))} isMobile={isMobile} />
-          <InputField label="Capital" type="number" value={config.initial_capital}
-            onChange={v => setConfig(c => ({ ...c, initial_capital: v }))} isMobile={isMobile} />
-          <InputField label="Leverage" type="number" value={config.leverage}
-            onChange={v => setConfig(c => ({ ...c, leverage: v }))} isMobile={isMobile} />
+          <InputField label="Start" type="date" value={config.start_date} invalid={invalidField === "start"}
+            onChange={edit("start_date", "start")} isMobile={isMobile} />
+          <InputField label="End" type="date" value={config.end_date} hint="blank for today" invalid={invalidField === "end"}
+            onChange={edit("end_date", "end")} isMobile={isMobile} />
+          <InputField label="Capital" type="number" value={config.initial_capital} invalid={invalidField === "capital"}
+            onChange={edit("initial_capital", "capital")} isMobile={isMobile} />
+          <InputField label="Leverage" type="number" value={config.leverage} invalid={invalidField === "leverage"}
+            onChange={edit("leverage", "leverage")} isMobile={isMobile} />
           <TimeframeToggle value={config.timeframe}
             onChange={v => setConfig(c => ({ ...c, timeframe: v }))} />
           <button
@@ -586,6 +595,14 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
         />
       </div>
 
+      {/* ── NOTICES: right under the form that caused them, as flat lines ── */}
+      {error && (
+        <div className="tool-notice" role="alert" data-tone="error">{error}</div>
+      )}
+      {connectionError && isRunning && (
+        <div className="tool-notice" role="status">{connectionError}</div>
+      )}
+
       {/* ── RECENT RUNS: flat link rows ── */}
       {(jobs.length > 0 || jobListError) && (
         <div className="bt-runs">
@@ -606,21 +623,6 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
               {job.started_at && <span style={{ color: T.text4 }}>{new Date(job.started_at * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
           ))}
-        </div>
-      )}
-
-      {connectionError && isRunning && (
-        <div className="tool-notice" role="status">{connectionError}</div>
-      )}
-
-      {/* ── ERROR ── */}
-      {error && (
-        <div style={{
-          padding: 12, marginBottom: 16, borderRadius: T.radiusSm,
-          background: "transparent", border: `1px solid ${T.red}`,
-          color: T.red, fontSize: T.textXs, fontFamily: T.mono,
-        }}>
-          {error}
         </div>
       )}
 
@@ -840,7 +842,7 @@ export default function BacktestPanel({ isMobile, onBacktestComplete }) {
 
 // ─── INPUT FIELD ────────────────────────────────────────────────────────────
 
-function InputField({ label, value, onChange, type = "text", placeholder, hint, isMobile }) {
+function InputField({ label, value, onChange, type = "text", placeholder, hint, isMobile, invalid = false }) {
   return (
     <div style={{ flex: isMobile ? "1 1 100%" : undefined }}>
       <div style={fieldLabel}>
@@ -853,9 +855,10 @@ function InputField({ label, value, onChange, type = "text", placeholder, hint, 
         onChange={e => onChange(e.target.value)}
         step={type === "number" && label === "Leverage" ? "0.5" : undefined}
         aria-label={label}
+        aria-invalid={invalid || undefined}
         style={{
           padding: "7px 12px", borderRadius: 6,
-          border: `1px solid ${T.border}`, background: "transparent",
+          border: `1px solid ${invalid ? T.loss : T.border}`, background: "transparent",
           color: T.text1, fontFamily: T.mono, fontSize: T.textSm,
           width: type === "number" ? 100 : type === "date" ? 140 : 120,
           outline: "none",

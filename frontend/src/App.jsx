@@ -775,8 +775,10 @@ export default function App() {
 
   const pageMargin = { marginTop: isMobile ? 16 : 20 };
 
+  // AI Assist fits the viewport and scrolls only its thread, so the page itself has nothing to scroll
+  // (a scrolled page slides the chat's top row under the floating capsule): no min-height, no bottom pad.
   return (
-    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal" style={{ minHeight: activeTab === "chat" ? undefined : "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         :where(.reflex-terminal), :where(.reflex-terminal *) { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
@@ -957,7 +959,7 @@ export default function App() {
       )}
 
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
-      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
+      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: activeTab === "chat" ? 0 : isMobile ? 80 : 60, position: "relative" }}>
 
         {/* Until the first scan arrives, a glass placeholder holds the summary's space so nothing below jumps. */}
         {showDashboard && tfMarketRows.length === 0 && (
