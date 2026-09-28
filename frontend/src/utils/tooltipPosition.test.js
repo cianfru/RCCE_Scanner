@@ -27,3 +27,17 @@ test("too tall for either side: the roomier side, capped, never over the anchor"
   const down = placeVertical(100, 116, 1200, 1000);
   assert.deepEqual(down, { top: 126, maxHeight: 1000 - 16 - 126 });
 });
+test("keeps clear of the header capsule and the phone tab bar (the Column guide from a low toolbar)", () => {
+  // A 3000px guide from a toolbar button at y=818 in a 1000px window, capsule bottom at 84: above, under the capsule.
+  const up = placeVertical(818, 843, 3000, 1000, 10, 16, { top: 92 });
+  assert.deepEqual(up, { top: 92, maxHeight: 818 - 10 - 92 });
+  // A fitting card above the anchor still sits right above it.
+  assert.deepEqual(placeVertical(818, 843, 300, 1000, 10, 16, { top: 92 }), { top: 818 - 300 - 10 });
+  // Phone: below, capped above the tab bar (its top at 772).
+  const down = placeVertical(140, 165, 3000, 844, 10, 16, { top: 74, bottom: 764 });
+  assert.deepEqual(down, { top: 175, maxHeight: 764 - 175 });
+  // An anchor inside the capsule still opens below itself.
+  assert.deepEqual(placeVertical(30, 60, 200, 1000, 10, 16, { top: 92 }), { top: 70 });
+  // Edges looser than the margin are ignored.
+  assert.deepEqual(placeVertical(877, 893, 900, 1000, 10, 16, { top: 4, bottom: 999 }), { top: 16, maxHeight: 877 - 10 - 16 });
+});

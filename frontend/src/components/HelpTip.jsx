@@ -23,6 +23,17 @@ import { clampLeft, placeVertical, TOOLTIP_MARGIN } from '../utils/tooltipPositi
  */
 const cardWidth = width => Math.min(width, (typeof window === 'undefined' ? 1440 : window.innerWidth) - TOOLTIP_MARGIN * 2);
 
+// The fixed chrome a card must not cover: it stays under the header capsule and above the phone tab bar.
+const CHROME_GAP = 8;
+const chromeEdges = () => {
+  const edges = {};
+  const capsule = document.querySelector('.terminal-header')?.getBoundingClientRect();
+  if (capsule && capsule.height > 0) edges.top = capsule.bottom + CHROME_GAP;
+  const tabbar = document.querySelector('.mobile-tabbar')?.getBoundingClientRect();
+  if (tabbar && tabbar.height > 0) edges.bottom = tabbar.top - CHROME_GAP;
+  return edges;
+};
+
 export default function HelpTip({ title, children, width = 400, trigger = 'hover', size = 14, label, icon, buttonStyle, className = "",
   anchor: anchorContent, anchorClass, hoverDelay = 0, onActivate, longPress = false, buttonProps }) {
   const [open, setOpen] = useState(false);
@@ -54,7 +65,7 @@ export default function HelpTip({ title, children, width = 400, trigger = 'hover
       // The card already has its final width (set in render), so this is its real height;
       // scrollHeight is the full height even while a maxHeight caps it.
       const h = tooltip.current ? Math.max(tooltip.current.getBoundingClientRect().height, tooltip.current.scrollHeight) : 300;
-      setPosition({ left: clampLeft(rect.left, rect.width, w, window.innerWidth), ...placeVertical(rect.top, rect.bottom, h, window.innerHeight), width: w });
+      setPosition({ left: clampLeft(rect.left, rect.width, w, window.innerWidth), ...placeVertical(rect.top, rect.bottom, h, window.innerHeight, undefined, undefined, chromeEdges()), width: w });
     };
     const dismiss = e => {
       if (e.key === 'Escape' || (e.type === 'pointerdown' && !anchor.current.contains(e.target) && !tooltip.current?.contains(e.target))) setOpen(false);
