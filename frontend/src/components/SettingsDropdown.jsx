@@ -279,6 +279,8 @@ export default function SettingsDropdown({ embedded = false }) {
           display: "flex", alignItems: "center", justifyContent: "center",
           background: open ? T.overlay06 : "transparent",
           // Borderless while closed, like refresh and the bell, on the metal plate (metal_rules.md).
+          // Owner decision (g), spec section 10: today's closed gear has a 1px T.border ring. If the
+          // owner keeps it, swap "transparent" for T.border here; the gear sits outside the sheen and grain.
           border: `1px solid ${open ? T.accent : "transparent"}`,
           borderRadius: 8,
           color: open ? T.accent : T.text3,
