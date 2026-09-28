@@ -1,6 +1,8 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import useFollowed from "../hooks/useFollowed.js";
-import { sideColor, fmtPx, fmtUsd, fmtWhen, shortAddr } from "../utils/traderFormat.js";
+import { sideColor, fmtPx, fmtUsd, fmtWhen } from "../utils/traderFormat.js";
+import { nameIn, viewNames } from "../utils/walletName.js";
+import WalletTag from "./WalletTag.jsx";
 
 // Profitable traders holding a coin: the largest few, one row each; their fills and other
 // positions on click, the rest behind "Show all".
@@ -8,6 +10,7 @@ export default function TraderEntries({ entries, onShow, loading = false, limit 
   const [open, setOpen] = useState(null);
   const [all, setAll] = useState(false);
   const { followed, toggle } = useFollowed();
+  const names = useMemo(() => viewNames((entries?.traders || []).map(t => t.address)), [entries]);
   if (loading && !entries) {
     return (
       <div className="te" aria-busy="true">
@@ -44,8 +47,10 @@ export default function TraderEntries({ entries, onShow, loading = false, limit 
                 <tr className={isOpen ? "te-open" : ""} onClick={() => setOpen(isOpen ? null : tr.address)} tabIndex={0}
                   onKeyDown={e => { if (e.key === "Enter") setOpen(isOpen ? null : tr.address); }} aria-expanded={isOpen}>
                   <td>
-                    <b className="te-label" style={{ color: sideColor(tr.side) }}>{tr.label}</b>
-                    <span className="te-addr">{shortAddr(tr.address)}</span>
+                    <span className="te-who">
+                      <b className="te-label" style={{ color: sideColor(tr.side) }} title={`${tr.label} on the chart`}>{tr.label}</b>
+                      <WalletTag className="te-addr" address={tr.address} name={nameIn(names, tr.address)} />
+                    </span>
                   </td>
                   <td><span style={{ color: sideColor(tr.side) }}>{tr.side === "long" ? "Long" : "Short"}</span> {fmtUsd(tr.size_usd)}</td>
                   <td className="te-wide">{fmtPx(tr.entry_px)}</td>

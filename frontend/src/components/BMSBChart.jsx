@@ -865,7 +865,7 @@ export default function BMSBChart({
             </button>
           ))}
           <HelpTip title="Chart layers" width={420}>
-            <p>Trader entries: profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size. Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry per side. Information, not a signal.</p>
+            <p>Trader entries: profitable traders (see Traders) who hold this coin now, labelled A, B, C by position size; the same letter sits before each trader's name in the Traders card. Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, grey for exits. The dashed line is the median entry per side. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
             <p>Mean lines: the price where this coin's z-score would be 0 (dashed) and 1 (dotted), the engine's mean. After a spike, the box shows where past spikes bottomed. A reference, not a target.</p>
             <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>

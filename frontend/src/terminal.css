@@ -1017,9 +1017,9 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .ts-sides{display:grid;grid-template-columns:repeat(2,minmax(0,520px));gap:8px 48px;}
 .ts-side{display:flex;flex-direction:column;min-width:0;}
 .ts-side-head{font:700 12px var(--font-geist-sans),sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 0 6px;border-bottom:1px solid var(--t-overlay08,rgba(255,255,255,.08));}
-.ts-wallet{display:grid;grid-template-columns:minmax(0,1fr) auto auto 88px;align-items:baseline;gap:14px;padding:7px 0;background:none;border:0;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 13px var(--font-geist-mono),monospace;color:var(--t-text2);text-align:left;cursor:pointer;}
-.ts-wallet:hover .ts-addr{text-decoration:underline;}
-.ts-addr{color:var(--t-accent);overflow:hidden;text-overflow:ellipsis;}
+.ts-wallet{display:grid;grid-template-columns:minmax(0,1fr) auto auto 88px;align-items:center;gap:14px;padding:7px 0;background:none;border:0;border-bottom:1px solid var(--t-overlay04,rgba(255,255,255,.04));font:500 13px var(--font-geist-mono),monospace;color:var(--t-text2);text-align:left;cursor:pointer;}
+.ts-wallet:hover .ts-addr .wtag-name{text-decoration:underline;}
+.ts-addr{color:var(--t-text1);overflow:hidden;text-overflow:ellipsis;}
 .ts-size{color:var(--t-text1);font-weight:600;text-align:right;}
 .ts-entry{font-size:12px;text-align:right;}
 .ts-pnl{text-align:right;font-weight:600;}
@@ -1067,8 +1067,9 @@ a.te-link{text-decoration:none;display:inline-block;}
 .te-table th:first-child,.te-table td:first-child{padding-left:0;}
 .te-table tbody tr:not(.te-detail){cursor:pointer;}
 .te-table tbody tr:not(.te-detail):hover td,.te-open td{background:var(--t-overlay04,rgba(255,255,255,.04));}
-.te-label{font-family:var(--font-geist-mono),monospace;margin-right:8px;}
-.te-addr{color:var(--t-text3);}
+.te-who{display:inline-flex;align-items:center;gap:8px;max-width:100%;}
+.te-label{font-family:var(--font-geist-mono),monospace;flex:none;min-width:1ch;}
+.te-addr{color:var(--t-text1);}
 .te-up{color:var(--t-profit);}
 .te-down{color:var(--t-loss);}
 .te-dim{color:var(--t-text4);}
@@ -1087,7 +1088,6 @@ a.te-link{text-decoration:none;display:inline-block;}
  .te-wide{display:none;}
  .te-mobile{display:block;margin:0 0 4px;}
  .te-cols{grid-template-columns:1fr;}
- .te-addr{display:block;}
 }
 
 /* Coin page: Traders card */
@@ -1121,8 +1121,9 @@ a.te-link{text-decoration:none;display:inline-block;}
 .fol-msg{font-size:12px;color:#cf9185;}
 .fol-card{border-top:1px solid var(--t-border);padding-top:12px;}
 .fol-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:6px;}
-.fol-name{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);}
-.fol-note{font-weight:400;color:var(--t-text3);}
+.fol-name{display:inline-flex;align-items:center;min-width:0;font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.fol-name .wtag-addr{margin-left:2px;}
+.fol-note{margin-left:6px;font-weight:400;color:var(--t-text3);}
 .fol-meta{flex:1;font-size:12px;color:var(--t-text3);}
 .fol .te-table tbody tr{cursor:pointer;}
 .fol .te-table tbody tr:hover td{background:var(--t-overlay04,rgba(255,255,255,.04));}
@@ -1635,3 +1636,15 @@ a.te-link{text-decoration:none;display:inline-block;}
 .bridge-windows td:last-child,.bridge-windows th:last-child{padding-right:0;}
 .bridge-windows p{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--t-text3);}
 @media(max-width:480px){.bridge-windows th,.bridge-windows td{padding:10px 4px;font-size:12px;}}
+
+/* Wallet codename: gradient dot + made-up name (WalletTag) */
+.wtag{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:100%;vertical-align:middle;}
+.wtag-av{flex:none;display:inline-block;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);}
+.wtag-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-geist-sans),sans-serif;font-weight:600;}
+.wtag-addr{flex:none;font:500 11px var(--font-geist-mono),monospace;color:var(--t-text4);white-space:nowrap;}
+.wtag-head{gap:9px;color:var(--t-text1);}
+.wtag-head .wtag-name{font-size:18px;font-weight:700;letter-spacing:-.01em;}
+.rl-tip .row b{min-width:0;display:flex;}
+.rl-tip-addr{margin:-1px 0 3px 19px;font-size:11px;color:var(--t-text4);}
+.pf-view-tag{margin-left:4px;color:var(--t-text2);}
+.pf-view-tag .wtag-name{font-weight:500;}
