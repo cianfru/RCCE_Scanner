@@ -1,7 +1,6 @@
 import { altBaseline, groupStats, SECTOR_SHORT } from "../utils/sectors.js";
 import MemberRug from "./MemberRug.jsx";
 import HelpTip from "./HelpTip.jsx";
-import Tabs from "./Tabs.jsx";
 import useSectors from "../hooks/useSectors.js";
 import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { useRef, useState } from "react";
@@ -45,7 +44,7 @@ function chipAria(g) {
     g.exTop ? `Without ${g.exTop.sym}, lead ${pts(g.exTop.shown)}.` : "", "Filter the grid."].filter(Boolean).join(" ");
 }
 
-// Which parts of the market are moving: one chip per sector (or chain), ranked by its
+// Which parts of the market are moving: one chip per sector, ranked by its
 // size-adjusted lead over the typical alt. Clicking a chip filters the grid and the best setups.
 const Chevron = ({ dir }) => <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
   <path d={dir < 0 ? "M10 3.5 5.5 8l4.5 4.5" : "M6 3.5 10.5 8 6 12.5"} /></svg>;
@@ -58,7 +57,7 @@ function StripSkeleton() {
   </section>;
 }
 
-export default function SectorStrip({ rows, baseRows, by, onByChange, value, onChange, timeframe, spot = false, loading = false }) {
+export default function SectorStrip({ rows, baseRows, value, onChange, timeframe, spot = false, loading = false }) {
   const sectors = useSectors();
   const [view, setView] = useState(null);             // null | "race" | "pockets"
   const scroller = useRef(null);
@@ -66,8 +65,8 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
   // Trader positioning is measured on perps and weighted by perp open interest: it says
   // nothing about the spot tokens in a chip, so spot chips leave that line out.
   const lean = spot ? null : sectors?.lean;
-  const groups = groupStats(rows, by, lean, base);
-  const edges = useScrollEdges(scroller, `${by}:${groups.length}:${spot}`);
+  const groups = groupStats(rows, "sector", lean, base);
+  const edges = useScrollEdges(scroller, `${groups.length}:${spot}`);
   if (loading && !groups.length) return <StripSkeleton />;
   if (!groups.length) return null;
   const span = timeframe === "4h" ? "4d" : "24d";
@@ -100,20 +99,19 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
   const clearLabel = value ? (value.includes("|") ? `${value.replace("|", " on ")} · show all` : "Show all") : null;
   return <section className="sector-strip" aria-label="Sectors">
     <div className="sector-strip-head">
-      <Tabs small label="Group by" items={[{ key: "sector", label: "Sectors" }, { key: "ecosystem", label: "Ecosystems" }]} value={by} onChange={k => { onByChange(k); onChange(null); }} />
-      <HelpTip title="Sectors and ecosystems" width={420}>
-        <p>Each chip is a group of markets: what the project does (sector) or the chain it lives on (ecosystem). Grouping is a curated label, not a signal input.</p>
+      <h2 className="ms-eyebrow sector-title">Sectors<span className="ms-tf"> · {timeframe === "4h" ? "4H" : "1D"}</span></h2>
+      <HelpTip title="Sectors" width={420}>
+        <p>Each chip is a group of markets by what the project does. Grouping is a curated label, not a signal input. Click a chip to filter the grid.</p>
         <p>Zero is the typical alt: the median move of all {base.nAlts} markets except BTC and the RWA & Stablecoins group over the last {span}.{base.vsBtc == null ? "" : base.vsBtc >= 5 ? ` Today the typical alt is ${vsBtc} vs BTC, so most groups are ahead of BTC too; zero here removes that.` : base.vsBtc <= -5 ? ` Today the typical alt is ${vsBtc} vs BTC, so most groups are behind BTC too; zero here removes that.` : ` Today the typical alt is ${vsBtc} vs BTC.`}</p>
         <p>The number is the group's lead: its median move minus the typical alt's, in percentage points, scaled by n/(n+10) for a group of n markets. A group of 5 keeps a third of its lead, 10 keeps half, 30 three quarters. We use 10 because, over 276 past 24-day windows, the median of a few coins in a sector predicted the rest of that sector about that well. Chips are ordered by this number; ties go to the larger group.</p>
         <p>The strip has one tick per market, on the same ±{base.D}-point scale in every chip. The thin line is the typical alt, the bold mark is the group's median, and arrows at an end mark markets beyond the scale (up to three). "Ahead" counts markets that beat the typical alt. "ex-ZEC" style notes show the lead without the group's best market when that market adds 1.5 points or more.</p>
         <p>Dashed chips have fewer than 10 markets. Groups with fewer than 3 markets, and Other, come last without a rank. Locked counts setups where the trend and an entry signal agree.</p>
         {!spot && <p>The last line is where profitable traders put their money: the group's share of their positions against its share of the market's open interest (1.0x is market weight, 2.0x twice it), then the share of them positioned long. Profitable traders are the top 300 Hyperliquid wallets by monthly return that were also in profit before this month. Because they are picked by this month's result, they tend to be long in a rising month, so the weight says more than the direction.</p>}
-        <p>Sector strength is descriptive. In our tests, 30-day sector leaders kept beating the weakest sectors over the next 10 days, but not BTC; ecosystem leadership showed nothing. That test used 30-day leadership; this chip ranking ({span}) was not tested for persistence. Race vs BTC and Pockets use daily closes against BTC, so their numbers differ from the chips.</p>
+        <p>Sector strength is descriptive. In our tests, 30-day sector leaders kept beating the weakest sectors over the next 10 days, but not BTC. That test used 30-day leadership; this chip ranking ({span}) was not tested for persistence. Race vs BTC and Pockets use daily closes against BTC, so their numbers differ from the chips.</p>
       </HelpTip>
       <p className="sector-baseline">
-        <span className="ms-long">Size-adjusted lead over the typical alt{vsBtc ? <> (itself <b>{vsBtc}</b> vs BTC over <b>{span}</b>)</> : ""} · dashed: under 10 markets</span>
         {clearLabel && <span className="sector-clear-inline"><button type="button" className="sector-clear" onClick={() => onChange(null)}>{clearLabel}</button>{" · "}</span>}
-        <span className="ms-short">vs typical alt{vsBtc ? <> (<b>{vsBtc}</b> vs BTC, <b>{span}</b>)</> : ""} · size-adjusted · {"dashed:\u00a0under\u00a010"}</span>
+        Lead over the typical alt, last <b>{span}</b>
       </p>
       <div className="sector-views" role="group" aria-label="Charts">
         {VIEWS.map(v => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setView(view === v.key ? null : v.key)}>{v.label}</button>)}
@@ -129,7 +127,7 @@ export default function SectorStrip({ rows, baseRows, by, onByChange, value, onC
       {edges.left && <button type="button" className="sector-chev prev" aria-label="Scroll sectors left" onClick={() => edges.scrollPage(-1)}><Chevron dir={-1} /></button>}
       {edges.right && <button type="button" className="sector-chev next" aria-label="Scroll sectors right" onClick={() => edges.scrollPage(1)}><Chevron dir={1} /></button>}
     </div>
-    {view === "race" && <SectorRace data={sectors} rows={rows} by={by} value={value} leaders={ranked.slice(0, 3).map(g => g.name)} />}
+    {view === "race" && <SectorRace data={sectors} rows={rows} by="sector" value={value} leaders={ranked.slice(0, 3).map(g => g.name)} />}
     {view === "pockets" && <PocketMatrix data={sectors} rows={rows} value={value} onSelect={onChange} />}
   </section>;
 }

@@ -6,7 +6,7 @@ const DOT = { live: () => "var(--t-accent)", stale: () => col("#fbbf24"), down: 
 
 // The header's data clock: a status dot (mint live, amber from 15 minutes, red when the feed
 // is down) and the scan time with its age. variant: "long" (1280+), "medium", "dot" (900-1023)
-// or "phone" (the dot alone, placed on the refresh icon by the caller).
+// or "phone" (the dot alone).
 export default function FreshnessClock({ lastRefresh, cacheAge, error, scanRunning, variant = "long" }) {
   const [, tick] = useState(0);
   useEffect(() => {

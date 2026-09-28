@@ -4,8 +4,9 @@
  * Shows net 24h flow with INFLOW / OUTFLOW / NEUTRAL label. Polls
  * /api/hyperliquid/bridge every 3 minutes (matching backend cache).
  *
- * Renders nothing when the backend reports ``available: false`` (missing
- * ETHERSCAN_API_KEY), so the row doesn't get a broken tile.
+ * Renders ``fallback`` when the backend reports ``available: false`` (missing
+ * ETHERSCAN_API_KEY) or has no flow yet. ``detail`` adds the per-window table
+ * below the card, for the Bridge page (More → Bridge).
  *
  * The BTC × bridge-flow divergence chip has two layouts, toggleable via
  * the ``?bridge=v2`` URL query string for live A/B comparison:
@@ -148,7 +149,36 @@ function DivergenceSparkline({ values }) {
   );
 }
 
-export default function BridgeFlowWidget({ isMobile }) {
+// The four windows as a small table: in, out, net and transfers. "*" marks a window the
+// sampled transfers do not fully cover.
+const WINDOWS = [["w1h", "1 hour"], ["w6h", "6 hours"], ["w24h", "24 hours"], ["w7d", "7 days"]];
+const plain = t => t.toLowerCase().replace(/btc/g, "BTC");
+const unsigned = v => fmtUsd(v).replace("+", "");
+function WindowTable({ data }) {
+  const rows = WINDOWS.filter(([k]) => data[k]);
+  const partial = rows.some(([k]) => !data[k].complete);
+  return (
+    <div className="bridge-windows">
+      <table>
+        <thead><tr><th scope="col">Window</th><th scope="col">In</th><th scope="col">Out</th><th scope="col">Net</th><th scope="col">Transfers</th></tr></thead>
+        <tbody>{rows.map(([k, label]) => {
+          const w = data[k];
+          const net = w.net_usd || 0;
+          return <tr key={k}>
+            <th scope="row">{label}{w.complete ? "" : "*"}</th>
+            <td>{unsigned(w.inflow_usd)}</td>
+            <td>{unsigned(w.outflow_usd)}</td>
+            <td style={{ color: net > 0 ? T.green : net < 0 ? T.red : T.text3 }}>{fmtUsd(net)}</td>
+            <td>{w.tx_count ?? "—"}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+      {partial && <p>* The last {data.tx_sample_size || ""} transfers cover only part of this window, so it repeats the flow of a shorter one.</p>}
+    </div>
+  );
+}
+
+export default function BridgeFlowWidget({ isMobile, detail = false, fallback = null }) {
   const variant = useBridgeVariant();
   const [data, setData] = useState(null);
   const [history, setHistory] = useState(null);
@@ -165,6 +195,8 @@ export default function BridgeFlowWidget({ isMobile }) {
         if (snapRes.ok) {
           const j = await snapRes.json();
           if (!cancelled) setData(j);
+        } else if (!cancelled) {
+          setData(d => d || { available: false });
         }
         if (histRes.ok) {
           const h = await histRes.json();
@@ -174,7 +206,7 @@ export default function BridgeFlowWidget({ isMobile }) {
           }
         }
       } catch {
-        /* swallow — widget just hides */
+        if (!cancelled) setData(d => d || { available: false });   // shows the fallback
       }
     };
     load();
@@ -182,7 +214,8 @@ export default function BridgeFlowWidget({ isMobile }) {
     return () => { cancelled = true; clearInterval(iv); };
   }, []);
 
-  if (!data || !data.available || !data.w24h) return null;
+  if (!data) return null;   // loading
+  if (!data.available || !data.w24h) return fallback;
 
   // Prefer 24h for display, but fall back to 6h if 24h is incomplete
   // (e.g. very low bridge activity or a cold start).
@@ -194,7 +227,7 @@ export default function BridgeFlowWidget({ isMobile }) {
 
   const net = displayWindow.net_usd || 0;
   const gross = (displayWindow.inflow_usd || 0) + (displayWindow.outflow_usd || 0);
-  if (gross === 0) return null;
+  if (gross === 0) return fallback;
 
   const trend = data.trend || "NEUTRAL";
   const signal = data.signal || "BALANCED";
@@ -395,7 +428,7 @@ export default function BridgeFlowWidget({ isMobile }) {
   }
 
   // ── v1 layout (default): chip + score + sparkline always visible ──────────
-  return (
+  const card = (
     <GlassCard style={{
       padding: isMobile ? "10px 14px" : "10px 16px",
       display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
@@ -452,5 +485,14 @@ export default function BridgeFlowWidget({ isMobile }) {
         </>
       )}
     </GlassCard>
+  );
+  if (!detail) return card;
+  const headline = divergenceHeadline(div);
+  return (
+    <>
+      <div style={{ display: "flex", flexWrap: "wrap" }}>{card}</div>
+      {headline && <p className="bridge-note"><b style={{ color: divColor }}>{plain(headline).replace(/^./, c => c.toUpperCase())}</b>: {plain(divergenceSentence(div))}, over the last 6 hours.</p>}
+      <WindowTable data={data} />
+    </>
   );
 }

@@ -167,15 +167,10 @@
 .header-divider{flex:0 0 1px;width:1px;height:24px;margin:0 16px;align-self:center;background:var(--t-border);}
 .header-spacer{flex:1 1 auto;min-width:12px;}
 .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.header-refresh-wrap{position:relative;display:inline-flex;}
-.header-refresh{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;border:0;background:transparent;color:var(--t-text3);cursor:pointer;transition:all .15s ease;}
-.header-refresh:hover:not(:disabled){color:var(--t-accent);}
-.header-refresh:disabled{cursor:default;opacity:.5;}
 .header-theme{border:0;background:transparent;padding:0;cursor:pointer;flex-shrink:0;font-size:12px;font-family:var(--font-geist-sans),sans-serif;color:var(--t-text3);transition:color .15s ease;}
 .header-theme:hover{color:var(--t-text1);}
 .header-tf .reflex-tabs{gap:2px;}
 .header-tf .reflex-tabs button{padding:6px 7px;}
-@media(max-width:640px){.header-theme{display:none;}}
 
 /* Main tabs (900px and wider): the capsule's full inner height; one sliding lit steel indicator on its bottom edge. */
 .header-tabs{position:relative;display:flex;align-items:stretch;flex-shrink:0;}
@@ -197,20 +192,19 @@
 [data-theme="light"] .header-tab-indicator{box-shadow:0 0 10px color-mix(in srgb,var(--t-accent) 30%,transparent);}
 @media(max-width:1023px){.header-tabs a{padding:0 10px;}}
 
-/* Data clock: dot plus "Updated 15:31 · 2m"; on phones the dot sits on the refresh icon. */
+/* Data clock: dot plus "Updated 15:31 · 2m"; on phones the dot alone. */
 .freshness{display:inline-flex;align-items:center;gap:6px;font:12px var(--font-geist-sans),sans-serif;color:var(--t-text4);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .freshness-dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;}
 .freshness-dot.is-scanning{animation:freshPulse 1.2s ease-in-out infinite;}
-.freshness-phone{position:absolute;top:3px;right:2px;pointer-events:none;}
 @keyframes freshPulse{0%,100%{opacity:1}50%{opacity:.25}}
 
 /* Phones: every header control gets a 44px hit area without growing its glyph. */
 @media(max-width:767px){
- .terminal-header .header-more::before,.terminal-header .header-brand::before,.terminal-header .header-refresh::before,
- .terminal-header .notification-trigger::before,.terminal-header .header-gear::before{content:"";position:absolute;}
+ .terminal-header .header-more::before,.terminal-header .header-brand::before,
+ .terminal-header .notification-trigger::before,.terminal-header .header-theme::before{content:"";position:absolute;}
  .terminal-header .header-more::before{inset:-4px;}
  .terminal-header .header-brand::before{inset:-7px 0;}
- .terminal-header .header-refresh::before,.terminal-header .header-gear::before{inset:-8px;}
+ .terminal-header .header-theme::before{inset:-14px -8px;}   /* "Light" is about 28x16: 44px tall, 44px wide */
  .terminal-header .notification-trigger::before{inset:-4px -6px;}
  /* 14px between the right-hand controls, so the 44px hit areas above sit side by side without overlapping. */
  .terminal-header .header-right{gap:14px;}
@@ -263,8 +257,6 @@
 .reflex-terminal .terminal-status {border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:3px 0!important;letter-spacing:.045em;}
 .reflex-terminal button.terminal-status {padding:6px 10px!important;border-bottom:1px solid currentColor!important;}
 .reflex-terminal .apple-btn {border-radius:6px;}
-.reflex-terminal .market-context {gap:0!important;border-block:1px solid var(--t-border);padding:10px 0;margin-top:16px!important;}
-.reflex-terminal .market-context > div {border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;}
 .alt-season-info {position:relative;display:inline-flex;margin-left:8px;text-transform:none;letter-spacing:normal;}
 .alt-season-info > button {border:1px solid var(--t-border);background:transparent;color:var(--t-text4);border-radius:50%;width:14px;height:14px;font:600 10px/1 var(--font-geist-sans),sans-serif;cursor:help;padding:0;display:inline-flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s;}
 .alt-season-info > button:hover,.alt-season-info > button[aria-expanded=true] {color:var(--t-accent);border-color:var(--t-accent);}
@@ -272,7 +264,6 @@
 .alt-season-explanation > * {display:block;margin-bottom:8px;}
 .refined .r-terminal .terminal-data-table {overflow-x:auto;}
 .refined .r-terminal .terminal-data-table table {min-width:1600px;}
-.reflex-terminal .signal-entry {border-right:1px solid var(--t-border)!important;padding-inline:12px!important;}
 .reflex-terminal .signal-entry:focus-visible {outline:2px solid var(--t-accent);outline-offset:2px;}
 /* Rendered in the document overlay layer, clear of animated card stacking contexts. */
 .alt-season-explanation {position:fixed;right:auto;z-index:100000;box-sizing:border-box;width:min(400px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow-y:auto;padding:24px 28px;font:13px/1.65 var(--font-geist-sans),sans-serif;letter-spacing:normal;text-transform:none;}
@@ -281,11 +272,6 @@
 .alt-season-explanation strong {font-size:14px;color:var(--t-text1);}
 @media(max-width:480px){.alt-season-explanation{padding:20px 22px;}}
 
-/* Reading order: filters and results first, supporting context on demand. */
-.scanner-context{margin:16px 0 0;border-block:1px solid var(--t-border);}
-.scanner-context>summary{padding:14px 0;color:var(--t-text2);font-size:14px;cursor:pointer;}
-.scanner-context>summary span{margin-left:12px;color:var(--t-text3);font-size:12px;}
-.scanner-context[open]{padding-bottom:16px;}
 .analysis-section{margin-top:32px;}
 .analysis-section>h2,.analysis-card>h2{margin:0 0 10px;font:600 20px/1.3 var(--font-geist-sans),sans-serif;letter-spacing:-.025em;color:var(--t-text1);}
 .analysis-section-caption{margin:0 0 20px;color:var(--t-text3);font-size:14px;line-height:1.6;}
@@ -307,7 +293,7 @@
 .reflex-terminal .terminal-data-table th{font-size:12px!important;letter-spacing:.02em;}
 .reflex-terminal .terminal-data-table .scanner-symbol{position:sticky;left:0;z-index:2;background:var(--t-selectBg);box-shadow:1px 0 var(--t-border);min-width:110px;}
 @media(max-width:900px){.analysis-grid-three{grid-template-columns:repeat(2,minmax(0,1fr));}.analysis-evidence{grid-template-columns:1fr;}.metric-history-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
-@media(max-width:600px){.analysis-grid,.analysis-grid-three,.metric-history-grid{grid-template-columns:1fr;}.analysis-card{padding:20px;}.analysis-definitions{grid-template-columns:1fr;gap:8px;}.scanner-context>summary span{display:block;margin:8px 0 0 16px;}}
+@media(max-width:600px){.analysis-grid,.analysis-grid-three,.metric-history-grid{grid-template-columns:1fr;}.analysis-card{padding:20px;}.analysis-definitions{grid-template-columns:1fr;gap:8px;}}
 .reflex-terminal .analysis-evidence,.reflex-terminal .analysis-grid,.reflex-terminal .analysis-definitions{min-width:0;}
 .reflex-terminal .analysis-card{box-sizing:border-box;min-width:0;padding:32px;overflow-wrap:anywhere;}
 .reflex-terminal .analysis-card>h2{margin-bottom:18px;}
@@ -344,11 +330,6 @@
 /* Information controls retain a circular shape inside stretched flex toolbars. */
 .reflex-terminal .alt-season-info {align-self:center;align-items:center;flex:0 0 auto;}
 .reflex-terminal .alt-season-info > button {display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px;min-width:20px;min-height:20px;max-width:20px;max-height:20px;aspect-ratio:1;line-height:1;padding:0;box-sizing:border-box;border-radius:50%;}
-.universe-coverage {color:var(--t-text3);font-size:12px;margin:16px 0;line-height:1.6;}
-.universe-coverage summary {cursor:pointer;}
-.universe-coverage input {background:transparent;color:var(--t-text1);border:1px solid var(--t-border);padding:10px 12px;margin:12px 0;width:min(100%,320px);}
-.universe-markets {display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:0 24px;max-height:320px;overflow:auto;padding:8px 0;}
-.universe-markets > div {display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--t-border);padding:10px 0;}
 
 /* A single balanced toolbar: navigation, spacious search, market context. */
 .scanner-timeframes { display:flex; gap:4px; }
@@ -359,12 +340,6 @@
 .scanner-search input { width:100%; min-width:0; height:44px; border:0; background:transparent; color:var(--t-text1); font:inherit; font-size:13px; outline:none; }
 .scanner-search input::placeholder { color:var(--t-text3); }
 .scanner-search button { border:0; background:transparent; color:var(--t-accent); font-size:20px; cursor:pointer; }
-/* Exclusion explanations need their own line, especially on narrow screens. */
-.universe-markets { grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr)); }
-.universe-markets > div { display:grid; gap:5px; min-width:0; padding:14px 0; overflow-wrap:anywhere; }
-.universe-markets > div > span:first-child { color:var(--t-text1); }
-.universe-markets > div > span:last-child { line-height:1.6; }
-
 
 /* Executor: accounting first, operating controls second. */
 .executor-performance {padding:28px;background:var(--t-surface);border:1px solid var(--t-border);border-radius:14px;margin-bottom:24px;}
@@ -527,8 +502,9 @@
 .terminal-data-table td.setup-cell[data-strength="2"] .signal-label{font-weight:700!important;}
 .setup-pair-head{padding-inline:0 10px;}
 /* Sector strip: which parts of the market are moving. */
-.sector-strip{margin:4px 0 18px;}
+.sector-strip{margin:24px 0 8px;}   /* 24px under the summary card; about 30px to the grid toolbar (its own 12-16px margin included) */
 .sector-strip-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px;}
+.sector-title{margin:0;}
 .sector-clear{margin-left:auto;background:transparent;border:0;border-bottom:1px solid var(--t-accent);color:var(--t-accent);font-size:12px;padding:2px 0;cursor:pointer;}
 .sector-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
 @media(min-width:768px){.sector-chips{scrollbar-width:thin;padding-bottom:6px;}}
@@ -1324,69 +1300,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 .rl-line{pointer-events:none;font:500 10.5px var(--font-geist-sans),sans-serif;paint-order:stroke;stroke:var(--t-bg);stroke-width:3px;stroke-linejoin:round;}
 @media (prefers-reduced-motion:reduce){.smap-dot,.smap-halo{transition:none;}}
 
-/* Scanner Radar strip: the page's entry to the Radar (perps only). */
-.radar-strip{position:relative;display:flex;align-items:center;margin-top:16px;padding:12px 18px;box-sizing:border-box;max-height:76px;overflow:hidden;background:var(--t-glassBg);border:1px solid var(--t-border);border-radius:14px;backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:var(--t-glassShadow),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 1px 0 rgba(255,255,255,.04);}
-/* Its accent edge: 2px at 60%, stopping short of the corners and fading out by 70% of the width,
-   so the hero card's machined edge stays the brightest line on the page. */
-.radar-strip::before{content:"";position:absolute;top:0;left:14px;right:14px;height:2px;pointer-events:none;background:linear-gradient(90deg,color-mix(in srgb,var(--t-accent) 60%,transparent),color-mix(in srgb,var(--t-accent) 60%,transparent) 30%,transparent 70%);}
-.radar-strip-id{flex:none;min-width:150px;display:flex;flex-direction:column;gap:4px;padding-right:18px;}
-.radar-strip-title{display:inline-flex;align-items:center;gap:8px;font:600 15px var(--font-geist-sans),sans-serif;color:var(--t-text1);white-space:nowrap;}
-.radar-strip-glyph{display:inline-flex;color:var(--t-accent);}
-.radar-strip-title small{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);}
-.radar-strip-count{font-size:13px;color:var(--t-text2);white-space:nowrap;}
-.radar-strip-count b{font:600 13px var(--font-geist-mono),monospace;color:var(--t-accent);}
-.radar-tiles{display:flex;flex:1;min-width:0;}
-.radar-tile{position:relative;isolation:isolate;flex:1 1 0;min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"thumb top" "thumb sub";column-gap:8px;row-gap:3px;align-items:center;padding:2px 12px;border:0;border-left:1px solid var(--t-border);background:none;text-align:left;cursor:pointer;color:var(--t-text2);font:inherit;}
-/* Hover and keyboard focus: a rounded surface inside the tile (the dividers stay put). */
-.radar-tile::after{content:"";position:absolute;inset:-4px 4px;z-index:-1;border-radius:8px;pointer-events:none;transition:background .15s;}
-.radar-tile:hover::after{background:var(--t-overlay04);}
-.reflex-terminal .radar-tile:focus-visible,.radar-tile:focus-visible{outline:none;}
-.radar-tile:focus-visible::after{box-shadow:inset 0 0 0 2px var(--t-accent);}
-.radar-tile .smap-thumb{grid-area:thumb;width:80px;height:40px;}
-.radar-thumb{overflow:hidden;}
-.radar-tile:hover .radar-tile-top strong{color:var(--t-accent);}
-.radar-tile-top{grid-area:top;align-self:end;display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;}
-.radar-tile-top strong{font:600 14px var(--font-geist-sans),sans-serif;color:var(--t-text1);overflow:hidden;text-overflow:ellipsis;}
-/* Line 2 keeps the trader count and its arrivals whole; only the signal words may shorten. */
-.radar-tile-sub{grid-area:sub;align-self:start;display:flex;align-items:center;gap:8px;min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text3);white-space:nowrap;}
-.radar-tile-sub .sig{min-width:0;overflow:hidden;text-overflow:ellipsis;}
-.radar-tile-sub .trd{flex:none;display:inline-flex;align-items:center;gap:3px;}
-.radar-tile-sub em{font-style:normal;color:var(--t-accent);margin-left:3px;}
-.radar-person{flex:none;}
-.radar-strip-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-left:18px;border-left:1px solid var(--t-border);white-space:nowrap;}
-.radar-open{font:600 13px var(--font-geist-sans),sans-serif;color:var(--t-accent);text-decoration:underline;text-underline-offset:3px;}
-.radar-strip-watching{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--t-text3);}
-.radar-strip-loading{flex:1;height:44px;margin:0 16px;}   /* loaded strip is 70px tall; hold it */
-.radar-strip-empty{flex:1;margin:0;padding:0 16px;font-size:13px;color:var(--t-text3);}
-/* Desktop: as many tiles as fit at 240px or more each (up to six), so line 2 never cuts. */
-@media(min-width:768px){
- .radar-tiles{container-type:inline-size;}
- @container (max-width:479px){.radar-tile:nth-child(n+2){display:none;}}
- @container (max-width:719px){.radar-tile:nth-child(n+3){display:none;}}
- @container (max-width:959px){.radar-tile:nth-child(n+4){display:none;}}
- @container (max-width:1199px){.radar-tile:nth-child(n+5){display:none;}}
- @container (max-width:1439px){.radar-tile:nth-child(n+6){display:none;}}
-}
-@media(max-width:767px){
- .radar-strip{flex-direction:column;align-items:stretch;gap:6px;max-height:none;padding:8px 14px 10px;}
- .radar-strip-row1{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
- .radar-strip-id{flex-direction:row;align-items:baseline;min-width:0;padding:0;gap:6px;}
- .radar-strip-id .radar-strip-count{overflow:hidden;text-overflow:ellipsis;}
- .radar-tiles{overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent);}
- .radar-tiles::-webkit-scrollbar{display:none;}
- .radar-tile{flex:0 0 168px;scroll-snap-align:start;padding:0 10px;grid-template-areas:"top top" "thumb sub";column-gap:8px;row-gap:5px;}
- .radar-tile:nth-child(n+5){display:none;}
- .radar-tile .smap-thumb{width:64px;height:32px;}
- .radar-tile::after{inset:0 2px;}
- .radar-tile-top{align-self:center;}
- .radar-tile-sub{flex-direction:column;align-items:flex-start;gap:2px;align-self:center;}
- .radar-tile-sub .sig{max-width:100%;}
- .radar-tile:first-child{border-left:0;padding-left:0;}
- .radar-strip-loading,.radar-strip-empty{margin:0;padding:0;}
- .radar-strip-loading{height:40px;}
-}
-@media(max-width:767px){.radar-strip:has(.radar-strip-loading){min-height:104px;}}   /* hold the loaded strip height so the grid does not jump */
-
 /* ── Scanner top polish (WP7) ─────────────────────────────────────────────── */
 /* Summary card: desktop "all markets" meta; phone sub-line and dial verdict. */
 .ms-all{white-space:nowrap;}
@@ -1407,8 +1320,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .sector-skeleton .sk-head{flex:0 0 22px;width:min(460px,70%);margin-top:4px;}
 .sector-skeleton .sk-chips{flex:1;display:flex;gap:8px;min-height:0;padding-bottom:6px;}
 .sector-skeleton .sk-chips>div{flex:0 0 180px;border-radius:8px;}
-@media(max-width:767px){.sector-skeleton{height:212px;} .sector-skeleton .sk-head{flex-basis:62px;width:100%;} .sector-skeleton .sk-chips{padding-bottom:2px;} .sector-skeleton .sk-chips>div{flex-basis:164px;}}
-.universe-coverage-pending{height:32px;}
+@media(max-width:767px){.sector-skeleton{height:194px;} .sector-skeleton .sk-head{flex-basis:44px;width:100%;} .sector-skeleton .sk-chips{padding-bottom:2px;} .sector-skeleton .sk-chips>div{flex-basis:164px;}}
 
 /* Title row: Perps | Spot beside 4H/1D (768px and wider), and the "/" search hint. */
 .scanner-market{display:none;}
@@ -1424,19 +1336,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 .search-hint{display:none;flex:0 0 auto;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:4px;font:500 12px/1 var(--font-geist-mono),monospace;color:var(--t-text4);}
 @media(min-width:768px) and (hover:hover) and (pointer:fine){.search-hint{display:inline-flex;}}
 .scanner-search:focus-within .search-hint{display:none;}
-
-/* Coverage line: a 32px target; exceptions first; readable line length. */
-.universe-coverage{margin:9px 0 10px;}
-.universe-coverage>summary{min-height:32px;padding:6px 0;box-sizing:border-box;}
-.universe-coverage p{max-width:70ch;margin:12px 0 0;}
-.universe-coverage small{font-size:12px;color:var(--t-text4);}
-.universe-exceptions{display:grid;gap:6px;margin:4px 0 2px;}
-.universe-exception{display:grid;grid-template-columns:auto auto minmax(0,max-content) minmax(0,1fr);align-items:baseline;column-gap:10px;font-size:12px;color:var(--t-text3);}
-.universe-exception>b{font-weight:600;color:var(--t-text2);}
-.universe-exception>b[data-kind="excluded"]{color:var(--t-text2);}
-.universe-exception-count{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text1);}
-.universe-exception-names{min-width:0;font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-@media(max-width:640px){.universe-exception{grid-template-columns:auto auto minmax(0,1fr);} .universe-exception-names{grid-column:1 / -1;}}
 
 /* Sector strip: fade edges while more chips sit past them, desktop chevrons, compact tail chips. */
 @property --fade-l{syntax:"<length>";inherits:false;initial-value:0px;}
@@ -1467,27 +1366,6 @@ a.te-link{text-decoration:none;display:inline-block;}
 @media(max-width:767px){.sector-clear-head{display:none;} .sector-clear-inline{display:inline;}}
 .chip-tip-lines{display:grid;gap:6px;}
 .chip-tip-lines p{margin:0;}
-
-/* Market context: compact opportunity rows (no boxed bullet lists). */
-.opp-lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px 32px;margin-top:16px;}
-.opp-list{min-width:0;}
-.opp-list-head{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;font:600 12px/1.4 var(--font-geist-sans),sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--t-text3);}
-.opp-list-head span{font:500 12px var(--font-geist-mono),monospace;letter-spacing:0;color:var(--t-text4);}
-.opp-rows{display:grid;}
-.opp-row{display:grid;grid-template-columns:16px 72px 24px 84px minmax(0,1fr) 30px;align-items:center;column-gap:8px;min-height:28px;padding:2px 6px;margin:0 -6px;border:0;border-radius:4px;background:none;text-align:left;font:inherit;font-size:12px;color:var(--t-text3);}
-button.opp-row{cursor:pointer;}
-button.opp-row:hover{background:var(--t-overlay04);}
-button.opp-row:hover .opp-sym{color:var(--t-accent);}
-.opp-row [aria-hidden="true"]{font-size:12px!important;}      /* a missing logo's monogram keeps the 12px minimum */
-.opp-sym{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.opp-tf{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);}
-.opp-status{font-weight:600;color:var(--t-text3);white-space:nowrap;}
-.opp-status[data-status="expired"],.opp-status[data-status="unavailable"]{color:var(--t-text4);}
-.opp-status[data-status="emerging"]{color:var(--t-accent);}
-.opp-reason{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t-text3);}
-.opp-age{font:500 12px var(--font-geist-mono),monospace;color:var(--t-text4);text-align:right;}
-.opp-more{margin-top:6px;}
-@media(max-width:480px){.opp-row{grid-template-columns:16px 64px 22px 76px minmax(0,1fr) 28px;column-gap:6px;}}
 
 /* Coin page header (spec 7.1): star before the logo; Watch, Trade and TradingView as flat text beside the timeframe tabs. */
 .reflex-terminal .coin-star{margin-right:-4px;}
@@ -1550,7 +1428,6 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 /* Traders table while its fills load: three skeleton rows under one quiet line. */
 .te-loading{margin:0 0 8px;font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .te-skel{height:28px;margin:0 0 6px;border-radius:3px;}
-
 
 /* ── Portfolio and "my trades" (WP9) ── */
 .pf-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 24px;padding:18px 20px 14px;}
@@ -1653,3 +1530,16 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .nf-count{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text2);}
 .nf-go{color:var(--t-text4);}
 @media(max-width:899px){.nf-list{max-width:none;}.nf-row{padding:14px 4px;}}
+
+/* Bridge page (More → Bridge): the flow card, a plain-English divergence line and the window table. */
+.bridge-page{display:grid;gap:16px;max-width:760px;}
+.bridge-lead,.bridge-note{margin:0;max-width:62ch;font-size:14px;line-height:1.6;color:var(--t-text2);}
+.bridge-note b{font-weight:600;}
+.bridge-windows table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
+.bridge-windows td{font-family:var(--font-geist-mono),monospace;}
+.bridge-windows th,.bridge-windows td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--t-border);color:var(--t-text2);white-space:nowrap;}
+.bridge-windows thead th{font:600 12px var(--font-geist-sans),sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--t-text3);}
+.bridge-windows th:first-child{text-align:left;padding-left:0;font-family:var(--font-geist-sans),sans-serif;}
+.bridge-windows td:last-child,.bridge-windows th:last-child{padding-right:0;}
+.bridge-windows p{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--t-text3);}
+@media(max-width:480px){.bridge-windows th,.bridge-windows td{padding:10px 4px;font-size:12px;}}
