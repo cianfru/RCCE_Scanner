@@ -62,6 +62,19 @@
 .te-toggle:hover{color:var(--t-text1);text-decoration-color:var(--t-borderH);}
 .te-toggle[aria-pressed="true"],.te-toggle[aria-expanded="true"]{color:var(--t-accent);text-decoration-color:var(--t-accent);text-decoration-thickness:2px;}
 .grid-guide-count{color:var(--t-text3);}
+/* "Aligned setups first" is a toggle, not a link: a small check box and no underline while off
+   (the Column guide next to it keeps the link underline); on, the box is checked and the label
+   takes the accent with the 2px selected-tab underline. The flat accent bar, not the steel one:
+   the steel bar belongs to the tab groups only. */
+.grid-toolbar .grid-aligned{display:inline-flex;align-items:center;gap:6px;color:var(--t-text3);text-decoration:none;}
+.grid-toolbar .grid-aligned>span{text-decoration:underline solid transparent 2px;text-underline-offset:6px;transition:text-decoration-color .15s;}
+.grid-toolbar .grid-aligned:hover{color:var(--t-text1);}
+.grid-toolbar .grid-aligned[aria-pressed="true"]{color:var(--t-accent);}
+.grid-toolbar .grid-aligned[aria-pressed="true"]>span{text-decoration-color:var(--t-accent);}
+.grid-aligned-box{flex:none;overflow:visible;}
+.grid-aligned-box rect{fill:none;stroke:currentColor;stroke-width:1.25;opacity:.8;}
+.grid-aligned-box path{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
+.grid-aligned[aria-pressed="true"] .grid-aligned-box rect{fill:var(--t-accentDim);opacity:1;}
 .te-toggle[aria-expanded="true"] .grid-guide-count{color:inherit;}
 .alt-season-explanation .grid-guide-hidden{color:var(--t-text1);}
 .alt-season-explanation .grid-guide-col{border-top:1px solid var(--t-border);padding-top:12px;}
@@ -418,9 +431,15 @@
 .alt-season-explanation.is-compact > * {margin:0 0 6px;}
 .alt-season-explanation.is-compact strong {font-size:12px;letter-spacing:.02em;}
 .alt-season-explanation p {margin:0 0 10px;}
-.alt-season-explanation .help-legend {display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--t-border);padding-top:8px;margin:0;}
-.alt-season-explanation .help-legend > div {display:flex;gap:8px;align-items:baseline;font-size:12px;line-height:1.4;margin:0;}
-.alt-season-explanation .help-legend > div > span:first-child {display:inline-flex;align-items:center;gap:5px;min-width:100px;flex-shrink:0;font-weight:600;}
+/* Legends: one label column per legend, as wide as its longest label (100px at least, as before),
+   so every description starts on the same x. In the Column guide the minimum is 116px, the
+   longest label (Re-accumulating), so all its legends share one edge. The label's baseline is
+   its word, not the regime icon, so the two columns share a text line. */
+.alt-season-explanation .grid-guide-col .help-legend {grid-template-columns:minmax(116px,max-content) minmax(0,1fr);}
+.alt-season-explanation .help-legend {display:grid;grid-template-columns:minmax(100px,max-content) minmax(0,1fr);gap:5px 8px;align-items:baseline;border-top:1px solid var(--t-border);padding-top:8px;margin:0;font-size:12px;line-height:1.4;}
+.alt-season-explanation .help-legend > div {display:contents;}
+.alt-season-explanation .help-legend > div > span:first-child {display:inline-flex;align-items:baseline;gap:5px;font-weight:600;white-space:nowrap;}
+.alt-season-explanation .help-legend > div > span:first-child > svg {align-self:center;}
 .alt-season-explanation .help-legend-key {color:var(--t-accent);font-size:12px;letter-spacing:.03em;}
 .alt-season-explanation .help-legend > div > span:last-child {color:var(--t-text4);}
 

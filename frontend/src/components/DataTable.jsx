@@ -417,7 +417,13 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
             {filtered && onClear && <button type="button" className="te-link grid-toolbar-clear" onClick={onClear}>Clear</button>}
           </div>
           <div className="grid-toolbar-actions">
-            <button type="button" className="te-toggle" aria-pressed={alignedFirst} onClick={() => setAlignedFirst(v => !v)} title={ALIGNED_TITLE}>Aligned setups first</button>
+            <button type="button" className="te-toggle grid-aligned" aria-pressed={alignedFirst} onClick={() => setAlignedFirst(v => !v)} title={ALIGNED_TITLE}>
+              <svg className="grid-aligned-box" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <rect x="1" y="1" width="10" height="10" rx="2" />
+                {alignedFirst && <path d="M3.4 6.2l1.8 1.8 3.5-3.8" />}
+              </svg>
+              <span>Aligned setups first</span>
+            </button>
             <HelpTip trigger="click" width={420} title="Column guide" className="grid-guide" anchorClass="te-toggle"
               anchor={<>Column guide{hiddenLabels.length ? <span className="grid-guide-count"> · {hiddenLabels.length} hidden</span> : null}</>}>
               {hiddenLabels.length > 0 && <p className="grid-guide-hidden">Hidden to fit this window: {hiddenLabels.map(l => SHORT_NAME[l] || l).join(", ")}. Every value is on the coin page.</p>}
