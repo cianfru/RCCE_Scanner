@@ -1093,7 +1093,7 @@ export default function App() {
 
         {activeTab === "settings" && <SettingsPage style={pageMargin} />}
 
-        {activeTab === "notfound" && <NotFound />}
+        {activeTab === "notfound" && <NotFound targets={tabTargets} radarTf={lastTf} />}
       </div>}
       </main>
 

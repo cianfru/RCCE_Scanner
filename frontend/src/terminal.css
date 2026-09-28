@@ -1300,3 +1300,17 @@ button.opp-row:hover .opp-sym{color:var(--t-accent);}
 .heat-sym{transform:translateZ(0);}
 /* TradFi sort labels keep today's plain look; its help sits in the (i) buttons. */
 .reflex-terminal .tradfi-sort{text-decoration:none;}
+/* 404: the four main pages as flat rows under the copy, each with its nav glyph. */
+.nf-list{list-style:none;margin:0;padding:0;max-width:520px;border-top:1px solid var(--t-border);}
+.nf-list li{border-bottom:1px solid var(--t-border);}
+.nf-row{display:grid;grid-template-columns:16px minmax(0,1fr) 16px;align-items:center;column-gap:14px;padding:12px 8px;color:var(--t-text1);text-decoration:none;transition:background .15s ease;-webkit-tap-highlight-color:transparent;}
+.nf-row:hover{background:var(--t-surface);}
+.nf-row:focus-visible{outline:2px solid var(--t-accent);outline-offset:-2px;}
+.nf-icon{display:flex;color:var(--t-text3);transition:color .15s ease;}
+.nf-row:hover .nf-icon{color:var(--t-accent);}
+.nf-text{min-width:0;}
+.nf-label{display:block;font:500 15px/1.35 var(--font-geist-sans),sans-serif;letter-spacing:-0.01em;}
+.nf-desc{display:block;margin-top:2px;font:13px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text4);}
+.nf-count{font:600 13px var(--font-geist-mono),monospace;color:var(--t-text2);}
+.nf-go{color:var(--t-text4);}
+@media(max-width:899px){.nf-list{max-width:none;}.nf-row{padding:14px 4px;}}
