@@ -22,14 +22,72 @@ const NAV_SECTIONS = [
     ],
   },
 ];
-const TRADFI = { key: "tradfi", label: "TradFi", desc: "Commodities, equities, indices (HIP-3)" };
+// "(HIP-3)" never breaks across lines.
+const TRADFI = { key: "tradfi", label: "TradFi", desc: <>Commodities, equities, indices <span style={{ whiteSpace: "nowrap" }}>(HIP-3)</span></> };
+const MARKETS = [
+  { kind: "perpetual", icon: "perps", label: "Perpetuals" },
+  { kind: "spot", icon: "spot", label: "Spot markets" },
+];
 const SETTINGS = { key: "settings", label: "Settings", desc: "Admin key, power state and data features" };
 const THEMES = [{ key: "dark", label: "Dark" }, { key: "light", label: "Light" }];
 
+// Section labels: sentence case, Geist 12/600, text3 (as in the gear popover).
 const sectionLabel = {
-  fontSize: 12, fontWeight: 600, color: T.text4, fontFamily: T.font, letterSpacing: 0,
+  fontSize: 12, fontWeight: 600, color: T.text3, fontFamily: T.font, letterSpacing: 0,
   padding: "0 8px 8px",
 };
+
+// The 16px glyph in a 20px slot, so every label in the drawer starts on the same column.
+function RowIcon({ name, active }) {
+  return (
+    <div style={{
+      width: 20, height: 20,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      color: active ? T.accent : T.text3,
+      flexShrink: 0,
+    }}>
+      {NAV_ICONS[name] || null}
+    </div>
+  );
+}
+
+// A scanner market: glyph, label and the number of markets scanned, one line.
+function MarketRow({ market, count, active, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? "page" : undefined}
+      style={{
+        display: "flex", alignItems: "center", gap: 12,
+        width: "100%", textAlign: "left",
+        padding: "14px 12px",
+        border: 0,
+        borderLeft: `2px solid ${active ? T.accent : "transparent"}`,
+        background: active ? T.accentDim : "transparent",
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+        marginBottom: 2,
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.surface; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+    >
+      <RowIcon name={market.icon} active={active} />
+      <span style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{
+          fontFamily: T.font, fontSize: T.textLg, fontWeight: active ? 600 : 500,
+          color: active ? T.accent : T.text1,
+          letterSpacing: "-0.01em",
+        }}>
+          {market.label}
+        </span>
+        <span title="markets scanned" style={{ fontFamily: T.font, color: T.text3, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+          {count}
+        </span>
+      </span>
+    </button>
+  );
+}
 
 function NavRow({ item, active, onSelect }) {
   return (
@@ -51,14 +109,7 @@ function NavRow({ item, active, onSelect }) {
       onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.surface; }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
     >
-      <div style={{
-        width: 20, height: 20,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: active ? T.accent : T.text3,
-        flexShrink: 0,
-      }}>
-        {NAV_ICONS[item.key] || null}
-      </div>
+      <RowIcon name={item.key} active={active} />
       <div style={{ minWidth: 0 }}>
         <div style={{
           fontFamily: T.font, fontSize: T.textLg, fontWeight: active ? 600 : 500,
@@ -228,14 +279,12 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           <div style={{ marginBottom: 20 }}>
             <div style={sectionLabel}>Markets</div>
 
-            {[["perpetual", "Perpetuals"], ["spot", "Spot markets"]].map(([kind, label]) => {
-              const selected = ["4h", "1d"].includes(activeTab) && marketKind === kind;
-              return <button type="button" key={kind} aria-current={selected ? "page" : undefined}
-                onClick={() => {onMarketChange?.(kind); onClose();}}
-                style={{display:"flex",justifyContent:"space-between",width:"100%",padding:"14px 12px",textAlign:"left",border:0,borderLeft:`2px solid ${selected ? T.accent : "transparent"}`,background:selected ? T.accentDim : "transparent",color:selected ? T.accent : T.text1,fontSize:14,cursor:"pointer"}}>
-                {label}<span title="markets scanned" style={{color:T.text3,fontSize:12}}>{scanData?.filter(r=>r.market_kind===kind).length || 0}</span>
-              </button>;
-            })}
+            {MARKETS.map(market => (
+              <MarketRow key={market.kind} market={market}
+                count={scanData?.filter(r => r.market_kind === market.kind).length || 0}
+                active={["4h", "1d"].includes(activeTab) && marketKind === market.kind}
+                onSelect={() => { onMarketChange?.(market.kind); onClose(); }} />
+            ))}
 
             {/* Watchlists */}
 
