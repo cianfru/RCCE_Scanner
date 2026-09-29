@@ -318,6 +318,7 @@ export default function TraderPage({ address }) {
               {data.band && <span className="tp-dim">{data.band} account</span>}
               {rank && <span className="tp-dim">#{rank} of {data.board_size}</span>}
             </div>
+            {data.entity?.note && <div className="tp-dim" title="These wallets hold the same coins and trade them together, so trader counts take them once">{data.entity.note}</div>}
           </div>
           <div className="tp-actions">
             {followFailed && <span role="status" className="tp-warn">Not saved</span>}

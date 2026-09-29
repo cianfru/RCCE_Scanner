@@ -768,6 +768,12 @@ function WalletDetail({ address, onClose, isMobile }) {
           {/* Tags */}
           <div style={{ marginTop: 6 }}>
             <WalletTags data={data} />
+            {data.entity?.note && (
+              <div style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text3, marginTop: 4 }}
+                title="These wallets hold the same coins and trade them together, so trader counts take them once">
+                {data.entity.note}
+              </div>
+            )}
           </div>
           </div>
         </div>

@@ -60,6 +60,25 @@ Until version 2 the cohort sweep read every focus wallet (about 2,800 whales and
 
 **Slower detection.** A wallet that trades after holding still for hours is seen up to about 70 minutes later (up to about 2 hours 20 minutes if it was flat), plus up to 20 minutes if that falls in the pause after a 4-hour close. It was 30 to 50 minutes. New-position markers, convergence alerts and the Radar's counts follow the same delay. Followed wallets are unchanged (5 minutes).
 
+## Wallets that trade together
+
+Some traders split one book across several wallets. The size study found three wallets holding 84% of the profitable traders' BTC longs, buying and selling the same lots. Counted separately they look like three traders agreeing. Now such a group counts as **one trader**; its dollars are still summed. Rule and constants: `backend/hl_entities.py`.
+
+**Data.** Each time a tracked wallet's reading differs from its previous one (the cadence's change test), the coins that moved are logged in `position_changes` in hyperlens.db: size before and after, price, and the window between the two readings. Fills are not stored, so timing is at the resolution of the readings. Kept 30 days, about 800 small rows a day for the whole roster (a few MB).
+
+**Rule** (recomputed daily with the roster, and at start, over the last 30 days). Two wallets are linked when all of these hold:
+
+1. **Traded together.** A wallet's changes to one coin in one direction within 2 hours of each other are one move. A move matches the other wallet's move in the same coin and direction within 48 hours. Each wallet has at least 2 matched moves, and at least 70% of each wallet's moves are matched.
+2. **Held together.** Each wallet's position in every coin either of them held, in dollars at one price per coin, sampled every 4 hours over the 30 days: the two series correlate at 0.8 or more. Same coins, same side, sizes rising and falling in proportion.
+
+Linked wallets are joined into one group (A with B and B with C make a group of three). The id is `grp-` plus the start of the smallest address.
+
+**Where a group counts once:** consensus counts and trends (`long_count`, per-cohort counts, participation), the positioning map's per-coin `n` (the Radar's "profitable traders net long" and its trails), the price ladder's counts, the 4-hour trader record (`trader_lean`), new-position counts in the last 24 hours and convergences. In the positioning map a group sits on the side of its combined dollars, at its dollar-weighted entry, and is in profit when its combined unrealised PnL is. `usd` fields, `money` and the ladder's dollars still add every wallet. The cohort sweep's Cohorts tab still counts wallets.
+
+**Shown:** `entity` on `/api/hyperlens/wallet/{address}`, `/api/traders/{address}` (id, size, members, note: "Part of a group of 3 wallets that trade together") and on roster, symbol-position and ladder rows (the id). The trader page and the wallet dialog show the note. `/api/hyperlens/status` shows the number of groups.
+
+**Check on real fills.** Replaying the adaptive cadence over the 30 days to 26 September 2026 on the fills of the 573 wallets of the size study: 339,000 readings, 21,000 logged coin changes, 17,000 candidate pairs, 3 pairs passing the traded-together test, and one group of 3: the study's three BTC wallets (0x2371...0883, 0x93ab...11f8, 0xec7f...df39). They made the same three moves up to 31 hours apart; their position series correlate at 0.84 to 0.99.
+
 ## Continuity
 
 Changing the cohort moves the Radar's trader counts and the stored lean series.

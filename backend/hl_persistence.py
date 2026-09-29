@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS trader_lean (
     PRIMARY KEY (bar_close, grp)
 );
 
+-- Position change log: one row per coin whose size changed between two readings of a tracked
+-- wallet (beyond dust, hl_cadence.changed). t0/t1: the previous and this reading, so the change
+-- happened in between. Read by hl_entities (lockstep wallets); kept _CHANGES_RETENTION_DAYS.
+CREATE TABLE IF NOT EXISTS position_changes (
+    address TEXT NOT NULL,
+    t0 REAL NOT NULL,
+    t1 REAL NOT NULL,
+    coin TEXT NOT NULL,
+    size_before REAL NOT NULL,
+    size_after REAL NOT NULL,
+    px REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pc_t1 ON position_changes(t1);
+
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
     coin TEXT NOT NULL,
@@ -378,6 +392,30 @@ def load_trader_lean(prefix: str, since: float) -> List[tuple]:
     ).fetchall()
 
 
+_CHANGES_RETENTION_DAYS = 30
+
+
+def save_position_changes(rows: List[tuple]) -> int:
+    """rows: (address, t0, t1, coin, size_before, size_after, px)."""
+    if not rows:
+        return 0
+    conn = _get_conn()
+    conn.executemany("INSERT INTO position_changes (address, t0, t1, coin, size_before, size_after, px) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    conn.commit()
+    return len(rows)
+
+
+def load_position_changes(since: float) -> Dict[str, List[tuple]]:
+    """address -> [(t0, t1, coin, size_before, size_after, px)] logged since ``since``, oldest first."""
+    out: Dict[str, List[tuple]] = {}
+    for a, t0, t1, coin, b, af, px in _get_conn().execute(
+            "SELECT address, t0, t1, coin, size_before, size_after, px FROM position_changes "
+            "WHERE t1 >= ? ORDER BY t1", (since,)):
+        out.setdefault(a, []).append((t0, t1, coin, b, af, px))
+    return out
+
+
 # Position details are only needed for the last few hours (startup restore reads 6h);
 # account values stay for the 30-day equity curves. Older rows keep account_value
 # and drop positions_json, which was nearly all of the file (2.2 GB by September 2026).
@@ -466,6 +504,10 @@ def cleanup_old_data() -> dict:
 
         # Clean up first_seen for positions that no longer exist
         # (old entries where the position was closed long ago)
+        cursor = conn.execute("DELETE FROM position_changes WHERE t1 < ?",
+                              (time.time() - _CHANGES_RETENTION_DAYS * 86400,))
+        deleted["position_changes"] = cursor.rowcount
+
         old_first_seen_cutoff = time.time() - (7 * 24 * 3600)  # 7 days
         cursor = conn.execute(
             "DELETE FROM position_first_seen WHERE first_seen_at < ?",
@@ -496,6 +538,7 @@ def get_db_stats() -> dict:
         trade_count = conn.execute("SELECT COUNT(*) FROM trade_log").fetchone()[0]
         trade_wallets = conn.execute("SELECT COUNT(DISTINCT address) FROM trade_log").fetchone()[0]
         fs_count = conn.execute("SELECT COUNT(*) FROM position_first_seen").fetchone()[0]
+        change_count = conn.execute("SELECT COUNT(*) FROM position_changes").fetchone()[0]
 
         # Oldest/newest snapshot
         oldest = conn.execute("SELECT MIN(timestamp) FROM snapshots").fetchone()[0]
@@ -515,6 +558,7 @@ def get_db_stats() -> dict:
             "trades": trade_count,
             "trade_wallets": trade_wallets,
             "position_first_seen": fs_count,
+            "position_changes": change_count,
             "oldest_snapshot": oldest,
             "newest_snapshot": newest,
             "retention_days": _SNAPSHOT_RETENTION_DAYS,

@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Set
 import aiohttp
 
 import hl_cadence as _cadence
+import hl_entities as _entities_rule
 import hl_calls as _hl_calls
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
@@ -39,6 +40,8 @@ from hl_persistence import (
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
     max_account_values as _db_max_account_values,
+    save_position_changes as _db_save_changes,
+    load_position_changes as _db_load_changes,
     get_db_stats as _db_stats,
 )
 
@@ -813,6 +816,7 @@ def _observe_opens(evicted: Set[str]) -> None:
         import followed_traders as ft
         from convergence import tracker
         tr = tracker()
+        tr.entity_of = entity_of               # lockstep wallets converge as one trader
         tr.forget(evicted)
         followed = ft.addresses()
         now = time.time()
@@ -904,6 +908,12 @@ def _after_positions_update() -> Set[str]:
     # cache (which Railway bills as memory). Wallet-detail page stays
     # accurate within the hour from in-memory state; on-disk persistence
     # is for surviving Railway redeploys.
+    if _pending_changes:
+        try:
+            _db_save_changes(list(_pending_changes))
+            _pending_changes.clear()
+        except Exception as exc:
+            logger.warning("HyperLens DB: change log save error: %s", exc)
     if (time.time() - _last_db_save_at) >= _DB_SAVE_INTERVAL_S:
         try:
             _db_save_snapshots(_snapshots)
@@ -1072,8 +1082,76 @@ async def poll_positions(force: bool = False) -> int:
 
 
 def _note_change(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot) -> None:
-    """Hook for readings whose positions changed (lockstep change log)."""
-    return None
+    """Queue the coins whose size changed since the previous reading for the change log
+    (hl_entities). Skipped when the gap between the readings is too long to time the change."""
+    if prev is None or snap.timestamp <= prev.timestamp or snap.timestamp - prev.timestamp > _cadence.MAX_READING_AGE_S:
+        return
+    before, after = _book_of(prev), _book_of(snap)
+    if not _cadence.changed(before, after):
+        return
+    b, a = _cadence.live(before), _cadence.live(after)
+    for coin in set(b) | set(a):
+        s0, u0 = b.get(coin, (0.0, 0.0))
+        s1, u1 = a.get(coin, (0.0, 0.0))
+        if s0 != s1:
+            px = abs(u1 / s1) if s1 else abs(u0 / s0)
+            _pending_changes.append((address, prev.timestamp, snap.timestamp, coin, s0, s1, px))
+    if len(_pending_changes) > 5_000:                  # never hold much if the DB is unavailable
+        del _pending_changes[:-5_000]
+
+
+# ---------------------------------------------------------------------------
+# Lockstep wallets (hl_entities): wallets that trade as one count as one trader
+# ---------------------------------------------------------------------------
+
+_pending_changes: List[tuple] = []
+_entity_of: Dict[str, str] = {}              # address -> entity id, grouped wallets only
+_entity_members: Dict[str, List[str]] = {}   # entity id -> member addresses
+_entities_at: float = 0.0
+
+
+def entity_of(address: str) -> str:
+    """The entity a wallet trades as: its group id, or the address itself."""
+    return _entity_of.get(address, address)
+
+
+def entity_info(address: str) -> Optional[dict]:
+    """Group details for a wallet in a lockstep group, else None."""
+    gid = _entity_of.get((address or "").lower())
+    if gid is None:
+        return None
+    members = _entity_members.get(gid, [])
+    return {"id": gid, "size": len(members), "members": members, "note": _entities_rule.note(len(members)),
+            "computed_at": _entities_at or None}
+
+
+def _compute_entities(now: float) -> tuple:
+    changes = _db_load_changes(now - _entities_rule.WINDOW_DAYS * 86400)
+    on_roster = {w.address for w in _roster}
+    changes = {a: cs for a, cs in changes.items() if a in on_roster}
+    books = {}
+    for a in changes:
+        snaps = _snapshots.get(a)
+        if snaps:
+            books[a] = _cadence.live(_book_of(snaps[-1]))
+    return _entities_rule.find_entities(changes, books, now=now)
+
+
+async def recompute_entities() -> int:
+    """Daily with the roster refresh (and at start): regroup lockstep wallets. Returns groups."""
+    global _entity_of, _entity_members, _entities_at
+    now = time.time()
+    try:
+        groups, links = await asyncio.to_thread(_compute_entities, now)
+    except Exception as exc:
+        logger.warning("HyperLens: lockstep grouping failed: %s", exc)
+        return len(_entity_members)
+    members: Dict[str, List[str]] = {}
+    for a, g in groups.items():
+        members.setdefault(g, []).append(a)
+    _entity_of, _entity_members, _entities_at = groups, {g: sorted(m) for g, m in members.items()}, now
+    logger.info("HyperLens: %d lockstep groups (%d wallets) from %d links", len(members), len(groups), len(links))
+    return len(members)
 
 
 # ---------------------------------------------------------------------------
@@ -1119,6 +1197,9 @@ def _recompute_consensus() -> None:
     Stale snapshots (>15min old) are excluded to prevent ghost data.
 
     Also computes per-cohort consensus (money_printer / smart_money).
+
+    Counts are of traders, not wallets: wallets that trade as one (hl_entities) count once per
+    coin, on the side of their combined dollars. Dollars are summed over every wallet.
     """
     global _consensus, _mp_book, _fresh_wallets, _consensus_wallets
 
@@ -1131,6 +1212,7 @@ def _recompute_consensus() -> None:
     # Collect per-symbol data (skip stale + MM-like wallets)
     sym_data: Dict[str, dict] = {}
     fresh_wallet_count = 0
+    fresh_entities: Set[str] = set()
     recent_count = 0
 
     for wallet in _roster:
@@ -1156,6 +1238,8 @@ def _recompute_consensus() -> None:
 
         fresh_wallet_count += 1
         addr = wallet.address
+        ent = entity_of(addr)
+        fresh_entities.add(ent)
         is_mp = addr in mp_addresses
         is_sm = addr in sm_addresses
 
@@ -1180,12 +1264,20 @@ def _recompute_consensus() -> None:
                     "mp_long_notional": 0.0, "mp_short_notional": 0.0,
                     "sm_long": 0, "sm_short": 0,
                     "sm_long_notional": 0.0, "sm_short_notional": 0.0,
+                    # entity -> net signed USD (all / money printers / smart money), for trader counts
+                    "ent": {}, "mp_ent": {}, "sm_ent": {},
                 }
 
             d = sym_data[coin]
+            signed = pos.size_usd if pos.side == "LONG" else -pos.size_usd
             if is_mp and not coin.startswith("xyz:"):
-                book = mp_book.setdefault(addr, {})
-                book[coin] = book.get(coin, 0.0) + (pos.size_usd if pos.side == "LONG" else -pos.size_usd)
+                book = mp_book.setdefault(ent, {})
+                book[coin] = book.get(coin, 0.0) + signed
+            d["ent"][ent] = d["ent"].get(ent, 0.0) + signed
+            if is_mp:
+                d["mp_ent"][ent] = d["mp_ent"].get(ent, 0.0) + signed
+            if is_sm:
+                d["sm_ent"][ent] = d["sm_ent"].get(ent, 0.0) + signed
             w_score = score_map.get(wallet.address, 1.0)
             d["leverages"].append(pos.leverage)
 
@@ -1194,27 +1286,30 @@ def _recompute_consensus() -> None:
             notional_weight = pos.size_usd * w_score
 
             if pos.side == "LONG":
-                d["long_count"] += 1
                 d["long_notional"] += pos.size_usd
                 d["weighted_sum"] += notional_weight
                 d["top_longs"].append(wallet.address)
                 if is_mp:
-                    d["mp_long"] += 1
                     d["mp_long_notional"] += pos.size_usd
                 if is_sm:
-                    d["sm_long"] += 1
                     d["sm_long_notional"] += pos.size_usd
             else:
-                d["short_count"] += 1
                 d["short_notional"] += pos.size_usd
                 d["weighted_sum"] -= notional_weight
                 d["top_shorts"].append(wallet.address)
                 if is_mp:
-                    d["mp_short"] += 1
                     d["mp_short_notional"] += pos.size_usd
                 if is_sm:
-                    d["sm_short"] += 1
                     d["sm_short_notional"] += pos.size_usd
+
+    # Trader counts: each entity once, on the side of its net dollars in the coin
+    for d in sym_data.values():
+        for key, lk, sk in (("ent", "long_count", "short_count"), ("mp_ent", "mp_long", "mp_short"),
+                            ("sm_ent", "sm_long", "sm_short")):
+            nets = d.pop(key).values()
+            d[lk] = sum(1 for v in nets if v > 0)
+            d[sk] = sum(1 for v in nets if v < 0)
+    fresh_trader_count = len(fresh_entities)
 
     # Build consensus objects
     new_consensus: Dict[str, SymbolConsensus] = {}
@@ -1248,7 +1343,7 @@ def _recompute_consensus() -> None:
         # Confidence = directional conviction * participation rate
         # 3L/1S with 4/100 wallets positioned = much weaker than
         # 30L/10S with 40/100 wallets positioned
-        participation = total_positioned / max(fresh_wallet_count, 1)
+        participation = total_positioned / max(fresh_trader_count, 1)
         confidence = min(abs(blended) * math.sqrt(participation), 1.0)
 
         # Average leverage across all positioned wallets for this symbol
@@ -1265,8 +1360,8 @@ def _recompute_consensus() -> None:
             symbol=coin,
             long_count=d["long_count"],
             short_count=d["short_count"],
-            neutral_count=fresh_wallet_count - total_positioned,
-            total_tracked=fresh_wallet_count,
+            neutral_count=fresh_trader_count - total_positioned,
+            total_tracked=fresh_trader_count,
             long_notional=d["long_notional"],
             short_notional=d["short_notional"],
             net_score=blended,
@@ -1300,10 +1395,11 @@ def _recompute_consensus() -> None:
 def profitable_lean(groups_of) -> Dict[str, dict]:
     """How profitable traders lean per group (sector, ecosystem, ...).
 
-    ``groups_of(coin)`` returns the group keys a coin belongs to. Each wallet is
+    ``groups_of(coin)`` returns the group keys a coin belongs to. Each trader is
     counted once per group, on the side of its net dollar exposure there, so a
-    trader long five AI coins is one AI long, not five. ``lean`` is
-    (long - short) / (long + short) over wallets, in [-1, +1].
+    trader long five AI coins is one AI long, not five. Wallets that trade as one
+    (hl_entities) are one trader: _mp_book is keyed by entity. ``lean`` is
+    (long - short) / (long + short) over traders, in [-1, +1].
     """
     out: Dict[str, dict] = {}
     for book in _mp_book.values():
@@ -1487,6 +1583,7 @@ def get_roster(cohort: Optional[str] = None, min_av: float = _DISPLAY_MIN_AV) ->
             "position_count": pos_count,
             "tradfi_position_count": xyz_count,
             "cohorts": cohorts_list,
+            "entity": _entity_of.get(w.address),
         }
 
         # Add cohort-specific ranks when available
@@ -1556,9 +1653,10 @@ def _cohort_readings(cohort: str):
 
 def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
     """Each position one group of tracked wallets holds in a coin, largest first. Same wallets and filters as
-    positioning_map, so the counts and dollars match it. ``size_usd`` is valued at entry (as Hyperliquid
+    positioning_map, so the dollars match it. ``size_usd`` is valued at entry (as Hyperliquid
     reports it); ``move`` is the unrealised PnL over that, in percent (the price move in the holder's favour);
-    ``roe`` is the return on margin in percent."""
+    ``roe`` is the return on margin in percent; ``entity`` is the wallet's lockstep group (None when it
+    trades alone), so counts can take a group once."""
     out = []
     for wallet, latest in _cohort_readings(cohort):
         for p in latest.positions:
@@ -1569,7 +1667,8 @@ def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
             out.append({"address": wallet.address, "side": p.side.lower(), "size_usd": round(p.size_usd),
                         "entry": p.entry_px, "leverage": p.leverage, "upnl": round(p.unrealized_pnl),
                         "roe": None if roe is None else round(roe, 1),
-                        "move": round(100 * p.unrealized_pnl / p.size_usd, 2) if p.size_usd else None})
+                        "move": round(100 * p.unrealized_pnl / p.size_usd, 2) if p.size_usd else None,
+                        "entity": _entity_of.get(wallet.address)})
     out.sort(key=lambda x: -x["size_usd"])
     return out
 
@@ -1579,13 +1678,22 @@ def positioning_map(cohort: str = "profitable") -> dict:
     median entry per side, and how many of them are in profit at the current mark.
 
     Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
-    "profitable" (money printers) or "large" (largest accounts). ``holding`` counts the
-    wallets with any position; the rest are flat.
+    "profitable" (money printers) or "large" (largest accounts).
+
+    Counts are of traders: wallets that trade as one (hl_entities) count once per coin, on the
+    side of their combined dollars, at their dollar-weighted entry, in profit when their combined
+    unrealised PnL is positive. Dollars (``usd``) are summed over every wallet; ``wallets`` per side
+    is the plain wallet count. Top level: ``wallets``/``holding`` count wallets, ``traders``/
+    ``traders_holding`` count traders.
     """
     raw: Dict[str, dict] = {}
     wallets = holding = 0
+    traders: Set[str] = set()
+    traders_holding: Set[str] = set()
     for wallet, latest in _cohort_readings(cohort):
         wallets += 1
+        ent = entity_of(wallet.address)
+        traders.add(ent)
         held = False
         for p in latest.positions:
             if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size:
@@ -1595,20 +1703,37 @@ def positioning_map(cohort: str = "profitable") -> dict:
             side = p.side.lower()
             # Current price from the position's unrealised PnL (size_usd is valued at entry).
             mark = p.entry_px + (p.unrealized_pnl if side == "long" else -p.unrealized_pnl) / abs(p.size)
-            d = raw.setdefault(coin, {"marks": [], "long": [], "short": []})
+            d = raw.setdefault(coin, {"marks": [], "long": [], "short": [], "ent": {}})
             d["marks"].append(mark)
-            d[side].append((p.entry_px, p.size_usd, (mark > p.entry_px) if side == "long" else (mark < p.entry_px)))
+            d[side].append(p.size_usd)
+            e = d["ent"].setdefault(ent, {"net": 0.0, "long": [0.0, 0.0, 0.0], "short": [0.0, 0.0, 0.0]})
+            e["net"] += p.size_usd if side == "long" else -p.size_usd
+            acc = e[side]                                  # dollars, dollars x entry, unrealised PnL
+            acc[0] += p.size_usd
+            acc[1] += p.size_usd * p.entry_px
+            acc[2] += p.unrealized_pnl
         holding += held
+        if held:
+            traders_holding.add(ent)
     out: Dict[str, dict] = {}
     for coin, d in raw.items():
         row = {"mark": statistics.median(d["marks"])}
+        per_side = {"long": [], "short": []}
+        for e in d["ent"].values():
+            side = "long" if e["net"] > 0 else "short" if e["net"] < 0 else None
+            if side is None:
+                continue
+            usd, usd_px, upnl = e[side]
+            if usd > 0:
+                per_side[side].append((usd_px / usd, upnl > 0))
         for side in ("long", "short"):
-            xs = d[side]
-            row[side] = {"n": len(xs), "usd": round(sum(x[1] for x in xs)),
+            xs = per_side[side]
+            row[side] = {"n": len(xs), "usd": round(sum(d[side])), "wallets": len(d[side]),
                          "median_entry": statistics.median(x[0] for x in xs) if xs else None,
-                         "in_profit": sum(1 for x in xs if x[2])}
+                         "in_profit": sum(1 for x in xs if x[1])}
         out[coin] = row
-    return {"wallets": wallets, "holding": holding, "coins": out}
+    return {"wallets": wallets, "holding": holding, "traders": len(traders),
+            "traders_holding": len(traders_holding), "coins": out}
 
 
 def wallet_positions(address: str) -> dict:
@@ -1681,6 +1806,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                     "liq_distance_pct": pos.liq_distance_pct,
                     "position_age_s": round(now - fs, 0) if (fs := _position_first_seen.get(wallet.address, {}).get(pos.coin)) else None,
                     "cohorts": sorted(_wallet_cohorts.get(wallet.address, set())),
+                    "entity": _entity_of.get(wallet.address),
                     "asset_class": pos.asset_class,
                     "dex": pos.dex,
                 })
@@ -2170,6 +2296,8 @@ def get_wallet_profile(address: str) -> Optional[dict]:
         "cohorts": cohorts_list,
         "mp_rank": mp_rank_val,
         "sm_rank": sm_rank_val,
+        # Lockstep group (hl_entities): counted as one trader with its other wallets; None if alone
+        "entity": entity_info(address),
         # Performance stats
         "stats": {
             "total_trades": total_closed,
@@ -2823,6 +2951,10 @@ def get_status() -> dict:
         "db": _db_stats(),
         # Hyperliquid info API calls per minute by request type (every caller in this process)
         "api_calls": _hl_calls.stats(),
+        # Lockstep groups: wallets counted as one trader
+        "entities": {"groups": len(_entity_members), "wallets": len(_entity_of),
+                     "computed_at": _entities_at or None,
+                     "sizes": sorted((len(m) for m in _entity_members.values()), reverse=True)},
     }
 
 
@@ -2883,6 +3015,7 @@ async def run_hyperlens_loop() -> None:
                     continue
                 _initialized = True
                 last_roster_refresh = time.time()
+                await recompute_entities()
 
             # Pressure map sub-task — spawn/cancel based on the flag
             if get_flag("hyperlens_pressure_map"):
@@ -2899,6 +3032,7 @@ async def run_hyperlens_loop() -> None:
             if time.time() - last_roster_refresh > _ROSTER_REFRESH_INTERVAL:
                 await refresh_leaderboard()
                 last_roster_refresh = time.time()
+                await recompute_entities()
 
             # Poll positions — skip while idle (no viewer to serve); the poll
             # hits Hyperliquid once per roster member, so at rest this is the

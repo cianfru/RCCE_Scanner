@@ -8,6 +8,8 @@ Built from data the server already holds: the scan results, the candles in the O
 store, the positioning map, the tracker's opens and the stored 4H record of profitable
 traders per coin. Nothing here calls an outside API.
 
+Trader counts take wallets that trade as one (hl_entities) once; dollars are summed.
+
 Each coin also carries the profitable cohort's dollars in it (``money``) and its own weekly
 bull market support band from the stored daily candles (``band``); ``ladder`` lists that
 cohort's positions in one coin for the Radar's price ladder.
@@ -100,7 +102,7 @@ def traders(coin: str, prof: dict, large: dict, opens: Iterable[dict], now: floa
     new = {("long"): set(), ("short"): set()}
     for o in opens:
         if o["coin"] == coin and o["cohort"] == "profitable" and now - o["ts"] <= 86400:
-            new[o["side"]].add(o["address"])
+            new[o["side"]].add(o.get("entity") or o["address"])       # a lockstep group opens once
     return {"pl": get(p, "long", "n"), "ps": get(p, "short", "n"),
             "ple": (p.get("long") or {}).get("median_entry"), "pse": (p.get("short") or {}).get("median_entry"),
             "ll": get(l, "long", "n"), "ls": get(l, "short", "n"),
@@ -242,9 +244,11 @@ def ladder(item: dict, positions: List[dict], mean: Optional[float], now: float)
     import statistics
     sides = {s: [p for p in positions if p["side"] == s] for s in ("long", "short")}
     med = {s: sig(statistics.median(p["entry"] for p in xs)) if xs else None for s, xs in sides.items()}
+    traders = {s: len({p.get("entity") or p["address"] for p in xs}) for s, xs in sides.items()}
     return {"coin": item["coin"], "symbol": item["symbol"], "price": item.get("price"), "stage": item.get("stage"),
             "zscore": item.get("zscore"), "updated_at": now, "band": item.get("band"), "mean": sig(mean),
-            "counts": {"long": len(sides["long"]), "short": len(sides["short"]),
+            "counts": {"long": traders["long"], "short": traders["short"],
+                       "long_wallets": len(sides["long"]), "short_wallets": len(sides["short"]),
                        "long_usd": sum(p["size_usd"] for p in sides["long"]),
                        "short_usd": sum(p["size_usd"] for p in sides["short"])},
             "median_entry": med,

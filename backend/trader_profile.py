@@ -486,6 +486,7 @@ async def profile(address: str) -> Optional[dict]:
     ranks = {w: next((x["rank"] for x in ranked(w) if x["address"] == address), None) for w in WINDOWS}
     res = {
         "address": address, "tracked": tracked, "cohorts": sorted(hl._wallet_cohorts.get(address, set())),
+        "entity": hl.entity_info(address),      # lockstep group (counted as one trader), None when alone
         "ranks": ranks, "board_size": len(ranked("30d", "profitable")),
         "account_value": av, "band": size_band(av), "windows": _windows(address, port), "win": stats,
         "equity": equity, "positions": positions,
