@@ -4508,7 +4508,7 @@ async def traders_leaderboard(
     window: str = Query("30d", pattern="^(7d|30d|all)$"),
     cohort: str = Query("profitable", pattern="^(profitable|large)$"),
     offset: int = Query(0, ge=0, le=1000),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=300),
 ):
     """A tracked group ranked by PnL over 7 days, 30 days or all time (Hyperliquid leaderboard
     windows, from the daily download). Win rate: positions closed in the last 30 days, computed

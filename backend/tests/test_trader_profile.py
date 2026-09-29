@@ -213,3 +213,4 @@ def test_fills_and_history_endpoints(client):
     assert client.get(f"/api/traders/{A}/fills?coin=BTC").json()["count"] == 0
     h = client.get(f"/api/traders/{A}/history?limit=1").json()
     assert h["total"] == 1 and h["trips"][0]["closed_at"] == 180 and h["trips"][0]["coin"] == "ETH"
+    assert h["coins"] == [{"coin": "ETH", "n": 1}] and h["earliest_fill"] == 0

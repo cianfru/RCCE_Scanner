@@ -42,7 +42,8 @@ WINDOWS = ("7d", "30d", "all")
 WINDOW_DAYS = {"7d": 7, "30d": 30, "all": None}
 # hl_intelligence's roster fields per window: (pnl, roi); Hyperliquid names them week / month / allTime.
 _ROSTER_FIELDS = {"7d": ("week_pnl", "week_roi"), "30d": ("pnl", "roi"), "all": ("all_time_pnl", "all_time_roi")}
-_PORTFOLIO_KEYS = {"7d": "week", "30d": "month", "all": "allTime"}
+# The perp account (the positions shown are perps; the leaderboard bands use the perp account too).
+_PORTFOLIO_KEYS = {"7d": ("perpWeek", "week"), "30d": ("perpMonth", "month"), "all": ("perpAllTime", "allTime")}
 
 PROFILE_FILLS_MAX_AGE_S = 90       # a profile re-reads fills older than this
 PROFILE_CACHE_S = 60
@@ -377,11 +378,12 @@ async def wallet_fills(address: str) -> dict:
 
 
 def parse_portfolio(raw) -> dict:
-    """Hyperliquid portfolio -> {window: {"pnl", "equity": [[t_s, value]], "start_value"}} for 7d/30d/all."""
+    """Hyperliquid portfolio -> {window: {"pnl", "equity": [[t_s, value]], "start_value"}} for 7d/30d/all,
+    for the perp account (the whole account when the perp series are missing)."""
     by = {k: v for k, v in raw} if isinstance(raw, list) else {}
     out = {}
-    for w, key in _PORTFOLIO_KEYS.items():
-        d = by.get(key) or {}
+    for w, (perp_key, key) in _PORTFOLIO_KEYS.items():
+        d = by.get(perp_key) or by.get(key) or {}
         av = [[p[0] / 1000, float(p[1])] for p in d.get("accountValueHistory") or []]
         pnl = d.get("pnlHistory") or []
         out[w] = {"pnl": float(pnl[-1][1]) if pnl else None, "equity": av,
@@ -518,7 +520,13 @@ async def history(address: str, coin: Optional[str] = None, offset: int = 0, lim
     """Closed positions (round trips), most recent first, paginated."""
     from hl_intelligence import _normalize_coin
     got = await wallet_fills(address.lower())
-    trips = round_trips(classify_fills(got["fills"]))["closed"]
-    trips = [dict(tr, hl_coin=tr["coin"], coin=_normalize_coin(tr["coin"])) for tr in trips if _match(coin, tr["coin"])]
+    every = [dict(tr, hl_coin=tr["coin"], coin=_normalize_coin(tr["coin"]))
+             for tr in round_trips(classify_fills(got["fills"]))["closed"]]
+    counts: Dict[str, int] = {}
+    for tr in every:
+        counts[tr["coin"]] = counts.get(tr["coin"], 0) + 1
+    trips = [tr for tr in every if _match(coin, tr["hl_coin"])]
     return {"address": address.lower(), "total": len(trips), "offset": offset, "limit": limit,
-            "trips": trips[offset:offset + limit], "covered_from": got.get("covered_from")}
+            "trips": trips[offset:offset + limit], "covered_from": got.get("covered_from"),
+            "earliest_fill": got["fills"][0]["time"] / 1000 if got.get("fills") else None,
+            "coins": [{"coin": c, "n": n} for c, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]}
