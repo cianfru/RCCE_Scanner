@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Request, Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -4498,6 +4498,65 @@ async def followed_add(body: dict):
 async def followed_remove(address: str):
     import followed_traders as ft
     return {"removed": ft.remove(address), "address": address.lower()}
+
+
+# ── Trader leaderboard and profiles (trader_profile.py) ─────────────────────
+# /leaderboard is declared before /{address}: the address pattern would reject it with a 422.
+
+@app.get("/api/traders/leaderboard")
+async def traders_leaderboard(
+    window: str = Query("30d", pattern="^(7d|30d|all)$"),
+    cohort: str = Query("profitable", pattern="^(profitable|large)$"),
+    offset: int = Query(0, ge=0, le=1000),
+    limit: int = Query(50, ge=1, le=300),
+):
+    """A tracked group ranked by PnL over 7 days, 30 days or all time (Hyperliquid leaderboard
+    windows, from the daily download). Win rate: positions closed in the last 30 days, computed
+    from each wallet's fills in the background and filled in as it arrives."""
+    import trader_profile as tp
+    return tp.leaderboard(window, cohort, offset, limit)
+
+
+@app.get("/api/traders/{address}")
+async def trader_profile_summary(address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$")):
+    """A trader's account value, PnL/ROI per window, win rate, equity history and open positions."""
+    import trader_profile as tp
+    res = await tp.profile(address)
+    if res is None:
+        raise HTTPException(status_code=404, detail="No Hyperliquid activity for this address")
+    return res
+
+
+@app.get("/api/traders/{address}/fills")
+async def trader_fills(
+    address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$"),
+    coin: Optional[str] = Query(None, max_length=20, pattern=r"^[A-Za-z0-9]+$"),
+    since: Optional[float] = Query(None, ge=0),
+    until: Optional[float] = Query(None, ge=0),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """The trader's perp fills, most recent first, each classified against the running position:
+    open, add, trim, close or flip."""
+    import trader_profile as tp
+    try:
+        return await tp.fills(address, coin, since, until, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Fills unavailable: {exc}")
+
+
+@app.get("/api/traders/{address}/history")
+async def trader_history(
+    address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$"),
+    coin: Optional[str] = Query(None, max_length=20, pattern=r"^[A-Za-z0-9]+$"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Closed positions (open to flat), most recent first, from the trader's latest fills."""
+    import trader_profile as tp
+    try:
+        return await tp.history(address, coin, offset, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"History unavailable: {exc}")
 
 
 @app.get("/api/hyperlens/wallet/{address}")

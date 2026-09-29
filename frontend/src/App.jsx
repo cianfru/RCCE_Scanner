@@ -1,11 +1,14 @@
 import SectorStrip from "./components/SectorStrip.jsx";
 import { inGroup, SECTOR_SHORT } from "./utils/sectors.js";
 import "./terminal.css";
+import "./traders.css";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { T, REGIME_ORDER, MCAP_RANK, getBaseSymbol } from "./theme.js";
 import { marketHref, timeframeFrom } from "./utils/researchNavigation.js";
 import { activeMainTab as mainTabFor, mainTabTargets, readLastScanner, writeLastScanner } from "./utils/mainNav.js";
+import { addressFromPath, profilePath } from "./utils/traderBoard.js";
+import { codename } from "./utils/walletName.js";
 import { useTheme } from "./ThemeContext";
 import useViewport from "./hooks/useViewport.js";
 import useFavorites from "./hooks/useFavorites.js";
@@ -44,6 +47,7 @@ const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
 const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
 const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 const BridgePage = lazy(() => import("./pages/BridgePage.jsx"));
+const TraderPage = lazy(() => import("./pages/TraderPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -145,12 +149,17 @@ export default function App() {
     }
     if (/^\/scanner\/[^/]+$/.test(path)) return "1d";      // coin page
     if (path === "/hyperlens") return "traders";            // redirected below
+    if (path === "/traders/leaderboard") return "traders";  // the Traders page's Leaderboard view
+    if (addressFromPath(path)) return "trader";             // a trader's profile: /trader/0x...
     return ROUTE_TO_TAB[path] || "notfound";
   }, [path, location.search]);
 
   // The scanner timeframe last viewed, for AI Assist
   const lastScannerTf = useRef("1d");
   if (activeTab === "4h" || activeTab === "1d") lastScannerTf.current = activeTab;
+
+  // /trader/:address, the address always lowercase (a mixed-case link is redirected below).
+  const traderAddress = activeTab === "trader" ? addressFromPath(path) : null;
 
   // Detect /scanner/:symbol route for dedicated coin page
   const coinPageSymbol = useMemo(() => {
@@ -697,8 +706,9 @@ export default function App() {
     document.title = coinPageSymbol ? `${getBaseSymbol(coinPageSymbol)} · Reflex`
       : showDashboard ? `${scannerTitle} ${activeTab.toUpperCase()} · Reflex`
       : activeTab === "radar" ? `Radar ${radarTf.toUpperCase()} · Reflex`
+      : activeTab === "trader" ? `${codename(traderAddress)} · Reflex`
       : `${TAB_TITLES[activeTab] || "Reflex"} · Reflex`;
-  }, [coinPageSymbol, showDashboard, scannerTitle, activeTab, radarTf]);
+  }, [coinPageSymbol, showDashboard, scannerTitle, activeTab, radarTf, traderAddress]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -724,6 +734,7 @@ export default function App() {
 
   // The old HyperLens address opens Traders, keeping its query.
   if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
+  if (traderAddress && traderAddress !== traderAddress.toLowerCase()) return <Navigate to={profilePath(traderAddress) + location.search} replace />;
 
   const pageMargin = { marginTop: isMobile ? 16 : 20 };
 
@@ -894,7 +905,7 @@ export default function App() {
       )}
 
       {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode; Radar and 404 draw their own) ── */}
-      {!coinPageSymbol && activeTab !== "chat" && activeTab !== "radar" && activeTab !== "notfound" && (
+      {!coinPageSymbol && activeTab !== "chat" && activeTab !== "radar" && activeTab !== "notfound" && activeTab !== "trader" && (
         <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
@@ -1031,6 +1042,12 @@ export default function App() {
             <FadeIn delay={300} style={pageMargin}>
               <HyperLensPanel isMobile={isMobile} />
             </FadeIn>
+          </Suspense>
+        )}
+
+        {activeTab === "trader" && traderAddress && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <TraderPage address={traderAddress.toLowerCase()} />
           </Suspense>
         )}
 

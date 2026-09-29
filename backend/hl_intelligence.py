@@ -163,6 +163,10 @@ class TrackedWallet:
     roi: Optional[float] = 0.0    # Monthly percentage ROI; None when it means nothing (near-empty start)
     score: float = 0.0            # monthly_roi * log(accountValue) ranking
     all_time_pnl: float = 0.0
+    # The leaderboard's other windows (same download): 7-day PnL and ROI, all-time ROI.
+    week_pnl: Optional[float] = None
+    week_roi: Optional[float] = None
+    all_time_roi: Optional[float] = None
 
 
 @dataclass
@@ -413,6 +417,7 @@ async def refresh_leaderboard() -> int:
             roi = 0.0
             monthly_vlm = 0.0
             all_time_pnl = 0.0
+            week_pnl = week_roi = all_time_roi = None
             window_perfs = entry.get("windowPerformances", [])
 
             if window_perfs and isinstance(window_perfs, list):
@@ -427,6 +432,10 @@ async def refresh_leaderboard() -> int:
                             monthly_vlm = float(metrics.get("vlm", 0) or 0)
                         elif window_name == "allTime":
                             all_time_pnl = float(metrics.get("pnl", 0) or 0)
+                            all_time_roi = float(metrics.get("roi", 0) or 0) * 100
+                        elif window_name == "week":
+                            week_pnl = float(metrics.get("pnl", 0) or 0)
+                            week_roi = float(metrics.get("roi", 0) or 0) * 100
             else:
                 pnl = float(entry.get("pnl", 0) or 0)
                 roi = float(entry.get("roi", 0) or 0) * 100
@@ -448,6 +457,9 @@ async def refresh_leaderboard() -> int:
                 roi=roi,
                 score=score,
                 all_time_pnl=all_time_pnl,
+                week_pnl=week_pnl,
+                week_roi=None if week_roi is None or week_pnl is None else _meaningful_roi(week_pnl, week_roi),
+                all_time_roi=None if all_time_roi is None else _meaningful_roi(all_time_pnl, all_time_roi),
             ))
         except Exception:
             continue  # Skip malformed entries
