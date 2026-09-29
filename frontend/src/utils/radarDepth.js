@@ -24,13 +24,19 @@ export const hasMoney = c => grossOf(c) > 0;
 // Old payloads (no money field anywhere): the map keeps sizing by wallet count.
 export const moneyMode = coins => coins.some(c => c && c.money);
 export const rmaxFor = w => (w < 600 ? 20 : 30);
-export const maxMoney = coins => Math.max(0, ...coins.map(grossOf));
+export const maxMoney = (coins, size = grossOf) => Math.max(0, ...coins.map(size));
+// The dollars the profitable cohort holds short in a coin (the Short view's bubble size).
+export const shortOf = c => c?.money?.short_usd || 0;
+// A bubble's dollars for a map side: short dollars in Short, long plus short otherwise.
+export const sizeFor = side => (side === "short" ? shortOf : grossOf);
 
-// Bubble radius: area proportional to the profitable cohort's dollars (long plus short), the
-// largest coin on the map at rmax; at least 3.2px with any money; a 2px grey dot without.
-export function bubbleRadius(c, G, rmax) {
-  if (!hasMoney(c) || !G) return 2;
-  return Math.max(3.2, rmax * Math.sqrt(grossOf(c) / G));
+// Bubble radius: area proportional to the profitable cohort's dollars (long plus short, or the
+// side's dollars with `size`), the largest coin on the map at rmax; at least 3.2px with any
+// money; a 2px grey dot without.
+export function bubbleRadius(c, G, rmax, size = grossOf) {
+  const v = size(c);
+  if (!(v > 0) || !G) return 2;
+  return Math.max(3.2, rmax * Math.sqrt(v / G));
 }
 export const countRadius = c => 4.5 + Math.min(6, Math.sqrt((c?.traders?.pl || 0) + (c?.traders?.ps || 0)));
 
@@ -48,10 +54,26 @@ export function shortSlice(r, netLongShare) {
   if (netLongShare == null) return null;
   const sh = 1 - netLongShare;
   if (!((r >= 8 && sh >= 0.02) || sh >= 0.4)) return null;
-  const big = r >= 12, rr = r - (big ? 0.75 : 0.5);
-  const a = 2 * Math.PI * Math.min(sh, 0.999);
+  return wedge(r - (r >= 12 ? 0.75 : 0.5), sh);
+}
+
+// A wedge of share f of a circle of radius rr, from 12 o'clock clockwise, around the centre.
+function wedge(rr, f) {
+  const a = 2 * Math.PI * Math.min(f, 0.999);
   const x1 = rr * Math.sin(a), y1 = -rr * Math.cos(a);
   return `M0,0 L0,${(-rr).toFixed(2)} A${rr.toFixed(2)},${rr.toFixed(2)} 0 ${a > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)} Z`;
+}
+
+// The Both view's pie: the bubble in the long colour with the short dollars' share as a wedge in
+// the short colour (from 12 o'clock clockwise), at any share. base: the colour under the wedge
+// ("long", or "short" when nobody is long; null without money); wedge: the path, or null when one
+// side holds it all.
+export function sidePie(r, money) {
+  const lu = money?.long_usd || 0, su = money?.short_usd || 0;
+  if (lu + su <= 0) return { base: null, wedge: null, short: null };
+  const sh = su / (lu + su);
+  if (!lu) return { base: "short", wedge: null, short: 1 };
+  return { base: "long", wedge: su > 0 ? wedge(r - (r >= 12 ? 0.75 : 0.5), sh) : null, short: sh };
 }
 
 // ------------------------------------------------------------------ band halo

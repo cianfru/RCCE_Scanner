@@ -6,7 +6,7 @@ import { fmtPx } from "../../utils/traderFormat.js";
 import { fmtIn, nextCloses, pastEntry, setupSide } from "../../utils/intel.js";
 import { formatPrice } from "../../utils/marketPresentation.js";
 import { fmtUsd, inEntryZone } from "../../utils/radarDepth.js";
-import { CROWD_WORD, SIGNAL_SHORT, STAGES, ZONE_WORD, enteredAt, movement, pnl, sinceText, tradersLine } from "../../utils/setupMap.js";
+import { CROWD_WORD, SIGNAL_SHORT, STAGES, SHORT_ZONE_N, SHORT_ZONE_Z, ZONE_WORD, enteredAt, inShortZone, movement, netShort, pnl, shortLine, sinceText, tradersLine } from "../../utils/setupMap.js";
 import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, crowdColor, sc, signed, zoneColor } from "./shared.jsx";
 
 function FocusChart({ c }) {
@@ -124,11 +124,37 @@ function FreshList({ xs, box, focus, onPick }) {
   </>;
 }
 
+// Most shorted (the Short view, in place of the new early setups): the coins most profitable
+// traders are net short, one row each in the same style: logo and coin, "stretched" beside it in
+// the Stretched and shorted zone; the stage and the shorts (count and dollars) under it; how many
+// net short and the stretch on the right. A click follows the coin on the map.
+function ShortList({ xs, focus, onPick }) {
+  return <ul className="rf-list">{xs.map(c => {
+    const stage = (STAGES.find(s => s.key === c.stage) || { name: "No setup" }).name;
+    const z = c.zscore != null ? c.zscore.toFixed(2) : null;
+    const line = shortLine(c, fmtUsd), ns = netShort(c), sz = inShortZone(c);
+    return <li key={c.coin}>
+      <button type="button" className="rf-row" aria-pressed={focus === c.coin} onClick={() => onPick(c.coin)}
+        aria-label={`${c.coin}${sz ? " (stretched and shorted)" : ""}: ${stage}, ${line}, ${ns} net short${z ? `, stretch ${z}` : ""}`}>
+        <TokenLogo symbol={c.symbol} size={32} />
+        <span className="rf-who">
+          <span className="rf-coin">{c.coin}{sz && <span className="rf-ez rf-sz" title={`Stretched ${SHORT_ZONE_Z} or more with ${SHORT_ZONE_N} or more profitable traders net short`}>stretched</span>}</span>
+          <span className="rf-sub"><span style={{ color: sc(c) }}>{stage}</span> · {line}</span>
+        </span>
+        <span className="rf-end">
+          <span className="rf-crowd" style={{ color: "var(--rd-short)" }}>{ns} net short</span>
+          {z && <span className="rf-when" title="Stretch (z-score)">z {z}</span>}
+        </span>
+      </button>
+    </li>;
+  })}</ul>;
+}
+
 // The rail beside the map: the followed coin (its price ladder and readings, or one line on how
-// to follow one), the watch list, your trades and the new early setups.
-// Never an empty box.
-export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, box, focus, onPick }) {
-  return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label="Followed coin, watch list and new early setups">
+// to follow one), the watch list, your trades and the new early setups (the most shorted in the
+// Short view: `shorted` is then a list, else null). Never an empty box.
+export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, shorted = null, box, focus, onPick }) {
+  return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label={`Followed coin, watch list and ${shorted ? "most shorted" : "new early setups"}`}>
     {focusSlot}
     {stripWatch.length > 0 && <section className="radar-sec">
       <h3 className="radar-sec-h"><Pin />Watching <span>({stripWatch.length})</span></h3>
@@ -140,7 +166,10 @@ export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mi
         ? <div className="radar-rows">{stripMine.map(([c, m]) => <StripRow key={c.coin} c={c} mine={m} onClick={() => onPick(c.coin)} />)}</div>
         : mineLoading ? <div className="radar-row-skel shimmer-loading" aria-hidden="true" /> : <p className="smap-note">No open perp positions on the map.</p>}
     </section>}
-    {fresh.length > 0 && <section className="radar-sec">
+    {shorted ? shorted.length > 0 && <section className="radar-sec">
+      <h3 className="radar-sec-h">Most shorted</h3>
+      <ShortList xs={shorted} focus={focus} onPick={onPick} />
+    </section> : fresh.length > 0 && <section className="radar-sec">
       <h3 className="radar-sec-h">New early setups <span>({fresh.length})</span></h3>
       <FreshList xs={fresh} box={box} focus={focus} onPick={onPick} />
     </section>}

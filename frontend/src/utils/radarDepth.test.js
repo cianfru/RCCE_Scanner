@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bandInfo, beeswarm, entryNote, entryRing, inEntryZone, bubbleRadius, candidates, fmtUsd, haloRing, ladderCounts, ladderDomain, ladderRadius, legendSizes, logScale,
+import { bandInfo, sidePie, sizeFor, shortOf, beeswarm, entryNote, entryRing, inEntryZone, bubbleRadius, candidates, fmtUsd, haloRing, ladderCounts, ladderDomain, ladderRadius, legendSizes, logScale,
   maxMoney, moneyMode, niceTicks, pctText, sameSpot, shortAddr, shortSlice, spreadLabels, stepPick, topWallets, traderPath, walletPnl } from "./radarDepth.js";
 
 const coin = (gross, share = 1, o = {}) => ({ coin: "X", money: { gross_usd: gross, long_usd: gross * share, short_usd: gross * (1 - share), net_long_share: gross ? share : null }, ...o });
@@ -154,4 +154,23 @@ test("entry zone: the server's flag, a dashed ring outside the halo, the ladder'
   assert.equal(entryNote({ dist_pct: -14.6, in_zone: false }, 3), "price 15% below their entry");
   assert.equal(entryNote({ dist_pct: 8.2, in_zone: false }, 2), "");      // fewer than 3 long: nothing
   assert.equal(entryNote(null, 5), "");
+});
+
+test("Short view size: dollars short; Both: a pie of long and short dollars", () => {
+  const a = { money: { long_usd: 9e6, short_usd: 1e6, gross_usd: 10e6 } }, b = { money: { long_usd: 0, short_usd: 4e6, gross_usd: 4e6 } };
+  const none = { money: { long_usd: 5e6, short_usd: 0, gross_usd: 5e6 } };
+  assert.equal(sizeFor("short")(a), 1e6);
+  assert.equal(sizeFor("long")(a), 10e6);
+  assert.equal(sizeFor("both")(a), 10e6);
+  assert.equal(maxMoney([a, b, none], shortOf), 4e6);
+  assert.equal(bubbleRadius(b, 4e6, 30, shortOf), 30);
+  assert.equal(bubbleRadius(a, 4e6, 30, shortOf), 15);                // area proportional: a quarter of the dollars, half the radius
+  assert.equal(bubbleRadius(none, 4e6, 30, shortOf), 2);              // nobody short: the grey dot
+  const p = sidePie(20, a.money);
+  assert.equal(p.base, "long"); assert.equal(p.short, 0.1);
+  assert.match(p.wedge, /^M0,0 L0,-19\.25 A19\.25,19\.25 0 0 1 /);
+  assert.deepEqual(sidePie(20, b.money), { base: "short", wedge: null, short: 1 });
+  assert.deepEqual(sidePie(20, none.money), { base: "long", wedge: null, short: 0 });
+  assert.deepEqual(sidePie(20, {}), { base: null, wedge: null, short: null });
+  assert.match(sidePie(5, { long_usd: 99, short_usd: 1 }).wedge, /^M0,0 L0,-4\.50 /);   // any share shows, even on a small bubble
 });

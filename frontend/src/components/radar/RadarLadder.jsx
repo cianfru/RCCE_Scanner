@@ -18,7 +18,8 @@ const TONE_COLOR = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "in
 // long and short; distance to the band. compact (the phone sheet, under the coin's own title):
 // no first line.
 // mark: the live mark price the followed coin's readings show, else the map's price.
-export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420, stack = [], onPick, compact = false }) {
+// side: the map's Long · Short · Both; in Short the header's counts lead with the shorts.
+export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420, stack = [], onPick, compact = false, side = "long" }) {
   const { data: lad, loading, error } = useLadder(c?.coin, tf);
   const host = useRef(null), head = useRef(null), plot = useRef(null);
   const [W, setW] = useState(360);
@@ -126,7 +127,9 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
         <strong>{c.coin}</strong><span className="rl-px">{fmtLadderPx(price)}</span><span className="rl-gross">{fmtUsd(held)} held</span>
         <LadderHelp />
       </div>}
-      <div className="rl-count"><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span>{compact && <LadderHelp />}</div>
+      <div className="rl-count">{side === "short"
+        ? <><span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span> · <span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span></>
+        : <><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span></>}{compact && <LadderHelp />}</div>
       <div className="rl-sub"><span style={{ color: TONE_COLOR[bi.tone] }}>{bi.text}</span>{note && <span className={entry?.in_zone ? "rl-ez" : undefined}>{` · ${note}`}</span>}</div>
       {stack.length > 0 && <div className="rl-quick"><span>Same spot</span>{stack.map(k => <button key={k} type="button" onClick={() => onPick?.(k)}>{k}</button>)}</div>}
     </div>
