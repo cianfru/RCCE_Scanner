@@ -119,6 +119,8 @@ An **event** on coin X at close D when, at D, all of these hold:
 
 None.
 
+Clarification, 29 September 2026, before any reading was logged: "all coins" in the benchmark means the coins read at close D (the unit above), each with a close at D and D + 14.
+
 ## Results
 
 To be added at each report. Nothing above changes.

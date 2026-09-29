@@ -11,7 +11,7 @@ import { useWallet } from "../WalletContext.jsx";
 import { timeframeFrom } from "../utils/researchNavigation.js";
 import { altBaseline, groupStats, inGroup, SECTOR_SHORT } from "../utils/sectors.js";
 import { fmtIn, nextCloses } from "../utils/intel.js";
-import { isAddress, newEarly, picks, visible, watchToast } from "../utils/setupMap.js";
+import { forwardLine, isAddress, newEarly, picks, visible, watchToast } from "../utils/setupMap.js";
 import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
@@ -117,6 +117,20 @@ function ViewPicker({ showAll, onView, mineOn, onMine }) {
   </>;
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+// The declared forward test's status, one quiet line; read when the (i) opens (it mounts only then).
+function ForwardLine() {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/radar/forward-test`).then(r => (r.ok ? r.json() : null)).then(j => { if (live) setSt(j); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const text = forwardLine(st);
+  return text ? <p className="radar-ft">{text}</p> : null;
+}
+
 // The (i) beside the title: what the Radar is, why it exists, how to read it and what to take
 // from it, in plain words. Opens on a click or tap; Escape or a tap outside closes it.
 function RadarAbout() {
@@ -137,9 +151,11 @@ function RadarAbout() {
       <li><b>Early setups box:</b> not yet stretched, with a few profitable traders already in.</li>
       <li><b>Top right:</b> stretched and crowded (many traders already in), so late.</li>
       <li><b>Ring:</b> empty when price is far above the band, full at the band, violet inside it, red when the last weekly close ended under it.</li>
+      <li><b>Dashed ring:</b> price is within 3% of where profitable traders entered on average — buying near where they bought, not after them.</li>
     </ul>
     <h4>What you can take from it</h4>
     <p>A shortlist to research, not a trade signal. Click a bubble to see who holds it and at what price, then click a trader to open their profile. Replay shows how the coins moved over recent closes.</p>
+    <ForwardLine />
     </div>
   </HelpTip>;
 }

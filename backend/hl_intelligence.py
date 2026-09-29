@@ -1724,7 +1724,9 @@ def positioning_map(cohort: str = "profitable") -> dict:
     Counts are of traders: wallets that trade as one (hl_entities) count once per coin, on the
     side of their combined dollars, at their dollar-weighted entry, in profit when their combined
     unrealised PnL is positive. Dollars (``usd``) are summed over every wallet; ``wallets`` per side
-    is the plain wallet count. Top level: ``wallets``/``holding`` count wallets, ``traders``/
+    is the plain wallet count. ``avg_entry`` per side is the dollar-weighted average entry of the
+    traders counted on that side (their positions on that side only; dollars valued at entry), the
+    Radar's entry zone. Top level: ``wallets``/``holding`` count wallets, ``traders``/
     ``traders_holding`` count traders.
     """
     raw: Dict[str, dict] = {}
@@ -1766,11 +1768,13 @@ def positioning_map(cohort: str = "profitable") -> dict:
                 continue
             usd, usd_px, upnl = e[side]
             if usd > 0:
-                per_side[side].append((usd_px / usd, upnl > 0))
+                per_side[side].append((usd_px / usd, upnl > 0, usd, usd_px))
         for side in ("long", "short"):
             xs = per_side[side]
+            w = sum(x[2] for x in xs)
             row[side] = {"n": len(xs), "usd": round(sum(d[side])), "wallets": len(d[side]),
                          "median_entry": statistics.median(x[0] for x in xs) if xs else None,
+                         "avg_entry": sum(x[3] for x in xs) / w if w > 0 else None,
                          "in_profit": sum(1 for x in xs if x[1])}
         out[coin] = row
     return {"wallets": wallets, "holding": holding, "traders": len(traders),

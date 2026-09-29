@@ -196,7 +196,7 @@ def test_ladder_endpoint_shape(monkeypatch):
     monkeypatch.setattr(hl, "_snapshots", {a.address: deque([PositionSnapshot(_t.time(), [p], 1e6)])})
     c = TestClient(main.app)
     body = c.get("/api/setup-map/ladder?coin=SUI&tf=1d").json()
-    assert set(body) == {"coin", "symbol", "price", "stage", "zscore", "updated_at", "band", "mean", "counts",
+    assert set(body) == {"coin", "symbol", "price", "stage", "zscore", "updated_at", "band", "entry", "mean", "counts",
                          "median_entry", "positions"}
     assert body["band"] == band and body["counts"] == {"long": 1, "short": 0, "long_usd": 300, "short_usd": 0,
                                                               "long_wallets": 1, "short_wallets": 0}

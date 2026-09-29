@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STAGES, at, labelBox, labelOrder, placeLabels, symlog, trailPoints } from "../../utils/setupMap.js";
-import { bandInfo, bubbleRadius, candidates, countRadius, fmtUsd, grossOf, haloRing, hasMoney, legendSizes, maxMoney, rmaxFor, shortSlice, stepPick } from "../../utils/radarDepth.js";
+import { bandInfo, bubbleRadius, candidates, countRadius, entryRing, fmtUsd, grossOf, haloRing, hasMoney, inEntryZone, legendSizes, maxMoney, rmaxFor, shortSlice, stepPick } from "../../utils/radarDepth.js";
 import { Pin, RM, XS, sc, stageColor, stepLabel } from "./shared.jsx";
 import HelpTip from "../HelpTip.jsx";
 
 const TONE = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "var(--rd-halo)" };
 const net = c => (c.traders?.pl || 0) - (c.traders?.ps || 0);
+
+// The entry zone's dashed ring for the legend, around a small bubble.
+function EntryKey() {
+  return <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+    <circle cx="9" cy="9" r="4.5" fill={stageColor("running")} />
+    <circle cx="9" cy="9" r="7.6" fill="none" stroke="var(--rd-long)" strokeWidth="1.1" strokeDasharray="2.4 1.6" />
+  </svg>;
+}
 
 // A small ring for the legend: fill share f of the band halo, in a colour, with the red tick.
 function Ring({ f = 0, color, tick }) {
@@ -20,7 +28,9 @@ function Ring({ f = 0, color, tick }) {
 // The Radar's map: every coin placed by stretch (the engine's z-score) and profitable-trader
 // lean, with trails of the last closes and a playable timeline. Bubble area is the dollars the
 // profitable wallets hold in the coin (a pink slice for the short share; a small grey dot when
-// none hold it), and a ring tracks the distance to the coin's weekly band. Drawn by React,
+// none hold it), and a ring tracks the distance to the coin's weekly band; a thin dashed ring
+// outside it marks the entry zone (price within 3% of the profitable traders' average long
+// entry; shown at "now" only, like the band ring). Drawn by React,
 // moved imperatively while playing (behind Replay). The key sits behind an (i). A click picks the nearest centre and steps through coins
 // stacked at one spot. Labels: the coins with the most money, placed without collisions at rest
 // and again at each close the timeline passes; between two closes every label keeps its side.
@@ -55,7 +65,9 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     const empty = moneyOn && !hasMoney(c);
     const bi = moneyOn && !empty ? bandInfo(c.band, c.price) : null;
     const ring = bi ? haloRing(r, bi) : null;
-    return [c.coin, { r, empty, bi, ring, outer: ring ? Math.max(r, ring.outer) : r, slice: moneyOn && !empty ? shortSlice(r, c.money?.net_long_share) : null }];
+    const edge = ring ? Math.max(r, ring.outer) : r;
+    const ez = moneyOn && !empty ? entryRing(edge, inEntryZone(c)) : null;
+    return [c.coin, { r, empty, bi, ring, ez, outer: ez ? ez.outer : edge, slice: moneyOn && !empty ? shortSlice(r, c.money?.net_long_share) : null }];
   })), [pts, G, rmax, moneyOn]);
 
   const byMoney = useMemo(() => [...pts].filter(hasMoney).sort((a, b) => grossOf(b) - grossOf(a)), [pts]);
@@ -298,6 +310,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
                     {ring.arc > 0 && <circle r={ring.hr} fill="none" stroke={TONE[gm.bi.tone]} strokeWidth={ring.sw} strokeDasharray={`${ring.arc.toFixed(2)} ${ring.C.toFixed(2)}`} transform="rotate(-90)" />}
                     {ring.tick && <line x1="0" x2="0" y1={-ring.hr - 3} y2={-ring.hr + 2.5} stroke="var(--rd-red)" strokeWidth="2" strokeLinecap="round" />}
                   </g>}
+                  {gm.ez && <circle className="smap-halo smap-ez" r={gm.ez.r.toFixed(2)} fill="none" stroke="var(--rd-long)" strokeWidth={gm.ez.sw} strokeDasharray={gm.ez.dash} transform="rotate(-90)" />}
                   <circle className="smap-core" r={r} fill={col} fillOpacity={gm.empty ? 0.55 : moneyOn && big ? 0.58 : 0.9} strokeWidth={big ? 1.5 : 1} />
                   {gm.slice && <path className="smap-slice" d={gm.slice} fill="var(--rd-short)" fillOpacity={big ? 0.55 : 0.85} />}
                   {on && <circle className="smap-sel" r={(gm.outer + 3.5).toFixed(2)} fill="none" />}
@@ -347,6 +360,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
                 <span><Ring f={0.5} color="var(--rd-halo)" />near band</span>
                 <span><Ring f={1} color="var(--rd-inband)" />in band</span>
                 <span><Ring f={1} color="var(--rd-red)" />closed under</span>
+                <span><EntryKey />entry zone</span>
               </div>
             </> : <div className="grp"><span><i className="smap-ringkey" />Opened long in 24h</span></div>}
             {(watched.size > 0 || mineOn) && <div className="grp">
@@ -357,6 +371,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
           <p>Across: how stretched the coin is against its own recent average (z-score). Up: how many profitable Hyperliquid traders are net long.</p>
           <p>Bubble size: the dollars those traders hold, longs plus shorts; the pink slice is the short share. A small grey dot: none hold it.</p>
           <p>Ring: how far price is from the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above it, full at its top edge, violet inside it, red when the last weekly close ended under it.</p>
+          <p>Dashed ring: price is within 3% of where profitable traders entered on average — buying near where they bought, not after them.</p>
         </HelpTip>
       </div>
     </div>

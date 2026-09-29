@@ -5,7 +5,7 @@ import { col } from "../../theme.js";
 import { fmtPx } from "../../utils/traderFormat.js";
 import { fmtIn, nextCloses, pastEntry, setupSide } from "../../utils/intel.js";
 import { formatPrice } from "../../utils/marketPresentation.js";
-import { fmtUsd } from "../../utils/radarDepth.js";
+import { fmtUsd, inEntryZone } from "../../utils/radarDepth.js";
 import { CROWD_WORD, SIGNAL_SHORT, STAGES, ZONE_WORD, enteredAt, movement, pnl, sinceText, tradersLine } from "../../utils/setupMap.js";
 import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, crowdColor, sc, signed, zoneColor } from "./shared.jsx";
 
@@ -86,7 +86,8 @@ function StripRow({ c, mine, onClick }) {
 
 // New early setups, one row each: logo and coin; the setup's stage and its profitable traders
 // (count and dollars) under it; the crowd read and how long ago it came into the box on the
-// right. Six at most, the rest behind "Show all". A click follows the coin on the map.
+// right; "entry zone" beside the coin when price sits within 3% of the profitable traders' average
+// long entry (a small dashed ring, as on the map). Six at most, the rest behind "Show all". A click follows the coin on the map.
 const FRESH_MAX = 6;
 const QUIET_CROWD = new Set(["holding", "quiet"]);
 function FreshList({ xs, box, focus, onPick }) {
@@ -101,12 +102,13 @@ function FreshList({ xs, box, focus, onPick }) {
       const z = c.zscore != null ? c.zscore.toFixed(2) : null;
       const crowd = c.crowd ? CROWD_WORD[c.crowd] : null;
       const traders = tradersLine(c, fmtUsd);
+      const ez = inEntryZone(c);
       return <li key={c.coin}>
         <button type="button" className="rf-row" aria-pressed={focus === c.coin} onClick={() => onPick(c.coin)}
-          aria-label={`${c.coin}: ${stage}, ${traders}${crowd ? `, ${crowd}` : ""}${since ? `, in the box ${since === "now" ? "since this close" : `for ${since}`}` : ""}`}>
+          aria-label={`${c.coin}${ez ? " (in the entry zone)" : ""}: ${stage}, ${traders}${crowd ? `, ${crowd}` : ""}${since ? `, in the box ${since === "now" ? "since this close" : `for ${since}`}` : ""}`}>
           <TokenLogo symbol={c.symbol} size={32} />
           <span className="rf-who">
-            <span className="rf-coin">{c.coin}</span>
+            <span className="rf-coin">{c.coin}{ez && <span className="rf-ez" title="Price is within 3% of where profitable traders entered on average"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6" /></svg>entry zone</span>}</span>
             <span className="rf-sub"><span style={{ color: sc(c) }}>{stage}</span> · {traders}</span>
           </span>
           <span className="rf-end">

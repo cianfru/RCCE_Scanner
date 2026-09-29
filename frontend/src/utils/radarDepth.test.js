@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bandInfo, beeswarm, bubbleRadius, candidates, fmtUsd, haloRing, ladderCounts, ladderDomain, ladderRadius, legendSizes, logScale,
+import { bandInfo, beeswarm, entryNote, entryRing, inEntryZone, bubbleRadius, candidates, fmtUsd, haloRing, ladderCounts, ladderDomain, ladderRadius, legendSizes, logScale,
   maxMoney, moneyMode, niceTicks, pctText, sameSpot, shortAddr, shortSlice, spreadLabels, stepPick, topWallets, traderPath, walletPnl } from "./radarDepth.js";
 
 const coin = (gross, share = 1, o = {}) => ({ coin: "X", money: { gross_usd: gross, long_usd: gross * share, short_usd: gross * (1 - share), net_long_share: gross ? share : null }, ...o });
@@ -138,4 +138,20 @@ test("ladder wallets: profile address, the largest first, P&L on margin", () => 
   assert.equal(walletPnl({ roe: 12, move: 3 }), 0.12);
   assert.equal(walletPnl({ move: -3 }), -0.03);
   assert.equal(walletPnl({}), null);
+});
+
+test("entry zone: the server's flag, a dashed ring outside the halo, the ladder's note", () => {
+  assert.equal(inEntryZone({ entry: { in_zone: true } }), true);
+  assert.equal(inEntryZone({ entry: { in_zone: false } }), false);
+  assert.equal(inEntryZone({}), false);
+  assert.equal(entryRing(10, false), null);
+  const r = entryRing(10, true);
+  assert.ok(r.r > 10 + 2 && r.outer > r.r);
+  const [a, b] = r.dash.split(" ").map(Number);
+  assert.ok(a > b && Math.abs((a + b) * Math.round((2 * Math.PI * r.r) / (a + b)) - 2 * Math.PI * r.r) < 0.25);   // whole dashes
+  assert.equal(entryNote({ dist_pct: 1.2, in_zone: true }, 5), "in their entry zone");
+  assert.equal(entryNote({ dist_pct: 8.24, in_zone: false }, 5), "price 8.2% above their entry");
+  assert.equal(entryNote({ dist_pct: -14.6, in_zone: false }, 3), "price 15% below their entry");
+  assert.equal(entryNote({ dist_pct: 8.2, in_zone: false }, 2), "");      // fewer than 3 long: nothing
+  assert.equal(entryNote(null, 5), "");
 });

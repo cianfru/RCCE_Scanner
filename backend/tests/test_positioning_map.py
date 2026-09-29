@@ -28,7 +28,9 @@ def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
     pm = hl.positioning_map("profitable")
     assert pm["wallets"] == 3 and pm["holding"] == 2
     sui = pm["coins"]["SUI"]
+    avg = sui["long"].pop("avg_entry")
     assert sui["long"] == {"n": 2, "usd": 475, "wallets": 2, "median_entry": 3.25, "in_profit": 1}
+    assert abs(avg - (300 * 3.0 + 175 * 3.5) / 475) < 1e-12                  # dollar-weighted, not the median
     assert sui["short"]["n"] == 0 and abs(sui["mark"] - 3.3) < 1e-9
     assert pm["coins"]["PEPE"]["short"]["in_profit"] == 0          # kPEPE normalised; short above entry
     assert hl.positioning_map("large")["coins"]["SUI"]["short"]["n"] == 1

@@ -89,6 +89,34 @@ export function haloRing(r, info) {
   return { show, track, hr, sw, C, arc, tick: show && !!info.tick, outer };
 }
 
+// ------------------------------------------------------------------ entry zone
+// The server decides whether a coin is in its entry zone (backend setup_map.entry: 3 or more
+// profitable traders long and price within 3% of their dollar-weighted average long entry).
+// The map marks it with a thin dashed ring just outside the band halo; the ladder names it.
+export const inEntryZone = c => !!c?.entry?.in_zone;
+
+// The dashed ring's geometry outside a bubble whose drawn edge (halo included) is at `outer`:
+// radius, stroke, dash, and the new outer edge for the selection ring, labels and marks.
+export function entryRing(outer, on) {
+  if (!on) return null;
+  const sw = 1.1, r = outer + 2.2 + sw / 2;
+  const C = 2 * Math.PI * r;
+  // About 14 dashes on a small ring, more on a big one; the gaps stay short so it reads as a ring.
+  const n = Math.max(8, Math.min(24, Math.round(C / 5)));
+  const dash = (0.6 * C) / n, gap = (0.4 * C) / n;
+  return { r, sw, dash: `${dash.toFixed(2)} ${gap.toFixed(2)}`, outer: r + sw / 2 };
+}
+
+// The ladder header's note on the entry zone: "in their entry zone", or where price sits against
+// their average long entry once 3 or more are long ("price 8.2% above their entry"); "" otherwise.
+export function entryNote(entry, nLong) {
+  if (!entry || entry.dist_pct == null) return "";
+  if (entry.in_zone) return "in their entry zone";
+  if ((nLong || 0) < 3) return "";
+  const d = Math.abs(entry.dist_pct);
+  return `price ${d >= 10 ? Math.round(d) : d.toFixed(1)}% ${entry.dist_pct >= 0 ? "above" : "below"} their entry`;
+}
+
 // ------------------------------------------------------------------ picking
 // Nearest centre, not topmost element: small dots within reach of the pointer (nearest first),
 // then bubbles the pointer is inside (smallest first, so a small bubble drawn over a big one

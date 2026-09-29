@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, enteredAt, sinceText, tradersLine, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, enteredAt, sinceText, tradersLine, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast, forwardLine } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -272,4 +272,11 @@ test("new early setups: when each came into the box, and the list line", () => {
   const usd = v => `$${v}`;
   assert.equal(tradersLine({ traders: { pl: 2, ps: 1 }, money: { gross_usd: 5 } }, usd), "3 traders · $5");
   assert.equal(tradersLine({ traders: { pl: 1, ps: 0 } }, usd), "1 trader");
+});
+
+test("forward test line: days logged and scored events against the minimum", () => {
+  assert.equal(forwardLine(null), "");
+  assert.equal(forwardLine({ days_logged: 0, H1: { scored: 0 }, min_events: 30 }), "Forward test: logging from the next daily close.");
+  assert.equal(forwardLine({ days_logged: 1, H1: { scored: 1 }, min_events: 30 }), "Forward test: 1 day logged, 1 event scored (needs 30).");
+  assert.equal(forwardLine({ days_logged: 12, H1: { scored: 3 }, min_events: 30 }), "Forward test: 12 days logged, 3 events scored (needs 30).");
 });

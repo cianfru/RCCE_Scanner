@@ -246,3 +246,12 @@ export function radarHref({ tf = "1d", focus, sector, view } = {}) {
   if (view === "all") p.set("view", "all");
   return `/radar?${p}`;
 }
+
+// The Radar forward test's one line in the (i) (/api/radar/forward-test): days logged and the
+// early-setup events with an outcome so far, against the declared minimum. "" without a status.
+export function forwardLine(st) {
+  if (!st || st.days_logged == null) return "";
+  if (!st.days_logged) return "Forward test: logging from the next daily close.";
+  const n = st.H1?.scored || 0, d = st.days_logged;
+  return `Forward test: ${d} day${d === 1 ? "" : "s"} logged, ${n} event${n === 1 ? "" : "s"} scored (needs ${st.min_events || 30}).`;
+}
