@@ -14,11 +14,13 @@ test("scanner and coin pages activate Scanner; coin pages opened from the Radar 
   assert.equal(activeMainTab("/scanner/BTC", "?tf=1d&from=" + encodeURIComponent("/radar?tf=1d&focus=BTC")), "radar");
   assert.equal(activeMainTab("/radar", "?tf=4h"), "radar");
   assert.equal(activeMainTab("/traders", ""), "traders");
+  assert.equal(activeMainTab("/traders/leaderboard", ""), "traders");
+  assert.equal(activeMainTab("/trader/0x91867345424fb158888ff9c5f1b1b2e7cd7d65d5", ""), "traders");
   assert.equal(activeMainTab("/portfolio", ""), "portfolio");
 });
 
 test("More pages, settings and unknown addresses have no active tab", () => {
-  for (const p of ["/signals", "/analytics", "/tradfi", "/backtest", "/executor", "/ai", "/settings", "/nope", "/scanner/BTC/extra"])
+  for (const p of ["/signals", "/analytics", "/tradfi", "/backtest", "/executor", "/ai", "/settings", "/nope", "/scanner/BTC/extra", "/trader/0x123", "/trader"])
     assert.equal(activeMainTab(p, ""), null, p);
 });
 

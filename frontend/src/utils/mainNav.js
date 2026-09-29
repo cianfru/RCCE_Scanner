@@ -9,7 +9,8 @@ export const MAIN_TABS = [
 
 export const LAST_SCANNER_KEY = "rcce-last-scanner";
 
-// Scanner: /scanner and coin pages; Radar: /radar and coin pages opened from it.
+// Scanner: /scanner and coin pages; Radar: /radar and coin pages opened from it; Traders: its
+// views, the leaderboard and trader profiles.
 // More pages, Settings and unknown addresses have no active tab (null).
 export function activeMainTab(pathname, search = "") {
   const path = String(pathname || "").replace(/\/+$/, "") || "/";
@@ -19,7 +20,8 @@ export function activeMainTab(pathname, search = "") {
     return from.startsWith("/radar") ? "radar" : "scanner";
   }
   if (path === "/radar") return "radar";
-  if (path === "/traders" || path === "/hyperlens") return "traders";
+  if (path === "/traders" || path === "/hyperlens" || path === "/traders/leaderboard") return "traders";
+  if (/^\/trader\/0x[0-9a-fA-F]{40}$/.test(path)) return "traders";     // a trader's profile
   if (path === "/portfolio") return "portfolio";
   return null;
 }

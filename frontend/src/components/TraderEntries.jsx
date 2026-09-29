@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { profilePath } from "../utils/traderBoard.js";
 import useFollowed from "../hooks/useFollowed.js";
 import { sideBarColor, sideColor, fmtPx, fmtUsd, fmtWhen } from "../utils/traderFormat.js";
 import { openedAgo, pnlPct, sizeShare, vsNowLabel } from "../utils/traderRow.js";
@@ -62,7 +64,12 @@ export default function TraderEntries({ entries, onShow, loading = false, limit 
               <div className="te-main" role="button" tabIndex={0} aria-expanded={isOpen}
                 aria-label={`${name}: ${tr.side} ${fmtUsd(tr.size_usd)}, average entry ${fmtPx(tr.entry_px)}, P&L ${pnl}, opened ${opened}. ${isOpen ? "Hide" : "Show"} fills and other positions`}
                 onClick={flip} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } }}>
-                <span className="te-c te-who"><WalletTag className="te-addr" address={tr.address} name={name} size={34} sub /></span>
+                <span className="te-c te-who">
+                  {/* The name opens the trader's profile; the rest of the row opens the fills below. */}
+                  <Link className="te-who-link" to={profilePath(tr.address)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                    <WalletTag className="te-addr" address={tr.address} name={name} size={34} sub />
+                  </Link>
+                </span>
                 <span className="te-c te-pos">
                   <span className="te-pos-t"><span className="te-side" style={{ color: sideColor(tr.side) }}>{sideWord(tr.side)}</span> <span className="te-size">{fmtUsd(tr.size_usd)}</span></span>
                   <span className="te-sbar" aria-hidden="true"><i style={{ width: `${share * 100}%`, background: sideBarColor(tr.side) }} /></span>

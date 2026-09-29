@@ -6,8 +6,11 @@ import TraderSummary from "./TraderSummary.jsx";
 import HelpTip from "./HelpTip.jsx";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import TraderLeaderboard, { WindowSwitch } from "./TraderLeaderboard.jsx";
+import { profilePath, WINDOW_KEYS } from "../utils/traderBoard.js";
 import TokenLogo from "./TokenLogo.jsx";
+import EquityChart from "./EquityChart.jsx";
 import WalletTag, { WalletAvatar } from "./WalletTag.jsx";
 import useFollowed from "../hooks/useFollowed.js";
 import { T } from "../theme.js";
@@ -539,80 +542,6 @@ function HeatmapGrid({ consensus, onSymbolClick, cohort, isMobile }) {
   );
 }
 
-// ─── EQUITY CHART (full-width SVG like HyperTracker) ───────────────────────
-
-function EquityChart({ data, width = 500, height = 120 }) {
-  const containerRef = useRef(null);
-  const [cw, setCw] = useState(width);
-  useEffect(() => {
-    if (containerRef.current) setCw(containerRef.current.offsetWidth);
-    const ro = new ResizeObserver(([e]) => setCw(e.contentRect.width));
-    if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  if (!data || data.length < 2) {
-    return (
-      <div ref={containerRef} style={{ width: "100%", height, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: T.mono, fontSize: T.textXs, color: T.text4 }}>Collecting equity data...</span>
-      </div>
-    );
-  }
-
-  const values = data.map(d => d.value ?? d);
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
-  const range = maxV - minV || 1;
-  const pad = { top: 8, right: 6, bottom: 6, left: 54 };
-  const chartW = cw - pad.left - pad.right;
-  const chartH = height - pad.top - pad.bottom;
-  const isUp = values[values.length - 1] >= values[0];
-  const lineColor = isUp ? T.green : T.red;
-
-  const points = values.map((v, i) => ({
-    x: pad.left + (i / (values.length - 1)) * chartW,
-    y: pad.top + chartH - ((v - minV) / range) * chartH,
-  }));
-
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L${(pad.left + chartW).toFixed(1)},${(pad.top + chartH).toFixed(1)} L${pad.left},${(pad.top + chartH).toFixed(1)} Z`;
-  const gradId = `eq-${Math.random().toString(36).slice(2, 8)}`;
-
-  // Y-axis: 3 labels
-  const yLabels = [maxV, (maxV + minV) / 2, minV];
-
-  return (
-    <div ref={containerRef} style={{ width: "100%" }}>
-      <svg width={cw} height={height} viewBox={`0 0 ${cw} ${height}`} style={{ display: "block" }}>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={lineColor} stopOpacity="0.18" />
-            <stop offset="100%" stopColor={lineColor} stopOpacity="0.01" />
-          </linearGradient>
-        </defs>
-        {yLabels.map((v, i) => {
-          const y = pad.top + chartH - ((v - minV) / range) * chartH;
-          return (
-            <g key={i}>
-              <line x1={pad.left} y1={y} x2={cw - pad.right} y2={y}
-                stroke={T.border} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.5" />
-              <text x={pad.left - 4} y={y + 4} textAnchor="end" fill={T.text4}
-                fontFamily={T.mono} fontSize="12">{fmt$(v)}</text>
-            </g>
-          );
-        })}
-        <path d={areaPath} fill={`url(#${gradId})`} />
-        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
-        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="3" fill={lineColor} />
-        <text x={cw - pad.right} y={Math.max(points[points.length - 1].y - 6, 12)}
-          textAnchor="end" fill={lineColor} fontFamily={T.mono} fontSize="12" fontWeight="700">
-          {fmt$(values[values.length - 1])}
-        </text>
-      </svg>
-    </div>
-  );
-}
-
 // ─── BIAS GAUGE (like HyperTracker "Perp Bias") ────────────────────────────
 
 function BiasGauge({ positions }) {
@@ -846,6 +775,8 @@ function WalletDetail({ address, onClose, isMobile }) {
           {followFailed && (
             <span role="status" style={{ fontFamily: T.font, fontSize: T.textXs, color: T.yellow }}>Not saved</span>
           )}
+          <Link to={profilePath(address)} className="te-link" style={{ fontSize: T.textSm, fontWeight: 600, marginRight: 6 }}
+            title="The trader's page: positions with their fills on the chart, and closed trades">Full profile</Link>
           <button
             type="button"
             onClick={toggleFollow}
@@ -1640,6 +1571,7 @@ function SymbolDetail({ symbol, consensus, onClose, onWalletClick, isMobile }) {
 const MAIN_TABS = [
   { key: "consensus", label: "Consensus" },
   { key: "favorites", label: "Following", title: "Traders you follow, with Telegram alerts on their changes" },
+  { key: "leaderboard", label: "Leaderboard", title: "Profitable traders ranked by PnL" },
 ];
 const MORE_TABS = [
   { key: "heatmap", label: "Lean", title: "Size-weighted long/short lean per symbol" },
@@ -1649,7 +1581,7 @@ const MORE_TABS = [
 const VIEW_TABS = [...MAIN_TABS, ...MORE_TABS];
 const MORE_KEYS = new Set(MORE_TABS.map(v => v.key));
 
-// Consensus and Following, then "More views", which opens a second row with the other three.
+// Consensus, Following and Leaderboard, then "More views", which opens a second row with the other three.
 // The row stays open while one of them is the view.
 function TabSwitcher({ active, onChange }) {
   const inMore = MORE_KEYS.has(active);
@@ -1661,7 +1593,7 @@ function TabSwitcher({ active, onChange }) {
         <Tabs label="Traders view" items={MAIN_TABS} value={inMore ? null : active} onChange={(k) => { setMoreOpen(false); onChange(k); }} />
         <button type="button" className="tl-more" aria-expanded={showMore} aria-pressed={inMore}
           onClick={() => { if (!inMore) setMoreOpen(v => !v); }}>
-          More views
+          <span className="tl-more-long">More views</span><span className="tl-more-short">More</span>
           <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ transform: showMore ? "rotate(180deg)" : "none", transition: "transform 0.2s ease" }}>
             <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -1707,19 +1639,39 @@ function storedView() {
 }
 
 export default function HyperLensPanel({ isMobile }) {
-  // The view comes from ?view=, else the last one used here, else Consensus.
+  // The view comes from ?view=, else the last one used here, else Consensus. The Leaderboard has
+  // its own address, /traders/leaderboard (?window=7d|all; 30 days by default).
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const onBoard = location.pathname.replace(/\/+$/, "") === "/traders/leaderboard";
   const rawView = searchParams.get("view");
   const urlView = viewFromUrl(rawView);
-  const [tab, setTabState] = useState(() => urlView || storedView() || "consensus");
+  const [tabState, setTabState] = useState(() => urlView || storedView() || "consensus");
+  const tab = onBoard ? "leaderboard" : tabState;
   const setTab = useCallback((v) => {
-    setTabState(v);
     try { localStorage.setItem(VIEW_STORE, v); } catch { /* storage blocked: the address still carries it */ }
-  }, []);
+    if (v === "leaderboard") { navigate("/traders/leaderboard"); return; }
+    setTabState(v);
+    if (onBoard) navigate(v === "consensus" ? "/traders" : `/traders?view=${slugOf(v)}`);
+  }, [onBoard, navigate]);
+  const boardWindow = WINDOW_KEYS.has(searchParams.get("window")) ? searchParams.get("window") : "30d";
+  const setBoardWindow = (w) => {
+    const next = new URLSearchParams(searchParams);
+    if (w === "30d") next.delete("window"); else next.set("window", w);
+    setSearchParams(next, { replace: true });
+  };
   // A link or back/forward that changes ?view= moves the view; otherwise ?view= follows the
-  // view (Consensus, the default, keeps a clean /traders).
+  // view (Consensus, the default, keeps a clean /traders). The last view being the Leaderboard
+  // sends /traders there.
   const lastUrlView = useRef(rawView);
   useEffect(() => {
+    if (onBoard) return;
+    if (tabState === "leaderboard") {
+      if (urlView) { setTabState(urlView); return; }
+      navigate("/traders/leaderboard", { replace: true });
+      return;
+    }
     if (rawView !== lastUrlView.current) {
       lastUrlView.current = rawView;
       if (urlView && urlView !== tab) { setTabState(urlView); return; }
@@ -1730,7 +1682,7 @@ export default function HyperLensPanel({ isMobile }) {
     if (want) next.set("view", want); else next.delete("view");
     lastUrlView.current = want;
     setSearchParams(next, { replace: true });
-  }, [tab, rawView]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, rawView, onBoard]);  // eslint-disable-line react-hooks/exhaustive-deps
   const [filter, setFilter] = useState("");
   // Profitable traders by default: the per-coin summary. Large accounts use the same summary;
   // all wallets keep the full consensus table.
@@ -1807,7 +1759,8 @@ export default function HyperLensPanel({ isMobile }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Header card (the page's hero card: it carries the one machined metal edge) */}
       <GlassCard className="hyperlens-summary" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: isMobile ? "12px 16px 2px" : "14px 16px 2px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {/* The consensus status line; the Leaderboard carries its own explanation. */}
+        {tab !== "leaderboard" && <div style={{ padding: isMobile ? "12px 16px 2px" : "14px 16px 2px", display: "flex", flexDirection: "column", gap: 4 }}>
           <div className="tl-status">
             <div className="tl-counts" style={{ opacity: partial ? 0.55 : 1 }}>
               {ready && statusItems.map(([n, key, color]) => (
@@ -1838,15 +1791,17 @@ export default function HyperLensPanel({ isMobile }) {
               Only {fresh} of {tracked} wallets were updated in the last 75 minutes, so these figures cover a partial set.
             </div>
           )}
-        </div>
+        </div>}
 
         {/* View tabs, and the symbol filter on desktop */}
         <div style={{
           padding: isMobile ? "0 4px" : "0 4px",
           display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10,
+          paddingTop: tab === "leaderboard" ? 6 : undefined,
         }}>
           <TabSwitcher active={tab} onChange={setTab} />
           {!isMobile && <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 12px 0 0" }}>
+          {tab === "leaderboard" && <div style={{ paddingTop: 6 }}><WindowSwitch value={boardWindow} onChange={setBoardWindow} /></div>}
           {groupView && groupSelect}
           {tab === "consensus" && (
             <input
@@ -1892,13 +1847,14 @@ export default function HyperLensPanel({ isMobile }) {
 
       {/* Main content */}
       {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}
-      {(tab === "consensus" && api ? summaryLoading : loading && tab !== "cohorts" && tab !== "positioning" && tab !== "favorites") ? (
+      {(tab === "consensus" && api ? summaryLoading : loading && tab !== "cohorts" && tab !== "positioning" && tab !== "favorites" && tab !== "leaderboard") ? (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           <TableSkeleton rows={10} cols={isMobile ? 3 : 5} />
         </GlassCard>
       ) : (
         <GlassCard style={{ padding: 0, overflow: "hidden" }}>
           {tab === "favorites" && <FollowingView />}
+          {tab === "leaderboard" && <TraderLeaderboard window={boardWindow} onWindow={setBoardWindow} showSwitch={isMobile} />}
           {tab === "consensus" && api && (rows === null
             ? <div className="ts-empty">Positioning unavailable</div>
             : <TraderSummary
@@ -1906,7 +1862,7 @@ export default function HyperLensPanel({ isMobile }) {
               filter={isMobile ? "" : filter}
               cohort={api}
               isMobile={isMobile}
-              onWalletClick={(addr) => { setSelectedWallet(addr); setSelectedSymbol(null); }}
+              onWalletClick={(addr) => navigate(profilePath(addr))}
               onSymbolClick={openSymbol}
             />)}
           {tab === "consensus" && !api && (

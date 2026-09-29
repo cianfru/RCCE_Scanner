@@ -1,5 +1,8 @@
 import { useTheme } from "../ThemeContext.jsx";
 import SpikeZone from "./SpikeZone.js";
+import FillMarks from "./FillMarks.js";
+import { fillMarks, fmtPrice, fmtStamp, KIND_WORD } from "../utils/traderBoard.js";
+import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
 import WalletOpens from "./WalletOpens.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
@@ -57,6 +60,9 @@ const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
 
 // ─── Timeframe options ────────────────────────────────────────────────────────
 
+// Fill marks: the side colours, ringed in the chart's background so overlapping marks stay apart.
+const fillColors = () => ({ long: sideColor("long"), short: sideColor("short"), ring: resolveToken("bg") || "#0b1417", edge: "rgba(0,0,0,0.25)" });
+
 const TIMEFRAMES = [
   { key: "4h",  label: "4H",  limit: 600,  apiTf: "4h", barSpace: 8 },   // the server loads 600 bars (~100 days); the 200-day MA needs 1D
   { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
@@ -78,6 +84,11 @@ export default function BMSBChart({
   showSetup = true,          // false where the page header already shows the regime and signal (coin page)
   myEntry = null,            // {price, side}: the shared address's open trade, drawn as a dashed "Your entry" line
   toolbarAction = null,      // an extra control at the start of the toolbar's right cluster (the coin page's "Ask AI")
+  // Compact mode (trader profile): candles and volume only, a slim toolbar, one trader's fills.
+  compact = false,
+  fills = null,              // classified fills (/api/traders/{address}/fills), drawn as marks at their price
+  focusRange = null,         // {from, to} in seconds: the view to open on (and Reset view returns to)
+  entryLabel = "Your entry", // the myEntry line's label
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -99,7 +110,11 @@ export default function BMSBChart({
   const [showMean, setShowMean] = useState(false);
   const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
-  const [showEntries, setShowEntries] = useState(true);
+  const [showEntries, setShowEntries] = useState(!compact);
+  const [hoverMark, setHoverMark] = useState(null);
+  const fillPrimRef = useRef(null);
+  const focusRef = useRef(focusRange);
+  focusRef.current = focusRange;
   const [candleTimes, setCandleTimes] = useState(null);
   const meanSeriesRef = useRef([]);
   const ribbonSeriesRef = useRef([]);
@@ -276,6 +291,9 @@ export default function BMSBChart({
       [key, chart.addSeries(LineSeries, { color: col("#91b9e8"), lineWidth: 1, lineStyle: style, title,
         lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: showMeanRef.current })]);
     meanSeriesRef.current = meanSeries;
+    if (compact) {
+      for (const ser of [ma200Series, bmsbEmaSeries, bmsbSmaSeries, bmsbMidSeries]) ser.applyOptions({ visible: false });
+    }
 
     // ── Fetch data ──
     const tfConfig = TIMEFRAMES.find(t => t.key === tf) || TIMEFRAMES[2];
@@ -320,6 +338,11 @@ export default function BMSBChart({
           candleSeries.setData(data.candles);
           setCandleTimes(data.candles.map(c => c.time));
           candleSeriesRef.current = candleSeries;
+          if (compact) {
+            const prim = new FillMarks(fillColors());
+            candleSeries.attachPrimitive(prim);
+            fillPrimRef.current = prim;
+          }
 
           // ── Volume data ──
           if (data.volume?.length > 0) {
@@ -335,6 +358,7 @@ export default function BMSBChart({
             if (cancelled) return;
             const candle = param.seriesData?.get(candleSeries);
             readCandle(candle?.open != null ? candle : null);
+            if (compact) setHoverMark(param.point ? fillPrimRef.current?.hitTest(param.point.x, param.point.y) || null : null);
           });
           for (const [key, ser] of meanSeries) ser.setData(data.mean_lines?.[key] || []);
           if (data.spike) {
@@ -441,6 +465,15 @@ export default function BMSBChart({
         const candleCount = data.candles?.length || 0;
         resetViewRef.current = () => {
           candleSeries.priceScale().applyOptions({ autoScale: true });
+          const focus = focusRef.current;
+          if (compact && focus && candleCount) {
+            const times = data.candles.map(c => c.time);
+            const idx = t => { const i = times.findIndex(x => x > t); return i < 0 ? times.length - 1 : Math.max(0, i - 1); };
+            const a = idx(focus.from), b = idx(focus.to);
+            const pad = Math.ceil(Math.max(24, b - a) * 0.08) + 2;
+            chart.timeScale().setVisibleLogicalRange({ from: a - pad, to: Math.min(b + pad, times.length - 1 + 4) });
+            return;
+          }
           const plotWidth = Math.max(160, (containerRef.current?.clientWidth || 900) - 80);
           const preferredBars = tf === "1d" ? 150 : 180;
           const visibleBars = Math.min(preferredBars, Math.max(40, Math.floor(plotWidth / 4)));
@@ -481,6 +514,7 @@ export default function BMSBChart({
       entryMarkersRef.current = null;
       entryLinesRef.current = [];
       myEntryLineRef.current = null;
+      fillPrimRef.current = null;
       pressureLinesRef.current = [];
       patternSeriesRef.current = [];
       // The mean-line effect runs before the rebuild on a timeframe switch; it must not reach
@@ -492,7 +526,7 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode]);
+  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode, compact]);
 
   // Overlay toggles: the mean lines (with the after-the-spike zone) and the trend ribbon, off by default.
   useEffect(() => {
@@ -623,10 +657,21 @@ export default function BMSBChart({
     try {
       myEntryLineRef.current = series.createPriceLine({
         price: myEntry.price, color: sideColor(myEntry.side === "short" ? "short" : "long"), lineWidth: 2, lineStyle: LineStyle.LargeDashed,
-        axisLabelVisible: true, title: "Your entry",
+        axisLabelVisible: true, title: entryLabel,
       });
     } catch (_) { myEntryLineRef.current = null; }
-  }, [myEntry, candleTimes, mode]);
+  }, [myEntry, candleTimes, mode, entryLabel]);
+
+  // A trader's fills (compact mode): one mark per candle, kind and side. A new focus range
+  // (another position on the same coin) moves the view.
+  useEffect(() => {
+    const prim = fillPrimRef.current;
+    if (!prim || !candleTimes?.length) return;
+    prim.setMarks(fillMarks(fills || [], candleTimes), fillColors());
+  }, [fills, candleTimes, mode]);
+  useEffect(() => {
+    if (compact && candleTimes?.length && focusRange) resetViewRef.current?.();
+  }, [compact, candleTimes, focusRange?.from, focusRange?.to]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zoom from a little before the earliest burst on the chart to the latest candle.
   const firstBurst = Math.min(...(entries?.traders || []).flatMap(tr => (tr.bursts || []).map(b => b.t)));
@@ -794,13 +839,25 @@ export default function BMSBChart({
   const activePatterns = patterns.filter(p => p.status === "forming" || p.status === "confirmed").length;
 
   return (
-    <div className="price-chart-panel" style={{
+    <div className={`price-chart-panel${compact ? " price-chart-compact" : ""}`} style={{
       width: "100%",
       overflow: "hidden",
-      marginBottom: 14,
+      marginBottom: compact ? 0 : 14,
       position: "relative",
     }}>
-      {/* ── Top bar: info strip + timeframe toggle ── */}
+      {/* ── Top bar: info strip + timeframe toggle (compact: reset and timeframe only) ── */}
+      {compact ? (
+        <div className="chart-toolbar chart-toolbar-compact">
+          <div className="chart-compact-left">{toolbarAction}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Back to the position's period">Reset view</button>
+            {timeframeControl && (
+              <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
+                value={activeTimeframe} onChange={setActiveTimeframe} />
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="chart-toolbar" style={{
         position: "relative", zIndex: 5,
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -885,6 +942,7 @@ export default function BMSBChart({
           )}
         </div>
       </div>
+      )}
 
       {/* ── Loading overlay ── */}
       {loading && (
@@ -933,7 +991,15 @@ export default function BMSBChart({
       {/* ── Chart container; the candle readout floats over it only while the pointer is on a candle ── */}
       <div style={{ position: "relative" }}>
         <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
-        {hoverCandle && <div className="candle-inspector" aria-label="Candle details">
+        {hoverMark && <div className="candle-inspector fill-inspector" aria-label="Fill details">
+          <strong style={{ color: sideColor(hoverMark.side) }}>{KIND_WORD[hoverMark.kind]} {hoverMark.side}</strong>
+          <span>{fmtUsdShort(hoverMark.usd)} at <b>{fmtPrice(hoverMark.px)}</b></span>
+          {hoverMark.n > 1 && <span>{hoverMark.n} fills</span>}
+          <span>{fmtStamp(hoverMark.t0)}{hoverMark.t1 - hoverMark.t0 >= 600 ? ` to ${fmtStamp(hoverMark.t1)}` : ""}</span>
+          {hoverMark.kind !== "open" && hoverMark.kind !== "add" && Math.abs(hoverMark.pnl) >= 1 &&
+            <span style={{ color: hoverMark.pnl >= 0 ? T.green : T.red }}>{hoverMark.pnl >= 0 ? "+" : "\u2212"}{fmtUsdShort(Math.abs(hoverMark.pnl))}</span>}
+        </div>}
+        {hoverCandle && !hoverMark && <div className="candle-inspector" aria-label="Candle details">
           <span>{new Date(hoverCandle.time*1000).toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})} UTC</span>
           <strong style={{color:hoverCandle.change == null ? T.text3 : hoverCandle.change >= 0 ? col('#97FCE4') : col('#d8a094')}}>{hoverCandle.change == null ? '—' : `${hoverCandle.change>=0?'+':''}${hoverCandle.change.toFixed(2)}%`}</strong>
           {['open','high','low','close'].map(key=><span key={key}>{key[0].toUpperCase()} <b>{new Intl.NumberFormat('en',{maximumSignificantDigits:7}).format(hoverCandle[key])}</b></span>)}
