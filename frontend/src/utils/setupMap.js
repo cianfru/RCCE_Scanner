@@ -64,21 +64,50 @@ export function movers(coins, box) {
   };
 }
 
+// The trail step at which a coin last came into the box (the trail's length when the server's
+// zone says it is in but its last point is not), or null when it is not in the box now, has no
+// trail, or sat in the box for the whole trail.
+function entryStep(c, box) {
+  if (c.zone !== "watch") return null;
+  const p = trailPoints(c);
+  if (!p || p.length < 2) return null;
+  let k = p.length - 1;
+  while (k >= 0 && inBox(box, p[k].z, p[k].n)) k--;
+  return k < 0 ? null : k + 1;
+}
+
 // New early setups (coins that came into the box within the trail), newest first: the step
 // each one came in, then the engine's priority. At most `limit`.
 export function newEarly(coins, box, limit = 6) {
   const out = [];
   for (const c of coins) {
-    if (c.zone !== "watch") continue;
-    const p = trailPoints(c);
-    if (!p || p.length < 2) continue;
-    let k = p.length - 1;
-    while (k >= 0 && inBox(box, p[k].z, p[k].n)) k--;
-    if (k < 0) continue;                              // in the box for the whole trail: not new
-    out.push({ c, at: k + 1 });
+    const at = entryStep(c, box);
+    if (at != null) out.push({ c, at });
   }
   return out.sort((a, b) => b.at - a.at || (b.c.priority || 0) - (a.c.priority || 0) || a.c.coin.localeCompare(b.c.coin))
     .slice(0, limit).map(x => x.c);
+}
+
+// When a new early setup came into the box: the time (seconds) of its first trail step in it.
+export function enteredAt(c, box) {
+  const k = entryStep(c, box);
+  const t = c.trail?.t;
+  return k == null || !t?.length ? null : t[Math.min(k, t.length - 1)] ?? null;
+}
+
+// Time since a moment, short: "now" under an hour, "8h" under two days, then "3d".
+export function sinceText(tSec, nowSec) {
+  if (tSec == null || nowSec == null) return "";
+  const h = Math.floor(Math.max(0, nowSec - tSec) / 3600);
+  return h < 1 ? "now" : h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
+}
+
+// The profitable traders in a coin, for a list row: "3 traders · $1.2M" ("1 trader", no
+// dollars when the payload has none).
+export function tradersLine(c, fmtUsd) {
+  const n = (c?.traders?.pl || 0) + (c?.traders?.ps || 0);
+  const g = c?.money?.gross_usd || 0;
+  return `${n} trader${n === 1 ? "" : "s"}${g > 0 ? ` · ${fmtUsd(g)}` : ""}`;
 }
 
 // What the map shows by default: setups with at least one profitable trader, forming and

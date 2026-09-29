@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, enteredAt, sinceText, tradersLine, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -256,4 +256,20 @@ test("labels: a big bubble takes its name inside, unless a smaller one covers it
   assert.notEqual(at2.inside, true);
   const small = { coin: "LONGNAMECOIN", x: 100, y: 100, r: 14 };
   assert.notEqual(placeLabels([small], { width: 400, height: 400, insideMin: 13 }).get("LONGNAMECOIN").inside, true);
+});
+
+test("new early setups: when each came into the box, and the list line", () => {
+  const early = coin({ coin: "EARLY", trail: { t: [100, 200, 300, 400], z: [2.5, 1.0, 1.0, 1.0], n: [3, 3, 3, 3] } });
+  assert.equal(enteredAt(early, BOX), 200);
+  assert.equal(enteredAt(coin({ trail: { t: [1, 2], z: [0.5, 0.5], n: [3, 3] } }), BOX), null);   // in all along
+  assert.equal(enteredAt(coin({ zone: "late" }), BOX), null);
+  assert.equal(enteredAt(coin({ trail: { t: [1, 2], z: [2.5, 2.5], n: [3, 3] } }), BOX), 2);       // the server says in: the latest step
+  assert.equal(sinceText(1000, 1000 + 1800), "now");
+  assert.equal(sinceText(0, 8 * 3600 + 5), "8h");
+  assert.equal(sinceText(0, 47 * 3600), "47h");
+  assert.equal(sinceText(0, 72 * 3600), "3d");
+  assert.equal(sinceText(null, 5), "");
+  const usd = v => `$${v}`;
+  assert.equal(tradersLine({ traders: { pl: 2, ps: 1 }, money: { gross_usd: 5 } }, usd), "3 traders · $5");
+  assert.equal(tradersLine({ traders: { pl: 1, ps: 0 } }, usd), "1 trader");
 });

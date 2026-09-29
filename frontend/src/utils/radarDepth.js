@@ -195,3 +195,17 @@ export function ladderCounts(c, lad) {
   if (lad?.counts) return lad.counts;
   return { long: c?.traders?.pl || 0, short: c?.traders?.ps || 0, long_usd: c?.money?.long_usd || 0, short_usd: c?.money?.short_usd || 0 };
 }
+
+// ------------------------------------------------------------------ the ladder's wallets
+// A trader's profile page: the full address, lowercase.
+export const traderPath = address => `/trader/${String(address || "").toLowerCase()}`;
+
+// The largest wallets in the coin for the list under the ladder: by position dollars, then
+// address (a stable order), at most `n`.
+export function topWallets(positions, n = 5) {
+  return [...(positions || [])].sort((a, b) => (b.size_usd || 0) - (a.size_usd || 0) || String(a.address).localeCompare(String(b.address))).slice(0, n);
+}
+
+// A wallet's unrealised P&L as a share: on margin when the payload has it (as the coin page's
+// trader list shows it), else the price move since its entry.
+export const walletPnl = w => (w?.roe != null ? w.roe / 100 : w?.move != null ? w.move / 100 : null);

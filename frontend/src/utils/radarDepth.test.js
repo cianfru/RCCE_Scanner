@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { bandInfo, beeswarm, bubbleRadius, candidates, fmtUsd, haloRing, ladderCounts, ladderDomain, ladderRadius, legendSizes, logScale,
-  maxMoney, moneyMode, niceTicks, pctText, sameSpot, shortAddr, shortSlice, spreadLabels, stepPick } from "./radarDepth.js";
+  maxMoney, moneyMode, niceTicks, pctText, sameSpot, shortAddr, shortSlice, spreadLabels, stepPick, topWallets, traderPath, walletPnl } from "./radarDepth.js";
 
 const coin = (gross, share = 1, o = {}) => ({ coin: "X", money: { gross_usd: gross, long_usd: gross * share, short_usd: gross * (1 - share), net_long_share: gross ? share : null }, ...o });
 
@@ -128,4 +128,14 @@ test("labels spread apart and the formats", () => {
   assert.equal(shortAddr("0x93ab7dbdeb996806454de19c35c8247f4b2511f8"), "0x93ab...11f8");
   assert.deepEqual(ladderCounts({ traders: { pl: 3, ps: 1 }, money: { long_usd: 9, short_usd: 2 } }, null), { long: 3, short: 1, long_usd: 9, short_usd: 2 });
   assert.deepEqual(ladderCounts({}, { counts: { long: 1, short: 0, long_usd: 5, short_usd: 0 } }).long_usd, 5);
+});
+
+test("ladder wallets: profile address, the largest first, P&L on margin", () => {
+  assert.equal(traderPath("0x93AB7dbdeb996806454DE19c35c8247f4b2511F8"), "/trader/0x93ab7dbdeb996806454de19c35c8247f4b2511f8");
+  const ws = [{ address: "0xb", size_usd: 5 }, { address: "0xa", size_usd: 5 }, { address: "0xc", size_usd: 9 }, { address: "0xd" }];
+  assert.deepEqual(topWallets(ws, 3).map(w => w.address), ["0xc", "0xa", "0xb"]);
+  assert.deepEqual(topWallets(null), []);
+  assert.equal(walletPnl({ roe: 12, move: 3 }), 0.12);
+  assert.equal(walletPnl({ move: -3 }), -0.03);
+  assert.equal(walletPnl({}), null);
 });

@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Star } from "lucide-react";
 import TokenLogo from "../TokenLogo.jsx";
 import { col } from "../../theme.js";
 import { fmtPx } from "../../utils/traderFormat.js";
 import { fmtIn, nextCloses, pastEntry, setupSide } from "../../utils/intel.js";
 import { formatPrice } from "../../utils/marketPresentation.js";
-import { SIGNAL_SHORT, STAGES, ZONE_WORD, movement, pnl } from "../../utils/setupMap.js";
-import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, sc, signed, zoneColor } from "./shared.jsx";
+import { fmtUsd } from "../../utils/radarDepth.js";
+import { CROWD_WORD, SIGNAL_SHORT, STAGES, ZONE_WORD, enteredAt, movement, pnl, sinceText, tradersLine } from "../../utils/setupMap.js";
+import { Crowd, Pin, STAR_TIP, WATCH_TIP, WatchMark, crowdColor, sc, signed, zoneColor } from "./shared.jsx";
 
 function FocusChart({ c }) {
   const s = c.sparkline || [];
@@ -82,17 +84,48 @@ function StripRow({ c, mine, onClick }) {
   </button>;
 }
 
-// New early setups: logo, coin and crowd word per coin (at most six, newest first).
-function FreshList({ xs, onPick }) {
-  return <div className="smap-strip">{xs.map(c =>
-    <button type="button" key={c.coin} className="smap-chip" onClick={() => onPick(c.coin)}><TokenLogo symbol={c.symbol} size={16} /><strong>{c.coin}</strong><Crowd k={c.crowd} /></button>)}
-  </div>;
+// New early setups, one row each: logo and coin; the setup's stage and its profitable traders
+// (count and dollars) under it; the crowd read and how long ago it came into the box on the
+// right. Six at most, the rest behind "Show all". A click follows the coin on the map.
+const FRESH_MAX = 6;
+const QUIET_CROWD = new Set(["holding", "quiet"]);
+function FreshList({ xs, box, focus, onPick }) {
+  const [all, setAll] = useState(false);
+  const now = Date.now() / 1000;
+  const shown = all ? xs : xs.slice(0, FRESH_MAX);
+  return <>
+    <ul className="rf-list">{shown.map(c => {
+      const stage = (STAGES.find(s => s.key === c.stage) || { name: "No setup" }).name;
+      const t = enteredAt(c, box);
+      const since = sinceText(t, now);
+      const z = c.zscore != null ? c.zscore.toFixed(2) : null;
+      const crowd = c.crowd ? CROWD_WORD[c.crowd] : null;
+      const traders = tradersLine(c, fmtUsd);
+      return <li key={c.coin}>
+        <button type="button" className="rf-row" aria-pressed={focus === c.coin} onClick={() => onPick(c.coin)}
+          aria-label={`${c.coin}: ${stage}, ${traders}${crowd ? `, ${crowd}` : ""}${since ? `, in the box ${since === "now" ? "since this close" : `for ${since}`}` : ""}`}>
+          <TokenLogo symbol={c.symbol} size={32} />
+          <span className="rf-who">
+            <span className="rf-coin">{c.coin}</span>
+            <span className="rf-sub"><span style={{ color: sc(c) }}>{stage}</span> · {traders}</span>
+          </span>
+          <span className="rf-end">
+            {crowd && <span className="rf-crowd" style={{ color: QUIET_CROWD.has(c.crowd) ? "var(--t-text3)" : crowdColor(c.crowd) }}>{crowd}</span>}
+            <span className="rf-when" title={`${t ? `Came into the Early setups box ${since === "now" ? "at the latest reading" : `${since} ago`}. ` : ""}${z ? `Stretch (z-score) ${z}.` : ""}`}>
+              {since ? (since === "now" ? "new" : `${since} ago`) : z ? `z ${z}` : ""}
+            </span>
+          </span>
+        </button>
+      </li>;
+    })}</ul>
+    {xs.length > FRESH_MAX && <button type="button" className="rf-more" aria-expanded={all} onClick={() => setAll(v => !v)}>{all ? "Show fewer" : `Show all ${xs.length}`}</button>}
+  </>;
 }
 
 // The rail beside the map: the followed coin (its price ladder and readings, or one line on how
 // to follow one), the watch list, your trades and the new early setups.
 // Never an empty box.
-export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, onPick }) {
+export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mineLoading, fresh, box, focus, onPick }) {
   return <div className="radar-rail-wrap"><aside className="radar-rail" aria-label="Followed coin, watch list and new early setups">
     {focusSlot}
     {stripWatch.length > 0 && <section className="radar-sec">
@@ -106,8 +139,8 @@ export default function RadarRail({ focusSlot, stripWatch, stripMine, mineOn, mi
         : mineLoading ? <div className="radar-row-skel shimmer-loading" aria-hidden="true" /> : <p className="smap-note">No open perp positions on the map.</p>}
     </section>}
     {fresh.length > 0 && <section className="radar-sec">
-      <h3 className="radar-sec-h">New early setups</h3>
-      <FreshList xs={fresh} onPick={onPick} />
+      <h3 className="radar-sec-h">New early setups <span>({fresh.length})</span></h3>
+      <FreshList xs={fresh} box={box} focus={focus} onPick={onPick} />
     </section>}
   </aside></div>;
 }
