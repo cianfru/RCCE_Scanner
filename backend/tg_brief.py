@@ -26,7 +26,7 @@ from tg_alerts import coin_b, esc, usd
 
 logger = logging.getLogger(__name__)
 
-APP_URL = os.environ.get("REFLEX_APP_URL", "").strip().rstrip("/")
+APP_URL = os.environ.get("REFLEX_APP_URL", "https://reflexsignal.xyz").strip().rstrip("/")
 GRACE_S = 3 * 3600          # a brief missed by a restart still goes out within 3 hours
 CAPTION_MAX = 1024          # Telegram's limit for a photo caption
 

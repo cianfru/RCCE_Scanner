@@ -30,7 +30,7 @@ export function stepLabel(tSec, tf) {
 }
 
 export const STAR_TIP = "Starred: pinned to the top of the scanner and scanned more often. Telegram opportunity alerts include starred coins.";
-export const WATCH_TIP = "Watching: Telegram message when it enters or leaves the box, confirms Uptrend, turns crowded or gets an exit signal.";
+export const WATCH_TIP = "Watching: Telegram message when it enters Early setups or the entry zone, or gets an exit signal; other changes appear in the daily brief.";
 
 export function Crowd({ k }) {
   return k ? <b className="smap-crowd" style={{ color: crowdColor(k) }}>{CROWD_WORD[k]}</b> : null;
