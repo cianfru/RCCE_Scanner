@@ -15,12 +15,13 @@ import { isAddress, newEarly, picks, visible, watchToast } from "../utils/setupM
 import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
+import HelpTip from "../components/HelpTip.jsx";
 import Tabs from "../components/Tabs.jsx";
 import SetupIntelDrawer from "../components/SetupIntelDrawer.jsx";
 import RadarPicks from "../components/radar/RadarPicks.jsx";
 import RadarMap from "../components/radar/RadarMap.jsx";
 import RadarRail, { FocusBody } from "../components/radar/RadarRail.jsx";
-import RadarLadder from "../components/radar/RadarLadder.jsx";
+import RadarLadder, { LadderWallets } from "../components/radar/RadarLadder.jsx";
 import RadarSheet from "../components/radar/RadarSheet.jsx";
 import { RM, store } from "../components/radar/shared.jsx";
 
@@ -116,6 +117,33 @@ function ViewPicker({ showAll, onView, mineOn, onMine }) {
   </>;
 }
 
+// The (i) beside the title: what the Radar is, why it exists, how to read it and what to take
+// from it, in plain words. Opens on a click or tap; Escape or a tap outside closes it.
+function RadarAbout() {
+  return <HelpTip title="How to read the Radar" width={420} trigger="click" size={18} label="About the Radar" className="radar-about">
+    <div className="radar-explain">
+    <h4>What it is</h4>
+    <p>A map of the scanner's setups, one bubble per coin.</p>
+    <ul>
+      <li><b>Across:</b> how stretched the coin is against its own recent average. This is its z-score: 0 is at the average, 2 is far above it.</li>
+      <li><b>Up:</b> how many profitable traders on Hyperliquid (a crypto futures exchange) are net long, meaning more of them bet on a rise than on a fall.</li>
+      <li><b>Bubble size:</b> the dollars those traders hold in it.</li>
+      <li><b>Ring:</b> how far price is from the coin's weekly support band, the zone between its 20-week and 21-week averages of weekly closes.</li>
+    </ul>
+    <h4>Why we built it</h4>
+    <p>To see at a glance which setups have profitable traders behind them, and which are still early rather than already stretched or crowded.</p>
+    <h4>How to read it</h4>
+    <ul>
+      <li><b>Early setups box:</b> not yet stretched, with a few profitable traders already in.</li>
+      <li><b>Top right:</b> stretched and crowded (many traders already in), so late.</li>
+      <li><b>Ring:</b> empty when price is far above the band, full at the band, violet inside it, red when the last weekly close ended under it.</li>
+    </ul>
+    <h4>What you can take from it</h4>
+    <p>A shortlist to research, not a trade signal. Click a bubble to see who holds it and at what price, then click a trader to open their profile. Replay shows how the coins moved over recent closes.</p>
+    </div>
+  </HelpTip>;
+}
+
 // "Next 1D close in 8h 13m", kept current.
 function NextClose({ tf }) {
   const [now, setNow] = useState(() => Date.now());
@@ -168,7 +196,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const pts = useMemo(() => visible(coins, { all: showAll, keep }), [coins, showAll, keep]);
   const top = useMemo(() => picks(coins, box), [coins, box]);
   const inBoxN = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
-  const fresh = useMemo(() => newEarly(coins, box, 6), [coins, box]);
+  const fresh = useMemo(() => newEarly(coins, box, Infinity), [coins, box]);
   const moneyOn = useMemo(() => moneyMode(coins), [coins]);
   const byCoin = useMemo(() => new Map(coins.map(c => [c.coin, c])), [coins]);
   const focusC = focus ? byCoin.get(focus) || null : null;
@@ -221,6 +249,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const focusSlot = !phone && focusC
     ? <>
       <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} cardHeight={width >= 1200 ? Math.max(420, cardH - 88) : null} plotHeight={440} stack={stack} onPick={setFocus} />
+      <LadderWallets c={focusC} tf={tf} />
       <section className="smap-focus radar-focus" aria-labelledby="radar-focus-h"><FocusBody {...focusProps} withLadder titleId="radar-focus-h" /></section>
     </>
     : !focusC ? <p className="radar-hint">Tap a bubble to see who holds it.</p> : null;
@@ -247,7 +276,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
     <div className="radar-page">
       <div className="scanner-head radar-head" style={{ padding: `${phone ? T.sp4 : T.sp3}px 0 ${T.sp1}px` }}>
         <div className="radar-head-left">
-          <PageTitle>Radar</PageTitle>
+          <span className="radar-title"><PageTitle>Radar</PageTitle><RadarAbout /></span>
           <Tabs small label="Timeframe" items={TF_ITEMS} value={tf} onChange={k => setParams({ tf: k }, true)} />
           <NextClose tf={tf} />
           {sector && <span className="radar-meta radar-sector-line">{groupLabel(sector)} · <button type="button" className="te-link" onClick={() => setParams({ sector: null, by: null })}>Show all</button></span>}
@@ -269,12 +298,13 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
         <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
           mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          fresh={fresh} onPick={pick} />
+          fresh={fresh} box={box} focus={focusC ? focus : null} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">
         {sheetProps.current && <FocusBody {...sheetProps.current} withLadder titleId="radar-sheet-h">
           {focusC && <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} compact plotHeight={380} stack={stack} onPick={setFocus} />}
+          {focusC && <LadderWallets c={focusC} tf={tf} />}
         </FocusBody>}
       </RadarSheet>}
 

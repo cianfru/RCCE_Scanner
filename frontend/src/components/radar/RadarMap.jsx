@@ -354,8 +354,9 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
               {mineOn && <span><i className="radar-minekey" />My trade</span>}
             </div>}
           </div>
-          <p>Size: the dollars profitable traders hold, longs plus shorts; the pink slice is the short share. A small grey dot: none hold it.</p>
-          <p>Ring: the distance to the coin's weekly band (20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above it, full at its top edge. Violet: inside the band. Red: the last weekly close ended under it.</p>
+          <p>Across: how stretched the coin is against its own recent average (z-score). Up: how many profitable Hyperliquid traders are net long.</p>
+          <p>Bubble size: the dollars those traders hold, longs plus shorts; the pink slice is the short share. A small grey dot: none hold it.</p>
+          <p>Ring: how far price is from the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above it, full at its top edge, violet inside it, red when the last weekly close ended under it.</p>
         </HelpTip>
       </div>
     </div>

@@ -70,23 +70,25 @@ def _prune() -> None:
         del _tasks[k]
 
 
-def _fresh(address: str) -> Optional[dict]:
+def _fresh(address: str, max_age: float = CACHE_S) -> Optional[dict]:
     hit = _fills_cache.get(address)
-    return hit[1] if hit and time.time() - hit[0] < CACHE_S else None
+    return hit[1] if hit and time.time() - hit[0] < max_age else None
 
 
-async def _wallet_fills(session, address: str) -> dict:
+async def _wallet_fills(session, address: str, max_age: float = CACHE_S) -> dict:
     """The wallet's latest fills (up to 2,000, same-time fills merged) plus its timed-order slices
     (latest 2,000). ``covered_from``: fills may be missing before this time (None: full history).
+    ``max_age``: how old a cached answer may be (the trader profile asks for a fresher one).
     """
-    hit = _fresh(address)
+    hit = _fresh(address, max_age)
     if hit is not None:
         return hit
     regular = await _post(session, {"type": "userFills", "user": address, "aggregateByTime": True})
     twap = await _post(session, {"type": "userTwapSliceFills", "user": address})
     # Keep only the fields the bursts need: a full fill is ~20 fields, and up to 4,000 per wallet.
     slim = lambda f, tw: {"coin": f.get("coin"), "time": f["time"], "px": f["px"], "sz": f["sz"], "side": f.get("side"),
-                          "dir": f.get("dir"), "startPosition": f.get("startPosition"), "twap": tw, "tid": f.get("tid")}
+                          "dir": f.get("dir"), "startPosition": f.get("startPosition"), "twap": tw, "tid": f.get("tid"),
+                          "closedPnl": f.get("closedPnl"), "fee": f.get("fee")}
     fills = [slim(f, False) for f in regular] + [slim(x["fill"], True) for x in twap]
     seen, out = set(), []
     for f in sorted(fills, key=lambda f: f["time"]):

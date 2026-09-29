@@ -85,14 +85,6 @@ export default function AnomalyBanner({ isMobile }) {
           background: accent.bg,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Pulsing dot */}
-            <span style={{
-              width: 8, height: 8,
-              borderRadius: "50%",
-              background: accent.color,
-              display: "inline-block",
-              animation: "anomalyPulse 1.5s ease-in-out infinite",
-            }} />
             <span style={{
               fontSize: m(T.textSm, isMobile),
               color: accent.color,
@@ -268,14 +260,6 @@ export default function AnomalyBanner({ isMobile }) {
           );
         })}
       </GlassCard>
-
-      {/* Pulse animation */}
-      <style>{`
-        @keyframes anomalyPulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-      `}</style>
     </div>
   );
 }
