@@ -131,8 +131,9 @@ _SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
 _PERP_EQUITY_MAX_AGE_S = 3 * 86400         # a perp-equity reading older than this is not used at build time
 _PERP_EQUITY_LOOKBACK_S = 7 * 86400        # ...but a tracked wallet's highest reading this far back counts
 
-# Stored records written with these rules carry roster_version = 2 (trader_lean rows, cohort
-# snapshots); rows from before have none (version 1: 300 + 300 wallets, $50K floors).
+# Stored records written with these rules carry roster_version = 2 (trader_lean, position_opens
+# and convergences rows, cohort snapshots); rows from before have none (version 1: 300 + 300
+# wallets, $50K floors, every wallet read each 30-minute sweep).
 ROSTER_VERSION = _cadence.ROSTER_VERSION
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
@@ -498,9 +499,8 @@ def build_cohorts(all_wallets: List[TrackedWallet], perp_equity: Optional[Dict[s
     elite = {w.address for w in sm_ranked[:ELITE_KEEP_RANK] if w.address in mp_addresses}
     # Elite first, then the largest others until the group has sm_target wallets; ranking order kept.
     room = max(0, sm_target - len(elite))
-    others = {w.address for w in sm_ranked if w.address not in elite}
-    others = {a for a in [w.address for w in sm_ranked if w.address in others][:room]}
-    smart_money = [w for w in sm_ranked if w.address in elite or w.address in others]
+    keep = elite | set([w.address for w in sm_ranked if w.address not in elite][:room])
+    smart_money = [w for w in sm_ranked if w.address in keep]
     return money_printers, smart_money, elite
 
 
@@ -598,7 +598,7 @@ async def refresh_leaderboard() -> int:
             merged.append(w)
     _roster = merged
     _roster_updated_at = time.time()
-    try:                                   # the cohort sweep polls these every sweep
+    try:                                   # the cohort sweep reads these on the adaptive cadence
         from cohorts.sweeper import pin_roster
         await asyncio.to_thread(pin_roster, [w.address for w in _roster], elite_addresses)
     except Exception as exc:
