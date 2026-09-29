@@ -33,6 +33,8 @@ from typing import Dict, Iterable, List, Optional
 
 import aiohttp
 
+import hl_calls
+
 from cohorts.sweeper import TokenBucket
 
 logger = logging.getLogger(__name__)
@@ -333,6 +335,7 @@ def leaderboard(window: str = "30d", cohort: str = "profitable", offset: int = 0
 
 async def _post(session: aiohttp.ClientSession, body: dict, bucket: TokenBucket):
     await bucket.take(_CALL_WEIGHT)
+    hl_calls.record(body.get("type"))
     async with session.post("https://api.hyperliquid.xyz/info", json=body) as resp:
         if resp.status == 429:
             bucket.penalize()

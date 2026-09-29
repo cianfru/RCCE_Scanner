@@ -46,6 +46,8 @@ async def fetch_market(symbol, *, funding_start, session):
 
     async def info(payload):
         try:
+            import hl_calls
+            hl_calls.record(payload.get("type"))
             async with session.post(API, json=payload) as response:
                 if response.status != 200:
                     return None

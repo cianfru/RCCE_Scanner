@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Set
 
 import aiohttp
 
+import hl_calls as _hl_calls
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
     save_trade_events as _db_save_trades,
@@ -635,6 +636,7 @@ async def _fetch_wallet_positions(
     """
     async with semaphore:
         try:
+            _hl_calls.record("clearinghouseState")
             async with session.post(
                 _HL_INFO_URL,
                 json={"type": "clearinghouseState", "user": wallet.address},
@@ -649,6 +651,7 @@ async def _fetch_wallet_positions(
         # come from L2 data which is fetched separately)
         if full:
             try:
+                _hl_calls.record("frontendOpenOrders")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "frontendOpenOrders", "user": wallet.address},
@@ -667,6 +670,7 @@ async def _fetch_wallet_positions(
         fetch_xyz = full or wallet.address in _xyz_active_wallets
         if fetch_xyz:
             try:
+                _hl_calls.record("clearinghouseState")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
@@ -1316,6 +1320,7 @@ async def _refresh_asset_index_map():
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
+            _hl_calls.record("meta")
             async with session.post(
                 _HL_INFO_URL,
                 json={"type": "meta"},
@@ -2150,6 +2155,7 @@ async def _poll_order_books() -> None:
     async def _fetch_book(session: aiohttp.ClientSession, coin: str) -> None:
         async with semaphore:
             try:
+                _hl_calls.record("l2Book")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "l2Book", "coin": coin, "nSigFigs": 3},
@@ -2722,6 +2728,8 @@ def get_status() -> dict:
         "tradfi_symbols": sorted(tradfi_symbols),
         # Persistence stats
         "db": _db_stats(),
+        # Hyperliquid info API calls per minute by request type (every caller in this process)
+        "api_calls": _hl_calls.stats(),
     }
 
 

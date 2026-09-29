@@ -1871,6 +1871,8 @@ async def hyperliquid_perpetuals_debug():
     try:
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            import hl_calls
+            hl_calls.record("metaAndAssetCtxs")
             async with session.post(
                 "https://api.hyperliquid.xyz/info",
                 json={"type": "metaAndAssetCtxs"},

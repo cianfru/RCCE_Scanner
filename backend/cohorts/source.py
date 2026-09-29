@@ -9,6 +9,8 @@ from typing import List, Optional, Tuple
 
 import aiohttp
 
+import hl_calls
+
 HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 WEIGHT = 2                     # clearinghouseState, per Hyperliquid's rate-limit docs
 
@@ -43,6 +45,7 @@ class ApiSource:
 
     async def fetch(self, address: str) -> Optional[Raw]:
         try:
+            hl_calls.record("clearinghouseState")
             async with self.session.post(HL_INFO_URL, json={"type": "clearinghouseState", "user": address}) as resp:
                 if resp.status == 429:
                     raise RateLimited()
