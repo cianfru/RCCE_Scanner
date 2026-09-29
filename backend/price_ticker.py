@@ -5,7 +5,8 @@ Lightweight price ticker relay — Binance + Hyperliquid WebSocket streams.
 
 Subscribes to Binance combined mini-ticker for CEX-listed symbols and
 Hyperliquid's allMids stream for HL-native tokens (HYPE, PURR, etc.).
-Batches all price updates into a single broadcast every ~1 second.
+Batches price updates into a single broadcast every 5 seconds, to visible tabs
+only, and only for symbols that moved at least 0.01% since they were last sent.
 
 Payload is minimal — just ``{symbol: price}`` — no extra API calls.
 """
@@ -20,8 +21,30 @@ from typing import Dict, Optional, Set
 
 logger = logging.getLogger("price_ticker")
 
-# Batch interval — collect ticks for this long before broadcasting
-_BATCH_INTERVAL = 1.0  # seconds
+# Batch interval — collect ticks for this long before broadcasting. At 1 s the
+# ticks were a steady stream to every open tab (egress is billed); 5 s still
+# reads as live in the grid.
+_BATCH_INTERVAL = 5.0  # seconds
+
+# Smallest move worth sending, as a fraction of the last price sent (0.01%).
+# Hyperliquid mids wiggle by a tick many times a second; below this the grid
+# would only flash noise.
+_MIN_MOVE = 1e-4
+
+
+def select_moves(dirty: Dict[str, float], last_sent: Dict[str, float],
+                 min_move: float = _MIN_MOVE) -> Dict[str, float]:
+    """Prices from *dirty* that moved at least *min_move* since last sent (or were never sent).
+
+    Compared against the last price *sent*, not the last seen, so a slow drift
+    still goes out once it adds up to the threshold.
+    """
+    out: Dict[str, float] = {}
+    for sym, price in dirty.items():
+        prev = last_sent.get(sym)
+        if prev is None or prev <= 0 or abs(price - prev) >= min_move * prev:
+            out[sym] = price
+    return out
 
 
 def _idle_active() -> bool:
@@ -106,6 +129,7 @@ class PriceTicker:
     def __init__(self) -> None:
         self._prices: Dict[str, float] = {}    # symbol -> latest price
         self._dirty: Dict[str, float] = {}     # prices changed since last broadcast
+        self._last_sent: Dict[str, float] = {}  # price last broadcast per symbol
         self._running = False
         # Cached HL-coin -> ccxt-symbol map, rebuilt only when the universe
         # changes (keyed on hyperliquid_universe.UPDATED_AT), not per message.
@@ -275,19 +299,32 @@ class PriceTicker:
                 continue
 
             hub = WebSocketHub.get()
-            if hub.client_count == 0:
+            if hub.active_count == 0:
+                # Nobody watching (no clients, or every tab hidden): tabs get a
+                # full snapshot when they come back, so nothing is owed.
                 self._dirty.clear()
                 continue
 
-            # Snapshot and clear
-            batch = self._dirty
-            self._dirty = {}
+            batch = self.take_batch()
+            if not batch:
+                continue
 
             await hub.broadcast({
                 "type": "price-tick",
                 "data": batch,
                 "ts": time.time(),
-            })
+            }, audience="active")
+
+    def take_batch(self) -> Dict[str, float]:
+        """Clear the dirty set and return the moves worth sending (recorded as sent)."""
+        batch = select_moves(self._dirty, self._last_sent)
+        self._dirty = {}
+        self._last_sent.update(batch)
+        return batch
+
+    def snapshot_event(self) -> Dict:
+        """Every known price, for a tab that connects or becomes visible (no flashes)."""
+        return {"type": "price-snapshot", "data": dict(self._prices), "ts": time.time()}
 
     def _get_watchlist_symbols(self) -> list:
         """Get current watchlist from scan cache."""
