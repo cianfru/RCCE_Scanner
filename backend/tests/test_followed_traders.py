@@ -1,5 +1,5 @@
 import followed_traders as ft
-from wallet_names import wallet_label
+from wallet_names import codename
 
 
 def p(size, usd, px=1.0):
@@ -27,8 +27,8 @@ def test_follow_list_and_message(tmp_path, monkeypatch):
     assert ft.add("0xABCDEF0123456789", "2Z early") and not ft.add("0xabcdef0123456789")
     assert "0xabcdef0123456789" in ft.addresses()
     msg = ft.message("0xabcdef0123456789", "profitable trader",
-                     [{"kind": "open", "coin": "2Z", "side": "long", "usd": 38_000, "px": 0.0505}],
+                     {"kind": "open", "coin": "2Z", "side": "long", "usd": 38_000, "px": 0.0505},
                      [{"coin": "2Z", "side": "long", "size_usd": 38_000}, {"coin": "HYPE", "side": "long", "size_usd": 120_000}])
-    assert msg.startswith("Followed trader " + wallet_label("0xabcdef0123456789") + " · 2Z early · ")
-    assert "2Z early" in msg and "Opened long 2Z $38K at 0.0505" in msg and "Now holds: long HYPE $120K, long 2Z $38K" in msg
+    assert msg == (f"{codename('0xabcdef0123456789')} · 2Z early opened long <b>2Z</b> $38K at 0.0505\n"
+                   "Profitable trader · holds long HYPE $120K, long 2Z $38K")
     assert ft.remove("0xABCDEF0123456789") and ft.addresses() == set()

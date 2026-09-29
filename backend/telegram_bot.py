@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import os
 import logging
-import time
 from typing import Dict, List, Optional
 
-from wallet_names import wallet_label
+import tg_alerts as ta
+from wallet_names import codename
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class TelegramBot:
             from telegram import Update
             from telegram.ext import (
                 Application,
+                CallbackQueryHandler,
                 CommandHandler,
                 MessageHandler,
                 filters,
@@ -62,6 +63,10 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("follow", self._cmd_follow))
         self.app.add_handler(CommandHandler("unfollow", self._cmd_unfollow))
         self.app.add_handler(CommandHandler("following", self._cmd_following))
+        self.app.add_handler(CommandHandler("alerts", self._cmd_alerts))
+        self.app.add_handler(CommandHandler("brief", self._cmd_brief))
+        self.app.add_handler(CommandHandler("quiet", self._cmd_quiet))
+        self.app.add_handler(CallbackQueryHandler(self._on_alerts_button, pattern=r"^al:"))
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
@@ -75,17 +80,19 @@ class TelegramBot:
         try:
             from telegram import BotCommand
             await self.app.bot.set_my_commands([
-                BotCommand("briefing", "Daily market briefing"),
-                BotCommand("signals", "Active signals summary"),
-                BotCommand("explain", "Explain a signal (e.g. /explain HYPE)"),
-                BotCommand("watch", "Monitor HL positions (e.g. /watch 0x...)"),
-                BotCommand("unwatch", "Stop position monitoring"),
-                BotCommand("positions", "Show open positions with scanner context"),
-                BotCommand("overview", "Full portfolio overview + opportunities"),
-                BotCommand("follow", "Follow a whale wallet (e.g. /follow 0x...)"),
-                BotCommand("unfollow", "Stop following a wallet"),
-                BotCommand("following", "List followed whale wallets"),
-                BotCommand("help", "Show help message"),
+                BotCommand("brief", "The daily brief, now"),
+                BotCommand("alerts", "What sends a message, quiet hours, pause"),
+                BotCommand("positions", "Open positions against the scanner"),
+                BotCommand("watch", "Register a wallet (/watch 0x...)"),
+                BotCommand("unwatch", "Stop reading the wallet"),
+                BotCommand("follow", "Follow a trader (/follow 0x...)"),
+                BotCommand("unfollow", "Stop following a trader"),
+                BotCommand("following", "Followed traders"),
+                BotCommand("explain", "A coin's signal (/explain HYPE)"),
+                BotCommand("signals", "Active signals"),
+                BotCommand("briefing", "Written market briefing"),
+                BotCommand("overview", "Positions and opportunities"),
+                BotCommand("help", "Commands"),
             ])
         except Exception as e:
             logger.warning("Failed to register bot commands menu: %s", e)
@@ -111,23 +118,80 @@ class TelegramBot:
             text = text[:4000] + "\n\n... (truncated)"
         await update.message.reply_text(text)
 
+    async def _send_html(self, update, text: str, markup=None):
+        await update.message.reply_text(text[:4000], parse_mode="HTML", reply_markup=markup,
+                                        disable_web_page_preview=True)
+
     async def _cmd_start(self, update, context):
         if not self._check_auth(update.effective_chat.id):
             return
-        await self._send(
+        await self._send_html(
             update,
-            "RCCE Scanner Assistant\n\n"
-            "Commands:\n"
-            "/briefing — Daily market briefing\n"
-            "/signals — Active signals summary\n"
-            "/explain SYMBOL — Explain a signal (e.g. /explain HYPE)\n"
-            "/watch 0xADDRESS — Monitor your HL positions\n"
-            "/unwatch — Stop position monitoring\n"
-            "/positions — Show open positions with scanner context\n"
-            "/overview — Full portfolio overview + opportunities\n"
-            "/help — Show this message\n\n"
-            "Or just type any question about the market.",
+            "<b>Reflex</b>\n"
+            f"A brief every morning at {ta.BRIEF_TIME}; instant alerts only for your positions, "
+            "watched coins, followed traders and anomalies on them.\n\n"
+            "/brief the brief now\n"
+            "/alerts what sends a message\n"
+            "/watch 0x... your wallet\n"
+            "/follow 0x... a trader\n"
+            "Or ask a question.",
         )
+
+    # -- Alerts and brief ---------------------------------------------------
+
+    @staticmethod
+    def _markup(rows):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                                     for row in rows])
+
+    async def _cmd_alerts(self, update, context):
+        if not self._check_auth(update.effective_chat.id):
+            return
+        text, rows = ta.alerts_view("main")
+        await self._send_html(update, text, self._markup(rows))
+
+    async def _on_alerts_button(self, update, context):
+        query = update.callback_query
+        if not self._check_auth(update.effective_chat.id):
+            await query.answer()
+            return
+        page = ta.apply_callback(query.data or "")
+        await query.answer()
+        if page == "brief":
+            import tg_brief
+            await tg_brief.send_brief(chats=[update.effective_chat.id])
+            page = "main"
+        text, rows = ta.alerts_view(page)
+        try:
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=self._markup(rows))
+        except Exception as exc:                      # "message is not modified" and the like
+            logger.debug("alerts: edit failed: %s", exc)
+
+    async def _cmd_brief(self, update, context):
+        if not self._check_auth(update.effective_chat.id):
+            return
+        import tg_brief
+        if not await tg_brief.send_brief(chats=[update.effective_chat.id]):
+            await self._send(update, "The brief could not be built right now.")
+
+    async def _cmd_quiet(self, update, context):
+        """/quiet 23:00 07:30, or /quiet off."""
+        if not self._check_auth(update.effective_chat.id):
+            return
+        args = context.args or []
+        try:
+            if args and args[0].lower() == "off":
+                ta.set_quiet(None)
+            elif len(args) == 2:
+                ta.set_quiet([args[0], args[1]])
+            else:
+                raise ValueError
+        except ValueError:
+            await self._send(update, "Usage: /quiet 23:00 07:30, or /quiet off")
+            return
+        q = ta.settings().get("quiet")
+        await self._send(update, f"Quiet hours {q[0]}-{q[1]}" if q else "Quiet hours off")
 
     async def _cmd_briefing(self, update, context):
         if not self._check_auth(update.effective_chat.id):
@@ -210,7 +274,7 @@ class TelegramBot:
                     results_by_symbol[sym] = r
 
         summary = await monitor.get_positions_summary(watcher.address, results_by_symbol)
-        await self._send(update, summary)
+        await self._send(update, ta.strip_emoji(summary))
 
     async def _cmd_overview(self, update, context):
         if not self._check_auth(update.effective_chat.id):
@@ -232,92 +296,51 @@ class TelegramBot:
                     results_by_symbol[sym] = r
 
         overview = await monitor.get_overview(watcher.address, results_by_symbol)
-        await self._send(update, overview)
+        await self._send(update, ta.strip_emoji(overview))
 
     async def _cmd_follow(self, update, context):
-        """Follow a whale wallet for trade alerts."""
+        """Follow a trader: the same list as the app's followed traders, so one set of alerts."""
         if not self._check_auth(update.effective_chat.id):
             return
-        if not context.args:
-            await self._send(update, "Usage: /follow 0xADDRESS\n\nYou'll get alerts when this wallet opens/closes positions.")
+        args = context.args or []
+        address = args[0].strip().lower() if args else ""
+        if not (address.startswith("0x") and len(address) == 42):
+            await self._send(update, "Usage: /follow 0xADDRESS")
             return
-
-        address = context.args[0].lower()
-        if not address.startswith("0x") or len(address) < 10:
-            await self._send(update, "Invalid address. Must start with 0x.")
-            return
-
-        import whale_follows as wf
-        # Use chat_id as user key for TG (no connected wallet in TG context)
-        user_key = f"tg:{update.effective_chat.id}"
-        added = wf.add_follow(user_key, address)
-        wf.link_tg(user_key, update.effective_chat.id)
-
-        if added:
-            # Try to get wallet info
-            try:
-                from hl_intelligence import get_wallet_profile
-                profile = get_wallet_profile(address)
-                cohorts = profile.get("cohorts", [])
-                av = profile.get("account_value", 0)
-                roi = profile.get("roi", 0)
-                cohort_str = ", ".join(c.replace("_", " ").title() for c in cohorts) if cohorts else "Tracked"
-                pos_count = len(profile.get("positions", []))
-                await self._send(
-                    update,
-                    f"Now following {wallet_label(address)}\n"
-                    f"Cohort: {cohort_str}\n"
-                    f"AV: ${av / 1e6:.1f}M | ROI: {roi:.0f}% | {pos_count} positions\n\n"
-                    f"You'll be notified when this wallet trades."
-                )
-            except Exception:
-                await self._send(update, f"Now following {wallet_label(address)}")
-        else:
-            await self._send(update, f"Already following {wallet_label(address)}")
+        import followed_traders as ft
+        added = ft.add(address, " ".join(args[1:])[:80])
+        name = codename(address)
+        await self._send(update, f"Following {name}" if added else f"Already following {name}")
 
     async def _cmd_unfollow(self, update, context):
-        """Stop following a whale wallet."""
         if not self._check_auth(update.effective_chat.id):
             return
         if not context.args:
             await self._send(update, "Usage: /unfollow 0xADDRESS")
             return
-
-        address = context.args[0].lower()
+        address = context.args[0].strip().lower()
+        import followed_traders as ft
         import whale_follows as wf
-        user_key = f"tg:{update.effective_chat.id}"
-        removed = wf.remove_follow(user_key, address)
-
-        if removed:
-            await self._send(update, f"Unfollowed {wallet_label(address)}")
-        else:
-            await self._send(update, f"Not following {wallet_label(address)}")
+        removed = ft.remove(address)
+        removed = wf.remove_follow(f"tg:{update.effective_chat.id}", address) or removed
+        await self._send(update, f"{'Unfollowed' if removed else 'Not following'} {codename(address)}")
 
     async def _cmd_following(self, update, context):
-        """List followed whale wallets."""
+        """Followed traders (the app's list, plus any older /follow entries of this chat)."""
         if not self._check_auth(update.effective_chat.id):
             return
-
+        import followed_traders as ft
         import whale_follows as wf
-        user_key = f"tg:{update.effective_chat.id}"
-        follows = wf.get_follows(user_key)
-
-        if not follows:
-            await self._send(update, "Not following any wallets.\nUse /follow 0xADDRESS to start.")
+        items = ft.items()
+        addrs = list(items) + [a for a in wf.get_follows(f"tg:{update.effective_chat.id}") if a not in items]
+        if not addrs:
+            await self._send(update, "Not following anyone. /follow 0xADDRESS")
             return
-
-        lines = [f"Following {len(follows)} wallet(s):\n"]
-        for addr in follows:
-            try:
-                from hl_intelligence import get_wallet_profile
-                profile = get_wallet_profile(addr)
-                cohorts = profile.get("cohorts", [])
-                cohort_str = ", ".join(c.replace("_", " ").title() for c in cohorts) if cohorts else "Tracked"
-                av = profile.get("account_value", 0)
-                lines.append(f"• {wallet_label(addr)} · {cohort_str}, ${av / 1e6:.1f}M")
-            except Exception:
-                lines.append(f"• {wallet_label(addr)}")
-        await self._send(update, "\n".join(lines))
+        lines = ["<b>Following</b>"]
+        for a in addrs:
+            note = (items.get(a) or {}).get("note")
+            lines.append(ta.esc(codename(a) + (f" · {note}" if note else "")))
+        await self._send_html(update, "\n".join(lines))
 
     async def _handle_message(self, update, context):
         if not self._check_auth(update.effective_chat.id):
@@ -338,53 +361,27 @@ class TelegramBot:
         )
         await self._send(update, reply)
 
-    # -- Proactive trade alerts --------------------------------------------
+    # -- 4H signal alerts (off by default: the brief covers the market) -------
 
     _ALERT_SIGNALS = {"STRONG_LONG", "LIGHT_LONG", "ACCUMULATE"}
     _ALERT_TRANSITIONS = {"ENTRY", "UPGRADE"}
     _MIN_CONDITIONS = 10
     _MIN_WIN_RATE = 60.0
-    _DEDUP_WINDOW = 4 * 3600  # 4 hours
     _MAX_ALERTS_PER_CYCLE = 5
 
-    _recent_alerts: Dict[str, float] = {}  # "SYM:SIGNAL" -> last_alert_ts
-
     async def push_trade_alerts(self, transitions: List[dict]) -> int:
-        """Push high-conviction trade alerts to all registered Telegram chats.
-
-        Called after each scan cycle with the list of signal transitions.
-        Returns number of alerts sent.
-        """
-        if not self.app or not self._running:
+        """High-conviction 4H entries, through the alert gate (category "signals", off by
+        default; once per coin and signal a day). Returns the number of alerts sent."""
+        if not self.app or not self._running or not ta.enabled("signals"):
             return 0
-
-        # Filter to high-conviction entries
-        candidates = []
-        now = time.time()
-        for t in transitions:
-            sig = t.get("signal", "")
-            tt = t.get("transition_type", "")
-            cond_met = t.get("conditions_met", 0) or 0
-
-            if sig not in self._ALERT_SIGNALS:
-                continue
-            if tt not in self._ALERT_TRANSITIONS:
-                continue
-            if cond_met < self._MIN_CONDITIONS:
-                continue
-
-            # Dedup check
-            dedup_key = f"{t.get('symbol')}:{sig}"
-            last = self._recent_alerts.get(dedup_key, 0)
-            if now - last < self._DEDUP_WINDOW:
-                continue
-
-            candidates.append(t)
-
+        candidates = [t for t in transitions
+                      if t.get("signal", "") in self._ALERT_SIGNALS
+                      and t.get("transition_type", "") in self._ALERT_TRANSITIONS
+                      and (t.get("conditions_met", 0) or 0) >= self._MIN_CONDITIONS]
         if not candidates:
             return 0
 
-        # Enrich with win rate data
+        # Win rate by signal (and regime, when it has one)
         try:
             from signal_analytics import SignalAnalytics
             from signal_log import SignalLog
@@ -392,190 +389,85 @@ class TelegramBot:
             analytics = SignalAnalytics(sig_log)
             scorecard = await sig_log.get_scorecard(timeframe="4h")
             regime_sc = await analytics.regime_stratified_scorecard(timeframe="4h")
-
             wr_by_signal = {c["signal"]: c for c in scorecard}
             wr_by_sig_regime: Dict[tuple, dict] = {}
             for sig, entries in regime_sc.items():
                 for e in entries:
                     wr_by_sig_regime[(sig, e["regime"])] = e
         except Exception:
-            wr_by_signal = {}
-            wr_by_sig_regime = {}
+            wr_by_signal, wr_by_sig_regime = {}, {}
 
-        # Filter by win rate
-        qualified = []
-        for t in candidates:
-            sig = t.get("signal", "")
-            regime = t.get("regime", "")
-            regime_entry = wr_by_sig_regime.get((sig, regime))
-            signal_entry = wr_by_signal.get(sig, {})
-
-            wr = None
-            wr_n = 0
-            wr_label = ""
-            if regime_entry and regime_entry.get("win_rate") is not None:
-                wr = regime_entry["win_rate"]
-                wr_n = regime_entry.get("count", 0)
-                wr_label = f"in {regime}"
-            elif signal_entry.get("win_rate") is not None:
-                wr = signal_entry["win_rate"]
-                wr_n = signal_entry.get("has_outcomes", 0)
-                wr_label = "overall"
-
+        sent = 0
+        for t in candidates[:self._MAX_ALERTS_PER_CYCLE]:
+            sig, regime = t.get("signal", ""), t.get("regime", "")
+            entry = wr_by_sig_regime.get((sig, regime)) or {}
+            wr = entry.get("win_rate")
+            if wr is None:
+                wr = (wr_by_signal.get(sig) or {}).get("win_rate")
             if wr is not None and wr < self._MIN_WIN_RATE:
                 continue
-
-            t["_wr"] = wr
-            t["_wr_n"] = wr_n
-            t["_wr_label"] = wr_label
-            qualified.append(t)
-
-        # Limit alerts per cycle
-        alerts = qualified[:self._MAX_ALERTS_PER_CYCLE]
-
-        # Format and send
-        sent = 0
-        for t in alerts:
             symbol = t.get("symbol", "?")
-            sig = t.get("signal", "?")
-            regime = t.get("regime", "?")
-            price = t.get("price", 0)
-            cond_met = t.get("conditions_met", 0) or 0
-            cond_total = t.get("conditions_total", 14) or 14
-            heat = t.get("heat", 0) or 0
-            z = t.get("zscore", 0) or 0
-            tt = t.get("transition_type", "")
-            wr = t.get("_wr")
-            wr_n = t.get("_wr_n", 0)
-            wr_label = t.get("_wr_label", "")
-
-            conviction = "HIGH" if cond_met >= 12 else "MED" if cond_met >= 10 else "LOW"
-            coin = symbol.split("/")[0] if "/" in symbol else symbol
-
-            msg_lines = [
-                f"Trade Identified: {coin}",
-                "",
-                f"Signal: {sig} ({regime})",
-                f"Conditions: {cond_met}/{cond_total} (conviction: {conviction})",
-            ]
+            coin = symbol.split("/")[0]
+            lines = [f"{ta.coin_b(coin)} · 4H {ta.esc(ta.signal_word(sig))}",
+                     f"{ta.esc(ta.REGIME_WORD.get(regime, regime))} · checks {t.get('conditions_met', 0)}/"
+                     f"{t.get('conditions_total', 14)} · stretch {(t.get('zscore') or 0):.1f} · heat {t.get('heat') or 0}"]
             if wr is not None:
-                msg_lines.append(f"Win Rate: {wr}% (n={wr_n}) {wr_label}")
-            msg_lines.extend([
-                f"Price: ${price:.6g} | Heat: {heat} | Z: {z:.2f}",
-                "",
-                f"Transition: {tt}",
-            ])
-
-            # Add met conditions summary
-            ctx_str = t.get("context")
-            if ctx_str:
-                try:
-                    import json
-                    ctx = json.loads(ctx_str)
-                    details = ctx.get("synthesis", {}).get("conditions_detail", [])
-                    met_names = [d["label"] for d in details if d.get("met")]
-                    if met_names:
-                        msg_lines.append(f"Triggers: {', '.join(met_names[:6])}")
-                except Exception:
-                    pass
-
-            msg = "\n".join(msg_lines)
-
-            # Send to all allowed chats
-            for chat_id in ALLOWED_CHAT_IDS:
-                try:
-                    await self.app.bot.send_message(
-                        chat_id=int(chat_id), text=msg,
-                    )
-                    sent += 1
-                except Exception as exc:
-                    logger.debug("TG alert to %s failed: %s", chat_id, exc)
-
-            # Mark as sent for dedup
-            self._recent_alerts[f"{symbol}:{sig}"] = now
-
-        # Cleanup old dedup entries
-        cutoff = now - self._DEDUP_WINDOW
-        self._recent_alerts = {k: v for k, v in self._recent_alerts.items() if v > cutoff}
-
-        if sent > 0:
+                lines.append(f"Past win rate {wr:.0f}%")
+            if await ta.submit("signals", f"{coin}:{sig}", "\n".join(lines)) == "sent":
+                sent += 1
+        if sent:
             logger.info("Telegram: pushed %d trade alerts", sent)
         return sent
 
     # -- Anomaly alerts --------------------------------------------------------
 
-    _ANOMALY_DEDUP_WINDOW = 30 * 60  # 30 min
-    _MAX_ANOMALY_ALERTS = 3
-    _recent_anomaly_alerts: Dict[str, float] = {}
-
-    _ANOMALY_TYPE_LABELS = {
-        "EXTREME_FUNDING": "EXTREME FUNDING",
-        "OI_SURGE": "OI SURGE",
-        "VOLUME_SPIKE": "VOLUME SPIKE",
-        "LSR_EXTREME": "LSR EXTREME",
-        "CVD_EXTREME": "CVD EXTREME",
-        "VPIN_TOXIC": "TOXIC FLOW (VPIN)",
+    _ANOMALY_WORD = {
+        "EXTREME_FUNDING": "extreme funding",
+        "OI_SURGE": "open interest surge",
+        "VOLUME_SPIKE": "volume spike",
+        "LSR_EXTREME": "long/short ratio extreme",
+        "CVD_EXTREME": "CVD extreme",
+        "VPIN_TOXIC": "toxic flow (VPIN)",
     }
 
     async def push_anomaly_alerts(self, anomalies) -> int:
-        """Push critical anomaly alerts to Telegram.
-
-        Receives a list of Anomaly dataclass instances (critical severity only).
-        """
+        """Critical anomalies through the gate: category "anomalies" when the coin is watched
+        or held, "anomalies_all" (off by default) otherwise; once per anomaly a day."""
         if not self.app or not self._running:
             return 0
-
-        now = time.time()
-        candidates = []
-        for a in anomalies:
-            dedup_key = a.dedup_key
-            last = self._recent_anomaly_alerts.get(dedup_key, 0)
-            if now - last < self._ANOMALY_DEDUP_WINDOW:
-                continue
-            candidates.append(a)
-
-        if not candidates:
-            return 0
-
-        alerts = candidates[:self._MAX_ANOMALY_ALERTS]
+        mine = _my_coins()
         sent = 0
-
-        for a in alerts:
-            coin = a.symbol.split("/")[0] if "/" in a.symbol else a.symbol
-            type_label = self._ANOMALY_TYPE_LABELS.get(a.anomaly_type, a.anomaly_type)
-
-            msg_lines = [
-                f"Anomaly: {coin}",
-                "",
-                f"Type: {type_label} ({a.direction})",
-                f"Severity: {a.severity.upper()}",
-                f"Detail: {a.context}",
-            ]
-            if a.z_score:
-                msg_lines.append(f"Z-score: {a.z_score:.1f}")
-            if a.historical_sigma:
-                msg_lines.append(f"History: {abs(a.historical_sigma):.1f} sigma vs own baseline")
-
-            msg = "\n".join(msg_lines)
-
-            for chat_id in ALLOWED_CHAT_IDS:
-                try:
-                    await self.app.bot.send_message(chat_id=int(chat_id), text=msg)
-                    sent += 1
-                except Exception as exc:
-                    logger.debug("TG anomaly alert to %s failed: %s", chat_id, exc)
-
-            self._recent_anomaly_alerts[dedup_key] = now
-
-        # Cleanup old dedup
-        cutoff = now - self._ANOMALY_DEDUP_WINDOW
-        self._recent_anomaly_alerts = {
-            k: v for k, v in self._recent_anomaly_alerts.items() if v > cutoff
-        }
-
-        if sent > 0:
+        for a in anomalies:
+            coin = a.symbol.split("/")[0]
+            cat = "anomalies" if coin in mine else "anomalies_all"
+            if not ta.enabled(cat):
+                continue
+            word = self._ANOMALY_WORD.get(a.anomaly_type, a.anomaly_type.replace("_", " ").lower())
+            side = str(a.direction or "").lower()
+            text = f"{ta.coin_b(coin)} · {ta.esc(word)}" + (f", {ta.esc(side)} side" if side else "")
+            if a.context:
+                text += "\n" + ta.esc(a.context)
+            if await ta.submit(cat, a.dedup_key, text) == "sent":
+                sent += 1
+        if sent:
             logger.info("Telegram: pushed %d anomaly alerts", sent)
         return sent
+
+
+def _my_coins() -> set:
+    """Watched coins and coins in registered wallets' open positions."""
+    out = set()
+    try:
+        import setup_map
+        out |= set(setup_map.watched())
+    except Exception:
+        pass
+    try:
+        from position_monitor import PositionMonitor
+        out |= PositionMonitor.get().held_coins()
+    except Exception:
+        pass
+    return out
 
 
 # Module-level singleton

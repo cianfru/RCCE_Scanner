@@ -222,6 +222,11 @@ async def lifespan(app: FastAPI):
         from telegram_bot import get_telegram_bot
         bot = get_telegram_bot()
         await bot.start()
+        if bot.app is not None:
+            # The daily brief (tg_brief): 08:00 Europe/Rome by default, the Radar from memory
+            import tg_brief
+            tg_brief.set_map_provider(_setup_map_cached)
+            asyncio.create_task(tg_brief.run_scheduler())
     except Exception as e:
         logger.warning("Telegram bot init failed (non-fatal): %s", e)
 
@@ -4446,8 +4451,9 @@ async def setup_map_watched():
 
 @app.post("/api/setup-map/watch")
 async def setup_map_watch(body: dict):
-    """Watch a coin: Telegram alerts when it enters or leaves the box, confirms Uptrend,
-    turns crowded or gets an exit signal. Body: {coin, tf}. Needs the admin key once set."""
+    """Watch a coin: Telegram alerts when it enters Early setups or the entry zone or gets an
+    exit signal (tg_alerts), and a line in the daily brief when anything changed. Body: {coin, tf}.
+    Needs the admin key once set."""
     import setup_map
     from hl_intelligence import _normalize_coin
     coin = _normalize_coin(str(body.get("coin", "")).strip().upper())
@@ -4545,18 +4551,20 @@ async def radar_forward_test():
 
 
 async def run_setup_watch(interval: int = 300):
-    """Every five minutes, while any coin is watched: compare with its last reading and
-    send what changed to Telegram."""
+    """Every five minutes, while any coin is watched: compare with its last reading and send
+    what matters through the Telegram alert gate (tg_alerts.check_watched: entered Early
+    setups, entered the entry zone, exit signal; once per coin and kind a day). setup_map.check
+    still runs to keep the watch list's own last reading; its texts are not sent."""
     import setup_map
-    import followed_traders as ft
+    import tg_alerts
     await asyncio.sleep(120)
     while True:
         try:
             tfs = {w["tf"] for w in setup_map.watched().values()}
             if tfs:
                 maps = {tf: await _setup_map_cached(tf) for tf in tfs}
-                for text in setup_map.check(maps):
-                    await ft._send(text)
+                await tg_alerts.check_watched(maps)
+                setup_map.check(maps)
         except Exception as exc:
             logger.warning("setup watch: %s", exc)
         await asyncio.sleep(interval)
