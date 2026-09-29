@@ -6,6 +6,7 @@ import HelpTip from "./HelpTip.jsx";
 import { T, col, SIGNAL_META, REGIME_META } from "../theme.js";
 import { MAP_FILTERS, MAP_MIN_TRADERS, matchOf, vsEntry } from "../utils/positioning.js";
 import { usd } from "../utils/traders.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const GROUPS = [
@@ -62,8 +63,8 @@ export default function PositioningView() {
       .catch(e => { if (!cancelled) setError(e.message); });
     setData(null);
     load();
-    const id = setInterval(load, 300_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const stop = pollWhileVisible(load, 300_000);
+    return () => { cancelled = true; stop(); };
   }, [group]);
 
   // Most traders first (a stable sort keeps the server's order among equals).

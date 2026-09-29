@@ -18,6 +18,7 @@ import HelpTip from "./HelpTip.jsx";
 import DataStatus from "./DataStatus.jsx";
 
 import { getAdminKey, setAdminKey } from "../auth.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // Display metadata for each flag — order = display order in the panel.
@@ -132,8 +133,8 @@ export default function SettingsForm() {
         .catch(() => {});
     };
     tick();
-    const id = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(id); };
+    const stop = pollWhileVisible(tick, 30_000);
+    return () => { alive = false; stop(); };
   }, []);
 
   const updateFlag = async (key, value) => {

@@ -15,6 +15,7 @@ import {
   chartTimeframe, fmtDay, fmtDuration, fmtMoney, fmtPnl, fmtPrice, fmtRate, fmtRoi, kindCounts, tripRange,
   WINDOW_KEYS, windowLabel,
 } from "../utils/traderBoard.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const HISTORY_PAGE = 20;
@@ -280,8 +281,8 @@ export default function TraderPage({ address }) {
       .then(d => { if (!cancelled) setData({ loading: false, ...d }); })
       .catch(() => { if (!cancelled) setData(prev => ({ ...prev, loading: false, error: !prev.address })); });
     load();
-    const id = setInterval(load, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const stop = pollWhileVisible(load, 60_000);
+    return () => { cancelled = true; stop(); };
   }, [address]);
 
 

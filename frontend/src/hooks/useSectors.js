@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -11,8 +12,8 @@ export default function useSectors({ days = 90, history = "" } = {}) {
     const load = () => fetch(`${API_BASE}/api/sectors?days=${days}${history ? `&history=${history}` : ""}`)
       .then(r => (r.ok ? r.json() : null)).then(d => { if (alive && d) setData(d); }).catch(() => {});
     load();
-    const id = setInterval(load, 300_000);
-    return () => { alive = false; clearInterval(id); };
+    const stop = pollWhileVisible(load, 300_000);
+    return () => { alive = false; stop(); };
   }, [days, history]);
   return data;
 }

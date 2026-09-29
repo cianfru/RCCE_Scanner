@@ -14,6 +14,8 @@ import useViewport from "./hooks/useViewport.js";
 import useFavorites from "./hooks/useFavorites.js";
 import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
+import { feedNeeds, needsKey } from "./utils/feedNeeds.js";
+import { overlayPrices, priceMoves } from "./utils/livePrices.js";
 import FadeIn from "./components/FadeIn.jsx";
 import MarketSummary from "./components/MarketSummary.jsx";
 import ScannerControls from "./components/ScannerControls.jsx";
@@ -292,35 +294,57 @@ export default function App() {
   // ── SharedWorker integration ───────────────────────────────────────────────
 
   const sw = useSharedWorker();
+  const wsRef = useWebSocket();
+
+  // Latest price per symbol from the WebSocket (ticks and snapshots); laid over fresh scan rows.
+  const livePrice = (rows) => (wsRef.connected ? overlayPrices(rows, prevPricesRef.current) : rows);
+
+  // The header clock only moves forward: a feed refreshed later (TradFi, another tab) can carry an
+  // older scan time than a scan notice already seen.
+  const clockRef = useRef(0);
+  const bumpClock = useCallback((receivedMs, ageS) => {
+    const age = Number.isFinite(ageS) ? ageS : null;
+    const dataTime = receivedMs - (age && age > 0 ? age * 1000 : 0);
+    if (dataTime < clockRef.current) return;
+    clockRef.current = dataTime;
+    setLastRefresh(new Date(receivedMs));
+    setCacheAge(age);
+  }, []);
 
   // Apply worker main-data updates when supported
   useEffect(() => {
     if (!sw.supported || !sw.mainData) return;
     const d = sw.mainData;
-    setData4h(d.r4h?.results || []);
-    setData1d(d.r1d?.results || []);
-    setConsensus4h(d.r4h?.consensus || null);
-    setConsensus1d(d.r1d?.consensus || null);
-    setScanRunning(d.r4h?.scan_running || false);
-    setCacheAge(d.r4h?.cache_age_seconds ?? null);
-    setLastRefresh(new Date(d.timestamp));
+    // A feed this page does not show may not be loaded yet; keep what is there.
+    if (d.r4h) { setData4h(livePrice(d.r4h.results || [])); setConsensus4h(d.r4h.consensus || null); }
+    if (d.r1d) { setData1d(livePrice(d.r1d.results || [])); setConsensus1d(d.r1d.consensus || null); }
+    setScanRunning(!!(d.r4h?.scan_running || d.r1d?.scan_running));
+    bumpClock(d.timestamp, d.cacheAge !== undefined ? d.cacheAge : d.r4h?.cache_age_seconds);
     if (d.sentiment) setSentiment(d.sentiment);
     if (d.tradfi4h) setDataTradfi4h(d.tradfi4h.results || []);
     if (d.tradfi1d) setDataTradfi1d(d.tradfi1d.results || []);
     setLoading(false);
     setError(null);
-  }, [sw.supported, sw.mainData]);
+  }, [sw.supported, sw.mainData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Forward filter changes to worker
   useEffect(() => {
     if (sw.supported) sw.setFilters(filterRegime, filterSignal);
   }, [sw.supported, sw.setFilters, filterRegime, filterSignal]);
 
+  // Only the feeds this page shows are kept fresh (utils/feedNeeds.js).
+  const needs = useMemo(() => feedNeeds(activeTab, { coinPage: !!coinPageSymbol, wsConnected: wsRef.connected,
+    lastScannerTf: lastScannerTf.current }), [activeTab, coinPageSymbol, wsRef.connected]);
+  const needsId = needsKey(needs);
+  const needsRef = useRef(needs);
+  needsRef.current = needs;
+  useEffect(() => {
+    if (sw.supported) sw.setNeeds(needs);
+  }, [sw.supported, sw.setNeeds, needsId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── WebSocket integration (real-time push from backend) ───────────────────
 
-  const wsRef = useWebSocket();
-
-  // Apply WebSocket synthesis-complete updates (overrides SharedWorker/polling data)
+  // Older servers push the full scan state (synthesis-complete); current ones send a scan notice.
   useEffect(() => {
     if (!wsRef.connected || !wsRef.synthesisData) return;
     const d = wsRef.synthesisData;
@@ -328,14 +352,13 @@ export default function App() {
     setData1d(d.results_1d || []);
     setConsensus4h(d.consensus_4h || null);
     setConsensus1d(d.consensus_1d || null);
-    setCacheAge(d.meta?.cache_age ?? null);
-    setLastRefresh(new Date((d.meta?.timestamp || Date.now() / 1000) * 1000));
+    bumpClock((d.meta?.timestamp || Date.now() / 1000) * 1000, d.meta?.cache_age ?? null);
     setScanRunning(false);
     setLoading(false);
     setError(null);
-  }, [wsRef.connected, wsRef.synthesisData]);
+  }, [wsRef.connected, wsRef.synthesisData, bumpClock]);
 
-  // Delta merge: patch individual symbol updates from drip scan into state
+  // Delta merge: patch individual symbol updates from drip scan into state (older servers)
   useEffect(() => {
     if (!wsRef.connected || !wsRef.symbolUpdate) return;
     const { symbol, result_4h, result_1d } = wsRef.symbolUpdate;
@@ -358,21 +381,10 @@ export default function App() {
     if (result_1d) setData1d((prev) => merge(prev, result_1d));
   }, [wsRef.connected, wsRef.symbolUpdate]);
 
-  // Sub-second price ticks — patch price + compute flash direction
-  useEffect(() => {
-    if (!wsRef.priceTicks) return;
-    const ticks = wsRef.priceTicks; // {symbol: price, ...}
-    const prev = prevPricesRef.current;
-    const flashes = new Map();
-
-    for (const [sym, price] of Object.entries(ticks)) {
-      const old = prev.get(sym);
-      if (old !== undefined && price !== old) {
-        flashes.set(sym, price > old ? "up" : "down");
-      }
-      prev.set(sym, price);
-    }
-
+  // Price ticks (every 5 s while visible) patch prices and flash; a snapshot (on connect and when the
+  // tab is shown again) patches without flashing.
+  const applyPrices = useCallback((ticks, flash) => {
+    const flashes = priceMoves(prevPricesRef.current, ticks);
     const patchPrices = (prevData) => {
       let changed = false;
       const next = prevData.map((r) => {
@@ -389,14 +401,23 @@ export default function App() {
     setData4h(patchPrices);
     setData1d(patchPrices);
 
-    if (flashes.size > 0) {
+    if (flash && flashes.size > 0) {
       setPriceFlash(flashes);
       // Clear flashes after animation completes
       setTimeout(() => setPriceFlash(new Map()), 1200);
     }
-  }, [wsRef.priceTicks]);
+  }, []);
+
+  useEffect(() => {
+    if (wsRef.priceTicks) applyPrices(wsRef.priceTicks, true);
+  }, [wsRef.priceTicks, applyPrices]);
+
+  useEffect(() => {
+    if (wsRef.priceSnapshot) applyPrices(wsRef.priceSnapshot, false);
+  }, [wsRef.priceSnapshot, applyPrices]);
 
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
+  // The browser revalidates with the ETag, so an unchanged feed is an empty 304.
 
   const fetchData = useCallback(async (tf) => {
     const params = new URLSearchParams({ timeframe: tf });
@@ -407,29 +428,39 @@ export default function App() {
     return res.json();
   }, [filterRegime, filterSignal]);
 
+  // Feed -> when it last loaded. Every feed loads once; after that only what the page shows.
+  const fallbackLoaded = useRef({});
   const loadAll = useCallback(async () => {
     if (sw.supported) return; // Worker handles polling
+    const n = needsRef.current, loaded = fallbackLoaded.current, now = Date.now();
+    const tfs = ["4h", "1d"].filter(tf => n.scan.includes(tf) || !loaded[`scan:${tf}`]);
+    const wantTradfi = n.tradfi || !loaded.tradfi;
+    const wantSentiment = !loaded.sentiment || (n.sentiment && now - loaded.sentiment >= 300_000);
     setLoading(true);
     setError(null);
     try {
-      const [r4h, r1d] = await Promise.all([fetchData("4h"), fetchData("1d")]);
-      setData4h(r4h.results || []);
-      setData1d(r1d.results || []);
-      setConsensus4h(r4h.consensus || null);
-      setConsensus1d(r1d.consensus || null);
-      setScanRunning(r4h.scan_running);
-      setCacheAge(r4h.cache_age_seconds);
-      setLastRefresh(new Date());
+      const scans = await Promise.all(tfs.map(tf => fetchData(tf)));
+      tfs.forEach((tf, i) => {
+        const r = scans[i];
+        loaded[`scan:${tf}`] = now;
+        if (tf === "4h") { setData4h(livePrice(r.results || [])); setConsensus4h(r.consensus || null); }
+        else { setData1d(livePrice(r.results || [])); setConsensus1d(r.consensus || null); }
+      });
+      if (scans.length) {
+        setScanRunning(!!scans[0].scan_running);
+        bumpClock(Date.now(), scans[0].cache_age_seconds);
+      }
 
       try {
         const [sent, tf4h, tf1d] = await Promise.all([
-          fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null),
-          fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null),
+          wantSentiment ? fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null) : null,
+          wantTradfi ? fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null) : null,
+          wantTradfi ? fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null) : null,
         ]);
-        if (sent) setSentiment(sent);
+        if (sent) { setSentiment(sent); loaded.sentiment = now; }
         if (tf4h) setDataTradfi4h(tf4h.results || []);
         if (tf1d) setDataTradfi1d(tf1d.results || []);
+        if (tf4h && tf1d) loaded.tradfi = now;
       } catch (_) {}
     } catch (e) {
       console.warn("Scanner feed error:", e.message, API_BASE);
@@ -437,7 +468,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [fetchData, sw.supported]);
+  }, [fetchData, sw.supported, bumpClock]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fallback polling — only runs when SharedWorker is unavailable
   useEffect(() => {
@@ -459,6 +490,25 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadAll, sw.supported]);
+
+  // A page that shows another feed loads it at once (the fallback; the worker does this itself).
+  const needsSeen = useRef(needsId);
+  useEffect(() => {
+    if (sw.supported || needsSeen.current === needsId) return;
+    needsSeen.current = needsId;
+    loadAll();
+  }, [needsId, sw.supported, loadAll]);
+
+  // A new scan is ready: refetch what this page shows (unchanged feeds come back as empty 304s).
+  // Pages without scanner rows only move the header clock.
+  useEffect(() => {
+    const u = wsRef.scanUpdated;
+    if (!u) return;
+    if (!needsRef.current.scan.length) bumpClock(u.at, 0);
+    setScanRunning(false);
+    if (sw.supported) sw.refresh();
+    else if (!document.hidden) loadAll();
+  }, [wsRef.scanUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rescan (the watch-group dialog's "Scan now"). Without the admin key the server refuses (403).
   // "Scan already in progress" keeps scanRunning until that scan's data arrives (the feed effects
@@ -487,9 +537,8 @@ export default function App() {
       scanWait.current = setTimeout(() => setScanRunning(false), 90 * 1000);
       return;
     }
-    if (wsRef.connected) {
-      setTimeout(() => wsRef.refresh(), 3000);
-    } else if (sw.supported) {
+    // The scan notice refetches when the pass completes; this covers a server without it.
+    if (sw.supported) {
       setTimeout(() => sw.refresh(), 3000);
     } else {
       setTimeout(loadAll, 3000);

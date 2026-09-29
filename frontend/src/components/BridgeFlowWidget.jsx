@@ -17,6 +17,7 @@
 import { useState, useEffect } from "react";
 import { T, m, alpha } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 min — macro indicator, not tick-level
@@ -210,8 +211,8 @@ export default function BridgeFlowWidget({ isMobile, detail = false, fallback = 
       }
     };
     load();
-    const iv = setInterval(load, POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(iv); };
+    const stop = pollWhileVisible(load, POLL_INTERVAL_MS);
+    return () => { cancelled = true; stop(); };
   }, []);
 
   if (!data) return null;   // loading

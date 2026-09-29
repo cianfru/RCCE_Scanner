@@ -36,7 +36,7 @@ function initWorker() {
     };
 
     workerPort.start();
-    workerPort.postMessage({ type: "connect", apiBase: API_BASE, token: getToken() });
+    workerPort.postMessage({ type: "connect", apiBase: API_BASE, token: getToken(), hidden: document.hidden });
 
     // Visibility forwarding
     document.addEventListener("visibilitychange", () => {
@@ -95,6 +95,8 @@ export function useSharedWorker() {
   const setWallet = useCallback((address) => send({ type: "set-wallet", address }), [send]);
   const setNotifParams = useCallback((minScore) => send({ type: "set-notif-params", minScore }), [send]);
   const setFilters = useCallback((regime, signal) => send({ type: "set-filters", regime, signal }), [send]);
+  // Which feeds this tab's page shows (utils/feedNeeds.js); the worker polls only those.
+  const setNeeds = useCallback((needs) => send({ type: "set-needs", needs }), [send]);
 
   return {
     supported: workerSupported,
@@ -105,6 +107,7 @@ export function useSharedWorker() {
     setWallet,
     setNotifParams,
     setFilters,
+    setNeeds,
     send,
   };
 }
