@@ -479,6 +479,11 @@ async def _auto_init_executor():
 
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 
+# ETag + 304 for unchanged JSON GETs (egress.py). Added before GZip so it sits
+# inside it and hashes the plain body.
+import egress
+app.add_middleware(egress.ConditionalGetMiddleware)
+
 # GZip responses > 500 bytes — reduces network egress ~70-80% for JSON payloads
 from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -488,6 +493,10 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # The shared worker reads ETag to send If-None-Match itself; preflights are
+    # cached for 2 hours (the browsers' cap) instead of 10 minutes.
+    expose_headers=["ETag"],
+    max_age=7200,
 )
 
 # Paths that must NOT count as user activity (health checks, uptime pingers,
@@ -496,6 +505,7 @@ app.add_middleware(
 _NO_ACTIVITY_PATHS = frozenset({
     "/health",
     "/api/status",
+    "/api/net-stats",
     "/api/admin/activity",
     "/api/admin/memory-snapshot",
 })
@@ -524,6 +534,16 @@ async def _activity_middleware(request, call_next):
     return await call_next(request)
 
 
+# Outermost: counts bytes as sent, after gzip (see /api/net-stats).
+app.add_middleware(egress.EgressCounterMiddleware)
+
+
+@app.get("/api/net-stats")
+async def net_stats():
+    """Approximate bytes sent per endpoint and over the WebSocket since start (read-only)."""
+    return egress.snapshot(ws_clients=WebSocketHub.get().counts())
+
+
 # ---------------------------------------------------------------------------
 # WebSocket — real-time scan event streaming
 # ---------------------------------------------------------------------------
@@ -532,34 +552,45 @@ async def _activity_middleware(request, call_next):
 async def websocket_scan(websocket: WebSocket):
     """Real-time scan data push. Runs alongside REST — additive, not a replacement.
 
-    Events sent: synthesis-complete, signal-transition, anomaly, symbol-update, heartbeat.
-    Client can send: {"type": "refresh"} to request immediate full state.
+    Events sent: see ws_hub.py. Client can send: {"type": "refresh"} to request
+    immediate full state (protocol 1). Protocol 2 (``?v=2``, the current frontend)
+    gets no scan state here (it fetches over HTTP) and sends {"type": "pause"} /
+    {"type": "resume"} as its tab is hidden / shown.
     """
     import access
     if not access.allowed("/ws/scan", websocket.headers, websocket.query_params):
         await websocket.close(code=4401)
         return
+    from price_ticker import PriceTicker
     hub = WebSocketHub.get()
-    await hub.connect(websocket)
+    protocol = 2 if websocket.query_params.get("v") == "2" else 1
+    await hub.connect(websocket, protocol)
     try:
-        # Send current cached state immediately on connect
-        await hub.send_to(websocket, {
-            "type": "synthesis-complete",
-            "data": {
-                "results_4h": cache.get_results("4h"),
-                "results_1d": cache.get_results("1d"),
-                "consensus_4h": cache.consensus.get("4h"),
-                "consensus_1d": cache.consensus.get("1d"),
-                "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
-            },
-            "ts": time.time(),
-        })
+        if protocol == 2:
+            await hub.send_to(websocket, PriceTicker.get().snapshot_event())
+        else:
+            # Send current cached state immediately on connect
+            await hub.send_to(websocket, {
+                "type": "synthesis-complete",
+                "data": {
+                    "results_4h": cache.get_results("4h"),
+                    "results_1d": cache.get_results("1d"),
+                    "consensus_4h": cache.consensus.get("4h"),
+                    "consensus_1d": cache.consensus.get("1d"),
+                    "meta": {"cache_age": cache.get_cache_age(), "timestamp": time.time()},
+                },
+                "ts": time.time(),
+            })
         while True:
             data = await websocket.receive_text()
             try:
                 import json
                 msg = json.loads(data)
-                if msg.get("type") == "refresh":
+                if msg.get("type") in ("pause", "resume"):
+                    hub.set_paused(websocket, msg["type"] == "pause")
+                    if msg["type"] == "resume":
+                        await hub.send_to(websocket, PriceTicker.get().snapshot_event())
+                elif msg.get("type") == "refresh" and protocol == 1:
                     await hub.send_to(websocket, {
                         "type": "synthesis-complete",
                         "data": {
@@ -601,7 +632,7 @@ async def scan(
     source = cache.results.get(timeframe)
     consensus = cache.consensus.get(timeframe)
     key = (timeframe, regime, signal, id(source), id(consensus), int(time.time() // 30))
-    body = _SCAN_BODY_CACHE.get(key)
+    body, etag = _SCAN_BODY_CACHE.get(key) or (None, None)
     if body is None:
         encoded = jsonable_encoder(ScanResponse(
             results=cache.get_results(timeframe, regime=regime, signal=signal),
@@ -612,12 +643,15 @@ async def scan(
         body = json.dumps(encoded, separators=(",", ":"))
         while len(_SCAN_BODY_CACHE) >= 6:   # both timeframes plus a few filters
             _SCAN_BODY_CACHE.pop(next(iter(_SCAN_BODY_CACHE)))
-        _SCAN_BODY_CACHE[key] = body
+        # ETag from the results alone: the cache age in the head changes every call.
+        etag = egress.etag_for(body.encode())
+        _SCAN_BODY_CACHE[key] = (body, etag)
     head = json.dumps({"scan_running": cache.is_scanning, "cache_age_seconds": cache.get_cache_age()})
-    return Response(content=head[:-1] + "," + body[1:], media_type="application/json")
+    return Response(content=head[:-1] + "," + body[1:], media_type="application/json",
+                    headers={"ETag": etag})
 
 
-_SCAN_BODY_CACHE: Dict[tuple, str] = {}
+_SCAN_BODY_CACHE: Dict[tuple, tuple] = {}
 
 
 @app.get("/api/tradfi")

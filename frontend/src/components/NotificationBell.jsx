@@ -6,6 +6,7 @@ import TokenLogo from "./TokenLogo.jsx";
 import { useWallet } from "../WalletContext.jsx";
 import { useSharedWorker } from "../hooks/useSharedWorker.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -196,8 +197,7 @@ export default function NotificationBell() {
     const load = () => fetch(`${API_BASE}/api/notifications/convergence`)
       .then(r => (r.ok ? r.json() : null)).then(d => d && setConvergence(d.items || [])).catch(() => {});
     load();
-    const iv = setInterval(load, 300_000);
-    return () => clearInterval(iv);
+    return pollWhileVisible(load, 300_000);
   }, []);
 
   // Fallback polling — only runs when SharedWorker unavailable
@@ -207,10 +207,9 @@ export default function NotificationBell() {
     fetchWarnings();
     fetchExhaustionOpps();
     fetchMarketSetups();
-    const iv = setInterval(() => {
+    return pollWhileVisible(() => {
       fetchAnomalies(); fetchWarnings(); fetchExhaustionOpps(); fetchMarketSetups();
     }, 60_000);
-    return () => clearInterval(iv);
   }, [sw.supported, fetchAnomalies, fetchWarnings, fetchExhaustionOpps, fetchMarketSetups]);
 
   useEffect(() => {

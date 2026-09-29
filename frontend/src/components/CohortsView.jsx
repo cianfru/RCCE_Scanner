@@ -4,6 +4,7 @@ import DataStatus from "./DataStatus.jsx";
 import HelpTip from "./HelpTip.jsx";
 import { T } from "../theme.js";
 import { dayLabel, displayName, gapSeries, leanPct, orderFor, orderedRows, timeTicks, usd } from "../utils/cohorts.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const fetchJson = url => fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
@@ -133,8 +134,8 @@ export default function CohortsView() {
       .catch(() => { if (alive) setError(true); })
       .finally(() => { if (alive) setLoading(false); });
     load();
-    const id = setInterval(load, 300_000);
-    return () => { alive = false; clearInterval(id); };
+    const stop = pollWhileVisible(load, 300_000);
+    return () => { alive = false; stop(); };
   }, [dimension, symbol, days, attempt]);
   const rows = useMemo(() => orderedRows(now?.rows, dimension), [now, dimension]);
   const colors = colorsFor(dimension);

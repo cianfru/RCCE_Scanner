@@ -19,6 +19,7 @@ import { TableSkeleton } from "./Skeleton.jsx";
 import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
 import { SUMMARY_MIN, summaryRows, sideCounts } from "../utils/traderSummary.js";
 import { codename, nameIn, shortAddr, viewNames } from "../utils/walletName.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -1719,8 +1720,7 @@ export default function HyperLensPanel({ isMobile }) {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30_000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadData, 30_000);
   }, [loadData]);
 
   // The group's per-coin rows (counts, dollars, median entries, a day ago); cached a minute server side.
@@ -1733,8 +1733,8 @@ export default function HyperLensPanel({ isMobile }) {
       .then(d => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: d.rows || [] })); })
       .catch(() => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: g[api] || null })); });
     load();
-    const id = setInterval(load, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const stop = pollWhileVisible(load, 60_000);
+    return () => { cancelled = true; stop(); };
   }, [api]);
 
   const rows = api ? groupRows[api] : null;

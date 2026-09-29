@@ -23,4 +23,9 @@ if __name__ == "__main__":
         port=int(os.environ.get("PORT", 8000)),
         loop="asyncio",
         http="h11",
+        # WebSocket frames bypass GZipMiddleware; permessage-deflate compresses
+        # them when the browser offers it (all current browsers do). These are
+        # uvicorn's defaults, stated so a future change cannot drop them silently.
+        ws="websockets-sansio",
+        ws_per_message_deflate=True,
     )
