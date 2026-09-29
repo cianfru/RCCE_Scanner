@@ -19,7 +19,7 @@ class RateLimited(Exception):
     pass
 
 
-Raw = Tuple[float, List[Tuple[str, float, bool]]]      # (perp equity, [(coin, usd, long)])
+Raw = Tuple[float, List[Tuple[str, float, bool, float]]]      # (perp equity, [(coin, usd, long, size)])
 
 
 def parse(data: dict) -> Raw:
@@ -32,7 +32,7 @@ def parse(data: dict) -> Raw:
         if not szi:
             continue
         usd = abs(float(p.get("positionValue", 0) or 0)) or abs(szi) * float(p.get("entryPx", 0) or 0)
-        positions.append((_normalize_coin(p.get("coin", "")), usd, szi > 0))
+        positions.append((_normalize_coin(p.get("coin", "")), usd, szi > 0, abs(szi)))
     return equity, positions
 
 

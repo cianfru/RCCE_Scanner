@@ -65,7 +65,7 @@ class AssignTests(unittest.TestCase):
             {"position": {"coin": "kPEPE", "szi": "-100", "positionValue": "50.5", "entryPx": "0.4"}},
             {"position": {"coin": "BTC", "szi": "0.0"}}]})
         self.assertEqual(eq, 1234.5)
-        self.assertEqual(ps, [("PEPE", 50.5, False)])
+        self.assertEqual(ps, [("PEPE", 50.5, False, 100.0)])                     # size kept for change detection
 
 
 class Clock:
@@ -109,7 +109,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(in_focus(10_000, 100_000))                                # proven trader
         self.assertFalse(in_focus(9_999, 5e6))                                    # proven, but too little in perps
         self.assertFalse(in_focus(99_999, 99_999))
-        self.assertEqual(schedule(250_000, -3e6, 1000.0), (True, 0.0))            # big losers stay followed
+        focus, nxt = schedule(250_000, -3e6, 1000.0, rng=lambda: 0.5)            # big losers stay followed
+        self.assertEqual((focus, nxt), (True, 1000.0 + 3600))                   # settled: 60 min (no jitter at 0.5)
         focus, nxt = schedule(50_000, 20_000, 1000.0, rng=lambda: 1.0)
         self.assertEqual((focus, nxt), (False, 1000.0 + CHECK_EVERY_S + CHECK_JITTER_S))
         _, nxt = schedule(0, None, 1000.0, rng=lambda: 0.0)
@@ -168,7 +169,9 @@ class SweepTests(unittest.TestCase):
             sm = next(r for r in snap if r["cohort"] == "Smart Money")
             self.assertEqual((sm["wallets"], sm["positioned"], sm["long_usd"]), (5, 5, 50_000))   # focus only
             self.assertEqual(st.focus_size(), 5)
-            self.assertEqual(len(st.due(clk_after := c.t + 1)), 5)                 # the rest wait for their daily check
+            self.assertEqual(len(st.due(c.t + 1)), 0)                              # nobody due right after a reading
+            self.assertEqual(len(st.due(c.t + 11 * 60)), 5)                         # first readings: 10 min later
+            self.assertEqual(len(st.due(c.t + 31 * 3600)), 10)                      # the rest at their daily check
             self.assertEqual(st.runs(1)[0]["status"], "done")
             self.assertGreaterEqual(sum(r["rate_limited"] for r in st.runs(5)), 1)
 
@@ -251,7 +254,7 @@ class RetryTests(unittest.TestCase):
 
 
 class HyperLensFeedTests(unittest.TestCase):
-    def test_pinned_wallets_are_due_every_sweep_and_old_db_migrates(self):
+    def test_newly_pinned_wallets_are_due_and_old_db_migrates(self):
         import sqlite3
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "old.db")
@@ -266,7 +269,8 @@ class HyperLensFeedTests(unittest.TestCase):
             st.db.execute("UPDATE wallets SET next_poll_at = 1e12")               # both checked recently
             self.assertEqual(st.due(1000.0), [])
             self.assertEqual(st.set_pinned(["0xB"]), 1)
-            self.assertEqual([a for a, _ in st.due(1000.0)], ["0xb"])
+            self.assertEqual([r[0] for r in st.due(1000.0)], ["0xb"])              # newly pinned: due at once
+            self.assertEqual(st.due(1000.0)[0][2:], (1, 4))                          # pinned, settled streak
 
     def test_sweep_responses_feed_hyperlens_roster(self):
         import hl_intelligence as hl
@@ -288,7 +292,7 @@ class HyperLensFeedTests(unittest.TestCase):
         roster = [hl.TrackedWallet(address=f"0x{i}", account_value=1e6) for i in range(3)]
         fetch = mock.AsyncMock(return_value=None)
         with mock.patch.object(hl, "_roster", roster), mock.patch.object(hl, "_asset_index_map", {"x": "y"}), \
-                mock.patch.object(hl, "_last_roster_poll_at", 0.0), mock.patch.object(hl, "_fetch_wallet_positions", fetch), \
+                mock.patch.object(hl, "_poll_plan", {}), mock.patch.object(hl, "_fetch_wallet_positions", fetch), \
                 mock.patch.object(hl, "_get_watchlist_addresses", return_value={"0x1"}), \
                 mock.patch.object(hl, "roster_via_cohorts", return_value=True):
             asyncio.run(hl.poll_positions())

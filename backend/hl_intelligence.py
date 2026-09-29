@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Set
 
 import aiohttp
 
+import hl_cadence as _cadence
 import hl_calls as _hl_calls
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
@@ -52,13 +53,14 @@ _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 
-# Polling cadence — "Sentiment Mode" uses a uniform 10-min cadence for
-# the roster. Watchlist (explicitly-followed wallets) keeps its 5-min tier
-# because the user added them on purpose.
-_WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
-_ROSTER_POLL_INTERVAL = 10 * 60            # 10 min uniform for roster (was 15)
-_ROSTER_IDLE_POLL_INTERVAL = 10 * 60       # 10 min uniform (was 30 — tier merged)
-_POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
+# Polling cadence — adaptive (hl_cadence): followed wallets every 5 min, a wallet whose
+# positions changed 10 min later, backing off to 15/30/45/60 min while unchanged, 2 h while
+# flat, elite at least every 15 min. With the cohort sweep on (production) the sweep reads the
+# roster on this cadence and HyperLens reads only followed wallets itself; with it off,
+# poll_positions below applies the same cadence to the roster.
+_WATCHLIST_POLL_INTERVAL = _cadence.FOLLOWED_S
+_POLL_INTERVAL = _cadence.TICK_S           # main loop tick (followed wallets are due every tick)
+_ROSTER_IDLE_POLL_INTERVAL = 10 * 60       # loop nap while nobody is viewing and nothing is followed
 
 # In-memory snapshot depth per wallet. "Sentiment Mode" only needs the
 # latest snapshot for consensus — trade reconstruction is disabled, so
@@ -67,7 +69,7 @@ _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 _POSITION_HISTORY_LEN = 1
 
 # Staleness: skip snapshots older than this when computing consensus
-_SNAPSHOT_MAX_AGE_S = 75 * 60              # covers the cohort sweep cadence (30 min + sweep + post-close pause)
+_SNAPSHOT_MAX_AGE_S = _cadence.MAX_READING_AGE_S   # the slowest tier (2 h, flat wallets) + a tick + the post-close pause
 # After a restart the restored readings are up to an hour or so old (saved hourly), and a
 # deploy starts the new copy before the old one saves on shutdown. Until the sweep has read
 # everyone again, restored readings count as current so HyperLens is not empty.
@@ -127,7 +129,7 @@ _PERP_EQUITY_LOOKBACK_S = 7 * 86400        # ...but a tracked wallet's highest r
 
 # Stored records written with these rules carry roster_version = 2 (trader_lean rows, cohort
 # snapshots); rows from before have none (version 1: 300 + 300 wallets, $50K floors).
-ROSTER_VERSION = 2
+ROSTER_VERSION = _cadence.ROSTER_VERSION
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
 # Consensus thresholds
@@ -298,8 +300,9 @@ _ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
 
 # Tiered polling state
 _xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
-_last_roster_poll_at: float = 0            # Last time full roster was polled
-_last_idle_roster_poll_at: float = 0       # Last time idle-roster wallets were polled
+# Own polling plan (followed wallets; the whole roster only when the cohort sweep is off):
+# address -> (next due time, readings in a row without a change). ~100 bytes per wallet.
+_poll_plan: Dict[str, tuple] = {}
 _ORDER_BOOK_TOP_N = 50                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
@@ -593,7 +596,7 @@ async def refresh_leaderboard() -> int:
     _roster_updated_at = time.time()
     try:                                   # the cohort sweep polls these every sweep
         from cohorts.sweeper import pin_roster
-        await asyncio.to_thread(pin_roster, [w.address for w in _roster])
+        await asyncio.to_thread(pin_roster, [w.address for w in _roster], elite_addresses)
     except Exception as exc:
         logger.warning("Cohorts: roster pin failed: %s", exc)
 
@@ -936,6 +939,8 @@ def ingest_state(address: str, data: dict, ts: Optional[float] = None) -> bool:
     if wallet is None:
         return False
     snap = _snapshot_from_state(data, ts=ts)
+    prev = _snapshots[wallet.address][-1] if _snapshots.get(wallet.address) else None
+    _note_change(wallet.address, prev, snap)
     if wallet.address not in _snapshots:
         _snapshots[wallet.address] = deque(maxlen=_POSITION_HISTORY_LEN)
     _snapshots[wallet.address].append(snap)
@@ -952,21 +957,40 @@ def after_ingest() -> None:
     _poll_count += 1
 
 
-async def poll_positions() -> int:
-    """Poll positions using tiered strategy.
+def _book_of(snap: Optional[PositionSnapshot]) -> Optional[_cadence.Book]:
+    if snap is None:
+        return None
+    out: _cadence.Book = {}
+    for p in snap.positions:
+        key = f"xyz:{p.coin}" if p.dex == _XYZ_DEX and not p.coin.startswith("xyz:") else p.coin
+        s0, u0 = out.get(key, (0.0, 0.0))
+        out[key] = (s0 + (p.size if p.side == "LONG" else -p.size), u0 + p.size_usd)
+    return out
 
-    - **Watchlist tier** (every 5 min): followed/watched wallets get full
-      polling — positions + orders + xyz DEX (3 API calls).
-    - **Active roster** (every 15 min): wallets with ≥1 open position —
-      positions only (1 API call).
-    - **Idle roster** (every 30 min): wallets with zero open positions —
-      they might open one, but no urgency.
 
-    In practice most wallets have zero positions at any given time, so
-    this reduces API volume significantly.
+def _plan_next(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot, now: float,
+               followed: bool, elite: bool) -> float:
+    """Record a reading in the own polling plan; returns when the wallet is next due."""
+    streak = _poll_plan.get(address, (0.0, _cadence.SETTLED_STREAK))[1]
+    book = _book_of(snap)
+    streak = _cadence.next_streak(streak, _cadence.changed(_book_of(prev), book))
+    due = _cadence.next_at(now, streak, not _cadence.live(book), followed=followed, elite=elite)
+    _poll_plan[address] = (due, streak)
+    return due
+
+
+async def poll_positions(force: bool = False) -> int:
+    """Read the wallets that are due (hl_cadence).
+
+    - Followed/watched wallets: every 5 min, always read here.
+    - Roster wallets: read here only when the cohort sweep is off (otherwise the sweep reads
+      them on the same cadence and feeds ingest_state). ``force`` reads every roster wallet
+      (the 4-hour record when nobody has been viewing and the sweep is off).
+
+    Positions only (one clearinghouseState call per wallet; the xyz DEX only for wallets
+    known to hold xyz positions).
     """
-    global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
-    global _last_idle_roster_poll_at
+    global _last_poll_at, _poll_count, _consensus_updated_at
     global _roster, _roster_money_printers, _roster_smart_money
 
     # Refresh asset index map if empty (resolves @142 → PENGU etc.)
@@ -979,25 +1003,20 @@ async def poll_positions() -> int:
 
     now = time.time()
     watchlist_addrs = _get_watchlist_addresses()
-    roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
-    # idle_roster_due kept as alias for backward-compat with logging below;
-    # in Sentiment Mode active/idle merged into single 10-min cadence.
-    idle_roster_due = roster_due
+    delegated = roster_via_cohorts()      # the cohort sweep reads the roster
+    elite = {a for a, c in _wallet_cohorts.items() if "elite" in c}
 
-    # Sentiment Mode: simplified split — watchlist (always) + roster (every
-    # _ROSTER_POLL_INTERVAL). No active/idle subdivision.
     watchlist_wallets = []
     roster_to_poll = []
-    delegated = roster_via_cohorts()      # the cohort sweep polls the roster
     for w in _roster:
         if w.address.lower() in watchlist_addrs:
             watchlist_wallets.append(w)
-        elif roster_due and not delegated:
+        elif not delegated and (force or _poll_plan.get(w.address, (0.0, 0))[0] <= now):
             roster_to_poll.append(w)
-
-    # Backward-compat aliases for the rest of this function
-    active_roster_wallets = roster_to_poll
-    idle_roster_wallets: list = []
+    # Plan entries of wallets that left the roster
+    on_roster = {w.address for w in _roster}
+    for a in [a for a in _poll_plan if a not in on_roster]:
+        del _poll_plan[a]
 
     wallets_to_poll = watchlist_wallets + roster_to_poll
     if not wallets_to_poll:
@@ -1008,9 +1027,6 @@ async def poll_positions() -> int:
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
     success_count = 0
 
-    # "Sentiment Mode": always run light polling (positions only, no orders,
-    # no xyz DEX). Saves 2 of 3 API calls per wallet. Order-driven features
-    # (pressure map, smart orders) were already disabled.
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
             _fetch_wallet_positions(session, semaphore, w, full=False)
@@ -1021,6 +1037,11 @@ async def poll_positions() -> int:
     for wallet, result in zip(wallets_to_poll, results):
         if isinstance(result, Exception) or result is None:
             continue
+
+        prev = _snapshots[wallet.address][-1] if _snapshots.get(wallet.address) else None
+        _plan_next(wallet.address, prev, result, now, followed=wallet.address.lower() in watchlist_addrs,
+                   elite=wallet.address in elite)
+        _note_change(wallet.address, prev, result)
 
         # Store snapshot in ring buffer
         if wallet.address not in _snapshots:
@@ -1035,25 +1056,12 @@ async def poll_positions() -> int:
 
     _last_poll_at = now
     _poll_count += 1
-    if roster_due:
-        _last_roster_poll_at = now
-    if idle_roster_due:
-        _last_idle_roster_poll_at = now
 
     evicted_addrs = _after_positions_update()
 
-    # Logging
-    tier_info = f"watchlist={len(watchlist_wallets)}"
-    if roster_due:
-        tier_info += f", active={len(active_roster_wallets)}"
-    if idle_roster_due:
-        tier_info += f", idle={len(idle_roster_wallets)}"
-    else:
-        idle_count = sum(1 for w in _roster
-                         if w.address.lower() not in watchlist_addrs
-                         and not _wallet_has_open_positions(w.address))
-        if idle_count > 0:
-            tier_info += f", idle_skipped={idle_count}"
+    tier_info = f"followed={len(watchlist_wallets)}, roster={len(roster_to_poll)}"
+    if delegated:
+        tier_info += " (roster read by the cohort sweep)"
     if evicted_addrs:
         tier_info += f", evicted={len(evicted_addrs)}"
     logger.info(
@@ -1061,6 +1069,11 @@ async def poll_positions() -> int:
         _poll_count, success_count, len(wallets_to_poll), tier_info, len(_consensus),
     )
     return success_count
+
+
+def _note_change(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot) -> None:
+    """Hook for readings whose positions changed (lockstep change log)."""
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1330,7 +1343,10 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     if bar <= _last_lean_bar or not _roster:
         return False
     if not is_active() and not roster_via_cohorts():
-        await poll_positions()
+        await poll_positions(force=True)       # nobody viewing and no sweep: readings may be hours old
+    # With the sweep on, every reading is at most _SNAPSHOT_MAX_AGE_S old (the adaptive cadence's
+    # slowest tier plus slack) and an unchanged wallet's reading is its current position, so the
+    # record uses the readings on hand rather than reading 600+ wallets at the close.
     rows = profitable_lean(_lean_groups)
     if not rows:
         return False
@@ -2787,6 +2803,12 @@ def get_status() -> dict:
         "poll_count": _poll_count,
         "poll_interval_sec": _POLL_INTERVAL,
         "idle_roster_poll_interval_sec": _ROSTER_IDLE_POLL_INTERVAL,
+        "cadence": {
+            "roster_read_by": "cohort_sweep" if roster_via_cohorts() else "hyperlens",
+            "followed_s": _cadence.FOLLOWED_S, "after_change_s": list(_cadence.BACKOFF_S),
+            "flat_s": _cadence.FLAT_S, "elite_max_s": _cadence.ELITE_MAX_S, "tick_s": _cadence.TICK_S,
+            "reading_max_age_s": _SNAPSHOT_MAX_AGE_S,
+        },
         "active_wallets": sum(1 for w in _roster if _wallet_has_open_positions(w.address)),
         "idle_wallets": sum(1 for w in _roster if not _wallet_has_open_positions(w.address)),
         "roster_refresh_interval_sec": _ROSTER_REFRESH_INTERVAL,
@@ -2899,9 +2921,9 @@ async def run_hyperlens_loop() -> None:
         except Exception as exc:
             logger.warning("HyperLens loop error: %s", exc)
 
-        # Fast cadence when active; long interruptible nap when idle so the box
-        # isn't waking every 5 min to poll HL round the clock.
-        if is_active():
+        # Tick every 5 min while someone is viewing, or while followed wallets need their 5-min
+        # reading for Telegram alerts; otherwise a long interruptible nap.
+        if is_active() or (roster_via_cohorts() and _followed_any()):
             await asyncio.sleep(_POLL_INTERVAL)
         else:
             await idle_sleep(_ROSTER_IDLE_POLL_INTERVAL)

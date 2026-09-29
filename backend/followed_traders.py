@@ -5,8 +5,8 @@ or removing needs the admin key like every other change.
 
 A change is found by comparing two readings of the wallet: a new coin/side is an open, a
 missing one a close, and a coin quantity up or down by at least a quarter an add or a
-cut. Changes under MIN_USD are ignored. Followed wallets are read every 5 minutes while
-someone is viewing and every 10 minutes otherwise (hl_intelligence).
+cut. Changes under MIN_USD are ignored. Followed wallets are read every 5 minutes, also while
+nobody is viewing (hl_intelligence, hl_cadence.FOLLOWED_S).
 """
 from __future__ import annotations
 

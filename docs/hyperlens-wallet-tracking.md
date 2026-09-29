@@ -39,9 +39,32 @@ The profit rules are unchanged. The group grows by taking more ranks and by drop
 
 Two of the six version 1 elite wallets had an empty perp account that day. The 7-day lookback keeps a tracked wallet that sold everything and moved its cash to spot for a few days.
 
+## Reading cadence
+
+Until version 2 the cohort sweep read every focus wallet (about 2,800 whales and proven traders) and the whole HyperLens roster every 30 minutes, whatever they were doing. Now each wallet's next reading depends on what its last one showed (`backend/hl_cadence.py`):
+
+| Wallet | Read every |
+|---|---|
+| Followed (the Follow list, Telegram alerts) | 5 min, also while nobody is viewing |
+| Positions changed at the last reading | 10 min |
+| Unchanged since, holding positions | 15, 30, 45, then 60 min |
+| Unchanged and flat | 2 h |
+| Elite | at least every 15 min |
+
+- **Changed** means a coin opened, closed or flipped, or a coin's size moved by more than 1% and more than $500. Positions under $500 are ignored. Closing everything counts as a change (10 min), then the wallet is flat (2 h).
+- The sweep looks for due wallets every 5 minutes, so "10 min" means 10 to 15. Intervals of 30 minutes or more get plus or minus 10% so wallets do not bunch into bursts.
+- Wallets outside the focus set keep their one check a day.
+- After deploy every wallet starts on the 60-minute step (or 2 hours if flat); the first reading of a new wallet counts as a change.
+
+**Records at their boundaries.** A reading counts as current for up to 2.5 hours (the slowest tier plus a tick and the 20-minute pause after each 4-hour close; was 75 minutes). The 4-hour trader record and the 30-minute cohort snapshots use the readings on hand: an unchanged wallet's last reading is its current position (its dollar value is at the price when it was read). No extra reading is made at the boundary. Only when the cohort sweep is off and nobody has been viewing does HyperLens read every roster wallet at the 4-hour close, as before.
+
+**Slower detection.** A wallet that trades after holding still for hours is seen up to about 70 minutes later (up to about 2 hours 20 minutes if it was flat), plus up to 20 minutes if that falls in the pause after a 4-hour close. It was 30 to 50 minutes. New-position markers, convergence alerts and the Radar's counts follow the same delay. Followed wallets are unchanged (5 minutes).
+
 ## Continuity
 
 Changing the cohort moves the Radar's trader counts and the stored lean series.
 
 - `trader_lean` rows (the 4-hour record per coin and group) have a `roster_version` column: 2 from this change on, empty (NULL) before. Split studies on it.
-- `/api/hyperlens/status` shows `roster_version` and the targets.
+- Cohort snapshots (the Cohorts tab, every 30 minutes) carry `"roster_version": 2` inside their data.
+- `position_opens` and `convergences` rows have a `roster_version` column (NULL before). The convergence forward test (docs/reviews/trader-convergence-forward-test.md) was declared on version 1: 300 wallets, $50K accounts, readings every 30 minutes, a 2-hour gap limit (now 2.5 hours, to cover the flat tier). Version 2 rows are a different variant and need their own declaration and count.
+- `/api/hyperlens/status` shows `roster_version`, the targets and the cadence.

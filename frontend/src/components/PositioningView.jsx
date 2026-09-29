@@ -82,7 +82,7 @@ export default function PositioningView() {
       <p className="coh-intro">
         {data ? <>{data.wallets} {who} hold positions on {data.rows.length} coins. Updated {when(data.updated_at)}.</> : error ? `Positioning unavailable (${error}).` : "Loading positioning…"}
         {" "}<HelpTip title="Positioning map" width={380}>
-          <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (about every 30 minutes). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
+          <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (every 10–15 minutes after a wallet trades, up to an hour when it has not, two hours when it holds nothing). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
           <p>Agree: at least {MAP_MIN_TRADERS} {who} lean the same way as the engine's 4H signal (long signals against longs, exits or a downtrend against shorts). Opposed: they lean against it. Whether agreement leads price is being recorded; until then this is information, not a signal.</p>
         </HelpTip>
       </p>

@@ -63,6 +63,7 @@ class Position:
     usd: float                 # mark value, always positive
     long: bool
     first_seen: float
+    size: float = 0.0          # coin quantity, always positive (0 on readings stored before it was kept)
 
 
 @dataclass

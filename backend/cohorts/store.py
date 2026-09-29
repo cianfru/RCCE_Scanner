@@ -1,6 +1,7 @@
 """SQLite storage for wallet cohorts (portable: the file can move to another host as is).
 
-wallets              registry from the leaderboard: all-time PnL, polling schedule
+wallets              registry from the leaderboard: all-time PnL, polling schedule (next_poll_at,
+                     streak = readings in a row without a position change, pinned = HyperLens roster)
 wallet_state_latest  one row per wallet, overwritten each poll (no per-wallet history)
 cohort_snapshots     aggregated rows per sweep: the time series
 sweep_runs           audit: duration, weight used, errors; an unfinished run is resumed
@@ -15,8 +16,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from cohorts.assign import Position, WalletState
+from hl_cadence import SETTLED_STREAK
 
 RETENTION_DAYS = 180
+RUNS_RETENTION_DAYS = 14       # sweep_runs rows (one per tick with work since the adaptive cadence)
+PIN_ROSTER, PIN_ELITE = 1, 2   # wallets.pinned: HyperLens roster wallet; elite (read at least every 15 min)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS wallets (
@@ -28,7 +32,8 @@ CREATE TABLE IF NOT EXISTS wallets (
     active INTEGER NOT NULL DEFAULT 1,
     focus INTEGER NOT NULL DEFAULT 0,
     pinned INTEGER NOT NULL DEFAULT 0,
-    next_poll_at REAL NOT NULL DEFAULT 0
+    next_poll_at REAL NOT NULL DEFAULT 0,
+    streak INTEGER NOT NULL DEFAULT 4
 );
 CREATE INDEX IF NOT EXISTS idx_wallets_due ON wallets(active, next_poll_at);
 CREATE TABLE IF NOT EXISTS wallet_state_latest (
@@ -82,6 +87,8 @@ class Store:
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(wallets)")}
         if "pinned" not in cols:              # databases created before HyperLens was fed by the sweep
             self.db.execute("ALTER TABLE wallets ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        if "streak" not in cols:              # before the adaptive cadence: start everyone settled (60 min)
+            self.db.execute(f"ALTER TABLE wallets ADD COLUMN streak INTEGER NOT NULL DEFAULT {SETTLED_STREAK}")
         self.db.commit()
 
     # --- registry -----------------------------------------------------------------
@@ -99,42 +106,62 @@ class Store:
         self.db.commit()
         return len(rows)
 
-    def due(self, now: float, polled_since: Optional[float] = None) -> List[Tuple[str, Optional[float]]]:
-        """(address, all-time PnL) to poll. polled_since: skip wallets already polled since then (resuming a sweep)."""
+    def due(self, now: float, polled_since: Optional[float] = None) -> List[Tuple[str, Optional[float], int, int]]:
+        """(address, all-time PnL, pinned, streak) of the wallets whose next reading is due.
+        polled_since: skip wallets already polled since then (resuming an interrupted run)."""
         return self.db.execute(
-            "SELECT w.address, w.all_time_pnl FROM wallets w LEFT JOIN wallet_state_latest s ON s.address = w.address "
-            "WHERE w.active = 1 AND (w.next_poll_at <= ? OR w.pinned = 1) AND (s.ts IS NULL OR s.ts < ?) "
+            "SELECT w.address, w.all_time_pnl, w.pinned, w.streak FROM wallets w "
+            "LEFT JOIN wallet_state_latest s ON s.address = w.address "
+            "WHERE w.active = 1 AND w.next_poll_at <= ? AND (s.ts IS NULL OR s.ts < ?) "
             "ORDER BY w.pinned DESC, w.lb_value DESC",
             (now, polled_since if polled_since is not None else float("inf"))).fetchall()
 
     def registry_size(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1").fetchone()[0]
 
-    def set_pinned(self, addresses: Iterable[str]) -> int:
-        """Wallets polled every sweep whatever their size (the HyperLens roster)."""
-        addrs = [(a.lower(),) for a in addresses]
-        self.db.execute("UPDATE wallets SET pinned = 0 WHERE pinned = 1")
-        self.db.executemany("UPDATE wallets SET pinned = 1 WHERE address = ?", addrs)
+    def set_pinned(self, addresses: Iterable[str], elite: Iterable[str] = ()) -> int:
+        """The HyperLens roster: read on the adaptive cadence whatever their size (elite at least
+        every 15 min). A wallet newly pinned is due at once."""
+        el = {a.lower() for a in elite}
+        addrs = {a.lower() for a in addresses} | el
+        before = {r[0] for r in self.db.execute("SELECT address FROM wallets WHERE pinned > 0")}
+        self.db.execute("UPDATE wallets SET pinned = 0 WHERE pinned > 0")
+        self.db.executemany("UPDATE wallets SET pinned = ? WHERE address = ?",
+                            [(PIN_ELITE if a in el else PIN_ROSTER, a) for a in addrs])
+        self.db.executemany("UPDATE wallets SET next_poll_at = 0 WHERE address = ?", [(a,) for a in addrs - before])
         self.db.commit()
-        return self.db.execute("SELECT COUNT(*) FROM wallets WHERE pinned = 1").fetchone()[0]
+        return self.db.execute("SELECT COUNT(*) FROM wallets WHERE pinned > 0").fetchone()[0]
 
     def focus_size(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM wallets WHERE active = 1 AND focus = 1").fetchone()[0]
 
     # --- wallet state -------------------------------------------------------------
-    def previous_first_seen(self, address: str) -> Dict[Tuple[str, bool], float]:
+    def previous(self, address: str):
+        """The wallet's last stored reading: ({(coin, long): first_seen}, book or None).
+        book: {coin: (signed size, usd)}; None when there is no reading or it was stored before
+        sizes were kept (then only the coin sides compare, see hl_cadence.changed_sides)."""
         row = self.db.execute("SELECT positions FROM wallet_state_latest WHERE address = ?", (address,)).fetchone()
-        return {(c, bool(lg)): fs for c, _, lg, fs in json.loads(row[0])} if row else {}
+        if not row:
+            return {}, None
+        ps = json.loads(row[0])
+        first = {(p[0], bool(p[2])): p[3] for p in ps}
+        if any(len(p) < 5 for p in ps):
+            return first, None
+        return first, {p[0]: (p[4] if p[2] else -p[4], p[1]) for p in ps}
+
+    def previous_first_seen(self, address: str) -> Dict[Tuple[str, bool], float]:
+        return self.previous(address)[0]
 
     def save_states(self, items: List[tuple]) -> None:
-        """items: (address, ts, equity, [Position], focus, next_poll_at)"""
+        """items: (address, ts, equity, [Position], focus, next_poll_at[, streak])"""
         self.db.executemany(
             "INSERT INTO wallet_state_latest (address, ts, equity, positions) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(address) DO UPDATE SET ts = excluded.ts, equity = excluded.equity, positions = excluded.positions",
-            [(a, ts, eq, json.dumps([[p.coin, round(p.usd, 2), int(p.long), p.first_seen] for p in ps], separators=(",", ":")))
-             for a, ts, eq, ps, _, _ in items])
-        self.db.executemany("UPDATE wallets SET focus = ?, next_poll_at = ? WHERE address = ?",
-                            [(int(f), nxt, a) for a, _, _, _, f, nxt in items])
+            [(it[0], it[1], it[2], json.dumps([[p.coin, round(p.usd, 2), int(p.long), p.first_seen, float(f"{p.size:.6g}")]
+                                               for p in it[3]], separators=(",", ":")))
+             for it in items])
+        self.db.executemany("UPDATE wallets SET focus = ?, next_poll_at = ?, streak = ? WHERE address = ?",
+                            [(int(it[4]), it[5], it[6] if len(it) > 6 else SETTLED_STREAK, it[0]) for it in items])
         self.db.commit()
 
     def equities(self, since: float) -> Dict[str, float]:
@@ -147,7 +174,8 @@ class Store:
         for a, eq, ps, pnl in self.db.execute(
                 "SELECT s.address, s.equity, s.positions, w.all_time_pnl FROM wallet_state_latest s "
                 "JOIN wallets w ON w.address = s.address WHERE w.active = 1 AND w.focus = 1 AND s.ts >= ?", (now - max_age_s,)):
-            out.append(WalletState(a, eq, pnl, [Position(c, u, bool(lg), fs) for c, u, lg, fs in json.loads(ps)]))
+            out.append(WalletState(a, eq, pnl, [Position(p[0], p[1], bool(p[2]), p[3], p[4] if len(p) > 4 else 0.0)
+                                                for p in json.loads(ps)]))
         return out
 
     # --- cohort time series -------------------------------------------------------
@@ -232,7 +260,13 @@ class Store:
     def close_run(self, run_id: int, now: float) -> None:
         self.db.execute("UPDATE sweep_runs SET status = 'done', finished = ?, duration_s = ? - started WHERE id = ?",
                         (now, now, run_id))
+        self.db.execute("DELETE FROM sweep_runs WHERE started < ? AND status = 'done'", (now - RUNS_RETENTION_DAYS * 86400,))
         self.db.commit()
+
+    def cadence_counts(self) -> Dict[str, int]:
+        """Followed-set wallets (focus or pinned) by how many readings in a row showed no change."""
+        return {f"streak_{k}": n for k, n in self.db.execute(
+            "SELECT streak, COUNT(*) FROM wallets WHERE active = 1 AND (focus = 1 OR pinned > 0) GROUP BY streak")}
 
     def runs(self, limit: int = 10) -> List[dict]:
         cols = ("id", "started", "finished", "status", "due", "polled", "errors", "rate_limited", "weight", "duration_s")

@@ -1620,7 +1620,7 @@ const COHORT_OPTIONS = [
 ];
 const cohortApi = (k) => COHORT_OPTIONS.find(o => o.key === k)?.api || null;
 
-const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K in the account and no more than 25 open positions (market makers are left out).";
+const BASIS_TITLE = "Wallets read in the last 2.5 hours (quiet wallets are read less often), with at least $5K in their perp account and no more than 25 open positions (market makers are left out).";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
@@ -1788,7 +1788,7 @@ export default function HyperLensPanel({ isMobile }) {
           </div>
           {partial && (
             <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: T.yellow }}>
-              Only {fresh} of {tracked} wallets were updated in the last 75 minutes, so these figures cover a partial set.
+              Only {fresh} of {tracked} wallets were read in the last 2.5 hours, so these figures cover a partial set.
             </div>
           )}
         </div>}

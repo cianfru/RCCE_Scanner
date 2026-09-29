@@ -163,7 +163,7 @@ export default function SetupIntelDrawer({ row, intel, updatedAt, watching = fal
         </>}
 
         <div className="si-foot">
-          <p className="si-dim">Positions are what these wallets hold at their latest reading (about every 30 minutes); opens are timed to the nearest reading. You decide the trade.</p>
+          <p className="si-dim">Positions are what these wallets hold at their latest reading (10–15 minutes after a wallet trades, up to an hour when it has been quiet); opens are timed to the nearest reading. You decide the trade.</p>
         </div>
       </div>
     </aside>
