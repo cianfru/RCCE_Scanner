@@ -2117,75 +2117,26 @@ def _process_followed_wallet_events() -> None:
 
 
 def _fire_tg_whale_alert(chat_id: int, event: dict) -> None:
-    """Send a whale trade alert via Telegram."""
-    import asyncio
+    """A trade by a wallet followed through the older whale_follows list, through the alert
+    gate (category "whales", off by default; once per wallet, coin and action a day)."""
+    import tg_alerts as ta
+    from wallet_names import codename
 
-    action = event.get("action", "?")
-    side = event.get("side", "?")
-    coin = event.get("coin", "?")
-    size = event.get("size_usd", 0)
-    entry = event.get("entry_px", 0)
-    lev = event.get("leverage", 1)
-    cohort = event.get("cohort", "tracked").replace("_", " ").title()
-    wallet = event.get("wallet", "")
-    pnl = event.get("pnl", 0)
-    pnl_pct = event.get("pnl_pct", 0)
-
-    # Format size
-    if size >= 1e6:
-        size_str = f"${size / 1e6:.1f}M"
-    elif size >= 1e3:
-        size_str = f"${size / 1e3:.0f}K"
-    else:
-        size_str = f"${size:.0f}"
-
-    from wallet_names import wallet_label
-    wallet_short = wallet_label(wallet) if len(wallet) > 10 else wallet
-
-    if action == "OPENED":
-        emoji = "🟢" if side == "LONG" else "🔴"
-        text = (
-            f"🐋 {cohort} wallet {action} {side} {coin}\n"
-            f"{emoji} {size_str} @ ${entry:,.2f} · {lev:.0f}x\n"
-            f"📊 {wallet_short}"
-        )
-    elif action == "CLOSED":
-        pnl_emoji = "✅" if pnl >= 0 else "❌"
-        pnl_sign = "+" if pnl >= 0 else ""
-        if abs(pnl) >= 1e3:
-            pnl_str = f"${pnl / 1e3:{pnl_sign}.1f}K"
-        else:
-            pnl_str = f"${pnl:{pnl_sign},.0f}"
-        text = (
-            f"🐋 {cohort} wallet {action} {side} {coin}\n"
-            f"{pnl_emoji} PnL: {pnl_str} ({pnl_pct:+.1f}%)\n"
-            f"📊 {wallet_short}"
-        )
-    elif action == "FLIPPED":
-        text = (
-            f"🐋 {cohort} wallet FLIPPED {coin}\n"
-            f"🔄 Was {side} → now {'SHORT' if side == 'LONG' else 'LONG'}\n"
-            f"💰 {size_str} @ ${entry:,.2f} · {lev:.0f}x\n"
-            f"📊 {wallet_short}"
-        )
-    else:
+    action = str(event.get("action", "?")).lower()
+    if action not in ("opened", "closed", "flipped"):
         return
-
-    try:
-        from telegram_bot import get_telegram_bot
-        bot = get_telegram_bot()
-        if bot.app and bot._running:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(
-                    bot.app.bot.send_message(chat_id=chat_id, text=text)
-                )
-            else:
-                loop.run_until_complete(
-                    bot.app.bot.send_message(chat_id=chat_id, text=text)
-                )
-    except Exception as e:
-        logger.debug("TG whale alert failed for chat %s: %s", chat_id, e)
+    side = str(event.get("side", "?")).lower()
+    coin = event.get("coin", "?")
+    wallet = event.get("wallet", "")
+    cohort = event.get("cohort", "tracked").replace("_", " ")
+    head = f"{ta.esc(codename(wallet))} {action} {ta.esc(side)} {ta.coin_b(coin)} {ta.usd(event.get('size_usd', 0))}"
+    if action == "closed":
+        pnl = event.get("pnl", 0) or 0
+        detail = f"PnL {'+' if pnl >= 0 else '-'}{ta.usd(abs(pnl))} ({event.get('pnl_pct', 0):+.1f}%)"
+    else:
+        detail = f"At {ta.px(event.get('entry_px', 0))} · {event.get('leverage', 1):.0f}x"
+    ta.submit_nowait("whales", f"{wallet}:{coin}:{action}", f"{head}\n{ta.esc(detail)} · {ta.esc(cohort)}",
+                     head, chats=[chat_id])
 
 
 def get_wallet_trades(address: str, limit: int = 50) -> List[dict]:
