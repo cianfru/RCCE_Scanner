@@ -354,7 +354,6 @@ export default function CoinChat({ symbol, isMobile, timeframe = "1d", marketKin
                 }}>
                   <div style={{
                     fontSize: T.textSm, color: T.text4, fontFamily: T.mono,
-                    animation: "pulse 1.5s ease-in-out infinite",
                   }}>
                     Thinking...
                   </div>

@@ -428,7 +428,6 @@ export default function ChatPanel({ isMobile, selectedSymbol, timeframe = "1d" }
             }}>
               <span style={{
                 fontSize: m(T.textBase, isMobile), fontFamily: T.font, color: T.text4,
-                animation: "pulse 1.5s ease-in-out infinite",
               }}>
                 Thinking...
               </span>

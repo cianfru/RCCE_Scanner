@@ -17,12 +17,12 @@ export default function AppHeader({
   width, isMobile, mode, onToggleTheme,
   activeTab, activeMainTab, tabTargets, radarTf,
   drawerOpen, onOpenDrawer, onBrand,
-  lastRefresh, cacheAge, error, scanRunning,
+  lastRefresh, cacheAge, error,
   timeframe, onTimeframe, compactTfRoute,
 }) {
   const headerRef = useRef(null);
   const showTabs = width >= 900;
-  const clock = width >= 1280 ? "long" : width >= 1024 ? "medium" : width >= 900 ? "dot" : isMobile ? "phone" : "medium";
+  const clock = width >= 1280 ? "long" : width >= 1024 ? "medium" : width >= 900 ? "compact" : isMobile ? "phone" : "medium";
 
   // Scrolled state on the page root: shows the top mask and the plate's page-colour scrim.
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function AppHeader({
   }, [compactOn, compactTfRoute]);
 
   const moreActive = MORE_PAGES.has(activeTab);
-  const freshnessProps = { lastRefresh, cacheAge, error, scanRunning };
+  const freshnessProps = { lastRefresh, cacheAge, error };
 
   return (
     <>

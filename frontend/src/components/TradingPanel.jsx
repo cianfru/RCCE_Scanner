@@ -385,7 +385,6 @@ function FeedsNotice({ failed, onRetry }) {
   const kept = failed.some(([, st]) => st.updatedAt);
   return (
     <div className="pf-feeds" role="alert">
-      <span className="data-status-dot" style={{ background: T.yellow }} aria-hidden="true" />
       <span>Hyperliquid did not answer for {names.length === 1 ? names[0].toLowerCase() : `${names.length} readings`}
         {names.length > 1 && <span className="pf-feeds-names" title={names.join(", ")}> ({names.join(", ")})</span>}
         {kept ? ". Older readings are kept where there is one." : "."}</span>

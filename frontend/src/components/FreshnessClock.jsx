@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { col } from "../theme.js";
 import { freshness, freshnessText } from "../utils/freshness.js";
 
-const DOT = { live: () => "var(--t-accent)", stale: () => col("#fbbf24"), down: () => col("#f87171") };
+// Text only, no status dot: amber once the data is 15 minutes old, red when the feed is down.
+const TONE = { live: () => undefined, stale: () => col("#fbbf24"), down: () => col("#f87171") };
+const SHORT = { stale: "Data late", down: "Feed down" };
 
-// The header's data clock: a status dot (mint live, amber from 15 minutes, red when the feed
-// is down) and the scan time with its age. variant: "long" (1280+), "medium", "dot" (900-1023)
-// or "phone" (the dot alone).
-export default function FreshnessClock({ lastRefresh, cacheAge, error, scanRunning, variant = "long" }) {
+// The header's data clock: the scan time with its age ("Updated 15:31 · 2m").
+// variant: "long" (1280+), "medium", "compact" (900-1023) or "phone". The last two show
+// nothing while the data is fresh, and a short "Data late" / "Feed down" when it is not.
+export default function FreshnessClock({ lastRefresh, cacheAge, error, variant = "long" }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => tick(n => n + 1), 30000);
@@ -18,16 +20,13 @@ export default function FreshnessClock({ lastRefresh, cacheAge, error, scanRunni
   if (!f.state) return null;
   const text = freshnessText(f);
   if (!f.dataTime) Object.assign(text, { title: "The scanner feed is unavailable", aria: "The scanner feed is unavailable" });
-  const dot = <span className={`freshness-dot${scanRunning ? " is-scanning" : ""}`} style={{ background: DOT[f.state]() }} />;
+  const color = TONE[f.state]();
 
-  if (variant === "phone") {
-    return <span className="freshness freshness-phone" role="img" aria-label={text.aria} title={text.title}>{dot}</span>;
+  if (variant === "phone" || variant === "compact") {
+    if (f.state === "live") return null;
+    return <span className="freshness" title={text.title} style={{ color }}>{SHORT[f.state]}</span>;
   }
-  const label = variant === "long" ? text.long : variant === "medium" ? text.medium : "";
-  return (
-    <span className="freshness" title={text.title} role={label ? undefined : "img"} aria-label={label ? undefined : text.aria}>
-      {dot}
-      {label && <span>{label}</span>}
-    </span>
-  );
+  const label = variant === "long" ? text.long : text.medium;
+  if (!label) return <span className="freshness" title={text.title} style={{ color }}>{SHORT[f.state] || ""}</span>;
+  return <span className="freshness" title={text.title} style={{ color }}>{label}</span>;
 }
