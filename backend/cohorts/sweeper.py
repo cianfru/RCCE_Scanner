@@ -246,8 +246,8 @@ class Sweeper:
             t0 = self.clock()
             try:
                 info = await self.run_once()
-                if info.get("wallets_due") or info.get("rows"):
-                    logger.info("Cohorts: sweep %s", info)
+                # One line per cohort snapshot (30 min), not per 5-min tick.
+                (logger.info if info.get("rows") else logger.debug)("Cohorts: sweep %s", info)
             except Exception:
                 logger.exception("Cohorts: sweep failed")
             await self.sleep(max(30.0, TICK_S - (self.clock() - t0)))

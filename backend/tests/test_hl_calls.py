@@ -8,7 +8,7 @@ class CallCounterTests(unittest.TestCase):
         hl_calls.reset()
 
     def test_per_minute_rates_by_type(self):
-        t0 = hl_calls._started + 600                       # ten minutes after start
+        t0 = (int(hl_calls._started // 60) + 10) * 60      # a minute boundary about ten minutes after start
         for m in range(5):                                 # five finished minutes
             for _ in range(10):
                 hl_calls.record("testStateA", now=t0 + m * 60)
@@ -18,7 +18,8 @@ class CallCounterTests(unittest.TestCase):
         mine = lambda d: {k: v for k, v in d.items() if k.startswith("test")}      # background callers may record too
         self.assertEqual(mine(st["per_min_5m"]), {"testStateA": 10.0, "testFillsB": 1.0})
         self.assertEqual(mine(st["total_since_start"]), {"testStateA": 149, "testFillsB": 5})
-        self.assertAlmostEqual(st["per_min_60m"]["testStateA"], 50 / 15, places=2)   # 15 minutes of uptime
+        up_min = int((t0 + 5 * 60 + 10 - hl_calls._started) // 60)                  # 14 or 15 minutes of uptime
+        self.assertAlmostEqual(st["per_min_60m"]["testStateA"], round(50 / up_min, 2), places=2)
 
     def test_old_minutes_fall_out_of_the_ring(self):
         t0 = hl_calls._started + 7200
