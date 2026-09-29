@@ -19,9 +19,11 @@ Rule (recomputed daily with the roster, over the last WINDOW_DAYS):
 1. Moves. A wallet's changes to one coin in one direction (adding to a long or a short, or
    cutting it) that follow each other within MOVE_GAP_S are one move.
 2. Traded together. A move of wallet A matches a move of wallet B when it is the same coin and
-   direction and they happened within MATCH_S of each other (each move matches at most one).
-   Both wallets need at least MIN_MATCHED matched moves, and at least MIN_SHARE of each one's
-   moves must be matched (most of what one does, the other does too).
+   direction and they happened within MATCH_S of each other (each move matches at most one;
+   the closest pairs are matched first). Both wallets need at least MIN_MATCHED matched moves,
+   at least MIN_SHARE of each one's moves must be matched (most of what one does, the other
+   does too), and the median time between matched moves must be at most MAX_MEDIAN_GAP_S
+   (two traders buying the same dip half a day apart, day after day, are not one book).
 3. Held together. Each wallet's position in every coin either of them held, in dollars at one
    price per coin, sampled every GRID_S over the window: the two series must correlate at
    MIN_CORRELATION or more (same coins, same side, sizes rising and falling in proportion).
@@ -29,9 +31,9 @@ Rule (recomputed daily with the roster, over the last WINDOW_DAYS):
    is "grp-" plus the start of its smallest address.
 
 Calibrated on the September 2026 roster's fills (docs/hyperlens-wallet-tracking.md): the three
-BTC wallets of the size study traded the same moves hours to a day and a half apart, so
-MATCH_S is 48 hours; the correlation and share tests keep traders who merely buy the same
-dip apart.
+BTC wallets of the size study made two of their three moves within minutes and the third a day
+and a half apart, so MATCH_S is 48 hours while the median gap must stay under 6 hours; the
+correlation, share and gap tests keep traders who merely buy the same dip apart.
 """
 from __future__ import annotations
 
@@ -44,6 +46,7 @@ MATCH_S = 48 * 3600
 MIN_MATCHED = 2
 MIN_SHARE = 0.7
 MIN_CORRELATION = 0.8
+MAX_MEDIAN_GAP_S = 6 * 3600     # most matched moves close together, not just within MATCH_S
 GRID_S = 4 * 3600
 
 # One logged change of one coin: (t0 = previous reading, t1 = this reading, coin, size before,
@@ -82,20 +85,24 @@ def moves(changes: Iterable[Change]) -> List[dict]:
 
 
 def match(ma: Sequence[dict], mb: Sequence[dict]) -> List[Tuple[dict, dict]]:
-    """Greedy one-to-one matching of two wallets' moves: same coin and direction, within MATCH_S."""
-    used: Set[int] = set()
-    pairs = []
-    for a in ma:
-        best, best_gap = None, None
+    """One-to-one matching of two wallets' moves (same coin and direction, within MATCH_S),
+    closest pairs first."""
+    cands = []
+    for i, a in enumerate(ma):
         for j, b in enumerate(mb):
-            if j in used or b["coin"] != a["coin"] or b["dir"] != a["dir"]:
-                continue
-            gap = abs(a["t1"] - b["t1"])
-            if gap <= MATCH_S and (best is None or gap < best_gap):
-                best, best_gap = j, gap
-        if best is not None:
-            used.add(best)
-            pairs.append((a, mb[best]))
+            if b["coin"] == a["coin"] and b["dir"] == a["dir"]:
+                gap = abs(a["t1"] - b["t1"])
+                if gap <= MATCH_S:
+                    cands.append((gap, i, j))
+    cands.sort()
+    used_a: Set[int] = set()
+    used_b: Set[int] = set()
+    pairs = []
+    for gap, i, j in cands:
+        if i not in used_a and j not in used_b:
+            used_a.add(i)
+            used_b.add(j)
+            pairs.append((ma[i], mb[j]))
     return pairs
 
 
@@ -149,9 +156,15 @@ def linked(ca: Sequence[Change], cb: Sequence[Change], book_a: Book, book_b: Boo
         return False, info
     if min(len(ma), len(mb)) < MIN_SHARE * max(len(ma), len(mb)):
         return False, info                  # cannot pass the share test: skip the matching
-    n = len(match(ma, mb))
+    pairs = match(ma, mb)
+    n = len(pairs)
     info.update(matched=n, share_a=round(n / len(ma), 3), share_b=round(n / len(mb), 3))
     if n < MIN_MATCHED or n / len(ma) < MIN_SHARE or n / len(mb) < MIN_SHARE:
+        return False, info
+    gaps = sorted(abs(a["t1"] - b["t1"]) for a, b in pairs)
+    info["median_gap_h"] = round(gaps[len(gaps) // 2] / 3600, 2) if len(gaps) % 2 else \
+        round((gaps[len(gaps) // 2 - 1] + gaps[len(gaps) // 2]) / 2 / 3600, 2)
+    if info["median_gap_h"] * 3600 > MAX_MEDIAN_GAP_S:
         return False, info
     coins = sorted({c[2] for c in ca} | {c[2] for c in cb} | set(book_a) | set(book_b))
     r = pearson(exposure(ca, book_a, coins, grid, prices), exposure(cb, book_b, coins, grid, prices))

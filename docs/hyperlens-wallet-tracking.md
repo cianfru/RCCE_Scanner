@@ -64,13 +64,13 @@ Until version 2 the cohort sweep read every focus wallet (about 2,800 whales and
 
 Some traders split one book across several wallets. The size study found three wallets holding 84% of the profitable traders' BTC longs, buying and selling the same lots. Counted separately they look like three traders agreeing. Now such a group counts as **one trader**; its dollars are still summed. Rule and constants: `backend/hl_entities.py`.
 
-**Data.** Each time a tracked wallet's reading differs from its previous one (the cadence's change test), the coins that moved are logged in `position_changes` in hyperlens.db: size before and after, price, and the window between the two readings. Fills are not stored, so timing is at the resolution of the readings. Kept 30 days, about 800 small rows a day for the whole roster (a few MB).
+**Data.** Each time a tracked wallet's reading differs from its previous one (the cadence's change test), the coins that moved are logged in `position_changes` in hyperlens.db: size before and after, price, and the window between the two readings. Fills are not stored, so timing is at the resolution of the readings. Kept 30 days, about 1,300 small rows a day for the version 2 roster (about 4 MB).
 
 **First start.** The log starts empty, and a group like the BTC wallets trades only a few times a month, so it would take weeks to be recognised. On the first start (empty log only, never again) a background task rebuilds the last 30 days from each roster wallet's fills: one `userFills` request per wallet, about 630 in all, one at a time on the coin-page entries' rate budget (it takes an hour or two), then regroups.
 
 **Rule** (recomputed daily with the roster, and at start, over the last 30 days). Two wallets are linked when all of these hold:
 
-1. **Traded together.** A wallet's changes to one coin in one direction within 2 hours of each other are one move. A move matches the other wallet's move in the same coin and direction within 48 hours. Each wallet has at least 2 matched moves, and at least 70% of each wallet's moves are matched.
+1. **Traded together.** A wallet's changes to one coin in one direction within 2 hours of each other are one move. A move matches the other wallet's move in the same coin and direction within 48 hours (closest pairs first). Each wallet has at least 2 matched moves, at least 70% of each wallet's moves are matched, and the median time between matched moves is 6 hours or less.
 2. **Held together.** Each wallet's position in every coin either of them held, in dollars at one price per coin, sampled every 4 hours over the 30 days: the two series correlate at 0.8 or more. Same coins, same side, sizes rising and falling in proportion.
 
 Linked wallets are joined into one group (A with B and B with C make a group of three). The id is `grp-` plus the start of the smallest address.
@@ -79,7 +79,33 @@ Linked wallets are joined into one group (A with B and B with C make a group of 
 
 **Shown:** `entity` on `/api/hyperlens/wallet/{address}`, `/api/traders/{address}` (id, size, members, note: "Part of a group of 3 wallets that trade together") and on roster, symbol-position and ladder rows (the id). The trader page and the wallet dialog show the note. `/api/hyperlens/status` shows the number of groups.
 
-**Check on real fills.** Replaying the adaptive cadence over the 30 days to 26 September 2026 on the fills of the 573 wallets of the size study: 339,000 readings, 21,000 logged coin changes, 17,000 candidate pairs, 3 pairs passing the traded-together test, and one group of 3: the study's three BTC wallets (0x2371...0883, 0x93ab...11f8, 0xec7f...df39). They made the same three moves up to 31 hours apart; their position series correlate at 0.84 to 0.99.
+**Check on real fills.** Two replays over the 30 days to 26 September 2026, using each wallet's real fills:
+
+| Wallets | Replay | Readings | Logged changes | Groups found |
+|---|---|---|---|---|
+| 573 (roster of the size study) | adaptive cadence | 339,000 | 21,000 (711 a day) | 1 of 3: the study's BTC wallets (0x2371...0883, 0x93ab...11f8, 0xec7f...df39) |
+| 573 | first-start seed from fills | | 19,900 | the same group of 3 |
+| 627 (roster version 2, dry run) | adaptive cadence | 474,000 | 37,900 (1,264 a day) | 1 of 2: BTC and ETH, same-minute trades |
+| 627 | first-start seed from fills | | 37,300 | 1 of 2: NEAR only, same-minute trades |
+
+The two version 2 pairs trade at the same minutes; each passes in one replay and misses the share test (67-70%) in the other, so pairs near the thresholds can come and go from day to day. A pair of BTC buyers adding every day, 13 hours apart on the median, is kept apart by the gap test. Two of the three study wallets are not in the version 2 dry run: their perp accounts were empty on 29 September and the dry run had no 7-day HyperLens history (production does).
+
+## Cost
+
+Hyperliquid info calls per minute (`clearinghouseState`, all from the cohort sweep in production). Before: production on 29 September 2026. After: the version 2 roster and the readings per wallet from the replay above (25.8 a day for a positioned wallet, 14.3 for a flat one; 48 a day before).
+
+| | Before | After |
+|---|---|---|
+| Focus and roster wallets | about 105 (every wallet each 30 minutes) | about 51 (2,907 wallets, 93% positioned) |
+| Elite floor | | about 1 |
+| Daily checks (other leaderboard wallets) | about 11 | about 11 |
+| **Total** | **116** | **about 62 (-46%)** |
+| Roster alone | 18 (536 wallets) | 12 (627 wallets) |
+| Each followed wallet | 0.2 | 0.2 |
+
+With the sweep off (`COHORTS_ENABLED=0`), HyperLens reads the roster itself while someone is viewing: 54 a minute before (536 wallets every 10 minutes), about 12 after. `/api/hyperlens/status` shows the live rate per request type (`api_calls`).
+
+Each reading costs about 2 ms of CPU, so the saving is small in money: well under a second of CPU a minute. New memory: the call counter (a few KB), the own polling plan for followed wallets (about 100 bytes each), queued change-log rows (a few per tick), the group maps (a few entries); the daily regrouping loads the 30-day change log for a few seconds (a few MB, in a worker thread). Database: the change log adds about 4 MB to hyperlens.db (71 MB, 30-day retention); cohorts.db keeps one more number per position and about 4,000 sweep-run rows (14 days).
 
 ## Continuity
 

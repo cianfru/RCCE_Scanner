@@ -36,7 +36,9 @@ def whale(scale, offsets):
 def test_lockstep_wallets_are_one_entity_and_independent_ones_are_not():
     changes = {
         "0xaaa1": whale(1.0, (0, 0, 0)),
-        "0xaaa2": whale(1.0, (1, 10, 31)),           # same moves, hours to a day and a half later
+        "0xaaa2": whale(1.0, (0.3, 0, 31)),          # same moves; the sale a day and a half later
+        # Accumulates BTC on the same days, but half a day off every time: not one book.
+        "0xeee1": whale(0.5, (12, 12, 12)),
         "0xaaa3": whale(0.66, (0.5, 0, 0)),           # smaller, same proportions
         # Buys the same dip but holds on and trades on alone afterwards.
         "0xbbb1": [ch(2, 12, "BTC", 0, 300), ch(5, 1, "BTC", 300, 350), ch(18, 4, "BTC", 350, 200),
@@ -52,6 +54,9 @@ def test_lockstep_wallets_are_one_entity_and_independent_ones_are_not():
     assert len(set(groups.values())) == 1 and groups["0xaaa2"] == "grp-aaa1"
     info = {(l["a"], l["b"]): l for l in links}
     assert info[("0xaaa1", "0xaaa2")]["matched"] == 3 and info[("0xaaa1", "0xaaa2")]["correlation"] >= ent.MIN_CORRELATION
+    grid = [NOW - 30 * D + k * 4 * H for k in range(181)]
+    ok, why = ent.linked(changes["0xaaa1"], changes["0xeee1"], {}, {}, grid, {"BTC": BTC})
+    assert not ok and why["matched"] == 3 and why["median_gap_h"] == 12.0
 
 
 def test_rule_parts():
