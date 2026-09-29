@@ -32,8 +32,8 @@ export default function TradersCard({ symbol, sm, traders, onShowEntries, spot, 
     <section className="analysis-card tc">
       <div className="tc-head">
         <h3>Traders on {coin}{spot ? " (Hyperliquid perps)" : ""} <HelpTip title="How this is read" width={420}>
-          <p>Profitable traders: the top 300 Hyperliquid wallets by monthly return that were also in profit before this month. In a rising month most are long, so a market they avoid says more than one they hold.</p>
-          <p>All tracked wallets: profitable traders and the 300 largest accounts. The direction blends dollar imbalance (70%) and wallet-count imbalance (30%); dollar weight rises to 85% when the notional imbalance exceeds 50%. Above +0.15 it leans long, below −0.15 short. This is the reading the signal's tracked-wallet check uses{sm ? `; conviction now ${formatPercent(sm.confidence, { ratio: true })}, not a probability of profit` : ""}.</p>
+          <p>Profitable traders: the top 600 Hyperliquid wallets by monthly return that were also in profit before this month. In a rising month most are long, so a market they avoid says more than one they hold.</p>
+          <p>All tracked wallets: profitable traders and the 60 largest accounts. The direction blends dollar imbalance (70%) and wallet-count imbalance (30%); dollar weight rises to 85% when the notional imbalance exceeds 50%. Above +0.15 it leans long, below −0.15 short. This is the reading the signal's tracked-wallet check uses{sm ? `; conviction now ${formatPercent(sm.confidence, { ratio: true })}, not a probability of profit` : ""}.</p>
           <p>Entries come from Hyperliquid's public fills (each trader's latest 2,000). P&amp;L is on margin. Click a trader for the fills and their other positions; Follow sends their changes to Telegram.</p>
         </HelpTip></h3>
       </div>

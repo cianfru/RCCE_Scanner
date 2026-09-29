@@ -109,7 +109,7 @@ def _pos(coin, side, usd):
 @pytest.fixture
 def board(monkeypatch):
     small = "0x" + "d" * 40
-    ws = [_wallet(A, 100, 50, 900), _wallet(B, 300, None, 400), _wallet(C, 200, 80, 100), _wallet(small, 999, 999, 999, av=10e3)]
+    ws = [_wallet(A, 100, 50, 900), _wallet(B, 300, None, 400), _wallet(C, 200, 80, 100), _wallet(small, 999, 999, 999, av=4e3)]
     now = time.time()
     snaps = {A: deque([PositionSnapshot(now, [_pos(c, "LONG", 1000 * (i + 1)) for i, c in enumerate(["BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK"])]
                                         + [_pos("xyz:TSLA", "LONG", 1e6)], 1e6)]),
@@ -127,7 +127,7 @@ def board(monkeypatch):
 
 def test_leaderboard_ranks_by_the_window_pnl(board):
     by = lambda w: [r["address"] for r in tp.leaderboard(w)["rows"]]
-    assert by("30d") == [B, C, A]                   # the $10K account is below the display floor
+    assert by("30d") == [B, C, A]                   # the $4K account is below the display floor
     assert by("7d") == [C, A, B]                    # no 7-day figure sorts last
     assert by("all") == [A, B, C]
     rows = tp.leaderboard("30d")["rows"]

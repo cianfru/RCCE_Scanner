@@ -137,6 +137,11 @@ class Store:
                             [(int(f), nxt, a) for a, _, _, _, f, nxt in items])
         self.db.commit()
 
+    def equities(self, since: float) -> Dict[str, float]:
+        """address -> perp equity at the latest reading, for readings taken since ``since``."""
+        return {a: eq for a, eq in self.db.execute(
+            "SELECT address, equity FROM wallet_state_latest WHERE ts >= ?", (since,))}
+
     def load_states(self, now: float, max_age_s: float) -> List[WalletState]:
         out = []
         for a, eq, ps, pnl in self.db.execute(

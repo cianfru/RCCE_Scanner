@@ -1774,7 +1774,7 @@ export default function HyperLensPanel({ isMobile }) {
               <HelpTip title="Traders" width={380} label="About this page">
                 {bySide ? <>
                   <p>{cohort === "money_printers"
-                    ? "Profitable traders: the top 300 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
+                    ? "Profitable traders: the top 600 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
                     : "Large accounts: the 300 largest Hyperliquid accounts ($1M and up); profit is not checked."}</p>
                   <p>One row per coin held by {SUMMARY_MIN} or more of them, most traders first: how many are long and short, their dollars, and the price against the median entry of the side most of them are on (green when that side is in profit). 24h is the change in traders long and short since a day ago. Open a row for the largest wallets on each side.</p>
                   <p>Bullish or bearish: at least 15% more of them long than short, or the reverse; otherwise mixed.</p>

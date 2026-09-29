@@ -37,6 +37,7 @@ from hl_persistence import (
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
+    max_account_values as _db_max_account_values,
     get_db_stats as _db_stats,
 )
 
@@ -78,33 +79,55 @@ _restored_until: float = 0.0
 def _fresh_limit(now: float) -> float:
     return _RESTORED_MAX_AGE_S if now < _restored_until else _SNAPSHOT_MAX_AGE_S
 
-# Live eviction: remove wallets whose AV drops below this during polling
-_EVICTION_THRESHOLD = 25_000               # $25K — half of MP minimum ($50K)
-_DISPLAY_MIN_AV = 50_000                   # Only display wallets above $50K in roster/consensus
+# Perp account floor (perp equity from clearinghouseState, not the leaderboard's account value,
+# which also counts spot, vaults and staking). One number for three uses: a wallet below it at
+# its latest reading is left out when the roster is built (when a reading is on hand), evicted
+# while tracked, and not counted in consensus or shown in the roster.
+_MIN_PERP_EQUITY = 5_000
+_EVICTION_THRESHOLD = _MIN_PERP_EQUITY
+_DISPLAY_MIN_AV = _MIN_PERP_EQUITY
 
 # Filtering thresholds
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
-# Cohort definitions — "Sentiment Mode" (latest snapshot only, one call per wallet).
-# Each wallet costs one light API call per poll interval (weight 2 of Hyperliquid's
-# 1200/min) and a few KB of memory; the earlier cost came from trade reconstruction
-# and order polling, which stay off. 300 per cohort (~500 unique wallets) is the
-# default; HYPERLENS_COHORT_SIZE lowers it (10-300) without a code change.
-_COHORT_SIZE = max(10, min(300, int(os.environ.get("HYPERLENS_COHORT_SIZE", "300"))))
-_ROSTER_COHORTS = {
-    "money_printers": _COHORT_SIZE,    # top performers by ROI
-    "smart_money": _COHORT_SIZE,       # largest wallets by AV
-}
+# --- Roster rules (roster version 2, see docs/hyperlens-wallet-tracking.md) --------------------
+# Built once a day from the Hyperliquid leaderboard download; market makers (monthly volume
+# over 100x account value) are removed first.
+#
+# Profitable traders ("money_printer"), all of:
+#   - monthly ROI >= 30%, and the ROI is meaningful (_meaningful_roi: the month did not start
+#     from under $1K, where a small profit reads as a huge ROI);
+#   - monthly profit >= $10K;
+#   - all-time PnL >= this month's PnL (in profit before this month: one lucky month is not enough);
+#   - leaderboard account value >= $10K (was $50K);
+#   - perp equity >= $5K (_MIN_PERP_EQUITY) at the sweep's latest reading or at any HyperLens
+#     reading of the last 7 days, when a reading is on hand. Wallets with no perp account (a
+#     third of the qualifiers hold everything in spot or vaults) have nothing to follow.
+#   Ranked by monthly ROI; the top MP_TARGET are kept (was 300). On the 29 Sept 2026
+#   leaderboard 869 pass the profit rules and 583 of them have a perp account.
+#
+# Large accounts ("smart_money"): leaderboard account value >= $1M and the same perp-equity
+# check, ranked by account value. Profit is not checked.
+#
+# Elite: a profitable trader that ranks within the top ELITE_KEEP_RANK large accounts. The
+# large-account group is every elite wallet plus the largest others up to SM_TARGET wallets
+# in all (was 300), so cutting the group never drops an elite wallet.
+MP_TARGET = max(10, int(os.environ.get("HYPERLENS_MP_TARGET", "600")))
+SM_TARGET = max(10, int(os.environ.get("HYPERLENS_SM_TARGET", "60")))
+ELITE_KEEP_RANK = 300                      # the large-account depth of roster version 1
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
-_MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
+_MP_MIN_ACCOUNT_VALUE = 10_000             # Money Printers: $10K minimum leaderboard account value (was $50K)
 _MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum monthly profit (rejects dust/lottery)
 _MIN_ROI_BASE = 1_000                      # ROI is dropped when the implied starting equity (pnl / roi) is below this
-# Profitable traders must also have been in profit before this month (all-time
-# PnL >= this month's PnL), so one lucky month is not enough. On the September
-# 2026 leaderboard ~1,000 wallets qualify; 115 of the old top 300 did not.
 _SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
+_PERP_EQUITY_MAX_AGE_S = 3 * 86400         # a perp-equity reading older than this is not used at build time
+_PERP_EQUITY_LOOKBACK_S = 7 * 86400        # ...but a tracked wallet's highest reading this far back counts
+
+# Stored records written with these rules carry roster_version = 2 (trader_lean rows, cohort
+# snapshots); rows from before have none (version 1: 300 + 300 wallets, $50K floors).
+ROSTER_VERSION = 2
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
 # Consensus thresholds
@@ -234,8 +257,8 @@ class SymbolConsensus:
 # ---------------------------------------------------------------------------
 
 _roster: List[TrackedWallet] = []                       # merged & deduplicated (all unique wallets)
-_roster_money_printers: List[TrackedWallet] = []         # top 200 by ROI
-_roster_smart_money: List[TrackedWallet] = []            # top 200 by AV
+_roster_money_printers: List[TrackedWallet] = []         # top MP_TARGET by monthly ROI
+_roster_smart_money: List[TrackedWallet] = []            # SM_TARGET by account value (elite always in)
 _wallet_cohorts: Dict[str, set] = {}                     # address -> {"money_printer", "smart_money", "elite"}
 _roster_updated_at: float = 0.0
 
@@ -367,41 +390,8 @@ def _meaningful_roi(pnl: float, roi_pct: float) -> Optional[float]:
     return roi_pct
 
 
-async def refresh_leaderboard() -> int:
-    """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
-
-    Two independent cohorts are built from the same leaderboard data:
-    - Money Printers ("profitable traders" in the UI): top by monthly ROI
-      (>= 30%, >= $10k profit, AV >= $50k) that were also in profit before this month
-    - Smart Money ("large accounts" in the UI): top by AV (>= $1M), profit not checked
-    - Elite: wallets in BOTH cohorts (auto-tagged)
-
-    Returns the number of wallets in the merged roster.
-    """
-    global _roster, _roster_money_printers, _roster_smart_money
-    global _wallet_cohorts, _roster_updated_at
-
-    logger.info("HyperLens: refreshing leaderboard roster (cohort mode)...")
-
-    timeout = aiohttp.ClientTimeout(total=45)  # Large response
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(_LEADERBOARD_URL) as resp:
-                if resp.status != 200:
-                    logger.warning("Leaderboard fetch failed: HTTP %d", resp.status)
-                    return len(_roster)
-                raw = await resp.json(content_type=None)
-    except Exception as exc:
-        logger.warning("Leaderboard fetch error: %s", exc)
-        return len(_roster)
-
-    # Response is {"leaderboardRows": [...]}
-    rows = raw if isinstance(raw, list) else raw.get("leaderboardRows", [])
-    if not rows:
-        logger.warning("Leaderboard empty or unexpected format: %s", type(raw))
-        return len(_roster)
-
-    # Parse all wallets (filter out market makers only)
+def parse_leaderboard(rows: list) -> List[TrackedWallet]:
+    """Leaderboard rows -> TrackedWallet list, market makers (vlm/AV > 100) removed."""
     all_wallets: List[TrackedWallet] = []
     for entry in rows:
         try:
@@ -464,6 +454,105 @@ async def refresh_leaderboard() -> int:
             ))
         except Exception:
             continue  # Skip malformed entries
+    return all_wallets
+
+
+def _perp_ok(w: TrackedWallet, perp_equity: Optional[Dict[str, float]]) -> bool:
+    """False only when a recent perp-equity reading exists and is below the floor."""
+    if not perp_equity:
+        return True
+    eq = perp_equity.get(w.address)
+    return eq is None or eq >= _MIN_PERP_EQUITY
+
+
+def build_cohorts(all_wallets: List[TrackedWallet], perp_equity: Optional[Dict[str, float]] = None,
+                  mp_target: Optional[int] = None, sm_target: Optional[int] = None):
+    """The roster rules (see the config block above). ``all_wallets``: the parsed leaderboard with
+    market makers removed and ROI already passed through _meaningful_roi. ``perp_equity``: address
+    -> perp equity from recent readings (may be empty). Returns (money printers ranked by ROI,
+    large accounts ranked by account value, elite addresses)."""
+    mp_target = MP_TARGET if mp_target is None else mp_target
+    sm_target = SM_TARGET if sm_target is None else sm_target
+    mp_candidates = [
+        w for w in all_wallets
+        if (w.roi is not None
+            and w.roi >= _MP_MIN_ROI_PCT
+            and w.account_value >= _MP_MIN_ACCOUNT_VALUE
+            and w.pnl >= _MP_MIN_PNL
+            and w.all_time_pnl >= w.pnl
+            and _perp_ok(w, perp_equity))
+    ]
+    mp_candidates.sort(key=lambda w: w.roi, reverse=True)
+    money_printers = mp_candidates[:mp_target]
+    mp_addresses = {w.address for w in money_printers}
+
+    sm_ranked = [w for w in all_wallets if w.account_value >= _SM_MIN_ACCOUNT_VALUE and _perp_ok(w, perp_equity)]
+    sm_ranked.sort(key=lambda w: w.account_value, reverse=True)
+    elite = {w.address for w in sm_ranked[:ELITE_KEEP_RANK] if w.address in mp_addresses}
+    # Elite first, then the largest others until the group has sm_target wallets; ranking order kept.
+    room = max(0, sm_target - len(elite))
+    others = {w.address for w in sm_ranked if w.address not in elite}
+    others = {a for a in [w.address for w in sm_ranked if w.address in others][:room]}
+    smart_money = [w for w in sm_ranked if w.address in elite or w.address in others]
+    return money_printers, smart_money, elite
+
+
+def _known_perp_equity() -> Dict[str, float]:
+    """Perp equity per wallet: the larger of the cohort sweep's latest reading (every leaderboard
+    wallet of $10K+ is read at least daily) and the highest HyperLens reading of the last
+    _PERP_EQUITY_LOOKBACK_S (so a tracked trader who sold everything and moved the cash to spot
+    for a few days is not dropped). Empty when neither source has data yet."""
+    now = time.time()
+    out: Dict[str, float] = {}
+    try:
+        from cohorts.sweeper import enabled, store
+        if enabled():
+            out.update(store().equities(now - _PERP_EQUITY_MAX_AGE_S))
+    except Exception as exc:
+        logger.warning("HyperLens: perp equity lookup failed: %s", exc)
+    try:
+        for a, av in _db_max_account_values(now - _PERP_EQUITY_LOOKBACK_S).items():
+            if av > out.get(a, -1.0):
+                out[a] = av
+    except Exception as exc:
+        logger.warning("HyperLens: account value history lookup failed: %s", exc)
+    return out
+
+
+async def refresh_leaderboard() -> int:
+    """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
+
+    Two cohorts are built from the same leaderboard data by build_cohorts (rules in the
+    config block): money printers ("profitable traders" in the UI, MP_TARGET by monthly ROI),
+    smart money ("large accounts", SM_TARGET by account value, elite always kept) and
+    elite (in both).
+
+    Returns the number of wallets in the merged roster.
+    """
+    global _roster, _roster_money_printers, _roster_smart_money
+    global _wallet_cohorts, _roster_updated_at
+
+    logger.info("HyperLens: refreshing leaderboard roster (cohort mode)...")
+
+    timeout = aiohttp.ClientTimeout(total=45)  # Large response
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_LEADERBOARD_URL) as resp:
+                if resp.status != 200:
+                    logger.warning("Leaderboard fetch failed: HTTP %d", resp.status)
+                    return len(_roster)
+                raw = await resp.json(content_type=None)
+    except Exception as exc:
+        logger.warning("Leaderboard fetch error: %s", exc)
+        return len(_roster)
+
+    # Response is {"leaderboardRows": [...]}
+    rows = raw if isinstance(raw, list) else raw.get("leaderboardRows", [])
+    if not rows:
+        logger.warning("Leaderboard empty or unexpected format: %s", type(raw))
+        return len(_roster)
+
+    all_wallets = parse_leaderboard(rows)
 
     # Wallet cohorts reuse this download (one 40MB leaderboard fetch a day serves both).
     try:
@@ -474,28 +563,9 @@ async def refresh_leaderboard() -> int:
     except Exception as exc:
         logger.warning("Cohorts: registry refresh failed: %s", exc)
 
-    # --- Build Money Printers cohort ---
-    # Require minimum ROI%, minimum AV, AND minimum absolute PnL so
-    # lottery/dust wallets (162k% on $100) don't pollute the roster.
-    mp_candidates = [
-        w for w in all_wallets
-        if (w.roi is not None
-            and w.roi >= _MP_MIN_ROI_PCT
-            and w.account_value >= _MP_MIN_ACCOUNT_VALUE
-            and w.pnl >= _MP_MIN_PNL
-            and w.all_time_pnl >= w.pnl)
-    ]
-    mp_candidates.sort(key=lambda w: w.roi, reverse=True)
-    _roster_money_printers = mp_candidates[:_ROSTER_COHORTS["money_printers"]]
+    perp_equity = await asyncio.to_thread(_known_perp_equity)
+    _roster_money_printers, _roster_smart_money, elite_addresses = build_cohorts(all_wallets, perp_equity)
     mp_addresses = {w.address for w in _roster_money_printers}
-
-    # --- Build Smart Money cohort ---
-    sm_candidates = [
-        w for w in all_wallets
-        if w.account_value >= _SM_MIN_ACCOUNT_VALUE
-    ]
-    sm_candidates.sort(key=lambda w: w.account_value, reverse=True)
-    _roster_smart_money = sm_candidates[:_ROSTER_COHORTS["smart_money"]]
     sm_addresses = {w.address for w in _roster_smart_money}
 
     # --- Build cohort tags ---
@@ -504,8 +574,6 @@ async def refresh_leaderboard() -> int:
         _wallet_cohorts.setdefault(addr, set()).add("money_printer")
     for addr in sm_addresses:
         _wallet_cohorts.setdefault(addr, set()).add("smart_money")
-    # Elite = in both cohorts
-    elite_addresses = mp_addresses & sm_addresses
     for addr in elite_addresses:
         _wallet_cohorts[addr].add("elite")
 
@@ -1267,7 +1335,7 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     if not rows:
         return False
     try:
-        _db_save_trader_lean(bar, rows)
+        _db_save_trader_lean(bar, rows, ROSTER_VERSION)
         _last_lean_bar = bar
     except Exception as exc:
         logger.warning("HyperLens DB: trader lean save error: %s", exc)
@@ -2704,6 +2772,9 @@ def get_status() -> dict:
 
     return {
         "tracked_wallets": len(_roster),
+        "roster_version": ROSTER_VERSION,
+        "roster_targets": {"money_printer": MP_TARGET, "smart_money": SM_TARGET, "elite_keep_rank": ELITE_KEEP_RANK,
+                           "min_perp_equity": _MIN_PERP_EQUITY},
         "money_printer_count": len(_roster_money_printers),
         "smart_money_count": len(_roster_smart_money),
         "elite_count": elite_count,

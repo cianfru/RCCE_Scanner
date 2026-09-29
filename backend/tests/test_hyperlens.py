@@ -24,7 +24,7 @@ class HyperLensTests(unittest.TestCase):
 
     def test_symbol_positions_use_the_consensus_account_filter(self):
         pos = {"coin": "ETH", "szi": "1", "entryPx": "2000", "leverage": {"type": "cross", "value": 2}}
-        roster = [hl.TrackedWallet(address="0xbig", account_value=1e6), hl.TrackedWallet(address="0xsmall", account_value=20_000)]
+        roster = [hl.TrackedWallet(address="0xbig", account_value=1e6), hl.TrackedWallet(address="0xsmall", account_value=3_000)]
         now = time.time()
         snaps = {w.address: deque([hl._snapshot_from_state(_state(w.account_value, pos), ts=now)]) for w in roster}
         with mock.patch.object(hl, "_roster", roster), mock.patch.object(hl, "_snapshots", snaps), \

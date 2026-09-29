@@ -115,6 +115,9 @@ def _get_conn() -> sqlite3.Connection:
         _conn.execute("PRAGMA synchronous=NORMAL")     # Faster writes, still safe
         _conn.execute("PRAGMA busy_timeout=5000")      # Wait up to 5s on locks
         _conn.executescript(_SCHEMA)
+        cols = {r[1] for r in _conn.execute("PRAGMA table_info(trader_lean)")}
+        if "roster_version" not in cols:      # rows from before roster version 2 keep NULL
+            _conn.execute("ALTER TABLE trader_lean ADD COLUMN roster_version INTEGER")
         _conn.commit()
         logger.info("HyperLens DB: opened at %s", _DB_PATH)
     return _conn
@@ -350,13 +353,16 @@ def load_position_first_seen() -> Dict[str, Dict[str, float]]:
 _LEAN_RETENTION_DAYS = 400
 
 
-def save_trader_lean(bar_close: int, rows: Dict[str, dict]) -> int:
-    """Store one candle close's profitable-trader lean (idempotent per bar)."""
+def save_trader_lean(bar_close: int, rows: Dict[str, dict], roster_version: Optional[int] = None) -> int:
+    """Store one candle close's profitable-trader lean (idempotent per bar). ``roster_version``
+    marks which roster rules produced it (NULL on rows written before version 2), so studies
+    can split the series where the cohort changed."""
     conn = _get_conn()
     conn.executemany(
-        "INSERT OR REPLACE INTO trader_lean (bar_close, grp, long, short, long_usd, short_usd) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        [(int(bar_close), g, r["long"], r["short"], r["long_usd"], r["short_usd"]) for g, r in rows.items()],
+        "INSERT OR REPLACE INTO trader_lean (bar_close, grp, long, short, long_usd, short_usd, roster_version) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(int(bar_close), g, r["long"], r["short"], r["long_usd"], r["short_usd"], roster_version)
+         for g, r in rows.items()],
     )
     conn.execute("DELETE FROM trader_lean WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
     conn.commit()
@@ -520,6 +526,12 @@ def get_db_stats() -> dict:
 # ---------------------------------------------------------------------------
 # Extended equity history (longer than in-memory deque)
 # ---------------------------------------------------------------------------
+
+def max_account_values(since: float) -> Dict[str, float]:
+    """address -> highest perp account value among the snapshots stored since ``since``."""
+    return {a: av for a, av in _get_conn().execute(
+        "SELECT address, MAX(account_value) FROM snapshots WHERE timestamp >= ? GROUP BY address", (since,))}
+
 
 def load_equity_history(address: str, days: int = 7) -> List[dict]:
     """Load extended equity curve from DB for a wallet.
