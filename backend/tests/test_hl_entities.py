@@ -196,3 +196,37 @@ def test_recompute_reads_the_stored_log(monkeypatch):
         assert hl.entity_of("0xaaa2") == "grp-aaa1"
         assert hp.get_db_stats()["position_changes"] == 6
         hp._conn.close()
+
+
+def test_changes_rebuilt_from_fills_for_the_seed():
+    ms = lambda t: int(t * 1000)
+    fills = [
+        {"coin": "BTC", "time": ms(NOW - 10 * D), "px": "100000", "sz": "2", "side": "B", "startPosition": "0"},
+        {"coin": "BTC", "time": ms(NOW - 10 * D + 120), "px": "100100", "sz": "1", "side": "B", "startPosition": "2"},
+        {"coin": "BTC", "time": ms(NOW - 3 * D), "px": "110000", "sz": "3", "side": "A", "startPosition": "3"},
+        {"coin": "BTC", "time": ms(NOW - 2 * D), "px": "110000", "sz": "0.001", "side": "B", "startPosition": "0"},  # dust
+        {"coin": "@107", "time": ms(NOW - 2 * D), "px": "1", "sz": "5000", "side": "B", "startPosition": "0"},       # spot
+        {"coin": "ETH", "time": ms(NOW - 40 * D), "px": "4000", "sz": "10", "side": "A", "startPosition": "0"},      # too old
+    ]
+    rows = ent.changes_from_fills(fills, NOW - 30 * D, NOW)
+    assert [(r[2], r[3], r[4]) for r in rows] == [("BTC", 0.0, 3.0), ("BTC", 3.0, 0.0)]
+    assert rows[0][0] == NOW - 10 * D and rows[0][1] == NOW - 10 * D + 120 and rows[0][5] == 100100.0
+    assert ent.changes_from_fills(fills, NOW - 30 * D, NOW - 5 * D) == rows[:1]       # only before the log starts
+
+
+def test_seed_runs_once_and_fills_the_log_before_it_starts(monkeypatch):
+    import hl_persistence as hp
+    import trader_entries as te
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(hp, "_DB_PATH", os.path.join(d, "hl.db"))
+        monkeypatch.setattr(hp, "_conn", None)
+        now = time.time()
+        fills = [{"coin": "BTC", "time": int((now - 5 * D) * 1000), "px": "100000", "sz": "1", "side": "B", "startPosition": "0"}]
+        post = mock.AsyncMock(return_value=fills)
+        monkeypatch.setattr(te, "_post", post)
+        monkeypatch.setattr(hl, "_roster", [TrackedWallet("0xaaa1"), TrackedWallet("0xaaa2")])
+        assert asyncio.run(hl.seed_changes_from_fills()) == 2
+        assert post.call_count == 2 and post.call_args.args[1]["type"] == "userFills"
+        post.reset_mock()                                               # the log has rows now: never again
+        assert asyncio.run(hl.seed_changes_from_fills()) == 0 and post.call_count == 0
+        hp._conn.close()

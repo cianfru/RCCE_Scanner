@@ -54,7 +54,7 @@ Until version 2 the cohort sweep read every focus wallet (about 2,800 whales and
 - **Changed** means a coin opened, closed or flipped, or a coin's size moved by more than 1% and more than $500. Positions under $500 are ignored. Closing everything counts as a change (10 min), then the wallet is flat (2 h).
 - The sweep looks for due wallets every 5 minutes, so "10 min" means 10 to 15. Intervals of 30 minutes or more get plus or minus 10% so wallets do not bunch into bursts.
 - Wallets outside the focus set keep their one check a day.
-- After deploy every wallet starts on the 60-minute step (or 2 hours if flat); the first reading of a new wallet counts as a change.
+- At deploy every focus and roster wallet is due at once, so the first tick reads them all (like one old sweep, about 15 minutes at the sweep's rate budget). Then they start on the 60-minute step (2 hours if flat), spreading out with the jitter. The first reading of a wallet never read before counts as a change.
 
 **Records at their boundaries.** A reading counts as current for up to 2.5 hours (the slowest tier plus a tick and the 20-minute pause after each 4-hour close; was 75 minutes). The 4-hour trader record and the 30-minute cohort snapshots use the readings on hand: an unchanged wallet's last reading is its current position (its dollar value is at the price when it was read). No extra reading is made at the boundary. Only when the cohort sweep is off and nobody has been viewing does HyperLens read every roster wallet at the 4-hour close, as before.
 
@@ -65,6 +65,8 @@ Until version 2 the cohort sweep read every focus wallet (about 2,800 whales and
 Some traders split one book across several wallets. The size study found three wallets holding 84% of the profitable traders' BTC longs, buying and selling the same lots. Counted separately they look like three traders agreeing. Now such a group counts as **one trader**; its dollars are still summed. Rule and constants: `backend/hl_entities.py`.
 
 **Data.** Each time a tracked wallet's reading differs from its previous one (the cadence's change test), the coins that moved are logged in `position_changes` in hyperlens.db: size before and after, price, and the window between the two readings. Fills are not stored, so timing is at the resolution of the readings. Kept 30 days, about 800 small rows a day for the whole roster (a few MB).
+
+**First start.** The log starts empty, and a group like the BTC wallets trades only a few times a month, so it would take weeks to be recognised. On the first start (empty log only, never again) a background task rebuilds the last 30 days from each roster wallet's fills: one `userFills` request per wallet, about 630 in all, one at a time on the coin-page entries' rate budget (it takes an hour or two), then regroups.
 
 **Rule** (recomputed daily with the roster, and at start, over the last 30 days). Two wallets are linked when all of these hold:
 

@@ -42,6 +42,7 @@ from hl_persistence import (
     max_account_values as _db_max_account_values,
     save_position_changes as _db_save_changes,
     load_position_changes as _db_load_changes,
+    position_changes_first_ts as _db_changes_first_ts,
     get_db_stats as _db_stats,
 )
 
@@ -1135,6 +1136,46 @@ def _compute_entities(now: float) -> tuple:
         if snaps:
             books[a] = _cadence.live(_book_of(snaps[-1]))
     return _entities_rule.find_entities(changes, books, now=now)
+
+
+_seed_task: Optional[asyncio.Task] = None
+
+
+async def seed_changes_from_fills() -> int:
+    """One-off: when the change log is empty (the first start after this change), rebuild the last
+    30 days from each roster wallet's fills, so lockstep groups are known at once instead of weeks
+    later. One userFills request per wallet (~630) on trader_entries' rate budget, one wallet at a
+    time, in the background. Once the log has rows it never runs again. Returns the rows added."""
+    now = time.time()
+    if await asyncio.to_thread(_db_changes_first_ts) is not None:
+        return 0
+    since, until = now - _entities_rule.WINDOW_DAYS * 86400, now
+    import trader_entries as te
+    added = 0
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for address in [w.address for w in _roster]:
+            try:
+                fills = await te._post(session, {"type": "userFills", "user": address, "aggregateByTime": True})
+            except Exception as exc:
+                logger.debug("HyperLens: change-log seed skipped %s: %s", address[:10], exc)
+                continue
+            rows = [(address, *c) for c in _entities_rule.changes_from_fills(fills or [], since, until,
+                                                                              _cadence.DUST_USD)]
+            del fills
+            if rows:
+                await asyncio.to_thread(_db_save_changes, rows)
+                added += len(rows)
+    logger.info("HyperLens: change log seeded with %d rows from fills", added)
+    return added
+
+
+async def _seed_then_group() -> None:
+    try:
+        await seed_changes_from_fills()
+    except Exception as exc:
+        logger.warning("HyperLens: change-log seed failed: %s", exc)
+    await recompute_entities()
 
 
 async def recompute_entities() -> int:
@@ -2980,7 +3021,7 @@ async def run_hyperlens_loop() -> None:
     effect within ~30s without restart. The order book / pressure-map
     sub-task is gated on a separate flag (hyperlens_pressure_map).
     """
-    global _initialized
+    global _initialized, _seed_task
     from feature_flags import get_flag
 
     logger.info("HyperLens: starting background loop...")
@@ -3016,6 +3057,8 @@ async def run_hyperlens_loop() -> None:
                 _initialized = True
                 last_roster_refresh = time.time()
                 await recompute_entities()
+                if _seed_task is None:          # background: groups known before the log has filled
+                    _seed_task = asyncio.create_task(_seed_then_group())
 
             # Pressure map sub-task — spawn/cancel based on the flag
             if get_flag("hyperlens_pressure_map"):

@@ -406,6 +406,12 @@ def save_position_changes(rows: List[tuple]) -> int:
     return len(rows)
 
 
+def position_changes_first_ts() -> Optional[float]:
+    """When the change log starts (None when empty)."""
+    row = _get_conn().execute("SELECT MIN(t1) FROM position_changes").fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
 def load_position_changes(since: float) -> Dict[str, List[tuple]]:
     """address -> [(t0, t1, coin, size_before, size_after, px)] logged since ``since``, oldest first."""
     out: Dict[str, List[tuple]] = {}

@@ -147,6 +147,8 @@ def linked(ca: Sequence[Change], cb: Sequence[Change], book_a: Book, book_b: Boo
             "correlation": None}
     if len(ma) < MIN_MATCHED or len(mb) < MIN_MATCHED:
         return False, info
+    if min(len(ma), len(mb)) < MIN_SHARE * max(len(ma), len(mb)):
+        return False, info                  # cannot pass the share test: skip the matching
     n = len(match(ma, mb))
     info.update(matched=n, share_a=round(n / len(ma), 3), share_b=round(n / len(mb), 3))
     if n < MIN_MATCHED or n / len(ma) < MIN_SHARE or n / len(mb) < MIN_SHARE:
@@ -224,6 +226,46 @@ def find_entities(changes_by_wallet: Dict[str, List[Change]], books: Optional[Di
         for w in members:
             out[w] = gid
     return out, links
+
+
+SEED_BURST_S = 10 * 60        # fills of one coin this close together are one change when seeding
+
+
+def changes_from_fills(fills: Iterable[dict], since: float, until: float,
+                       dust_usd: float = 500.0) -> List[Change]:
+    """Change-log rows rebuilt from a wallet's fills (Hyperliquid userFills: coin, time in ms, px, sz,
+    side B/A, startPosition), for seeding the log once after it starts empty. Fills of one coin less
+    than SEED_BURST_S apart are one change; changes worth under ``dust_usd`` are dropped; spot and
+    builder-dex fills are skipped. Only changes that ended in [since, until) are returned."""
+    by_coin: Dict[str, List[tuple]] = {}
+    for f in fills:
+        coin = str(f.get("coin") or "")
+        if not coin or coin.startswith("@") or "/" in coin or ":" in coin or f.get("startPosition") is None:
+            continue
+        try:
+            t = float(f["time"]) / 1000
+            sp, sz, px = float(f["startPosition"]), float(f["sz"]), float(f["px"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        by_coin.setdefault(coin, []).append((t, sp, sz if f.get("side") == "B" else -sz, px))
+    out: List[Change] = []
+    for coin, xs in by_coin.items():
+        xs.sort()
+        burst = None
+        for t, sp, d, px in xs + [(math.inf, 0.0, 0.0, 0.0)]:
+            if burst is not None and t - burst[1] > SEED_BURST_S:
+                t0, t1, before, after, bpx = burst
+                if abs(after - before) * bpx >= dust_usd and since <= t1 < until:
+                    out.append((t0, t1, coin, before, after, bpx))
+                burst = None
+            if t == math.inf:
+                break
+            if burst is None:
+                burst = [t, t, sp, sp + d, px]
+            else:
+                burst[1], burst[3], burst[4] = t, sp + d, px
+    out.sort(key=lambda c: c[1])
+    return out
 
 
 def note(size: int) -> str:
