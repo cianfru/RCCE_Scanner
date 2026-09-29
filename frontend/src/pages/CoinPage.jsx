@@ -385,7 +385,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           </details>
           <p className="analysis-ask"><button type="button" className="te-link" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}>Ask AI about {coin}</button></p>
         </article>
-        <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"}
+        <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"} price={data.price}
           onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
 
