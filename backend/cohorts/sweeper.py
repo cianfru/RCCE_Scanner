@@ -1,13 +1,19 @@
-"""Cohort sweep: whales and proven traders every sweep, everyone else once a day, within a
-fixed share of Hyperliquid's per-IP weight budget (1,200/min, shared with the scanner's
-candles and HyperLens).
+"""Cohort sweep: whales and proven traders on an adaptive cadence, everyone else once a day,
+within a fixed share of Hyperliquid's per-IP weight budget (1,200/min, shared with the
+scanner's candles and HyperLens).
 
+- Every TICK_S (5 min) the wallets whose next reading is due are read.
 - Focus set (assign.in_focus): $100K+ perp equity, or $100K+ all-time PnL with $10K+
-  perp equity (~3,100 wallets). Polled every sweep (at most one sweep per 30 min).
+  perp equity (~2,800 wallets). Read on the adaptive cadence (hl_cadence): 10 min after a
+  position change, backing off to 15, 30, 45 and 60 min while nothing changes, 2 h while
+  flat. (Until roster version 2 every focus wallet was read every sweep, ~30 min.)
 - Every other $10K+ leaderboard wallet: one check a day (jittered 18-30h) to see
   whether it has joined the focus set. Largest accounts are checked first.
-- HyperLens's roster is pinned: polled every sweep, and each response also feeds
-  HyperLens (ingest_state / after_ingest), which then polls only followed wallets.
+- HyperLens's roster is pinned: read on the same cadence whatever its size (elite wallets
+  at least every 15 min), and each response also feeds HyperLens (ingest_state /
+  after_ingest), which then reads only followed wallets itself (every 5 min).
+- The cohort snapshot (all-market rows) is written every SNAPSHOT_EVERY_S (30 min) from each
+  wallet's latest reading up to STATE_MAX_AGE_S old; per-symbol rows once per 4h candle.
 
 - Token bucket at COHORTS_WEIGHT_PER_MIN (default 400); halves for 5 min on a 429.
 - Quiet for 20 min after each 4h candle close, when the scanner refreshes every market.
@@ -30,18 +36,20 @@ from typing import Callable, List, Optional
 
 import aiohttp
 
+import hl_cadence
 from cohorts.assign import Position, WalletState, aggregate, in_focus, zscore
 from cohorts.source import ApiSource, RateLimited
-from cohorts.store import Store
+from cohorts.store import PIN_ELITE, Store
 
 logger = logging.getLogger(__name__)
 
 MIN_EQUITY_FLOOR = 10_000          # discovery floor on leaderboard account value
 CHECK_EVERY_S = 24 * 3600          # wallets outside the focus set
 CHECK_JITTER_S = 6 * 3600
-MIN_SWEEP_GAP_S = 30 * 60           # ~3,100 focus wallets take ~15 min of budget
+TICK_S = hl_cadence.TICK_S          # how often due wallets are looked for
+SNAPSHOT_EVERY_S = 30 * 60          # cohort snapshot cadence
 QUIET_AFTER_CLOSE_S = 20 * 60
-STATE_MAX_AGE_S = 2 * 3600         # focus wallets are polled every sweep
+STATE_MAX_AGE_S = hl_cadence.MAX_READING_AGE_S   # the slowest tier plus a tick and the quiet window
 BATCH = 200
 WORKERS = 4
 Z_WINDOW_S = 30 * 86400
@@ -93,15 +101,33 @@ def quiet_until(now: float) -> Optional[float]:
     return close + QUIET_AFTER_CLOSE_S if now - close < QUIET_AFTER_CLOSE_S else None
 
 
-def schedule(equity: float, all_time_pnl: Optional[float], now: float, rng: Callable[[], float] = random.random):
-    """(in focus, next_poll_at) after a poll: focus wallets every sweep, others about daily."""
-    if in_focus(equity, all_time_pnl):
-        return True, 0.0
+def schedule(equity: float, all_time_pnl: Optional[float], now: float, rng: Optional[Callable[[], float]] = None,
+             pinned: int = 0, streak: int = hl_cadence.SETTLED_STREAK, flat: bool = False):
+    """(in focus, next_poll_at) after a poll. Focus and pinned wallets: the adaptive cadence
+    (``streak``: readings in a row without a change, after this one); others about daily."""
+    rng = rng or random.random
+    focus = in_focus(equity, all_time_pnl)
+    if focus or pinned:
+        return focus, hl_cadence.next_at(now, streak, flat, elite=pinned == PIN_ELITE, rng=rng)
     return False, now + CHECK_EVERY_S + (2 * rng() - 1) * CHECK_JITTER_S
 
 
 def with_first_seen(raw_positions, previous, now) -> List[Position]:
-    return [Position(c, usd, lg, previous.get((c, lg), now)) for c, usd, lg in raw_positions]
+    out = []
+    for p in raw_positions:
+        c, usd, lg = p[0], p[1], p[2]
+        out.append(Position(c, usd, lg, previous.get((c, lg), now), p[3] if len(p) > 3 else 0.0))
+    return out
+
+
+def book_of(positions) -> "hl_cadence.Book":
+    """{coin: (signed size, usd)} from raw (coin, usd, long, size) positions."""
+    out = {}
+    for p in positions:
+        size = p[3] if len(p) > 3 else 0.0
+        s0, u0 = out.get(p[0], (0.0, 0.0))
+        out[p[0]] = (s0 + (size if p[2] else -size), u0 + p[1])
+    return out
 
 
 class Sweeper:
@@ -140,9 +166,12 @@ class Sweeper:
         async def worker():
             while True:
                 try:
-                    address, pnl = queue.get_nowait()
+                    item = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
+                address, pnl = item[0], item[1]
+                pinned = item[2] if len(item) > 2 else 0
+                streak = item[3] if len(item) > 3 else hl_cadence.SETTLED_STREAK
                 if self.respect_quiet:
                     q = quiet_until(self.clock())
                     if q:
@@ -154,20 +183,28 @@ class Sweeper:
                 except RateLimited:
                     stats["rate_limited"] += 1
                     self.bucket.penalize()
-                    queue.put_nowait((address, pnl))
+                    queue.put_nowait(item)
                     continue
                 if raw is None:
                     if address not in retried:          # one retry, at the back of the queue
                         retried.add(address)
-                        queue.put_nowait((address, pnl))
+                        queue.put_nowait(item)
                     else:
                         stats["errors"] += 1
                     continue
                 now = self.clock()
                 equity, positions = raw
-                ps = with_first_seen(positions, self.store.previous_first_seen(address), now)
-                focus, nxt = schedule(equity, pnl, now)
-                done.append((address, now, equity, ps, focus, nxt))
+                first_seen, prev_book = self.store.previous(address)
+                book = book_of(positions)
+                if prev_book is None and first_seen:     # reading stored before sizes were kept
+                    moved = hl_cadence.changed_sides(set(first_seen), book)
+                else:                                    # prev_book None here: no earlier reading
+                    moved = hl_cadence.changed(prev_book, book)
+                streak = hl_cadence.next_streak(streak, moved)
+                ps = with_first_seen(positions, first_seen, now)
+                flat = not hl_cadence.live(book)
+                focus, nxt = schedule(equity, pnl, now, pinned=pinned, streak=streak, flat=flat)
+                done.append((address, now, equity, ps, focus, nxt, streak))
                 stats["polled"] += 1
                 if len(done) >= BATCH:
                     await flush()
@@ -175,7 +212,8 @@ class Sweeper:
         await asyncio.gather(*(worker() for _ in range(WORKERS)))
         await flush()
         now = self.clock()
-        rows = self.aggregate(now)
+        last = self.store.latest_ts()
+        rows = self.aggregate(now) if last is None or now - last >= SNAPSHOT_EVERY_S - TICK_S / 2 else []
         self.store.close_run(run_id, now)
         self.last = {"run_id": run_id, "resumed": resumed, "wallets_due": len(todo), "rows": len(rows),
                      "duration_s": round(now - t0, 1)}
@@ -194,6 +232,8 @@ class Sweeper:
             h = hist.get((r["dimension"], r["cohort"], r["symbol"]), [])
             span_ok = h and now - min(t for t, _ in h) >= Z_MIN_SPAN_S
             r["bias_z"] = zscore([b for _, b in h], r["bias"], min_points=1) if span_ok else None
+        for r in rows:
+            r["roster_version"] = hl_cadence.ROSTER_VERSION     # marks the switch to the adaptive cadence
         ts = int(now)
         self.store.write_snapshot(ts, rows)
         return rows
@@ -206,10 +246,11 @@ class Sweeper:
             t0 = self.clock()
             try:
                 info = await self.run_once()
-                logger.info("Cohorts: sweep %s", info)
+                # One line per cohort snapshot (30 min), not per 5-min tick.
+                (logger.info if info.get("rows") else logger.debug)("Cohorts: sweep %s", info)
             except Exception:
                 logger.exception("Cohorts: sweep failed")
-            await self.sleep(max(60.0, MIN_SWEEP_GAP_S - (self.clock() - t0)))
+            await self.sleep(max(30.0, TICK_S - (self.clock() - t0)))
 
 
 # --- wiring -------------------------------------------------------------------------
@@ -224,9 +265,9 @@ def store() -> Store:
     return _store
 
 
-def pin_roster(addresses) -> int:
-    """HyperLens's roster: polled every sweep so HyperLens needs no polling of its own."""
-    return store().set_pinned(addresses) if enabled() else 0
+def pin_roster(addresses, elite=()) -> int:
+    """HyperLens's roster: read on the adaptive cadence so HyperLens needs no polling of its own."""
+    return store().set_pinned(addresses, elite) if enabled() else 0
 
 
 def registry_from_leaderboard(wallets, now: Optional[float] = None) -> int:

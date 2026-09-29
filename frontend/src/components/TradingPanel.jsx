@@ -18,6 +18,7 @@ import { compactUsd } from "../utils/money.js";
 import { watchToast } from "../utils/setupMap.js";
 import { sideColor, shortAddr } from "../utils/traderFormat.js";
 import WalletTag from "./WalletTag.jsx";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -670,15 +671,16 @@ export default function TradingPanel({ api }) {
     const fastInterval   = setInterval(fetchFast, 15_000);
     const medInterval    = setInterval(fetchMedium, 30_000);
     const slowInterval   = setInterval(fetchSlow, 120_000);
-    const scanInterval   = setInterval(fetchScannerContext, 60_000);
-    const warnInterval   = setInterval(fetchWarnings, 60_000);
+    // Reflex server reads (the three above go to Hyperliquid): paused while hidden.
+    const stopScan       = pollWhileVisible(fetchScannerContext, 60_000);
+    const stopWarn       = pollWhileVisible(fetchWarnings, 60_000);
 
     return () => {
       clearInterval(fastInterval);
       clearInterval(medInterval);
       clearInterval(slowInterval);
-      clearInterval(scanInterval);
-      clearInterval(warnInterval);
+      stopScan();
+      stopWarn();
     };
   }, [fetchFast, fetchMedium, fetchSlow, fetchScannerContext, fetchWarnings, account]);
 

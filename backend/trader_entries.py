@@ -20,6 +20,8 @@ from typing import Dict, List, Optional
 
 import aiohttp
 
+import hl_calls
+
 from cohorts.sweeper import TokenBucket
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,7 @@ _tasks: Dict[str, asyncio.Task] = {}    # coin -> background fetch of its holder
 
 async def _post(session: aiohttp.ClientSession, body: dict):
     await _bucket.take(_CALL_WEIGHT)
+    hl_calls.record(body.get("type"))
     async with session.post(INFO_URL, json=body) as resp:
         if resp.status == 429:
             _bucket.penalize()

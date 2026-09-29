@@ -82,6 +82,8 @@ _cache = _HLCache()
 
 async def _post_info(session: aiohttp.ClientSession, payload: dict) -> dict:
     """POST to Hyperliquid info endpoint."""
+    import hl_calls
+    hl_calls.record(payload.get("type"))
     async with session.post(
         _HL_API_URL,
         json=payload,

@@ -33,6 +33,8 @@ from typing import Dict, Iterable, List, Optional
 
 import aiohttp
 
+import hl_calls
+
 from cohorts.sweeper import TokenBucket
 
 logger = logging.getLogger(__name__)
@@ -333,6 +335,7 @@ def leaderboard(window: str = "30d", cohort: str = "profitable", offset: int = 0
 
 async def _post(session: aiohttp.ClientSession, body: dict, bucket: TokenBucket):
     await bucket.take(_CALL_WEIGHT)
+    hl_calls.record(body.get("type"))
     async with session.post("https://api.hyperliquid.xyz/info", json=body) as resp:
         if resp.status == 429:
             bucket.penalize()
@@ -483,6 +486,7 @@ async def profile(address: str) -> Optional[dict]:
     ranks = {w: next((x["rank"] for x in ranked(w) if x["address"] == address), None) for w in WINDOWS}
     res = {
         "address": address, "tracked": tracked, "cohorts": sorted(hl._wallet_cohorts.get(address, set())),
+        "entity": hl.entity_info(address),      # lockstep group (counted as one trader), None when alone
         "ranks": ranks, "board_size": len(ranked("30d", "profitable")),
         "account_value": av, "band": size_band(av), "windows": _windows(address, port), "win": stats,
         "equity": equity, "positions": positions,

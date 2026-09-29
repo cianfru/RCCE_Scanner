@@ -6,6 +6,7 @@ import HelpTip from "./HelpTip.jsx";
 import { T, col, SIGNAL_META, REGIME_META } from "../theme.js";
 import { MAP_FILTERS, MAP_MIN_TRADERS, matchOf, vsEntry } from "../utils/positioning.js";
 import { usd } from "../utils/traders.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const GROUPS = [
@@ -62,8 +63,8 @@ export default function PositioningView() {
       .catch(e => { if (!cancelled) setError(e.message); });
     setData(null);
     load();
-    const id = setInterval(load, 300_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const stop = pollWhileVisible(load, 300_000);
+    return () => { cancelled = true; stop(); };
   }, [group]);
 
   // Most traders first (a stable sort keeps the server's order among equals).
@@ -82,7 +83,7 @@ export default function PositioningView() {
       <p className="coh-intro">
         {data ? <>{data.wallets} {who} hold positions on {data.rows.length} coins. Updated {when(data.updated_at)}.</> : error ? `Positioning unavailable (${error}).` : "Loading positioning…"}
         {" "}<HelpTip title="Positioning map" width={380}>
-          <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (about every 30 minutes). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
+          <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (every 10–15 minutes after a wallet trades, up to an hour when it has not, two hours when it holds nothing). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
           <p>Agree: at least {MAP_MIN_TRADERS} {who} lean the same way as the engine's 4H signal (long signals against longs, exits or a downtrend against shorts). Opposed: they lean against it. Whether agreement leads price is being recorded; until then this is information, not a signal.</p>
         </HelpTip>
       </p>

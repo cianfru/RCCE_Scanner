@@ -24,6 +24,7 @@ import { useWallet } from "../WalletContext.jsx";
 import useMyPositions from "../hooks/useMyPositions.js";
 import { sideColor, fmtPx } from "../utils/traderFormat.js";
 import { STAR_TIP, WATCH_TIP, WatchMark } from "../components/radar/shared.jsx";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -189,8 +190,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
       if (!cancelled) { setAvailability(market || {unlisted: true}); setAvailabilityError(false); }
     }).catch(() => { if (!cancelled) setAvailabilityError(true); });
-    load(); const timer = setInterval(load, 60000);
-    return () => {cancelled = true; clearInterval(timer);};
+    load(); const stop = pollWhileVisible(load, 60000);
+    return () => {cancelled = true; stop();};
   }, [urlSymbol, timeframe, marketKind, availabilityAttempt]);
   const retryAvailability = <>Market availability could not refresh.{" "}<button type="button" className="te-link" onClick={() => setAvailabilityAttempt(n => n + 1)}>Retry</button></>;
 

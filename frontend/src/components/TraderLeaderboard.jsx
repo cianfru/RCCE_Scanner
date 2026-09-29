@@ -27,7 +27,7 @@ export function WindowSwitch({ value, onChange, label = "PnL window" }) {
 export function LeaderboardHelp() {
   return (
     <HelpTip title="How the leaderboard is built" width={400} label="About the leaderboard">
-      <p>Profitable traders: Hyperliquid wallets with at least 30% and $10K profit this month, already in profit before it, and at least $50K in the account. Market makers are left out.</p>
+      <p>Profitable traders: Hyperliquid wallets with at least 30% and $10K profit this month, already in profit before it, and at least $5K in their perp account. Market makers are left out.</p>
       <p>Ranked by PnL over the window, from Hyperliquid's own leaderboard (refreshed daily). ROI is Hyperliquid's for the same window; it is blank when the account started the window nearly empty.</p>
       <p>Win rate: positions closed in the last 30 days that made money after fees, from each trader's public fills. Positions: open now.</p>
     </HelpTip>

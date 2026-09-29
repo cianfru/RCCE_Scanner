@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { T, m } from "../theme.js";
 import GlassCard from "./GlassCard.jsx";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -46,8 +47,7 @@ export default function AnomalyBanner({ isMobile }) {
 
   useEffect(() => {
     fetchAnomalies();
-    const iv = setInterval(fetchAnomalies, 60_000);
-    return () => clearInterval(iv);
+    return pollWhileVisible(fetchAnomalies, 60_000);
   }, [fetchAnomalies]);
 
   const dismiss = (key) => {

@@ -19,6 +19,7 @@ import { TableSkeleton } from "./Skeleton.jsx";
 import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, trendCounts } from "../utils/hyperlens.js";
 import { SUMMARY_MIN, summaryRows, sideCounts } from "../utils/traderSummary.js";
 import { codename, nameIn, shortAddr, viewNames } from "../utils/walletName.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -768,6 +769,12 @@ function WalletDetail({ address, onClose, isMobile }) {
           {/* Tags */}
           <div style={{ marginTop: 6 }}>
             <WalletTags data={data} />
+            {data.entity?.note && (
+              <div style={{ fontFamily: T.font, fontSize: T.textXs, color: T.text3, marginTop: 4 }}
+                title="These wallets hold the same coins and trade them together, so trader counts take them once">
+                {data.entity.note}
+              </div>
+            )}
           </div>
           </div>
         </div>
@@ -1620,7 +1627,7 @@ const COHORT_OPTIONS = [
 ];
 const cohortApi = (k) => COHORT_OPTIONS.find(o => o.key === k)?.api || null;
 
-const BASIS_TITLE = "Wallets updated in the last 75 minutes, with at least $50K in the account and no more than 25 open positions (market makers are left out).";
+const BASIS_TITLE = "Wallets read in the last 2.5 hours (quiet wallets are read less often), with at least $5K in their perp account and no more than 25 open positions (market makers are left out).";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
@@ -1713,8 +1720,7 @@ export default function HyperLensPanel({ isMobile }) {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30_000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadData, 30_000);
   }, [loadData]);
 
   // The group's per-coin rows (counts, dollars, median entries, a day ago); cached a minute server side.
@@ -1727,8 +1733,8 @@ export default function HyperLensPanel({ isMobile }) {
       .then(d => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: d.rows || [] })); })
       .catch(() => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: g[api] || null })); });
     load();
-    const id = setInterval(load, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const stop = pollWhileVisible(load, 60_000);
+    return () => { cancelled = true; stop(); };
   }, [api]);
 
   const rows = api ? groupRows[api] : null;
@@ -1774,7 +1780,7 @@ export default function HyperLensPanel({ isMobile }) {
               <HelpTip title="Traders" width={380} label="About this page">
                 {bySide ? <>
                   <p>{cohort === "money_printers"
-                    ? "Profitable traders: the top 300 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
+                    ? "Profitable traders: the top 600 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
                     : "Large accounts: the 300 largest Hyperliquid accounts ($1M and up); profit is not checked."}</p>
                   <p>One row per coin held by {SUMMARY_MIN} or more of them, most traders first: how many are long and short, their dollars, and the price against the median entry of the side most of them are on (green when that side is in profit). 24h is the change in traders long and short since a day ago. Open a row for the largest wallets on each side.</p>
                   <p>Bullish or bearish: at least 15% more of them long than short, or the reverse; otherwise mixed.</p>
@@ -1788,7 +1794,7 @@ export default function HyperLensPanel({ isMobile }) {
           </div>
           {partial && (
             <div title={BASIS_TITLE} style={{ fontFamily: T.font, fontSize: T.textXs, color: T.yellow }}>
-              Only {fresh} of {tracked} wallets were updated in the last 75 minutes, so these figures cover a partial set.
+              Only {fresh} of {tracked} wallets were read in the last 2.5 hours, so these figures cover a partial set.
             </div>
           )}
         </div>}

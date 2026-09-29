@@ -2,12 +2,14 @@
 Tracked wallets opening positions, and profitable traders converging on one coin
 (docs/reviews/trader-convergence-forward-test.md).
 
-Every sweep reading of a tracked wallet is compared with its previous reading: a coin
-and side it did not hold before is an open, timed at the reading (so within one sweep,
-about 30 minutes) at the position's entry price. The first reading of a wallet after a
+Every reading of a tracked wallet is compared with its previous reading: a coin and side it
+did not hold before is an open, timed at the reading at the position's entry price. Readings
+follow the adaptive cadence (hl_cadence): within 10-15 min of a wallet's previous change, up
+to about an hour for a positioned wallet that had been quiet, up to about 2 h for a flat one. The first reading of a wallet after a
 start only sets its baseline, so nothing it already held counts as an open.
 
 A convergence: at least MIN_WALLETS profitable traders open the same side of one coin
+(wallets that trade as one, hl_entities, count once)
 within WINDOW_S, all still holding, the latest entry within MAX_MOVE of the first, and
 at most MAX_OTHERS other profitable traders already on that side. It is recorded and
 alerted once, again only if more wallets join.
@@ -17,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ WINDOW_S = 24 * 3600
 MIN_WALLETS = 2
 MAX_MOVE = 0.05
 MAX_OTHERS = 2
-MAX_GAP_S = 2 * 3600       # an open seen after a longer gap (e.g. a restart) is not timed well enough
+# An open seen after a longer gap between readings (e.g. a restart) is not timed well enough.
+# The adaptive cadence reads a flat wallet every 2 h (hl_cadence), so the limit follows it.
+from hl_cadence import MAX_READING_AGE_S as MAX_GAP_S, ROSTER_VERSION  # noqa: E402
 RETENTION_DAYS = 180
 PRUNE_EVERY_S = 6 * 3600
 
@@ -60,24 +64,26 @@ CREATE INDEX IF NOT EXISTS idx_conv_ts ON convergences(ts);
 Key = Tuple[str, str]  # (coin, side)
 
 
-def find_convergence(opens: List[dict], holding: Dict[str, set], key: Key, now: float) -> Optional[dict]:
+def find_convergence(opens: List[dict], holding: Dict[str, set], key: Key, now: float,
+                     entity_of: Callable[[str], str] = lambda a: a) -> Optional[dict]:
     """The convergence on ``key`` at ``now``, or None.
 
     ``opens``: profitable-trader opens (dicts with ts, prev_ts, address, coin, side, entry_px, size_usd).
     ``holding``: address -> set of (coin, side) currently held, profitable traders only.
+    ``entity_of``: wallets that trade as one (hl_entities) count as one trader.
     """
     group: Dict[str, dict] = {}
     for o in sorted(opens, key=lambda o: o["ts"]):
         if (o["coin"], o["side"]) == key and now - o["ts"] <= WINDOW_S and o["ts"] - o["prev_ts"] <= MAX_GAP_S \
                 and key in holding.get(o["address"], ()):
-            group.setdefault(o["address"], o)            # each wallet's first open in the window
+            group.setdefault(entity_of(o["address"]), o)   # each trader's first open in the window
     if len(group) < MIN_WALLETS:
         return None
     members = sorted(group.values(), key=lambda o: o["ts"])
     first, last = members[0], members[-1]
     if abs(last["entry_px"] / first["entry_px"] - 1) > MAX_MOVE:
         return None
-    others = sum(1 for a, held in holding.items() if a not in group and key in held)
+    others = len({entity_of(a) for a, held in holding.items() if key in held} - set(group))
     if others > MAX_OTHERS:
         return None
     return {"coin": key[0], "side": key[1], "n": len(members), "first_ts": first["ts"], "first_px": first["entry_px"],
@@ -96,8 +102,12 @@ class Tracker:
         self.fired: Dict[Key, Tuple[float, int]] = {}  # key -> (when, n) of the last alert
         self.started = clock()
         self.pruned_at = 0.0
+        self.entity_of: Callable[[str], str] = lambda a: a     # set by HyperLens (lockstep groups)
         if conn is not None:
             conn.executescript(_SCHEMA)
+            for table in ("position_opens", "convergences"):      # rows before roster version 2 keep NULL
+                if "roster_version" not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN roster_version INTEGER")
             since = self.started - WINDOW_S
             cols = ("ts", "prev_ts", "address", "cohort", "coin", "side", "entry_px", "size_usd")
             self.opens = [dict(zip(cols, r)) for r in conn.execute(
@@ -118,7 +128,7 @@ class Tracker:
         if prev is None:
             return []
         new = [{"ts": ts, "prev_ts": prev_ts, "address": address, "cohort": cohort, "coin": k[0], "side": k[1],
-                "entry_px": float(p["entry_px"]), "size_usd": float(p["size_usd"])}
+                "entry_px": float(p["entry_px"]), "size_usd": float(p["size_usd"]), "entity": self.entity_of(address)}
                for k, p in cur.items() if k not in prev and p.get("entry_px")]
         self.opens += new
         return new
@@ -137,7 +147,7 @@ class Tracker:
         holding = {a: set(h) for a, h in self.held.items() if self.cohort.get(a) == "profitable"}
         out = []
         for key in {(o["coin"], o["side"]) for o in new_opens if o["cohort"] == "profitable"}:
-            c = find_convergence(prof_opens, holding, key, now)
+            c = find_convergence(prof_opens, holding, key, now, self.entity_of)
             if c is None:
                 continue
             when, n = self.fired.get(key, (0.0, 0))
@@ -156,15 +166,15 @@ class Tracker:
             return
         try:
             self.conn.executemany(
-                "INSERT INTO position_opens (ts, prev_ts, address, cohort, coin, side, entry_px, size_usd) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [(o["ts"], o["prev_ts"], o["address"], o["cohort"], o["coin"], o["side"], o["entry_px"], o["size_usd"])
-                 for o in opens])
+                "INSERT INTO position_opens (ts, prev_ts, address, cohort, coin, side, entry_px, size_usd, roster_version) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(o["ts"], o["prev_ts"], o["address"], o["cohort"], o["coin"], o["side"], o["entry_px"], o["size_usd"],
+                  ROSTER_VERSION) for o in opens])
             self.conn.executemany(
-                "INSERT INTO convergences (ts, coin, side, n, first_ts, first_px, last_px, mark_px, others, wallets) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO convergences (ts, coin, side, n, first_ts, first_px, last_px, mark_px, others, wallets, "
+                "roster_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(c["ts"], c["coin"], c["side"], c["n"], c["first_ts"], c["first_px"], c["last_px"], c["mark_px"],
-                  c["others"], json.dumps(c["wallets"])) for c in convs])
+                  c["others"], json.dumps(c["wallets"]), ROSTER_VERSION) for c in convs])
             if self.clock() - self.pruned_at >= PRUNE_EVERY_S:
                 cutoff = self.clock() - RETENTION_DAYS * 86400
                 self.conn.execute("DELETE FROM position_opens WHERE ts < ?", (cutoff,))

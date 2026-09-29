@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS trader_lean (
     PRIMARY KEY (bar_close, grp)
 );
 
+-- Position change log: one row per coin whose size changed between two readings of a tracked
+-- wallet (beyond dust, hl_cadence.changed). t0/t1: the previous and this reading, so the change
+-- happened in between. Read by hl_entities (lockstep wallets); kept _CHANGES_RETENTION_DAYS.
+CREATE TABLE IF NOT EXISTS position_changes (
+    address TEXT NOT NULL,
+    t0 REAL NOT NULL,
+    t1 REAL NOT NULL,
+    coin TEXT NOT NULL,
+    size_before REAL NOT NULL,
+    size_after REAL NOT NULL,
+    px REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pc_t1 ON position_changes(t1);
+
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
     coin TEXT NOT NULL,
@@ -115,6 +129,9 @@ def _get_conn() -> sqlite3.Connection:
         _conn.execute("PRAGMA synchronous=NORMAL")     # Faster writes, still safe
         _conn.execute("PRAGMA busy_timeout=5000")      # Wait up to 5s on locks
         _conn.executescript(_SCHEMA)
+        cols = {r[1] for r in _conn.execute("PRAGMA table_info(trader_lean)")}
+        if "roster_version" not in cols:      # rows from before roster version 2 keep NULL
+            _conn.execute("ALTER TABLE trader_lean ADD COLUMN roster_version INTEGER")
         _conn.commit()
         logger.info("HyperLens DB: opened at %s", _DB_PATH)
     return _conn
@@ -350,13 +367,16 @@ def load_position_first_seen() -> Dict[str, Dict[str, float]]:
 _LEAN_RETENTION_DAYS = 400
 
 
-def save_trader_lean(bar_close: int, rows: Dict[str, dict]) -> int:
-    """Store one candle close's profitable-trader lean (idempotent per bar)."""
+def save_trader_lean(bar_close: int, rows: Dict[str, dict], roster_version: Optional[int] = None) -> int:
+    """Store one candle close's profitable-trader lean (idempotent per bar). ``roster_version``
+    marks which roster rules produced it (NULL on rows written before version 2), so studies
+    can split the series where the cohort changed."""
     conn = _get_conn()
     conn.executemany(
-        "INSERT OR REPLACE INTO trader_lean (bar_close, grp, long, short, long_usd, short_usd) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        [(int(bar_close), g, r["long"], r["short"], r["long_usd"], r["short_usd"]) for g, r in rows.items()],
+        "INSERT OR REPLACE INTO trader_lean (bar_close, grp, long, short, long_usd, short_usd, roster_version) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(int(bar_close), g, r["long"], r["short"], r["long_usd"], r["short_usd"], roster_version)
+         for g, r in rows.items()],
     )
     conn.execute("DELETE FROM trader_lean WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
     conn.commit()
@@ -370,6 +390,36 @@ def load_trader_lean(prefix: str, since: float) -> List[tuple]:
         "WHERE grp >= ? AND grp < ? AND bar_close >= ? ORDER BY bar_close",
         (prefix, prefix + "\uffff", int(since)),
     ).fetchall()
+
+
+_CHANGES_RETENTION_DAYS = 30
+
+
+def save_position_changes(rows: List[tuple]) -> int:
+    """rows: (address, t0, t1, coin, size_before, size_after, px)."""
+    if not rows:
+        return 0
+    conn = _get_conn()
+    conn.executemany("INSERT INTO position_changes (address, t0, t1, coin, size_before, size_after, px) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    conn.commit()
+    return len(rows)
+
+
+def position_changes_first_ts() -> Optional[float]:
+    """When the change log starts (None when empty)."""
+    row = _get_conn().execute("SELECT MIN(t1) FROM position_changes").fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+def load_position_changes(since: float) -> Dict[str, List[tuple]]:
+    """address -> [(t0, t1, coin, size_before, size_after, px)] logged since ``since``, oldest first."""
+    out: Dict[str, List[tuple]] = {}
+    for a, t0, t1, coin, b, af, px in _get_conn().execute(
+            "SELECT address, t0, t1, coin, size_before, size_after, px FROM position_changes "
+            "WHERE t1 >= ? ORDER BY t1", (since,)):
+        out.setdefault(a, []).append((t0, t1, coin, b, af, px))
+    return out
 
 
 # Position details are only needed for the last few hours (startup restore reads 6h);
@@ -460,6 +510,10 @@ def cleanup_old_data() -> dict:
 
         # Clean up first_seen for positions that no longer exist
         # (old entries where the position was closed long ago)
+        cursor = conn.execute("DELETE FROM position_changes WHERE t1 < ?",
+                              (time.time() - _CHANGES_RETENTION_DAYS * 86400,))
+        deleted["position_changes"] = cursor.rowcount
+
         old_first_seen_cutoff = time.time() - (7 * 24 * 3600)  # 7 days
         cursor = conn.execute(
             "DELETE FROM position_first_seen WHERE first_seen_at < ?",
@@ -490,6 +544,7 @@ def get_db_stats() -> dict:
         trade_count = conn.execute("SELECT COUNT(*) FROM trade_log").fetchone()[0]
         trade_wallets = conn.execute("SELECT COUNT(DISTINCT address) FROM trade_log").fetchone()[0]
         fs_count = conn.execute("SELECT COUNT(*) FROM position_first_seen").fetchone()[0]
+        change_count = conn.execute("SELECT COUNT(*) FROM position_changes").fetchone()[0]
 
         # Oldest/newest snapshot
         oldest = conn.execute("SELECT MIN(timestamp) FROM snapshots").fetchone()[0]
@@ -509,6 +564,7 @@ def get_db_stats() -> dict:
             "trades": trade_count,
             "trade_wallets": trade_wallets,
             "position_first_seen": fs_count,
+            "position_changes": change_count,
             "oldest_snapshot": oldest,
             "newest_snapshot": newest,
             "retention_days": _SNAPSHOT_RETENTION_DAYS,
@@ -520,6 +576,12 @@ def get_db_stats() -> dict:
 # ---------------------------------------------------------------------------
 # Extended equity history (longer than in-memory deque)
 # ---------------------------------------------------------------------------
+
+def max_account_values(since: float) -> Dict[str, float]:
+    """address -> highest perp account value among the snapshots stored since ``since``."""
+    return {a: av for a, av in _get_conn().execute(
+        "SELECT address, MAX(account_value) FROM snapshots WHERE timestamp >= ? GROUP BY address", (since,))}
+
 
 def load_equity_history(address: str, days: int = 7) -> List[dict]:
     """Load extended equity curve from DB for a wallet.

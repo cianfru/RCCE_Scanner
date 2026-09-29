@@ -9,6 +9,8 @@ from typing import List, Optional, Tuple
 
 import aiohttp
 
+import hl_calls
+
 HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 WEIGHT = 2                     # clearinghouseState, per Hyperliquid's rate-limit docs
 
@@ -17,7 +19,7 @@ class RateLimited(Exception):
     pass
 
 
-Raw = Tuple[float, List[Tuple[str, float, bool]]]      # (perp equity, [(coin, usd, long)])
+Raw = Tuple[float, List[Tuple[str, float, bool, float]]]      # (perp equity, [(coin, usd, long, size)])
 
 
 def parse(data: dict) -> Raw:
@@ -30,7 +32,7 @@ def parse(data: dict) -> Raw:
         if not szi:
             continue
         usd = abs(float(p.get("positionValue", 0) or 0)) or abs(szi) * float(p.get("entryPx", 0) or 0)
-        positions.append((_normalize_coin(p.get("coin", "")), usd, szi > 0))
+        positions.append((_normalize_coin(p.get("coin", "")), usd, szi > 0, abs(szi)))
     return equity, positions
 
 
@@ -43,6 +45,7 @@ class ApiSource:
 
     async def fetch(self, address: str) -> Optional[Raw]:
         try:
+            hl_calls.record("clearinghouseState")
             async with self.session.post(HL_INFO_URL, json={"type": "clearinghouseState", "user": address}) as resp:
                 if resp.status == 429:
                     raise RateLimited()

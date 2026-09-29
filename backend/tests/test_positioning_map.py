@@ -28,7 +28,7 @@ def test_positioning_map_counts_sides_entries_and_profit(monkeypatch):
     pm = hl.positioning_map("profitable")
     assert pm["wallets"] == 3 and pm["holding"] == 2
     sui = pm["coins"]["SUI"]
-    assert sui["long"] == {"n": 2, "usd": 475, "median_entry": 3.25, "in_profit": 1}
+    assert sui["long"] == {"n": 2, "usd": 475, "wallets": 2, "median_entry": 3.25, "in_profit": 1}
     assert sui["short"]["n"] == 0 and abs(sui["mark"] - 3.3) < 1e-9
     assert pm["coins"]["PEPE"]["short"]["in_profit"] == 0          # kPEPE normalised; short above entry
     assert hl.positioning_map("large")["coins"]["SUI"]["short"]["n"] == 1
@@ -57,7 +57,7 @@ def test_cohort_positions_match_the_positioning_map(monkeypatch):
     rows = hl.cohort_positions("SUI", "profitable")
     assert [r["address"] for r in rows] == ["0xa", "0xb"]                  # largest first
     assert rows[0] == {"address": "0xa", "side": "long", "size_usd": 300, "entry": 3.0, "leverage": 3.0,
-                       "upnl": 30, "roe": None, "move": 10.0}
+                       "upnl": 30, "roe": None, "move": 10.0, "entity": None}
     assert rows[1]["side"] == "short" and rows[1]["move"] == round(100 * 10 / 175, 2)
     sui = hl.positioning_map("profitable")["coins"]["SUI"]
     assert sui["long"]["usd"] == sum(r["size_usd"] for r in rows if r["side"] == "long")

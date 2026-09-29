@@ -1871,18 +1871,14 @@ async def _run_synthesis_pass(
     elapsed = time.time() - t0
     n_syms = len(scan_cache._results_by_sym)
 
-    # Broadcast full state to WebSocket clients
+    # Tell visible WebSocket clients the scan changed; they refetch over HTTP
+    # (gzip + ETag) only the timeframe on screen. Pushing the full state of both
+    # timeframes to every client each pass was the largest share of egress.
     try:
         from ws_hub import WebSocketHub
         hub = WebSocketHub.get()
         if hub.client_count > 0:
-            await hub.push_synthesis(
-                scan_cache.get_results("4h"),
-                scan_cache.get_results("1d"),
-                scan_cache.consensus.get("4h"),
-                scan_cache.consensus.get("1d"),
-                {"cache_age": 0, "timestamp": time.time(), "symbols": n_syms, "opportunity_events": getattr(scan_cache, "opportunity_events", [])},
-            )
+            await hub.push_scan_updated(time.time())
     except Exception:
         pass
 

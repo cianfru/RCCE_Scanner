@@ -25,6 +25,9 @@ from typing import Dict, List, Optional, Set
 
 import aiohttp
 
+import hl_cadence as _cadence
+import hl_entities as _entities_rule
+import hl_calls as _hl_calls
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
     save_trade_events as _db_save_trades,
@@ -36,6 +39,10 @@ from hl_persistence import (
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
+    max_account_values as _db_max_account_values,
+    save_position_changes as _db_save_changes,
+    load_position_changes as _db_load_changes,
+    position_changes_first_ts as _db_changes_first_ts,
     get_db_stats as _db_stats,
 )
 
@@ -50,13 +57,14 @@ _HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 
 _ROSTER_REFRESH_INTERVAL = 24 * 60 * 60   # Daily
 
-# Polling cadence — "Sentiment Mode" uses a uniform 10-min cadence for
-# the roster. Watchlist (explicitly-followed wallets) keeps its 5-min tier
-# because the user added them on purpose.
-_WATCHLIST_POLL_INTERVAL = 5 * 60          # 5 min for followed/watched wallets
-_ROSTER_POLL_INTERVAL = 10 * 60            # 10 min uniform for roster (was 15)
-_ROSTER_IDLE_POLL_INTERVAL = 10 * 60       # 10 min uniform (was 30 — tier merged)
-_POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
+# Polling cadence — adaptive (hl_cadence): followed wallets every 5 min, a wallet whose
+# positions changed 10 min later, backing off to 15/30/45/60 min while unchanged, 2 h while
+# flat, elite at least every 15 min. With the cohort sweep on (production) the sweep reads the
+# roster on this cadence and HyperLens reads only followed wallets itself; with it off,
+# poll_positions below applies the same cadence to the roster.
+_WATCHLIST_POLL_INTERVAL = _cadence.FOLLOWED_S
+_POLL_INTERVAL = _cadence.TICK_S           # main loop tick (followed wallets are due every tick)
+_ROSTER_IDLE_POLL_INTERVAL = 10 * 60       # loop nap while nobody is viewing and nothing is followed
 
 # In-memory snapshot depth per wallet. "Sentiment Mode" only needs the
 # latest snapshot for consensus — trade reconstruction is disabled, so
@@ -65,7 +73,7 @@ _POLL_INTERVAL = _WATCHLIST_POLL_INTERVAL  # Main loop cadence (fastest tier)
 _POSITION_HISTORY_LEN = 1
 
 # Staleness: skip snapshots older than this when computing consensus
-_SNAPSHOT_MAX_AGE_S = 75 * 60              # covers the cohort sweep cadence (30 min + sweep + post-close pause)
+_SNAPSHOT_MAX_AGE_S = _cadence.MAX_READING_AGE_S   # the slowest tier (2 h, flat wallets) + a tick + the post-close pause
 # After a restart the restored readings are up to an hour or so old (saved hourly), and a
 # deploy starts the new copy before the old one saves on shutdown. Until the sweep has read
 # everyone again, restored readings count as current so HyperLens is not empty.
@@ -77,33 +85,56 @@ _restored_until: float = 0.0
 def _fresh_limit(now: float) -> float:
     return _RESTORED_MAX_AGE_S if now < _restored_until else _SNAPSHOT_MAX_AGE_S
 
-# Live eviction: remove wallets whose AV drops below this during polling
-_EVICTION_THRESHOLD = 25_000               # $25K — half of MP minimum ($50K)
-_DISPLAY_MIN_AV = 50_000                   # Only display wallets above $50K in roster/consensus
+# Perp account floor (perp equity from clearinghouseState, not the leaderboard's account value,
+# which also counts spot, vaults and staking). One number for three uses: a wallet below it at
+# its latest reading is left out when the roster is built (when a reading is on hand), evicted
+# while tracked, and not counted in consensus or shown in the roster.
+_MIN_PERP_EQUITY = 5_000
+_EVICTION_THRESHOLD = _MIN_PERP_EQUITY
+_DISPLAY_MIN_AV = _MIN_PERP_EQUITY
 
 # Filtering thresholds
 _MM_VLM_RATIO = 100                        # vlm/AV > 100 = market maker, skip
 _MM_MAX_POSITIONS = 25                     # wallets with >25 concurrent positions = likely MM/vault
 _ROI_WINDOW = "month"                      # Ranking window (was allTime)
 
-# Cohort definitions — "Sentiment Mode" (latest snapshot only, one call per wallet).
-# Each wallet costs one light API call per poll interval (weight 2 of Hyperliquid's
-# 1200/min) and a few KB of memory; the earlier cost came from trade reconstruction
-# and order polling, which stay off. 300 per cohort (~500 unique wallets) is the
-# default; HYPERLENS_COHORT_SIZE lowers it (10-300) without a code change.
-_COHORT_SIZE = max(10, min(300, int(os.environ.get("HYPERLENS_COHORT_SIZE", "300"))))
-_ROSTER_COHORTS = {
-    "money_printers": _COHORT_SIZE,    # top performers by ROI
-    "smart_money": _COHORT_SIZE,       # largest wallets by AV
-}
+# --- Roster rules (roster version 2, see docs/hyperlens-wallet-tracking.md) --------------------
+# Built once a day from the Hyperliquid leaderboard download; market makers (monthly volume
+# over 100x account value) are removed first.
+#
+# Profitable traders ("money_printer"), all of:
+#   - monthly ROI >= 30%, and the ROI is meaningful (_meaningful_roi: the month did not start
+#     from under $1K, where a small profit reads as a huge ROI);
+#   - monthly profit >= $10K;
+#   - all-time PnL >= this month's PnL (in profit before this month: one lucky month is not enough);
+#   - leaderboard account value >= $10K (was $50K);
+#   - perp equity >= $5K (_MIN_PERP_EQUITY) at the sweep's latest reading or at any HyperLens
+#     reading of the last 7 days, when a reading is on hand. Wallets with no perp account (a
+#     third of the qualifiers hold everything in spot or vaults) have nothing to follow.
+#   Ranked by monthly ROI; the top MP_TARGET are kept (was 300). On the 29 Sept 2026
+#   leaderboard 869 pass the profit rules and 583 of them have a perp account.
+#
+# Large accounts ("smart_money"): leaderboard account value >= $1M and the same perp-equity
+# check, ranked by account value. Profit is not checked.
+#
+# Elite: a profitable trader that ranks within the top ELITE_KEEP_RANK large accounts. The
+# large-account group is every elite wallet plus the largest others up to SM_TARGET wallets
+# in all (was 300), so cutting the group never drops an elite wallet.
+MP_TARGET = max(10, int(os.environ.get("HYPERLENS_MP_TARGET", "600")))
+SM_TARGET = max(10, int(os.environ.get("HYPERLENS_SM_TARGET", "60")))
+ELITE_KEEP_RANK = 300                      # the large-account depth of roster version 1
 _MP_MIN_ROI_PCT = 30.0                     # Money Printers: 30% monthly ROI minimum
-_MP_MIN_ACCOUNT_VALUE = 50_000             # Money Printers: $50k minimum AV
+_MP_MIN_ACCOUNT_VALUE = 10_000             # Money Printers: $10K minimum leaderboard account value (was $50K)
 _MP_MIN_PNL = 10_000                       # Money Printers: $10k minimum monthly profit (rejects dust/lottery)
 _MIN_ROI_BASE = 1_000                      # ROI is dropped when the implied starting equity (pnl / roi) is below this
-# Profitable traders must also have been in profit before this month (all-time
-# PnL >= this month's PnL), so one lucky month is not enough. On the September
-# 2026 leaderboard ~1,000 wallets qualify; 115 of the old top 300 did not.
 _SM_MIN_ACCOUNT_VALUE = 1_000_000          # Smart Money: $1M minimum AV
+_PERP_EQUITY_MAX_AGE_S = 3 * 86400         # a perp-equity reading older than this is not used at build time
+_PERP_EQUITY_LOOKBACK_S = 7 * 86400        # ...but a tracked wallet's highest reading this far back counts
+
+# Stored records written with these rules carry roster_version = 2 (trader_lean, position_opens
+# and convergences rows, cohort snapshots); rows from before have none (version 1: 300 + 300
+# wallets, $50K floors, every wallet read each 30-minute sweep).
+ROSTER_VERSION = _cadence.ROSTER_VERSION
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
 # Consensus thresholds
@@ -233,8 +264,8 @@ class SymbolConsensus:
 # ---------------------------------------------------------------------------
 
 _roster: List[TrackedWallet] = []                       # merged & deduplicated (all unique wallets)
-_roster_money_printers: List[TrackedWallet] = []         # top 200 by ROI
-_roster_smart_money: List[TrackedWallet] = []            # top 200 by AV
+_roster_money_printers: List[TrackedWallet] = []         # top MP_TARGET by monthly ROI
+_roster_smart_money: List[TrackedWallet] = []            # SM_TARGET by account value (elite always in)
 _wallet_cohorts: Dict[str, set] = {}                     # address -> {"money_printer", "smart_money", "elite"}
 _roster_updated_at: float = 0.0
 
@@ -274,8 +305,9 @@ _ORDER_BOOK_POLL_INTERVAL = 60                # seconds (was 30)
 
 # Tiered polling state
 _xyz_active_wallets: Set[str] = set()      # Wallets that have had xyz positions
-_last_roster_poll_at: float = 0            # Last time full roster was polled
-_last_idle_roster_poll_at: float = 0       # Last time idle-roster wallets were polled
+# Own polling plan (followed wallets; the whole roster only when the cohort sweep is off):
+# address -> (next due time, readings in a row without a change). ~100 bytes per wallet.
+_poll_plan: Dict[str, tuple] = {}
 _ORDER_BOOK_TOP_N = 50                        # top N symbols by wallet count
 _WALL_THRESHOLD_USD = 500_000                 # min notional for an order book "wall"
 
@@ -366,41 +398,8 @@ def _meaningful_roi(pnl: float, roi_pct: float) -> Optional[float]:
     return roi_pct
 
 
-async def refresh_leaderboard() -> int:
-    """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
-
-    Two independent cohorts are built from the same leaderboard data:
-    - Money Printers ("profitable traders" in the UI): top by monthly ROI
-      (>= 30%, >= $10k profit, AV >= $50k) that were also in profit before this month
-    - Smart Money ("large accounts" in the UI): top by AV (>= $1M), profit not checked
-    - Elite: wallets in BOTH cohorts (auto-tagged)
-
-    Returns the number of wallets in the merged roster.
-    """
-    global _roster, _roster_money_printers, _roster_smart_money
-    global _wallet_cohorts, _roster_updated_at
-
-    logger.info("HyperLens: refreshing leaderboard roster (cohort mode)...")
-
-    timeout = aiohttp.ClientTimeout(total=45)  # Large response
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(_LEADERBOARD_URL) as resp:
-                if resp.status != 200:
-                    logger.warning("Leaderboard fetch failed: HTTP %d", resp.status)
-                    return len(_roster)
-                raw = await resp.json(content_type=None)
-    except Exception as exc:
-        logger.warning("Leaderboard fetch error: %s", exc)
-        return len(_roster)
-
-    # Response is {"leaderboardRows": [...]}
-    rows = raw if isinstance(raw, list) else raw.get("leaderboardRows", [])
-    if not rows:
-        logger.warning("Leaderboard empty or unexpected format: %s", type(raw))
-        return len(_roster)
-
-    # Parse all wallets (filter out market makers only)
+def parse_leaderboard(rows: list) -> List[TrackedWallet]:
+    """Leaderboard rows -> TrackedWallet list, market makers (vlm/AV > 100) removed."""
     all_wallets: List[TrackedWallet] = []
     for entry in rows:
         try:
@@ -463,6 +462,104 @@ async def refresh_leaderboard() -> int:
             ))
         except Exception:
             continue  # Skip malformed entries
+    return all_wallets
+
+
+def _perp_ok(w: TrackedWallet, perp_equity: Optional[Dict[str, float]]) -> bool:
+    """False only when a recent perp-equity reading exists and is below the floor."""
+    if not perp_equity:
+        return True
+    eq = perp_equity.get(w.address)
+    return eq is None or eq >= _MIN_PERP_EQUITY
+
+
+def build_cohorts(all_wallets: List[TrackedWallet], perp_equity: Optional[Dict[str, float]] = None,
+                  mp_target: Optional[int] = None, sm_target: Optional[int] = None):
+    """The roster rules (see the config block above). ``all_wallets``: the parsed leaderboard with
+    market makers removed and ROI already passed through _meaningful_roi. ``perp_equity``: address
+    -> perp equity from recent readings (may be empty). Returns (money printers ranked by ROI,
+    large accounts ranked by account value, elite addresses)."""
+    mp_target = MP_TARGET if mp_target is None else mp_target
+    sm_target = SM_TARGET if sm_target is None else sm_target
+    mp_candidates = [
+        w for w in all_wallets
+        if (w.roi is not None
+            and w.roi >= _MP_MIN_ROI_PCT
+            and w.account_value >= _MP_MIN_ACCOUNT_VALUE
+            and w.pnl >= _MP_MIN_PNL
+            and w.all_time_pnl >= w.pnl
+            and _perp_ok(w, perp_equity))
+    ]
+    mp_candidates.sort(key=lambda w: w.roi, reverse=True)
+    money_printers = mp_candidates[:mp_target]
+    mp_addresses = {w.address for w in money_printers}
+
+    sm_ranked = [w for w in all_wallets if w.account_value >= _SM_MIN_ACCOUNT_VALUE and _perp_ok(w, perp_equity)]
+    sm_ranked.sort(key=lambda w: w.account_value, reverse=True)
+    elite = {w.address for w in sm_ranked[:ELITE_KEEP_RANK] if w.address in mp_addresses}
+    # Elite first, then the largest others until the group has sm_target wallets; ranking order kept.
+    room = max(0, sm_target - len(elite))
+    keep = elite | set([w.address for w in sm_ranked if w.address not in elite][:room])
+    smart_money = [w for w in sm_ranked if w.address in keep]
+    return money_printers, smart_money, elite
+
+
+def _known_perp_equity() -> Dict[str, float]:
+    """Perp equity per wallet: the larger of the cohort sweep's latest reading (every leaderboard
+    wallet of $10K+ is read at least daily) and the highest HyperLens reading of the last
+    _PERP_EQUITY_LOOKBACK_S (so a tracked trader who sold everything and moved the cash to spot
+    for a few days is not dropped). Empty when neither source has data yet."""
+    now = time.time()
+    out: Dict[str, float] = {}
+    try:
+        from cohorts.sweeper import enabled, store
+        if enabled():
+            out.update(store().equities(now - _PERP_EQUITY_MAX_AGE_S))
+    except Exception as exc:
+        logger.warning("HyperLens: perp equity lookup failed: %s", exc)
+    try:
+        for a, av in _db_max_account_values(now - _PERP_EQUITY_LOOKBACK_S).items():
+            if av > out.get(a, -1.0):
+                out[a] = av
+    except Exception as exc:
+        logger.warning("HyperLens: account value history lookup failed: %s", exc)
+    return out
+
+
+async def refresh_leaderboard() -> int:
+    """Fetch HL leaderboard and rebuild the tracking roster using cohorts.
+
+    Two cohorts are built from the same leaderboard data by build_cohorts (rules in the
+    config block): money printers ("profitable traders" in the UI, MP_TARGET by monthly ROI),
+    smart money ("large accounts", SM_TARGET by account value, elite always kept) and
+    elite (in both).
+
+    Returns the number of wallets in the merged roster.
+    """
+    global _roster, _roster_money_printers, _roster_smart_money
+    global _wallet_cohorts, _roster_updated_at
+
+    logger.info("HyperLens: refreshing leaderboard roster (cohort mode)...")
+
+    timeout = aiohttp.ClientTimeout(total=45)  # Large response
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_LEADERBOARD_URL) as resp:
+                if resp.status != 200:
+                    logger.warning("Leaderboard fetch failed: HTTP %d", resp.status)
+                    return len(_roster)
+                raw = await resp.json(content_type=None)
+    except Exception as exc:
+        logger.warning("Leaderboard fetch error: %s", exc)
+        return len(_roster)
+
+    # Response is {"leaderboardRows": [...]}
+    rows = raw if isinstance(raw, list) else raw.get("leaderboardRows", [])
+    if not rows:
+        logger.warning("Leaderboard empty or unexpected format: %s", type(raw))
+        return len(_roster)
+
+    all_wallets = parse_leaderboard(rows)
 
     # Wallet cohorts reuse this download (one 40MB leaderboard fetch a day serves both).
     try:
@@ -473,28 +570,9 @@ async def refresh_leaderboard() -> int:
     except Exception as exc:
         logger.warning("Cohorts: registry refresh failed: %s", exc)
 
-    # --- Build Money Printers cohort ---
-    # Require minimum ROI%, minimum AV, AND minimum absolute PnL so
-    # lottery/dust wallets (162k% on $100) don't pollute the roster.
-    mp_candidates = [
-        w for w in all_wallets
-        if (w.roi is not None
-            and w.roi >= _MP_MIN_ROI_PCT
-            and w.account_value >= _MP_MIN_ACCOUNT_VALUE
-            and w.pnl >= _MP_MIN_PNL
-            and w.all_time_pnl >= w.pnl)
-    ]
-    mp_candidates.sort(key=lambda w: w.roi, reverse=True)
-    _roster_money_printers = mp_candidates[:_ROSTER_COHORTS["money_printers"]]
+    perp_equity = await asyncio.to_thread(_known_perp_equity)
+    _roster_money_printers, _roster_smart_money, elite_addresses = build_cohorts(all_wallets, perp_equity)
     mp_addresses = {w.address for w in _roster_money_printers}
-
-    # --- Build Smart Money cohort ---
-    sm_candidates = [
-        w for w in all_wallets
-        if w.account_value >= _SM_MIN_ACCOUNT_VALUE
-    ]
-    sm_candidates.sort(key=lambda w: w.account_value, reverse=True)
-    _roster_smart_money = sm_candidates[:_ROSTER_COHORTS["smart_money"]]
     sm_addresses = {w.address for w in _roster_smart_money}
 
     # --- Build cohort tags ---
@@ -503,8 +581,6 @@ async def refresh_leaderboard() -> int:
         _wallet_cohorts.setdefault(addr, set()).add("money_printer")
     for addr in sm_addresses:
         _wallet_cohorts.setdefault(addr, set()).add("smart_money")
-    # Elite = in both cohorts
-    elite_addresses = mp_addresses & sm_addresses
     for addr in elite_addresses:
         _wallet_cohorts[addr].add("elite")
 
@@ -522,9 +598,9 @@ async def refresh_leaderboard() -> int:
             merged.append(w)
     _roster = merged
     _roster_updated_at = time.time()
-    try:                                   # the cohort sweep polls these every sweep
+    try:                                   # the cohort sweep reads these on the adaptive cadence
         from cohorts.sweeper import pin_roster
-        await asyncio.to_thread(pin_roster, [w.address for w in _roster])
+        await asyncio.to_thread(pin_roster, [w.address for w in _roster], elite_addresses)
     except Exception as exc:
         logger.warning("Cohorts: roster pin failed: %s", exc)
 
@@ -635,6 +711,7 @@ async def _fetch_wallet_positions(
     """
     async with semaphore:
         try:
+            _hl_calls.record("clearinghouseState")
             async with session.post(
                 _HL_INFO_URL,
                 json={"type": "clearinghouseState", "user": wallet.address},
@@ -649,6 +726,7 @@ async def _fetch_wallet_positions(
         # come from L2 data which is fetched separately)
         if full:
             try:
+                _hl_calls.record("frontendOpenOrders")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "frontendOpenOrders", "user": wallet.address},
@@ -667,6 +745,7 @@ async def _fetch_wallet_positions(
         fetch_xyz = full or wallet.address in _xyz_active_wallets
         if fetch_xyz:
             try:
+                _hl_calls.record("clearinghouseState")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
@@ -738,6 +817,7 @@ def _observe_opens(evicted: Set[str]) -> None:
         import followed_traders as ft
         from convergence import tracker
         tr = tracker()
+        tr.entity_of = entity_of               # lockstep wallets converge as one trader
         tr.forget(evicted)
         followed = ft.addresses()
         now = time.time()
@@ -829,6 +909,12 @@ def _after_positions_update() -> Set[str]:
     # cache (which Railway bills as memory). Wallet-detail page stays
     # accurate within the hour from in-memory state; on-disk persistence
     # is for surviving Railway redeploys.
+    if _pending_changes:
+        try:
+            _db_save_changes(list(_pending_changes))
+            _pending_changes.clear()
+        except Exception as exc:
+            logger.warning("HyperLens DB: change log save error: %s", exc)
     if (time.time() - _last_db_save_at) >= _DB_SAVE_INTERVAL_S:
         try:
             _db_save_snapshots(_snapshots)
@@ -864,6 +950,8 @@ def ingest_state(address: str, data: dict, ts: Optional[float] = None) -> bool:
     if wallet is None:
         return False
     snap = _snapshot_from_state(data, ts=ts)
+    prev = _snapshots[wallet.address][-1] if _snapshots.get(wallet.address) else None
+    _note_change(wallet.address, prev, snap)
     if wallet.address not in _snapshots:
         _snapshots[wallet.address] = deque(maxlen=_POSITION_HISTORY_LEN)
     _snapshots[wallet.address].append(snap)
@@ -880,21 +968,40 @@ def after_ingest() -> None:
     _poll_count += 1
 
 
-async def poll_positions() -> int:
-    """Poll positions using tiered strategy.
+def _book_of(snap: Optional[PositionSnapshot]) -> Optional[_cadence.Book]:
+    if snap is None:
+        return None
+    out: _cadence.Book = {}
+    for p in snap.positions:
+        key = f"xyz:{p.coin}" if p.dex == _XYZ_DEX and not p.coin.startswith("xyz:") else p.coin
+        s0, u0 = out.get(key, (0.0, 0.0))
+        out[key] = (s0 + (p.size if p.side == "LONG" else -p.size), u0 + p.size_usd)
+    return out
 
-    - **Watchlist tier** (every 5 min): followed/watched wallets get full
-      polling — positions + orders + xyz DEX (3 API calls).
-    - **Active roster** (every 15 min): wallets with ≥1 open position —
-      positions only (1 API call).
-    - **Idle roster** (every 30 min): wallets with zero open positions —
-      they might open one, but no urgency.
 
-    In practice most wallets have zero positions at any given time, so
-    this reduces API volume significantly.
+def _plan_next(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot, now: float,
+               followed: bool, elite: bool) -> float:
+    """Record a reading in the own polling plan; returns when the wallet is next due."""
+    streak = _poll_plan.get(address, (0.0, _cadence.SETTLED_STREAK))[1]
+    book = _book_of(snap)
+    streak = _cadence.next_streak(streak, _cadence.changed(_book_of(prev), book))
+    due = _cadence.next_at(now, streak, not _cadence.live(book), followed=followed, elite=elite)
+    _poll_plan[address] = (due, streak)
+    return due
+
+
+async def poll_positions(force: bool = False) -> int:
+    """Read the wallets that are due (hl_cadence).
+
+    - Followed/watched wallets: every 5 min, always read here.
+    - Roster wallets: read here only when the cohort sweep is off (otherwise the sweep reads
+      them on the same cadence and feeds ingest_state). ``force`` reads every roster wallet
+      (the 4-hour record when nobody has been viewing and the sweep is off).
+
+    Positions only (one clearinghouseState call per wallet; the xyz DEX only for wallets
+    known to hold xyz positions).
     """
-    global _last_poll_at, _poll_count, _consensus_updated_at, _last_roster_poll_at
-    global _last_idle_roster_poll_at
+    global _last_poll_at, _poll_count, _consensus_updated_at
     global _roster, _roster_money_printers, _roster_smart_money
 
     # Refresh asset index map if empty (resolves @142 → PENGU etc.)
@@ -907,25 +1014,20 @@ async def poll_positions() -> int:
 
     now = time.time()
     watchlist_addrs = _get_watchlist_addresses()
-    roster_due = (now - _last_roster_poll_at) >= _ROSTER_POLL_INTERVAL
-    # idle_roster_due kept as alias for backward-compat with logging below;
-    # in Sentiment Mode active/idle merged into single 10-min cadence.
-    idle_roster_due = roster_due
+    delegated = roster_via_cohorts()      # the cohort sweep reads the roster
+    elite = {a for a, c in _wallet_cohorts.items() if "elite" in c}
 
-    # Sentiment Mode: simplified split — watchlist (always) + roster (every
-    # _ROSTER_POLL_INTERVAL). No active/idle subdivision.
     watchlist_wallets = []
     roster_to_poll = []
-    delegated = roster_via_cohorts()      # the cohort sweep polls the roster
     for w in _roster:
         if w.address.lower() in watchlist_addrs:
             watchlist_wallets.append(w)
-        elif roster_due and not delegated:
+        elif not delegated and (force or _poll_plan.get(w.address, (0.0, 0))[0] <= now):
             roster_to_poll.append(w)
-
-    # Backward-compat aliases for the rest of this function
-    active_roster_wallets = roster_to_poll
-    idle_roster_wallets: list = []
+    # Plan entries of wallets that left the roster
+    on_roster = {w.address for w in _roster}
+    for a in [a for a in _poll_plan if a not in on_roster]:
+        del _poll_plan[a]
 
     wallets_to_poll = watchlist_wallets + roster_to_poll
     if not wallets_to_poll:
@@ -936,9 +1038,6 @@ async def poll_positions() -> int:
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT)
     success_count = 0
 
-    # "Sentiment Mode": always run light polling (positions only, no orders,
-    # no xyz DEX). Saves 2 of 3 API calls per wallet. Order-driven features
-    # (pressure map, smart orders) were already disabled.
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
             _fetch_wallet_positions(session, semaphore, w, full=False)
@@ -949,6 +1048,11 @@ async def poll_positions() -> int:
     for wallet, result in zip(wallets_to_poll, results):
         if isinstance(result, Exception) or result is None:
             continue
+
+        prev = _snapshots[wallet.address][-1] if _snapshots.get(wallet.address) else None
+        _plan_next(wallet.address, prev, result, now, followed=wallet.address.lower() in watchlist_addrs,
+                   elite=wallet.address in elite)
+        _note_change(wallet.address, prev, result)
 
         # Store snapshot in ring buffer
         if wallet.address not in _snapshots:
@@ -963,25 +1067,12 @@ async def poll_positions() -> int:
 
     _last_poll_at = now
     _poll_count += 1
-    if roster_due:
-        _last_roster_poll_at = now
-    if idle_roster_due:
-        _last_idle_roster_poll_at = now
 
     evicted_addrs = _after_positions_update()
 
-    # Logging
-    tier_info = f"watchlist={len(watchlist_wallets)}"
-    if roster_due:
-        tier_info += f", active={len(active_roster_wallets)}"
-    if idle_roster_due:
-        tier_info += f", idle={len(idle_roster_wallets)}"
-    else:
-        idle_count = sum(1 for w in _roster
-                         if w.address.lower() not in watchlist_addrs
-                         and not _wallet_has_open_positions(w.address))
-        if idle_count > 0:
-            tier_info += f", idle_skipped={idle_count}"
+    tier_info = f"followed={len(watchlist_wallets)}, roster={len(roster_to_poll)}"
+    if delegated:
+        tier_info += " (roster read by the cohort sweep)"
     if evicted_addrs:
         tier_info += f", evicted={len(evicted_addrs)}"
     logger.info(
@@ -989,6 +1080,119 @@ async def poll_positions() -> int:
         _poll_count, success_count, len(wallets_to_poll), tier_info, len(_consensus),
     )
     return success_count
+
+
+def _note_change(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot) -> None:
+    """Queue the coins whose size changed since the previous reading for the change log
+    (hl_entities). Skipped when the gap between the readings is too long to time the change."""
+    if prev is None or snap.timestamp <= prev.timestamp or snap.timestamp - prev.timestamp > _cadence.MAX_READING_AGE_S:
+        return
+    before, after = _book_of(prev), _book_of(snap)
+    if not _cadence.changed(before, after):
+        return
+    b, a = _cadence.live(before), _cadence.live(after)
+    for coin in set(b) | set(a):
+        s0, u0 = b.get(coin, (0.0, 0.0))
+        s1, u1 = a.get(coin, (0.0, 0.0))
+        if s0 != s1:
+            px = abs(u1 / s1) if s1 else abs(u0 / s0)
+            _pending_changes.append((address, prev.timestamp, snap.timestamp, coin, s0, s1, px))
+    if len(_pending_changes) > 5_000:                  # never hold much if the DB is unavailable
+        del _pending_changes[:-5_000]
+
+
+# ---------------------------------------------------------------------------
+# Lockstep wallets (hl_entities): wallets that trade as one count as one trader
+# ---------------------------------------------------------------------------
+
+_pending_changes: List[tuple] = []
+_entity_of: Dict[str, str] = {}              # address -> entity id, grouped wallets only
+_entity_members: Dict[str, List[str]] = {}   # entity id -> member addresses
+_entities_at: float = 0.0
+
+
+def entity_of(address: str) -> str:
+    """The entity a wallet trades as: its group id, or the address itself."""
+    return _entity_of.get(address, address)
+
+
+def entity_info(address: str) -> Optional[dict]:
+    """Group details for a wallet in a lockstep group, else None."""
+    gid = _entity_of.get((address or "").lower())
+    if gid is None:
+        return None
+    members = _entity_members.get(gid, [])
+    return {"id": gid, "size": len(members), "members": members, "note": _entities_rule.note(len(members)),
+            "computed_at": _entities_at or None}
+
+
+def _compute_entities(now: float) -> tuple:
+    changes = _db_load_changes(now - _entities_rule.WINDOW_DAYS * 86400)
+    on_roster = {w.address for w in _roster}
+    changes = {a: cs for a, cs in changes.items() if a in on_roster}
+    books = {}
+    for a in changes:
+        snaps = _snapshots.get(a)
+        if snaps:
+            books[a] = _cadence.live(_book_of(snaps[-1]))
+    return _entities_rule.find_entities(changes, books, now=now)
+
+
+_seed_task: Optional[asyncio.Task] = None
+
+
+async def seed_changes_from_fills() -> int:
+    """One-off: when the change log is empty (the first start after this change), rebuild the last
+    30 days from each roster wallet's fills, so lockstep groups are known at once instead of weeks
+    later. One userFills request per wallet (~630) on trader_entries' rate budget, one wallet at a
+    time, in the background. Once the log has rows it never runs again. Returns the rows added."""
+    now = time.time()
+    if await asyncio.to_thread(_db_changes_first_ts) is not None:
+        return 0
+    since, until = now - _entities_rule.WINDOW_DAYS * 86400, now
+    import trader_entries as te
+    added = 0
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for address in [w.address for w in _roster]:
+            try:
+                fills = await te._post(session, {"type": "userFills", "user": address, "aggregateByTime": True})
+            except Exception as exc:
+                logger.debug("HyperLens: change-log seed skipped %s: %s", address[:10], exc)
+                continue
+            rows = [(address, *c) for c in _entities_rule.changes_from_fills(fills or [], since, until,
+                                                                              _cadence.DUST_USD)]
+            del fills
+            if rows:
+                await asyncio.to_thread(_db_save_changes, rows)
+                added += len(rows)
+    logger.info("HyperLens: change log seeded with %d rows from fills", added)
+    return added
+
+
+async def _seed_then_group() -> None:
+    try:
+        await seed_changes_from_fills()
+    except Exception as exc:
+        logger.warning("HyperLens: change-log seed failed: %s", exc)
+    await recompute_entities()
+
+
+async def recompute_entities() -> int:
+    """Daily with the roster refresh (and at start): regroup lockstep wallets. Returns groups."""
+    global _entity_of, _entity_members, _entities_at
+    now = time.time()
+    try:
+        groups, links = await asyncio.to_thread(_compute_entities, now)
+    except Exception as exc:
+        logger.warning("HyperLens: lockstep grouping failed: %s", exc)
+        return len(_entity_members)
+    members: Dict[str, List[str]] = {}
+    for a, g in groups.items():
+        members.setdefault(g, []).append(a)
+    _entity_of, _entity_members, _entities_at = groups, {g: sorted(m) for g, m in members.items()}, now
+    logger.info("HyperLens: %d lockstep groups (%d wallets) from %d links", len(members), len(groups), len(links))
+    return len(members)
 
 
 # ---------------------------------------------------------------------------
@@ -1034,6 +1238,9 @@ def _recompute_consensus() -> None:
     Stale snapshots (>15min old) are excluded to prevent ghost data.
 
     Also computes per-cohort consensus (money_printer / smart_money).
+
+    Counts are of traders, not wallets: wallets that trade as one (hl_entities) count once per
+    coin, on the side of their combined dollars. Dollars are summed over every wallet.
     """
     global _consensus, _mp_book, _fresh_wallets, _consensus_wallets
 
@@ -1046,6 +1253,7 @@ def _recompute_consensus() -> None:
     # Collect per-symbol data (skip stale + MM-like wallets)
     sym_data: Dict[str, dict] = {}
     fresh_wallet_count = 0
+    fresh_entities: Set[str] = set()
     recent_count = 0
 
     for wallet in _roster:
@@ -1071,6 +1279,8 @@ def _recompute_consensus() -> None:
 
         fresh_wallet_count += 1
         addr = wallet.address
+        ent = entity_of(addr)
+        fresh_entities.add(ent)
         is_mp = addr in mp_addresses
         is_sm = addr in sm_addresses
 
@@ -1095,12 +1305,20 @@ def _recompute_consensus() -> None:
                     "mp_long_notional": 0.0, "mp_short_notional": 0.0,
                     "sm_long": 0, "sm_short": 0,
                     "sm_long_notional": 0.0, "sm_short_notional": 0.0,
+                    # entity -> net signed USD (all / money printers / smart money), for trader counts
+                    "ent": {}, "mp_ent": {}, "sm_ent": {},
                 }
 
             d = sym_data[coin]
+            signed = pos.size_usd if pos.side == "LONG" else -pos.size_usd
             if is_mp and not coin.startswith("xyz:"):
-                book = mp_book.setdefault(addr, {})
-                book[coin] = book.get(coin, 0.0) + (pos.size_usd if pos.side == "LONG" else -pos.size_usd)
+                book = mp_book.setdefault(ent, {})
+                book[coin] = book.get(coin, 0.0) + signed
+            d["ent"][ent] = d["ent"].get(ent, 0.0) + signed
+            if is_mp:
+                d["mp_ent"][ent] = d["mp_ent"].get(ent, 0.0) + signed
+            if is_sm:
+                d["sm_ent"][ent] = d["sm_ent"].get(ent, 0.0) + signed
             w_score = score_map.get(wallet.address, 1.0)
             d["leverages"].append(pos.leverage)
 
@@ -1109,27 +1327,30 @@ def _recompute_consensus() -> None:
             notional_weight = pos.size_usd * w_score
 
             if pos.side == "LONG":
-                d["long_count"] += 1
                 d["long_notional"] += pos.size_usd
                 d["weighted_sum"] += notional_weight
                 d["top_longs"].append(wallet.address)
                 if is_mp:
-                    d["mp_long"] += 1
                     d["mp_long_notional"] += pos.size_usd
                 if is_sm:
-                    d["sm_long"] += 1
                     d["sm_long_notional"] += pos.size_usd
             else:
-                d["short_count"] += 1
                 d["short_notional"] += pos.size_usd
                 d["weighted_sum"] -= notional_weight
                 d["top_shorts"].append(wallet.address)
                 if is_mp:
-                    d["mp_short"] += 1
                     d["mp_short_notional"] += pos.size_usd
                 if is_sm:
-                    d["sm_short"] += 1
                     d["sm_short_notional"] += pos.size_usd
+
+    # Trader counts: each entity once, on the side of its net dollars in the coin
+    for d in sym_data.values():
+        for key, lk, sk in (("ent", "long_count", "short_count"), ("mp_ent", "mp_long", "mp_short"),
+                            ("sm_ent", "sm_long", "sm_short")):
+            nets = d.pop(key).values()
+            d[lk] = sum(1 for v in nets if v > 0)
+            d[sk] = sum(1 for v in nets if v < 0)
+    fresh_trader_count = len(fresh_entities)
 
     # Build consensus objects
     new_consensus: Dict[str, SymbolConsensus] = {}
@@ -1163,7 +1384,7 @@ def _recompute_consensus() -> None:
         # Confidence = directional conviction * participation rate
         # 3L/1S with 4/100 wallets positioned = much weaker than
         # 30L/10S with 40/100 wallets positioned
-        participation = total_positioned / max(fresh_wallet_count, 1)
+        participation = total_positioned / max(fresh_trader_count, 1)
         confidence = min(abs(blended) * math.sqrt(participation), 1.0)
 
         # Average leverage across all positioned wallets for this symbol
@@ -1180,8 +1401,8 @@ def _recompute_consensus() -> None:
             symbol=coin,
             long_count=d["long_count"],
             short_count=d["short_count"],
-            neutral_count=fresh_wallet_count - total_positioned,
-            total_tracked=fresh_wallet_count,
+            neutral_count=fresh_trader_count - total_positioned,
+            total_tracked=fresh_trader_count,
             long_notional=d["long_notional"],
             short_notional=d["short_notional"],
             net_score=blended,
@@ -1215,10 +1436,11 @@ def _recompute_consensus() -> None:
 def profitable_lean(groups_of) -> Dict[str, dict]:
     """How profitable traders lean per group (sector, ecosystem, ...).
 
-    ``groups_of(coin)`` returns the group keys a coin belongs to. Each wallet is
+    ``groups_of(coin)`` returns the group keys a coin belongs to. Each trader is
     counted once per group, on the side of its net dollar exposure there, so a
-    trader long five AI coins is one AI long, not five. ``lean`` is
-    (long - short) / (long + short) over wallets, in [-1, +1].
+    trader long five AI coins is one AI long, not five. Wallets that trade as one
+    (hl_entities) are one trader: _mp_book is keyed by entity. ``lean`` is
+    (long - short) / (long + short) over traders, in [-1, +1].
     """
     out: Dict[str, dict] = {}
     for book in _mp_book.values():
@@ -1258,12 +1480,15 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     if bar <= _last_lean_bar or not _roster:
         return False
     if not is_active() and not roster_via_cohorts():
-        await poll_positions()
+        await poll_positions(force=True)       # nobody viewing and no sweep: readings may be hours old
+    # With the sweep on, every reading is at most _SNAPSHOT_MAX_AGE_S old (the adaptive cadence's
+    # slowest tier plus slack) and an unchanged wallet's reading is its current position, so the
+    # record uses the readings on hand rather than reading 600+ wallets at the close.
     rows = profitable_lean(_lean_groups)
     if not rows:
         return False
     try:
-        _db_save_trader_lean(bar, rows)
+        _db_save_trader_lean(bar, rows, ROSTER_VERSION)
         _last_lean_bar = bar
     except Exception as exc:
         logger.warning("HyperLens DB: trader lean save error: %s", exc)
@@ -1316,6 +1541,7 @@ async def _refresh_asset_index_map():
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
+            _hl_calls.record("meta")
             async with session.post(
                 _HL_INFO_URL,
                 json={"type": "meta"},
@@ -1398,6 +1624,7 @@ def get_roster(cohort: Optional[str] = None, min_av: float = _DISPLAY_MIN_AV) ->
             "position_count": pos_count,
             "tradfi_position_count": xyz_count,
             "cohorts": cohorts_list,
+            "entity": _entity_of.get(w.address),
         }
 
         # Add cohort-specific ranks when available
@@ -1467,9 +1694,10 @@ def _cohort_readings(cohort: str):
 
 def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
     """Each position one group of tracked wallets holds in a coin, largest first. Same wallets and filters as
-    positioning_map, so the counts and dollars match it. ``size_usd`` is valued at entry (as Hyperliquid
+    positioning_map, so the dollars match it. ``size_usd`` is valued at entry (as Hyperliquid
     reports it); ``move`` is the unrealised PnL over that, in percent (the price move in the holder's favour);
-    ``roe`` is the return on margin in percent."""
+    ``roe`` is the return on margin in percent; ``entity`` is the wallet's lockstep group (None when it
+    trades alone), so counts can take a group once."""
     out = []
     for wallet, latest in _cohort_readings(cohort):
         for p in latest.positions:
@@ -1480,7 +1708,8 @@ def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
             out.append({"address": wallet.address, "side": p.side.lower(), "size_usd": round(p.size_usd),
                         "entry": p.entry_px, "leverage": p.leverage, "upnl": round(p.unrealized_pnl),
                         "roe": None if roe is None else round(roe, 1),
-                        "move": round(100 * p.unrealized_pnl / p.size_usd, 2) if p.size_usd else None})
+                        "move": round(100 * p.unrealized_pnl / p.size_usd, 2) if p.size_usd else None,
+                        "entity": _entity_of.get(wallet.address)})
     out.sort(key=lambda x: -x["size_usd"])
     return out
 
@@ -1490,13 +1719,22 @@ def positioning_map(cohort: str = "profitable") -> dict:
     median entry per side, and how many of them are in profit at the current mark.
 
     Same wallet filters as the consensus; builder-dex markets are skipped. ``cohort`` is
-    "profitable" (money printers) or "large" (largest accounts). ``holding`` counts the
-    wallets with any position; the rest are flat.
+    "profitable" (money printers) or "large" (largest accounts).
+
+    Counts are of traders: wallets that trade as one (hl_entities) count once per coin, on the
+    side of their combined dollars, at their dollar-weighted entry, in profit when their combined
+    unrealised PnL is positive. Dollars (``usd``) are summed over every wallet; ``wallets`` per side
+    is the plain wallet count. Top level: ``wallets``/``holding`` count wallets, ``traders``/
+    ``traders_holding`` count traders.
     """
     raw: Dict[str, dict] = {}
     wallets = holding = 0
+    traders: Set[str] = set()
+    traders_holding: Set[str] = set()
     for wallet, latest in _cohort_readings(cohort):
         wallets += 1
+        ent = entity_of(wallet.address)
+        traders.add(ent)
         held = False
         for p in latest.positions:
             if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size:
@@ -1506,20 +1744,37 @@ def positioning_map(cohort: str = "profitable") -> dict:
             side = p.side.lower()
             # Current price from the position's unrealised PnL (size_usd is valued at entry).
             mark = p.entry_px + (p.unrealized_pnl if side == "long" else -p.unrealized_pnl) / abs(p.size)
-            d = raw.setdefault(coin, {"marks": [], "long": [], "short": []})
+            d = raw.setdefault(coin, {"marks": [], "long": [], "short": [], "ent": {}})
             d["marks"].append(mark)
-            d[side].append((p.entry_px, p.size_usd, (mark > p.entry_px) if side == "long" else (mark < p.entry_px)))
+            d[side].append(p.size_usd)
+            e = d["ent"].setdefault(ent, {"net": 0.0, "long": [0.0, 0.0, 0.0], "short": [0.0, 0.0, 0.0]})
+            e["net"] += p.size_usd if side == "long" else -p.size_usd
+            acc = e[side]                                  # dollars, dollars x entry, unrealised PnL
+            acc[0] += p.size_usd
+            acc[1] += p.size_usd * p.entry_px
+            acc[2] += p.unrealized_pnl
         holding += held
+        if held:
+            traders_holding.add(ent)
     out: Dict[str, dict] = {}
     for coin, d in raw.items():
         row = {"mark": statistics.median(d["marks"])}
+        per_side = {"long": [], "short": []}
+        for e in d["ent"].values():
+            side = "long" if e["net"] > 0 else "short" if e["net"] < 0 else None
+            if side is None:
+                continue
+            usd, usd_px, upnl = e[side]
+            if usd > 0:
+                per_side[side].append((usd_px / usd, upnl > 0))
         for side in ("long", "short"):
-            xs = d[side]
-            row[side] = {"n": len(xs), "usd": round(sum(x[1] for x in xs)),
+            xs = per_side[side]
+            row[side] = {"n": len(xs), "usd": round(sum(d[side])), "wallets": len(d[side]),
                          "median_entry": statistics.median(x[0] for x in xs) if xs else None,
-                         "in_profit": sum(1 for x in xs if x[2])}
+                         "in_profit": sum(1 for x in xs if x[1])}
         out[coin] = row
-    return {"wallets": wallets, "holding": holding, "coins": out}
+    return {"wallets": wallets, "holding": holding, "traders": len(traders),
+            "traders_holding": len(traders_holding), "coins": out}
 
 
 def wallet_positions(address: str) -> dict:
@@ -1592,6 +1847,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
                     "liq_distance_pct": pos.liq_distance_pct,
                     "position_age_s": round(now - fs, 0) if (fs := _position_first_seen.get(wallet.address, {}).get(pos.coin)) else None,
                     "cohorts": sorted(_wallet_cohorts.get(wallet.address, set())),
+                    "entity": _entity_of.get(wallet.address),
                     "asset_class": pos.asset_class,
                     "dex": pos.dex,
                 })
@@ -2081,6 +2337,8 @@ def get_wallet_profile(address: str) -> Optional[dict]:
         "cohorts": cohorts_list,
         "mp_rank": mp_rank_val,
         "sm_rank": sm_rank_val,
+        # Lockstep group (hl_entities): counted as one trader with its other wallets; None if alone
+        "entity": entity_info(address),
         # Performance stats
         "stats": {
             "total_trades": total_closed,
@@ -2150,6 +2408,7 @@ async def _poll_order_books() -> None:
     async def _fetch_book(session: aiohttp.ClientSession, coin: str) -> None:
         async with semaphore:
             try:
+                _hl_calls.record("l2Book")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "l2Book", "coin": coin, "nSigFigs": 3},
@@ -2698,6 +2957,9 @@ def get_status() -> dict:
 
     return {
         "tracked_wallets": len(_roster),
+        "roster_version": ROSTER_VERSION,
+        "roster_targets": {"money_printer": MP_TARGET, "smart_money": SM_TARGET, "elite_keep_rank": ELITE_KEEP_RANK,
+                           "min_perp_equity": _MIN_PERP_EQUITY},
         "money_printer_count": len(_roster_money_printers),
         "smart_money_count": len(_roster_smart_money),
         "elite_count": elite_count,
@@ -2710,6 +2972,12 @@ def get_status() -> dict:
         "poll_count": _poll_count,
         "poll_interval_sec": _POLL_INTERVAL,
         "idle_roster_poll_interval_sec": _ROSTER_IDLE_POLL_INTERVAL,
+        "cadence": {
+            "roster_read_by": "cohort_sweep" if roster_via_cohorts() else "hyperlens",
+            "followed_s": _cadence.FOLLOWED_S, "after_change_s": list(_cadence.BACKOFF_S),
+            "flat_s": _cadence.FLAT_S, "elite_max_s": _cadence.ELITE_MAX_S, "tick_s": _cadence.TICK_S,
+            "reading_max_age_s": _SNAPSHOT_MAX_AGE_S,
+        },
         "active_wallets": sum(1 for w in _roster if _wallet_has_open_positions(w.address)),
         "idle_wallets": sum(1 for w in _roster if not _wallet_has_open_positions(w.address)),
         "roster_refresh_interval_sec": _ROSTER_REFRESH_INTERVAL,
@@ -2722,6 +2990,12 @@ def get_status() -> dict:
         "tradfi_symbols": sorted(tradfi_symbols),
         # Persistence stats
         "db": _db_stats(),
+        # Hyperliquid info API calls per minute by request type (every caller in this process)
+        "api_calls": _hl_calls.stats(),
+        # Lockstep groups: wallets counted as one trader
+        "entities": {"groups": len(_entity_members), "wallets": len(_entity_of),
+                     "computed_at": _entities_at or None,
+                     "sizes": sorted((len(m) for m in _entity_members.values()), reverse=True)},
     }
 
 
@@ -2747,7 +3021,7 @@ async def run_hyperlens_loop() -> None:
     effect within ~30s without restart. The order book / pressure-map
     sub-task is gated on a separate flag (hyperlens_pressure_map).
     """
-    global _initialized
+    global _initialized, _seed_task
     from feature_flags import get_flag
 
     logger.info("HyperLens: starting background loop...")
@@ -2782,6 +3056,9 @@ async def run_hyperlens_loop() -> None:
                     continue
                 _initialized = True
                 last_roster_refresh = time.time()
+                await recompute_entities()
+                if _seed_task is None:          # background: groups known before the log has filled
+                    _seed_task = asyncio.create_task(_seed_then_group())
 
             # Pressure map sub-task — spawn/cancel based on the flag
             if get_flag("hyperlens_pressure_map"):
@@ -2798,6 +3075,7 @@ async def run_hyperlens_loop() -> None:
             if time.time() - last_roster_refresh > _ROSTER_REFRESH_INTERVAL:
                 await refresh_leaderboard()
                 last_roster_refresh = time.time()
+                await recompute_entities()
 
             # Poll positions — skip while idle (no viewer to serve); the poll
             # hits Hyperliquid once per roster member, so at rest this is the
@@ -2820,9 +3098,9 @@ async def run_hyperlens_loop() -> None:
         except Exception as exc:
             logger.warning("HyperLens loop error: %s", exc)
 
-        # Fast cadence when active; long interruptible nap when idle so the box
-        # isn't waking every 5 min to poll HL round the clock.
-        if is_active():
+        # Tick every 5 min while someone is viewing, or while followed wallets need their 5-min
+        # reading for Telegram alerts; otherwise a long interruptible nap.
+        if is_active() or (roster_via_cohorts() and _followed_any()):
             await asyncio.sleep(_POLL_INTERVAL)
         else:
             await idle_sleep(_ROSTER_IDLE_POLL_INTERVAL)

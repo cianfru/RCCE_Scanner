@@ -5,10 +5,16 @@
  * Auto-reconnect with exponential backoff. Falls back gracefully if WS unavailable.
  *
  * Events consumed:
- *   synthesis-complete  → full scan results (replaces REST polling)
+ *   scan-updated        → a new scan is ready; the page refetches what it shows
+ *   synthesis-complete  → full scan results (older servers only)
+ *   price-tick          → changed prices (every 5 s while the tab is visible)
+ *   price-snapshot      → all prices, on connect and when the tab is shown again
  *   signal-transition   → instant signal flips
  *   anomaly             → new market anomalies
  *   heartbeat           → keepalive (no action needed)
+ *
+ * Protocol 2 (?v=2): the tab tells the server when it is hidden ("pause") and
+ * visible again ("resume"), so hidden tabs get no price ticks or scan notices.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -21,7 +27,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 function getWsUrl() {
   // Convert http(s)://host to ws(s)://host
   const base = API_BASE.replace(/^http/, "ws");
-  return withToken(`${base}/ws/scan`);
+  return withToken(`${base}/ws/scan?v=2`);
 }
 
 // ── Singleton WebSocket manager ──────────────────────────────────────────────
@@ -62,6 +68,7 @@ function connect() {
   ws.onopen = () => {
     reconnectAttempt = 0;
     wsConnected = true;
+    if (document.hidden) sendMessage({ type: "pause" });
     notifyListeners({ type: "_ws_status", connected: true });
   };
 
@@ -118,9 +125,15 @@ function sendMessage(msg) {
 if (typeof WebSocket !== "undefined") {
   connect();
 
-  // Reconnect on tab visibility change (mobile wakes from sleep)
+  // Hidden: ask the server to hold price ticks and scan notices. Visible: resume
+  // (the server answers with all current prices), or reconnect if the socket
+  // dropped (mobile wakes from sleep).
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
+    if (document.hidden) {
+      sendMessage({ type: "pause" });
+    } else if (ws && ws.readyState === WebSocket.OPEN) {
+      sendMessage({ type: "resume" });
+    } else {
       reconnectAttempt = 0; // Reset backoff on manual focus
       connect();
     }
@@ -134,6 +147,8 @@ export function useWebSocket() {
   const [synthesisData, setSynthesisData] = useState(null);
   const [symbolUpdate, setSymbolUpdate] = useState(null);
   const [priceTicks, setPriceTicks] = useState(null);
+  const [priceSnapshot, setPriceSnapshot] = useState(null);
+  const [scanUpdated, setScanUpdated] = useState(null);
   const [transitions, setTransitions] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const [insight, setInsight] = useState(null);
@@ -156,6 +171,12 @@ export function useWebSocket() {
           break;
         case "price-tick":
           setPriceTicks(msg.data);
+          break;
+        case "price-snapshot":
+          setPriceSnapshot(msg.data);
+          break;
+        case "scan-updated":
+          setScanUpdated({ at: Date.now(), ...(msg.data || {}) });
           break;
         case "signal-transition":
           setTransitions(msg.data || []);
@@ -191,6 +212,8 @@ export function useWebSocket() {
     synthesisData,
     symbolUpdate,
     priceTicks,
+    priceSnapshot,
+    scanUpdated,
     transitions,
     anomalies,
     insight,

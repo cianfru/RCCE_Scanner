@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { T, SIGNAL_META } from "../theme.js";
 import { getAdminKey } from "../auth.js";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -497,8 +498,8 @@ export default function ExecutorPanel({ api }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10_000);
-    return () => clearInterval(interval);
+    // Display refresh only (execution runs server side); paused while the tab is hidden.
+    return pollWhileVisible(fetchData, 10_000);
   }, [fetchData]);
 
   const callApi = async (endpoint, method = "POST", body = null) => {

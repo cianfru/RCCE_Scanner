@@ -62,6 +62,8 @@ async def refresh(cache):
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
             async def fetch(kind):
+                import hl_calls
+                hl_calls.record(kind)
                 async with session.post("https://api.hyperliquid.xyz/info", json={"type": kind}) as response:
                     response.raise_for_status()
                     return await response.json()

@@ -1,4 +1,4 @@
-// Profitable traders (HyperLens): wallets in the top 300 by monthly return that were
+// Profitable traders (HyperLens): wallets in the top 600 by monthly return that were
 // also in profit before this month. Display only; the signal's whale check still
 // reads all tracked wallets weighted by size.
 export const LEAN_MIN_WALLETS = 3;

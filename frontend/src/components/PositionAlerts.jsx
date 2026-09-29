@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { T, m } from "../theme.js";
 import { useWallet } from "../WalletContext.jsx";
 import GlassCard from "./GlassCard.jsx";
+import { pollWhileVisible } from "../utils/visiblePoll.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -43,8 +44,7 @@ export default function PositionAlerts({ isMobile }) {
 
   useEffect(() => {
     fetchWarnings();
-    const iv = setInterval(fetchWarnings, 60_000);
-    return () => clearInterval(iv);
+    return pollWhileVisible(fetchWarnings, 60_000);
   }, [fetchWarnings]);
 
   const dismiss = (alertKey) => {

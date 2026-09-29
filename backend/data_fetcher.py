@@ -617,6 +617,8 @@ async def _fetch_hl_candles(
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            import hl_calls
+            hl_calls.record(payload.get("type"))
             async with session.post(
                 _HL_API_URL,
                 json=payload,
