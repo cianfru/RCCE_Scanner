@@ -55,3 +55,21 @@ export function usd(v) {
   if (a >= 1e3) return `$${Math.round(a / 1e3)}K`;
   return `$${Math.round(a)}`;
 }
+
+// Date ticks for the lean charts (UTC, unix seconds): the smallest step from the list that
+// keeps at most maxTicks labels. Hour steps label "14:00" and midnights "29 Sep"; day steps "29 Sep".
+const DAY = 86400;
+const STEPS = [3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600, DAY, 2 * DAY, 7 * DAY, 14 * DAY];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const dayLabel = ts => { const d = new Date(ts * 1000); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`; };
+export function timeTicks(t0, t1, maxTicks = 6) {
+  if (!(t1 > t0)) return [];
+  const span = t1 - t0, n = Math.max(1, maxTicks);
+  const step = STEPS.find(s => span / s <= n) || Math.ceil(span / n / DAY) * DAY;
+  const out = [];
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
+    const midnight = t % DAY === 0;
+    out.push({ ts: t, label: step >= DAY || midnight ? dayLabel(t) : `${String(new Date(t * 1000).getUTCHours()).padStart(2, "0")}:00`, day: midnight });
+  }
+  return out;
+}

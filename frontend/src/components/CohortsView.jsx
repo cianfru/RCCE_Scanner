@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Tabs from "./Tabs.jsx";
 import DataStatus from "./DataStatus.jsx";
+import HelpTip from "./HelpTip.jsx";
 import { T } from "../theme.js";
-import { displayName, gapSeries, leanPct, orderFor, orderedRows, usd } from "../utils/cohorts.js";
+import { dayLabel, displayName, gapSeries, leanPct, orderFor, orderedRows, timeTicks, usd } from "../utils/cohorts.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const fetchJson = url => fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
@@ -12,61 +13,96 @@ const DIMENSIONS = [
   { key: "equity", label: "By account size", title: "Groups by perp account value" },
 ];
 
-// Losing groups in warm tones, profitable groups in cool ones; account sizes light to dark.
-// Light theme gets deeper shades so the palest lines stay visible on white.
+// Loss groups in warm hues (red, orange, amber, mauve), profit groups in cool ones (pale blue,
+// blue, teal, green): a different hue per line so eight lines stay apart. Account sizes: one blue,
+// pale to deep. Light theme gets deeper steps so every line clears the white surface.
 function colorsFor(dimension) {
   const light = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light";
-  if (dimension === "equity") return light ? ["#6b8fbf", "#4f76ad", "#355e9a", "#1f4785"] : ["#9fb8d8", "#7d9fcc", "#5b86bf", "#3a6db3"];
-  return light ? ["#9c3b28", "#b4533f", "#c86f4f", "#d08a62", "#5aa391", "#2f8f78", "#1b7a64", "#0d6552"]
-    : ["#b4533f", "#cf7a5c", "#dfa27f", "#e8c3a6", "#9fd8c9", "#6fc3ad", "#3fae91", "#1f9a7c"];
+  if (dimension === "equity") return light ? ["#86a9d9", "#5a86cc", "#2f5fb5", "#163a80"] : ["#c9dcf5", "#8db6ec", "#5690e0", "#2f66c9"];
+  return light ? ["#c62f33", "#c5621c", "#9a7a0a", "#a45a88", "#5b83c4", "#2f5fd0", "#0b8a7c", "#1f8f4c"]
+    : ["#e5484d", "#ef8a3c", "#d8b13a", "#c78bb0", "#8fb3e8", "#4f86ee", "#1fb3a0", "#48c774"];
 }
+const warmColor = () => (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light" ? "#c5621c" : "#ef8a3c");
 
 const when = ts => {
   const d = new Date(ts * 1000);
-  return `${d.getUTCDate()} ${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+  return `${dayLabel(ts)} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
 };
 
-// Lean over time, -100% (all short) to +100% (all long), one line per group.
-function LeanChart({ series, height = 200, aria, zeroLabel = "Balanced" }) {
+// Chart title with its (i), and an optional control on the right.
+function ChartHead({ title, info, children }) {
+  return <div className="coh-chart-head">
+    <h3>{title}</h3>
+    <HelpTip title={title} width={360}>{info}</HelpTip>
+    {children && <div className="coh-chart-ctl">{children}</div>}
+  </div>;
+}
+
+const Y_TICKS = [1, 0.5, 0, -0.5, -1];
+
+// Lean over time, -100% (all short) to +100% (all long), one line per group. The legend doubles
+// as the readout: each name carries its value at the hovered time (the latest reading otherwise).
+// Hovering or tapping a name picks out its line.
+function LeanChart({ series, aria }) {
   const box = useRef(null);
-  const [W, setW] = useState(640);
+  const [W, setW] = useState(0);
   const [hover, setHover] = useState(null);
-  useEffect(() => {
-    if (!box.current || typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(([e]) => setW(Math.max(260, Math.round(e.contentRect.width))));
+  const [hot, setHot] = useState(null);
+  const [pinned, setPinned] = useState(null);
+  useLayoutEffect(() => {
+    if (!box.current) return undefined;
+    setW(Math.round(box.current.clientWidth));
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
     ro.observe(box.current);
     return () => ro.disconnect();
   }, []);
-  const all = series.flatMap(s => s.points);
-  const ts = [...new Set(all.map(p => p.ts))].sort((a, b) => a - b);
-  if (ts.length < 2) return <div ref={box} className="coh-empty">One reading so far. The chart fills in as readings arrive.</div>;
-  const padL = 8, padR = 44, padT = 8, padB = 22, t0 = ts[0], t1 = ts[ts.length - 1];
-  const x = t => padL + ((t - t0) / (t1 - t0 || 1)) * (W - padL - padR);
-  const y = v => padT + (1 - (v + 1) / 2) * (height - padT - padB);
+  const ts = useMemo(() => [...new Set(series.flatMap(s => s.points.map(p => p.ts)))].sort((a, b) => a - b), [series]);
+  if (ts.length < 2) return <div ref={box} className="coh-chart"><p className="coh-empty">One reading so far. The chart fills in as readings arrive.</p></div>;
+  const focus = hot ?? pinned;
+  const phone = W > 0 && W < 560;
+  const plotH = phone ? 230 : 340;
+  const padL = phone ? 44 : 50, padR = 10, padT = 10, padB = 28, H = plotH + padT + padB;
+  const t0 = ts[0], t1 = ts[ts.length - 1], plotW = Math.max(1, W - padL - padR);
+  const x = t => padL + ((t - t0) / (t1 - t0 || 1)) * plotW;
+  const y = v => padT + (1 - (v + 1) / 2) * plotH;
   const path = pts => pts.filter(p => p.v != null).map((p, i) => `${i ? "L" : "M"}${x(p.ts).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+  const ticks = timeTicks(t0, t1, Math.max(2, Math.floor(plotW / (phone ? 70 : 150)))).filter(t => x(t.ts) > padL + 16 && x(t.ts) < W - padR - 16);
+  const at = hover ?? t1;
+  const valueAt = s => s.points.find(q => q.ts === at)?.v;
   const onMove = e => {
     const r = e.currentTarget.getBoundingClientRect();
-    const t = t0 + (((e.clientX - r.left) / r.width) * W - padL) / (W - padL - padR) * (t1 - t0);
+    const t = t0 + ((e.clientX - r.left - padL) / plotW) * (t1 - t0);
     setHover(ts.reduce((b, c) => (Math.abs(c - t) < Math.abs(b - t) ? c : b), ts[0]));
   };
+  const drawn = focus ? [...series.filter(s => s.key !== focus), ...series.filter(s => s.key === focus)] : series;
   return <div ref={box} className="coh-chart">
-    <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} role="img" aria-label={aria}
-      onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
-      {[-1, -0.5, 0, 0.5, 1].map(v => <g key={v}>
-        <line className={v === 0 ? "coh-zero" : "coh-grid"} x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} />
-        <text className="coh-tick" x={W - padR + 6} y={y(v) + 4}>{v === 0 ? "0" : leanPct(v)}</text>
-      </g>)}
-      <text className="coh-tick" x={padL + 2} y={y(0) - 4}>{zeroLabel}</text>
-      {series.map(s => <path key={s.key} d={path(s.points)} fill="none" stroke={s.color} strokeWidth={s.width || 1.5} strokeDasharray={s.dash} />)}
-      <text className="coh-tick" x={padL} y={height - 6}>{when(t0)}</text>
-      <text className="coh-tick" x={W - padR} y={height - 6} textAnchor="end">{when(t1)}</text>
-      {hover != null && <line className="coh-cursor" x1={x(hover)} x2={x(hover)} y1={padT} y2={height - padB} />}
-    </svg>
-    <div className="coh-readout">
-      {hover == null ? <span>Hover the chart for a reading.</span> : <>
-        <b>{when(hover)}</b>
-        {series.map(s => { const p = s.points.find(q => q.ts === hover); return p?.v == null ? null : <span key={s.key} style={{ color: s.color }}>{s.label} {leanPct(p.v)}</span>; })}
-      </>}
+    <div className="coh-readout" aria-live="off">
+      <span className="coh-at">{hover == null ? `Latest · ${when(at)}` : when(at)}</span>
+      <ul className="coh-legend">{series.map(s => { const v = valueAt(s); return <li key={s.key}>
+        <button type="button" aria-pressed={pinned === s.key} data-dim={focus && focus !== s.key ? "" : undefined}
+          onMouseEnter={() => setHot(s.key)} onMouseLeave={() => setHot(null)} onFocus={() => setHot(s.key)} onBlur={() => setHot(null)}
+          onClick={() => setPinned(k => (k === s.key ? null : s.key))}>
+          <i style={{ background: s.color }} /><span className="coh-lg-name">{s.label}</span><b>{leanPct(v)}</b>
+        </button></li>; })}</ul>
+    </div>
+    <div className="coh-plot" style={{ height: H }}>
+      {W > 0 && <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={aria}
+        onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}>
+        {ticks.map(t => <line key={t.ts} className="coh-vgrid" x1={x(t.ts)} x2={x(t.ts)} y1={padT} y2={padT + plotH} />)}
+        {Y_TICKS.map(v => <g key={v}>
+          <line className={v === 0 ? "coh-zero" : "coh-grid"} x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} />
+          <text className="coh-tick" x={padL - 8} y={y(v) + 4} textAnchor="end">{leanPct(v)}</text>
+        </g>)}
+        {ticks.map(t => <text key={t.ts} className="coh-tick" x={x(t.ts)} y={H - 8} textAnchor="middle">{t.label}</text>)}
+        {drawn.map(s => <path key={s.key} d={path(s.points)} fill="none" stroke={s.color} strokeLinejoin="round"
+          strokeWidth={focus === s.key ? 2.5 : 1.75} opacity={focus && focus !== s.key ? 0.16 : 1} />)}
+        {hover != null && <>
+          <line className="coh-cursor" x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + plotH} />
+          {drawn.map(s => { const v = valueAt(s); return v == null || (focus && focus !== s.key) ? null
+            : <circle key={s.key} className="coh-mark" cx={x(hover)} cy={y(v)} r={3.5} fill={s.color} />; })}
+        </>}
+      </svg>}
     </div>
   </div>;
 }
@@ -107,12 +143,15 @@ export default function CohortsView() {
     points: (hist?.cohorts?.[k] || []).map(p => ({ ts: p.ts, v: p.bias })),
   })).filter(s => s.points.length), [hist, dimension]);  // eslint-disable-line react-hooks/exhaustive-deps
   const gaps = useMemo(() => (dimension === "pnl" ? gapSeries(hist?.cohorts) : []), [hist, dimension]);
-  const div = now?.divergence;
-  const zNote = rows.some(r => r.bias_z != null) ? null : "Compared with each group's own history after 3 days of readings.";
+  const groupedBy = dimension === "pnl" ? "all-time profit or loss on Hyperliquid" : "perp account value ($100K and up)";
   return <div className="coh">
     <p className="coh-intro">
-      How groups of Hyperliquid wallets are positioned. Lean is (long − short) ÷ (long + short) by position size: +100% all long, −100% all short.
-      {now?.since ? ` Collecting since ${when(now.since)}: ${now.readings} all-market readings (every 30 minutes), ${now.symbol_readings} per-coin (every 4 hours).` : ""}
+      How groups of Hyperliquid wallets lean, long or short.{" "}
+      <HelpTip title="About cohorts" width={380}>
+        <p>{now?.population || "Hyperliquid leaderboard wallets with $100K+ perp equity, plus proven traders ($100K+ all-time PnL) with $10K+ perp equity. Market makers excluded."}</p>
+        <p>Lean = (long − short) ÷ (long + short), by the dollar value of open positions: +100% all long, −100% all short. "vs usual" compares a group's lean with its own history, in standard deviations, once there are 3 days of readings.</p>
+        <p>Readings every 30 minutes for all markets, every 4 hours per coin{now?.since ? `, since ${when(now.since)}` : ""}.</p>
+      </HelpTip>
     </p>
     <div className="coh-controls">
       <Tabs small label="Group wallets" items={DIMENSIONS} value={dimension} onChange={setDimension} />
@@ -138,21 +177,16 @@ export default function CohortsView() {
           <td className="coh-wide">{r.bias_z == null ? "—" : `${r.bias_z > 0 ? "+" : ""}${r.bias_z.toFixed(1)} sd`}</td>
         </tr>)}</tbody>
       </table>
-      {zNote && <p className="coh-muted">"vs usual": {zNote}</p>}
-      {dimension === "pnl" && div?.divergence != null && <p className="coh-gap">
-        Wallets up $100K+ all-time lean <b>{leanPct(div.winners.bias)}</b>; wallets that lost money lean <b>{leanPct(div.losers.bias)}</b>.
-        The gap is {Math.round(Math.abs(div.divergence) * 100)} points{div.divergence > 0 ? ", profitable wallets longer" : div.divergence < 0 ? ", losing wallets longer" : ""}.
-      </p>}
-      <div className="coh-section-head"><h3>Lean over time</h3><Tabs small label="Range" items={RANGES} value={days} onChange={setDays} /></div>
+      <ChartHead title="Lean over time" info={<p>One line per group of wallets, grouped by {groupedBy}. Lean = (long − short) ÷ (long + short), using the dollar value of the group's open positions: +100% all long, −100% all short, 0% balanced. Hover the chart to read every group at one time; hover or tap a name to pick out its line.</p>}>
+        <Tabs small label="Range" items={RANGES} value={days} onChange={setDays} />
+      </ChartHead>
       <LeanChart series={series} aria={`Lean of each wallet group over ${days} days`} />
-      <ul className="coh-legend">{series.map(s => <li key={s.key}><i style={{ background: s.color }} />{s.label}</li>)}</ul>
       {dimension === "pnl" && gaps.length > 0 && <>
-        <h3 className="coh-h3">Profitable against losing wallets</h3>
-        <LeanChart height={150} zeroLabel="Same lean" aria="Lean of profitable wallets minus lean of losing wallets"
-          series={[{ key: "w", label: "Profitable", color: T.accent, points: gaps.map(g => ({ ts: g.ts, v: g.winners })) },
-                   { key: "l", label: "Losing", color: "#cf7a5c", points: gaps.map(g => ({ ts: g.ts, v: g.losers })) }]} />
+        <ChartHead title="Profitable vs losing wallets" info={<p>Two lean lines: wallets up $100K or more all-time, and wallets with an all-time loss on Hyperliquid. Each line adds up the long and short positions of every wallet in its group, weighted by dollar value. Lines far apart mean the two groups are positioned differently. Descriptive only: whether the gap leads price has not been tested yet; that needs about 30 days of readings.</p>} />
+        <LeanChart aria="Lean of wallets up $100K+ all-time and of wallets with an all-time loss"
+          series={[{ key: "w", label: "Up $100K+", color: T.accent, points: gaps.map(g => ({ ts: g.ts, v: g.winners })) },
+                   { key: "l", label: "Lost money", color: warmColor(), points: gaps.map(g => ({ ts: g.ts, v: g.losers })) }]} />
       </>}
-      <p className="coh-muted">{now.population} Descriptive only: whether the gap between profitable and losing wallets leads price has not been tested yet; that needs about 30 days of readings.</p>
     </>}
   </div>;
 }

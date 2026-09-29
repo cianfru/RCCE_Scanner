@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { displayName, orderedRows, gapSeries, leanPct, usd } from './cohorts.js';
+import { displayName, orderedRows, gapSeries, leanPct, usd, timeTicks } from './cohorts.js';
 
 test('display names never show the internal cohort keys', () => {
   assert.equal(displayName('pnl', 'Smart Money'), '$100K–1M profit');
@@ -29,4 +29,17 @@ test('formatting', () => {
   assert.equal(leanPct(-0.004), '0%');
   assert.equal(usd(3730733624), '$3.7B');
   assert.equal(usd(-5561641), '$5.6M');
+});
+
+test('time ticks: hours over a day, dates over a week, never more than asked', () => {
+  const d0 = Date.UTC(2026, 8, 28) / 1000;                     // 28 Sep 00:00 UTC
+  const day = timeTicks(d0 + 3600 * 5, d0 + 86400 + 3600 * 5, 6);
+  assert.ok(day.length <= 6 && day.length >= 3);
+  assert.ok(day.every(t => /^\d\d:00$|^\d+ [A-Z][a-z]{2}$/.test(t.label)));
+  assert.ok(day.some(t => t.label === '29 Sep'));              // the midnight tick names the day
+  const week = timeTicks(d0 - 6 * 86400, d0 + 3600, 8);
+  assert.deepEqual(week.map(t => t.label), ['22 Sep', '23 Sep', '24 Sep', '25 Sep', '26 Sep', '27 Sep', '28 Sep']);
+  const month = timeTicks(d0 - 30 * 86400, d0, 5);
+  assert.ok(month.length <= 5 && month.length >= 2);
+  assert.deepEqual(timeTicks(5, 5), []);
 });
