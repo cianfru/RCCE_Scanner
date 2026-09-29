@@ -400,16 +400,65 @@ class _StablecoinCache:
 _stablecoin_cache = _StablecoinCache()
 
 
-async def fetch_stablecoin_supply() -> Optional[StablecoinData]:
-    """Fetch USDT and USDC market caps from CoinGecko.
+_LLAMA_STABLECOINS_URL = "https://stablecoins.llama.fi/stablecoins?includePrices=false"
 
-    Computes 7-day trend from cached history.
+
+def _trend_label(change_pct: float) -> str:
+    if change_pct > 1.0:
+        return "EXPANDING"
+    if change_pct < -1.0:
+        return "CONTRACTING"
+    return "STABLE"
+
+
+def parse_llama_stablecoins(payload: dict) -> Optional[StablecoinData]:
+    """USDT + USDC supply and its 7-day change from DefiLlama's stablecoin list.
+
+    DefiLlama reports each coin's circulating supply now and a week ago, so the
+    trend is known on the first fetch (no in-memory history that a restart wipes).
+    """
+    caps = {"USDT": [0.0, 0.0], "USDC": [0.0, 0.0]}
+    for asset in (payload or {}).get("peggedAssets", []):
+        sym = str(asset.get("symbol", "")).upper()
+        if sym not in caps or caps[sym][0]:
+            continue                                     # first (largest) USDT / USDC only
+        now = (asset.get("circulating") or {}).get("peggedUSD") or 0
+        week = (asset.get("circulatingPrevWeek") or {}).get("peggedUSD") or 0
+        caps[sym] = [float(now), float(week)]
+    usdt, usdc = caps["USDT"][0], caps["USDC"][0]
+    total = usdt + usdc
+    prev = caps["USDT"][1] + caps["USDC"][1]
+    if total <= 0:
+        return None
+    change_pct = round(((total - prev) / prev) * 100.0, 2) if prev > 0 else 0.0
+    return StablecoinData(usdt_market_cap=usdt, usdc_market_cap=usdc, total_stablecoin_cap=total,
+                          trend=_trend_label(change_pct), change_7d_pct=change_pct, timestamp=time.time())
+
+
+async def fetch_stablecoin_supply() -> Optional[StablecoinData]:
+    """USDT and USDC supply with a 7-day trend.
+
+    DefiLlama first (free, reachable from servers, gives the week-ago supply);
+    CoinGecko as a fallback, whose trend needs the in-memory history.
     """
     cached = _stablecoin_cache.get()
     if cached is not None:
         return cached
 
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(_LLAMA_STABLECOINS_URL) as resp:
+                resp.raise_for_status()
+                result = parse_llama_stablecoins(await resp.json())
+        if result is not None:
+            _stablecoin_cache.put(result)
+            logger.info("Stablecoin supply (DefiLlama): $%.1fB trend=%s (%.2f%% 7d)",
+                        result.total_stablecoin_cap / 1e9, result.trend, result.change_7d_pct)
+            return result
+    except Exception as exc:
+        logger.warning("DefiLlama stablecoin fetch failed, trying CoinGecko: %s", exc)
+
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(_STABLECOIN_URL) as resp:
