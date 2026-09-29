@@ -72,7 +72,7 @@ function heldTitle(mine, price) {
   return `Your ${mine.side} from ${fmtPx(mine.entry)}${r == null ? "" : ` · ${r >= 0 ? "+" : ""}${(100 * r).toFixed(1)}%`}`;
 }
 
-function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, backtestSymbols, favorites, onToggleFavorite, timeframe, onSelect, folds, held }) {
+function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, backtestSymbols, favorites, onToggleFavorite, priceFlash, timeframe, onSelect, folds, held }) {
   const noHistory = row.history_bars === 0;   // unmeasured, not zero
   switch (colLabel) {
     case "#":
@@ -82,6 +82,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
         </td>
       );
     case "SYMBOL": {
+      const flash = priceFlash?.get?.(row.symbol);
       const isFav = favorites?.has(row.symbol);
       const base = getBaseSymbol(row.symbol);
       const priceStr = row.price
@@ -108,7 +109,8 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
           {priceStr && (
             <div style={{
               fontSize: 12, fontWeight: 500, letterSpacing: "0.01em", marginTop: 1,
-              color: T.text1,
+              color: flash === "up" ? T.green : flash === "down" ? T.red : T.text1,
+              transition: "color 0.3s ease",
             }}>
               {priceStr}
               {row.sector && row.sector !== "Other" && <span title={[row.sector, row.ecosystem, row.size_tier && `${row.size_tier} size`].filter(Boolean).join(" · ")}
@@ -184,7 +186,7 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
   }
 }
 
-function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, tight, line, backtestSymbols, favorites, onToggleFavorite, marketWide, timeframe, folds, held }) {
+function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner, phone, tight, line, backtestSymbols, favorites, onToggleFavorite, priceFlash, marketWide, timeframe, folds, held }) {
   const rm = REGIME_META[row.regime] || REGIME_META.FLAT;
   // Only locked-in rows (trend and entry signal agree) are tinted, so they stand
   // out; every other row keeps just its regime stripe on the left.
@@ -226,7 +228,7 @@ function SymbolRow({ row, index, selected, onSelect, columns, isMobile, scanner,
             {line.includes("SPARK") && <span title={sparkTitle(row, timeframe, folds?.energy)}><SparklineCell data={row.sparkline} width={tight ? 48 : 56} height={16} /></span>}
           </div>}
         </td>;
-        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} tight={tight} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} timeframe={timeframe} onSelect={onSelect} folds={folds} held={held} />;
+        return <CellContent key={label} colLabel={label} row={row} index={index} isMobile={isMobile} phone={phone} tight={tight} cellPad={cellPad} backtestSymbols={backtestSymbols} favorites={favorites} onToggleFavorite={onToggleFavorite} priceFlash={priceFlash} timeframe={timeframe} onSelect={onSelect} folds={folds} held={held} />;
       })}
     </tr>
   );
@@ -256,7 +258,7 @@ function HeaderLabel({ label, text, sortKey, active, dir, onSort, compact }) {
   </HelpTip>;
 }
 
-export default function DataTable({ results, label, sortKey, sortDir, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite,
+export default function DataTable({ results, label, sortKey, sortDir, onSort, selected, onSelect, visibleColumns, isMobile, backtestSymbols, loading, favorites, onToggleFavorite, priceFlash,
   variant = "embed", tf = "1d", totalCount, scopeLabel, filterWords = [], onClear }) {
   const scanner = variant === "scanner";
   // Coins the shared address holds (connected wallet or read-only view); no executor fallback.
@@ -471,6 +473,7 @@ export default function DataTable({ results, label, sortKey, sortDir, onSort, se
                     backtestSymbols={backtestSymbols}
                     favorites={favorites}
                     onToggleFavorite={onToggleFavorite}
+                    priceFlash={priceFlash}
                     timeframe={tf}
                     folds={folds}
                   />

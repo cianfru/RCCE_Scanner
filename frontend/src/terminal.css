@@ -235,6 +235,7 @@
 
 /* Feed status line (DataStatus): flat text, 6px dot, underlined Retry. */
 .data-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:4px 0 12px;font:12px/1.5 var(--font-geist-sans),sans-serif;}
+.data-status-dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;}
 
 /* Metal: accessibility. Static paint only, so reduced motion has nothing to stop. */
 @media (prefers-contrast:more){.reflex-terminal .terminal-header::before{display:none;}}
@@ -1578,6 +1579,7 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .pf-connect{max-width:640px;margin-left:auto!important;margin-right:auto!important;}
 /* Failed feeds: one line under the account card's header, one Retry for all. */
 .pf-feeds{padding:10px 20px;border-bottom:1px solid var(--t-border);font:13px/1.5 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.pf-feeds .data-status-dot{display:inline-block;margin-right:8px;vertical-align:1px;}
 .pf-feeds .pf-feeds-names{color:var(--t-text3);}
 .pf-feeds .te-link{font-size:13px;margin-left:10px;white-space:nowrap;}
 @media(max-width:767px){.pf-feeds{padding:10px 16px;}.pf-feeds .pf-feeds-names{display:none;}}

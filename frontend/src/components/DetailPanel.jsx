@@ -159,6 +159,7 @@ function TradeForm({ selected, api, isMobile }) {
           display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
           fontSize: 9, fontFamily: T.mono, color: T.text4,
         }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399" }} />
           {address.slice(0, 6)}...{address.slice(-4)}
         </div>
       )}

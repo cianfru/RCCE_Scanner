@@ -248,9 +248,15 @@ export default function SettingsForm() {
             const label = isActive ? "ACTIVE" : "IDLE";
             return (
               <span style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
                 fontSize: T.textXs, fontFamily: T.mono, fontWeight: 700,
                 letterSpacing: "0.06em", color,
               }}>
+                <span style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: color,
+                  boxShadow: isActive ? `0 0 6px ${color}` : "none",
+                }} />
                 {label}
               </span>
             );

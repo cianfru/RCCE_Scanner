@@ -216,6 +216,9 @@ export default function App() {
   const [sectorFilter, setSectorFilter] = useState(() => initialQuery.get("sector"));
   const [lastRefresh, setLastRefresh] = useState(null);
 
+  // Price flash: symbol → "up" | "down" (cleared after 1.2s)
+  const [priceFlash, setPriceFlash] = useState(new Map());
+  const prevPricesRef = useRef(new Map());
 
   // TradFi (HIP-3) data
   const [dataTradfi4h, setDataTradfi4h] = useState([]);
@@ -355,10 +358,20 @@ export default function App() {
     if (result_1d) setData1d((prev) => merge(prev, result_1d));
   }, [wsRef.connected, wsRef.symbolUpdate]);
 
-  // Sub-second price ticks: patch the price in place (no colour flash on a tick).
+  // Sub-second price ticks — patch price + compute flash direction
   useEffect(() => {
     if (!wsRef.priceTicks) return;
     const ticks = wsRef.priceTicks; // {symbol: price, ...}
+    const prev = prevPricesRef.current;
+    const flashes = new Map();
+
+    for (const [sym, price] of Object.entries(ticks)) {
+      const old = prev.get(sym);
+      if (old !== undefined && price !== old) {
+        flashes.set(sym, price > old ? "up" : "down");
+      }
+      prev.set(sym, price);
+    }
 
     const patchPrices = (prevData) => {
       let changed = false;
@@ -375,6 +388,12 @@ export default function App() {
 
     setData4h(patchPrices);
     setData1d(patchPrices);
+
+    if (flashes.size > 0) {
+      setPriceFlash(flashes);
+      // Clear flashes after animation completes
+      setTimeout(() => setPriceFlash(new Map()), 1200);
+    }
   }, [wsRef.priceTicks]);
 
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
@@ -734,6 +753,9 @@ export default function App() {
         ::-webkit-scrollbar-thumb:hover { background: var(--t-scrollHover); }
         tr:hover td:not(.scanner-symbol) { background: transparent !important; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @keyframes glow { 0%,100%{box-shadow: 0 0 12px rgba(151,252,228,0.12);} 50%{box-shadow: 0 0 24px rgba(151,252,228,0.25);} }
+        @keyframes orbBreathe { 0%,100%{opacity:0.6;transform:scale(1)} 50%{opacity:0.9;transform:scale(1.08)} }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         .fade-in-up { animation: fadeInUp 0.4s ease-out both; }
@@ -807,12 +829,12 @@ export default function App() {
         <div style={{
           position: "absolute", top: "-10%", left: "15%", width: 600, height: 600,
           borderRadius: "50%", background: "radial-gradient(circle, rgba(151,252,228,0.07) 0%, transparent 70%)",
-          filter: "blur(80px)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite",
         }} />
         <div style={{
           position: "absolute", bottom: "10%", left: "30%", width: 450, height: 450,
           borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,0.04) 0%, transparent 70%)",
-          filter: "blur(80px)",
+          filter: "blur(80px)", animation: "orbBreathe 10s ease-in-out infinite 6s",
         }} />
       </div>
 
@@ -847,7 +869,7 @@ export default function App() {
           setFilterRegime("ALL"); setFilterSignal("ALL"); setStatCardFilter(null);
           setSectorFilter(null); setSearchTerm(""); setSortKey(DEFAULT_SORT); setSortDir(null);
         }}
-        lastRefresh={lastRefresh} cacheAge={cacheAge} error={error}
+        lastRefresh={lastRefresh} cacheAge={cacheAge} error={error} scanRunning={scanRunning}
         timeframe={activeTab === "radar" ? radarTf : activeTab === "4h" ? "4h" : "1d"}
         onTimeframe={setHeaderTimeframe}
         compactTfRoute={showDashboard ? "scanner" : activeTab === "radar" ? "radar" : null}
@@ -932,7 +954,7 @@ export default function App() {
                 <DataTable variant="scanner" tf={activeTab} results={activeTab === "4h" ? display4h : display1d} label={null}
                   sortKey={sortKey} sortDir={activeDir} onSort={onSort} selected={selected} onSelect={handleSelectCoin}
                   visibleColumns={COLUMNS} isMobile={isMobile} backtestSymbols={backtestSymbols} loading={loading}
-                  favorites={favorites} onToggleFavorite={toggleFavorite}
+                  favorites={favorites} onToggleFavorite={toggleFavorite} priceFlash={priceFlash}
                   totalCount={tfScopeRows.length} scopeLabel={scopeLabel} filterWords={filterWords} onClear={clearGridFilters} />
               </FadeIn>
             )}
