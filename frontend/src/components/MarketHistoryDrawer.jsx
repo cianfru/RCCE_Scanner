@@ -4,6 +4,8 @@ import Tabs from "./Tabs.jsx";
 import HelpTip from "./HelpTip.jsx";
 import MarketHistoryChart, { useWidth } from "./MarketHistoryChart.jsx";
 import { T } from "../theme.js";
+import AsOf from "./AsOf.jsx";
+import { apiFetch } from "../edge.js";
 import { COPY, RANGES, bandHead, bandOn, bandShort, breadthContext, dayDate, episodesOf, fearGreedByDay, fgSplit,
          inRange, monthYear, pctLabel, percentileOf, rowsOf, runsMarks, signedPct, stripCounts, stripScale, todayValues,
          yearOf } from "../utils/marketHistory.js";
@@ -13,7 +15,7 @@ let cached = null;                                   // { at, promise }: one fet
 
 function loadHistory() {
   if (!cached || Date.now() - cached.at > 3_600_000) {
-    cached = { at: Date.now(), promise: fetch(`${API_BASE}/api/market-history`).then(r => (r.ok ? r.json() : null)).catch(() => null) };
+    cached = { at: Date.now(), promise: apiFetch("/api/market-history").then(r => (r.ok ? r.json() : null)).catch(() => null) };
   }
   return cached.promise;
 }
@@ -338,6 +340,7 @@ export default function MarketHistoryDrawer({ tab, onTab, onClose }) {
     <aside className="mh-drawer" role="dialog" aria-modal="true" aria-labelledby="mh-title">
       <header className="mh-head">
         <h2 id="mh-title">{COPY.title}</h2>
+        <AsOf data={data} style={{ marginLeft: 8 }} />
         <button ref={closeRef} type="button" className="mh-close" onClick={onClose}>{COPY.close}</button>
       </header>
       <Tabs label="History" value={tab} onChange={onTab} items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />

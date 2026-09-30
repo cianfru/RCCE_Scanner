@@ -226,6 +226,18 @@ class HubAudienceTests(unittest.TestCase):
         asyncio.run(self.hub.push_signal_transition([{"symbol": "BTC/USDT"}]))
         self.assertEqual(self.types(self.hidden), ["signal-transition"])
 
+    def test_transitions_are_compact_for_current_pages(self):
+        full = dict(_row(), transition_type="ENTRY", context="x" * 5000, cto_shadow={"a": "b" * 5000})
+        asyncio.run(self.hub.push_signal_transition([full]))
+        for ws in (self.v2, self.hidden):
+            self.assertEqual(len(ws.sent), 1)
+            t = ws.sent[0]["data"][0]
+            self.assertEqual(t["symbol"], "BTC/USDT")
+            self.assertEqual(t["transition_type"], "ENTRY")
+            self.assertNotIn("context", t)
+            self.assertNotIn("cto_shadow", t)
+        self.assertEqual(self.v1.sent[0]["data"][0]["context"], "x" * 5000)
+
     def test_ws_bytes_are_counted(self):
         asyncio.run(self.hub.broadcast({"type": "price-tick", "data": {"A": 1}}, audience="active"))
         snap = egress.snapshot()

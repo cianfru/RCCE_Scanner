@@ -2,6 +2,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { createKeyedCache } from "../utils/keyedCache.js";
 import { WATCH_MESSAGES, watchReason } from "../utils/setupMap.js";
 import { usesAccount } from "../account.js";
+import { apiJson } from "../edge.js";
 
 export { WATCH_MESSAGES };
 
@@ -21,7 +22,12 @@ const getJson = url => fetch(url).then(r => {
 // Watch toggle read the same setup map per timeframe (one GET per five minutes while
 // something shows it and the page is visible) and the same watch list.
 export const setupMapStore = {
-  byTf: createKeyedCache({ fetcher: tf => getJson(`${API_BASE}/api/setup-map?tf=${tf}`), ttl: TTL_MS, refresh: true }),
+  // Signed-in readers go direct: with access tiers on, their map depends on their session,
+  // so it must not come from the shared edge copy.
+  byTf: createKeyedCache({
+    fetcher: tf => usesAccount() ? getJson(`${API_BASE}/api/setup-map?tf=${tf}`) : apiJson(`/api/setup-map?tf=${tf}`),
+    ttl: TTL_MS, refresh: true,
+  }),
   watch: createKeyedCache({ fetcher: () => getJson(watchBase()), ttl: TTL_MS, refresh: true }),
 };
 

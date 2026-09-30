@@ -62,6 +62,15 @@ def _count(event: Dict[str, Any], payload: str, recipients: int) -> None:
         pass
 
 
+# What a protocol-2 page needs from a signal transition (the rest is on the scan row).
+_TRANSITION_KEYS = ("symbol", "timeframe", "signal", "transition_type", "regime", "price",
+                    "zscore", "heat", "conditions_met", "conditions_total")
+
+
+def compact_transition(t: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: t[k] for k in _TRANSITION_KEYS if k in t}
+
+
 class WebSocketHub:
     """Singleton manager for WebSocket connections + event broadcasting."""
 
@@ -136,6 +145,8 @@ class WebSocketHub:
                 out.append(ws)
             elif audience == "active_v2" and meta["v"] == 2 and not meta["paused"]:
                 out.append(ws)
+            elif audience == "v2" and meta["v"] == 2:
+                out.append(ws)
         return out
 
     # ── Broadcasting ──────────────────────────────────────────────────────
@@ -143,8 +154,8 @@ class WebSocketHub:
     async def broadcast(self, event: Dict[str, Any], audience: str = "all") -> None:
         """Send event to clients. Silently drops dead connections.
 
-        audience: "all", "active" (tab visible), "legacy" (protocol 1) or
-        "active_v2" (protocol 2 with the tab visible).
+        audience: "all", "active" (tab visible), "legacy" (protocol 1), "v2"
+        (protocol 2) or "active_v2" (protocol 2 with the tab visible).
         """
         targets = self._audience(audience)
         if not targets:
@@ -202,14 +213,18 @@ class WebSocketHub:
         await self.push_scan_updated((meta or {}).get("timestamp"))
 
     async def push_signal_transition(self, transitions: List[Dict]) -> None:
-        """Broadcast signal transitions (ENTRY, EXIT, TRIM, regime change)."""
+        """Broadcast signal transitions (ENTRY, EXIT, TRIM, regime change).
+
+        Protocol-2 pages get each transition's headline fields only (full scan rows
+        were ~40 KB each, to every tab, hidden ones included); older pages keep the
+        full rows.
+        """
         if not transitions:
             return
-        await self.broadcast({
-            "type": "signal-transition",
-            "data": transitions,
-            "ts": time.time(),
-        })
+        now = time.time()
+        await self.broadcast({"type": "signal-transition", "data": transitions, "ts": now}, audience="legacy")
+        await self.broadcast({"type": "signal-transition", "data": [compact_transition(t) for t in transitions],
+                              "ts": now}, audience="v2")
 
     async def push_anomaly(self, anomalies: list) -> None:
         """Broadcast new market anomalies."""

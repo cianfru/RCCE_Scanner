@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import useHistoryDot, { noteHistoryOpened } from "../hooks/useHistoryDot.js";
 import { sparkGeometry } from "../utils/marketSpark.js";
 import "./SparkHistoryButton.css";
+import { apiFetch } from "../edge.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const HOUR = 3_600_000;
@@ -10,7 +11,7 @@ let cached = null;                                   // { at, promise }: one fet
 
 function loadSpark() {
   if (!cached || Date.now() - cached.at >= HOUR) {
-    cached = { at: Date.now(), promise: fetch(`${API_BASE}/api/market-history/spark`).then(r => (r.ok ? r.json() : null)).catch(() => null) };
+    cached = { at: Date.now(), promise: apiFetch("/api/market-history/spark").then(r => (r.ok ? r.json() : null)).catch(() => null) };
   }
   return cached.promise;
 }
