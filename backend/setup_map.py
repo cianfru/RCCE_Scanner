@@ -10,9 +10,10 @@ traders per coin. Nothing here calls an outside API.
 
 Trader counts take wallets that trade as one (hl_entities) once; dollars are summed.
 
-Each coin also carries the profitable cohort's dollars in it (``money``) and its own weekly
-bull market support band from the stored daily candles (``band``); ``ladder`` lists that
-cohort's positions in one coin for the Radar's price ladder.
+Each coin also carries the profitable cohort's dollars in it (``money``), its own weekly
+bull market support band from the stored daily candles (``band``) and where price sits against
+the profitable traders' dollar-weighted average long entry (``entry``: the entry zone);
+``ladder`` lists that cohort's positions in one coin for the Radar's price ladder.
 """
 from __future__ import annotations
 
@@ -237,16 +238,35 @@ def weekly_band(ohlcv: Optional[dict], price: Optional[float], now: float) -> Op
             "week": (days[-1] + 1) * 86400, **band_state(lo, hi, wc, price)}
 
 
+# ------------------------------------------------------------------ entry zone
+# Declared in docs/reviews/radar-forward-test.md (H2 uses the same rule): at least ENTRY_MIN_TRADERS
+# profitable traders long (lockstep entities once) and price within ENTRY_BAND of their dollar-weighted
+# average long entry.
+ENTRY_MIN_TRADERS = 3
+ENTRY_BAND = 0.03
+
+
+def entry(n_long: int, avg_long_entry: Optional[float], price: Optional[float]) -> Optional[dict]:
+    """Price against the profitable traders' dollar-weighted average long entry (positioning_map's
+    ``avg_entry``, over the traders counted long). None when nobody is long or there is no price."""
+    if not avg_long_entry or avg_long_entry <= 0 or not price or price <= 0 or n_long <= 0:
+        return None
+    d = price / avg_long_entry - 1
+    return {"avg_long_entry": sig(avg_long_entry), "dist_pct": round(100 * d, 2),
+            "in_zone": n_long >= ENTRY_MIN_TRADERS and abs(d) <= ENTRY_BAND + 1e-12}
+
+
 def ladder(item: dict, positions: List[dict], mean: Optional[float], now: float) -> dict:
     """One coin's profitable wallets at their entry prices, for the Radar's price ladder: each position
     (hl_intelligence.cohort_positions), counts and dollars per side, the median entry per side, the
-    engine's mean (the price at z = 0) and the coin's weekly band from the map."""
+    engine's mean (the price at z = 0), and the coin's weekly band and entry zone from the map."""
     import statistics
     sides = {s: [p for p in positions if p["side"] == s] for s in ("long", "short")}
     med = {s: sig(statistics.median(p["entry"] for p in xs)) if xs else None for s, xs in sides.items()}
     traders = {s: len({p.get("entity") or p["address"] for p in xs}) for s, xs in sides.items()}
     return {"coin": item["coin"], "symbol": item["symbol"], "price": item.get("price"), "stage": item.get("stage"),
-            "zscore": item.get("zscore"), "updated_at": now, "band": item.get("band"), "mean": sig(mean),
+            "zscore": item.get("zscore"), "updated_at": now, "band": item.get("band"), "entry": item.get("entry"),
+            "mean": sig(mean),
             "counts": {"long": traders["long"], "short": traders["short"],
                        "long_wallets": len(sides["long"]), "short_wallets": len(sides["short"]),
                        "long_usd": sum(p["size_usd"] for p in sides["long"]),
@@ -280,6 +300,7 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
             "sparkline": [round(v, 8) for v in (r.get("sparkline") or [])] if st != "waiting" else [],
             "stage": st, "zone": zone(st, z, net), "crowd": crowd(r.get("signal") not in ("LIGHT_SHORT", "STRONG_SHORT"), t, r.get("price")),
             "traders": t, "money": money(prof.get(coin)),
+            "entry": entry(t["pl"], ((prof.get(coin) or {}).get("long") or {}).get("avg_entry"), r.get("price")),
         }
         try:
             item["band"] = weekly_band(store.get(r["symbol"], "1d") if store else None, r.get("price"), now)

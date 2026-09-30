@@ -222,6 +222,11 @@ async def lifespan(app: FastAPI):
         from telegram_bot import get_telegram_bot
         bot = get_telegram_bot()
         await bot.start()
+        if bot.app is not None:
+            # The daily brief (tg_brief): 08:00 Europe/Rome by default, the Radar from memory
+            import tg_brief
+            tg_brief.set_map_provider(_setup_map_cached)
+            asyncio.create_task(tg_brief.run_scheduler())
     except Exception as e:
         logger.warning("Telegram bot init failed (non-fatal): %s", e)
 
@@ -288,6 +293,12 @@ async def lifespan(app: FastAPI):
 
     # Start WebSocket heartbeat (keeps Railway proxy from dropping idle connections)
     asyncio.create_task(run_setup_watch())
+    # The Radar's forward record: one 1D reading per coin per daily close (docs/reviews/radar-forward-test.md)
+    try:
+        import radar_log
+        asyncio.create_task(radar_log.run(lambda: _setup_map_build("1d"), _radar_day_ago, _radar_candles))
+    except Exception as e:
+        logger.warning("Radar log init failed (non-fatal): %s", e)
     asyncio.create_task(WebSocketHub.get().run_heartbeat())
 
     # Start Binance price ticker relay (sub-second price updates)
@@ -4440,8 +4451,9 @@ async def setup_map_watched():
 
 @app.post("/api/setup-map/watch")
 async def setup_map_watch(body: dict):
-    """Watch a coin: Telegram alerts when it enters or leaves the box, confirms Uptrend,
-    turns crowded or gets an exit signal. Body: {coin, tf}. Needs the admin key once set."""
+    """Watch a coin: Telegram alerts when it enters Early setups or the entry zone or gets an
+    exit signal (tg_alerts), and a line in the daily brief when anything changed. Body: {coin, tf}.
+    Needs the admin key once set."""
     import setup_map
     from hl_intelligence import _normalize_coin
     coin = _normalize_coin(str(body.get("coin", "")).strip().upper())
@@ -4488,19 +4500,71 @@ async def setup_map_mine(address: Optional[str] = Query(None, pattern="^0x[0-9a-
     return {"source": "executor", "positions": out}
 
 
-async def run_setup_watch(interval: int = 300):
-    """Every five minutes, while any coin is watched: compare with its last reading and
-    send what changed to Telegram."""
+def _radar_day_ago(smap: dict, now: float) -> dict:
+    """Profitable traders long and short per coin about 24 hours before now (setup_map.day_ago)."""
     import setup_map
-    import followed_traders as ft
+    from hl_persistence import load_trader_lean
+    lean: dict = {}
+    for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600):
+        lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
+    return setup_map.day_ago(lean, [c["coin"] for c in smap.get("coins") or []], now)
+
+
+def _radar_candles(symbol: str):
+    from data_fetcher import _ohlcv_store
+    return _ohlcv_store.get(symbol, "1d")
+
+
+_RADAR_FT_CACHE: dict = {}
+
+
+def _radar_forward_status() -> dict:
+    """The forward test so far: logged readings scored with the declared rules (research/radar_forward.py);
+    closes the log misses come from the stored daily candles."""
+    import radar_log
+    import setup_map
+    from research import radar_forward
+    rows = radar_log.load(radar_log.conn())
+    now = time.time()
+    symbols = {}
+    for c in (_SETUP_MAP_CACHE.get("1d") or (0, {}))[1].get("coins", []):
+        symbols[c["coin"]] = c["symbol"]
+    candles = {}
+    for coin in {r["coin"] for r in rows}:
+        sym = symbols.get(coin) or f"{coin}/USDT"
+        ts, cs = setup_map.closes(_radar_candles(sym), "1d", now)
+        if ts:
+            candles[coin] = dict(zip(ts, cs))
+    return radar_forward.status(radar_forward.report(rows, candles, now))
+
+
+@app.get("/api/radar/forward-test")
+async def radar_forward_test():
+    """Status of the declared Radar forward test: days logged, events per hypothesis, verdict so far
+    ("too few" under the minimum). Read-only; cached for ten minutes."""
+    hit = _RADAR_FT_CACHE.get("s")
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    body = await asyncio.to_thread(_radar_forward_status)
+    _RADAR_FT_CACHE["s"] = (time.time(), body)
+    return body
+
+
+async def run_setup_watch(interval: int = 300):
+    """Every five minutes, while any coin is watched: compare with its last reading and send
+    what matters through the Telegram alert gate (tg_alerts.check_watched: entered Early
+    setups, entered the entry zone, exit signal; once per coin and kind a day). setup_map.check
+    still runs to keep the watch list's own last reading; its texts are not sent."""
+    import setup_map
+    import tg_alerts
     await asyncio.sleep(120)
     while True:
         try:
             tfs = {w["tf"] for w in setup_map.watched().values()}
             if tfs:
                 maps = {tf: await _setup_map_cached(tf) for tf in tfs}
-                for text in setup_map.check(maps):
-                    await ft._send(text)
+                await tg_alerts.check_watched(maps)
+                setup_map.check(maps)
         except Exception as exc:
             logger.warning("setup watch: %s", exc)
         await asyncio.sleep(interval)

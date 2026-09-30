@@ -11,7 +11,7 @@ import { useWallet } from "../WalletContext.jsx";
 import { timeframeFrom } from "../utils/researchNavigation.js";
 import { altBaseline, groupStats, inGroup, SECTOR_SHORT } from "../utils/sectors.js";
 import { fmtIn, nextCloses } from "../utils/intel.js";
-import { isAddress, newEarly, picks, visible, watchToast } from "../utils/setupMap.js";
+import { SIDES, forwardLine, isAddress, mostShorted, newEarly, picks, sideOf, visible, watchToast } from "../utils/setupMap.js";
 import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
@@ -117,6 +117,20 @@ function ViewPicker({ showAll, onView, mineOn, onMine }) {
   </>;
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+// The declared forward test's status, one quiet line; read when the (i) opens (it mounts only then).
+function ForwardLine() {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`${API_BASE}/api/radar/forward-test`).then(r => (r.ok ? r.json() : null)).then(j => { if (live) setSt(j); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const text = forwardLine(st);
+  return text ? <p className="radar-ft">{text}</p> : null;
+}
+
 // The (i) beside the title: what the Radar is, why it exists, how to read it and what to take
 // from it, in plain words. Opens on a click or tap; Escape or a tap outside closes it.
 function RadarAbout() {
@@ -137,9 +151,12 @@ function RadarAbout() {
       <li><b>Early setups box:</b> not yet stretched, with a few profitable traders already in.</li>
       <li><b>Top right:</b> stretched and crowded (many traders already in), so late.</li>
       <li><b>Ring:</b> empty when price is far above the band, full at the band, violet inside it, red when the last weekly close ended under it.</li>
+      <li><b>Dashed ring:</b> price is within 3% of where profitable traders entered on average — buying near where they bought, not after them.</li>
+      <li><b>Long · Short · Both:</b> Short shows where profitable traders are net short, sized by the dollars short, with stretched coins they short boxed top right; Both splits each bubble into dollars long and short.</li>
     </ul>
     <h4>What you can take from it</h4>
     <p>A shortlist to research, not a trade signal. Click a bubble to see who holds it and at what price, then click a trader to open their profile. Replay shows how the coins moved over recent closes.</p>
+    <ForwardLine />
     </div>
   </HelpTip>;
 }
@@ -181,6 +198,9 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const results = useMemo(() => (sector ? perps.filter(r => inGroup(r, by, sector)) : perps), [perps, sector, by]);
 
   const [mineOn, setMineOn] = useState(() => store.get("smap-mine") === "1");
+  // Long · Short · Both: what the map draws, remembered per viewer (the forward test logs Long either way).
+  const [side, setSide] = useState(() => sideOf(store.get("radar-side")));
+  const pickSide = k => { const v = sideOf(k); setSide(v); store.set("radar-side", v); };
   const [addressDraft, setAddressDraft] = useState("");
   const [detail, setDetail] = useState(null);
   const [msg, setMsg] = useState("");
@@ -193,10 +213,11 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const coins = useMemo(() => (data?.coins || []).filter(c => allowed.has(c.symbol)), [data, allowed]);
   const box = data?.box || { z: [-0.5, 1.5], n: [1, 8] };
   const keep = useMemo(() => new Set([...watched, ...mineBy.keys(), ...(focus ? [focus] : [])]), [watched, mineBy, focus]);
-  const pts = useMemo(() => visible(coins, { all: showAll, keep }), [coins, showAll, keep]);
+  const pts = useMemo(() => visible(coins, { all: showAll, keep, side }), [coins, showAll, keep, side]);
   const top = useMemo(() => picks(coins, box), [coins, box]);
   const inBoxN = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
   const fresh = useMemo(() => newEarly(coins, box, Infinity), [coins, box]);
+  const shorted = useMemo(() => (side === "short" ? mostShorted(coins, 6) : []), [coins, side]);
   const moneyOn = useMemo(() => moneyMode(coins), [coins]);
   const byCoin = useMemo(() => new Map(coins.map(c => [c.coin, c])), [coins]);
   const focusC = focus ? byCoin.get(focus) || null : null;
@@ -248,7 +269,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const cardH = mapH + 52 + 2;
   const focusSlot = !phone && focusC
     ? <>
-      <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} cardHeight={width >= 1200 ? Math.max(420, cardH - 88) : null} plotHeight={440} stack={stack} onPick={setFocus} />
+      <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} cardHeight={width >= 1200 ? Math.max(420, cardH - 88) : null} plotHeight={440} stack={stack} onPick={setFocus} side={side} />
       <LadderWallets c={focusC} tf={tf} />
       <section className="smap-focus radar-focus" aria-labelledby="radar-focus-h"><FocusBody {...focusProps} withLadder titleId="radar-focus-h" /></section>
     </>
@@ -278,6 +299,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
         <div className="radar-head-left">
           <span className="radar-title"><PageTitle>Radar</PageTitle><RadarAbout /></span>
           <Tabs small label="Timeframe" items={TF_ITEMS} value={tf} onChange={k => setParams({ tf: k }, true)} />
+          <Tabs small label="Traders' side" items={SIDES} value={side} onChange={pickSide} />
           <NextClose tf={tf} />
           {sector && <span className="radar-meta radar-sector-line">{groupLabel(sector)} · <button type="button" className="te-link" onClick={() => setParams({ sector: null, by: null })}>Show all</button></span>}
         </div>
@@ -296,14 +318,14 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
 
       <div className="radar-main" ref={mainRef}>
         <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
-          mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} />
+          mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} side={side} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          fresh={fresh} box={box} focus={focusC ? focus : null} onPick={pick} />
+          fresh={fresh} shorted={side === "short" ? shorted : null} box={box} focus={focusC ? focus : null} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">
         {sheetProps.current && <FocusBody {...sheetProps.current} withLadder titleId="radar-sheet-h">
-          {focusC && <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} compact plotHeight={380} stack={stack} onPick={setFocus} />}
+          {focusC && <RadarLadder c={focusC} tf={tf} mark={focusIntel?.mark} compact plotHeight={380} stack={stack} onPick={setFocus} side={side} />}
           {focusC && <LadderWallets c={focusC} tf={tf} />}
         </FocusBody>}
       </RadarSheet>}

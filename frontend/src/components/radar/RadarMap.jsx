@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { STAGES, at, labelBox, labelOrder, placeLabels, symlog, trailPoints } from "../../utils/setupMap.js";
-import { bandInfo, bubbleRadius, candidates, countRadius, fmtUsd, grossOf, haloRing, hasMoney, legendSizes, maxMoney, rmaxFor, shortSlice, stepPick } from "../../utils/radarDepth.js";
+import { SHORT_ZONE_N, SHORT_ZONE_Z, STAGES, at, inShortZone, labelBox, labelOrder, netFor, placeLabels, sideTrail, symlog } from "../../utils/setupMap.js";
+import { bandInfo, bubbleRadius, candidates, countRadius, entryRing, fmtUsd, grossOf, haloRing, inEntryZone, legendSizes, maxMoney, rmaxFor, shortSlice, sidePie, sizeFor, stepPick } from "../../utils/radarDepth.js";
 import { Pin, RM, XS, sc, stageColor, stepLabel } from "./shared.jsx";
 import HelpTip from "../HelpTip.jsx";
 
 const TONE = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "var(--rd-halo)" };
-const net = c => (c.traders?.pl || 0) - (c.traders?.ps || 0);
+const SIDE_FILL = { long: "var(--rd-long)", short: "var(--rd-short)" };
+// Up-axis ticks: Long as before; Short mirrors them, since most coins sit net long (below 0 there).
+const Y_TICKS = { long: [-3, 0, 1, 3, 8, 20, 50], short: [-50, -20, -8, -3, 0, 1, 3, 8, 20, 50] };
+const Y_CAPTION = { long: "More profitable traders long", short: "More profitable traders short", both: "More profitable traders long" };
+
+// The Both view's key: a bubble in the long colour with a short wedge.
+function PieKey() {
+  return <svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="var(--rd-long)" fillOpacity=".8" /><path d="M7,7 L7,1 A6,6 0 0 1 12.7,5.1 Z" fill="var(--rd-short)" fillOpacity=".9" /></svg>;
+}
+
+// The entry zone's dashed ring for the legend, around a small bubble.
+function EntryKey() {
+  return <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+    <circle cx="9" cy="9" r="4.5" fill={stageColor("running")} />
+    <circle cx="9" cy="9" r="7.6" fill="none" stroke="var(--rd-long)" strokeWidth="1.1" strokeDasharray="2.4 1.6" />
+  </svg>;
+}
 
 // A small ring for the legend: fill share f of the band halo, in a colour, with the red tick.
 function Ring({ f = 0, color, tick }) {
@@ -20,11 +36,16 @@ function Ring({ f = 0, color, tick }) {
 // The Radar's map: every coin placed by stretch (the engine's z-score) and profitable-trader
 // lean, with trails of the last closes and a playable timeline. Bubble area is the dollars the
 // profitable wallets hold in the coin (a pink slice for the short share; a small grey dot when
-// none hold it), and a ring tracks the distance to the coin's weekly band. Drawn by React,
+// none hold it), and a ring tracks the distance to the coin's weekly band; a thin dashed ring
+// outside it marks the entry zone (price within 3% of the profitable traders' average long
+// entry; shown at "now" only, like the band ring). Drawn by React,
 // moved imperatively while playing (behind Replay). The key sits behind an (i). A click picks the nearest centre and steps through coins
 // stacked at one spot. Labels: the coins with the most money, placed without collisions at rest
 // and again at each close the timeline passes; between two closes every label keeps its side.
-export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, watched, mineBy, mineOn, keep, onPick, onRest, moneyOn = true }) {
+// side: "long" (as above), "short" (up is profitable traders net short, bubble area the dollars
+// short, no slice or entry ring, and the Stretched and shorted zone top right in place of the
+// Early setups box) or "both" (placed as long, each bubble a pie of dollars long and short).
+export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, watched, mineBy, mineOn, keep, onPick, onRest, moneyOn = true, side = "long" }) {
   const host = useRef(null), svgRef = useRef(null), scrub = useRef(null), when = useRef(null), tipRef = useRef(null);
   const [W, setW] = useState(800);
   useEffect(() => {
@@ -35,12 +56,15 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     return () => ro.disconnect();
   }, []);
   const small = W < 600, H = height, L = 40, R = 14, T = 16, B = 40;
-  const trails = useMemo(() => new Map(pts.map(c => [c.coin, trailPoints(c)])), [pts]);
+  const shortView = side === "short", both = side === "both";
+  const net = useCallback(c => netFor(c, side), [side]);
+  const trails = useMemo(() => new Map(pts.map(c => [c.coin, sideTrail(c, side)])), [pts, side]);
   const steps = useMemo(() => { const any = pts.find(c => c.trail?.t?.length); return any ? any.trail.t : [Date.now() / 1000]; }, [pts]);
   const last = steps.length - 1;
   const nets = pts.flatMap(c => (trails.get(c.coin) || [{ n: net(c) }]).map(p => p.n));
   // A little headroom on top for the largest bubbles.
-  const ys = [symlog(Math.min(-4, ...nets)), symlog(Math.max(25, ...nets)) + (moneyOn ? 0.06 : 0)];
+  // Short: most coins sit net long (below 0), so the top starts lower, keeping its zone in scale.
+  const ys = [symlog(Math.min(-4, ...nets)), symlog(Math.max(shortView ? 10 : 25, ...nets)) + (moneyOn ? 0.06 : 0)];
   const X = useCallback(v => L + ((Math.max(XS[0], Math.min(XS[1], v)) - XS[0]) / (XS[1] - XS[0])) * (W - L - R), [W]);
   const Y = useCallback(v => T + (1 - (symlog(v) - ys[0]) / (ys[1] - ys[0])) * (H - T - B), [H, ys[0], ys[1]]);
   const u = useRef(last);
@@ -48,39 +72,47 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
   const fmtStep = t => stepLabel(t, tf);
 
   // Sizes and rings: one money scale for the map and its key.
-  const G = useMemo(() => maxMoney(pts), [pts]);
+  // Short: sized by the dollars short (a coin nobody shorts is the grey dot); Long and Both: all dollars.
+  const sizeOf = useMemo(() => sizeFor(side), [side]);
+  const G = useMemo(() => maxMoney(pts, sizeOf), [pts, sizeOf]);
   const rmax = rmaxFor(W);
   const geo = useMemo(() => new Map(pts.map(c => {
-    const r = moneyOn ? bubbleRadius(c, G, rmax) : countRadius(c);
-    const empty = moneyOn && !hasMoney(c);
+    const r = moneyOn ? bubbleRadius(c, G, rmax, sizeOf) : countRadius(c);
+    const empty = moneyOn && !(sizeOf(c) > 0);
     const bi = moneyOn && !empty ? bandInfo(c.band, c.price) : null;
     const ring = bi ? haloRing(r, bi) : null;
-    return [c.coin, { r, empty, bi, ring, outer: ring ? Math.max(r, ring.outer) : r, slice: moneyOn && !empty ? shortSlice(r, c.money?.net_long_share) : null }];
-  })), [pts, G, rmax, moneyOn]);
+    const edge = ring ? Math.max(r, ring.outer) : r;
+    // The entry zone reads the long side's average entry: not drawn in Short.
+    const ez = moneyOn && !empty && !shortView ? entryRing(edge, inEntryZone(c)) : null;
+    const pie = moneyOn && !empty && both ? sidePie(r, c.money) : null;
+    const slice = moneyOn && !empty && side === "long" ? shortSlice(r, c.money?.net_long_share) : null;
+    return [c.coin, { r, empty, bi, ring, ez, outer: ez ? ez.outer : edge, slice, pie }];
+  })), [pts, G, rmax, moneyOn, sizeOf, side, shortView, both]);
 
-  const byMoney = useMemo(() => [...pts].filter(hasMoney).sort((a, b) => grossOf(b) - grossOf(a)), [pts]);
+  const byMoney = useMemo(() => [...pts].filter(c => sizeOf(c) > 0).sort((a, b) => sizeOf(b) - sizeOf(a)), [pts, sizeOf]);
   // At rest, trails show for the eight coins with the most money, the followed and the hovered
   // coin; while the timeline plays or is scrubbed, every trail shows.
   const trailed = useMemo(() => new Set(moneyOn ? byMoney.slice(0, 8).map(c => c.coin) : pts.map(c => c.coin)), [byMoney, pts, moneyOn]);
   const labelled = useMemo(() => {
-    if (moneyOn) return new Set([...byMoney.slice(0, small ? 4 : 12).map(c => c.coin), ...keep]);
+    // Short: the coins in the Stretched and shorted zone are named too, however small.
+    if (moneyOn) return new Set([...byMoney.slice(0, small ? 4 : 12).map(c => c.coin), ...(shortView ? pts.filter(inShortZone).map(c => c.coin) : []), ...keep]);
     const inBoxTop = pts.filter(c => c.zone === "watch").sort((a, b) => (b.priority || 0) - (a.priority || 0)).slice(0, small ? 4 : 8).map(c => c.coin);
     const big = pts.filter(c => c.zone !== "watch").sort((a, b) => Math.abs(net(b)) - Math.abs(net(a))).slice(0, small ? 2 : 5).map(c => c.coin);
     return new Set([...inBoxTop, ...big, ...keep]);
-  }, [pts, byMoney, keep, small, moneyOn]);
+  }, [pts, byMoney, keep, small, moneyOn, net, shortView]);
   // Always shown while the trails move (on their right when they had no room at the last placement).
   const pinned = useMemo(() => new Set([...(focus ? [focus] : []), ...watched, ...mineBy.keys()]), [focus, watched, mineBy]);
   const order = useMemo(() => {
     if (!moneyOn) return labelOrder(pts, { labelled, focus, watched, mine: new Set(mineBy.keys()) });
-    const rank = c => (c.coin === focus ? 0 : watched.has(c.coin) ? 1 : mineBy.has(c.coin) ? 2 : 3);
-    return pts.filter(c => c.coin === focus || labelled.has(c.coin)).sort((a, b) => rank(a) - rank(b) || grossOf(b) - grossOf(a) || a.coin.localeCompare(b.coin));
-  }, [pts, labelled, focus, watched, mineBy, moneyOn]);
+    const rank = c => (c.coin === focus ? 0 : watched.has(c.coin) ? 1 : mineBy.has(c.coin) ? 2 : shortView && inShortZone(c) ? 3 : 4);
+    return pts.filter(c => c.coin === focus || labelled.has(c.coin)).sort((a, b) => rank(a) - rank(b) || sizeOf(b) - sizeOf(a) || a.coin.localeCompare(b.coin));
+  }, [pts, labelled, focus, watched, mineBy, moneyOn, sizeOf, shortView]);
   // Drawing order: largest first, so a smaller bubble sits on a larger one (ETH over BTC); at
   // equal size, coins in the box on top. Following a coin never changes the order.
   const painted = useMemo(() => {
-    const lift = c => (c.zone === "watch" ? 1 : 0);
+    const lift = c => ((shortView ? inShortZone(c) : c.zone === "watch") ? 1 : 0);
     return [...pts].sort((a, b) => (geo.get(b.coin)?.r || 0) - (geo.get(a.coin)?.r || 0) || lift(a) - lift(b));
-  }, [pts, geo]);
+  }, [pts, geo, shortView]);
   const under = useMemo(() => { const k = new Map(painted.map((c, i) => [c.coin, i])); return (d, o) => (k.get(o.coin) ?? -1) < (k.get(d.coin) ?? -1); }, [painted]);
 
   // Dated marks on the followed coin's trail up to step t; newest first, so a later date
@@ -195,11 +227,11 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     if (place && rest) onRest?.(pos);
     if (scrub.current && +scrub.current.value !== t) scrub.current.value = t;
     if (when.current) when.current.textContent = rest ? "Now" : `${fmtStep(steps[Math.round(t)] - dt)} close`;
-  }, [byCoin, trails, geo, X, Y, last, steps, tf, layoutLabels, onRest]);
+  }, [byCoin, trails, geo, X, Y, last, steps, tf, layoutLabels, onRest, net]);
   useEffect(() => { u.current = last; }, [last, tf]);
   // A new dot set (sector, view, my trades, data) or size: the labels are placed afresh,
   // wherever the timeline stands.
-  useLayoutEffect(() => { setTime(Math.min(u.current, last), true); }, [setTime, last, pts, W, H]);
+  useLayoutEffect(() => { setTime(Math.min(u.current, last), true); }, [setTime, last, pts, W, H, side]);
   // Real text widths once the fonts are in.
   useEffect(() => { document.fonts?.ready?.then(() => setTime(u.current, true)).catch(() => {}); }, [setTime]);
 
@@ -253,7 +285,7 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
     if (s.coin !== focus) onPick(s.coin);
     if (!touch) setHover({ coin: s.coin, list: list.map(i => i.coin) });
   };
-  useEffect(() => { lastPick.current = null; }, [pts, W, H]);
+  useEffect(() => { lastPick.current = null; }, [pts, W, H, side]);
   // Keep the hover card beside its bubble, inside the map.
   useLayoutEffect(() => {
     const tip = tipRef.current, p = hover && posRef.current.get(hover.coin);
@@ -281,9 +313,11 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
           <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Coins by stretch and profitable-trader lean"
             className={hover ? "pick" : undefined} onPointerMove={onMove} onClick={onClick}>
             <rect x={X(box.z[1] + 0.5)} y={T} width={W - R - X(box.z[1] + 0.5)} height={H - B - T} className="smap-late" />
-            <rect x={X(box.z[0])} y={Y(box.n[1])} width={X(box.z[1]) - X(box.z[0])} height={Y(box.n[0]) - Y(box.n[1])} className="smap-box" />
+            {shortView
+              ? <rect x={X(SHORT_ZONE_Z)} y={T} width={W - R - X(SHORT_ZONE_Z)} height={Math.max(0, Y(SHORT_ZONE_N) - T)} className="smap-box smap-sbox" />
+              : <rect x={X(box.z[0])} y={Y(box.n[1])} width={X(box.z[1]) - X(box.z[0])} height={Y(box.n[0]) - Y(box.n[1])} className="smap-box" />}
             {[-2, -1, 0, 1, 2, 3].map(t => <g key={`x${t}`}><line className="smap-ax" x1={X(t)} x2={X(t)} y1={T} y2={H - B} opacity=".5" /><text className="smap-axt" x={X(t)} y={H - B + 14} textAnchor="middle">{t > 0 ? "+" : ""}{t}</text></g>)}
-            {[-3, 0, 1, 3, 8, 20, 50].filter(t => symlog(t) >= ys[0] && symlog(t) <= ys[1]).map(t => <g key={`y${t}`}><line className="smap-ax" x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} opacity={t === 0 ? 1 : 0.5} /><text className="smap-axt" x={L - 6} y={Y(t) + 4} textAnchor="end">{t > 0 ? "+" : ""}{t}</text></g>)}
+            {Y_TICKS[shortView ? "short" : "long"].filter(t => symlog(t) >= ys[0] && symlog(t) <= ys[1]).map(t => <g key={`y${t}`}><line className="smap-ax" x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} opacity={t === 0 ? 1 : 0.5} /><text className="smap-axt" x={L - 6} y={Y(t) + 4} textAnchor="end">{t > 0 ? "+" : ""}{t}</text></g>)}
             <g className="smap-focusmarks" />
             {painted.map(c => {
               const gm = geo.get(c.coin), r = gm.r, ring = gm.ring, on = focus === c.coin, big = r >= 12, col = gm.empty ? "var(--t-text3)" : sc(c);
@@ -298,7 +332,13 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
                     {ring.arc > 0 && <circle r={ring.hr} fill="none" stroke={TONE[gm.bi.tone]} strokeWidth={ring.sw} strokeDasharray={`${ring.arc.toFixed(2)} ${ring.C.toFixed(2)}`} transform="rotate(-90)" />}
                     {ring.tick && <line x1="0" x2="0" y1={-ring.hr - 3} y2={-ring.hr + 2.5} stroke="var(--rd-red)" strokeWidth="2" strokeLinecap="round" />}
                   </g>}
-                  <circle className="smap-core" r={r} fill={col} fillOpacity={gm.empty ? 0.55 : moneyOn && big ? 0.58 : 0.9} strokeWidth={big ? 1.5 : 1} />
+                  {gm.ez && <circle className="smap-halo smap-ez" r={gm.ez.r.toFixed(2)} fill="none" stroke="var(--rd-long)" strokeWidth={gm.ez.sw} strokeDasharray={gm.ez.dash} transform="rotate(-90)" />}
+                  {gm.pie
+                    ? <>
+                      <circle className="smap-core" r={r} fill={SIDE_FILL[gm.pie.base]} fillOpacity={big ? 0.62 : 0.9} strokeWidth={big ? 1.5 : 1} />
+                      {gm.pie.wedge && <path className="smap-slice" d={gm.pie.wedge} fill="var(--rd-short)" fillOpacity={big ? 0.72 : 0.95} />}
+                    </>
+                    : <circle className="smap-core" r={r} fill={col} fillOpacity={gm.empty ? 0.55 : moneyOn && big ? 0.58 : 0.9} strokeWidth={big ? 1.5 : 1} />}
                   {gm.slice && <path className="smap-slice" d={gm.slice} fill="var(--rd-short)" fillOpacity={big ? 0.55 : 0.85} />}
                   {on && <circle className="smap-sel" r={(gm.outer + 3.5).toFixed(2)} fill="none" />}
                   {mineBy.has(c.coin) && <rect className="smap-minebox" x={-gm.outer - 5} y={-gm.outer - 5} width={2 * gm.outer + 10} height={2 * gm.outer + 10} fill="none" stroke="var(--t-text1)" strokeWidth="1.4" strokeDasharray="3 2" />}
@@ -309,17 +349,22 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
             })}
             {/* The plot's own captions sit above the dots, cut out of them by a halo in the page colour. */}
             <g className="smap-captions" aria-hidden="true">
-              <text className="smap-zonet" x={X(box.z[0]) + 6} y={Y(box.n[1]) + 16}>Early setups</text>
+              {shortView
+                // Top right; on a phone one line lower, clear of the axis caption beside it.
+                ? <text className="smap-zonet smap-szonet" x={W - R - 6} y={small ? Math.max(T + 16, Math.min(T + 30, Y(SHORT_ZONE_N) - 6)) : T + 16} textAnchor="end">Stretched and shorted</text>
+                : <text className="smap-zonet" x={X(box.z[0]) + 6} y={Y(box.n[1]) + 16}>Early setups</text>}
               <text className="smap-regl smap-latet" x={W - R - 6} y={H - B - 8} textAnchor="end">Stretched</text>
               <text className="smap-axl" x={L} y={H - 6}>Near its mean</text><text className="smap-axl" x={W - R} y={H - 6} textAnchor="end">Stretched</text>
-              <text className="smap-axl" x={L + 4} y={T + 12}>More profitable traders long</text>
+              <text className="smap-axl" x={L + 4} y={T + 12}>{Y_CAPTION[side] || Y_CAPTION.long}</text>
             </g>
           </svg>}
         {hc && <div className="smap-tip" ref={tipRef} role="status">
           <div className="row"><b>{hc.coin}</b><span style={{ color: sc(hc), fontWeight: 600 }}>{(STAGES.find(s => s.key === hc.stage) || { name: "No setup" }).name}</span></div>
-          {moneyOn && <div className="row"><span>Held</span><span className="m">{fmtUsd(grossOf(hc))}{grossOf(hc) ? ` · ${Math.round(100 * (hc.money.net_long_share ?? 1))}% long` : ""}</span></div>}
+          {moneyOn && (shortView
+            ? <div className="row"><span>Short</span><span className="m">{fmtUsd(hc.money?.short_usd || 0)} of {fmtUsd(grossOf(hc))}</span></div>
+            : <div className="row"><span>Held</span><span className="m">{fmtUsd(grossOf(hc))}{grossOf(hc) ? ` · ${Math.round(100 * (hc.money.net_long_share ?? 1))}% long` : ""}</span></div>)}
           {moneyOn && <div className="row"><span>Band</span><span className="m" style={{ color: { red: "var(--rd-red)", violet: "var(--rd-inband)" }[bandInfo(hc.band, hc.price).tone] }}>{bandInfo(hc.band, hc.price).short}</span></div>}
-          <div className="row"><span>Wallets</span><span className="m">{hc.traders?.pl || 0} long · {hc.traders?.ps || 0} short</span></div>
+          <div className="row"><span>Wallets</span><span className="m">{shortView ? `${hc.traders?.ps || 0} short · ${hc.traders?.pl || 0} long` : `${hc.traders?.pl || 0} long · ${hc.traders?.ps || 0} short`}</span></div>
           {hStack.length > 0 && <div className="also">Also here: {hStack.join(", ")}. Click again to step.</div>}
         </div>}
       </div>
@@ -341,12 +386,15 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
             {moneyOn ? <>
               <div className="grp">
                 {sizes.map(s => <span key={s.v}><svg width={2 * s.r + 2} height={2 * s.r + 2} aria-hidden="true"><circle cx={s.r + 1} cy={s.r + 1} r={s.r} fill="none" stroke="var(--t-text3)" /></svg>{fmtUsd(s.v)}</span>)}
-                <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill={stageColor("running")} /><path d="M7,7 L7,1 A6,6 0 0 1 12.7,5.1 Z" fill="var(--rd-short)" fillOpacity=".85" /></svg>short</span>
+                {side === "long" && <span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill={stageColor("running")} /><path d="M7,7 L7,1 A6,6 0 0 1 12.7,5.1 Z" fill="var(--rd-short)" fillOpacity=".85" /></svg>short</span>}
+                {shortView && <span>dollars short</span>}
+                {both && <span><PieKey />long · short</span>}
               </div>
               <div className="grp">
                 <span><Ring f={0.5} color="var(--rd-halo)" />near band</span>
                 <span><Ring f={1} color="var(--rd-inband)" />in band</span>
                 <span><Ring f={1} color="var(--rd-red)" />closed under</span>
+                {!shortView && <span><EntryKey />entry zone</span>}
               </div>
             </> : <div className="grp"><span><i className="smap-ringkey" />Opened long in 24h</span></div>}
             {(watched.size > 0 || mineOn) && <div className="grp">
@@ -357,6 +405,8 @@ export default function RadarMap({ pts, byCoin, box, data, tf, height, focus, wa
           <p>Across: how stretched the coin is against its own recent average (z-score). Up: how many profitable Hyperliquid traders are net long.</p>
           <p>Bubble size: the dollars those traders hold, longs plus shorts; the pink slice is the short share. A small grey dot: none hold it.</p>
           <p>Ring: how far price is from the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Empty at 30% or more above it, full at its top edge, violet inside it, red when the last weekly close ended under it.</p>
+          <p>Dashed ring: price is within 3% of where profitable traders entered on average — buying near where they bought, not after them.</p>
+          <p>Long · Short · Both: in Short, up counts traders net short, size is the dollars short and the top-right box holds stretched coins with 3 or more net short; in Both, each bubble splits into dollars long (green) and short (pink).</p>
         </HelpTip>
       </div>
     </div>

@@ -1,7 +1,8 @@
 """
-Followed traders: a shortlist of wallets whose position changes are recorded and sent to
-Telegram. Not tied to a connected wallet (the app logs in with the access code); adding
-or removing needs the admin key like every other change.
+Followed traders: a shortlist of wallets whose position changes are recorded, and whose
+larger opens, closes and flips go to Telegram (through tg_alerts). Not tied to a connected
+wallet (the app logs in with the access code); adding or removing needs the admin key like
+every other change, or /follow in the Telegram chat.
 
 A change is found by comparing two readings of the wallet: a new coin/side is an open, a
 missing one a close, and a coin quantity up or down by at least a quarter an add or a
@@ -10,7 +11,6 @@ nobody is viewing (hl_intelligence, hl_cadence.FOLLOWED_S).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -19,7 +19,7 @@ from collections import deque
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from wallet_names import wallet_label
+from wallet_names import codename
 
 logger = logging.getLogger(__name__)
 
@@ -130,52 +130,69 @@ def _px(v) -> str:
     return "?" if not v else f"{v:.4g}" if v < 1000 else f"{v:,.0f}"
 
 
-def message(address: str, cohort: str, changes: List[dict], holdings: Iterable[dict]) -> str:
-    verb = {"open": "Opened", "close": "Closed", "add": "Added to", "cut": "Cut"}
-    note = _items.get(address, {}).get("note")
-    head = f"Followed trader {wallet_label(address)}" + (f" · {note}" if note else "") + f" · {cohort}"
-    lines = [head]
-    for c in changes:
-        size = _usd(c["usd"]) if c["kind"] in ("open", "close") else f"{_usd(c['delta_usd'])}, now {_usd(c['usd'])}"
-        lines.append(f"{verb[c['kind']]} {c['side']} {c['coin']} {size} at {_px(c['px'])}")
+_VERB = {"open": "opened", "close": "closed", "flip": "flipped to", "add": "added to", "cut": "cut"}
+
+
+def _holds(holdings: Iterable[dict]) -> str:
     hold = sorted(holdings, key=lambda p: -p["size_usd"])
-    if hold:
-        top = ", ".join(f"{p['side']} {p['coin']} {_usd(p['size_usd'])}" for p in hold[:4])
-        lines.append(f"Now holds: {top}" + (f" (+{len(hold) - 4} more)" if len(hold) > 4 else ""))
-    else:
-        lines.append("Now holds: nothing")
-    return "\n".join(lines)
+    if not hold:
+        return "holds nothing now"
+    top = ", ".join(f"{p['side']} {p['coin']} {_usd(p['size_usd'])}" for p in hold[:3])
+    return "holds " + top + (f" +{len(hold) - 3}" if len(hold) > 3 else "")
+
+
+def alerts(changes: List[dict], min_usd: float) -> List[dict]:
+    """The changes worth an instant message: opens and closes of at least min_usd, and flips
+    (a close and an open of the other side of one coin in the same reading). Adds and cuts
+    stay in the app's record."""
+    by_coin: Dict[str, dict] = {}
+    for c in changes:
+        by_coin.setdefault(c["coin"], {})[c["kind"]] = c
+    out = []
+    for coin, k in by_coin.items():
+        if "open" in k and "close" in k and k["open"]["side"] != k["close"]["side"]:
+            if max(k["open"]["usd"], k["close"]["usd"]) >= min_usd:
+                out.append(dict(k["open"], kind="flip"))
+            continue
+        for kind in ("open", "close"):
+            if kind in k and k[kind]["usd"] >= min_usd:
+                out.append(k[kind])
+    return out
+
+
+def message(address: str, cohort: str, change: dict, holdings: Iterable[dict]) -> str:
+    """One change, in the house style (HTML): who and what, then the cohort and what they hold."""
+    from tg_alerts import coin_b, esc
+    note = _items.get(address, {}).get("note")
+    who = esc(codename(address) + (f" · {note}" if note else ""))
+    head = (f"{who} {_VERB[change['kind']]} {esc(change['side'])} {coin_b(change['coin'])} "
+            f"{_usd(change['usd'])} at {_px(change['px'])}")
+    return head + "\n" + esc(f"{cohort[:1].upper()}{cohort[1:]} · {_holds(holdings)}")
 
 
 def record(address: str, cohort: str, ts: float, changes: List[dict], holdings: List[dict]) -> None:
-    """Store the changes and send them to Telegram (best effort, never raises)."""
+    """Store the changes and send the ones worth a message through the alert gate (category
+    "followed": opens, closes and flips of at least the /alerts size, once per coin a day).
+    Best effort, never raises."""
     if not changes:
         return
     for c in changes:
         _events.append({"address": address, "cohort": cohort, "ts": ts, **c})
     _save()
-    text = message(address, {"profitable": "profitable trader", "large": "large account"}.get(cohort, cohort),
-                   changes, holdings)
     try:
-        asyncio.get_running_loop().create_task(_send(text))
+        import tg_alerts as ta
+        label = {"profitable": "profitable trader", "large": "large account"}.get(cohort, cohort)
+        for c in alerts(changes, float(ta.settings().get("follow_min_usd") or MIN_USD)):
+            text = message(address, label, c, holdings)
+            ta.submit_nowait("followed", f"{address}:{c['coin']}:{c['kind']}", text, text.split("\n")[0])
     except Exception as exc:
         logger.debug("followed traders: telegram not sent: %s", exc)
 
 
 def chat_ids() -> set:
     """Where alerts go: TELEGRAM_ALLOWED_CHATS, plus every chat registered with /watch."""
-    ids = set()
-    try:
-        from telegram_bot import ALLOWED_CHAT_IDS
-        ids |= {int(c) for c in ALLOWED_CHAT_IDS}
-    except Exception:
-        pass
-    try:
-        from position_monitor import PositionMonitor
-        ids |= {int(w.chat_id) for w in PositionMonitor.get().watchers}
-    except Exception:
-        pass
-    return ids
+    from tg_alerts import default_chats
+    return set(default_chats())
 
 
 def telegram_status() -> str:
@@ -188,18 +205,3 @@ def telegram_status() -> str:
     except Exception:
         return "off"
     return "ready" if chat_ids() else "no-chat"
-
-
-async def _send(text: str) -> int:
-    from telegram_bot import get_telegram_bot
-    bot = get_telegram_bot()
-    if not getattr(bot, "app", None) or not getattr(bot, "_running", False):
-        return 0
-    sent = 0
-    for cid in chat_ids():
-        try:
-            await bot.app.bot.send_message(chat_id=cid, text=text)
-            sent += 1
-        except Exception as exc:
-            logger.debug("followed traders: send to %s failed: %s", cid, exc)
-    return sent

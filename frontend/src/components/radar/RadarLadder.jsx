@@ -4,20 +4,22 @@ import HelpTip from "../HelpTip.jsx";
 import WalletTag, { WalletAvatar } from "../WalletTag.jsx";
 import useLadder from "../../hooks/useLadder.js";
 import { nameIn, shortAddr, viewNames } from "../../utils/walletName.js";
-import { bandInfo, beeswarm, fmtLadderPx, fmtUsd, ladderCounts, ladderDomain, ladderRadius, logScale, niceTicks, pctText, spreadLabels, topWallets, traderPath, walletPnl } from "../../utils/radarDepth.js";
+import { bandInfo, beeswarm, entryNote, fmtLadderPx, fmtUsd, ladderCounts, ladderDomain, ladderRadius, logScale, niceTicks, pctText, spreadLabels, topWallets, traderPath, walletPnl } from "../../utils/radarDepth.js";
 
 const TONE_COLOR = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "inherit", none: "inherit" };
 
 // Who is where: the followed coin's profitable wallets at their entry prices (log price axis),
 // longs left and shorts right, dot area by position dollars scaled to the largest wallet in the
 // coin; the price line, the weekly band shaded, the engine's mean dashed and each side's median
-// entry dotted. Hover or focus a dot for the wallet; a click (or Enter) opens the trader's
+// entry dotted, and the dollar-weighted average long entry dashed ("avg entry", the entry zone's
+// reference). Hover or focus a dot for the wallet; a click (or Enter) opens the trader's
 // profile. On touch the first tap shows the wallet with an "Open profile" link, a second tap
 // on the same dot opens it. Header: coin, price, dollars held; wallets
 // long and short; distance to the band. compact (the phone sheet, under the coin's own title):
 // no first line.
 // mark: the live mark price the followed coin's readings show, else the map's price.
-export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420, stack = [], onPick, compact = false }) {
+// side: the map's Long · Short · Both; in Short the header's counts lead with the shorts.
+export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420, stack = [], onPick, compact = false, side = "long" }) {
   const { data: lad, loading, error } = useLadder(c?.coin, tf);
   const host = useRef(null), head = useRef(null), plot = useRef(null);
   const [W, setW] = useState(360);
@@ -52,6 +54,8 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
   const band = lad?.band ?? c?.band ?? null;
   const bi = bandInfo(band, price);
   const counts = ladderCounts(c, lad);
+  const entry = lad?.entry ?? c?.entry ?? null;
+  const note = entryNote(entry, counts.long);
   const H = cardHeight ? Math.max(360, cardHeight - headH - 2) : plotHeight;
 
   const g = useMemo(() => {
@@ -88,12 +92,16 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
     const mL = lg.length ? lad.median_entry?.long : null, mS = sh.length ? lad.median_entry?.short : null;
     if (mL) { const y = Y(mL); med.push({ y, x0: colL[0] - 4, x1: colL[1] + 4, col: "var(--rd-long)" }); left.push({ x: colL[1] + 2, y: y - 4, t: "median", col: "var(--rd-long)", anchor: "end" }); }
     if (mS) { const y = Y(mS); med.push({ y, x0: colS[0] - 4, x1: colS[1] + 4, col: "var(--rd-short)" }); right.push({ y: y - 4, t: "median", col: "var(--rd-short)" }); }
+    // The profitable traders' dollar-weighted average long entry: dashed across the plot, word on the right.
+    let avgY = null;
+    const avg = lg.length ? entry?.avg_long_entry : null;
+    if (avg && avg >= lo && avg <= hi) { avgY = Y(avg); right.push({ y: avgY - 4, t: "avg entry", col: "var(--rd-long)" }); }
     const mx = Math.max(1, ...ws.map(w => w.size_usd || 0)), dense = Math.max(lg.length, sh.length);
     const rows = (list, col, cx) => beeswarm(list.map(w => ({ w, col, y: Y(w.entry), r: ladderRadius(w.size_usd || 0, mx, { narrow: W < 360, dense }),
       off: w.entry < lim[0] || w.entry > lim[1] })), (cx[0] + cx[1]) / 2, (cx[1] - cx[0]) / 2);
     const dots = [...rows(lg, "var(--rd-long)", colL), ...rows(sh, "var(--rd-short)", colS)];
-    return { ws, L, R, T, B, Y, mid, colL, colS, ticks, bandRect, meanY, med, dots, left, right: spreadLabels(right), py: Y(price) };
-  }, [lad, price, band, bi.tone, W, H]);
+    return { ws, L, R, T, B, Y, mid, colL, colS, ticks, bandRect, meanY, avgY, med, dots, left, right: spreadLabels(right), py: Y(price) };
+  }, [lad, price, band, bi.tone, W, H, entry?.avg_long_entry]);
 
   const names = useMemo(() => viewNames((g?.ws || []).map(w => w.address)), [g]);
   const d = tip && g ? g.dots[tip.i] : null;
@@ -119,8 +127,10 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
         <strong>{c.coin}</strong><span className="rl-px">{fmtLadderPx(price)}</span><span className="rl-gross">{fmtUsd(held)} held</span>
         <LadderHelp />
       </div>}
-      <div className="rl-count"><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span>{compact && <LadderHelp />}</div>
-      <div className="rl-sub" style={{ color: TONE_COLOR[bi.tone] }}>{bi.text}</div>
+      <div className="rl-count">{side === "short"
+        ? <><span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span> · <span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span></>
+        : <><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span></>}{compact && <LadderHelp />}</div>
+      <div className="rl-sub"><span style={{ color: TONE_COLOR[bi.tone] }}>{bi.text}</span>{note && <span className={entry?.in_zone ? "rl-ez" : undefined}>{` · ${note}`}</span>}</div>
       {stack.length > 0 && <div className="rl-quick"><span>Same spot</span>{stack.map(k => <button key={k} type="button" onClick={() => onPick?.(k)}>{k}</button>)}</div>}
     </div>
     <div className="rl-plot" ref={plot} style={{ height: H }}>
@@ -137,6 +147,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
             <line x1={g.L} x2={W - g.R} y1={g.bandRect.y1} y2={g.bandRect.y1} /><line x1={g.L} x2={W - g.R} y1={g.bandRect.y2} y2={g.bandRect.y2} />
           </g>}
           {g.meanY != null && <line className="rl-mean" x1={g.L} x2={W - g.R} y1={g.meanY} y2={g.meanY} />}
+          {g.avgY != null && <line className="rl-avg" x1={g.L} x2={W - g.R} y1={g.avgY} y2={g.avgY} />}
           {g.med.map((m, k) => <line key={k} className="rl-med" x1={m.x0} x2={m.x1} y1={m.y} y2={m.y} style={{ stroke: m.col }} />)}
           <line className="rl-price" x1={g.L} x2={W - g.R} y1={g.py} y2={g.py} />
           <rect className="rl-pxbox" x={g.L - (fmtLadderPx(price).length * 6.8 + 8) - 2} y={g.py - 8} width={fmtLadderPx(price).length * 6.8 + 8} height="16" rx="2" />
@@ -179,7 +190,8 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
 function LadderHelp() {
   return <HelpTip title="Who is where" width={340}>
     <p>Each dot is one profitable wallet at its entry price: longs left, shorts right. Dot area is the position in dollars, scaled to the largest wallet in this coin. Hover or tap a dot for the wallet; click it (or tap it again) to open the trader's profile.</p>
-    <p>Solid line: price. Shaded: the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Dashed: the engine's mean. Dotted: the median entry on each side.</p>
+    <p>Solid line: price. Shaded: the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Dashed grey: the engine's mean. Dashed green: the average long entry, weighted by dollars. Dotted: the median entry on each side.</p>
+    <p>In their entry zone: price is within 3% of that average, with 3 or more profitable traders long.</p>
     <p>Wallets: the Hyperliquid profitable cohort, as on the Traders page.</p>
   </HelpTip>;
 }

@@ -24,13 +24,19 @@ export const hasMoney = c => grossOf(c) > 0;
 // Old payloads (no money field anywhere): the map keeps sizing by wallet count.
 export const moneyMode = coins => coins.some(c => c && c.money);
 export const rmaxFor = w => (w < 600 ? 20 : 30);
-export const maxMoney = coins => Math.max(0, ...coins.map(grossOf));
+export const maxMoney = (coins, size = grossOf) => Math.max(0, ...coins.map(size));
+// The dollars the profitable cohort holds short in a coin (the Short view's bubble size).
+export const shortOf = c => c?.money?.short_usd || 0;
+// A bubble's dollars for a map side: short dollars in Short, long plus short otherwise.
+export const sizeFor = side => (side === "short" ? shortOf : grossOf);
 
-// Bubble radius: area proportional to the profitable cohort's dollars (long plus short), the
-// largest coin on the map at rmax; at least 3.2px with any money; a 2px grey dot without.
-export function bubbleRadius(c, G, rmax) {
-  if (!hasMoney(c) || !G) return 2;
-  return Math.max(3.2, rmax * Math.sqrt(grossOf(c) / G));
+// Bubble radius: area proportional to the profitable cohort's dollars (long plus short, or the
+// side's dollars with `size`), the largest coin on the map at rmax; at least 3.2px with any
+// money; a 2px grey dot without.
+export function bubbleRadius(c, G, rmax, size = grossOf) {
+  const v = size(c);
+  if (!(v > 0) || !G) return 2;
+  return Math.max(3.2, rmax * Math.sqrt(v / G));
 }
 export const countRadius = c => 4.5 + Math.min(6, Math.sqrt((c?.traders?.pl || 0) + (c?.traders?.ps || 0)));
 
@@ -48,10 +54,26 @@ export function shortSlice(r, netLongShare) {
   if (netLongShare == null) return null;
   const sh = 1 - netLongShare;
   if (!((r >= 8 && sh >= 0.02) || sh >= 0.4)) return null;
-  const big = r >= 12, rr = r - (big ? 0.75 : 0.5);
-  const a = 2 * Math.PI * Math.min(sh, 0.999);
+  return wedge(r - (r >= 12 ? 0.75 : 0.5), sh);
+}
+
+// A wedge of share f of a circle of radius rr, from 12 o'clock clockwise, around the centre.
+function wedge(rr, f) {
+  const a = 2 * Math.PI * Math.min(f, 0.999);
   const x1 = rr * Math.sin(a), y1 = -rr * Math.cos(a);
   return `M0,0 L0,${(-rr).toFixed(2)} A${rr.toFixed(2)},${rr.toFixed(2)} 0 ${a > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)} Z`;
+}
+
+// The Both view's pie: the bubble in the long colour with the short dollars' share as a wedge in
+// the short colour (from 12 o'clock clockwise), at any share. base: the colour under the wedge
+// ("long", or "short" when nobody is long; null without money); wedge: the path, or null when one
+// side holds it all.
+export function sidePie(r, money) {
+  const lu = money?.long_usd || 0, su = money?.short_usd || 0;
+  if (lu + su <= 0) return { base: null, wedge: null, short: null };
+  const sh = su / (lu + su);
+  if (!lu) return { base: "short", wedge: null, short: 1 };
+  return { base: "long", wedge: su > 0 ? wedge(r - (r >= 12 ? 0.75 : 0.5), sh) : null, short: sh };
 }
 
 // ------------------------------------------------------------------ band halo
@@ -87,6 +109,34 @@ export function haloRing(r, info) {
   const arc = show && info.fill > 0 ? info.fill * C : 0;
   const outer = show && (arc > 0 || track) ? hr + sw / 2 : r;
   return { show, track, hr, sw, C, arc, tick: show && !!info.tick, outer };
+}
+
+// ------------------------------------------------------------------ entry zone
+// The server decides whether a coin is in its entry zone (backend setup_map.entry: 3 or more
+// profitable traders long and price within 3% of their dollar-weighted average long entry).
+// The map marks it with a thin dashed ring just outside the band halo; the ladder names it.
+export const inEntryZone = c => !!c?.entry?.in_zone;
+
+// The dashed ring's geometry outside a bubble whose drawn edge (halo included) is at `outer`:
+// radius, stroke, dash, and the new outer edge for the selection ring, labels and marks.
+export function entryRing(outer, on) {
+  if (!on) return null;
+  const sw = 1.1, r = outer + 2.2 + sw / 2;
+  const C = 2 * Math.PI * r;
+  // About 14 dashes on a small ring, more on a big one; the gaps stay short so it reads as a ring.
+  const n = Math.max(8, Math.min(24, Math.round(C / 5)));
+  const dash = (0.6 * C) / n, gap = (0.4 * C) / n;
+  return { r, sw, dash: `${dash.toFixed(2)} ${gap.toFixed(2)}`, outer: r + sw / 2 };
+}
+
+// The ladder header's note on the entry zone: "in their entry zone", or where price sits against
+// their average long entry once 3 or more are long ("price 8.2% above their entry"); "" otherwise.
+export function entryNote(entry, nLong) {
+  if (!entry || entry.dist_pct == null) return "";
+  if (entry.in_zone) return "in their entry zone";
+  if ((nLong || 0) < 3) return "";
+  const d = Math.abs(entry.dist_pct);
+  return `price ${d >= 10 ? Math.round(d) : d.toFixed(1)}% ${entry.dist_pct >= 0 ? "above" : "below"} their entry`;
 }
 
 // ------------------------------------------------------------------ picking

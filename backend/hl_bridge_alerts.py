@@ -39,47 +39,29 @@ def _direction_for(score_6h: float) -> str:
 
 
 def _format_alert(div: dict) -> str:
-    direction = _direction_for(float(div.get("score_6h") or 0.0))
-    emoji = "\u26a0\ufe0f" if direction == "DISTRIBUTION" else "\U0001f4e5"
-    header = (
-        f"{emoji} HL BRIDGE DIVERGENCE \u2014 BTC {direction.lower()} risk"
-    )
+    """HTML text in the house style: no emojis, values escaped."""
+    from tg_alerts import esc
+    direction = _direction_for(float(div.get("score_6h") or 0.0)).lower()
     btc_z = float(div.get("btc_return_6h_z") or 0.0)
     flow_z = float(div.get("net_flow_6h_z") or 0.0)
     score_6h = float(div.get("score_6h") or 0.0)
     score_1h = float(div.get("score_1h") or 0.0)
     interp = div.get("interpretation") or ""
-    return (
-        f"{header}\n"
-        f"6h: BTC {btc_z:+.1f}\u03c3 / flow {flow_z:+.1f}\u03c3 "
-        f"(score {score_6h:+.1f})\n"
-        f"1h confirm: score {score_1h:+.1f}\n"
-        f"{interp}"
-    )
+    lines = [f"<b>BTC</b> · bridge flow divergence, {direction}",
+             f"6h: BTC {btc_z:+.1f}\u03c3, flow {flow_z:+.1f}\u03c3, score {score_6h:+.1f} · 1h score {score_1h:+.1f}"]
+    if interp:
+        lines.append(esc(interp))
+    return "\n".join(lines)
 
 
-async def _send_telegram(text: str) -> int:
-    """Broadcast ``text`` to allowed chats. Returns number of sends that succeeded."""
+async def _send_telegram(text: str, key: str = "exhaustion") -> int:
+    """Through the alert gate (category "bridge", off by default). Returns 1 when sent."""
     try:
-        from telegram_bot import get_telegram_bot, ALLOWED_CHAT_IDS
+        import tg_alerts as ta
+        return 1 if await ta.submit("bridge", key, text) == "sent" else 0
     except Exception as exc:
-        logger.debug("hl_bridge_alerts: telegram import failed: %s", exc)
+        logger.debug("hl_bridge_alerts: telegram not sent: %s", exc)
         return 0
-
-    bot = get_telegram_bot()
-    app = getattr(bot, "app", None)
-    running = getattr(bot, "_running", False)
-    if not app or not running or not ALLOWED_CHAT_IDS:
-        return 0
-
-    sent = 0
-    for chat_id in ALLOWED_CHAT_IDS:
-        try:
-            await app.bot.send_message(chat_id=int(chat_id), text=text)
-            sent += 1
-        except Exception as exc:
-            logger.debug("hl_bridge_alerts: TG send to %s failed: %s", chat_id, exc)
-    return sent
 
 
 async def check_and_alert(divergence: Optional[dict]) -> bool:
@@ -121,7 +103,7 @@ async def check_and_alert(divergence: Optional[dict]) -> bool:
         return False
 
     msg = _format_alert(divergence)
-    sent = await _send_telegram(msg)
+    sent = await _send_telegram(msg, f"exhaustion:{direction}")
     _last_fire_ts = now
     _last_direction = direction
     logger.info(

@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from wallet_names import codename
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -43,7 +45,6 @@ _REGISTRY_PATH = _PERSIST_DIR / "monitor_registry.json"
 _OPPORTUNITY_SIGNALS = {"STRONG_LONG", "LIGHT_LONG"}
 _ADVERSE_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
 _DEFAULT_OVERVIEW_INTERVAL = 6 * 3600  # 6 hours
-_MAX_NOTIFICATIONS_PER_CYCLE = 10
 
 # Signal ranking (higher = more bullish)
 _SIGNAL_RANK = {
@@ -205,6 +206,11 @@ class PositionMonitor:
         self._WARNING_COOLDOWN = 3600  # don't repeat same warning within 1 hour
         # Consensus change tracking — fires once per transition (e.g. RISK-ON → RISK-OFF)
         self._last_consensus: Optional[str] = None
+        # Last open positions per chat (anomaly alerts on held coins), the 1D signal last seen
+        # per "chatid:symbol" (exit alerts) and each held coin's weekly band per day.
+        self.last_positions: Dict[int, List[dict]] = {}
+        self._last_exit_signal: Dict[str, str] = {}
+        self._band_cache: Dict[str, tuple] = {}
         self._load()
 
     @classmethod
@@ -245,8 +251,8 @@ class PositionMonitor:
                 w.registered_at = time.time()
                 self._save()
                 if old_addr == address:
-                    return f"Already monitoring {address[:8]}...{address[-4:]}"
-                return f"Updated: now monitoring {address[:8]}...{address[-4:]} (was {old_addr[:8]}...{old_addr[-4:]})"
+                    return f"Already reading {codename(address)}"
+                return f"Now reading {codename(address)} (was {codename(old_addr)})"
 
         self.watchers.append(Watcher(
             chat_id=chat_id,
@@ -254,7 +260,8 @@ class PositionMonitor:
             registered_at=time.time(),
         ))
         self._save()
-        return f"Monitoring started for {address[:8]}...{address[-4:]}\nYou'll receive alerts for regime/signal changes on your open positions."
+        return (f"Reading {codename(address)}. Alerts: exit signal, weekly close under the band, "
+                f"liquidation near. /alerts to change.")
 
     def unregister(self, chat_id: int) -> str:
         """Remove monitoring for a chat."""
@@ -262,8 +269,11 @@ class PositionMonitor:
         self.watchers = [w for w in self.watchers if w.chat_id != chat_id]
         if len(self.watchers) < before:
             self._save()
-            return "Monitoring stopped. You won't receive position alerts anymore."
+            return "Stopped reading the wallet."
         return "No active monitoring found for this chat."
+
+    def held_coins(self) -> Set[str]:
+        return {p["coin"] for ps in self.last_positions.values() for p in ps}
 
     def get_watcher(self, chat_id: int) -> Optional[Watcher]:
         for w in self.watchers:
@@ -304,24 +314,16 @@ class PositionMonitor:
         if consensus_changed:
             prev_c = self._last_consensus
             logger.info("Consensus changed: %s → %s", prev_c, current_consensus)
-            for watcher in self.watchers:
-                try:
-                    from telegram_bot import get_bot
-                    bot = get_bot()
-                    if bot:
-                        await bot.send_message(
-                            watcher.chat_id,
-                            f"🌐 MARKET CONSENSUS SHIFT\n"
-                            f"{prev_c} → {current_consensus}\n\n"
-                            f"This affects all signals — check dashboard for updated positions."
-                        )
-                except Exception:
-                    pass
+            import tg_alerts as ta
+            await ta.submit("market_shift", f"{prev_c}>{current_consensus}",
+                            f"Market consensus {ta.esc(prev_c)} to {ta.esc(current_consensus)} (4H)",
+                            chats=[w.chat_id for w in self.watchers])
         self._last_consensus = current_consensus
 
+        results_1d = {r.get("symbol", ""): r for r in scan_results.get("1d", [])}
         for watcher in self.watchers:
             try:
-                await self._process_watcher(watcher, results_by_symbol)
+                await self._process_watcher(watcher, results_by_symbol, results_1d)
             except Exception as e:
                 logger.warning("Monitor failed for chat %s: %s", watcher.chat_id, e)
 
@@ -329,8 +331,14 @@ class PositionMonitor:
         self,
         watcher: Watcher,
         results_by_symbol: Dict[str, dict],
+        results_1d: Optional[Dict[str, dict]] = None,
     ):
-        """Process a single watcher: fetch positions, detect changes, notify."""
+        """Process a single watcher: fetch positions, detect changes, notify.
+
+        Instant alerts (category "positions", see _position_alerts): the 1D signal turns
+        against a position, a weekly close under the coin's support band, liquidation near.
+        Everything else here (regime and signal notes, heat, OI, opportunities, the 6h
+        overview) goes through the gate under categories that are off by default."""
         from hyperliquid_data import fetch_clearinghouse_state, parse_open_positions
 
         # Fetch current HL positions
@@ -340,6 +348,8 @@ class PositionMonitor:
 
         positions = parse_open_positions(clearinghouse)
         held_symbols: Set[str] = {p["symbol"] for p in positions}
+        self.last_positions[watcher.chat_id] = positions
+        await self._position_alerts(watcher, positions, results_by_symbol, results_1d or {})
 
         notifications: List[str] = []
 
@@ -458,18 +468,7 @@ class PositionMonitor:
                     f"Risk: crowded funding = squeeze risk"
                 )
 
-            # -- Liquidation proximity warning --
-            liq = pos.get("liq_px", 0)
-            current_price = scan.get("price", 0)
-            if liq > 0 and current_price > 0:
-                liq_dist = abs(current_price - liq) / current_price * 100
-                if liq_dist < _LIQ_WARNING_PCT and _should_warn("liq_proximity"):
-                    notifications.append(
-                        f"\U0001f6a8 LIQUIDATION RISK \u2014 {coin}\n"
-                        f"Current: ${current_price:.6g} | Liq: ${liq:.6g} ({liq_dist:.1f}% away)\n"
-                        f"You hold: {side} ${pos['size_usd']:,.0f} @ {pos['leverage']:.0f}x\n"
-                        f"ACTION REQUIRED: Add margin or reduce position"
-                    )
+            # (Liquidation distance is an instant alert: _position_alerts.)
 
             # -- Exhaustion state warning --
             exh_state = scan.get("exhaustion_state", "")
@@ -554,7 +553,9 @@ class PositionMonitor:
         # "Market Pulse" mode: only sentinel coins (BTC/ETH/SOL/HYPE) and
         # held positions generate real-time alerts.  Everything else is
         # filtered unless it passes the HIGH confluence gate (≥4/7).
-        if watcher.notify_opportunities:
+        import tg_alerts as ta
+        n_notes = len(notifications)
+        if watcher.notify_opportunities and ta.enabled("opportunities"):
             _alert_universe = _SENTINEL_SYMBOLS | held_symbols
 
             for sym, scan in results_by_symbol.items():
@@ -702,18 +703,84 @@ class PositionMonitor:
                             f"Spot-led moves more sustainable — high conviction"
                         )
 
-        # -- 3. Rate-limit and send --
-        if notifications:
-            await self._send_notifications(watcher.chat_id, notifications)
+        # -- 3. Through the gate: each note once a day, off by default --
+        for k, text in enumerate(notifications):
+            cat = "position_notes" if k < n_notes else "opportunities"
+            if ta.enabled(cat):
+                await ta.submit(cat, text.split("\n")[0], ta.calm(text), chats=[watcher.chat_id])
 
-        # -- 4. Periodic overview --
+        # -- 4. Periodic overview (off by default: the daily brief replaces it) --
         now = time.time()
         interval = watcher.overview_interval_hours * 3600
-        if interval > 0 and (now - watcher.last_overview_ts) >= interval:
+        if interval > 0 and (now - watcher.last_overview_ts) >= interval and ta.enabled("overview"):
             overview = self._fmt_overview(positions, results_by_symbol)
-            await self._send_tg(watcher.chat_id, overview)
+            await ta.submit("overview", "portfolio", ta.calm(overview), chats=[watcher.chat_id], window=interval - 60)
             watcher.last_overview_ts = now
             self._save()
+
+    # -- Instant position alerts ------------------------------------------------
+
+    async def _position_alerts(self, watcher: Watcher, positions: List[dict],
+                               results_by_symbol: Dict[str, dict], results_1d: Dict[str, dict]) -> None:
+        """Exit signal (the 1D signal turns against the position), a weekly close under the
+        coin's support band (longs), liquidation near (ignores quiet hours and the cap)."""
+        import tg_alerts as ta
+        if not ta.enabled("positions"):
+            return
+        from tg_brief import stance
+        now = time.time()
+        liq_pct = float(ta.settings().get("liq_pct") or _LIQ_WARNING_PCT)
+        for pos in positions:
+            sym, coin, side = pos["symbol"], pos["coin"], pos["side"]
+            hold = (f"You hold {side.lower()} {ta.usd(pos['size_usd'])} · {pos['leverage']:.0f}x"
+                    f" · PnL {'+' if pos['unrealized_pnl'] >= 0 else '-'}{ta.usd(abs(pos['unrealized_pnl']))}")
+            row = results_1d.get(sym) or {}
+            sig = row.get("signal")
+            key = f"{watcher.chat_id}:{sym}"
+            prev = self._last_exit_signal.get(key)
+            if sig:
+                self._last_exit_signal[key] = sig
+            if sig and prev and stance(side, sig) == "against" and stance(side, prev) != "against":
+                words = f"exit signal {ta.signal_word(sig)}" if side == "LONG" else f"scanner turned {ta.signal_word(sig).lower()}"
+                await ta.submit("positions", f"exit:{coin}", f"{ta.coin_b(coin)} · {ta.esc(words)} (1D)\n{hold}",
+                                f"{ta.coin_b(coin)} {ta.esc(words)}", chats=[watcher.chat_id], now=now)
+
+            price = (results_by_symbol.get(sym) or row).get("price") or 0
+            if side == "LONG":
+                band = self._band(sym, price, now)
+                if band and band.get("state") == "closed_under":
+                    await ta.submit("positions", f"band:{coin}:{band.get('week')}",
+                                    f"{ta.coin_b(coin)} · weekly close under the support band\n"
+                                    f"Close {ta.px(band.get('week_close'))} · band {ta.px(band.get('lo'))}-{ta.px(band.get('hi'))}\n{hold}",
+                                    f"{ta.coin_b(coin)} weekly close under the band",
+                                    chats=[watcher.chat_id], window=8 * 86400, now=now)
+
+            liq = pos.get("liq_px", 0) or 0
+            if liq > 0 and price > 0:
+                dist = abs(price - liq) / price * 100
+                if dist < liq_pct:
+                    tier = "liq5" if dist < 5 else "liq"
+                    await ta.submit("positions", f"{tier}:{coin}",
+                                    f"{ta.coin_b(coin)} · liquidation {dist:.1f}% away\n"
+                                    f"Price {ta.px(price)} · liquidation {ta.px(liq)}\n{hold}",
+                                    f"{ta.coin_b(coin)} liquidation {dist:.1f}% away",
+                                    chats=[watcher.chat_id], urgent=True, now=now)
+
+    def _band(self, sym: str, price: float, now: float) -> Optional[dict]:
+        """The coin's weekly support band from the stored daily candles, once a day per coin."""
+        day = int(now // 86400)
+        hit = self._band_cache.get(sym)
+        if hit and hit[0] == day:
+            return hit[1]
+        band = None
+        try:
+            import setup_map
+            from data_fetcher import _ohlcv_store
+            band = setup_map.weekly_band(_ohlcv_store.get(sym, "1d"), price, now)
+        except Exception as exc:
+            logger.debug("position band %s: %s", sym, exc)
+        self._band_cache[sym] = (day, band)
+        return band
 
     # -- Notification formatting ----------------------------------------------
 
@@ -969,39 +1036,6 @@ class PositionMonitor:
                 lines.append(f"\U0001f7e2 {base} \u2014 {opp['signal']} ({met}/{total} conditions)")
 
         return "\n".join(lines)
-
-    # -- Telegram sending -----------------------------------------------------
-
-    async def _send_notifications(self, chat_id: int, notifications: List[str]):
-        """Send notifications, respecting rate limit."""
-        if len(notifications) > _MAX_NOTIFICATIONS_PER_CYCLE:
-            # Batch into a single message
-            combined = "\n\n".join(notifications[:_MAX_NOTIFICATIONS_PER_CYCLE])
-            remaining = len(notifications) - _MAX_NOTIFICATIONS_PER_CYCLE
-            combined += f"\n\n... and {remaining} more alerts"
-            await self._send_tg(chat_id, combined)
-        elif len(notifications) <= 3:
-            # Send individually for small counts
-            for notif in notifications:
-                await self._send_tg(chat_id, notif)
-        else:
-            # Batch medium counts into one message
-            await self._send_tg(chat_id, "\n\n".join(notifications))
-
-    async def _send_tg(self, chat_id: int, text: str):
-        """Send a message via the Telegram bot."""
-        try:
-            from telegram_bot import get_telegram_bot
-            bot = get_telegram_bot()
-            if bot.app and bot._running:
-                # Truncate to Telegram limit
-                if len(text) > 4000:
-                    text = text[:4000] + "\n\n... (truncated)"
-                await bot.app.bot.send_message(chat_id=chat_id, text=text)
-            else:
-                logger.debug("TG bot not running, skipping notification to %s", chat_id)
-        except Exception as e:
-            logger.warning("Failed to send TG notification to %s: %s", chat_id, e)
 
     # -- On-demand helpers (used by TG commands) ------------------------------
 

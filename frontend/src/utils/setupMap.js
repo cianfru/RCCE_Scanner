@@ -18,6 +18,37 @@ export const SIGNAL_SHORT = {
 };
 
 export const net = c => (c?.traders?.pl || 0) - (c?.traders?.ps || 0);
+
+// ------------------------------------------------------------------ Long / Short / Both
+// The map's side switch. Long (the default): up is profitable traders net long, size the dollars
+// they hold. Short: up is profitable traders net short (short minus long, lockstep groups once, as
+// the server counts them) and size the dollars short. Both: placed as Long, each bubble split into
+// dollars long and short. The switch only changes what the page draws (the forward test logs Long).
+export const SIDES = [{ key: "long", label: "Long" }, { key: "short", label: "Short" }, { key: "both", label: "Both" }];
+export const sideOf = v => (v === "short" || v === "both" ? v : "long");
+export const netShort = c => (c?.traders?.ps || 0) - (c?.traders?.pl || 0);
+// Up on the map for a side: net short in Short, net long otherwise.
+export const netFor = (c, side) => (side === "short" ? netShort(c) : net(c));
+
+// Stretched and shorted (the Short view's zone, top right): stretched at least SHORT_ZONE_Z and at
+// least SHORT_ZONE_N profitable traders net short.
+export const SHORT_ZONE_Z = 1.5;
+export const SHORT_ZONE_N = 3;
+export const inShortZone = c => c?.zscore != null && c.zscore >= SHORT_ZONE_Z && netShort(c) >= SHORT_ZONE_N;
+
+// Most shorted: coins with profitable traders net short, most net short first, then the dollars
+// short, then the name. At most `limit`.
+export function mostShorted(coins, limit = 6) {
+  return coins.filter(c => c && c.zscore != null && netShort(c) >= 1)
+    .sort((a, b) => netShort(b) - netShort(a) || (b.money?.short_usd || 0) - (a.money?.short_usd || 0) || a.coin.localeCompare(b.coin))
+    .slice(0, limit);
+}
+
+// A Most shorted row's line: "12 short · $3.4M" (no dollars when the payload has none).
+export function shortLine(c, fmtUsd) {
+  const n = c?.traders?.ps || 0, u = c?.money?.short_usd || 0;
+  return `${n} short${u > 0 ? ` · ${fmtUsd(u)}` : ""}`;
+}
 export const symlog = v => Math.sign(v) * Math.log10(1 + Math.abs(v));
 export const inBox = (box, z, n) => z != null && z >= box.z[0] && z <= box.z[1] && n >= box.n[0] && n <= box.n[1];
 
@@ -30,6 +61,13 @@ export function trailPoints(c) {
   for (let k = 0; k < n.length; k++) if (n[k] == null) n[k] = k > 0 ? n[k - 1] : null;
   for (let k = n.length - 1; k >= 0; k--) if (n[k] == null) n[k] = k < n.length - 1 ? n[k + 1] : net(c);
   return t.z.map((z, k) => ({ z, n: n[k] }));
+}
+
+// A trail for a side: the stored record keeps long minus short at each close, so net short is its
+// negative (Short); Long and Both use it as it is.
+export function sideTrail(c, side) {
+  const p = trailPoints(c);
+  return p && side === "short" ? p.map(v => ({ z: v.z, n: v.n == null ? v.n : 0 - v.n })) : p;
 }
 
 export function movement(c, box) {
@@ -111,9 +149,10 @@ export function tradersLine(c, fmtUsd) {
 }
 
 // What the map shows by default: setups with at least one profitable trader, forming and
-// just-fired setups even when nobody holds them, and anything watched or held.
-export function visible(coins, { all = false, keep = new Set() } = {}) {
-  return coins.filter(c => c.zscore != null && (all || keep.has(c.coin) || (c.stage !== "waiting"
+// just-fired setups even when nobody holds them, and anything watched or held. The Short view
+// (side "short") also shows every coin profitable traders are net short, setup or not.
+export function visible(coins, { all = false, keep = new Set(), side = "long" } = {}) {
+  return coins.filter(c => c.zscore != null && (all || keep.has(c.coin) || (side === "short" && netShort(c) >= 1) || (c.stage !== "waiting"
     && ((c.traders?.pl || 0) + (c.traders?.ps || 0) > 0 || c.stage === "forming" || c.stage === "fresh"))));
 }
 
@@ -245,4 +284,13 @@ export function radarHref({ tf = "1d", focus, sector, view } = {}) {
   if (sector) p.set("sector", sector);
   if (view === "all") p.set("view", "all");
   return `/radar?${p}`;
+}
+
+// The Radar forward test's one line in the (i) (/api/radar/forward-test): days logged and the
+// early-setup events with an outcome so far, against the declared minimum. "" without a status.
+export function forwardLine(st) {
+  if (!st || st.days_logged == null) return "";
+  if (!st.days_logged) return "Forward test: logging from the next daily close.";
+  const n = st.H1?.scored || 0, d = st.days_logged;
+  return `Forward test: ${d} day${d === 1 ? "" : "s"} logged, ${n} event${n === 1 ? "" : "s"} scored (needs ${st.min_events || 30}).`;
 }

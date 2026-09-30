@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, enteredAt, sinceText, tradersLine, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast } from "./setupMap.js";
+import { WATCH_MESSAGES, at, inBox, isAddress, labelBox, labelOrder, movement, movers, newEarly, enteredAt, sinceText, tradersLine, picks, placeLabels, pnl, radarHref, symlog, thumbExtent, trailPoints, visible, watchReason, watchToast, forwardLine, SHORT_ZONE_N, SHORT_ZONE_Z, inShortZone, mostShorted, netFor, netShort, shortLine, sideOf, sideTrail } from "./setupMap.js";
 
 const BOX = { z: [-0.5, 1.5], n: [1, 8] };
 const coin = (o = {}) => ({ coin: "X", zscore: 0.5, priority: 50, stage: "running", zone: "watch", crowd: "holding",
@@ -272,4 +272,48 @@ test("new early setups: when each came into the box, and the list line", () => {
   const usd = v => `$${v}`;
   assert.equal(tradersLine({ traders: { pl: 2, ps: 1 }, money: { gross_usd: 5 } }, usd), "3 traders · $5");
   assert.equal(tradersLine({ traders: { pl: 1, ps: 0 } }, usd), "1 trader");
+});
+
+test("forward test line: days logged and scored events against the minimum", () => {
+  assert.equal(forwardLine(null), "");
+  assert.equal(forwardLine({ days_logged: 0, H1: { scored: 0 }, min_events: 30 }), "Forward test: logging from the next daily close.");
+  assert.equal(forwardLine({ days_logged: 1, H1: { scored: 1 }, min_events: 30 }), "Forward test: 1 day logged, 1 event scored (needs 30).");
+  assert.equal(forwardLine({ days_logged: 12, H1: { scored: 3 }, min_events: 30 }), "Forward test: 12 days logged, 3 events scored (needs 30).");
+});
+
+test("Short view: net short, its trail, the stretched-and-shorted zone and the most shorted", () => {
+  const c = (coin, pl, ps, o = {}) => ({ coin, zscore: 1.8, stage: "stretched", traders: { pl, ps }, money: { short_usd: ps * 1e5 }, ...o });
+  assert.equal(netShort(c("A", 2, 7)), 5);
+  assert.equal(netShort(c("A", 3, 3)), 0);
+  assert.ok(!Object.is(netShort({}), -0));
+  assert.equal(netFor(c("A", 2, 7), "short"), 5);
+  assert.equal(netFor(c("A", 2, 7), "long"), -5);
+  assert.equal(netFor(c("A", 2, 7), "both"), -5);
+  assert.equal(sideOf("short"), "short"); assert.equal(sideOf("both"), "both"); assert.equal(sideOf(null), "long"); assert.equal(sideOf("x"), "long");
+  // The stored record keeps long minus short: net short is its negative, gaps filled as for Long.
+  const t = { traders: { pl: 1, ps: 4 }, trail: { t: [1, 2, 3], z: [1, 1.2, 1.6], n: [2, null, -3] } };
+  assert.deepEqual(sideTrail(t, "short").map(p => p.n), [-2, -2, 3]);
+  assert.deepEqual(sideTrail(t, "long").map(p => p.n), [2, 2, -3]);
+  assert.deepEqual(sideTrail(t, "both"), trailPoints(t));
+  assert.equal(sideTrail({ trail: null }, "short"), null);
+  assert.ok(sideTrail({ traders: { pl: 2, ps: 2 }, trail: { t: [1], z: [0], n: [0] } }, "short").every(p => !Object.is(p.n, -0)));
+  // Zone: z at least 1.5 and 3 or more net short.
+  assert.equal(SHORT_ZONE_Z, 1.5); assert.equal(SHORT_ZONE_N, 3);
+  assert.ok(inShortZone(c("A", 0, 3, { zscore: 1.5 })));
+  assert.ok(!inShortZone(c("A", 1, 3, { zscore: 2.5 })));          // 2 net short
+  assert.ok(!inShortZone(c("A", 0, 9, { zscore: 1.49 })));
+  assert.ok(!inShortZone(c("A", 0, 9, { zscore: null })));
+  // Most shorted: net short first, then dollars short, then name; nobody net short is left out.
+  const xs = [c("A", 0, 3), c("B", 1, 9), c("C", 5, 5), c("D", 0, 8, { money: { short_usd: 1 } }), c("E", 0, 8), c("F", 0, 2, { zscore: null })];
+  assert.deepEqual(mostShorted(xs).map(x => x.coin), ["B", "E", "D", "A"]);
+  assert.deepEqual(mostShorted(xs, 2).map(x => x.coin), ["B", "E"]);
+  assert.equal(shortLine(c("A", 1, 12, { money: { short_usd: 3.4e6 } }), v => `$${v / 1e6}M`), "12 short · $3.4M");
+  assert.equal(shortLine(c("A", 1, 1, { money: {} }), String), "1 short");
+});
+
+test("Short view shows every coin profitable traders are net short, setup or not", () => {
+  const w = { coin: "W", zscore: 3, stage: "waiting", traders: { pl: 0, ps: 3 } }, e = { coin: "E", zscore: 3, stage: "waiting", traders: { pl: 2, ps: 2 } };
+  assert.deepEqual(visible([w, e]).map(c => c.coin), []);
+  assert.deepEqual(visible([w, e], { side: "short" }).map(c => c.coin), ["W"]);
+  assert.deepEqual(visible([w, e], { side: "both" }).map(c => c.coin), []);
 });
