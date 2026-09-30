@@ -7,8 +7,12 @@ windows ("week", "month", "allTime"), kept from the daily leaderboard download i
 so they can lag by up to a day. Open positions come from the cohort sweep's latest reading.
 
 Profile: one wallet's account (Hyperliquid ``portfolio``: account value history per window),
-live positions (``clearinghouseState``) and its fills (``userFills`` and timed-order slices,
-shared with the coin page's trader entries through trader_entries' cache and rate budget).
+live positions (``clearinghouseState``) and its fills. A tracked wallet's fills come from the
+fills store (hl_fills), with no Hyperliquid fills request per view; when its live positions
+differ from the stored fills, the store reads the new ones (waiting a few seconds). Any other
+wallet's fills are read live (``userFills`` and timed-order slices, trader_entries' cache and
+rate budget), shared between viewers for LIVE_FILLS_CACHE_S, one read at a time per wallet, and
+at most hl_fills.LIVE_LOADS_PER_MIN such reads a minute in all (past that: hl_fills.Busy).
 
 Fill classification: every fill carries the position size before it (``startPosition``), so each
 one is placed against the running position of its coin:
@@ -34,6 +38,8 @@ from typing import Dict, Iterable, List, Optional
 import aiohttp
 
 import hl_calls
+import hl_fills
+from hl_fills import Busy  # noqa: F401  (main answers it with "busy, try again shortly")
 
 from cohorts.sweeper import TokenBucket
 
@@ -47,7 +53,8 @@ _ROSTER_FIELDS = {"7d": ("week_pnl", "week_roi"), "30d": ("pnl", "roi"), "all": 
 # The perp account (the positions shown are perps; the leaderboard bands use the perp account too).
 _PORTFOLIO_KEYS = {"7d": ("perpWeek", "week"), "30d": ("perpMonth", "month"), "all": ("perpAllTime", "allTime")}
 
-PROFILE_FILLS_MAX_AGE_S = 90       # a profile re-reads fills older than this
+LIVE_FILLS_CACHE_S = 180           # an untracked wallet's live fills are shared between viewers this long
+VIEW_WAIT_S = 4.0                  # a profile waits this long for a stale tracked wallet's new fills
 PROFILE_CACHE_S = 60
 PORTFOLIO_CACHE_S = 120
 LEADERBOARD_CACHE_S = 60
@@ -55,9 +62,9 @@ STATS_TTL_S = 3 * 3600             # leaderboard win rates are recomputed after 
 WARM_MAX_WALLETS = 100             # a leaderboard view warms at most this many wallets' win rates
 MAX_COINS_SHOWN = 5
 
-# Win rates for the leaderboard: one userFills request per wallet (20 weight plus 1 per 20 fills),
-# on its own small share of the per-IP budget (the sweep takes 400/min, trader entries 480/min).
-_warm_bucket = TokenBucket(240, capacity=240)
+# Win rates for the leaderboard come from the fills store. Only with the store off does each wallet
+# cost a userFills request (20 weight plus 1 per 20 fills), on this small share of the per-IP budget.
+_warm_bucket = TokenBucket(60, capacity=60)
 _CALL_WEIGHT = 20
 
 _stats: Dict[str, tuple] = {}            # address -> (computed_at, {"7d": {...}, "30d": {...}, "all": {...}})
@@ -66,6 +73,7 @@ _profile_cache: Dict[str, tuple] = {}    # address -> (built_at, profile)
 _board_cache: Dict[tuple, tuple] = {}    # (window, cohort) -> (built_at, ranked rows)
 _warm_task: Optional[asyncio.Task] = None
 _warm_queue: List[str] = []
+_live_loads: Dict[str, asyncio.Task] = {}   # address -> the live fills read in progress (one per wallet)
 
 
 # ---------------------------------------------------------------------------
@@ -358,12 +366,27 @@ def _schedule_warm(addresses: List[str]) -> None:
             _warm_task = None
 
 
+def _stats_of(fills: List[dict], now: float) -> dict:
+    return win_stats(round_trips(classify_fills(fills))["closed"], now)
+
+
 async def _warm() -> None:
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
         while _warm_queue:
             address = _warm_queue.pop(0)
             st = _stats.get(address)
             if st and time.time() - st[0] < STATS_TTL_S:
+                continue
+            if hl_fills.enabled():
+                if hl_fills.ready(address):
+                    try:
+                        got = await hl_fills.load(address)
+                        now = time.time()
+                        _stats[address] = (now, await asyncio.to_thread(_stats_of, got["fills"], now))
+                    except Exception as exc:
+                        logger.warning("trader leaderboard: stored fills for %s failed: %s", address[:10], exc)
+                else:
+                    hl_fills.prioritise([address])      # its backfill comes first; the rate follows
                 continue
             try:
                 raw = await _post(session, {"type": "userFills", "user": address, "aggregateByTime": True}, _warm_bucket)
@@ -374,10 +397,59 @@ async def _warm() -> None:
 
 
 async def wallet_fills(address: str) -> dict:
-    """The wallet's fills (shared cache with trader entries), at most PROFILE_FILLS_MAX_AGE_S old."""
+    """The wallet's fills, oldest first, with ``covered_from``: from the fills store for a tracked
+    wallet; otherwise read live (shared with trader entries' cache) at most LIVE_FILLS_CACHE_S old,
+    one read per wallet at a time, within the live-read limit (else hl_fills.Busy)."""
+    import trader_entries as te
+    address = address.lower()
+    got = await hl_fills.load(address)
+    if got is not None:
+        return got
+    if hl_fills.enabled() and _tracked(address):
+        hl_fills.prioritise([address])          # backfill pending: this wallet next
+    hit = te._fresh(address, LIVE_FILLS_CACHE_S)
+    if hit is not None:
+        return hit
+    task = _live_loads.get(address)
+    if task is None or task.done():
+        ok, retry = hl_fills.live_limiter.try_acquire()
+        if not ok:
+            raise hl_fills.Busy(retry)
+        task = _live_loads[address] = asyncio.get_running_loop().create_task(_live_fills(address))
+        task.add_done_callback(lambda t, a=address: _live_loads.pop(a, None) if _live_loads.get(a) is t else None)
+    return await asyncio.shield(task)
+
+
+async def _live_fills(address: str) -> dict:
     import trader_entries as te
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-        return await te._wallet_fills(session, address, max_age=PROFILE_FILLS_MAX_AGE_S)
+        return await te._wallet_fills(session, address, max_age=LIVE_FILLS_CACHE_S)
+
+
+def _tracked(address: str) -> bool:
+    import hl_intelligence as hl
+    return any(x.address == address for x in hl._roster)
+
+
+def _behind(state: Optional[dict], classified: List[dict]) -> bool:
+    """Do the live positions differ from where the stored fills leave each coin?"""
+    live: Dict[str, float] = {}
+    for ap in (state or {}).get("assetPositions") or []:
+        p = ap.get("position") or {}
+        coin = p.get("coin") or ""
+        try:
+            szi = float(p.get("szi") or 0)
+        except (TypeError, ValueError):
+            continue
+        if coin and ":" not in coin and szi:
+            live[coin] = live.get(coin, 0.0) + szi
+    stored: Dict[str, float] = {}
+    for f in classified:
+        stored[f["coin"]] = f["after"]
+    stored = {c: v for c, v in stored.items() if v}
+    if set(live) != set(stored):
+        return True
+    return any(abs(live[c] - stored[c]) > 1e-9 * max(1.0, abs(live[c])) for c in live)
 
 
 def parse_portfolio(raw) -> dict:
@@ -462,13 +534,23 @@ async def profile(address: str) -> Optional[dict]:
         return hit[1]
     results = await asyncio.gather(fetch_clearinghouse_state(address), portfolio(address), wallet_fills(address),
                                    return_exceptions=True)
+    for r in results:
+        if isinstance(r, hl_fills.Busy):
+            raise r
     state, port, fills = [None if isinstance(r, BaseException) else r for r in results]
     for r in results:
         if isinstance(r, BaseException):
             logger.warning("trader profile %s: %s", address[:10], r)
-    now = time.time()
     fl = (fills or {}).get("fills") or []
-    trips = round_trips(classify_fills(fl))
+    classified = classify_fills(fl)
+    if (fills or {}).get("stored") and state is not None and _behind(state, classified):
+        await hl_fills.refresh(address, wait=VIEW_WAIT_S)       # the store reads the wallet's new fills
+        newer = await hl_fills.load(address)
+        if newer is not None and newer is not fills:
+            fills, fl = newer, newer["fills"]
+            classified = classify_fills(fl)
+    now = time.time()
+    trips = round_trips(classified)
     stats = win_stats(trips["closed"], now)
     if fills is not None:
         _stats[address] = (now, stats)
