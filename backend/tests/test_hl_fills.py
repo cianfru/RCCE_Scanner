@@ -45,9 +45,14 @@ class FakeHL:
         self.regular = collections.defaultdict(list)
         self.twap = collections.defaultdict(list)
         self.calls = []
+        self.fail_at = {}          # request type -> the call number (1-based) answered with a 429
+
 
     async def http(self, session, body):
         self.calls.append(body)
+        n = sum(1 for c in self.calls if c["type"] == body["type"])
+        if self.fail_at.get(body["type"]) == n:
+            raise hl_fills.RateLimited()
         u, kind = body["user"], body["type"]
         if kind == "userFillsByTime":
             fs = sorted((f for f in self.regular[u] if f["time"] >= body["startTime"]), key=lambda f: f["time"])
@@ -75,6 +80,9 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_fills, "_backfill_bucket", TokenBucket(1e6, capacity=1e6))
     monkeypatch.setattr(hl_fills, "live_limiter", hl_fills.LiveLimiter(2))
     monkeypatch.setattr(hl_fills, "_quiet", lambda now: False)
+    for name, value in (("_started_at", None), ("_current", None), ("_last_attempt", None),
+                        ("_last_exception", None), ("_state", "not started"), ("_task", None)):
+        monkeypatch.setattr(hl_fills, name, value, raising=False)
     monkeypatch.setattr(hl, "_roster", [TrackedWallet(A, account_value=1e6)])
     monkeypatch.setattr(te, "_fills_cache", {})
     monkeypatch.setattr(tp, "_live_loads", {})
@@ -302,3 +310,76 @@ def test_profile_behind_live_positions(fake):
     assert not tp._behind(state(10), cl)
     assert tp._behind(state(12), cl) and tp._behind({"assetPositions": []}, cl)
     assert tp._behind(state(10), []) and not tp._behind({"assetPositions": []}, [])
+
+
+# --- Regressions from the first production deploy (30 September 2026) --------------------------
+
+def test_status_right_after_a_start_reads_the_database(fake, tmp_path, monkeypatch):
+    """After a restart the status showed 0 wallets, 0 fills and db_mb null until the reader had
+    opened the store, although the file held 136 wallets."""
+    fake.regular[A] = seq(NOW - 900)
+    run(hl_fills.sync(None, A, "backfill"))
+    path = hl_fills.store().path
+    hl_fills.use_store(None)                      # a new process: nothing loaded yet
+    monkeypatch.setenv("FILLS_DB_PATH", path)
+    st = hl_fills.status()
+    assert st["backfilled"] == 1 and st["stored_wallets"] == 1 and st["fills"] == 7
+    assert st["db_mb"] is not None and st["db_path"] == path
+
+
+def test_backfill_cut_short_resumes_from_the_last_page(fake, monkeypatch):
+    """A 429 (or a restart) in the middle of a wallet's backfill threw away its progress: the
+    cursor was saved only at the end, so every retry read the wallet from 180 days ago again."""
+    monkeypatch.setattr(hl_fills, "PAGE", 3)
+    fake.regular[A] = seq(NOW - 7200)[:7]         # 7 perp fills: pages of 3, each starting at the last one read
+    fake.fail_at["userFillsByTime"] = 3           # the third page is refused
+    run(hl_fills._run_one(None, A, "backfill"))
+    st = hl_fills.status()
+    assert st["last_attempt"]["outcome"] == "error" and st["last_attempt"]["pages"] == 2
+    assert st["last_exception"]["address"] == A and "RateLimited" in st["last_exception"]["error"]
+    assert st["current"] is None
+    saved = hl_fills.store().wallets()[A]
+    assert saved["cursor_ms"] == int((NOW - 7200 + 240) * 1000)     # the last fill of the second page
+    assert saved["backfilled_at"] is None and hl_fills.store().count(saved["id"]) == 5
+    # The retry starts at the saved cursor, not at the start of the window.
+    fake.calls.clear()
+    hl_fills._retry_at.clear()
+    run(hl_fills._run_one(None, A, "backfill"))
+    first = next(c for c in fake.calls if c["type"] == "userFillsByTime")
+    assert first["startTime"] == saved["cursor_ms"] - hl_fills.OVERLAP_MS
+    w = hl_fills._meta[A]
+    assert w["backfilled_at"] and w["n"] == 7 and hl_fills.status()["last_attempt"]["outcome"] == "ok"
+    assert w["covered_from"] == pytest.approx(NOW - hl_fills.RETENTION_DAYS * 86400, abs=5)
+
+
+def test_backfill_waits_out_the_startup_burst(fake, monkeypatch):
+    """At start the scanner loads every market's candles (2,700+ weight a minute seen in
+    production, over Hyperliquid's 1,200): the backfill waits, reads after a change do not."""
+    roster = [A]
+    now = time.time()
+    monkeypatch.setattr(hl_fills, "_started_at", now - 60)
+    assert hl_fills.next_job(now, roster) is None
+    monkeypatch.setattr(hl_fills, "_started_at", now - hl_fills.BACKFILL_AFTER_START_S - 1)
+    assert hl_fills.next_job(now, roster) == (A, "backfill")
+    fake.regular[A] = seq(NOW - 900)
+    run(hl_fills.sync(None, A, "backfill"))
+    monkeypatch.setattr(hl_fills, "_started_at", time.time())
+    hl_fills._dirty[A] = time.time() + 100
+    assert hl_fills.next_job(time.time() + 120, roster) == (A, "change")
+
+
+def test_a_view_does_not_wait_behind_a_read_in_progress(fake, monkeypatch):
+    """A profile waited 4 seconds for its refresh while the reader was busy with a long backfill."""
+    fake.regular[A] = seq(NOW - 900)
+    run(hl_fills.sync(None, A, "backfill"))
+    hl_fills._meta[A]["synced_at"] = time.time() - hl_fills.VIEW_REFRESH_S - 1
+
+    async def view(busy):
+        monkeypatch.setattr(hl_fills, "_task", asyncio.get_running_loop().create_task(asyncio.sleep(10)))
+        monkeypatch.setattr(hl_fills, "_current", {"address": "0x" + "b" * 40} if busy else None)
+        t0 = time.monotonic()
+        await hl_fills.refresh(A, wait=0.5)
+        hl_fills._task.cancel()
+        return time.monotonic() - t0
+    assert run(view(busy=True)) < 0.2 and A in hl_fills._view_requests
+    assert run(view(busy=False)) >= 0.45           # a free reader: the view waits for it

@@ -122,7 +122,7 @@ Trader profiles, their fills and closed positions, the coin page's trader entrie
 | A profile's live positions differ from the stored fills | the same, at most once per wallet every 10 minutes; the profile waits up to 4 seconds for it |
 | Every 12 hours (plus or minus 10%) | the same, for trades opened and closed between two position readings |
 
-**Budget.** The store has its own share of Hyperliquid's 1,200 weight a minute: 300, of which the backfill may use 240, so reads after a change always have room. The backfill also pauses in the 20 minutes after each 4-hour close. Two older shares shrink to keep the total of all shares where it was: leaderboard win rates 240 to 60 (they come from the store now), trader entries 480 to 360 (the coin page's holders are tracked wallets).
+**Budget.** The store has its own share of Hyperliquid's 1,200 weight a minute: 300, of which the backfill may use 240, so reads after a change always have room. The backfill also pauses in the 20 minutes after each 4-hour close and for the first 10 minutes after a start, while the scanner loads every market's candles (`FILLS_BACKFILL_AFTER_START_S`). Every page is saved with its cursor as it arrives, so a read cut short by a 429, a timeout or a restart continues from the last page instead of starting the wallet again. Two older shares shrink to keep the total of all shares where it was: leaderboard win rates 240 to 60 (they come from the store now), trader entries 480 to 360 (the coin page's holders are tracked wallets).
 
 | Share (weight a minute) | Before | After |
 |---|---|---|
@@ -149,7 +149,7 @@ Before, each uncached profile view of a tracked wallet cost 40 to 240 weight in 
 
 **Wallets not on the roster** (a pasted address) are still read live, shared between viewers for 3 minutes, one read per wallet at a time, and at most 6 such reads a minute across all users (`TRADER_LIVE_LOADS_PER_MIN`). Past that the profile, fills and history endpoints answer 503 "Busy, try again shortly" with a `Retry-After`, and the profile page retries after it.
 
-**Shown:** `/api/hyperlens/status` has `fills_store` (wallets backfilled and pending, time left, rows, file size, the store's weight a minute, queued reads, live reads refused) and `api_calls` now counts weight per request type (`weight_per_min_5m`).
+**Shown:** `/api/hyperlens/status` has `fills_store` (wallets backfilled and pending, time left, rows, file size, the store's weight a minute, queued reads, live reads refused; `state`, the read in progress in `current` with its pages, fills and weight so far, `last_attempt` with its outcome, `last_exception`). The counts are read from the database file from the first second after a start and `api_calls` now counts weight per request type (`weight_per_min_5m`).
 
 **Off:** `FILLS_STORE_ENABLED=0` returns every page to live reads as before.
 
