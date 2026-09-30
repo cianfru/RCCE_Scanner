@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { T } from "../theme.js";
 import { NAV_ICONS } from "./navIcons.jsx";
+import { getAdminKey } from "../auth.js";
+import { useAccount } from "../account.js";
 
 // More: the rarely used pages, one tap from the hamburger. The four main pages live in the
 // header tabs (and the phone tab bar), so they are not repeated here. The theme switch is in
@@ -25,6 +27,8 @@ const NAV_SECTIONS = [
 ];
 // "(HIP-3)" never breaks across lines.
 const TRADFI = { key: "tradfi", label: "TradFi", desc: <>Commodities, equities, indices <span style={{ whiteSpace: "nowrap" }}>(HIP-3)</span></> };
+// Listed only in the owner's browser (the admin key, or the owner's wallet signed in).
+const OWNER_ITEMS = [{ key: "intel", label: "Intel", desc: "Who uses Reflex, how and from where" }];
 const MARKETS = [
   { kind: "perpetual", icon: "perps", label: "Perpetuals" },
   { kind: "spot", icon: "spot", label: "Spot markets" },
@@ -135,6 +139,8 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
   const [visible, setVisible] = useState(false);
   const navRef = useRef(null);
   const touchStart = useRef(null);
+  const account = useAccount();
+  const owner = !!getAdminKey() || !!account?.owner;
 
   useEffect(() => {
     if (isOpen) {
@@ -299,6 +305,15 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
               ))}
             </div>
           ))}
+
+          {owner && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={sectionLabel}>Owner</div>
+              {OWNER_ITEMS.map(item => (
+                <NavRow key={item.key} item={item} active={activeTab === item.key} onSelect={go(item.key)} />
+              ))}
+            </div>
+          )}
         </div>
       </nav>
     </>

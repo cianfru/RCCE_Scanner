@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { track } from "../usage.js";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import TokenLogo from "./TokenLogo.jsx";
@@ -115,6 +116,7 @@ export default function GlobalSearch({ rows, radarTf = "1d", phone = false, comp
   const close = useCallback(() => { setOpen(false); setSheet(false); input.current?.blur(); }, []);
   const pick = useCallback(e => {
     if (!e) return;
+    track("search");
     close();
     setQ("");
     if (e.kind === "coin") onOpenCoin ? onOpenCoin(e.row) : navigate(marketHref(e.row));

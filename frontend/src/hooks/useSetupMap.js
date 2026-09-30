@@ -3,6 +3,7 @@ import { createKeyedCache } from "../utils/keyedCache.js";
 import { WATCH_MESSAGES, watchReason } from "../utils/setupMap.js";
 import { usesAccount } from "../account.js";
 import { apiJson } from "../edge.js";
+import { track } from "../usage.js";
 
 export { WATCH_MESSAGES };
 
@@ -66,6 +67,7 @@ export async function toggleWatch(coin, tf = "1d") {
     return { ok: false, reason: "error" };
   }
   if (!res.ok) return { ok: false, reason: watchReason(res.status, res.status === 403 ? (await res.json().catch(() => ({}))).detail : undefined) };
+  if (!on) track("watch");
   await loadWatch({ force: true });
   return { ok: true, watching: !on };
 }

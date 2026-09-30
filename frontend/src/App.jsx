@@ -40,6 +40,7 @@ import PageTitle from "./components/PageTitle.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
 import NotFound from "./components/NotFound.jsx";
 import GlobalSearch from "./components/GlobalSearch.jsx";
+import { trackView } from "./usage.js";
 
 // Pages load their code on first visit; the shell and the scanner stay in the main bundle.
 const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
@@ -54,6 +55,7 @@ const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
 const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 const BridgePage = lazy(() => import("./pages/BridgePage.jsx"));
 const TraderPage = lazy(() => import("./pages/TraderPage.jsx"));
+const IntelPage = lazy(() => import("./pages/IntelPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ const ROUTE_TO_TAB = {
   "/executor": "executor",
   "/portfolio": "trading",
   "/settings": "settings",
+  "/intel": "intel",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
@@ -106,6 +109,7 @@ const TAB_TO_ROUTE = {
   executor: "/executor",
   trading: "/portfolio",
   settings: "/settings",
+  intel: "/intel",
 };
 // Page titles (h1 and browser tab) of the pages without their own title logic.
 const TAB_TITLES = {
@@ -119,6 +123,7 @@ const TAB_TITLES = {
   executor: "Executor",
   chat: "AI Assist",
   settings: "Settings",
+  intel: "Intel",
   notfound: "Page not found",
 };
 const DEFAULT_SORT = "priority_score";
@@ -166,6 +171,9 @@ export default function App() {
     if (addressFromPath(path)) return "trader";             // a trader's profile: /trader/0x...
     return ROUTE_TO_TAB[path] || "notfound";
   }, [path, location.search]);
+
+  // Page views for the owner's Intel page (usage.js): one per path, not per filter change.
+  useEffect(() => { trackView(path); }, [path]);
 
   // The scanner timeframe last viewed, for AI Assist
   const lastScannerTf = useRef("1d");
@@ -1124,6 +1132,12 @@ export default function App() {
         )}
 
         {activeTab === "settings" && <SettingsPage style={pageMargin} />}
+
+        {activeTab === "intel" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <IntelPage style={pageMargin} />
+          </Suspense>
+        )}
 
         {activeTab === "notfound" && <NotFound targets={tabTargets} radarTf={lastTf} />}
       </div>}

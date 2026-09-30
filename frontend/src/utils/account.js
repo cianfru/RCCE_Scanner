@@ -10,6 +10,7 @@ const SESSION_PATHS = [
   /^\/api\/setup-map\/watch\//,
   /^\/api\/traders\/0x[0-9a-fA-F]{40}(\/|$)/,
   /^\/api\/hyperlens\/followed(\/|$)/,
+  /^\/api\/owner\//,
 ];
 
 export function sendsSession(url, apiBase) {
