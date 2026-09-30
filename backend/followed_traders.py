@@ -61,8 +61,16 @@ def _save() -> None:
 
 
 def addresses() -> set:
+    """Every followed wallet: the owner's list, plus (with accounts on) every wallet some
+    account follows, so each is read once however many people follow it."""
     _load()
-    return set(_items)
+    out = set(_items)
+    try:
+        import accounts
+        out |= accounts.followed_union()
+    except Exception as exc:
+        logger.debug("followed traders: account follows not read: %s", exc)
+    return out
 
 
 def items() -> Dict[str, dict]:
@@ -160,10 +168,12 @@ def alerts(changes: List[dict], min_usd: float) -> List[dict]:
     return out
 
 
-def message(address: str, cohort: str, change: dict, holdings: Iterable[dict]) -> str:
-    """One change, in the house style (HTML): who and what, then the cohort and what they hold."""
+def message(address: str, cohort: str, change: dict, holdings: Iterable[dict], note: Optional[str] = None) -> str:
+    """One change, in the house style (HTML): who and what, then the cohort and what they hold.
+    ``note`` defaults to the owner's note on the wallet."""
     from tg_alerts import coin_b, esc
-    note = _items.get(address, {}).get("note")
+    if note is None:
+        note = _items.get(address, {}).get("note")
     who = esc(codename(address) + (f" · {note}" if note else ""))
     head = (f"{who} {_VERB[change['kind']]} {esc(change['side'])} {coin_b(change['coin'])} "
             f"{_usd(change['usd'])} at {_px(change['px'])}")
@@ -176,17 +186,35 @@ def record(address: str, cohort: str, ts: float, changes: List[dict], holdings: 
     Best effort, never raises."""
     if not changes:
         return
-    for c in changes:
-        _events.append({"address": address, "cohort": cohort, "ts": ts, **c})
-    _save()
+    if address in _items or not _account_only(address):
+        for c in changes:
+            _events.append({"address": address, "cohort": cohort, "ts": ts, **c})
+        _save()
+        try:
+            import tg_alerts as ta
+            for c in alerts(changes, float(ta.settings().get("follow_min_usd") or MIN_USD)):
+                text = message(address, cohort_label(cohort), c, holdings)
+                ta.submit_nowait("followed", f"{address}:{c['coin']}:{c['kind']}", text, text.split("\n")[0])
+        except Exception as exc:
+            logger.debug("followed traders: telegram not sent: %s", exc)
     try:
-        import tg_alerts as ta
-        label = {"profitable": "profitable trader", "large": "large account"}.get(cohort, cohort)
-        for c in alerts(changes, float(ta.settings().get("follow_min_usd") or MIN_USD)):
-            text = message(address, label, c, holdings)
-            ta.submit_nowait("followed", f"{address}:{c['coin']}:{c['kind']}", text, text.split("\n")[0])
+        import user_alerts
+        user_alerts.followed_changes(address, cohort, ts, changes, holdings)
     except Exception as exc:
-        logger.debug("followed traders: telegram not sent: %s", exc)
+        logger.debug("followed traders: account alerts not sent: %s", exc)
+
+
+def _account_only(address: str) -> bool:
+    """Followed by accounts but not on the owner's list (those changes are the accounts')."""
+    try:
+        import accounts
+        return address in accounts.followed_union()
+    except Exception:
+        return False
+
+
+def cohort_label(cohort: str) -> str:
+    return {"profitable": "profitable trader", "large": "large account"}.get(cohort, cohort)
 
 
 def chat_ids() -> set:

@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Request, Path as PathParam
+from fastapi import Depends, FastAPI, Query, HTTPException, WebSocket, WebSocketDisconnect, Request, Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.gzip import GZipMiddleware
@@ -227,6 +227,7 @@ async def lifespan(app: FastAPI):
             import tg_brief
             tg_brief.set_map_provider(_setup_map_cached)
             asyncio.create_task(tg_brief.run_scheduler())
+        accounts_api.start_background(_setup_map_cached)     # per-account alerts (REFLEX_ACCOUNTS)
     except Exception as e:
         logger.warning("Telegram bot init failed (non-fatal): %s", e)
 
@@ -489,6 +490,11 @@ async def _auto_init_executor():
 
 
 app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
+
+# Wallet sign-in and per-account lists (accounts_api.py); off unless REFLEX_ACCOUNTS is set.
+import accounts_api
+from accounts_api import require_holder as _holder_only, require_owner_when_public as _owner_only
+app.include_router(accounts_api.router)
 
 # ETag + 304 for unchanged JSON GETs (egress.py). Added before GZip so it sits
 # inside it and hashes the plain body.
@@ -4392,10 +4398,11 @@ async def _setup_map_cached(tf: str) -> dict:
 
 
 @app.get("/api/setup-map")
-async def setup_map_view(tf: str = Query("1d", pattern="^(4h|1d)$")):
+async def setup_map_view(request: Request, tf: str = Query("1d", pattern="^(4h|1d)$")):
     """Every coin by stretch (z-score) and profitable-trader lean, with trails of the last
-    closes (docs in setup_map.py). Built from data in memory; cached for two minutes."""
-    return await _setup_map_cached(tf)
+    closes (docs in setup_map.py). Built from data in memory; cached for two minutes.
+    With access tiers on, the free tier gets the map from at least an hour ago."""
+    return await accounts_api.setup_map_for(request, tf, _setup_map_cached)
 
 
 _LADDER_CACHE: dict = {}
@@ -4421,7 +4428,7 @@ def _ladder_build(tf: str, item: dict) -> dict:
     return setup_map.ladder(item, cohort_positions(item["coin"], "profitable"), mean, now)
 
 
-@app.get("/api/setup-map/ladder")
+@app.get("/api/setup-map/ladder", dependencies=[Depends(_holder_only)])
 async def setup_map_ladder(coin: str = Query(..., min_length=1, max_length=40),
                            tf: str = Query("1d", pattern="^(4h|1d)$")):
     """One coin's profitable wallets at their entry prices (the Radar's price ladder), with the weekly band,
@@ -4442,14 +4449,14 @@ async def setup_map_ladder(coin: str = Query(..., min_length=1, max_length=40),
     return body
 
 
-@app.get("/api/setup-map/watch")
+@app.get("/api/setup-map/watch", dependencies=[Depends(_owner_only)])
 async def setup_map_watched():
     import setup_map
     import followed_traders as ft
     return {"coins": [{"coin": c, **w} for c, w in setup_map.watched().items()], "telegram": ft.telegram_status()}
 
 
-@app.post("/api/setup-map/watch")
+@app.post("/api/setup-map/watch", dependencies=[Depends(_owner_only)])
 async def setup_map_watch(body: dict):
     """Watch a coin: Telegram alerts when it enters Early setups or the entry zone or gets an
     exit signal (tg_alerts), and a line in the daily brief when anything changed. Body: {coin, tf}.
@@ -4464,7 +4471,7 @@ async def setup_map_watch(body: dict):
     return {"watching": coin}
 
 
-@app.delete("/api/setup-map/watch/{coin}")
+@app.delete("/api/setup-map/watch/{coin}", dependencies=[Depends(_owner_only)])
 async def setup_map_unwatch(coin: str):
     import setup_map
     from hl_intelligence import _normalize_coin
@@ -4570,7 +4577,7 @@ async def run_setup_watch(interval: int = 300):
         await asyncio.sleep(interval)
 
 
-@app.get("/api/hyperlens/followed")
+@app.get("/api/hyperlens/followed", dependencies=[Depends(_owner_only)])
 async def followed_list():
     """Followed traders with their current positions and recent changes."""
     import followed_traders as ft
@@ -4584,7 +4591,7 @@ async def followed_list():
     return {"traders": traders, "events": ft.events(None, 50), "telegram": ft.telegram_status()}
 
 
-@app.post("/api/hyperlens/followed")
+@app.post("/api/hyperlens/followed", dependencies=[Depends(_owner_only)])
 async def followed_add(body: dict):
     """Follow a trader. Body: {address, note?}. Needs the admin key once it is set."""
     import followed_traders as ft
@@ -4594,7 +4601,7 @@ async def followed_add(body: dict):
     return {"added": ft.add(address, str(body.get("note", ""))), "address": address.lower()}
 
 
-@app.delete("/api/hyperlens/followed/{address}")
+@app.delete("/api/hyperlens/followed/{address}", dependencies=[Depends(_owner_only)])
 async def followed_remove(address: str):
     import followed_traders as ft
     return {"removed": ft.remove(address), "address": address.lower()}
@@ -4617,7 +4624,7 @@ async def traders_leaderboard(
     return tp.leaderboard(window, cohort, offset, limit)
 
 
-@app.get("/api/traders/{address}")
+@app.get("/api/traders/{address}", dependencies=[Depends(_holder_only)])
 async def trader_profile_summary(address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$")):
     """A trader's account value, PnL/ROI per window, win rate, equity history and open positions."""
     import trader_profile as tp
@@ -4627,7 +4634,7 @@ async def trader_profile_summary(address: str = PathParam(..., pattern=r"^0x[0-9
     return res
 
 
-@app.get("/api/traders/{address}/fills")
+@app.get("/api/traders/{address}/fills", dependencies=[Depends(_holder_only)])
 async def trader_fills(
     address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$"),
     coin: Optional[str] = Query(None, max_length=20, pattern=r"^[A-Za-z0-9]+$"),
@@ -4644,7 +4651,7 @@ async def trader_fills(
         raise HTTPException(status_code=502, detail=f"Fills unavailable: {exc}")
 
 
-@app.get("/api/traders/{address}/history")
+@app.get("/api/traders/{address}/history", dependencies=[Depends(_holder_only)])
 async def trader_history(
     address: str = PathParam(..., pattern=r"^0x[0-9a-fA-F]{40}$"),
     coin: Optional[str] = Query(None, max_length=20, pattern=r"^[A-Za-z0-9]+$"),

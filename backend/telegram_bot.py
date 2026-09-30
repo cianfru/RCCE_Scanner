@@ -66,6 +66,7 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("alerts", self._cmd_alerts))
         self.app.add_handler(CommandHandler("brief", self._cmd_brief))
         self.app.add_handler(CommandHandler("quiet", self._cmd_quiet))
+        self.app.add_handler(CommandHandler("unlink", self._cmd_unlink))
         self.app.add_handler(CallbackQueryHandler(self._on_alerts_button, pattern=r"^al:"))
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
@@ -123,6 +124,9 @@ class TelegramBot:
                                         disable_web_page_preview=True)
 
     async def _cmd_start(self, update, context):
+        # /start <code> from the app links this chat to a Reflex account (accounts on).
+        if context.args and await self._link(update, context.args[0]):
+            return
         if not self._check_auth(update.effective_chat.id):
             return
         await self._send_html(
@@ -136,6 +140,29 @@ class TelegramBot:
             "/follow 0x... a trader\n"
             "Or ask a question.",
         )
+
+    # -- Account link (accounts.py) -------------------------------------------
+
+    async def _link(self, update, code: str) -> bool:
+        """Bind the chat to the account the code was made for. False when accounts are off."""
+        import accounts
+        if not accounts.enabled():
+            return False
+        user = accounts.tg_claim(code, update.effective_chat.id)
+        if user is None:
+            await self._send(update, "That code is not valid any more. Make a new one in the app.")
+        else:
+            await self._send_html(update, f"Linked to {ta.esc(codename(user))}. "
+                                           "Alerts for your followed traders and watched coins arrive here.\n"
+                                           "/unlink to stop.")
+        return True
+
+    async def _cmd_unlink(self, update, context):
+        import accounts
+        if not accounts.enabled():
+            return
+        done = accounts.tg_unlink(chat_id=update.effective_chat.id)
+        await self._send(update, "Unlinked." if done else "This chat is not linked to an account.")
 
     # -- Alerts and brief ---------------------------------------------------
 

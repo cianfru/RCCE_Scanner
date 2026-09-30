@@ -17,3 +17,4 @@ yfinance>=0.2.36
 psutil>=5.9.0
 Pillow>=10.1
 tzdata>=2024.1
+eth-account>=0.10.0
