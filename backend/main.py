@@ -4015,6 +4015,41 @@ async def public_preview(timeframe: str = Query("1d", description="4h or 1d")):
     return {"results": preview_rows(cache.get_results(timeframe if timeframe in ("4h", "1d") else "1d"))}
 
 
+_LANDING_CACHE: dict = {}
+
+
+@app.get("/api/public/landing")
+async def public_landing():
+    """The landing page's live data, the same for every visitor (public_preview.landing): the 1D
+    Radar map slimmed to what it draws, the read of one coin, breadth by week and the forward
+    test's counter. Rebuilt at most every two minutes; the CDN keeps a copy (edge.PUBLIC_PATHS).
+    With access tiers on, the map is the free tier's delayed one."""
+    hit = _LANDING_CACHE.get("body")
+    if hit and time.time() - hit[0] < 120:
+        return hit[1]
+    import degrade
+    import public_preview
+    import tiers
+    smap = await degrade.LAST_GOOD.serve(("setup-map", "1d"), lambda: _setup_map_cached("1d"))
+    if tiers.enforced():
+        import radar_delay
+        delay = tiers.radar_delay_s()
+        radar_delay.note("1d", smap, delay)
+        smap = radar_delay.get("1d", delay)
+    try:
+        import market_history
+        history = degrade.LAST_GOOD.serve_sync(("market-history",), market_history.view)
+    except Exception:
+        history = None
+    try:
+        forward = await radar_forward_test()
+    except Exception:
+        forward = None
+    body = public_preview.landing(smap, cache.get_results("1d"), history, forward)
+    _LANDING_CACHE["body"] = (time.time(), body)
+    return body
+
+
 @app.get("/health")
 async def health():
     return {"ok": True, "build": "2026-03-17-multi-source"}
