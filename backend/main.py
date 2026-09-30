@@ -506,6 +506,10 @@ import accounts_api
 from accounts_api import require_holder as _holder_only, require_owner_when_public as _owner_only
 app.include_router(accounts_api.router)
 
+# Usage beacon, invite codes and the owner's Intel page (usage_api.py).
+import usage_api
+app.include_router(usage_api.router)
+
 # ETag + 304 for unchanged JSON GETs (egress.py). Added before GZip so it sits
 # inside it and hashes the plain body.
 import egress
@@ -3968,10 +3972,12 @@ async def auth_login(payload: dict):
     import access
     if not access.enforced():
         return {"ok": True, "enforced": False, "token": None}
-    if not access.check_code((payload or {}).get("code", "")):
+    # The shared code or a per-person invite code (invites.py); the token names which.
+    token = access.login((payload or {}).get("code", ""))
+    if not token:
         await asyncio.sleep(1.0)   # slow down guessing
         raise HTTPException(status_code=401, detail="Incorrect access code")
-    return {"ok": True, "enforced": True, "token": access.issue_token()}
+    return {"ok": True, "enforced": True, "token": token}
 
 
 @app.get("/api/auth/status")

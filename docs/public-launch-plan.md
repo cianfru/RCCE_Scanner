@@ -103,6 +103,30 @@ Nothing changes for users until the first two steps; each switch rolls back on i
 
 Bytes are measured through the API (gzip and ETag middlewares) with a production scan of 208 rows; the per-hour figure assumes one pass a minute.
 
+## Invites and usage (the Intel page)
+
+For the invite-only beta: who uses Reflex, how much, from where and which features, so the next steps are decided from numbers.
+
+**Invite codes.** The owner creates one code per person on `/intel` (Invites tab): a label (the person's name), optionally an expiry, copy, revoke. The login screen is unchanged and takes either the shared access code or an invite code. The session token names the invite, so every session belongs to a person; revoking a code, or its expiry, ends its sessions. The shared code keeps working and shows as "shared code" (everyone on it counts as one person).
+
+**What is recorded.** Page views (Scanner, Radar, Traders, a coin page, a trader profile, the other pages by name) and a few actions (search, the Radar's Long/Short/Both, follow, watch, Telegram link, wallet sign-in, theme switch), as counts per day and person, not a click log. Per session: the day, first and last event, country and city, device class (phone, tablet, desktop) and browser family. Per person: first and last seen, wallet signed in yes/no, Telegram linked yes/no. No IP address, user agent, wallet address or coin is stored. Kept 180 days.
+
+**How it travels.** The app queues events and sends one small batch a minute while the tab is visible, plus one when it is hidden (`sendBeacon`), to `POST /api/usage/beacon` (`usage_api.py`, SQLite `usage.db` on the data volume). It does not depend on API logs, so it keeps working behind the edge cache. A browser holding the admin key (the owner's) is not counted.
+
+**Location.** The API is called on Railway directly, so its requests carry no location. The first batch of each session goes through the app's own site instead (`/u/beacon`, a rewrite in `frontend/vercel.json`), which passes Vercel's country and city to the API; later batches go direct. That is one Vercel request per session. If the rewrite is missing, an optional lookup (`REFLEX_USAGE_GEO_LOOKUP=1`) asks a public IP-location service once per visitor per day.
+
+**The page.** `/intel` is listed under More only in the owner's browser and answers only to the admin key (or the owner's wallet session while accounts are on). Top line: active today, 7 and 28 days, logged in out of invited, and the beta bar: the share of people still active in their fourth week (with an (i) on how it is counted). Charts: daily active people (90 days) and a weekly retention grid. Tabs: People (sortable), Features (use, and returning vs one-time people), Places (countries, devices), Invites.
+
+**Cost.** One request a minute per visible tab at most, a few hundred bytes each, and nothing while hidden; the database is a few MB for a beta.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `REFLEX_USAGE` | on | `0` stops recording (the page still shows what was kept) |
+| `REFLEX_USAGE_DAYS` | 180 | How long sessions and counts are kept |
+| `REFLEX_USAGE_TZ` | Europe/Rome | The time zone of a "day" |
+| `REFLEX_USAGE_GEO_LOOKUP` | off | The fallback location lookup |
+| `VITE_USAGE` (Vercel) | on | `0` stops the app sending anything |
+
 ## Not needed while the app has one user
 
 None of the above is needed today. Revisit this file when the launch date is set.

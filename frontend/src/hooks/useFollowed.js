@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { usesAccount } from "../account.js";
+import { track } from "../usage.js";
 import { refusal } from "../utils/account.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -54,6 +55,7 @@ export default function useFollowed() {
         : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: a, note }) });
       ok = res.ok;
     } catch { ok = false; }
+    if (ok && !on) track("follow");
     if (ok) await load(true);
     return ok;
   }, [followed]);

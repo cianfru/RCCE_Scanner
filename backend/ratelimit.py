@@ -145,7 +145,7 @@ _EXCHANGE_READS = re.compile(
 _WALLET_NOTICES = re.compile(r"^/api/notifications/(position-warnings|exhaustion-opportunities|market-setups)$")
 _TRADER = re.compile(r"^/api/traders/0x[0-9a-fA-F]{40}(/fills|/history)?$")
 # Login keeps its own guard and chat its own limiter (see main.py).
-_WRITE_EXEMPT = ("/api/auth/", "/api/chat")
+_WRITE_EXEMPT = ("/api/auth/", "/api/chat", "/api/usage/beacon")   # the beacon has its own limit
 
 # Class -> (per client "burst/per_minute", all clients together "burst/per_minute" or None).
 DEFAULTS: Dict[str, Tuple[str, Optional[str]]] = {
