@@ -394,7 +394,9 @@ def test_flags_off_behave_as_before(off, client, monkeypatch):
     async def build(tf):
         return live
     monkeypatch.setattr(main, "_setup_map_cached", build)
-    assert c.get("/api/setup-map?tf=1d").json() == live
+    body = c.get("/api/setup-map?tf=1d").json()
+    body.pop("as_of", None); body.pop("stale", None)   # stamped by degrade.py
+    assert body == live
     # The owner's lists answer as before, without a session.
     assert c.get("/api/hyperlens/followed").status_code == 200
     assert c.post("/api/hyperlens/followed", json={"address": addr(3)}).json() == {"added": True, "address": addr(3)}
@@ -459,7 +461,9 @@ def test_tiers_on_gate_holder_features(on, client, monkeypatch):
     monkeypatch.setattr(main, "_setup_map_cached", build)
     got = c.get("/api/setup-map?tf=1d", headers={"X-Reflex-Session": free}).json()
     assert got["delayed"] and got["coins"] == []                            # nothing an hour old yet
-    assert c.get("/api/setup-map?tf=1d", headers={"X-Reflex-Session": holder}).json() == live
+    body = c.get("/api/setup-map?tf=1d", headers={"X-Reflex-Session": holder}).json()
+    body.pop("as_of", None); body.pop("stale", None)   # stamped by degrade.py
+    assert body == live
     assert c.get("/api/setup-map?tf=1d").json()["delayed"]                   # signed out: free
     trader = f"/api/traders/{addr(50)}"
     assert c.get(trader, headers={"X-Reflex-Session": free}).json() == {"detail": "holder"}
