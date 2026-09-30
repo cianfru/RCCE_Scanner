@@ -33,6 +33,7 @@ from scanner import cache, run_scan, run_rolling_scan, run_tradfi_scan, get_scan
 from ws_hub import WebSocketHub
 from models import (
     ScanResponse,
+    ScanResult,
     ConsensusResponse,
     StatusResponse,
     WatchlistResponse,
@@ -493,6 +494,10 @@ app = FastAPI(title="RCCE Scanner API", version="4.0", lifespan=lifespan)
 # ETag + 304 for unchanged JSON GETs (egress.py). Added before GZip so it sits
 # inside it and hashes the plain body.
 import egress
+import edge
+# Shared CDN cache headers for the edge feeds (edge.py). Innermost, so the ETag
+# middleware below keeps the browser Cache-Control it sets.
+app.add_middleware(edge.EdgeCacheMiddleware)
 app.add_middleware(egress.ConditionalGetMiddleware)
 
 # GZip responses > 500 bytes — reduces network egress ~70-80% for JSON payloads
@@ -528,7 +533,8 @@ async def _activity_middleware(request, call_next):
     path = request.url.path
     # Server-side access control (access.py): only when REFLEX_ACCESS_CODE is set.
     import access
-    if request.method != "OPTIONS" and not access.allowed(path, request.headers, request.query_params):
+    if request.method != "OPTIONS" and not access.allowed(path, request.headers, request.query_params) \
+            and not edge.request_allowed(request.method, path, request.headers, request.query_params):
         # This middleware sits outside CORS, so the header is added here for the
         # browser to read the 401 and show the login screen.
         return JSONResponse({"detail": "Login required"}, status_code=401,
@@ -545,14 +551,26 @@ async def _activity_middleware(request, call_next):
     return await call_next(request)
 
 
+# Per-client token buckets on the expensive endpoints (ratelimit.py); 429 + Retry-After.
+import ratelimit as _ratelimit
+app.add_middleware(_ratelimit.RateLimitMiddleware)
+
 # Outermost: counts bytes as sent, after gzip (see /api/net-stats).
 app.add_middleware(egress.EgressCounterMiddleware)
+
+
+@app.get("/api/edge/key")
+async def edge_key():
+    """Whether pages should read the heavy feeds through the CDN, and the key for their URLs (edge.py)."""
+    return JSONResponse(edge.key_response(), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/net-stats")
 async def net_stats():
     """Approximate bytes sent per endpoint and over the WebSocket since start (read-only)."""
-    return egress.snapshot(ws_clients=WebSocketHub.get().counts())
+    snap = egress.snapshot(ws_clients=WebSocketHub.get().counts())
+    snap["rate_limited"] = dict(_ratelimit.LIMITED)
+    return snap
 
 
 # ---------------------------------------------------------------------------
@@ -630,39 +648,83 @@ async def scan(
     timeframe: str = Query("4h", description="4h or 1d"),
     regime: Optional[str] = Query(None),
     signal: Optional[str] = Query(None),
+    view: str = Query("full", pattern="^(full|list)$",
+                      description="list: the fields the scanner pages read (scan_view.py)"),
 ):
     """Return cached scan results, filtered by regime/signal.
 
     Encoding ~200 rows through the response model was the largest steady CPU cost
     (every open tab polls both timeframes each minute), so the encoded body is kept
     until the next synthesis pass replaces the results, and at most 30 seconds.
+    ``as_of`` is when the results were computed (the last completed scan pass); ``stale``
+    says it is older than the scan limit in degrade.py (the results are the last good ones).
     """
     import json
-    from fastapi.encoders import jsonable_encoder
     from fastapi.responses import Response
-    source = cache.results.get(timeframe)
-    consensus = cache.consensus.get(timeframe)
-    key = (timeframe, regime, signal, id(source), id(consensus), int(time.time() // 30))
-    body, etag = _SCAN_BODY_CACHE.get(key) or (None, None)
-    if body is None:
-        encoded = jsonable_encoder(ScanResponse(
-            results=cache.get_results(timeframe, regime=regime, signal=signal),
-            scan_running=False, cache_age_seconds=0.0, consensus=consensus,
-        ))
-        encoded.pop("scan_running", None)
-        encoded.pop("cache_age_seconds", None)
-        body = json.dumps(encoded, separators=(",", ":"))
-        while len(_SCAN_BODY_CACHE) >= 6:   # both timeframes plus a few filters
-            _SCAN_BODY_CACHE.pop(next(iter(_SCAN_BODY_CACHE)))
-        # ETag from the results alone: the cache age in the head changes every call.
-        etag = egress.etag_for(body.encode())
-        _SCAN_BODY_CACHE[key] = (body, etag)
-    head = json.dumps({"scan_running": cache.is_scanning, "cache_age_seconds": cache.get_cache_age()})
+    body, etag = _scan_body(timeframe, regime, signal, view)
+    import degrade
+    head = json.dumps({"scan_running": cache.is_scanning, "cache_age_seconds": cache.get_cache_age(),
+                       "as_of": cache.last_scan_time,
+                       "stale": degrade.is_stale(cache.last_scan_time, degrade.scan_limit())})
     return Response(content=head[:-1] + "," + body[1:], media_type="application/json",
                     headers={"ETag": etag})
 
 
 _SCAN_BODY_CACHE: Dict[tuple, tuple] = {}
+
+
+def _scan_body(timeframe: str, regime: Optional[str], signal: Optional[str], view: str) -> tuple:
+    """(encoded body without the per-request head, its ETag), kept per scan pass."""
+    import json
+    from fastapi.encoders import jsonable_encoder
+    import scan_view
+    source = cache.results.get(timeframe)
+    consensus = cache.consensus.get(timeframe)
+    key = (timeframe, regime, signal, view, id(source), id(consensus), int(time.time() // 30))
+    hit = _SCAN_BODY_CACHE.get(key)
+    if hit:
+        return hit
+    encoded = jsonable_encoder(ScanResponse(
+        results=cache.get_results(timeframe, regime=regime, signal=signal),
+        scan_running=False, cache_age_seconds=0.0, consensus=consensus,
+    ))
+    encoded.pop("scan_running", None)
+    encoded.pop("cache_age_seconds", None)
+    if view == "list":
+        encoded["results"] = scan_view.list_rows(encoded["results"])
+    elif view == "sparklines":
+        encoded = {"sparklines": scan_view.sparklines(encoded["results"])}
+    body = json.dumps(encoded, separators=(",", ":"))
+    while len(_SCAN_BODY_CACHE) >= 10:   # both timeframes and views plus a few filters
+        _SCAN_BODY_CACHE.pop(next(iter(_SCAN_BODY_CACHE)))
+    # ETag from the results alone: the cache age in the head changes every call.
+    out = (body, egress.etag_for(body.encode()))
+    _SCAN_BODY_CACHE[key] = out
+    return out
+
+
+@app.get("/api/scan/sparklines")
+async def scan_sparklines(timeframe: str = Query("4h", pattern="^(4h|1d)$")):
+    """Symbol -> its last 24 closes: the part of the scan list that changes only when a candle
+    closes, so its ETag holds between candles (the list view leaves it out)."""
+    from fastapi.responses import Response
+    body, etag = _scan_body(timeframe, None, None, "sparklines")
+    return Response(content=body, media_type="application/json", headers={"ETag": etag})
+
+
+@app.get("/api/scan/row")
+async def scan_row(
+    symbol: str = Query(..., min_length=1, max_length=40),
+    timeframe: str = Query("4h", pattern="^(4h|1d)$"),
+    market: Optional[str] = Query(None, pattern="^(perpetual|spot)$"),
+):
+    """One coin's full scan row (every field), for the coin page and the detail panel."""
+    from fastapi.encoders import jsonable_encoder
+    import scan_view
+    row = scan_view.find_row(cache.get_results(timeframe), symbol, market)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not in the scan")
+    return {"as_of": cache.last_scan_time, "row": jsonable_encoder(ScanResult(**row))}
 
 
 @app.get("/api/tradfi")
@@ -3801,11 +3863,9 @@ _explain_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=60)
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP behind Railway's proxy."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Client IP behind the platform proxy (ratelimit.client_ip)."""
+    from ratelimit import client_ip
+    return client_ip(request.headers, request.client.host if request.client else None)
 
 
 def _enforce_rate_limit(limiter: SlidingWindowLimiter, request: Request) -> None:
@@ -4149,11 +4209,16 @@ async def hyperlens_consensus(
             out["cohorts"] = _cohort_view(symbol)
         return out
 
-    all_c = get_all_consensus()
-    results = [_consensus_to_dict(c) for c in all_c.values()]
-    # Sort by total positioned wallets
-    results.sort(key=lambda x: x["long_count"] + x["short_count"], reverse=True)
-    return {"count": len(results), "consensus": results}
+    def _all() -> dict:
+        results = [_consensus_to_dict(c) for c in get_all_consensus().values()]
+        # Sort by total positioned wallets
+        results.sort(key=lambda x: x["long_count"] + x["short_count"], reverse=True)
+        return {"count": len(results), "consensus": results}
+
+    # The last good list, marked stale, if a rebuild fails or comes back empty (degrade.py).
+    import degrade
+    body = degrade.LAST_GOOD.serve_sync(("consensus",), _all)
+    return degrade.stamp(body, (degrade.positions_as_of(), degrade.positions_limit()))
 
 
 def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict:
@@ -4179,10 +4244,12 @@ def _cohort_view(symbol: Optional[str], dimension: Optional[str] = None) -> dict
 
 @app.get("/api/market-history")
 async def market_history_view():
-    """Share of coins in each regime on every day since 2019, today's percentile, past episodes."""
+    """Share of coins in each regime on every day since 2019, today's percentile, past episodes.
+    The last good view, marked stale, if a rebuild fails (degrade.py)."""
+    import degrade
     import market_history
     try:
-        return market_history.view()
+        return degrade.LAST_GOOD.serve_sync(("market-history",), market_history.view)
     except FileNotFoundError:
         return JSONResponse({"detail": "Market history seed missing from this deploy"}, status_code=503)
 
@@ -4281,7 +4348,14 @@ def _positioning_map_cached(cohort: str) -> dict:
 async def hyperlens_positioning(cohort: str = Query("profitable", pattern="^(profitable|large)$")):
     """Per coin: where tracked wallets are positioned (counts, dollars, median entry per side),
     new positions in the last 24h, recent convergences, and the engine's 4H and 1D reading.
-    Built from data already in memory; cached for a minute."""
+    Built from data already in memory; cached for a minute. ``as_of`` is the newest wallet
+    reading; a failed rebuild serves the last good body marked stale (degrade.py)."""
+    import degrade
+    body = degrade.LAST_GOOD.serve_sync(("positioning", cohort), lambda: _positioning_body(cohort))
+    return degrade.stamp(body, (degrade.positions_as_of(), degrade.positions_limit()))
+
+
+def _positioning_body(cohort: str) -> dict:
     hit = _POSITIONING_CACHE.get(cohort)
     if hit and time.time() - hit[0] < 60:
         return hit[1]
@@ -4394,8 +4468,12 @@ async def _setup_map_cached(tf: str) -> dict:
 @app.get("/api/setup-map")
 async def setup_map_view(tf: str = Query("1d", pattern="^(4h|1d)$")):
     """Every coin by stretch (z-score) and profitable-trader lean, with trails of the last
-    closes (docs in setup_map.py). Built from data in memory; cached for two minutes."""
-    return await _setup_map_cached(tf)
+    closes (docs in setup_map.py). Built from data in memory; cached for two minutes.
+    If a rebuild fails, the last good map goes out marked stale (degrade.py)."""
+    import degrade
+    body = await degrade.LAST_GOOD.serve(("setup-map", tf), lambda: _setup_map_cached(tf))
+    return degrade.stamp(body, (degrade.scan_as_of(), degrade.scan_limit()),
+                         (degrade.positions_as_of(), degrade.positions_limit()))
 
 
 _LADDER_CACHE: dict = {}
@@ -4613,8 +4691,11 @@ async def traders_leaderboard(
     """A tracked group ranked by PnL over 7 days, 30 days or all time (Hyperliquid leaderboard
     windows, from the daily download). Win rate: positions closed in the last 30 days, computed
     from each wallet's fills in the background and filled in as it arrives."""
+    import degrade
     import trader_profile as tp
-    return tp.leaderboard(window, cohort, offset, limit)
+    # The last good page, marked stale, if building it fails (degrade.py).
+    return degrade.LAST_GOOD.serve_sync(("leaderboard", window, cohort, offset, limit),
+                                        lambda: tp.leaderboard(window, cohort, offset, limit))
 
 
 @app.get("/api/traders/{address}")
