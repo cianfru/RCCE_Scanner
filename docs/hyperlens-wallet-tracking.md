@@ -107,6 +107,52 @@ With the sweep off (`COHORTS_ENABLED=0`), HyperLens reads the roster itself whil
 
 Each reading costs about 2 ms of CPU, so the saving is small in money: well under a second of CPU a minute. New memory: the call counter (a few KB), the own polling plan for followed wallets (about 100 bytes each), queued change-log rows (a few per tick), the group maps (a few entries); the daily regrouping loads the 30-day change log for a few seconds (a few MB, in a worker thread). Database: the change log adds about 4 MB to hyperlens.db (71 MB, 30-day retention); cohorts.db keeps one more number per position and about 4,000 sweep-run rows (14 days).
 
+## Stored fills
+
+Trader profiles, their fills and closed positions, the coin page's trader entries and the leaderboard's win rates need each wallet's fills. Until October 2026 every uncached page view asked Hyperliquid for them (`userFills` and the timed-order slices: 40 to 240 weight, against 2 for a position reading). Now the roster's fills are kept in our database (`backend/hl_fills.py`) and those pages read them from there.
+
+**Store.** `fills.db`, next to `hyperlens.db` (or `FILLS_DB_PATH`). One row per perpetual fill: time, coin, side, price, size, position before, direction, closed PnL, fee, and whether it is a timed-order slice; the fields the open/add/trim/close/flip classification, the chart marks and the round trips need. The key is (wallet, time, trade id, side, slice flag), so a fill read twice is stored once and a wallet's fills are one range of the key in time order. Spot and builder-dex fills are not kept. Kept 180 days and at most the newest 10,000 per wallet; a wallet off the roster for 7 days is dropped. Freed pages go back to the disk every 6 hours.
+
+**Reading.** One wallet at a time, in the background:
+
+| When | What |
+|---|---|
+| First time (backfill) | `userFillsByTime` from 180 days ago, 2,000 a page (Hyperliquid serves a wallet's 10,000 latest), and its timed-order slices |
+| The position poller sees the wallet's positions change | only the fills since the last stored one (`userFillsByTime`, `userTwapSliceFillsByTime`) |
+| A profile's live positions differ from the stored fills | the same, at most once per wallet every 10 minutes; the profile waits up to 4 seconds for it |
+| Every 12 hours (plus or minus 10%) | the same, for trades opened and closed between two position readings |
+
+**Budget.** The store has its own share of Hyperliquid's 1,200 weight a minute: 300, of which the backfill may use 240, so reads after a change always have room. The backfill also pauses in the 20 minutes after each 4-hour close. Two older shares shrink to keep the total of all shares where it was: leaderboard win rates 240 to 60 (they come from the store now), trader entries 480 to 360 (the coin page's holders are tracked wallets).
+
+| Share (weight a minute) | Before | After |
+|---|---|---|
+| Cohort sweep | 400 | 400 |
+| Trader entries and live profiles | 480 | 360 |
+| Leaderboard win rates | 240 | 60 |
+| Fills store | | 300 (backfill up to 240) |
+| **Sum of shares** | **1,120** | **1,120** |
+
+**Measured on 30 September 2026** (60 wallets sampled from that day's roster rules; 18 of them read into a test store):
+
+| | |
+|---|---|
+| Fills in 180 days, per wallet | median 296, mean 1,085 (perp only: mean 781); 15% also have 2,000+ timed-order slices |
+| Backfill weight per wallet | median about 60, mean about 200, largest about 750 |
+| Backfill of the roster (about 620 wallets) | about 120,000 weight: 8 to 12 hours at 240 a minute, pauses included |
+| A read after a change | 40 weight (two requests, few fills) |
+| Steady state | about 1 read a minute after changes and 0.9 a minute from the sweep: about 60 weight a minute |
+| Disk | 86 bytes a fill: about 90 MB after the backfill, 100-250 MB after 180 days, at most about 530 MB (every wallet at 10,000) |
+| Largest wallet (10,000 fills) | read from disk in 40 ms, classified in 120 ms (once per stored version) |
+| Same classification as the live path | on the window both cover, 12 wallets: 10 identical, 2 differing by 1 and 3 fills at the edge of the live path's 2,000-slice window |
+
+Before, each uncached profile view of a tracked wallet cost 40 to 240 weight in fills and each coin page's trader entries up to 6 times that; now both cost none.
+
+**Wallets not on the roster** (a pasted address) are still read live, shared between viewers for 3 minutes, one read per wallet at a time, and at most 6 such reads a minute across all users (`TRADER_LIVE_LOADS_PER_MIN`). Past that the profile, fills and history endpoints answer 503 "Busy, try again shortly" with a `Retry-After`, and the profile page retries after it.
+
+**Shown:** `/api/hyperlens/status` has `fills_store` (wallets backfilled and pending, time left, rows, file size, the store's weight a minute, queued reads, live reads refused) and `api_calls` now counts weight per request type (`weight_per_min_5m`).
+
+**Off:** `FILLS_STORE_ENABLED=0` returns every page to live reads as before.
+
 ## Continuity
 
 Changing the cohort moves the Radar's trader counts and the stored lean series.
