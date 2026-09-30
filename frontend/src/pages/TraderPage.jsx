@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import BMSBChart from "../components/BMSBChart.jsx";
 import EquityChart from "../components/EquityChart.jsx";
 import HelpTip from "../components/HelpTip.jsx";
+import Locked from "../components/Locked.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import { WalletAvatar } from "../components/WalletTag.jsx";
 import { WindowSwitch } from "../components/TraderLeaderboard.jsx";
@@ -275,6 +276,7 @@ export default function TraderPage({ address }) {
     const load = () => fetch(`${API}/api/traders/${address}`)
       .then(async r => {
         if (r.status === 404) return { missing: true };
+        if (r.status === 403) return { locked: true };        // access tiers: profiles are for holders
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
@@ -329,7 +331,8 @@ export default function TraderPage({ address }) {
           </div>
         </div>
 
-        {data.missing ? <p className="tp-empty">No Hyperliquid activity for this address.</p>
+        {data.locked ? <Locked what="Trader profiles" />
+          : data.missing ? <p className="tp-empty">No Hyperliquid activity for this address.</p>
           : data.error ? <p className="tp-empty">Profile unavailable. Retrying.</p> : <>
           <div className="tp-kpis-head">
             <WindowSwitch value={win} onChange={setWin} />
@@ -351,7 +354,7 @@ export default function TraderPage({ address }) {
         </>}
       </section>
 
-      {!data.missing && (
+      {!data.missing && !data.locked && (
         <section className="tp-section">
           <div className="tp-section-head">
             <h2>Open positions <HelpTip title="Open positions" width={360}>
@@ -377,7 +380,7 @@ export default function TraderPage({ address }) {
         </section>
       )}
 
-      {!data.missing && !data.loading && <History address={address} isMobile={isMobile} />}
+      {!data.missing && !data.locked && !data.loading && <History address={address} isMobile={isMobile} />}
     </div>
   );
 }

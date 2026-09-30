@@ -1814,3 +1814,15 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .te-detail{grid-row:2;margin:14px 0 0;padding:12px 14px;}
  .te-cols{grid-template-columns:1fr;}
 }
+
+/* Wallet account (VITE_ACCOUNTS): the header entry, its small panel, and the locked line for holder features. */
+.acct{position:relative;display:inline-flex;align-items:center;gap:8px;}
+.acct-panel{position:absolute;top:calc(100% + 14px);right:0;z-index:120;min-width:220px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;
+ background:var(--t-bg);border:1px solid var(--t-border);border-radius:12px;font:12px var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.acct-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.acct-dim{color:var(--t-text3);}
+.acct-code{margin:0;color:var(--t-text2);}
+.acct-code a{color:var(--t-accent);}
+.acct-msg{margin:0;font-size:12px;color:var(--t-text3);}
+.acct-locked{display:flex;align-items:center;gap:6px;margin:12px 0;font-size:13px;color:var(--t-text3);}
+.radar-delayed{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--t-text3);}

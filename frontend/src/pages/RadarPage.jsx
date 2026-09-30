@@ -15,6 +15,7 @@ import { SIDES, forwardLine, isAddress, mostShorted, newEarly, picks, sideOf, vi
 import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
+import { delayedLine, lockHelp, LOCK_TITLE } from "../utils/account.js";
 import HelpTip from "../components/HelpTip.jsx";
 import Tabs from "../components/Tabs.jsx";
 import SetupIntelDrawer from "../components/SetupIntelDrawer.jsx";
@@ -301,6 +302,10 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
           <Tabs small label="Timeframe" items={TF_ITEMS} value={tf} onChange={k => setParams({ tf: k }, true)} />
           <Tabs small label="Traders' side" items={SIDES} value={side} onChange={pickSide} />
           <NextClose tf={tf} />
+          {data?.delayed && <span className="radar-delayed">{delayedLine(data)}<HelpTip title={LOCK_TITLE} width={300} label="About the delayed Radar">
+            <p>The free Radar shows the map from {data.delay_min || 60} minutes ago. The live map and its price ladder are for token holders.</p>
+            {lockHelp(null).map(l => <p key={l}>{l}</p>)}
+          </HelpTip></span>}
           {sector && <span className="radar-meta radar-sector-line">{groupLabel(sector)} · <button type="button" className="te-link" onClick={() => setParams({ sector: null, by: null })}>Show all</button></span>}
         </div>
         <div className="radar-head-right">
