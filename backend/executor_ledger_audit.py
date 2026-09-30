@@ -13,6 +13,10 @@ AUDITED_UNIT_MISMATCHES = (
 
 # Closures filled at a price far from the market at that moment (checked against
 # Hyperliquid's hourly candles). The bad quote also triggered the exit itself.
+# Entries match the originally recorded fill. executor._LEDGER_CORRECTIONS
+# rewrites the PURR fill to the market price once (originals kept under
+# "correction"), after which the record no longer matches and counts normally;
+# a ledger that has not been corrected yet is still flagged.
 AUDITED_PRICE_ERRORS = (
     # PURR traded 0.131-0.137 in that hour; the fill was recorded at 13.015.
     ('PURR/USDT', 1790425994, 1790489004, .12409, 13.015),

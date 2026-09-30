@@ -815,6 +815,48 @@ def _attach_positioning(
     return source
 
 
+def guard_row_prices(results_by_tf: dict, scan_cache=None) -> int:
+    """Keep feed errors out of published scan prices.
+
+    A row's price is its latest candle close. When Hyperliquid's own mark (or
+    ticker mid) disowns it by more than PRICE_SANITY_MAX_RATIO, the row shows
+    the latest stored close that agrees with that reference (else the reference
+    itself) and is flagged with ``price_rejected`` so the executor skips it.
+    Returns the number of rows flagged.
+    """
+    from price_sanity import live_references, price_rejection, within
+    from data_fetcher import _ohlcv_store
+    hl_metrics = getattr(scan_cache, "_last_hl_metrics", None) or {}
+    flagged = 0
+    for tf, rows in results_by_tf.items():
+        for r in rows:
+            symbol = r.get("symbol", "")
+            price = r.get("price")
+            earlier = r.get("price_rejected")
+            if isinstance(earlier, dict) and price == earlier.get("shown"):
+                flagged += 1  # still our substitute: the row has not been refreshed yet
+                continue
+            refs = live_references(symbol, hl_metrics)
+            reason = price_rejection(price, refs) if refs else None
+            if reason is None:
+                r.pop("price_rejected", None)
+                continue
+            fallback = None
+            data = _ohlcv_store.get(symbol, r.get("timeframe") or tf)
+            if data is not None:
+                for close in list(data.get("close", []))[-6:][::-1]:
+                    if all(within(close, ref) for ref in refs.values()):
+                        fallback = float(close)
+                        break
+            if fallback is None:
+                fallback = next(iter(refs.values()))
+            logger.warning("Scan price rejected for %s (%s): %s; showing %s", symbol, tf, reason, fallback)
+            r["price_rejected"] = {"price": price, "reason": reason, "shown": fallback}
+            r["price"] = fallback
+            flagged += 1
+    return flagged
+
+
 def attach_unified_signals(results_by_tf: dict, scan_cache=None) -> None:
     four = {r["symbol"]: r for r in results_by_tf.get("4h", [])}
     daily = {r["symbol"]: r for r in results_by_tf.get("1d", [])}
@@ -1845,6 +1887,7 @@ async def _run_synthesis_pass(
         except Exception:
             logger.exception("Confluence computation failed")
 
+    guard_row_prices(scan_cache.results, scan_cache)
     attach_unified_signals(scan_cache.results, scan_cache)
     from setup_research_service import schedule_setup_research
     schedule_setup_research(scan_cache)
@@ -2010,6 +2053,7 @@ async def run_scan(
             except Exception:
                 logger.exception("Confluence computation failed")
 
+        guard_row_prices(scan_cache.results, scan_cache)
         attach_unified_signals(scan_cache.results, scan_cache)
         from setup_research_service import schedule_setup_research
         schedule_setup_research(scan_cache)
@@ -2182,6 +2226,7 @@ async def run_rolling_scan(
             except Exception:
                 logger.exception("Confluence computation failed")
 
+        guard_row_prices(scan_cache.results, scan_cache)
         attach_unified_signals(scan_cache.results, scan_cache)
         from setup_research_service import schedule_setup_research
         schedule_setup_research(scan_cache)
