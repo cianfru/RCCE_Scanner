@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass, field, asdict
@@ -23,6 +24,7 @@ from typing import Dict, List, Optional
 import asyncio
 
 from trading_engine import TradingEngine, PaperEngine, HyperliquidEngine, EngineError
+from price_sanity import PRICE_SANITY_MAX_RATIO, price_rejection, reference_prices
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,24 @@ DEFAULT_WHITELIST = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
     "ADA/USDT", "AVAX/USDT", "DOGE/USDT", "DOT/USDT", "LINK/USDT",
 ]
+
+# Price rejections kept for the status endpoint.
+_MAX_PRICE_REJECTIONS = 20
+
+# One-time paper-ledger corrections, approved by the owner. Each entry names a
+# closed trade by its recorded fields and the market price it is corrected to.
+# The trade stays closed at the same time and size; only the fill is replaced.
+_LEDGER_CORRECTIONS = (
+    {
+        "symbol": "PURR/USDT", "entry_time": 1790425994.2996264, "exit_time": 1790489004.928304,
+        "entry_price": 0.12409, "exit_price": 13.015, "volume": 314.79, "cost_usd": 39.0625,
+        "exit_signal": "TRIM",
+        # Close of Hyperliquid's PURR 1h candle for 2026-09-27 06:00-07:00 UTC, the
+        # hour of the exit (o 0.13096, h 0.1324, l 0.13083, c 0.13194).
+        "corrected_exit_price": 0.13194,
+        "reason": "exit filled ~100x above market (price feed error)",
+    },
+)
 
 
 # ---------------------------------------------------------------------------
@@ -140,10 +160,14 @@ class ExecutorTrade:
     order_ids: List[str] = field(default_factory=list)
     entry_reason: str = ""
     entry_warnings: List[str] = field(default_factory=list)
+    # Present only on a trade whose recorded fill was corrected; keeps the originals.
+    correction: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["kraken_pair"] = d["exchange_pair"]
+        if d.get("correction") is None:
+            d.pop("correction", None)
         return d
 
 
@@ -193,6 +217,12 @@ class Executor:
         self.last_error: Optional[str] = None
         self.last_execution_time: Optional[float] = None
         self.total_executions: int = 0
+
+        # Price sanity: last accepted price per open position, recent rejections,
+        # and the reference lookup (symbol -> {name: price}); tests replace it.
+        self.last_marks: Dict[str, float] = {}
+        self.last_price_rejections: List[dict] = []
+        self.reference_provider = reference_prices
 
         # Whitelist: only trade these symbols (default: backtested set)
         self.whitelist: List[str] = DEFAULT_WHITELIST.copy()
@@ -249,6 +279,8 @@ class Executor:
 
         # Load persisted state if exists
         self._load_state()
+        # Same synchronous step as the load: nothing else can touch the ledger in between.
+        self._apply_ledger_corrections()
 
         self.initialized = True
         return {
@@ -292,6 +324,15 @@ class Executor:
             # Skip non-whitelisted symbols (but always allow exits for open positions)
             if symbol not in self.whitelist and symbol not in self.positions:
                 continue
+
+            # Price sanity: no entry, exit or stop on a quote the references disown.
+            if symbol in self.positions or signal in _ENTRY_SIGNALS or r.get("price_rejected"):
+                rejection = self._price_rejection(symbol, price, r)
+                if rejection:
+                    self._record_price_rejection(symbol, signal, price, rejection)
+                    continue
+                if symbol in self.positions:
+                    self.last_marks[symbol] = float(price)
 
             signal_reason = r.get("signal_reason", "")
             signal_warnings = r.get("signal_warnings", [])
@@ -401,6 +442,86 @@ class Executor:
         return None
 
     # ------------------------------------------------------------------
+    # Price sanity
+    # ------------------------------------------------------------------
+
+    def _price_rejection(self, symbol: str, price, row: Optional[dict] = None) -> Optional[str]:
+        """Why this cycle's price for *symbol* must not be traded, or None."""
+        flagged = (row or {}).get("price_rejected")
+        if flagged:
+            reason = flagged.get("reason") if isinstance(flagged, dict) else flagged
+            return f"scanner rejected the quote: {reason}"
+        try:
+            references = self.reference_provider(symbol) or {}
+        except Exception:
+            logger.debug("Price references unavailable for %s", symbol, exc_info=True)
+            references = {}
+        pos = self.positions.get(symbol)
+        last_mark = self.last_marks.get(symbol) or (pos.entry_price if pos else None)
+        return price_rejection(price, references, last_mark=last_mark,
+                               max_ratio=PRICE_SANITY_MAX_RATIO)
+
+    def _record_price_rejection(self, symbol: str, signal: str, price, reason: str) -> None:
+        logger.warning("Executor skipped %s this cycle (signal %s): %s", symbol, signal, reason)
+        self.last_price_rejections.append({
+            "symbol": symbol, "signal": signal, "price": price,
+            "reason": reason, "at": time.time(),
+        })
+        del self.last_price_rejections[:-_MAX_PRICE_REJECTIONS]
+
+    # ------------------------------------------------------------------
+    # Ledger corrections (paper only, applied once)
+    # ------------------------------------------------------------------
+
+    def _apply_ledger_corrections(self) -> int:
+        """Apply each entry of _LEDGER_CORRECTIONS once to the paper ledger.
+
+        The trade keeps its time, size and exit reason; its fill becomes the
+        corrected market price, P&L is recomputed as _execute_exit computes it,
+        and paper cash gives back the P&L difference. The original values are
+        kept under trade.correction, which also marks the trade as done.
+        Positions are not touched. Returns the number of trades corrected.
+        """
+        if self.mode != "paper" or not isinstance(self.engine, PaperEngine):
+            return 0
+        applied = 0
+        for spec in _LEDGER_CORRECTIONS:
+            for trade in self.trade_log:
+                if trade.correction is not None or not _trade_matches(trade, spec):
+                    continue
+                fill = spec["corrected_exit_price"]
+                if trade.side == "SHORT":
+                    pnl_pct = (trade.entry_price - fill) / trade.entry_price * 100
+                else:
+                    pnl_pct = (fill - trade.entry_price) / trade.entry_price * 100
+                cost = trade.cost_usd if trade.cost_usd is not None else trade.entry_price * trade.volume
+                pnl_usd = cost * (pnl_pct / 100)
+                cash_change = pnl_usd - trade.pnl_usd
+                trade.correction = {
+                    "original_exit_price": trade.exit_price,
+                    "original_pnl_usd": trade.pnl_usd,
+                    "original_pnl_pct": trade.pnl_pct,
+                    "corrected_at": time.time(),
+                    "reason": spec["reason"],
+                    "cash_change_usd": cash_change,
+                }
+                cash_before = self.engine.cash
+                trade.exit_price, trade.pnl_pct, trade.pnl_usd = fill, pnl_pct, pnl_usd
+                self.engine.cash += cash_change
+                applied += 1
+                logger.warning(
+                    "LEDGER CORRECTION %s %s exit at %s: exit %s -> %s, P&L $%.2f -> $%.2f, "
+                    "paper cash $%.2f -> $%.2f (%s)",
+                    trade.symbol, trade.exit_signal, trade.exit_time,
+                    trade.correction["original_exit_price"], fill,
+                    trade.correction["original_pnl_usd"], pnl_usd,
+                    cash_before, self.engine.cash, spec["reason"],
+                )
+        if applied:
+            self._save_state()
+        return applied
+
+    # ------------------------------------------------------------------
     # Order execution
     # ------------------------------------------------------------------
 
@@ -468,6 +589,7 @@ class Executor:
             entry_warnings=signal_warnings or [],
         )
 
+        self.last_marks.pop(symbol, None)  # the entry price is the first mark
         self._save_state()  # persist immediately after entry
 
         action = f"{side} {symbol} @ ${fill_price:,.2f} ({signal}, {size_pct*100:.0f}%, vol={volume})"
@@ -544,6 +666,7 @@ class Executor:
 
         # Remove position
         del self.positions[symbol]
+        self.last_marks.pop(symbol, None)
         self._save_state()  # persist immediately after exit
 
         pnl_sign = "+" if pnl_pct >= 0 else ""
@@ -599,6 +722,7 @@ class Executor:
             "win_rate": round(wins / len(self.trade_log) * 100, 1) if self.trade_log else 0,
             "last_scan_signals": self.last_scan_signals,
             "last_error": self.last_error,
+            "last_price_rejections": list(self.last_price_rejections),
             "last_execution_time": self.last_execution_time,
             "total_executions": self.total_executions,
             "available_pairs": len(self.pair_map),
@@ -771,6 +895,23 @@ class Executor:
             self._save_state()
             logger.info("Removed %s from whitelist (%d total)", symbol, len(self.whitelist))
         return self.get_whitelist()
+
+
+def _trade_matches(trade: ExecutorTrade, spec: dict) -> bool:
+    """True when *trade* is the closed trade that *spec* names (recorded values)."""
+    def same(a, b) -> bool:
+        try:
+            return math.isclose(float(a), float(b), rel_tol=1e-9, abs_tol=0.0)
+        except (TypeError, ValueError):
+            return False
+    try:
+        times = (int(trade.entry_time) == int(spec["entry_time"])
+                 and int(trade.exit_time) == int(spec["exit_time"]))
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return (trade.symbol == spec["symbol"] and trade.exit_signal == spec["exit_signal"] and times
+            and all(same(getattr(trade, k), spec[k])
+                    for k in ("entry_price", "exit_price", "volume", "cost_usd")))
 
 
 # ---------------------------------------------------------------------------

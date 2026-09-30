@@ -846,10 +846,16 @@ async def fetch_ohlcv(
     native_spot = MARKETS.get(symbol, {}).get("kind") == "spot"
     if symbol in _ccxt_only and not native_spot:
         data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
+        if data is not None and not fallback_consistent(symbol, timeframe, data):
+            # Back to Hyperliquid on the next call; keep the stored series meanwhile.
+            _ccxt_only.discard(symbol)
+            data = None
     else:
         data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, fetch_limit)
         if data is None and not native_spot:
             data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
+            if data is not None and not fallback_consistent(symbol, timeframe, data):
+                data = None
             if data is not None:
                 _ccxt_only.add(symbol)
                 logger.info("Learned CCXT-only: %s (total %d)", symbol, len(_ccxt_only))
@@ -865,6 +871,34 @@ async def fetch_ohlcv(
     _cache.put(symbol, timeframe, merged)
 
     return merged
+
+
+def fallback_consistent(symbol: str, timeframe: str, data: dict,
+                        reference: Optional[dict] = None) -> bool:
+    """Whether Binance/Bybit bars may stand in for this symbol's Hyperliquid series.
+
+    The REST fallback matches markets by ticker text alone ("PURR" + "USDT"), so it
+    can return a different instrument, or the same one in another unit. For a
+    Hyperliquid market the bars are accepted only when their closes agree with the
+    series we already hold (within PRICE_SANITY_MAX_RATIO); with nothing to compare
+    they are refused and Hyperliquid is tried again on the next cycle.
+    """
+    from hyperliquid_universe import MARKETS
+    from price_sanity import series_consistent, within
+    if reference is None:
+        reference = _ohlcv_store.get(symbol, timeframe)
+    verdict = series_consistent(reference, data)
+    if verdict is None and reference is not None and len(reference.get("close", [])) and len(data.get("close", [])):
+        verdict = within(data["close"][-1], reference["close"][-1])
+    if verdict is None:
+        verdict = symbol not in MARKETS
+    if not verdict:
+        logger.warning(
+            "Rejected CEX fallback bars for %s (%s): they do not match the stored Hyperliquid series "
+            "(last fallback close %s)", symbol, timeframe,
+            data["close"][-1] if len(data.get("close", [])) else None,
+        )
+    return bool(verdict)
 
 
 async def _fetch_ohlcv_ccxt(
@@ -1080,6 +1114,8 @@ async def fetch_batch(
             for sym in need_ccxt:
                 data = await _fetch_ohlcv_ccxt(sym, timeframe, "bybit")
                 deepened.add(sym)  # Mark as tried regardless of outcome
+                if data is not None and not fallback_consistent(sym, timeframe, data, results.get(sym)):
+                    data = None
                 if data is not None:
                     hl_count = len(results.get(sym, {}).get("close", [])) if results.get(sym) else 0
                     ccxt_count = len(data.get("close", []))
