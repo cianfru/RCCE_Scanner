@@ -1,19 +1,9 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { createWalletClient, custom } from "viem";
 import { arbitrum } from "viem/chains";
+import { WalletContext, useWallet } from "./walletContextCore.js";
 
-const WalletContext = createContext({
-  address: null,
-  isConnected: false,
-  walletClient: null,
-  connect: async () => {},
-  disconnect: () => {},
-  error: null,
-  viewAddress: "",
-  setViewAddress: () => false,
-  effectiveAddress: null,
-  readOnly: false,
-});
+export { useWallet };
 
 const STORAGE_KEY = "rcce-wallet-address";
 // An address to look at without connecting (read-only): Portfolio, the Radar's My trades
@@ -160,8 +150,4 @@ export function WalletProvider({ children }) {
       {children}
     </WalletContext.Provider>
   );
-}
-
-export function useWallet() {
-  return useContext(WalletContext);
 }

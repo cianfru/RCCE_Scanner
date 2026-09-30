@@ -48,7 +48,6 @@ const ExecutorPanel = lazy(() => import("./components/ExecutorPanel.jsx"));
 const TradingPanel = lazy(() => import("./components/TradingPanel.jsx"));
 const SignalLogPanel = lazy(() => import("./components/SignalLogPanel.jsx"));
 const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
-const ChatPanel = lazy(() => import("./components/ChatPanel.jsx"));
 const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
 const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
 const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
@@ -87,7 +86,6 @@ const ROUTE_TO_TAB = {
   "/analytics": "analytics",
   "/tradfi": "tradfi",
   "/bridge": "bridge",
-  "/ai": "chat",
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
@@ -104,7 +102,6 @@ const TAB_TO_ROUTE = {
   analytics: "/analytics",
   tradfi: "/tradfi",
   bridge: "/bridge",
-  chat: "/ai",
   backtest: "/backtest",
   executor: "/executor",
   trading: "/portfolio",
@@ -121,7 +118,6 @@ const TAB_TITLES = {
   bridge: "Bridge",
   backtest: "Backtest",
   executor: "Executor",
-  chat: "AI Assist",
   settings: "Settings",
   intel: "Intel",
   notfound: "Page not found",
@@ -175,7 +171,7 @@ export default function App() {
   // Page views for the owner's Intel page (usage.js): one per path, not per filter change.
   useEffect(() => { trackView(path); }, [path]);
 
-  // The scanner timeframe last viewed, for AI Assist
+  // The scanner timeframe last viewed (the feeds keep it fresh)
   const lastScannerTf = useRef("1d");
   if (activeTab === "4h" || activeTab === "1d") lastScannerTf.current = activeTab;
 
@@ -814,13 +810,12 @@ export default function App() {
   // The old HyperLens address opens Traders, keeping its query.
   if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
   if (traderAddress && traderAddress !== traderAddress.toLowerCase()) return <Navigate to={profilePath(traderAddress) + location.search} replace />;
+  if (path === "/ai") return <Navigate to="/scanner" replace />;   // the retired AI Assist page
 
   const pageMargin = { marginTop: isMobile ? 16 : 20 };
 
-  // AI Assist fits the viewport and scrolls only its thread, so the page itself has nothing to scroll
-  // (a scrolled page slides the chat's top row under the floating capsule): no min-height, no bottom pad.
   return (
-    <div className="reflex-terminal" style={{ minHeight: activeTab === "chat" ? undefined : "100vh", background: T.bg, color: T.text1, position: "relative" }}>
+    <div className="reflex-terminal" style={{ minHeight: "100vh", background: T.bg, color: T.text1, position: "relative" }}>
       {/* Fonts & Global Styles */}
       <style>{`
         :where(.reflex-terminal), :where(.reflex-terminal *) { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-geist-sans), sans-serif; }
@@ -936,7 +931,7 @@ export default function App() {
       />
 
       {/* ── PHONE TAB BAR (below 900px; before the header so the header's menus open above it) ── */}
-      {width < 900 && activeTab !== "chat" && <MobileTabBar activeKey={mainTab} targets={tabTargets} />}
+      {width < 900 && <MobileTabBar activeKey={mainTab} targets={tabTargets} />}
 
       {/* ── HEADER ── */}
       <AppHeader
@@ -977,7 +972,7 @@ export default function App() {
         </div>
       )}
 
-      <main id="content" style={activeTab === "chat" ? undefined : { paddingBottom: "calc(var(--tabbar-space) + 16px)" }}>
+      <main id="content" style={{ paddingBottom: "calc(var(--tabbar-space) + 16px)" }}>
       {/* ── COIN PAGE (dedicated /scanner/:symbol route) ── */}
       {coinPageSymbol && (
         <Suspense fallback={<div style={{ padding: isMobile ? 16 : 24 }}><PageSkeleton /></div>}>
@@ -985,8 +980,8 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* ── SECTION TITLE (hidden for chat and coin page — full-immersion mode; Radar and 404 draw their own) ── */}
-      {!coinPageSymbol && activeTab !== "chat" && activeTab !== "radar" && activeTab !== "notfound" && activeTab !== "trader" && (
+      {/* ── SECTION TITLE (hidden on the coin page; Radar and 404 draw their own) ── */}
+      {!coinPageSymbol && activeTab !== "radar" && activeTab !== "notfound" && activeTab !== "trader" && (
         <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
@@ -999,7 +994,7 @@ export default function App() {
       )}
 
       {/* ── MAIN CONTENT (hidden when on coin page) ── */}
-      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: activeTab === "chat" ? 0 : isMobile ? 80 : 60, position: "relative" }}>
+      {!coinPageSymbol && <div style={{ paddingTop: 0, paddingLeft: hPad, paddingRight: hPad, paddingBottom: isMobile ? 80 : 60, position: "relative" }}>
 
         {/* Until the first scan arrives, a glass placeholder holds the summary's space so nothing below jumps. */}
         {showDashboard && tfMarketRows.length === 0 && (
@@ -1107,13 +1102,6 @@ export default function App() {
         {activeTab === "bridge" && (
           <Suspense fallback={<PageSkeleton style={pageMargin} />}>
             <BridgePage style={pageMargin} />
-          </Suspense>
-        )}
-
-        {activeTab === "chat" && (
-          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
-            <ChatPanel isMobile={isMobile} timeframe={lastScannerTf.current}
-              selectedSymbol={selected && !selected.tradfi_coin ? selected.symbol : null} />
           </Suspense>
         )}
 

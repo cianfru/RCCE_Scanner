@@ -22,7 +22,7 @@ import {
 import SparklineCell from "./SparklineCell.jsx";
 import InfoButton, { COLUMN_INFO, ColumnHelp } from "./InfoPopover.jsx";
 import GlassCard from "./GlassCard.jsx";
-import { useWallet } from "../WalletContext.jsx";
+import { useWallet } from "../walletContextCore.js";
 import useMyPositions from "../hooks/useMyPositions.js";
 import { pnl } from "../utils/setupMap.js";
 import { sideColor, fmtPx } from "../utils/traderFormat.js";

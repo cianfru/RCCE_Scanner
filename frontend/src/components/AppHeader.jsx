@@ -8,7 +8,7 @@ import NotificationBell from "./NotificationBell.jsx";
 import Tabs from "./Tabs.jsx";
 
 // Pages reached through More: the hamburger's bars turn accent while one is open.
-const MORE_PAGES = new Set(["signals", "analytics", "tradfi", "bridge", "backtest", "executor", "chat"]);
+const MORE_PAGES = new Set(["signals", "analytics", "tradfi", "bridge", "backtest", "executor"]);
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
 // The wallet entry, only in builds with VITE_ACCOUNTS=1 (its own small chunk).
 const AccountMenu = ACCOUNTS ? lazy(() => import("./AccountMenu.jsx")) : null;
