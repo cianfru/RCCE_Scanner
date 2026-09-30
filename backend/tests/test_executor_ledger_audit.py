@@ -55,3 +55,11 @@ class ReferenceCacheTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(executor_marks,'_cached',cached), patch.object(executor_marks,'_refreshed',100), patch.object(executor_marks.time,'monotonic',return_value=200), patch.object(executor_marks.aiohttp,'ClientSession',side_effect=AssertionError('must not fetch')):
                 self.assertEqual(await executor_marks.external_marks(['TON/USDT']),cached)
                 self.assertEqual(await executor_marks.external_marks(['YZY/USDT']),{})
+
+
+def test_purr_bad_exit_price_is_flagged():
+    from executor_ledger_audit import closure_issue
+    t = {'symbol': 'PURR/USDT', 'entry_time': 1790425994.2996264, 'exit_time': 1790489004.928304,
+         'entry_price': 0.12409, 'exit_price': 13.015, 'pnl_usd': 4058.0}
+    assert 'bad exit price' in closure_issue(t)
+    assert closure_issue({**t, 'exit_price': 0.13194}) is None
