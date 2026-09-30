@@ -332,11 +332,6 @@
 .scanner-timeframes { display:flex; gap:4px; }
 .scanner-timeframes button { background:transparent; border:0; border-bottom:2px solid transparent; color:var(--t-text3); font-family:inherit; font-weight:600; font-size:13px; padding:12px 14px; cursor:pointer; }
 .scanner-timeframes button[aria-pressed="true"] { color:var(--t-accent); border-bottom-color:transparent; background:var(--metal-tab-bar); }
-.scanner-search { display:flex; align-items:center; gap:12px; min-width:0; padding:0 14px; border:1px solid var(--t-border); border-radius:6px; color:var(--t-text3); background:var(--t-overlay02); }
-.scanner-search:focus-within { border-color:var(--t-borderH); }
-.scanner-search input { width:100%; min-width:0; height:44px; border:0; background:transparent; color:var(--t-text1); font:inherit; font-size:13px; outline:none; }
-.scanner-search input::placeholder { color:var(--t-text3); }
-.scanner-search button { border:0; background:transparent; color:var(--t-accent); font-size:20px; cursor:pointer; }
 
 /* Executor: accounting first, operating controls second. */
 .executor-performance {padding:28px;background:var(--t-surface);border:1px solid var(--t-border);border-radius:14px;margin-bottom:24px;}
@@ -625,14 +620,10 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .pocket-none{width:92px;height:46px;}
 @media (max-width:900px){.race-body{grid-template-columns:1fr;}.pocket,.pocket-none{width:76px;}.race,.pockets{padding:12px 10px;}.race-legend .race-hint{display:none;}.sector-views button{padding:6px 6px;}}
 
-/* Title row: timeframe tabs and search sit beside the page title. */
+/* Title row: timeframe tabs sit beside the page title (search is in the header). */
 .scanner-head .scanner-timeframes{order:2;}
-.scanner-head .scanner-search{order:3;margin-left:auto;width:clamp(240px,28vw,360px);}
-.scanner-head .scanner-search input{height:40px;}
 @media(max-width:767px){
  .scanner-head .scanner-timeframes{margin-left:auto;}
- .scanner-head .scanner-search{flex:1 1 100%;width:auto;margin-left:0;}
- .scanner-head .scanner-search input{height:44px;}
 }
 
 /* Market summary: consensus and regime mix | Fear & Greed dial | signal counts. */
@@ -1447,9 +1438,6 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .scanner-market .reflex-tabs button[aria-pressed="true"]{background:none;color:var(--t-text1);}
  .scanner-market .reflex-tabs button[aria-pressed="false"]:hover{color:var(--t-text2);}
 }
-.search-hint{display:none;flex:0 0 auto;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:4px;font:500 12px/1 var(--font-geist-mono),monospace;color:var(--t-text4);}
-@media(min-width:768px) and (hover:hover) and (pointer:fine){.search-hint{display:inline-flex;}}
-.scanner-search:focus-within .search-hint{display:none;}
 
 /* Sector strip: fade edges while more chips sit past them, desktop chevrons, compact tail chips. */
 @property --fade-l{syntax:"<length>";inherits:false;initial-value:0px;}

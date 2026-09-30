@@ -1,0 +1,76 @@
+/* Search for coins and traders (GlobalSearch): a field in the header on every page, results
+   under it; a full-screen sheet on phones. Flat text, no pills. */
+.gs{position:relative;min-width:0;}
+.gs-field{display:flex;align-items:center;gap:10px;min-width:0;padding:0 12px;border:1px solid var(--t-border);border-radius:8px;color:var(--t-text3);background:var(--t-overlay04);transition:border-color .15s;}
+.gs-field:focus-within{border-color:var(--t-borderH);}
+.gs-field input{flex:1 1 auto;width:100%;min-width:0;height:36px;padding:0;border:0;background:transparent;color:var(--t-text1);font:14px var(--font-geist-sans),sans-serif;outline:none;-webkit-appearance:none;appearance:none;}
+.gs-field input::-webkit-search-cancel-button{display:none;}
+.gs-field input::placeholder{color:var(--t-text3);}
+.reflex-terminal .gs-field input:focus-visible{outline:none;}
+.gs-kbd{display:none;flex:0 0 auto;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:4px;font:500 12px/1 var(--font-geist-mono),monospace;color:var(--t-text4);}
+@media(hover:hover) and (pointer:fine){.gs-kbd{display:inline-flex;}}
+.gs-field:focus-within .gs-kbd{display:none;}
+.gs-clear{flex:0 0 auto;width:24px;height:24px;margin-right:-6px;padding:0;border:0;background:transparent;color:var(--t-text3);font-size:18px;line-height:1;cursor:pointer;}
+.gs-clear:hover{color:var(--t-text1);}
+/* Header: 260px at rest, wider while the list is open (grows to the left; the data clock steps aside). */
+.gs-header{width:260px;margin-right:6px;transition:width .18s ease;}
+.gs-header.is-open{width:540px;}
+.header-right:has(.gs-header.is-open) .freshness{display:none;}
+/* 900-1279px (tabs without icons): a narrower field; open, it takes the clock's room and the list
+   keeps a readable width, right-aligned under it. */
+.gs-header.gs-compact{width:180px;}
+.gs-header.gs-compact.is-open{width:320px;}
+.gs-header.gs-compact .gs-list{left:auto;width:480px;}
+
+/* The list. Columns line up across rows (subgrid): logo | ticker and name | price | 24h | Radar.
+   A subgrid row's side padding sits in its edge tracks, so the logo track is 12px wider. */
+.gs-list{position:absolute;top:calc(100% + 8px);left:0;right:0;z-index:120;padding:6px;box-sizing:border-box;border:1px solid var(--t-border);border-radius:12px;background:var(--t-popoverBg);background-color:var(--t-bg);
+ box-shadow:inset 0 1px 0 var(--t-overlay04),0 2px 8px var(--t-shadow),0 24px 64px var(--t-shadowDeep);font:14px var(--font-geist-sans),sans-serif;}
+.gs-header .gs-list{top:calc(100% + 24px);}
+.gs-group{display:grid;column-gap:14px;}
+.gs-coins{grid-template-columns:36px minmax(0,1fr) auto auto;}
+.gs-coins.has-status{grid-template-columns:36px minmax(0,1fr) auto auto auto;}
+.gs-traders{grid-template-columns:36px minmax(0,1fr) auto;}
+.gs-group>*{grid-column:1/-1;}
+.gs-group>.gs-row{display:grid;grid-template-columns:subgrid;}
+.gs-list>.gs-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;column-gap:14px;}
+.gs-coins+.gs-traders{margin-top:6px;padding-top:6px;border-top:1px solid var(--t-overlay08);}
+.gs-label{padding:8px 12px 6px;font:500 11px var(--font-geist-sans),sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--t-text3);}
+.gs-row{align-items:center;min-height:48px;padding:0 12px;border-radius:8px;cursor:pointer;color:var(--t-text1);}
+.gs-row[aria-selected="true"]{background:var(--t-overlay08);}
+.gs-id{display:flex;flex-direction:column;justify-content:center;min-width:0;}
+.gs-line{display:flex;align-items:baseline;gap:10px;min-width:0;white-space:nowrap;}
+.gs-ticker{flex:0 0 auto;font-weight:600;font-size:14px;color:var(--t-text1);}
+.gs-codename{font-weight:500;}
+.gs-name,.gs-addr{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--t-text3);}
+.gs-addr{font:12px var(--font-geist-mono),monospace;}
+.gs-open{flex:0 0 auto;font-weight:500;color:var(--t-text1);}
+.gs-address .gs-addr{font-size:13px;color:var(--t-text2);}
+.gs-price,.gs-chg{font:13px var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--t-text2);}
+.gs-price{color:var(--t-text1);}
+.gs-chg.up{color:var(--t-profit);}
+.gs-chg.down{color:var(--t-loss);}
+.gs-status,.gs-aside{font-size:12px;color:var(--t-text3);text-align:right;white-space:nowrap;}
+.gs-coins .gs-status{text-align:left;min-width:64px;}
+.gs-pnl{display:flex;align-items:baseline;justify-content:flex-end;gap:6px;}
+.gs-unit{font-size:12px;color:var(--t-text3);}
+.gs-hit{color:var(--t-text1);}
+.gs-pnl .gs-aside{margin-right:8px;}
+.gs-empty{padding:14px 12px;font-size:13px;color:var(--t-text3);}
+
+/* Phones: a search button in the header opens a full-screen sheet, the field on top. */
+.header-search-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;margin:0 -6px 0 0;padding:0;border:0;background:transparent;color:var(--t-text2);cursor:pointer;}
+.gs-sheet{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;background:var(--t-bg);padding-top:env(safe-area-inset-top);}
+.gs-sheet-top{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--t-overlay08);}
+.gs-field-sheet{flex:1 1 auto;}
+.gs-field-sheet input{height:44px;font-size:16px;}
+.gs-cancel{flex:0 0 auto;padding:10px 0;border:0;background:transparent;color:var(--t-text2);font:15px var(--font-geist-sans),sans-serif;cursor:pointer;}
+.gs-list-phone{position:static;flex:1 1 auto;overflow-y:auto;padding:8px 8px calc(16px + env(safe-area-inset-bottom));border:0;border-radius:0;background:none;box-shadow:none;}
+.gs-list-phone .gs-coins,.gs-list-phone .gs-coins.has-status{grid-template-columns:40px minmax(0,1fr) auto;}
+.gs-list-phone .gs-traders{grid-template-columns:40px minmax(0,1fr) auto;}
+.gs-list-phone>.gs-row{grid-template-columns:28px minmax(0,1fr) auto;}
+.gs-list-phone .gs-row{min-height:60px;}
+.gs-list-phone .gs-id .gs-status{margin-top:3px;text-align:left;}
+.gs-list-phone .gs-ticker{font-size:15px;}
+.gs-fig{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+.gs-fig .gs-price{font-size:14px;}
