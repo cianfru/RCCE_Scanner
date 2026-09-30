@@ -6,6 +6,9 @@ Hyperliquid publishes every wallet's fills, so for the few profitable traders ho
 coin we fetch them on demand, when someone opens that coin's chart, and cache the answer.
 Timed orders (TWAP) fill in slices that come from a separate request.
 
+A tracked wallet's fills come from the fills store (hl_fills) with no request; only other
+wallets (the trader profile of a pasted address) are read here.
+
 Each fill carries the position size before it (``startPosition``), so the current
 position's start is the last fill that opened it from flat or flipped its side. Fills are
 grouped into bursts: same action, less than BURST_GAP_S apart.
@@ -34,8 +37,9 @@ BUYING_NOW_S = 5 * 60          # a timed-order slice this recent means it is sti
 CACHE_S = 10 * 60
 ANSWER_WITHIN_S = 8            # answer with what is ready; the rest keeps loading
 # Hyperliquid charges 20 weight per fills request plus 1 per 20 fills returned. This feature
-# gets its own small share of the per-IP budget so it cannot starve the cohort sweep.
-_bucket = TokenBucket(480, capacity=480)
+# gets its own small share of the per-IP budget so it cannot starve the cohort sweep. (480 before
+# the fills store; the coin page's holders are tracked wallets, now read from the store.)
+_bucket = TokenBucket(360, capacity=360)
 _CALL_WEIGHT = 20
 
 _DIRS = {
@@ -74,6 +78,10 @@ def _prune() -> None:
 
 
 def _fresh(address: str, max_age: float = CACHE_S) -> Optional[dict]:
+    import hl_fills
+    stored = hl_fills.stored_fills(address)
+    if stored is not None:
+        return stored
     hit = _fills_cache.get(address)
     return hit[1] if hit and time.time() - hit[0] < max_age else None
 

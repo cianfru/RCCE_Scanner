@@ -1,3 +1,5 @@
+import { sendsSession } from "./utils/account.js";
+
 // Server-side access (backend/access.py). The token from /api/auth/login rides on
 // every API request; a 401 sends the user back to the login screen.
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -16,6 +18,15 @@ const ADMIN_KEY = "reflex_admin_key";
 export const getAdminKey = () => read(ADMIN_KEY) || "";
 export const setAdminKey = key => write(ADMIN_KEY, key ? String(key).trim() : null);
 export const authEnforced = () => read(ENFORCED_KEY) === "1";
+
+// Wallet account session (backend/accounts_api.py, only when VITE_ACCOUNTS is on). It rides
+// only on the account-aware paths (utils/account.js sendsSession).
+const SESSION_KEY = "reflex_session";
+export const getSession = () => read(SESSION_KEY);
+export function setSession(token) {
+  write(SESSION_KEY, token || null);
+  window.dispatchEvent(new Event("reflex-session"));
+}
 
 export function isAuthenticated() {
   // A connected wallet used to skip the code; that only holds while the server is open.
@@ -62,10 +73,12 @@ window.fetch = async (input, init = {}) => {
   const token = isApi ? getToken() : null;
   const method = String(init.method || (typeof input !== "string" && input?.method) || "GET").toUpperCase();
   const adminKey = isApi && method !== "GET" && method !== "HEAD" ? getAdminKey() : "";
-  if (token || adminKey) {
+  const session = sendsSession(url, API_BASE) ? getSession() : null;
+  if (token || adminKey || session) {
     const headers = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
     if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
     if (adminKey) headers.set("X-Admin-Key", adminKey);
+    if (session) headers.set("X-Reflex-Session", session);
     init = { ...init, headers };
   }
   const res = await nativeFetch(input, init);

@@ -124,7 +124,7 @@ class ConditionalGetMiddleware:
             if _header(headers, b"cache-control") is None:
                 headers.append((b"cache-control", b"no-cache"))
             if etag_matches(if_none_match, etag):
-                keep = {b"etag", b"cache-control", b"vary"}
+                keep = {b"etag", b"cache-control", b"cdn-cache-control", b"vary"}
                 await send({"type": "http.response.start", "status": 304,
                             "headers": [(k, v) for k, v in headers if k.lower() in keep]})
                 await send({"type": "http.response.body", "body": b""})

@@ -11,8 +11,9 @@ the code also signs everyone out.
 
 Writes are guarded separately: once REFLEX_ADMIN_KEY is set, every non-GET API request
 (executor controls, TradFi markets, feature flags, watchlists, chat, backtests, scan
-refresh...) must carry "X-Admin-Key: <key>", whether or not viewing is open. Login is
-exempt. Until the variable is set nothing changes.
+refresh...) must carry "X-Admin-Key: <key>", whether or not viewing is open. Login and
+an account's own lists (/api/me/, which need a wallet session instead; accounts_api.py)
+are exempt. Until the variable is set nothing changes.
 """
 from __future__ import annotations
 
@@ -72,7 +73,7 @@ def allowed(path: str, headers, query_params) -> bool:
 
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-WRITE_EXEMPT = ("/api/auth/",)
+WRITE_EXEMPT = ("/api/auth/", "/api/me/")
 
 
 def admin_enforced() -> bool:

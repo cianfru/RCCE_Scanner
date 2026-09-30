@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { ACCOUNTS } from "../account.js";
 import { T } from "../theme.js";
 import ReflexBrand from "./ReflexBrand.jsx";
 import HeaderTabs from "./HeaderTabs.jsx";
@@ -9,6 +10,8 @@ import Tabs from "./Tabs.jsx";
 // Pages reached through More: the hamburger's bars turn accent while one is open.
 const MORE_PAGES = new Set(["signals", "analytics", "tradfi", "bridge", "backtest", "executor", "chat"]);
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
+// The wallet entry, only in builds with VITE_ACCOUNTS=1 (its own small chunk).
+const AccountMenu = ACCOUNTS ? lazy(() => import("./AccountMenu.jsx")) : null;
 
 // The floating metal capsule: More, the brand, the main tabs (900px and wider), and the
 // right cluster (data clock, alerts, theme). The page-colour mask above it
@@ -87,6 +90,7 @@ export default function AppHeader({
           )}
           <FreshnessClock {...freshnessProps} variant={clock} />
           <NotificationBell />
+          {AccountMenu && <Suspense fallback={null}><AccountMenu /></Suspense>}
           <button type="button" className="header-theme" onClick={onToggleTheme}
             title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
             {mode === "dark" ? "Light" : "Dark"}

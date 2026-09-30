@@ -170,8 +170,13 @@ export const WATCH_MESSAGES = {
   admin: "Watching needs the admin key. Add it under Settings.",
   cap: "At most 30 coins can be watched.",
   error: "Could not change the watch list.",
+  locked: "Watching is for Reflex token holders.",
+  signin: "Sign in with a wallet to watch coins.",
 };
-export const watchReason = status => (status === 403 ? "admin" : status === 400 ? "cap" : "error");
+// A 403 is the admin key, or with wallet accounts on (detail) a holder feature or no sign-in.
+export const watchReason = (status, detail) => (status === 403
+  ? (detail === "holder" ? "locked" : /sign in/i.test(detail || "") ? "signin" : "admin")
+  : status === 400 ? "cap" : "error");
 export function watchToast(coin, result, telegram) {
   if (!result?.ok) return WATCH_MESSAGES[result?.reason] || WATCH_MESSAGES.error;
   if (!result.watching) return `Stopped watching ${coin}`;

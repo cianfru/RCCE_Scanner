@@ -16,6 +16,9 @@ import { useSharedWorker } from "./hooks/useSharedWorker.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import { feedNeeds, needsKey } from "./utils/feedNeeds.js";
 import { overlayPrices, priceMoves } from "./utils/livePrices.js";
+import { mergeSparklines } from "./utils/scanRows.js";
+import { apiFetch } from "./edge.js";
+import useFullRow from "./hooks/useFullRow.js";
 import FadeIn from "./components/FadeIn.jsx";
 import MarketSummary from "./components/MarketSummary.jsx";
 import ScannerControls from "./components/ScannerControls.jsx";
@@ -55,6 +58,13 @@ const TraderPage = lazy(() => import("./pages/TraderPage.jsx"));
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+// Age of a scan body at `receivedMs`: from its as_of (when the pass completed) when present, so a
+// copy served by the CDN a few seconds later still dates correctly; else the server's cache age.
+function scanAge(receivedMs, body, fallback) {
+  const asOf = Number(body?.as_of);
+  return Number.isFinite(asOf) && asOf > 0 ? Math.max(0, receivedMs / 1000 - asOf) : fallback;
+}
 
 // ─── COLUMN DEFINITIONS ─────────────────────────────────────────────────────
 // [sortKey, label, minViewportWidth]
@@ -211,6 +221,8 @@ export default function App() {
   const [cacheAge, setCacheAge] = useState(null);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  // The detail panel shows the coin's full row (the list rows leave per-coin detail out).
+  const selectedFull = useFullRow(selected);
   const [filterRegime, setFilterRegime] = useState("ALL");
   const [filterSignal, setFilterSignal] = useState("ALL");
   const [sortKey, setSortKey] = useState(() => initialQuery.get("sort") || DEFAULT_SORT);
@@ -320,7 +332,7 @@ export default function App() {
     if (d.r4h) { setData4h(livePrice(d.r4h.results || [])); setConsensus4h(d.r4h.consensus || null); }
     if (d.r1d) { setData1d(livePrice(d.r1d.results || [])); setConsensus1d(d.r1d.consensus || null); }
     setScanRunning(!!(d.r4h?.scan_running || d.r1d?.scan_running));
-    bumpClock(d.timestamp, d.cacheAge !== undefined ? d.cacheAge : d.r4h?.cache_age_seconds);
+    bumpClock(d.timestamp, scanAge(d.timestamp, d.r4h || d.r1d, d.cacheAge !== undefined ? d.cacheAge : d.r4h?.cache_age_seconds));
     if (d.sentiment) setSentiment(d.sentiment);
     if (d.tradfi4h) setDataTradfi4h(d.tradfi4h.results || []);
     if (d.tradfi1d) setDataTradfi1d(d.tradfi1d.results || []);
@@ -420,13 +432,18 @@ export default function App() {
   // ── Data fetching (fallback when SharedWorker unavailable) ────────────────
   // The browser revalidates with the ETag, so an unchanged feed is an empty 304.
 
+  // The list view (no per-coin detail) plus the sparklines, merged back by symbol.
   const fetchData = useCallback(async (tf) => {
-    const params = new URLSearchParams({ timeframe: tf });
+    const params = new URLSearchParams({ timeframe: tf, view: "list" });
     if (filterRegime !== "ALL") params.append("regime", filterRegime);
     if (filterSignal !== "ALL") params.append("signal", filterSignal);
-    const res = await fetch(`${API_BASE}/api/scan?${params}`);
+    const [res, sparks] = await Promise.all([
+      apiFetch(`/api/scan?${params}`),
+      apiFetch(`/api/scan/sparklines?timeframe=${tf}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
     if (!res.ok) throw new Error(`API error ${res.status}`);
-    return res.json();
+    const body = await res.json();
+    return { ...body, results: mergeSparklines(body.results || [], sparks?.sparklines) };
   }, [filterRegime, filterSignal]);
 
   // Feed -> when it last loaded. Every feed loads once; after that only what the page shows.
@@ -449,14 +466,14 @@ export default function App() {
       });
       if (scans.length) {
         setScanRunning(!!scans[0].scan_running);
-        bumpClock(Date.now(), scans[0].cache_age_seconds);
+        bumpClock(Date.now(), scanAge(Date.now(), scans[0], scans[0].cache_age_seconds));
       }
 
       try {
         const [sent, tf4h, tf1d] = await Promise.all([
           wantSentiment ? fetch(`${API_BASE}/api/sentiment`).then(r => r.json()).catch(() => null) : null,
-          wantTradfi ? fetch(`${API_BASE}/api/tradfi?timeframe=4h`).then(r => r.json()).catch(() => null) : null,
-          wantTradfi ? fetch(`${API_BASE}/api/tradfi?timeframe=1d`).then(r => r.json()).catch(() => null) : null,
+          wantTradfi ? apiFetch("/api/tradfi?timeframe=4h").then(r => r.json()).catch(() => null) : null,
+          wantTradfi ? apiFetch("/api/tradfi?timeframe=1d").then(r => r.json()).catch(() => null) : null,
         ]);
         if (sent) { setSentiment(sent); loaded.sentiment = now; }
         if (tf4h) setDataTradfi4h(tf4h.results || []);
@@ -507,7 +524,7 @@ export default function App() {
     if (!u) return;
     if (!needsRef.current.scan.length) bumpClock(u.at, 0);
     setScanRunning(false);
-    if (sw.supported) sw.refresh();
+    if (sw.supported) sw.refresh(u.timestamp);
     else if (!document.hidden) loadAll();
   }, [wsRef.scanUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1125,7 +1142,7 @@ export default function App() {
 
       {/* ── DETAIL PANEL ── */}
       <AdminNotice />
-      <DetailPanel selected={selected} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
+      <DetailPanel selected={selectedFull} isMobile={isMobile} isTablet={isTablet} onClose={() => setSelected(null)} api={API_BASE} />
     </div>
   );
 }

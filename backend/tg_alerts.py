@@ -26,7 +26,7 @@ import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +190,12 @@ def resume() -> None:
     save()
 
 
+def paused_at(s: dict, now: Optional[float] = None) -> bool:
+    return (now or time.time()) < float(s.get("paused_until") or 0)
+
+
 def paused(now: Optional[float] = None) -> bool:
-    return (now or time.time()) < float(settings().get("paused_until") or 0)
+    return paused_at(settings(), now)
 
 
 # ------------------------------------------------------------------ time (Europe/Rome by default)
@@ -353,6 +357,29 @@ def _prune(st: dict, now: float) -> None:
     st["sent"] = {k: v for k, v in st["sent"].items() if now - v[0] < v[1]} if st["sent"] else {}
 
 
+def gate(st: dict, cat: str, key: str, text: str, line: Optional[str], now: float,
+         urgent: bool = False, window: float = DEDUPE_S) -> str:
+    """The delivery rules on one record (the owner's, or an account's in user_alerts):
+    "off", "dup", "held" (recorded for the brief) or "send". Marks the key as sent."""
+    s = st["settings"]
+    if not bool(s["on"].get(cat, False)):
+        return "off"
+    full = f"{cat}:{key}"
+    _prune(st, now)
+    if full in st["sent"]:
+        return "dup"
+    st["sent"][full] = [now, window]
+    per = period_start(now)
+    if st.get("period") != per:
+        st["period"], st["count"] = per, 0
+    hold = paused_at(s, now) or (not urgent and (in_quiet(now, s.get("quiet")) or st["count"] >= int(s.get("cap") or 0)))
+    if hold:
+        st["held"].append({"ts": now, "cat": cat, "line": line or text.split("\n")[0]})
+        st["held"] = st["held"][-HELD_MAX:]
+        return "held"
+    return "send"
+
+
 async def submit(cat: str, key: str, text: str, line: Optional[str] = None, *,
                  chats: Optional[Iterable[int]] = None, urgent: bool = False,
                  window: float = DEDUPE_S, now: Optional[float] = None) -> str:
@@ -363,21 +390,10 @@ async def submit(cat: str, key: str, text: str, line: Optional[str] = None, *,
     pause or cap reached), "sent" or "nobody" (no chat or no bot)."""
     st = _load()
     now = now or time.time()
-    if not enabled(cat):
-        return "off"
-    full = f"{cat}:{key}"
-    _prune(st, now)
-    if full in st["sent"]:
-        return "dup"
-    st["sent"][full] = [now, window]
-    s = st["settings"]
-    per = period_start(now)
-    if st.get("period") != per:
-        st["period"], st["count"] = per, 0
-    hold = paused(now) or (not urgent and (in_quiet(now, s.get("quiet")) or st["count"] >= int(s.get("cap") or 0)))
-    if hold:
-        st["held"].append({"ts": now, "cat": cat, "line": line or text.split("\n")[0]})
-        st["held"] = st["held"][-HELD_MAX:]
+    verdict = gate(st, cat, key, text, line, now, urgent, window)
+    if verdict in ("off", "dup"):
+        return verdict
+    if verdict == "held":
         save()
         return "held"
     targets = list(chats) if chats is not None else default_chats()
@@ -539,27 +555,35 @@ def watched_text(coin: str, words: str, item: dict) -> str:
             f" · {esc(signal_word(item.get('signal')))}")
 
 
-async def check_watched(maps: Dict[str, dict], now: Optional[float] = None) -> List[str]:
-    """Compare each watched coin with its last reading and submit what changed. Returns the
-    statuses (for logs and tests)."""
-    import setup_map
-    st = _load()
+async def watch_pass(watched: Dict[str, dict], maps: Dict[str, dict], last: Dict[str, dict],
+                     send: Callable[..., Awaitable[str]], now: Optional[float] = None) -> Tuple[List[str], bool]:
+    """Compare each watched coin with its last reading (``last``, updated in place) and send
+    what changed through ``send(cat, key, text, line, now=)``. Returns (statuses, changed)."""
     out, dirty = [], False
-    for coin, w in setup_map.watched().items():
+    for coin, w in watched.items():
         m = maps.get(w.get("tf", "1d"))
         item = next((c for c in (m or {}).get("coins", []) if c.get("coin") == coin), None)
         if item is None:
             continue
         cur = watch_state(item)
-        for cat, kind, words in watch_events(st["watch"].get(coin), cur):
-            out.append(await submit(cat, f"{kind}:{coin}", watched_text(coin, words, item),
-                                    f"{coin_b(coin)} {esc(words)}", now=now))
-        if cur != st["watch"].get(coin):
-            st["watch"][coin] = cur
+        for cat, kind, words in watch_events(last.get(coin), cur):
+            out.append(await send(cat, f"{kind}:{coin}", watched_text(coin, words, item),
+                                  f"{coin_b(coin)} {esc(words)}", now=now))
+        if cur != last.get(coin):
+            last[coin] = cur
             dirty = True
-    for coin in [c for c in st["watch"] if c not in setup_map.watched()]:
-        st["watch"].pop(coin)
+    for coin in [c for c in last if c not in watched]:
+        last.pop(coin)
         dirty = True
+    return out, dirty
+
+
+async def check_watched(maps: Dict[str, dict], now: Optional[float] = None) -> List[str]:
+    """Compare each watched coin with its last reading and submit what changed. Returns the
+    statuses (for logs and tests)."""
+    import setup_map
+    st = _load()
+    out, dirty = await watch_pass(setup_map.watched(), maps, st["watch"], submit, now)
     if dirty:
         save()
     return out

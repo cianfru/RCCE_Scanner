@@ -13,6 +13,13 @@
  *    304 and is not re-broadcast.
  *  - a tab asks for "refresh" when the server announces a new scan, so the
  *    minute timer is only a fallback.
+ *  - the scan list comes without per-coin detail and without sparklines
+ *    (?view=list); the sparklines have their own feed, which changes only when a
+ *    candle closes, and are merged back in here (backend/scan_view.py).
+ *  - when the API turns it on (/api/edge/key), the CDN feeds go through this
+ *    site's /edge path, cached for everyone (backend/edge.py); any trouble there
+ *    falls back to the API directly. The scan URL carries the pass it asks for, so
+ *    a scan notice never gets an older copy.
  */
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -20,6 +27,17 @@
 const ports = new Set();
 let apiBase = "";
 let token = null;   // API token from the page (see src/auth.js)
+
+// CDN feeds (keep in step with src/utils/edgeUrl.js and backend/edge.py).
+const EDGE_PATHS = new Set(["/api/scan", "/api/scan/sparklines", "/api/scan/row", "/api/setup-map",
+  "/api/market-history", "/api/market-history/spark", "/api/hyperlens/consensus", "/api/hyperlens/positioning",
+  "/api/traders/leaderboard", "/api/tradfi", "/api/universe", "/api/sectors"]);
+let edgeAllowed = false;     // the page allows it (VITE_EDGE_CACHE)
+let edgeCfg = null;          // { prefix, key, expiresAt } while the API has it on
+let edgeCheckedAt = 0;
+let edgePending = null;
+let edgeBroken = false;      // the /edge path answered with something other than the API
+let scanVersion = null;      // the scan pass the last notice announced
 
 // Visibility tracking — pause when ALL tabs are hidden
 const tabVisibility = new Map(); // portId → boolean (true = visible)
@@ -108,26 +126,65 @@ function needsGrew(before, after) {
   return (after.tradfi && !before.tradfi) || (after.sentiment && !before.sentiment);
 }
 
-function feedUrl(feed) {
+// API path of a main feed (the scan list's sparklines are fetched next to it, see fetchFeed).
+function feedPath(feed) {
   const [kind, tf] = feed.split(":");
-  if (kind === "sentiment") return `${apiBase}/api/sentiment`;
+  if (kind === "sentiment") return "/api/sentiment";
   const params = new URLSearchParams({ timeframe: tf });
   if (kind === "scan") {
+    params.append("view", "list");
     if (filterRegime !== "ALL") params.append("regime", filterRegime);
     if (filterSignal !== "ALL") params.append("signal", filterSignal);
-    return `${apiBase}/api/scan?${params}`;
+    return `/api/scan?${params}`;
   }
-  return `${apiBase}/api/tradfi?${params}`;
+  return `/api/tradfi?${params}`;
+}
+
+function isEdgePath(path) {
+  return EDGE_PATHS.has(path.split("?")[0]);
+}
+
+// Whether the API has the CDN path on, and the key its URLs carry (asked again every 10 minutes).
+async function edgeConfig() {
+  if (!edgeAllowed || edgeBroken || !apiBase) return null;
+  const now = Date.now();
+  const expiring = edgeCfg && edgeCfg.expiresAt && now > edgeCfg.expiresAt - 300_000;
+  if (!expiring && edgeCheckedAt && now - edgeCheckedAt < 600_000) return edgeCfg;
+  if (!edgePending) {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    edgePending = fetch(`${apiBase}/api/edge/key`, { headers, cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => (b && b.enabled && b.key ? { prefix: b.prefix || "/edge", key: b.key, expiresAt: (b.expires_at || 0) * 1000 } : null))
+      .catch(() => null)
+      .then(cfg => { edgeCfg = cfg; edgeCheckedAt = Date.now(); edgePending = null; return cfg; });
+  }
+  return edgePending;
+}
+
+function edgeUrl(cfg, path, version) {
+  let url = `${cfg.prefix}${path}`;
+  const add = (k, v) => { url += `${url.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}`; };
+  if (version != null) add("v", version);
+  add("k", cfg.key);
+  return url;
 }
 
 // GET with If-None-Match. Resolves { data, changed }; a 304 returns the kept copy.
-async function fetchConditional(url) {
+// `edge` requests carry no token (the CDN URL holds the key) and throw on anything odd,
+// so the caller can go to the API directly instead.
+async function fetchConditional(url, edge = false) {
   const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token && !edge) headers.Authorization = `Bearer ${token}`;
   const kept = etagCache.get(url);
   if (kept) headers["If-None-Match"] = kept.etag;
   const res = await fetch(url, { headers });
   if (res.status === 304 && kept) return { data: kept.data, changed: false };
+  if (edge) {
+    const ctype = (res.headers.get("content-type") || "").toLowerCase();
+    if (res.status === 401) edgeCheckedAt = 0;                         // a new key next time
+    if (res.ok && ctype && !ctype.includes("json")) edgeBroken = true;  // not deployed here
+    if (!res.ok || (ctype && !ctype.includes("json"))) throw new Error(`edge ${res.status}`);
+  }
   if (res.status === 401) { token = null; broadcast({ type: "auth-expired" }); }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -137,8 +194,41 @@ async function fetchConditional(url) {
   return { data, changed: true };
 }
 
-async function fetchJSON(url) {
-  return (await fetchConditional(url)).data;
+// An API path through the CDN when it is a CDN feed and the API has it on; otherwise directly.
+async function fetchPath(path, version) {
+  const cfg = isEdgePath(path) ? await edgeConfig() : null;
+  if (cfg) {
+    try {
+      return await fetchConditional(edgeUrl(cfg, path, version), true);
+    } catch (_) {
+      /* fall through to the API */
+    }
+  }
+  return fetchConditional(`${apiBase}${path}`);
+}
+
+// Rows of the list view get their sparklines back by symbol.
+function mergeSparklines(rows, sparks) {
+  if (!Array.isArray(rows)) return rows;
+  const map = sparks && typeof sparks === "object" ? sparks : {};
+  return rows.map(r => (r && r.sparkline === undefined ? { ...r, sparkline: map[r.symbol] || [] } : r));
+}
+
+// One main feed. A scan is its list plus its sparklines; it changed when either did.
+async function fetchFeed(feed) {
+  const path = feedPath(feed);
+  if (!feed.startsWith("scan:")) return fetchPath(path);
+  const tf = feed.split(":")[1];
+  const [list, spark] = await Promise.all([
+    fetchPath(path, scanVersion),
+    fetchPath(`/api/scan/sparklines?timeframe=${tf}`).catch(() => null),
+  ]);
+  const data = { ...list.data, results: mergeSparklines(list.data?.results, spark?.data?.sparklines) };
+  return { data, changed: list.changed || !!(spark && spark.changed) };
+}
+
+async function fetchJSON(path) {
+  return (await fetchPath(path)).data;
 }
 
 // ── Main data polling ────────────────────────────────────────────────────────
@@ -173,7 +263,7 @@ async function pollMainOnce() {
   const feeds = planMainFetches(unionNeeds(tabNeeds, tabVisibility), feedLoadedAt, now);
   if (!feeds.length) return;
   const results = await Promise.all(feeds.map(feed =>
-    fetchConditional(feedUrl(feed)).then(r => ({ feed, r }), err => ({ feed, err }))));
+    fetchFeed(feed).then(r => ({ feed, r }), err => ({ feed, err }))));
 
   const next = { ...(latestMain || {}) };
   let changed = false, scanChanged = false, scanError = null;
@@ -212,28 +302,28 @@ async function pollNotifications() {
   if (!apiBase) return;
   try {
     const fetches = [
-      fetchJSON(`${apiBase}/api/notifications?limit=10`).catch(() => ({ events: [] })),
-      fetchJSON(`${apiBase}/api/notifications/anomalies`).catch(() => ({ anomalies: [] })),
+      fetchJSON(`/api/notifications?limit=10`).catch(() => ({ events: [] })),
+      fetchJSON(`/api/notifications/anomalies`).catch(() => ({ anomalies: [] })),
     ];
 
     // Wallet-dependent endpoints
     if (walletAddress) {
       fetches.push(
-        fetchJSON(`${apiBase}/api/notifications/position-warnings?address=${walletAddress}`).catch(() => ({ warnings: [] }))
+        fetchJSON(`/api/notifications/position-warnings?address=${walletAddress}`).catch(() => ({ warnings: [] }))
       );
       fetches.push(
-        fetchJSON(`${apiBase}/api/notifications/exhaustion-opportunities?address=${walletAddress}`).catch(() => ({ opportunities: [] }))
+        fetchJSON(`/api/notifications/exhaustion-opportunities?address=${walletAddress}`).catch(() => ({ opportunities: [] }))
       );
       fetches.push(
-        fetchJSON(`${apiBase}/api/notifications/market-setups?address=${walletAddress}&min_score=${notifMinScore}`).catch(() => ({ setups: [] }))
+        fetchJSON(`/api/notifications/market-setups?address=${walletAddress}&min_score=${notifMinScore}`).catch(() => ({ setups: [] }))
       );
     } else {
       fetches.push(Promise.resolve({ warnings: [] }));
       fetches.push(
-        fetchJSON(`${apiBase}/api/notifications/exhaustion-opportunities`).catch(() => ({ opportunities: [] }))
+        fetchJSON(`/api/notifications/exhaustion-opportunities`).catch(() => ({ opportunities: [] }))
       );
       fetches.push(
-        fetchJSON(`${apiBase}/api/notifications/market-setups?min_score=${notifMinScore}`).catch(() => ({ setups: [] }))
+        fetchJSON(`/api/notifications/market-setups?min_score=${notifMinScore}`).catch(() => ({ setups: [] }))
       );
     }
 
@@ -294,6 +384,7 @@ self.onconnect = function (e) {
     switch (msg.type) {
       case "connect":
         if (msg.token) token = msg.token;
+        if (msg.edge !== undefined) edgeAllowed = !!msg.edge;
         if (msg.hidden !== undefined) tabVisibility.set(portId, !msg.hidden);
         if (msg.apiBase && !apiBase) {
           apiBase = msg.apiBase;
@@ -313,6 +404,7 @@ self.onconnect = function (e) {
 
       case "refresh":
         // Immediate re-fetch (a new scan was announced, or the user triggered one)
+        if (msg.version != null) scanVersion = msg.version;
         pollMain();
         break;
 

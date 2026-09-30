@@ -19,6 +19,7 @@ import { watchToast } from "../utils/setupMap.js";
 import { sideColor, shortAddr } from "../utils/traderFormat.js";
 import WalletTag from "./WalletTag.jsx";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
+import { apiFetch } from "../edge.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -633,8 +634,8 @@ export default function TradingPanel({ api }) {
   const fetchScannerContext = useCallback(async () => {
     try {
       const [res4h, res1d] = await Promise.all([
-        fetch(`${api}/api/scan?timeframe=4h`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${api}/api/scan?timeframe=1d`).then(r => r.ok ? r.json() : null).catch(() => null),
+        apiFetch("/api/scan?timeframe=4h&view=list").then(r => r.ok ? r.json() : null).catch(() => null),
+        apiFetch("/api/scan?timeframe=1d&view=list").then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       const toMap = res => {
         const map = {};

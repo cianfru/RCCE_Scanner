@@ -7,6 +7,8 @@ import { T, col, SIGNAL_META, REGIME_META } from "../theme.js";
 import { MAP_FILTERS, MAP_MIN_TRADERS, matchOf, vsEntry } from "../utils/positioning.js";
 import { usd } from "../utils/traders.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
+import { apiFetch } from "../edge.js";
+import AsOf from "./AsOf.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const GROUPS = [
@@ -57,7 +59,7 @@ export default function PositioningView() {
 
   useEffect(() => {
     let cancelled = false;
-    const load = () => fetch(`${API_BASE}/api/hyperlens/positioning?cohort=${group}`)
+    const load = () => apiFetch(`/api/hyperlens/positioning?cohort=${group}`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(d => { if (!cancelled) { setData(d); setError(null); } })
       .catch(e => { if (!cancelled) setError(e.message); });
@@ -81,7 +83,7 @@ export default function PositioningView() {
         <Tabs small label="Show" items={FILTERS.map(f => ({ ...f, label: `${f.label}${data ? ` (${counts[f.key]})` : ""}` }))} value={filter} onChange={setFilter} />
       </div>
       <p className="coh-intro">
-        {data ? <>{data.wallets} {who} hold positions on {data.rows.length} coins. Updated {when(data.updated_at)}.</> : error ? `Positioning unavailable (${error}).` : "Loading positioning…"}
+        {data ? <>{data.wallets} {who} hold positions on {data.rows.length} coins. Updated {when(data.updated_at)}. <AsOf data={data} /></> : error ? `Positioning unavailable (${error}).` : "Loading positioning…"}
         {" "}<HelpTip title="Positioning map" width={380}>
           <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (every 10–15 minutes after a wallet trades, up to an hour when it has not, two hours when it holds nothing). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
           <p>Agree: at least {MAP_MIN_TRADERS} {who} lean the same way as the engine's 4H signal (long signals against longs, exits or a downtrend against shorts). Opposed: they lean against it. Whether agreement leads price is being recorded; until then this is information, not a signal.</p>

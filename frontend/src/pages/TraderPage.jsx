@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import BMSBChart from "../components/BMSBChart.jsx";
 import EquityChart from "../components/EquityChart.jsx";
 import HelpTip from "../components/HelpTip.jsx";
+import Locked from "../components/Locked.jsx";
 import TokenLogo from "../components/TokenLogo.jsx";
 import { WalletAvatar } from "../components/WalletTag.jsx";
 import { WindowSwitch } from "../components/TraderLeaderboard.jsx";
@@ -272,17 +273,27 @@ export default function TraderPage({ address }) {
     let cancelled = false;
     setData({ loading: true });
     setOpenPos(null);
+    let retry = null;
     const load = () => fetch(`${API}/api/traders/${address}`)
       .then(async r => {
         if (r.status === 404) return { missing: true };
+        if (r.status === 403) return { locked: true };        // access tiers: profiles are for holders
+        if (r.status === 503) {
+          const b = await r.json().catch(() => ({}));
+          throw Object.assign(new Error("busy"), { busy: true, after: Number(b.retry_after) || 20 });
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
       .then(d => { if (!cancelled) setData({ loading: false, ...d }); })
-      .catch(() => { if (!cancelled) setData(prev => ({ ...prev, loading: false, error: !prev.address })); });
+      .catch(e => {
+        if (cancelled) return;
+        setData(prev => ({ ...prev, loading: false, error: !prev.address, busy: !!e.busy }));
+        if (e.busy) { clearTimeout(retry); retry = setTimeout(load, Math.min(60, e.after) * 1000); }
+      });
     load();
     const stop = pollWhileVisible(load, 60_000);
-    return () => { cancelled = true; stop(); };
+    return () => { cancelled = true; stop(); clearTimeout(retry); };
   }, [address]);
 
 
@@ -329,8 +340,9 @@ export default function TraderPage({ address }) {
           </div>
         </div>
 
-        {data.missing ? <p className="tp-empty">No Hyperliquid activity for this address.</p>
-          : data.error ? <p className="tp-empty">Profile unavailable. Retrying.</p> : <>
+        {data.locked ? <Locked what="Trader profiles" />
+          : data.missing ? <p className="tp-empty">No Hyperliquid activity for this address.</p>
+          : data.error ? <p className="tp-empty">{data.busy ? "Busy, try again shortly. Retrying." : "Profile unavailable. Retrying."}</p> : <>
           <div className="tp-kpis-head">
             <WindowSwitch value={win} onChange={setWin} />
             <HelpTip title="These figures" width={380} label="About these figures">
@@ -351,7 +363,7 @@ export default function TraderPage({ address }) {
         </>}
       </section>
 
-      {!data.missing && (
+      {!data.missing && !data.locked && (
         <section className="tp-section">
           <div className="tp-section-head">
             <h2>Open positions <HelpTip title="Open positions" width={360}>
@@ -377,7 +389,7 @@ export default function TraderPage({ address }) {
         </section>
       )}
 
-      {!data.missing && !data.loading && <History address={address} isMobile={isMobile} />}
+      {!data.missing && !data.locked && !data.loading && <History address={address} isMobile={isMobile} />}
     </div>
   );
 }

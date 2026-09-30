@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import HelpTip from "./HelpTip.jsx";
+import AsOf from "./AsOf.jsx";
+import { apiFetch } from "../edge.js";
 import TokenLogo from "./TokenLogo.jsx";
 import { WalletAvatar } from "./WalletTag.jsx";
 import { nameIn, shortAddr, viewNames } from "../utils/walletName.js";
@@ -94,7 +96,7 @@ function Row({ row, name }) {
 
 // Profitable traders ranked by PnL over the window; a row opens the trader's profile.
 export default function TraderLeaderboard({ window: win = "30d", onWindow, showSwitch = true }) {
-  const [state, setState] = useState({ rows: [], total: 0, loading: true, error: false, window: win });
+  const [state, setState] = useState({ rows: [], total: 0, loading: true, error: false, window: win, meta: null });
   const [count, setCount] = useState(PAGE);
   const polls = useRef(0);
 
@@ -105,11 +107,12 @@ export default function TraderLeaderboard({ window: win = "30d", onWindow, showS
     let cancelled = false;
     let timer = null;
     const load = () => {
-      fetch(`${API}/api/traders/leaderboard?window=${win}&offset=0&limit=${count}`)
+      apiFetch(`/api/traders/leaderboard?window=${win}&offset=0&limit=${count}`)
         .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
         .then(d => {
           if (cancelled) return;
-          setState({ rows: d.rows || [], total: d.total || 0, loading: false, error: false, window: win });
+          setState({ rows: d.rows || [], total: d.total || 0, loading: false, error: false, window: win,
+            meta: { as_of: d.as_of, stale: d.stale } });
           // Win rates arrive over a few minutes: look again while some are missing.
           if ((d.win_rate_pending || 0) > 0 && polls.current < 8) {
             polls.current += 1;
@@ -132,6 +135,7 @@ export default function TraderLeaderboard({ window: win = "30d", onWindow, showS
     <div className="lb">
       <div className="lb-top-line">
         <span className="lb-title">Profitable traders <LeaderboardHelp /></span>
+        <AsOf data={state.meta} />
         {showSwitch && <WindowSwitch value={win} onChange={onWindow} />}
       </div>
       {state.loading && !rows.length ? (

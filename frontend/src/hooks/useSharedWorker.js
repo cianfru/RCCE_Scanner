@@ -1,4 +1,5 @@
 import { getToken, logout } from "../auth.js";
+import { EDGE_ALLOWED } from "../edge.js";
 /**
  * useSharedWorker — React hook for the RCCE SharedWorker.
  *
@@ -36,7 +37,7 @@ function initWorker() {
     };
 
     workerPort.start();
-    workerPort.postMessage({ type: "connect", apiBase: API_BASE, token: getToken(), hidden: document.hidden });
+    workerPort.postMessage({ type: "connect", apiBase: API_BASE, token: getToken(), hidden: document.hidden, edge: EDGE_ALLOWED });
 
     // Visibility forwarding
     document.addEventListener("visibilitychange", () => {
@@ -90,7 +91,8 @@ export function useSharedWorker() {
     }
   }, []);
 
-  const refresh = useCallback(() => send({ type: "refresh" }), [send]);
+  // `version`: the scan pass a notice announced (the CDN URL carries it; see shared-worker.js).
+  const refresh = useCallback((version) => send({ type: "refresh", version: Number.isFinite(version) ? version : undefined }), [send]);
   const refreshNotifications = useCallback(() => send({ type: "refresh-notifications" }), [send]);
   const setWallet = useCallback((address) => send({ type: "set-wallet", address }), [send]);
   const setNotifParams = useCallback((minScore) => send({ type: "set-notif-params", minScore }), [send]);

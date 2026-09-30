@@ -5,6 +5,7 @@ import useFollowed from "../hooks/useFollowed.js";
 import { SIDE_COLOR, changeLine, fmtPx, fmtUsd, fmtWhen } from "../utils/traderFormat.js";
 import { nameIn, viewNames } from "../utils/walletName.js";
 import WalletTag from "./WalletTag.jsx";
+import Locked from "./Locked.jsx";
 
 const COHORT_NAME = { money_printer: "profitable trader", smart_money: "large account", elite: "both" };
 
@@ -25,6 +26,10 @@ export default function FollowingView() {
     setMsg(ok ? "" : "Could not follow: set the admin key in Settings.");
     if (ok) setAddr("");
   };
+
+  if (data?.locked) {
+    return <div className="fol"><Locked what="Following traders" /></div>;
+  }
 
   return (
     <div className="fol">

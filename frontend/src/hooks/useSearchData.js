@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { parseHlMarkets } from "../utils/search.js";
+import { apiFetch } from "../edge.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const HL_INFO = "https://api.hyperliquid.xyz/info";
@@ -33,7 +34,7 @@ function loadMarkets() {
 function loadTraders() {
   if (cache.traders && Date.now() - cache.tradersAt < TRADERS_TTL) return Promise.resolve(cache.traders);
   if (cache.tradersP) return cache.tradersP;
-  const page = offset => fetch(`${API_BASE}/api/traders/leaderboard?window=30d&offset=${offset}&limit=300`)
+  const page = offset => apiFetch(`/api/traders/leaderboard?window=30d&offset=${offset}&limit=300`)
     .then(r => (r.ok ? r.json() : { rows: [] })).catch(() => ({ rows: [] }));
   cache.tradersP = Promise.all([page(0), page(300)])
     .then(([a, b]) => {

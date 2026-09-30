@@ -334,6 +334,53 @@ async def send_brief(chats: Optional[List[int]] = None, now: Optional[float] = N
     return sent
 
 
+async def send_user_briefs(now: Optional[float] = None, scheduled: bool = False,
+                           only: Optional[List[str]] = None) -> int:
+    """The brief for each linked account with the holder features and the brief on (not the
+    owner, who gets the brief above). One gathering and one picture for everyone; each
+    account gets its own watched coins, held alerts and open positions. A scheduled run
+    skips accounts that already had today's brief."""
+    import accounts
+    import tiers
+    import user_alerts as ua
+    if not accounts.enabled():
+        return 0
+    now = now or time.time()
+    due = []
+    for user, chat in accounts.tg_linked():
+        if accounts.is_owner(user) or (only is not None and user not in only):
+            continue
+        st = ua.state(user)
+        if scheduled and (not st["settings"].get("brief", True) or st.get("last_brief") == slot_of(now)):
+            continue
+        if await tiers.allows(user):
+            due.append((user, chat))
+    if not due:
+        return 0
+    ctx = await gather(now)
+    png = await asyncio.to_thread(render_image, ctx.get("smap"), now)
+    items = {c["coin"]: c for c in (ctx.get("smap") or {}).get("coins", [])}
+    sent = 0
+    for user, chat in due:
+        watched = accounts.watch_list(user)
+        async with ua._lock(user):
+            st = ua.state(user)
+            watch_now = {c: ta.watch_state(items[c]) for c in watched if c in items}
+            held, st["held"] = st["held"], []
+            c = dict(ctx, held=held, watched=len(watched), changes=watch_changes(st.get("brief_watch") or {}, watch_now),
+                     positions=await _positions(user))
+            if await _send(chat, "\n".join(compose(c)), png):
+                sent += 1
+                if scheduled:
+                    st["last_brief"] = slot_of(now)
+                    st["brief_watch"] = watch_now
+            else:
+                st["held"] = held + st["held"]
+            ua.save(user, st)
+    logger.info("Telegram brief sent to %d account(s)", sent)
+    return sent
+
+
 def slot_of(now: float) -> str:
     """The date of the brief slot that ``now`` belongs to (the last brief time at or before it)."""
     return ta.local(ta.period_start(now)).date().isoformat()
@@ -355,5 +402,10 @@ async def run_scheduler() -> None:
                 await send_brief(now=now, scheduled=True)
         except Exception as exc:
             logger.warning("brief: %s", exc)
+        try:
+            if brief_due(now, ""):
+                await send_user_briefs(now=now, scheduled=True)
+        except Exception as exc:
+            logger.warning("brief (accounts): %s", exc)
         wait = ta.next_brief_at(time.time()).timestamp() - time.time()
         await asyncio.sleep(max(5.0, min(600.0, wait + 1)))

@@ -1,12 +1,17 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { createKeyedCache } from "../utils/keyedCache.js";
 import { WATCH_MESSAGES, watchReason } from "../utils/setupMap.js";
+import { usesAccount } from "../account.js";
+import { apiJson } from "../edge.js";
 
 export { WATCH_MESSAGES };
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const TTL_MS = 300_000;
 const WATCH = "watch";
+
+// Signed in with a wallet (VITE_ACCOUNTS), the watch list is the account's own.
+const watchBase = () => `${API_BASE}${usesAccount() ? "/api/me/watch" : "/api/setup-map/watch"}`;
 
 const getJson = url => fetch(url).then(r => {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -17,9 +22,22 @@ const getJson = url => fetch(url).then(r => {
 // Watch toggle read the same setup map per timeframe (one GET per five minutes while
 // something shows it and the page is visible) and the same watch list.
 export const setupMapStore = {
-  byTf: createKeyedCache({ fetcher: tf => getJson(`${API_BASE}/api/setup-map?tf=${tf}`), ttl: TTL_MS, refresh: true }),
-  watch: createKeyedCache({ fetcher: () => getJson(`${API_BASE}/api/setup-map/watch`), ttl: TTL_MS, refresh: true }),
+  // Signed-in readers go direct: with access tiers on, their map depends on their session,
+  // so it must not come from the shared edge copy.
+  byTf: createKeyedCache({
+    fetcher: tf => usesAccount() ? getJson(`${API_BASE}/api/setup-map?tf=${tf}`) : apiJson(`/api/setup-map?tf=${tf}`),
+    ttl: TTL_MS, refresh: true,
+  }),
+  watch: createKeyedCache({ fetcher: () => getJson(watchBase()), ttl: TTL_MS, refresh: true }),
 };
+
+// Signing in or out changes the watch list and, with access tiers on, live or delayed maps.
+if (typeof window !== "undefined") {
+  window.addEventListener("reflex-session", () => {
+    if (setupMapStore.watch.peek(WATCH) !== undefined) setupMapStore.watch.load(WATCH, { force: true });
+    for (const tf of ["4h", "1d"]) if (setupMapStore.byTf.peek(tf) !== undefined) setupMapStore.byTf.load(tf, { force: true });
+  });
+}
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
@@ -41,13 +59,13 @@ export async function toggleWatch(coin, tf = "1d") {
   let res;
   try {
     // Every caller shows watchToast's own "Watching needs the admin key" on a 403 (adminNotice: false).
-    res = await fetch(`${API_BASE}/api/setup-map/watch${on ? `/${encodeURIComponent(coin)}` : ""}`, on
+    res = await fetch(`${watchBase()}${on ? `/${encodeURIComponent(coin)}` : ""}`, on
       ? { method: "DELETE", adminNotice: false }
       : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ coin, tf }), adminNotice: false });
   } catch {
     return { ok: false, reason: "error" };
   }
-  if (!res.ok) return { ok: false, reason: watchReason(res.status) };
+  if (!res.ok) return { ok: false, reason: watchReason(res.status, res.status === 403 ? (await res.json().catch(() => ({}))).detail : undefined) };
   await loadWatch({ force: true });
   return { ok: true, watching: !on };
 }
