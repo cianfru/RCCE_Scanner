@@ -279,6 +279,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Cohorts init failed (non-fatal): %s", e)
 
+    # Stored fills of the tracked wallets (trader profiles read them); FILLS_STORE_ENABLED=0 turns it off.
+    try:
+        import hl_fills
+        if hl_fills.enabled():
+            asyncio.create_task(hl_fills.run_forever())
+            logger.info("Fills store: ENABLED")
+    except Exception as e:
+        logger.warning("Fills store init failed (non-fatal): %s", e)
+
     # Market history for the scanner's history drawer: one breadth row per closed day
     try:
         from market_history import run_forever as run_market_history
@@ -4690,6 +4699,15 @@ async def followed_remove(address: str):
 
 # ── Trader leaderboard and profiles (trader_profile.py) ─────────────────────
 # /leaderboard is declared before /{address}: the address pattern would reject it with a 422.
+from hl_fills import Busy as _FillsBusy  # noqa: E402
+
+
+@app.exception_handler(_FillsBusy)
+async def _fills_busy(request: Request, exc: _FillsBusy):
+    """Too many live reads of untracked wallets this minute (hl_fills.LIVE_LOADS_PER_MIN)."""
+    return JSONResponse(status_code=503, content={"detail": "Busy, try again shortly", "retry_after": exc.retry_after},
+                        headers={"Retry-After": str(exc.retry_after)})
+
 
 @app.get("/api/traders/leaderboard")
 async def traders_leaderboard(
@@ -4731,6 +4749,8 @@ async def trader_fills(
     import trader_profile as tp
     try:
         return await tp.fills(address, coin, since, until, limit)
+    except _FillsBusy:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Fills unavailable: {exc}")
 
@@ -4746,6 +4766,8 @@ async def trader_history(
     import trader_profile as tp
     try:
         return await tp.history(address, coin, offset, limit)
+    except _FillsBusy:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"History unavailable: {exc}")
 

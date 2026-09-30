@@ -1084,11 +1084,19 @@ async def poll_positions(force: bool = False) -> int:
 
 def _note_change(address: str, prev: Optional[PositionSnapshot], snap: PositionSnapshot) -> None:
     """Queue the coins whose size changed since the previous reading for the change log
-    (hl_entities). Skipped when the gap between the readings is too long to time the change."""
-    if prev is None or snap.timestamp <= prev.timestamp or snap.timestamp - prev.timestamp > _cadence.MAX_READING_AGE_S:
+    (hl_entities), and ask the fills store (hl_fills) for the wallet's new fills. The log skips
+    changes when the gap between the readings is too long to time them."""
+    if prev is None or snap.timestamp <= prev.timestamp:
         return
     before, after = _book_of(prev), _book_of(snap)
     if not _cadence.changed(before, after):
+        return
+    try:
+        import hl_fills
+        hl_fills.mark_changed(address)
+    except Exception as exc:
+        logger.debug("HyperLens: fills store notice failed: %s", exc)
+    if snap.timestamp - prev.timestamp > _cadence.MAX_READING_AGE_S:
         return
     b, a = _cadence.live(before), _cadence.live(after)
     for coin in set(b) | set(a):
@@ -2891,6 +2899,14 @@ def get_smart_money_orders(symbol: str = None) -> list:
     return result
 
 
+def _fills_store_status() -> dict:
+    try:
+        import hl_fills
+        return hl_fills.status()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def get_status() -> dict:
     """Module status for API endpoint."""
     mp_addrs = {w.address for w in _roster_money_printers}
@@ -2947,6 +2963,8 @@ def get_status() -> dict:
         "db": _db_stats(),
         # Hyperliquid info API calls per minute by request type (every caller in this process)
         "api_calls": _hl_calls.stats(),
+        # Stored fills of the roster (hl_fills): backfill progress, size, its Hyperliquid weight
+        "fills_store": _fills_store_status(),
         # Lockstep groups: wallets counted as one trader
         "entities": {"groups": len(_entity_members), "wallets": len(_entity_of),
                      "computed_at": _entities_at or None,
