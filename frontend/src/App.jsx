@@ -36,6 +36,7 @@ import HitRateStrip from "./components/HitRateStrip.jsx";
 import PageTitle from "./components/PageTitle.jsx";
 import PageSkeleton from "./components/PageSkeleton.jsx";
 import NotFound from "./components/NotFound.jsx";
+import GlobalSearch from "./components/GlobalSearch.jsx";
 
 // Pages load their code on first visit; the shell and the scanner stay in the main bundle.
 const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
@@ -742,6 +743,10 @@ export default function App() {
   const lastTf = timeframeFrom(scannerTarget.split("?")[1] || "");
   const tabTargets = mainTabTargets({ lastScanner: scannerTarget, lastScannerTf: lastTf });
 
+  // Coins-and-traders search in the header, on every page. Hyperliquid's market list feeds it; the
+  // scanner rows, where loaded, carry a coin's timeframe to its page.
+  const searchRows = data1d.length ? data1d : data4h;
+
   // The header's compact 4H | 1D drives the page's own timeframe (scanner or Radar).
   const setHeaderTimeframe = (tf) => {
     if (activeTab !== "radar") { setActiveTab(tf); return; }
@@ -922,6 +927,8 @@ export default function App() {
         timeframe={activeTab === "radar" ? radarTf : activeTab === "4h" ? "4h" : "1d"}
         onTimeframe={setHeaderTimeframe}
         compactTfRoute={showDashboard ? "scanner" : activeTab === "radar" ? "radar" : null}
+        search={<GlobalSearch rows={searchRows} radarTf={radarTf || lastTf} phone={isMobile} compact={width >= 900 && width < 1280}
+          onOpenCoin={row => handleSelectCoin(row)} />}
       />
 
       {/* ── ERROR ── */}
@@ -960,8 +967,7 @@ export default function App() {
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
         }}>
           <PageTitle>{showDashboard ? scannerTitle : TAB_TITLES[activeTab]}</PageTitle>
-          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} searchTerm={searchTerm}
-            onSearchChange={v => { setSearchTerm(v); updateScannerQuery("q", v); }} marketKind={marketKind} onMarketChange={changeMarket} />}
+          {showDashboard && <ScannerControls activeTab={activeTab} onTabChange={setActiveTab} marketKind={marketKind} onMarketChange={changeMarket} />}
           {activeTab === "tradfi" && <Tabs label="Timeframe" items={[{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }]} value={tradfiTf} onChange={setTradfiTf} />}
 
         </div>

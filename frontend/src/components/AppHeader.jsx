@@ -18,7 +18,7 @@ export default function AppHeader({
   activeTab, activeMainTab, tabTargets, radarTf,
   drawerOpen, onOpenDrawer, onBrand,
   lastRefresh, cacheAge, error,
-  timeframe, onTimeframe, compactTfRoute,
+  timeframe, onTimeframe, compactTfRoute, search,
 }) {
   const headerRef = useRef(null);
   const showTabs = width >= 900;
@@ -81,6 +81,7 @@ export default function AppHeader({
         <div className="header-spacer" />
 
         <div className="header-right">
+          {search}
           {compactOn && headHidden && (
             <div className="header-tf"><Tabs small label="Timeframe" items={TF_ITEMS} value={timeframe} onChange={onTimeframe} /></div>
           )}
