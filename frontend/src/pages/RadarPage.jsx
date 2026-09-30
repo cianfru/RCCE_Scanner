@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { track } from "../usage.js";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { T, getBaseSymbol } from "../theme.js";
@@ -201,7 +202,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const [mineOn, setMineOn] = useState(() => store.get("smap-mine") === "1");
   // Long · Short · Both: what the map draws, remembered per viewer (the forward test logs Long either way).
   const [side, setSide] = useState(() => sideOf(store.get("radar-side")));
-  const pickSide = k => { const v = sideOf(k); setSide(v); store.set("radar-side", v); };
+  const pickSide = k => { const v = sideOf(k); setSide(v); store.set("radar-side", v); track("radar_tab", v); };
   const [addressDraft, setAddressDraft] = useState("");
   const [detail, setDetail] = useState(null);
   const [msg, setMsg] = useState("");

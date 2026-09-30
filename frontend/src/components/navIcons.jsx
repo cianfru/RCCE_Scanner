@@ -39,6 +39,12 @@ const GLYPHS = {
   </>,
   // USDC in and out of Hyperliquid through its Arbitrum bridge.
   bridge: <path d="M2 5.5h11M10.5 3l2.5 2.5L10.5 8M14 10.5H3M5.5 8L3 10.5 5.5 13" {...S} strokeLinecap="round" strokeLinejoin="round"/>,
+  // The owner's Intel page: who uses the app.
+  intel: <>
+    <circle cx="6" cy="5.5" r="2.5" {...S}/>
+    <path d="M1.5 13.5c.6-2.6 2.3-4 4.5-4s3.9 1.4 4.5 4" {...S} strokeLinecap="round"/>
+    <path d="M10.5 3.2a2.5 2.5 0 010 4.6M12 9.8c1.3.5 2.2 1.8 2.5 3.7" {...S} strokeLinecap="round"/>
+  </>,
   // More drawer, Markets: perpetual contracts (an infinity loop) and spot markets (two coins).
   perps: <path d="M8 8C6.6 5.9 5.4 4.5 4.3 4.5a2.8 3.5 0 000 7c1.1 0 2.3-1.4 3.7-3.5s2.6-3.5 3.7-3.5a2.8 3.5 0 010 7c-1.1 0-2.3-1.4-3.7-3.5z" {...S} strokeLinejoin="round"/>,
   spot: <>

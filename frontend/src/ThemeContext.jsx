@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { applyTheme } from "./theme.js";
+import { track } from "./usage.js";
 
 const ThemeContext = createContext({ mode: "dark", toggle: () => {} });
 
@@ -12,7 +13,7 @@ export function ThemeProvider({ children }) {
   }, [mode]);
 
   // Repaint the shared colour tables before the re-render that follows, not after it.
-  const toggle = useCallback(() => setMode(m => { const next = m === "dark" ? "light" : "dark"; applyTheme(next); return next; }), []);
+  const toggle = useCallback(() => setMode(m => { const next = m === "dark" ? "light" : "dark"; applyTheme(next); track("theme", next); return next; }), []);
 
   return (
     <ThemeContext.Provider value={{ mode, toggle }}>

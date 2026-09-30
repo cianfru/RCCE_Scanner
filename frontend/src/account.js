@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { getSession, setSession } from "./auth.js";
 import { toHex } from "./utils/account.js";
+import { track } from "./usage.js";
 
 export const ACCOUNTS = import.meta.env.VITE_ACCOUNTS === "1";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -54,6 +55,7 @@ export async function signIn() {
   const signature = await eth.request({ method: "personal_sign", params: [toHex(message), address] });
   const res = await post("/api/auth/wallet/verify", { message, signature });
   setSession(res.token);
+  track("wallet_signin");
   await loadMe();
   return res;
 }
@@ -65,7 +67,9 @@ export async function signOut() {
 }
 
 export async function telegramLink() {
-  return post("/api/me/telegram/link");
+  const res = await post("/api/me/telegram/link");
+  track("telegram_link");
+  return res;
 }
 
 export async function telegramPrefs(body) {

@@ -1,6 +1,25 @@
 {
   "rewrites": [
     {
+      "source": "/u/beacon",
+      "has": [
+        { "type": "header", "key": "x-vercel-ip-country", "value": "(?<cc>[A-Z]{2})" },
+        { "type": "header", "key": "x-vercel-ip-city", "value": "(?<city>[^/?#&]{1,80})" }
+      ],
+      "destination": "https://rccescanner-production.up.railway.app/api/usage/beacon?cc=:cc&city=:city"
+    },
+    {
+      "source": "/u/beacon",
+      "has": [
+        { "type": "header", "key": "x-vercel-ip-country", "value": "(?<cc>[A-Z]{2})" }
+      ],
+      "destination": "https://rccescanner-production.up.railway.app/api/usage/beacon?cc=:cc"
+    },
+    {
+      "source": "/u/beacon",
+      "destination": "https://rccescanner-production.up.railway.app/api/usage/beacon"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
