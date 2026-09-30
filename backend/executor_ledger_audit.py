@@ -11,6 +11,13 @@ AUDITED_UNIT_MISMATCHES = (
     ('PEPE/USDT', 1786825035, 1787257011, .002645, .00000315),
 )
 
+# Closures filled at a price far from the market at that moment (checked against
+# Hyperliquid's hourly candles). The bad quote also triggered the exit itself.
+AUDITED_PRICE_ERRORS = (
+    # PURR traded 0.131-0.137 in that hour; the fill was recorded at 13.015.
+    ('PURR/USDT', 1790425994, 1790489004, .12409, 13.015),
+)
+
 
 def closure_issue(trade):
     try:
@@ -22,4 +29,9 @@ def closure_issue(trade):
                 and exit_time == exited
                 and trade.get('entry_price') == entry and trade.get('exit_price') == exit_price):
             return 'Verified price-unit mismatch: entry per 1,000 tokens, exit per single token. The recorded closure cannot be treated as a valid strategy loss.'
+    for symbol, entered, exited, entry, exit_price in AUDITED_PRICE_ERRORS:
+        if (trade.get('symbol') == symbol and entry_time == entered
+                and exit_time == exited
+                and trade.get('entry_price') == entry and trade.get('exit_price') == exit_price):
+            return 'Verified bad exit price: the fill was recorded about 100 times above the market price at that time. The recorded closure cannot be treated as a valid strategy result.'
     return None
