@@ -1,11 +1,24 @@
 {
   "rewrites": [
     {
+      "source": "/edge/api/:path*",
+      "destination": "https://rccescanner-production.up.railway.app/api/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/edge/api/:path*",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
+      ]
+    },
     {
       "source": "/",
       "headers": [

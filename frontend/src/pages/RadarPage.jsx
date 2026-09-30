@@ -15,6 +15,7 @@ import { SIDES, forwardLine, isAddress, mostShorted, newEarly, picks, sideOf, vi
 import { moneyMode, sameSpot } from "../utils/radarDepth.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
+import AsOf from "../components/AsOf.jsx";
 import HelpTip from "../components/HelpTip.jsx";
 import Tabs from "../components/Tabs.jsx";
 import SetupIntelDrawer from "../components/SetupIntelDrawer.jsx";
@@ -298,6 +299,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
       <div className="scanner-head radar-head" style={{ padding: `${phone ? T.sp4 : T.sp3}px 0 ${T.sp1}px` }}>
         <div className="radar-head-left">
           <span className="radar-title"><PageTitle>Radar</PageTitle><RadarAbout /></span>
+          <AsOf data={data} />
           <Tabs small label="Timeframe" items={TF_ITEMS} value={tf} onChange={k => setParams({ tf: k }, true)} />
           <Tabs small label="Traders' side" items={SIDES} value={side} onChange={pickSide} />
           <NextClose tf={tf} />

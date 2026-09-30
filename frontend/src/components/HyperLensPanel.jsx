@@ -20,6 +20,8 @@ import { MIN_WALLETS, fmtUsd as fmt$, fmtSignedUsd, fmtSignedPct, cohortFields, 
 import { SUMMARY_MIN, summaryRows, sideCounts } from "../utils/traderSummary.js";
 import { codename, nameIn, shortAddr, viewNames } from "../utils/walletName.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
+import { apiFetch } from "../edge.js";
+import AsOf from "./AsOf.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -1697,6 +1699,9 @@ export default function HyperLensPanel({ isMobile }) {
   const [status, setStatus] = useState({});
   const [consensus, setConsensus] = useState([]);
   const [groupRows, setGroupRows] = useState({});
+  // as_of / stale of the two feeds (a small "as of" shows when the server served its last good copy).
+  const [consensusMeta, setConsensusMeta] = useState(null);
+  const [groupMeta, setGroupMeta] = useState({});
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1707,10 +1712,11 @@ export default function HyperLensPanel({ isMobile }) {
       // Consensus rows carry every cohort's figures, so a cohort switch needs no refetch.
       const [statusRes, consensusRes] = await Promise.all([
         fetch(`${API}/api/hyperlens/status`).then(r => r.json()),
-        fetch(`${API}/api/hyperlens/consensus`).then(r => r.json()),
+        apiFetch("/api/hyperlens/consensus").then(r => r.json()),
       ]);
       setStatus(statusRes);
       setConsensus(consensusRes.consensus || []);
+      setConsensusMeta({ as_of: consensusRes.as_of, stale: consensusRes.stale });
     } catch (err) {
       console.warn("HyperLens fetch failed:", err);
     } finally {
@@ -1728,9 +1734,13 @@ export default function HyperLensPanel({ isMobile }) {
   useEffect(() => {
     if (!api) return undefined;
     let cancelled = false;
-    const load = () => fetch(`${API}/api/hyperlens/positioning?cohort=${api}`)
+    const load = () => apiFetch(`/api/hyperlens/positioning?cohort=${api}`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(d => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: d.rows || [] })); })
+      .then(d => {
+        if (cancelled) return;
+        setGroupRows(g => ({ ...g, [api]: d.rows || [] }));
+        setGroupMeta(m => ({ ...m, [api]: { as_of: d.as_of, stale: d.stale } }));
+      })
       .catch(() => { if (!cancelled) setGroupRows(g => ({ ...g, [api]: g[api] || null })); });
     load();
     const stop = pollWhileVisible(load, 60_000);
@@ -1850,6 +1860,9 @@ export default function HyperLensPanel({ isMobile }) {
           />
         </ModalOverlay>
       )}
+
+      {tab === "consensus" && <AsOf data={consensusMeta} also={api ? groupMeta[api] : null}
+        style={{ display: "block", textAlign: "right", margin: "0 2px 4px" }} />}
 
       {/* Main content */}
       {/* Cohorts reads the sweep's own tables, so it does not wait for HyperLens data. */}

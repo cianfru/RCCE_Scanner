@@ -4,6 +4,8 @@ import HelpTip from "../components/HelpTip.jsx";
 import { formatPercent, formatPrice, evidenceSummary, counterEvidence, hasCoinglass, signalAgreement } from "../utils/marketPresentation.js";
 import Tabs from "../components/Tabs.jsx";
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
+import useFullRow from "../hooks/useFullRow.js";
+import { apiFetch } from "../edge.js";
 import { Star } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { col, T, REGIME_META, SIGNAL_META, heatColor, phaseColor, exhaustMeta, fmt, zBar, getBaseSymbol, getTVSymbol } from "../theme.js";
@@ -185,7 +187,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   useEffect(() => {
     let cancelled = false;
     setAvailability(null); setAvailabilityError(false);
-    const load = () => fetch(`${API_BASE}/api/universe?timeframe=${timeframe}`).then(r => { if (!r.ok) throw new Error("Unavailable"); return r.json(); }).then(d => {
+    const load = () => apiFetch(`/api/universe?timeframe=${timeframe}`).then(r => { if (!r.ok) throw new Error("Unavailable"); return r.json(); }).then(d => {
       const sym = (urlSymbol || "").toUpperCase();
       const market = (d.markets || []).find(m => m.symbol === sym) || (d.markets || []).find(m => m.base.toUpperCase() === sym && m.kind === marketKind) || (d.markets || []).find(m => m.base.toUpperCase() === sym);
       if (!cancelled) { setAvailability(market || {unlisted: true}); setAvailabilityError(false); }
@@ -209,8 +211,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const myEntry = useMemo(() => (mine?.entry ? { price: mine.entry, side: mine.side } : null), [mine?.entry, mine?.side]);
 
 
-  // Find scan result matching URL symbol
-  const data = useMemo(() => {
+  // Find scan result matching URL symbol (the list row; its full row is laid over it below)
+  const listRow = useMemo(() => {
     const scanData = timeframe === "4h" ? scanData4h : scanData1d;
     if (!scanData || scanData.length === 0) return null;
     const sym = (urlSymbol || "").toUpperCase();
@@ -220,6 +222,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       || rows.find(r => getBaseSymbol(r.symbol).replace("/", "").toUpperCase() === sym)
       || null;
   }, [scanData4h, scanData1d, urlSymbol, timeframe, marketKind]);
+  const data = useFullRow(listRow);
 
   // "Trade on Hyperliquid" drops "Trade on" only when the full label would push the actions off the
   // title line (a long ticker, a two-line setup pair, the 4H+1D note). When even the short label does
