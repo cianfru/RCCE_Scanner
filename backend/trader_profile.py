@@ -74,6 +74,7 @@ _board_cache: Dict[tuple, tuple] = {}    # (window, cohort) -> (built_at, ranked
 _warm_task: Optional[asyncio.Task] = None
 _warm_queue: List[str] = []
 _live_loads: Dict[str, asyncio.Task] = {}   # address -> the live fills read in progress (one per wallet)
+_classified_cache: Dict[int, tuple] = {}    # id(stored fills list) -> (that list, its classification)
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +427,22 @@ async def _live_fills(address: str) -> dict:
         return await te._wallet_fills(session, address, max_age=LIVE_FILLS_CACHE_S)
 
 
+def _classified(got: Optional[dict]) -> List[dict]:
+    """classify_fills of a wallet's fills; for stored fills, remembered while the store serves the
+    same list (up to 8 wallets), so the fills and history requests of one page view classify once."""
+    fl = (got or {}).get("fills") or []
+    if not (got or {}).get("stored"):
+        return classify_fills(fl)
+    hit = _classified_cache.get(id(fl))
+    if hit and hit[0] is fl:
+        return hit[1]
+    cl = classify_fills(fl)
+    if len(_classified_cache) >= 8:
+        _classified_cache.pop(next(iter(_classified_cache)))
+    _classified_cache[id(fl)] = (fl, cl)
+    return cl
+
+
 def _tracked(address: str) -> bool:
     import hl_intelligence as hl
     return any(x.address == address for x in hl._roster)
@@ -542,13 +559,13 @@ async def profile(address: str) -> Optional[dict]:
         if isinstance(r, BaseException):
             logger.warning("trader profile %s: %s", address[:10], r)
     fl = (fills or {}).get("fills") or []
-    classified = classify_fills(fl)
+    classified = _classified(fills)
     if (fills or {}).get("stored") and state is not None and _behind(state, classified):
         await hl_fills.refresh(address, wait=VIEW_WAIT_S)       # the store reads the wallet's new fills
         newer = await hl_fills.load(address)
         if newer is not None and newer is not fills:
             fills, fl = newer, newer["fills"]
-            classified = classify_fills(fl)
+            classified = _classified(fills)
     now = time.time()
     trips = round_trips(classified)
     stats = win_stats(trips["closed"], now)
@@ -594,7 +611,7 @@ async def fills(address: str, coin: Optional[str] = None, since: Optional[float]
     """Classified fills, most recent first, optionally for one coin and a time range (seconds)."""
     from hl_intelligence import _normalize_coin
     got = await wallet_fills(address.lower())
-    cl = classify_fills(got["fills"])
+    cl = _classified(got)
     sel = [dict(f, hl_coin=f["coin"], coin=_normalize_coin(f["coin"])) for f in cl
            if _match(coin, f["coin"]) and (since is None or f["t"] >= since) and (until is None or f["t"] <= until)]
     sel.reverse()
@@ -607,7 +624,7 @@ async def history(address: str, coin: Optional[str] = None, offset: int = 0, lim
     from hl_intelligence import _normalize_coin
     got = await wallet_fills(address.lower())
     every = [dict(tr, hl_coin=tr["coin"], coin=_normalize_coin(tr["coin"]))
-             for tr in round_trips(classify_fills(got["fills"]))["closed"]]
+             for tr in round_trips(_classified(got))["closed"]]
     counts: Dict[str, int] = {}
     for tr in every:
         counts[tr["coin"]] = counts.get(tr["coin"], 0) + 1

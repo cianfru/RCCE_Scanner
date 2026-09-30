@@ -429,9 +429,10 @@ async def sync(session, address: str, reason: str) -> int:
         tstart = twap_cursor
         if tstart is None:
             latest = await _post(session, {"type": "userTwapSliceFills", "user": address}, backfill)
-            fs = [x.get("fill", x) for x in latest if isinstance(x, dict)]
-            fs = [f for f in fs if isinstance(f, dict) and "time" in f and f["time"] >= since_ms]
-            if len(latest) < PAGE:
+            every = [x.get("fill", x) for x in latest if isinstance(x, dict)]
+            every = [f for f in every if isinstance(f, dict) and "time" in f]
+            fs = [f for f in every if f["time"] >= since_ms]
+            if len(latest) < PAGE or len(fs) < len(every):     # the latest slices reach back past the window
                 await store_page(fs, True)
                 twap_seen = twap_seen or bool(fs)
                 twap_cursor = max([f["time"] for f in fs] + [now_ms - 60_000])

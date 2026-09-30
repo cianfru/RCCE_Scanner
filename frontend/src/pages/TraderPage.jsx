@@ -276,7 +276,10 @@ export default function TraderPage({ address }) {
     const load = () => fetch(`${API}/api/traders/${address}`)
       .then(async r => {
         if (r.status === 404) return { missing: true };
-        if (r.status === 503) throw Object.assign(new Error("busy"), { busy: true, after: Number(r.headers.get("Retry-After")) || 20 });
+        if (r.status === 503) {
+          const b = await r.json().catch(() => ({}));
+          throw Object.assign(new Error("busy"), { busy: true, after: Number(b.retry_after) || 20 });
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })

@@ -56,7 +56,7 @@ class FakeHL:
             fs = sorted((f for f in self.twap[u] if f["time"] >= body["startTime"]), key=lambda f: f["time"])
             return [{"fill": f, "twapId": 1} for f in fs[:hl_fills.PAGE]]
         if kind == "userTwapSliceFills":
-            fs = sorted(self.twap[u], key=lambda f: -f["time"])[:2000]
+            fs = sorted(self.twap[u], key=lambda f: -f["time"])[:hl_fills.PAGE]
             return [{"fill": f, "twapId": 1} for f in fs]
         if kind == "userFills":
             return sorted(self.regular[u], key=lambda f: -f["time"])[:2000]
@@ -131,6 +131,27 @@ def test_incremental_read_starts_at_the_last_stored_fill(fake, monkeypatch):
     fake.calls.clear()
     run(hl_fills.sync(None, A, "sweep"))
     assert [c["type"] for c in fake.calls] == ["userFillsByTime"]
+
+
+def test_timed_order_backfill(fake, monkeypatch):
+    monkeypatch.setattr(hl_fills, "PAGE", 3)
+    since = NOW - hl_fills.RETENTION_DAYS * 86400
+    B = "0x" + "b" * 40
+    monkeypatch.setattr(hl, "_roster", [TrackedWallet(A, account_value=1e6), TrackedWallet(B, account_value=1e6)])
+    # The latest slices reach back past the window: those inside it are all there is.
+    fake.twap[A] = [hf(since - 86400 * d, "B", 1, 1, 0, tid=10 + d) for d in (1, 2)] + \
+                   [hf(NOW - 600 + i, "B", 1, 1, i, tid=20 + i) for i in range(2)]
+    run(hl_fills.sync(None, A, "backfill"))
+    w = hl_fills._meta[A]
+    assert w["n"] == 2 and w["twap_seen"] and w["covered_from"] == pytest.approx(since, abs=5)
+    assert [c["type"] for c in fake.calls].count("userTwapSliceFillsByTime") == 0
+    # A heavy user (a full page, all recent): read forward by time from an estimated start.
+    fake.calls.clear()
+    fake.twap[B] = [hf(NOW - 3000 + 10 * i, "B", 1, 1, i, tid=100 + i) for i in range(12)]
+    run(hl_fills.sync(None, B, "backfill"))
+    assert hl_fills._meta[B]["n"] == 12
+    assert [c["type"] for c in fake.calls].count("userTwapSliceFillsByTime") >= 2
+    assert hl_fills._meta[B]["covered_from"] < NOW - 2000
 
 
 def test_stored_fills_classify_like_the_live_path(fake):
