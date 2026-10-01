@@ -4,13 +4,14 @@ import HelpTip from "../HelpTip.jsx";
 import WalletTag, { WalletAvatar } from "../WalletTag.jsx";
 import useLadder from "../../hooks/useLadder.js";
 import { nameIn, shortAddr, viewNames } from "../../utils/walletName.js";
+import { trendNote } from "../../utils/chartPresentation.js";
 import { bandInfo, beeswarm, entryNote, fmtLadderPx, fmtUsd, ladderCounts, ladderDomain, ladderRadius, logScale, niceTicks, pctText, spreadLabels, topWallets, traderPath, walletPnl } from "../../utils/radarDepth.js";
 
 const TONE_COLOR = { red: "var(--rd-red)", violet: "var(--rd-inband)", halo: "inherit", none: "inherit" };
 
 // Who is where: the followed coin's profitable wallets at their entry prices (log price axis),
 // longs left and shorts right, dot area by position dollars scaled to the largest wallet in the
-// coin; the price line, the weekly band shaded, the engine's mean dashed and each side's median
+// coin; the price line, the weekly band shaded, the engine's trend line dashed and each side's median
 // entry dotted, and the dollar-weighted average long entry dashed ("avg entry", the entry zone's
 // reference). Hover or focus a dot for the wallet; a click (or Enter) opens the trader's
 // profile. On touch the first tap shows the wallet with an "Open profile" link, a second tap
@@ -62,7 +63,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
     if (!lad || !price) return null;
     const ws = lad.positions || [];
     const R = 10, T = 26, B = 12, L = Math.max(58, fmtLadderPx(price).length * 6.8 + 14);
-    const { lo, hi, lim } = ladderDomain(price, { band, mean: lad.mean, entries: ws.map(w => w.entry) });
+    const { lo, hi, lim } = ladderDomain(price, { band, trend: lad.trend, entries: ws.map(w => w.entry) });
     const Y = logScale(lo, hi, T, H - B);
     const mid = (L + W - R) / 2;
     const colL = [L + 8, mid - 6], colS = [mid + 6, W - R - 4];
@@ -80,12 +81,12 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
       bandRect = { y1, y2, h: Math.max(3, y2 - y1) };
       right.push({ y: y2 + 12, t: "weekly band", col: bi.tone === "red" ? "var(--rd-red)" : "var(--rd-inband)" });
     }
-    let meanY = null;
-    if (lad.mean && lad.mean >= lo && lad.mean <= hi) {
-      meanY = Y(lad.mean);
+    let trendY = null;
+    if (lad.trend && lad.trend >= lo && lad.trend <= hi) {
+      trendY = Y(lad.trend);
       // In or near the band: the word goes to the left end, clear of the band's own label.
-      if (bandRect && meanY >= bandRect.y1 - 12 && meanY <= bandRect.y2 + 12) left.push({ x: L + 4, y: meanY - 4, t: "mean", col: "var(--t-text3)", anchor: "start" });
-      else right.push({ y: meanY - 4, t: "mean", col: "var(--t-text3)" });
+      if (bandRect && trendY >= bandRect.y1 - 12 && trendY <= bandRect.y2 + 12) left.push({ x: L + 4, y: trendY - 4, t: "trend", col: "var(--t-text3)", anchor: "start" });
+      else right.push({ y: trendY - 4, t: "trend", col: "var(--t-text3)" });
     }
     const lg = ws.filter(w => w.side === "long"), sh = ws.filter(w => w.side === "short");
     const med = [];
@@ -100,7 +101,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
     const rows = (list, col, cx) => beeswarm(list.map(w => ({ w, col, y: Y(w.entry), r: ladderRadius(w.size_usd || 0, mx, { narrow: W < 360, dense }),
       off: w.entry < lim[0] || w.entry > lim[1] })), (cx[0] + cx[1]) / 2, (cx[1] - cx[0]) / 2);
     const dots = [...rows(lg, "var(--rd-long)", colL), ...rows(sh, "var(--rd-short)", colS)];
-    return { ws, L, R, T, B, Y, mid, colL, colS, ticks, bandRect, meanY, avgY, med, dots, left, right: spreadLabels(right), py: Y(price) };
+    return { ws, L, R, T, B, Y, mid, colL, colS, ticks, bandRect, trendY, avgY, med, dots, left, right: spreadLabels(right), py: Y(price) };
   }, [lad, price, band, bi.tone, W, H, entry?.avg_long_entry]);
 
   const names = useMemo(() => viewNames((g?.ws || []).map(w => w.address)), [g]);
@@ -125,11 +126,11 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
     <div className="rl-head" ref={head}>
       {!compact && <div className="rl-t">
         <strong>{c.coin}</strong><span className="rl-px">{fmtLadderPx(price)}</span><span className="rl-gross">{fmtUsd(held)} held</span>
-        <LadderHelp />
+        <LadderHelp tf={tf} />
       </div>}
       <div className="rl-count">{side === "short"
         ? <><span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span> · <span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span></>
-        : <><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span></>}{compact && <LadderHelp />}</div>
+        : <><span className="l">{counts.long} long {fmtUsd(counts.long_usd)}</span> · <span className="s">{counts.short} short {fmtUsd(counts.short_usd)}</span></>}{compact && <LadderHelp tf={tf} />}</div>
       <div className="rl-sub"><span style={{ color: TONE_COLOR[bi.tone] }}>{bi.text}</span>{note && <span className={entry?.in_zone ? "rl-ez" : undefined}>{` · ${note}`}</span>}</div>
       {stack.length > 0 && <div className="rl-quick"><span>Same spot</span>{stack.map(k => <button key={k} type="button" onClick={() => onPick?.(k)}>{k}</button>)}</div>}
     </div>
@@ -146,7 +147,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
             <rect x={g.L} y={g.bandRect.y1 - (g.bandRect.h === 3 ? 1.5 : 0)} width={W - g.R - g.L} height={g.bandRect.h} />
             <line x1={g.L} x2={W - g.R} y1={g.bandRect.y1} y2={g.bandRect.y1} /><line x1={g.L} x2={W - g.R} y1={g.bandRect.y2} y2={g.bandRect.y2} />
           </g>}
-          {g.meanY != null && <line className="rl-mean" x1={g.L} x2={W - g.R} y1={g.meanY} y2={g.meanY} />}
+          {g.trendY != null && <line className="rl-trend" x1={g.L} x2={W - g.R} y1={g.trendY} y2={g.trendY} />}
           {g.avgY != null && <line className="rl-avg" x1={g.L} x2={W - g.R} y1={g.avgY} y2={g.avgY} />}
           {g.med.map((m, k) => <line key={k} className="rl-med" x1={m.x0} x2={m.x1} y1={m.y} y2={m.y} style={{ stroke: m.col }} />)}
           <line className="rl-price" x1={g.L} x2={W - g.R} y1={g.py} y2={g.py} />
@@ -187,10 +188,10 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
   </section>;
 }
 
-function LadderHelp() {
+function LadderHelp({ tf }) {
   return <HelpTip title="Who is where" width={340}>
     <p>Each dot is one profitable wallet at its entry price: longs left, shorts right. Dot area is the position in dollars, scaled to the largest wallet in this coin. Hover or tap a dot for the wallet; click it (or tap it again) to open the trader's profile.</p>
-    <p>Solid line: price. Shaded: the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Dashed grey: the engine's mean. Dashed green: the average long entry, weighted by dollars. Dotted: the median entry on each side.</p>
+    <p>Solid line: price. Shaded: the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Dashed grey: trend, the {trendNote(null, tf).replace(/\.$/, "")}. Dashed green: the average long entry, weighted by dollars. Dotted: the median entry on each side.</p>
     <p>In their entry zone: price is within 3% of that average, with 3 or more profitable traders long.</p>
     <p>Wallets: the Hyperliquid profitable cohort, as on the Traders page.</p>
   </HelpTip>;

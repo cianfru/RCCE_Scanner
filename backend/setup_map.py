@@ -256,17 +256,17 @@ def entry(n_long: int, avg_long_entry: Optional[float], price: Optional[float]) 
             "in_zone": n_long >= ENTRY_MIN_TRADERS and abs(d) <= ENTRY_BAND + 1e-12}
 
 
-def ladder(item: dict, positions: List[dict], mean: Optional[float], now: float) -> dict:
+def ladder(item: dict, positions: List[dict], trend: Optional[float], now: float) -> dict:
     """One coin's profitable wallets at their entry prices, for the Radar's price ladder: each position
     (hl_intelligence.cohort_positions), counts and dollars per side, the median entry per side, the
-    engine's mean (the price at z = 0), and the coin's weekly band and entry zone from the map."""
+    engine's trend line today (spike_zone.trend_level), and the coin's weekly band and entry zone from the map."""
     import statistics
     sides = {s: [p for p in positions if p["side"] == s] for s in ("long", "short")}
     med = {s: sig(statistics.median(p["entry"] for p in xs)) if xs else None for s, xs in sides.items()}
     traders = {s: len({p.get("entity") or p["address"] for p in xs}) for s, xs in sides.items()}
     return {"coin": item["coin"], "symbol": item["symbol"], "price": item.get("price"), "stage": item.get("stage"),
             "zscore": item.get("zscore"), "updated_at": now, "band": item.get("band"), "entry": item.get("entry"),
-            "mean": sig(mean),
+            "trend": sig(trend),
             "counts": {"long": traders["long"], "short": traders["short"],
                        "long_wallets": len(sides["long"]), "short_wallets": len(sides["short"]),
                        "long_usd": sum(p["size_usd"] for p in sides["long"]),

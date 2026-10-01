@@ -1,9 +1,14 @@
 """
-After a spike: where past spikes bottomed, and where the engine's mean is today
+After a spike: where past spikes bottomed, and the engine's trend line
 (docs/reviews/after-the-spike-study.md, "Spike fan on the coin chart").
 
-- ``mean_levels``: the price at which z would be 0 and 1 on each bar, from the same
-  regression baseline, deviation mean and deviation spread as the engine's z-score.
+- ``trend_level``: the engine's baseline as a price on each bar: the 300-bar linear
+  regression of log price, or the 200-bar average of log price where the regression has
+  too little history (the same baseline the z-score measures from). The coin chart and the
+  Radar ladder show it as "Trend".
+- ``mean_levels``: the price at which z would equal k on each bar (baseline + the 200-bar
+  average deviation + k spreads). Research only; not shown in the app, since after a long
+  run the average deviation puts it far from price.
 - ``last_spike``: the engine's cool-off spike (last bar with z >= Z_BLOWOFF, its run of
   bars with z >= 2.0) and its anchor, the first bar after the run (known at the time).
 - ``zone``: the box where past spikes bottomed, from seeds/spike_paths.json, placed from
@@ -27,13 +32,25 @@ RUN_Z = 2.0
 HORIZON = 60
 
 
+def _log_base(logp: np.ndarray, fallback: bool = True) -> np.ndarray:
+    """The z-score's baseline in log price: linreg(LEN_REGRESSION), SMA(LEN_LONG) where it is NaN."""
+    log_reg = _linreg(logp, LEN_REGRESSION)
+    return np.where(np.isnan(log_reg), _sma(logp, LEN_LONG), log_reg) if fallback else log_reg
+
+
+def trend_level(close, fallback: bool = True) -> np.ndarray:
+    """The engine's trend line as a price per bar: exp(baseline). NaN where neither the
+    regression nor (with ``fallback``) the 200-bar average has enough history."""
+    close = np.asarray(close, dtype=np.float64)
+    return np.exp(_log_base(np.log(np.maximum(close, _EPS)), fallback))
+
+
 def mean_levels(close, ks=(0.0, 1.0)) -> Dict[float, np.ndarray]:
     """Price per bar at which the engine's z-score would equal each k."""
     close = np.asarray(close, dtype=np.float64)
     n = len(close)
     logp = np.log(np.maximum(close, _EPS))
-    log_reg = _linreg(logp, LEN_REGRESSION)
-    base = np.where(np.isnan(log_reg), _sma(logp, LEN_LONG), log_reg)
+    base = _log_base(logp)
     dev = logp - base
     mean_dev = _sma_nan_safe(dev, LEN_LONG)
     std_dev = _stdev_nan_safe(dev, LEN_LONG)

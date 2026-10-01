@@ -1358,7 +1358,7 @@ a.te-link{text-decoration:none;display:inline-block;}
 .rl-band line{stroke:var(--rd-bandline);stroke-width:.8;}
 .rl-band.red rect{fill:var(--rd-red);fill-opacity:.1;}
 .rl-band.red line{stroke:var(--rd-red);}
-.rl-mean{stroke:var(--t-text3);stroke-dasharray:5 4;}
+.rl-trend{stroke:var(--t-text3);stroke-dasharray:5 4;}
 .rl-med{stroke-width:1.2;stroke-dasharray:1.5 3;}
 .rl-avg{stroke:var(--rd-long);stroke-width:1.1;stroke-dasharray:6 3;stroke-opacity:.85;}
 .rl-sub .rl-ez{color:var(--rd-long);}

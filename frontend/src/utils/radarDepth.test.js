@@ -91,10 +91,10 @@ test("click to step through stacked coins", () => {
   assert.deepEqual(sameSpot(pos, "Q"), []);
 });
 
-test("ladder scale: log range with price, band, mean and clamped entries", () => {
-  const d = ladderDomain(100, { band: { lo: 70, hi: 75 }, mean: 72, entries: [90, 110, 5000] });
+test("ladder scale: log range with price, band, trend line and clamped entries", () => {
+  const d = ladderDomain(100, { band: { lo: 70, hi: 75 }, trend: 72, entries: [90, 110, 5000] });
   assert.ok(d.lo < 70 && d.hi > 400 && d.hi < 460);                  // 5000 clamped to price * 4
-  const far = ladderDomain(100, { mean: 1000 });                     // a mean 10x away is left out
+  const far = ladderDomain(100, { trend: 1000 });                    // a trend line 10x away is left out
   assert.ok(far.hi < 110);
   const Y = logScale(10, 1000, 0, 100);
   assert.ok(Math.abs(Y(100) - 50) < 1e-9); assert.equal(Y(1000), 0); assert.equal(Y(1), 100);

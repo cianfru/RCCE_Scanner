@@ -189,14 +189,14 @@ export function niceTicks(lo, hi, n) {
   return out;
 }
 
-// The ladder's price range (log scale): price, the band, the mean when it sits within 3x of
+// The ladder's price range (log scale): price, the band, the trend line when it sits within 3x of
 // price, and every entry clamped to [price / 8, price * 4]; at least +-4% around price, then
 // padded 6% of the log span each side. lim: the clamp range (entries beyond it draw faded at the edge).
-export function ladderDomain(price, { band, mean, entries = [] } = {}) {
+export function ladderDomain(price, { band, trend, entries = [] } = {}) {
   const lim = [price / 8, price * 4];
   const vals = [price];
   if (band?.lo && band?.hi) vals.push(band.lo, band.hi);
-  if (mean && mean > price / 3 && mean < price * 3) vals.push(mean);
+  if (trend && trend > price / 3 && trend < price * 3) vals.push(trend);
   for (const e of entries) if (e > 0) vals.push(clamp(e, lim[0], lim[1]));
   let lo = Math.min(...vals, price * 0.96), hi = Math.max(...vals, price * 1.04);
   const pad = (Math.log(hi) - Math.log(lo)) * 0.06;

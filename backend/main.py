@@ -1736,18 +1736,20 @@ async def chart_data(
                        "source_candle_time": int(closed_range["timestamp"][-1] / 1000), "as_of": int(time.time()),
                        "timeframe": timeframe}
 
-    # After a spike: where past spikes bottomed, and the engine's mean (z = 0 / 1) as prices.
-    mean_lines, spike = {"z0": [], "z1": []}, None
+    # The engine's trend line (the z-score's baseline) as prices, and after a spike where past spikes bottomed.
+    # The 300-bar regression where the last bar has one, else the 200-bar average: one kind per line, no jump.
+    trend, spike = None, None
     try:
-        from engines.spike_zone import mean_levels, last_spike, zone as spike_zone, HORIZON as SPIKE_HORIZON
+        from engines.spike_zone import trend_level, last_spike, zone as spike_zone, HORIZON as SPIKE_HORIZON
         from engines.rcce_engine import _calc_zscore_hybrid, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE
         cc = np.asarray(closed_range["close"], dtype=np.float64)[-600:]
         ct = [int(t / 1000) for t in closed_range["timestamp"][-600:]]
         if len(cc) >= LEN_LONG:
-            lv = mean_levels(cc)
-            for key, k in (("z0", 0.0), ("z1", 1.0)):
-                mean_lines[key] = display([{"time": t, "value": round(float(v), interp_prec)}
-                                           for t, v in zip(ct, lv[k]) if np.isfinite(v)])
+            reg = len(cc) >= LEN_REGRESSION
+            lv = trend_level(cc, fallback=not reg)
+            trend = {"kind": "regression" if reg else "average", "bars": LEN_REGRESSION if reg else LEN_LONG,
+                     "line": display([{"time": t, "value": round(float(v), interp_prec)}
+                                      for t, v in zip(ct, lv) if np.isfinite(v)])}
             zz = _calc_zscore_hybrid(cc, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE)
             zz = zz * min(1.0, max(0.0, (len(cc) - LEN_LONG) / LEN_LONG))
             sp = last_spike(zz, cc)
@@ -1764,7 +1766,7 @@ async def chart_data(
     return {
         "symbol": symbol,
         "timeframe": timeframe,
-        "mean_lines": mean_lines,
+        "trend": trend,
         "spike": spike,
         "expected_range": chart_range,
         "volume_unit": symbol.split("/")[0],
@@ -4554,30 +4556,30 @@ _LADDER_CACHE: dict = {}
 
 
 def _ladder_build(tf: str, item: dict) -> dict:
-    """setup_map.ladder from memory: the profitable cohort's positions in the coin and the engine's mean."""
+    """setup_map.ladder from memory: the profitable cohort's positions in the coin and the engine's trend line."""
     import numpy as np
     import setup_map
     from data_fetcher import _ohlcv_store
     from hl_intelligence import cohort_positions
     now = time.time()
-    mean = None
+    trend = None
     try:
         from engines.rcce_engine import LEN_LONG
-        from engines.spike_zone import mean_levels
+        from engines.spike_zone import trend_level
         _, cs = setup_map.closes(_ohlcv_store.get(item["symbol"], tf), tf, now)
         if len(cs) >= LEN_LONG:
-            v = float(mean_levels(np.asarray(cs[-600:], dtype=np.float64), ks=(0.0,))[0.0][-1])
-            mean = v if np.isfinite(v) else None
+            v = float(trend_level(np.asarray(cs[-600:], dtype=np.float64))[-1])
+            trend = v if np.isfinite(v) else None
     except Exception as exc:
-        logger.debug("ladder: no mean for %s: %s", item["coin"], exc)
-    return setup_map.ladder(item, cohort_positions(item["coin"], "profitable"), mean, now)
+        logger.debug("ladder: no trend for %s: %s", item["coin"], exc)
+    return setup_map.ladder(item, cohort_positions(item["coin"], "profitable"), trend, now)
 
 
 @app.get("/api/setup-map/ladder", dependencies=[Depends(_holder_only)])
 async def setup_map_ladder(coin: str = Query(..., min_length=1, max_length=40),
                            tf: str = Query("1d", pattern="^(4h|1d)$")):
     """One coin's profitable wallets at their entry prices (the Radar's price ladder), with the weekly band,
-    the engine's mean and the median entry per side. Data in memory; cached for 30 seconds."""
+    the engine's trend line and the median entry per side. Data in memory; cached for 30 seconds."""
     smap = await _setup_map_cached(tf)
     item = next((c for c in smap["coins"] if c["coin"] == coin), None) \
         or next((c for c in smap["coins"] if c["coin"].upper() == coin.upper()), None)
