@@ -62,6 +62,25 @@ def score(rows, bmsb):
     return out
 
 
+def _share(rows, cond):
+    base = [r for r in rows if cond(r)]
+    neg = sum(1 for r in base if (r.get("zscore") or 0.0) < 0)
+    return {"bars": len(base), "z_below_0": neg, "share_pct": 100.0 * neg / len(base) if base else None}
+
+
+def contradiction(rows):
+    """docs/reviews/z-baseline-study.md: among bars > 15% above the weekly band and within 10% of
+    the 90-bar high, the share with z < 0 (and, for information, without the 90-bar-high condition)."""
+    above = lambda r: r.get("deviation_pct") is not None and r["deviation_pct"] > 15
+    near = lambda r: r.get("off_high_90") is not None and r["off_high_90"] >= -10
+    return {"declared": _share(rows, lambda r: above(r) and near(r)), "band_only": _share(rows, above)}
+
+
+def _mix(rows, key):
+    c = collections.Counter(r[key] for r in rows)
+    return {k: round(100.0 * v / len(rows), 2) for k, v in c.most_common()} if rows else {}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("variants", nargs="+", help="NAME=path.pkl")
@@ -86,6 +105,12 @@ def main(argv=None):
             "signal_bars": dict(sig.most_common()),
             "regime_bars": dict(collections.Counter(r["regime"] for r in rows).most_common()),
         }
+        span = [w for w in windows() if w["index"] < HOLDOUT]
+        inside = [r for r in rows if span[0]["start_ms"] <= r["timestamp"] < span[-1]["end_ms"]]
+        if inside and "deviation_pct" in inside[0]:
+            table[name]["regime_mix_pct_w1_9"] = _mix(inside, "regime")
+            table[name]["signal_mix_pct_w1_9"] = _mix(inside, "signal")
+            table[name]["contradiction_w1_9"] = contradiction(inside)
     out = RUNS_DIR / f"{args.out}.json"
     out.write_text(json.dumps(table, indent=1, default=float))
     print(json.dumps(table, indent=1, default=float))

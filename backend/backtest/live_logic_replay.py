@@ -2,10 +2,12 @@
 Replay one version of the live signal logic on 4h Binance history (step 1 of 2).
 
     python backtest/live_logic_replay.py --backend <path to a backend/ checkout> --out <file.pkl> [--gate on|off] [--blowoff off|takeover|full]
+        [--zbase current|G|F1] [--tf 4h|1d]
 
-The 4h timeframe is what the executor trades. The script imports the replay engine,
-engines and synthesizer from ``--backend``, so the same data can be run through an
-older commit (e.g. a git worktree) and through today's code. Data comes from this
+The 4h timeframe is what the executor trades (--tf 1d replays the daily chart as the traded
+timeframe instead). The script imports the replay engine, engines and synthesizer from
+``--backend``, so the same data can be run through an older commit (e.g. a git worktree)
+and through today's code. Data comes from this
 checkout's binance_history (loaded by file path) so every version sees identical bars.
 Windows 1-9 only (ends 2026-03-29); the holdout is never replayed. Output is a list of
 plain dicts, consumed by backtest/live_logic_check.py.
@@ -26,9 +28,50 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "DOGE", "DOT", "LINK"]   # the study's primary set
 DATA_START = "2020-10-01"          # 4h warm-up before W1 (2021-10-21)
+DATA_START_1D_PRIMARY = "2019-01-01"   # --tf 1d: 500 daily bars of warm-up end before W1
 DATA_END = "2026-03-29"            # end of W9; the holdout starts here
 FIELDS = ("timestamp", "symbol", "price", "signal", "raw_signal", "regime", "confluence_label",
-          "conditions_met", "conditions_total", "signal_status", "zscore", "heat")
+          "conditions_met", "conditions_total", "signal_status", "zscore", "heat", "deviation_pct")
+
+
+def _zbase(rcce, name):
+    """Swap the engine's z function in-process (docs/reviews/z-baseline-study.md).
+    current: today's re-centred z. G: today's z, set to 0 where its sign contradicts the raw
+    deviation from the line. F1: no re-centring, z = dev / stdev(dev)."""
+    import numpy as np
+    original = rcce._calc_zscore_hybrid
+
+    def dev_of(close, len_ma, len_reg):
+        logp = np.log(np.maximum(close, rcce._EPS))
+        reg = rcce._linreg(logp, len_reg)
+        return logp - np.where(np.isnan(reg), rcce._sma(logp, len_ma), reg)
+
+    def guarded(close, len_ma, len_reg, z_smooth=1, z_scale=1.0):
+        z = original(close, len_ma, len_reg, z_smooth, z_scale)
+        dev = dev_of(close, len_ma, len_reg)
+        bad = np.isfinite(dev) & np.isfinite(z) & (np.sign(dev) * np.sign(z) < 0)
+        return np.where(bad, 0.0, z)
+
+    def no_recentre(close, len_ma, len_reg, z_smooth=1, z_scale=1.0):
+        dev = dev_of(close, len_ma, len_reg)
+        std = rcce._stdev_nan_safe(dev, len_ma)
+        zero = (std < rcce._EPS) | np.isnan(std)
+        z = np.where(zero, 0.0, dev / np.where(zero, 1.0, std)) * z_scale
+        return rcce._sma_nan_safe(z, z_smooth) if z_smooth > 1 else z
+
+    rcce._calc_zscore_hybrid = {"current": original, "G": guarded, "F1": no_recentre}[name]
+
+
+def _off_high_90(rows, primary, tf_ms):
+    """Close vs the highest close of the last 90 bars of the traded timeframe (this bar included), in %."""
+    import numpy as np
+    index = {}
+    for sym, d in primary.items():
+        c = np.asarray(d["close"], dtype=float)
+        hi = np.array([c[max(0, i - 89):i + 1].max() for i in range(len(c))])
+        index[sym] = {float(t): 100.0 * (c[i] / hi[i] - 1) for i, t in enumerate(d["timestamp"])}
+    for r in rows:
+        r["off_high_90"] = index.get(r["symbol"], {}).get(float(r["timestamp"]) - tf_ms)
 
 
 def _bh():
@@ -54,16 +97,24 @@ def main(argv=None):
     ap.add_argument("--symbols", choices=("primary", "secondary"), default="primary")
     ap.add_argument("--blowoff", choices=("off", "takeover", "full"),
                     help="Overheated fix (docs/reviews/overheated-regime.md): off, score only, or score + 2-bar entry")
+    ap.add_argument("--zbase", choices=("current", "G", "F1"), default="current",
+                    help="z baseline variant (docs/reviews/z-baseline-study.md)")
+    ap.add_argument("--tf", choices=("4h", "1d"), default="4h", help="traded (primary) timeframe")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
+    start = {"4h": DATA_START, "1d": DATA_START, "1w": "2019-01-07"}
+    if args.tf == "1d":
+        start["1d"] = DATA_START_1D_PRIMARY
     symbols = SYMBOLS
     if args.symbols == "secondary":
         from backtest.larsson_scenarios import SECONDARY_FILE
         symbols = json.loads(SECONDARY_FILE.read_text())["symbols"]
     for s in symbols:
         for tf in data:
-            d = bh.load(f"{s}USDT", tf, DATA_START if tf != "1w" else "2019-01-07", DATA_END)
+            if args.tf == "1d" and tf == "4h":
+                continue
+            d = bh.load(f"{s}USDT", tf, start[tf], DATA_END)
             if d is not None:
                 data[tf][f"{s}/USDT"] = d
     fng = _fear_greed()
@@ -79,10 +130,16 @@ def main(argv=None):
         import engines.rcce_engine as rcce
         rcce.COOL_OFF_RELEASE_Z = args.cooloff
         rcce.COOL_OFF_SOURCE = args.cooloff_source
+    import engines.rcce_engine as rcce
+    _zbase(rcce, args.zbase)
     from backtest.replay_engine import run_replay
+    from candle_snapshot import TF_MS
+    primary = data[args.tf]
     t0 = time.time()
-    res = asyncio.run(run_replay(list(data["4h"]), data["4h"], data["1d"], data["1w"], fng, warmup_bars=500))
+    res = asyncio.run(run_replay(list(primary), primary, data["1d"], data["1w"], fng, warmup_bars=500,
+                                 timeframe=args.tf))
     rows = [{k: getattr(r, k, None) for k in FIELDS} for r in res]
+    _off_high_90(rows, primary, TF_MS[args.tf])
     Path(args.out).write_bytes(pickle.dumps(rows))
     print(f"{len(rows)} bar results in {time.time() - t0:.0f}s -> {args.out}")
 
