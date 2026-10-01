@@ -2,7 +2,7 @@
 Replay one version of the live signal logic on 4h Binance history (step 1 of 2).
 
     python backtest/live_logic_replay.py --backend <path to a backend/ checkout> --out <file.pkl> [--gate on|off] [--blowoff off|takeover|full]
-        [--zbase current|G|F1] [--tf 4h|1d]
+        [--zbase current|G|F1|G1d|K1d] [--tf 4h|1d]
 
 The 4h timeframe is what the executor trades (--tf 1d replays the daily chart as the traded
 timeframe instead). The script imports the replay engine, engines and synthesizer from
@@ -35,9 +35,12 @@ FIELDS = ("timestamp", "symbol", "price", "signal", "raw_signal", "regime", "con
 
 
 def _zbase(rcce, name):
-    """Swap the engine's z function in-process (docs/reviews/z-baseline-study.md).
+    """Swap the engine's z function in-process (docs/reviews/z-baseline-study.md,
+    docs/reviews/z-daily-study.md).
     current: today's re-centred z. G: today's z, set to 0 where its sign contradicts the raw
-    deviation from the line. F1: no re-centring, z = dev / stdev(dev)."""
+    deviation from the line. F1: no re-centring, z = dev / stdev(dev).
+    G1d / K1d: daily charts only (4h z is today's). G1d is G. K1d clips the re-centring:
+    z = (dev - clip(mean(dev), -stdev(dev), +stdev(dev))) / stdev(dev)."""
     import numpy as np
     original = rcce._calc_zscore_hybrid
 
@@ -59,6 +62,30 @@ def _zbase(rcce, name):
         z = np.where(zero, 0.0, dev / np.where(zero, 1.0, std)) * z_scale
         return rcce._sma_nan_safe(z, z_smooth) if z_smooth > 1 else z
 
+    def capped(close, len_ma, len_reg, z_smooth=1, z_scale=1.0):
+        dev = dev_of(close, len_ma, len_reg)
+        mean = rcce._sma_nan_safe(dev, len_ma)
+        std = rcce._stdev_nan_safe(dev, len_ma)
+        zero = (std < rcce._EPS) | np.isnan(std)
+        safe = np.where(zero, 1.0, std)
+        z = np.where(zero, 0.0, (dev - np.clip(mean, -safe, safe)) / safe) * z_scale
+        return rcce._sma_nan_safe(z, z_smooth) if z_smooth > 1 else z
+
+    if name in ("G1d", "K1d"):
+        import scanner
+        variant, engine = (guarded if name == "G1d" else capped), scanner.compute_rcce
+
+        def daily_only(ohlcv, *a, **k):
+            ts = ohlcv["timestamp"]
+            daily = len(ts) > 1 and float(ts[-1]) - float(ts[-2]) >= 43_200_000   # 4h series keep today's z
+            rcce._calc_zscore_hybrid = variant if daily else original
+            try:
+                return engine(ohlcv, *a, **k)
+            finally:
+                rcce._calc_zscore_hybrid = original
+
+        scanner.compute_rcce = daily_only
+        return
     rcce._calc_zscore_hybrid = {"current": original, "G": guarded, "F1": no_recentre}[name]
 
 
@@ -97,8 +124,8 @@ def main(argv=None):
     ap.add_argument("--symbols", choices=("primary", "secondary"), default="primary")
     ap.add_argument("--blowoff", choices=("off", "takeover", "full"),
                     help="Overheated fix (docs/reviews/overheated-regime.md): off, score only, or score + 2-bar entry")
-    ap.add_argument("--zbase", choices=("current", "G", "F1"), default="current",
-                    help="z baseline variant (docs/reviews/z-baseline-study.md)")
+    ap.add_argument("--zbase", choices=("current", "G", "F1", "G1d", "K1d"), default="current",
+                    help="z baseline variant (docs/reviews/z-baseline-study.md, z-daily-study.md)")
     ap.add_argument("--tf", choices=("4h", "1d"), default="4h", help="traded (primary) timeframe")
     args = ap.parse_args(argv)
     bh = _bh()
