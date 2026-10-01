@@ -589,6 +589,9 @@ async def net_stats():
     """Approximate bytes sent per endpoint and over the WebSocket since start (read-only)."""
     snap = egress.snapshot(ws_clients=WebSocketHub.get().counts())
     snap["rate_limited"] = dict(_ratelimit.LIMITED)
+    # Hyperliquid weight by consumer (scanner, positions, fills, cohorts, other) against the shared budget.
+    import hl_calls
+    snap["hyperliquid_budget"] = hl_calls.budget_status()
     return snap
 
 

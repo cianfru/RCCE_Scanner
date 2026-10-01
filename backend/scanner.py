@@ -1378,11 +1378,13 @@ _DRIP_IDLE_POLL_SECONDS = 300
 async def _drip_one_symbol(
     symbol: str,
     scan_cache: ScanCache,
+    offline: bool = False,
 ) -> int:
     """Fetch OHLCV + run engines for one symbol on both timeframes.
 
     Stores raw engine results (no signal) into scan_cache._results_by_sym.
     Returns number of timeframes actually processed (0, 1, or 2).
+    offline: from the stored candles only, without a request (the first pass after a restart).
     """
     from hyperliquid_universe import MARKETS
     from spot_quality import volume_reason, candle_reason
@@ -1394,11 +1396,12 @@ async def _drip_one_symbol(
     if not hasattr(scan_cache, "spot_quality"):
         scan_cache.spot_quality = {}
 
-    # Fetch weekly data once (shared by both TFs for heatmap/exhaustion)
-    weekly = await fetch_ohlcv(symbol, "1w")
+    # Fetch weekly data once (shared by both TFs for heatmap/exhaustion). The engines read closed
+    # weekly bars only, so a series that already holds the latest closed week is not read again.
+    weekly = await fetch_ohlcv(symbol, "1w", closed_only=True, offline=offline)
 
     for tf in ("4h", "1d"):
-        ohlcv = await fetch_ohlcv(symbol, tf)
+        ohlcv = await fetch_ohlcv(symbol, tf, offline=offline)
         if market.get("kind") == "spot":
             reason = candle_reason(ohlcv, tf)
             scan_cache.spot_quality[(symbol, tf)] = reason
@@ -1411,6 +1414,12 @@ async def _drip_one_symbol(
             continue
 
         as_of_ms = time.time() * 1000
+        if offline:
+            # Closed bars as of when the stored candles were read: a bar that was still open then
+            # is not taken as closed (after a close the market is read again by the drip loop).
+            observed = _ohlcv_store.observed_at(symbol, tf)
+            if observed is not None:
+                as_of_ms = min(as_of_ms, observed * 1000)
         btc_data = _ohlcv_store.get("BTC/USDT", tf)
         eth_data = _ohlcv_store.get("ETH/USDT", tf)
         cache_key = (symbol, tf)
@@ -1501,11 +1510,68 @@ def _classify_drip_tier(
     return "active"
 
 
+# Startup: every market with stored candles is first scanned from the store, without a request
+# (the scan as it stood before the restart), WARM_GAP_S apart per market, beside the drip loop.
+# Markets whose stored candles already hold every closed bar also keep their refresh schedule
+# from before the restart; only the others are read at once (all of them after a 4h close).
+WARM_GAP_S = 0.05
+_TFS_STORED = ("4h", "1d", "1w")
+
+
+def _btc_eth_first(symbols: List[str]) -> List[str]:
+    return sorted(symbols, key=lambda s: (s != "BTC/USDT", s != "ETH/USDT"))
+
+
+def restored_symbols(symbols: List[str], now: Optional[float] = None) -> List[str]:
+    """Markets whose stored 4h, 1d and 1w candles were read after their latest close (BTC and ETH
+    first: other markets' engines read them)."""
+    return _btc_eth_first([s for s in symbols if all(_ohlcv_store.complete(s, tf, now) for tf in _TFS_STORED)])
+
+
+def stored_symbols(symbols: List[str]) -> List[str]:
+    """Markets with stored 4h or 1d candles."""
+    return _btc_eth_first([s for s in symbols if any(_ohlcv_store.get(s, tf) is not None for tf in ("4h", "1d"))])
+
+
+def seed_schedule(schedule, symbols: List[str]) -> None:
+    """Each restored market's last refresh is when its 4h candles were last read."""
+    now_wall, now_mono = time.time(), time.monotonic()
+    for s in symbols:
+        observed = _ohlcv_store.observed_at(s, "4h")
+        if observed is not None:
+            schedule.seed(s, now_mono - max(0.0, now_wall - observed), observed)
+
+
+_warm = {"started_at": None, "finished_at": None, "markets": 0, "done": 0}
+_warm_task: Optional[asyncio.Task] = None
+
+
+async def warm_from_store(scan_cache: ScanCache, symbols: List[str]) -> int:
+    """Engine results for these markets from their stored candles, so the scan is complete within
+    a minute or two of a start instead of after a full pass of candle requests."""
+    _warm.update(started_at=time.time(), finished_at=None, markets=len(symbols), done=0)
+    done = 0
+    for symbol in symbols:
+        if symbol not in scan_cache.symbols or scan_cache._results_by_sym.get(symbol):
+            continue
+        try:
+            if await _drip_one_symbol(symbol, scan_cache, offline=True) > 0:
+                done += 1
+                _warm["done"] = done
+        except Exception:
+            logger.warning("Stored-candle pass failed for %s", symbol, exc_info=True)
+        await asyncio.sleep(WARM_GAP_S)
+    _warm["finished_at"] = time.time()
+    logger.info("Stored-candle pass: %d of %d markets in %.0fs", done, len(symbols),
+                _warm["finished_at"] - _warm["started_at"])
+    return done
+
+
 async def run_drip_scan(
     scan_cache: Optional[ScanCache] = None,
 ) -> None:
     """Refresh due markets serially; synthesis/position monitoring stays separate."""
-    global _drip_attempt_count
+    global _drip_attempt_count, _warm_task
     from activity import is_active, idle_sleep
     from hyperliquid_universe import MARKETS
     from scan_schedule import ScanSchedule
@@ -1514,6 +1580,13 @@ async def run_drip_scan(
         scan_cache = cache
     schedule = ScanSchedule()
     await asyncio.sleep(5)
+    restored = restored_symbols(list(scan_cache.symbols))
+    seed_schedule(schedule, restored)
+    stored = stored_symbols(list(scan_cache.symbols))
+    if stored:
+        _warm_task = asyncio.create_task(warm_from_store(scan_cache, stored))
+    logger.info("Drip start: %d markets scanned from stored candles, %d of them up to date; %d read now",
+                len(stored), len(restored), len(scan_cache.symbols) - len(restored))
     while True:
         symbols = list(scan_cache.symbols)
         schedule.prune(symbols)
@@ -2548,4 +2621,5 @@ def get_scan_status() -> dict:
         "drip_attempts": _drip_attempt_count,
         "symbols_scanned": len(cache._results_by_sym),
         "drip_tiers": {"hot": hot, "active": active, "cold": cold, "deep_cold": deep_cold},
+        "stored_candle_pass": dict(_warm),
     }

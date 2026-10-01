@@ -1,6 +1,9 @@
 """Market history drawer: seed + daily rows, episodes scored after the study's end day, the risk-on run."""
 import asyncio
 import json
+import os
+import shutil
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,14 +14,13 @@ class MarketHistoryTests(unittest.TestCase):
     def setUp(self):
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
         mh._closes.clear()
-        self.tmp = patch.object(mh, "_live_path", return_value="/tmp/mh_test_live.json")
+        self.dir = tempfile.mkdtemp(prefix="mh_test_")
+        self.tmp = patch.object(mh, "_live_path", return_value=os.path.join(self.dir, "mh_test_live.json"))
         self.tmp.start()
-        import os
-        if os.path.exists("/tmp/mh_test_live.json"):
-            os.remove("/tmp/mh_test_live.json")
 
     def tearDown(self):
         self.tmp.stop()
+        shutil.rmtree(self.dir, ignore_errors=True)
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
         mh._closes.clear()
 
@@ -65,7 +67,7 @@ class MarketHistoryTests(unittest.TestCase):
         self.assertEqual(added, 2)
         self.assertEqual([d[0] for d in mh.all_days()[-2:]], [last + 1, last + 2])
         self.assertEqual(mh.view()["fear_greed"][-1], [last + 1, 61])
-        saved = json.load(open("/tmp/mh_test_live.json"))
+        saved = json.load(open(os.path.join(self.dir, "mh_test_live.json")))
         self.assertEqual(len(saved["days"]), 2)
 
     def test_update_fills_closes_from_60_days_before_the_end_day(self):
@@ -142,11 +144,13 @@ class CycleTests(unittest.TestCase):
 
     def setUp(self):
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
-        self.tmp = patch.object(mh, "_live_path", return_value="/tmp/mh_test_live_none.json")
+        self.dir = tempfile.mkdtemp(prefix="mh_test_")
+        self.tmp = patch.object(mh, "_live_path", return_value=os.path.join(self.dir, "mh_test_live_none.json"))
         self.tmp.start()
 
     def tearDown(self):
         self.tmp.stop()
+        shutil.rmtree(self.dir, ignore_errors=True)
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
 
     def test_seed_reproduces_the_study(self):
@@ -533,14 +537,13 @@ class FanPayloadTests(unittest.TestCase):
     def setUp(self):
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
         mh._closes.clear()
-        self.tmp = patch.object(mh, "_live_path", return_value="/tmp/mh_test_live_fan.json")
+        self.dir = tempfile.mkdtemp(prefix="mh_test_")
+        self.tmp = patch.object(mh, "_live_path", return_value=os.path.join(self.dir, "mh_test_live_fan.json"))
         self.tmp.start()
-        import os
-        if os.path.exists("/tmp/mh_test_live_fan.json"):
-            os.remove("/tmp/mh_test_live_fan.json")
 
     def tearDown(self):
         self.tmp.stop()
+        shutil.rmtree(self.dir, ignore_errors=True)
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
         mh._closes.clear()
         mh._fan_log.clear()
@@ -624,11 +627,13 @@ class SparkTests(unittest.TestCase):
     def setUp(self):
         mh._seed, mh._live, mh._fng, mh._view, mh._spark = None, [], {}, None, None
         mh._closes.clear()
-        self.tmp = patch.object(mh, "_live_path", return_value="/tmp/mh_test_live_spark.json")
+        self.dir = tempfile.mkdtemp(prefix="mh_test_")
+        self.tmp = patch.object(mh, "_live_path", return_value=os.path.join(self.dir, "mh_test_live_spark.json"))
         self.tmp.start()
 
     def tearDown(self):
         self.tmp.stop()
+        shutil.rmtree(self.dir, ignore_errors=True)
         mh._seed, mh._live, mh._fng, mh._view, mh._spark = None, [], {}, None, None
         mh._closes.clear()
 

@@ -1,7 +1,8 @@
 """Where wallet states come from.
 
-ApiSource polls clearinghouseState (weight 2) per wallet. A future hl-node snapshot
-reader only has to implement the same fetch() (or override fetch_many) to replace it.
+ApiSource polls clearinghouseState (weight 2) per wallet, within the shared Hyperliquid weight
+budget (hl_calls). A future hl-node snapshot reader only has to implement the same fetch() (or
+override fetch_many) to replace it.
 """
 from __future__ import annotations
 
@@ -44,10 +45,16 @@ class ApiSource:
         self.on_raw = on_raw            # (address, raw response): lets HyperLens reuse the same poll
 
     async def fetch(self, address: str) -> Optional[Raw]:
+        return await self.fetch_as(address, "cohorts")
+
+    async def fetch_as(self, address: str, consumer: str) -> Optional[Raw]:
+        """fetch(), paid from ``consumer``'s share of the shared budget ("positions" for the
+        HyperLens roster, "cohorts" for everyone else)."""
         try:
-            hl_calls.record("clearinghouseState")
+            await hl_calls.acquire(consumer, "clearinghouseState")
             async with self.session.post(HL_INFO_URL, json={"type": "clearinghouseState", "user": address}) as resp:
                 if resp.status == 429:
+                    hl_calls.rate_limited(consumer)
                     raise RateLimited()
                 if resp.status != 200:
                     return None

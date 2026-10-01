@@ -15,7 +15,9 @@ scanner's candles and HyperLens).
 - The cohort snapshot (all-market rows) is written every SNAPSHOT_EVERY_S (30 min) from each
   wallet's latest reading up to STATE_MAX_AGE_S old; per-symbol rows once per 4h candle.
 
-- Token bucket at COHORTS_WEIGHT_PER_MIN (default 400); halves for 5 min on a 429.
+- Token bucket at COHORTS_WEIGHT_PER_MIN (default 400); halves for 5 min on a 429. Each read
+  also waits for the process's shared Hyperliquid budget (hl_calls): the pinned roster as
+  "positions" (after the scanner), everyone else as "cohorts" (last).
 - Quiet for 20 min after each 4h candle close, when the scanner refreshes every market.
 - Resumable: states are saved every 200 wallets; after a restart the unfinished sweep
   continues, skipping wallets already polled since it started.
@@ -178,8 +180,12 @@ class Sweeper:
                         await self.sleep(q - self.clock())
                 await self.bucket.take(self.source.weight)
                 stats["weight"] += self.source.weight
+                fetch_as = getattr(self.source, "fetch_as", None)
                 try:
-                    raw = await self.source.fetch(address)
+                    if fetch_as is not None:
+                        raw = await fetch_as(address, "positions" if pinned else "cohorts")
+                    else:
+                        raw = await self.source.fetch(address)
                 except RateLimited:
                     stats["rate_limited"] += 1
                     self.bucket.penalize()

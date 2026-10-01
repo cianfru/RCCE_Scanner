@@ -243,6 +243,14 @@ class DataCache:
         self._fetched_at[key] = time.monotonic()
         self._fetched_wall[key] = time.time()
 
+    def seed(self, symbol: str, timeframe: str, observed_wall: float) -> None:
+        """Count a stored series read at ``observed_wall`` (before a restart) as fetched then, so the
+        usual TTL and candle-close rules decide whether it is read again."""
+        key = self._key(symbol, timeframe)
+        age = max(0.0, time.time() - observed_wall)
+        self._fetched_at[key] = time.monotonic() - age
+        self._fetched_wall[key] = observed_wall
+
     def invalidate(self, symbol: str, timeframe: str) -> None:
         """Remove a single entry."""
         self._fetched_at.pop(self._key(symbol, timeframe), None)
@@ -265,12 +273,16 @@ _cache = DataCache()
 # OHLCVStore -- persistent OHLCV cache (append-only, no TTL expiration)
 # ---------------------------------------------------------------------------
 
-# Maximum age before forcing a full refetch (handles restarts / gaps)
+# Maximum age before forcing a full refetch (handles restarts / gaps). Below it, an incremental
+# read fetches exactly the bars missing since the last stored one (bars_to_fetch).
 _STALENESS_LIMIT: Dict[str, float] = {
     "4h": 24 * 3600,     # 24 hours
     "1d": 7 * 86400,     # 7 days
     "1w": 30 * 86400,    # 30 days
 }
+
+# A closed candle is taken as final once it was read this long after its close.
+_CLOSE_SETTLE_S = 60
 
 # Persistence path — Railway persistent volume at /data, local fallback
 _DATA_DIR = Path("/data") if Path("/data").is_dir() else Path(__file__).parent
@@ -318,6 +330,33 @@ class OHLCVStore:
         self._store.pop(key, None)
         self._updated_at.pop(key, None)
         self._history_targets.pop(key, None)
+
+    def bars_missing(self, symbol: str, timeframe: str, now_ms: Optional[float] = None) -> Optional[int]:
+        """Bars opened since the last stored bar opened (0: the last stored bar is the open one).
+        None when nothing is stored."""
+        cached = self._store.get(self._key(symbol, timeframe))
+        tf_ms = _TF_MS.get(timeframe)
+        if cached is None or tf_ms is None or not len(cached.get("timestamp", [])):
+            return None
+        now_ms = time.time() * 1000 if now_ms is None else now_ms
+        return max(0, int((now_ms - float(cached["timestamp"][-1])) // tf_ms))
+
+    def bars_to_fetch(self, symbol: str, timeframe: str, now_ms: Optional[float] = None) -> int:
+        """Bars an incremental read asks for: the last stored bar (it may have been open when read)
+        and every bar since, at least 2 (what every incremental read asked for before)."""
+        missing = self.bars_missing(symbol, timeframe, now_ms)
+        if missing is None:
+            return _DEFAULT_LIMIT.get(timeframe, 500)
+        return max(2, missing + 1)
+
+    def complete(self, symbol: str, timeframe: str, now: Optional[float] = None) -> bool:
+        """The stored series holds every closed bar: it was read after the latest close settled."""
+        key = self._key(symbol, timeframe)
+        if key not in self._store or key not in self._updated_at:
+            return False
+        observed = self.observed_at(symbol, timeframe)
+        close = DataCache._last_close(timeframe, time.time() if now is None else now)
+        return observed is not None and observed >= close + _CLOSE_SETTLE_S
 
     def needs_full_fetch(self, symbol: str, timeframe: str) -> bool:
         """True if no cache or cache is stale (too old for incremental update)."""
@@ -423,7 +462,8 @@ class OHLCVStore:
         """Load store from pickle file on disk. Returns True if loaded.
 
         Applies staleness checks: entries older than _STALENESS_LIMIT
-        are discarded (they'll trigger a full refetch on next scan).
+        are discarded (they'll trigger a full refetch on next scan). Every
+        other entry is kept, and only the bars missing since its last bar are read.
         """
         path = path or _OHLCV_CACHE_PATH
         if not path.exists():
@@ -515,6 +555,22 @@ _ohlcv_store = OHLCVStore()
 _ohlcv_store.load_from_disk()
 
 
+def _seed_cache_from_store() -> int:
+    """After a restart, count each stored series as fetched when it was last read, so the scanner
+    does not read it again before its TTL or the next candle close (it did, for every market)."""
+    n = 0
+    for key in list(_ohlcv_store._updated_at):
+        symbol, _, timeframe = key.partition("|")
+        observed = _ohlcv_store.observed_at(symbol, timeframe)
+        if observed is not None:
+            _cache.seed(symbol, timeframe, observed)
+            n += 1
+    return n
+
+
+_seed_cache_from_store()
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -579,11 +635,22 @@ def _parse_hl_candles(candles: list) -> Optional[dict]:
     }
 
 
+class HLRateLimited(Exception):
+    """Hyperliquid kept answering 429 after every retry."""
+
+
+# A 429 is retried after hl_calls.backoff_delay(attempt): 1-2 s, 2-4 s, 4-8 s, 8-16 s, and each
+# retry waits for the shared budget again (which a 429 slows down for every consumer).
+_HL_429_ATTEMPTS = 5
+_HL_ERROR_ATTEMPTS = 3
+
+
 async def _fetch_hl_candles(
     session: aiohttp.ClientSession,
     coin: str,
     timeframe: str,
     limit: Optional[int] = None,
+    consumer: str = "scanner",
 ) -> Optional[dict]:
     """Fetch candles from Hyperliquid using a shared session.
 
@@ -593,7 +660,11 @@ async def _fetch_hl_candles(
     coin : HL coin name (e.g. "BTC", "xyz:GOLD")
     timeframe : "4h", "1d", or "1w"
     limit : number of candles
+    consumer : whose share of the Hyperliquid weight budget pays for it (hl_calls)
+
+    Raises HLRateLimited when every attempt was answered 429.
     """
+    import hl_calls
     tf_ms = _TF_MS.get(timeframe)
     if tf_ms is None:
         return None
@@ -614,33 +685,40 @@ async def _fetch_hl_candles(
         },
     }
 
-    max_retries = 3
-    for attempt in range(max_retries):
+    expected = hl_calls.candle_weight(limit)
+    limited = errors = 0
+    while True:
+        await hl_calls.acquire(consumer, "candleSnapshot", expected)
         try:
-            import hl_calls
-            hl_calls.record(payload.get("type"))
             async with session.post(
                 _HL_API_URL,
                 json=payload,
                 headers={"Content-Type": "application/json"},
             ) as resp:
                 if resp.status == 429:
-                    # Rate limited — back off and retry
-                    wait = 1.0 * (attempt + 1)
-                    logger.debug("HL 429 for %s/%s, retry %d in %.1fs", coin, timeframe, attempt + 1, wait)
+                    hl_calls.rate_limited(consumer)
+                    limited += 1
+                    if limited >= _HL_429_ATTEMPTS:
+                        raise HLRateLimited(f"{coin} {timeframe}")
+                    wait = hl_calls.backoff_delay(limited - 1)
+                    logger.debug("HL 429 for %s/%s, retry %d in %.1fs", coin, timeframe, limited, wait)
                     await asyncio.sleep(wait)
                     continue
                 if resp.status != 200:
                     return None
                 candles = await resp.json()
+            if isinstance(candles, list):
+                hl_calls.settle(consumer, "candleSnapshot", hl_calls.candle_weight(len(candles)) - expected)
             return _parse_hl_candles(candles)
+        except HLRateLimited:
+            raise
         except Exception as exc:
             logger.debug("HL candle fetch failed for %s/%s: %s", coin, timeframe, exc)
-            if attempt < max_retries - 1:
+            errors += 1
+            if errors < _HL_ERROR_ATTEMPTS:
                 await asyncio.sleep(0.5)
                 continue
             return None
-    return None
 
 
 def _hl_coin_name(symbol: str) -> str:
@@ -718,6 +796,8 @@ async def _fetch_ohlcv_hyperliquid(
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             return await _fetch_hl_candles(session, coin, timeframe, limit)
+    except HLRateLimited:
+        raise
     except Exception as exc:
         logger.debug("Hyperliquid candle fetch failed for %s: %s", symbol, exc)
         return None
@@ -818,22 +898,35 @@ async def fetch_ohlcv(
     timeframe: str,
     exchange_id: str = "kraken",
     limit: Optional[int] = None,
+    *,
+    offline: bool = False,
+    closed_only: bool = False,
 ) -> Optional[dict]:
     """Fetch OHLCV data for a single *symbol*.
 
     Uses OHLCVStore for incremental updates:
-    - Cold start: full fetch (500 bars)
-    - Subsequent: fetch 2 bars, merge into cached array
+    - Cold start: full fetch (600 bars)
+    - Subsequent: fetch the bars missing since the last stored one (at least 2), merge
 
     Tries Hyperliquid first (primary), then CCXT exchanges as fallback.
+
+    offline: the stored series only, no request (the first scan pass after a restart).
+    closed_only: the caller reads closed bars only, so a series that already holds every closed
+    bar is not read again (the scanner's weekly input).
     """
     if timeframe not in SUPPORTED_TIMEFRAMES:
         logger.error("Unsupported timeframe '%s'. Use one of %s", timeframe, SUPPORTED_TIMEFRAMES)
         return None
 
+    if offline:
+        return _ohlcv_store.get(symbol, timeframe)
+
     # Determine fetch limit: full history or incremental update
     is_incremental = not _ohlcv_store.needs_full_fetch(symbol, timeframe)
-    fetch_limit = 2 if is_incremental else max(limit or 0, _DEFAULT_LIMIT.get(timeframe, 500))
+    if closed_only and is_incremental and _ohlcv_store.complete(symbol, timeframe):
+        return _ohlcv_store.get(symbol, timeframe)
+    fetch_limit = (_ohlcv_store.bars_to_fetch(symbol, timeframe) if is_incremental
+                   else max(limit or 0, _DEFAULT_LIMIT.get(timeframe, 500)))
 
     # Check TTL cache for very recent fetches (avoids redundant calls within same cycle)
     cached = _cache.get(symbol, timeframe)
@@ -851,7 +944,12 @@ async def fetch_ohlcv(
             _ccxt_only.discard(symbol)
             data = None
     else:
-        data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, fetch_limit)
+        try:
+            data = await _fetch_ohlcv_hyperliquid(symbol, timeframe, fetch_limit)
+        except HLRateLimited:
+            # Hyperliquid is limiting this IP, not missing the market: keep the stored series
+            # (no CEX fallback, which would also mark the symbol CCXT-only).
+            return _ohlcv_store.get(symbol, timeframe)
         if data is None and not native_spot:
             data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
             if data is not None and not fallback_consistent(symbol, timeframe, data):
@@ -976,6 +1074,8 @@ async def fetch_batch(
     if not uncached:
         return results
 
+    full_fetch_set = set(full_fetch_syms)
+
     # ── Phase 2: Fetch from HL in waves ──
     _WAVE_SIZE = 20
     _WAVE_PAUSE_S = 1.5  # 1.5s between waves — conservative for Railway
@@ -1014,7 +1114,8 @@ async def fetch_batch(
 
         if data is not None:
             # Merge into persistent store
-            merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=limit if limit > 2 else None)
+            full = sym in full_fetch_set
+            merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=limit if full else None)
             _cache.put(sym, timeframe, merged)
             results[sym] = merged
             return sym
@@ -1025,7 +1126,8 @@ async def fetch_batch(
         if incr_fetch_syms:
             for i in range(0, len(incr_fetch_syms), _WAVE_SIZE):
                 wave = incr_fetch_syms[i : i + _WAVE_SIZE]
-                tasks = [asyncio.create_task(_hl_fetch(session, s, limit=2)) for s in wave]
+                tasks = [asyncio.create_task(_hl_fetch(session, s, limit=_ohlcv_store.bars_to_fetch(s, timeframe)))
+                         for s in wave]
                 outcomes = await asyncio.gather(*tasks, return_exceptions=True)
                 for sym, outcome in zip(wave, outcomes):
                     if isinstance(outcome, Exception):
@@ -1067,10 +1169,11 @@ async def fetch_batch(
                 async def _rt_fetch(s: aiohttp.ClientSession, sym: str) -> str:
                     coin = _hl_coin_name(sym)
                     # Retry with appropriate limit
-                    rt_limit = 2 if not _ohlcv_store.needs_full_fetch(sym, timeframe) else _DEFAULT_LIMIT.get(timeframe, 500)
+                    full = _ohlcv_store.needs_full_fetch(sym, timeframe)
+                    rt_limit = _DEFAULT_LIMIT.get(timeframe, 500) if full else _ohlcv_store.bars_to_fetch(sym, timeframe)
                     data = await _fetch_hl_candles(s, coin, timeframe, limit=rt_limit)
                     if data is not None:
-                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=rt_limit if rt_limit > 2 else None)
+                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=rt_limit if full else None)
                         _cache.put(sym, timeframe, merged)
                         results[sym] = merged
                         return sym
@@ -1449,12 +1552,15 @@ async def fetch_ohlcv_hip3(
 
     hl_coin = f"xyz:{coin}"
 
-    if session is not None:
-        data = await _fetch_hl_candles(session, hl_coin, timeframe, limit)
-    else:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as s:
-            data = await _fetch_hl_candles(s, hl_coin, timeframe, limit)
+    try:
+        if session is not None:
+            data = await _fetch_hl_candles(session, hl_coin, timeframe, limit)
+        else:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as s:
+                data = await _fetch_hl_candles(s, hl_coin, timeframe, limit)
+    except HLRateLimited:
+        data = None
 
     if data is not None:
         _cache.put(symbol, timeframe, data)
