@@ -95,5 +95,5 @@ This is a picture of what past spikes did, not a forecast. It is drawn when the 
   - 4H comes from the replayed 10 primary and 30 secondary coins.
   - Windows 1-9 only.
 - **Label:** the sample size and "half of past cases stayed in the darker band; not a forecast".
-- **The mean lines:** the price where z would be 0 and 1 today, from the engine's own regression and deviation, drawn with the fan.
+- **The mean lines:** the price where z would be 0 and 1 today, from the engine's own regression and deviation, drawn with the fan. Replaced on 1 October 2026 by the engine's trend line itself (the 300-bar regression of log price, `spike_zone.trend_level`): after a long run the 200-bar average deviation put the z = 0 price far above price, which read as a mean the coin had not reached.
 - **Calibration, forward:** each new spike after 26 September 2026 is recorded, and at 60 bars it is counted as inside or outside the 25-75 band on its final bar and on its lowest close. If far fewer than half end inside the darker band, the chart says the bands are too narrow.

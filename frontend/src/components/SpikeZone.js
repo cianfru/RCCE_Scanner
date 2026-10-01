@@ -6,7 +6,7 @@ export default class SpikeZone {
     this.anchorClose = anchorClose;
     this.zone = zone;
     this.colors = colors;
-    this.visible = false;   // drawn with the chart's Mean lines
+    this.visible = false;   // drawn with the chart's Trend line
     this.view = { zOrder: () => "bottom", renderer: () => ({ draw: target => this.draw(target) }) };
   }
   attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.requestUpdate = requestUpdate; requestUpdate(); }

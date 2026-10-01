@@ -1,10 +1,10 @@
-"""After-the-spike picture on the coin chart: mean lines and the spike anchor."""
+"""After-the-spike picture on the coin chart: the trend line, mean levels and the spike anchor."""
 import unittest
 
 import numpy as np
 
-from engines.rcce_engine import LEN_LONG, LEN_REGRESSION, Z_SCALE, Z_SMOOTH, _calc_zscore_hybrid
-from engines.spike_zone import last_spike, mean_levels, zone
+from engines.rcce_engine import LEN_LONG, LEN_REGRESSION, Z_SCALE, Z_SMOOTH, _calc_zscore_hybrid, _linreg
+from engines.spike_zone import last_spike, mean_levels, trend_level, zone
 
 
 def series(n=700, seed=3):
@@ -18,6 +18,34 @@ class SpikeZoneTests(unittest.TestCase):
         z = _calc_zscore_hybrid(c, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE)
         lv = mean_levels(c, ks=(float(z[-1]),))
         self.assertAlmostEqual(lv[float(z[-1])][-1], c[-1], delta=c[-1] * 1e-6)
+
+    def test_trend_level_is_the_regression_line(self):
+        c = series()
+        tl = trend_level(c)
+        reg = np.exp(_linreg(np.log(c), LEN_REGRESSION))
+        np.testing.assert_allclose(tl[LEN_REGRESSION - 1:], reg[LEN_REGRESSION - 1:], rtol=1e-12)
+        # The z-score is measured from this line: dev = log(close / trend).
+        z = _calc_zscore_hybrid(c, LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE)
+        dev = np.log(c) - np.log(tl)
+        m = dev[-LEN_LONG:].mean()
+        s = dev[-LEN_LONG:].std(ddof=0)
+        self.assertAlmostEqual(z[-1], (dev[-1] - m) / s, delta=1e-3)
+        # The last bar's trend is a 300-bar fit: the closes before it do not move it.
+        self.assertAlmostEqual(trend_level(c[-LEN_REGRESSION:])[-1], tl[-1], delta=tl[-1] * 1e-9)
+
+    def test_trend_level_falls_back_to_the_200_bar_average(self):
+        c = series(n=250)
+        tl = trend_level(c)
+        sma = np.exp(np.convolve(np.log(c), np.ones(LEN_LONG) / LEN_LONG, mode="valid"))
+        self.assertTrue(np.isnan(tl[:LEN_LONG - 1]).all())
+        np.testing.assert_allclose(tl[LEN_LONG - 1:], sma, rtol=1e-9)
+        self.assertTrue(np.isnan(trend_level(c, fallback=False)).all())
+        # On a longer series the fallback covers only the bars before the regression has 300.
+        c2 = series(n=400)
+        t2, r2 = trend_level(c2), trend_level(c2, fallback=False)
+        self.assertTrue(np.isnan(r2[:LEN_REGRESSION - 1]).all() and np.isfinite(r2[LEN_REGRESSION - 1:]).all())
+        np.testing.assert_allclose(t2[LEN_REGRESSION - 1:], r2[LEN_REGRESSION - 1:])
+        self.assertTrue(np.isfinite(t2[LEN_LONG - 1:LEN_REGRESSION - 1]).all())
 
     def test_spike_anchor_and_superseded(self):
         z = np.array([0.5] * 10 + [2.2, 2.7, 3.0, 2.1] + [1.0] * 6)

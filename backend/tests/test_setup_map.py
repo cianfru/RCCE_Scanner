@@ -171,9 +171,9 @@ def test_ladder_counts_medians_and_positions():
     assert lad["counts"] == {"long": 2, "short": 1, "long_usd": 6000, "short_usd": 3000,
                              "long_wallets": 2, "short_wallets": 1}
     assert lad["median_entry"] == {"long": sm.sig((1.0123456789 + 0.9) / 2), "short": 1.2}
-    assert lad["positions"][0]["entry"] == 1.01235 and lad["band"] == item["band"] and lad["mean"] == 0.95
+    assert lad["positions"][0]["entry"] == 1.01235 and lad["band"] == item["band"] and lad["trend"] == 0.95
     empty = sm.ladder(item, [], None, NOW)
-    assert empty["counts"]["long"] == 0 and empty["median_entry"] == {"long": None, "short": None} and empty["mean"] is None
+    assert empty["counts"]["long"] == 0 and empty["median_entry"] == {"long": None, "short": None} and empty["trend"] is None
 
 
 def test_ladder_endpoint_shape(monkeypatch):
@@ -196,7 +196,7 @@ def test_ladder_endpoint_shape(monkeypatch):
     monkeypatch.setattr(hl, "_snapshots", {a.address: deque([PositionSnapshot(_t.time(), [p], 1e6)])})
     c = TestClient(main.app)
     body = c.get("/api/setup-map/ladder?coin=SUI&tf=1d").json()
-    assert set(body) == {"coin", "symbol", "price", "stage", "zscore", "updated_at", "band", "entry", "mean", "counts",
+    assert set(body) == {"coin", "symbol", "price", "stage", "zscore", "updated_at", "band", "entry", "trend", "counts",
                          "median_entry", "positions"}
     assert body["band"] == band and body["counts"] == {"long": 1, "short": 0, "long_usd": 300, "short_usd": 0,
                                                               "long_wallets": 1, "short_wallets": 0}

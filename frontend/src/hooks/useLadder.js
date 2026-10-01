@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const NONE = Object.freeze({ data: undefined, error: null, loading: false });
 
 // The Radar's price ladder for one coin: the profitable wallets at their entry prices, the weekly
-// band, the engine's mean and the median entries (/api/setup-map/ladder). One read per coin and
+// band, the engine's trend line and the median entries (/api/setup-map/ladder). One read per coin and
 // timeframe per minute, refreshed while it shows.
 const ladders = createKeyedCache({
   fetcher: key => {

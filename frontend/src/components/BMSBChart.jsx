@@ -6,7 +6,7 @@ import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
 import WalletOpens from "./WalletOpens.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
-import { candleChange } from "../utils/chartPresentation.js";
+import { candleChange, trendNote } from "../utils/chartPresentation.js";
 import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import RegimeIcon from "./RegimeIcon.jsx";
@@ -107,7 +107,8 @@ export default function BMSBChart({
   const [ribbon, setRibbon] = useState(null);
   const [patterns, setPatterns] = useState([]);
   const [showPatterns, setShowPatterns] = useState(false);
-  const [showMean, setShowMean] = useState(false);
+  const [showTrend, setShowTrend] = useState(false);
+  const [trend, setTrend] = useState(null);
   const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
   const [showEntries, setShowEntries] = useState(!compact);
@@ -116,10 +117,10 @@ export default function BMSBChart({
   const focusRef = useRef(focusRange);
   focusRef.current = focusRange;
   const [candleTimes, setCandleTimes] = useState(null);
-  const meanSeriesRef = useRef([]);
+  const trendSeriesRef = useRef(null);
   const ribbonSeriesRef = useRef([]);
   const spikeZoneRef = useRef(null);
-  const showMeanRef = useRef(false);
+  const showTrendRef = useRef(false);
   const showRibbonRef = useRef(false);
   const zoneEndRef = useRef(null);
   const patternSeriesRef = useRef([]);
@@ -286,11 +287,10 @@ export default function BMSBChart({
       title: "BMSB",
     });
 
-    // The engine's mean as prices: where z would be 0 and 1 (after-the-spike study).
-    const meanSeries = [["z0", "Mean (z 0)", LineStyle.Dashed], ["z1", "z 1", LineStyle.Dotted]].map(([key, title, style]) =>
-      [key, chart.addSeries(LineSeries, { color: col("#91b9e8"), lineWidth: 1, lineStyle: style, title,
-        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: showMeanRef.current })]);
-    meanSeriesRef.current = meanSeries;
+    // The engine's trend line (the z-score's baseline: 300-bar regression of log price).
+    const trendSeries = chart.addSeries(LineSeries, { color: col("#91b9e8"), lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Trend",
+      lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: showTrendRef.current });
+    trendSeriesRef.current = trendSeries;
     if (compact) {
       for (const ser of [ma200Series, bmsbEmaSeries, bmsbSmaSeries, bmsbMidSeries]) ser.applyOptions({ visible: false });
     }
@@ -304,6 +304,7 @@ export default function BMSBChart({
     setRibbon(null);
     setPatterns([]);
     setSpike(null);
+    setTrend(null);
     setCandleTimes(null);
     entryMarkersRef.current = null;
     entryLinesRef.current = [];
@@ -360,16 +361,17 @@ export default function BMSBChart({
             readCandle(candle?.open != null ? candle : null);
             if (compact) setHoverMark(param.point ? fillPrimRef.current?.hitTest(param.point.x, param.point.y) || null : null);
           });
-          for (const [key, ser] of meanSeries) ser.setData(data.mean_lines?.[key] || []);
+          trendSeries.setData(data.trend?.line || []);
+          setTrend(data.trend ? { kind: data.trend.kind, bars: data.trend.bars } : null);
           if (data.spike) {
             setSpike(data.spike);
             const anchorIndex = data.spike.anchor_time != null ? data.candles.findIndex(c => c.time === data.spike.anchor_time) : -1;
             if (anchorIndex >= 0 && data.spike.zone) {
-              // Drawn with the Mean lines; the reset view then makes room for the part still ahead.
+              // Drawn with the Trend line; the reset view then makes room for the part still ahead.
               zoneEndRef.current = anchorIndex + data.spike.zone.to_bar;
               const zone = new SpikeZone({ anchorIndex, anchorClose: data.spike.anchor_close, zone: data.spike.zone,
                 colors: { fill: "rgba(207,145,133,0.08)", line: col("#cf9185"), text: col("#cf9185") } });
-              zone.setVisible(showMeanRef.current);
+              zone.setVisible(showTrendRef.current);
               candleSeries.attachPrimitive(zone);
               spikeZoneRef.current = zone;
             }
@@ -480,8 +482,8 @@ export default function BMSBChart({
           // Keep ~100px empty right of the last candle for the entry-line labels,
           // whatever the width: p empty bars take p / (visibleBars + p) of the plot.
           const pad = Math.max(6, Math.ceil(100 * visibleBars / Math.max(60, plotWidth - 100)));
-          // With the Mean lines on after a spike, extend the view to the end of the "where past spikes bottomed" zone.
-          const zoneEnd = zoneEndRef.current != null && showMeanRef.current ? zoneEndRef.current + 3 : 0;
+          // With the Trend line on after a spike, extend the view to the end of the "where past spikes bottomed" zone.
+          const zoneEnd = zoneEndRef.current != null && showTrendRef.current ? zoneEndRef.current + 3 : 0;
           const to = Math.max(candleCount + pad, zoneEnd);
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(-1, to - pad - visibleBars),
@@ -517,10 +519,10 @@ export default function BMSBChart({
       fillPrimRef.current = null;
       pressureLinesRef.current = [];
       patternSeriesRef.current = [];
-      // The mean-line effect runs before the rebuild on a timeframe switch; it must not reach
+      // The trend-line effect runs before the rebuild on a timeframe switch; it must not reach
       // this chart's series once the chart is gone (applyOptions there schedules a paint of a
       // removed chart, which throws "Object is disposed" on the next frame).
-      meanSeriesRef.current = [];
+      trendSeriesRef.current = null;
       ribbonSeriesRef.current = [];
       spikeZoneRef.current = null;
       try { chart.remove(); } catch (_) { /* ignore */ }
@@ -528,13 +530,13 @@ export default function BMSBChart({
     };
   }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode, compact]);
 
-  // Overlay toggles: the mean lines (with the after-the-spike zone) and the trend ribbon, off by default.
+  // Overlay toggles: the trend line (with the after-the-spike zone) and the trend ribbon, off by default.
   useEffect(() => {
-    showMeanRef.current = showMean;
-    for (const [, ser] of meanSeriesRef.current) { try { ser.applyOptions({ visible: showMean }); } catch (_) {} }
-    spikeZoneRef.current?.setVisible(showMean);
+    showTrendRef.current = showTrend;
+    try { trendSeriesRef.current?.applyOptions({ visible: showTrend }); } catch (_) {}
+    spikeZoneRef.current?.setVisible(showTrend);
     if (zoneEndRef.current != null) resetViewRef.current?.();
-  }, [showMean, activeTimeframe]);
+  }, [showTrend, activeTimeframe]);
   useEffect(() => {
     showRibbonRef.current = showRibbon;
     for (const ser of ribbonSeriesRef.current) { try { ser.applyOptions({ visible: showRibbon }); } catch (_) {} }
@@ -914,7 +916,7 @@ export default function BMSBChart({
           {[
             { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
-            { key: "mean", on: showMean, set: setShowMean, long: "Mean lines", short: "Mean" },
+            { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
             { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
             activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
           ].filter(Boolean).map(t => (
@@ -930,7 +932,7 @@ export default function BMSBChart({
           <HelpTip title="Chart layers" width={420}>
             <p>Trader entries: profitable traders (see Traders) who hold this coin now, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. The dashed line is the median entry per side. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>Mean lines: the price where this coin's z-score would be 0 (dashed) and 1 (dotted), the engine's mean. After a spike, the box shows where past spikes bottomed. A reference, not a target.</p>
+            <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>
             <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
             {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
           </HelpTip>
@@ -1007,7 +1009,7 @@ export default function BMSBChart({
           {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live</span>}
         </div>}
       </div>
-      {!loading && !error && spike && showMean && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
+      {!loading && !error && spike && showTrend && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
         {spike.superseded
           ? <><strong style={{color:T.text2}}>Spike superseded</strong> · price has since closed above the spike's peak ({new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}), so the trend resumed and the after-the-spike zone no longer applies.</>
           : spike.running
@@ -1016,7 +1018,7 @@ export default function BMSBChart({
             <HelpTip title="After the spike" width={380}>
               <p>A spike is the last time this coin's z-score reached 2.5; it ends when z drops back under 2. The box and the dashed path start from that bar's close, which is known at the time; the true peak is only known later.</p>
               <p>The box covers the middle half of past lows (depth and timing), measured on the study period only (to 29 March 2026). One in four past spikes fell deeper than the box, and one in four fell less.</p>
-              <p>The engine blocks nothing because of this picture. See Mean lines for where the engine's own mean sits today.</p>
+              <p>The engine blocks nothing because of this picture.</p>
             </HelpTip></>
           : <>Spike detected; no history for this timeframe yet.</>}
       </div>}
