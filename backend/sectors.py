@@ -93,9 +93,12 @@ _S = {
 
 
 _S.update({"FART": _S["FARTCOIN"], "VIRT": _S["VIRTUAL"], "ZORA": ("Other", "Base")})   # spot tickers and alias
-# HyperLens reports some coins under exchange-neutral names (kPEPE -> PEPE, RENDER -> RNDR).
+# HyperLens reports the "k" markets under their base names (kPEPE -> PEPE).
 _S.update({k: _S[f"k{k}"] for k in ("PEPE", "SHIB", "BONK", "FLOKI", "NEIRO", "LUNC")})
-_S.update({"RNDR": _S["RENDER"], "FTM": _S["S"], "MATIC": _S["POL"]})
+# The live map keys renamed tickers by their current names (S, POL, RENDER; ticker_renames.py).
+# The studies (backtest/) built their coin lists from this map with the old Binance pairs as well
+# (FTMUSDT, MATICUSDT, RNDRUSDT), so they read STUDY_S, which keeps them, in the same order.
+STUDY_S = {**_S, "RNDR": _S["RENDER"], "FTM": _S["S"], "MATIC": _S["POL"]}
 
 
 def _lookup(coin: str) -> Optional[Tuple[str, Optional[str]]]:

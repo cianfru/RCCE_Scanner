@@ -1515,10 +1515,10 @@ def profitable_traders_positioned() -> int:
 # Public API
 # ---------------------------------------------------------------------------
 
-# Reverse map: HL coin names → scanner base names (kPEPE→PEPE, POL→MATIC, etc.)
+# Reverse map: HL coin names → scanner base names (kPEPE→PEPE, ...). Renamed tickers (S, POL,
+# RENDER) keep their current names; see ticker_renames.py.
 _HL_REVERSE_MAP: Dict[str, str] = {
     "kPEPE": "PEPE", "kSHIB": "SHIB", "kBONK": "BONK", "kFLOKI": "FLOKI",
-    "POL": "MATIC", "RENDER": "RNDR", "S": "FTM",
 }
 
 
@@ -1526,7 +1526,7 @@ def _normalize_coin(symbol: str) -> str:
     """Normalize any symbol format to bare coin name.
 
     Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT",
-    HL names like "kPEPE", "POL", "RENDER", "S".
+    HL names like "kPEPE".
     Also preserves xyz DEX prefix: "xyz:GOLD" stays "xyz:GOLD".
     """
     # Preserve xyz DEX prefix (HIP-3 TradFi instruments)

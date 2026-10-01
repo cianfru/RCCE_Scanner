@@ -21,7 +21,7 @@ from concurrent.futures import ProcessPoolExecutor
 from backtest import binance_history as bh
 from backtest.larsson_study import RUNS_DIR
 from backtest.sector_momentum_study import _pair
-from sectors import _S
+from sectors import STUDY_S as _S
 
 START = "2019-01-01"
 WINDOW = 600

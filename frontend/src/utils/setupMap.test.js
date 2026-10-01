@@ -67,18 +67,18 @@ test("addresses are 0x plus 40 hex digits", () => {
 });
 
 // Dots as drawn on the 1D map at 1079x470 (wf/scanner-top/today_desk-dark_smap.png), where
-// today's labels collided: "PENGU PEFARTCOIN", "ETHC" (ETH under BTC), TIA over RNDR.
+// today's labels collided: "PENGU PEFARTCOIN", "ETHC" (ETH under BTC), TIA over RENDER.
 const FIXTURE = [["BTC",733.4,50.5,10.5],["ETH",725.7,50.5,10.5],["SOL",783.1,72.4,9.7],["BNB",710.9,231,5.91],["APE",416.3,260.8,5.5],
   ["DOGE",723.5,142.6,7.82],["INJ",499.2,260.8,5.5],["CRV",630.9,209.9,6.23],["LDO",707.1,193.5,6.5],["LINK",792.2,99.4,8.62],
   ["GMX",638.1,260.8,5.5],["SNX",735.1,260.8,5.5],["XRP",785,150.3,7.96],["AAVE",779.5,135.6,7.66],["COMP",743,260.8,5.5],
   ["WLD",587.2,123.3,7.96],["TIA",544.1,260.8,5.5],["PENDLE",634.5,193.5,6.5],["FET",629.2,209.9,6.23],["JUP",687.1,180.1,6.74],
   ["ONDO",582.6,112.8,8.74],["STRK",782.6,231,5.91],["TAO",723.5,78.3,9.3],["ETHFI",760.2,193.5,6.5],["EIGEN",541.9,260.8,5.5],
-  ["RNDR",563.1,260.8,5.5],["GRASS",526.7,150.3,7.66],["PURR",429.8,260.8,6.23],["XLM",543.4,260.8,5.5],["MOVE",741.8,260.8,5.5],
+  ["RENDER",563.1,260.8,5.5],["GRASS",526.7,150.3,7.66],["PURR",429.8,260.8,6.23],["XLM",543.4,260.8,5.5],["MOVE",741.8,260.8,5.5],
   ["VIRTUAL",719.6,180.1,6.74],["PENGU",589.4,193.5,6.5],["FARTCOIN",664.6,193.5,6.95],["MORPHO",390.9,231,6.5],["TRUMP",741.6,260.8,6.74],
   ["VVV",396.2,69.6,9.6],["ZORA",758.7,260.8,5.5]].map(([coin, x, y, r]) => ({ coin, x, y, r }));
 // Today's labelled set on that map, in placement priority (in the box by engine priority,
 // the largest trader lean, then movers).
-const LABELLED = ["FET", "INJ", "PENDLE", "PURR", "PENGU", "TIA", "RNDR", "CRV", "BTC", "ETH", "BNB", "GRASS", "FARTCOIN", "MORPHO", "SNX", "WLD"];
+const LABELLED = ["FET", "INJ", "PENDLE", "PURR", "PENGU", "TIA", "RENDER", "CRV", "BTC", "ETH", "BNB", "GRASS", "FARTCOIN", "MORPHO", "SNX", "WLD"];
 const PLOT = { x0: 40, y0: 16, x1: 1065, y1: 430 };
 
 function checkLayout(dots, others, placed, opts = {}) {
@@ -105,7 +105,7 @@ test("labels: no overlaps on the TIA / PENGU / FARTCOIN / ETH / PENDLE cluster",
   checkLayout(dots, others, placed);
   // Today's collisions are gone: each of these is labelled, or (FARTCOIN, boxed in by
   // PENDLE, LDO, JUP and CRV) left for hover rather than printed over a neighbour.
-  for (const c of ["TIA", "PENGU", "ETH", "PENDLE", "BTC", "RNDR"]) assert.ok(placed.has(c), `${c} is labelled`);
+  for (const c of ["TIA", "PENGU", "ETH", "PENDLE", "BTC", "RENDER"]) assert.ok(placed.has(c), `${c} is labelled`);
   assert.ok(placed.size >= 12, `most labels fit (${placed.size} of ${dots.length})`);
   for (const [coin, p] of placed) {
     const d = FIXTURE.find(x => x.coin === coin);

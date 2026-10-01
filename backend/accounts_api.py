@@ -251,7 +251,8 @@ async def my_watch(request: Request):
 async def my_watch_add(request: Request, body: dict):
     user = await _holder(request)
     from hl_intelligence import _normalize_coin
-    coin = _normalize_coin(str((body or {}).get("coin", "")).strip().upper())
+    from ticker_renames import current_coin
+    coin = current_coin(_normalize_coin(str((body or {}).get("coin", "")).strip().upper()))
     if not coin or len(coin) > 20:
         raise HTTPException(status_code=400, detail="coin is required")
     tf = str((body or {}).get("tf", "1d"))
@@ -269,7 +270,8 @@ async def my_watch_add(request: Request, body: dict):
 async def my_watch_remove(request: Request, coin: str):
     user = await _holder(request)
     from hl_intelligence import _normalize_coin
-    c = _normalize_coin(coin.upper())
+    from ticker_renames import current_coin
+    c = current_coin(_normalize_coin(coin.upper()))
     if accounts.is_owner(user):
         import setup_map
         setup_map.unwatch(c)

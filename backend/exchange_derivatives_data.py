@@ -76,7 +76,7 @@ _BINANCE_PREFIX_MAP = {
 # Priority coins — fetched first for fast initial data
 _PRIORITY_COINS = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT",
-    "MATIC", "UNI", "NEAR", "OP", "ARB", "SUI", "APT", "FIL", "ATOM", "LTC",
+    "POL", "UNI", "NEAR", "OP", "ARB", "SUI", "APT", "FIL", "ATOM", "LTC",
 ]
 
 

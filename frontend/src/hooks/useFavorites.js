@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { currentSymbols } from "../utils/tickerRenames.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const KEY = "reflex_favorites";
@@ -8,11 +9,14 @@ const KEY = "reflex_favorites";
 // kept in localStorage and synced to /api/favorites.
 const store = { favorites: null, hydrated: false, subs: new Set() };
 
+// Symbols starred under a ticker Hyperliquid has since renamed (MATIC, RNDR, FTM) are read
+// under the current name and saved back that way.
 function current() {
   if (!store.favorites) {
     try {
-      const v = JSON.parse(localStorage.getItem(KEY) || "[]");
-      store.favorites = new Set(Array.isArray(v) ? v : []);
+      const { list, changed } = currentSymbols(JSON.parse(localStorage.getItem(KEY) || "[]"));
+      store.favorites = new Set(list);
+      if (changed) localStorage.setItem(KEY, JSON.stringify(list));
     } catch {
       store.favorites = new Set();
     }
@@ -39,7 +43,7 @@ function hydrate() {
   fetch(`${API_BASE}/api/favorites`)
     .then(r => r.json())
     .then(data => {
-      if (Array.isArray(data?.symbols) && data.symbols.length > 0) commit(new Set([...current(), ...data.symbols]));
+      if (Array.isArray(data?.symbols) && data.symbols.length > 0) commit(new Set([...current(), ...currentSymbols(data.symbols).list]));
     })
     .catch(() => {});
 }

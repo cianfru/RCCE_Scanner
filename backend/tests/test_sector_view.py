@@ -38,12 +38,12 @@ class ProfitableTraderTests(unittest.TestCase):
         with mock.patch.object(hl, "_mp_book", {
             "a": {"WIF": 1000.0, "BOME": 500.0, "BTC": -200.0},   # long memes twice: one Memes long
             "b": {"WIF": -300.0},
-            "c": {"RNDR": 100.0, "WIF": 50.0},
+            "c": {"RENDER": 100.0, "WIF": 50.0},
         }):
             lean = hl.profitable_lean(groups)
         self.assertEqual((lean["sector:Memes"]["long"], lean["sector:Memes"]["short"]), (2, 1))
         self.assertAlmostEqual(lean["sector:Memes"]["lean"], 1 / 3, places=3)
-        self.assertEqual(lean["ecosystem:Solana"]["long"], 2)      # a (WIF+BOME) and c (RNDR+WIF)
+        self.assertEqual(lean["ecosystem:Solana"]["long"], 2)      # a (WIF+BOME) and c (RENDER+WIF)
         self.assertEqual(lean["pocket:AI|Solana"]["long"], 1)
         self.assertEqual(lean["sector:Majors"]["short"], 1)
 

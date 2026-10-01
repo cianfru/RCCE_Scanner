@@ -19,7 +19,7 @@ import numpy as np
 
 from backtest import binance_history as bh
 from backtest.larsson_study import HOLDOUT, RUNS_DIR, windows
-from sectors import _S
+from sectors import STUDY_S as _S
 
 START, END = "2021-01-01", "2026-03-29"
 H = 10
