@@ -108,6 +108,13 @@ _CACHE_TTL: Dict[str, int] = {
 
 SUPPORTED_TIMEFRAMES = list(_CACHE_TTL.keys())
 
+# Timeframe → milliseconds per candle (for calculating startTime, and Hyperliquid's candle grid)
+_TF_MS: Dict[str, int] = {
+    "4h": 4 * 3600 * 1000,
+    "1d": 86400 * 1000,
+    "1w": 7 * 86400 * 1000,
+}
+
 # Minimum candle counts per timeframe for full z-score warm-up.
 # Z-score needs a 300-bar regression followed by 200 bars of normalization;
 # keep extra history for regime persistence beyond that warm-up.
@@ -207,12 +214,12 @@ class DataCache:
 
     @staticmethod
     def _last_close(timeframe: str, wall: float) -> float:
-        """Most recent candle close for *timeframe* (UTC; weeks close Monday 00:00)."""
+        """Most recent candle close for *timeframe* (UTC). Hyperliquid's candles sit on the epoch grid,
+        so its weeks open and close Thursday 00:00 (the epoch began on a Thursday), not Monday."""
         bar = {"4h": 14_400, "1d": 86_400, "1w": 604_800}.get(timeframe)
         if bar is None:
             return float("-inf")
-        offset = 4 * 86_400 if timeframe == "1w" else 0   # the epoch began on a Thursday
-        return (wall - offset) // bar * bar + offset
+        return wall // bar * bar
 
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
         """Return OHLCVStore data if recently fetched, else None."""
@@ -291,6 +298,34 @@ _OHLCV_CACHE_PATH = Path(os.environ.get(
 _SAVE_DEBOUNCE_SECS = 600
 
 
+_FIELDS = ("timestamp", "open", "high", "low", "close", "volume")
+
+# Where a stored series' bars come from. A series holds bars of one source only: Hyperliquid
+# ("hl") or the Binance/Bybit fallback ("cex"). Their weeks start on different days (Hyperliquid
+# Thursday 00:00 UTC, the exchanges Monday 00:00), and even on 4h/1d their prices are another
+# instrument's (spot, or another venue's perp), so a fallback bar never enters a Hyperliquid series
+# except as older history before its first bar on 4h/1d (see OHLCVStore.update).
+SOURCE_HL = "hl"
+SOURCE_CEX = "cex"
+
+
+def on_hl_grid(timestamps, timeframe: str) -> np.ndarray:
+    """Which bar opens lie on Hyperliquid's candle grid (epoch-aligned: weeks open Thursday 00:00 UTC)."""
+    tf_ms = _TF_MS.get(timeframe)
+    ts = np.asarray(timestamps, dtype=np.float64)
+    if tf_ms is None:
+        return np.ones(len(ts), dtype=bool)
+    return np.mod(ts, tf_ms) == 0
+
+
+def _sorted_unique(data: dict) -> dict:
+    """The bars ordered by open time, one per timestamp (the last one given wins)."""
+    ts = np.asarray(data["timestamp"], dtype=np.float64)
+    _, rev = np.unique(ts[::-1], return_index=True)
+    idx = len(ts) - 1 - rev
+    return {f: np.asarray(data[f], dtype=np.float64)[idx] for f in _FIELDS}
+
+
 class OHLCVStore:
     """Persistent in-memory OHLCV cache. Stores full history arrays and
     updates them incrementally by appending new bars.
@@ -298,12 +333,19 @@ class OHLCVStore:
     Unlike DataCache (TTL-based), this store never expires. On each scan:
     - If no cache exists: full fetch (cold start)
     - If cache exists: fetch only 2 latest bars, merge into cached array
+
+    A fetched range is authoritative: stored bars inside it are replaced by the fetched ones, and
+    stored bars inside it that the fetch does not have are dropped (``stats`` counts both).
     """
 
     def __init__(self) -> None:
         self._store: Dict[str, dict] = {}       # key: "SYMBOL|TF" → OHLCV dict
         self._history_targets: Dict[str, int] = {}
         self._updated_at: Dict[str, float] = {}  # key → monotonic time
+        self._sources: Dict[str, str] = {}       # key → SOURCE_HL / SOURCE_CEX
+        self._refetch: set = set()               # keys whose next read must be a full one
+        self._verified_at: Dict[str, float] = {}  # key → wall time of the last full check against Hyperliquid
+        self.stats: Dict[str, int] = {"bars_revised": 0, "bars_dropped": 0, "fallback_bars_refused": 0}
 
     @staticmethod
     def _key(symbol: str, timeframe: str) -> str:
@@ -312,6 +354,11 @@ class OHLCVStore:
     def get(self, symbol: str, timeframe: str) -> Optional[dict]:
         """Return cached OHLCV arrays or None if not stored."""
         return self._store.get(self._key(symbol, timeframe))
+
+    def source(self, symbol: str, timeframe: str) -> Optional[str]:
+        """SOURCE_HL or SOURCE_CEX for a stored series, None when nothing is stored."""
+        key = self._key(symbol, timeframe)
+        return self._sources.get(key, SOURCE_HL) if key in self._store else None
 
     def observed_at(self, symbol: str, timeframe: str) -> Optional[float]:
         updated = self._updated_at.get(self._key(symbol, timeframe))
@@ -323,6 +370,30 @@ class OHLCVStore:
         self._store.pop(key, None)
         self._updated_at.pop(key, None)
         self._history_targets.pop(key, None)
+        self._sources.pop(key, None)
+        self._refetch.discard(key)
+        self._verified_at.pop(key, None)
+
+    def clean_weekly(self, key: str) -> int:
+        """A weekly series holding bars on Hyperliquid's grid and off it (exchange weeks merged in
+        before the fallback was kept out): drop the off-grid bars and read the series in full next
+        time, which also fills weeks only the exchange bars covered. Returns the bars dropped."""
+        data = self._store.get(key)
+        if data is None or not key.endswith("|1w") or not len(data["timestamp"]):
+            return 0
+        grid = on_hl_grid(data["timestamp"], "1w")
+        if grid.all():
+            self._sources.setdefault(key, SOURCE_HL)
+            return 0
+        if not grid.any():                       # an exchange-only series: consistent, keep it
+            self._sources[key] = SOURCE_CEX
+            return 0
+        self._store[key] = {f: np.asarray(data[f])[grid] for f in _FIELDS}
+        self._sources[key] = SOURCE_HL
+        self._refetch.add(key)
+        dropped = int((~grid).sum())
+        self.stats["bars_dropped"] += dropped
+        return dropped
 
     def bars_missing(self, symbol: str, timeframe: str, now_ms: Optional[float] = None) -> Optional[int]:
         """Bars opened since the last stored bar opened (0: the last stored bar is the open one).
@@ -345,16 +416,20 @@ class OHLCVStore:
     def complete(self, symbol: str, timeframe: str, now: Optional[float] = None) -> bool:
         """The stored series holds every closed bar: it was read after the latest close settled."""
         key = self._key(symbol, timeframe)
-        if key not in self._store or key not in self._updated_at:
+        if key not in self._store or key not in self._updated_at or key in self._refetch:
             return False
         observed = self.observed_at(symbol, timeframe)
         close = DataCache._last_close(timeframe, time.time() if now is None else now)
         return observed is not None and observed >= close + _CLOSE_SETTLE_S
 
-    def needs_full_fetch(self, symbol: str, timeframe: str) -> bool:
-        """True if no cache or cache is stale (too old for incremental update)."""
+    def needs_full_fetch(self, symbol: str, timeframe: str, source: str = SOURCE_HL) -> bool:
+        """True if no cache or cache is stale (too old for incremental update), or the next read
+        comes from another source than the stored bars (which it then replaces), or a repair asked
+        for a full read."""
         key = self._key(symbol, timeframe)
         if key not in self._store:
+            return True
+        if key in self._refetch or self._sources.get(key, SOURCE_HL) != source:
             return True
         updated = self._updated_at.get(key, 0.0)
         max_age = _STALENESS_LIMIT.get(timeframe, 24 * 3600)
@@ -367,12 +442,18 @@ class OHLCVStore:
         return bar_count < target and self._history_targets.get(key, 0) < target
 
     def update(self, symbol: str, timeframe: str, new_data: dict,
-               max_bars: Optional[int] = None, full_fetch_target: Optional[int] = None) -> dict:
+               max_bars: Optional[int] = None, full_fetch_target: Optional[int] = None,
+               source: str = SOURCE_HL) -> dict:
         """Merge new bars into cached array. Returns the full updated array.
 
-        Preserve older backfills and newer cached bars; fetched values replace
-        matching timestamps. Record successful full requests so short listings
-        do not trigger another backfill on every scan.
+        Preserve older backfills and newer cached bars. The fetched range is authoritative: its
+        bars replace the stored ones at the same timestamps, and stored bars inside the range
+        that the fetch does not have are dropped (bars from another source or grid). Record
+        successful full requests so short listings do not trigger another backfill on every scan.
+
+        ``source``: where the bars come from (SOURCE_HL or SOURCE_CEX). Fallback bars never enter
+        a Hyperliquid series, except older history before its first bar on 4h/1d (exchange weeks
+        start on another day, so never on 1w); Hyperliquid bars replace a fallback series.
         """
         key = self._key(symbol, timeframe)
         if max_bars is None:
@@ -383,22 +464,79 @@ class OHLCVStore:
             # Empty new data — return existing cache or None
             return self._store.get(key, new_data)
 
-        fields = ["timestamp", "open", "high", "low", "close", "volume"]
+        new = _sorted_unique(new_data)
+        if source == SOURCE_HL and timeframe == "1w":
+            grid = on_hl_grid(new["timestamp"], timeframe)
+            if not grid.all():
+                new = {f: v[grid] for f, v in new.items()}
+                if not len(new["timestamp"]):
+                    return self._store.get(key, new_data)
+        tf_ms = _TF_MS.get(timeframe, 0)
         cached = self._store.get(key)
+        cached_source = self._sources.get(key, SOURCE_HL) if cached is not None else None
+
+        if cached is not None and cached_source == SOURCE_HL and source != SOURCE_HL:
+            # Fallback bars for a Hyperliquid series: only history older than its first bar.
+            first = float(cached["timestamp"][0]) if len(cached["timestamp"]) else float("inf")
+            older = (new["timestamp"] + tf_ms <= first) if timeframe != "1w" else np.zeros(len(new["timestamp"]), bool)
+            self.stats["fallback_bars_refused"] += int((~older).sum())
+            if not older.any():
+                return cached
+            merged = {f: np.concatenate([new[f][older], cached[f]])[-max_bars:] for f in _FIELDS}
+            self._store[key] = merged
+            if full_fetch_target is not None:
+                self._history_targets[key] = max(full_fetch_target, self._history_targets.get(key, 0))
+            return merged
+
         if cached is None:
-            merged = {f: np.asarray(new_data[f])[-max_bars:].copy() for f in fields}
+            merged = {f: v[-max_bars:].copy() for f, v in new.items()}
         else:
-            # Merge by timestamp, including older backfill and revised closed bars.
-            # Reverse before unique so newly fetched values win on overlap.
-            timestamps = np.concatenate([cached["timestamp"], new_ts])
-            _, reverse_indices = np.unique(timestamps[::-1], return_index=True)
-            indices = (len(timestamps) - 1 - reverse_indices)[-max_bars:]
-            merged = {f: np.concatenate([cached[f], new_data[f]])[indices] for f in fields}
+            lo, hi = float(new["timestamp"][0]), float(new["timestamp"][-1])
+            c_ts = np.asarray(cached["timestamp"], dtype=np.float64)
+            if cached_source != source:
+                # Hyperliquid replaces a fallback series: keep only older 4h/1d history before it.
+                keep = (c_ts + tf_ms <= lo) if timeframe != "1w" else np.zeros(len(c_ts), bool)
+                self._history_targets.pop(key, None)
+            else:
+                inside = (c_ts >= lo) & (c_ts <= hi)
+                keep = ~inside
+                self._count_revisions(cached, inside, new)
+            merged = {f: np.concatenate([np.asarray(cached[f], dtype=np.float64)[keep], new[f]]) for f in _FIELDS}
+            order = np.argsort(merged["timestamp"], kind="stable")[-max_bars:]
+            merged = {f: v[order] for f, v in merged.items()}
+            if source == SOURCE_HL and timeframe == "1w":
+                grid = on_hl_grid(merged["timestamp"], timeframe)
+                if not grid.all():
+                    self.stats["bars_dropped"] += int((~grid).sum())
+                    merged = {f: v[grid] for f, v in merged.items()}
         self._store[key] = merged
+        self._sources[key] = source
         self._updated_at[key] = time.monotonic()
         if full_fetch_target is not None:
             self._history_targets[key] = max(full_fetch_target, self._history_targets.get(key, 0))
+            self._refetch.discard(key)
         return merged
+
+    def _count_revisions(self, cached: dict, inside: np.ndarray, new: dict) -> None:
+        """Count stored bars inside a fetched range that the fetch changed or does not have."""
+        if not inside.any():
+            return
+        c_ts = np.asarray(cached["timestamp"], dtype=np.float64)[inside]
+        pos = np.searchsorted(new["timestamp"], c_ts)
+        pos_ok = np.minimum(pos, len(new["timestamp"]) - 1)
+        present = new["timestamp"][pos_ok] == c_ts
+        dropped = int((~present).sum())
+        # The newest stored bar may have been open when read: a changed value there is the candle
+        # completing, not a revision.
+        last_open = c_ts == float(cached["timestamp"][-1])
+        changed = np.zeros(len(c_ts), dtype=bool)
+        for f in ("open", "high", "low", "close"):
+            old = np.asarray(cached[f], dtype=np.float64)[inside]
+            changed |= present & ~np.isclose(old, new[f][pos_ok], rtol=1e-9, atol=0.0)
+        revised = int((changed & ~last_open).sum())
+        if dropped or revised:
+            self.stats["bars_dropped"] += dropped
+            self.stats["bars_revised"] += revised
 
     def count(self) -> int:
         """Number of cached symbol/timeframe pairs."""
@@ -435,6 +573,9 @@ class OHLCVStore:
                     "version": 3,
                     "history_targets": self._history_targets,
                     "observed_at": {key: time.time() - (time.monotonic() - updated) for key, updated in self._updated_at.items()},
+                    "sources": self._sources,
+                    "refetch": sorted(self._refetch),
+                    "verified_at": self._verified_at,
                     "store": self._store,
                     "saved_at": time.time(),
                 }, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -475,6 +616,9 @@ class OHLCVStore:
             saved_at = payload.get("saved_at", 0)
             store_data = payload["store"]
             self._history_targets = payload.get("history_targets", {})
+            refetch = set(payload.get("refetch", ()))
+            verified = payload.get("verified_at", {})
+            cleaned = 0
             age_secs = time.time() - saved_at
 
             # Markets Hyperliquid renamed (ticker_renames): series stored under the old name
@@ -552,6 +696,14 @@ class OHLCVStore:
                 self._store[key] = ohlcv
                 observed_at = payload.get("observed_at", {}).get(stored_key, saved_at)
                 self._updated_at[key] = time.monotonic() - max(0, time.time() - observed_at)
+                stored_source = payload.get("sources", {}).get(stored_key)
+                if stored_source is not None:
+                    self._sources[key] = stored_source
+                if stored_key in refetch:
+                    self._refetch.add(key)
+                if stored_key in verified:
+                    self._verified_at[key] = verified[stored_key]
+                cleaned += self.clean_weekly(key)
                 loaded += 1
 
             logger.info(
@@ -559,6 +711,10 @@ class OHLCVStore:
                 "(stale/invalid), file age %.1f min",
                 loaded, skipped, age_secs / 60,
             )
+            if cleaned:
+                logger.warning("OHLCVStore: dropped %d weekly bars off Hyperliquid's Thursday grid "
+                               "(exchange weeks); %d weekly series will be read in full",
+                               cleaned, sum(1 for k in self._refetch if k.endswith("|1w")))
             return loaded > 0
         except Exception:
             logger.warning("OHLCVStore load failed (will cold start)", exc_info=True)
@@ -575,6 +731,8 @@ def _seed_cache_from_store() -> int:
     does not read it again before its TTL or the next candle close (it did, for every market)."""
     n = 0
     for key in list(_ohlcv_store._updated_at):
+        if key in _ohlcv_store._refetch:          # cleaned on load: read in full at the first chance
+            continue
         symbol, _, timeframe = key.partition("|")
         observed = _ohlcv_store.observed_at(symbol, timeframe)
         if observed is not None:
@@ -611,13 +769,6 @@ def _parse_ohlcv(raw: list) -> dict:
 # ---------------------------------------------------------------------------
 
 _HL_API_URL = "https://api.hyperliquid.xyz/info"
-
-# Timeframe → milliseconds per candle (for calculating startTime)
-_TF_MS: Dict[str, int] = {
-    "4h": 4 * 3600 * 1000,
-    "1d": 86400 * 1000,
-    "1w": 7 * 86400 * 1000,
-}
 
 
 def _parse_hl_candles(candles: list) -> Optional[dict]:
@@ -950,9 +1101,21 @@ async def fetch_ohlcv(
 
     # Fetch from source
     data = None
+    source = SOURCE_HL
     from hyperliquid_universe import MARKETS
-    native_spot = MARKETS.get(symbol, {}).get("kind") == "spot"
-    if symbol in _ccxt_only and not native_spot:
+    # The Binance/Bybit fallback is for markets Hyperliquid does not have. For a Hyperliquid market
+    # (or a series already holding Hyperliquid bars) a failed read keeps the stored series: the
+    # fallback's bars are another instrument's, and its weeks start on Monday instead of Thursday,
+    # so merged in they corrupted the weekly band (two "weeks" per week, never replaced).
+    cex_allowed = (MARKETS.get(symbol, {}).get("kind") is None
+                   and _ohlcv_store.source(symbol, timeframe) != SOURCE_HL)
+    if not cex_allowed:
+        _ccxt_only.discard(symbol)
+    if symbol in _ccxt_only and cex_allowed:
+        source = SOURCE_CEX
+        is_incremental = not _ohlcv_store.needs_full_fetch(symbol, timeframe, SOURCE_CEX)
+        fetch_limit = (_ohlcv_store.bars_to_fetch(symbol, timeframe) if is_incremental
+                       else max(limit or 0, _DEFAULT_LIMIT.get(timeframe, 500)))
         data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
         if data is not None and not fallback_consistent(symbol, timeframe, data):
             # Back to Hyperliquid on the next call; keep the stored series meanwhile.
@@ -965,7 +1128,11 @@ async def fetch_ohlcv(
             # Hyperliquid is limiting this IP, not missing the market: keep the stored series
             # (no CEX fallback, which would also mark the symbol CCXT-only).
             return _ohlcv_store.get(symbol, timeframe)
-        if data is None and not native_spot:
+        if data is None and cex_allowed:
+            source = SOURCE_CEX
+            is_incremental = not _ohlcv_store.needs_full_fetch(symbol, timeframe, SOURCE_CEX)
+            fetch_limit = (_ohlcv_store.bars_to_fetch(symbol, timeframe) if is_incremental
+                           else max(limit or 0, _DEFAULT_LIMIT.get(timeframe, 500)))
             data = await _fetch_ohlcv_ccxt(symbol, timeframe, exchange_id, fetch_limit)
             if data is not None and not fallback_consistent(symbol, timeframe, data):
                 data = None
@@ -978,7 +1145,8 @@ async def fetch_ohlcv(
         return _ohlcv_store.get(symbol, timeframe)
 
     # Merge into persistent store
-    merged = _ohlcv_store.update(symbol, timeframe, data, full_fetch_target=fetch_limit if not is_incremental else None)
+    merged = _ohlcv_store.update(symbol, timeframe, data, full_fetch_target=fetch_limit if not is_incremental else None,
+                                 source=source)
 
     # Also put in TTL cache to prevent re-fetching within same scan cycle
     _cache.put(symbol, timeframe, merged)
@@ -1219,6 +1387,11 @@ async def fetch_batch(
                 continue
             if sym in deepened:
                 continue  # Already tried CCXT for this symbol+timeframe
+            # A Hyperliquid market takes fallback bars only as older 4h/1d history before its first
+            # Hyperliquid bar (OHLCVStore.update): not for a failed read, and never weekly.
+            hl_market = sym in MARKETS or _ohlcv_store.source(sym, timeframe) == SOURCE_HL
+            if hl_market and (timeframe == "1w" or sym not in results):
+                continue
             if sym not in results:
                 need_ccxt.append(sym)
             elif results[sym] is not None:
@@ -1239,7 +1412,8 @@ async def fetch_batch(
                     ccxt_count = len(data.get("close", []))
                     # Only replace if CCXT has more data
                     if ccxt_count > hl_count:
-                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=_DEFAULT_LIMIT.get(timeframe, 500))
+                        merged = _ohlcv_store.update(sym, timeframe, data, full_fetch_target=_DEFAULT_LIMIT.get(timeframe, 500),
+                                                     source=SOURCE_CEX)
                         _cache.put(sym, timeframe, merged)
                         results[sym] = merged
                         logger.info("CCXT deepened %s: %d → %d bars", sym, hl_count, ccxt_count)
@@ -1274,7 +1448,102 @@ def get_data_source_info() -> dict:
         "ccxt_only_symbols": sorted(list(_ccxt_only))[:20],
         "cache_entries": len(_cache),
         "ohlcv_store_entries": _ohlcv_store.count(),
+        # Bars a fresh read replaced or dropped, fallback bars kept out of Hyperliquid series, and
+        # the background check of stored series against Hyperliquid (verify_store).
+        "ohlcv_store_repairs": dict(_ohlcv_store.stats),
+        "ohlcv_store_full_reads_pending": len(_ohlcv_store._refetch),
+        "ohlcv_store_verification": dict(_verify_status),
     }
+
+
+# ---------------------------------------------------------------------------
+# Stored series checked against Hyperliquid
+# ---------------------------------------------------------------------------
+# Each stored Hyperliquid series is read in full once per VERIFY_INTERVAL_S and merged; the fetched
+# range is authoritative (OHLCVStore.update), so bars from another source or grid are dropped,
+# revised bars replaced and missing weeks filled. It runs in the background on the lowest-priority
+# share of the shared weight budget (hl_calls "cohorts"), weekly series first. The time of each
+# series' last check is saved with the store: a restart resumes where it stopped, and a checked
+# series is not read again before the interval, so the first pass after a deploy is the one-time
+# repair and later passes are the ongoing check.
+
+VERIFY_INTERVAL_S = 7 * 86400
+VERIFY_CONSUMER = "cohorts"
+_VERIFY_START_DELAY_S = 180      # after the first scan passes
+_VERIFY_IDLE_S = 3600
+_verify_status: Dict[str, object] = {"running": False, "checked": 0, "changed": 0, "due": 0,
+                                     "last_pass_at": None}
+
+
+def verify_due(now: Optional[float] = None) -> List[str]:
+    """Stored Hyperliquid-market series not checked within VERIFY_INTERVAL_S (weekly, then 1d, then 4h)."""
+    from hyperliquid_universe import MARKETS
+    now = time.time() if now is None else now
+    due = []
+    for tf in ("1w", "1d", "4h"):
+        for key in sorted(k for k in _ohlcv_store._store if k.endswith("|" + tf)):
+            symbol = key.partition("|")[0]
+            if _ohlcv_store.source(symbol, tf) != SOURCE_HL or MARKETS.get(symbol, {}).get("kind") is None:
+                continue
+            if now - _ohlcv_store._verified_at.get(key, 0.0) >= VERIFY_INTERVAL_S:
+                due.append(key)
+    return due
+
+
+async def verify_store(consumer: str = VERIFY_CONSUMER, max_series: Optional[int] = None) -> dict:
+    """One pass over the series due for a check. Returns {"checked", "changed", "due"}."""
+    keys = verify_due()
+    if max_series is not None:
+        keys = keys[:max_series]
+    checked = changed = 0
+    _verify_status.update(running=True, due=len(keys))
+    timeout = aiohttp.ClientTimeout(total=30)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for key in keys:
+                symbol, _, tf = key.partition("|")
+                stored = _ohlcv_store.get(symbol, tf)
+                if stored is None:
+                    continue
+                limit = max(len(stored["timestamp"]), _DEFAULT_LIMIT.get(tf, 500))
+                try:
+                    data = await _fetch_hl_candles(session, _hl_coin_name(symbol), tf, limit, consumer=consumer)
+                except HLRateLimited:
+                    break                               # the next pass resumes here
+                if data is None:
+                    continue
+                before = _ohlcv_store.stats["bars_revised"] + _ohlcv_store.stats["bars_dropped"]
+                n_before = len(stored["timestamp"])
+                merged = _ohlcv_store.update(symbol, tf, data, full_fetch_target=limit)
+                _ohlcv_store._verified_at[key] = time.time()
+                diff = (_ohlcv_store.stats["bars_revised"] + _ohlcv_store.stats["bars_dropped"] - before
+                        + max(0, len(merged["timestamp"]) - n_before))
+                checked += 1
+                if diff:
+                    changed += 1
+                    logger.info("Stored %s %s checked against Hyperliquid: %d bars replaced, dropped or added",
+                                symbol, tf, diff)
+                _verify_status.update(checked=_verify_status["checked"] + 1,
+                                      changed=_verify_status["changed"] + (1 if diff else 0))
+    finally:
+        _verify_status.update(running=False, last_pass_at=time.time())
+    if checked:
+        logger.info("OHLCVStore check against Hyperliquid: %d series read, %d changed", checked, changed)
+        _ohlcv_store.save_to_disk()
+    return {"checked": checked, "changed": changed, "due": len(keys)}
+
+
+async def run_store_verification() -> None:
+    """Background loop for verify_store (OHLCV_VERIFY_ENABLED=0 turns it off)."""
+    if os.environ.get("OHLCV_VERIFY_ENABLED", "1").lower() in ("0", "false", "no"):
+        return
+    await asyncio.sleep(_VERIFY_START_DELAY_S)
+    while True:
+        try:
+            await verify_store()
+        except Exception:
+            logger.warning("OHLCVStore check against Hyperliquid failed", exc_info=True)
+        await asyncio.sleep(_VERIFY_IDLE_S)
 
 
 # ---------------------------------------------------------------------------

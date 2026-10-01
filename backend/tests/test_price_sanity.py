@@ -93,12 +93,37 @@ def test_ticker_fallback_cannot_replace_the_hyperliquid_series():
     assert out is None and "PURR/USDT" not in pinned
 
 
-def test_consistent_fallback_still_works():
+def test_consistent_fallback_stays_out_of_a_hyperliquid_series():
+    # Even consistent exchange bars are another instrument's (and on 1w another week): a Hyperliquid
+    # market keeps its stored series when a read fails (data_fetcher, BMSB incident 2026-10-01).
     stored = series([0.13] * 30)
     same = series([0.1302, 0.1311], start=T0 + 28 * H4)
     out, pinned = _run_fetch("PURR/USDT", stored, None, same)
+    assert float(out["close"][-1]) == 0.13
+    assert "PURR/USDT" not in pinned
+
+
+def test_consistent_fallback_still_works_for_a_market_hyperliquid_does_not_list():
+    stored = series([0.13] * 30)
+    same = series([0.1302, 0.1311], start=T0 + 28 * H4)
+    store, cache = data_fetcher.OHLCVStore(), data_fetcher.DataCache()
+    store.update("XYZ/USDT", "4h", stored, source=data_fetcher.SOURCE_CEX)
+
+    async def hl(*a, **k):
+        return None
+
+    async def cex(*a, **k):
+        return same
+
+    only = set()
+    with patch.object(data_fetcher, "_ohlcv_store", store), patch.object(data_fetcher, "_cache", cache), \
+            patch.object(data_fetcher, "_ccxt_only", only), \
+            patch.object(data_fetcher, "_fetch_ohlcv_hyperliquid", hl), \
+            patch.object(data_fetcher, "_fetch_ohlcv_ccxt", cex), \
+            patch.dict(hyperliquid_universe.MARKETS, PURR_MARKET, clear=True):
+        out = asyncio.run(data_fetcher.fetch_ohlcv("XYZ/USDT", "4h"))
     assert float(out["close"][-1]) == 0.1311
-    assert "PURR/USDT" in pinned
+    assert "XYZ/USDT" in only
 
 
 def test_scan_row_price_is_guarded_and_flagged():
