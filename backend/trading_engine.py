@@ -15,7 +15,10 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, List, Optional
+
+from ticker_renames import hl_name, is_k_key, k_key
 
 logger = logging.getLogger(__name__)
 
@@ -270,10 +273,40 @@ class HyperliquidEngine(TradingEngine):
     # Helpers
     # ------------------------------------------------------------------
 
+    # The boundary with Hyperliquid: every order, close and leverage call leaves under
+    # Hyperliquid's name (the app's "KPEPE" is "kPEPE" there), and every position and fill
+    # read back is keyed by the app's name again (ticker_renames.k_key).
     @staticmethod
     def _coin(symbol: str) -> str:
-        """Convert scanner symbol 'BTC/USDT' → Hyperliquid coin 'BTC'."""
-        return symbol.split("/")[0]
+        """Scanner symbol -> Hyperliquid coin: 'BTC/USDT' -> 'BTC', 'KPEPE/USDT' -> 'kPEPE'."""
+        return hl_name(symbol.split("/")[0])
+
+    def _size_decimals(self, coin: str) -> int:
+        """szDecimals from Hyperliquid's meta for the coin as Hyperliquid names it ('kPEPE')."""
+        try:
+            return int(self._info.asset_to_sz_decimals[self._info.name_to_asset(coin)])
+        except Exception:
+            pass
+        try:
+            for u in (self._info.meta() or {}).get("universe", []):
+                if u.get("name") == coin:
+                    return int(u["szDecimals"])
+        except Exception as exc:
+            raise EngineError("order_failed", f"No size decimals for {coin}: {exc}") from exc
+        raise EngineError("order_failed", f"No size decimals for {coin}")
+
+    def _order_size(self, symbol: str, volume: float) -> float:
+        """The size sent to Hyperliquid. A k market's size is in k-units (1,000 tokens), as its
+        price is per 1,000 tokens, so volume = USD / price is already in k-units; it is floored
+        to the market's own szDecimals (kPEPE's, not PEPE's), which the executor's price-based
+        precision can exceed. Every other coin's size is sent as the executor computed it."""
+        if not is_k_key(symbol.split("/")[0]):
+            return volume
+        d = self._size_decimals(self._coin(symbol))
+        size = float(Decimal(str(volume)).quantize(Decimal(1).scaleb(-d), rounding=ROUND_DOWN))
+        if size <= 0:
+            raise EngineError("order_failed", f"Size {volume} rounds to zero for {self._coin(symbol)}")
+        return size
 
     def _next_order_id(self, hl_status: Optional[dict] = None) -> str:
         """Generate a local order ID, optionally enriched with HL response."""
@@ -334,6 +367,7 @@ class HyperliquidEngine(TradingEngine):
     def buy(self, symbol: str, volume: float, price: float, leverage: Optional[int] = None) -> dict:
         """Place a long / buy order on Hyperliquid."""
         coin = self._coin(symbol)
+        volume = self._order_size(symbol, volume)
         lev = leverage or self._default_leverage
         self._ensure_leverage(coin, lev)
 
@@ -361,6 +395,7 @@ class HyperliquidEngine(TradingEngine):
     def sell(self, symbol: str, volume: float, price: float, leverage: Optional[int] = None) -> dict:
         """Place a short / sell order on Hyperliquid."""
         coin = self._coin(symbol)
+        volume = self._order_size(symbol, volume)
         lev = leverage or self._default_leverage
         self._ensure_leverage(coin, lev)
 
@@ -431,7 +466,7 @@ class HyperliquidEngine(TradingEngine):
         positions = []
         for ap in state.get("assetPositions", []):
             pos = ap.get("position", {})
-            coin = pos.get("coin", "")
+            coin = k_key(pos.get("coin", ""))      # Hyperliquid's kPEPE is the app's KPEPE
             szi = float(pos.get("szi", 0.0))
             if abs(szi) < 1e-12:
                 continue
@@ -489,7 +524,7 @@ class HyperliquidEngine(TradingEngine):
         result = []
         for f in fills:
             result.append({
-                "coin": f.get("coin", ""),
+                "coin": k_key(f.get("coin", "")),
                 "side": f.get("side", ""),
                 "size": float(f.get("sz", 0)),
                 "price": float(f.get("px", 0)),
@@ -504,7 +539,8 @@ class HyperliquidEngine(TradingEngine):
         return result
 
     def set_leverage(self, coin: str, leverage: int, is_cross: bool = True) -> dict:
-        """Set leverage for a specific coin."""
+        """Set leverage for a specific coin ("KPEPE" is sent as Hyperliquid's "kPEPE")."""
+        coin = hl_name(coin)
         try:
             self._exchange.update_leverage(leverage, coin, is_cross=is_cross)
             self._leverage_cache[coin] = leverage

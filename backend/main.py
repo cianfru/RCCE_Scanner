@@ -2535,6 +2535,7 @@ async def trade_account(address: str = Query(..., min_length=10)):
 @app.get("/api/trade/positions")
 async def trade_positions(address: str = Query(..., min_length=10)):
     """Get current Hyperliquid positions for a wallet address."""
+    from ticker_renames import k_key
     try:
         info = _get_hl_info()
         state = await asyncio.to_thread(info.user_state, address)
@@ -2546,7 +2547,7 @@ async def trade_positions(address: str = Query(..., min_length=10)):
             if abs(szi) < 1e-12:
                 continue
             positions.append({
-                "coin": pos.get("coin", ""),
+                "coin": k_key(pos.get("coin", "")),          # Hyperliquid's kPEPE is the app's KPEPE
                 "side": "LONG" if szi > 0 else "SHORT",
                 "size": abs(szi),
                 "entry_price": float(pos.get("entryPx", 0)),
@@ -2568,13 +2569,14 @@ async def trade_fills(
     limit: int = Query(50, ge=1, le=500),
 ):
     """Get recent Hyperliquid fills for a wallet address."""
+    from ticker_renames import k_key
     try:
         info = _get_hl_info()
         raw_fills = await asyncio.to_thread(info.user_fills, address)
         fills = []
         for f in raw_fills[:limit]:
             fills.append({
-                "coin": f.get("coin", ""),
+                "coin": k_key(f.get("coin", "")),
                 "side": f.get("side", ""),
                 "price": float(f.get("px", 0)),
                 "size": float(f.get("sz", 0)),
@@ -2602,12 +2604,15 @@ async def trade_history():
 async def trade_log(body: TradeLogRequest):
     """Log a completed trade reported by the frontend wallet."""
     from manual_trader import get_trade_journal
+    from ticker_renames import k_key, k_symbol
     journal = get_trade_journal()
+    # Journal under the app's key, whichever name the client sent (KPEPE, not kPEPE).
+    body.symbol, body.coin = k_symbol(body.symbol), k_key(body.coin)
 
     # Capture scanner signal/regime at trade time
     signal_at_trade = ""
     regime_at_trade = ""
-    for r in (cache.results_4h or []):
+    for r in (cache.results.get("4h") or []):
         if r.get("symbol") == body.symbol:
             signal_at_trade = r.get("signal", "")
             regime_at_trade = r.get("regime", "")
@@ -2633,7 +2638,10 @@ async def trade_log(body: TradeLogRequest):
 async def trade_log_close(body: TradeCloseLogRequest):
     """Log a position closure reported by the frontend wallet."""
     from manual_trader import get_trade_journal
+    from ticker_renames import k_symbol
     journal = get_trade_journal()
+    # A close is reported from Hyperliquid's position (kPEPE): match the open trade's KPEPE/USDT.
+    body.symbol = k_symbol(body.symbol)
 
     trade = journal.log_close(
         symbol=body.symbol,

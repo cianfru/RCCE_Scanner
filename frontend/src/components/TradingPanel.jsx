@@ -19,6 +19,7 @@ import { watchToast } from "../utils/setupMap.js";
 import { sideColor, shortAddr } from "../utils/traderFormat.js";
 import WalletTag from "./WalletTag.jsx";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
+import { kKey } from "../utils/tickerRenames.js";
 import { apiFetch } from "../edge.js";
 
 // ---------------------------------------------------------------------------
@@ -320,7 +321,7 @@ function PortfolioChart({ portfolio, period, onPeriodChange, mode, onModeChange,
 function liqDistance(ap, scanMap4h) {
   const p = ap.position || ap;
   const liqPx = p.liquidationPx ? parseNum(p.liquidationPx) : null;
-  const price = scanMap4h[p.coin]?.price;
+  const price = scanMap4h[kKey(p.coin)]?.price;
   return liqPx && price ? Math.abs(price - liqPx) / price * 100 : null;
 }
 
@@ -336,7 +337,7 @@ function ScannerCheck({ positions, scanMap4h }) {
   if (positions.length === 0 || Object.keys(scanMap4h).length === 0) return null;
   const rows = positions.map(ap => {
     const isLong = parseNum(ap.position?.szi ?? ap.szi) > 0;
-    const ctx = scanMap4h[(ap.position || ap).coin];
+    const ctx = scanMap4h[kKey((ap.position || ap).coin)];
     return { ctx, alignment: ctx ? computeAlignment(ctx.signal, isLong) : null };
   });
   const covered    = rows.filter(r => r.ctx);
@@ -420,7 +421,8 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
   const side = isLong ? "long" : "short";
 
   const p = pos.position || pos;
-  const coin = p.coin;
+  const coin = p.coin;             // Hyperliquid's name (kPEPE): what a close is sent under
+  const appKey = kKey(coin);       // the app's key (KPEPE): scan rows, warnings, the watch list
   const leverage = p.leverage?.value ?? "?";
   const leverageType = p.leverage?.type === "isolated" ? "isolated" : "cross";
   const entryPx = parseNum(p.entryPx);
@@ -431,8 +433,8 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
   const marginUsed = parseNum(p.marginUsed);
   const fundingSinceOpen = parseNum(p.cumFunding?.sinceOpen);
 
-  const ctx4h = scanMap4h[coin];
-  const ctx1d = scanMap1d[coin];
+  const ctx4h = scanMap4h[appKey];
+  const ctx1d = scanMap1d[appKey];
   const liqDistPct = liqDistance(pos, scanMap4h);
   const liqDanger = liqDistPct !== null && liqDistPct < 15;
   const liqTone = liqDistPct !== null && liqDistPct < 8 ? T.loss : T.yellow;
@@ -440,7 +442,7 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
   // The card's flag: a left edge in the verdict's colour when the scanner takes a side.
   const flag = alignment === "ALIGNED" ? T.profit : alignment === "CONFLICTING" ? T.loss : null;
 
-  const coinWarnings = (posWarnings || []).filter(w => w.symbol === coin || w.symbol === `${coin}/USDT`);
+  const coinWarnings = (posWarnings || []).filter(w => w.symbol === appKey || w.symbol === `${appKey}/USDT`);
 
   return (
     <div className="pf-card" style={flag ? { boxShadow: `inset 2px 0 color-mix(in srgb, ${flag} 55%, transparent)` } : undefined} data-coin={coin}>
@@ -478,7 +480,7 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
         ))}
         <div className="pf-card-actions">
           <Link className="te-link" to={`/radar?tf=4h&focus=${encodeURIComponent(coin)}`}>Open on Radar</Link>
-          <button type="button" className="te-link pf-watch" aria-pressed={watching} title={WATCH_TIP} onClick={() => onWatch(coin)}>
+          <button type="button" className="te-link pf-watch" aria-pressed={watching} title={WATCH_TIP} onClick={() => onWatch(appKey)}>
             <WatchMark />{watching ? "Watching" : "Watch"}
           </button>
           {!readOnly && (
@@ -699,7 +701,7 @@ export default function TradingPanel({ api }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            symbol: `${coin}/USDT`,
+            symbol: `${kKey(coin)}/USDT`,
             exit_price: result.avgPx,
             close_order_id: String(result.oid || ""),
           }),
@@ -933,7 +935,7 @@ export default function TradingPanel({ api }) {
                 scanMap4h={scanMap4h}
                 scanMap1d={scanMap1d}
                 posWarnings={posWarnings}
-                watching={watched.has(ap.position?.coin || ap.coin)}
+                watching={watched.has(kKey(ap.position?.coin || ap.coin))}
                 onWatch={onWatch}
                 notice={noticeCardShown && positionsNotice.coin === (ap.position?.coin || ap.coin) ? positionsNotice : null}
                 onDismissNotice={dismissNotice}

@@ -19,6 +19,8 @@ from typing import Dict, List, Optional
 
 import aiohttp
 
+from ticker_renames import k_key
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -374,8 +376,8 @@ def parse_open_positions(clearinghouse: dict) -> List[dict]:
         lev = float(leverage_val.get("value", 1)) if isinstance(leverage_val, dict) else float(leverage_val or 1)
 
         positions.append({
-            "coin": coin,
-            "symbol": f"{coin}/USDT",
+            "coin": coin,                                   # Hyperliquid's name (kPEPE)
+            "symbol": f"{k_key(coin)}/USDT",                # the scan row's key (KPEPE/USDT)
             "side": "LONG" if szi > 0 else "SHORT",
             "size": abs(szi),
             "size_usd": abs(szi) * entry_px,

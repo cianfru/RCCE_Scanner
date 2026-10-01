@@ -72,6 +72,14 @@ def hl_name(coin: str) -> str:
     return "k" + coin[1:] if is_k_key(coin) else coin
 
 
+def k_symbol(symbol: str) -> str:
+    """The app's symbol for one built from a Hyperliquid name: "kPEPE/USDT" -> "KPEPE/USDT"."""
+    if not isinstance(symbol, str):
+        return symbol
+    base, sep, rest = symbol.partition("/")
+    return k_key(base) + sep + rest
+
+
 def current_coin(coin: str) -> str:
     """The current ticker for a bare coin ("MATIC" -> "POL"); anything else unchanged."""
     return RENAMED.get(coin, coin) if isinstance(coin, str) else coin
