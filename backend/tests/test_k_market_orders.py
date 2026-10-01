@@ -106,8 +106,8 @@ def test_close_and_leverage_leave_as_kpepe():
 
 def test_normal_coins_are_unchanged():
     eng = fake_engine()
-    eng.buy("BTC/USDT", 0.01234567, 81000.0, leverage=3)
-    assert eng._exchange.orders[-1] == {"coin": "BTC", "a": INDEX["BTC"], "b": True, "s": 0.01234567, "r": False}
+    eng.buy("BTC/USDT", 0.01234567, 81000.0, leverage=3)       # floored to BTC's szDecimals (5)
+    assert eng._exchange.orders[-1] == {"coin": "BTC", "a": INDEX["BTC"], "b": True, "s": 0.01234, "r": False}
     eng.close_position("BTC/USDT")
     assert eng._exchange.closes[-1]["coin"] == "BTC"
     # The legacy per-token BONK stays BONK, separate from the k market.
