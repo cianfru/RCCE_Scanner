@@ -131,6 +131,7 @@ _EXCHANGE_READS = re.compile(
     r"|trade/(account|positions|fills|history)"
     r"|chart/.+"
     r"|positioning/cross-exchange/.+"
+    r"|options/surface/.+"
     r"|perpetuals/hyperliquid(/debug)?"
     r"|hyperlens/entries/.+"
     r"|hyperlens/follows/check/.+"

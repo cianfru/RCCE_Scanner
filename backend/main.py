@@ -1192,6 +1192,14 @@ _cross_exchange_cache: Dict[str, tuple] = {}  # symbol -> (expires_at, payload)
 _CROSS_EXCHANGE_TTL_S = 60
 
 
+@app.get("/api/options/surface/{symbol:path}")
+async def options_surface(symbol: str):
+    """Derive's implied volatility for a recorded coin (BTC, ETH), from derive_scan.
+    ``{"available": false}`` for other coins or when derive_scan is not configured."""
+    import options_surface as osf
+    return await osf.surface_for(symbol)
+
+
 @app.get("/api/positioning/cross-exchange/{symbol:path}")
 async def cross_exchange_positioning(symbol: str):
     """Return funding rate + open interest for a symbol across Binance,
