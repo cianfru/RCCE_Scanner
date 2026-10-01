@@ -26,6 +26,10 @@ Switches (Railway variables):
     EDGE_SWR_S=30            serve a copy this much longer while the CDN refetches it
     EDGE_STALE_IF_ERROR_S=600  serve the last copy this long when the API errors
     EDGE_KEY_WINDOW_S=21600  how long one key is issued for
+    EDGE_PUBLIC_TTL_S=300    CDN lifetime of the public landing payloads
+
+The landing's public payloads (PUBLIC_PATHS) need no key: they are public by design and
+the same for everyone, so they are always marked cacheable, whatever EDGE_CACHE says.
 """
 from __future__ import annotations
 
@@ -55,6 +59,9 @@ EDGE_PATHS = frozenset({
     "/api/sectors",
 })
 
+# Public by design (access.PUBLIC_PREFIXES) and the same for every visitor: no key needed.
+PUBLIC_PATHS = frozenset({"/api/public/preview", "/api/public/landing"})
+
 LEVEL = "member"          # the one access level there is today
 
 
@@ -80,6 +87,11 @@ def window() -> int:
 def cdn_cache_control() -> str:
     return (f"max-age={ttl()}, stale-while-revalidate={_int_env('EDGE_SWR_S', 30)}, "
             f"stale-if-error={_int_env('EDGE_STALE_IF_ERROR_S', 600)}")
+
+
+def public_cdn_cache_control() -> str:
+    t = max(1, _int_env("EDGE_PUBLIC_TTL_S", 300))
+    return f"max-age={t}, stale-while-revalidate={2 * t}, stale-if-error=86400"
 
 
 def _key_for(level: str, slot: int) -> str:
@@ -149,15 +161,24 @@ def _query(scope) -> dict:
     return {k: v[-1] for k, v in qs.items()}
 
 
+def is_public_request(method: str, path: str) -> bool:
+    return method.upper() == "GET" and path in PUBLIC_PATHS
+
+
 class EdgeCacheMiddleware:
     def __init__(self, app) -> None:
         self.app = app
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope.get("type") != "http" or not is_edge_request(
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        public = is_public_request(scope.get("method", ""), scope.get("path", ""))
+        if not public and not is_edge_request(
                 scope.get("method", ""), scope.get("path", ""), _Headers(scope.get("headers")), _query(scope)):
             await self.app(scope, receive, send)
             return
+        lifetime = public_cdn_cache_control() if public else cdn_cache_control()
 
         async def send_wrapper(message) -> None:
             if message["type"] == "http.response.start" and message.get("status") == 200:
@@ -169,7 +190,7 @@ class EdgeCacheMiddleware:
                                if k.lower() not in (b"cache-control", b"cdn-cache-control")]
                     headers += [
                         (b"cache-control", b"max-age=0, must-revalidate"),
-                        (b"cdn-cache-control", cdn_cache_control().encode("latin-1")),
+                        (b"cdn-cache-control", lifetime.encode("latin-1")),
                         (b"vercel-cache-tag", b"reflex-api"),
                     ]
                     message = {**message, "headers": headers}
