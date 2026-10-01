@@ -341,6 +341,15 @@ def _load() -> None:
         _watch = json.loads(_FILE.read_text())
     except Exception:
         _watch = {}
+    if not isinstance(_watch, dict):
+        _watch = {}
+    # Coins watched under a ticker Hyperliquid has since renamed move to the current name (once:
+    # the file is saved renamed). A coin watched under both names keeps the current entry.
+    from ticker_renames import rename_keys
+    _watch, n = rename_keys(_watch)
+    if n:
+        logger.info("setup map: %d watched coins moved to their current tickers", n)
+        _save()
 
 
 def _save() -> None:
@@ -357,7 +366,9 @@ def watched() -> Dict[str, dict]:
 
 
 def watch(coin: str, tf: str) -> bool:
+    from ticker_renames import current_coin
     _load()
+    coin = current_coin(coin)
     if coin not in _watch and len(_watch) >= MAX_WATCHED:
         return False
     _watch[coin] = {"tf": tf if tf in TF_S else "1d", "added": time.time(), "state": None}
@@ -366,7 +377,9 @@ def watch(coin: str, tf: str) -> bool:
 
 
 def unwatch(coin: str) -> None:
+    from ticker_renames import current_coin
     _load()
+    coin = current_coin(coin)
     if _watch.pop(coin, None) is not None:
         _save()
 

@@ -447,14 +447,14 @@ export const MCAP_RANK = {
   // 11-20
   "TON/USDT": 11, "SUI/USDT": 12, "HBAR/USDT": 13, "DOT/USDT": 14,
   "NEAR/USDT": 15, "ICP/USDT": 16, "UNI/USDT": 17, "APT/USDT": 18,
-  "RNDR/USDT": 19, "FET/USDT": 20,
+  "RENDER/USDT": 19, "FET/USDT": 20,
   // 21-30
   "TAO/USDT": 21,  "ATOM/USDT": 22, "STX/USDT": 23, "FIL/USDT": 24,
   "OP/USDT": 25,   "ARB/USDT": 26,  "INJ/USDT": 27, "AAVE/USDT": 28,
   "VET/USDT": 29,  "IMX/USDT": 30,
   // 31-40
   "MKR/USDT": 31,  "GRT/USDT": 32,  "SEI/USDT": 33, "TIA/USDT": 34,
-  "WLD/USDT": 35,  "LDO/USDT": 36,  "FTM/USDT": 37, "ALGO/USDT": 38,
+  "WLD/USDT": 35,  "LDO/USDT": 36,  "S/USDT": 37, "ALGO/USDT": 38,
   "RUNE/USDT": 39, "SHIB/USDT": 40,
   // 41-50
   "PEPE/USDT": 41, "DYDX/USDT": 42, "ENS/USDT": 43, "WIF/USDT": 44,
@@ -465,7 +465,7 @@ export const MCAP_RANK = {
   "COMP/USDT": 55, "OCEAN/USDT": 56, "SAND/USDT": 57, "MANA/USDT": 58,
   "AXS/USDT": 59,  "CAKE/USDT": 60,
   // 61-70
-  "GMT/USDT": 61,  "GALA/USDT": 62, "W/USDT": 63,   "MATIC/USDT": 64,
+  "GMT/USDT": 61,  "GALA/USDT": 62, "W/USDT": 63,   "POL/USDT": 64,
   "MEME/USDT": 65,
   // BTC pairs (same rank as USDT)
   "ETH/BTC": 2,  "SOL/BTC": 4,  "XRP/BTC": 5,  "ADA/BTC": 7,

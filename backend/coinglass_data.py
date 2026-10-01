@@ -90,7 +90,7 @@ _MIN_REQUEST_GAP_S   = 4.5           # ~13 req/min (conservative, avoids 429s)
 _PRIORITY_COINS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
     "ADA/USDT", "DOGE/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
-    "MATIC/USDT", "UNI/USDT", "ATOM/USDT", "LTC/USDT", "NEAR/USDT",
+    "POL/USDT", "UNI/USDT", "ATOM/USDT", "LTC/USDT", "NEAR/USDT",
     "ARB/USDT", "OP/USDT", "SUI/USDT", "APT/USDT", "HYPE/USDT",
 ]
 

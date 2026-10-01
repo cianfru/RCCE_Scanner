@@ -27,7 +27,7 @@ from backtest.larsson_study import HOLDOUT, RUNS_DIR, _compute_bmsb_filter, _wee
 from backtest.live_logic_check import score
 from backtest.live_logic_replay import DATA_END, DATA_START, FIELDS, _fear_greed
 from backtest.sector_momentum_study import END, START, _load, _pair
-from sectors import _S
+from sectors import STUDY_S as _S
 
 PER_SECTOR = 4
 LISTED_BEFORE = "2022-07-01"

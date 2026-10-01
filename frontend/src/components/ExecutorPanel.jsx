@@ -8,6 +8,7 @@ import useScrollEdges, { fadeAttrs } from "../hooks/useScrollEdges.js";
 import { T, SIGNAL_META } from "../theme.js";
 import { getAdminKey } from "../auth.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
+import { currentSymbol } from "../utils/tickerRenames.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -220,17 +221,20 @@ function PositionRow({ pos, expanded, onToggle }) {
   const unrealizedPnl = pos.unrealized_pnl_pct;
   const confluence = confluenceLabel(pos.confluence_at_entry);
   const num = { ...cellStyle, textAlign: "right" };
+  // A position opened under a ticker Hyperliquid has since renamed shows the current name; the
+  // executor's own record keeps the name it was opened under (closed trades too).
+  const shown = currentSymbol(pos.symbol);
 
   return (
     <>
       <tr>
         <td style={{ ...cellStyle, fontWeight: 700, color: T.text1 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <TokenLogo symbol={pos.symbol} size={18} fallback="ring" />
+          <TokenLogo symbol={shown} size={18} fallback="ring" />
           <button type="button" onClick={onToggle} aria-expanded={expanded}
-            title="Show price source and entry rationale"
+            title={shown === pos.symbol ? "Show price source and entry rationale" : `Show price source and entry rationale (opened as ${pos.symbol})`}
             style={{ background: "transparent", border: 0, padding: 0, font: "inherit", color: "inherit", cursor: "pointer", borderBottom: `1px dotted ${T.text3}` }}>
-            {pos.symbol.replace("/USDT", "")}
+            {shown.replace("/USDT", "")}
           </button>
           </span>
           {pos.side === "SHORT" && <span style={{ ...S.label, marginLeft: 8, color: T.red }}>Short</span>}

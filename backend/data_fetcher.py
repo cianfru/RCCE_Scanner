@@ -57,7 +57,7 @@ DEFAULT_SYMBOLS: List[str] = [
     # Meme
     "DOGE/USDT", "PEPE/USDT", "WIF/USDT",
     # AI / Compute
-    "FET/USDT", "RNDR/USDT", "TAO/USDT",
+    "FET/USDT", "RENDER/USDT", "TAO/USDT",
     # DeFi
     "AAVE/USDT", "RUNE/USDT",
     # Infra
@@ -71,7 +71,7 @@ DEFAULT_SYMBOLS: List[str] = [
 FULL_SYMBOLS: List[str] = [
     # Large caps
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "MATIC/USDT",
+    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "POL/USDT",
     "NEAR/USDT", "UNI/USDT", "ATOM/USDT", "FIL/USDT", "APT/USDT",
     # L2 / New L1
     "ARB/USDT", "OP/USDT", "SUI/USDT", "SEI/USDT", "INJ/USDT",
@@ -80,13 +80,13 @@ FULL_SYMBOLS: List[str] = [
     "DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
     "FLOKI/USDT", "MEME/USDT",
     # AI / Compute
-    "FET/USDT", "RNDR/USDT", "TAO/USDT",
+    "FET/USDT", "RENDER/USDT", "TAO/USDT",
     # DeFi
     "AAVE/USDT", "SKY/USDT", "LDO/USDT", "CRV/USDT", "SNX/USDT",
     "COMP/USDT", "RUNE/USDT",
     # Infrastructure / Misc
     "STX/USDT", "ICP/USDT", "HBAR/USDT", "VET/USDT", "ALGO/USDT",
-    "FTM/USDT", "SAND/USDT", "MANA/USDT", "AXS/USDT", "GMT/USDT",
+    "S/USDT", "SAND/USDT", "MANA/USDT", "AXS/USDT", "GMT/USDT",
     "IMX/USDT", "GALA/USDT",
     # Newer listings
     "BLUR/USDT", "JTO/USDT", "JUP/USDT", "PYTH/USDT", "W/USDT",
@@ -180,16 +180,14 @@ async def _ensure_binance_symbols() -> set:
         _binance_symbols = set()
         return _binance_symbols
 
-# Hyperliquid coin name mapping — handles rebrands and HL-specific names.
-# Key: CCXT base (from "BASE/USDT"), Value: HL coin name.
+# Hyperliquid coin name mapping for its "k" (thousand-unit) markets.
+# Key: CCXT base (from "BASE/USDT"), Value: HL coin name. Renamed tickers (MATIC, RNDR, FTM)
+# are keyed by their current names everywhere (ticker_renames.py), so they need no entry.
 _HL_COIN_MAP: Dict[str, str] = {
-    "MATIC": "POL",       # Polygon rebrand
     "SHIB":  "kSHIB",     # HL uses kSHIB
     "PEPE":  "kPEPE",     # HL uses kPEPE
     "BONK":  "kBONK",     # HL uses kBONK
     "FLOKI": "kFLOKI",    # HL uses kFLOKI
-    "RNDR":  "RENDER",    # Render rebrand
-    "FTM":   "S",         # Sonic rebrand
 }
 
 
@@ -484,9 +482,31 @@ class OHLCVStore:
             self._history_targets = payload.get("history_targets", {})
             age_secs = time.time() - saved_at
 
+            # Markets Hyperliquid renamed (ticker_renames): series stored under the old name
+            # load under the current one; when both are stored the current one is kept.
+            from ticker_renames import current_symbol
+            renamed_keys = {}
+            for key in store_data:
+                sym, sep, rest = key.partition("|")
+                new_key = f"{current_symbol(sym)}{sep}{rest}"
+                if new_key != key:
+                    renamed_keys[key] = new_key
+                    target = self._history_targets.pop(key, None)
+                    if target is not None and new_key not in store_data:
+                        self._history_targets[new_key] = target
+            if renamed_keys:
+                logger.info("OHLCVStore: %d series stored under renamed tickers load under their current names",
+                            len(renamed_keys))
+
             loaded = 0
             skipped = 0
             for key, ohlcv_lists in store_data.items():
+                stored_key = key
+                if key in renamed_keys:
+                    if renamed_keys[key] in store_data:
+                        skipped += 1
+                        continue
+                    key = renamed_keys[key]
                 # Determine timeframe from key ("SYMBOL|TF")
                 parts = key.split("|")
                 if len(parts) != 2:
@@ -535,7 +555,7 @@ class OHLCVStore:
                             continue
 
                 self._store[key] = ohlcv
-                observed_at = payload.get("observed_at", {}).get(key, saved_at)
+                observed_at = payload.get("observed_at", {}).get(stored_key, saved_at)
                 self._updated_at[key] = time.monotonic() - max(0, time.time() - observed_at)
                 loaded += 1
 

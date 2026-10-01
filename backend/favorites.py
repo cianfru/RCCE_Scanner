@@ -44,7 +44,15 @@ def load() -> None:
     try:
         if _FAVORITES_PATH.exists():
             raw = json.loads(_FAVORITES_PATH.read_text())
-            _favorites = set(raw) if isinstance(raw, list) else set()
+            raw = raw if isinstance(raw, list) else []
+            # Symbols starred under a ticker Hyperliquid has since renamed move to the current
+            # name (once: the file is saved renamed).
+            from ticker_renames import rename_list
+            current, renamed = rename_list(raw)
+            _favorites = set(current)
+            if renamed:
+                save()
+                logger.info("Favorites: %d symbols moved to their current tickers", renamed)
             logger.info("Favorites loaded: %d symbols", len(_favorites))
     except Exception as e:
         logger.warning("Could not load favorites: %s", e)
@@ -95,10 +103,11 @@ def toggle(symbol: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _normalise(symbol: str) -> str:
+    from ticker_renames import current_symbol
     sym = symbol.upper().replace("-", "/").strip()
     if "/" not in sym:
         sym = f"{sym}/USDT"
-    return sym
+    return current_symbol(sym)
 
 
 # Load on import so position_monitor / main can use get() immediately

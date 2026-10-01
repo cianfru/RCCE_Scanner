@@ -193,6 +193,13 @@ async def lifespan(app: FastAPI):
     import concurrent.futures
     asyncio.get_running_loop().set_default_executor(
         concurrent.futures.ThreadPoolExecutor(max_workers=int(os.environ.get("IO_WORKERS", "4")), thread_name_prefix="io"))
+    # Records stored under tickers Hyperliquid renamed (FTM, MATIC, RNDR) move to the current
+    # names before anything reads them; once per store, see ticker_renames.py.
+    try:
+        import ticker_renames
+        await asyncio.to_thread(ticker_renames.migrate_stores)
+    except Exception as e:
+        logger.warning("Ticker rename migration failed (non-fatal): %s", e)
     from hyperliquid_universe import refresh, run_refresh
     await refresh(cache)
     asyncio.create_task(run_refresh(cache))
@@ -4626,13 +4633,16 @@ async def setup_map_mine(address: Optional[str] = Query(None, pattern="^0x[0-9a-
         return {"source": "address", "positions": out}
     from executor import get_executor
     from hl_intelligence import _normalize_coin
+    from ticker_renames import current_coin
     ex = get_executor()
     if ex:
         status = await ex.get_status()
         for sym, p in (status.get("positions") or {}).items():
             if not sym.endswith("/USDT"):
                 continue
-            out.append({"coin": _normalize_coin(sym), "side": str(p.get("side", "")).lower(), "entry": p.get("entry_price"),
+            # Display only: a position the executor opened under a since-renamed ticker marks the
+            # coin under its current name; the executor's record is left as it is.
+            out.append({"coin": current_coin(_normalize_coin(sym)), "side": str(p.get("side", "")).lower(), "entry": p.get("entry_price"),
                         "usd": round(p.get("cost_usd") or 0)})
     return {"source": "executor", "positions": out}
 

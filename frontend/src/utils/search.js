@@ -2,6 +2,7 @@
 // scanner rows, Hyperliquid's market contexts, the Radar's setup map and the trader list.
 import { coinName } from "../data/coinNames.js";
 import { codename } from "./walletName.js";
+import { currentSymbol } from "./tickerRenames.js";
 
 export const isFullAddress = v => /^0x[0-9a-f]{40}$/i.test(String(v || "").trim());
 
@@ -140,6 +141,9 @@ export function radarStatus(c) {
 // Typo matches are a fallback: they show only when nothing matches as typed ("bitcon" finds
 // Bitcoin, but "bitcoin" does not also bring Litecoin).
 export function searchCoins(query, entries, limit = 6) {
+  // A renamed ticker typed in full ("matic") finds the coin under its current name (POL).
+  const old = String(query || "").trim().toUpperCase();
+  if (currentSymbol(old) !== old) query = currentSymbol(old);
   let hits = [];
   for (const e of entries) {
     const tier = coinTier(query, e.ticker, e.name);
