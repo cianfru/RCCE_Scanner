@@ -1,37 +1,32 @@
 import "./auth.js";   // installs the API token before anything fetches
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ThemeProvider } from "./ThemeContext";
-import { WalletProvider } from "./WalletContext";
-import AuthGate from "./components/AuthGate";
 import ErrorBoundary from "./components/ErrorBoundary";
-import App from "./App";
 import { RefinedLanding } from "./landing/RefinedLanding.tsx";
+
+// The app (and its socket and shared worker) loads only on the gated routes.
+const GatedApp = lazy(() => import("./GatedApp.jsx"));
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <ErrorBoundary>
-          <Routes>
-            {/* Public marketing landing */}
-            <Route path="/" element={<RefinedLanding />} />
-            <Route path="/onchain" element={<Navigate to="/scanner" replace />} />
-            {/* The scanner app (gated) — /scanner, /scanner/:symbol, etc. */}
-            <Route
-              path="/*"
-              element={
-                <AuthGate>
-                  <WalletProvider>
-                    <App />
-                  </WalletProvider>
-                </AuthGate>
-              }
-            />
-          </Routes>
-        </ErrorBoundary>
-      </ThemeProvider>
+      <ErrorBoundary>
+        <Routes>
+          {/* Public marketing landing */}
+          <Route path="/" element={<RefinedLanding />} />
+          <Route path="/onchain" element={<Navigate to="/scanner" replace />} />
+          {/* The scanner app (gated): /scanner, /scanner/:symbol, etc. */}
+          <Route
+            path="/*"
+            element={
+              <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--t-bg, #04060C)" }} />}>
+                <GatedApp />
+              </Suspense>
+            }
+          />
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   </React.StrictMode>
 );

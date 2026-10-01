@@ -83,7 +83,7 @@ export default function BMSBChart({
   traderApi = null,          // ref the chart fills with {showEntries} for the page's traders card
   showSetup = true,          // false where the page header already shows the regime and signal (coin page)
   myEntry = null,            // {price, side}: the shared address's open trade, drawn as a dashed "Your entry" line
-  toolbarAction = null,      // an extra control at the start of the toolbar's right cluster (the coin page's "Ask AI")
+  toolbarAction = null,      // an extra control at the start of the toolbar's right cluster
   // Compact mode (trader profile): candles and volume only, a slim toolbar, one trader's fills.
   compact = false,
   fills = null,              // classified fills (/api/traders/{address}/fills), drawn as marks at their price

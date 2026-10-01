@@ -21,7 +21,6 @@ const NAV_SECTIONS = [
     items: [
       { key: "backtest", label: "Backtest", desc: "Strategy backtesting" },
       { key: "executor", label: "Executor", desc: "Signal execution engine" },
-      { key: "chat", label: "AI Assist", desc: "Explain the scanner’s market data · limited daily use" },
     ],
   },
 ];
@@ -250,7 +249,7 @@ export default function NavDrawer({ isOpen, onClose, activeTab, onTabChange, isM
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <img src="/brand/reflex-ribbon-transparent.svg" width={24} height={24} alt="" />
+            <img src="/brand/reflex-mark.webp" width={24} height={24} alt="" style={{ objectFit: "contain" }} />
             <span style={{
               fontFamily: T.font, fontSize: 15, fontWeight: 700,
               color: T.text1, letterSpacing: "-0.01em",

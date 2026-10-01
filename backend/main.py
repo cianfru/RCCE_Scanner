@@ -3987,9 +3987,6 @@ async def auth_status():
     return {"enforced": access.enforced()}
 
 
-_PREVIEW_COINS = {"BTC", "ETH", "SOL", "HYPE", "LINK"}
-
-
 _SECTOR_SERIES_CACHE: Dict[tuple, dict] = {}
 
 
@@ -4013,10 +4010,9 @@ async def sectors_view(days: int = Query(90, ge=7, le=180), history: str = Query
 
 @app.get("/api/public/preview")
 async def public_preview(timeframe: str = Query("1d", description="4h or 1d")):
-    """The landing page's live preview: five large markets only, public by design."""
-    rows = [r for r in cache.get_results(timeframe if timeframe in ("4h", "1d") else "1d")
-            if str(r.get("symbol", "")).split("/")[0] in _PREVIEW_COINS]
-    return {"results": rows}
+    """The landing page's live preview: five large markets, the fields the landing shows, public by design."""
+    from public_preview import preview_rows
+    return {"results": preview_rows(cache.get_results(timeframe if timeframe in ("4h", "1d") else "1d"))}
 
 
 @app.get("/health")

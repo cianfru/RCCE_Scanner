@@ -24,7 +24,10 @@ Fetching, one wallet at a time on this module's own share of Hyperliquid's per-I
 
 Weight: 20 per request plus 1 per 20 fills returned. The store has WEIGHT_PER_MIN (300) of the
 1,200 a minute; the backfill may use at most BACKFILL_WEIGHT_PER_MIN (240) of it, so the
-incremental reads always have room, and pauses during the quiet window after each 4-hour close.
+incremental reads always have room. The backfill waits BACKFILL_AFTER_START_S (10 min) after a
+start, while the scanner loads every market's candles, and pauses during the quiet window after
+each 4-hour close. Every page read is saved with its cursor at once, so a read cut short (a 429,
+a timeout, a restart) resumes where it stopped instead of starting the wallet again.
 
 Wallets not on the roster (a pasted address) are read live in trader_profile, shared between
 viewers for a few minutes, and at most LIVE_LOADS_PER_MIN such reads a minute across all users;
@@ -61,6 +64,7 @@ MIN_RESYNC_S = 60               # a change or view read is skipped when the wall
 OFF_ROSTER_DAYS = 7
 MAINTAIN_EVERY_S = 6 * 3600
 START_DELAY_S = 60
+BACKFILL_AFTER_START_S = int(os.environ.get("FILLS_BACKFILL_AFTER_START_S", "600"))  # skip the startup candle burst
 PAGE = 2000                     # fills per answer (Hyperliquid's cap)
 HL_RECENT_CAP = 10_000          # Hyperliquid serves a wallet's latest 10,000 fills by time
 MAX_PAGES = 8                   # per request type per read; the rest continues at the next read
@@ -222,6 +226,12 @@ class Store:
                 return self.db.execute("SELECT COALESCE(SUM(n), 0) FROM wallets").fetchone()[0]
             return self.db.execute("SELECT COUNT(*) FROM fills WHERE wallet = ?", (wid,)).fetchone()[0]
 
+    def regular_span(self, wid: int) -> Tuple[int, Optional[int]]:
+        """(regular fills stored, time of the earliest)."""
+        with self.lock:
+            return tuple(self.db.execute("SELECT COUNT(*), MIN(time) FROM fills WHERE wallet = ? AND twap = 0",
+                                         (wid,)).fetchone())
+
     def trim(self, wid: int, keep: int) -> Tuple[int, Optional[int]]:
         """Keep the newest ``keep`` fills (and any sharing the oldest kept millisecond).
         Returns (deleted, time of the oldest kept fill) or (0, None) when under the cap."""
@@ -315,6 +325,11 @@ live_limiter = LiveLimiter(LIVE_LOADS_PER_MIN)
 _weight_log: Deque[Tuple[float, int, bool]] = collections.deque()    # (t, weight, backfill), last hour
 _stats = {"syncs": collections.Counter(), "errors": 0, "last_error": None, "new_fills": 0,
           "backfill_weight": 0, "backfilled_now": 0}
+_started_at: Optional[float] = None       # when run_forever started (None: not running in this process)
+_state = "not started"                    # what the reader is doing, for the status
+_current: Optional[dict] = None           # the read in progress: wallet, reason, pages, fills, weight
+_last_attempt: Optional[dict] = None      # the last read that ended, successfully or not
+_last_exception: Optional[dict] = None
 
 
 def _spent(weight: int, backfill: bool) -> None:
@@ -358,6 +373,11 @@ async def _post(session, body: dict, backfill: bool) -> list:
             await b.take(extra)
         hl_calls.record_weight(body["type"], extra)
     _spent(CALL_WEIGHT + extra, backfill)
+    if _current is not None:
+        _current["pages"] += 1
+        _current["fills_read"] += len(data)
+        _current["weight"] += CALL_WEIGHT + extra
+        _current["last_page_at"] = time.time()
     return data
 
 
@@ -406,23 +426,37 @@ async def sync(session, address: str, reason: str) -> int:
     now_ms = int(now * 1000)
     since_ms = int((now - RETENTION_DAYS * 86400) * 1000)
     added = 0
-    covered = w["covered_from"]
+    covered = max(since_ms / 1000, w["covered_from"] or 0) if backfill else w["covered_from"]
 
     async def store_page(fs, twap):
         nonlocal added
         rows = [row_of(f, twap) for f in fs if is_perp_fill(f)]
         if rows:
-            added += await asyncio.to_thread(st.insert, wid, rows)
+            new = await asyncio.to_thread(st.insert, wid, rows)
+            added += new
+            if _current is not None:
+                _current["new_fills"] += new
+
+    async def checkpoint(**fields):
+        """Save the read so far, so a read cut short resumes from here."""
+        await asyncio.to_thread(st.update, wid, **fields)
+        _meta[address] = dict(_meta.get(address) or w, **fields)
+        _bump(address)
+
+    async def regular_page(fs):
+        await store_page(fs, False)
+        if fs:
+            await checkpoint(cursor_ms=max((_meta.get(address) or w)["cursor_ms"] or 0, max(f["time"] for f in fs)))
 
     # Regular fills
     start = max(since_ms, (w["cursor_ms"] or since_ms) - OVERLAP_MS)
     n, first, last, done = await _pages(session, {"type": "userFillsByTime", "user": address, "aggregateByTime": True},
-                                        start, backfill, False, lambda fs: store_page(fs, False))
+                                        start, backfill, False, regular_page)
     cursor = max(w["cursor_ms"] or 0, last or 0) if not done else max(w["cursor_ms"] or 0, last or 0, now_ms - 60_000)
-    if backfill:
-        covered = since_ms / 1000
-        if n >= HL_RECENT_CAP * 0.95 and first:        # older fills than the latest 10,000 are not served
-            covered = first / 1000
+    if backfill and done:
+        reg_n, reg_first = await asyncio.to_thread(st.regular_span, wid)
+        if max(n, reg_n) >= HL_RECENT_CAP * 0.95 and reg_first:   # older fills than the latest 10,000 are not served
+            covered = max(covered, reg_first / 1000)
     # Timed-order slices: on the first read, on a change or view, or when the wallet has used them
     twap_cursor, twap_seen = w["twap_cursor_ms"], w["twap_seen"]
     if backfill or reason != "sweep" or twap_seen:
@@ -443,10 +477,16 @@ async def sync(session, address: str, reason: str) -> int:
                 tstart = max(since_ms, max(ts) - span * max(1, MAX_FILLS_PER_WALLET // PAGE))
                 covered = max(covered or 0, tstart / 1000)
                 twap_seen = True
+                await checkpoint(twap_cursor_ms=tstart, twap_seen=1, covered_from=covered)
+
+        async def twap_page(fs):
+            await store_page(fs, True)
+            if fs:
+                await checkpoint(twap_cursor_ms=max((_meta.get(address) or w)["twap_cursor_ms"] or 0,
+                                                    max(f["time"] for f in fs)), twap_seen=1)
         if tstart is not None:
             tn, _, tlast, tdone = await _pages(session, {"type": "userTwapSliceFillsByTime", "user": address},
-                                               max(since_ms, tstart - OVERLAP_MS), backfill, True,
-                                               lambda fs: store_page(fs, True))
+                                               max(since_ms, tstart - OVERLAP_MS), backfill, True, twap_page)
             twap_seen = twap_seen or tn > 0
             twap_cursor = max(tstart, tlast or 0, (now_ms - 60_000) if tdone else 0)
     trimmed, oldest = await asyncio.to_thread(st.trim, wid, MAX_FILLS_PER_WALLET)
@@ -569,7 +609,7 @@ def next_job(now: float, roster: List[str]) -> Optional[Tuple[str, str]]:
     due = [x for x in due if x[0] <= now]
     if due:
         return min(due)[1], "sweep"
-    if _quiet(now):
+    if _quiet(now) or (_started_at is not None and now - _started_at < BACKFILL_AFTER_START_S):
         return None
     pending = [a for a in _priority if ok(a) and not ready(a)] + \
               [a for a in roster if ok(a) and not (_meta.get(a) or {}).get("backfilled_at")]
@@ -595,7 +635,7 @@ async def refresh(address: str, wait: float = 0.0) -> None:
         old, _ = _view_requests.popitem(last=False)
         _resolve(old)
     _kick()
-    if wait > 0 and _task is not None and not _task.done():
+    if wait > 0 and _task is not None and not _task.done() and _current is None:   # the reader is free
         fut = asyncio.get_running_loop().create_future()
         _waiters.setdefault(address, []).append(fut)
         try:
@@ -605,20 +645,33 @@ async def refresh(address: str, wait: float = 0.0) -> None:
 
 
 async def _run_one(session, address: str, reason: str) -> None:
+    global _current, _last_attempt, _last_exception
+    _current = {"address": address, "reason": reason, "started_at": time.time(), "pages": 0, "fills_read": 0,
+                "new_fills": 0, "weight": 0, "last_page_at": None}
+    outcome, error = "ok", None
     try:
         await sync(session, address, reason)
         _retry_at.pop(address, None)
         if reason in ("change", "view", "backfill"):
             _dirty.pop(address, None)
+        w = _meta.get(address) or {}
+        if reason == "backfill" and not w.get("backfilled_at"):
+            outcome = "partial"            # page limit reached; continues from the saved cursor
     except asyncio.CancelledError:
+        outcome = "cancelled"
         raise
     except Exception as exc:
         fails = _retry_at.get(address, (0, 0))[1] + 1
         _retry_at[address] = (time.time() + min(3600, 60 * 2 ** min(fails, 6)), fails)
+        outcome, error = "error", f"{type(exc).__name__}: {exc}"[:300]
         _stats["errors"] += 1
-        _stats["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+        _stats["last_error"] = error
+        _last_exception = {"at": time.time(), "address": address, "reason": reason, "error": error,
+                           "retry_at": _retry_at[address][0], "failures_in_a_row": fails}
         logger.warning("Fills store: read of %s failed (%s): %s", address[:10], reason, exc)
     finally:
+        _last_attempt = dict(_current, finished_at=time.time(), outcome=outcome, error=error)
+        _current = None
         _view_requests.pop(address, None)
         _priority.pop(address, None)
         _resolve(address)
@@ -673,12 +726,14 @@ def _maintain_db(roster: List[str], now: Optional[float] = None) -> Tuple[dict, 
 
 async def run_forever() -> None:
     """Background reader (started from main at startup when FILLS_STORE_ENABLED is not 0)."""
-    global _wake, _task, _meta
+    global _wake, _task, _started_at, _state, _last_exception
     _task = asyncio.current_task()
     _wake = asyncio.Event()
+    _started_at = time.time()
+    _state = "opening the store"
+    await asyncio.to_thread(store)             # loads the wallets table: the status and profiles see it at once
+    _state = "start delay"
     await asyncio.sleep(START_DELAY_S)
-    st = await asyncio.to_thread(store)
-    _meta = await asyncio.to_thread(st.wallets)
     last_maint = time.time() - MAINTAIN_EVERY_S + 1800          # first maintenance ~30 min after start
     timeout = aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -686,25 +741,33 @@ async def run_forever() -> None:
             try:
                 from feature_flags import get_flag
                 if not get_flag("hyperlens_enabled"):
+                    _state = "paused (hyperlens_enabled is off)"
                     await asyncio.sleep(60)
                     continue
                 roster = _roster()
                 now = time.time()
+                if not roster:
+                    _state = "waiting for the roster"
                 if roster and now - last_maint > MAINTAIN_EVERY_S:
                     last_maint = now
                     _apply_maintenance(*(await asyncio.to_thread(_maintain_db, roster, now))[1:])
                 job = next_job(now, roster) if roster else None
                 if job is None:
+                    if roster:
+                        _state = ("waiting: startup" if now - _started_at < BACKFILL_AFTER_START_S else
+                                  "waiting: quiet window after the 4h close" if _quiet(now) else "idle")
                     _wake.clear()
                     try:
                         await asyncio.wait_for(_wake.wait(), 30)
                     except asyncio.TimeoutError:
                         pass
                     continue
+                _state = "reading"
                 await _run_one(session, *job)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                _last_exception = {"at": time.time(), "address": None, "reason": "loop", "error": f"{type(exc).__name__}: {exc}"[:300]}
                 logger.warning("Fills store loop error: %s", exc)
                 await asyncio.sleep(10)
 
@@ -755,7 +818,13 @@ async def load(address: str) -> Optional[dict]:
 
 
 def status() -> dict:
-    """For /api/hyperlens/status: backfill progress, the store's size and its Hyperliquid weight."""
+    """For /api/hyperlens/status: backfill progress, the store's size and its Hyperliquid weight.
+    Read from the database file when the reader has not opened it yet (just after a start)."""
+    if _store is None and enabled() and os.path.exists(default_path()):
+        try:
+            store()
+        except Exception as exc:
+            logger.warning("Fills store: status could not open the store: %s", exc)
     roster = _roster()
     on = set(roster)
     done = sum(1 for a in roster if (_meta.get(a) or {}).get("backfilled_at"))
@@ -771,8 +840,13 @@ def status() -> dict:
             size = round(_store.size_bytes() / 1e6, 1)
         except OSError:
             pass
+    cur = None
+    if _current is not None:
+        cur = dict(_current, running_s=round(now - _current["started_at"]))
     return {
         "enabled": enabled(),
+        "state": _state, "started_at": _started_at, "db_path": _store.path if _store is not None else default_path(),
+        "current": cur, "last_attempt": _last_attempt, "last_exception": _last_exception,
         "wallets": len(roster), "backfilled": done, "backfill_pending": pending, "backfill_eta_s": eta,
         "stored_wallets": len(_meta), "stored_on_roster": sum(1 for a in _meta if a in on),
         "fills": sum((w.get("n") or 0) for w in _meta.values()), "db_mb": size,

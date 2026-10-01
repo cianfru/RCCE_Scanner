@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { logoOutline } from './logoOutline.js';
 
+// The ribbon's surface: the 535x555 crop of the brand render that the outline covers
+// (x 270-805, y 155-710 in outline units). It maps onto the solid's faces and, clipped
+// to the outline by a mask, is the still shown until WebGL is ready or when it is unavailable.
+const SURFACE = '/brand/reflex-surface.webp';
+const BOX = { x: 270, y: 155, w: 535, h: 555 };
+const MASK = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='${BOX.x} ${BOX.y} ${BOX.w} ${BOX.h}'><path d='${logoOutline}' fill-rule='evenodd'/></svg>`)}")`;
+const RIBBON_MASK = { maskImage: MASK, WebkitMaskImage: MASK, maskSize: '100% 100%', WebkitMaskSize: '100% 100%', maskRepeat: 'no-repeat', WebkitMaskRepeat: 'no-repeat' };
+
 export default function LogoSculpture({ active }) {
   const mount = useRef(null);
+  const still = useRef(null);
   const control = useRef(null);
   const activeRef = useRef(active);
   const [ready, setReady] = useState(false);
@@ -50,7 +59,7 @@ export default function LogoSculpture({ active }) {
         const positions = geometry.attributes.position, uv = geometry.attributes.uv;
         for(let i=0;i<positions.count;i++) {
           const x=positions.getX(i), y=positions.getY(i), z=positions.getZ(i);
-          uv.setXY(i,x/1672,1-y/941);
+          uv.setXY(i,(x-BOX.x)/BOX.w,1-(y-BOX.y)/BOX.h);
 
         }
         geometry.scale(.005,-.005,.005); geometry.center(); geometry.computeVertexNormals();
@@ -64,16 +73,20 @@ export default function LogoSculpture({ active }) {
         renderer.domElement.addEventListener('webglcontextlost',()=>{cancelAnimationFrame(frame);setReady(false);});
         resize(); setReady(true);
         // Retain the original ribbon's surface detail on the front and back of the solid.
-        new THREE.TextureLoader().load('/brand/reflex-logo-surface.png', loaded => {
-          if(disposed) {loaded.dispose();return;}
-          texture=loaded; texture.colorSpace=THREE.SRGBColorSpace; face.map=texture; face.color.set('#f5fefd');face.needsUpdate=true;render();
-        });
+        // The texture is the still's own image element: one download serves both.
+        const image = still.current;
+        const applySurface = () => {
+          if(disposed || !image?.naturalWidth) return;
+          texture=new THREE.Texture(image); texture.colorSpace=THREE.SRGBColorSpace; texture.needsUpdate=true;
+          face.map=texture; face.color.set('#f5fefd');face.needsUpdate=true;render();
+        };
+        if(image?.complete) applySurface(); else image?.addEventListener('load', applySurface, {once:true});
       } catch { if(!disposed) setReady(false); }
     }
     init();
     return () => { disposed=true; control.current=null;cancelAnimationFrame(frame);observer?.disconnect();geometry?.dispose();face?.dispose();edge?.dispose();texture?.dispose();environment?.dispose();renderer?.dispose();renderer?.domElement.remove(); };
   }, []);
   return <div ref={mount} className="r-sculpture" data-rendered={ready}>
-    {!ready && <img src="/brand/reflex-ribbon-transparent.svg" width="535" height="555" alt=""/>}
+    <img ref={still} src={SURFACE} width={BOX.w} height={BOX.h} alt="" style={RIBBON_MASK}/>
   </div>;
 }

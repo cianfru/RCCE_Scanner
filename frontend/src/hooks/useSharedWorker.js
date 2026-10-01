@@ -18,7 +18,8 @@ let workerPort = null;
 let workerSupported = false;
 let listeners = new Set(); // { id, handler }
 let listenerIdCounter = 0;
-let connected = false;
+// The last message of each data type, replayed to a listener that subscribes after it arrived.
+const lastByType = new Map();
 
 function initWorker() {
   if (worker !== null || typeof SharedWorker === "undefined") return;
@@ -29,6 +30,7 @@ function initWorker() {
 
     workerPort.onmessage = (event) => {
       if (event.data?.type === "auth-expired") { logout(); return; }
+      if (event.data?.type) lastByType.set(event.data.type, event.data);
       for (const listener of listeners) {
         try {
           listener.handler(event.data);
@@ -50,12 +52,13 @@ function initWorker() {
   }
 }
 
-// Try to init immediately on module load
-initWorker();
-
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSharedWorker() {
+  // Starts on the first render of a component that uses it (the app), never at
+  // import time, so a page that only imports the module starts no polling.
+  // Idempotent; runs during render so `supported` is right on that first render.
+  initWorker();
   const [mainData, setMainData] = useState(null);
   const [notifData, setNotifData] = useState(null);
   const idRef = useRef(null);
@@ -79,6 +82,7 @@ export function useSharedWorker() {
 
     const listener = { id, handler };
     listeners.add(listener);
+    for (const msg of lastByType.values()) handler(msg);
 
     return () => {
       listeners.delete(listener);

@@ -14,7 +14,6 @@ import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
-import CoinChat from "../components/CoinChat.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
@@ -203,7 +202,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const [watchMsg, setWatchMsg] = useState("");
   useEffect(() => { if (!watchMsg) return undefined; const t = setTimeout(() => setWatchMsg(""), 3500); return () => clearTimeout(t); }, [watchMsg]);
   const onWatch = useCallback(async c => setWatchMsg(watchToast(c, await toggleWatch(c, timeframe), telegram)), [toggleWatch, timeframe, telegram]);
-  const [chatOpen, setChatOpen] = useState(false);
   // The shared address's trade in this perp (connected wallet or read-only view).
   const { effectiveAddress } = useWallet();
   const { byCoin: myBy } = useMyPositions(marketKind === "perpetual" ? effectiveAddress : null);
@@ -358,8 +356,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           traderApi={traderApi}
           showSetup={false}
           myEntry={myEntry}
-          toolbarAction={<button type="button" className="chart-ask" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}
-            title={`Ask AI about ${coin}`}><img src="/brand/reflex-ribbon-transparent.svg" alt="" width="16" height="16" />Ask AI</button>}
         />
       </div>
 
@@ -387,7 +383,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             {data.signal_first_seen_at && <p>Signal first recorded {new Date(data.signal_first_seen_at * 1000).toLocaleString()}.</p>}
             <EngineValues data={data} />
           </details>
-          <p className="analysis-ask"><button type="button" className="te-link" data-coinchat-trigger aria-expanded={chatOpen} onClick={() => setChatOpen(true)}>Ask AI about {coin}</button></p>
         </article>
         <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"} price={data.price}
           onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
@@ -409,8 +404,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </details>
 
-      {/* Per-coin AI chat popover */}
-      <CoinChat symbol={data.symbol} timeframe={timeframe} marketKind={marketKind} isMobile={isMobile} open={chatOpen} onOpenChange={setChatOpen} />
       {watchMsg && <div className="smap-toast" role="status">{watchMsg}</div>}
     </div>
   );

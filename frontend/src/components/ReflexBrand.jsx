@@ -37,7 +37,7 @@ function MetalWordmark({ width, height }) {
 }
 
 export default function ReflexBrand({ compact = false, onClick, metal = false, className }) {
-  const mark = <img className={metal ? "brand-mark" : undefined} src="/brand/reflex-ribbon-transparent.svg" alt="" width={compact ? 30 : 38} height={compact ? 30 : 38} />;
+  const mark = <img className={metal ? "brand-mark" : undefined} src="/brand/reflex-mark.webp" alt="" width={compact ? 30 : 38} height={compact ? 30 : 38} style={{ objectFit: "contain" }} />;
   const content = <>{mark}{metal
     ? <MetalWordmark width={compact ? 82 : 96} height={compact ? 25 : 29} />
     : <img className="terminal-wordmark" src="/brand/reflex-lettering-clean.svg" alt="reflex" width={compact ? 82 : 96} height={compact ? 25 : 29} />}</>;

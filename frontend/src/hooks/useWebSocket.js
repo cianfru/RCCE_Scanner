@@ -1,7 +1,8 @@
 /**
  * useWebSocket — React hook for real-time scan data via WebSocket.
  *
- * Singleton connection shared across all components (same pattern as useSharedWorker).
+ * Singleton connection shared across all components (same pattern as useSharedWorker),
+ * opened when the first component using the hook mounts.
  * Auto-reconnect with exponential backoff. Falls back gracefully if WS unavailable.
  *
  * Events consumed:
@@ -121,14 +122,20 @@ function sendMessage(msg) {
   }
 }
 
-// Auto-connect on first import (lazy — only if WebSocket exists)
-if (typeof WebSocket !== "undefined") {
-  connect();
+// Connects when the first component using the hook mounts (the app), never at
+// import time. The visibility handler is installed once, on that first start.
+let visibilityBound = false;
 
+function start() {
+  if (typeof WebSocket === "undefined") return;
+  connect();
+  if (visibilityBound) return;
+  visibilityBound = true;
   // Hidden: ask the server to hold price ticks and scan notices. Visible: resume
   // (the server answers with all current prices), or reconnect if the socket
-  // dropped (mobile wakes from sleep).
+  // dropped (mobile wakes from sleep). Nothing to do once every user unmounted.
   document.addEventListener("visibilitychange", () => {
+    if (listeners.size === 0) return;
     if (document.hidden) {
       sendMessage({ type: "pause" });
     } else if (ws && ws.readyState === WebSocket.OPEN) {
@@ -193,6 +200,7 @@ export function useWebSocket() {
 
     const listener = { id, handler };
     listeners.add(listener);
+    start();
 
     return () => {
       listeners.delete(listener);
