@@ -66,6 +66,7 @@ class BarResult:
     divergence: Optional[str] = None
     exhaustion_state: str = "NEUTRAL"
     vol_state: str = "MID"
+    deviation_pct: float = 0.0
     # For condition analysis
     condition_flags: List[bool] = field(default_factory=list)
 
@@ -125,6 +126,7 @@ async def run_replay(
     on_progress: Optional[Callable[[float, str], None]] = None,
     as_of_ms: Optional[float] = None,
     on_decision_bar: Optional[Callable] = None,
+    timeframe: str = "4h",
 ) -> List[BarResult]:
     """Run bar-by-bar replay through all engines.
 
@@ -138,6 +140,8 @@ async def run_replay(
         {date_str: F&G value} for sentiment lookup.
     warmup_bars : int
         Number of bars to skip at the start for engine warmup.
+    timeframe : str
+        The primary (traded) timeframe of ``ohlcv_4h``: "4h" (default) or "1d".
     on_progress : callable or None
         Called with (progress_pct, status_msg) for UI updates.
 
@@ -206,7 +210,7 @@ async def run_replay(
 
         # Current timestamp from the reference symbol
         bar_open_ts = float(ref_data["timestamp"][bar_idx])
-        current_ts = bar_open_ts + TF_MS["4h"]
+        current_ts = bar_open_ts + TF_MS[timeframe]
         if current_ts > available_at:
             break  # Providers may include an unfinished final historical candle.
         current_date = datetime.fromtimestamp(current_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
@@ -241,16 +245,16 @@ async def run_replay(
             is_btc_quoted = quote == "BTC"
 
             btc_slice = None if is_btc_quoted else (
-                closed_candles(ohlcv_4h[btc_sym], "4h", current_ts) if btc_sym in ohlcv_4h else None
+                closed_candles(ohlcv_4h[btc_sym], timeframe, current_ts) if btc_sym in ohlcv_4h else None
             )
             eth_slice = None if is_btc_quoted else (
-                closed_candles(ohlcv_4h[eth_sym], "4h", current_ts) if eth_sym in ohlcv_4h else None
+                closed_candles(ohlcv_4h[eth_sym], timeframe, current_ts) if eth_sym in ohlcv_4h else None
             )
 
             try:
                 result = _process_symbol(
                     symbol=symbol,
-                    timeframe="4h",
+                    timeframe=timeframe,
                     ohlcv=slice_primary,
                     weekly=weekly,
                     btc_data=btc_slice,
@@ -366,6 +370,7 @@ async def run_replay(
                     divergence=r.get("divergence"),
                     exhaustion_state=r.get("exhaustion_state", "NEUTRAL"),
                     vol_state=r.get("vol_state", "MID"),
+                    deviation_pct=r.get("deviation_pct", 0.0),
                 )
                 all_results.append(bar_result)
 
