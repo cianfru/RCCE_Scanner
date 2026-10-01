@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import time
 from abc import ABC, abstractmethod
@@ -18,7 +19,7 @@ from dataclasses import dataclass, asdict
 from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, List, Optional
 
-from ticker_renames import hl_name, is_k_key, k_key
+from ticker_renames import hl_name, k_key
 
 logger = logging.getLogger(__name__)
 
@@ -296,16 +297,21 @@ class HyperliquidEngine(TradingEngine):
         raise EngineError("order_failed", f"No size decimals for {coin}")
 
     def _order_size(self, symbol: str, volume: float) -> float:
-        """The size sent to Hyperliquid. A k market's size is in k-units (1,000 tokens), as its
-        price is per 1,000 tokens, so volume = USD / price is already in k-units; it is floored
-        to the market's own szDecimals (kPEPE's, not PEPE's), which the executor's price-based
-        precision can exceed. Every other coin's size is sent as the executor computed it."""
-        if not is_k_key(symbol.split("/")[0]):
-            return volume
-        d = self._size_decimals(self._coin(symbol))
+        """The size sent to Hyperliquid, floored to the market's szDecimals from its meta.
+
+        Every live order size passes through here: buys, sells and the executor's fallback
+        closes. The executor's price-based precision can exceed what the market takes (BTC to 8
+        decimals where Hyperliquid allows 5), so the size is rounded DOWN, never up: a close or
+        trim comes out at or under the position, never over it. A size that floors to zero is
+        refused before any call. A k market's size is in k-units (1,000 tokens), as its price is
+        per 1,000 tokens, and is floored to its own szDecimals (kPEPE's, not PEPE's)."""
+        coin = self._coin(symbol)
+        if not (isinstance(volume, (int, float)) and math.isfinite(volume) and volume > 0):
+            raise EngineError("order_failed", f"Size {volume} is not a positive size for {coin}")
+        d = self._size_decimals(coin)
         size = float(Decimal(str(volume)).quantize(Decimal(1).scaleb(-d), rounding=ROUND_DOWN))
         if size <= 0:
-            raise EngineError("order_failed", f"Size {volume} rounds to zero for {self._coin(symbol)}")
+            raise EngineError("order_failed", f"Size {volume} rounds to zero for {coin}")
         return size
 
     def _next_order_id(self, hl_status: Optional[dict] = None) -> str:
