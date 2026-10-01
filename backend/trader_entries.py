@@ -59,11 +59,13 @@ async def _post(session: aiohttp.ClientSession, body: dict):
     async with session.post(INFO_URL, json=body) as resp:
         if resp.status == 429:
             _bucket.penalize()
+            hl_calls.rate_limited()
         if resp.status != 200:
             raise RuntimeError(f"HTTP {resp.status}")
         data = await resp.json(content_type=None)
     if isinstance(data, list) and len(data) >= 20:
         await _bucket.take(len(data) // 20)
+        hl_calls.record_weight(body.get("type"), len(data) // 20)
     return data
 
 

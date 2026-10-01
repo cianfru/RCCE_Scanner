@@ -711,11 +711,13 @@ async def _fetch_wallet_positions(
     """
     async with semaphore:
         try:
-            _hl_calls.record("clearinghouseState")
+            await _hl_calls.acquire("positions", "clearinghouseState")
             async with session.post(
                 _HL_INFO_URL,
                 json={"type": "clearinghouseState", "user": wallet.address},
             ) as resp:
+                if resp.status == 429:
+                    _hl_calls.rate_limited("positions")
                 if resp.status != 200:
                     return None
                 data = await resp.json(content_type=None)
@@ -726,7 +728,7 @@ async def _fetch_wallet_positions(
         # come from L2 data which is fetched separately)
         if full:
             try:
-                _hl_calls.record("frontendOpenOrders")
+                await _hl_calls.acquire("positions", "frontendOpenOrders")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "frontendOpenOrders", "user": wallet.address},
@@ -745,7 +747,7 @@ async def _fetch_wallet_positions(
         fetch_xyz = full or wallet.address in _xyz_active_wallets
         if fetch_xyz:
             try:
-                _hl_calls.record("clearinghouseState")
+                await _hl_calls.acquire("positions", "clearinghouseState")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "clearinghouseState", "user": wallet.address, "dex": _XYZ_DEX},
@@ -2371,7 +2373,7 @@ async def _poll_order_books() -> None:
     async def _fetch_book(session: aiohttp.ClientSession, coin: str) -> None:
         async with semaphore:
             try:
-                _hl_calls.record("l2Book")
+                await _hl_calls.acquire("positions", "l2Book")
                 async with session.post(
                     _HL_INFO_URL,
                     json={"type": "l2Book", "coin": coin, "nSigFigs": 3},

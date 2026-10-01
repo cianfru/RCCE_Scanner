@@ -24,7 +24,8 @@ Fetching, one wallet at a time on this module's own share of Hyperliquid's per-I
 
 Weight: 20 per request plus 1 per 20 fills returned. The store has WEIGHT_PER_MIN (300) of the
 1,200 a minute; the backfill may use at most BACKFILL_WEIGHT_PER_MIN (240) of it, so the
-incremental reads always have room. The backfill waits BACKFILL_AFTER_START_S (10 min) after a
+incremental reads always have room. Each request also waits for the process's shared
+Hyperliquid budget as "fills" (hl_calls), after the scanner and the position poller. The backfill waits BACKFILL_AFTER_START_S (10 min) after a
 start, while the scanner loads every market's candles, and pauses during the quiet window after
 each 4-hour close. Every page read is saved with its cursor at once, so a read cut short (a 429,
 a timeout, a restart) resumes where it stopped instead of starting the wallet again.
@@ -358,12 +359,13 @@ async def _post(session, body: dict, backfill: bool) -> list:
     buckets = (_bucket, _backfill_bucket) if backfill else (_bucket,)
     for b in buckets:
         await b.take(CALL_WEIGHT)
-    hl_calls.record(body["type"])
+    await hl_calls.acquire("fills", body["type"], CALL_WEIGHT)
     try:
         data = await _http(session, body)
     except RateLimited:
         for b in buckets:
             b.penalize()
+        hl_calls.rate_limited("fills")
         _spent(CALL_WEIGHT, backfill)
         raise
     data = data if isinstance(data, list) else []
@@ -371,7 +373,7 @@ async def _post(session, body: dict, backfill: bool) -> list:
     if extra:
         for b in buckets:
             await b.take(extra)
-        hl_calls.record_weight(body["type"], extra)
+        hl_calls.record_weight(body["type"], extra, consumer="fills")
     _spent(CALL_WEIGHT + extra, backfill)
     if _current is not None:
         _current["pages"] += 1

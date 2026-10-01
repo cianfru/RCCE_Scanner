@@ -58,6 +58,11 @@ class ScanSchedule:
                                       s not in ('BTC/USDT', 'ETH/USDT')),
                    default=None)
 
+    def seed(self, symbol, now, wall):
+        """A refresh made before a restart (its stored candles were read at ``wall``)."""
+        self.attempts[symbol] = now
+        self.wall_attempts[symbol] = wall
+
     def record(self, symbol, now, available, wall=None):
         self.attempts[symbol] = now
         if wall is not None:

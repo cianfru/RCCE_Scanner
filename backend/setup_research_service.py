@@ -56,7 +56,14 @@ async def fetch_market(symbol, *, funding_start, session):
             return None
 
     book_task = info(dict(type="l2Book", coin=coin))
-    candles_task = _fetch_hl_candles(session, coin, "4h", 120)
+
+    async def candles_or_none():
+        from data_fetcher import HLRateLimited
+        try:
+            return await _fetch_hl_candles(session, coin, "4h", 120, consumer="cohorts")
+        except HLRateLimited:
+            return None
+    candles_task = candles_or_none()
     funding_task = (
         info(
             dict(
