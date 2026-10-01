@@ -260,9 +260,11 @@ class Executor:
                 metrics = await fetch_hyperliquid_metrics()
                 hl_coins = {m.coin for m in metrics.values()}
 
+                # Hyperliquid names a k market "kPEPE"; the scanner's KPEPE/USDT maps to it.
+                from ticker_renames import hl_name
                 self.pair_map = {}
                 for sym in scanner_symbols:
-                    coin = sym.split("/")[0].upper()
+                    coin = hl_name(sym.split("/")[0].upper())
                     if coin in hl_coins:
                         self.pair_map[sym] = coin
 
