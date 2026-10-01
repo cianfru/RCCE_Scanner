@@ -14,7 +14,6 @@ import BMSBChart from "../components/BMSBChart.jsx";
 import ConditionsScorecard from "../components/ConditionsScorecard.jsx";
 import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
-import OptionsVolPanel, { RECORDED as OPTIONS_RECORDED } from "../components/OptionsVolPanel.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
@@ -398,11 +397,10 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         </div>
       </details>
       <details className="coin-more">
-        <summary><span>All market data</span><small>Funding, open interest, flow, exchanges{OPTIONS_RECORDED.has(getBaseSymbol(data.symbol)) ? ", options" : ""}</small></summary>
+        <summary><span>All market data</span><small>Funding, open interest, flow, exchanges</small></summary>
         <div className="analysis-grid">
           <PositioningPanel positioning={data.positioning} hasCoinglass={hasCoinglass(data)} cvdTrend={data.cvd_trend} cvdDiv={data.cvd_divergence} bsr={data.buy_sell_ratio} vpin={data.vpin} oiContext={data.oi_context}/>
           <CrossExchangePanel symbol={data.symbol}/>
-          <OptionsVolPanel symbol={data.symbol}/>
         </div>
       </details>
 
