@@ -2,6 +2,7 @@
 import concurrent.futures
 import hashlib
 import json
+import re
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.parse import quote
@@ -15,6 +16,14 @@ API = 'https://rccescanner-production.up.railway.app/api/universe'
 def fetch(market):
     # Resolve exact native market identity; do not lowercase or guess aliases.
     name = market['coin'] if market['kind'] == 'perpetual' else market['base']
+    got = fetch_svg(market, name)
+    # A "k" market (kPEPE: per 1,000 tokens) has no artwork of its own; the token's is used.
+    if got is None and market['kind'] == 'perpetual' and re.fullmatch(r'k[A-Z0-9]+', name):
+        got = fetch_svg(market, name[1:])
+    return got
+
+
+def fetch_svg(market, name):
     source = f'https://app.hyperliquid.xyz/coins/{quote(name, safe="")}.svg'
     try:
         with urlopen(source, timeout=15) as response:

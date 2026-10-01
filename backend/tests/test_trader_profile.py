@@ -135,7 +135,7 @@ def test_leaderboard_ranks_by_the_window_pnl(board):
     a = next(r for r in rows if r["address"] == A)
     assert a["positions"] == 6 and a["coins"] == ["LINK", "AVAX", "DOGE", "SOL", "ETH"] and a["more_coins"] == 1
     assert a["band"] == "$1M–10M" and a["roi"] == pytest.approx(0.01)
-    assert next(r for r in rows if r["address"] == B)["coins"] == ["PEPE"]
+    assert next(r for r in rows if r["address"] == B)["coins"] == ["KPEPE"]   # kPEPE under the scanner's key
     assert next(r for r in rows if r["address"] == C)["win_rate"] == 75.0
     assert a["win_rate"] is None and set(board[-1]) == {A, B}          # the missing win rates get computed
     page = tp.leaderboard("30d", offset=1, limit=1)

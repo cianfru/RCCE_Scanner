@@ -299,6 +299,26 @@
     "source": "https://app.hyperliquid.xyz/coins/KAS.svg",
     "src": "/token-logos/ce341c520ee63df0.svg"
   },
+  "KBONK/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/BONK.svg",
+    "src": "/token-logos/261599f251196b0b.svg"
+  },
+  "KFLOKI/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/FLOKI.svg",
+    "src": "/token-logos/bb46b5d343b3e915.svg"
+  },
+  "KLUNC/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/LUNC.svg",
+    "src": "/token-logos/864c90faed7fe29a.svg"
+  },
+  "KPEPE/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/PEPE.svg",
+    "src": "/token-logos/308d0c7db463372b.svg"
+  },
+  "KSHIB/USDT": {
+    "source": "https://app.hyperliquid.xyz/coins/SHIB.svg",
+    "src": "/token-logos/e1718d832724f003.svg"
+  },
   "LAYER/USDT": {
     "source": "https://app.hyperliquid.xyz/coins/LAYER.svg",
     "src": "/token-logos/65c6da10eb6db3c2.svg"

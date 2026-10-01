@@ -180,15 +180,10 @@ async def _ensure_binance_symbols() -> set:
         _binance_symbols = set()
         return _binance_symbols
 
-# Hyperliquid coin name mapping for its "k" (thousand-unit) markets.
-# Key: CCXT base (from "BASE/USDT"), Value: HL coin name. Renamed tickers (MATIC, RNDR, FTM)
-# are keyed by their current names everywhere (ticker_renames.py), so they need no entry.
-_HL_COIN_MAP: Dict[str, str] = {
-    "SHIB":  "kSHIB",     # HL uses kSHIB
-    "PEPE":  "kPEPE",     # HL uses kPEPE
-    "BONK":  "kBONK",     # HL uses kBONK
-    "FLOKI": "kFLOKI",    # HL uses kFLOKI
-}
+# Hyperliquid's "k" markets (quoted per 1,000 tokens) are keyed KPEPE/USDT, Hyperliquid's name
+# kPEPE (ticker_renames.hl_name). The bare PEPE/USDT is not mapped to kPEPE: its candles would be
+# per 1,000 tokens under a 1-token key. Renamed tickers (MATIC, RNDR, FTM) are keyed by their
+# current names everywhere (ticker_renames.py), so they need no mapping.
 
 
 # ---------------------------------------------------------------------------
@@ -746,8 +741,8 @@ def _hl_coin_name(symbol: str) -> str:
     from hyperliquid_universe import MARKETS
     if symbol in MARKETS:
         return MARKETS[symbol]["coin"]
-    base = symbol.split("/")[0]
-    return _HL_COIN_MAP.get(base, base)
+    from ticker_renames import hl_name
+    return hl_name(symbol.split("/")[0])
 
 
 def _ratio_ohlcv(base: Optional[dict], quote: Optional[dict]) -> Optional[dict]:

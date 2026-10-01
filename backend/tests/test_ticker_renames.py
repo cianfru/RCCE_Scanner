@@ -26,16 +26,15 @@ def test_current_names_in_every_form():
 def test_live_maps_use_current_names():
     import data_fetcher
     import scanner
-    from hl_intelligence import _normalize_coin, _HL_REVERSE_MAP
+    from hl_intelligence import _normalize_coin
     for old, new in tr.RENAMED.items():
-        assert old not in data_fetcher._HL_COIN_MAP and new not in _HL_REVERSE_MAP
         assert _normalize_coin(new) == new and _normalize_coin(f"{new}/USDT") == new
         assert data_fetcher._hl_coin_name(f"{new}/USDT") == new
     lists = data_fetcher.DEFAULT_SYMBOLS + data_fetcher.FULL_SYMBOLS + scanner.TIER1_SYMBOLS
     assert not [s for s in lists if tr.renamed(s)]
     assert "RENDER/USDT" in scanner.TIER1_SYMBOLS and "POL/USDT" in data_fetcher.FULL_SYMBOLS
-    # The "k" markets still map both ways.
-    assert data_fetcher._hl_coin_name("PEPE/USDT") == "kPEPE" and _normalize_coin("kPEPE") == "PEPE"
+    # The "k" markets map both ways under one key (test_k_markets.py).
+    assert data_fetcher._hl_coin_name("KPEPE/USDT") == "kPEPE" and _normalize_coin("kPEPE") == "KPEPE"
 
 
 def test_sectors_use_current_names_and_studies_keep_theirs():
@@ -120,7 +119,7 @@ def test_migrate_stores_renames_once(tmp_path):
     paths = _make_stores(tmp_path)
     marker = tmp_path / "ticker_renames.json"
     state = tr.migrate_stores(paths, marker, executor_state=tmp_path / "none.json")
-    assert set(state["done"]) == set(paths)
+    assert set(state["done"]) == set(paths) | {"hyperlens_k", "cohorts_k", "accounts_k"}
 
     assert _q(paths["signal_events"], "SELECT symbol FROM signal_events ORDER BY timestamp") == \
         [("POL/USDT",), ("POL/USDT",), ("S/USDT",), ("BTC/USDT",)]

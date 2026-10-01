@@ -65,7 +65,7 @@ class AssignTests(unittest.TestCase):
             {"position": {"coin": "kPEPE", "szi": "-100", "positionValue": "50.5", "entryPx": "0.4"}},
             {"position": {"coin": "BTC", "szi": "0.0"}}]})
         self.assertEqual(eq, 1234.5)
-        self.assertEqual(ps, [("PEPE", 50.5, False, 100.0)])                     # size kept for change detection
+        self.assertEqual(ps, [("KPEPE", 50.5, False, 100.0)])                    # size kept for change detection
 
 
 class Clock:

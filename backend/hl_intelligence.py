@@ -28,6 +28,7 @@ import aiohttp
 import hl_cadence as _cadence
 import hl_entities as _entities_rule
 import hl_calls as _hl_calls
+from ticker_renames import K_BASES as _K_BASES, k_key as _k_key, hl_name
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
     save_trade_events as _db_save_trades,
@@ -1295,7 +1296,7 @@ def _recompute_consensus() -> None:
         is_sm = addr in sm_addresses
 
         for pos in latest.positions:
-            # Normalize coin name: kPEPE→PEPE, preserve existing xyz: prefix
+            # Normalize coin name: kPEPE→KPEPE, preserve existing xyz: prefix
             raw = pos.coin
             if raw.startswith("xyz:") or pos.dex == _XYZ_DEX:
                 # xyz DEX coins — ensure exactly one xyz: prefix
@@ -1515,18 +1516,14 @@ def profitable_traders_positioned() -> int:
 # Public API
 # ---------------------------------------------------------------------------
 
-# Reverse map: HL coin names → scanner base names (kPEPE→PEPE, ...). Renamed tickers (S, POL,
-# RENDER) keep their current names; see ticker_renames.py.
-_HL_REVERSE_MAP: Dict[str, str] = {
-    "kPEPE": "PEPE", "kSHIB": "SHIB", "kBONK": "BONK", "kFLOKI": "FLOKI",
-}
-
-
 def _normalize_coin(symbol: str) -> str:
     """Normalize any symbol format to bare coin name.
 
-    Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT",
-    HL names like "kPEPE".
+    Handles: "BTC", "BTC/USDT:USDT", "BTCUSDT", "1000PEPE/USDT:USDT".
+    Hyperliquid's "k" markets (quoted per 1,000 tokens) take the scanner's key: "kPEPE",
+    "KPEPE/USDT" and "1000PEPE" are all "KPEPE"; the bare "PEPE" stays "PEPE" (a 1-token price
+    elsewhere, never mixed with the k market). Renamed tickers (S, POL, RENDER) keep their
+    current names; see ticker_renames.py.
     Also preserves xyz DEX prefix: "xyz:GOLD" stays "xyz:GOLD".
     """
     # Preserve xyz DEX prefix (HIP-3 TradFi instruments)
@@ -1537,12 +1534,12 @@ def _normalize_coin(symbol: str) -> str:
     coin = re.sub(r"(USDT|USDC|USD)$", "", coin)
     if coin.startswith("1000"):
         coin = coin[4:]
-    # Map HL-specific names back to scanner base names
-    coin = _HL_REVERSE_MAP.get(coin, coin)
+        if coin in _K_BASES:            # a per-1,000 contract elsewhere: the same unit as kPEPE
+            coin = "K" + coin
     # Resolve @index IDs (e.g. @142 → PENGU)
     if coin.startswith("@"):
         coin = _asset_index_map.get(coin, coin)
-    return coin
+    return _k_key(coin)                 # Hyperliquid's kPEPE -> KPEPE
 
 
 async def _refresh_asset_index_map():
@@ -1906,8 +1903,8 @@ def get_position_changes(symbol: str, window_minutes: int = 30) -> dict:
                 continue  # Not enough history for this wallet
 
         # Compare positions for this coin
-        prev_pos = next((p for p in prev.positions if p.coin == coin), None)
-        curr_pos = next((p for p in latest.positions if p.coin == coin), None)
+        prev_pos = next((p for p in prev.positions if _normalize_coin(p.coin) == coin), None)
+        curr_pos = next((p for p in latest.positions if _normalize_coin(p.coin) == coin), None)
 
         if prev_pos is None and curr_pos is not None:
             opened += 1
@@ -2376,7 +2373,7 @@ async def _poll_order_books() -> None:
                 await _hl_calls.acquire("positions", "l2Book")
                 async with session.post(
                     _HL_INFO_URL,
-                    json={"type": "l2Book", "coin": coin, "nSigFigs": 3},
+                    json={"type": "l2Book", "coin": hl_name(coin), "nSigFigs": 3},   # kPEPE, not KPEPE
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json(content_type=None)

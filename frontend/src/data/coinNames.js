@@ -1,6 +1,6 @@
 // Full names for Hyperliquid perp tickers, for search ("bitcoin" finds BTC). Hand-made for the
 // main markets; a ticker missing here is still found by its ticker. The "k" markets (kPEPE,
-// kSHIB ...) are keyed by their base ticker without the k.
+// kSHIB ...) are keyed by their base ticker without the k (see kBase below).
 export const COIN_NAMES = {
   "0G": "0G", "2Z": "DoubleZero", AAVE: "Aave", ACE: "Fusionist", ADA: "Cardano", AERO: "Aerodrome",
   AIXBT: "aixbt", ALGO: "Algorand", ALT: "AltLayer", ANIME: "Animecoin", APE: "ApeCoin", APEX: "ApeX",
@@ -9,7 +9,7 @@ export const COIN_NAMES = {
   BCH: "Bitcoin Cash", BERA: "Berachain", BIGTIME: "Big Time", BIO: "Bio Protocol", BLUR: "Blur",
   BNB: "BNB", BOME: "Book of Meme", BONK: "Bonk", BRETT: "Brett", BSV: "Bitcoin SV", BTC: "Bitcoin",
   CAKE: "PancakeSwap", CELO: "Celo", CFX: "Conflux", COMP: "Compound", CRV: "Curve", DASH: "Dash",
-  DOGE: "Dogecoin", DOT: "Polkadot", DYDX: "dYdX", DYM: "Dymension", EIGEN: "EigenLayer", ENA: "Ethena",
+  DOGE: "Dogecoin", DOGS: "Dogs", DOT: "Polkadot", DYDX: "dYdX", DYM: "Dymension", EIGEN: "EigenLayer", ENA: "Ethena",
   ENS: "Ethereum Name Service", ETC: "Ethereum Classic", ETH: "Ethereum", ETHFI: "ether.fi",
   FARTCOIN: "Fartcoin", FET: "Fetch.ai", FIL: "Filecoin", FLOKI: "Floki",
   FOGO: "Fogo", GALA: "Gala", GAS: "Neo Gas", GMT: "STEPN", GMX: "GMX", GOAT: "Goatseus Maximus",
@@ -35,8 +35,23 @@ export const COIN_NAMES = {
   ZEC: "Zcash", ZEN: "Horizen", ZETA: "ZetaChain", ZK: "ZKsync", ZORA: "Zora", ZRO: "LayerZero",
 };
 
-// The name for a market's base ticker ("KPEPE" or "kPEPE" is Pepe); "" when unknown.
+// Hyperliquid's "k" markets: perps quoted per 1,000 tokens, named kPEPE on Hyperliquid and keyed
+// KPEPE in the app (backend/ticker_renames.py). Bases from Hyperliquid's meta; any other name with
+// a lower-case k is one too. KAS and KAITO are ordinary tickers.
+export const K_BASES = new Set(["BONK", "DOGS", "FLOKI", "LUNC", "NEIRO", "PEPE", "SHIB"]);
+
+// The base token of a k market ("kPEPE" or "KPEPE" -> "PEPE"); null for any other ticker.
+export function kBase(ticker) {
+  const s = String(ticker || "");
+  if (/^k[A-Z0-9]+$/.test(s)) return s.slice(1);
+  const t = s.toUpperCase();
+  return t.length > 1 && t[0] === "K" && K_BASES.has(t.slice(1)) ? t.slice(1) : null;
+}
+
+// The name for a market's base ticker; a k market says its unit ("kPEPE" is "Pepe (per 1,000)").
+// "" when unknown.
 export function coinName(ticker) {
-  const t = String(ticker || "").toUpperCase();
-  return COIN_NAMES[t] || (t.length > 1 && t[0] === "K" && COIN_NAMES[t.slice(1)]) || "";
+  const k = kBase(ticker);
+  if (k) return `${COIN_NAMES[k] || k} (per 1,000)`;
+  return COIN_NAMES[String(ticker || "").toUpperCase()] || "";
 }
