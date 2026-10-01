@@ -107,6 +107,10 @@ With the sweep off (`COHORTS_ENABLED=0`), HyperLens reads the roster itself whil
 
 Each reading costs about 2 ms of CPU, so the saving is small in money: well under a second of CPU a minute. New memory: the call counter (a few KB), the own polling plan for followed wallets (about 100 bytes each), queued change-log rows (a few per tick), the group maps (a few entries); the daily regrouping loads the 30-day change log for a few seconds (a few MB, in a worker thread). Database: the change log adds about 4 MB to hyperlens.db (71 MB, 30-day retention); cohorts.db keeps one more number per position and about 4,000 sweep-run rows (14 days).
 
+## Coin keys
+
+Positions, cohorts, the trader record and the Radar key a coin by the scanner's base ticker. Hyperliquid's "k" markets (kPEPE, kBONK ...: perps quoted per 1,000 tokens) are keyed `KPEPE`, as the scan row `KPEPE/USDT` is; Hyperliquid is asked by its own name (`kPEPE`), and stored fills and snapshots keep it. Prices stay per 1,000 tokens; the bare `PEPE` is never mapped to the k market. `backend/ticker_renames.py` holds the mapping and the one-time rename of records written as `PEPE` before October 2026.
+
 ## Stored fills
 
 Trader profiles, their fills and closed positions, the coin page's trader entries and the leaderboard's win rates need each wallet's fills. Until October 2026 every uncached page view asked Hyperliquid for them (`userFills` and the timed-order slices: 40 to 240 weight, against 2 for a position reading). Now the roster's fills are kept in our database (`backend/hl_fills.py`) and those pages read them from there.

@@ -69,3 +69,26 @@ test('without Hyperliquid the scanner rows stand in', () => {
   const e = coinEntries(null, rows, new Map());
   assert.deepEqual(e.map(x => [x.ticker, x.spot, x.name]), [['BTC', false, 'Bitcoin'], ['HYPE', true, 'Hyperliquid']]);
 });
+
+test('k markets (per 1,000 tokens): found by the base name, named with their unit, Radar state by the app key', () => {
+  const names = ['kPEPE', 'kBONK', 'KAS', 'kNEIRO'];
+  const perp = [{ universe: names.map(name => ({ name })) },
+    names.map(() => ({ markPx: '0.0098', prevDayPx: '0.01', dayNtlVlm: '1000', openInterest: '1' }))];
+  const m = parseHlMarkets(perp, null);
+  assert.deepEqual(m.map(x => x.symbol), ['KPEPE/USDT', 'KBONK/USDT', 'KAS/USDT', 'KNEIRO/USDT']);
+  assert.deepEqual(m.map(x => x.name), ['Pepe (per 1,000)', 'Bonk (per 1,000)', 'Kaspa', 'Neiro (per 1,000)']);
+  const radar = new Map([['KPEPE', { coin: 'KPEPE', zone: 'watch', entry: { in_zone: true } }]]);
+  const e = coinEntries(m, [], radar);
+  for (const q of ['pepe', 'PEPE', 'kpepe', '1000pepe', 'pepe (per']) {
+    const hit = searchCoins(q, e)[0];
+    assert.equal(hit?.ticker, 'kPEPE', q);
+    assert.equal(hit.row.symbol, 'KPEPE/USDT');
+    assert.equal(hit.status, 'Early setup · entry zone');
+  }
+  assert.equal(searchCoins('kas', e)[0].ticker, 'KAS');
+  assert.equal(searchCoins('1000kas', e).length, 0);
+  // Without Hyperliquid's list the scanner rows stand in, under the same key.
+  const rows = coinEntries(null, [{ symbol: 'KBONK/USDT', market_kind: 'perpetual', market_coin: 'kBONK', price: 0.02 }], radar);
+  assert.equal(searchCoins('bonk', rows)[0].ticker, 'kBONK');
+  assert.equal(rows[0].name, 'Bonk (per 1,000)');
+});

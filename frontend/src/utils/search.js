@@ -1,6 +1,6 @@
 // Search across coins and traders (the header search). Pure functions: the component feeds the
 // scanner rows, Hyperliquid's market contexts, the Radar's setup map and the trader list.
-import { coinName } from "../data/coinNames.js";
+import { coinName, kBase } from "../data/coinNames.js";
 import { codename } from "./walletName.js";
 import { currentSymbol } from "./tickerRenames.js";
 
@@ -144,6 +144,8 @@ export function searchCoins(query, entries, limit = 6) {
   // A renamed ticker typed in full ("matic") finds the coin under its current name (POL).
   const old = String(query || "").trim().toUpperCase();
   if (currentSymbol(old) !== old) query = currentSymbol(old);
+  // Another exchange's name for a per-1,000 contract ("1000pepe") finds the k market (kPEPE).
+  else if (/^1000[A-Z0-9]+$/.test(old) && kBase(`K${old.slice(4)}`)) query = `K${old.slice(4)}`;
   let hits = [];
   for (const e of entries) {
     const tier = coinTier(query, e.ticker, e.name);

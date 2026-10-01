@@ -8,6 +8,10 @@ renamed once, at startup (migrate_stores), and the stores read at import (the OH
 favourites, the Radar watch list) rename on load. Every step is idempotent: a record already
 under the current name is left alone, and when both names are present the current one wins.
 
+Hyperliquid's "k" markets (kPEPE, kBONK ...: perps quoted per 1,000 tokens) are keyed "KPEPE",
+as the scanner's symbol KPEPE/USDT is. HyperLens once keyed them by the bare base ("PEPE"); a
+later step under its own marker (hyperlens_k, cohorts_k, accounts_k) renames those records.
+
 Left as written, on purpose:
 - the executor's state and trade history (its behaviour changes only with the owner's approval;
   executor_exposure reports what it holds under an old name, read-only);
@@ -20,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -29,6 +34,42 @@ logger = logging.getLogger(__name__)
 
 RENAMED: Dict[str, str] = {"FTM": "S", "MATIC": "POL", "RNDR": "RENDER"}
 VERSION = 1
+
+# ------------------------------------------------------------------ the "k" markets
+# Hyperliquid quotes some perps per 1,000 tokens and names them with a lower-case k (kPEPE,
+# kBONK ...). The app keys them in upper case, as the scanner's symbol does: "KPEPE" and
+# "KPEPE/USDT". Hyperliquid's own name ("kPEPE") is used only when asking Hyperliquid, and
+# stored raw records (fills, snapshots) keep it. Prices stay per 1,000 tokens as Hyperliquid
+# quotes them; the bare ticker ("PEPE") is a 1-token instrument elsewhere and is never mapped
+# to the k market, so the two prices never meet under one key.
+# Bases from Hyperliquid's meta (kDOGS is delisted; kept so its stored records map too).
+K_BASES: Tuple[str, ...] = ("BONK", "DOGS", "FLOKI", "LUNC", "NEIRO", "PEPE", "SHIB")
+_K_HL = re.compile(r"^k[A-Z0-9]+$")
+
+
+def k_key(name: str) -> str:
+    """The app's key for a Hyperliquid coin name: "kPEPE" -> "KPEPE"; anything else unchanged.
+    Any lower-case k followed by an upper-case ticker is a k market on Hyperliquid."""
+    return "K" + name[1:] if isinstance(name, str) and _K_HL.match(name) else name
+
+
+def is_k_key(coin: str) -> bool:
+    """True for the app's key of a k market ("KPEPE"); KAS and KAITO are ordinary tickers."""
+    if not isinstance(coin, str) or len(coin) < 2 or coin[0] != "K":
+        return False
+    if coin[1:] in K_BASES:
+        return True
+    try:
+        from hyperliquid_universe import MARKETS
+        m = MARKETS.get(f"{coin}/USDT")
+        return bool(m) and m.get("kind") == "perpetual" and _K_HL.match(str(m.get("coin", ""))) is not None
+    except Exception:
+        return False
+
+
+def hl_name(coin: str) -> str:
+    """Hyperliquid's name for the app's key: "KPEPE" -> "kPEPE"; anything else unchanged."""
+    return "k" + coin[1:] if is_k_key(coin) else coin
 
 
 def current_coin(coin: str) -> str:
@@ -133,29 +174,42 @@ def _migrate_db(path: Path, plan: List[Tuple[str, str, Dict[str, str]]], extra=N
     return out
 
 
-def _wallet_states(c: sqlite3.Connection) -> dict:
-    """cohorts.db wallet_state_latest: positions JSON [[coin, usd, long, first_seen, size], ...]."""
-    if not _has_table(c, "wallet_state_latest"):
-        return {}
-    like = " OR ".join("positions LIKE ?" for _ in RENAMED)
-    rows = c.execute(f"SELECT address, positions FROM wallet_state_latest WHERE {like}",
-                     [f'%"{o}"%' for o in RENAMED]).fetchall()
-    n = 0
-    for address, raw in rows:
-        try:
-            ps = json.loads(raw)
-        except ValueError:
-            continue
-        changed = False
-        for p in ps:
-            if isinstance(p, list) and p and p[0] in RENAMED:
-                p[0] = RENAMED[p[0]]
-                changed = True
-        if changed:
-            c.execute("UPDATE wallet_state_latest SET positions = ? WHERE address = ?",
-                      (json.dumps(ps, separators=(",", ":")), address))
-            n += 1
-    return {"wallet_state_latest.positions": {"renamed": n}} if n else {}
+def _wallet_states_for(pairs: Dict[str, str]):
+    """cohorts.db wallet_state_latest: positions JSON [[coin, usd, long, first_seen, size], ...];
+    each position's coin renamed per ``pairs`` (old -> new)."""
+    def step(c: sqlite3.Connection) -> dict:
+        if not _has_table(c, "wallet_state_latest"):
+            return {}
+        like = " OR ".join("positions LIKE ?" for _ in pairs)
+        rows = c.execute(f"SELECT address, positions FROM wallet_state_latest WHERE {like}",
+                         [f'%"{o}"%' for o in pairs]).fetchall()
+        n = 0
+        for address, raw in rows:
+            try:
+                ps = json.loads(raw)
+            except ValueError:
+                continue
+            changed = False
+            for p in ps:
+                if isinstance(p, list) and p and p[0] in pairs:
+                    p[0] = pairs[p[0]]
+                    changed = True
+            if changed:
+                c.execute("UPDATE wallet_state_latest SET positions = ? WHERE address = ?",
+                          (json.dumps(ps, separators=(",", ":")), address))
+                n += 1
+        return {"wallet_state_latest.positions": {"renamed": n}} if n else {}
+    return step
+
+
+_wallet_states = _wallet_states_for(RENAMED)
+
+
+def _k_pairs(prefix: str = "") -> Dict[str, str]:
+    """Records HyperLens wrote under a k market's bare base ("PEPE", "coin:PEPE") before the
+    app keyed it "KPEPE". Every one of them came from Hyperliquid's kPEPE positions (Hyperliquid
+    has no 1-token PEPE perp), so their prices and sizes are already per 1,000 tokens."""
+    return {f"{prefix}{b}": f"{prefix}K{b}" for b in K_BASES}
 
 
 # ------------------------------------------------------------------ the stores
@@ -199,6 +253,10 @@ def _paths() -> Dict[str, Optional[Path]]:
     return out
 
 
+# Steps that run on another step's file (the k markets, added later under their own marker).
+_SAME_FILE = {"hyperlens_k": "hyperlens", "cohorts_k": "cohorts", "accounts_k": "accounts"}
+
+
 def plans() -> Dict[str, Tuple[List[Tuple[str, str, Dict[str, str]]], object]]:
     """Store -> ([(table, column, old -> new)], extra step). Scanner symbols are "BASE/USDT";
     HyperLens and the Radar key coins bare (trader_lean groups as "coin:BASE")."""
@@ -215,6 +273,15 @@ def plans() -> Dict[str, Tuple[List[Tuple[str, str, Dict[str, str]]], object]]:
         "accounts": ([("watch", "coin", _coin_pairs())], None),
         # Opportunity journal: per-candle snapshots, latest states, transitions.
         "opportunities": ([("snapshots", "symbol", sym), ("states", "symbol", sym), ("transitions", "symbol", sym)], None),
+        # The k markets (PEPE -> KPEPE ...): only what HyperLens keyed by the bare base. The
+        # Radar's readings, scanner records and the OHLCV cache were always keyed by the
+        # scanner symbol (KPEPE/USDT, KPEPE) and need nothing; raw Hyperliquid records keep kPEPE.
+        # The 4H trader record behind the Radar's trails and 24h change; tracked wallets' opens
+        # and convergences (the Radar's "new in 24h").
+        "hyperlens_k": ([("trader_lean", "grp", _k_pairs("coin:")), ("position_opens", "coin", _k_pairs()),
+                         ("convergences", "coin", _k_pairs())], None),
+        "cohorts_k": ([("cohort_snapshots", "symbol", _k_pairs())], _wallet_states_for(_k_pairs())),
+        "accounts_k": ([("watch", "coin", _k_pairs())], None),
     }
 
 
@@ -241,7 +308,7 @@ def migrate_stores(paths: Optional[Dict[str, Optional[Path]]] = None, marker: Op
     for name, (plan, extra) in plans().items():
         if name in done:
             continue
-        path = paths.get(name)
+        path = paths.get(name) if name in paths else paths.get(_SAME_FILE.get(name, name))
         if path is None:
             continue
         try:
