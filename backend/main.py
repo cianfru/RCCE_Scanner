@@ -203,6 +203,9 @@ async def lifespan(app: FastAPI):
     from hyperliquid_universe import refresh, run_refresh
     await refresh(cache)
     asyncio.create_task(run_refresh(cache))
+    # Stored candles checked against Hyperliquid in the background, weekly first (data_fetcher.verify_store).
+    from data_fetcher import run_store_verification
+    asyncio.create_task(run_store_verification())
 
     # Initialize signal log DB
     try:
