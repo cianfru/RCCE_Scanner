@@ -28,7 +28,13 @@
 .lp-cta-ghost:hover{background:var(--lp-acc-dim);border-color:var(--lp-acc);}
 
 /* Hero */
-.lp-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:center;padding:8px 0 4px;min-height:440px;}
+/* The first screen is complete on its own: it fills the viewport (up to a sensible height),
+   so nothing of the next section shows under it. */
+.lp-first{display:flex;flex-direction:column;min-height:min(100vh,1100px);min-height:min(100svh,1100px);}
+.lp-first>.lp-hero{flex:1 0 auto;}
+.lp-first>.lp-coverage{margin-bottom:28px;}
+.lp-pending{min-height:100vh;}
+.lp-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:center;padding:8px 0 24px;}
 /* The floating ribbon (as the first landing had it): halo, bob, floor shadow and pointer lean. */
 .lp-hero-art{position:relative;justify-self:end;width:440px;height:440px;}
 .lp-r{position:absolute;inset:0;will-change:transform;}
@@ -38,13 +44,15 @@
 .lp-hero-art[data-moving=true] .lp-r-float,.lp-hero-art[data-moving=true] .lp-r-shadow{animation-play-state:running;}
 @keyframes lp-r-float{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
 @keyframes lp-r-shadow{0%,100%{transform:scaleX(1);opacity:.75}50%{transform:scaleX(.82);opacity:.4}}
-.lp-motion{position:absolute;right:0;bottom:18px;display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid rgba(151,252,228,.16);border-radius:6px;background:rgba(15,57,51,.32);color:var(--lp-t3);font:500 12px/1 var(--font-geist-sans),sans-serif;cursor:pointer;white-space:nowrap;}
-.lp-motion:hover{color:var(--lp-acc);border-color:var(--lp-border-h);}
-.lp-hero-radar-wrap{padding:8px 0 48px;}
-.lp-motion-t{white-space:nowrap;}
+@media (min-width:1700px) and (min-height:950px){
+  .lp-hero-art{width:520px;height:520px;}
+}
 @media (max-width:1366px){
-  .lp-hero{min-height:380px;}
   .lp-hero-art{width:380px;height:380px;}
+}
+@media (max-height:820px) and (min-width:1101px){
+  .lp-hero-art{width:360px;height:360px;}
+  .lp-hero h1{font-size:clamp(46px,4.6vw,66px);}
 }
 .lp-hero h1{font-size:clamp(46px,5.2vw,76px);line-height:1.04;letter-spacing:-.035em;}
 .lp-hero h1 span{color:var(--lp-acc);}
@@ -112,6 +120,9 @@
 .lp-callouts .lp-shot-img{border:1px solid var(--lp-border);border-radius:14px;overflow:hidden;}
 .lp-mark{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--lp-acc);color:#04060C;font:700 12px var(--font-geist-mono),monospace;flex:none;}
 .lp-shot-img .lp-mark{position:absolute;transform:translate(-50%,-50%);box-shadow:0 0 0 4px rgba(4,6,12,.75);}
+.lp-radar-live{margin:0;}
+.lp-radar-host{position:relative;}
+.lp-radar-host>.lp-mark{position:absolute;transform:translate(-50%,-50%);box-shadow:0 0 0 4px rgba(4,6,12,.75);z-index:3;pointer-events:none;}
 .lp-mark-list{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;font-size:13px;color:var(--lp-t2);}
 .lp-mark-list li{display:flex;align-items:center;gap:10px;}
 
@@ -200,10 +211,7 @@
   .lp-nav{padding:16px 0;}
   .lp-hero{padding:0 0 8px;gap:4px;}
   .lp-hero-art{width:210px;height:210px;}
-  .lp-motion{right:-52px;bottom:10px;padding:8px;}
-  .lp-motion-t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
-  .lp-hero-radar-wrap{padding:24px 0 32px;}
-  .lp-hero h1{font-size:44px;}
+        .lp-hero h1{font-size:44px;}
   .lp-hero-copy>p{font-size:16px;margin:16px 0 22px;}
   .lp-hero-radar-head{flex-wrap:wrap;}
   .lp-coverage{grid-template-columns:1fr 1fr;}
@@ -230,7 +238,7 @@
   .lp-fold h2,.lp-layer h2,.lp-section-head h2,.lp-coin h2,.lp-tg h2,.lp-method h2,.lp-access h2,.lp-final h2{font-size:32px;}
   .lp-layer,.lp-coin,.lp-history,.lp-tg,.lp-method{padding:56px 0;}
   .lp-mark-list{grid-template-columns:1fr;}
-  .lp-shot-img .lp-mark{width:18px;height:18px;font-size:11px;box-shadow:0 0 0 3px rgba(4,6,12,.75);}
+  .lp-radar-host>.lp-mark,.lp-shot-img .lp-mark{width:18px;height:18px;font-size:11px;box-shadow:0 0 0 3px rgba(4,6,12,.75);}
   .lp-expand{grid-template-columns:1fr;margin:0 4px;padding:16px 4px 4px 12px;}
   .lp-engine{padding:10px;}
   .lp-section-head{flex-direction:column;align-items:flex-start;gap:12px;}
