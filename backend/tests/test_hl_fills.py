@@ -18,6 +18,18 @@ V = "0x" + "f" * 40
 NOW = time.time()
 
 
+class FrozenClock:
+    """hl_fills reads the time through this in the tests: always NOW. With the real clock, checks
+    against NOW (taken when the module is imported) failed when the suite ran slowly."""
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+    @staticmethod
+    def time():
+        return NOW
+
+
 def hf(t_s, side, px, sz, start, coin="ETH", d=None, pnl=0.0, fee=0.1, tid=None):
     """A Hyperliquid fill as userFills / userFillsByTime send it."""
     t = int(t_s * 1000)
@@ -80,6 +92,7 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_fills, "_backfill_bucket", TokenBucket(1e6, capacity=1e6))
     monkeypatch.setattr(hl_fills, "live_limiter", hl_fills.LiveLimiter(2))
     monkeypatch.setattr(hl_fills, "_quiet", lambda now: False)
+    monkeypatch.setattr(hl_fills, "time", FrozenClock())
     for name, value in (("_started_at", None), ("_current", None), ("_last_attempt", None),
                         ("_last_exception", None), ("_state", "not started"), ("_task", None)):
         monkeypatch.setattr(hl_fills, name, value, raising=False)
@@ -248,19 +261,19 @@ def test_job_order_changes_before_sweep_before_backfill(fake, monkeypatch):
     for a in (A, C):
         run(hl_fills.sync(None, a, "backfill"))
     hl_fills._priority.clear()
-    assert hl_fills.next_job(time.time(), roster) == (B, "backfill")
-    later = time.time() + 120
+    assert hl_fills.next_job(NOW, roster) == (B, "backfill")
+    later = NOW + 120
     hl_fills._dirty[A] = later - 1
     assert hl_fills.next_job(later, roster) == (A, "change")
     hl_fills._dirty.clear()
-    swept = time.time() + hl_fills.SWEEP_S * 1.2
+    swept = NOW + hl_fills.SWEEP_S * 1.2
     assert hl_fills.next_job(swept, roster)[1] == "sweep"
     monkeypatch.setattr(hl_fills, "_quiet", lambda now: True)
-    assert hl_fills.next_job(time.time() + 120, roster) is None       # backfill waits out the quiet window
+    assert hl_fills.next_job(NOW + 120, roster) is None       # backfill waits out the quiet window
     # A failed read is retried later, not at once.
-    hl_fills._retry_at[B] = (time.time() + 600, 1)
+    hl_fills._retry_at[B] = (NOW + 600, 1)
     monkeypatch.setattr(hl_fills, "_quiet", lambda now: False)
-    assert hl_fills.next_job(time.time() + 120, roster) is None
+    assert hl_fills.next_job(NOW + 120, roster) is None
 
 
 def test_position_change_asks_for_new_fills(fake):
@@ -356,30 +369,36 @@ def test_backfill_waits_out_the_startup_burst(fake, monkeypatch):
     """At start the scanner loads every market's candles (2,700+ weight a minute seen in
     production, over Hyperliquid's 1,200): the backfill waits, reads after a change do not."""
     roster = [A]
-    now = time.time()
+    now = NOW
     monkeypatch.setattr(hl_fills, "_started_at", now - 60)
     assert hl_fills.next_job(now, roster) is None
     monkeypatch.setattr(hl_fills, "_started_at", now - hl_fills.BACKFILL_AFTER_START_S - 1)
     assert hl_fills.next_job(now, roster) == (A, "backfill")
     fake.regular[A] = seq(NOW - 900)
     run(hl_fills.sync(None, A, "backfill"))
-    monkeypatch.setattr(hl_fills, "_started_at", time.time())
-    hl_fills._dirty[A] = time.time() + 100
-    assert hl_fills.next_job(time.time() + 120, roster) == (A, "change")
+    monkeypatch.setattr(hl_fills, "_started_at", NOW)
+    hl_fills._dirty[A] = NOW + 100
+    assert hl_fills.next_job(NOW + 120, roster) == (A, "change")
 
 
 def test_a_view_does_not_wait_behind_a_read_in_progress(fake, monkeypatch):
     """A profile waited 4 seconds for its refresh while the reader was busy with a long backfill."""
     fake.regular[A] = seq(NOW - 900)
     run(hl_fills.sync(None, A, "backfill"))
-    hl_fills._meta[A]["synced_at"] = time.time() - hl_fills.VIEW_REFRESH_S - 1
+    hl_fills._meta[A]["synced_at"] = NOW - hl_fills.VIEW_REFRESH_S - 1
 
     async def view(busy):
+        """Whether the view is still waiting once the reader has had its turn (no wall-clock timing)."""
         monkeypatch.setattr(hl_fills, "_task", asyncio.get_running_loop().create_task(asyncio.sleep(10)))
         monkeypatch.setattr(hl_fills, "_current", {"address": "0x" + "b" * 40} if busy else None)
-        t0 = time.monotonic()
-        await hl_fills.refresh(A, wait=0.5)
+        waiting = asyncio.get_running_loop().create_task(hl_fills.refresh(A, wait=30))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        still_waiting = not waiting.done()
+        registered = A in hl_fills._waiters
+        hl_fills._resolve(A)                     # the reader finished this wallet
+        await asyncio.wait_for(waiting, 1)
         hl_fills._task.cancel()
-        return time.monotonic() - t0
-    assert run(view(busy=True)) < 0.2 and A in hl_fills._view_requests
-    assert run(view(busy=False)) >= 0.45           # a free reader: the view waits for it
+        return still_waiting, registered
+    assert run(view(busy=True)) == (False, False) and A in hl_fills._view_requests
+    assert run(view(busy=False)) == (True, True)       # a free reader: the view waits for it

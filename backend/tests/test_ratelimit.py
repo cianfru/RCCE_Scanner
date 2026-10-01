@@ -25,12 +25,15 @@ class RateLimitTests(unittest.TestCase):
         self.assertTrue(lim.check("b")[0])
 
     def test_window_expiry_frees_budget(self):
-        lim = SlidingWindowLimiter(max_requests=1, window_seconds=0.05)
-        self.assertTrue(lim.check("ip")[0])
-        self.assertFalse(lim.check("ip")[0])
-        import time
-        time.sleep(0.06)
-        self.assertTrue(lim.check("ip")[0])
+        from unittest import mock
+        clock = [1000.0]           # a fixed clock: the real one made this depend on the machine's speed
+        with mock.patch.object(ratelimit.time, "monotonic", lambda: clock[0]):
+            lim = SlidingWindowLimiter(max_requests=1, window_seconds=0.05)
+            self.assertTrue(lim.check("ip")[0])
+            clock[0] += 0.04
+            self.assertFalse(lim.check("ip")[0])
+            clock[0] += 0.02
+            self.assertTrue(lim.check("ip")[0])
 
     def test_key_cap_is_bounded_under_unique_flood(self):
         # Regression for the unbounded-map bug: a flood of fresh identities
