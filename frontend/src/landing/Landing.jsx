@@ -190,21 +190,57 @@ function ForwardCounter({ f }) {
   </div>;
 }
 
-// The ribbon turns only while it is on screen and the tab is visible.
-function FinalArt({ reduced }) {
-  const ref = useRef(null);
-  const [seen, setSeen] = useState(false);
+// The floating ribbon at the top: the 3D R turns, bobs and leans toward the pointer, with its
+// halo and floor shadow, only while it is on screen, the tab is visible and motion is not
+// paused (Pause motion) or reduced (then it is a still frame).
+function HeroArt({ reduced }) {
+  const ref = useRef(null), tilt = useRef(null);
+  const [seen, setSeen] = useState(true);
   const [shown, setShown] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const active = !reduced && !paused && seen && shown;
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return undefined;
-    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { rootMargin: "100px" });
+    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { rootMargin: "80px" });
     io.observe(el);
     const vis = () => setShown(!document.hidden);
     document.addEventListener("visibilitychange", vis);
     return () => { io.disconnect(); document.removeEventListener("visibilitychange", vis); };
   }, []);
-  return <div className="lp-final-art" aria-hidden="true" ref={ref}><LogoSculpture active={!reduced && seen && shown} /></div>;
+  // Pointer lean, eased toward the pointer (mouse only), back to rest when motion stops.
+  useEffect(() => {
+    const el = tilt.current;
+    if (!el) return undefined;
+    if (!active) { el.style.transform = ""; return undefined; }
+    let goal = [0, 0], now = [0, 0], frame = 0;
+    const step = () => {
+      now = [now[0] + (goal[0] - now[0]) * 0.06, now[1] + (goal[1] - now[1]) * 0.06];
+      el.style.transform = `translate3d(${(now[0] * 16).toFixed(2)}px,${(now[1] * 11).toFixed(2)}px,0) rotate(${(now[0] * 0.8).toFixed(3)}deg)`;
+      frame = Math.abs(goal[0] - now[0]) + Math.abs(goal[1] - now[1]) > 0.002 ? requestAnimationFrame(step) : 0;
+    };
+    const move = e => {
+      if (e.pointerType !== "mouse") return;
+      goal = [Math.max(-1, Math.min(1, (e.clientX / window.innerWidth - 0.5) * 2)), Math.max(-1, Math.min(1, (e.clientY / window.innerHeight - 0.5) * 2))];
+      if (!frame) frame = requestAnimationFrame(step);
+    };
+    window.addEventListener("pointermove", move, { passive: true });
+    return () => { window.removeEventListener("pointermove", move); cancelAnimationFrame(frame); el.style.transform = ""; };
+  }, [active]);
+  return <div className="lp-hero-art" ref={ref} data-moving={active ? "true" : "false"}>
+    <div className="lp-r" aria-hidden="true" ref={tilt}>
+      <div className="lp-r-float">
+        <div className="lp-r-halo" />
+        <LogoSculpture active={active} />
+      </div>
+      <div className="lp-r-shadow" />
+    </div>
+    {!reduced && <button type="button" className="lp-motion" onClick={() => setPaused(v => !v)} aria-pressed={paused}
+      aria-label={paused ? "Play the logo's motion" : "Pause the logo's motion"}>
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">{paused ? <path d="M2 1 L9 5 L2 9 Z" fill="currentColor" /> : <><rect x="2" y="1" width="2" height="8" fill="currentColor" /><rect x="6" y="1" width="2" height="8" fill="currentColor" /></>}</svg>
+      <span className="lp-motion-t">{paused ? "Play motion" : "Pause motion"}</span>
+    </button>}
+  </div>;
 }
 
 const FAQ = [
@@ -234,6 +270,9 @@ export function Landing() {
           <p>Regime, entry checks and profitable-trader positioning for every Hyperliquid perp.</p>
           <a className="lp-cta" href={ACCESS}>Open Reflex</a>
         </div>
+        <HeroArt reduced={reduced} />
+      </section>
+      <section className="lp-width lp-hero-radar-wrap" aria-label="The Radar at the latest daily close">
         <HeroRadar data={data} phone={phone} />
       </section>
       <Coverage asOf={data?.as_of} />
@@ -293,7 +332,7 @@ export function Landing() {
       </section>
 
       <section className="lp-final lp-width" aria-labelledby="lp-final-h">
-        <FinalArt reduced={reduced} />
+        <div className="lp-final-mark" aria-hidden="true"><Mark size={64} /></div>
         <h2 id="lp-final-h">One read. Every morning.</h2>
         <a className="lp-cta" href={ACCESS}>Open Reflex</a>
       </section>

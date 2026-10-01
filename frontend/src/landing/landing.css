@@ -28,7 +28,24 @@
 .lp-cta-ghost:hover{background:var(--lp-acc-dim);border-color:var(--lp-acc);}
 
 /* Hero */
-.lp-hero{display:grid;grid-template-columns:minmax(0,4.2fr) minmax(0,7.8fr);gap:40px;align-items:center;padding:40px 0 48px;}
+.lp-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:center;padding:8px 0 4px;min-height:440px;}
+/* The floating ribbon (as the first landing had it): halo, bob, floor shadow and pointer lean. */
+.lp-hero-art{position:relative;justify-self:end;width:440px;height:440px;}
+.lp-r{position:absolute;inset:0;will-change:transform;}
+.lp-r-float{position:absolute;inset:0;animation:lp-r-float 12s ease-in-out infinite;animation-play-state:paused;}
+.lp-r-halo{position:absolute;inset:12% -10%;background:radial-gradient(ellipse,#97FCE415,#0F393325 38%,transparent 68%);filter:blur(25px);}
+.lp-r-shadow{position:absolute;bottom:-2%;left:22%;width:56%;height:8%;background:radial-gradient(ellipse,#97FCE426,transparent 68%);filter:blur(12px);animation:lp-r-shadow 12s ease-in-out infinite;animation-play-state:paused;}
+.lp-hero-art[data-moving=true] .lp-r-float,.lp-hero-art[data-moving=true] .lp-r-shadow{animation-play-state:running;}
+@keyframes lp-r-float{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
+@keyframes lp-r-shadow{0%,100%{transform:scaleX(1);opacity:.75}50%{transform:scaleX(.82);opacity:.4}}
+.lp-motion{position:absolute;right:0;bottom:18px;display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid rgba(151,252,228,.16);border-radius:6px;background:rgba(15,57,51,.32);color:var(--lp-t3);font:500 12px/1 var(--font-geist-sans),sans-serif;cursor:pointer;white-space:nowrap;}
+.lp-motion:hover{color:var(--lp-acc);border-color:var(--lp-border-h);}
+.lp-hero-radar-wrap{padding:8px 0 48px;}
+.lp-motion-t{white-space:nowrap;}
+@media (max-width:1366px){
+  .lp-hero{min-height:380px;}
+  .lp-hero-art{width:380px;height:380px;}
+}
 .lp-hero h1{font-size:clamp(46px,5.2vw,76px);line-height:1.04;letter-spacing:-.035em;}
 .lp-hero h1 span{color:var(--lp-acc);}
 .lp-hero-copy>p{font-size:17px;line-height:1.6;margin:22px 0 30px;max-width:380px;color:var(--lp-t2);}
@@ -168,18 +185,24 @@
 .lp-faq details[open] summary span{transform:rotate(45deg);}
 .lp-faq details p{padding:0 32px 20px 0;font-size:15px;line-height:1.65;}
 .lp-final{display:flex;flex-direction:column;align-items:center;gap:24px;padding:72px 0 88px;text-align:center;}
-.lp-final-art{position:relative;width:300px;height:310px;}
+.lp-final-mark{opacity:.9;}
 .lp-footer{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px 0 40px;border-top:1px solid var(--lp-border);font-size:13px;color:var(--lp-t3);}
 
 @media (max-width:1100px){
   .lp-hero,.lp-fold-grid,.lp-layer{grid-template-columns:1fr;gap:28px;}
+  .lp-hero{min-height:0;gap:8px;}
+  .lp-hero-art{order:-1;justify-self:center;width:300px;height:300px;}
   .lp-layer-copy p{max-width:560px;}
 }
 @media (max-width:700px){
   .lp-width{width:calc(100% - 32px);}
   .lp-nav nav,.lp-nav .lp-cta-ghost{display:none;}
   .lp-nav{padding:16px 0;}
-  .lp-hero{padding:16px 0 32px;gap:24px;}
+  .lp-hero{padding:0 0 8px;gap:4px;}
+  .lp-hero-art{width:210px;height:210px;}
+  .lp-motion{right:-52px;bottom:10px;padding:8px;}
+  .lp-motion-t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+  .lp-hero-radar-wrap{padding:24px 0 32px;}
   .lp-hero h1{font-size:44px;}
   .lp-hero-copy>p{font-size:16px;margin:16px 0 22px;}
   .lp-hero-radar-head{flex-wrap:wrap;}
@@ -215,7 +238,6 @@
   .lp-phone{width:100%;max-width:340px;margin-inline:auto;}
   .lp-counter-num b{font-size:44px;}
   .lp-counter-cells{gap:3px;}
-  .lp-final-art{width:240px;height:250px;}
   .lp-footer{flex-direction:column;align-items:flex-start;}
 }
-@media (prefers-reduced-motion:reduce){.lp *{transition:none!important;animation:none!important;}}
+@media (prefers-reduced-motion:reduce){.lp *{transition:none!important;animation:none!important;}.lp-r{transform:none!important;}}
