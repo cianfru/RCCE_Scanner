@@ -15,10 +15,9 @@ backend/feature_flags.json
 market_history_live.json
 *.pkl
 
-# Larsson study: paid third-party data and research notes stay out of this
-# public repo; the Binance kline cache is regenerated on demand.
-data/private/
-backend/data/private/
+# Study data: the paid third-party files in backend/data/private/ are tracked (the repo
+# is private) and kept out of the Docker image by backend/.dockerignore. The Binance kline
+# cache and run outputs are regenerated on demand.
 backend/data/larsson_cache/
 backend/data/larsson_runs/
 backend/hyperliquid_universe.json
