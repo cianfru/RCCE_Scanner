@@ -375,7 +375,9 @@ def run_b1(win, data, replay, bmsb, veto_blue=False, pm_class=None):
         exposure.append(value / pm.equity_curve[-1][1] if pm.equity_curve[-1][1] > 0 else 0.0)
     pm.close_all_at_end(days[-1])
     pm.equity_curve[-1] = (days[-1], pm.get_equity())
-    trades = [dict(symbol=t.symbol.split("/")[0], pnl=t.pnl_usd, r=None, bars=t.bars_held, exit=t.exit_signal) for t in pm.trades]
+    trades = [dict(symbol=t.symbol.split("/")[0], pnl=t.pnl_usd, r=None, bars=t.bars_held, exit=t.exit_signal,
+                   entry=t.entry_time, exit_ts=t.exit_time, exit_px=t.exit_price, **getattr(t, "tags", {}))
+              for t in pm.trades]
     return pm.equity_curve, exposure, trades
 
 

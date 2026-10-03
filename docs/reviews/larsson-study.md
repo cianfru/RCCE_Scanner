@@ -449,3 +449,114 @@ By family: rectangle 2/27, triangle 2/14, head & shoulders 1/12, cup & handle 0/
 ## Terminal chart (display only)
 
 The terminal chart draws the Larsson Line ribbon (four EMAs coloured gold / blue / grey per bar) where the CTO lines used to be, and on 1D offers a Patterns toggle, off by default. Each drawn pattern carries its measured track record from the validity study above. Neither feeds the synthesizer, the exits or any signal; the chart endpoint still returns `cto_fast` / `cto_slow` unchanged, and the new data sits under its own keys (`larsson`, `patterns`). The ribbon skips the first 3 x 58 bars of the chart history; on BTC, ETH, SOL and DOGE the drawn 500-bar ribbon matched a full-history computation on every bar's state (EMA gap below 0.1%).
+
+## R2: exit RCCE trades on a support breakdown (declared before running)
+
+Declared 2026-10-03, before any result of this test was computed. Question: does exiting an RCCE trade when the close breaks down through a support level touched at least twice improve results? Prior evidence is a hypothesis only: it comes from months inside the held-back window, where breakdowns of support were followed by real moves and breakouts were not.
+
+**Scope.** Windows 1-9 only; the holdout (W10) stays locked and no data past the end of W9 is loaded. Same data (Binance spot daily), costs (5 + 5 bps per side), sizing, BMSB gate and fill convention (signal-bar close) as B1. Universes: the primary ten and the secondary 30 of the scenario search (`secondary_universe.json`, unchanged), with the same cached RCCE replays.
+
+**Trigger.** A Module B `breakdown` event (`levels-1` declared defaults: n = 5, tol 1.5%, W = 730, gap 10, min_touches 2, max_last 30, buffer 1%; a breakdown needs n_low >= 2) on the coin's USD daily chart, on a completed daily close (bar i). It counts only:
+- while a trade is open on that coin, on closes after its entry bar;
+- for a level at or below the position's average entry price at that close (levels above it are ignored);
+- after the parent's own rules have run on that close (if the parent exits there, nothing is left to exit).
+
+The exit fills at the open of the coin's next daily bar (i + 1), before anything else on that bar, with the same costs. A pending exit is dropped if the position is closed first (RISK_OFF on another coin's bar the same day) or the window ends (the window-end close takes precedence). After a full breakdown exit the coin takes no new entry on the exit bar; B1's entry rules apply again from the following bar, as after any B1 exit. Everything else on that bar (RISK_OFF closing all positions, the decay counter) runs unchanged. After a 50% sell the remaining half stays under the parent's rules, including on the exit bar's close.
+
+**Variants** (nothing else is tuned):
+
+| ID | Rule | Parent |
+|---|---|---|
+| R2-B1 | B1 plus a full exit at the next open on a breakdown | B1 |
+| R2-B1-50 | B1 plus a 50% sell at the next open on the first breakdown of the trade (once per trade; later breakdowns ignored) | B1 |
+| R2-H60 | `F0-t60-s12-nosig` plus a full exit at the next open on a breakdown | `F0-t60-s12-nosig` |
+| R2-B1-ng | as R2-B1, but only when the ribbon (Module A, USD daily) is not gold on the breakdown bar | B1 |
+
+**Measures**, per universe, for the four variants and both parents:
+- compounded return over W1-9 (fresh capital per window), worst window drawdown, median-window Sharpe, windows beating the parent (higher window return);
+- trades, win rate, average hold. A trade is one position from entry to final exit: a 50% sell and the later close of the rest count as one trade (P&L summed, hold to the final exit);
+- breakdown exits (fills), and what holding would have done: the return from the exit fill (open of bar i + 1) to the close of bar i + 20, before costs; mean, median and share negative (negative = the exit avoided a loss). Exits whose 20 bars run past the end of W9 are excluded and counted.
+
+**Statistics.** White's Reality Check over the four variants against B1 on daily returns (the scenario search's implementation: stationary bootstrap, mean block 10 days, 2,000 resamples, seed 7), with naive one-sided p-values per variant vs B1. A variant's Reality Check p is the share of bootstrap maxima (over all four) at or above its own statistic; for the best variant this is White's family p. Run on both universes; the bar uses the primary. Context only: naive p of each variant vs its own parent. For R2-H60 the comparison with B1 also carries the parent's own difference from B1 (naive p 0.09 in the scenario search); criterion 2 is what isolates the breakdown rule.
+
+**Decision bar.** A variant is a candidate only if all of these hold; otherwise "context, not a signal":
+1. Reality Check p < 0.10 on the primary universe.
+2. It beats its parent on compounded return AND worst-window drawdown (strictly: higher compounded return, shallower worst-window drawdown) on BOTH the primary and secondary universes.
+3. It holds with the single best coin removed: on the primary universe without the coin that contributes most to the variant's gain over its parent (variant P&L minus parent P&L, summed over W1-9), with the RCCE replay unchanged and the allocation spread over the nine remaining coins, it still beats its parent on compounded return and worst-window drawdown.
+
+Criteria 2 and 3 are computed and reported for every variant.
+
+**Diagnostic, not a criterion.** Variants and parents once without window resets on the primary universe (one capital from W1 start to W9 end), as in the scenario search.
+
+**Check.** The parents must reproduce their earlier numbers (B1 +53.9% / -24.4% primary, +12.5% / -26.3% secondary; `F0-t60-s12-nosig` +83.4% / -19.8% and +22.4% / -27.3%). Any difference is reported as a deviation.
+
+**Run.** A new module in the backtest package (`python -m backtest.breakdown_exit_study --out r2_breakdown_w1-9`, from `backend/`), committed with its tests before the run. No live code path, the executor or the synthesizer is touched.
+
+### Results (run `r2_breakdown_w1-9`)
+
+Run as declared; no deviations. Both parents reproduce their earlier numbers exactly. A second run from the committed code (`r2_breakdown_w1-9_repro`) gives identical numbers. "Held 20 bars" is the return from the exit fill to the close 20 bars after the breakdown, had the trade been held; negative means the exit avoided a loss.
+
+**Primary universe (10 coins, W1-9)**
+
+| Strategy | Compounded W1-9 | Worst window DD | Median Sharpe | Windows beating parent | Trades | Win rate | Avg hold | Breakdown exits | Held 20 bars: mean / median / share < 0 | RC p | Naive p vs B1 | Naive p vs parent |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| B1 | +53.9% | -24.4% | 0.00 | - | 228 | 28% | 27 | - | - | - | - | - |
+| `F0-t60-s12-nosig` | +83.4% | -19.8% | 0.00 | - | 211 | 36% | 31 | - | - | - | - | - |
+| R2-B1 | +50.1% | -23.9% | 0.00 | 2/9 | 240 | 26% | 25 | 21 | +2.9% / -2.3% / 52% | 0.99 | 0.89 | 0.89 |
+| R2-B1-50 | +52.1% | -24.0% | 0.00 | 4/9 | 228 | 28% | 27 | 17 | +3.0% / +1.0% / 47% | 0.94 | 0.85 | 0.85 |
+| R2-H60 | +74.7% | -18.6% | 0.00 | 4/9 | 230 | 33% | 28 | 39 | -0.7% / -5.4% / 67% | 0.15 | 0.15 | 0.91 |
+| R2-B1-ng | +50.2% | -23.8% | 0.00 | 1/9 | 237 | 27% | 25 | 13 | +1.9% / -5.5% / 54% | 0.99 | 0.89 | 0.89 |
+
+White's Reality Check over the four variants against B1: **family p = 0.15** (best R2-H60).
+
+**Secondary universe (30 coins, W1-9)**
+
+| Strategy | Compounded W1-9 | Worst window DD | Median Sharpe | Windows beating parent | Trades | Win rate | Avg hold | Breakdown exits | Held 20 bars: mean / median / share < 0 | RC p | Naive p vs B1 | Naive p vs parent |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| B1 | +12.5% | -26.3% | -0.13 | - | 690 | 22% | 24 | - | - | - | - | - |
+| `F0-t60-s12-nosig` | +22.4% | -27.3% | -0.03 | - | 648 | 27% | 27 | - | - | - | - | - |
+| R2-B1 | +11.9% | -25.9% | -0.12 | 5/9 | 718 | 21% | 23 | 59 | +6.4% / +2.8% / 42% | 0.94 | 0.66 | 0.66 |
+| R2-B1-50 | +13.2% | -25.9% | -0.11 | 6/9 | 690 | 22% | 24 | 52 | +4.8% / +2.8% / 42% | 0.80 | 0.42 | 0.42 |
+| R2-H60 | +20.7% | -26.4% | -0.02 | 6/9 | 700 | 25% | 24 | 126 | +4.8% / -0.2% / 50% (125; 1 past W9) | 0.18 | 0.18 | 0.65 |
+| R2-B1-ng | +12.0% | -25.8% | -0.12 | 5/9 | 713 | 21% | 23 | 47 | +9.5% / +4.0% / 43% | 0.92 | 0.66 | 0.66 |
+
+Reality Check on the secondary set: family p = 0.18 (best R2-H60).
+
+**No resets (diagnostic; primary, 2021-10-21 to 2026-03-29, one capital)**
+
+| Strategy | Total return | Max drawdown | Trades | Win rate | Avg hold | Breakdown exits |
+|---|---:|---:|---:|---:|---:|---:|
+| B1 | +48.7% | -31.7% | 185 | 22% | 35 | - |
+| `F0-t60-s12-nosig` | +62.2% | -27.6% | 180 | 32% | 37 | - |
+| R2-B1 | +46.9% | -32.4% | 198 | 20% | 32 | 24 |
+| R2-B1-50 | +44.9% | -31.5% | 185 | 21% | 35 | 19 |
+| R2-H60 | +62.3% | -25.0% | 198 | 28% | 33 | 43 |
+| R2-B1-ng | +47.1% | -32.4% | 195 | 20% | 33 | 17 |
+
+**Best coin removed (primary)**
+
+| Variant | Coin removed | Variant: compounded / worst DD | Parent: compounded / worst DD | Holds |
+|---|---|---|---|---|
+| R2-B1 | BTC | +49.5% / -25.0% | +54.2% / -25.4% | no |
+| R2-B1-50 | DOT | +56.2% / -23.2% | +59.1% / -23.3% | no |
+| R2-H60 | BTC | +79.9% / -19.0% | +92.3% / -19.9% | no |
+| R2-B1-ng | BTC | +49.9% / -24.8% | +54.2% / -25.4% | no |
+
+### Verdict of R2
+
+| Variant | 1. RC p < 0.10 (primary) | 2. Beats parent on compounded and worst DD, both universes | 3. Best coin removed | Verdict |
+|---|---|---|---|---|
+| R2-B1 | no (0.99) | no: lower compounded on both | no | context, not a signal |
+| R2-B1-50 | no (0.94) | no: lower compounded on the primary (passes on the secondary) | no | context, not a signal |
+| R2-H60 | no (0.15) | no: lower compounded on both | no | context, not a signal |
+| R2-B1-ng | no (0.99) | no: lower compounded on both | no | context, not a signal |
+
+**No variant is a candidate.** Exiting RCCE trades on a support breakdown does not improve them in W1-9.
+
+Readings:
+- **Drawdown slightly lower, return lower.** All eight variant-universe pairs have a shallower worst-window drawdown than their parent (by 0.4-1.2 points), and seven of eight compound less. Without resets R2-H60 matches its parent's return (+62.3% vs +62.2%) with a shallower drawdown (-25.0% vs -27.6%). That is the most favourable figure in the test, but it is a diagnostic only, and the windowed tests fail.
+- **Few trades exit this way under B1.** A qualifying breakdown needs a close at least 1% below a level at or below the entry, while B1's 8% stop sits close underneath. On the primary set only 21 of B1's 228 trades exit this way, and 8% stop-outs fall from 139 to 130. The 12% stop of `F0-t60-s12-nosig` leaves more room: 39 exits and 18 fewer stop-outs.
+- **Did the exits avoid losses?** Not on balance. On the primary set the median full exit was followed by a further fall over the next 20 bars (median -2.3% R2-B1, -5.5% R2-B1-ng, -5.4% R2-H60). Sharp rebounds pull the averages up (mean +2.9%, +1.9% and -0.7%). On the secondary set holding would have gained, on average and in most cases (means +4.8% to +9.5%, 42-50% negative). The exit avoids some slow declines and misses the rebounds.
+- R2-H60's lower primary compounded return comes mostly from W7 (+31.1% vs +38.8%). Its Reality Check p of 0.15 against B1 is its parent's edge, not the rule's. Against its own parent its naive p is 0.91 (primary) and 0.65 (secondary).
+- The not-gold gate (R2-B1-ng) removes 8 of 21 exits on the primary set (12 of 59 on the secondary) and changes nothing material.
+- The held-back months showed breakdowns followed by real moves. In W1-9 a support breakdown during an RCCE trade is not a reliable exit. Nothing changes in the app, the executor or the synthesizer; the holdout stays locked.
