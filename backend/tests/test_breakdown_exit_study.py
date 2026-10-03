@@ -151,7 +151,7 @@ class ReportingTests(unittest.TestCase):
 
     def test_beats_needs_both_return_and_drawdown(self):
         parent = {"compounded_pct": 50.0, "worst_dd_pct": -20.0}
-        self.assertTrue(r2.beats({"compounded_pct": 51.0, "worst_dd_pct": -19.0}, parent))
+        self.assertIs(r2.beats({"compounded_pct": np.float64(51.0), "worst_dd_pct": -19.0}, parent), True)
         self.assertFalse(r2.beats({"compounded_pct": 51.0, "worst_dd_pct": -20.0}, parent))
         self.assertFalse(r2.beats({"compounded_pct": 49.0, "worst_dd_pct": -10.0}, parent))
 

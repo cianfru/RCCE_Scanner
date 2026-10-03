@@ -213,7 +213,7 @@ def best_coin(variant_trades: List[dict], parent_trades: List[dict]) -> str:
 
 
 def beats(row: dict, parent_row: dict) -> bool:
-    return row["compounded_pct"] > parent_row["compounded_pct"] and row["worst_dd_pct"] > parent_row["worst_dd_pct"]
+    return bool(row["compounded_pct"] > parent_row["compounded_pct"] and row["worst_dd_pct"] > parent_row["worst_dd_pct"])
 
 
 def statistics_vs(results: dict) -> dict:
@@ -262,7 +262,7 @@ def study() -> dict:
     verdict = {}
     for v in VARIANTS:
         p = PARENTS[v]
-        c1 = payload["primary"]["reality_check"]["adjusted_p"][v] < 0.10
+        c1 = bool(payload["primary"]["reality_check"]["adjusted_p"][v] < 0.10)
         c2 = all(beats(tables[u][v], tables[u][p]) for u in ("primary", "secondary"))
         c3 = payload["best_coin_removed"][v]["holds"]
         verdict[v] = {"c1_reality_check": c1, "c2_beats_parent_both": c2, "c3_best_coin_removed": c3,
