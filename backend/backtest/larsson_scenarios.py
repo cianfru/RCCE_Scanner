@@ -229,7 +229,9 @@ def _stationary_bootstrap_idx(n, mean_block, rng):
 def reality_check(results, names, benchmark="B1", reps=2000, mean_block=10, seed=7):
     """White's Reality Check on mean daily excess return vs the benchmark.
 
-    Returns the family p-value for the best scenario and naive per-scenario p-values.
+    Returns the family p-value for the best scenario, naive per-scenario p-values and
+    single-step adjusted p-values (share of bootstrap maxima at or above each scenario's
+    own statistic; for the best scenario this equals the family p).
     """
     rng = np.random.default_rng(seed)
     d = np.vstack([results[n]["daily"] - results[benchmark]["daily"] for n in names])
@@ -244,6 +246,7 @@ def reality_check(results, names, benchmark="B1", reps=2000, mean_block=10, seed
         boot_each += (centred >= means)            # naive one-sided p for each scenario
     return {"best": names[int(means.argmax())], "family_p": float((boot_max >= stat).mean()),
             "naive_p": {nm: float(c / reps) for nm, c in zip(names, boot_each)},
+            "adjusted_p": {nm: float((boot_max >= math.sqrt(n) * m).mean()) for nm, m in zip(names, means)},
             "mean_excess_bps_per_day": {nm: float(m * 1e4) for nm, m in zip(names, means)}}
 
 
