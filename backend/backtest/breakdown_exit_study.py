@@ -23,7 +23,7 @@ import logging
 import math
 import statistics
 from collections import Counter, defaultdict
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -49,17 +49,22 @@ EXPECTED_PARENTS = {   # earlier runs (scen_primary / scen_secondary): compounde
 
 # ------------------------------------------------------------------------------ manager
 
-def breakdown_exit_class(base, *, fraction: float = 1.0, once: bool = False, not_gold: bool = False):
+def breakdown_exit_class(base, *, fraction: float = 1.0, once: bool = False, not_gold: bool = False,
+                         gate: Optional[Callable[[float], bool]] = None):
     """``base`` (a PositionManager class) plus the declared breakdown exit.
 
     fraction  share of the position sold at the next open (1.0 full, 0.5 half)
     once      only the first breakdown of a trade counts
     not_gold  only breakdowns on bars where the ribbon is not gold count
+    gate      optional market gate read on the breakdown close (bar timestamp -> bool);
+              a qualifying breakdown on a close where it is False is skipped and
+              logged in the class attribute ``skipped`` (R2-RO)
     """
     label = EXIT_FULL if fraction >= 1.0 else EXIT_HALF
 
     class BreakdownExitPM(base):
         ctx = None
+        skipped: List[dict] = []                      # fresh per class: one log per run
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -100,6 +105,10 @@ def breakdown_exit_class(base, *, fraction: float = 1.0, once: bool = False, not
                 if (once and key in self._bd_fired) or (not_gold and sd.ll["state"][i] == "gold"):
                     return out if out is not None else fill
                 if any(e["event"] == "breakdown" and e["level"] <= pos.entry_price for e in sd.levels[i].events):
+                    if gate is not None and not gate(bar.timestamp):
+                        self.skipped.append({"symbol": sym.split("/")[0], "entry": pos.entry_time,
+                                             "bd_bar": int(i), "ts": float(bar.timestamp)})
+                        return out if out is not None else fill
                     self._bd_pending[sym] = (pos.entry_time, i)
                     if once:
                         self._bd_fired.add(key)
@@ -129,9 +138,10 @@ def attach_levels(data) -> None:
         sd.levels = levels_for(sd, DECLARED["tol"], DECLARED["max_last"], DECLARED["b"])
 
 
-def run_all(data, replay, bmsb, wins, names=None) -> dict:
+def run_all(data, replay, bmsb, wins, names=None, classes=None) -> dict:
+    """``classes`` defaults to R2's ``pm_classes()``; pass fresh classes per run (gate logs)."""
     out = {}
-    for name, cls in pm_classes().items():
+    for name, cls in (pm_classes() if classes is None else classes).items():
         if names is not None and name not in names:
             continue
         rows, daily, trades = [], [], []
@@ -141,7 +151,8 @@ def run_all(data, replay, bmsb, wins, names=None) -> dict:
             eq = np.array([INITIAL_CAPITAL] + [e for _, e in curve])
             daily.extend(eq[1:] / eq[:-1] - 1)
             trades.extend(tr)
-        out[name] = {"rows": rows, "daily": np.array(daily), "trades": trades}
+        out[name] = {"rows": rows, "daily": np.array(daily), "trades": trades,
+                     "skipped": list(getattr(cls, "skipped", []))}
         logger.info("%s done", name)
     return out
 
@@ -173,12 +184,13 @@ def forward_returns(trades: List[dict], data, bars: int = FWD_BARS) -> dict:
             "share_negative_pct": float(np.mean(np.array(vals) < 0) * 100) if vals else None}
 
 
-def summarise(results: dict, data) -> dict:
+def summarise(results: dict, data, parents: Optional[Dict[str, str]] = None) -> dict:
+    parents = PARENTS if parents is None else parents
     table = {}
     for name, res in results.items():
         rows, tr = res["rows"], res["trades"]
         pos = positions(tr)
-        parent = PARENTS.get(name)
+        parent = parents.get(name)
         prow = {r["window"]: r for r in results[parent]["rows"]} if parent in results else None
         table[name] = {
             "parent": parent,
