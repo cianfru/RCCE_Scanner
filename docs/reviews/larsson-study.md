@@ -560,3 +560,57 @@ Readings:
 - R2-H60's lower primary compounded return comes mostly from W7 (+31.1% vs +38.8%). Its Reality Check p of 0.15 against B1 is its parent's edge, not the rule's. Against its own parent its naive p is 0.91 (primary) and 0.65 (secondary).
 - The not-gold gate (R2-B1-ng) removes 8 of 21 exits on the primary set (12 of 59 on the secondary) and changes nothing material.
 - The held-back months showed breakdowns followed by real moves. In W1-9 a support breakdown during an RCCE trade is not a reliable exit. Nothing changes in the app, the executor or the synthesizer; the holdout stays locked.
+
+## R2-RO: support-breakdown exit only in risk-off (declared before running)
+
+Declared 2026-10-09, before any result of this test was computed. Question: does R2's support-breakdown exit help when it acts only while the whole market is falling? The prior evidence comes from inside the held-back window (Apr-Oct 2026, a falling market), where support breakdowns were followed by real declines. It is a hypothesis only; R2 (all market states) failed its bar.
+
+**Scope.** Windows 1-9 only. The holdout (W10) stays locked; no data past the end of W9 is loaded. Data, costs, sizing, BMSB entry gate (two completed weeks below, unchanged), fill convention, trigger, level rules, universes and cached RCCE replays are R2's.
+
+**Trigger.** R2's, unchanged: a Module B `breakdown` (`levels-1` declared defaults, n_low >= 2) of a level at or below the position's average entry price, on a completed daily close (bar i) after the entry bar, evaluated after the parent's own rules on that close. The exit fills at the open of bar i + 1, before anything else on that bar; a pending exit is dropped if the position closes first or the window ends; no new entry on the exit bar.
+
+**Risk-off gate.** A qualifying breakdown acts only if the variant's risk-off definition is on at the close of bar i (the close the trigger is read on). The fill does not re-check it. A qualifying breakdown on a close where the definition is off is skipped and counted; the position stays under the parent's rules, and a later qualifying breakdown in the same trade can still exit it if the definition is on then. Both definitions use only data complete at the close of bar i:
+
+- **RO-BMSB**: BTC's last completed weekly close is below its weekly BMSB, the mid of the 20-week SMA and 21-week EMA, computed as B1's entry filter computes it (`_compute_bmsb_filter`, here with one week instead of two). The completed-week rule is B1's: Binance BTCUSDT weekly bars (only finished weeks are loaded) keyed to the open of their final day, so at the close of bar i the gate reads the latest week whose last day is at or before bar i. Source: the BTC weekly series stored in the replay cache, the one B1's gate reads. Same on both universes.
+- **RO-CONS**: the RCCE market consensus for day i is RISK-OFF. It is the consensus the replay computed for that day and passed to the synthesizer: `scanner.compute_consensus`, the live scanner's own function (RISK-OFF when more than 55% of coins are in MARKDOWN), over the daily regimes of every coin the replay ran that day, from bars complete at the close of day i and finished weeks. It is read from the replay's stored per-coin results: each result's signal reason records the consensus it was synthesized with. If no stored result records it, it is recounted with `compute_consensus` from that day's stored regimes. A day with no replay results is not risk-off.
+
+**Pre-run decision on RO-CONS: kept; the fallback ("BTC 1D RCCE regime is MARKDOWN or CAP") is not used.** Checked before declaring, on the cached replays only (no returns, no risk-off shares computed):
+- The replay computes the consensus every day with `scanner.compute_consensus`. Its thresholds have not changed since the replays were cached. The one later change, leaving out coins with no candle history, never applies in the replay.
+- The replay's value can be recovered exactly. In W1-9 the recorded label is readable on 1,619 of 1,620 days (primary) and 1,620 of 1,620 (secondary), and all of a day's records agree. The one primary day without a record (2025-04-07, every signal blocked by an exhaustion climax) has stored results for all ten coins, so the recount is exact.
+- A plain recount from stored regimes is not used: on 23 primary and 7 secondary W1-9 days a coin's result is missing from the cache while the coin still counted in the replay's consensus, so the recount differs from the replay's value on those days.
+- Declared limitation: the live scanner counts every coin it scans. The replay counts the coins it ran: the primary ten on the primary universe, and the 30 secondary coins plus BTC and ETH on the secondary universe. RO-CONS is a 10-coin consensus on the primary and a 32-coin consensus on the secondary.
+
+Interaction (from the code, not a result): B1 closes every position on a RISK_OFF signal, which the synthesizer issues only while the consensus is RISK-OFF. On such a close B1's rules run first, so RO2-B1 can act only on positions B1 still holds. `F0-t60-s12-nosig` ignores RCCE exit signals.
+
+**Variants** (nothing else is tuned):
+
+| ID | Rule | Parent |
+|---|---|---|
+| RO1-B1 | B1 plus a full breakdown exit, only while RO-BMSB | B1 |
+| RO2-B1 | B1 plus a full breakdown exit, only while RO-CONS | B1 |
+| RO1-H60 | `F0-t60-s12-nosig` plus a full breakdown exit, only while RO-BMSB | `F0-t60-s12-nosig` |
+| RO2-H60 | `F0-t60-s12-nosig` plus a full breakdown exit, only while RO-CONS | `F0-t60-s12-nosig` |
+
+Context rows, not tested and outside the Reality Check: R2-B1 and R2-H60 (the same exit with no gate), rerun with the same code.
+
+**Measures**, per universe, for the four variants, both parents and the context rows:
+- compounded return over W1-9 (fresh capital per window), worst-window drawdown, median-window Sharpe, windows beating the parent (higher window return);
+- trades, win rate, average hold (R2's trade definition);
+- breakdown exits (fills); skipped breakdowns: qualifying breakdown closes on which the gate was off, counted per close and as distinct positions;
+- for the exited trades, the 20-bar "had it been held" return (R2's measure: exit fill to the close of bar i + 20, before costs; mean, median, share negative; exits whose 20 bars run past W9 are excluded and counted). Context: the same measure for skipped breakdowns, taken at the first skipped close of each position (open of bar i + 1 to the close of bar i + 20);
+- the share of days each definition is on, per window (the window's trading days as the study counts them; RO-CONS per universe).
+
+**Statistics.** White's Reality Check over the four variants against B1 on daily returns (the scenario search's implementation: stationary bootstrap, mean block 10 days, 2,000 resamples, seed 7). A variant's Reality Check p is the share of bootstrap maxima at or above its own statistic (for the best variant, White's family p). Naive one-sided p per variant against B1 and against its parent. Both universes; the bar uses the primary.
+
+**Decision bar.** A variant is a candidate only if all of these hold; otherwise "context, not a signal":
+1. Reality Check p < 0.10 on the primary universe.
+2. It beats its parent on compounded return AND worst-window drawdown (strictly) on BOTH universes.
+3. It still beats its parent on both measures with its single best coin removed: R2's rule, on the primary universe, without the coin contributing most to the variant's gain over its parent (P&L difference summed over W1-9), with the RCCE replay unchanged (RO-CONS keeps counting that coin) and the allocation spread over the nine remaining coins.
+
+All three are computed and reported for every variant.
+
+**Diagnostic, not a criterion.** Variants, parents and context rows once without window resets on the primary universe (one capital from W1 start to W9 end).
+
+**Checks.** The parents must reproduce (B1 +53.9% / -24.4% primary, +12.5% / -26.3% secondary; `F0-t60-s12-nosig` +83.4% / -19.8%, +22.4% / -27.3%), and so must the context rows (R2-B1 +50.1% / -23.9%, +11.9% / -25.9%; R2-H60 +74.7% / -18.6%, +20.7% / -26.4%). Any difference is reported as a deviation.
+
+**Run.** A new module (`python -m backtest.riskoff_breakdown_study --out r2ro_breakdown_w1-9`, from `backend/`), committed with its tests before the run. No live code path, the executor, the synthesizer or the frontend is touched.
