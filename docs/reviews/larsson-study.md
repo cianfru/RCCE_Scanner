@@ -614,3 +614,85 @@ All three are computed and reported for every variant.
 **Checks.** The parents must reproduce (B1 +53.9% / -24.4% primary, +12.5% / -26.3% secondary; `F0-t60-s12-nosig` +83.4% / -19.8%, +22.4% / -27.3%), and so must the context rows (R2-B1 +50.1% / -23.9%, +11.9% / -25.9%; R2-H60 +74.7% / -18.6%, +20.7% / -26.4%). Any difference is reported as a deviation.
 
 **Run.** A new module (`python -m backtest.riskoff_breakdown_study --out r2ro_breakdown_w1-9`, from `backend/`), committed with its tests before the run. No live code path, the executor, the synthesizer or the frontend is touched.
+
+### Results (run `r2ro_breakdown_w1-9`)
+
+Run as declared; no deviations. The declaration (f888e3d) and the harness with its tests (e30a56d) were committed before the run. Both parents and both context rows reproduce their earlier numbers exactly, and a second run from the committed code (`r2ro_breakdown_w1-9_repro`) gives identical output. "Held 20 bars" is R2's measure (exit fill, or the next open for a skipped breakdown, to the close 20 bars after the breakdown, had the trade been held); negative means the exit avoided, or would have avoided, a loss. "Skipped" counts qualifying breakdown closes on which the gate was off, and the positions they fell in; its held-20 column uses each position's first skipped close.
+
+**Primary universe (10 coins, W1-9)**
+
+| Strategy | Compounded W1-9 | Worst window DD | Median Sharpe | Windows beating parent | Trades | Win rate | Avg hold | Breakdown exits | Skipped (closes / positions) | Held 20 bars after exits: mean / median / share < 0 (n) | Held 20 bars after skipped (n) | RC p | Naive p vs B1 | Naive p vs parent |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---:|---:|
+| B1 | +53.9% | -24.4% | 0.00 | - | 228 | 28% | 27 | - | - | - | - | - | - | - |
+| `F0-t60-s12-nosig` | +83.4% | -19.8% | 0.00 | - | 211 | 36% | 31 | - | - | - | - | - | - | - |
+| RO1-B1 | +53.2% | -24.4% | 0.00 | 0/9 | 231 | 28% | 26 | 4 | 20 / 14 | -3.5% / -2.3% / 50% (4) | +4.2% / -0.1% / 50% (14) | 1.00 | 0.90 | 0.90 |
+| RO2-B1 | +53.9% | -24.4% | 0.00 | 0/9 | 228 | 28% | 27 | 0 | 26 / 17 | - | +3.0% / +1.0% / 47% (17) | 1.00 | 1.00 | 1.00 |
+| RO1-H60 | +82.5% | -19.6% | 0.00 | 2/9 | 216 | 35% | 30 | 10 | 40 / 26 | -0.8% / -3.1% / 60% (10) | -1.7% / -5.9% / 69% (26) | 0.104 | 0.10 | 0.71 |
+| RO2-H60 | +83.4% | -19.8% | 0.00 | 0/9 | 211 | 36% | 31 | 0 | 55 / 34 | - | -2.2% / -5.9% / 68% (34) | 0.0985 | 0.09 | 1.00 |
+| R2-B1 (context) | +50.1% | -23.9% | 0.00 | 2/9 | 240 | 26% | 25 | 21 | - | +2.9% / -2.3% / 52% (21) | - | - | - | - |
+| R2-H60 (context) | +74.7% | -18.6% | 0.00 | 4/9 | 230 | 33% | 28 | 39 | - | -0.7% / -5.4% / 67% (39) | - | - | - | - |
+
+White's Reality Check over the four variants against B1: **family p = 0.0985** (best RO2-H60, which is its parent trade for trade; see the verdict).
+
+**Secondary universe (30 coins, W1-9)**
+
+| Strategy | Compounded W1-9 | Worst window DD | Median Sharpe | Windows beating parent | Trades | Win rate | Avg hold | Breakdown exits | Skipped (closes / positions) | Held 20 bars after exits: mean / median / share < 0 (n) | Held 20 bars after skipped (n) | RC p | Naive p vs B1 | Naive p vs parent |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---:|---:|
+| B1 | +12.5% | -26.3% | -0.13 | - | 690 | 22% | 24 | - | - | - | - | - | - | - |
+| `F0-t60-s12-nosig` | +22.4% | -27.3% | -0.03 | - | 648 | 27% | 27 | - | - | - | - | - | - | - |
+| RO1-B1 | +12.0% | -26.3% | -0.13 | 1/9 | 694 | 22% | 24 | 8 | 57 / 46 | +7.1% / +3.7% / 50% (8) | +3.7% / +2.7% / 43% (46) | 1.00 | 0.91 | 0.91 |
+| RO2-B1 | +12.5% | -26.3% | -0.13 | 0/9 | 690 | 22% | 24 | 0 | 68 / 52 | - | +4.8% / +2.8% / 42% (52) | 1.00 | 1.00 | 1.00 |
+| RO1-H60 | +21.8% | -27.1% | -0.03 | 3/9 | 652 | 28% | 27 | 15 | 145 / 110 | +0.6% / -4.3% / 67% (15) | +0.3% / -3.2% / 55% (109; 1 past W9) | 0.16 | 0.16 | 0.73 |
+| RO2-H60 | +22.4% | -27.3% | -0.03 | 0/9 | 648 | 27% | 27 | 0 | 166 / 121 | - | +0.6% / -3.3% / 55% (120; 1 past W9) | 0.15 | 0.15 | 1.00 |
+| R2-B1 (context) | +11.9% | -25.9% | -0.12 | 5/9 | 718 | 21% | 23 | 59 | - | +6.4% / +2.8% / 42% (59) | - | - | - | - |
+| R2-H60 (context) | +20.7% | -26.4% | -0.02 | 6/9 | 700 | 25% | 24 | 126 | - | +4.8% / -0.2% / 50% (125; 1 past W9) | - | - | - | - |
+
+Reality Check on the secondary set: family p = 0.15 (best RO2-H60).
+
+**Share of days each definition was on**
+
+| Definition | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 | W1-9 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| RO-BMSB (both universes) | 67% | 100% | 51% | 27% | 4% | 35% | 14% | 13% | 86% | 44% |
+| RO-CONS, primary (10 coins) | 3.9% | 5.6% | 0% | 0% | 0% | 1.1% | 3.3% | 0% | 3.9% | 2.0% (32 days) |
+| RO-CONS, secondary (32 coins) | 3.3% | 5.6% | 0% | 0% | 0% | 3.9% | 4.4% | 0% | 2.2% | 2.2% (35 days) |
+
+**No resets (diagnostic; primary, 2021-10-21 to 2026-03-29, one capital)**
+
+| Strategy | Total return | Max drawdown | Trades | Win rate | Avg hold | Breakdown exits | Skipped (closes / positions) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| B1 | +48.7% | -31.7% | 185 | 22% | 35 | - | - |
+| `F0-t60-s12-nosig` | +62.2% | -27.6% | 180 | 32% | 37 | - | - |
+| RO1-B1 | +48.4% | -31.7% | 188 | 21% | 34 | 7 | 21 / 13 |
+| RO2-B1 | +48.7% | -31.7% | 185 | 22% | 35 | 0 | 31 / 19 |
+| RO1-H60 | +63.8% | -27.1% | 184 | 31% | 36 | 12 | 45 / 27 |
+| RO2-H60 | +62.2% | -27.6% | 180 | 32% | 37 | 0 | 62 / 37 |
+| R2-B1 (context) | +46.9% | -32.4% | 198 | 20% | 32 | 24 | - |
+| R2-H60 (context) | +62.3% | -25.0% | 198 | 28% | 33 | 43 | - |
+
+**Best coin removed (primary)**
+
+| Variant | Coin removed | Variant: compounded / worst DD | Parent: compounded / worst DD | Holds |
+|---|---|---|---|---|
+| RO1-B1 | SOL | +51.9% / -23.6% | +52.6% / -23.6% | no |
+| RO2-B1 | XRP (tie: identical to parent) | +61.2% / -24.6% | +61.2% / -24.6% | no |
+| RO1-H60 | XRP | +88.6% / -19.4% | +90.4% / -19.6% | no |
+| RO2-H60 | XRP (tie: identical to parent) | +90.4% / -19.6% | +90.4% / -19.6% | no |
+
+### Verdict of R2-RO
+
+| Variant | 1. RC p < 0.10 (primary) | 2. Beats parent on compounded and worst DD, both universes | 3. Best coin removed | Verdict |
+|---|---|---|---|---|
+| RO1-B1 | no (1.00) | no: lower compounded on both, worst DD equal on both | no | context, not a signal |
+| RO2-B1 | no (1.00) | no: identical to B1 on both (no breakdown exit fired) | no (identical) | context, not a signal |
+| RO1-H60 | no (0.104) | no: lower compounded on both (+82.5% vs +83.4%, +21.8% vs +22.4%); worst DD shallower on both | no | context, not a signal |
+| RO2-H60 | formally yes (0.0985), but it is its parent's edge: no breakdown exit fired, so RO2-H60 is `F0-t60-s12-nosig` trade for trade | no: identical to its parent on both | no (identical) | context, not a signal |
+
+**No variant is a candidate.** Restricting the breakdown exit to risk-off does not make it an improvement in W1-9.
+
+Readings:
+- **The consensus gate never fired.** The replay's consensus was RISK-OFF on 32 of 1,620 W1-9 days on the primary and 35 on the secondary (about 2%). The replayed regimes put a coin in MARKDOWN on about 6% of coin-days, so more than 55% of coins in MARKDOWN at once is rare. No qualifying breakdown on an open trade fell on one of those days, so RO2-B1 and RO2-H60 equal their parents trade for trade on both universes. RO2-H60's Reality Check p (0.0985) is the parent's own difference from B1 (naive p 0.09 in the scenario search), not the rule's.
+- **The BMSB gate fired rarely.** RO-BMSB was on 44% of W1-9 days (all of W2, 86% of W9), but B1's entry gate uses the same band with two completed weeks instead of one, so while BTC stays below, new entries stop a week after RO-BMSB turns on and few trades are open on those days. Breakdown exits against skipped closes: RO1-H60 10 vs 40 (primary) and 15 vs 145 (secondary); RO1-B1 4 vs 20 and 8 vs 57.
+- **Same shape as R2, smaller.** RO1-H60's worst drawdown is slightly shallower than its parent's on both universes (-19.6% vs -19.8%, -27.1% vs -27.3%) and its compounded return slightly lower (+82.5% vs +83.4%, +21.8% vs +22.4%). It gains in the bear windows W1 and W9 on both universes (and by 0.02 points in W6 on the secondary) and gives back in W4 on both, W6 on the primary and W5 on the secondary, each window by under 1.5 points. Without resets it is ahead of its parent (+63.8% vs +62.2%, drawdown -27.1% vs -27.6%); that is a diagnostic only.
+- **Breakdowns inside risk-off were not followed by larger falls than those outside it.** RO1-H60 on the primary: after the 10 exits, holding 20 bars returned median -3.1% (60% negative); after the 26 skipped breakdowns outside risk-off, median -5.9% (69% negative). Secondary: median -4.3% (67%, 15 exits) against -3.2% (55%, 109 skipped). Under B1 there are only 4 and 8 exits. The pattern reported from the held-back months (breakdowns in a falling market followed by real declines) does not show in W1-9, and the risk-off samples here are small (4-15 exits).
+- Nothing changes in the app, the executor or the synthesizer; the holdout stays locked.
