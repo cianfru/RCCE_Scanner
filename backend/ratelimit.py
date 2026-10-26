@@ -144,6 +144,8 @@ _EXCHANGE_READS = re.compile(
 # These read the given wallet's positions when an address is passed.
 _WALLET_NOTICES = re.compile(r"^/api/notifications/(position-warnings|exhaustion-opportunities|market-setups)$")
 _TRADER = re.compile(r"^/api/traders/0x[0-9a-fA-F]{40}(/fills|/history)?$")
+# The Portfolio page's per-coin context and events (memory and the signal log, keyed by coin).
+_PORTFOLIO = re.compile(r"^/api/portfolio/(context|events)$")
 # Login keeps its own guard and chat its own limiter (see main.py).
 _WRITE_EXEMPT = ("/api/auth/", "/api/chat", "/api/usage/beacon")   # the beacon has its own limit
 
@@ -152,6 +154,7 @@ DEFAULTS: Dict[str, Tuple[str, Optional[str]]] = {
     "trader": ("30/20", "120/120"),     # trader profiles, fills and history
     "exchange": ("60/60", "300/600"),   # other endpoints that read an exchange per request
     "write": ("60/60", None),           # changes (POST, PUT, PATCH, DELETE)
+    "portfolio": ("30/30", "600/1200"), # the Portfolio page's coin context and events
 }
 
 
@@ -161,6 +164,8 @@ def classify(method: str, path: str, query) -> Optional[str]:
     if method == "GET":
         if _TRADER.match(path):
             return "trader"
+        if _PORTFOLIO.match(path):
+            return "portfolio"
         if _EXCHANGE_READS.match(path):
             return "exchange"
         if _WALLET_NOTICES.match(path) and query.get("address"):

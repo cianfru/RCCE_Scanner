@@ -1,0 +1,174 @@
+// B1. The risk strip: one glass card, four cells (Equity, Liquidation, Exposure, Reflex). Each has a
+// one-word label with its (i), one headline and one visual.
+import { useMemo } from "react";
+import { Label, Hover, Tween, CoinName, pnlClass } from "./parts.jsx";
+import BookThumb from "./BookThumb.jsx";
+import { usd, pct } from "../../utils/portfolio/format.js";
+import { distRed, nearestLiq, reflexShares } from "../../utils/portfolio/checks.js";
+import { worstMargin, PARTS } from "../../utils/portfolio/totals.js";
+import { displayName } from "../../utils/portfolio/displayNames.js";
+import { INFO, LABELS, STRIP, ROWS } from "./copy.js";
+
+const PART_ALPHA = { perps: 100, tradfi: 75, other: 55, spot: 40, earn: 32, staked: 25, vaults: 15 };
+const VENUE_WORD = { main: STRIP.parts.perps, xyz: STRIP.parts.tradfi };
+
+function Spark({ points, height = 24 }) {
+  if (!points || points.length < 2) return <div className="pf-spark" style={{ height }} />;
+  const W = 300, H = height;
+  const vs = points.map(p => p.value);
+  const lo = Math.min(...vs), hi = Math.max(...vs), r = hi - lo || 1;
+  const t0 = points[0].time, t1 = points[points.length - 1].time, tr = t1 - t0 || 1;
+  const d = points.map((p, i) => `${i ? "L" : "M"}${(((p.time - t0) / tr) * W).toFixed(1)},${(H - 2 - ((p.value - lo) / r) * (H - 4)).toFixed(1)}`).join("");
+  return <svg className="pf-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" height={H} aria-hidden="true">
+    <path d={d} fill="none" stroke="var(--t-accent)" strokeWidth="1.25" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+  </svg>;
+}
+
+function EquityCell({ totals, day, partialNames, phone }) {
+  const change = day?.pnlHistory?.length ? day.pnlHistory[day.pnlHistory.length - 1].value : null;
+  const parts = PARTS.filter(k => totals.parts[k] > 0.5);
+  const sum = parts.reduce((s, k) => s + totals.parts[k], 0) || 1;
+  const pop = <div className="pf-pop">
+    <div className="pf-stack" aria-hidden="true">{parts.map(k => <i key={k} style={{ width: `${(totals.parts[k] / sum) * 100}%`, background: `color-mix(in srgb, var(--t-accent) ${PART_ALPHA[k]}%, transparent)` }} />)}</div>
+    {parts.map(k => <div key={k} className="pf-pop-row"><span><i className="pf-sw" style={{ background: `color-mix(in srgb, var(--t-accent) ${PART_ALPHA[k]}%, transparent)` }} />{STRIP.parts[k]}</span><b className="m">{usd(totals.parts[k])}</b></div>)}
+    <div className="pf-pop-sep" />
+    <div className="pf-pop-row"><span>{STRIP.openPnl}</span><b className={`m ${pnlClass(totals.openPnl)}`}>{usd(totals.openPnl, { sign: true })}</b></div>
+    <div className="pf-pop-row"><span>{STRIP.withdrawable}</span><b className="m">{usd(totals.withdrawable)}</b></div>
+  </div>;
+  const info = partialNames.length ? `${INFO.equity} ${STRIP.partialInfo(partialNames.join(", "))}` : INFO.equity;
+  return <div className="pf-cell pf-cell-eq">
+    <div className="pf-cell-top"><Label info={info}>{LABELS.equity}</Label></div>
+    <div className="pf-cell-head">
+      <Hover content={pop} width={260} className="pf-head-hov" tabIndex={0}>
+        <Tween className="pf-big m" value={totals.equity} format={v => usd(v)} />
+      </Hover>
+      {totals.partial && <span className="pf-partial">{STRIP.partial}</span>}
+      {change != null && <span className={`pf-chg m ${pnlClass(change)}`}>{usd(change, { sign: true })} <span className="pf-chg-u">{STRIP.h24}</span></span>}
+    </div>
+    <Spark points={day?.accountValueHistory} height={phone ? 28 : 24} />
+  </div>;
+}
+
+function LiquidationCell({ rows, venues, compact }) {
+  const near = nearestLiq(rows, 3);
+  const top = near[0];
+  const red = top && distRed(top.dist);
+  const worst = worstMargin(venues);
+  const ratio = worst?.ratio ?? null;
+  const pop = near.length ? <div className="pf-pop">{near.map(r => <div key={r.coin} className="pf-pop-row">
+    <span>{displayName(r.coin).name}</span><b className="m">{pct(r.dist.pct)}{r.dist.atr != null ? ` · ${r.dist.atr.toFixed(1)} ${STRIP.atr}` : ""}</b></div>)}</div> : null;
+  return <div className="pf-cell pf-cell-liq">
+    <div className="pf-cell-top"><Label info={INFO.liquidation}>{LABELS.liquidation}</Label></div>
+    <div className="pf-cell-head">
+      {top ? <Hover content={pop} width={220} className="pf-head-hov" tabIndex={0}>
+        <span className="pf-liq-coin">{displayName(top.coin).name}</span>
+        <span className={`pf-big m${red ? " pf-red" : ""}`} style={compact ? { fontSize: 17 } : undefined}>{pct(top.dist.pct, { digits: 0 })}</span>
+        {top.dist.atr != null && !compact && <span className="pf-liq-atr m">{top.dist.atr.toFixed(1)} {STRIP.atr}</span>}
+      </Hover> : <span className="pf-big m pf-dim">{"—"}</span>}
+    </div>
+    <div className="pf-mbar-wrap">
+      <div className="pf-mbar" role="img" aria-label={`${STRIP.margin} ${ratio != null ? pct(ratio * 100, { digits: 0 }) : "—"}`}>
+        {ratio != null && <i style={{ width: `${Math.min(100, ratio * 100)}%` }} className={ratio >= 0.66 ? "pf-red-bg" : ""} />}
+        <b className="pf-mbar-100" aria-hidden="true" />
+      </div>
+      {!compact && <span className="pf-mbar-t" title={worst ? (VENUE_WORD[worst.venue] || worst.venue) : undefined}>{STRIP.margin} <span className="m">{ratio != null ? pct(ratio * 100, { digits: 0 }) : "—"}</span></span>}
+    </div>
+  </div>;
+}
+
+// Diverging bar: shorts left, longs right; one block per position, width ∝ notional; the larger
+// side's gross fills its half. Colour: open P&L at 35/60/90% for |ROE| under 5%, 5-20%, over 20%.
+export function ExposureBar({ rows, onPick, height = 8 }) {
+  const longs = rows.filter(r => r.isLong).sort((a, b) => b.value - a.value);
+  const shorts = rows.filter(r => !r.isLong).sort((a, b) => b.value - a.value);
+  const gl = longs.reduce((s, r) => s + r.value, 0), gs = shorts.reduce((s, r) => s + r.value, 0);
+  const scale = Math.max(gl, gs) || 1;
+  const seg = (r, side) => {
+    const a = Math.abs(r.roe) < 5 ? 35 : Math.abs(r.roe) <= 20 ? 60 : 90;
+    const tone = r.upnl >= 0 ? "var(--t-profit)" : "var(--t-loss)";
+    const share = (r.value / (gl + gs)) * 100;
+    const tip = <div className="pf-pop"><div className="pf-pop-row"><span><b>{displayName(r.coin).name}</b> {r.isLong ? ROWS.long : ROWS.short}</span><b className="m">{usd(r.value)}</b></div>
+      <div className="pf-pop-row"><span>{STRIP.share}</span><b className="m">{pct(share, { digits: 0 })}</b></div>
+      <div className="pf-pop-row"><span>{STRIP.openPnl}</span><b className={`m ${pnlClass(r.upnl)}`}>{usd(r.upnl, { sign: true })}</b></div></div>;
+    return <Hover key={r.coin} as="button" type="button" content={tip} width={200}
+      className={`pf-xseg${r.venue !== "main" ? " pf-hatch" : ""}`} aria-label={`${displayName(r.coin).name} ${usd(r.value)}`}
+      style={{ width: `${(r.value / scale) * 100}%`, background: `color-mix(in srgb, ${tone} ${a}%, transparent)`, color: `color-mix(in srgb, ${tone} ${a}%, transparent)` }}
+      onClick={() => onPick?.(r.coin)} data-side={side} />;
+  };
+  return <div className="pf-xbar" style={{ height }}>
+    <div className="pf-xhalf pf-xl">{shorts.map(r => seg(r, "short"))}</div>
+    <b className="pf-xmid" aria-hidden="true" />
+    <div className="pf-xhalf pf-xr">{longs.map(r => seg(r, "long"))}</div>
+  </div>;
+}
+
+function ExposureCell({ rows, equity, onPick, compact }) {
+  const gl = rows.filter(r => r.isLong).reduce((s, r) => s + r.value, 0);
+  const gs = rows.filter(r => !r.isLong).reduce((s, r) => s + r.value, 0);
+  const net = gl - gs, gross = gl + gs;
+  const big = [...rows].sort((a, b) => b.value - a.value)[0];
+  const bigShare = big && gross ? big.value / gross : 0;
+  return <div className="pf-cell pf-cell-x">
+    <div className="pf-cell-top"><Label info={INFO.exposure}>{LABELS.exposure}</Label>
+      {!compact && big && bigShare > 0.4 && <span className="pf-xbig m">{displayName(big.coin).name} {pct(bigShare * 100, { digits: 0 })}</span>}</div>
+    <div className="pf-cell-head">
+      {rows.length ? <><span className="pf-xnet">{net >= 0 ? STRIP.netLong : STRIP.netShort}</span>
+        <Tween className="pf-big m" style={compact ? { fontSize: 17 } : undefined} value={Math.abs(net)} format={v => usd(v)} /></>
+        : <span className="pf-big m pf-dim">$0</span>}
+    </div>
+    <div className="pf-xwrap">
+      <ExposureBar rows={rows} onPick={onPick} />
+      {!compact && <span className="pf-xsub m">{STRIP.gross} {usd(gross)} · {equity > 0 ? `${(gross / equity).toFixed(1)}x` : "—"}</span>}
+    </div>
+  </div>;
+}
+
+function ReflexCell({ rows, tf, onTf, map, compact, onRadar }) {
+  const s = useMemo(() => reflexShares(rows.filter(r => r.venue === "main" || r.covered), tf), [rows, tf]);
+  const total = s.total || 1;
+  const w = k => `${(s[k] / total) * 100}%`;
+  const covered = s.total - s.uncovered;
+  const withPct = covered > 0 ? (s.with / s.total) * 100 : null;
+  const tip = k => <div className="pf-pop"><div className="pf-pop-row"><span>{{ with: STRIP.with, against: STRIP.against, none: STRIP.noSignal, uncovered: STRIP.notCovered }[k]}</span><b className="m">{pct((s[k] / total) * 100, { digits: 0 })} · {usd(s[k])}</b></div></div>;
+  return <div className="pf-cell pf-cell-rx">
+    <div className="pf-cell-top"><Label info={INFO.reflex} width={360}>{LABELS.reflex}</Label>
+      {!compact && <span className="pf-tf">
+        {["4h", "1d"].map(k => <button key={k} type="button" className="te-toggle" aria-pressed={tf === k} onClick={() => onTf(k)}>{k === "4h" ? STRIP.tf4h : STRIP.tf1d}</button>)}
+      </span>}
+    </div>
+    <div className="pf-rx-body">
+      <div className="pf-rx-main">
+        <div className="pf-cell-head">
+          <span className="pf-big m" style={compact ? { fontSize: 17 } : undefined}>{withPct != null ? pct(withPct, { digits: 0 }) : "—"}</span>
+          {withPct != null && <span className="pf-xnet">{STRIP.with}</span>}
+        </div>
+        <div className="pf-rbar">
+          {["with", "against", "none", "uncovered"].filter(k => s[k] > 0).map(k => <Hover key={k} content={tip(k)} width={200} className={`pf-rseg pf-r-${k}`} style={{ width: w(k) }} />)}
+        </div>
+      </div>
+      {!compact && <BookThumb rows={rows} map={map} onClick={onRadar} />}
+    </div>
+  </div>;
+}
+
+export default function RiskStrip({ totals, rows, day, partialNames, tf, onTf, map, onPick, onRadar, phone, stale }) {
+  const venues = totals.venues;
+  if (phone) {
+    return <div className={`pf-strip-ph${stale ? " pf-stale" : ""}`}>
+      <div className="pf-strip pf-strip-eq"><EquityCell totals={totals} day={day} partialNames={partialNames} phone /></div>
+      <div className="pf-strip pf-strip-3">
+        <LiquidationCell rows={rows} venues={venues} compact />
+        <ExposureCell rows={rows} equity={totals.equity} onPick={onPick} compact />
+        <ReflexCell rows={rows} tf={tf} onTf={onTf} map={map} compact onRadar={onRadar} />
+      </div>
+    </div>;
+  }
+  return <div className={`pf-strip${stale ? " pf-stale" : ""}`}>
+    <EquityCell totals={totals} day={day} partialNames={partialNames} />
+    <LiquidationCell rows={rows} venues={venues} />
+    <ExposureCell rows={rows} equity={totals.equity} onPick={onPick} />
+    <ReflexCell rows={rows} tf={tf} onTf={onTf} map={map} onRadar={onRadar} />
+  </div>;
+}
+
+export { Spark };
