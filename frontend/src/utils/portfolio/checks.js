@@ -12,6 +12,24 @@ export const LIQ_FACTS = new Set(["stoppastliq", "liq2atr"]);
 const closingSide = isLong => (isLong ? "A" : "B");
 const n = v => { const x = typeof v === "string" ? parseFloat(v) : v; return Number.isFinite(x) ? x : null; };
 
+// A stop-loss: a stop trigger on the closing side that is reduce-only or the position's own TP/SL.
+// Any other stop trigger (a stop entry, say) is just a stop. isLong null: no position, never a stop-loss.
+export const isStopLoss = (o, isLong) => isLong != null && !!o?.isTrigger && String(o.orderType || "").startsWith("Stop")
+  && o.side === closingSide(isLong) && !!(o.reduceOnly || o.isPositionTpsl);
+export const isTakeProfit = o => !!o?.isTrigger && String(o.orderType || "").startsWith("Take Profit");
+
+// One coin's open orders by kind, for the Orders tab: {tp, sl, stop, limit}.
+export function orderKinds(list, isLong) {
+  const out = { tp: 0, sl: 0, stop: 0, limit: 0 };
+  for (const o of list || []) {
+    if (isTakeProfit(o)) out.tp += 1;
+    else if (isStopLoss(o, isLong)) out.sl += 1;
+    else if (o.isTrigger) out.stop += 1;
+    else out.limit += 1;
+  }
+  return out;
+}
+
 // Orders on one position's coin, by kind. Stops: reduce-only (or position TP/SL) stop triggers on the
 // closing side. TPs: take-profit triggers on the closing side, and reduce-only limits on the closing
 // side past the mark in the position's favour (a take-profit ladder placed as limits). Nearest first.
@@ -20,7 +38,7 @@ export function ordersFor(pos, orders) {
   const side = closingSide(pos.isLong);
   const trig = o => n(o.triggerPx) ?? n(o.limitPx);
   const dist = v => Math.abs(v - pos.mark);
-  const stops = mine.filter(o => o.isTrigger && String(o.orderType || "").startsWith("Stop") && o.side === side && (o.reduceOnly || o.isPositionTpsl))
+  const stops = mine.filter(o => isStopLoss(o, pos.isLong))
     .map(o => ({ px: trig(o), o })).filter(s => s.px != null).sort((a, b) => dist(a.px) - dist(b.px));
   const tpTrig = mine.filter(o => o.isTrigger && String(o.orderType || "").startsWith("Take Profit") && o.side === side)
     .map(o => ({ px: trig(o), o }));
@@ -65,11 +83,26 @@ export function positionChecks(pos, ctx, { stops = [], ordersRead = true } = {})
 }
 
 // The rail's one flag: Stop past liq > no stop > Liq above band > Under band; the rest as "+n".
+// quietNoStop: "no stop" holds on at least half the rows, so the checks row's count says it once
+// and the rows leave it out (a column of the same words would bury the rare flags).
 const FLAG_ORDER = ["stoppastliq", "nostop", "liqaboveband", "underband"];
-export function flagsOf(checks) {
-  const list = FLAG_ORDER.filter(k => checks.has(k));
+export function flagsOf(checks, { quietNoStop = false } = {}) {
+  const list = FLAG_ORDER.filter(k => checks.has(k) && !(quietNoStop && k === "nostop"));
   return { first: list[0] || null, more: list.slice(1) };
 }
+export const quietNoStop = (counts, n) => n > 0 && (counts?.nostop || 0) >= n / 2;
+
+// Funding carry per day at the current hourly rate (Hyperliquid's metaAndAssetCtxs): negative is
+// paid. A positive rate means longs pay shorts. Shown on a row from 0.1% of the notional a day.
+export const CARRY_MIN = 0.001;
+export const carryPerDay = (pos, rate) => (Number.isFinite(rate) && pos?.value > 0 ? -(pos.isLong ? 1 : -1) * rate * pos.value * 24 : null);
+export const carryShown = (pos, rate) => {
+  const c = carryPerDay(pos, rate);
+  return c != null && Math.abs(c) >= CARRY_MIN * pos.value ? c : null;
+};
+
+// The checks that read the scanner's context: unknown (not zero) while that context is missing.
+export const CTX_CHECKS = new Set(["exit", "d1against", "underband", "liqaboveband", "tradersleft"]);
 
 // Everything a board row needs, from one position, its context and the venue's orders.
 export function buildRow(pos, ctx, orders, { ordersRead = true } = {}) {

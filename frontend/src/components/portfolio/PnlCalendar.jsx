@@ -1,6 +1,7 @@
 // The P&L calendar: realised P&L per UTC day (closed trades net of fees, plus funding), colour only,
-// five steps against the month's 90th percentile; W is the week's total. Today has an accent outline,
-// the last-visit day a corner tick; days before the fills on hand are hatched.
+// five steps against the month's 90th percentile; W is the week's total and the month's sum sits by
+// its name. Today has an accent outline, the last-visit day a corner tick; days before the fills on
+// hand are hatched; days still to come are not drawn.
 import { useMemo, useState } from "react";
 import { dailyPnl, monthGrid, steps } from "../../utils/portfolio/calendar.js";
 import { usd, monthName } from "../../utils/portfolio/format.js";
@@ -24,34 +25,36 @@ export default function PnlCalendar({ fills, funding, historyStart, lastVisit, p
   const today = now.toISOString().slice(0, 10);
   const visitDay = lastVisit ? new Date(lastVisit * 1000).toISOString().slice(0, 10) : null;
   const startKey = historyStart ? new Date(historyStart).toISOString().slice(0, 10) : null;
+  const month = weeks.reduce((s, w) => s + w.week, 0);
   const fill = v => {
     const k = step(v);
     if (!k) return "var(--t-overlay06)";
     return `color-mix(in srgb, ${v > 0 ? "var(--t-profit)" : "var(--t-loss)"} ${STEP_PCT[k]}%, var(--t-bg))`;
   };
   const cell = key => {
-    if (!key) return <span className="pf-cal-c pf-cal-blank" />;
+    if (!key || key > today) return <span className="pf-cal-c pf-cal-blank" />;
     const d = days.get(key);
     const pre = startKey && key < startKey;
-    const future = key > today;
     const tip = d ? <div className="pf-pop">
       <div className="pf-pop-row"><span>{key}</span><b className={`m ${pnlClass(d.net)}`}>{usd(d.net, { sign: true })}</b></div>
       <div className="pf-pop-row"><span>{CAL.closes}</span><b className="m">{d.closes}</b></div>
       <div className="pf-pop-row"><span>{CAL.funding}</span><b className={`m ${pnlClass(d.funding)}`}>{usd(d.funding, { sign: true })}</b></div>
       <div className="pf-pop-row"><span>{CAL.fees}</span><b className="m">{usd(-d.fees)}</b></div></div> : null;
-    return <Hover key={key} className={`pf-cal-c${pre ? " pf-cal-pre" : ""}${future ? " pf-cal-fut" : ""}${key === today ? " pf-cal-today" : ""}${key === visitDay ? " pf-cal-visit" : ""}`}
-      style={{ background: pre || future ? undefined : fill(d?.net || 0) }} content={tip} width={200} aria-label={key} />;
+    return <Hover key={key} className={`pf-cal-c${pre ? " pf-cal-pre" : ""}${key === today ? " pf-cal-today" : ""}${key === visitDay ? " pf-cal-visit" : ""}`}
+      style={{ background: pre ? undefined : fill(d?.net || 0) }} content={tip} width={200} aria-label={key} />;
   };
   return <div className="pf-cal">
     <div className="pf-cal-head">
       <Label info={INFO.calendar}>{monthName(y, m)}</Label>
+      <span className="pf-sep" aria-hidden="true">·</span>
+      <span className={`m pf-cal-sum ${pnlClass(month)}`}>{usd(month, { sign: true })}</span>
       <span className="pf-cal-nav">
-        <button type="button" className="pf-textbtn" disabled={!canBack} onClick={() => shift(-1)} aria-label={CAL.prev}>‹</button>
-        <button type="button" className="pf-textbtn" disabled={!canFwd} onClick={() => shift(1)} aria-label={CAL.next}>›</button>
+        <button type="button" className="pf-textbtn" disabled={!canBack} onClick={() => shift(-1)} aria-label={CAL.prev}>{"‹"}</button>
+        <button type="button" className="pf-textbtn" disabled={!canFwd} onClick={() => shift(1)} aria-label={CAL.next}>{"›"}</button>
       </span>
     </div>
     <div className={`pf-cal-grid${phone ? " pf-cal-ph" : ""}`}>
-      {CAL.days.map((d, i) => <span key={i} className="pf-cal-wd">{d}</span>)}<span className="pf-cal-wd">{CAL.week}</span>
+      {CAL.days.map((d, i) => <span key={i} className="pf-lbl pf-lbl-plain pf-cal-wd">{d}</span>)}<span className="pf-lbl pf-lbl-plain pf-cal-wd">{CAL.week}</span>
       {weeks.map((w, i) => [...w.days.map((k, j) => <span key={`${i}-${j}`} className="pf-cal-slot">{cell(k)}</span>),
         <span key={`w${i}`} className={`pf-cal-w m ${pnlClass(w.week)}`}>{w.week ? usd(w.week, { sign: true }) : ""}</span>])}
     </div>

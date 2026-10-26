@@ -106,7 +106,8 @@ export function computeTotals({ main, dexs = {}, spot, spotMeta, mids, earn, del
   const equity = PARTS.reduce((s, k) => s + parts[k], 0);
   return {
     equity, parts, openPnl, venues, spotRows: sr,
-    withdrawable: num(main?.withdrawable) || 0,
+    // Every perps venue's withdrawable (main, xyz and the other builder dexes).
+    withdrawable: [main, ...Object.values(dexs)].reduce((s, st) => s + (num(st?.withdrawable) || 0), 0),
     partial: failed.length > 0, failed: [...failed],
   };
 }

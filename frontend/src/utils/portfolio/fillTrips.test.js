@@ -89,6 +89,14 @@ test("busy books: adds and trims net per bucket, opens and closes stay", () => {
   assert.ok(Math.abs(net - 100) < 1e-9);                       // 100 adds of 2 and 100 trims of 1
   assert.ok(out.filter(m => m.kind === "add").every(m => m.buy === true));
   assert.deepEqual(thinMarks(marks.slice(0, 5), 40), marks.slice(0, 5));
+  // A hard cap counts every kind: at most 16 (desktop) or 8 (phone) marks.
+  const many = [];
+  for (let i = 0; i < 300; i++) many.push({ index: i, kind: ["open", "add", "trim", "close"][i % 4], side: "long", sz: 1, px: 10, usd: 10, n: 1 });
+  for (const cap of [16, 8]) {
+    const t = thinMarks(many, cap, { all: true });
+    assert.ok(t.length <= cap, `${t.length} marks for a cap of ${cap}`);
+    assert.ok(t.length >= cap - 1);
+  }
 });
 
 test("real fills: every open position has a trip, sizes chain without drift", () => {

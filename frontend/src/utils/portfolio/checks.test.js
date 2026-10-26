@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildRow, positionChecks, ordersFor, liqDistance, sortRows, countChecks, filterRows, alignment, reflexShares, flagsOf, nearestLiq } from "./checks.js";
+import { buildRow, positionChecks, ordersFor, orderKinds, liqDistance, sortRows, countChecks, filterRows, alignment, reflexShares, flagsOf, quietNoStop, nearestLiq, carryPerDay, carryShown } from "./checks.js";
 import { positionsOf } from "./totals.js";
 
 const fx = name => JSON.parse(readFileSync(new URL(`./__fixtures__/${name}.json`, import.meta.url), "utf8"));
@@ -99,6 +99,11 @@ test("sort: liquidation facts first, then checks hit, then nearest liquidation",
 
 test("flags, alignment and REFLEX shares", () => {
   assert.deepEqual(flagsOf(new Set(["underband", "nostop", "stoppastliq"])), { first: "stoppastliq", more: ["nostop", "underband"] });
+  // "no stop" on half the rows or more: said once by the checks row, left off the rows.
+  assert.deepEqual(flagsOf(new Set(["nostop"]), { quietNoStop: true }), { first: null, more: [] });
+  assert.deepEqual(flagsOf(new Set(["nostop", "underband"]), { quietNoStop: true }), { first: "underband", more: [] });
+  assert.equal(quietNoStop({ nostop: 11 }, 12), true);
+  assert.equal(quietNoStop({ nostop: 2 }, 12), false);
   assert.equal(alignment("STRONG_LONG", true), "with");
   assert.equal(alignment("TRIM", true), "against");
   assert.equal(alignment("LIGHT_SHORT", false), "with");
@@ -111,4 +116,24 @@ test("flags, alignment and REFLEX shares", () => {
   ]);
   assert.deepEqual(s, { with: 70, against: 20, none: 5, uncovered: 5, total: 100 });
   assert.equal(liqDistance(pos({ liq: null }), 3), null);
+});
+
+test("Orders tab kinds: the rail's stop-loss rule; a stop entry is just a stop", () => {
+  const btc = fx("orders").filter(o => o.coin === "BTC");
+  assert.deepEqual(orderKinds(btc, true), { tp: 0, sl: 3, stop: 1, limit: 0 });
+  assert.equal(ordersFor({ coin: "BTC", isLong: true, mark: 80221 }, btc).stops.length, 3);
+  // No position on the coin: nothing is a stop-loss.
+  assert.deepEqual(orderKinds(btc, null), { tp: 0, sl: 0, stop: 4, limit: 0 });
+});
+
+test("funding carry: per day at the current rate, shown from 0.1% of notional", () => {
+  // A $1,600 short at −0.08%/h pays 1.92% a day: −$30.72.
+  const short = { isLong: false, value: 1600 };
+  assert.ok(Math.abs(carryPerDay(short, -0.0008) + 30.72) < 1e-9);
+  assert.ok(Math.abs(carryShown(short, -0.0008) + 30.72) < 1e-9);
+  // −0.0024%/h on the same short is 0.057% a day: not shown.
+  assert.equal(carryShown(short, -0.000023915), null);
+  // A long receives when the rate is negative.
+  assert.ok(carryPerDay({ isLong: true, value: 1000 }, -0.0001) > 0);
+  assert.equal(carryShown(short, NaN), null);
 });

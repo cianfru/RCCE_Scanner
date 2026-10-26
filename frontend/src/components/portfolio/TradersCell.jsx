@@ -1,6 +1,15 @@
 // TRADERS: profitable tracked traders long against short (linked wallets once), a caret over your
 // side, and one line of what moved: who left your side in 24 h, or who opened in the last 6 h.
+// The only place on the board where long and short carry their own colours.
 import { ROWS } from "./copy.js";
+
+export function SplitBar({ l, s, w = 56, h = 4, caret = null }) {
+  const lw = l + s ? (l / (l + s)) * 100 : 50;
+  return <span className="pf-split" style={{ width: w, height: h }} aria-hidden="true">
+    <i className="pf-split-l" style={{ width: `${lw}%` }} /><i className="pf-split-s" style={{ width: `${100 - lw}%` }} />
+    {caret && <b className="pf-caret" style={caret === "long" ? { left: 0 } : { right: 0 }} />}
+  </span>;
+}
 
 export default function TradersCell({ row, compact = false }) {
   const t = row.ctx?.traders;
@@ -17,13 +26,9 @@ export default function TradersCell({ row, compact = false }) {
       if (t[big].opens_6h > 0) line2 = <span>+{t[big].opens_6h} {big} 6h</span>;
     }
   }
-  const lw = (l / (l + s)) * 100;
   return <div className="pf-tr" title={`${ROWS.long} ${l} · ${ROWS.short} ${s}`}>
     <div className="pf-tr-l1">
-      <span className="pf-split" aria-hidden="true">
-        <i className="pf-split-l" style={{ width: `${lw}%` }} /><i className="pf-split-s" style={{ width: `${100 - lw}%` }} />
-        <b className="pf-caret" style={row.isLong ? { left: 0 } : { right: 0 }} />
-      </span>
+      <SplitBar l={l} s={s} caret={mine} />
       <span className="m"><span className="pf-long">{l}</span><span className="pf-t4"> · </span><span className="pf-short">{s}</span></span>
     </div>
     {!compact && <div className="pf-tr-l2 pf-t3">{line2}</div>}

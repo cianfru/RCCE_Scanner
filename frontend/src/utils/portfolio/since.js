@@ -5,6 +5,8 @@
 import { EXIT_SIGNALS, LONG_ENTRIES, SHORT_ENTRIES } from "./checks.js";
 
 export const SNAP_VERSION = 1;
+export const SMALL_CLOSE_USD = 25;
+export const SMALL_CLOSE_SHARE = 0.0005;
 export const BASE_AFTER_MS = 30 * 60 * 1000;
 export const snapKey = addr => `reflex.pf.snap.v1.${String(addr || "").toLowerCase()}`;
 
@@ -62,11 +64,14 @@ export function sinceChanges(base, cur, { trips = [] } = {}) {
     const b = bc[coin];
     if (!b || b.side !== c.side) add(1, 0, { kind: "trip", coin, opened: true, side: c.side });
   }
+  // A close too small to matter (under $25 or 0.05% of equity, whichever is larger) ranks last.
+  const trivial = Math.max(SMALL_CLOSE_USD, SMALL_CLOSE_SHARE * (cur.equity || base.equity || 0));
   for (const [coin, b] of Object.entries(bc)) {
     const c = cc[coin];
     if (c && c.side === b.side) continue;
     const trip = trips.find(t => t.coin === coin && t.closedAt * 1000 > base.t);
-    add(1, 0, { kind: "trip", coin, opened: false, side: b.side, pnl: trip ? trip.pnl : null });
+    const small = trip && trip.pnl != null && Math.abs(trip.pnl) < trivial;
+    add(small ? 8 : 1, small ? 1 : 0, { kind: "trip", coin, opened: false, side: b.side, pnl: trip ? trip.pnl : null });
   }
   for (const [coin, c] of Object.entries(cc)) {
     const b = bc[coin];

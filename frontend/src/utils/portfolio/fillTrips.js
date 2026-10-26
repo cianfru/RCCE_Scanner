@@ -143,14 +143,20 @@ export function roundTrips(classified) {
 // Chart marks for a busy book: at most `max` marks. Opens, closes and flips stay; adds and trims are
 // netted per bucket of candles into one mark (an add or a trim of the net size, at the bucket's
 // average price), so a grid of hundreds of fills still leaves the candles readable.
-export function thinMarks(marks, max = 48) {
+// all: a hard cap, opens, closes and flips included: a bucket that holds one keeps its latest
+// open, close or flip in place of the netted adds and trims.
+export function thinMarks(marks, max = 48, { all = false } = {}) {
   if (!marks || marks.length <= max) return marks || [];
   const first = marks[0].index, last = marks[marks.length - 1].index;
   const k = Math.max(1, Math.ceil((last - first + 1) / max));
   const keep = [];
   const buckets = new Map();
+  const life = new Map();
   for (const m of marks) {
-    if (m.kind === "open" || m.kind === "close" || m.kind === "flip") { keep.push(m); continue; }
+    if (m.kind === "open" || m.kind === "close" || m.kind === "flip") {
+      if (all) life.set(Math.floor((m.index - first) / k), m); else keep.push(m);
+      continue;
+    }
     const b = Math.floor((m.index - first) / k);
     const g = buckets.get(b) || { net: 0, sz: 0, pxSz: 0, n: 0, pnl: 0 };
     g.net += (m.kind === "add" ? 1 : -1) * m.sz;
@@ -158,8 +164,9 @@ export function thinMarks(marks, max = 48) {
     g.index = m.index; g.time = m.time; g.side = m.side; g.t0 = g.t0 ?? m.t0; g.t1 = m.t1;
     buckets.set(b, g);
   }
-  for (const g of buckets.values()) {
-    if (!g.sz || Math.abs(g.net) < 1e-12) continue;
+  for (const m of life.values()) keep.push(m);
+  for (const [b, g] of buckets) {
+    if (life.has(b) || !g.sz || Math.abs(g.net) < 1e-12) continue;
     const px = g.pxSz / g.sz;
     const kind = g.net > 0 ? "add" : "trim";
     keep.push({ index: g.index, time: g.time, kind, side: g.side, usd: Math.abs(g.net) * px, sz: Math.abs(g.net), n: g.n, pnl: g.pnl,

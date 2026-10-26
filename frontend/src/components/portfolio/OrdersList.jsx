@@ -30,21 +30,23 @@ export function orderItems(orders, mark) {
   return items;
 }
 
-export function OrderRow({ o, mark, canCancel, onCancel, cancelling, showSide = false }) {
+const sizeText = (v, unit, dec) => `${fmtSize(v, dec)}${unit ? ` ${unit}` : ""}`;
+
+export function OrderRow({ o, mark, canCancel, onCancel, cancelling, showSide = false, unit = null, szDecimals = null }) {
   const d = fromMark(o, mark);
   return <div className="pf-ord">
     <span className="pf-ord-t">{typeWord(o)}</span>
-    {showSide && <span className={o.side === "B" ? "pf-long" : "pf-short"}>{o.side === "B" ? TABS.buy : TABS.sell}</span>}
+    {showSide && <span className="pf-t2">{o.side === "B" ? TABS.buy : TABS.sell}</span>}
     <span className="m pf-t1">{px(priceOf(o))}</span>
     <span className="m pf-t3">{o.isTrigger && o.orderType === "Stop Market" ? `${DETAIL.cap} ${px(o.limitPx)}` : ""}</span>
-    <span className="m">{fmtSize(o.sz)}</span>
+    <span className="m">{sizeText(o.sz, unit, szDecimals)}</span>
     <span className="pf-t3">{o.reduceOnly ? DETAIL.reduce : ""}</span>
     <span className="m pf-t2">{d != null ? pct(d, { sign: true }) : "—"}</span>
     <span>{canCancel && tradable(o.coin) && <button type="button" className="pf-textbtn pf-cancel" disabled={cancelling === o.oid} onClick={() => onCancel(o.coin, o.oid)}>{DETAIL.cancel}</button>}</span>
   </div>;
 }
 
-function GroupRow({ g, mark, canCancel, onCancel, cancelling }) {
+function GroupRow({ g, mark, canCancel, onCancel, cancelling, unit, szDecimals }) {
   const [open, setOpen] = useState(false);
   const ps = g.list.map(priceOf);
   const lo = Math.min(...ps), hi = Math.max(...ps);
@@ -53,24 +55,27 @@ function GroupRow({ g, mark, canCancel, onCancel, cancelling }) {
       <span className="pf-ord-t">{g.side === "B" ? DETAIL.bids(g.list.length) : DETAIL.asks(g.list.length)}</span>
       <span className="m pf-t1">{px(lo)}–{px(hi)}</span>
       <span />
-      <span className="m">{fmtSize(g.list.reduce((s, o) => s + parseFloat(o.sz), 0))}</span>
+      <span className="m">{sizeText(g.list.reduce((s, o) => s + parseFloat(o.sz), 0), unit, szDecimals)}</span>
       <span className="pf-t3">{g.list.every(o => o.reduceOnly) ? DETAIL.reduce : ""}</span>
       <span className="m pf-t2">{pct(fromMark(g.list[0], mark), { sign: true })}</span>
       <span />
     </button>
-    {open && g.list.map(o => <OrderRow key={o.oid} o={o} mark={mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} />)}
+    {open && g.list.map(o => <OrderRow key={o.oid} o={o} mark={mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} unit={unit} szDecimals={szDecimals} />)}
   </>;
 }
 
-export default function OrdersList({ orders, mark, canCancel, onCancel, cancelling, limit = 6 }) {
+export default function OrdersList({ orders, mark, canCancel, onCancel, cancelling, limit = 6, unit = null, szDecimals = null }) {
   const [all, setAll] = useState(false);
   const items = orderItems(orders, mark);
   const shown = all ? items : items.slice(0, limit);
   const rest = items.slice(shown.length).reduce((s, it) => s + (it.kind === "group" ? it.list.length : 1), 0);
+  const p = { mark, canCancel, onCancel, cancelling, unit, szDecimals };
   return <div className="pf-ords">
+    {items.length > 0 && <div className="pf-ord pf-ord-head"><span>{DETAIL.cols.type}</span><span>{DETAIL.cols.price}</span><span />
+      <span>{DETAIL.cols.size}</span><span /><span>{DETAIL.cols.fromMark}</span><span /></div>}
     {shown.map((it, i) => it.kind === "group"
-      ? <GroupRow key={`g${it.side}`} g={it} mark={mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} />
-      : <OrderRow key={it.o.oid ?? i} o={it.o} mark={mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} />)}
+      ? <GroupRow key={`g${it.side}`} g={it} {...p} />
+      : <OrderRow key={it.o.oid ?? i} o={it.o} {...p} />)}
     {rest > 0 && <button type="button" className="pf-textbtn pf-ord-more" onClick={() => setAll(true)}>{DETAIL.moreOrders(rest)}</button>}
   </div>;
 }

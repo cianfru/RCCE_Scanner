@@ -32,15 +32,39 @@ export function px(v) {
   return new Intl.NumberFormat("en-US", { maximumSignificantDigits: n >= 1e4 ? 6 : 5 }).format(n);
 }
 
+// A price at fixed decimals, so a column lines up on the point ("80.000" beside "79.883").
+export function pxFixed(v, decimals) {
+  const n = num(v);
+  if (n == null) return "—";
+  if (decimals == null) return px(n);
+  return n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+// Decimals per coin for a list of fills ({coin, px}): five significant figures at the coin's highest
+// price (Hyperliquid's own precision), so 79.883 and 80.000 share three decimals and BTC has none.
+export const decimalsAt = v => (v > 0 ? Math.max(0, Math.min(6, 5 - (Math.floor(Math.log10(v)) + 1))) : 0);
+export function decimalsByCoin(list) {
+  const top = new Map();
+  for (const f of list || []) {
+    const v = Math.abs(num(f.px) ?? 0);
+    if (v > (top.get(f.coin) ?? 0)) top.set(f.coin, v);
+  }
+  return new Map([...top].map(([c, v]) => [c, decimalsAt(v)]));
+}
+
 // "31%"; under 10, one decimal ("7.7%").
 export function pct(v, { sign = false, digits = null } = {}) {
   const n = num(v);
   if (n == null) return "—";
   const a = Math.abs(n);
   const d = digits != null ? digits : a < 10 ? 1 : 0;
-  const body = trimZero(a.toFixed(d)) || "0";
+  let body = trimZero(a.toFixed(d)) || "0";
+  // Rounding never reaches 100% from below: a trigger 99.96% away reads −99.9%, not −100%.
+  if (a < 100 && parseFloat(body) >= 100) body = "99.9";
   return `${n < 0 && body !== "0" ? MINUS : sign && n > 0 ? "+" : ""}${body}%`;
 }
+
+// Daily ATRs to liquidation: one decimal under 10 ("1.4"), whole from 10 ("14").
+export const atrNum = v => (num(v) == null ? "—" : v >= 10 ? String(Math.round(v)) : v.toFixed(1));
 
 export const signed = (v, d = 1) => {
   const n = num(v);

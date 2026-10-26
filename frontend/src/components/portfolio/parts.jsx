@@ -1,10 +1,14 @@
 // Small shared pieces of the Portfolio page: the (i) label, the glass hover card, tweened numbers,
 // the price flash and the coin's name.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import HelpTip from "../HelpTip.jsx";
 import TokenLogo from "../TokenLogo.jsx";
-import { displayName, logoSymbol } from "../../utils/portfolio/displayNames.js";
+import tokenLogos from "../../data/tokenLogos.json";
+import xyzLogos from "../../data/xyzLogos.json";
+import { displayName, logoSymbol, venueOf } from "../../utils/portfolio/displayNames.js";
+
+const hasTokenLogo = sym => !!tokenLogos[sym]?.src;
 
 // An 11px uppercase label with a dotted underline; hover, focus or a tap opens its (i).
 export function Label({ children, info, width = 320, title }) {
@@ -15,7 +19,8 @@ export function Label({ children, info, width = 320, title }) {
 }
 
 // A glass card that follows its anchor (portaled, kept inside the viewport). Hover or focus opens it.
-export function Hover({ content, children, className = "", width = 240, as: Tag = "span", onClick, ...rest }) {
+// align "start": the card's left edge on the anchor's (a number set at a card's padding).
+export function Hover({ content, children, className = "", width = 240, as: Tag = "span", onClick, align = "center", ...rest }) {
   const [open, setOpenNow] = useState(false);
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
@@ -29,10 +34,11 @@ export function Hover({ content, children, className = "", width = 240, as: Tag 
     const r = ref.current.getBoundingClientRect();
     const h = card.current?.getBoundingClientRect().height || 120;
     const w = Math.min(width, window.innerWidth - 24);
-    const left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+    const want = align === "start" ? r.left : r.left + r.width / 2 - w / 2;
+    const left = Math.max(12, Math.min(window.innerWidth - w - 12, want));
     const below = r.bottom + 8 + h < window.innerHeight - 8;
     setPos({ left, top: below ? r.bottom + 8 : Math.max(8, r.top - 8 - h), width: w });
-  }, [open, width, content]);
+  }, [open, width, content, align]);
   useEffect(() => {
     if (!open) return undefined;
     const close = e => { if (!card.current?.contains(e.target)) setOpenNow(false); };
@@ -94,13 +100,63 @@ export function useFlash(value) {
   return dir;
 }
 
-// Logo, name and suffix ("MSTR TradFi").
+// A coin's logo: the app's cached Hyperliquid artwork; TradFi (xyz) markets use Hyperliquid's own
+// xyz icons (data/xyzLogos.json, cached the same way), clipped round as Hyperliquid shows them. No
+// artwork: the first two letters, unboxed.
+export function CoinLogo({ coin, size = 18 }) {
+  const [failed, setFailed] = useState(false);
+  const xyz = xyzLogos[coin];
+  const sym = logoSymbol(coin);
+  if (xyz && !failed) {
+    return <span className="pf-xlogo" style={{ width: size, height: size }}>
+      <img src={xyz} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)} />
+    </span>;
+  }
+  if (venueOf(coin) === "main" && hasTokenLogo(sym)) return <TokenLogo symbol={sym} size={size} fallback="none" />;
+  return <span className="pf-mono" aria-hidden="true" style={{ width: size, fontSize: Math.max(11, Math.round(size * 0.55)) }}>{displayName(coin).name.slice(0, 2)}</span>;
+}
+
+// Logo and name (the suffix, "TradFi", is printed by the caller where there is room).
 export function CoinName({ coin, names, size = 18, strong = true }) {
   const d = displayName(coin, names);
   return <span className="pf-cn">
-    <TokenLogo symbol={logoSymbol(coin)} size={size} fallback="monogram" />
+    <CoinLogo coin={coin} size={size} />
     <span className={strong ? "pf-cn-n" : "pf-cn-s"}>{d.name}</span>
   </span>;
+}
+
+// A coin's name with its venue suffix in text3 ("TSLA TradFi").
+export function NameSfx({ coin, names }) {
+  const d = displayName(coin, names);
+  return <>{d.name}{d.suffix && <span className="pf-t3 pf-sfx"> {d.suffix}</span>}</>;
+}
+
+// The liquidation glyph (the rail's red tick over its hatch): every liquidation fact carries it, so
+// it never reads as a loss figure (in light theme the red is the loss red).
+export function LiqGlyph({ h = 12 }) {
+  const id = useId().replace(/:/g, "");
+  return <svg className="pf-liqg" width="9" height={h} viewBox={`0 0 9 ${h}`} aria-hidden="true">
+    <defs><pattern id={id} width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="3" stroke="var(--rd-red)" strokeOpacity=".45" strokeWidth="1.5" /></pattern></defs>
+    <rect x="0" y={h / 2 - 3.5} width="6" height="7" fill={`url(#${id})`} />
+    <rect x="6" y="0" width="2" height={h} fill="var(--rd-red)" />
+  </svg>;
+}
+
+// A text's width in px for the page's fonts (canvas; an estimate where there is no canvas).
+let measureCtx = null;
+export function textWidth(text, size = 11, family = "mono", weight = 500) {
+  const s = String(text ?? "");
+  if (typeof document !== "undefined") {
+    try {
+      measureCtx = measureCtx || document.createElement("canvas").getContext("2d");
+      const css = getComputedStyle(document.documentElement);
+      const fam = family === "mono" ? css.getPropertyValue("--font-geist-mono") || "monospace" : css.getPropertyValue("--font-geist-sans") || "sans-serif";
+      measureCtx.font = `${weight} ${size}px ${fam}`;
+      return measureCtx.measureText(s).width;
+    } catch { /* no canvas */ }
+  }
+  return s.length * size * (family === "mono" ? 0.6 : 0.56);
 }
 
 export const pnlClass = v => (v > 0 ? "pf-up" : v < 0 ? "pf-dn" : "pf-flat");

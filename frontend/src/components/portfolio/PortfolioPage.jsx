@@ -15,7 +15,7 @@ import { watchToast } from "../../utils/setupMap.js";
 import { Skeleton } from "../Skeleton.jsx";
 import RadarSheet from "../radar/RadarSheet.jsx";
 import { computeTotals, positionsOf } from "../../utils/portfolio/totals.js";
-import { buildRow, countChecks, sortRows, filterRows, CHECK_KEYS, URL_KEYS } from "../../utils/portfolio/checks.js";
+import { buildRow, countChecks, sortRows, filterRows, quietNoStop, CHECK_KEYS, CTX_CHECKS, URL_KEYS } from "../../utils/portfolio/checks.js";
 import { classifyFills, roundTrips } from "../../utils/portfolio/fillTrips.js";
 import { readSlots, writeCurrent, buildSnapshot, sinceChanges, sinceSummary } from "../../utils/portfolio/since.js";
 import { spotNames, displayName } from "../../utils/portfolio/displayNames.js";
@@ -34,6 +34,7 @@ import Performance from "./Performance.jsx";
 import ActivityTabs from "./ActivityTabs.jsx";
 import { makeTradeActions, closeArgs, PF_CONFIRM_SHEET } from "./tradeActions.js";
 import { CoinName, pnlClass } from "./parts.jsx";
+import { useHeldAssetCtx } from "./assetCtx.js";
 import PageTitle from "../PageTitle.jsx";
 import { CONNECT, IDENTITY, ROWS, FEEDS, TITLE } from "./copy.js";
 
@@ -66,7 +67,7 @@ function useReflex(coinsKey) {
     return pollWhileVisible(load, 300_000);
   }, [load, get]);
   useEffect(() => { if (scanUpdated) { load(); get("events", setEv); } }, [scanUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { ctx, ev, failed: !!(failed.context || failed.events), retry: () => { load(); get("events", setEv); } };
+  return { ctx, ev, failed: !!(failed.context || failed.events), ctxFailed: !!failed.context, retry: () => { load(); get("events", setEv); } };
 }
 
 // What the scanner and the book looked like 24 hours ago, as a baseline snapshot (Since: 24H).
@@ -162,6 +163,10 @@ export default function PortfolioPage({ api, preview = false }) {
   }, [f.main, f.xyz, f.others]);
   const coinsKey = useMemo(() => positions.slice(0, 12).map(p => p.coin).sort().join(","), [positions]);
   const reflex = useReflex(coinsKey);
+  // The scanner's context answered: until it does (or after it fails), what it reads is unknown.
+  const ctxKnown = !!reflex.ctx && !reflex.ctxFailed;
+  // Funding rates for the venues held, read once per visit (the rows' carry).
+  const assetCtx = useHeldAssetCtx(positions.map(p => p.coin));
 
   const rows = useMemo(() => positions.map(p => buildRow(p, reflex.ctx?.coins?.[p.coin],
     p.venue === "main" ? f.orders : p.venue === "xyz" ? f.ordersXyz : [],
@@ -212,9 +217,12 @@ export default function PortfolioPage({ api, preview = false }) {
     return sinceSummary(sinceBase, { fills: f.fills || [], funding: f.funding || [], upnl: totals.openPnl });
   }, [sinceBase, mode2, f.portfolio, f.fills, f.funding, totals.openPnl]);
 
-  // Checks, filter, sort, groups.
+  // Checks, filter, sort, groups. A check that reads missing context cannot filter.
   const counts = useMemo(() => countChecks(rows), [rows]);
-  const visible = useMemo(() => sortRows(filterRows(rows, selected), sort), [rows, selected, sort]);
+  const active = useMemo(() => (ctxKnown ? selected : new Set([...selected].filter(k => !CTX_CHECKS.has(k)))), [selected, ctxKnown]);
+  const visible = useMemo(() => sortRows(filterRows(rows, active), sort), [rows, active, sort]);
+  const quiet = quietNoStop(counts, rows.length);
+  const sides = useMemo(() => new Map(rows.map(r => [r.coin, r.isLong])), [rows]);
   const groups = useMemo(() => ({
     main: visible.filter(r => r.venue === "main"), xyz: visible.filter(r => r.venue === "xyz"),
     other: visible.filter(r => r.venue !== "main" && r.venue !== "xyz"),
@@ -296,13 +304,15 @@ export default function PortfolioPage({ api, preview = false }) {
     return <div key={row.coin} className="pf-row-wrap">
       <BoardRow row={row} names={names} ev={evOf(row.coin)} openAt={openAtOf(row.coin)} watching={watched.has(kKey(row.coin))}
         onWatch={onWatch} onClose={onClose} closing={closing === row.coin} canClose={canClose} open={open} onToggle={() => toggleOpen(row.coin)}
-        flash={flash === row.coin} showHeld={showHeld} now={nowMs} dim={venueFailed} />
+        flash={flash === row.coin} showHeld={showHeld} now={nowMs} dim={venueFailed}
+        quietNoStop={quiet} visit={slots.base?.coins?.[row.coin]} visitT={slots.base?.t} rate={assetCtx.get(row.coin)?.funding} />
       {notice?.coin === row.coin && <ActionNotice notice={notice} onDismiss={() => setNotice(null)} />}
       {open && <PositionDetail row={row} classified={classified} trip={trips.open[row.coin]} ev={evOf(row.coin)} openAt={openAtOf(row.coin)}
         windowStart={fillsStart ? fillsStart / 1000 : null} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} />}
     </div>;
   };
-  const renderCard = row => <PhoneCard key={row.coin} row={row} names={names} now={nowMs} flash={flash === row.coin} onOpen={() => toggleOpen(row.coin)} />;
+  const renderCard = row => <PhoneCard key={row.coin} row={row} names={names} now={nowMs} flash={flash === row.coin} onOpen={() => toggleOpen(row.coin)}
+    quietNoStop={quiet} visit={slots.base?.coins?.[row.coin]} />;
   const sheetRow = phone && openCoin ? rows.find(r => r.coin === openCoin) : null;
   const marks = new Map(rows.map(r => [r.coin, r.mark]));
 
@@ -311,23 +321,23 @@ export default function PortfolioPage({ api, preview = false }) {
       failedNames={failedNames} onRetry={retry} onCopied={() => setCopied(true)} phone={phone} />
     {loading ? <LoadingShapes phone={phone} /> : <>
       <RiskStrip totals={totals} rows={rows} day={f.portfolio?.day} partialNames={totals.failed} tf={fit} onTf={k => setParam("fit", k === "1d" ? "1d" : null)}
-        map={mapData} onPick={pick} onRadar={() => navigate("/radar?tf=4h")} phone={phone} stale={staleHard} />
+        map={mapData} onPick={pick} onRadar={() => navigate("/radar?tf=4h")} phone={phone} stale={staleHard} ctxKnown={ctxKnown} />
       {(sinceBase || slots.base) && <SinceRow mode={mode2} onMode={setSinceMode} summary={summary} changes={changes} onPick={pick} phone={phone} hasBase={!!slots.base} />}
-      {rows.length > 0 && <ChecksRow counts={counts} selected={selected} onToggle={toggleCheck} sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} phone={phone} />}
+      {rows.length > 0 && <ChecksRow counts={counts} selected={active} onToggle={toggleCheck} sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} phone={phone} ctxKnown={ctxKnown} />}
       {rows.length > 0 && phone && <SortRow sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} />}
       {rows.length > 0 ? <div className={staleHard ? "pf-stale" : ""}>
         <Board groups={groups} phone={phone} showHeld={showHeld} ctxAsOf={reflex.ctx?.stale ? reflex.ctx : null} renderRow={renderRow} renderCard={renderCard} />
       </div> : <div className="pf-noneline"><span className="pf-t2">{ROWS.noPositions}</span>
-        {lastClosed && <span className="pf-t3"> {ROWS.lastClosed(displayName(lastClosed.coin).name, lastClosed.side, usd(lastClosed.pnl, { sign: true }), fmtAge(nowMs / 1000 - lastClosed.closedAt))}</span>}</div>}
+        {lastClosed && <span className="pf-t3"> {ROWS.lastClosed([displayName(lastClosed.coin).name, displayName(lastClosed.coin).suffix].filter(Boolean).join(" "), lastClosed.side, usd(lastClosed.pnl, { sign: true }), fmtAge(nowMs / 1000 - lastClosed.closedAt))}</span>}</div>}
       {notice && !rows.some(r => r.coin === notice.coin) && <ActionNotice notice={notice} onDismiss={() => setNotice(null)} />}
       <Performance portfolio={f.portfolio} period={period} onPeriod={k => setParam("period", k === "1m" ? null : k)} mode={mode} onMode={k => setParam("mode", k === "pnl" ? null : k)}
         fills={f.fills} funding={f.funding} fillsStart={fillsStart} lastVisit={slots.base ? slots.base.t / 1000 : null} phone={phone} />
-      <ActivityTabs tab={tab} onTab={k => setParam("tab", k === "orders" ? null : k)} orders={[...(f.orders || []), ...(f.ordersXyz || [])]} marks={marks}
+      <ActivityTabs tab={tab} onTab={k => setParam("tab", k === "orders" ? null : k)} orders={[...(f.orders || []), ...(f.ordersXyz || [])]} marks={marks} sides={sides}
         fills={f.fills} funding={f.funding} names={names} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone={phone} />
     </>}
     {sheetRow && <RadarSheet open onClose={() => setParam("open", null)} labelledBy="pf-sheet-h">
       <div className="pf-sh-head" id="pf-sheet-h"><CoinName coin={sheetRow.coin} names={names} size={20} />
-        <span className={sheetRow.isLong ? "pf-long" : "pf-short"}>{sheetRow.isLong ? ROWS.long : ROWS.short}</span>
+        <span className="pf-side">{sheetRow.isLong ? ROWS.long : ROWS.short}{sheetRow.lev != null && <span className="pf-t3 m"> {sheetRow.lev}x</span>}</span>
         <span className={`m pf-sh-pnl ${pnlClass(sheetRow.upnl)}`}>{usd(sheetRow.upnl, { sign: true })}</span></div>
       <PositionDetail row={sheetRow} classified={classified} trip={trips.open[sheetRow.coin]} ev={evOf(sheetRow.coin)} openAt={openAtOf(sheetRow.coin)}
         windowStart={fillsStart ? fillsStart / 1000 : null} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone />

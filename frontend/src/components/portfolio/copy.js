@@ -6,7 +6,7 @@ export const TITLE = "Portfolio";
 export const LABELS = {
   equity: "EQUITY", liquidation: "LIQUIDATION", exposure: "EXPOSURE", reflex: "REFLEX",
   position: "POSITION", levels: "LEVELS", scanner: "SCANNER", held: "WHILE HELD", traders: "TRADERS",
-  tradfi: "TRADFI", other: "OTHER VENUES", since: "SINCE",
+  tradfi: "TRADFI", other: "OTHER VENUES", since: "SINCE", toLiq: "TO LIQ",
 };
 
 export const INFO = {
@@ -17,12 +17,13 @@ export const INFO = {
   reflex: "Share of open notional where the scanner's 4H (or 1D) signal points your way. Short signals have no measured edge; read shorts as context. Map: your positions on the Radar, stretch across and profitable traders long minus short up. Context, not a signal; the forward test has run since 29 Sep 2026.",
   since: "Compared with what this browser saw on your last visit, kept on this device only. Fills and funding from Hyperliquid; signal changes from the scanner.",
   since24: "Compared with 24 hours ago: Hyperliquid's P&L for the day, fills and positions from Hyperliquid, signal changes from the scanner's log, trader counts from a day ago.",
-  levels: "Your entry, stops, take-profits and liquidation on one price line with the weekly band (violet), the trend line (dashed) and profitable traders' median entry (dotted). Distance is from Hyperliquid's mark.",
-  scanner: "4H signal and how long it has held; 1D on hover. Bar: heat, stretch above the weekly band, 0-100; 95 or more turns the signal to Trim; 70 and 85 are entry limits.",
-  held: "What the scanner showed since you opened: 4H regime colours and signal changes.",
+  levels: "Your entry (circle), nearest stop and take-profit (triangles; +n more), and liquidation (red tick, hatched) on one price line, with the weekly band (violet), the trend line (grey tick), profitable traders' median entry on your side (diamond) and, faint, where the mark was on your last visit.",
+  toLiq: "From Hyperliquid's mark to the liquidation price, in % and in daily ATRs (14-day average daily range).",
+  scanner: "4H signal and how long it has held; \"1D\" names the daily signal when it is behind an exit or 1D against. Bar: heat, stretch above the weekly band, 0-100; the tick is 95, where the signal turns to Trim; a faint tick is where heat was before the last scan.",
+  held: "What the scanner showed since you opened: 4H regime colours (hover for the key) and signal changes.",
   traders: "Profitable tracked traders long · short, linked wallets counted once. Context, not a signal.",
   chart: "Hyperliquid's own history for the whole account. P&L leaves out deposits and withdrawals.",
-  calendar: "Realised P&L per UTC day: closed trades net of fees, plus funding. Open P&L is not included. Hatched days are before the fills on hand.",
+  calendar: "Realised P&L per UTC day: closed trades net of fees, plus funding. The total beside the month is the same sum. The period tabs count open P&L as well, so the two differ by the open P&L. Hatched days are before the fills on hand.",
   funding: "Negative is paid, positive received.",
 };
 
@@ -40,14 +41,14 @@ export const CHECKS = {
 export const STRIP = {
   partial: "partial", h24: "24h", margin: "Margin", atr: "ATR", netLong: "Net long", netShort: "Net short", gross: "Gross",
   with: "with", against: "Against", noSignal: "No signal", notCovered: "Not covered", tf4h: "4H", tf1d: "1D",
-  openPnl: "Open P&L", withdrawable: "Withdrawable", share: "Share",
+  openPnl: "Open P&L", withdrawable: "Withdrawable", share: "Share", sinceVisit: d => `since ${d}`, carry: "/d",
   partialInfo: names => `Not answering now: ${names}.`,
   parts: { perps: "Perps", tradfi: "TradFi", other: "Other venues", spot: "Spot", earn: "Earn", staked: "Staked", vaults: "Vaults" },
 };
 
 export const RAIL = {
   liq: "Liq", sl: "SL", tp: "TP", entry: "Entry", mark: "Mark", band: "Band", trend: "Trend", tradersEntry: "Traders' entry",
-  swingLow: "Swing low", swingHigh: "Swing high", atr: "Daily ATR", noStop: "no stop",
+  swingLow: "Swing low", swingHigh: "Swing high", atr: "Daily ATR", noStop: "no stop", none: "none",
   bandState: { above: "above", inside: "inside", under_now: "under now", closed_under: "closed under" },
 };
 
@@ -56,15 +57,14 @@ export const ROWS = {
   close: "Close", closing: "Closing…", more: n => `+${n} more`, nearestLiq: p => `nearest liq ${p}`,
   noPositions: "No open positions",
   lastClosed: (coin, side, pnl, a) => `last closed ${coin} ${side} ${pnl} · ${a}`,
-  preview: "preview", dismiss: "Dismiss",
+  preview: "preview", dismiss: "Dismiss", notCovered: "Not covered by the scanner",
 };
 
 export const SINCE = {
   lastVisit: "Last visit", h24: "24H", nothing: "Nothing changed", fills: n => `${n} ${n === 1 ? "fill" : "fills"}`,
   changes: n => `${n} ${n === 1 ? "change" : "changes"}`,
-  opened: (coin, side) => `Opened ${coin} ${side}`, closed: (coin, side) => `Closed ${coin} ${side}`,
-  heat: coin => `${coin} heat`, liq: coin => `${coin} liq`, band: coin => `${coin} band`, traders: coin => `${coin} traders`,
-  regime: coin => `${coin} regime`,
+  opened: "Opened", closed: "Closed",
+  heat: "heat", liq: "liq", band: "band", traders: "traders", regime: "regime",
 };
 
 export const SORTS = [{ key: "closest", label: "Closest" }, { key: "size", label: "Size" }, { key: "pnl", label: "P&L" }];
@@ -77,6 +77,7 @@ export const DETAIL = {
   ordersOn: (coin, n) => `Orders on ${coin} · ${n}`,
   stopMarket: "Stop market", stopLimit: "Stop limit", takeProfit: "Take profit", limit: "Limit", cap: "cap", reduce: "reduce", cancel: "Cancel",
   bids: n => `${n} bids`, asks: n => `${n} asks`, before: d => `before ${d}`, moreOrders: n => `+${n} more`,
+  cols: { type: "Type", price: "Price", size: "Size", fromMark: "From mark" },
   perDay: "/day", you: "you", of: "of", pnlShare: "P&L share",
 };
 
@@ -97,12 +98,12 @@ export const TABS = {
   orders: "Orders", fills: "Fills", funding: "Funding", older: "Older", newer: "Newer", total30: v => `30d ${v}`, d30: "30d",
   cols: { type: "Type", side: "Side", trigger: "Trigger", limit: "Limit", size: "Size", reduce: "Reduce", fromMark: "From mark",
     time: "Time", coin: "Coin", dir: "Direction", price: "Price", closedPnl: "Closed P&L", fee: "Fee", total: "Total" },
-  buy: "Buy", sell: "Sell", tp: n => `${n} TP`, sl: n => `${n} SL`, limits: n => `${n} limit`, nearest: p => `nearest ${p}`,
+  buy: "Buy", sell: "Sell", tp: n => `${n} TP`, sl: n => `${n} SL`, stops: n => `${n} stop`, limits: n => `${n} limit`, nearest: p => `nearest ${p}`,
   none: { orders: "No open orders", fills: "No fills in the last 30 days", funding: "No funding in the last 30 days" },
 };
 
 export const IDENTITY = {
-  readOnly: "read-only", stopViewing: "Stop viewing", copied: "Copied",
+  readOnly: "read-only", stopViewing: "Stop viewing", copied: "Copied", close4h: "4H close",
   failed: f => `${f} failed`, nFailed: n => `${n} feeds failed`, retry: "Retry", stale: "Stale",
   asOf: t => `as of ${t}`,
 };

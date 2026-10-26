@@ -41,7 +41,7 @@ export default function Board({ groups, phone, showHeld, ctxAsOf, renderRow, ren
   return <div className={`pf-board${showHeld ? " pf-with-held" : ""}`} role="table">
     <div className="pf-bhead" role="row">
       <span><Label>{LABELS.position}</Label></span>
-      <span><Label info={INFO.levels} width={360}>{LABELS.levels}</Label></span>
+      <span className="pf-bh-lv"><Label info={INFO.levels} width={360}>{LABELS.levels}</Label><Label info={INFO.toLiq} width={300}>{LABELS.toLiq}</Label></span>
       <span className="pf-bh-sc"><Label info={INFO.scanner} width={340}>{LABELS.scanner}</Label>{ctxAsOf && <AsOf data={ctxAsOf} />}</span>
       {showHeld && <span><Label info={INFO.held}>{LABELS.held}</Label></span>}
       <span><Label info={INFO.traders}>{LABELS.traders}</Label></span>

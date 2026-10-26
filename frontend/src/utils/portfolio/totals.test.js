@@ -28,6 +28,13 @@ test("every part is counted: perps on all venues, spot at mid, earn, staked and 
   assert.ok(t.parts.staked > 8_000 && t.parts.vaults > 6_000);
 });
 
+test("withdrawable sums every perps venue, not the main one only", () => {
+  const t = computeTotals(all);
+  const each = [main, xyz, ...Object.values(dexs)].reduce((s, st) => s + (parseFloat(st.withdrawable) || 0), 0);
+  assert.ok(Math.abs(t.withdrawable - each) < 1e-6);
+  assert.ok(t.withdrawable > parseFloat(main.withdrawable) + 6000);
+});
+
 test("marginSummary, never crossMarginSummary: isolated margin is counted", () => {
   assert.ok(parseFloat(xyz.crossMarginSummary.accountValue) < parseFloat(xyz.marginSummary.accountValue));
   assert.equal(computeTotals(all).parts.tradfi, parseFloat(xyz.marginSummary.accountValue));

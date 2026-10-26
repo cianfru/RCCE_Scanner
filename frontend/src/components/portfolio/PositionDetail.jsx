@@ -1,35 +1,17 @@
-// B5. A row's detail: the chart on the left, the facts and the orders on the coin on the right.
-import { useEffect, useState } from "react";
-import * as hlClient from "../../services/hlClient.js";
-import { REGIME_META, SIGNAL_META } from "../../theme.js";
+// B5. A row's detail: the chart on the left (as tall as the facts beside it, 340 px at least), the
+// facts and the orders on the coin on the right.
+import { useLayoutEffect, useRef, useState } from "react";
+import { REGIME_META } from "../../theme.js";
 import { usd, px, pct, size as fmtSize, stamp, dayMonth, age } from "../../utils/portfolio/format.js";
-import { displayName, venueOf } from "../../utils/portfolio/displayNames.js";
-import { Hover, pnlClass } from "./parts.jsx";
+import { displayName } from "../../utils/portfolio/displayNames.js";
+import { Hover, LiqGlyph, pnlClass } from "./parts.jsx";
 import PositionChart from "./PositionChart.jsx";
 import OrdersList from "./OrdersList.jsx";
-import { sigWord } from "./ScannerCell.jsx";
+import { sigWord, sigColor } from "./ScannerCell.jsx";
+import { useAssetCtx } from "./assetCtx.js";
 import { DETAIL } from "./copy.js";
 
-// metaAndAssetCtxs per dex, cached for five minutes: szDecimals and the current funding rate.
-const metaCache = new Map();
-export function useAssetCtx(coin) {
-  const dex = venueOf(coin) === "main" ? "" : venueOf(coin);
-  const [v, setV] = useState(() => metaCache.get(dex)?.v || null);
-  useEffect(() => {
-    const hit = metaCache.get(dex);
-    if (hit && Date.now() - hit.at < 300_000) { setV(hit.v); return undefined; }
-    let alive = true;
-    hlClient.getMetaAndAssetCtxs(dex).then(raw => {
-      const [meta, ctxs] = raw || [];
-      const out = new Map();
-      (meta?.universe || []).forEach((u, i) => out.set(u.name, { szDecimals: u.szDecimals, funding: parseFloat(ctxs?.[i]?.funding) }));
-      metaCache.set(dex, { at: Date.now(), v: out });
-      if (alive) setV(out);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, [dex]);
-  return v?.get(coin) || null;
-}
+export { useAssetCtx };
 
 // What the scanner read when the position opened (from the events body).
 export function atOpen(ev, openAt) {
@@ -42,7 +24,7 @@ export function atOpen(ev, openAt) {
   return { sig, reg };
 }
 
-export function Facts({ row, trip, fundingSince, ev, openAt, windowStart, nowS }) {
+export function Facts({ row, trip, ev, openAt, windowStart, nowS }) {
   const a = useAssetCtx(row.coin);
   const name = displayName(row.coin).name;
   const t = row.ctx?.traders?.[row.side];
@@ -51,13 +33,14 @@ export function Facts({ row, trip, fundingSince, ev, openAt, windowStart, nowS }
   const before = !openAt;
   const realised = trip && !before ? trip.realized + trip.fees : null;
   const ao = atOpen(ev, openAt);
+  const liqRed = row.dist && row.dist.pct < 15;
   const f = (k, v, cls = "") => <div className="pf-fact" key={k}><span className="pf-fact-k">{k}</span><span className={`pf-fact-v m ${cls}`}>{v}</span></div>;
   return <div className="pf-facts">
     {f(DETAIL.size, `${fmtSize(Math.abs(row.szi), a?.szDecimals)} ${name}`)}
     {f(DETAIL.value, usd(row.value))}
     {f(DETAIL.entry, px(row.entry))}
     {f(DETAIL.mark, px(row.mark))}
-    {f(DETAIL.liq, row.liq ? `${px(row.liq)} · ${pct(row.dist?.pct, { digits: 0 })}` : "—", row.dist && row.dist.pct < 15 ? "pf-red" : "")}
+    {f(DETAIL.liq, row.liq ? <>{liqRed && <LiqGlyph h={11} />}{px(row.liq)} · {pct(row.dist?.pct, { digits: 0 })}</> : "—", liqRed ? "pf-red" : "")}
     {f(DETAIL.margin, `${usd(row.margin)} · ${row.iso ? DETAIL.isolated : DETAIL.cross}`)}
     <div className="pf-fact"><span className="pf-fact-k">{DETAIL.funding}</span>
       <Hover className={`pf-fact-v m ${pnlClass(row.funding)}`} width={200} content={fundShare != null ? <div className="pf-pop"><div className="pf-pop-row"><span>{DETAIL.pnlShare}</span><b className="m">{pct(fundShare, { digits: 0 })}</b></div></div> : null}>
@@ -68,22 +51,36 @@ export function Facts({ row, trip, fundingSince, ev, openAt, windowStart, nowS }
     {f(DETAIL.realised, realised != null ? usd(realised, { sign: true }) : "—", pnlClass(realised))}
     {f(DETAIL.fees, trip && !before ? usd(-trip.fees) : "—", trip?.fees ? "pf-dn" : "")}
     {ao && <div className="pf-fact"><span className="pf-fact-k">{DETAIL.atOpen}</span><span className="pf-fact-v">
-      <span style={{ color: SIGNAL_META[ao.sig]?.color }}>{sigWord(ao.sig)}</span> <span className="pf-t3">4H ·</span> {REGIME_META[ao.reg]?.name || ao.reg}</span></div>}
+      <span className="pf-sig" style={{ color: sigColor(ao.sig) }}>{sigWord(ao.sig)}</span><span className="pf-t3">{"4H · "}</span><span>{REGIME_META[ao.reg]?.name || ao.reg}</span></span></div>}
     {t?.median_entry ? f(DETAIL.tradersEntry, `${px(t.median_entry)} · ${DETAIL.you} ${pct((row.entry / t.median_entry - 1) * 100, { sign: true })}`) : null}
     {t?.n ? f(DETAIL.inProfit, `${t.in_profit} ${DETAIL.of} ${t.n}`) : null}
   </div>;
 }
 
-export default function PositionDetail({ row, classified, trip, ev, openAt, windowStart, canCancel, onCancel, cancelling, phone, fundingSince }) {
+const CHART_MIN = 340, CHART_MAX = 560, CHART_TOP = 26;
+
+export default function PositionDetail({ row, classified, trip, ev, openAt, windowStart, canCancel, onCancel, cancelling, phone }) {
   const nowS = Date.now() / 1000;
   const mine = row.orders || [];
+  const a = useAssetCtx(row.coin);
+  // Desktop: the chart takes the facts column's height (340 to 560 px).
+  const side = useRef(null);
+  const [h, setH] = useState(CHART_MIN);
+  useLayoutEffect(() => {
+    if (phone || !side.current) return undefined;
+    const fit = () => side.current && setH(Math.max(CHART_MIN, Math.min(CHART_MAX, Math.round(side.current.getBoundingClientRect().height - CHART_TOP))));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(side.current);
+    return () => ro.disconnect();
+  }, [phone]);
   return <div className={`pf-detail${phone ? " pf-detail-ph" : ""}`} onClick={e => e.stopPropagation()}>
-    <div className="pf-detail-chart"><PositionChart row={row} classified={classified} events={ev} openAt={openAt} height={phone ? 220 : 300} /></div>
-    <div className="pf-detail-side">
-      <Facts row={row} trip={trip} fundingSince={fundingSince} ev={ev} openAt={openAt} windowStart={windowStart} nowS={nowS} />
+    <div className="pf-detail-chart"><PositionChart row={row} classified={classified} events={ev} openAt={openAt} height={phone ? 220 : h} phone={phone} szDecimals={a?.szDecimals} /></div>
+    <div className="pf-detail-side" ref={side}>
+      <Facts row={row} trip={trip} ev={ev} openAt={openAt} windowStart={windowStart} nowS={nowS} />
       <div className="pf-ords-h">{DETAIL.ordersOn(displayName(row.coin).name, mine.length)}</div>
       {row.venue !== "main" && !row.ordersRead ? <div className="pf-t3">{"—"}</div>
-        : <OrdersList orders={mine} mark={row.mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} />}
+        : <OrdersList orders={mine} mark={row.mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} unit={displayName(row.coin).name} szDecimals={a?.szDecimals} />}
     </div>
   </div>;
 }

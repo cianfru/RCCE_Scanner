@@ -6,7 +6,8 @@ import PageTitle from "../PageTitle.jsx";
 import WalletTag from "../WalletTag.jsx";
 import { shortAddr } from "../../utils/walletName.js";
 import { profilePath } from "../../utils/traderBoard.js";
-import { ago, closeClock, clockText } from "../../utils/portfolio/format.js";
+import { ago, closeClock } from "../../utils/portfolio/format.js";
+import { fmtIn } from "../../utils/intel.js";
 import { IDENTITY, INFO, TITLE } from "./copy.js";
 
 export const STALE_SOFT_MS = 45_000;
@@ -24,6 +25,7 @@ export default function TitleRow({ address, readOnly, onStopViewing, lastMainAt,
     onCopied?.();
   };
   const failed = failedNames.length > 0;
+  const sep = <span className="pf-sep" aria-hidden="true">·</span>;
   const status = failed ? (
     <span className="pf-feedfail" title={failedNames.join(", ")}>
       {failedNames.length === 1 ? IDENTITY.failed(failedNames[0]) : IDENTITY.nFailed(failedNames.length)}
@@ -40,11 +42,10 @@ export default function TitleRow({ address, readOnly, onStopViewing, lastMainAt,
     <div className="pf-id">
       <Link to={profilePath(address)} className="pf-wtag"><WalletTag address={address} size={phone ? 18 : 20} /></Link>
       {!phone && <button type="button" className="pf-addr" onClick={copy} title={address}>{shortAddr(address)}</button>}
-      {readOnly && !phone && <><span className="pf-sep" aria-hidden="true">·</span><span>{IDENTITY.readOnly}</span>
-        <span className="pf-sep" aria-hidden="true">·</span>
+      {readOnly && !phone && <>{sep}<span>{IDENTITY.readOnly}</span>{sep}
         <button type="button" className="pf-textbtn" onClick={onStopViewing}>{IDENTITY.stopViewing}</button></>}
-      {!phone && <span className="pf-clock" title={`1D ${clockText(clk.d1)} · 1W ${clockText(clk.w1)}\n${INFO.clock}`}>4H {clockText(clk.h4)}</span>}
-      {status}
+      {!phone && <>{sep}<span className="pf-clock" title={`1D close ${fmtIn(clk.d1 * 1000)} · 1W close ${fmtIn(clk.w1 * 1000)}\n${INFO.clock}`}>{IDENTITY.close4h} {fmtIn(clk.h4 * 1000)}</span></>}
+      {status && !phone && sep}{status}
     </div>
     {readOnly && phone && <div className="pf-id pf-id-2">
       <span>{IDENTITY.readOnly}</span><span className="pf-sep" aria-hidden="true">·</span>

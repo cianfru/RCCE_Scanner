@@ -57,13 +57,47 @@ test("hatch runs from the liquidation tick to the costly edge", () => {
   assert.equal(railModel({ isLong: true, mark: 100, entry: 95, width: W }).hatch, null);
 });
 
-test("labels: mark price > Liq > SL, the lowest dropped within 28 px, at most three", () => {
-  assert.deepEqual(placeLabels([{ kind: "sl", x: 110, prio: 2 }, { kind: "mark", x: 100, prio: 0 }, { kind: "liq", x: 20, prio: 1 }]).map(l => l.kind), ["mark", "liq"]);
-  assert.deepEqual(placeLabels([{ kind: "mark", x: 300, prio: 0 }, { kind: "liq", x: 20, prio: 1 }, { kind: "sl", x: 40, prio: 2 }]).map(l => l.kind), ["mark", "liq"]);
-  assert.deepEqual(placeLabels([{ kind: "mark", x: 300, prio: 0 }, { kind: "liq", x: 20, prio: 1 }, { kind: "sl", x: 200, prio: 2 }]).map(l => l.kind), ["mark", "liq", "sl"]);
-  const m = railModel({ isLong: true, mark: 100, entry: 99, liq: 99.5, stops: [{ px: 99.8 }], width: W });
+test("labels: mark price > Liq > SL, a lower one dropped when it would overlap", () => {
+  const band = [11, 20];
+  const T = (kind, x, prio, extra = {}) => ({ kind, x, w: 16, text: kind, size: 11, band, prio, anchors: ["middle"], ...extra });
+  assert.deepEqual(placeLabels([T("sl", 110, 2), T("liq", 105, 1), T("mark", 100, 0, { band: [-20, -10], keep: true })], [], { width: W }).map(l => l.kind), ["mark", "liq"]);
+  assert.deepEqual(placeLabels([T("liq", 20, 1), T("sl", 200, 2)], [], { width: W }).map(l => l.kind), ["liq", "sl"]);
+  // A text never leaves the rail: shifted back inside, or dropped when fixed.
+  assert.equal(placeLabels([T("liq", 2, 1)], [], { width: W })[0].x0, 0);
+  assert.deepEqual(placeLabels([T("tpMore", W - 4, 3, { fixed: true, anchors: ["start"] })], [], { width: W }), []);
+  const m = railModel({ isLong: true, mark: 100, entry: 99, liq: 99.5, stops: [{ px: 99.8 }], width: W, text: { mark: "100" } });
   assert.equal(m.labels[0].kind, "mark");
-  assert.ok(m.labels.length <= 3);
+});
+
+test("labels: the mark price moves off a take-profit glyph; +n drops on a collision", () => {
+  // NEAR: the take-profit sits a few px right of the mark, under the centred price.
+  const m = railModel({ isLong: true, mark: 4.4922, entry: 4.53, tps: [{ px: 4.497 }, { px: 4.6 }], width: W, text: { mark: "4.4922" } });
+  const mark = m.labels.find(l => l.kind === "mark");
+  assert.ok(mark.x0 + mark.w <= m.m.tp - 3.5, "price ends left of the take-profit glyph");
+  const more = m.labels.find(l => l.kind === "tpMore");
+  if (more) assert.ok(more.x0 >= m.m.tp + 3.5 || more.x0 + more.w <= m.m.tp - 3.5);
+  // The stops' +n goes on the side away from the mark and never covers the entry circle.
+  const b = railModel({ isLong: true, mark: 80221, entry: 80400, stops: [{ px: 80150 }, { px: 79000 }, { px: 78000 }], width: W, text: { mark: "80,221" } });
+  const sm = b.labels.find(l => l.kind === "slMore");
+  assert.ok(sm, "room on the far side");
+  assert.ok(sm.x0 + sm.w <= b.m.stop - 3.5, "+n left of a stop that sits left of the mark");
+  assert.ok(sm.x0 + sm.w < b.m.entry - 4.5 || sm.x0 > b.m.entry + 4.5);
+});
+
+test("labels: the traders' diamond blocks a +n; Liq clears a broken axis", () => {
+  const m = railModel({ isLong: true, mark: 100, entry: 99, tps: [{ px: 103 }, { px: 110 }], tradersEntry: 103.2, width: W, text: { mark: "100" } });
+  assert.equal(m.labels.find(l => l.kind === "tpMore"), undefined);
+  const far = railModel({ isLong: true, mark: 100, entry: 98, liq: 40, width: 340, compact: true, text: { mark: "100" } });
+  const liq = far.labels.find(l => l.kind === "liq");
+  assert.ok(liq && liq.x0 + liq.w < far.breakX - 5.5);
+  // Phone: no Liq label when the break sits within 24 px of the edge.
+  const narrow = railModel({ isLong: true, mark: 100, entry: 98, liq: 40, width: 200, compact: true, text: { mark: "100" } });
+  assert.equal(narrow.labels.find(l => l.kind === "liq"), undefined);
+});
+
+test("the last visit's mark: drawn only inside the domain", () => {
+  assert.ok(railModel({ isLong: true, mark: 100, entry: 99, visitMark: 99.5, width: W }).m.visit > 0);
+  assert.equal(railModel({ isLong: true, mark: 100, entry: 99, visitMark: 60, width: W }).m.visit, null);
 });
 
 test("extra stops and take-profits are counted, the nearest is drawn", () => {

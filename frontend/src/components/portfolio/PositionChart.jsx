@@ -1,7 +1,8 @@
 // The expanded row's chart: Hyperliquid candles from the browser (no Railway call), your levels as
-// price lines, your fills as marks and the scanner's 4H/1D changes on the top edge. 7D is 1h candles;
-// Trip runs from the open (1h up to 10 days, then chartTimeframe, capped at 30 days). Charts update
-// with setData and are never rebuilt on a refresh.
+// price lines, your fills as small marks (16 at most, 8 on a phone) and the scanner's 4H/1D changes
+// on the top edge. 7D is 1h candles; Trip runs from the open (1h up to 10 days, then
+// chartTimeframe, capped at 30 days). Charts update with setData and are never rebuilt on a refresh.
+// No boxes on the price scale but each level's own price, dark with the level's colour.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createChart, CandlestickSeries, ColorType, CrosshairMode, LineStyle } from "lightweight-charts";
 import * as hlClient from "../../services/hlClient.js";
@@ -9,14 +10,16 @@ import { useTheme } from "../../ThemeContext.jsx";
 import FillMarks from "../FillMarks.js";
 import { fillMarks, chartTimeframe } from "../../utils/traderBoard.js";
 import { marksInput, thinMarks } from "../../utils/portfolio/fillTrips.js";
-import { px, stamp, size as fmtSize } from "../../utils/portfolio/format.js";
-import { SIGNAL_META } from "../../theme.js";
+import { stamp, size as fmtSize, decimalsAt } from "../../utils/portfolio/format.js";
+import { displayName } from "../../utils/portfolio/displayNames.js";
 import { palette, fade } from "./chartTheme.js";
-import { sigWord } from "./ScannerCell.jsx";
-import { DETAIL, RAIL } from "./copy.js";
+import { sigWord, sigColor } from "./ScannerCell.jsx";
+import { textWidth } from "./parts.jsx";
+import { DETAIL } from "./copy.js";
 
 const H = 3600, D = 86400;
 const cache = new Map();
+const SIG_PX = 11;
 
 export function chartRange(mode, openAt, nowS) {
   if (mode === "trip" && openAt) {
@@ -36,7 +39,28 @@ async function loadCandles(coin, interval, from, to) {
   return out;
 }
 
-export default function PositionChart({ row, classified, events, openAt, height = 300 }) {
+// The mark's own precision (five significant figures, as Hyperliquid shows it): 79.125, 80,221, 4.4922.
+const decimalsFor = mark => decimalsAt(mark);
+
+// The scanner's changes along the top edge: each gets a tick and its word when the word fits; a
+// change whose tick would cross a word already placed is left out.
+export function placeSignals(list, toX, width = Infinity) {
+  const out = [];
+  let lastEnd = -1e9;
+  for (const e of list) {
+    const x = toX(e.time);
+    if (x == null || x < 0 || x > width) continue;
+    if (x <= lastEnd + 4) continue;                 // inside the previous word: no tick through it
+    const w = 6 + textWidth(e.text, SIG_PX, "sans", 600);
+    // Near the right edge the word reads leftwards from its tick, inside the plot.
+    const flip = x + w > width && x - w > lastEnd + 4;
+    out.push({ ...e, x, label: flip || x + w <= width, flip });
+    lastEnd = flip ? x : x + w;
+  }
+  return out;
+}
+
+export default function PositionChart({ row, classified, events, openAt, height = 300, phone = false, szDecimals = null }) {
   const box = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -45,12 +69,14 @@ export default function PositionChart({ row, classified, events, openAt, height 
   const sigsRef = useRef([]);
   const placeRef = useRef(null);
   const linesRef = useRef([]);
+  const [gen, setGen] = useState(0);
   const [mode, setMode] = useState(openAt ? "trip" : "7d");
   const [candles, setCandles] = useState(null);
   const [hover, setHover] = useState(null);
   const { mode: theme } = useTheme();
   const nowS = Math.floor(Date.now() / 1000);
   const range = chartRange(mode, openAt, nowS);
+  const dec = decimalsFor(row.mark);
 
   useEffect(() => {
     let alive = true;
@@ -59,7 +85,7 @@ export default function PositionChart({ row, classified, events, openAt, height 
     return () => { alive = false; };
   }, [row.coin, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Build once per coin and theme.
+  // Build once per coin and theme; a new height only resizes.
   useEffect(() => {
     if (!box.current) return undefined;
     const p = palette(box.current);
@@ -68,31 +94,23 @@ export default function PositionChart({ row, classified, events, openAt, height 
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: p.chartText, fontFamily: "'Geist Mono', monospace", fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
       crosshair: { mode: CrosshairMode.Normal,
-        vertLine: { color: p.cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: p.text3 },
-        horzLine: { color: p.cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: p.text3 } },
+        vertLine: { color: p.cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: p.bg },
+        horzLine: { color: p.cross, width: 1, style: LineStyle.Dashed, labelBackgroundColor: p.bg } },
       timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false, rightOffset: 4 },
       rightPriceScale: { borderColor: p.border, scaleMargins: { top: 0.14, bottom: 0.08 } },
       handleScroll: { mouseWheel: false, pressedMouseMove: true }, handleScale: { mouseWheel: false, pinch: true },
     });
+    // No last-value box: the mark is its own price line (Hyperliquid's mark, as on the rail).
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "transparent", downColor: fade(p.text3, 0.85), borderUpColor: fade(p.text2, 0.9), borderDownColor: fade(p.text3, 0.85),
-      wickUpColor: fade(p.text2, 0.6), wickDownColor: fade(p.text3, 0.6), priceLineVisible: false, lastValueVisible: true,
+      wickUpColor: fade(p.text2, 0.6), wickDownColor: fade(p.text3, 0.6), priceLineVisible: false, lastValueVisible: false,
     });
-    const marks = new FillMarks({ long: p.accent, short: p.accent, ring: p.text1 });
+    const marks = new FillMarks({ long: p.accent, short: p.accent, ring: p.bg }, { maxR: 4 });
     series.attachPrimitive(marks);
     chartRef.current = chart; seriesRef.current = series; marksRef.current = marks;
-    // The scanner's changes along the top edge: a tick and a short word, placed from the time scale.
     const placeSigs = () => {
       const ts = chart.timeScale();
-      let lastEnd = -1e9;
-      setSigs(sigsRef.current.map(e => {
-        const x = ts.timeToCoordinate(e.time);
-        if (x == null) return null;
-        const w = 12 + e.text.length * 6.2;       // the word's width at 9.5px, with the tick
-        const label = x > lastEnd + 8;
-        if (label) lastEnd = x + w;
-        return { ...e, x, label };
-      }).filter(Boolean));
+      setSigs(placeSignals(sigsRef.current, t => ts.timeToCoordinate(t), ts.width()));
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(placeSigs);
     placeRef.current = placeSigs;
@@ -103,26 +121,30 @@ export default function PositionChart({ row, classified, events, openAt, height 
       const bar = param.seriesData.get(series);
       setHover(bar ? { t: param.time, close: bar.close } : null);
     });
+    setGen(g => g + 1);
     return () => { ro.disconnect(); chart.remove(); chartRef.current = null; seriesRef.current = null; linesRef.current = []; };
-  }, [row.coin, theme, height]);
+  }, [row.coin, theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { chartRef.current?.applyOptions({ height }); }, [height]);
 
-  // Levels as price lines.
+  // Levels as price lines: no titles; each axis label is dark with the price in the line's colour.
   const ctx = row.ctx;
   useEffect(() => {
     const s = seriesRef.current;
     if (!s || !box.current) return;
     const p = palette(box.current);
     for (const l of linesRef.current) { try { s.removePriceLine(l); } catch { /* gone */ } }
-    const add = (price, color, style, title, axis = true) => price && linesRef.current.push(s.createPriceLine({ price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: axis, title }));
     linesRef.current = [];
-    add(row.liq, p.red, LineStyle.Solid, RAIL.liq);
-    add(row.entry, p.accent, LineStyle.Dashed, RAIL.entry, 1);
+    const add = (price, color, style, axis = true, text = color) => price && linesRef.current.push(s.createPriceLine({
+      price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: axis, title: "", axisLabelColor: p.bg, axisLabelTextColor: text }));
+    add(row.liq, p.red, LineStyle.Solid);
+    add(row.entry, p.accent, LineStyle.Dashed);
     // The nearest stop and take-profit only: a ladder of orders reads in the list beside the chart.
-    for (const st of (row.ordersRead ? row.stops : []).slice(0, 1)) add(st.px, p.accent, LineStyle.Dotted, RAIL.sl);
-    for (const tp of row.tps.slice(0, 1)) add(tp.px, p.accent, LineStyle.Dotted, RAIL.tp);
-    if (ctx?.band) { add(ctx.band.lo, p.bandline, LineStyle.Solid, RAIL.band, false); add(ctx.band.hi, p.bandline, LineStyle.Solid, "", false); }
-    if (ctx?.trend) add(ctx.trend, p.text3, LineStyle.Dashed, RAIL.trend, false);
-  }, [row.liq, row.entry, row.stops, row.tps, row.ordersRead, ctx, theme, candles]);
+    for (const st of (row.ordersRead ? row.stops : []).slice(0, 1)) add(st.px, p.accent, LineStyle.Dotted);
+    for (const tp of row.tps.slice(0, 1)) add(tp.px, p.accent, LineStyle.Dotted);
+    if (ctx?.band) { add(ctx.band.lo, p.bandline, LineStyle.Solid, false); add(ctx.band.hi, p.bandline, LineStyle.Solid, false); }
+    if (ctx?.trend) add(ctx.trend, p.text3, LineStyle.Dashed, false);
+    add(row.mark, fade(p.text1, 0.45), LineStyle.SparseDotted, true, p.text1);
+  }, [row.liq, row.entry, row.mark, row.stops, row.tps, row.ordersRead, ctx, gen, candles]);
 
   // Candles, fills and signal markers: setData only.
   const times = useMemo(() => (candles || []).map(c => c.time), [candles]);
@@ -130,15 +152,14 @@ export default function PositionChart({ row, classified, events, openAt, height 
     const s = seriesRef.current, chart = chartRef.current;
     if (!s || !candles) return;
     s.setData(candles);
-    const dec = row.mark >= 10000 ? 0 : row.mark >= 1000 ? 1 : row.mark >= 10 ? 2 : row.mark >= 1 ? 4 : 6;
     s.applyOptions({ priceFormat: { type: "price", precision: dec, minMove: 10 ** -dec } });
-    marksRef.current?.setMarks(thinMarks(fillMarks(marksInput(classified, row.coin, candles[0]?.time || 0), times), 44));
+    marksRef.current?.setMarks(thinMarks(fillMarks(marksInput(classified, row.coin, candles[0]?.time || 0), times), phone ? 8 : 16, { all: true }));
     const at = t => times[Math.max(0, times.findLastIndex(x => x <= t))];
     sigsRef.current = (events?.events || []).filter(e => e.kind === "signal" && candles.length && e.t >= candles[0].time)
-      .map(e => ({ time: at(e.t), color: SIGNAL_META[e.to]?.color, text: `${sigWord(e.to)} ${e.tf === "4h" ? "4H" : "1D"}` }));
+      .map(e => ({ time: at(e.t), color: sigColor(e.to), text: `${sigWord(e.to)} ${e.tf === "4h" ? "4H" : "1D"}` }));
     chart?.timeScale().fitContent();
     placeRef.current?.();
-  }, [candles, classified, events, times, row.coin, row.mark]);
+  }, [candles, classified, events, times, row.coin, dec, phone, gen]);
 
   // Your size at the hovered time, from the classified fills.
   const sizeAt = useMemo(() => {
@@ -153,6 +174,9 @@ export default function PositionChart({ row, classified, events, openAt, height 
     return s;
   }, [hover, events]);
 
+  // "5 Oct 20:00 · 94.23 · 98.51 HYPE · LIGHT LONG"
+  const sep = <span className="pf-sep">·</span>;
+  const unit = displayName(row.coin).name;
   return <div className="pf-chart">
     <div className="pf-chart-top">
       <span className="pf-chart-modes">
@@ -160,14 +184,14 @@ export default function PositionChart({ row, classified, events, openAt, height 
         <button type="button" className="te-toggle" aria-pressed={mode === "trip"} disabled={!openAt} onClick={() => setMode("trip")}>{DETAIL.trip}</button>
       </span>
       <span className="pf-chart-legend m">{hover ? <>
-        <span>{stamp(hover.t * 1000)}</span><span className="pf-t1">{px(hover.close)}</span>
-        {sizeAt != null && <span>{fmtSize(sizeAt)}</span>}
-        {sigAt && <span style={{ color: SIGNAL_META[sigAt]?.color }}>{sigWord(sigAt)}</span>}
+        <span>{stamp(hover.t * 1000)}</span>{sep}<span className="pf-t1">{hover.close.toFixed(dec)}</span>
+        {sizeAt != null && <>{sep}<span>{fmtSize(Math.abs(sizeAt), szDecimals)} {unit}</span></>}
+        {sigAt && <>{sep}<span className="pf-sig" style={{ color: sigColor(sigAt) }}>{sigWord(sigAt)}</span></>}
       </> : <span className="pf-t3">{range.interval.toUpperCase()}</span>}</span>
     </div>
     <div className="pf-chart-wrap">
       <div ref={box} className="pf-chart-box" style={{ height }} />
-      <div className="pf-sigs" aria-hidden="true">{sigs.map((g, i) => <span key={i} className="pf-sigm" style={{ left: g.x, color: g.color }}>
+      <div className="pf-sigs" aria-hidden="true">{sigs.map((g, i) => <span key={i} className={`pf-sigm${g.flip ? " pf-sigm-flip" : ""}`} style={{ left: g.x, color: g.color }}>
         <i style={{ background: g.color }} />{g.label && <b>{g.text}</b>}</span>)}</div>
     </div>
     {candles && !candles.length && <div className="pf-chart-empty">{"—"}</div>}

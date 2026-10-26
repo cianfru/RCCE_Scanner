@@ -70,6 +70,16 @@ test("changes are ranked: trips, liquidation, signals (against first), regime, b
   assert.equal(ch.find(x => x.kind === "signal" && x.coin === "LINK").against, true);
 });
 
+test("a trivial close ranks last: under $25 or 0.05% of equity", () => {
+  const base = { ...snap(0, { TSLA: c(), LINK: c() }), equity: 128_000 };
+  const cur = { ...snap(1, { LINK: c({ h4: "TRIM" }) }), equity: 128_000 };
+  const small = sinceChanges(base, cur, { trips: [{ coin: "TSLA", closedAt: 0.5, pnl: 0.73 }] });
+  assert.deepEqual(small.map(x => x.kind), ["signal", "trip"]);
+  // $60 is under 0.05% of $128K ($64): still last; $80 is not.
+  assert.equal(sinceChanges(base, cur, { trips: [{ coin: "TSLA", closedAt: 0.5, pnl: -60 }] })[0].kind, "signal");
+  assert.equal(sinceChanges(base, cur, { trips: [{ coin: "TSLA", closedAt: 0.5, pnl: 80 }] })[0].kind, "trip");
+});
+
 test("thresholds: liq down under 5 points, heat moves not crossing 85/95, traders under 5 holders, price under 5%", () => {
   const base = snap(0, { A: c({ liqPct: 30, heat: 70, tl: 2, ts: 1, mark: 100 }) });
   const cur = snap(1, { A: c({ liqPct: 26, liqAtr: 3.5, heat: 84, tl: 4, ts: 0, mark: 104 }) });
