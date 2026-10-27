@@ -204,12 +204,13 @@ def inventory_scanner() -> Dict[str, Any]:
         ("signal_first_seen_label",  getattr(cache, "signal_first_seen_label", {})),
     ]
     total = 0
+    seen: set = set()     # results and _results_by_sym share the same row dicts: count them once
     for name, obj in targets:
         try:
             count = len(obj)
         except Exception:
             count = None
-        size = _deep_size(obj)
+        size = _deep_size(obj, seen)
         total += size
         out[name] = {"count": count, "bytes": size, "size": _fmt_bytes(size)}
     out["_total"] = {"bytes": total, "size": _fmt_bytes(total)}
@@ -353,8 +354,11 @@ def top_objects_by_type(limit: int = 15) -> List[Dict[str, Any]]:
 def full_report() -> Dict[str, Any]:
     """Full memory snapshot. Single entry point for the admin endpoint."""
     proc = process_info()
+    import memlog
     return {
         "process": proc,
+        # Container view: cgroup memory (incl. page cache), jemalloc heap, volume files.
+        "container": _safe_inventory("container", memlog.snapshot),
         "gc": _safe_inventory("gc", gc_info),
         "hyperlens": _safe_inventory("hyperlens", inventory_hyperlens),
         "scanner": _safe_inventory("scanner", inventory_scanner),
@@ -370,21 +374,11 @@ def full_report() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _malloc_trim() -> bool:
-    """Ask glibc to release unused malloc arenas back to the OS.
-
-    Only effective on Linux glibc (Railway containers use Debian which has
-    glibc). Returns True if the call succeeded.
-    """
-    try:
-        import ctypes
-        # libc.so.6 is the glibc shared library; malloc_trim(0) returns all
-        # unused memory at the top of any arena to the OS.
-        libc = ctypes.CDLL("libc.so.6")
-        libc.malloc_trim(0)
-        return True
-    except Exception as exc:
-        logger.debug("malloc_trim unavailable: %s", exc)
-        return False
+    """Give freed heap pages back to the OS. The image preloads jemalloc, where glibc's
+    malloc_trim does nothing; memlog.release_heap purges jemalloc's arenas instead.
+    Returns True if a release call succeeded."""
+    import memlog
+    return memlog.release_heap() != "none"
 
 
 def cleanup() -> Dict[str, Any]:
@@ -394,7 +388,7 @@ def cleanup() -> Dict[str, Any]:
       1. Snapshot current RSS
       2. Clear regenerable caches (engine cache, ttl cache, etc.)
       3. Run gc.collect() three times (helps with cycles)
-      4. Ask glibc to release unused arenas back to the OS
+      4. Return freed heap pages to the OS (jemalloc purge; glibc malloc_trim without it)
 
     Safe to call repeatedly. None of the cleared caches affect signal
     correctness — they're all rebuilt on next access.
@@ -451,7 +445,7 @@ def cleanup() -> Dict[str, Any]:
     for _ in range(3):
         gc_runs.append(gc.collect())
 
-    # 6. Ask glibc to return unused arena memory to OS
+    # 6. Return freed heap pages to the OS (jemalloc purge, or glibc malloc_trim)
     trimmed = _malloc_trim()
 
     after = process_info()

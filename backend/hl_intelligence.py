@@ -561,6 +561,10 @@ async def refresh_leaderboard() -> int:
         return len(_roster)
 
     all_wallets = parse_leaderboard(rows)
+    raw_rows = len(rows)
+    # The parsed download (~135 MB of dicts for ~48k rows) is not needed past this point:
+    # free it before the awaits below instead of holding it to the end of the function.
+    del raw, rows
 
     # Wallet cohorts reuse this download (one 40MB leaderboard fetch a day serves both).
     try:
@@ -626,7 +630,7 @@ async def refresh_leaderboard() -> int:
         len(_roster_smart_money),
         len(elite_addresses),
         len(all_wallets),
-        len(rows),
+        raw_rows,
         len(ghost_addrs),
     )
     return len(_roster)
@@ -2906,6 +2910,21 @@ def _fills_store_status() -> dict:
         return {"error": str(exc)}
 
 
+
+_DB_STATS_TTL_S = 600
+_db_stats_memo: tuple = (0.0, None)
+
+
+def _db_stats_cached() -> dict:
+    """The DB figures count whole tables (~0.1 s on the event loop, and the file pulled into the
+    page cache) while the HyperLens tab polls status every 30 s: read them at most every 10 min."""
+    global _db_stats_memo
+    at, body = _db_stats_memo
+    if body is None or time.time() - at > _DB_STATS_TTL_S:
+        body = _db_stats()
+        _db_stats_memo = (time.time(), body)
+    return body
+
 def get_status() -> dict:
     """Module status for API endpoint."""
     mp_addrs = {w.address for w in _roster_money_printers}
@@ -2959,7 +2978,7 @@ def get_status() -> dict:
         "xyz_wallets": len(xyz_wallets),
         "tradfi_symbols": sorted(tradfi_symbols),
         # Persistence stats
-        "db": _db_stats(),
+        "db": _db_stats_cached(),
         # Hyperliquid info API calls per minute by request type (every caller in this process)
         "api_calls": _hl_calls.stats(),
         # Stored fills of the roster (hl_fills): backfill progress, size, its Hyperliquid weight

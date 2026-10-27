@@ -56,6 +56,8 @@ def mark_active(source: str = "") -> None:
 
 
 def _ws_client_count() -> int:
+    """Every open WebSocket, hidden tabs included: the synthesis cadence (and the executor and
+    alert checks that run in it) stays at the active pace while any page is open."""
     try:
         from ws_hub import WebSocketHub
         return WebSocketHub.get().client_count

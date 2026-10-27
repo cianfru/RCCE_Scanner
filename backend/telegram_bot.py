@@ -410,10 +410,10 @@ class TelegramBot:
 
         # Win rate by signal (and regime, when it has one)
         try:
-            from signal_analytics import SignalAnalytics
+            from signal_analytics import shared as shared_analytics
             from signal_log import SignalLog
             sig_log = SignalLog.get()
-            analytics = SignalAnalytics(sig_log)
+            analytics = shared_analytics(sig_log)
             scorecard = await sig_log.get_scorecard(timeframe="4h")
             regime_sc = await analytics.regime_stratified_scorecard(timeframe="4h")
             wr_by_signal = {c["signal"]: c for c in scorecard}

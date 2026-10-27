@@ -1658,51 +1658,78 @@ def get_tradfi_symbols() -> List[dict]:
 
 def _yf_period_for_timeframe(timeframe: str) -> tuple[str, str]:
     """Return (yfinance period, yfinance interval) for a scanner timeframe."""
-    if timeframe == "4h":
-        # yfinance max for hourly data is 730 days; fetch 2 years
-        return "2y", "1h"
-    elif timeframe == "1d":
-        return "5y", "1d"
-    elif timeframe == "1w":
-        return "10y", "1wk"
-    return "5y", "1d"
+    import yf_source
+    return yf_source.period_for(timeframe)
 
 
 def _parse_yf_to_ohlcv(df, timeframe: str) -> Optional[dict]:
-    """Convert a yfinance DataFrame into the standard OHLCV dict.
+    """Convert a yfinance DataFrame into the standard OHLCV dict (yf_source.parse)."""
+    import yf_source
+    return yf_source.parse(df, timeframe)
 
-    For 4h timeframe: yfinance only supports 1h, so we resample to 4h.
-    """
-    if df is None or df.empty:
-        return None
 
-    # yfinance returns columns: Open, High, Low, Close, Volume
-    # Drop rows with NaN close
-    df = df.dropna(subset=["Close"])
-    if df.empty:
-        return None
+_YF_CHILD_TIMEOUT_S = 180
 
-    # Resample 1h → 4h if needed
-    if timeframe == "4h":
-        df = df.resample("4h").agg({
-            "Open": "first",
-            "High": "max",
-            "Low": "min",
-            "Close": "last",
-            "Volume": "sum",
-        }).dropna(subset=["Close"])
-        if df.empty:
-            return None
 
-    timestamps = np.array([int(ts.timestamp() * 1000) for ts in df.index], dtype=np.float64)
-    return {
-        "timestamp": timestamps,
-        "open":      df["Open"].values.astype(np.float64),
-        "high":      df["High"].values.astype(np.float64),
-        "low":       df["Low"].values.astype(np.float64),
-        "close":     df["Close"].values.astype(np.float64),
-        "volume":    df["Volume"].values.astype(np.float64),
-    }
+class _YFDownloadFailed(Exception):
+    """The download itself failed (Yahoo down or slow): reported, not retried in this process."""
+
+
+def _yf_failure_lines(stderr: bytes) -> str:
+    lines = [ln.strip() for ln in stderr.decode(errors="replace").splitlines()
+             if ("Failed" in ln or "Error" in ln) and "Warning" not in ln]
+    return " | ".join(lines[-3:])[:300]
+
+
+async def _yf_download(tickers: List[str], timeframe: str) -> Dict[str, Optional[dict]]:
+    """yf_source.download_batch in a short-lived child process, so yfinance and pandas (~65 MB
+    of RSS for the life of a process) never load here, and the pages of the files the child read
+    are dropped once it exits. In-process only if the child cannot be started or crashes.
+    Raises _YFDownloadFailed when the download itself failed or timed out."""
+    import sys
+    import yf_source
+    if os.environ.get("YF_SUBPROCESS", "1").strip().lower() not in ("0", "false", "no", "off"):
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, str(Path(__file__).with_name("yf_source.py")), timeframe, *tickers,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=_YF_CHILD_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                raise _YFDownloadFailed(f"no answer within {_YF_CHILD_TIMEOUT_S} s")
+            if proc.returncode == 0:
+                answer = yf_source.decode(out.decode())
+                await asyncio.to_thread(_drop_cached_pages, answer.get("files") or [])
+                failures = _yf_failure_lines(err)
+                if not answer.get("ok"):
+                    raise _YFDownloadFailed(answer.get("error") or failures or "download failed")
+                if failures:
+                    logger.warning("yfinance: %s", failures)
+                return answer["bars"]
+            if proc.returncode < 0:
+                raise _YFDownloadFailed(f"child killed by signal {-proc.returncode}")
+            logger.warning("yfinance child exited with %s (%s); downloading in-process",
+                           proc.returncode, _yf_failure_lines(err) or "no error text")
+        except _YFDownloadFailed:
+            raise
+        except Exception as exc:
+            logger.warning("yfinance child could not run (%r); downloading in-process", exc)
+        finally:
+            if proc is not None and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, yf_source.download_batch, tickers, timeframe)
+
+
+def _drop_cached_pages(paths: List[str]) -> None:
+    try:
+        import memlog
+        for p in paths:
+            memlog.drop_file_cache(p)
+    except Exception as exc:
+        logger.debug("yfinance child: page-cache drop failed: %s", exc)
 
 
 async def fetch_ohlcv_yfinance(
@@ -1769,38 +1796,13 @@ async def fetch_batch_yfinance(
 
     logger.info("yfinance batch: fetching %d/%d symbols for %s", len(uncached_symbols), len(TRADFI_SYMBOLS), timeframe)
 
-    loop = asyncio.get_running_loop()
     try:
-        import yfinance as yf
-        period, interval = _yf_period_for_timeframe(timeframe)
-
-        def _download_all():
-            return yf.download(
-                uncached_tickers,
-                period=period,
-                interval=interval,
-                group_by="ticker",
-                threads=True,
-            )
-
-        df_all = await loop.run_in_executor(None, _download_all)
-
+        downloaded = await _yf_download(uncached_tickers, timeframe)
         for symbol, yf_ticker in zip(uncached_symbols, uncached_tickers):
-            try:
-                if len(uncached_tickers) == 1:
-                    # Single ticker: yf.download returns flat DataFrame
-                    df = df_all
-                else:
-                    df = df_all[yf_ticker]
-                data = _parse_yf_to_ohlcv(df, timeframe)
-                if data is not None:
-                    _cache.put(symbol, timeframe, data)
-                    results[symbol] = data
-                else:
-                    results[symbol] = None
-            except Exception as exc:
-                logger.debug("yfinance parse failed for %s: %s", symbol, exc)
-                results[symbol] = None
+            data = downloaded.get(yf_ticker)
+            if data is not None:
+                _cache.put(symbol, timeframe, data)
+            results[symbol] = data
 
     except Exception as exc:
         logger.error("yfinance batch download failed: %s", exc)

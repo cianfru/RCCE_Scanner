@@ -402,3 +402,48 @@ def test_a_view_does_not_wait_behind_a_read_in_progress(fake, monkeypatch):
         return still_waiting, registered
     assert run(view(busy=True)) == (False, False) and A in hl_fills._view_requests
     assert run(view(busy=False)) == (True, True)       # a free reader: the view waits for it
+
+
+def test_count_stays_exact_after_a_read_cut_short(fake, monkeypatch):
+    # A read that stores fills and then fails leaves the stored n behind; the next read must
+    # recount (not add to the stale n), so the cap still holds.
+    fake.regular[A] = seq(NOW - 7200)
+    run(hl_fills.sync(None, A, "backfill"))
+    st = hl_fills.store()
+    wid = hl_fills._meta[A]["id"]
+    assert hl_fills._meta[A]["n"] == st.count(wid) == 7
+    fake.regular[A] += [hf(NOW - 30 + i, "B", 100, 1, 0, tid=1000 + i) for i in range(3)]
+    fake.fail_at["userTwapSliceFillsByTime"] = 1
+    with pytest.raises(hl_fills.RateLimited):
+        run(hl_fills.sync(None, A, "change"))
+    assert st.count(wid) == 10
+    run(hl_fills.sync(None, A, "change"))
+    assert hl_fills._meta[A]["n"] == st.wallets()[A]["n"] == st.count(wid) == 10
+    monkeypatch.setattr(hl_fills, "MAX_FILLS_PER_WALLET", 9)
+    fake.regular[A] += [hf(NOW - 10, "B", 100, 1, 0, tid=2000)]
+    run(hl_fills.sync(None, A, "change"))
+    assert st.count(wid) <= 9 + 1 and hl_fills._meta[A]["n"] == st.count(wid)
+
+
+def test_a_completed_read_skips_the_recount(fake, monkeypatch):
+    fake.regular[A] = seq(NOW - 7200)
+    run(hl_fills.sync(None, A, "backfill"))
+    run(hl_fills.sync(None, A, "change"))          # first read in this process after the backfill
+    st = hl_fills.store()
+    calls = []
+    real = st.count
+    monkeypatch.setattr(st, "count", lambda wid=None: calls.append(wid) or real(wid))
+    fake.regular[A] += [hf(NOW - 5, "B", 100, 1, 0, tid=3000)]
+    run(hl_fills.sync(None, A, "change"))
+    assert calls == [] and hl_fills._meta[A]["n"] == real(hl_fills._meta[A]["id"]) == 8
+
+
+def test_compact_frees_every_free_page(tmp_path):
+    st = hl_fills.Store(str(tmp_path / "f.db"))
+    wid = st.wallet("0xabc")["id"]
+    rows = [(i, i, "B", 0, "BTC", 1.0, 1.0, 0.0, "Open Long", 0.0, 0.0) for i in range(20000)]
+    st.insert(wid, rows)
+    st.drop(wid)
+    assert st.db.execute("PRAGMA freelist_count").fetchone()[0] > 100
+    st.compact()
+    assert st.db.execute("PRAGMA freelist_count").fetchone()[0] == 0

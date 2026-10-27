@@ -158,6 +158,7 @@ class _Cache:
 
 
 _cache = _Cache()
+_cvd_cache = _Cache()      # the scanner's CVD-only reads (cvd_only=True)
 
 
 # ---------------------------------------------------------------------------
@@ -486,9 +487,37 @@ def _compute_oi_change(bars: list) -> tuple:
 # Main fetch orchestrator
 # ---------------------------------------------------------------------------
 
+async def _fetch_cvd_only(symbols: List[str], price_changes: Optional[Dict[str, float]]) -> tuple:
+    """Taker buy/sell ratio per coin -> CVD, and nothing else: the scanner reads only the CVD, and
+    the full fetch spends five more requests per coin plus two whole-market ticker downloads."""
+    if _cvd_cache.is_valid():
+        return {}, _cvd_cache.cvd, None
+    coins = sorted({_scanner_to_coin(s) for s in symbols},
+                   key=lambda c: (0 if c in set(_PRIORITY_COINS) else 1, c))
+    timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
+    cvd_results: Dict[str, CVDResult] = {}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            sem = asyncio.Semaphore(_BINANCE_CONCURRENCY)
+            results = await asyncio.gather(*(_fetch_binance_taker_ratio(session, c, sem) for c in coins),
+                                           return_exceptions=True)
+        price_map = price_changes or {}
+        for coin, result in zip(coins, results):
+            if isinstance(result, dict):
+                cvd = _compute_cvd(result["bars"], price_map.get(f"{coin}/USDT"))
+                cvd.coin = coin
+                cvd_results[coin] = cvd
+        _cvd_cache.put({}, cvd_results)
+        return {}, cvd_results, None
+    except Exception as exc:
+        logger.error("Exchange CVD fetch failed: %s", exc)
+        return {}, _cvd_cache.cvd or {}, None
+
+
 async def fetch_exchange_derivatives(
     symbols: Optional[List[str]] = None,
     price_changes: Optional[Dict[str, float]] = None,
+    cvd_only: bool = False,
 ) -> tuple:
     """Fetch derivatives data from Binance + Bybit + OKX.
 
@@ -499,6 +528,8 @@ async def fetch_exchange_derivatives(
         If None, fetches all available Binance USDT perps.
     price_changes : dict[str, float] or None
         Recent price change % per scanner symbol — for CVD divergence.
+    cvd_only : bool
+        Only the CVD (one request per coin); metrics_dict comes back empty.
 
     Returns
     -------
@@ -507,6 +538,8 @@ async def fetch_exchange_derivatives(
         cvd_dict: Dict[str, CVDResult] keyed by coin base (e.g. 'BTC')
         cb_premium: CBPremium or None
     """
+    if cvd_only and symbols:
+        return await _fetch_cvd_only(symbols, price_changes)
     if _cache.is_valid():
         return _cache.data, _cache.cvd, _cache.cb_premium
 

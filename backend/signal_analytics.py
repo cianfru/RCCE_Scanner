@@ -110,6 +110,19 @@ _SIGNAL_RANK = {
 # Analytics engine
 # ---------------------------------------------------------------------------
 
+_shared: Dict[int, "SignalAnalytics"] = {}
+
+
+def shared(signal_log) -> "SignalAnalytics":
+    """One instance per signal log, so the 5-minute result cache serves repeated requests: the
+    notification feeds poll every minute, and a new instance each time reloaded the whole
+    4h history (with its context blobs) on every poll."""
+    inst = _shared.get(id(signal_log))
+    if inst is None or inst._log is not signal_log:
+        inst = _shared[id(signal_log)] = SignalAnalytics(signal_log)
+    return inst
+
+
 class SignalAnalytics:
     """Performance attribution analytics for signal events."""
 
@@ -128,6 +141,9 @@ class SignalAnalytics:
             if now - ts < _CACHE_TTL:
                 return result
         result = await compute_fn()
+        if len(self._cache) >= 256:       # keys include request symbols: keep it bounded
+            for k in [k for k, (t, _) in self._cache.items() if now - t >= _CACHE_TTL]:
+                del self._cache[k]
         self._cache[key] = (now, result)
         return result
 

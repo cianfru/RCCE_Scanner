@@ -298,6 +298,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Fills store init failed (non-fatal): %s", e)
 
+    # Memory log line every 10 min, and the volume files' page cache (billed as RAM)
+    # dropped every 5 min (memlog.py); MEMLOG=0 / CACHE_RELEASE=0 turn either off.
+    import memlog
+    asyncio.create_task(memlog.run_forever())
+
     # Market history for the scanner's history drawer: one breadth row per closed day
     try:
         from market_history import run_forever as run_market_history
@@ -441,8 +446,9 @@ async def _periodic_scan():
                     for r in cache.results.get("4h", [])
                     if r.get("price")
                 }
-                if current_prices:
-                    await sig_log.update_outcomes(current_prices)
+                if current_prices and await sig_log.update_outcomes(current_prices):
+                    from signal_analytics import shared as shared_analytics
+                    shared_analytics(sig_log).invalidate_cache()     # win rates follow new outcomes
             except Exception:
                 logger.debug("Signal outcome update failed (non-fatal)")
 
@@ -642,6 +648,7 @@ async def websocket_scan(websocket: WebSocket):
                 },
                 "ts": time.time(),
             })
+        last_refresh = time.time()          # the connect just sent the state
         while True:
             data = await websocket.receive_text()
             try:
@@ -652,6 +659,10 @@ async def websocket_scan(websocket: WebSocket):
                     if msg["type"] == "resume":
                         await hub.send_to(websocket, PriceTicker.get().snapshot_event())
                 elif msg.get("type") == "refresh" and protocol == 1:
+                    # The full state is ~1 MB on the wire: at most one per connection a minute.
+                    if time.time() - last_refresh < 60:
+                        continue
+                    last_refresh = time.time()
                     await hub.send_to(websocket, {
                         "type": "synthesis-complete",
                         "data": {
@@ -1294,6 +1305,9 @@ async def cross_exchange_positioning(symbol: str):
         "dominant_oi": dominant_oi,
         "fetched_at": now,
     }
+    if len(_cross_exchange_cache) >= 256:      # keyed by the URL symbol: drop expired answers
+        for k in [k for k, (exp, _) in _cross_exchange_cache.items() if exp <= now]:
+            del _cross_exchange_cache[k]
     _cross_exchange_cache[symbol] = (now + _CROSS_EXCHANGE_TTL_S, payload)
     return payload
 
@@ -2864,9 +2878,9 @@ async def signal_regime_durations(
 async def analytics_attribution(timeframe: str = Query("4h")):
     """Combined performance attribution (all 6 sections)."""
     try:
-        from signal_analytics import SignalAnalytics
+        from signal_analytics import shared as shared_analytics
         from signal_log import SignalLog
-        analytics = SignalAnalytics(SignalLog.get())
+        analytics = shared_analytics(SignalLog.get())
         return await analytics.get_full_attribution(timeframe=timeframe)
     except Exception as e:
         logger.exception("Analytics attribution error")
@@ -2876,9 +2890,9 @@ async def analytics_attribution(timeframe: str = Query("4h")):
 async def _run_analytics(method_name: str, timeframe: str, **kwargs):
     """Shared helper for all analytics endpoints — catches and surfaces errors."""
     try:
-        from signal_analytics import SignalAnalytics
+        from signal_analytics import shared as shared_analytics
         from signal_log import SignalLog
-        analytics_engine = SignalAnalytics(SignalLog.get())
+        analytics_engine = shared_analytics(SignalLog.get())
         method = getattr(analytics_engine, method_name)
         return await method(timeframe=timeframe, **kwargs)
     except Exception as e:
@@ -2924,9 +2938,9 @@ async def analytics_hyperlens(timeframe: str = Query("4h")):
 @app.get("/api/analytics/symbol/{symbol:path}")
 async def analytics_symbol(symbol: str, timeframe: str = Query("4h")):
     """Per-symbol win rate and performance breakdown."""
-    from signal_analytics import SignalAnalytics
+    from signal_analytics import shared as shared_analytics
     from signal_log import SignalLog
-    analytics = SignalAnalytics(SignalLog.get())
+    analytics = shared_analytics(SignalLog.get())
     return await analytics.symbol_win_rate(symbol=symbol, timeframe=timeframe)
 
 
@@ -2988,8 +3002,8 @@ async def notifications_feed(
 
     # Enrich signal events with historical win rate data
     try:
-        from signal_analytics import SignalAnalytics
-        analytics = SignalAnalytics(sig_log)
+        from signal_analytics import shared as shared_analytics
+        analytics = shared_analytics(sig_log)
         scorecard = await sig_log.get_scorecard(timeframe="4h")
         regime_data = await analytics.regime_stratified_scorecard(timeframe="4h")
         confluence_data = await analytics.confluence_stratified_scorecard(timeframe="4h")
@@ -3589,10 +3603,10 @@ async def market_setups(address: Optional[str] = Query(None), min_score: int = Q
 
         # Enrich with historical win rate data
         try:
-            from signal_analytics import SignalAnalytics
+            from signal_analytics import shared as shared_analytics
             from signal_log import SignalLog
             sig_log = SignalLog.get()
-            analytics = SignalAnalytics(sig_log)
+            analytics = shared_analytics(sig_log)
             scorecard = await sig_log.get_scorecard(timeframe="4h")
             regime_sc = await analytics.regime_stratified_scorecard(timeframe="4h")
             wr_by_signal = {c["signal"]: c.get("win_rate") for c in scorecard}
@@ -4897,9 +4911,13 @@ async def traders_leaderboard(
     from each wallet's fills in the background and filled in as it arrives."""
     import degrade
     import trader_profile as tp
-    # The last good page, marked stale, if building it fails (degrade.py).
-    return degrade.LAST_GOOD.serve_sync(("leaderboard", window, cohort, offset, limit),
-                                        lambda: tp.leaderboard(window, cohort, offset, limit))
+    # The last good page, marked stale, if building it fails (degrade.py). Only the pages the app
+    # opens (offset 0 or 300, limits in steps of 50) are remembered: arbitrary offset/limit pairs
+    # would push other feeds' fallbacks out of the 64 shared slots.
+    if offset in (0, 300) and limit % 50 == 0:
+        return degrade.LAST_GOOD.serve_sync(("leaderboard", window, cohort, offset, limit),
+                                            lambda: tp.leaderboard(window, cohort, offset, limit))
+    return tp.leaderboard(window, cohort, offset, limit)
 
 
 @app.get("/api/traders/{address}", dependencies=[Depends(_holder_only)])

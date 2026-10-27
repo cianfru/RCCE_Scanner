@@ -321,6 +321,19 @@ class _PosCacheEntry:
 
 
 _pos_cache: Dict[str, _PosCacheEntry] = {}
+_POS_CACHE_MAX = 512            # addresses; any valid address a caller passes is cached
+_POS_STALE_KEEP_S = 600         # an expired answer stays this long as the fallback on an error
+_pos_inflight: Dict[str, "asyncio.Future"] = {}
+
+
+def _pos_cache_put(address: str, data: Optional[dict]) -> None:
+    now = time.monotonic()
+    if len(_pos_cache) >= _POS_CACHE_MAX:
+        for a in [a for a, e in _pos_cache.items() if now - e.expires_at > _POS_STALE_KEEP_S]:
+            del _pos_cache[a]
+        while len(_pos_cache) >= _POS_CACHE_MAX:
+            del _pos_cache[min(_pos_cache, key=lambda a: _pos_cache[a].expires_at)]
+    _pos_cache[address] = _PosCacheEntry(data=data, expires_at=now + _POS_CACHE_TTL)
 
 
 async def fetch_clearinghouse_state(address: str) -> Optional[dict]:
@@ -340,6 +353,13 @@ async def fetch_clearinghouse_state(address: str) -> Optional[dict]:
     if entry and time.monotonic() < entry.expires_at:
         return entry.data
 
+    # Callers polling the same wallet together (a page's notification feeds) share one read.
+    pending = _pos_inflight.get(address)
+    if pending is not None:
+        return await asyncio.shield(pending)
+    fut = asyncio.get_running_loop().create_future()
+    _pos_inflight[address] = fut
+    result = None
     timeout = aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_S)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -347,14 +367,20 @@ async def fetch_clearinghouse_state(address: str) -> Optional[dict]:
                 "type": "clearinghouseState",
                 "user": address,
             })
-        _pos_cache[address] = _PosCacheEntry(data=data, expires_at=time.monotonic() + _POS_CACHE_TTL)
+        _pos_cache_put(address, data)
+        result = data
         return data
     except Exception as exc:
         logger.warning("Failed to fetch clearinghouse state for %s: %s", address[:10], exc)
         # Return stale cache if available
         if entry and entry.data:
+            result = entry.data
             return entry.data
         return None
+    finally:
+        _pos_inflight.pop(address, None)
+        if not fut.done():
+            fut.set_result(result)
 
 
 def parse_open_positions(clearinghouse: dict) -> List[dict]:

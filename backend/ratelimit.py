@@ -17,6 +17,8 @@ from collections import deque
 # can't grow the map without bound. At capacity, new keys are rejected rather
 # than admitted — existing keys keep their history untouched.
 _MAX_KEYS = 20_000
+_PRUNE_EVERY_S = 60.0
+_PRUNE_ABOVE = 256
 
 
 class SlidingWindowLimiter:
@@ -25,12 +27,16 @@ class SlidingWindowLimiter:
         self.window = window_seconds
         self._hits: dict[str, deque] = {}
         self._lock = threading.Lock()
+        self._pruned_at = time.monotonic()
 
     def check(self, key: str) -> tuple[bool, float]:
         """Return (allowed, retry_after_seconds). Records the hit when allowed."""
         now = time.monotonic()
         cutoff = now - self.window
         with self._lock:
+            if now - self._pruned_at > _PRUNE_EVERY_S and len(self._hits) > _PRUNE_ABOVE:
+                self._prune(cutoff)               # idle keys go once a minute, not only at the cap
+                self._pruned_at = now
             dq = self._hits.get(key)
             if dq is None:
                 # New identity. Enforce the key cap before admitting it.
@@ -82,11 +88,15 @@ class TokenBucket:
         self.max_keys = _MAX_KEYS if max_keys is None else max_keys
         self._b: Dict[str, Tuple[float, float]] = {}
         self._lock = threading.Lock()
+        self._pruned_at = time.monotonic()
 
     def take(self, key: str, now: Optional[float] = None) -> Tuple[bool, float]:
         """Spend one token. Returns (allowed, seconds until one is available)."""
         now = time.monotonic() if now is None else now
         with self._lock:
+            if now - self._pruned_at > _PRUNE_EVERY_S and len(self._b) > _PRUNE_ABOVE:
+                self._prune(now)                  # full (idle) buckets go once a minute
+                self._pruned_at = now
             if key not in self._b and len(self._b) >= self.max_keys:
                 self._prune(now)
                 if len(self._b) >= self.max_keys:
