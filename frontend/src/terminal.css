@@ -2304,6 +2304,8 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
     columns stay on desktop, so the price is never squeezed out. */
  .pf-detail-ph .pf-ord{grid-template-columns:72px minmax(0,1fr) 54px 72px 42px;}
  .pf-v2 .pf-detail-ph .pf-ord-head{letter-spacing:.02em;}
+ /* A collapsed ladder's range ("74.524–76.877") wraps after its dash rather than being cut. */
+ .pf-detail-ph .pf-ord-group>span:nth-child(2){white-space:normal;overflow-wrap:anywhere;}
  .pf-sh-acts .pf-notice{margin:0 0 10px;}
  .pf-detail-ph .pf-ord>:nth-child(3),.pf-detail-ph .pf-ord>:nth-child(5){display:none;}
  .pf-v2 .pf-sh-acts{position:sticky;bottom:0;z-index:2;margin:4px -16px 0;padding:12px 16px 14px;border-top:1px solid var(--t-border);

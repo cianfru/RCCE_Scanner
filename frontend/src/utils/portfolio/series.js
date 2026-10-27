@@ -34,9 +34,12 @@ export function nearestPoint(points, t) {
 }
 
 // The highest and the lowest raw point (their true values), each placed on the nearest drawn step.
+// The first raw point can sit before the first step (the grid starts on a multiple of the step), so
+// an extreme there takes the first step rather than none.
 export function extremes(raw, drawn) {
   const pts = clean(raw);
   if (pts.length < 2 || !drawn?.length) return null;
   const hi = pts.reduce((x, y) => (y.value > x.value ? y : x)), lo = pts.reduce((x, y) => (y.value < x.value ? y : x));
-  return { hi: { value: hi.value, time: nearestPoint(drawn, hi.time).time }, lo: { value: lo.value, time: nearestPoint(drawn, lo.time).time } };
+  const on = t => drawn.reduce((b, p) => (Math.abs(p.time - t) < Math.abs(b.time - t) ? p : b), drawn[0]).time;
+  return { hi: { value: hi.value, time: on(hi.time) }, lo: { value: lo.value, time: on(lo.time) } };
 }

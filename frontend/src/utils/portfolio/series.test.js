@@ -37,3 +37,12 @@ test("nearest point and extremes sit on drawn steps, with the raw values", () =>
   const e = extremes([{ time: 0, value: 0 }, { time: 12, value: 9 }, { time: 19, value: -3 }], drawn);
   assert.deepEqual(e, { hi: { value: 9, time: 10 }, lo: { value: -3, time: 20 } });
 });
+
+// Smoke run, a real portfolio-margin account: its highest point was the period's first one, which
+// sits before the first resampled step; the page threw "reading 'time'" and went blank.
+test("an extreme on the first raw point, before the first step, takes the first step", () => {
+  const raw = [{ time: 95, value: 50 }, { time: 130, value: 10 }, { time: 260, value: -20 }];
+  const drawn = resample(raw, 100);
+  assert.equal(drawn[0].time, 100);
+  assert.deepEqual(extremes(raw, drawn), { hi: { value: 50, time: 100 }, lo: { value: -20, time: 260 } });
+});
