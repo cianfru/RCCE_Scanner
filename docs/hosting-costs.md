@@ -26,12 +26,12 @@ These made the bill grow with uptime. The process itself, RSS, was 560–580 MB 
 
 Since the October change (`backend/memlog.py`):
 
-- **Page-cache release.** Every 5 minutes the clean cached pages of the volume's files are dropped with `posix_fadvise(DONTNEED)`. Nothing on disk changes, and SQLite re-reads what it needs. Descriptors of SQLite database files stay open for the life of the process, because closing one would release SQLite's locks.
+- **Page-cache release.** Every minute the clean cached pages of the volume's files are dropped with `posix_fadvise(DONTNEED)`. Nothing on disk changes, and SQLite re-reads what it needs. Descriptors of SQLite database files stay open for the life of the process, because closing one would release SQLite's locks.
 - **One log line every 10 minutes**, also shown under `container` in `/api/admin/memory-snapshot`:
   ```
-  memlog rss=.. anon=.. | cgroup=.. anon=.. file=.. (active, inactive, mapped) | released=.. | heap allocated=.. resident=.. | volume=.. (largest files) | threads=.. up=..h
+  memlog rss=.. anon=.. | cgroup=.. anon=.. file=.. (active, inactive, mapped) | released=.. | heap allocated=.. resident=.. | volume=.. (largest files) | cached (files with most pages in cache) | threads=.. up=..h
   ```
-  `cgroup` is the figure Railway charges. `cgroup file` is the page cache. `rss` and `heap` are the process's own memory.
+  `cgroup` is the figure Railway charges. `cgroup file` is the page cache, and `cached` shows which volume files hold it. `rss` and `heap` are the process's own memory.
 - **Libraries no longer loaded in the server:**
   - ccxt: the Bybit fallback is now one REST call.
   - yfinance and pandas: HIP-3 has no DXY or VIX candles, so every TradFi pass still needs yfinance. It now runs in a short-lived child process (`backend/yf_source.py`). When the child exits, the server drops the cached pages of the library files it read (about 40 MB).
@@ -47,7 +47,7 @@ Since the October change (`backend/memlog.py`):
 | `MEMLOG` | on | `0` stops the log line |
 | `MEMLOG_INTERVAL_S` | 600 | seconds between log lines |
 | `CACHE_RELEASE` | on | `0` stops the page-cache release |
-| `CACHE_RELEASE_S` | 300 | seconds between releases |
+| `CACHE_RELEASE_S` | 60 | seconds between releases (some jobs read hundreds of MB in a burst) |
 | `MALLOC_CONF` | set in the Dockerfile | jemalloc options |
 
 ## Not done, and why

@@ -8,7 +8,8 @@ Railway bills the container's cgroup memory, and that counts the kernel's page c
 every page of fills.db, hyperlens.db, opportunities.db or the OHLCV pickle that was read
 or written stays charged until the kernel is short of memory, which on a service without
 a memory limit (a service with a volume cannot have one) is never. So the bill grew with
-the files. Every CACHE_RELEASE_S the clean cached pages of the volume's files (and of the
+the files. Every CACHE_RELEASE_S (60 s: some jobs read hundreds of MB in a burst) the clean
+cached pages of the volume's files (and of the
 source files read at import) are dropped with posix_fadvise(DONTNEED): nothing on disk
 changes and SQLite re-reads what it needs.
 
@@ -147,6 +148,69 @@ def _walk(root: Path, depth: int = 0):
                 yield from _walk(Path(e.path), depth + 1)
         except OSError:
             continue
+
+
+_libc = None
+
+
+def _libc_calls():
+    global _libc
+    if _libc is None:
+        lib = ctypes.CDLL(None, use_errno=True)
+        lib.mmap.restype = ctypes.c_void_p
+        lib.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long]
+        lib.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        lib.mincore.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p]
+        _libc = lib
+    return _libc
+
+
+def _resident_mb(path: Path) -> Optional[float]:
+    """MB of the file in the page cache (mincore over a read-only mapping; nothing is read)."""
+    import mmap
+    try:
+        size = path.stat().st_size
+        if size == 0:
+            return 0.0
+        key = str(path)
+        fd = _kept_fds.get(key) if _is_sqlite(path) else None
+        own = fd is None
+        if own:
+            if _is_sqlite(path):
+                return None              # only through a kept descriptor (closing one drops locks)
+            fd = os.open(key, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+        try:
+            lib = _libc_calls()
+            addr = lib.mmap(None, size, mmap.PROT_READ, mmap.MAP_SHARED, fd, 0)
+            if addr in (None, ctypes.c_void_p(-1).value):
+                return None
+            try:
+                pages = (size + mmap.PAGESIZE - 1) // mmap.PAGESIZE
+                vec = ctypes.create_string_buffer(pages)
+                if lib.mincore(addr, size, vec) != 0:
+                    return None
+                return sum(b & 1 for b in vec.raw) * mmap.PAGESIZE / _MB
+            finally:
+                lib.munmap(addr, size)
+        finally:
+            if own:
+                os.close(fd)
+    except Exception:            # noqa: BLE001 - diagnostics only
+        return None
+
+
+def cached_files(limit: int = 6) -> Dict[str, float]:
+    """The volume files with the most pages in the page cache, MB."""
+    root = volume_dir()
+    if root is None:
+        return {}
+    out = []
+    for path in _walk(root):
+        mb = _resident_mb(path)
+        if mb:
+            out.append((mb, str(path.relative_to(root))))
+    out.sort(reverse=True)
+    return {name: round(mb, 1) for mb, name in out[:limit]}
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +384,7 @@ def snapshot() -> Dict[str, object]:
         "cgroup": cgroup_stats(),
         "heap": heap_stats(),
         "volume": volume_files(),
+        "cached": cached_files(),
         "last_release": dict(_last_release),
         "kept_fds": len(_kept_fds),
         "uptime_h": round((time.time() - _START) / 3600, 2),
@@ -346,6 +411,9 @@ def log_line() -> str:
     if vol:
         largest = " ".join(f"{k}={v:.0f}" for k, v in vol["largest"].items())
         parts.append(f"volume={vol['total_mb']:.0f} ({largest})")
+    hot = cached_files(limit=3)
+    if hot:
+        parts.append("cached " + " ".join(f"{k}={v:.0f}" for k, v in hot.items()))
     parts.append(f"threads={int(p.get('Threads', 0))} up={(time.time() - _START) / 3600:.1f}h")
     return " | ".join(parts)
 
@@ -364,10 +432,10 @@ async def _off_loop(fn):
 
 
 async def run_forever() -> None:
-    """Every CACHE_RELEASE_S (default 300): trim the view caches and drop the volume's page cache;
+    """Every CACHE_RELEASE_S (default 60): trim the view caches and drop the volume's page cache;
     every MEMLOG_INTERVAL_S (default 600): one log line. MEMLOG=0 / CACHE_RELEASE=0 turn either off."""
     release = _env_on("CACHE_RELEASE")
-    every = _env_int("CACHE_RELEASE_S", 300) or 300
+    every = _env_int("CACHE_RELEASE_S", 60) or 60
     log_every = _env_int("MEMLOG_INTERVAL_S", 600) if _env_on("MEMLOG") else 0
     next_pass = time.time() + 60             # first pass once startup reads are done
     next_log = time.time() + 90

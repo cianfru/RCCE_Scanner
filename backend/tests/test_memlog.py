@@ -111,3 +111,15 @@ def test_run_forever_can_be_turned_off(monkeypatch):
         task.cancel()
     asyncio.run(go())
     assert calls == []
+
+
+def test_cached_files_reports_page_cache_residency(volume):
+    path = volume / "big.bin"
+    with open(path, "wb") as f:
+        f.write(os.urandom(4 << 20))
+        f.flush()
+        os.fsync(f.fileno())
+    path.read_bytes()
+    assert memlog.cached_files().get("big.bin", 0) >= 3.9
+    memlog.release_page_cache()
+    assert memlog.cached_files().get("big.bin", 0) < 1
