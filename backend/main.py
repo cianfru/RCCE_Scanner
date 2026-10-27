@@ -299,7 +299,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Fills store init failed (non-fatal): %s", e)
 
     # Memory log line every 10 min, and the volume files' page cache (billed as RAM)
-    # dropped every 5 min (memlog.py); MEMLOG=0 / CACHE_RELEASE=0 turn either off.
+    # dropped every minute (memlog.py); MEMLOG=0 / CACHE_RELEASE=0 turn either off.
     import memlog
     asyncio.create_task(memlog.run_forever())
 
