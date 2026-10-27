@@ -2388,8 +2388,8 @@ async def run_tradfi_scan(
 
         # 2. Fetch weekly data for heatmap + exhaustion
         weekly_batch = await fetch_batch_hip3("1w")
-        # Fill weekly gaps with yfinance, only when HIP-3 left one: importing yfinance
-        # (and pandas) costs ~65 MB of RSS for the life of the process.
+        # Fill weekly gaps with yfinance (a short-lived child process, see data_fetcher._yf_download),
+        # only when HIP-3 left one.
         if any(weekly_batch.get(s["symbol"]) is None for s in TRADFI_SYMBOLS):   # the live list (edited in place)
             try:
                 yf_weekly = await fetch_batch_yfinance("1w")

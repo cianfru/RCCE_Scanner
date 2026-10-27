@@ -1671,10 +1671,21 @@ def _parse_yf_to_ohlcv(df, timeframe: str) -> Optional[dict]:
 _YF_CHILD_TIMEOUT_S = 180
 
 
+class _YFDownloadFailed(Exception):
+    """The download itself failed (Yahoo down or slow): reported, not retried in this process."""
+
+
+def _yf_failure_lines(stderr: bytes) -> str:
+    lines = [ln.strip() for ln in stderr.decode(errors="replace").splitlines()
+             if ("Failed" in ln or "Error" in ln) and "Warning" not in ln]
+    return " | ".join(lines[-3:])[:300]
+
+
 async def _yf_download(tickers: List[str], timeframe: str) -> Dict[str, Optional[dict]]:
     """yf_source.download_batch in a short-lived child process, so yfinance and pandas (~65 MB
-    of RSS for the life of a process) never load here; in-process only if the child cannot run.
-    Raises when the download itself failed."""
+    of RSS for the life of a process) never load here, and the pages of the files the child read
+    are dropped once it exits. In-process only if the child cannot be started or crashes.
+    Raises _YFDownloadFailed when the download itself failed or timed out."""
     import sys
     import yf_source
     if os.environ.get("YF_SUBPROCESS", "1").strip().lower() not in ("0", "false", "no", "off"):
@@ -1682,23 +1693,43 @@ async def _yf_download(tickers: List[str], timeframe: str) -> Dict[str, Optional
         try:
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, str(Path(__file__).with_name("yf_source.py")), timeframe, *tickers,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=_YF_CHILD_TIMEOUT_S)
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=_YF_CHILD_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                raise _YFDownloadFailed(f"no answer within {_YF_CHILD_TIMEOUT_S} s")
             if proc.returncode == 0:
-                return yf_source.decode(out.decode())
-            if proc.returncode == yf_source.DOWNLOAD_FAILED:
-                raise RuntimeError("download failed (child process)")
-            logger.warning("yfinance child exited with %s; downloading in-process", proc.returncode)
-        except RuntimeError:
+                answer = yf_source.decode(out.decode())
+                await asyncio.to_thread(_drop_cached_pages, answer.get("files") or [])
+                failures = _yf_failure_lines(err)
+                if not answer.get("ok"):
+                    raise _YFDownloadFailed(answer.get("error") or failures or "download failed")
+                if failures:
+                    logger.warning("yfinance: %s", failures)
+                return answer["bars"]
+            if proc.returncode < 0:
+                raise _YFDownloadFailed(f"child killed by signal {-proc.returncode}")
+            logger.warning("yfinance child exited with %s (%s); downloading in-process",
+                           proc.returncode, _yf_failure_lines(err) or "no error text")
+        except _YFDownloadFailed:
             raise
         except Exception as exc:
-            logger.warning("yfinance child failed (%s); downloading in-process", exc)
+            logger.warning("yfinance child could not run (%r); downloading in-process", exc)
         finally:
             if proc is not None and proc.returncode is None:
                 proc.kill()
                 await proc.wait()
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, yf_source.download_batch, tickers, timeframe)
+
+
+def _drop_cached_pages(paths: List[str]) -> None:
+    try:
+        import memlog
+        for p in paths:
+            memlog.drop_file_cache(p)
+    except Exception as exc:
+        logger.debug("yfinance child: page-cache drop failed: %s", exc)
 
 
 async def fetch_ohlcv_yfinance(

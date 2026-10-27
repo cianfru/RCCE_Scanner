@@ -92,32 +92,52 @@ def download_batch(tickers: List[str], timeframe: str) -> Dict[str, Optional[dic
     return out
 
 
-def encode(results: Dict[str, Optional[dict]]) -> str:
-    """Bars as JSON lists: Python floats round-trip exactly; NaN stays NaN."""
-    return json.dumps({t: (None if d is None else {f: [float(x) for x in d[f]] for f in FIELDS})
-                       for t, d in results.items()})
+def loaded_files() -> List[str]:
+    """Source, bytecode and shared-library files this process read: once it exits, the parent drops
+    their cached pages (they would stay charged to the container's memory)."""
+    out = set()
+    for mod in list(sys.modules.values()):
+        for path in (getattr(mod, "__file__", None), getattr(getattr(mod, "__spec__", None), "cached", None)):
+            if path:
+                out.add(path)
+    try:
+        with open("/proc/self/maps") as f:
+            for line in f:
+                path = line.split()[-1] if len(line.split()) >= 6 else ""
+                if path.startswith("/") and ".so" in path:
+                    out.add(path)
+    except OSError:
+        pass
+    return sorted(out)
 
 
-def decode(text: str) -> Dict[str, Optional[dict]]:
+def encode(results: Optional[Dict[str, Optional[dict]]], error: Optional[str] = None,
+           files: Optional[List[str]] = None) -> str:
+    """The child's answer. Bars as JSON lists: Python floats round-trip exactly; NaN stays NaN."""
+    bars = {t: (None if d is None else {f: [float(x) for x in d[f]] for f in FIELDS})
+            for t, d in (results or {}).items()}
+    return json.dumps({"ok": error is None, "error": error, "bars": bars, "files": files or []})
+
+
+def decode(text: str) -> dict:
+    """{"ok", "error", "bars": {ticker: OHLCV dict of float64 arrays or None}, "files"}."""
     import numpy as np
     raw = json.loads(text)
-    return {t: (None if d is None else {f: np.asarray(d[f], dtype=np.float64) for f in FIELDS})
-            for t, d in raw.items()}
-
-
-DOWNLOAD_FAILED = 3     # exit code: the download itself failed (Yahoo down, no network)
+    raw["bars"] = {t: (None if d is None else {f: np.asarray(d[f], dtype=np.float64) for f in FIELDS})
+                   for t, d in raw.get("bars", {}).items()}
+    return raw
 
 
 def main(argv: List[str]) -> int:
     timeframe, tickers = argv[0], argv[1:]
+    results, error = None, None
     # yfinance prints its progress bar to stdout; stdout carries only the JSON answer.
     with contextlib.redirect_stdout(sys.stderr):
         try:
             results = download_batch(tickers, timeframe)
         except Exception as exc:
-            print(f"yfinance download failed: {exc}", file=sys.stderr)
-            return DOWNLOAD_FAILED
-    sys.stdout.write(encode(results))
+            error = f"{type(exc).__name__}: {exc}"[:300]
+    sys.stdout.write(encode(results, error, loaded_files()))
     sys.stdout.flush()
     return 0
 

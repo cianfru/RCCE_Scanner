@@ -19,8 +19,9 @@ def _bars(n, seed):
 
 def test_json_transport_is_exact_including_nan():
     src = {"GC=F": _bars(50, 1), "^VIX": None, "DX-Y.NYB": _bars(7, 2)}
-    out = yf_source.decode(yf_source.encode(src))
-    assert out["^VIX"] is None
+    answer = yf_source.decode(yf_source.encode(src, None, ["/x/a.pyc"]))
+    out = answer["bars"]
+    assert answer["ok"] and answer["files"] == ["/x/a.pyc"] and out["^VIX"] is None
     for t in ("GC=F", "DX-Y.NYB"):
         for f in yf_source.FIELDS:
             assert out[t][f].dtype == np.float64
@@ -28,20 +29,52 @@ def test_json_transport_is_exact_including_nan():
     assert math.isnan(out["GC=F"]["volume"][3]) and out["GC=F"]["open"][5] == 1 / 3
 
 
-def test_child_process_answers_json_and_reports_download_failures(monkeypatch, tmp_path):
-    # Run the module as the child does, with yfinance replaced by a stub that fails.
-    stub = tmp_path / "yfinance.py"
-    stub.write_text("def download(*a, **k):\n    print('progress bar on stdout')\n    raise RuntimeError('offline')\n")
+def _stub(tmp_path, body):
+    (tmp_path / "yfinance.py").write_text(body)
+
+
+def _run_child(tmp_path, *args):
+    import os
 
     async def run():
-        import os
         env = dict(os.environ, PYTHONPATH=f"{tmp_path}{os.pathsep}{os.environ.get('PYTHONPATH', '')}")
-        proc = await asyncio.create_subprocess_exec(sys.executable, yf_source.__file__, "1d", "GC=F",
+        proc = await asyncio.create_subprocess_exec(sys.executable, yf_source.__file__, *args,
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env)
         out, err = await proc.communicate()
         return proc.returncode, out, err
-    rc, out, err = asyncio.run(run())
-    assert rc == yf_source.DOWNLOAD_FAILED and out == b"" and b"offline" in err
+    return asyncio.run(run())
+
+
+def test_child_reports_a_failed_download_and_the_files_it_read(tmp_path):
+    _stub(tmp_path, "def download(*a, **k):\n    print('progress bar on stdout')\n    raise RuntimeError('offline')\n")
+    rc, out, err = _run_child(tmp_path, "1d", "GC=F")
+    answer = yf_source.decode(out.decode())
+    assert rc == 0 and not answer["ok"] and "offline" in answer["error"]
+    assert any(f.endswith("yfinance.py") for f in answer["files"])        # the stub was imported
+    assert b"progress bar" in err                                           # stdout stays clean JSON
+
+
+def test_a_failed_download_is_not_retried_in_the_server(tmp_path, monkeypatch):
+    import data_fetcher as df
+    _stub(tmp_path, "def download(*a, **k):\n    raise RuntimeError('offline')\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    dropped = []
+    monkeypatch.setattr(df, "_drop_cached_pages", lambda paths: dropped.extend(paths))
+    monkeypatch.setattr(yf_source, "download_batch", lambda *a: pytest.fail("retried in the server"))
+    with pytest.raises(df._YFDownloadFailed, match="offline"):
+        asyncio.run(df._yf_download(["GC=F"], "1d"))
+    assert dropped                                                          # the child's files are dropped
+
+
+def test_a_child_that_cannot_start_falls_back_in_process(monkeypatch):
+    import data_fetcher as df
+
+    async def no_spawn(*a, **k):
+        raise OSError("cannot spawn")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", no_spawn)
+    monkeypatch.setattr(yf_source, "download_batch", lambda tickers, tf: {t: _bars(10, 0) for t in tickers})
+    out = asyncio.run(df._yf_download(["GC=F"], "1d"))
+    assert set(out) == {"GC=F"}
 
 
 def test_batch_fetch_goes_through_the_child_download(monkeypatch):

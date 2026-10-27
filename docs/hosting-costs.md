@@ -32,11 +32,11 @@ Since the October change (`backend/memlog.py`):
   memlog rss=.. anon=.. | cgroup=.. anon=.. file=.. (active, inactive, mapped) | released=.. | heap allocated=.. resident=.. | volume=.. (largest files) | threads=.. up=..h
   ```
   `cgroup` is the figure Railway charges. `cgroup file` is the page cache. `rss` and `heap` are the process's own memory.
-- **Libraries no longer loaded:**
-  - ccxt: the Bybit fallback is now one REST call;
-  - yfinance and pandas: the TradFi weekly fallback only runs when HIP-3 has a gap.
+- **Libraries no longer loaded in the server:**
+  - ccxt: the Bybit fallback is now one REST call.
+  - yfinance and pandas: HIP-3 has no DXY or VIX candles, so every TradFi pass still needs yfinance. It now runs in a short-lived child process (`backend/yf_source.py`). When the child exits, the server drops the cached pages of the library files it read (about 40 MB).
 
-  Together that is about 90 MB.
+  Together that is about 90 MB of the server's own memory. Each child costs about 165 MB for a few seconds, 2–3 times per TradFi pass.
 - **jemalloc** runs with `background_thread:true,max_background_threads:1,narenas:2`, so freed memory goes back to the OS.
 - **View caches** (trader profiles, stored fills, portfolio answers, clearinghouse states) drop entries once they are past their reuse window.
 
