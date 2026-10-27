@@ -14,6 +14,8 @@ export const EDGE_PATHS = new Set([
   "/api/tradfi",
   "/api/universe",
   "/api/sectors",
+  "/api/portfolio/context",
+  "/api/portfolio/events",
 ]);
 
 export function edgePath(path) {

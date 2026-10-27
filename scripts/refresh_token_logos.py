@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
@@ -60,5 +60,22 @@ def main():
     print(f'{len(manifest)}/{len(markets)} markets have verified Hyperliquid SVGs; others use monograms.')
 
 
+def main_xyz():
+    """The TradFi (xyz builder dex) markets' SVGs, keyed by Hyperliquid's coin name ("xyz:NVDA"),
+    for the Portfolio page. The universe comes from Hyperliquid's public info endpoint."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    body = json.dumps({'type': 'meta', 'dex': 'xyz'}).encode()
+    req = Request('https://api.hyperliquid.xyz/info', data=body, headers={'Content-Type': 'application/json'})
+    with urlopen(req, timeout=30) as response:
+        names = [u['name'] for u in json.load(response)['universe'] if not u.get('isDelisted')]
+    markets = [{'symbol': name, 'kind': 'perpetual', 'coin': name} for name in names]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        manifest = {k: v['src'] for k, v in (item for item in pool.map(lambda m: fetch_svg(m, m['coin']), markets) if item)}
+    path = ROOT / 'frontend/src/data/xyzLogos.json'
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+    print(f'{len(manifest)}/{len(markets)} xyz markets have verified Hyperliquid SVGs; others use monograms.')
+
+
 if __name__ == '__main__':
-    main()
+    import sys
+    main_xyz() if sys.argv[1:] == ['--xyz'] else main()

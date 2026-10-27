@@ -5,8 +5,10 @@
 import { markRadius } from "../utils/traderBoard.js";
 
 export default class FillMarks {
-  constructor(colors) {
+  // opts.maxR: a cap on the mark radius in px (a dense chart keeps its candles readable).
+  constructor(colors, { maxR = null } = {}) {
     this.colors = colors;       // {long, short, ring}
+    this.maxR = maxR;
     this.marks = [];
     this.hits = [];
     this.view = { zOrder: () => "top", renderer: () => ({ draw: target => this.draw(target) }) };
@@ -44,7 +46,7 @@ export default class FillMarks {
         const x = ts.logicalToCoordinate(m.index);
         const y = m.px == null ? null : this.series.priceToCoordinate(m.px);
         if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y) || x < -10 || x > mediaSize.width + 10) continue;
-        const r = markRadius(m.usd, maxUsd, m.kind);
+        const r = Math.min(this.maxR ?? Infinity, markRadius(m.usd, maxUsd, m.kind));
         const color = m.side === "long" ? c.long : c.short;
         ctx.lineJoin = "round";
         if (m.kind === "trim") {

@@ -1,3 +1,4 @@
+// Rollback only (one release): the old Portfolio page, served at /portfolio only by a build with VITE_PORTFOLIO_LEGACY=1 (App.jsx).
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   createChart, AreaSeries, ColorType, LineStyle, CrosshairMode,

@@ -4510,6 +4510,118 @@ async def hyperlens_intel(coins: str = Query(..., max_length=200)):
                       for c in wanted}}
 
 
+# ── Portfolio page context and events (portfolio_context.py). Keyed by coin only, from memory
+# and the signal log (read-only); no Hyperliquid call, no address. On unless PORTFOLIO_CONTEXT=0.
+# Each answer is kept a minute per scan and coin set, and goes through the edge cache.
+import portfolio_context as _pfctx  # noqa: E402
+
+# The coin set a page asks about stays out of the access log (only the path is logged).
+logging.getLogger("uvicorn.access").addFilter(_pfctx.DropPortfolioQuery())
+
+_PF_MEMO = _pfctx.Memo()
+_PF_EVENTS_MEMO = _pfctx.Memo()
+_PF_BODIES = _pfctx.BodyCache(ttl=60, max_items=512)
+
+
+def _pf_scan_id() -> str:
+    """Changes when a scan pass, a TradFi pass or a tracked-wallet reading lands."""
+    import degrade
+    tradfi = cache.tradfi_results.get("4h")
+    return f"s_{int(degrade.scan_as_of() or 0)}_{int(degrade.positions_as_of() or 0)}_{id(tradfi) % 100000}"
+
+
+def _pf_sources() -> "_pfctx.Sources":
+    import numpy as np
+    import setup_map
+    from convergence import tracker
+    from data_fetcher import _ohlcv_store
+    from hl_intelligence import _normalize_coin, entity_of
+    now = time.time()
+
+    def by_key(results, normalize=True):
+        out: dict = {}
+        for r in results or []:
+            if not isinstance(r, dict) or (r.get("market_kind") or "perpetual") != "perpetual" or not r.get("symbol"):
+                continue
+            key = _normalize_coin(r["symbol"]) if normalize else r["symbol"].split("/")[0].upper()
+            out.setdefault(key, r)
+        return out
+
+    def trend(symbol: str):
+        from engines.rcce_engine import LEN_LONG
+        from engines.spike_zone import trend_level
+        _, cs = setup_map.closes(_ohlcv_store.get(symbol, "1d"), "1d", now)
+        if len(cs) < LEN_LONG:
+            return None
+        v = float(trend_level(np.asarray(cs[-600:], dtype=np.float64))[-1])
+        return v if np.isfinite(v) else None
+
+    prof = _positioning_map_cached("profitable")
+    day_ago = {r["coin"]: r["day_ago"] for r in _positioning_body("profitable")["rows"] if r.get("day_ago")}
+    return _pfctx.Sources(
+        rows={tf: by_key(cache.get_results(tf)) for tf in ("4h", "1d")},
+        tradfi={tf: by_key(cache.tradfi_results.get(tf), normalize=False) for tf in ("4h", "1d")},
+        candles=_ohlcv_store.get,
+        band=lambda symbol, price: setup_map.weekly_band(_ohlcv_store.get(symbol, "1d"), price, now),
+        trend=trend, prof=prof["coins"], day_ago=day_ago,
+        opens=[o for o in tracker().opens if now - o["ts"] <= _pfctx.OPENS_WINDOW_S], entity=entity_of)
+
+
+def _pf_respond(request: Request, body: dict, tag: str):
+    from fastapi.responses import Response
+    headers = {"ETag": tag, "Cache-Control": _pfctx.CACHE_CONTROL}
+    if _pfctx.not_modified(request.headers.get("if-none-match"), tag):
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(body, headers=headers)
+
+
+def _pf_coins(coins: str) -> list:
+    if not _pfctx.enabled():
+        raise HTTPException(status_code=404, detail="Not Found")
+    wanted = _pfctx.parse_coins(coins)
+    if not wanted:
+        raise HTTPException(status_code=400, detail="coins is required")
+    return wanted
+
+
+@app.get("/api/portfolio/context")
+async def portfolio_context_view(request: Request, coins: str = Query("", max_length=400)):
+    """Per coin (at most 20, raw Hyperliquid names): the scanner's 4H and 1D reading, the weekly band,
+    trend line, swing, daily ATR and profitable traders' counts and median entries. Same answer for
+    every visitor; memoised per scan, the whole answer kept a minute; ETag and max-age=60."""
+    wanted = _pf_coins(coins)
+    import degrade
+    scan_id = _pf_scan_id()
+    key = ("context", scan_id, tuple(wanted))
+    hit = _PF_BODIES.get(key)
+    if hit is None:
+        def build():
+            body = _pfctx.context_body(wanted, _pf_sources, scan_id, degrade.scan_as_of(), _PF_MEMO)
+            return body, _pfctx.etag(body)
+        hit = await asyncio.to_thread(build)
+        _PF_BODIES.put(key, hit)
+    return _pf_respond(request, *hit)
+
+
+@app.get("/api/portfolio/events")
+async def portfolio_events_view(request: Request, coins: str = Query("", max_length=400)):
+    """Per coin: the scanner's 4H and 1D signal and regime changes over a fixed 30-day window (at most
+    60 per coin) and what it read at the window's start. Same answer for every visitor; ETag = the
+    newest event id."""
+    wanted = _pf_coins(coins)
+    from signal_log import _DB_PATH as signal_db
+    scan_id = _pf_scan_id()
+    key = ("events", scan_id, _pfctx.window_start(time.time()), tuple(wanted))
+    hit = _PF_BODIES.get(key)
+    if hit is None:
+        def build():
+            body = _pfctx.events_body(wanted, str(signal_db), None, _PF_EVENTS_MEMO, scan_id)
+            return body, _pfctx.events_etag(body)
+        hit = await asyncio.to_thread(build)
+        _PF_BODIES.put(key, hit)
+    return _pf_respond(request, *hit)
+
+
 _SETUP_MAP_CACHE: dict = {}
 
 

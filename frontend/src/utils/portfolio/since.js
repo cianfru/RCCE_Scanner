@@ -1,0 +1,162 @@
+// "Since" (Portfolio v2, B2): what changed since this browser's last visit, kept on this device only.
+// Two slots under reflex.pf.snap.v1.<hash of the address>: {base, cur}. The address itself is never
+// stored (only a 64-bit hash of it, lowercased), and at most SNAP_KEEP addresses are kept. On load, a
+// `cur` older than 30 minutes becomes the baseline; `cur` is rewritten every 60 s while the page is
+// visible and when it is hidden or left. Every storage read and write is guarded: blocked storage
+// behaves as a first visit.
+import { EXIT_SIGNALS, LONG_ENTRIES, SHORT_ENTRIES } from "./checks.js";
+import { feeUsd } from "./fees.js";
+
+export const SNAP_VERSION = 1;
+export const SMALL_CLOSE_USD = 25;
+export const SMALL_CLOSE_SHARE = 0.0005;
+export const BASE_AFTER_MS = 30 * 60 * 1000;
+export const SNAP_KEEP = 6;
+const SNAP_PREFIX = "reflex.pf.snap.v1.";
+
+// Two 32-bit FNV-1a passes (different offsets): a short, stable key that does not hold the address.
+export function addrHash(addr) {
+  const s = String(addr || "").toLowerCase();
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x01000193) >>> 0;
+  }
+  return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+export const snapKey = addr => `${SNAP_PREFIX}${addrHash(addr)}`;
+
+// Keeps the SNAP_KEEP most recently written snapshots (one per address looked at), drops the rest.
+function prune(storage, keep = SNAP_KEEP) {
+  if (typeof storage?.key !== "function" || typeof storage?.removeItem !== "function") return;
+  const mine = [];
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i);
+    if (!k?.startsWith(SNAP_PREFIX)) continue;
+    let t = 0;
+    try { t = JSON.parse(storage.getItem(k))?.cur?.t || 0; } catch { /* unreadable: oldest */ }
+    mine.push([k, t]);
+  }
+  mine.sort((p, q) => q[1] - p[1]).slice(keep).forEach(([k]) => storage.removeItem(k));
+}
+
+export function readSlots(storage, addr, now = Date.now()) {
+  try {
+    const raw = storage?.getItem(snapKey(addr));
+    const s = raw ? JSON.parse(raw) : {};
+    let base = s?.base?.v === SNAP_VERSION ? s.base : null;
+    const cur = s?.cur?.v === SNAP_VERSION ? s.cur : null;
+    if (cur && now - cur.t > BASE_AFTER_MS) base = cur;
+    return { base, cur, ok: true };
+  } catch {
+    return { base: null, cur: null, ok: false };
+  }
+}
+
+export function writeCurrent(storage, addr, base, snap) {
+  try {
+    storage?.setItem(snapKey(addr), JSON.stringify({ base: base || null, cur: snap }));
+    prune(storage);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// rows: board rows (checks.buildRow); t in ms.
+export function buildSnapshot({ t, equity, upnl, lastFillT, rows }) {
+  const coins = {};
+  for (const r of rows || []) {
+    const c = r.ctx;
+    const tr = c?.traders;
+    coins[r.coin] = {
+      side: r.side, szi: r.szi, upnl: round(r.upnl, 2), mark: r.mark,
+      liqPct: r.dist ? round(r.dist.pct, 2) : null, liqAtr: r.dist?.atr != null ? round(r.dist.atr, 2) : null,
+      h4: c?.h4?.signal ?? null, d1: c?.d1?.signal ?? null, reg4h: c?.h4?.regime ?? null, heat: c?.h4?.heat ?? null,
+      band: c?.band?.state ?? null, tl: tr?.long?.n ?? null, ts: tr?.short?.n ?? null,
+    };
+  }
+  return { v: SNAP_VERSION, t, equity: round(equity, 2), upnl: round(upnl, 2), lastFillT: lastFillT ?? null, coins };
+}
+const round = (v, d) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
+
+// Against the side: an exit or a short entry on a long, a long entry on a short.
+export const signalAgainst = (sig, side) => (side === "long" ? EXIT_SIGNALS.has(sig) || SHORT_ENTRIES.has(sig) : LONG_ENTRIES.has(sig));
+const crossed = (a, b, level) => a != null && b != null && (a < level) !== (b < level);
+
+// Change cells, most important first (B2's ranking). base, cur: snapshots; trips: closed round trips
+// (fillTrips.roundTrips().closed) for the "Closed ... $" cells; unknown(coin): the coin's venue is not
+// read now (its feed failed or has not answered), so its absence says nothing: never "Opened" or
+// "Closed" for it.
+export function sinceChanges(base, cur, { trips = [], unknown = () => false } = {}) {
+  if (!base || !cur) return [];
+  const out = [];
+  const add = (rank, sub, cell) => out.push({ rank, sub, ...cell });
+  const bc = base.coins || {}, cc = cur.coins || {};
+  for (const [coin, c] of Object.entries(cc)) {
+    const b = bc[coin];
+    if (unknown(coin)) continue;
+    if (!b || b.side !== c.side) add(1, 0, { kind: "trip", coin, opened: true, side: c.side });
+  }
+  // A close too small to matter (under $25 or 0.05% of equity, whichever is larger) ranks last.
+  const trivial = Math.max(SMALL_CLOSE_USD, SMALL_CLOSE_SHARE * (cur.equity || base.equity || 0));
+  for (const [coin, b] of Object.entries(bc)) {
+    const c = cc[coin];
+    if (c && c.side === b.side) continue;
+    if (unknown(coin)) continue;
+    const trip = trips.find(t => t.coin === coin && t.closedAt * 1000 > base.t);
+    const small = trip && trip.pnl != null && Math.abs(trip.pnl) < trivial;
+    add(small ? 8 : 1, small ? 1 : 0, { kind: "trip", coin, opened: false, side: b.side, pnl: trip ? trip.pnl : null });
+  }
+  for (const [coin, c] of Object.entries(cc)) {
+    const b = bc[coin];
+    if (!b || b.side !== c.side) continue;
+    const nowRed = c.liqAtr != null ? c.liqAtr < 1.5 : c.liqPct != null && c.liqPct < 15;
+    const wasRed = b.liqAtr != null ? b.liqAtr < 1.5 : b.liqPct != null && b.liqPct < 15;
+    if (c.liqPct != null && b.liqPct != null && (b.liqPct - c.liqPct >= 5 || (nowRed && !wasRed)))
+      add(2, -(b.liqPct - c.liqPct), { kind: "liq", coin, from: b.liqPct, to: c.liqPct, red: nowRed });
+    for (const tf of ["h4", "d1"]) {
+      if (c[tf] && b[tf] && c[tf] !== b[tf]) {
+        const against = signalAgainst(c[tf], c.side);
+        add(3, against ? 0 : 1, { kind: "signal", coin, tf, from: b[tf], to: c[tf], against });
+      }
+    }
+    if (c.reg4h && b.reg4h && c.reg4h !== b.reg4h) add(4, 0, { kind: "regime", coin, from: b.reg4h, to: c.reg4h });
+    if (c.band && b.band && c.band !== b.band) add(5, 0, { kind: "band", coin, from: b.band, to: c.band });
+    if (crossed(b.heat, c.heat, 85) || crossed(b.heat, c.heat, 95)) add(6, 0, { kind: "heat", coin, from: b.heat, to: c.heat });
+    const mine = c.side === "long" ? "tl" : "ts";
+    const holders = (c.tl ?? 0) + (c.ts ?? 0);
+    if (c[mine] != null && b[mine] != null && Math.abs(c[mine] - b[mine]) >= 2 && holders >= 5)
+      add(7, 0, { kind: "traders", coin, from: [b.tl, b.ts], to: [c.tl, c.ts], side: c.side });
+    if (c.mark && b.mark) {
+      const ch = (c.mark / b.mark - 1) * 100;
+      if (Math.abs(ch) >= 5) add(8, -Math.abs(ch), { kind: "price", coin, change: ch });
+    }
+  }
+  return out.sort((p, q) => p.rank - q.rank || p.sub - q.sub || String(p.coin).localeCompare(String(q.coin)));
+}
+
+// The first cell's line: P&L since the baseline (closed P&L net of fees, funding, and the change in
+// open P&L) and the fills since. Fees in a token (spot buys) count at its mid (feePx: token name ->
+// price). With a venue not read now (unknown(coin)), the open P&L change counts only the coins of the
+// venues read, and the line says partial.
+export function sinceSummary(base, { fills = [], funding = [], upnl = 0, cur = null, unknown = null, feePx = null } = {}) {
+  if (!base) return null;
+  const after = fills.filter(f => f.time > base.t);
+  let partial = false;
+  const realised = after.reduce((s, f) => {
+    const fee = feeUsd(f, feePx);
+    if (fee == null) partial = true;
+    return s + (parseFloat(f.closedPnl) || 0) - (fee || 0);
+  }, 0);
+  const fund = funding.filter(f => f.time > base.t).reduce((s, f) => s + (parseFloat(f.delta?.usdc) || 0), 0);
+  let open = base.upnl != null ? upnl - base.upnl : 0;
+  const skip = unknown && cur ? Object.keys({ ...(base.coins || {}), ...(cur.coins || {}) }).filter(c => unknown(c)) : [];
+  if (skip.length) {
+    const sum = coins => Object.entries(coins || {}).reduce((s, [c, x]) => s + (unknown(c) ? 0 : x?.upnl || 0), 0);
+    open = sum(cur.coins) - sum(base.coins);
+    partial = true;
+  }
+  return { t: base.t, pnl: realised + fund + open, fills: after.length, partial };
+}

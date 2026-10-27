@@ -57,6 +57,9 @@ EDGE_PATHS = frozenset({
     "/api/tradfi",
     "/api/universe",
     "/api/sectors",
+    # The Portfolio page's per-coin scanner context: keyed by coin only, never an address.
+    "/api/portfolio/context",
+    "/api/portfolio/events",
 })
 
 # Public by design (access.PUBLIC_PREFIXES) and the same for every visitor: no key needed.

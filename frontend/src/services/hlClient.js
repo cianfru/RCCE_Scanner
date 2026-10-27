@@ -235,10 +235,73 @@ export async function getUserFills(address) {
 /**
  * Get funding payment history.
  */
-export async function getUserFunding(address, startTime) {
+export async function getUserFunding(address, startTime, endTime) {
   const params = { user: address };
   if (startTime) params.startTime = startTime;
+  if (endTime) params.endTime = endTime;
   return infoClient.userFunding(params);
+}
+
+// ---------------------------------------------------------------------------
+// Portfolio v2 reads (read-only info calls; nothing here signs or trades)
+// ---------------------------------------------------------------------------
+
+/** Clearinghouse state on one builder dex ("xyz", "para", ...). */
+export async function getDexClearinghouseState(address, dex) {
+  return infoClient.clearinghouseState({ user: address, dex });
+}
+
+/** Open orders on one dex (main when dex is empty). */
+export async function getDexOpenOrders(address, dex = "") {
+  return infoClient.frontendOpenOrders(dex ? { user: address, dex } : { user: address });
+}
+
+/** Fills from startTime (ms, inclusive), aggregated by time like getUserFills. */
+export async function getUserFillsByTime(address, startTime, endTime) {
+  const params = { user: address, startTime, aggregateByTime: true };
+  if (endTime) params.endTime = endTime;
+  return infoClient.userFillsByTime(params);
+}
+
+/** Candles: interval "1h" | "4h" | "1d"; times in ms. */
+export async function getCandles(coin, interval, startTime, endTime) {
+  return infoClient.candleSnapshot({ coin, interval, startTime, endTime });
+}
+
+export async function getPerpDexs() {
+  return infoClient.perpDexs();
+}
+
+export async function getSpotMeta() {
+  return infoClient.spotMeta();
+}
+
+/** Mids on one builder dex (main: getAllMids). */
+export async function getDexMids(dex) {
+  return infoClient.allMids({ dex });
+}
+
+export async function getDelegatorSummary(address) {
+  return infoClient.delegatorSummary({ user: address });
+}
+
+export async function getVaultEquities(address) {
+  return infoClient.userVaultEquities({ user: address });
+}
+
+/** Earn: supplied and borrowed per token. */
+export async function getBorrowLendState(address) {
+  return infoClient.borrowLendUserState({ user: address });
+}
+
+/** "disabled" unless spot balances back the perps account (a unified account). */
+export async function getUserAbstraction(address) {
+  return infoClient.userAbstraction({ user: address });
+}
+
+/** Funding rates and marks for one dex (main when dex is empty). */
+export async function getMetaAndAssetCtxs(dex = "") {
+  return infoClient.metaAndAssetCtxs(dex ? { dex } : undefined);
 }
 
 /**
