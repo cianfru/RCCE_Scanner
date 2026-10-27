@@ -35,11 +35,10 @@ from typing import Dict, List, Optional
 
 
 def _malloc_trim():
-    """Ask glibc/jemalloc to release unused memory back to the OS."""
+    """Release freed heap pages to the OS (a jemalloc purge; glibc's malloc_trim without jemalloc)."""
     try:
-        import ctypes
-        libc = ctypes.CDLL("libc.so.6")
-        libc.malloc_trim(0)
+        import memlog
+        memlog.release_heap()
     except Exception:
         pass
 
@@ -1304,7 +1303,7 @@ async def _scan_timeframe(
     try:
         from exchange_derivatives_data import fetch_exchange_derivatives
         _, ex_cvd_raw, _ = await asyncio.wait_for(
-            fetch_exchange_derivatives(symbols, price_changes_dict),
+            fetch_exchange_derivatives(symbols, price_changes_dict, cvd_only=True),
             timeout=12.0,
         )
         # ex_cvd_raw is keyed by coin base (e.g. "BTC"), same as cg_cvd
@@ -1727,7 +1726,7 @@ async def _run_synthesis_pass(
     try:
         from exchange_derivatives_data import fetch_exchange_derivatives
         _, ex_cvd_raw, _ = await asyncio.wait_for(
-            fetch_exchange_derivatives(all_symbols, price_changes_dict),
+            fetch_exchange_derivatives(all_symbols, price_changes_dict, cvd_only=True),
             timeout=12.0,
         )
         if ex_cvd_raw:
@@ -2389,14 +2388,16 @@ async def run_tradfi_scan(
 
         # 2. Fetch weekly data for heatmap + exhaustion
         weekly_batch = await fetch_batch_hip3("1w")
-        # Fill weekly gaps with yfinance
-        try:
-            yf_weekly = await fetch_batch_yfinance("1w")
-            for sym, data in yf_weekly.items():
-                if data is not None and weekly_batch.get(sym) is None:
-                    weekly_batch[sym] = data
-        except Exception:
-            pass
+        # Fill weekly gaps with yfinance, only when HIP-3 left one: importing yfinance
+        # (and pandas) costs ~65 MB of RSS for the life of the process.
+        if any(weekly_batch.get(sym) is None for sym in TRADFI_SYMBOL_LIST):
+            try:
+                yf_weekly = await fetch_batch_yfinance("1w")
+                for sym, data in yf_weekly.items():
+                    if data is not None and weekly_batch.get(sym) is None:
+                        weekly_batch[sym] = data
+            except Exception:
+                pass
 
         # 3. Process each symbol through engines (parallel via thread pool)
         sym_info_map = {}

@@ -445,6 +445,20 @@ def _classified(got: Optional[dict]) -> List[dict]:
     return cl
 
 
+def trim_caches(now: Optional[float] = None) -> None:
+    """Drop answers past their reuse window (otherwise kept until a size cap) and classifications
+    of fills lists the store's load cache no longer holds (~7 MB for a 10,000-fill wallet)."""
+    now = time.time() if now is None else now
+    for cache, ttl in ((_portfolio_cache, PORTFOLIO_CACHE_S), (_profile_cache, PROFILE_CACHE_S)):
+        for k in [k for k, v in list(cache.items()) if now - v[0] >= ttl]:
+            cache.pop(k, None)
+    import hl_fills
+    hl_fills.trim_load_cache(now)
+    held = {id(v[1].get("fills")) for v in list(hl_fills._load_cache.values())}
+    for k in [k for k in list(_classified_cache) if k not in held]:
+        _classified_cache.pop(k, None)
+
+
 def _tracked(address: str) -> bool:
     import hl_intelligence as hl
     return any(x.address == address for x in hl._roster)

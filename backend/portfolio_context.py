@@ -314,6 +314,9 @@ class BodyCache:
     def put(self, key: tuple, value, now: Optional[float] = None) -> None:
         now = time.time() if now is None else now
         with self._lock:
+            if len(self._d) >= 32:        # expired answers are never served: drop them now, not at the cap
+                for k in [k for k, (t, _) in self._d.items() if now - t > self.ttl]:
+                    del self._d[k]
             if key not in self._d and len(self._d) >= self.max_items:
                 for k in [k for k, (t, _) in self._d.items() if now - t > self.ttl] or [min(self._d, key=lambda k: self._d[k][0])]:
                     self._d.pop(k, None)

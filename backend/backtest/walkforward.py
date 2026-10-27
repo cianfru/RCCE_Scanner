@@ -434,6 +434,10 @@ async def run_walkforward(config: WalkForwardConfig) -> str:
     """Launch a walk-forward validation. Returns ID immediately."""
     wf_id = uuid4().hex[:8]
     result = WalkForwardResult(id=wf_id, config=config, started_at=time.time())
+    # Keep the last few runs: each holds its trades and curves until the process restarts.
+    for old_id in [k for k, r in sorted(_walkforward_store.items(), key=lambda kv: kv[1].started_at or 0)
+                   if getattr(r, "status", None) in ("complete", "completed", "done", "error", "failed")][:max(0, len(_walkforward_store) - 4)]:
+        _walkforward_store.pop(old_id, None)
     _walkforward_store[wf_id] = result
 
     asyncio.create_task(_run_walkforward_task(wf_id, config, result))

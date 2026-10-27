@@ -66,7 +66,10 @@ class OpportunityJournal:
                 self.db.execute("DELETE FROM snapshots WHERE candle < ?", (cutoff,))
                 self.db.execute("DELETE FROM transitions WHERE observed_at < ?", (cutoff,))
             self.last_prune = as_of
-            self._snapshot_seen = {k for k in self._snapshot_seen if (k[2] or 0) >= cutoff}
+            # Rows carry their latest candle, so a week of candles is enough to skip re-encoding;
+            # keeping all 90 days grew this set by ~1,500 tuples a day of uptime.
+            recent = max(cutoff, as_of - 7 * 86400)
+            self._snapshot_seen = {k for k in self._snapshot_seen if (k[2] or 0) >= recent}
         return changed
 
     def recent(self, limit=100):

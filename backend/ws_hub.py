@@ -118,6 +118,12 @@ class WebSocketHub:
         meta = self._meta.get(ws)
         if meta is not None:
             meta["paused"] = bool(paused)
+            if not paused:
+                try:
+                    from activity import mark_active
+                    mark_active("ws-resume")     # wake idle loops within one idle_sleep chunk
+                except Exception:
+                    pass
 
     @property
     def client_count(self) -> int:

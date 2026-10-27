@@ -12,8 +12,13 @@ ENV OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREA
 # on long-running async Python services. jemalloc actively returns unused
 # pages to the OS and handles fragmentation far better.
 RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 \
-    && rm -rf /var/lib/apt/lists/*
-ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s "$(ls /usr/lib/*-linux-gnu/libjemalloc.so.2 | head -n 1)" /usr/local/lib/libjemalloc.so.2
+ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
+# background_thread: freed pages go back to the OS on a timer, even when the thread that freed
+# them goes idle (by default they wait for that arena's next allocation). narenas:2 instead of
+# 4 per host CPU (dozens on Railway) keeps freed memory from spreading over many arenas.
+ENV MALLOC_CONF=background_thread:true,max_background_threads:1,narenas:2
 
 WORKDIR /app
 

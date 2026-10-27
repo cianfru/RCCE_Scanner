@@ -28,4 +28,7 @@ if __name__ == "__main__":
         # uvicorn's defaults, stated so a future change cannot drop them silently.
         ws="websockets-sansio",
         ws_per_message_deflate=True,
+        # Clients only send small control messages (pause, resume, refresh); the default
+        # accepts 16 MiB frames.
+        ws_max_size=1 << 20,
     )

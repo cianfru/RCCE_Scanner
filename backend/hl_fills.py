@@ -260,7 +260,8 @@ class Store:
 
     def compact(self) -> None:
         with self.lock:
-            self.db.execute("PRAGMA incremental_vacuum")
+            # executescript runs the pragma to completion; execute() steps it once and frees one page.
+            self.db.executescript("PRAGMA incremental_vacuum;")
             self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def size_bytes(self) -> int:
@@ -285,6 +286,7 @@ def use_store(s: Optional[Store]) -> None:
     _store = s
     _meta = s.wallets() if s is not None else {}
     _load_cache.clear()
+    _load_used.clear()
     _rev.clear()
 
 
@@ -491,10 +493,17 @@ async def sync(session, address: str, reason: str) -> int:
                                                max(since_ms, tstart - OVERLAP_MS), backfill, True, twap_page)
             twap_seen = twap_seen or tn > 0
             twap_cursor = max(tstart, tlast or 0, (now_ms - 60_000) if tdone else 0)
-    trimmed, oldest = await asyncio.to_thread(st.trim, wid, MAX_FILLS_PER_WALLET)
-    if oldest is not None and trimmed:
-        covered = max(covered or 0, oldest / 1000)
-    count = await asyncio.to_thread(st.count, wid)
+    # Trim and recount only when the wallet can be over the cap: both read the wallet's whole
+    # key range, which ~1,700 syncs a day would otherwise pull through the page cache. The stored
+    # count plus the rows inserted is exact (maintain() recounts after its prunes).
+    known = w.get("n")
+    if backfill or known is None or known + added > MAX_FILLS_PER_WALLET:
+        trimmed, oldest = await asyncio.to_thread(st.trim, wid, MAX_FILLS_PER_WALLET)
+        if oldest is not None and trimmed:
+            covered = max(covered or 0, oldest / 1000)
+        count = await asyncio.to_thread(st.count, wid)
+    else:
+        trimmed, count = 0, known + added
     fields = {"cursor_ms": cursor, "twap_cursor_ms": twap_cursor, "synced_at": now, "n": count,
               "twap_seen": int(bool(twap_seen)), "covered_from": covered, "off_roster_at": None}
     if backfill and done:
@@ -779,6 +788,17 @@ async def run_forever() -> None:
 # ---------------------------------------------------------------------------
 
 _load_cache: "collections.OrderedDict[str, tuple]" = collections.OrderedDict()   # address -> (rev, result)
+_load_used: Dict[str, float] = {}         # address -> last served from _load_cache
+LOAD_CACHE_IDLE_S = 600
+
+
+def trim_load_cache(now: Optional[float] = None) -> None:
+    """Drop wallets not served for LOAD_CACHE_IDLE_S: a loaded wallet is up to ~5 MB of fill dicts,
+    otherwise kept until 8 newer wallets push it out."""
+    now = time.time() if now is None else now
+    for a in [a for a, t in list(_load_used.items()) if now - t >= LOAD_CACHE_IDLE_S]:
+        _load_cache.pop(a, None)
+        _load_used.pop(a, None)
 
 
 def ready(address: str) -> bool:
@@ -799,11 +819,13 @@ def stored_fills(address: str) -> Optional[dict]:
     hit = _load_cache.get(address)
     if hit and hit[0] == rev:
         _load_cache.move_to_end(address)
+        _load_used[address] = time.time()
         return hit[1]
     w = _meta[address]
     fills = [fill_of(r) for r in store().load(w["id"])]
     res = {"fills": fills, "covered_from": w["covered_from"], "synced_at": w["synced_at"], "stored": True}
     _load_cache[address] = (rev, res)
+    _load_used[address] = time.time()
     while len(_load_cache) > LOAD_CACHE_WALLETS:
         _load_cache.popitem(last=False)
     return res
