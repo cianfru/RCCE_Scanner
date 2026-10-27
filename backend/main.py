@@ -4567,9 +4567,10 @@ def _pf_sources() -> "_pfctx.Sources":
         opens=[o for o in tracker().opens if now - o["ts"] <= _pfctx.OPENS_WINDOW_S], entity=entity_of)
 
 
-def _pf_respond(request: Request, body: dict, tag: str):
+def _pf_respond(request: Request, body: dict, tag: str, keep: bool = True):
+    """keep=False (no scan has finished yet, e.g. just after a deploy): no browser or edge copy."""
     from fastapi.responses import Response
-    headers = {"ETag": tag, "Cache-Control": _pfctx.CACHE_CONTROL}
+    headers = {"ETag": tag, "Cache-Control": _pfctx.CACHE_CONTROL if keep else "no-store"}
     if _pfctx.not_modified(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
     return JSONResponse(body, headers=headers)
@@ -4600,7 +4601,7 @@ async def portfolio_context_view(request: Request, coins: str = Query("", max_le
             return body, _pfctx.etag(body)
         hit = await asyncio.to_thread(build)
         _PF_BODIES.put(key, hit)
-    return _pf_respond(request, *hit)
+    return _pf_respond(request, *hit, keep=hit[0].get("as_of") is not None)
 
 
 @app.get("/api/portfolio/events")
