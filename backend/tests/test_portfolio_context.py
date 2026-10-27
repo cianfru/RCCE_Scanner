@@ -223,6 +223,7 @@ def test_route_answers_with_etag_and_304(client, monkeypatch):
     c, main = client
     monkeypatch.setattr(main, "_pf_sources", lambda: _sources())
     monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_1")
+    monkeypatch.setattr(main.cache, "last_scan_time", NOW)
     r = c.get("/api/portfolio/context?coins=XMR,HYPE,xyz:SILVER,HYPE")
     assert r.status_code == 200
     body = r.json()
@@ -233,6 +234,28 @@ def test_route_answers_with_etag_and_304(client, monkeypatch):
     r2 = c.get("/api/portfolio/context?coins=HYPE,XMR,xyz:SILVER", headers={"If-None-Match": tag})
     assert r2.status_code == 304 and r2.headers["etag"] == tag
     assert c.get("/api/portfolio/context?coins=").status_code == 400
+
+
+def test_before_the_first_scan_the_answer_is_not_kept(client, monkeypatch):
+    # Just after a deploy no scan has finished: every coin reads uncovered, so neither the
+    # browser nor the edge may keep that answer once the scan lands.
+    c, main = client
+    import edge
+    monkeypatch.setattr(main, "_pf_sources", lambda: _sources())
+    monkeypatch.setattr(main.cache, "last_scan_time", None)
+    monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_0")
+    r = c.get("/api/portfolio/context?coins=XMR")
+    assert r.status_code == 200 and r.json()["as_of"] is None
+    assert r.headers["cache-control"] == "no-store"
+    monkeypatch.setenv("EDGE_CACHE", "1")
+    r = c.get(f"/api/portfolio/context?coins=XMR&k={edge.issue()['key']}")
+    assert r.status_code == 200 and "cdn-cache-control" not in r.headers
+    monkeypatch.setattr(main.cache, "last_scan_time", NOW)
+    monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_1")
+    r = c.get("/api/portfolio/context?coins=XMR")
+    assert r.headers["cache-control"] == "max-age=60"
+    r = c.get(f"/api/portfolio/context?coins=XMR&k={edge.issue()['key']}")
+    assert r.status_code == 200 and "cdn-cache-control" in r.headers
 
 
 def test_route_builds_from_memory_without_any_hyperliquid_call(client, monkeypatch):
