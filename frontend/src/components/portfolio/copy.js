@@ -11,10 +11,11 @@ export const LABELS = {
 
 export const INFO = {
   clock: "Time to the next 4H, daily and weekly candle closes (UTC). Signals are rechecked after each 4H close; the band reads weekly closes.",
-  equity: "Everything this address holds on Hyperliquid: perps on every venue (cross and isolated), spot at mid, Earn, staked HYPE and vaults. 24h is Hyperliquid's own P&L for the day; deposits and withdrawals are left out.",
-  liquidation: "Margin is maintenance margin over account value; Hyperliquid liquidates at 100%. Above: the position nearest its liquidation price, from Hyperliquid's mark, in % and in daily ATRs (14-day average daily range).",
+  equity: "Everything this address holds on Hyperliquid: perps on every venue (cross and isolated), spot at mid, Earn, staked HYPE and vaults. Unified and portfolio-margin accounts keep every balance in spot, so their total is spot at mid, staked HYPE and vaults. 24h is Hyperliquid's own P&L for the day; deposits and withdrawals are left out.",
+  liquidation: "Margin: cross maintenance margin over the cross account value, on the venue nearest its limit; Hyperliquid liquidates cross positions at 100%. Unified accounts: Hyperliquid's unified account ratio. Portfolio margin has its own measure, not shown. Above: the position nearest its liquidation price, from Hyperliquid's mark, in % and in daily ATRs (14-day average daily range).",
   exposure: "One block per position. Width is notional, colour its open P&L; longs right, shorts left, TradFi hatched. Leverage is gross notional over equity.",
-  reflex: "With signal: the share of the book's open notional on the side the scanner's 4H (or 1D) signal agrees with (a long entry signal on a long; a short entry or an exit signal on a short). The bar adds against, no signal and not covered. Short signals have no measured edge; read shorts as context. Map: your positions on the Radar, stretch across and profitable traders long minus short up. Context, not a signal; the forward test has run since 29 Sep 2026.",
+  reflex: "With signal: the share of the notional the scanner reads (main perps and the TradFi it covers) on the side its 4H (or 1D) signal agrees with: a long entry signal on a long; a short entry or an exit signal on a short. The bar adds against, no signal and not covered (main perps it has no reading for). Short signals have no measured edge; read shorts as context. Map: your positions on the Radar, stretch across and profitable traders long minus short up. Context, not a signal; the forward test has run since 29 Sep 2026.",
+  reflexPhone: "With signal: the share of the notional the scanner reads (main perps and the TradFi it covers) on the side its signal agrees with: a long entry signal on a long; a short entry or an exit signal on a short. Short signals have no measured edge. Context, not a signal.",
   since: "Compared with what this browser saw on your last visit, kept on this device only. Fills and funding from Hyperliquid; signal changes from the scanner.",
   since24: "Compared with 24 hours ago: Hyperliquid's P&L for the day, fills and positions from Hyperliquid, signal changes from the scanner's log, trader counts from a day ago.",
   levels: "Your entry (circle), nearest stop and take-profit (triangles; +n more), and liquidation (red tick, hatched) on one price line, with the weekly band (violet), the trend line (grey tick), profitable traders' median entry on your side (diamond) and, faint, where the mark was on your last visit.",
@@ -23,7 +24,7 @@ export const INFO = {
   held: "What the scanner showed since you opened: 4H regime colours (hover for the key) and signal changes.",
   traders: "Profitable tracked traders long · short, linked wallets counted once. Context, not a signal.",
   chart: "Hyperliquid's own history for the whole account. P&L leaves out deposits and withdrawals.",
-  calendar: "Realised P&L per UTC day: closed trades net of fees, plus funding. The total beside the month is the same sum. The period tabs count open P&L as well, so the two differ by the open P&L. Hatched days are before the fills on hand.",
+  calendar: "Realised P&L per UTC day: closed trades net of fees, plus funding. The total beside the month is the same sum over the calendar month. The period tabs measure something else: Hyperliquid's P&L for the whole account (open P&L, spot, vaults and staking included) over a rolling window. Hatched days are before the fills and funding on hand.",
   funding: "Negative is paid, positive received.",
 };
 
@@ -43,7 +44,11 @@ export const STRIP = {
   withSignal: "with signal", with: "With signal", against: "Against signal", noSignal: "No signal", notCovered: "Not covered", tf4h: "4H", tf1d: "1D",
   openPnl: "Open P&L", withdrawable: "Withdrawable", share: "Share", sinceVisit: d => `since ${d}`, carry: "/d",
   partialInfo: names => `Not answering now: ${names}.`,
-  parts: { perps: "Perps", tradfi: "TradFi", other: "Other venues", spot: "Spot", earn: "Earn", staked: "Staked", vaults: "Vaults" },
+  pendingInfo: names => `Still reading: ${names}.`,
+  unpricedInfo: names => `No price now: ${names}.`,
+  noMode: "The account mode is not read yet.",
+  modes: { unifiedAccount: "Unified account", portfolioMargin: "Portfolio margin" },
+  parts: { perps: "Perps", tradfi: "TradFi", other: "Other venues", spot: "Spot", earn: "Earn", staked: "Staked", vaults: "Vaults", balances: "Balances" },
 };
 
 export const RAIL = {
@@ -111,7 +116,7 @@ export const IDENTITY = {
 export const FEEDS = {
   main: "Perps", xyz: "TradFi", other: "Other venues", spot: "Spot", orders: "Orders", ordersXyz: "Orders",
   fills: "Fills", portfolio: "Portfolio", funding: "Funding", staking: "Staking", vaults: "Vaults", earn: "Earn",
-  context: "Scanner", events: "Scanner", mids: "Spot", meta: "Spot",
+  context: "Scanner", events: "Scanner", mids: "Prices", meta: "Spot names", abstraction: "Account mode",
 };
 
 export const CONNECT = {

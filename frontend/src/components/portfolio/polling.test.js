@@ -18,6 +18,9 @@ test("no read is faster than the old page's", () => {
   assert.ok(OLD.includes("setInterval(fetchFast, 15_000)") && OLD.includes("setInterval(fetchMedium, 30_000)") && OLD.includes("setInterval(fetchSlow, 120_000)"));
   assert.ok(CADENCE.fast >= 15_000);
   assert.ok(CADENCE.orders >= 15_000 && CADENCE.spot >= 15_000);
+  // The main open orders ride with the positions every 15 s, as the old page read them.
+  assert.match(FEEDS, /read\("orders", "frontendOpenOrders", \(\) => hlClient\.getDexOpenOrders\(account, ""\)/);
+  assert.match(OLD, /\["Open orders", \(\) => hlClient\.getOpenOrders\(account\), setOpenOrders\]/);
   assert.ok(CADENCE.fills >= 30_000);
   assert.ok(CADENCE.portfolio >= 120_000 && CADENCE.slow >= 120_000);
   assert.ok(CADENCE.mids >= 15_000 && CADENCE.venues >= 15_000);
@@ -30,7 +33,9 @@ test("every poll pauses while the tab is hidden", () => {
   // The page's own intervals only move its clock (no request).
   assert.deepEqual(intervals, ["() => setNowMs(Date.now())"]);
   const polls = [...FEEDS.matchAll(/pollWhileVisible\(([^,]+), CADENCE\.(\w+)\)/g)].map(m => m[2]);
-  assert.deepEqual(polls.sort(), ["fast", "fills", "mids", "orders", "portfolio", "slow", "slow", "spot", "venues"]);
+  assert.deepEqual(polls.sort(), ["fast", "fills", "history", "mids", "orders", "portfolio", "slow", "slow", "spot", "venues"]);
+  // The history tick sends at most one page, and only while the last minute's weight allows it.
+  assert.match(FEEDS, /if \(!meter\.allows\(est, HISTORY_CAP, now\)\) return false;/);
   assert.match(PAGE, /return pollWhileVisible\(load, 300_000\);/);
   // A scan notice while hidden waits for the tab to come back.
   assert.match(PAGE, /if \(document\.hidden\) \{ missed\.current = true; return; \}/);

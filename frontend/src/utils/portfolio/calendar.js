@@ -1,15 +1,17 @@
 // The P&L calendar (Portfolio v2, B6): realised P&L per UTC day, from the fills and funding on hand:
-// Σ(closedPnl − fee) + Σ funding. Open P&L is not included.
+// Σ(closedPnl − fee) + Σ funding. Open P&L is not included. A fee charged in a token (a spot buy pays
+// in the token bought) counts at that token's mid (px: token name -> price, totals.pricesByName).
 import { dayKey } from "./format.js";
+import { feeUsd } from "./fees.js";
 
-export function dailyPnl(fills, funding) {
+export function dailyPnl(fills, funding, px = null) {
   const days = new Map();
   const get = k => days.get(k) || (days.set(k, { net: 0, closed: 0, fees: 0, funding: 0, closes: 0 }), days.get(k));
   for (const f of fills || []) {
     const d = get(dayKey(f.time));
-    const pnl = parseFloat(f.closedPnl) || 0, fee = parseFloat(f.fee) || 0;
+    const pnl = parseFloat(f.closedPnl) || 0, fee = feeUsd(f, px) || 0;
     d.closed += pnl; d.fees += fee; d.net += pnl - fee;
-    if (/Close|>/.test(String(f.dir || ""))) d.closes += 1;
+    if (/Close|>|Settlement/.test(String(f.dir || ""))) d.closes += 1;
   }
   for (const f of funding || []) {
     const d = get(dayKey(f.time));

@@ -4,6 +4,7 @@
 // window.confirm; closeEquivalence.test.js checks that both paths send byte-identical requests.
 // Never from this page: placeMarketOrder or setLeverage, or a close or cancel on a builder-dex row.
 import { kKey } from "../../utils/tickerRenames.js";
+import { isMainDex } from "../../utils/portfolio/displayNames.js";
 
 // Once the exchange has accepted an action, a journal failure cannot undo it (from Codex).
 export async function executeAndJournal(execute, journal) {
@@ -27,9 +28,10 @@ export function parseNum(v) {
 // the display-rounded size) and the side.
 export const closeArgs = position => ({ coin: position.coin, size: Math.abs(parseNum(position.szi)), isLong: parseNum(position.szi) > 0 });
 
-// A row that can be closed or cancelled from this page: main-dex perps only (hlOrder.assetFor throws
-// for builder-dex coins).
-export const tradable = coin => typeof coin === "string" && !coin.includes(":") && !coin.startsWith("@");
+// A row that can be closed or cancelled from this page: main-dex perps only. hlOrder.assetFor throws
+// for builder-dex coins ("xyz:TSLA") and spot pairs ("@107", "PURR/USDC"), so a button there could
+// only ever fail before anything is sent.
+export const tradable = coin => typeof coin === "string" && !!coin && isMainDex(coin);
 
 // "Open on Radar" for a row. The Radar keys its coins by the app's key (KPEPE), so the focus is the
 // app's key; TradingPanel sent Hyperliquid's name (kPEPE), which found no k market there. Every

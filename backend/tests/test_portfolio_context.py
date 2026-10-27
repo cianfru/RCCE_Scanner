@@ -294,6 +294,22 @@ def test_body_cache_keeps_answers_a_minute_and_stays_bounded():
     assert len(cache) <= 3 and cache.get(("context", "s1", ("C9",)), now=NOW + 9) == 9
 
 
+def test_the_access_log_keeps_the_path_not_the_coin_set():
+    import logging
+
+    import main  # noqa: F401  (installs the filter)
+    f = [x for x in logging.getLogger("uvicorn.access").filters if isinstance(x, pc.DropPortfolioQuery)]
+    assert f, "the filter is installed on uvicorn.access"
+    rec = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                            ("1.2.3.4:5", "GET", "/api/portfolio/context?coins=BTC,HYPE,xyz:UNITREE", "1.1", 200), None)
+    assert f[0].filter(rec) is True
+    assert rec.getMessage() == '1.2.3.4:5 - "GET /api/portfolio/context HTTP/1.1" 200'
+    other = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                              ("1.2.3.4:5", "GET", "/api/scan?timeframe=4h", "1.1", 200), None)
+    f[0].filter(other)
+    assert "timeframe=4h" in other.getMessage()
+
+
 def test_the_answer_holds_counts_never_an_address(client, monkeypatch):
     c, main = client
     monkeypatch.setattr(main, "_pf_sources", lambda: _sources())

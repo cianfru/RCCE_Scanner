@@ -33,6 +33,22 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
+import logging
+
+
+class DropPortfolioQuery(logging.Filter):
+    """uvicorn's access log without the query string on /api/portfolio/*. The coin set a page asks
+    about is close to an identifier (Hyperliquid positions are public), so it is not kept in the log
+    next to the client address; the path stays. Installed on the "uvicorn.access" logger by main.py."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        a = record.args
+        if isinstance(a, tuple) and len(a) >= 3 and isinstance(a[2], str) \
+                and a[2].startswith("/api/portfolio/") and "?" in a[2]:
+            record.args = (*a[:2], a[2].split("?", 1)[0], *a[3:])
+        return True
+
+
 MAX_COINS = 20
 ATR_LEN = 14
 EVENTS_WINDOW_DAYS = 30
@@ -330,27 +346,36 @@ def _connect_ro(db_path: str) -> sqlite3.Connection:
     return con
 
 
-def coin_events(con: sqlite3.Connection, symbol: str, ws: int) -> dict:
+# The log's timeframes and the page's: main perps log "4h"/"1d"; the TradFi scan logs its own
+# ("tradfi_4h"/"tradfi_1d", scanner.run_tradfi_scan) under "NAME/USD".
+PERP_TFS = (("4h", "4h", "h4"), ("1d", "1d", "d1"))
+TRADFI_TFS = (("tradfi_4h", "4h", "h4"), ("tradfi_1d", "1d", "d1"))
+
+
+def coin_events(con: sqlite3.Connection, symbol: str, ws: int, tfs=PERP_TFS) -> dict:
     at_start: Dict[str, dict] = {}
-    for tf, k in (("4h", "h4"), ("1d", "d1")):
+    for tf, _, k in tfs:
         s = con.execute("SELECT signal FROM signal_events WHERE symbol=? AND timeframe=? AND timestamp<? "
                         "ORDER BY timestamp DESC LIMIT 1", (symbol, tf, ws)).fetchone()
         r = con.execute("SELECT regime FROM regime_events WHERE symbol=? AND timeframe=? AND timestamp<? "
                         "ORDER BY timestamp DESC LIMIT 1", (symbol, tf, ws)).fetchone()
         at_start[k] = {"signal": s["signal"] if s else None, "regime": r["regime"] if r else None}
+    page_tf = {tf: out for tf, out, _ in tfs}
+    log_tfs = tuple(page_tf)
+    marks = ",".join("?" * len(log_tfs))
     evs = []
     last_id = 0
     for row in con.execute("SELECT id, timestamp, timeframe, prev_signal, signal, price FROM signal_events "
-                           "WHERE symbol=? AND timeframe IN ('4h','1d') AND timestamp>=? ORDER BY timestamp",
-                           (symbol, ws)):
+                           f"WHERE symbol=? AND timeframe IN ({marks}) AND timestamp>=? ORDER BY timestamp",
+                           (symbol, *log_tfs, ws)):
         last_id = max(last_id, row["id"])
-        evs.append({"t": int(row["timestamp"]), "tf": row["timeframe"], "kind": "signal",
+        evs.append({"t": int(row["timestamp"]), "tf": page_tf[row["timeframe"]], "kind": "signal",
                     "from": row["prev_signal"], "to": row["signal"], "px": _num(row["price"])})
     for row in con.execute("SELECT id, timestamp, timeframe, prev_regime, regime, price FROM regime_events "
-                           "WHERE symbol=? AND timeframe IN ('4h','1d') AND timestamp>=? ORDER BY timestamp",
-                           (symbol, ws)):
+                           f"WHERE symbol=? AND timeframe IN ({marks}) AND timestamp>=? ORDER BY timestamp",
+                           (symbol, *log_tfs, ws)):
         last_id = max(last_id, row["id"])
-        evs.append({"t": int(row["timestamp"]), "tf": row["timeframe"], "kind": "regime",
+        evs.append({"t": int(row["timestamp"]), "tf": page_tf[row["timeframe"]], "kind": "regime",
                     "from": row["prev_regime"], "to": row["regime"], "px": _num(row["price"])})
     evs.sort(key=lambda e: (e["t"], e["kind"], e["tf"]))
     truncated = len(evs) > EVENTS_CAP
@@ -359,9 +384,10 @@ def coin_events(con: sqlite3.Connection, symbol: str, ws: int) -> dict:
 
 def events_body(coins: Iterable[str], db_path: str, now: Optional[float] = None,
                 memo: Optional[Memo] = None, scan_id: str = "") -> dict:
-    """The signal log's changes per coin since the window start (main perps only: TradFi and other
-    venues are not in the log, so they get empty lists). ``last_id`` is the newest event id among
-    them: the ETag, so a page asking again before anything changed gets a 304."""
+    """The signal log's changes per coin since the window start: main perps under "KEY/USDT", TradFi
+    (xyz) under "NAME/USD" with the TradFi scan's timeframes; other venues are not scanned, so they
+    get empty lists. ``last_id`` is the newest event id among them: the ETag, so a page asking again
+    before anything changed gets a 304."""
     now = time.time() if now is None else now
     ws = window_start(now)
     out: Dict[str, dict] = {}
@@ -370,7 +396,7 @@ def events_body(coins: Iterable[str], db_path: str, now: Optional[float] = None,
     try:
         for c in coins:
             key = app_key(c)
-            if key is None or key.startswith("xyz:"):
+            if key is None:
                 out[c] = {"at_start": None, "events": [], "truncated": False, "_last_id": 0}
             else:
                 def build(key=key):
@@ -379,6 +405,8 @@ def events_body(coins: Iterable[str], db_path: str, now: Optional[float] = None,
                         if not db_path or not os.path.exists(db_path):
                             return {"at_start": None, "events": [], "truncated": False, "_last_id": 0}
                         con = _connect_ro(db_path)
+                    if key.startswith("xyz:"):
+                        return coin_events(con, f"{key[4:]}/USD", ws, TRADFI_TFS)
                     return coin_events(con, f"{key}/USDT", ws)
                 out[c] = memo.get(f"{scan_id}|{ws}", c, build, now)[0] if memo is not None else build()
             last = max(last, out[c].get("_last_id", 0))

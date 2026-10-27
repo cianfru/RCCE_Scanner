@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { railDomain, railModel, placeLabels } from "./rail.js";
+import { railDomain, railModel, placeLabels, GLYPHS, TRADERS_LIFTED } from "./rail.js";
 
 const W = 400;
 
@@ -123,4 +123,16 @@ test("extra stops and take-profits are counted, the nearest is drawn", () => {
   assert.equal(m.moreStops, 2);
   assert.equal(m.moreTps, 1);
   assert.ok(m.m.stop < m.m.mark && m.m.tp > m.m.mark);
+});
+
+// Design review (phone NEAR card): the traders' diamond on the take-profit triangle rises one step.
+test("the traders' diamond never sits on the take-profit triangle", () => {
+  const base = { isLong: true, mark: 4.3, entry: 4.2, tps: [{ px: 4.6 }], width: 300, compact: true };
+  const on = railModel({ ...base, tradersEntry: 4.601 });
+  assert.deepEqual(on.tradersBand, TRADERS_LIFTED);
+  const [ty0, ty1] = GLYPHS.tp;
+  assert.ok(on.tradersBand[1] <= ty0, "lifted clear of the triangle");
+  const off = railModel({ ...base, tradersEntry: 4.25 });
+  assert.deepEqual(off.tradersBand, GLYPHS.traders);
+  assert.ok(ty1 > ty0);
 });

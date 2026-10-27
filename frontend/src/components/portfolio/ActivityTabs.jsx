@@ -5,7 +5,8 @@ import { orderKinds } from "../../utils/portfolio/checks.js";
 import { usd, pct, size as fmtSize, stamp, ago, dayKey, dayMonth, pxFixed, decimalsByCoin } from "../../utils/portfolio/format.js";
 import { Label, CoinName, NameSfx, pnlClass } from "./parts.jsx";
 import { OrderRow, fromMark } from "./OrdersList.jsx";
-import { INFO, TABS } from "./copy.js";
+import { feeText } from "../../utils/portfolio/fees.js";
+import { INFO, STRIP, TABS } from "./copy.js";
 
 // "BTC · 4 · 3 SL · 1 stop · nearest 0.2%"; one kind only: "NEAR · 18 limit".
 export function groupWords(k, n) {
@@ -58,7 +59,7 @@ function Fills({ fills, names, phone }) {
       const price = pxFixed(f.px, dec.get(f.coin));
       if (phone) return <div key={`${f.tid}-${f.time}`} className="pf-fill-ph">
         <span className="pf-fp-1"><b className="pf-t1">{name}</b> <span className="pf-t2">{f.dir}</span><span className={`m ${pnlClass(pnl)}`}>{pnl ? usd(pnl, { sign: true }) : ""}</span></span>
-        <span className="pf-fp-2 m pf-t3">{stamp(f.time)} · {fmtSize(f.sz)} @ {price} · {usd(-(parseFloat(f.fee) || 0), { exact: true })}</span>
+        <span className="pf-fp-2 m pf-t3">{stamp(f.time)} · {fmtSize(f.sz)} @ {price} · {f.feeToken && f.feeToken !== "USDC" ? feeText(f) : usd(-(parseFloat(f.fee) || 0), { exact: true })}</span>
       </div>;
       return <div key={`${f.tid}-${f.time}`} className="pf-fill">
         <span className="m pf-t2" title={ago(f.time)}>{stamp(f.time)}</span>
@@ -67,7 +68,7 @@ function Fills({ fills, names, phone }) {
         <span className="m">{fmtSize(f.sz)}</span>
         <span className="m">{price}</span>
         <span className={`m ${pnlClass(pnl)}`}>{pnl ? usd(pnl, { sign: true, exact: Math.abs(pnl) < 100 }) : "—"}</span>
-        <span className="m pf-t3">{(parseFloat(f.fee) || 0).toFixed(2)}</span>
+        <span className="m pf-t3">{feeText(f)}</span>
       </div>;
     })}
     <div className="pf-pager">
@@ -84,7 +85,8 @@ function DayBar({ v, max }) {
     {v !== 0 && <i className={v < 0 ? "pf-fbar-dn" : "pf-fbar-up"} style={v < 0 ? { right: "50%", width: `${w}%` } : { left: "50%", width: `${w}%` }} />}</span>;
 }
 
-function Funding({ funding, names }) {
+// partial: the 30-day window is not all read yet (the total covers the days on hand).
+function Funding({ funding, names, partial }) {
   const [open, setOpen] = useState(null);
   const days = useMemo(() => {
     const by = new Map();
@@ -102,7 +104,8 @@ function Funding({ funding, names }) {
   const max = Math.max(0, ...days.map(d => Math.abs(d.total)));
   if (!days.length) return <div className="pf-empty pf-t3">{TABS.none.funding}</div>;
   return <div className="pf-fund">
-    <div className="pf-fund-head"><Label info={INFO.funding}>{TABS.d30}</Label><span className={`m ${pnlClass(total)}`}>{usd(total, { sign: true })}</span></div>
+    <div className="pf-fund-head"><Label info={INFO.funding}>{TABS.d30}</Label><span className={`m ${pnlClass(total)}`}>{usd(total, { sign: true })}</span>
+      {partial && <span className="pf-partial">{STRIP.partial}</span>}</div>
     {days.map(d => <div key={d.key} className="pf-fund-g">
       <button type="button" className="pf-fund-row" aria-expanded={open === d.key} onClick={() => setOpen(o => (o === d.key ? null : d.key))}>
         <span className="m pf-t2">{dayMonth(Date.parse(`${d.key}T00:00:00Z`))}</span>
@@ -115,7 +118,8 @@ function Funding({ funding, names }) {
   </div>;
 }
 
-export default function ActivityTabs({ tab, onTab, orders, marks, sides = new Map(), fills, funding, names, canCancel, onCancel, cancelling, phone }) {
+// notice: the outcome of a Cancel pressed here (the page's ActionNotice), under the tabs.
+export default function ActivityTabs({ tab, onTab, orders, marks, sides = new Map(), fills, funding, names, canCancel, onCancel, cancelling, phone, notice = null, fundingPartial = false }) {
   const t = ["orders", "fills", "funding"].includes(tab) ? tab : "orders";
   return <section className="pf-act">
     <div className="pf-act-tabs" role="tablist">
@@ -123,8 +127,9 @@ export default function ActivityTabs({ tab, onTab, orders, marks, sides = new Ma
       <button type="button" role="tab" className="te-toggle" aria-pressed={t === "fills"} onClick={() => onTab("fills")}>{TABS.fills}</button>
       <button type="button" role="tab" className="te-toggle" aria-pressed={t === "funding"} onClick={() => onTab("funding")}>{TABS.funding}</button>
     </div>
+    {notice}
     {t === "orders" && <OrderGroups orders={orders} marks={marks} sides={sides} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} names={names} phone={phone} />}
     {t === "fills" && <Fills fills={fills} names={names} phone={phone} />}
-    {t === "funding" && <Funding funding={funding} names={names} />}
+    {t === "funding" && <Funding funding={funding} names={names} partial={fundingPartial} />}
   </section>;
 }

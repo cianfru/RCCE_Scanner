@@ -113,3 +113,26 @@ test("summary: closed P&L net of fees, funding and the change in open P&L since 
   assert.equal(s.fills, 2);
   assert.ok(Math.abs(s.pnl - (19 - 3 + 50)) < 1e-9);
 });
+
+// A venue whose feed failed (or has not answered): its coins are neither opened nor closed, and the
+// summary's open P&L counts the venues read only, marked partial (design review, scenario hlfail).
+test("a venue not read now never reads as closed or opened", () => {
+  const base = snap(1000, { BTC: { side: "long", upnl: 10 }, "xyz:NVDA": { side: "long", upnl: 50 }, "xyz:MSTR": { side: "long", upnl: -5 } }, { upnl: 55 });
+  const cur = snap(5000, { BTC: { side: "long", upnl: 30 } }, { upnl: 30 });
+  const unknown = coin => coin.startsWith("xyz:");
+  assert.equal(sinceChanges(base, cur, { unknown }).filter(c => c.kind === "trip").length, 0);
+  // Without the venue rule both TradFi positions would read as closed.
+  assert.equal(sinceChanges(base, cur).filter(c => c.kind === "trip" && !c.opened).length, 2);
+  const s = sinceSummary(base, { upnl: 30, cur, unknown });
+  assert.equal(s.pnl, 20);                                   // BTC 10 -> 30 only
+  assert.equal(s.partial, true);
+  assert.equal(sinceSummary(base, { upnl: 30 }).pnl, -25);  // the old reading: TradFi's open P&L as a loss
+});
+
+test("a fee in a token counts at its mid in the summary", () => {
+  const base = snap(1000, {}, { upnl: 0 });
+  const fills = [{ time: 2000, closedPnl: "0", fee: "2", feeToken: "HYPE" }, { time: 2000, closedPnl: "5", fee: "1", feeToken: "USDC" }];
+  const s = sinceSummary(base, { fills, upnl: 0, feePx: new Map([["HYPE", 40]]) });
+  assert.equal(s.pnl, 5 - 1 - 80);
+  assert.equal(sinceSummary(base, { fills, upnl: 0 }).partial, true);   // no price for HYPE: partial, never 2 dollars
+});

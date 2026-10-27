@@ -235,9 +235,10 @@ export async function getUserFills(address) {
 /**
  * Get funding payment history.
  */
-export async function getUserFunding(address, startTime) {
+export async function getUserFunding(address, startTime, endTime) {
   const params = { user: address };
   if (startTime) params.startTime = startTime;
+  if (endTime) params.endTime = endTime;
   return infoClient.userFunding(params);
 }
 

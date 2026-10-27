@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { makeTradeActions, closeArgs, tradable, executeAndJournal } from "./tradeActions.js";
+import { formatVolume } from "../../utils/hlOrder.js";
+import { size as fmtSize } from "../../utils/portfolio/format.js";
 
 function harness(over = {}) {
   const calls = { close: [], cancel: [], fetch: [], notices: [], closing: [], cancelling: [], fast: 0 };
@@ -86,6 +88,10 @@ test("xyz and other builder-dex rows are never closed or cancelled from this pag
   assert.equal(tradable("xyz:MSTR"), false);
   assert.equal(tradable("para:PAPER"), false);
   assert.equal(tradable("@107"), false);
+  // Canonical spot pairs come back in the main open-orders list too; hlOrder.assetFor has no index for them.
+  assert.equal(tradable("PURR/USDC"), false);
+  assert.equal(tradable(""), false);
+  assert.equal(tradable(null), false);
   // The components gate Close and Cancel on tradable().
   const read = f => readFileSync(new URL(f, import.meta.url), "utf8");
   assert.match(read("./BoardRow.jsx"), /tradable\(row\.coin\)/);
@@ -110,4 +116,13 @@ test("the close waits for the sheet: nothing is sent until it answers, Keep send
   assert.match(page, /confirm: coin => new Promise\(resolve => \{/);
   const r = await executeAndJournal(async () => ({ oid: 1 }), async () => { throw new Error("down"); });
   assert.deepEqual(r, { execution: { oid: 1 }, journalPending: true });
+});
+
+// Design review: the close sheet shows the size the close is sent with (floored, never rounded up).
+test("the close sheet's size is the size sent: |szi| floored to szDecimals", () => {
+  const sheet = readFileSync(new URL("./CloseConfirm.jsx", import.meta.url), "utf8");
+  assert.match(sheet, /const sent = dec != null \? formatVolume\(Math\.abs\(row\.szi\), dec\) : Math\.abs\(row\.szi\);/);
+  assert.match(sheet, /fmtSize\(sent, dec\)/);
+  assert.equal(fmtSize(formatVolume(0.035537, 5), 5), "0.03553");                 // the equivalence test sends "0.03553"
+  assert.equal(fmtSize(0.035537, 5), "0.03554");                                  // what a plain rounding showed
 });

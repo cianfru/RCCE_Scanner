@@ -107,3 +107,31 @@ test("real fills: every open position has a trip, sizes chain without drift", ()
   const { open } = roundTrips(cl);
   assert.ok(Object.keys(open).length > 0);
 });
+
+// Data review: a settlement closes a builder-dex trip; realised sums unrounded fills.
+test("a Settlement fill ends the trip", () => {
+  const seq = [
+    { coin: "para:PAPER", time: 1000, side: "B", px: "0.03", sz: "3304", startPosition: "0", dir: "Open Long", closedPnl: "0", fee: "0.01" },
+    { coin: "para:PAPER", time: 9000, side: "A", px: "0.026296", sz: "3304", startPosition: "3304", dir: "Settlement", closedPnl: "7.011088", fee: "0" },
+  ];
+  assert.equal(isPerpFill(seq[1], { includeDex: true }), true);
+  const { open, closed } = roundTrips(classifyFills(seq, { includeDex: true }));
+  assert.equal(open["para:PAPER"], undefined);
+  assert.equal(closed.length, 1);
+  close(closed[0].pnl, 7.0);
+});
+
+test("a trip's realised is the exact sum, rounded once", () => {
+  const seq = [fill(0, "B", 10, 1000, 0, { fee: 0.004 })];
+  for (let i = 1; i <= 300; i++) seq.push(fill(i * 10, "A", 10, 1, 1001 - i, { pnl: 0.0049, fee: 0.0004 }));
+  const tr = roundTrips(classifyFills(seq)).open.ETH;
+  // 300 x (0.0049 - 0.0004) - 0.004 = 1.346, shown 1.35; rounding each fill to cents first gave 0.
+  close(tr.realized, 1.35, 1e-9);
+});
+
+test("fees in a token count at its mid when prices are given", () => {
+  const seq = [fill(0, "B", 10, 1, 0, { fee: 0.5 })];
+  seq[0].feeToken = "USDT0";
+  const c = classifyFills(seq, { px: new Map([["USDT0", 0.998]]) });
+  close(c[0].fee, 0.499);
+});

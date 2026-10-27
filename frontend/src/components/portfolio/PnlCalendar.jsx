@@ -6,12 +6,14 @@ import { useMemo, useState } from "react";
 import { dailyPnl, monthGrid, steps } from "../../utils/portfolio/calendar.js";
 import { usd, monthName } from "../../utils/portfolio/format.js";
 import { Label, Hover, pnlClass } from "./parts.jsx";
-import { INFO, CAL } from "./copy.js";
+import { INFO, CAL, STRIP } from "./copy.js";
 
 const STEP_PCT = [0, 16, 30, 46, 64, 84];
 
-export default function PnlCalendar({ fills, funding, historyStart, lastVisit, phone }) {
-  const days = useMemo(() => dailyPnl(fills, funding), [fills, funding]);
+// historyStart: where both the fills and the funding on hand begin (ms); feePx: token name -> price.
+// partial: the 30-day window is still being read, so the month's sum leaves out its hatched days.
+export default function PnlCalendar({ fills, funding, historyStart, lastVisit, phone, feePx = null, partial = false }) {
+  const days = useMemo(() => dailyPnl(fills, funding, feePx), [fills, funding, feePx]);
   const now = new Date();
   const [ym, setYm] = useState([now.getUTCFullYear(), now.getUTCMonth()]);
   const [y, m] = ym;
@@ -48,6 +50,7 @@ export default function PnlCalendar({ fills, funding, historyStart, lastVisit, p
       <Label info={INFO.calendar}>{monthName(y, m)}</Label>
       <span className="pf-sep" aria-hidden="true">·</span>
       <span className={`m pf-cal-sum ${pnlClass(month)}`}>{usd(month, { sign: true })}</span>
+      {partial && historyStart > Date.UTC(y, m, 1) && <span className="pf-partial">{STRIP.partial}</span>}
       <span className="pf-cal-nav">
         <button type="button" className="pf-textbtn" disabled={!canBack} onClick={() => shift(-1)} aria-label={CAL.prev}>{"‹"}</button>
         <button type="button" className="pf-textbtn" disabled={!canFwd} onClick={() => shift(1)} aria-label={CAL.next}>{"›"}</button>

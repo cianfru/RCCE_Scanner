@@ -34,7 +34,8 @@ export const BANDS = {
   full: { mark: [-20, -10], under: [11, 20], tpMore: [-13, -5] },
   compact: { mark: [-18, -9], under: [5, 14] },
 };
-const GLYPHS = { tp: [-11, -5], sl: [5, 11], traders: [-11.5, -6.5], entry: [-4.5, 4.5], tick: [-8, 8], liq: [-7, 7], trend: [-6, 6], brk: [-6, 6], visit: [-5, 5] };
+export const GLYPHS = { tp: [-11, -5], sl: [5, 11], traders: [-11.5, -6.5], entry: [-4.5, 4.5], tick: [-8, 8], liq: [-7, 7], trend: [-6, 6], brk: [-6, 6], visit: [-5, 5] };
+export const TRADERS_LIFTED = [-17.5, -12.5];
 // Text sizes (px) and an approximate width when no measure is given: Geist Mono is 0.6 em a figure.
 export const TEXT_PX = { mark: 11, label: 11, more: 11 };
 const approx = (text, size) => String(text).length * size * 0.6;
@@ -65,11 +66,14 @@ export function railModel({ isLong, mark, entry, liq = null, stops = [], tps = [
     visit: ok(visitMark) && visitMark > dom.lo && visitMark < dom.hi && Math.abs(L(visitMark / mark)) > 1e-6 ? x(visitMark) : null,
   };
   const moreStops = Math.max(0, stops.length - 1), moreTps = Math.max(0, tps.length - 1);
+  // The traders' diamond sits just above the track, where the take-profit triangle is; on top of it,
+  // the diamond rises one step so both stay readable (the texts keep clear of it there too).
+  const tradersBand = m.traders != null && m.tp != null && Math.abs(m.traders - m.tp) < 7 ? TRADERS_LIFTED : GLYPHS.traders;
 
   // Glyphs: always drawn; they block texts.
   const g = (id, at, half, band) => (at == null ? null : { id, x0: at - half, x1: at + half, y0: band[0], y1: band[1] });
   const obstacles = [
-    g("tp", m.tp, 3.5, GLYPHS.tp), g("sl", m.stop, 3.5, GLYPHS.sl), g("traders", m.traders, 2.5, GLYPHS.traders),
+    g("tp", m.tp, 3.5, GLYPHS.tp), g("sl", m.stop, 3.5, GLYPHS.sl), g("traders", m.traders, 2.5, tradersBand),
     g("entry", m.entry, 4.5, GLYPHS.entry), g("mark", m.mark, 1, GLYPHS.tick), g("liq", m.liq, 1, GLYPHS.liq),
     g("trend", m.trend, 1, GLYPHS.trend), g("brk", breakX, 5.5, GLYPHS.brk),
   ].filter(Boolean);
@@ -96,7 +100,7 @@ export function railModel({ isLong, mark, entry, liq = null, stops = [], tps = [
     if (moreTps > 0 && m.tp != null) add("tpMore", m.tp + (away(m.tp) === "start" ? 6 : -6), `+${moreTps}`, TEXT_PX.more, B.tpMore, 3, [away(m.tp)], { fixed: true, own: "tp" });
   }
   const labels = placeLabels(texts, obstacles, { width });
-  return { domain: dom, x, m, hatch, breakX, costly, labels, moreStops, moreTps };
+  return { domain: dom, x, m, hatch, breakX, costly, labels, moreStops, moreTps, tradersBand };
 }
 
 // Texts in priority order, each at the first anchor where it hits no glyph and no text kept before

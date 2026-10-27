@@ -2,12 +2,15 @@
 // classify_fills and round_trips, with its cases in fillTrips.test.js). Used for a position's open
 // time, adds and trims, realised P&L and fees since it opened, the chart's fill marks and the last
 // closed trip. includeDex: also builder-dex markets ("xyz:TSLA"), which the backend leaves out.
+import { feeUsd } from "./fees.js";
 
+// A perp fill: "Open Long", "Close Short", "Long > Short", ... and "Settlement", which closes a
+// builder-dex position when its market settles (its startPosition and size end the trip).
 export function isPerpFill(f, { includeDex = false } = {}) {
   const coin = String(f?.coin || "");
   const d = String(f?.dir || "");
   return !!coin && !coin.startsWith("@") && !coin.includes("/") && (includeDex || !coin.includes(":"))
-    && (d.includes("Long") || d.includes("Short"));
+    && (d.includes("Long") || d.includes("Short") || d === "Settlement");
 }
 
 const dec = x => {
@@ -59,12 +62,14 @@ export function classifyFills(fills, opts = {}) {
     else if (kind === "close") avg = null;
     st.pos = after; st.avg = avg;
     const sideSign = kind === "open" || kind === "add" || kind === "flip" ? sa : sb;
-    const fee = dec(f.fee) || 0;
+    // Perp fees are in the dex's collateral; px (token name -> price) values any other fee token.
+    const fee = opts.px ? feeUsd(f, opts.px) ?? 0 : dec(f.fee) || 0;
+    // Unrounded: sums (a trip's realised, its fees) are rounded once, for display.
     const pnl = (dec(f.closedPnl) || 0) - fee;
     out.push({
       t: f.time / 1000, coin, kind, side: sideSign > 0 ? "long" : "short",
-      px: price, sz, usd: Math.round(price * sz * 100) / 100, before, after,
-      pnl: Math.round(pnl * 100) / 100, fee, avgEntry: avg, twap: !!f.twap, closedPnl: dec(f.closedPnl) || 0,
+      px: price, sz, usd: price * sz, before, after,
+      pnl, fee, avgEntry: avg, twap: !!f.twap, closedPnl: dec(f.closedPnl) || 0,
     });
   }
   return out;

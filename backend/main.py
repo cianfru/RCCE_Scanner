@@ -4515,6 +4515,9 @@ async def hyperlens_intel(coins: str = Query(..., max_length=200)):
 # Each answer is kept a minute per scan and coin set, and goes through the edge cache.
 import portfolio_context as _pfctx  # noqa: E402
 
+# The coin set a page asks about stays out of the access log (only the path is logged).
+logging.getLogger("uvicorn.access").addFilter(_pfctx.DropPortfolioQuery())
+
 _PF_MEMO = _pfctx.Memo()
 _PF_EVENTS_MEMO = _pfctx.Memo()
 _PF_BODIES = _pfctx.BodyCache(ttl=60, max_items=512)

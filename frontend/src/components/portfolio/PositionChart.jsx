@@ -12,6 +12,7 @@ import { fillMarks, chartTimeframe } from "../../utils/traderBoard.js";
 import { marksInput, thinMarks } from "../../utils/portfolio/fillTrips.js";
 import { stamp, size as fmtSize, decimalsAt } from "../../utils/portfolio/format.js";
 import { displayName } from "../../utils/portfolio/displayNames.js";
+import { meter, weightOf } from "../../utils/portfolio/weight.js";
 import { palette, fade } from "./chartTheme.js";
 import { sigWord, sigColor } from "./ScannerCell.jsx";
 import { textWidth } from "./parts.jsx";
@@ -33,7 +34,9 @@ export function chartRange(mode, openAt, nowS) {
 async function loadCandles(coin, interval, from, to) {
   const key = `${coin}|${interval}|${Math.floor(from / 3600)}`;
   if (cache.has(key)) return cache.get(key);
+  meter.add(weightOf("candleSnapshot"));
   const raw = await hlClient.getCandles(coin, interval, Math.floor(from * 1000), Math.floor(to * 1000));
+  meter.add(weightOf("candleSnapshot", (raw || []).length) - weightOf("candleSnapshot"));
   const out = (raw || []).map(c => ({ time: Math.floor(c.t / 1000), open: +c.o, high: +c.h, low: +c.l, close: +c.c }));
   cache.set(key, out);
   return out;

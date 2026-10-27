@@ -2,7 +2,7 @@
 // inline detail, performance and activity. Everything Hyperliquid is read from the browser
 // (usePortfolioFeeds); the scanner's per-coin context and events come from /api/portfolio/*.
 // Close and cancel go through tradeActions.js, unchanged from TradingPanel.jsx; the close sheet is the confirm.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useWallet } from "../../WalletContext.jsx";
 import useViewport from "../../hooks/useViewport.js";
@@ -14,11 +14,11 @@ import { pollWhileVisible } from "../../utils/visiblePoll.js";
 import { watchToast } from "../../utils/setupMap.js";
 import { Skeleton } from "../Skeleton.jsx";
 import RadarSheet from "../radar/RadarSheet.jsx";
-import { computeTotals, positionsOf } from "../../utils/portfolio/totals.js";
+import { computeTotals, positionsOf, modeKind, pricesByName } from "../../utils/portfolio/totals.js";
 import { buildRow, countChecks, sortRows, filterRows, quietNoStop, CHECK_KEYS, CTX_CHECKS, URL_KEYS } from "../../utils/portfolio/checks.js";
 import { classifyFills, roundTrips } from "../../utils/portfolio/fillTrips.js";
 import { readSlots, writeCurrent, buildSnapshot, sinceChanges, sinceSummary } from "../../utils/portfolio/since.js";
-import { spotNames, displayName } from "../../utils/portfolio/displayNames.js";
+import { spotNames, displayName, venueOf } from "../../utils/portfolio/displayNames.js";
 import { usd, age as fmtAge } from "../../utils/portfolio/format.js";
 import { kKey } from "../../utils/tickerRenames.js";
 import usePortfolioFeeds from "./usePortfolioFeeds.js";
@@ -26,20 +26,24 @@ import TitleRow, { STALE_HARD_MS, STALE_SOFT_MS } from "./TitleRow.jsx";
 import RiskStrip from "./RiskStrip.jsx";
 import SinceRow from "./SinceRow.jsx";
 import ChecksRow, { SortRow } from "./ChecksRow.jsx";
-import Board, { ActionNotice } from "./Board.jsx";
+import Board, { ActionNotice, groupShown } from "./Board.jsx";
 import BoardRow, { PhoneCard, Actions } from "./BoardRow.jsx";
 import PositionDetail from "./PositionDetail.jsx";
 import CloseConfirm, { CloseBody } from "./CloseConfirm.jsx";
 import Performance from "./Performance.jsx";
 import ActivityTabs from "./ActivityTabs.jsx";
 import { makeTradeActions, closeArgs } from "./tradeActions.js";
+import { noticePlace } from "./noticePlace.js";
 import { CoinName, pnlClass } from "./parts.jsx";
 import { useHeldAssetCtx } from "./assetCtx.js";
 import PageTitle from "../PageTitle.jsx";
 import { CONNECT, IDENTITY, ROWS, FEEDS, TITLE } from "./copy.js";
 
 const KEY_OF_URL = Object.fromEntries(Object.entries(URL_KEYS).map(([k, v]) => [v, k]));
-const VENUE_FEEDS = new Set(["main", "xyz", "other", "spot", "earn", "staking", "vaults"]);
+// The feeds Equity is made of: standard accounts, and unified or portfolio-margin ones (every balance
+// in spot; the perps states are not part of the total). Prices count: a token with no mid is not $0.
+const EQUITY_FEEDS = ["main", "xyz", "other", "spot", "earn", "staking", "vaults", "mids", "meta"];
+const SPOT_MODE_FEEDS = ["spot", "staking", "vaults", "mids", "meta"];
 
 // The scanner's context and events for the coins held: one GET each, again after each scan (the
 // shared scan-updated notice) or every 5 minutes while visible. A plain GET (no custom header, so
@@ -161,6 +165,8 @@ export default function PortfolioPage({ api }) {
 
   const f = usePortfolioFeeds(account);
   const names = useMemo(() => spotNames(f.spotMeta), [f.spotMeta]);
+  // Fee tokens other than USDC (a spot buy pays in the token bought) at their mid.
+  const feePx = useMemo(() => pricesByName(f.spotMeta, f.mids), [f.spotMeta, f.mids]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 30_000); return () => clearInterval(t); }, []);
 
@@ -187,15 +193,34 @@ export default function PortfolioPage({ api }) {
     { ordersRead: p.venue === "main" ? f.ordersRead.main : p.venue === "xyz" ? f.ordersRead.xyz : false })),
   [positions, reflex.ctx, f.orders, f.ordersXyz, f.ordersRead.main, f.ordersRead.xyz]);
 
-  const failedVenues = f.failed.filter(k => VENUE_FEEDS.has(k)).map(k => FEEDS[k]);
-  const totals = useMemo(() => computeTotals({
-    main: f.main, dexs: { ...(f.xyz ? { xyz: f.xyz } : {}), ...(f.others || {}) }, spot: f.spot, spotMeta: f.spotMeta, mids: f.mids,
-    earn: f.earn, delegator: f.delegator, vaults: f.vaults, unified: !!f.abstraction && f.abstraction !== "disabled", failed: [...new Set(failedVenues)],
-  }), [f.main, f.xyz, f.others, f.spot, f.spotMeta, f.mids, f.earn, f.delegator, f.vaults, f.abstraction, failedVenues.join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The feeds the total is made of (they depend on the account's mode): a failed one, or one not
+  // answered yet, makes it partial. Prices (mids, spot names) count too.
+  const kind = modeKind(f.abstraction ?? null);
+  const eqFeeds = kind && kind !== "standard" ? SPOT_MODE_FEEDS : EQUITY_FEEDS;
+  const failedVenues = [...new Set(eqFeeds.filter(k => f.feeds[k]?.error).map(k => FEEDS[k]))];
+  const pendingVenues = [...new Set(eqFeeds.filter(k => !f.feeds[k]).map(k => FEEDS[k]))];
+  const totals = useMemo(() => {
+    const t = computeTotals({
+      main: f.main, dexs: { ...(f.xyz ? { xyz: f.xyz } : {}), ...(f.others || {}) }, spot: f.spot, spotMeta: f.spotMeta, mids: f.mids,
+      earn: f.earn, delegator: f.delegator, vaults: f.vaults, mode: f.abstraction ?? null, failed: failedVenues, collateral: assetCtx.collateral,
+    });
+    return { ...t, pending: pendingVenues, partial: t.partial || pendingVenues.length > 0 };
+  }, [f.main, f.xyz, f.others, f.spot, f.spotMeta, f.mids, f.earn, f.delegator, f.vaults, f.abstraction, failedVenues.join(), pendingVenues.join(), assetCtx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Venues whose positions are not read now (failed, or not answered yet): their rows are missing or
+  // old, so the cells built from every row say "partial", and Since never reads them as opened or closed.
+  const venuesUnread = useMemo(() => new Set(["main", "xyz", "other"].filter(k => !f.feeds[k] || f.feeds[k].error)), [f.feeds]);
+  const venueUnread = useCallback(coin => {
+    const v = venueOf(coin);
+    return venuesUnread.has(v === "main" || v === "xyz" ? v : "other");
+  }, [venuesUnread]);
+  const unreadNames = [...venuesUnread].map(k => FEEDS[k]);
 
-  const classified = useMemo(() => classifyFills(f.fills, { includeDex: true }), [f.fills]);
+  const classified = useMemo(() => classifyFills(f.fills, { includeDex: true, px: feePx }), [f.fills, feePx]);
   const trips = useMemo(() => roundTrips(classified), [classified]);
-  const fillsStart = f.fills?.length ? f.fills[0].time : null;
+  // Where the fills on hand begin: 24 hours back at first, 30 days once the older part is in.
+  const fillsStart = f.coverage.fills?.from ?? (f.fills?.length ? f.fills[0].time : null);
+  // The calendar's days are whole only where both fills and funding are on hand.
+  const historyStart = f.coverage.fills && f.coverage.funding ? Math.max(f.coverage.fills.from, f.coverage.funding.from) : Date.now();
   const openAtOf = coin => trips.open[coin]?.openedAt ?? null;
   const evOf = coin => (reflex.ev?.coins?.[coin] ? { ...reflex.ev.coins[coin], windowStart: reflex.ev.window_start } : null);
 
@@ -207,10 +232,12 @@ export default function PortfolioPage({ api }) {
   }, [account]);
   const [sinceMode, setSinceMode] = useState(null);
   const mode2 = sinceMode || (slots.base ? "visit" : "24h");
-  const snap = useMemo(() => (f.main ? buildSnapshot({ t: nowMs, equity: totals.equity, upnl: totals.openPnl,
-    lastFillT: f.fills?.length ? f.fills[f.fills.length - 1].time : null, rows }) : null), [f.main, rows, totals.equity, totals.openPnl, f.fills, nowMs]);
+  const snap = useMemo(() => (f.main ? buildSnapshot({ t: nowMs, equity: totals.partial ? null : totals.equity, upnl: totals.openPnl,
+    lastFillT: f.fills?.length ? f.fills[f.fills.length - 1].time : null, rows }) : null), [f.main, rows, totals.equity, totals.partial, totals.openPnl, f.fills, nowMs]);
+  // The snapshot is stored only while every venue's positions are read: a venue that failed would
+  // otherwise read as closed on the next visit.
   const snapRef = useRef(null);
-  snapRef.current = snap;
+  snapRef.current = venuesUnread.size ? null : snap;
   useEffect(() => {
     if (!account) return undefined;
     const write = () => { if (!snapRef.current) return; try { writeCurrent(window.localStorage, account, slots.base, snapRef.current); } catch { /* blocked */ } };
@@ -221,15 +248,19 @@ export default function PortfolioPage({ api }) {
     return () => { stop(); document.removeEventListener("visibilitychange", onHide); window.removeEventListener("pagehide", write); };
   }, [account, slots]);
   const sinceBase = mode2 === "visit" ? slots.base : (f.main ? base24h(rows, reflex.ev, trips, f.fills, nowMs) : null);
-  const changes = useMemo(() => (snap && sinceBase ? sinceChanges(sinceBase, snap, { trips: trips.closed }) : []), [snap, sinceBase, trips]);
+  const changes = useMemo(() => (snap && sinceBase ? sinceChanges(sinceBase, snap, { trips: trips.closed, unknown: venueUnread }) : []), [snap, sinceBase, trips, venueUnread]);
   const summary = useMemo(() => {
     if (!sinceBase) return null;
+    // Fills and funding since the baseline are all on hand only once the window reaches back to it.
+    const covers = c => !!c && c.from <= sinceBase.t;
     if (mode2 === "24h") {
       const day = f.portfolio?.day?.pnlHistory;
-      return { t: sinceBase.t, pnl: day?.length ? day[day.length - 1].value : 0, fills: (f.fills || []).filter(x => x.time > sinceBase.t).length };
+      return { t: sinceBase.t, pnl: day?.length ? day[day.length - 1].value : 0, fills: (f.fills || []).filter(x => x.time > sinceBase.t).length,
+        partial: !covers(f.coverage.fills) };
     }
-    return sinceSummary(sinceBase, { fills: f.fills || [], funding: f.funding || [], upnl: totals.openPnl });
-  }, [sinceBase, mode2, f.portfolio, f.fills, f.funding, totals.openPnl]);
+    const s = sinceSummary(sinceBase, { fills: f.fills || [], funding: f.funding || [], upnl: totals.openPnl, cur: snap, unknown: venueUnread, feePx });
+    return s && { ...s, partial: s.partial || !covers(f.coverage.fills) || !covers(f.coverage.funding) };
+  }, [sinceBase, mode2, f.portfolio, f.fills, f.funding, f.coverage, totals.openPnl, snap, venueUnread, feePx]);
 
   // Checks, filter, sort, groups. A check that reads missing context cannot filter.
   const counts = useMemo(() => countChecks(rows), [rows]);
@@ -241,6 +272,9 @@ export default function PortfolioPage({ api }) {
     main: visible.filter(r => r.venue === "main"), xyz: visible.filter(r => r.venue === "xyz"),
     other: visible.filter(r => r.venue !== "main" && r.venue !== "xyz"),
   }), [visible]);
+  // Groups opened past their first rows, and the coins whose rows are on screen.
+  const [expanded, setExpanded] = useState(() => new Set());
+  const shownCoins = useMemo(() => new Set(["main", "xyz", "other"].flatMap(k => groupShown(groups[k], expanded.has(k)).map(r => r.coin))), [groups, expanded]);
   const toggleCheck = k => {
     const n = new Set(selected);
     n.has(k) ? n.delete(k) : n.add(k);
@@ -268,22 +302,35 @@ export default function PortfolioPage({ api }) {
   // the address changing, or the position changing or going while it is open all mean "no".
   const [closing, setClosing] = useState(null);
   const [cancelling, setCancelling] = useState(null);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(null);        // {section, coin, tone, text, origin: "row" | "activity"}
   const [sheet, setSheet] = useState(null);           // {row, anchor, resolve}
   const sheetRef = useRef(null);
   sheetRef.current = sheet;
   const anchorRef = useRef(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
-  const actions = useMemo(() => makeTradeActions({
-    api, hlClient, readOnly, walletClient, setClosing, setCancelling, setActionNotice: setNotice, fetchFast: f.fetchFast,
-    confirm: coin => new Promise(resolve => {
-      sheetRef.current?.resolve(false);
-      const next = { row: rowsRef.current.find(r => r.coin === coin), anchor: anchorRef.current, resolve };
-      sheetRef.current = next;
-      setSheet(next);
-    }),
-  }), [api, readOnly, walletClient, f.fetchFast]); // eslint-disable-line react-hooks/exhaustive-deps
+  const accountRef = useRef(account);
+  accountRef.current = account;
+  // One wallet's outcome never shows under another (TradingPanel cleared its notice on every address
+  // change): the notice clears when the address changes, and an outcome that arrives after it is dropped.
+  useEffect(() => { setNotice(null); }, [account]);
+  // origin: where the action was pressed, so its outcome shows there ("row": a board row, its detail or
+  // the phone sheet; "activity": the Activity orders). Only the notice is tagged; the calls are the same.
+  const actionsFor = useCallback(origin => {
+    const owner = account;
+    return makeTradeActions({
+      api, hlClient, readOnly, walletClient, setClosing, setCancelling, fetchFast: f.fetchFast,
+      setActionNotice: v => { if (accountRef.current === owner) setNotice(v ? { ...v, origin } : null); },
+      confirm: coin => new Promise(resolve => {
+        sheetRef.current?.resolve(false);
+        const next = { row: rowsRef.current.find(r => r.coin === coin), anchor: anchorRef.current, resolve };
+        sheetRef.current = next;
+        setSheet(next);
+      }),
+    });
+  }, [api, account, readOnly, walletClient, f.fetchFast]);
+  const actions = useMemo(() => actionsFor("row"), [actionsFor]);
+  const activityActions = useMemo(() => actionsFor("activity"), [actionsFor]);
   const canClose = !readOnly && !!walletClient;
   const onClose = (row, anchor) => {
     anchorRef.current = anchor;
@@ -291,7 +338,15 @@ export default function PortfolioPage({ api }) {
     actions.closePosition(coin, size, isLong);
   };
   const onCancel = (coin, oid) => actions.cancelOrd(coin, oid);
-  const endSheet = useCallback(ok => { sheetRef.current?.resolve(ok); sheetRef.current = null; setSheet(null); }, []);
+  const onCancelActivity = (coin, oid) => activityActions.cancelOrd(coin, oid);
+  const endSheet = useCallback(ok => {
+    const s = sheetRef.current;
+    sheetRef.current = null;
+    setSheet(null);
+    s?.resolve(ok);
+    // Focus goes back to the Close button the sheet came from (desktop), when it is still there.
+    if (s?.anchor?.isConnected) s.anchor.focus?.({ preventScroll: true });
+  }, []);
   // An open sheet answers "no" when what it shows is no longer what is held, or the address changes.
   useEffect(() => {
     if (!sheet) return;
@@ -299,6 +354,11 @@ export default function PortfolioPage({ api }) {
     if (!live || live.szi !== sheet.row.szi) endSheet(false);
   }, [rows, sheet, endSheet]);
   useEffect(() => () => endSheet(false), [account, endSheet]);
+  // Phone: the confirm lives in the coin's sheet; the sheet closing by any route (Escape, a swipe,
+  // another coin) answers "no", so a dismissed confirm never comes back.
+  useEffect(() => {
+    if (phone && sheet && sheet.row?.coin !== openCoin) endSheet(false);
+  }, [phone, sheet, openCoin, endSheet]);
 
   const toggleOpen = coin => setParam("open", openCoin === coin ? null : coin);
   useEffect(() => {
@@ -322,6 +382,13 @@ export default function PortfolioPage({ api }) {
   const lastClosed = trips.closed[0];
   const mapData = map4h;
 
+  const sheetRow = phone && openCoin ? rows.find(r => r.coin === openCoin) : null;
+  // Where the last action's outcome shows (noticePlace.js): the phone sheet, the coin's row or card,
+  // the Activity orders, or above the board.
+  const place = noticePlace(notice, { sheetCoin: sheetRow?.coin, shownCoins });
+  const noticeAt = (where, coin = null) => (place === where && (coin == null || coin === notice.coin)
+    ? <ActionNotice notice={notice} onDismiss={() => setNotice(null)} /> : null);
+
   const renderRow = row => {
     const open = openCoin === row.coin;
     const venueFailed = (row.venue === "xyz" && f.feeds.xyz?.error) || (row.venue === "main" && f.feeds.main?.error);
@@ -330,34 +397,39 @@ export default function PortfolioPage({ api }) {
         onWatch={onWatch} onClose={onClose} closing={closing === row.coin} canClose={canClose} open={open} onToggle={() => toggleOpen(row.coin)}
         flash={flash === row.coin} showHeld={showHeld} now={nowMs} dim={venueFailed}
         quietNoStop={quiet} visit={slots.base?.coins?.[row.coin]} visitT={slots.base?.t} rate={assetCtx.get(row.coin)?.funding} />
-      {notice?.coin === row.coin && <ActionNotice notice={notice} onDismiss={() => setNotice(null)} />}
+      {noticeAt("row", row.coin)}
       {open && <PositionDetail row={row} classified={classified} trip={trips.open[row.coin]} ev={evOf(row.coin)} openAt={openAtOf(row.coin)}
         windowStart={fillsStart ? fillsStart / 1000 : null} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} />}
     </div>;
   };
-  const renderCard = row => <PhoneCard key={row.coin} row={row} names={names} now={nowMs} flash={flash === row.coin} onOpen={() => toggleOpen(row.coin)}
-    quietNoStop={quiet} visit={slots.base?.coins?.[row.coin]} />;
-  const sheetRow = phone && openCoin ? rows.find(r => r.coin === openCoin) : null;
+  const renderCard = row => <Fragment key={row.coin}>
+    <PhoneCard row={row} names={names} now={nowMs} flash={flash === row.coin} onOpen={() => toggleOpen(row.coin)}
+      quietNoStop={quiet} visit={slots.base?.coins?.[row.coin]} />
+    {noticeAt("row", row.coin)}
+  </Fragment>;
   const marks = new Map(rows.map(r => [r.coin, r.mark]));
 
   return <div className={`pf-page pf-v2${staleHard ? " pf-is-stale" : ""}`}>
     <TitleRow address={account} readOnly={readOnly} onStopViewing={() => setViewAddress("")} lastMainAt={lastMainAt}
       failedNames={failedNames} onRetry={retry} onCopied={() => setCopied(true)} phone={phone} />
     {loading ? <LoadingShapes phone={phone} /> : <>
-      <RiskStrip totals={totals} rows={rows} day={f.portfolio?.day} partialNames={totals.failed} tf={fit} onTf={k => setParam("fit", k === "1d" ? "1d" : null)}
-        map={mapData} onPick={pick} onRadar={() => navigate("/radar?tf=4h")} phone={phone} stale={staleHard} ctxKnown={ctxKnown} />
+      <RiskStrip totals={totals} rows={rows} day={f.portfolio?.day} tf={fit} onTf={k => setParam("fit", k === "1d" ? "1d" : null)}
+        map={mapData} onPick={pick} onRadar={() => navigate("/radar?tf=4h")} phone={phone} stale={staleHard} ctxKnown={ctxKnown} unread={unreadNames} />
       {(sinceBase || slots.base) && <SinceRow mode={mode2} onMode={setSinceMode} summary={summary} changes={changes} onPick={pick} phone={phone} hasBase={!!slots.base} />}
       {rows.length > 0 && <ChecksRow counts={counts} selected={active} onToggle={toggleCheck} sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} phone={phone} ctxKnown={ctxKnown} />}
       {rows.length > 0 && phone && <SortRow sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} />}
+      {noticeAt("page")}
       {rows.length > 0 ? <div className={staleHard ? "pf-stale" : ""}>
-        <Board groups={groups} phone={phone} showHeld={showHeld} ctxAsOf={reflex.ctx?.stale ? reflex.ctx : null} renderRow={renderRow} renderCard={renderCard} />
+        <Board groups={groups} phone={phone} showHeld={showHeld} ctxAsOf={reflex.ctx?.stale ? reflex.ctx : null} renderRow={renderRow} renderCard={renderCard}
+          expanded={expanded} onExpand={k => setExpanded(s => new Set(s).add(k))} />
       </div> : <div className="pf-noneline"><span className="pf-t2">{ROWS.noPositions}</span>
         {lastClosed && <span className="pf-t3"> {ROWS.lastClosed([displayName(lastClosed.coin).name, displayName(lastClosed.coin).suffix].filter(Boolean).join(" "), lastClosed.side, usd(lastClosed.pnl, { sign: true }), fmtAge(nowMs / 1000 - lastClosed.closedAt))}</span>}</div>}
-      {notice && !rows.some(r => r.coin === notice.coin) && <ActionNotice notice={notice} onDismiss={() => setNotice(null)} />}
       <Performance portfolio={f.portfolio} period={period} onPeriod={k => setParam("period", k === "1m" ? null : k)} mode={mode} onMode={k => setParam("mode", k === "pnl" ? null : k)}
-        fills={f.fills} funding={f.funding} fillsStart={fillsStart} lastVisit={slots.base ? slots.base.t / 1000 : null} phone={phone} />
+        fills={f.fills} funding={f.funding} fillsStart={historyStart} lastVisit={slots.base ? slots.base.t / 1000 : null} phone={phone} feePx={feePx}
+        historyPartial={!(f.coverage.fills?.complete && f.coverage.funding?.complete)} />
       <ActivityTabs tab={tab} onTab={k => setParam("tab", k === "orders" ? null : k)} orders={[...(f.orders || []), ...(f.ordersXyz || [])]} marks={marks} sides={sides}
-        fills={f.fills} funding={f.funding} names={names} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone={phone} />
+        fills={f.fills} funding={f.funding} names={names} canCancel={canClose} onCancel={onCancelActivity} cancelling={cancelling} phone={phone}
+        notice={noticeAt("activity")} fundingPartial={!f.coverage.funding?.complete} />
     </>}
     {sheetRow && <RadarSheet open onClose={() => { if (sheet) endSheet(false); setParam("open", null); }} labelledBy="pf-sheet-h">
       <div className="pf-sh-head" id="pf-sheet-h"><CoinName coin={sheetRow.coin} names={names} size={20} />
@@ -366,7 +438,11 @@ export default function PortfolioPage({ api }) {
       <PositionDetail row={sheetRow} classified={classified} trip={trips.open[sheetRow.coin]} ev={evOf(sheetRow.coin)} openAt={openAtOf(sheetRow.coin)}
         windowStart={fillsStart ? fillsStart / 1000 : null} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone />
       {sheet?.row?.coin === sheetRow.coin ? <CloseBody row={sheet.row} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />
-        : <div className="pf-sh-acts"><Actions row={sheetRow} watching={watched.has(kKey(sheetRow.coin))} onWatch={onWatch} onClose={onClose} closing={closing === sheetRow.coin} canClose={canClose} /></div>}
+        : <div className="pf-sh-acts">
+          {/* The outcome sits in the sheet's pinned action bar, above the buttons: always in view. */}
+          {noticeAt("sheet", sheetRow.coin)}
+          <Actions row={sheetRow} watching={watched.has(kKey(sheetRow.coin))} onWatch={onWatch} onClose={onClose} closing={closing === sheetRow.coin} canClose={canClose} />
+        </div>}
     </RadarSheet>}
     {sheet && !phone && <CloseConfirm row={sheet.row} anchor={sheet.anchor} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />}
     {copied && <div className="smap-toast" role="status">{IDENTITY.copied}</div>}

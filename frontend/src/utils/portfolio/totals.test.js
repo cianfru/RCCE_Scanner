@@ -52,10 +52,84 @@ test("a failed venue gives partial and never a smaller number without saying so"
   assert.equal(kept.equity, full);
 });
 
-test("unified accounts do not count spot USDC twice", () => {
-  const a = spotRows(spot, spotMeta, mids).reduce((s, r) => s + r.usd, 0);
-  const b = spotRows(spot, spotMeta, mids, { unified: true }).reduce((s, r) => s + r.usd, 0);
-  assert.ok(Math.abs(a - b - 6792.10337308) < 1e-6);
+// Real accounts in each mode (data review, 27 Oct 2026; addresses left out): the page's total against
+// Hyperliquid's own account value (portfolio "day", last point) read at the same time.
+const modeFx = name => {
+  const d = fx(`modes/${name}`);
+  return { d, args: { main: d.main, dexs: { xyz: d.xyz, ...d.others }, spot: d.spot, spotMeta: d.spotMeta, mids: d.mids, earn: d.earn,
+    delegator: d.delegator, vaults: d.vaults, mode: d.abstraction, collateral: new Map([["main", 0], ["xyz", 0]]) }, hl: parseFloat(d.hlAccountValue) };
+};
+
+test("unified accounts: every balance is in spot; the perps states are not added", () => {
+  for (const name of ["unified-a", "unified-b"]) {
+    const { d, args, hl } = modeFx(name);
+    assert.equal(d.abstraction, "unifiedAccount");
+    const t = computeTotals(args);
+    const off = Math.abs(t.equity - hl) / hl;
+    assert.ok(off < 0.005, `${name}: equity ${t.equity.toFixed(0)} against Hyperliquid ${hl} (${(off * 100).toFixed(2)}%)`);
+    assert.equal(t.parts.perps + t.parts.tradfi + t.parts.other + t.parts.earn, 0);
+    assert.equal(t.partial, false);
+    // The standard formula on the same reads: perps plus USDC counted twice (the bug this replaces).
+    const wrong = computeTotals({ ...args, mode: "disabled" }).equity;
+    assert.ok(Math.abs(wrong - hl) / hl > 0.25, `${name}: the standard formula should be far off`);
+  }
+  // Withdrawable: spot USDC total minus hold.
+  const { d, args } = modeFx("unified-a");
+  const usdc = d.spot.balances.find(b => b.coin === "USDC");
+  assert.ok(Math.abs(computeTotals(args).withdrawable - (parseFloat(usdc.total) - parseFloat(usdc.hold))) < 1e-6);
+});
+
+test("unified accounts: the margin bar is Hyperliquid's unified account ratio", () => {
+  const { d, args } = modeFx("unified-a");
+  const t = computeTotals(args);
+  const cross = parseFloat(d.main.crossMaintenanceMarginUsed) + parseFloat(d.xyz.crossMaintenanceMarginUsed);
+  const iso = [d.main, d.xyz].flatMap(s => s.assetPositions).filter(ap => ap.position.leverage.type === "isolated").reduce((s, ap) => s + parseFloat(ap.position.marginUsed), 0);
+  const usdc = parseFloat(d.spot.balances.find(b => b.coin === "USDC").total);
+  const w = worstMargin(t.venues);
+  assert.equal(w.venue, "unifiedAccount");
+  assert.ok(Math.abs(w.ratio - cross / (usdc - iso)) < 1e-12);
+  assert.ok(w.ratio > 0.019 && w.ratio < 0.022, `ratio ${w.ratio}`);                    // 2.1%, not the per-venue 8.2%
+  // A dex with margin in use and no collateral token known yet: no ratio rather than a wrong one.
+  assert.equal(worstMargin(computeTotals({ ...args, collateral: new Map() }).venues), null);
+});
+
+test("portfolio margin: spot at mid, staked and vaults; Earn not added; no margin ratio", () => {
+  const { d, args, hl } = modeFx("portfolio-margin");
+  assert.equal(d.abstraction, "portfolioMargin");
+  const t = computeTotals(args);
+  const off = Math.abs(t.equity - hl) / hl;
+  assert.ok(off < 0.005, `equity ${t.equity.toFixed(0)} against Hyperliquid ${hl} (${(off * 100).toFixed(2)}%)`);
+  assert.equal(t.parts.earn, 0);
+  assert.ok(t.spotRows.some(r => r.coin === "USDC" && r.total < 0));                     // the USDC borrow is kept
+  assert.equal(worstMargin(t.venues), null);
+});
+
+test("the account mode: unknown means no number; default and disabled are standard", () => {
+  const unknown = computeTotals({ ...all, mode: null });
+  assert.equal(unknown.equity, null);
+  assert.equal(unknown.partial, true);
+  for (const mode of ["disabled", "default", "dexAbstraction"]) assert.equal(computeTotals({ ...all, mode }).equity, computeTotals(all).equity);
+});
+
+test("a balance with no price makes the total partial and names it", () => {
+  const t = computeTotals({ ...all, mids: {} });
+  assert.equal(t.partial, true);
+  assert.ok(t.unpriced.includes("HYPE") && t.unpriced.includes("Staked HYPE"), JSON.stringify(t.unpriced));
+  const noMeta = computeTotals({ ...all, spotMeta: null });
+  assert.equal(noMeta.partial, true);
+  assert.ok(noMeta.unpriced.includes("UBTC"));
+});
+
+test("standard accounts: the margin ratio leaves isolated margin out", () => {
+  const r = marginRatio(xyz);
+  assert.equal(r, 0);                                                                    // every xyz position is isolated
+  const fake = { ...xyz, crossMaintenanceMarginUsed: "680.48" };
+  assert.ok(Math.abs(marginRatio(fake) - 680.48 / parseFloat(xyz.crossMarginSummary.accountValue)) < 1e-12);
+});
+
+test("spot rows: USDC at 1 and a negative total kept", () => {
+  const rows = spotRows({ balances: [{ coin: "USDC", token: 0, total: "-10" }] }, spotMeta, mids);
+  assert.deepEqual(rows.map(r => [r.coin, r.usd]), [["USDC", -10]]);
 });
 
 test("token prices come from the @n pair against USDC", () => {

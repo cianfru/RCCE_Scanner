@@ -82,7 +82,10 @@ export function RailSvg({ row, width, height = 44, labels = true, compact = fals
     {model.breakX != null && <g className="pf-r-break"><line x1={model.breakX - 5} y1={y + 6} x2={model.breakX - 1} y2={y - 6} /><line x1={model.breakX + 1} y1={y + 6} x2={model.breakX + 5} y2={y - 6} /></g>}
     {m.visit != null && <rect x={m.visit - 0.5} y={y - 5} width="1" height="10" className="pf-r-visit" />}
     {m.trend != null && <line x1={m.trend} x2={m.trend} y1={y - 6} y2={y + 6} className="pf-r-trend" />}
-    {m.traders != null && <path d={`M${m.traders},${y - 11.5} L${m.traders + 2.5},${y - 9} L${m.traders},${y - 6.5} L${m.traders - 2.5},${y - 9} Z`} className="pf-r-traders" fill={row.isLong ? "var(--rd-long)" : "var(--rd-short)"} />}
+    {m.traders != null && (() => {
+      const cy = y + (model.tradersBand[0] + model.tradersBand[1]) / 2;
+      return <path d={`M${m.traders},${cy - 2.5} L${m.traders + 2.5},${cy} L${m.traders},${cy + 2.5} L${m.traders - 2.5},${cy} Z`} className="pf-r-traders" fill={row.isLong ? "var(--rd-long)" : "var(--rd-short)"} />;
+    })()}}
     {m.liq != null && <rect x={m.liq - 1} y={y - 7} width="2" height="14" className="pf-r-liq" />}
     {m.entry != null && m.mark != null && <line x1={m.entry} x2={m.mark} y1={y} y2={y} stroke={pnl} strokeWidth="3" />}
     {m.stop != null && <path d={tri(m.stop, false)} className="pf-r-sl" />}

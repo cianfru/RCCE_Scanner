@@ -2,11 +2,16 @@
 // path is TradingPanel's own code, read from its source: PositionCard's arguments and the
 // closePosition and cancelOrd it calls. The new path is the board row's arguments (positionsOf ->
 // buildRow -> closeArgs) and tradeActions.js. Both run through the real services/hlClient.js and the
-// Hyperliquid SDK with a test signer and a recorded fetch; the requests must be byte-identical.
+// Hyperliquid SDK with a recorded fetch; the requests must be byte-identical. Most cases sign with a
+// local-account test signer ({address, signTypedData}); the app itself signs with the viem wallet
+// client WalletContext.jsx builds (JSON-RPC, over window.ethereum), covered at the end of this file:
+// as WalletContext builds it today (no account), and with an account, which is how signing would work.
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { createWalletClient, custom } from "viem";
+import { arbitrum } from "viem/chains";
 import * as hlClient from "../../services/hlClient.js";
 import { kKey } from "../../utils/tickerRenames.js";
 import { positionsOf } from "../../utils/portfolio/totals.js";
@@ -64,7 +69,10 @@ const NEW_PAGE = [
   "const { coin, size, isLong } = closeArgs({ coin: row.coin, szi: row.szi });",
   "actions.closePosition(coin, size, isLong);",
   "const onCancel = (coin, oid) => actions.cancelOrd(coin, oid);",
+  "const onCancelActivity = (coin, oid) => activityActions.cancelOrd(coin, oid);",
   "() => hlClient.getDexOpenOrders(account, \"\")",
+  // Both action sets are made by one function from the same deps; only the notice's place differs.
+  "api, hlClient, readOnly, walletClient, setClosing, setCancelling, fetchFast: f.fetchFast,",
 ];
 function newArgs(state) {
   return positionsOf(state, "main").map(p => buildRow(p, null, [])).map(row => {
@@ -208,7 +216,7 @@ after(() => { globalThis.fetch = networkFetch; });
 test("the source lines both paths are copied from are still there", () => {
   for (const line of OLD_CARD) assert.ok(OLD.includes(line), `TradingPanel.jsx: ${line}`);
   for (const line of NEW_PAGE) assert.ok(PAGE.includes(line) || read("./usePortfolioFeeds.js").includes(line), `new page: ${line}`);
-  assert.match(ROW, /canClose && tradable\(row\.coin\) && <button type="button" className="pf-close" disabled=\{closing\} onClick=\{e => onClose\(row, e\.currentTarget\)\}>/);
+  assert.match(ROW, /canClose && tradable\(row\.coin\) && <button type="button" className="pf-close" disabled=\{closing\}[^>]*\n?\s*onClick=\{e => onClose\(row, e\.currentTarget\)\}>/);
   assert.match(ORDERS, /canCancel && tradable\(o\.coin\) && <button[^>]*onClick=\{\(\) => onCancel\(o\.coin, o\.oid\)\}>/);
   // Neither page ever opens or resizes a position.
   const code = src => src.replace(/^\s*\/\/.*$/gm, "");
@@ -316,4 +324,97 @@ test("the old page's open-orders read and the new one send the same request", as
   const r2 = await run(async () => { await hlClient.getDexOpenOrders("0x00000000000000000000000000000000000000aa", ""); });
   assert.equal(r1.requests.length, 1);
   assert.deepEqual(r2.requests, r1.requests);
+});
+
+// ------------------------------------------------- the app's own wallet client (viem, JSON-RPC)
+// WalletContext.jsx builds createWalletClient({ chain: arbitrum, transport: custom(window.ethereum) }).
+// An injected provider stands in for the browser wallet: it records what it is asked to sign.
+const WALLET = read("../../WalletContext.jsx");
+// Each run has its own address (the SDK keeps nonces per signer, so a shared one would step the
+// second run's nonce); the address is taken out of what the wallet records before comparing.
+let injectedN = 0;
+function injected() {
+  const calls = [];
+  injectedN += 1;
+  const addr = `0x${String(500 + injectedN).padStart(40, "0")}`;
+  return {
+    calls, addr,
+    request: async ({ method, params }) => {
+      calls.push({ method, params: JSON.stringify(params ?? null).replaceAll(addr, "0xSIGNER") });
+      if (method === "eth_accounts" || method === "eth_requestAccounts") return [addr];
+      if (method === "eth_chainId") return "0xa4b1";
+      if (method === "eth_signTypedData_v4") return `0x${"11".repeat(32)}${"22".repeat(32)}1b`;
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+}
+async function closeWith(path, makeWallet, args) {
+  const provider = injected();
+  const wallet = makeWallet(provider);
+  const r = await run(async out => {
+    if (path === "old") {
+      const c = common(out);
+      await oldClose(false, wallet, { confirm: () => true }, c.setClosing, c.setCancelling, c.setActionNotice,
+        oldExecuteAndJournal, hlClient, globalThis.fetch, API, kKey, c.fetchFast, quiet)(...args);
+    } else {
+      const confirm = () => new Promise(resolve => setTimeout(() => resolve(true), 5));
+      await makeTradeActions({ api: API, hlClient, readOnly: false, walletClient: wallet, ...common(out), confirm }).closePosition(...args);
+    }
+  });
+  return { ...r, wallet: provider.calls };
+}
+async function cancelWith(path, makeWallet, coin, oid) {
+  const provider = injected();
+  const wallet = makeWallet(provider);
+  const r = await run(async out => {
+    if (path === "old") {
+      const c = common(out);
+      await oldCancel(false, wallet, { confirm: () => true }, c.setClosing, c.setCancelling, c.setActionNotice,
+        oldExecuteAndJournal, hlClient, globalThis.fetch, API, kKey, c.fetchFast, quiet)(coin, oid);
+    } else {
+      await makeTradeActions({ api: API, hlClient, readOnly: false, walletClient: wallet, ...common(out) }).cancelOrd(coin, oid);
+    }
+  });
+  return { ...r, wallet: provider.calls };
+}
+
+test("the app's wallet client as WalletContext builds it: both pages fail the same way, before the wallet is asked", async () => {
+  // The shape this test copies; if WalletContext changes, this test must be looked at again.
+  assert.match(WALLET, /createWalletClient\(\{\s*chain: arbitrum,\s*transport: custom\(window\.ethereum\),\s*\}\)/);
+  const asBuilt = provider => createWalletClient({ chain: arbitrum, transport: custom(provider) });
+  for (const args of newArgs(MAIN)) {
+    const before = await closeWith("old", asBuilt, args);
+    const after = await closeWith("new", asBuilt, args);
+    assert.deepEqual(after.requests, before.requests, `close ${args[0]}`);
+    assert.deepEqual(after.notices, before.notices);
+    assert.deepEqual(after.states, before.states);
+    // viem has no account to sign with: nothing reaches the wallet or the exchange.
+    assert.equal(before.wallet.filter(c => c.method === "eth_signTypedData_v4").length, 0);
+    assert.equal(before.requests.filter(q => q.url.endsWith("/exchange")).length, 0);
+    assert.equal(before.notices.at(-1).tone, "error");
+  }
+  const before = await cancelWith("old", asBuilt, "BTC", 586531222372);
+  const after = await cancelWith("new", asBuilt, "BTC", 586531222372);
+  assert.deepEqual(after.requests, before.requests);
+  assert.deepEqual(after.notices, before.notices);
+  assert.equal(before.requests.filter(q => q.url.endsWith("/exchange")).length, 0);
+});
+
+test("the app's wallet client with an account: the same typed data to the wallet and byte-identical requests", async () => {
+  // Not what WalletContext builds today (see above); this covers the JSON-RPC signing path itself.
+  const withAccount = provider => createWalletClient({ account: provider.addr, chain: arbitrum, transport: custom(provider) });
+  for (const args of newArgs(MAIN)) {
+    const before = await closeWith("old", withAccount, args);
+    const after = await closeWith("new", withAccount, args);
+    const signs = before.wallet.filter(c => c.method === "eth_signTypedData_v4");
+    assert.equal(signs.length, 1, `close ${args[0]}: one signature`);
+    assert.deepEqual(after.wallet, before.wallet, `close ${args[0]}: what the wallet is asked`);
+    assert.deepEqual(after.requests, before.requests, `close ${args[0]}: requests`);
+    assert.equal(after.requests.filter(q => q.url.endsWith("/exchange")).length, 1);
+    assert.deepEqual(after.notices, before.notices);
+  }
+  const before = await cancelWith("old", withAccount, "kPEPE", 99);
+  const after = await cancelWith("new", withAccount, "kPEPE", 99);
+  assert.deepEqual(after.wallet, before.wallet);
+  assert.deepEqual(after.requests, before.requests);
 });

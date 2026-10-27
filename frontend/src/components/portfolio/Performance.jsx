@@ -74,7 +74,14 @@ function PerfChart({ data, raw, mode, lastVisit, height }) {
     s.eq.applyOptions({ visible: mode === "equity" });
     series.setData(data);
     const key = `${mode}|${data[0]?.time}|${data.length > 1 ? data[1].time - data[0].time : 0}`;
-    if (key !== keyRef.current) { chart.timeScale().fitContent(); keyRef.current = key; }
+    if (key !== keyRef.current) {
+      // The whole period, with about 28 px of room on the left so the first date reads whole.
+      const ts = chart.timeScale(), w = Math.max(120, ts.width() || box.current?.clientWidth || 600);
+      const right = data.length - 1 + 2;
+      const pad = (28 * (right + 1)) / Math.max(1, w - 28);
+      ts.setVisibleLogicalRange({ from: -pad, to: right });
+      keyRef.current = key;
+    }
     setLayout(n => n + 1);
   }, [data, mode, theme, height]);
 
@@ -114,7 +121,7 @@ function PerfChart({ data, raw, mode, lastVisit, height }) {
   </div>;
 }
 
-export default function Performance({ portfolio, period, onPeriod, mode, onMode, fills, funding, fillsStart, lastVisit, phone }) {
+export default function Performance({ portfolio, period, onPeriod, mode, onMode, fills, funding, fillsStart, lastVisit, phone, feePx = null, historyPartial = false }) {
   const tabs = PERF.periods.map(p => {
     const h = portfolio?.[p.src];
     const last = h?.pnlHistory?.length ? h.pnlHistory[h.pnlHistory.length - 1].value : null;
@@ -141,7 +148,7 @@ export default function Performance({ portfolio, period, onPeriod, mode, onMode,
     </div>
     <div className="pf-perf-body">
       <PerfChart data={data} raw={raw} mode={mode} lastVisit={lastVisit} height={phone ? 200 : 240} />
-      <PnlCalendar fills={fills} funding={funding} historyStart={fillsStart} lastVisit={lastVisit} phone={phone} />
+      <PnlCalendar fills={fills} funding={funding} historyStart={fillsStart} lastVisit={lastVisit} phone={phone} feePx={feePx} partial={historyPartial} />
     </div>
   </section>;
 }

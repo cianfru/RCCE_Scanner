@@ -58,8 +58,30 @@ def test_events_since_the_window_with_the_reading_at_its_start(tmp_path):
     assert h["truncated"] is False
     assert body["coins"]["XMR"] == {"at_start": {"h4": {"signal": None, "regime": None}, "d1": {"signal": None, "regime": None}},
                                     "events": [], "truncated": False}
-    assert body["coins"]["xyz:MSTR"] == {"at_start": None, "events": [], "truncated": False}
+    # TradFi is read from the TradFi scan's log ("MSTR/USD", tradfi_4h/tradfi_1d): nothing logged here.
+    assert body["coins"]["xyz:MSTR"] == {"at_start": {"h4": {"signal": None, "regime": None}, "d1": {"signal": None, "regime": None}},
+                                         "events": [], "truncated": False}
     assert body["last_id"] == 2                       # the newest id among HYPE's rows (signal 2, regime 1)
+
+
+def test_tradfi_rows_read_the_tradfi_scan_log(tmp_path):
+    # Data review: the TradFi scan logs its transitions as "NAME/USD" with timeframes tradfi_4h and
+    # tradfi_1d; the page's WHILE HELD strip and the 24H baseline read them as 4h and 1d.
+    ws = pc.window_start(NOW)
+    db = _db(tmp_path / "s.db", signals=[
+        ("SILVER/USD", "tradfi_4h", "WAIT", "LIGHT_LONG", "FLAT", 48.0, ws - DAY),
+        ("SILVER/USD", "tradfi_1d", "RISK_OFF", "WAIT", "FLAT", 47.1, ws + 4 * DAY),
+        ("SILVER/USD", "tradfi_4h", "LIGHT_LONG", "WAIT", "MARKUP", 49.2, ws + 5 * DAY),
+        ("SILVER/USDT", "4h", "TRIM", "LIGHT_LONG", "MARKUP", 1.0, ws + DAY),            # not this market
+    ], regimes=[("SILVER/USD", "tradfi_4h", "MARKUP", "FLAT", 49.0, ws + 5 * DAY)])
+    body = pc.events_body(["xyz:SILVER", "xyz:MSTR", "para:PAPER"], db, now=NOW)
+    s = body["coins"]["xyz:SILVER"]
+    assert s["at_start"]["h4"] == {"signal": "WAIT", "regime": None}
+    assert [(e["t"] - ws, e["tf"], e["kind"], e["to"]) for e in s["events"]] == [
+        (4 * DAY, "1d", "signal", "RISK_OFF"), (5 * DAY, "4h", "regime", "MARKUP"), (5 * DAY, "4h", "signal", "LIGHT_LONG")]
+    assert body["coins"]["xyz:MSTR"]["events"] == []
+    assert body["coins"]["para:PAPER"] == {"at_start": None, "events": [], "truncated": False}
+    assert body["last_id"] == 3
 
 
 def test_capped_at_60_keeping_the_latest(tmp_path):

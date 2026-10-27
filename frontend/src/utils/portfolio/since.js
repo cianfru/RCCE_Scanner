@@ -5,6 +5,7 @@
 // visible and when it is hidden or left. Every storage read and write is guarded: blocked storage
 // behaves as a first visit.
 import { EXIT_SIGNALS, LONG_ENTRIES, SHORT_ENTRIES } from "./checks.js";
+import { feeUsd } from "./fees.js";
 
 export const SNAP_VERSION = 1;
 export const SMALL_CLOSE_USD = 25;
@@ -85,14 +86,17 @@ export const signalAgainst = (sig, side) => (side === "long" ? EXIT_SIGNALS.has(
 const crossed = (a, b, level) => a != null && b != null && (a < level) !== (b < level);
 
 // Change cells, most important first (B2's ranking). base, cur: snapshots; trips: closed round trips
-// (fillTrips.roundTrips().closed) for the "Closed ... $" cells.
-export function sinceChanges(base, cur, { trips = [] } = {}) {
+// (fillTrips.roundTrips().closed) for the "Closed ... $" cells; unknown(coin): the coin's venue is not
+// read now (its feed failed or has not answered), so its absence says nothing: never "Opened" or
+// "Closed" for it.
+export function sinceChanges(base, cur, { trips = [], unknown = () => false } = {}) {
   if (!base || !cur) return [];
   const out = [];
   const add = (rank, sub, cell) => out.push({ rank, sub, ...cell });
   const bc = base.coins || {}, cc = cur.coins || {};
   for (const [coin, c] of Object.entries(cc)) {
     const b = bc[coin];
+    if (unknown(coin)) continue;
     if (!b || b.side !== c.side) add(1, 0, { kind: "trip", coin, opened: true, side: c.side });
   }
   // A close too small to matter (under $25 or 0.05% of equity, whichever is larger) ranks last.
@@ -100,6 +104,7 @@ export function sinceChanges(base, cur, { trips = [] } = {}) {
   for (const [coin, b] of Object.entries(bc)) {
     const c = cc[coin];
     if (c && c.side === b.side) continue;
+    if (unknown(coin)) continue;
     const trip = trips.find(t => t.coin === coin && t.closedAt * 1000 > base.t);
     const small = trip && trip.pnl != null && Math.abs(trip.pnl) < trivial;
     add(small ? 8 : 1, small ? 1 : 0, { kind: "trip", coin, opened: false, side: b.side, pnl: trip ? trip.pnl : null });
@@ -133,12 +138,25 @@ export function sinceChanges(base, cur, { trips = [] } = {}) {
 }
 
 // The first cell's line: P&L since the baseline (closed P&L net of fees, funding, and the change in
-// open P&L) and the fills since.
-export function sinceSummary(base, { fills = [], funding = [], upnl = 0 } = {}) {
+// open P&L) and the fills since. Fees in a token (spot buys) count at its mid (feePx: token name ->
+// price). With a venue not read now (unknown(coin)), the open P&L change counts only the coins of the
+// venues read, and the line says partial.
+export function sinceSummary(base, { fills = [], funding = [], upnl = 0, cur = null, unknown = null, feePx = null } = {}) {
   if (!base) return null;
   const after = fills.filter(f => f.time > base.t);
-  const realised = after.reduce((s, f) => s + (parseFloat(f.closedPnl) || 0) - (parseFloat(f.fee) || 0), 0);
+  let partial = false;
+  const realised = after.reduce((s, f) => {
+    const fee = feeUsd(f, feePx);
+    if (fee == null) partial = true;
+    return s + (parseFloat(f.closedPnl) || 0) - (fee || 0);
+  }, 0);
   const fund = funding.filter(f => f.time > base.t).reduce((s, f) => s + (parseFloat(f.delta?.usdc) || 0), 0);
-  const open = base.upnl != null ? upnl - base.upnl : 0;
-  return { t: base.t, pnl: realised + fund + open, fills: after.length };
+  let open = base.upnl != null ? upnl - base.upnl : 0;
+  const skip = unknown && cur ? Object.keys({ ...(base.coins || {}), ...(cur.coins || {}) }).filter(c => unknown(c)) : [];
+  if (skip.length) {
+    const sum = coins => Object.entries(coins || {}).reduce((s, [c, x]) => s + (unknown(c) ? 0 : x?.upnl || 0), 0);
+    open = sum(cur.coins) - sum(base.coins);
+    partial = true;
+  }
+  return { t: base.t, pnl: realised + fund + open, fills: after.length, partial };
 }

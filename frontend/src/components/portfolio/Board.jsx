@@ -1,13 +1,14 @@
 // B4. The board: column labels with their (i), main perps, then TradFi (xyz) and other venues, each
 // group collapsed past 8 rows. A row opens its detail inline (B5); an action's outcome sits under it.
-import { useState } from "react";
 import AsOf from "../AsOf.jsx";
 import { Label } from "./parts.jsx";
 import { pct } from "../../utils/portfolio/format.js";
 import { nearestLiq } from "../../utils/portfolio/checks.js";
 import { INFO, LABELS, ROWS } from "./copy.js";
 
-const GROUP_MAX = 8;
+export const GROUP_MAX = 8;
+// The rows a group shows: the first GROUP_MAX until "+n more" opens it (all: it was opened).
+export const groupShown = (rows, all) => (!all && rows.length > GROUP_MAX ? rows.slice(0, GROUP_MAX) : rows);
 
 export function ActionNotice({ notice, onDismiss }) {
   return <div className="pf-notice pf-row-notice" role={notice.tone === "error" ? "alert" : "status"} data-tone={notice.tone}>
@@ -16,26 +17,28 @@ export function ActionNotice({ notice, onDismiss }) {
   </div>;
 }
 
-function Group({ label, rows, render, collapsible = true }) {
-  const [all, setAll] = useState(false);
+function Group({ label, rows, render, all, onAll }) {
   if (!rows.length) return null;
-  const cut = collapsible && !all && rows.length > GROUP_MAX ? GROUP_MAX : rows.length;
+  const cut = groupShown(rows, all).length;
   const hidden = rows.slice(cut);
   const near = nearestLiq(hidden, 1)[0];
   return <div className="pf-group">
     {label && <div className="pf-group-h"><span className="pf-lbl pf-lbl-plain">{label}</span><span className="m pf-t3">{rows.length}</span></div>}
     {rows.slice(0, cut).map(render)}
-    {hidden.length > 0 && <button type="button" className="pf-group-more" onClick={() => setAll(true)}>
+    {hidden.length > 0 && <button type="button" className="pf-group-more" onClick={onAll}>
       {ROWS.more(hidden.length)}{near ? ` · ${ROWS.nearestLiq(pct(near.dist.pct, { digits: 0 }))}` : ""}</button>}
   </div>;
 }
 
-export default function Board({ groups, phone, showHeld, ctxAsOf, renderRow, renderCard }) {
+// expanded: the groups ("main", "xyz", "other") opened past GROUP_MAX. The page keeps it, so it knows
+// which rows are on screen (an action's notice sits under its row only while that row is shown).
+export default function Board({ groups, phone, showHeld, ctxAsOf, renderRow, renderCard, expanded, onExpand }) {
+  const g = (key, label, render) => <Group label={label} rows={groups[key]} render={render} all={expanded.has(key)} onAll={() => onExpand(key)} />;
   if (phone) {
     return <div className="pf-cards">
-      <Group rows={groups.main} render={renderCard} />
-      <Group label={LABELS.tradfi} rows={groups.xyz} render={renderCard} />
-      <Group label={LABELS.other} rows={groups.other} render={renderCard} />
+      {g("main", null, renderCard)}
+      {g("xyz", LABELS.tradfi, renderCard)}
+      {g("other", LABELS.other, renderCard)}
     </div>;
   }
   return <div className={`pf-board${showHeld ? " pf-with-held" : ""}`} role="table">
@@ -47,9 +50,9 @@ export default function Board({ groups, phone, showHeld, ctxAsOf, renderRow, ren
       <span><Label info={INFO.traders}>{LABELS.traders}</Label></span>
       <span />
     </div>
-    <Group rows={groups.main} render={renderRow} />
-    <Group label={LABELS.tradfi} rows={groups.xyz} render={renderRow} />
-    <Group label={LABELS.other} rows={groups.other} render={renderRow} />
+    {g("main", null, renderRow)}
+    {g("xyz", LABELS.tradfi, renderRow)}
+    {g("other", LABELS.other, renderRow)}
   </div>;
 }
 

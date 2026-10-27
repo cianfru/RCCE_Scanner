@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { px, pct, size as fmtSize } from "../../utils/portfolio/format.js";
 import { tradable } from "./tradeActions.js";
+import { displayName } from "../../utils/portfolio/displayNames.js";
 import { DETAIL, TABS } from "./copy.js";
 
 export function typeWord(o) {
@@ -42,7 +43,8 @@ export function OrderRow({ o, mark, canCancel, onCancel, cancelling, showSide = 
     <span className="m">{sizeText(o.sz, unit, szDecimals)}</span>
     <span className="pf-t3">{o.reduceOnly ? DETAIL.reduce : ""}</span>
     <span className="m pf-t2">{d != null ? pct(d, { sign: true }) : "—"}</span>
-    <span>{canCancel && tradable(o.coin) && <button type="button" className="pf-textbtn pf-cancel" disabled={cancelling === o.oid} onClick={() => onCancel(o.coin, o.oid)}>{DETAIL.cancel}</button>}</span>
+    <span>{canCancel && tradable(o.coin) && <button type="button" className="pf-textbtn pf-cancel" disabled={cancelling === o.oid}
+      aria-label={`${DETAIL.cancel} ${displayName(o.coin).name} ${typeWord(o).toLowerCase()} ${px(priceOf(o))}`} onClick={() => onCancel(o.coin, o.oid)}>{DETAIL.cancel}</button>}</span>
   </div>;
 }
 

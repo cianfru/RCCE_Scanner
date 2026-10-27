@@ -5,7 +5,7 @@ import { REGIME_META } from "../../theme.js";
 import { Label, Hover, CoinLogo, NameSfx, LiqGlyph, pnlClass } from "./parts.jsx";
 import { sigWord, sigColor } from "./ScannerCell.jsx";
 import { usd, pct, weekdayTime } from "../../utils/portfolio/format.js";
-import { INFO, LABELS, SINCE, RAIL, ROWS } from "./copy.js";
+import { INFO, LABELS, SINCE, RAIL, ROWS, STRIP } from "./copy.js";
 
 const sideWord = s => (s === "short" ? ROWS.short.toLowerCase() : ROWS.long.toLowerCase());
 
@@ -41,8 +41,10 @@ function Cell({ c, onPick }) {
 export default function SinceRow({ mode, onMode, summary, changes, onPick, phone, hasBase }) {
   const [open, setOpen] = useState(false);
   const shown = changes.slice(0, 4), rest = changes.slice(4);
+  // partial: a venue is not read now, or the fills or funding since the baseline are not all in yet.
+  const part = summary?.partial ? <span className="pf-partial">{STRIP.partial}</span> : null;
   const head = summary ? <span className="pf-since-when"><span className="pf-t1">{weekdayTime(summary.t)}</span>
-    <span className="m"><span className={pnlClass(summary.pnl)}>{usd(summary.pnl, { sign: true })}</span>{summary.fills != null && <span className="pf-t2"> · {SINCE.fills(summary.fills)}</span>}</span></span> : null;
+    <span className="m"><span className={pnlClass(summary.pnl)}>{usd(summary.pnl, { sign: true })}</span>{summary.fills != null && <span className="pf-t2"> · {SINCE.fills(summary.fills)}</span>}</span>{part}</span> : null;
   const toggle = <span className="pf-since-modes">
     <button type="button" className="te-toggle" aria-pressed={mode === "visit"} disabled={!hasBase} onClick={() => onMode("visit")}>{SINCE.lastVisit}</button>
     <span className="pf-sep" aria-hidden="true">·</span>
@@ -53,7 +55,7 @@ export default function SinceRow({ mode, onMode, summary, changes, onPick, phone
       <button type="button" className="pf-since-line" aria-expanded={open} onClick={() => setOpen(o => !o)}>
         <span className="pf-lbl pf-lbl-plain">{LABELS.since}</span>
         {summary && <span className="pf-t1">{weekdayTime(summary.t)}</span>}
-        {summary && <span className={`m ${pnlClass(summary.pnl)}`}>{usd(summary.pnl, { sign: true })}</span>}
+        {summary && <span className={`m ${pnlClass(summary.pnl)}`}>{usd(summary.pnl, { sign: true })}</span>}{part}
         <span className="pf-t3">{changes.length ? SINCE.changes(changes.length) : SINCE.nothing}</span>
       </button>
       {open && <div className="pf-since-stack">{toggle}{changes.map((c, i) => <Cell key={i} c={c} onPick={onPick} />)}</div>}

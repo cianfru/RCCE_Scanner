@@ -1937,7 +1937,8 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .pf-since-l2{display:flex;}
 .pf-since-when{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap;font-size:13px;}
 .pf-since-when .m{font-size:12px;}
-.pf-since-cells{display:flex;align-items:center;gap:24px;flex:1;min-width:0;overflow:hidden;padding:4px 0;}
+.pf-since-cells{display:flex;align-items:center;flex-wrap:wrap;column-gap:24px;row-gap:4px;flex:1;min-width:0;padding:4px 0;}
+.pf-since-when .pf-partial,.pf-since-line .pf-partial,.pf-fund-head .pf-partial{margin-left:2px;}
 .pf-quiet{font-size:13px;}
 .pf-scell{display:inline-flex;align-items:center;gap:7px;flex:none;max-width:250px;padding:0;border:0;background:none;color:var(--t-text2);font:13px var(--font-geist-sans),sans-serif;white-space:nowrap;cursor:pointer;}
 .pf-scell:hover .pf-sc-k{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--t-borderH);}
@@ -1950,12 +1951,14 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .pf-heatmini i{position:absolute;top:-3px;width:2px;height:9px;margin-left:-1px;border-radius:1px;}
 .pf-hm-ghost{background:var(--t-text4);opacity:.7;}
 .pf-hm-now{background:var(--t-text1);}
-.pf-since-more{flex:none;cursor:default;font:500 13px var(--font-geist-mono),monospace;outline:none;}
+.pf-since-more{flex:none;cursor:default;font:500 13px var(--font-geist-mono),monospace;outline:none;border-radius:3px;}
+.pf-since-more:focus-visible{outline:1px solid var(--t-accent);outline-offset:3px;}
 
 /* B3 checks row */
+/* Every check stays in view at every width: the list wraps to a second line when it does not fit
+   beside the sorts (no hidden overflow). */
 .pf-checks{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:36px;border-bottom:1px solid var(--t-border);}
-.pf-checks-list{display:flex;align-items:center;gap:18px;min-width:0;overflow-x:auto;scrollbar-width:none;}
-.pf-checks-list::-webkit-scrollbar{display:none;}
+.pf-checks-list{display:flex;align-items:center;flex-wrap:wrap;column-gap:18px;row-gap:0;min-width:0;}
 .pf-chk-wrap{flex:none;}
 .pf-v2 .pf-chk{display:inline;margin:6px 0;padding:2px 0 3px;border:0;border-bottom:1px solid var(--t-border);background:none;font:13px var(--font-geist-sans),sans-serif;color:var(--t-text2);text-decoration:none;white-space:nowrap;cursor:pointer;transition:color .15s,border-color .15s;}
 .pf-v2 .pf-chk:hover{color:var(--t-text1);border-bottom-color:var(--t-borderH);}
@@ -2272,9 +2275,10 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .pf-cd-l3{display:flex;align-items:center;gap:8px;font-size:11px;white-space:nowrap;overflow:hidden;}
  .pf-cd-l3 .pf-flag{margin-left:auto;}
  .pf-group-h{padding-left:8px;}
- .pf-perf-head{flex-wrap:nowrap;}
- .pf-periods{gap:16px;overflow-x:auto;scrollbar-width:none;flex:1;}
- .pf-periods::-webkit-scrollbar{display:none;}
+ /* The four period tabs on a line of their own (they wrap rather than hide), the P&L / Equity toggle under them. */
+ .pf-perf-head{flex-wrap:wrap;row-gap:6px;}
+ .pf-periods{flex:1 1 100%;flex-wrap:wrap;column-gap:14px;row-gap:2px;}
+ .pf-perf-r{margin-left:auto;}
  .pf-perf-r .pf-lbl-wrap{display:none;}
  .pf-perf-body{grid-template-columns:minmax(0,1fr);gap:20px;}
  .pf-cal-grid{grid-template-columns:repeat(7,44px) 46px;gap:0;}
@@ -2298,7 +2302,9 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .pf-detail-ph .pf-fact-v{white-space:nowrap;font-size:12px;}
  /* The coin's orders in the sheet: type, price, size, from mark (and Cancel); the cap and reduce
     columns stay on desktop, so the price is never squeezed out. */
- .pf-detail-ph .pf-ord{grid-template-columns:52px minmax(0,1fr) 60px 84px auto;}
+ .pf-detail-ph .pf-ord{grid-template-columns:72px minmax(0,1fr) 54px 72px 42px;}
+ .pf-v2 .pf-detail-ph .pf-ord-head{letter-spacing:.02em;}
+ .pf-sh-acts .pf-notice{margin:0 0 10px;}
  .pf-detail-ph .pf-ord>:nth-child(3),.pf-detail-ph .pf-ord>:nth-child(5){display:none;}
  .pf-v2 .pf-sh-acts{position:sticky;bottom:0;z-index:2;margin:4px -16px 0;padding:12px 16px 14px;border-top:1px solid var(--t-border);
   background:var(--t-bg);}
