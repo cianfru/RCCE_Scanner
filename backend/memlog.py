@@ -346,6 +346,19 @@ def log_line() -> str:
     return " | ".join(parts)
 
 
+_pool = None
+
+
+async def _off_loop(fn):
+    """Run on memlog's own thread: the shared default pool (IO_WORKERS) can be busy with long
+    jobs for minutes, which would delay the release and the log line."""
+    global _pool
+    if _pool is None:
+        import concurrent.futures
+        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="memlog")
+    return await asyncio.get_running_loop().run_in_executor(_pool, fn)
+
+
 async def run_forever() -> None:
     """Every CACHE_RELEASE_S (default 300): trim the view caches and drop the volume's page cache;
     every MEMLOG_INTERVAL_S (default 600): one log line. MEMLOG=0 / CACHE_RELEASE=0 turn either off."""
@@ -360,10 +373,10 @@ async def run_forever() -> None:
             if now >= next_pass:
                 trim_app_caches()
                 if release:
-                    await asyncio.to_thread(release_page_cache)
+                    await _off_loop(release_page_cache)
                 next_pass = now + every
             if log_every and now >= next_log:
-                logger.info(await asyncio.to_thread(log_line))
+                logger.info(await _off_loop(log_line))
                 next_log = now + log_every
         except asyncio.CancelledError:
             raise

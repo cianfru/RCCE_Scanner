@@ -15,5 +15,5 @@ Read `docs/public-launch-plan.md`. It lists what must be done before many users 
 - Never show the word "Larsson" in the UI. The paid data it refers to lives only in `backend/data/private/` (tracked in this private repo, excluded from the Docker image); never serve it from the API, the app or public pages.
 - The login screen stays as it is.
 - Research follows a declared-study protocol: rules committed before results are computed; verdicts only when the declared bar is met, otherwise "context, not a signal".
-- Costs stay low (Railway bill is mostly network egress; see `/api/net-stats`). Live or paper trading changes need the owner's explicit approval; the executor stays as it is.
+- Costs stay low. The Railway bill is mostly RAM, including the page cache of the volume's files; egress is in `/api/net-stats`. See `docs/hosting-costs.md` and the `memlog` line in the Railway logs. Live or paper trading changes need the owner's explicit approval; the executor stays as it is.
 - Wallet tracking is documented in `docs/hyperlens-wallet-tracking.md`.
