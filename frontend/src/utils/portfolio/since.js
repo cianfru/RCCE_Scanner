@@ -1,14 +1,44 @@
 // "Since" (Portfolio v2, B2): what changed since this browser's last visit, kept on this device only.
-// Two slots under reflex.pf.snap.v1.<address>: {base, cur}. On load, a `cur` older than 30 minutes
-// becomes the baseline; `cur` is rewritten every 60 s while the page is visible and when it is hidden
-// or left. Every storage read and write is guarded: blocked storage behaves as a first visit.
+// Two slots under reflex.pf.snap.v1.<hash of the address>: {base, cur}. The address itself is never
+// stored (only a 64-bit hash of it, lowercased), and at most SNAP_KEEP addresses are kept. On load, a
+// `cur` older than 30 minutes becomes the baseline; `cur` is rewritten every 60 s while the page is
+// visible and when it is hidden or left. Every storage read and write is guarded: blocked storage
+// behaves as a first visit.
 import { EXIT_SIGNALS, LONG_ENTRIES, SHORT_ENTRIES } from "./checks.js";
 
 export const SNAP_VERSION = 1;
 export const SMALL_CLOSE_USD = 25;
 export const SMALL_CLOSE_SHARE = 0.0005;
 export const BASE_AFTER_MS = 30 * 60 * 1000;
-export const snapKey = addr => `reflex.pf.snap.v1.${String(addr || "").toLowerCase()}`;
+export const SNAP_KEEP = 6;
+const SNAP_PREFIX = "reflex.pf.snap.v1.";
+
+// Two 32-bit FNV-1a passes (different offsets): a short, stable key that does not hold the address.
+export function addrHash(addr) {
+  const s = String(addr || "").toLowerCase();
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x01000193) >>> 0;
+  }
+  return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+export const snapKey = addr => `${SNAP_PREFIX}${addrHash(addr)}`;
+
+// Keeps the SNAP_KEEP most recently written snapshots (one per address looked at), drops the rest.
+function prune(storage, keep = SNAP_KEEP) {
+  if (typeof storage?.key !== "function" || typeof storage?.removeItem !== "function") return;
+  const mine = [];
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i);
+    if (!k?.startsWith(SNAP_PREFIX)) continue;
+    let t = 0;
+    try { t = JSON.parse(storage.getItem(k))?.cur?.t || 0; } catch { /* unreadable: oldest */ }
+    mine.push([k, t]);
+  }
+  mine.sort((p, q) => q[1] - p[1]).slice(keep).forEach(([k]) => storage.removeItem(k));
+}
 
 export function readSlots(storage, addr, now = Date.now()) {
   try {
@@ -26,6 +56,7 @@ export function readSlots(storage, addr, now = Date.now()) {
 export function writeCurrent(storage, addr, base, snap) {
   try {
     storage?.setItem(snapKey(addr), JSON.stringify({ base: base || null, cur: snap }));
+    prune(storage);
     return true;
   } catch {
     return false;

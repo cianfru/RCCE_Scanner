@@ -14,7 +14,7 @@ import LevelsRail, { RailSvg, Distance, FlagLine } from "./LevelsRail.jsx";
 import ScannerCell, { HeatBar, sigWord, sigColor } from "./ScannerCell.jsx";
 import TradersCell, { SplitBar } from "./TradersCell.jsx";
 import HeldStrip from "./HeldStrip.jsx";
-import { tradable } from "./tradeActions.js";
+import { tradable, radarHref } from "./tradeActions.js";
 import { ROWS, STRIP } from "./copy.js";
 import useElementWidth from "../../hooks/useElementWidth.js";
 import { age } from "../../utils/portfolio/format.js";
@@ -43,12 +43,13 @@ function Carry({ v }) {
   return <span className="pf-carry"><span className={pnlClass(v)}>{usd(v, { sign: true })}</span><span className="pf-t3">{STRIP.carry}</span></span>;
 }
 
+// Watch and Radar on every main-perps row, as on the old page (TradingPanel.jsx); see radarHref.
 export function Actions({ row, watching, onWatch, onClose, closing, canClose }) {
-  const covered = row.covered && row.venue === "main";
+  const main = row.venue === "main";
   return <div className="pf-acts" onClick={e => e.stopPropagation()}>
-    {covered && <button type="button" className={`pf-icon${watching ? " pf-on" : ""}`} aria-pressed={watching} title={watching ? ROWS.watching : ROWS.watch}
+    {main && <button type="button" className={`pf-icon${watching ? " pf-on" : ""}`} aria-pressed={watching} title={watching ? ROWS.watching : ROWS.watch}
       aria-label={watching ? ROWS.watching : ROWS.watch} onClick={() => onWatch(kKey(row.coin))}><Eye size={16} strokeWidth={1.75} /></button>}
-    {covered && <Link className="pf-icon" to={`/radar?tf=4h&focus=${encodeURIComponent(kKey(row.coin))}`} title={ROWS.radar} aria-label={ROWS.radar}><Radar size={16} strokeWidth={1.75} /></Link>}
+    {main && <Link className="pf-icon" to={radarHref(row.coin)} title={ROWS.radar} aria-label={ROWS.radar}><Radar size={16} strokeWidth={1.75} /></Link>}
     {canClose && tradable(row.coin) && <button type="button" className="pf-close" disabled={closing} onClick={e => onClose(row, e.currentTarget)}>{closing ? ROWS.closing : ROWS.close}</button>}
   </div>;
 }

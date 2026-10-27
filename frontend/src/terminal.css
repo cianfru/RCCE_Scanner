@@ -2065,9 +2065,11 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .pf-split-s{background:var(--rd-short);border-radius:0 2px 2px 0;}
 .pf-caret{position:absolute;top:-7px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:4px solid var(--t-accent);}
 .pf-tr-l2{min-height:15px;font-size:11px;white-space:nowrap;}
-.pf-acts{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding-right:6px;opacity:0;transition:opacity .15s;}
-.pf-row:hover .pf-acts,.pf-row:focus-within .pf-acts,.pf-row-open .pf-acts{opacity:1;}
-@media(hover:none){.pf-acts{opacity:1;}}
+.pf-acts{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding-right:6px;}
+.pf-acts>*{opacity:0;transition:opacity .15s;}
+/* On hover or focus; a watched coin's eye and a close in progress ("Closing…") stay in view. */
+.pf-row:hover .pf-acts>*,.pf-row:focus-within .pf-acts>*,.pf-row-open .pf-acts>*,.pf-acts>.pf-on,.pf-acts>.pf-close:disabled{opacity:1;}
+@media(hover:none){.pf-acts>*{opacity:1;}}
 .pf-icon{display:inline-flex;padding:3px;border:0;background:none;color:var(--t-text3);cursor:pointer;}
 .pf-icon:hover{color:var(--t-text1);}
 .pf-icon.pf-on{color:var(--t-accent);}
@@ -2184,7 +2186,6 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .pf-sheet-go{padding:0;border:0;background:none;font:600 13px var(--font-geist-sans),sans-serif;color:var(--rd-red);cursor:pointer;}
 .pf-sheet-go:disabled{opacity:.45;cursor:not-allowed;}
 .pf-sheet-keep{font-size:13px;color:var(--t-text2);}
-.pf-sheet-pv{margin-left:auto;font-size:11px;}
 .pf-sheet-d{font-family:var(--font-geist-sans),sans-serif;}
 
 /* No wallet and loading */
@@ -2254,8 +2255,10 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .pf-since-line{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0;border:0;background:none;color:var(--t-text2);font-size:13px;white-space:nowrap;overflow:hidden;text-align:left;cursor:pointer;}
  .pf-since-line .m{font-size:12px;}
  .pf-since-stack{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:4px 0 12px;}
- .pf-checks-ph{display:block;min-height:36px;}
- .pf-checks-ph .pf-checks-list{padding-right:28px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);}
+ .pf-checks-ph{display:block;min-height:36px;padding:4px 0;}
+ /* Every check in view: the list wraps (no hidden overflow behind a fade). */
+ .pf-checks-ph .pf-checks-list{flex-wrap:wrap;overflow:visible;row-gap:0;column-gap:16px;}
+ .pf-checks-ph .pf-chk{margin:4px 0;}
  .pf-sorts-ph{justify-content:flex-end;height:28px;border-bottom:1px solid var(--t-border);}
  .pf-cards{display:flex;flex-direction:column;}
  .pf-card2{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;min-height:100px;padding:10px 0 10px 8px;box-sizing:border-box;border:0;border-bottom:1px solid var(--t-border);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;}
@@ -2293,10 +2296,15 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
  .pf-v2 .radar-sheet-body>*{flex-shrink:0;}
  .pf-v2 .radar-sheet-body{padding-bottom:0;}
  .pf-detail-ph .pf-fact-v{white-space:nowrap;font-size:12px;}
+ /* The coin's orders in the sheet: type, price, size, from mark (and Cancel); the cap and reduce
+    columns stay on desktop, so the price is never squeezed out. */
+ .pf-detail-ph .pf-ord{grid-template-columns:52px minmax(0,1fr) 60px 84px auto;}
+ .pf-detail-ph .pf-ord>:nth-child(3),.pf-detail-ph .pf-ord>:nth-child(5){display:none;}
  .pf-v2 .pf-sh-acts{position:sticky;bottom:0;z-index:2;margin:4px -16px 0;padding:12px 16px 14px;border-top:1px solid var(--t-border);
-  background:color-mix(in srgb,var(--t-bg) 90%,transparent);backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);}
+  background:var(--t-bg);}
  .pf-v2 .radar-sheet-body>.pf-sheet{padding-bottom:14px;}
- .pf-sh-acts .pf-acts{opacity:1;justify-content:flex-start;gap:20px;}
+ .pf-sh-acts .pf-acts{justify-content:flex-start;gap:20px;}
+ .pf-sh-acts .pf-acts>*{opacity:1;}
  .pf-nowallet{min-height:420px;}
  .pf-ghost-row{grid-template-columns:90px 1fr;}
 }

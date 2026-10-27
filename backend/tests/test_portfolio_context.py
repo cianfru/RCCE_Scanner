@@ -76,7 +76,7 @@ def test_atr_uses_completed_daily_candles_only():
 
 def test_coins_are_deduplicated_sorted_and_capped_with_raw_names_kept():
     raw = ",".join(["ZEC", "BTC", "kPEPE", "xyz:MSTR", "BTC", " HYPE ", "bad coin", "@107"]
-                   + [f"C{i:02d}" for i in range(10)])
+                   + [f"C{i:02d}" for i in range(20)])
     out = pc.parse_coins(raw)
     assert len(out) == pc.MAX_COINS
     assert out == sorted(out)
@@ -195,17 +195,28 @@ def client(monkeypatch, no_network):
     from fastapi.testclient import TestClient
 
     import main
-    monkeypatch.setenv("PORTFOLIO_CONTEXT", "1")
+    monkeypatch.delenv("PORTFOLIO_CONTEXT", raising=False)
     monkeypatch.setattr(main, "_PF_MEMO", pc.Memo())
+    monkeypatch.setattr(main, "_PF_BODIES", pc.BodyCache())
     return TestClient(main.app), main
 
 
-def test_off_by_default(monkeypatch, no_network):
-    from fastapi.testclient import TestClient
+def test_on_by_default_with_a_kill_switch(monkeypatch):
+    assert pc.enabled({}) is True
+    for off in ("0", "false", "no", "off", " OFF "):
+        assert pc.enabled({"PORTFOLIO_CONTEXT": off}) is False
+    for on in ("1", "true", "yes", "on", ""):
+        assert pc.enabled({"PORTFOLIO_CONTEXT": on}) is True
 
-    import main
-    monkeypatch.delenv("PORTFOLIO_CONTEXT", raising=False)
-    assert TestClient(main.app).get("/api/portfolio/context?coins=BTC").status_code == 404
+
+def test_kill_switch_answers_404(client, monkeypatch):
+    c, main = client
+    monkeypatch.setattr(main, "_pf_sources", lambda: _sources())
+    monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_1")
+    assert c.get("/api/portfolio/context?coins=HYPE").status_code == 200
+    monkeypatch.setenv("PORTFOLIO_CONTEXT", "0")
+    assert c.get("/api/portfolio/context?coins=HYPE").status_code == 404
+    assert c.get("/api/portfolio/events?coins=HYPE").status_code == 404
 
 
 def test_route_answers_with_etag_and_304(client, monkeypatch):
@@ -245,3 +256,66 @@ def test_rate_limit_class():
     assert ratelimit.classify("GET", "/api/portfolio/context", {}) == "portfolio"
     assert ratelimit.classify("GET", "/api/portfolio/events", {}) == "portfolio"
     assert ratelimit.classify("GET", "/api/portfolio/other", {}) is None
+    limits = ratelimit.Limits(env={})
+    # A page asks twice on load and twice per scan notice; a burst of 30 covers many tabs behind one address.
+    assert all(limits.check("portfolio", "1.2.3.4", now=0.0)[0] for _ in range(30))
+    assert limits.check("portfolio", "1.2.3.4", now=0.0)[0] is False
+    assert limits.check("portfolio", "5.6.7.8", now=0.0)[0] is True
+
+
+def test_both_feeds_go_through_the_edge_cache_as_member_feeds():
+    import edge
+    assert {"/api/portfolio/context", "/api/portfolio/events"} <= edge.EDGE_PATHS
+    assert not ({"/api/portfolio/context", "/api/portfolio/events"} & edge.PUBLIC_PATHS)
+
+
+def test_sources_are_built_only_when_a_coin_is_not_memoised():
+    memo = pc.Memo()
+    built = []
+
+    def sources():
+        built.append(1)
+        return _sources()
+    pc.context_body(["HYPE", "XMR"], sources, "s1", NOW, memo, now=NOW)
+    assert built == [1]                                                  # once for both coins
+    pc.context_body(["HYPE", "XMR"], sources, "s1", NOW, memo, now=NOW)
+    assert built == [1]                                                  # memoised: not built again
+    pc.context_body(["HYPE"], sources, "s2", NOW, memo, now=NOW)
+    assert built == [1, 1]                                               # a new scan
+
+
+def test_body_cache_keeps_answers_a_minute_and_stays_bounded():
+    cache = pc.BodyCache(ttl=60, max_items=3)
+    cache.put(("context", "s1", ("HYPE",)), "a", now=NOW)
+    assert cache.get(("context", "s1", ("HYPE",)), now=NOW + 59) == "a"
+    assert cache.get(("context", "s1", ("HYPE",)), now=NOW + 61) is None
+    for i in range(10):
+        cache.put(("context", "s1", (f"C{i}",)), i, now=NOW + i)
+    assert len(cache) <= 3 and cache.get(("context", "s1", ("C9",)), now=NOW + 9) == 9
+
+
+def test_the_answer_holds_counts_never_an_address(client, monkeypatch):
+    c, main = client
+    monkeypatch.setattr(main, "_pf_sources", lambda: _sources())
+    monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_addr")
+    r = c.get("/api/portfolio/context?coins=HYPE&address=0x348c000000000000000000000000000000001eee")
+    assert r.status_code == 200
+    text = r.text.lower()
+    for a in ("0xa", "0xb", "0xc", "0x348c"):
+        assert f'"{a}' not in text
+    assert r.json()["coins"]["HYPE"]["traders"]["short"]["opens_6h"] == 1
+
+
+def test_route_builds_once_per_scan_and_coin_set(client, monkeypatch):
+    c, main = client
+    builds = []
+
+    def sources():
+        builds.append(1)
+        return _sources()
+    monkeypatch.setattr(main, "_pf_sources", sources)
+    monkeypatch.setattr(main, "_pf_scan_id", lambda: "s_once")
+    a = c.get("/api/portfolio/context?coins=HYPE,kPEPE")
+    b = c.get("/api/portfolio/context?coins=kPEPE,HYPE")
+    assert a.status_code == b.status_code == 200 and a.json() == b.json() and a.headers["etag"] == b.headers["etag"]
+    assert builds == [1]

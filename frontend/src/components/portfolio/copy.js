@@ -14,7 +14,7 @@ export const INFO = {
   equity: "Everything this address holds on Hyperliquid: perps on every venue (cross and isolated), spot at mid, Earn, staked HYPE and vaults. 24h is Hyperliquid's own P&L for the day; deposits and withdrawals are left out.",
   liquidation: "Margin is maintenance margin over account value; Hyperliquid liquidates at 100%. Above: the position nearest its liquidation price, from Hyperliquid's mark, in % and in daily ATRs (14-day average daily range).",
   exposure: "One block per position. Width is notional, colour its open P&L; longs right, shorts left, TradFi hatched. Leverage is gross notional over equity.",
-  reflex: "Share of open notional where the scanner's 4H (or 1D) signal points your way. Short signals have no measured edge; read shorts as context. Map: your positions on the Radar, stretch across and profitable traders long minus short up. Context, not a signal; the forward test has run since 29 Sep 2026.",
+  reflex: "With signal: the share of the book's open notional on the side the scanner's 4H (or 1D) signal agrees with (a long entry signal on a long; a short entry or an exit signal on a short). The bar adds against, no signal and not covered. Short signals have no measured edge; read shorts as context. Map: your positions on the Radar, stretch across and profitable traders long minus short up. Context, not a signal; the forward test has run since 29 Sep 2026.",
   since: "Compared with what this browser saw on your last visit, kept on this device only. Fills and funding from Hyperliquid; signal changes from the scanner.",
   since24: "Compared with 24 hours ago: Hyperliquid's P&L for the day, fills and positions from Hyperliquid, signal changes from the scanner's log, trader counts from a day ago.",
   levels: "Your entry (circle), nearest stop and take-profit (triangles; +n more), and liquidation (red tick, hatched) on one price line, with the weekly band (violet), the trend line (grey tick), profitable traders' median entry on your side (diamond) and, faint, where the mark was on your last visit.",
@@ -40,7 +40,7 @@ export const CHECKS = {
 
 export const STRIP = {
   partial: "partial", h24: "24h", margin: "Margin", atr: "ATR", netLong: "Net long", netShort: "Net short", gross: "Gross",
-  with: "with", against: "Against", noSignal: "No signal", notCovered: "Not covered", tf4h: "4H", tf1d: "1D",
+  withSignal: "with signal", with: "With signal", against: "Against signal", noSignal: "No signal", notCovered: "Not covered", tf4h: "4H", tf1d: "1D",
   openPnl: "Open P&L", withdrawable: "Withdrawable", share: "Share", sinceVisit: d => `since ${d}`, carry: "/d",
   partialInfo: names => `Not answering now: ${names}.`,
   parts: { perps: "Perps", tradfi: "TradFi", other: "Other venues", spot: "Spot", earn: "Earn", staked: "Staked", vaults: "Vaults" },
@@ -57,7 +57,7 @@ export const ROWS = {
   close: "Close", closing: "Closing…", more: n => `+${n} more`, nearestLiq: p => `nearest liq ${p}`,
   noPositions: "No open positions",
   lastClosed: (coin, side, pnl, a) => `last closed ${coin} ${side} ${pnl} · ${a}`,
-  preview: "preview", dismiss: "Dismiss", notCovered: "Not covered by the scanner",
+  dismiss: "Dismiss", notCovered: "Not covered by the scanner",
 };
 
 export const SINCE = {
@@ -84,7 +84,7 @@ export const DETAIL = {
 export const SHEET = {
   title: (coin, side) => `Close ${coin} ${side}`,
   detail: (size, coin, usd) => `${size} ${coin} · ${usd} · market, up to 2% slippage`,
-  go: "Close at market", keep: "Keep", preview: "Preview: no order is sent from this page.",
+  go: "Close at market", keep: "Keep",
 };
 
 export const CAL = { closes: "Closes", funding: "Funding", fees: "Fees", prev: "Previous month", next: "Next month", week: "W", days: ["M", "T", "W", "T", "F", "S", "S"] };
@@ -96,7 +96,7 @@ export const PERF = {
 
 export const TABS = {
   orders: "Orders", fills: "Fills", funding: "Funding", older: "Older", newer: "Newer", total30: v => `30d ${v}`, d30: "30d",
-  cols: { type: "Type", side: "Side", trigger: "Trigger", limit: "Limit", size: "Size", reduce: "Reduce", fromMark: "From mark",
+  cols: { type: "Type", side: "Side", size: "Size", reduce: "Reduce", fromMark: "From mark",
     time: "Time", coin: "Coin", dir: "Direction", price: "Price", closedPnl: "Closed P&L", fee: "Fee", total: "Total" },
   buy: "Buy", sell: "Sell", tp: n => `${n} TP`, sl: n => `${n} SL`, stops: n => `${n} stop`, limits: n => `${n} limit`, nearest: p => `nearest ${p}`,
   none: { orders: "No open orders", fills: "No fills in the last 30 days", funding: "No funding in the last 30 days" },

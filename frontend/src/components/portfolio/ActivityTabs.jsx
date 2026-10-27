@@ -36,7 +36,7 @@ function OrderGroups({ orders, marks, sides, canCancel, onCancel, cancelling, na
         <span className="pf-t3 m pf-og-near">{Number.isFinite(g.near) ? TABS.nearest(pct(g.near)) : ""}</span>
       </button>
       {open.has(g.coin) && <div className="pf-og-list">
-        {!phone && <div className="pf-ord pf-ord-head pf-ord-full"><span>{TABS.cols.type}</span><span>{TABS.cols.side}</span><span>{TABS.cols.trigger}</span><span>{TABS.cols.limit}</span><span>{TABS.cols.size}</span><span>{TABS.cols.reduce}</span><span>{TABS.cols.fromMark}</span><span /></div>}
+        {!phone && <div className="pf-ord pf-ord-head pf-ord-full"><span>{TABS.cols.type}</span><span>{TABS.cols.side}</span><span>{TABS.cols.price}</span><span /><span>{TABS.cols.size}</span><span>{TABS.cols.reduce}</span><span>{TABS.cols.fromMark}</span><span /></div>}
         {g.list.slice().sort((a, b) => Math.abs(fromMark(a, g.mark) ?? 0) - Math.abs(fromMark(b, g.mark) ?? 0))
           .map(o => <div key={o.oid} className="pf-ord-full-wrap"><OrderRow o={o} mark={g.mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} showSide /></div>)}
       </div>}

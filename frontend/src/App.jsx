@@ -45,9 +45,9 @@ import { trackView } from "./usage.js";
 // Pages load their code on first visit; the shell and the scanner stay in the main bundle.
 const BacktestPanel = lazy(() => import("./components/BacktestPanel.jsx"));
 const ExecutorPanel = lazy(() => import("./components/ExecutorPanel.jsx"));
-const TradingPanel = lazy(() => import("./components/TradingPanel.jsx"));
-// Portfolio v2 mockup for review: /portfolio-preview, not linked from navigation (Portfolio v2 spec).
-const PortfolioPage = lazy(() => import("./components/portfolio/PortfolioPage.jsx"));
+// Rollback for one release: a build with VITE_PORTFOLIO_LEGACY=1 serves the old page (TradingPanel.jsx) at /portfolio.
+const PORTFOLIO_LEGACY = import.meta.env.VITE_PORTFOLIO_LEGACY === "1";
+const PortfolioPage = lazy(() => (PORTFOLIO_LEGACY ? import("./components/TradingPanel.jsx") : import("./components/portfolio/PortfolioPage.jsx")));
 const SignalLogPanel = lazy(() => import("./components/SignalLogPanel.jsx"));
 const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
 const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
@@ -91,7 +91,6 @@ const ROUTE_TO_TAB = {
   "/backtest": "backtest",
   "/executor": "executor",
   "/portfolio": "trading",
-  "/portfolio-preview": "pfpreview",
   "/settings": "settings",
   "/intel": "intel",
 };
@@ -115,7 +114,6 @@ const TAB_TO_ROUTE = {
 const TAB_TITLES = {
   traders: "Traders",
   trading: "Portfolio",
-  pfpreview: "Portfolio",
   signals: "Signal Log",
   analytics: "Analytics",
   tradfi: "TradFi",
@@ -985,7 +983,7 @@ export default function App() {
       )}
 
       {/* ── SECTION TITLE (hidden on the coin page; Radar and 404 draw their own) ── */}
-      {!coinPageSymbol && activeTab !== "radar" && activeTab !== "notfound" && activeTab !== "trader" && activeTab !== "pfpreview" && (
+      {!coinPageSymbol && activeTab !== "radar" && activeTab !== "notfound" && activeTab !== "trader" && !(activeTab === "trading" && !PORTFOLIO_LEGACY) && (
         <div className="scanner-head" style={{
           padding: `${isMobile ? T.sp4 : T.sp3}px ${hPad}px ${T.sp1}px`,
           display: "flex", alignItems: "center", justifyContent: "flex-start", flexWrap: "wrap", gap: "12px 20px",
@@ -1064,15 +1062,9 @@ export default function App() {
 
         {activeTab === "trading" && (
           <Suspense fallback={<PageSkeleton style={pageMargin} />}>
-            <FadeIn delay={300} style={pageMargin}>
-              <TradingPanel api={API_BASE} />
-            </FadeIn>
-          </Suspense>
-        )}
-
-        {activeTab === "pfpreview" && (
-          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
-            <PortfolioPage api={API_BASE} preview />
+            {PORTFOLIO_LEGACY
+              ? <FadeIn delay={300} style={pageMargin}><PortfolioPage api={API_BASE} /></FadeIn>
+              : <PortfolioPage api={API_BASE} />}
           </Suspense>
         )}
 

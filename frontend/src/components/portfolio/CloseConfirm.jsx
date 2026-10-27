@@ -1,6 +1,6 @@
-// The close sheet (needs the owner's OK before it replaces window.confirm; PF_CONFIRM_SHEET in
-// tradeActions.js). Desktop: a 320 px glass card by the Close button; phone: in place of the sheet's
-// action row. Focus starts on Keep; Escape or a click outside is Keep.
+// The close sheet: the confirm before a close (TradingPanel.jsx used window.confirm). Desktop: a 320 px
+// glass card by the Close button; phone: in place of the sheet's action row. Focus starts on Keep;
+// Escape or a click outside is Keep. The size shown is the one the close is sent with.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { displayName } from "../../utils/portfolio/displayNames.js";
@@ -8,7 +8,7 @@ import { usd, size as fmtSize } from "../../utils/portfolio/format.js";
 import { useAssetCtx } from "./assetCtx.js";
 import { ROWS, SHEET } from "./copy.js";
 
-export function CloseBody({ row, onConfirm, onKeep, preview, szDecimals }) {
+export function CloseBody({ row, onConfirm, onKeep, szDecimals }) {
   const keep = useRef(null);
   useEffect(() => { keep.current?.focus(); }, []);
   const name = displayName(row.coin).name;
@@ -19,14 +19,13 @@ export function CloseBody({ row, onConfirm, onKeep, preview, szDecimals }) {
     <div className="pf-sheet-t">{SHEET.title(name, row.isLong ? ROWS.long.toLowerCase() : ROWS.short.toLowerCase())}</div>
     <div className="pf-sheet-d">{SHEET.detail(fmtSize(Math.abs(row.szi), dec), name, usd(row.value))}</div>
     <div className="pf-sheet-a">
-      <button type="button" className="pf-sheet-go" disabled={preview} onClick={onConfirm}>{SHEET.go}</button>
+      <button type="button" className="pf-sheet-go" onClick={onConfirm}>{SHEET.go}</button>
       <button ref={keep} type="button" className="pf-textbtn pf-sheet-keep" onClick={onKeep}>{SHEET.keep}</button>
-      {preview && <span className="pf-t3 pf-sheet-pv">{ROWS.preview}</span>}
     </div>
   </div>;
 }
 
-export default function CloseConfirm({ row, anchor, onConfirm, onKeep, preview, szDecimals }) {
+export default function CloseConfirm({ row, anchor, onConfirm, onKeep, szDecimals }) {
   const card = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -45,6 +44,6 @@ export default function CloseConfirm({ row, anchor, onConfirm, onKeep, preview, 
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onDown); };
   }, [onKeep, anchor]);
   return createPortal(<div ref={card} className="pf-sheet-pop" style={{ ...pos, visibility: pos ? "visible" : "hidden" }}>
-    <CloseBody row={row} onConfirm={onConfirm} onKeep={onKeep} preview={preview} szDecimals={szDecimals} />
+    <CloseBody row={row} onConfirm={onConfirm} onKeep={onKeep} szDecimals={szDecimals} />
   </div>, anchor?.closest?.(".pf-page") || document.body);
 }

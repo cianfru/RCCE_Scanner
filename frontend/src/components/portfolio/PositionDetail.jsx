@@ -50,8 +50,8 @@ export function Facts({ row, trip, ev, openAt, windowStart, nowS }) {
     {f(DETAIL.addsTrims, trip && !before ? `${trip.adds} · ${trip.trims}` : "—")}
     {f(DETAIL.realised, realised != null ? usd(realised, { sign: true }) : "—", pnlClass(realised))}
     {f(DETAIL.fees, trip && !before ? usd(-trip.fees) : "—", trip?.fees ? "pf-dn" : "")}
-    {ao && <div className="pf-fact"><span className="pf-fact-k">{DETAIL.atOpen}</span><span className="pf-fact-v">
-      <span className="pf-sig" style={{ color: sigColor(ao.sig) }}>{sigWord(ao.sig)}</span><span className="pf-t3">{"4H · "}</span><span>{REGIME_META[ao.reg]?.name || ao.reg}</span></span></div>}
+    {ao?.sig && <div className="pf-fact"><span className="pf-fact-k">{DETAIL.atOpen}</span><span className="pf-fact-v">
+      <span className="pf-sig" style={{ color: sigColor(ao.sig) }}>{sigWord(ao.sig)}</span><span className="pf-t3">{ao.reg ? "4H · " : "4H"}</span>{ao.reg && <span>{REGIME_META[ao.reg]?.name || ao.reg}</span>}</span></div>}
     {t?.median_entry ? f(DETAIL.tradersEntry, `${px(t.median_entry)} · ${DETAIL.you} ${pct((row.entry / t.median_entry - 1) * 100, { sign: true })}`) : null}
     {t?.n ? f(DETAIL.inProfit, `${t.in_profit} ${DETAIL.of} ${t.n}`) : null}
   </div>;
@@ -80,7 +80,7 @@ export default function PositionDetail({ row, classified, trip, ev, openAt, wind
       <Facts row={row} trip={trip} ev={ev} openAt={openAt} windowStart={windowStart} nowS={nowS} />
       <div className="pf-ords-h">{DETAIL.ordersOn(displayName(row.coin).name, mine.length)}</div>
       {row.venue !== "main" && !row.ordersRead ? <div className="pf-t3">{"—"}</div>
-        : <OrdersList orders={mine} mark={row.mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} unit={displayName(row.coin).name} szDecimals={a?.szDecimals} />}
+        : <OrdersList orders={mine} mark={row.mark} canCancel={canCancel} onCancel={onCancel} cancelling={cancelling} unit={phone ? null : displayName(row.coin).name} szDecimals={a?.szDecimals} />}
     </div>
   </div>;
 }

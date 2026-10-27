@@ -146,10 +146,10 @@ function ReflexCell({ rows, tf, onTf, map, compact, onRadar, ctxKnown }) {
     </div>
     <div className="pf-rx-body">
       <div className="pf-rx-main">
-        {compact && withPct != null && <span className="pf-xnet">{STRIP.with}</span>}
+        {compact && withPct != null && <span className="pf-xnet">{STRIP.withSignal}</span>}
         <div className="pf-cell-head">
           <span className="pf-big m">{withPct != null ? pct(withPct, { digits: 0 }) : "—"}</span>
-          {!compact && withPct != null && <span className="pf-xnet">{STRIP.with}</span>}
+          {!compact && withPct != null && <span className="pf-xnet">{STRIP.withSignal}</span>}
         </div>
         {rows.length > 0 && <div className="pf-rbar">
           {ctxKnown && ["with", "against", "none", "uncovered"].filter(k => s[k] > 0).map(k => <Hover key={k} content={tip(k)} width={200} className={`pf-rseg pf-r-${k}`} style={{ width: w(k) }} />)}

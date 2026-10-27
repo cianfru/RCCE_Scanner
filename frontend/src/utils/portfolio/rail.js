@@ -31,7 +31,7 @@ export function railDomain({ mark, entry, stop, tp, band, trend, tradersEntry, l
 // Desktop: mark price above, Liq and SL under; the take-profit glyph and the traders' diamond sit
 // just above the track, the stop glyph just under it. Compact (phone cards): a 32 px rail.
 export const BANDS = {
-  full: { mark: [-20, -10], under: [11, 20], tpMore: [-13, -5], slMore: [3, 11] },
+  full: { mark: [-20, -10], under: [11, 20], tpMore: [-13, -5] },
   compact: { mark: [-18, -9], under: [5, 14] },
 };
 const GLYPHS = { tp: [-11, -5], sl: [5, 11], traders: [-11.5, -6.5], entry: [-4.5, 4.5], tick: [-8, 8], liq: [-7, 7], trend: [-6, 6], brk: [-6, 6], visit: [-5, 5] };
@@ -74,7 +74,8 @@ export function railModel({ isLong, mark, entry, liq = null, stops = [], tps = [
     g("trend", m.trend, 1, GLYPHS.trend), g("brk", breakX, 5.5, GLYPHS.brk),
   ].filter(Boolean);
 
-  // Texts by priority: mark price 0, Liq 1, SL 2, the take-profits' "+n" 3, the stops' "+n" 4.
+  // Texts by priority: mark price 0, Liq 1, SL 2 ("SL +2" with more stops: one label under the track,
+  // clear of the glyphs around the mark), the take-profits' "+n" 3.
   const B = compact ? BANDS.compact : BANDS.full;
   const away = at => (at >= (m.mark ?? at) ? "start" : "end");
   const markText = text.mark ?? "";
@@ -90,23 +91,26 @@ export function railModel({ isLong, mark, entry, liq = null, stops = [], tps = [
   const liqRoom = !compact || breakX == null || (breakX >= 24 && breakX <= width - 24);
   if (liqRoom) add("liq", m.liq, "Liq", TEXT_PX.label, B.under, 1, liqAnchors);
   if (!compact) {
-    add("sl", m.stop, "SL", TEXT_PX.label, B.under, 2, ["middle", "start", "end"]);
+    add("sl", m.stop, moreStops > 0 ? `SL +${moreStops}` : "SL", TEXT_PX.label, B.under, 2, ["middle", "start", "end"]);
     // "+n" sits on the side of its glyph away from the mark, 5 px clear of it; it never shifts.
     if (moreTps > 0 && m.tp != null) add("tpMore", m.tp + (away(m.tp) === "start" ? 6 : -6), `+${moreTps}`, TEXT_PX.more, B.tpMore, 3, [away(m.tp)], { fixed: true, own: "tp" });
-    if (moreStops > 0 && m.stop != null) add("slMore", m.stop + (away(m.stop) === "start" ? 6 : -6), `+${moreStops}`, TEXT_PX.more, B.slMore, 4, [away(m.stop)], { fixed: true, own: "sl" });
   }
   const labels = placeLabels(texts, obstacles, { width });
   return { domain: dom, x, m, hatch, breakX, costly, labels, moreStops, moreTps };
 }
 
 // Texts in priority order, each at the first anchor where it hits no glyph and no text kept before
-// it (boxes overlap in both x, with `pad` px, and y). A text that would leave the rail is shifted
-// back inside, except a fixed one ("+n"), which is dropped instead. The mark price (keep) is always
-// placed, at its least crowded anchor. Returns [{kind, text, x0, w, size}] for textAnchor="start".
-export function placeLabels(texts, obstacles = [], { width = Infinity, pad = 3 } = {}) {
+// it (boxes overlap in both x, with `pad` px between texts and `glyphPad` px from a glyph, and y).
+// A text that would leave the rail is shifted back inside, except a fixed one ("+n"), which is
+// dropped instead. The mark price (keep) is always placed, at its least crowded anchor. Returns
+// [{kind, text, x0, w, size}] for textAnchor="start".
+export function placeLabels(texts, obstacles = [], { width = Infinity, pad = 3, glyphPad = 1 } = {}) {
   const taken = [...obstacles];
   const out = [];
-  const hit = (p, q) => p.x0 < q.x1 + pad && q.x0 < p.x1 + pad && p.y0 < q.y1 && q.y0 < p.y1;
+  const hit = (p, q) => {
+    const g = String(q.id).startsWith("text:") ? pad : glyphPad;
+    return p.x0 < q.x1 + g && q.x0 < p.x1 + g && p.y0 < q.y1 && q.y0 < p.y1;
+  };
   for (const t of [...texts].sort((p, q) => p.prio - q.prio)) {
     let best = null;
     for (const anchor of t.anchors || ["middle"]) {

@@ -1,7 +1,7 @@
 // Portfolio v2 (docs: the final spec). Title row, risk strip, since row, checks, the board with its
 // inline detail, performance and activity. Everything Hyperliquid is read from the browser
 // (usePortfolioFeeds); the scanner's per-coin context and events come from /api/portfolio/*.
-// Close and cancel go through tradeActions.js, unchanged from TradingPanel.jsx.
+// Close and cancel go through tradeActions.js, unchanged from TradingPanel.jsx; the close sheet is the confirm.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useWallet } from "../../WalletContext.jsx";
@@ -32,7 +32,7 @@ import PositionDetail from "./PositionDetail.jsx";
 import CloseConfirm, { CloseBody } from "./CloseConfirm.jsx";
 import Performance from "./Performance.jsx";
 import ActivityTabs from "./ActivityTabs.jsx";
-import { makeTradeActions, closeArgs, PF_CONFIRM_SHEET } from "./tradeActions.js";
+import { makeTradeActions, closeArgs } from "./tradeActions.js";
 import { CoinName, pnlClass } from "./parts.jsx";
 import { useHeldAssetCtx } from "./assetCtx.js";
 import PageTitle from "../PageTitle.jsx";
@@ -42,21 +42,19 @@ const KEY_OF_URL = Object.fromEntries(Object.entries(URL_KEYS).map(([k, v]) => [
 const VENUE_FEEDS = new Set(["main", "xyz", "other", "spot", "earn", "staking", "vaults"]);
 
 // The scanner's context and events for the coins held: one GET each, again after each scan (the
-// shared scan-updated notice) or every 5 minutes while visible, with If-None-Match.
+// shared scan-updated notice) or every 5 minutes while visible. A plain GET (no custom header, so
+// no CORS preflight): the browser revalidates with the answer's ETag itself, an empty 304 when
+// nothing changed.
 function useReflex(coinsKey) {
   const [ctx, setCtx] = useState(null);
   const [ev, setEv] = useState(null);
   const [failed, setFailed] = useState({});
-  const tags = useRef({});
   const { scanUpdated } = useWebSocket();
   const get = useCallback(async (kind, set) => {
     if (!coinsKey) return;
-    const key = `${kind}|${coinsKey}`;
     try {
-      const res = await apiFetch(`/api/portfolio/${kind}?coins=${encodeURIComponent(coinsKey)}`, tags.current[key] ? { headers: { "If-None-Match": tags.current[key] } } : undefined);
-      if (res.status === 304) { setFailed(f => ({ ...f, [kind]: false })); return; }
+      const res = await apiFetch(`/api/portfolio/${kind}?coins=${encodeURIComponent(coinsKey)}`);
       if (!res.ok) throw new Error(String(res.status));
-      tags.current[key] = res.headers.get("ETag") || undefined;
       set(await res.json());
       setFailed(f => ({ ...f, [kind]: false }));
     } catch { setFailed(f => ({ ...f, [kind]: true })); }
@@ -66,7 +64,18 @@ function useReflex(coinsKey) {
     load(); get("events", setEv);
     return pollWhileVisible(load, 300_000);
   }, [load, get]);
-  useEffect(() => { if (scanUpdated) { load(); get("events", setEv); } }, [scanUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A scan notice while the tab is hidden waits for the tab to come back.
+  const missed = useRef(false);
+  useEffect(() => {
+    if (!scanUpdated) return;
+    if (document.hidden) { missed.current = true; return; }
+    load(); get("events", setEv);
+  }, [scanUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden && missed.current) { missed.current = false; load(); get("events", setEv); } };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load, get]);
   return { ctx, ev, failed: !!(failed.context || failed.events), ctxFailed: !!failed.context, retry: () => { load(); get("events", setEv); } };
 }
 
@@ -131,7 +140,7 @@ function LoadingShapes({ phone }) {
   </div>;
 }
 
-export default function PortfolioPage({ api, preview = false }) {
+export default function PortfolioPage({ api }) {
   const { effectiveAddress: account, readOnly, setViewAddress, walletClient, connect, error: walletError } = useWallet();
   const { isMobile: phone, width } = useViewport();
   const navigate = useNavigate();
@@ -155,13 +164,18 @@ export default function PortfolioPage({ api, preview = false }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 30_000); return () => clearInterval(t); }, []);
 
-  // Positions on every venue, largest first; the context covers the 12 largest.
+  // Positions on every venue, largest first.
   const positions = useMemo(() => {
     const out = [...positionsOf(f.main, "main"), ...positionsOf(f.xyz, "xyz")];
     for (const [dex, st] of Object.entries(f.others || {})) out.push(...positionsOf(st, dex));
     return out.sort((a, b) => b.value - a.value);
   }, [f.main, f.xyz, f.others]);
-  const coinsKey = useMemo(() => positions.slice(0, 12).map(p => p.coin).sort().join(","), [positions]);
+  // Asked once both the perps and TradFi accounts have answered (or failed), so the first visit
+  // sends one context request, not one per venue.
+  const venuesRead = !!f.feeds.main && !!f.feeds.xyz;
+  // Main perps first (the scanner covers them; TradFi only in part), then by size: at most 20.
+  const coinsKey = useMemo(() => (venuesRead ? [...positions].sort((a, b) => (b.venue === "main") - (a.venue === "main") || b.value - a.value)
+    .slice(0, 20).map(p => p.coin).sort().join(",") : ""), [positions, venuesRead]);
   const reflex = useReflex(coinsKey);
   // The scanner's context answered: until it does (or after it fails), what it reads is unknown.
   const ctxKnown = !!reflex.ctx && !reflex.ctxFailed;
@@ -242,39 +256,49 @@ export default function PortfolioPage({ api, preview = false }) {
     setTimeout(() => setFlash(c => (c === coin ? null : c)), 1200);
   }, []);
 
-  // Watch (the same store and toast as the Radar).
-  const { data: map4h, watched, telegram, toggleWatch } = useSetupMap("4h");
+  // Watch (the same store and toast as the Radar). The 4H map (the REFLEX cell's thumbnail) only
+  // loads with an address to show.
+  const { data: map4h, watched, telegram, toggleWatch } = useSetupMap(account ? "4h" : null);
   const [toast, setToast] = useState("");
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(""), 3500); return () => clearTimeout(t); }, [toast]);
   const onWatch = useCallback(async coin => setToast(watchToast(coin, await toggleWatch(coin, "4h"), telegram)), [toggleWatch, telegram]);
 
-  // Close and cancel: tradeActions.js. The sheet replaces window.confirm only with PF_CONFIRM_SHEET
-  // on; on the preview route it shows for review and sends nothing.
+  // Close and cancel: tradeActions.js, the same calls as TradingPanel.jsx. The close sheet is the
+  // confirm (TradingPanel used window.confirm); Keep, Escape, a click outside, the phone sheet closing,
+  // the address changing, or the position changing or going while it is open all mean "no".
   const [closing, setClosing] = useState(null);
   const [cancelling, setCancelling] = useState(null);
   const [notice, setNotice] = useState(null);
   const [sheet, setSheet] = useState(null);           // {row, anchor, resolve}
+  const sheetRef = useRef(null);
+  sheetRef.current = sheet;
   const anchorRef = useRef(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const actions = useMemo(() => makeTradeActions({
     api, hlClient, readOnly, walletClient, setClosing, setCancelling, setActionNotice: setNotice, fetchFast: f.fetchFast,
-    confirm: PF_CONFIRM_SHEET
-      ? coin => new Promise(resolve => setSheet({ row: rowsRef.current.find(r => r.coin === coin), anchor: anchorRef.current, resolve }))
-      : undefined,
+    confirm: coin => new Promise(resolve => {
+      sheetRef.current?.resolve(false);
+      const next = { row: rowsRef.current.find(r => r.coin === coin), anchor: anchorRef.current, resolve };
+      sheetRef.current = next;
+      setSheet(next);
+    }),
   }), [api, readOnly, walletClient, f.fetchFast]); // eslint-disable-line react-hooks/exhaustive-deps
   const canClose = !readOnly && !!walletClient;
   const onClose = (row, anchor) => {
-    if (preview) { setSheet({ row, anchor, resolve: null }); return; }
     anchorRef.current = anchor;
     const { coin, size, isLong } = closeArgs({ coin: row.coin, szi: row.szi });
     actions.closePosition(coin, size, isLong);
   };
-  const onCancel = (coin, oid) => {
-    if (preview) { setNotice({ section: "orders", coin, tone: "ok", text: ROWS.preview }); return; }
-    actions.cancelOrd(coin, oid);
-  };
-  const endSheet = ok => { sheet?.resolve?.(ok); setSheet(null); };
+  const onCancel = (coin, oid) => actions.cancelOrd(coin, oid);
+  const endSheet = useCallback(ok => { sheetRef.current?.resolve(ok); sheetRef.current = null; setSheet(null); }, []);
+  // An open sheet answers "no" when what it shows is no longer what is held, or the address changes.
+  useEffect(() => {
+    if (!sheet) return;
+    const live = rows.find(r => r.coin === sheet.row?.coin);
+    if (!live || live.szi !== sheet.row.szi) endSheet(false);
+  }, [rows, sheet, endSheet]);
+  useEffect(() => () => endSheet(false), [account, endSheet]);
 
   const toggleOpen = coin => setParam("open", openCoin === coin ? null : coin);
   useEffect(() => {
@@ -335,16 +359,16 @@ export default function PortfolioPage({ api, preview = false }) {
       <ActivityTabs tab={tab} onTab={k => setParam("tab", k === "orders" ? null : k)} orders={[...(f.orders || []), ...(f.ordersXyz || [])]} marks={marks} sides={sides}
         fills={f.fills} funding={f.funding} names={names} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone={phone} />
     </>}
-    {sheetRow && <RadarSheet open onClose={() => setParam("open", null)} labelledBy="pf-sheet-h">
+    {sheetRow && <RadarSheet open onClose={() => { if (sheet) endSheet(false); setParam("open", null); }} labelledBy="pf-sheet-h">
       <div className="pf-sh-head" id="pf-sheet-h"><CoinName coin={sheetRow.coin} names={names} size={20} />
         <span className="pf-side">{sheetRow.isLong ? ROWS.long : ROWS.short}{sheetRow.lev != null && <span className="pf-t3 m"> {sheetRow.lev}x</span>}</span>
         <span className={`m pf-sh-pnl ${pnlClass(sheetRow.upnl)}`}>{usd(sheetRow.upnl, { sign: true })}</span></div>
       <PositionDetail row={sheetRow} classified={classified} trip={trips.open[sheetRow.coin]} ev={evOf(sheetRow.coin)} openAt={openAtOf(sheetRow.coin)}
         windowStart={fillsStart ? fillsStart / 1000 : null} canCancel={canClose} onCancel={onCancel} cancelling={cancelling} phone />
-      {sheet?.row?.coin === sheetRow.coin ? <CloseBody row={sheetRow} preview={preview} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />
+      {sheet?.row?.coin === sheetRow.coin ? <CloseBody row={sheet.row} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />
         : <div className="pf-sh-acts"><Actions row={sheetRow} watching={watched.has(kKey(sheetRow.coin))} onWatch={onWatch} onClose={onClose} closing={closing === sheetRow.coin} canClose={canClose} /></div>}
     </RadarSheet>}
-    {sheet && !phone && <CloseConfirm row={sheet.row} anchor={sheet.anchor} preview={preview} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />}
+    {sheet && !phone && <CloseConfirm row={sheet.row} anchor={sheet.anchor} onConfirm={() => endSheet(true)} onKeep={() => endSheet(false)} />}
     {copied && <div className="smap-toast" role="status">{IDENTITY.copied}</div>}
     {toast && <div className="smap-toast" role="status">{toast}</div>}
   </div>;

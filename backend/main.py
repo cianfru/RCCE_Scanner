@@ -4511,11 +4511,13 @@ async def hyperlens_intel(coins: str = Query(..., max_length=200)):
 
 
 # ── Portfolio page context and events (portfolio_context.py). Keyed by coin only, from memory
-# and the signal log; no Hyperliquid call, no address. Off unless PORTFOLIO_CONTEXT is set.
+# and the signal log (read-only); no Hyperliquid call, no address. On unless PORTFOLIO_CONTEXT=0.
+# Each answer is kept a minute per scan and coin set, and goes through the edge cache.
 import portfolio_context as _pfctx  # noqa: E402
 
 _PF_MEMO = _pfctx.Memo()
 _PF_EVENTS_MEMO = _pfctx.Memo()
+_PF_BODIES = _pfctx.BodyCache(ttl=60, max_items=512)
 
 
 def _pf_scan_id() -> str:
@@ -4581,16 +4583,21 @@ def _pf_coins(coins: str) -> list:
 
 @app.get("/api/portfolio/context")
 async def portfolio_context_view(request: Request, coins: str = Query("", max_length=400)):
-    """Per coin (at most 12, raw Hyperliquid names): the scanner's 4H and 1D reading, the weekly band,
+    """Per coin (at most 20, raw Hyperliquid names): the scanner's 4H and 1D reading, the weekly band,
     trend line, swing, daily ATR and profitable traders' counts and median entries. Same answer for
-    every visitor; memoised per scan; ETag and max-age=60."""
+    every visitor; memoised per scan, the whole answer kept a minute; ETag and max-age=60."""
     wanted = _pf_coins(coins)
     import degrade
-
-    def build():
-        return _pfctx.context_body(wanted, _pf_sources(), _pf_scan_id(), degrade.scan_as_of(), _PF_MEMO)
-    body = await asyncio.to_thread(build)
-    return _pf_respond(request, body, _pfctx.etag(body))
+    scan_id = _pf_scan_id()
+    key = ("context", scan_id, tuple(wanted))
+    hit = _PF_BODIES.get(key)
+    if hit is None:
+        def build():
+            body = _pfctx.context_body(wanted, _pf_sources, scan_id, degrade.scan_as_of(), _PF_MEMO)
+            return body, _pfctx.etag(body)
+        hit = await asyncio.to_thread(build)
+        _PF_BODIES.put(key, hit)
+    return _pf_respond(request, *hit)
 
 
 @app.get("/api/portfolio/events")
@@ -4600,8 +4607,16 @@ async def portfolio_events_view(request: Request, coins: str = Query("", max_len
     newest event id."""
     wanted = _pf_coins(coins)
     from signal_log import _DB_PATH as signal_db
-    body = await asyncio.to_thread(_pfctx.events_body, wanted, str(signal_db), None, _PF_EVENTS_MEMO, _pf_scan_id())
-    return _pf_respond(request, body, _pfctx.events_etag(body))
+    scan_id = _pf_scan_id()
+    key = ("events", scan_id, _pfctx.window_start(time.time()), tuple(wanted))
+    hit = _PF_BODIES.get(key)
+    if hit is None:
+        def build():
+            body = _pfctx.events_body(wanted, str(signal_db), None, _PF_EVENTS_MEMO, scan_id)
+            return body, _pfctx.events_etag(body)
+        hit = await asyncio.to_thread(build)
+        _PF_BODIES.put(key, hit)
+    return _pf_respond(request, *hit)
 
 
 _SETUP_MAP_CACHE: dict = {}

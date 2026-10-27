@@ -1,11 +1,9 @@
 // Close and cancel, moved verbatim from TradingPanel.jsx (Portfolio v2, section 5). Only the
 // presentation changes: the same guard, the same calls and arguments, the same journal request and
-// notice texts. The one exception: with PF_CONFIRM_SHEET on, the confirm is the close sheet
-// (CloseConfirm.jsx) instead of window.confirm. It stays off until the owner approves it.
+// notice texts. The confirm is the page's close sheet (CloseConfirm.jsx) where the old page used
+// window.confirm; closeEquivalence.test.js checks that both paths send byte-identical requests.
 // Never from this page: placeMarketOrder or setLeverage, or a close or cancel on a builder-dex row.
 import { kKey } from "../../utils/tickerRenames.js";
-
-export const PF_CONFIRM_SHEET = false;
 
 // Once the exchange has accepted an action, a journal failure cannot undo it (from Codex).
 export async function executeAndJournal(execute, journal) {
@@ -32,6 +30,11 @@ export const closeArgs = position => ({ coin: position.coin, size: Math.abs(pars
 // A row that can be closed or cancelled from this page: main-dex perps only (hlOrder.assetFor throws
 // for builder-dex coins).
 export const tradable = coin => typeof coin === "string" && !coin.includes(":") && !coin.startsWith("@");
+
+// "Open on Radar" for a row. The Radar keys its coins by the app's key (KPEPE), so the focus is the
+// app's key; TradingPanel sent Hyperliquid's name (kPEPE), which found no k market there. Every
+// other coin gets the same address as before.
+export const radarHref = coin => `/radar?tf=4h&focus=${encodeURIComponent(kKey(coin))}`;
 
 // deps: { api, hlClient, readOnly, walletClient, setClosing, setCancelling, setActionNotice, fetchFast,
 // confirm(coin) -> boolean | Promise<boolean>, fetch }.

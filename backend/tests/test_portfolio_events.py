@@ -92,7 +92,7 @@ def test_missing_database_gives_empty_lists(tmp_path):
     assert body["coins"]["HYPE"]["events"] == [] and body["last_id"] == 0
 
 
-def test_route_is_off_by_default_and_answers_304(tmp_path, monkeypatch):
+def test_route_is_on_by_default_and_answers_304(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     import main
@@ -103,9 +103,10 @@ def test_route_is_off_by_default_and_answers_304(tmp_path, monkeypatch):
         raise AssertionError("outbound call from the portfolio events")
     monkeypatch.setattr(aiohttp.ClientSession, "_request", aboom)
     c = TestClient(main.app)
-    monkeypatch.delenv("PORTFOLIO_CONTEXT", raising=False)
+    monkeypatch.setenv("PORTFOLIO_CONTEXT", "off")
     assert c.get("/api/portfolio/events?coins=HYPE").status_code == 404
-    monkeypatch.setenv("PORTFOLIO_CONTEXT", "1")
+    monkeypatch.delenv("PORTFOLIO_CONTEXT", raising=False)
+    monkeypatch.setattr(main, "_PF_BODIES", pc.BodyCache())
     ws = pc.window_start(__import__("time").time())
     db = _db(tmp_path / "s.db", signals=[("HYPE/USDT", "4h", "TRIM", "STRONG_LONG", "MARKUP", 80.0, ws + DAY)])
     monkeypatch.setattr(signal_log, "_DB_PATH", db)

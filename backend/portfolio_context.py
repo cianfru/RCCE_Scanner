@@ -10,9 +10,14 @@ traders sit on it.
 30-day window, plus what each read at the window's start. The page clips them to each position's
 open time.
 
-Both are keyed by coin only: the same answer for every visitor, never an address. Both read
-memory (scan results, TradFi results, the candle store, the positioning map) and the signal log's
-SQLite tables; neither calls Hyperliquid. Off unless PORTFOLIO_CONTEXT is set (1/true/yes/on).
+Both are keyed by coin only: the same answer for every visitor, never an address (the page asks
+with the coins it holds; no wallet address reaches these endpoints, and nothing here logs or keeps
+one). Both read memory (scan results, TradFi results, the candle store, the positioning map) and the
+signal log's SQLite tables, read-only; neither calls Hyperliquid. Each answer is kept for a minute per
+scan and coin set (BodyCache), with an ETag, and goes through the edge cache (edge.EDGE_PATHS).
+
+On by default. The kill switch: PORTFOLIO_CONTEXT=0 (or false/no/off) on Railway answers both with
+404, and the page shows the scanner columns as not answering.
 """
 from __future__ import annotations
 
@@ -28,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-MAX_COINS = 12
+MAX_COINS = 20
 ATR_LEN = 14
 EVENTS_WINDOW_DAYS = 30
 EVENTS_CAP = 60
@@ -38,8 +43,9 @@ _COIN_RE = re.compile(r"^[A-Za-z0-9@:._-]{1,24}$")
 
 
 def enabled(env: Optional[dict] = None) -> bool:
+    """On unless PORTFOLIO_CONTEXT is 0, false, no or off."""
     env = os.environ if env is None else env
-    return str(env.get("PORTFOLIO_CONTEXT", "0")).strip().lower() in ("1", "true", "yes", "on")
+    return str(env.get("PORTFOLIO_CONTEXT", "1")).strip().lower() not in ("0", "false", "no", "off")
 
 
 def parse_coins(raw: Optional[str]) -> List[str]:
@@ -243,15 +249,23 @@ class Memo:
         return val, None
 
 
-def context_body(coins: Iterable[str], src: Sources, scan_id: str, as_of: Optional[float], memo: Memo,
+def context_body(coins: Iterable[str], src, scan_id: str, as_of: Optional[float], memo: Memo,
                  now: Optional[float] = None) -> dict:
-    """``stale`` and an older ``as_of`` when any coin was answered from its last good reading."""
+    """``stale`` and an older ``as_of`` when any coin was answered from its last good reading.
+    ``src``: the Sources, or a function that builds them (called once, and only when a coin is not
+    memoised for this scan)."""
     now = time.time() if now is None else now
     out: Dict[str, dict] = {}
     oldest = None
+    built: List[Sources] = []
+
+    def sources() -> Sources:
+        if not built:
+            built.append(src() if callable(src) else src)
+        return built[0]
     for c in coins:
         try:
-            val, built_at = memo.get(scan_id, c, lambda c=c: coin_context(c, src, now), now)
+            val, built_at = memo.get(scan_id, c, lambda c=c: coin_context(c, sources(), now), now)
         except Exception:
             val, built_at = {"covered": False}, None
         out[c] = val
@@ -261,6 +275,36 @@ def context_body(coins: Iterable[str], src: Sources, scan_id: str, as_of: Option
     if oldest is not None:
         body["stale"] = True
     return body
+
+
+class BodyCache:
+    """Whole answers for a short time, keyed by what they depend on (the scan id and the coin set):
+    a page polling, or many pages holding the same coins, cost one build per scan. Bounded; the
+    oldest entry goes first."""
+
+    def __init__(self, ttl: float = 60.0, max_items: int = 512) -> None:
+        self.ttl, self.max_items = ttl, max_items
+        self._d: Dict[tuple, tuple] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: tuple, now: Optional[float] = None):
+        now = time.time() if now is None else now
+        with self._lock:
+            hit = self._d.get(key)
+            if hit is None or now - hit[0] > self.ttl:
+                return None
+            return hit[1]
+
+    def put(self, key: tuple, value, now: Optional[float] = None) -> None:
+        now = time.time() if now is None else now
+        with self._lock:
+            if key not in self._d and len(self._d) >= self.max_items:
+                for k in [k for k, (t, _) in self._d.items() if now - t > self.ttl] or [min(self._d, key=lambda k: self._d[k][0])]:
+                    self._d.pop(k, None)
+            self._d[key] = (now, value)
+
+    def __len__(self) -> int:
+        return len(self._d)
 
 
 def etag(body: Any) -> str:

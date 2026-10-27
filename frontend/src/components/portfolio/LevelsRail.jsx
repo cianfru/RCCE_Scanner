@@ -68,7 +68,7 @@ export function RailSvg({ row, width, height = 44, labels = true, compact = fals
   const y = compact ? 21 : Y;
   const pnl = row.upnl >= 0 ? "var(--t-profit)" : "var(--t-loss)";
   const tri = (x, up) => up ? `M${x - 3.5},${y - 5} L${x + 3.5},${y - 5} L${x},${y - 11} Z` : `M${x - 3.5},${y + 5} L${x + 3.5},${y + 5} L${x},${y + 11} Z`;
-  const base = { mark: y - (compact ? 9 : 11), liq: y + (compact ? 13 : 19), sl: y + 19, tpMore: y - 5, slMore: y + 11 };
+  const base = { mark: y - (compact ? 9 : 11), liq: y + (compact ? 13 : 19), sl: y + 19, tpMore: y - 5 };
   return <svg className="pf-rail" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
     <defs>
       <pattern id={hatchId} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -91,8 +91,11 @@ export function RailSvg({ row, width, height = 44, labels = true, compact = fals
     {m.mark != null && <rect x={m.mark - 1} y={y - 8} width="2" height="16" className="pf-r-mark" />}
     {labels && model.labels.map(l => {
       if (l.kind === "mark") return <text key="m" x={l.x0} y={base.mark} className={`pf-r-px${flash ? ` pf-flash-${flash}` : ""}`}>{l.text}</text>;
-      if (l.kind === "tpMore" || l.kind === "slMore") return <text key={l.kind} x={l.x0} y={base[l.kind]} className="pf-r-more">{l.text}</text>;
-      return <text key={l.kind} x={l.x0} y={base[l.kind]} className="pf-r-lab">{l.kind === "liq" ? RAIL.liq : RAIL.sl}</text>;
+      if (l.kind === "tpMore") return <text key={l.kind} x={l.x0} y={base[l.kind]} className="pf-r-more">{l.text}</text>;
+      if (l.kind === "liq") return <text key="liq" x={l.x0} y={base.liq} className="pf-r-lab">{RAIL.liq}</text>;
+      // "SL", or "SL +2" when more stops sit further out.
+      const more = l.text.split(" ")[1];
+      return <text key="sl" x={l.x0} y={base.sl} className="pf-r-lab">{RAIL.sl}{more && <tspan className="pf-r-more">{` ${more}`}</tspan>}</text>;
     })}
   </svg>;
 }

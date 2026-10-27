@@ -9,8 +9,23 @@ function memStorage() {
 const ADDR = "0xABCDEFabcdef0000000000000000000000000001";
 const snap = (t, coins = {}, o = {}) => ({ v: 1, t, equity: 1000, upnl: 10, lastFillT: null, coins, ...o });
 
-test("key is per address, lowercased", () => {
-  assert.equal(snapKey(ADDR), `reflex.pf.snap.v1.${ADDR.toLowerCase()}`);
+test("key is per address, case-blind, and never holds the address", () => {
+  assert.equal(snapKey(ADDR), snapKey(ADDR.toLowerCase()));
+  assert.match(snapKey(ADDR), /^reflex\.pf\.snap\.v1\.[0-9a-f]{16}$/);
+  assert.ok(!snapKey(ADDR).toLowerCase().includes(ADDR.toLowerCase().slice(2, 10)));
+  assert.notEqual(snapKey(ADDR), snapKey("0xABCDEFabcdef0000000000000000000000000002"));
+});
+
+test("at most six addresses' snapshots are kept, the most recent", () => {
+  const m = new Map();
+  const s = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k),
+    key: i => [...m.keys()][i] ?? null, get length() { return m.size; } };
+  s.setItem("other.app.key", "1");
+  for (let i = 1; i <= 9; i++) writeCurrent(s, `0x${String(i).padStart(40, "0")}`, null, snap(i * 1000));
+  const kept = [...m.keys()].filter(k => k.startsWith("reflex.pf.snap.v1."));
+  assert.equal(kept.length, 6);
+  assert.ok(m.has(snapKey(`0x${"9".padStart(40, "0")}`)) && !m.has(snapKey(`0x${"1".padStart(40, "0")}`)));
+  assert.equal(s.getItem("other.app.key"), "1");
 });
 
 test("two slots: a first visit has no baseline; a cur older than 30 min becomes the baseline", () => {

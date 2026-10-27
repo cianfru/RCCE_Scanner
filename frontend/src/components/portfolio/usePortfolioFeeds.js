@@ -34,10 +34,12 @@ export default function usePortfolioFeeds(account) {
   const [feeds, setFeeds] = useState({});
   const scope = useRef(null);
   const cache = useRef({ fills: [], funding: [], otherDexs: null, sizes: { main: "", xyz: "" } });
+  const fastInFlight = useRef(null);
 
   useEffect(() => {
     const s = { account };
     scope.current = s;
+    fastInFlight.current = null;
     setD({}); setFeeds({});
     cache.current = { fills: [], funding: [], otherDexs: null, sizes: { main: "", xyz: "" } };
     return () => { if (scope.current === s) scope.current = null; };
@@ -102,10 +104,12 @@ export default function usePortfolioFeeds(account) {
     put("funding", merged);
   }, [account, read, put]);
 
-  // Main and xyz every 15 s. A size change refreshes orders and fills at once.
-  const fetchFast = useCallback(async () => {
+  // Main and xyz every 15 s (the old page's rate). A size change refreshes orders and fills at once.
+  // One read at a time: a tick, the tab coming back and an action's refresh never stack up.
+  const fetchFast = useCallback(async (fresh = false) => {
     if (!account) return;
-    await Promise.all([
+    if (fastInFlight.current && !fresh) return fastInFlight.current;
+    const run = Promise.all([
       read("main", () => hlClient.getClearinghouseState(account), v => {
         put("main", v);
         const k = sizeKey(v);
@@ -119,7 +123,9 @@ export default function usePortfolioFeeds(account) {
         if (cache.current.sizes.xyz && k !== cache.current.sizes.xyz) fetchOrders();
         cache.current.sizes.xyz = k;
       }),
-    ]);
+    ]).finally(() => { if (fastInFlight.current === run) fastInFlight.current = null; });
+    fastInFlight.current = run;
+    await run;
   }, [account, read, put, fetchOrders, fetchFills]);
 
   const fetchVenues = useCallback(async () => {
@@ -206,9 +212,12 @@ export default function usePortfolioFeeds(account) {
     if (f.has("other") || f.has("meta")) fetchOnce();
   }, [failed, fetchFast, fetchOrders, fetchFills, fetchFunding, fetchSpot, fetchMids, fetchPortfolio, fetchSlow, fetchOnce]);
 
+  // After a close or cancel: a fresh read of positions and orders, never one already in flight.
+  const afterAction = useCallback(async () => { await fetchFast(true); await fetchOrders(); }, [fetchFast, fetchOrders]);
+
   return {
     ...d, feeds, failed, failedNames: [...new Set(failed.map(k => FEEDS[k] || k))],
     lastMainAt: feeds.main?.at ?? null, ordersRead: { main: !!feeds.orders?.at, xyz: !!feeds.ordersXyz?.at },
-    fetchFast: async () => { await fetchFast(); await fetchOrders(); }, retry,
+    fetchFast: afterAction, retry,
   };
 }

@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { makeTradeActions, closeArgs, tradable, executeAndJournal, PF_CONFIRM_SHEET } from "./tradeActions.js";
+import { makeTradeActions, closeArgs, tradable, executeAndJournal } from "./tradeActions.js";
 
 function harness(over = {}) {
   const calls = { close: [], cancel: [], fetch: [], notices: [], closing: [], cancelling: [], fast: 0 };
@@ -93,8 +93,21 @@ test("xyz and other builder-dex rows are never closed or cancelled from this pag
   assert.doesNotMatch(read("./PortfolioPage.jsx") + read("./BoardRow.jsx") + read("./OrdersList.jsx"), /placeMarketOrder|setLeverage/);
 });
 
-test("the sheet stays behind its flag until approved", async () => {
-  assert.equal(PF_CONFIRM_SHEET, false);
+test("the close waits for the sheet: nothing is sent until it answers, Keep sends nothing", async () => {
+  let answer;
+  const { calls, actions } = harness({ confirm: () => new Promise(resolve => { answer = resolve; }) });
+  const pending = actions.closePosition("HYPE", 358.94, true);
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal(calls.close.length + calls.fetch.length + calls.closing.length, 0);
+  answer(true);
+  await pending;
+  assert.equal(calls.close.length, 1);
+  const kept = harness({ confirm: async () => false });
+  await kept.actions.closePosition("HYPE", 358.94, true);
+  assert.equal(kept.calls.close.length + kept.calls.fetch.length, 0);
+  // The page passes the sheet as the confirm; window.confirm stays only as the fallback.
+  const page = readFileSync(new URL("./PortfolioPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /confirm: coin => new Promise\(resolve => \{/);
   const r = await executeAndJournal(async () => ({ oid: 1 }), async () => { throw new Error("down"); });
   assert.deepEqual(r, { execution: { oid: 1 }, journalPending: true });
 });

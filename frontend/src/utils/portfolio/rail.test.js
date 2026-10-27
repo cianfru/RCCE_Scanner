@@ -76,12 +76,30 @@ test("labels: the mark price moves off a take-profit glyph; +n drops on a collis
   assert.ok(mark.x0 + mark.w <= m.m.tp - 3.5, "price ends left of the take-profit glyph");
   const more = m.labels.find(l => l.kind === "tpMore");
   if (more) assert.ok(more.x0 >= m.m.tp + 3.5 || more.x0 + more.w <= m.m.tp - 3.5);
-  // The stops' +n goes on the side away from the mark and never covers the entry circle.
+  // BTC: a stop just under the mark with two more further out reads "SL +2" as one label under the
+  // track, clear of the stop, entry and mark glyphs (they sit above y = 11), and of every other label.
   const b = railModel({ isLong: true, mark: 80221, entry: 80400, stops: [{ px: 80150 }, { px: 79000 }, { px: 78000 }], width: W, text: { mark: "80,221" } });
-  const sm = b.labels.find(l => l.kind === "slMore");
-  assert.ok(sm, "room on the far side");
-  assert.ok(sm.x0 + sm.w <= b.m.stop - 3.5, "+n left of a stop that sits left of the mark");
-  assert.ok(sm.x0 + sm.w < b.m.entry - 4.5 || sm.x0 > b.m.entry + 4.5);
+  const sl = b.labels.find(l => l.kind === "sl");
+  assert.equal(sl.text, "SL +2");
+  assert.equal(b.labels.find(l => l.kind === "slMore"), undefined);
+  assert.ok(sl.x0 <= b.m.stop + 3.5 && sl.x0 + sl.w >= b.m.stop - 3.5, "under its stop glyph");
+  const band = l => (l.kind === "mark" ? [-20, -10] : l.kind === "tpMore" ? [-13, -5] : [11, 20]);
+  for (const p of b.labels) for (const q of b.labels) {
+    if (p === q) continue;
+    const overlap = p.x0 < q.x0 + q.w && q.x0 < p.x0 + p.w && band(p)[0] < band(q)[1] && band(q)[0] < band(p)[1];
+    assert.ok(!overlap, `${p.kind} overlaps ${q.kind}`);
+  }
+  // On a phone card (compact) there is no SL text at all.
+  const c = railModel({ isLong: true, mark: 80221, entry: 80400, stops: [{ px: 80150 }, { px: 79000 }], width: 340, compact: true, text: { mark: "80,221" } });
+  assert.equal(c.labels.find(l => l.kind === "sl"), undefined);
+});
+
+test("labels: XMR (live data): the mark price ends left of a take-profit just right of the mark", () => {
+  const x = railModel({ isLong: true, mark: 610.8, entry: 606.6, tps: [{ px: 612.1 }, { px: 640 }], band: { lo: 520, hi: 545 }, width: 591, text: { mark: "610.8" } });
+  const mk = x.labels.find(l => l.kind === "mark");
+  assert.ok(x.m.tp - x.m.mark > 4 && x.m.tp - x.m.mark < 12, `tp ${x.m.tp - x.m.mark} px right of the mark`);
+  assert.ok(mk.x0 + mk.w <= x.m.tp - 3.5, "the price clears the take-profit glyph");
+  assert.ok(Math.abs(mk.x0 + mk.w - x.m.mark) < 1e-9, "anchored at its end on the mark");
 });
 
 test("labels: the traders' diamond blocks a +n; Liq clears a broken axis", () => {
