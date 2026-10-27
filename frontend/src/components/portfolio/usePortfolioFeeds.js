@@ -23,7 +23,9 @@ import { FEEDS } from "./copy.js";
 const S = 1000;
 export const CADENCE = { fast: 15 * S, venues: 60 * S, spot: 60 * S, orders: 60 * S, fills: 60 * S, mids: 120 * S, portfolio: 300 * S, slow: 600 * S, history: 5 * S };
 const DAY = 86400_000;
-export const HEAD_MS = DAY;                       // the first read of fills and funding
+// The first read of fills and funding: the last 24 hours and a margin, so the Since 24H baseline
+// (taken when the page opened, a moment before this read) is always inside it.
+export const HEAD_MS = DAY + 30 * 60 * 1000;
 export const SESSION_MS = 30 * 60 * 1000;         // spot names and the builder dexes, per browser session
 export const PAGE = { fills: 2000, funding: 500 };
 const TYPE = { fills: "userFillsByTime", funding: "userFunding" };
