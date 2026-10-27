@@ -57,3 +57,4 @@ Since the October change (`backend/memlog.py`):
 - **Pruning OHLCV series of markets no longer scanned.** About 16 MB. The executor's price guard and the position monitor read stored candles for symbols that can be outside the scan, and the executor stays as it is.
 - **Compressing `opportunities.db` rows.** About 4× smaller. It changes the stored format the research tools read. With the page-cache release the file no longer costs RAM, only volume space (cents).
 - **The paper-ledger reload and the executor state rewrite.** Both need the owner's approval: paper and live trading code.
+- **Idle mode while only hidden tabs are open.** Counting only visible tabs would cut CPU, but it would also slow the synthesis pass, where the executor's stop checks and the position alerts run. So an open hidden tab still keeps the app on the active cadence.

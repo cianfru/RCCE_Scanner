@@ -8,7 +8,7 @@ import bybit_futures_data as bf
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch):
     monkeypatch.setattr(bf, "_cache", bf._Cache())
-    monkeypatch.setattr(bf, "_failed_at", 0.0)
+    monkeypatch.setattr(bf, "_failed_at", None)
 
 
 ROWS = [

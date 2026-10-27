@@ -66,7 +66,7 @@ _cache = _Cache()
 _TICKERS_URL = "https://api.bybit.com/v5/market/tickers?category=linear"
 _PREFIXES = ("1000000", "10000", "1000", "100")   # multiplier prefixes, e.g. 1000PEPEUSDT
 _FAIL_BACKOFF_S = 15 * 60                          # unreachable or blocked: retry after 15 min
-_failed_at = 0.0
+_failed_at: Optional[float] = None               # monotonic time of the last failure
 
 
 def _scanner_symbol(bybit_symbol: str) -> Optional[str]:
@@ -144,7 +144,7 @@ async def fetch_bybit_futures_metrics(
 
     if not wanted:
         return {}
-    if time.monotonic() - _failed_at < _FAIL_BACKOFF_S:
+    if _failed_at is not None and time.monotonic() - _failed_at < _FAIL_BACKOFF_S:
         fallback = _cache.get_fallback() or {}
         return {s: fallback[s] for s in wanted if s in fallback}
 

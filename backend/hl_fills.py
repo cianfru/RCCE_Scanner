@@ -259,9 +259,17 @@ class Store:
             return cur.rowcount
 
     def compact(self) -> None:
+        # executescript runs the pragma to completion (execute() steps it once and frees one page).
+        # 2,000 pages (8 MB) at a time, so readers waiting on the lock are not held up for long.
+        free = None
+        for _ in range(10_000):
+            with self.lock:
+                left = self.db.execute("PRAGMA freelist_count").fetchone()[0]
+                if not left or left == free:     # nothing left, or not an auto_vacuum=INCREMENTAL file
+                    break
+                free = left
+                self.db.executescript("PRAGMA incremental_vacuum(2000);")
         with self.lock:
-            # executescript runs the pragma to completion; execute() steps it once and frees one page.
-            self.db.executescript("PRAGMA incremental_vacuum;")
             self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def size_bytes(self) -> int:
@@ -270,6 +278,7 @@ class Store:
 
 _store: Optional[Store] = None
 _meta: Dict[str, dict] = {}          # address -> wallets row (kept in step with the table)
+_counted: set = set()                # wallet ids whose n a completed read in this process set
 
 
 def store() -> Store:
@@ -287,6 +296,7 @@ def use_store(s: Optional[Store]) -> None:
     _meta = s.wallets() if s is not None else {}
     _load_cache.clear()
     _load_used.clear()
+    _counted.clear()
     _rev.clear()
 
 
@@ -425,6 +435,8 @@ async def sync(session, address: str, reason: str) -> int:
     address = address.lower()
     w = _meta.get(address) or await asyncio.to_thread(st.wallet, address)
     wid = w["id"]
+    trusted = wid in _counted        # its stored n was set by a completed read in this process
+    _counted.discard(wid)            # a read cut short leaves it out, so the next one recounts
     backfill = w["backfilled_at"] is None
     now = time.time()
     now_ms = int(now * 1000)
@@ -495,9 +507,10 @@ async def sync(session, address: str, reason: str) -> int:
             twap_cursor = max(tstart, tlast or 0, (now_ms - 60_000) if tdone else 0)
     # Trim and recount only when the wallet can be over the cap: both read the wallet's whole
     # key range, which ~1,700 syncs a day would otherwise pull through the page cache. The stored
-    # count plus the rows inserted is exact (maintain() recounts after its prunes).
+    # count plus the rows inserted is exact when the last read of this wallet in this process
+    # completed (maintain() recounts after its prunes); otherwise count again.
     known = w.get("n")
-    if backfill or known is None or known + added > MAX_FILLS_PER_WALLET:
+    if backfill or not trusted or known is None or known + added > MAX_FILLS_PER_WALLET:
         trimmed, oldest = await asyncio.to_thread(st.trim, wid, MAX_FILLS_PER_WALLET)
         if oldest is not None and trimmed:
             covered = max(covered or 0, oldest / 1000)
@@ -510,6 +523,7 @@ async def sync(session, address: str, reason: str) -> int:
         fields["backfilled_at"] = now
         _stats["backfilled_now"] += 1
     await asyncio.to_thread(st.update, wid, **fields)
+    _counted.add(wid)
     w = dict(w, **fields)
     _meta[address] = w
     if added or trimmed or backfill:
@@ -837,6 +851,7 @@ async def load(address: str) -> Optional[dict]:
         return None
     hit = _load_cache.get(address.lower())
     if hit and hit[0] == _rev.get(address.lower(), 0):
+        _load_used[address.lower()] = time.time()
         return hit[1]
     return await asyncio.to_thread(stored_fills, address)
 

@@ -228,6 +228,10 @@ def _drop(path: Path) -> bool:
                 try:
                     if os.fstat(fd).st_ino != os.stat(key).st_ino:
                         fd = None          # replaced database: open the new one, leave the old fd open
+                except FileNotFoundError:
+                    # Deleted: no other process can open it, so no lock that matters goes with it.
+                    os.close(_kept_fds.pop(key))
+                    return False
                 except OSError:
                     return False
             if fd is None:

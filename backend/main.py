@@ -446,8 +446,9 @@ async def _periodic_scan():
                     for r in cache.results.get("4h", [])
                     if r.get("price")
                 }
-                if current_prices:
-                    await sig_log.update_outcomes(current_prices)
+                if current_prices and await sig_log.update_outcomes(current_prices):
+                    from signal_analytics import shared as shared_analytics
+                    shared_analytics(sig_log).invalidate_cache()     # win rates follow new outcomes
             except Exception:
                 logger.debug("Signal outcome update failed (non-fatal)")
 

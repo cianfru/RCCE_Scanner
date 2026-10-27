@@ -56,11 +56,11 @@ def mark_active(source: str = "") -> None:
 
 
 def _ws_client_count() -> int:
-    """Open WebSockets whose tab is visible: a hidden tab keeps its socket but is told nothing
-    until it resumes, so it should not hold every loop at the active cadence."""
+    """Every open WebSocket, hidden tabs included: the synthesis cadence (and the executor and
+    alert checks that run in it) stays at the active pace while any page is open."""
     try:
         from ws_hub import WebSocketHub
-        return WebSocketHub.get().active_count
+        return WebSocketHub.get().client_count
     except Exception:
         return 0
 

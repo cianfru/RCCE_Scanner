@@ -2390,7 +2390,7 @@ async def run_tradfi_scan(
         weekly_batch = await fetch_batch_hip3("1w")
         # Fill weekly gaps with yfinance, only when HIP-3 left one: importing yfinance
         # (and pandas) costs ~65 MB of RSS for the life of the process.
-        if any(weekly_batch.get(sym) is None for sym in TRADFI_SYMBOL_LIST):
+        if any(weekly_batch.get(s["symbol"]) is None for s in TRADFI_SYMBOLS):   # the live list (edited in place)
             try:
                 yf_weekly = await fetch_batch_yfinance("1w")
                 for sym, data in yf_weekly.items():
