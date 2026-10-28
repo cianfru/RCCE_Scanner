@@ -87,7 +87,8 @@ class ReadTests(unittest.TestCase):
         self.assertEqual((len(got), cov, capped), (7000, None, 0))
 
     def test_near_the_api_cap_coverage_starts_at_the_first_fill_read(self):
-        (got, cov, capped), times = self.run_read(9800)
+        with patch.object(wr, "MAX_REG_PAGES", 3):          # room to read ~10,000 without taking the newest window only
+            (got, cov, capped), times = self.run_read(9800)
         self.assertEqual((len(got), capped), (9800, 0))
         self.assertEqual(cov, times[0])
 
