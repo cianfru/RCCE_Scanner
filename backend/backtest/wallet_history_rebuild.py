@@ -59,6 +59,7 @@ SMART_PNL, SMART_EQ, WHALE_EQ = 100_000, 10_000, 1_000_000
 CAND_PNL, CAND_AV, CAND_VLM = 100_000, 1_000_000, 100_000_000
 WHALE_LIKELY_AV, WHALE_LIKELY_VLM = 1_000_000, 1_000_000_000
 MAX_REG_PAGES, MAX_TWAP_PAGES = 3, 2
+HL_CAP_SEEN = 9_500                  # near Hyperliquid's ~10,000 latest fills per wallet (hl_fills.HL_RECENT_CAP)
 MAX_POSITIONS = 25
 FLAT_BELOW = 1e-6           # float leftovers of a full close (the API's sizes carry noise), as research/traders_turn.py
 PAGE = 2000
@@ -164,7 +165,16 @@ def merge(*lists):
 def read_kind(addr: str, kind: str, latest_kind: str, now: int):
     """(fills since START, coverage start or None when complete, capped). One page from START when it is not
     full; else the latest 2,000 too, and when the gap between them takes more than the cap in pages, only the
-    newest window (coverage then starts at its first fill)."""
+    newest window (coverage then starts at its first fill). Hyperliquid serves only about a wallet's latest
+    10,000 fills, so a read that reaches HL_CAP_SEEN may be cut at its oldest end: coverage starts at its first
+    fill too (as hl_fills does)."""
+    got, cov, capped = _read_kind(addr, kind, latest_kind, now)
+    if cov is None and len(got) >= HL_CAP_SEEN:
+        cov = got[0]["time"]
+    return got, cov, capped
+
+
+def _read_kind(addr: str, kind: str, latest_kind: str, now: int):
     first = fills_since(addr, START, now, kind, max_pages=1)
     if len(first) < PAGE:
         return first, None, 0

@@ -54,6 +54,43 @@ class PositionsTests(unittest.TestCase):
             self.assertFalse(wr.is_perp(f), f)
 
 
+class ReadTests(unittest.TestCase):
+    """read_kind: one page for a quiet wallet, the newest window for a busy one, coverage cut near the API's cap."""
+
+    def run_read(self, total, start=100 * DAY, now=200 * DAY):
+        times = [start + int(i * (now - start) / total) for i in range(total)]
+        fill = lambda t: {"time": t, "tid": t, "oid": t, "coin": "BTC", "side": "B", "sz": "1", "startPosition": "0"}
+
+        def fills_since(addr, s0, end, kind, max_pages=50):
+            out = [fill(t) for t in times if s0 <= t <= end]
+            return out[:2000 * max_pages]
+
+        def info(body):
+            return [fill(t) for t in times[-2000:]]
+        with patch.object(wr, "START", start), patch.object(wr, "fills_since", fills_since), patch.object(wr, "info", info):
+            return wr.read_kind("0xabc", "userFillsByTime", "userFills", now), times
+
+    def test_a_quiet_wallet_is_one_page_and_complete(self):
+        (got, cov, capped), times = self.run_read(1500)
+        self.assertEqual((len(got), cov, capped), (1500, None, 0))
+
+    def test_a_busy_wallet_is_read_in_full_when_the_gap_is_short(self):
+        (got, cov, capped), _ = self.run_read(7000)
+        self.assertEqual((len(got), cov, capped), (7000, None, 0))
+
+    def test_near_the_api_cap_coverage_starts_at_the_first_fill_read(self):
+        (got, cov, capped), times = self.run_read(9800)
+        self.assertEqual((len(got), capped), (9800, 0))
+        self.assertEqual(cov, times[0])
+
+    def test_a_very_busy_wallet_keeps_its_newest_window(self):
+        (got, cov, capped), times = self.run_read(40_000)
+        self.assertEqual(capped, 1)
+        self.assertGreater(cov, times[0])
+        self.assertEqual(got[-1]["time"], times[-1])
+        self.assertLessEqual(len(got), 2000 * (wr.MAX_REG_PAGES + 2))
+
+
 class AggregateTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="whr_test_")
