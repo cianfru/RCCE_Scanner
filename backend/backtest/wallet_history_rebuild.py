@@ -64,6 +64,8 @@ MAX_POSITIONS = 25
 FLAT_BELOW = 1e-6           # float leftovers of a full close (the API's sizes carry noise), as research/traders_turn.py
 PAGE = 2000
 COLUMNS = ["day", "wallets", "positioned", "long", "short", "long_usd", "short_usd", "sampled"]
+COINS = ("BTC", "ETH", "SOL", "HYPE")       # main coins: per coin, wallets long and short it (as the sweep's symbol rows)
+COIN_COLUMNS = ["day", "long", "short"]
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +453,8 @@ def price(closes: dict, data: dict, coin: str, d: int, t: int):
 
 
 def aggregate(conn, share, whale_share, end_ms=None):
-    """Weighted daily rows per group, plus the raw counts behind them."""
+    """Weighted daily rows per group, per main coin and group (wallets long and short that coin), and the raw
+    counts behind them."""
     ends = day_ends(end_ms)
     meta = {a: (k, av, vlm) for a, k, av, vlm in conn.execute("SELECT addr, skey, lb_av, lb_vlm FROM wallets")}
     census = {a: json.loads(c) for a, c in conn.execute("SELECT addr, census FROM wallets WHERE census IS NOT NULL")
@@ -505,24 +508,33 @@ def aggregate(conn, share, whale_share, end_ms=None):
                     a["short"] += weight * (net < 0)
                 a["long_usd"] += weight * long_usd
                 a["short_usd"] += weight * short_usd
-    out = {}
+                for c in COINS:
+                    sz = book.get(c, 0.0)
+                    a[f"{c}_long"] += weight * (sz > 0)
+                    a[f"{c}_short"] += weight * (sz < 0)
+    out, coins = {}, {c: {} for c in COINS}
     for g, by_day in acc.items():
-        rows = []
+        rows, per_coin = [], {c: [] for c in COINS}
         for d, a in sorted(by_day.items()):
             if not a["n"]:
                 continue
             scale = (a["wallets"] + a["uncovered_w"]) / a["wallets"]      # uncovered members take the covered shares
             rows.append([d, round(a["wallets"] * scale), round(a["positioned"] * scale), round(a["long"] * scale),
                          round(a["short"] * scale), round(a["long_usd"] * scale), round(a["short_usd"] * scale), int(a["n"])])
+            for c in COINS:
+                per_coin[c].append([d, round(a[f"{c}_long"] * scale), round(a[f"{c}_short"] * scale)])
         out[g] = rows
-    return out, {"censused": len(census), "read": len(fills)}
+        for c in COINS:
+            coins[c][g] = per_coin[c]
+    return out, coins, {"censused": len(census), "read": len(fills)}
 
 
 def export(conn, share, whale_share, path=SEED, end_ms=None):
-    groups, counts = aggregate(conn, share, whale_share, end_ms)
+    groups, coins, counts = aggregate(conn, share, whale_share, end_ms)
     days = [r[0] for rows in groups.values() for r in rows]
     seed = {"version": 1, "built": datetime.date.today().isoformat(), "start_day": min(days), "end_day": max(days),
-            "columns": COLUMNS, "sample": {"share": share, "whale_share": whale_share, **counts}, "groups": groups}
+            "columns": COLUMNS, "sample": {"share": share, "whale_share": whale_share, **counts}, "groups": groups,
+            "coin_columns": COIN_COLUMNS, "coins": coins}
     Path(path).write_text(json.dumps(seed, separators=(",", ":")))
     return seed
 

@@ -8,6 +8,8 @@ One row per day and group, [day, wallets, positioned, long, short, long_usd, sho
 - whales: its Tidal Whale and Leviathan equity cohorts ($1M+ perp equity).
 
 A wallet is long or short by the sign of its net dollar position over all markets, as in cohorts.assign.aggregate.
+For the main coins (COINS) one more row per day and group, [day, long, short]: wallets long and short that coin (the
+sweep's symbol rows); the group's wallets that day are the total, as for all markets.
 
 Two sources:
 - the seed (seeds/wallet_history_seed.json): days rebuilt from Hyperliquid's public data by
@@ -32,6 +34,8 @@ logger = logging.getLogger(__name__)
 DAY_S = 86_400
 SEED_PATH = Path(__file__).resolve().parent / "seeds" / "wallet_history_seed.json"
 COLUMNS = ["day", "wallets", "positioned", "long", "short", "long_usd", "short_usd", "sampled"]
+COINS = ("BTC", "ETH", "SOL", "HYPE")
+COIN_COLUMNS = ["day", "long", "short"]
 GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "smart": ("pnl", ("Smart Money", "Money Printer")),
     "whales": ("equity", ("Tidal Whale", "Leviathan")),
@@ -41,7 +45,7 @@ UPDATE_AFTER_S = 50 * 60        # the sweep is quiet 20 min after each 4h close;
 MIN_OVERLAP_DAYS = 7
 
 _seed: Optional[dict] = None
-_live: Dict[str, Dict[int, list]] = {}
+_live: Dict[str, Dict[int, list]] = {}  # "smart", "whales", and per coin "smart:BTC" ... -> day -> row
 _checked: Optional[int] = None    # the last day whose close has been looked up (with or without snapshots)
 _view: Optional[dict] = None
 
@@ -75,7 +79,7 @@ def _load() -> dict:
 def _save() -> None:
     path = Path(_live_path())
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"columns": COLUMNS, "checked_through": _checked,
+    tmp.write_text(json.dumps({"columns": COLUMNS, "coin_columns": COIN_COLUMNS, "checked_through": _checked,
                                "days": {g: [rows[d] for d in sorted(rows)] for g, rows in _live.items()}},
                               separators=(",", ":")))
     os.replace(tmp, path)
@@ -85,16 +89,17 @@ def _save() -> None:
 # Live rows from the cohort sweep
 # ---------------------------------------------------------------------------
 
-Fetch = Callable[[str, Tuple[str, ...], int, int], List[Tuple[int, str, dict]]]
+Fetch = Callable[..., List[Tuple[int, str, dict]]]
 
 
-def _fetch_snapshots(dimension: str, cohorts: Tuple[str, ...], lo: int, hi: int) -> List[Tuple[int, str, dict]]:
-    """(ts, cohort, data) of the sweep's all-market rows for these cohorts with lo <= ts <= hi."""
+def _fetch_snapshots(dimension: str, cohorts: Tuple[str, ...], lo: int, hi: int, symbol: str = "") -> List[Tuple[int, str, dict]]:
+    """(ts, cohort, data) of the sweep's rows for these cohorts with lo <= ts <= hi: all markets (symbol ''), or
+    one coin (written once per 4h candle)."""
     from cohorts.sweeper import store
     marks = ",".join("?" * len(cohorts))
     return [(ts, c, json.loads(data)) for ts, c, data in store().db.execute(
-        f"SELECT ts, cohort, data FROM cohort_snapshots WHERE dimension = ? AND symbol = '' AND cohort IN ({marks}) "
-        "AND ts BETWEEN ? AND ? ORDER BY ts", (dimension, *cohorts, lo, hi))]
+        f"SELECT ts, cohort, data FROM cohort_snapshots WHERE dimension = ? AND symbol = ? AND cohort IN ({marks}) "
+        "AND ts BETWEEN ? AND ? ORDER BY ts", (dimension, symbol, *cohorts, lo, hi))]
 
 
 def day_row(day: int, snaps: List[Tuple[int, str, dict]]) -> Optional[list]:
@@ -113,13 +118,18 @@ def day_row(day: int, snaps: List[Tuple[int, str, dict]]) -> Optional[list]:
 
 
 def live_rows(days: List[int], fetch: Fetch = _fetch_snapshots) -> Dict[str, Dict[int, list]]:
-    out: Dict[str, Dict[int, list]] = {g: {} for g in GROUPS}
+    """Rows per key: each group's all-market row, and "group:COIN" rows [day, long, short] for the main coins."""
+    out: Dict[str, Dict[int, list]] = {}
     for d in days:
-        close = (d + 1) * DAY_S
+        lo, hi = (d + 1) * DAY_S - SNAP_WINDOW_S, (d + 1) * DAY_S + SNAP_WINDOW_S
         for g, (dim, cohorts) in GROUPS.items():
-            row = day_row(d, fetch(dim, cohorts, close - SNAP_WINDOW_S, close + SNAP_WINDOW_S))
+            row = day_row(d, fetch(dim, cohorts, lo, hi))
             if row is not None:
-                out[g][d] = row
+                out.setdefault(g, {})[d] = row
+            for coin in COINS:
+                row = day_row(d, fetch(dim, cohorts, lo, hi, symbol=coin))
+                if row is not None:
+                    out.setdefault(f"{g}:{coin}", {})[d] = [d, row[3], row[4]]
     return out
 
 
@@ -209,30 +219,62 @@ def aligned(row: list, offset: dict) -> list:
     return [row[0], n, positioned, long, short, row[5], row[6], row[7]]
 
 
+def coin_rows(rebuilt: Dict[int, list], live: Dict[int, list], rebuilt_wallets: Dict[int, int],
+              live_wallets: Dict[int, int]) -> List[list]:
+    """One coin and group, [day, long, short, rebuilt]: recorded days where present, rebuilt days otherwise, moved to
+    the recorded level as the group's rows are (long and short shares of the group's wallets, shifted by their mean
+    differences over a week or more of overlap)."""
+    both = [d for d in rebuilt if d in live and rebuilt_wallets.get(d) and live_wallets.get(d)]
+    shift = None
+    if len(both) >= MIN_OVERLAP_DAYS:
+        shift = [sum(live[d][k] / live_wallets[d] - rebuilt[d][k] / rebuilt_wallets[d] for d in both) / len(both)
+                 for k in (1, 2)]
+    clamp = lambda v: min(1.0, max(0.0, v))
+    out = []
+    for d in sorted(set(rebuilt) | set(live)):
+        if d in live:
+            out.append(list(live[d][:3]) + [0])
+            continue
+        r, n = rebuilt[d], rebuilt_wallets.get(d)
+        if shift and n:
+            long = round(clamp(r[1] / n + shift[0]) * n)
+            r = [d, long, min(n - long, round(clamp(r[2] / n + shift[1]) * n))]
+        out.append(list(r[:3]) + [1])
+    return out
+
+
 def view() -> dict:
     """Per group, one row a day: recorded where the sweep has the day, rebuilt otherwise. Where the two overlap by a
     week or more, the rebuilt days are moved to the recorded level (the overlap's mean difference per share), so the
-    seam between them does not read as positions changing; ``overlap`` says by how much."""
+    seam between them does not read as positions changing; ``overlap`` says by how much. The main coins' rows follow
+    the same rule."""
     global _view
     if _view is not None:
         return _view
     seed = _load()
     end = seed.get("end_day")
-    groups, checks = {}, {}
+    groups, checks, coins = {}, {}, {c: {} for c in COINS}
     for g in GROUPS:
         rebuilt = {r[0]: list(r) for r in (seed.get("groups") or {}).get(g, [])}
         live = _live.get(g, {})
         check = overlap([rebuilt[d] for d in sorted(rebuilt)], live)
+        rebuilt_wallets = {d: r[1] for d, r in rebuilt.items()}
         if check:
             rebuilt = {d: aligned(r, check["offset"]) for d, r in rebuilt.items()}
             check["offset"] = {k: round(100 * v, 1) for k, v in check["offset"].items()}
         days = sorted(set(rebuilt) | set(live))
         groups[g] = [live[d] + [0] if d in live else rebuilt[d] + [1] for d in days]
         checks[g] = check
-    live_days = sorted(set().union(*(set(v) for v in _live.values()))) if _live else []
+        live_wallets = {d: r[1] for d, r in live.items()}
+        for c in COINS:
+            seed_rows = ((seed.get("coins") or {}).get(c) or {}).get(g, [])
+            coins[c][g] = coin_rows({r[0]: r for r in seed_rows}, _live.get(f"{g}:{c}", {}), rebuilt_wallets, live_wallets)
+    live_days = sorted(set().union(*(set(v) for k, v in _live.items() if k in GROUPS))) if _live else []
     _view = {
         "columns": COLUMNS + ["rebuilt"],
         "groups": groups,
+        "coin_columns": COIN_COLUMNS + ["rebuilt"],
+        "coins": coins,
         "rebuilt": {"from": seed.get("start_day"), "to": end, "built": seed.get("built"), "sample": seed.get("sample")}
         if seed else None,
         "recorded_from": live_days[0] if live_days else None,

@@ -4,6 +4,7 @@
 .mkt-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 24px;margin-bottom:16px;}
 .mkt-split{grid-column:1 / -1;justify-self:start;max-width:420px;}
 .mkt .mh-controls{margin-bottom:6px;}
+.mkt-wallet-controls{display:flex;flex-wrap:wrap;align-items:center;gap:4px 24px;}
 .mkt .mh-section{margin-top:28px;}
 
 /* Wallet KPIs: long share in green, short share in red */

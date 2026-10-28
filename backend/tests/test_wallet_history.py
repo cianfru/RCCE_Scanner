@@ -51,18 +51,22 @@ class PositioningHistoryTests(unittest.TestCase):
 
         first = 100 * DAY + 60                               # the sweep's first snapshot: just after day 99's close
 
-        def fetch(dim, cohorts, lo, hi):
-            calls.append((dim, lo))
+        def fetch(dim, cohorts, lo, hi, symbol=""):
+            calls.append((dim, lo, symbol))
             close = lo + ph.SNAP_WINDOW_S
             day = close // DAY - 1
             if day == 102 or close + 300 < first:            # the sweep was down, or not started yet
                 return []
+            if symbol:                                       # coin rows: only BTC has holders here
+                return [snap(close + 900, cohorts[0], 50, 7, 3)] if symbol == "BTC" else []
             return [snap(close + 300, cohorts[0], 100 + day, 40, 30)]
 
         now = 105 * DAY + 2 * 3600                          # day 104's close was two hours ago
         added = asyncio.run(ph.update(now=now, fetch=fetch, fetch_first=lambda: first))
-        self.assertEqual(added, 2 * 5)                       # days 99, 100, 101, 103, 104 for both groups
+        self.assertEqual(added, 2 * 5 * 2)                   # days 99, 100, 101, 103, 104; both groups; all and BTC
         self.assertEqual(sorted(ph._live["smart"]), [99, 100, 101, 103, 104])
+        self.assertEqual(ph._live["whales:BTC"][100], [100, 7, 3])
+        self.assertNotIn("smart:ETH", ph._live)
         saved = json.load(open(os.path.join(self.dir, "wallet_history_live.json")))
         self.assertEqual(saved["checked_through"], 104)
         self.assertEqual(saved["days"]["whales"][0][:5], [99, 199, 70, 40, 30])
@@ -95,6 +99,17 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual((o["days"], o["from"], o["to"], o["long_pts"], o["short_pts"]), (8, 92, 100, 3.0, 1.0))
         self.assertEqual(o["offset"], {"positioned": 2.0, "long": 3.0, "short": -1.0})
 
+    def test_coin_rows_follow_the_same_rule(self):
+        rebuilt = {d: [d, 300, 100] for d in range(10, 20)}               # 30% long, 10% short of 1,000 wallets
+        live = {d: [d, 360, 80] for d in range(13, 22)}                   # 36% and 8% of 1,000; 7 days overlap
+        rows = ph.coin_rows(rebuilt, live, {d: 1000 for d in range(10, 20)}, {d: 1000 for d in range(13, 22)})
+        by_day = {r[0]: r for r in rows}
+        self.assertEqual(sorted(by_day), list(range(10, 22)))
+        self.assertEqual(by_day[10], [10, 360, 80, 1])                    # rebuilt, moved by +6 and -2 points
+        self.assertEqual(by_day[15], [15, 360, 80, 0])                    # recorded
+        short = ph.coin_rows(rebuilt, {14: [14, 360, 80]}, {d: 1000 for d in range(10, 20)}, {14: 1000})
+        self.assertEqual(short[0], [10, 300, 100, 1], "a single overlap day moves nothing")
+
     def test_aligned_keeps_the_counts_possible(self):
         row = [1, 100, 50, 45, 5, 0, 0, 10]
         out = ph.aligned(row, {"positioned": -0.4, "long": 0.6, "short": 0.5})
@@ -119,7 +134,8 @@ class PositioningHistoryTests(unittest.TestCase):
             ])
         with patch.object(sweeper, "_store", st):
             added = asyncio.run(ph.update(now=base + 4 * DAY + 2 * 3600))
-        self.assertEqual(added, 10)                          # days 20749-20753, both groups
+        self.assertEqual(added, 15)                          # days 20749-20753: both groups, and smart's BTC row
+        self.assertEqual(ph._live["smart:BTC"][20750], [20750, 1, 1])
         self.assertEqual(ph._live["smart"][20749], [20749, 1200, 850, 490, 300, 150_000_000, 90_000_000, 1200])
         self.assertEqual(ph._live["whales"][20753][:5], [20753, 60, 55, 25, 28])
         st.db.close()

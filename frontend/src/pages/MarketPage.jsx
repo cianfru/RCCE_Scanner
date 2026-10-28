@@ -7,7 +7,7 @@ import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, loadHistory
   from "../components/MarketHistorySections.jsx";
 import { COPY, RANGES, bandOn, breadthContext, episodesOf, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
          percentileOf, rowsOf, signedPct, todayValues } from "../utils/marketHistory.js";
-import { GROUPS, WALLET_MODES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
+import { GROUPS, SCOPES, WALLET_MODES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
 import "./market.css";
 
 // /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how Hyperliquid's
@@ -15,10 +15,10 @@ import "./market.css";
 // scanner's history drawer; the consensus card's history button and the dial open it (?view=fear for the dial).
 
 // A wallet group's (i): who is in it, how it is drawn, where the days come from.
-const walletInfo = (wallets, g, mode) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
-  rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], mode })} />;
+const walletInfo = (wallets, g, mode, scope) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
+  rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], mode, scope })} />;
 
-function Kpis({ data, rows, wallets, ctx, view, walletMode }) {
+function Kpis({ data, rows, wallets, ctx, view, walletMode, scope }) {
   const t = data.today, c = data.cycle;
   const fg = data.fear_greed || [];
   // The chart's last day, so the KPI matches the readout under the chart (the index may have a newer day).
@@ -45,12 +45,12 @@ function Kpis({ data, rows, wallets, ctx, view, walletMode }) {
       <em>{COPY.kpi.pct(percentileOf(fg.map(v => v[1]), lastFg[1]))}</em>
     </div>}
     {GROUPS.map(g => {
-      const r = latestOf(wallets, g.key);
+      const r = latestOf(wallets, g.key, scope);
       if (!r) return null;
       return <div key={g.key} className="mh-kpi mkt-wallet-kpi">
         <strong><b className="is-long">{pct(r.L)}</b><i aria-hidden="true">·</i><b className="is-short">{pct(r.S)}</b></strong>
-        <span>{g.label}{walletInfo(wallets, g, walletMode)}</span>
-        <em>{WCOPY.kpi.sub}</em>
+        <span>{g.label}{walletInfo(wallets, g, walletMode, scope)}</span>
+        <em>{WCOPY.kpi.sub(scope)}</em>
       </div>;
     })}
     {view === "fear" && <FearSplit data={data} />}
@@ -79,6 +79,7 @@ export default function MarketPage({ style }) {
   const [range, setRange] = useState("1y");
   const [overlays, setOverlays] = useState(["downtrend", "fg"]);
   const [walletMode, setWalletMode] = useState("z");
+  const [scope, setScope] = useState("all");
   const [bandLabel, setBandLabel] = useState(null);
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function MarketPage({ style }) {
   }, []);
 
   const fg = useMemo(() => fearGreedByDay(data), [data]);
-  const walletDays = useMemo(() => byDay(wallets), [wallets]);
+  const walletDays = useMemo(() => byDay(wallets, { scope }), [wallets, scope]);
   const rows = useMemo(() => {
     const weekly = data?.btc_band_weekly || [];
     const alt = new Map(data?.alt_recent || []);
@@ -112,7 +113,7 @@ export default function MarketPage({ style }) {
   const last = rows[rows.length - 1];
   const today = view === "breadth" ? { ...todayValues(data), row: last } : { row: last };
   const walletGroups = wallets ? GROUPS.filter(g => wallets.groups?.[g.key]?.length)
-    .map(g => ({ ...g, info: walletInfo(wallets, g, walletMode) })) : [];
+    .map(g => ({ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, walletMode, scope) })) : [];
   const walletProp = walletGroups.length ? { mode: walletMode, groups: walletGroups, from: firstDay(wallets) } : null;
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
@@ -124,9 +125,12 @@ export default function MarketPage({ style }) {
         items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
       <AsOf data={data} also={wallets} />
     </div>
-    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} walletMode={walletMode} />
+    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} walletMode={walletMode} scope={scope} />
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
-      {walletProp && <Tabs small label={WCOPY.modeLabel} items={WALLET_MODES} value={walletMode} onChange={setWalletMode} />}
+      {walletProp && <div className="mkt-wallet-controls">
+        <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
+        <Tabs small label={WCOPY.modeLabel} items={WALLET_MODES} value={walletMode} onChange={setWalletMode} />
+      </div>}
     </Controls>
     {view === "breadth"
       ? <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov}

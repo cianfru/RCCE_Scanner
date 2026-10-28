@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS, WCOPY, Z_MIN, Z_WINDOW, byDay, firstDay, groupRows, latestOf, ofWallets, pct, signedZ, trailingZ }
-  from './walletHistory.js';
+import { GROUPS, SCOPES, WCOPY, Z_MIN, Z_WINDOW, byDay, firstDay, groupRows, latestOf, ofWallets, pct, signedZ,
+  trailingZ } from './walletHistory.js';
 import { popWords } from './marketHistory.js';
 
 const FORBIDDEN = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*)\b/i;
@@ -55,6 +55,22 @@ test('shares count flat wallets in the total and the rebuilt days are marked', (
   assert.equal(ofWallets(rows[2]), '100 long · 40 short of 200');
 });
 
+test("a coin scope counts that coin out of the group's wallets", () => {
+  const data = { columns: [...COLS, 'rebuilt'], coin_columns: ['day', 'long', 'short', 'rebuilt'],
+    groups: { smart: [[10, 100, 80, 50, 20, 0, 0, 30, 1], [11, 200, 150, 100, 40, 0, 0, 200, 0]] },
+    coins: { BTC: { smart: [[10, 30, 10, 1], [11, 40, 60, 0], [12, 5, 5, 0]] } } };
+  const rows = groupRows(data, 'smart', { scope: 'BTC' });
+  assert.deepEqual(rows.map(r => [r.day, r.L, r.S, r.rebuilt]), [[10, 0.3, 0.1, true], [11, 0.2, 0.3, false]],
+    'day 12 has no group row, so no total');
+  assert.equal(latestOf(data, 'smart', 'BTC').S, 0.3);
+  assert.deepEqual(groupRows(data, 'smart', { scope: 'ETH' }), []);
+  assert.equal(byDay(data, { scope: 'BTC' }).smart.get(10).long, 30);
+  assert.deepEqual(SCOPES.map(s => s.key), ['all', 'BTC', 'ETH', 'SOL', 'HYPE']);
+  assert.equal(WCOPY.label(GROUPS[0], 'BTC'), 'Smart money · BTC');
+  assert.equal(WCOPY.label(GROUPS[0], 'all'), 'Smart money');
+  assert.match(WCOPY.pop.group(GROUPS[0], { scope: 'BTC' }).join(' '), /long or short BTC/);
+});
+
 test('z-scores ride along on every row once the window has enough days', () => {
   const groups = { smart: [], whales: [] };
   for (let d = 0; d < 120; d++) {
@@ -83,6 +99,11 @@ test('copy: no forecast words, popovers within the word budget', () => {
     const share = WCOPY.pop.group(g, { ...ctx, mode: 'share' });
     texts.push(...share);
     assert.ok(popWords(share.join(' ')) <= 90);
+    for (const scope of ['BTC', 'HYPE']) {
+      const paras = WCOPY.pop.group(g, { ...ctx, scope });
+      texts.push(...paras);
+      assert.ok(popWords(paras.join(' ')) <= 90, `${g.key} ${scope}: ${popWords(paras.join(' '))} words`);
+    }
   }
   for (const t of texts) {
     assert.doesNotMatch(t, FORBIDDEN, t);

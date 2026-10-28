@@ -118,19 +118,21 @@ class AggregateTests(unittest.TestCase):
         self.add("b", 6, 50_000, 1e6, 50_000, 200_000, {"BTC": -1.0})
         self.add("w", 4000, 5e6, 1e6, 3e6, 500_000, {"BTC": 2.0})
         self.add("out", 9000, 50_000, 1e6, 50_000, 200_000, {"BTC": 1.0})       # not in the sample
-        groups, counts = wr.aggregate(self.conn, 0.10, 0.50, end_ms=103 * DAY)
+        groups, coins, counts = wr.aggregate(self.conn, 0.10, 0.50, end_ms=103 * DAY)
         self.assertEqual(counts, {"censused": 3, "read": 3})
         smart = {r[0]: r for r in groups["smart"]}
         # day, wallets, positioned, long, short, long_usd, short_usd, sampled
         self.assertEqual(smart[100], [100, 22, 22, 12, 10, 1400, 1000, 3])
         self.assertEqual([r[1] for r in groups["whales"]], [2, 2, 2])
+        self.assertEqual(coins["BTC"]["smart"][0], [100, 12, 10])       # wallets long and short BTC, weighted
+        self.assertEqual(coins["ETH"]["smart"][0], [100, 0, 0])
 
     def test_uncovered_members_take_the_covered_shares(self):
         self.conn.execute("INSERT INTO candles VALUES (?, ?)", ("BTC", json.dumps([[d, 100.0] for d in range(98, 110)])))
         self.add("a", 1, 50_000, 1e6, 50_000, 200_000, {"BTC": 1.0})
         self.add("b", 2, 50_000, 1e6, 50_000, 200_000, {"BTC": -1.0}, coverage=102 * DAY)   # read from day 101's close on
         self.add("c", 3, 50_000, 1e6, 50_000, 200_000, None)                                # not read yet
-        groups, _ = wr.aggregate(self.conn, 0.10, 0.10, end_ms=103 * DAY)
+        groups, _, _ = wr.aggregate(self.conn, 0.10, 0.10, end_ms=103 * DAY)
         smart = {r[0]: r for r in groups["smart"]}
         self.assertEqual(smart[100][:5], [100, 30, 30, 30, 0])      # only a read: its side, scaled to 3 wallets
         self.assertEqual(smart[101][:5], [101, 30, 30, 15, 15])

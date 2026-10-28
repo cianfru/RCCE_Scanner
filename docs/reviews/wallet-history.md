@@ -21,6 +21,7 @@ A wallet can be in both. Market makers are out: monthly volume over 100 times th
 - **Shares**: long wallets and short wallets as a share of the group's wallets that day. Shares, not counts, so a group that grows (more wallets reach $100K of PnL) does not read as more longs.
 - **Z-score** (the page's default view): each share against the 90 days before the day (the day itself left out, at least 30 earlier days). Green, above the zero line: the long share's z-score. Red, drawn downward: the short share's, so more shorts than usual reach lower. The filled area shows only on each line's own side; a line on the other side means fewer than usual (green below zero: fewer longs; red above zero: fewer shorts).
 - **Share** view: the long share up in green, the short share down in red.
+- **Main coins** (BTC, ETH, SOL, HYPE): the same, with long or short meaning a position in that coin (the sweep's per-coin rows); wallets without one count in the group's total. A wallet can be short BTC and net long overall.
 
 ## Sources
 
