@@ -2972,11 +2972,11 @@ async def notifications_feed(
         since_filter = " AND timestamp > ?"
         params.append(since)
 
-    # Signal transitions (exclude INITIAL — first-ever scan noise)
-    sig_params = ["4h"] + params + ["4h"] + params + [limit]
-    cursor = await db.execute(
-        f"""SELECT * FROM (
-            SELECT 'signal' AS event_type, symbol, signal AS label,
+    # Signal transitions (exclude INITIAL — first-ever scan noise). The newest `limit` of each
+    # table, merged: the same rows as one UNION ALL sorted whole, read through the timestamp
+    # indexes instead of both tables in full.
+    sig_rows = await (await db.execute(
+        f"""SELECT 'signal' AS event_type, symbol, signal AS label,
                    prev_signal AS prev_label, regime, price,
                    transition_type, timestamp
             FROM signal_events
@@ -2984,21 +2984,22 @@ async def notifications_feed(
               AND transition_type IS NOT NULL
               AND transition_type != 'INITIAL'
               AND transition_type != 'LATERAL'
-
-            UNION ALL
-
-            SELECT 'regime' AS event_type, symbol, regime AS label,
+            ORDER BY timestamp DESC, id ASC
+            LIMIT ?""",
+        ["4h"] + params + [limit],
+    )).fetchall()
+    reg_rows = await (await db.execute(
+        f"""SELECT 'regime' AS event_type, symbol, regime AS label,
                    prev_regime AS prev_label, regime, price,
                    NULL AS transition_type, timestamp
             FROM regime_events
             WHERE timeframe = ?{since_filter}
-        )
-        ORDER BY timestamp DESC
-        LIMIT ?""",
-        sig_params,
-    )
-    rows = await cursor.fetchall()
-    events = [dict(r) for r in rows]
+            ORDER BY timestamp DESC, id ASC
+            LIMIT ?""",
+        ["4h"] + params + [limit],
+    )).fetchall()
+    merged = [dict(r) for r in sig_rows] + [dict(r) for r in reg_rows]
+    events = sorted(merged, key=lambda e: e["timestamp"], reverse=True)[:limit]
 
     # Enrich signal events with historical win rate data
     try:

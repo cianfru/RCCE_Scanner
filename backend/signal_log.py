@@ -251,6 +251,11 @@ class SignalLog:
                 ON regime_events(timestamp);
             CREATE INDEX IF NOT EXISTS idx_sig_transition_tf
                 ON signal_events(transition_type, timeframe);
+            -- Covers the analytics and scorecard reads (everything but context), so they read a
+            -- few MB of index instead of the whole table with its context blobs.
+            CREATE INDEX IF NOT EXISTS idx_sig_tf_ts_cover
+                ON signal_events(timeframe, timestamp, symbol, signal, regime, conditions_met,
+                                 conditions_total, outcome_1d_pct, outcome_3d_pct, outcome_7d_pct);
         """)
         await self._db.commit()
 
