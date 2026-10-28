@@ -16,7 +16,7 @@ def row(signal, outcome, met, conditions_met=9, regime="MARKUP", conditions_tota
 def analytics(rows):
     a = SignalAnalytics(signal_log=None)
 
-    async def fetch(timeframe, extra_where="", extra_params=()):
+    async def fetch(timeframe, extra_where="", extra_params=(), with_context=True):
         return rows
 
     a._fetch_rows_with_outcomes = fetch

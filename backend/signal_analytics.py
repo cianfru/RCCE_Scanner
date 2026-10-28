@@ -152,7 +152,8 @@ class SignalAnalytics:
     # ------------------------------------------------------------------
 
     async def _fetch_rows_with_outcomes(
-        self, timeframe: str, extra_where: str = "", extra_params: tuple = ()
+        self, timeframe: str, extra_where: str = "", extra_params: tuple = (),
+        with_context: bool = True,
     ) -> list:
         """Fetch signal_events rows that have 7d outcomes.
 
@@ -186,9 +187,12 @@ class SignalAnalytics:
             prev_by_sym[sym] = ts
 
         # Step 2: fetch the actual analytics rows (non-WAIT, with outcomes)
+        # context (~6 KB a row, in overflow pages) only for the sections that read it; without it
+        # the query is answered from idx_sig_tf_ts_cover instead of the whole table.
         sql = (
             "SELECT signal, regime, conditions_met, conditions_total, "
-            "       outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, context, "
+            "       outcome_1d_pct, outcome_3d_pct, outcome_7d_pct, "
+            f"       {'context' if with_context else 'NULL AS context'}, "
             "       timestamp, symbol "
             "FROM signal_events "
             f"WHERE timeframe = ? AND outcome_7d_pct IS NOT NULL AND signal != 'WAIT' "
@@ -416,7 +420,7 @@ class SignalAnalytics:
         """Signal performance broken down by regime."""
 
         async def _compute():
-            rows = await self._fetch_rows_with_outcomes(timeframe)
+            rows = await self._fetch_rows_with_outcomes(timeframe, with_context=False)
 
             # Group by (signal, regime)
             groups: Dict[Tuple[str, str], list] = defaultdict(list)
@@ -461,7 +465,7 @@ class SignalAnalytics:
         """
 
         async def _compute():
-            rows = [r for r in await self._fetch_rows_with_outcomes(timeframe)
+            rows = [r for r in await self._fetch_rows_with_outcomes(timeframe, with_context=False)
                     if r["signal"] in _LONG_SIGNALS]
 
             def _bucket(share: float) -> str:
@@ -532,7 +536,8 @@ class SignalAnalytics:
 
         async def _compute():
             rows = await self._fetch_rows_with_outcomes(timeframe,
-                extra_where="AND signal IN ('STRONG_LONG','LIGHT_LONG','ACCUMULATE','REVIVAL_SEED','REVIVAL_SEED_CONFIRMED')")
+                extra_where="AND signal IN ('STRONG_LONG','LIGHT_LONG','ACCUMULATE','REVIVAL_SEED','REVIVAL_SEED_CONFIRMED')",
+                with_context=False)
 
             periods = {
                 "0-24h": [],
