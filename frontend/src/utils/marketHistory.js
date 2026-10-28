@@ -1,5 +1,5 @@
-// Pure helpers and all visible copy for the market history drawer (/api/market-history).
-// The drawer leads with charts; the method text lives in the info popovers (COPY.pop).
+// Pure helpers and all visible copy for the market history page (/api/market-history).
+// The page leads with charts; the method text lives in the info popovers (COPY.pop).
 
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -11,8 +11,8 @@ export const FAN_SERIES = ["uptrend", "btc", "alt"];
 export const FAN_LOG_FROM = 20724;                    // 28 Sep 2026: the clean check starts (docs/reviews/market-paths-method.md)
 export const MIN_RUNS = 6;                            // the repo's "too few" bar
 
-export const RANGES = [{ key: "3m", label: "3M", days: 90 }, { key: "1y", label: "1Y", days: 365 },
-  { key: "3y", label: "3Y", days: 3 * 365 }, { key: "all", label: "All", days: null }];
+export const RANGES = [{ key: "3m", label: "3M", days: 90 }, { key: "6m", label: "6M", days: 182 },
+  { key: "1y", label: "1Y", days: 365 }, { key: "3y", label: "3Y", days: 3 * 365 }, { key: "all", label: "All", days: null }];
 
 export function dayDate(day, withYear = true) {
   const d = new Date(day * DAY_MS);
@@ -441,7 +441,7 @@ export function breadthContext(data, { range = "3m" } = {}) {
 }
 
 // The words a tab shows outside tables, popovers, axis ticks and tab/toggle labels (the word budget).
-// Mirrors what MarketHistoryDrawer renders; the screenshots pass re-counts them on the page.
+// Mirrors what the market history page renders (pages/MarketPage.jsx); the screenshots pass re-counts them on the page.
 export function visibleTexts(tab, data, { range = "3m", band } = {}) {
   if (tab === "fear") {
     return [COPY.kpi.fg, COPY.kpi.pct(50), COPY.panel.btc, COPY.panel.fg, COPY.zones.greed, COPY.zones.fear,

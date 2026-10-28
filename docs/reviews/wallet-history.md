@@ -1,0 +1,55 @@
+# Smart money and whales, long and short, at each daily close (method note, 28 October 2026)
+
+What the market history page (`/market`) draws under the Uptrend share and Fear & Greed: how many Hyperliquid smart-money wallets and whales were net long and net short at each 00:00 UTC close. The owner asked to see it next to the share of coins in Uptrend, without a study. It is a description of who held what. **Context, not a signal**: no test, no verdict, nothing here says what follows.
+
+Code: `backend/wallet_history.py` (the feed, `/api/market-history/wallets`), `backend/backtest/wallet_history_rebuild.py` (the rebuilt days), `frontend/src/utils/walletHistory.js` (shares and z-scores), `frontend/src/pages/MarketPage.jsx`.
+
+## Groups
+
+The live cohort sweep's own groups (`backend/cohorts/assign.py`), as each wallet stood on the day:
+
+| Group | Rule | Sweep cohorts |
+|---|---|---|
+| Smart money | all-time PnL $100K or more, perp equity $10K or more | Smart Money + Money Printer |
+| Whales | perp equity $1M or more | Tidal Whale + Leviathan |
+
+A wallet can be in both. Market makers are out: monthly volume over 100 times the account value (as the live registry), or more than 25 open positions (as `cohorts.assign`).
+
+## Counting
+
+- Each wallet counts once per group: **long** or **short** by the sign of its net dollar position over all perpetual markets at the close (position size times the coin's daily close), as the sweep's `long_wallets` / `short_wallets`. Wallets with no position count in the total, as flat.
+- **Shares**: long wallets and short wallets as a share of the group's wallets that day. Shares, not counts, so a group that grows (more wallets reach $100K of PnL) does not read as more longs.
+- **Z-score** (the page's default view): each share against the 90 days before the day (the day itself left out, at least 30 earlier days). Green, above the zero line: the long share's z-score. Red, drawn downward: the short share's, so more shorts than usual reach lower. The filled area shows only on each line's own side; a line on the other side means fewer than usual (green below zero: fewer longs; red above zero: fewer shorts).
+- **Share** view: the long share up in green, the short share down in red.
+
+## Sources
+
+**Recorded (from 26 September 2026).** The cohort sweep writes an all-market snapshot every 30 minutes (`cohort_snapshots`, kept 180 days). Once a day `wallet_history.update` takes the snapshot nearest each close (within an hour) and keeps the row in `wallet_history_live.json` next to hyperlens.db, so the history outlives the sweep's retention. Tiny: two rows a day.
+
+**Rebuilt (1 September 2025 to the seed's last day).** Hyperliquid keeps no history of anyone's positions, so they are rebuilt from public records (`python -m backtest.wallet_history_rebuild`):
+
+1. Candidates: today's leaderboard without market makers, with $100K+ all-time PnL, a $1M+ account or $100M+ all-time volume (to catch wallets that were large once).
+2. Sample: a fixed hash of the address picks 10% of the candidates and 35% of the likely whales ($1M+ account or $1B+ all-time volume). Every count is weighted by one over the wallet's chance of being picked, so the rebuilt counts estimate the whole group; `sampled` says how many wallets each day rests on.
+3. Membership by day: Hyperliquid's `portfolio` history gives each wallet's perp equity (weekly, finer in the last month) and all-time PnL (weekly), interpolated at each close. A wallet is in a group only on the days it met the rule then, not because it meets it today.
+4. Positions: current positions, regular fills and timed-order slices since 1 September 2025. Each fill carries Hyperliquid's record of the position just before it, so a position at a close is the one right after the last fill before it or right before the next one (the current position when none follows); where a fill was not read and the two differ, the nearer in time. Leftovers under 1e-6 of a coin are flat (float noise of a full close).
+5. Very active wallets are read for their newest pages only (3 of regular fills, 2 of slices, 2,000 a page). Before their first fill read they are uncovered that day: left out, and the covered wallets' shares stand for them.
+
+**Joining the two.** The page shows recorded days wherever the sweep has them and rebuilt days before them (and in any gap). The rebuilt counts are an estimate from a sample, so their level can sit a few points off the recorded one; left as is, the seam would read as wallets changing side in exactly the most recent days. Where the two overlap by a week or more, the rebuilt days are moved to the recorded level: each share (positioned, long, short) shifted by its mean difference over the overlap (`overlap.offset`, in points). The feed also gives the mean absolute gap before the shift (`overlap.long_pts`, `overlap.short_pts`), and the page's (i) quotes it.
+
+## Limits
+
+- **Survivorship.** Candidates come from today's leaderboard. A wallet that has left it is missing from the past.
+- **Sampling.** About one in ten smart-money wallets and one in three whales. Day to day the same wallets move, so changes are steadier than levels.
+- **Weekly membership.** Equity and PnL are weekly points before the last month; a wallet crossing a threshold mid-week switches group on the interpolated day.
+- **Today's market-maker flag** decides who is a market maker over the whole period.
+- **Very active traders** drop out of the older days (uncovered); the rest are scaled to their group.
+- **Timed orders.** A slice history cut at its oldest end leaves positions built by slices alone unseen before it.
+- Recorded rows count readings up to 2.5 hours old at the close (the sweep's cadence); rebuilt rows count the position at the close.
+
+## Refreshing the seed
+
+From `backend/`: `census`, `fills`, `candles`, then `export` (each resumable; the cache defaults to `data/wallet_history_cache/`, gitignored). Raising `--share` adds wallets to the same sample. Recorded days need nothing: the server adds one a day.
+
+## Rebuild run
+
+To be added after the run.

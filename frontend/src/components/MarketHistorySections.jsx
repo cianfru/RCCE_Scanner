@@ -1,33 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import Tabs from "./Tabs.jsx";
 import HelpTip from "./HelpTip.jsx";
-import MarketHistoryChart, { useWidth } from "./MarketHistoryChart.jsx";
+import { useWidth } from "./MarketHistoryChart.jsx";
 import { T } from "../theme.js";
-import AsOf from "./AsOf.jsx";
 import { apiFetch } from "../edge.js";
-import { COPY, RANGES, bandHead, bandOn, bandShort, breadthContext, dayDate, episodesOf, fearGreedByDay, fgSplit,
-         inRange, monthYear, pctLabel, percentileOf, rowsOf, runsMarks, signedPct, stripCounts, stripScale, todayValues,
+import { COPY, bandHead, bandShort, dayDate, episodesOf, pctLabel, runsMarks, signedPct, stripCounts, stripScale,
          yearOf } from "../utils/marketHistory.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
-let cached = null;                                   // { at, promise }: one fetch per hour per tab
+// The market history page's sections under its chart (risk-on runs, episodes, forward test) and their shared
+// pieces. The page itself is pages/MarketPage.jsx; it replaced the scanner's history drawer.
 
-function loadHistory() {
-  if (!cached || Date.now() - cached.at > 3_600_000) {
-    cached = { at: Date.now(), promise: apiFetch("/api/market-history").then(r => (r.ok ? r.json() : null)).catch(() => null) };
+const cached = {};                                   // path -> { at, promise }: one fetch per hour per tab
+
+function loadOnce(path) {
+  const c = cached[path];
+  if (!c || Date.now() - c.at > 3_600_000) {
+    cached[path] = { at: Date.now(), promise: apiFetch(path).then(r => (r.ok ? r.json() : null)).catch(() => null) };
   }
-  return cached.promise;
+  return cached[path].promise;
 }
 
-const OVERLAYS = () => [                             // a function: T is repainted on theme change
+export const loadHistory = () => loadOnce("/api/market-history");
+export const loadWallets = () => loadOnce("/api/market-history/wallets");
+
+export const OVERLAYS = () => [                      // a function: T is repainted on theme change
   { key: "overheated", color: T.yellow, dash: "4 3" },
   { key: "median_z", color: "#91b9e8", axis: "z" },
   { key: "fg", color: "var(--t-text3)", dash: "1 3", scale: 100 },
 ];
 
 // The info (i): method text lives here, not on the page.
-function Info({ title, paras }) {
+export function Info({ title, paras }) {
   return <HelpTip title={title} width={320} size={13}>{paras.map((p, i) => <span key={i}>{p}</span>)}</HelpTip>;
 }
 
@@ -35,7 +38,7 @@ const clip = (v, m = 60) => Math.max(-m, Math.min(m, v));
 
 // ------------------------------------------------------------------ risk-on runs
 
-function RunsChart({ cycle, since }) {
+export function RunsChart({ cycle, since }) {
   const [box, W] = useWidth();
   const [hov, setHov] = useState(null);
   const m = runsMarks(cycle);
@@ -123,7 +126,7 @@ function EpisodeStrip({ eps, base, label }) {
 // Columns hidden on a phone (Days, Uptrend, BTC 30d), so the scored ones show without side-scrolling.
 const OPT_COLS = [1, 2, 3];
 
-function Episodes({ data, band, setBandLabel, ctx }) {
+export function Episodes({ data, band, setBandLabel, ctx }) {
   const [all, setAll] = useState(false);
   const eps = episodesOf(data, band);                     // newest first
   const base = data.base?.["30"];
@@ -171,7 +174,7 @@ function Episodes({ data, band, setBandLabel, ctx }) {
 // Declared 26 Sep 2026 (docs/reviews/btc-band-breadth-forward-test.md): new episodes fill the squares as their
 // 60 days close; the past cases are where the idea came from.
 
-function ForwardTest({ ft, base }) {
+export function ForwardTest({ ft, base }) {
   const [table, setTable] = useState(false);
   const b60 = base?.["60"]?.alt?.median;
   const scored = ft.episodes.filter(e => e.h60);
@@ -225,130 +228,16 @@ function ForwardTest({ ft, base }) {
   </section>;
 }
 
-// ------------------------------------------------------------------ tabs
+// ------------------------------------------------------------------ controls
 
-function Controls({ range, setRange, overlays, setOverlays }) {
+export function Controls({ ranges, range, setRange, overlays, setOverlays, children }) {
   const toggle = k => setOverlays(o => (o.includes(k) ? o.filter(x => x !== k) : [...o, k]));
   return <div className="mh-controls">
-    <Tabs small label={COPY.rangeLabel} items={RANGES} value={range} onChange={setRange} />
+    <Tabs small label={COPY.rangeLabel} items={ranges} value={range} onChange={setRange} />
     {setOverlays && <div className="mh-toggles" role="group" aria-label={COPY.overlaysLabel}>
       {OVERLAYS().map(o => <button key={o.key} type="button" aria-pressed={overlays.includes(o.key)} onClick={() => toggle(o.key)}>
         <i style={{ background: o.color }} aria-hidden="true" />{COPY.overlays[o.key]}</button>)}
     </div>}
+    {children}
   </div>;
-}
-
-function BreadthTab({ data, rows, range, setRange }) {
-  const [overlays, setOverlays] = useState([]);
-  const [bandLabel, setBandLabel] = useState(data.today.band);
-  const band = data.bands.find(b => b.label === bandLabel) || data.bands[0];
-  const ctx = breadthContext(data, { range });
-  const t = data.today, c = data.cycle, fan = ctx.fan;
-  const shown = useMemo(() => inRange(rows, range).map(r => ({ ...r, fg: r.fg == null ? null : r.fg / 100 })), [rows, range]);
-  const ov = OVERLAYS().filter(o => overlays.includes(o.key));
-  const last = rows[rows.length - 1];
-  const today = { ...todayValues(data), row: last };      // the fan's starting values (Uptrend + Overheated share)
-  const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
-    : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
-  return <>
-    <div className="mh-kpis">
-      <div className="mh-kpi">
-        <strong>{pctLabel(t.uptrend)}</strong>
-        <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, n: t.n, since: ctx.since })} /></span>
-        <em>{COPY.kpi.pct(t.percentile)}</em>
-      </div>
-      {c && <div className="mh-kpi" title={dayDate(c.start)}>
-        <strong>{COPY.kpi.day(c.day)}</strong>
-        <span>{COPY.kpi.run(ctx.on)}</span>
-        {ctx.on && c.below_days > 0 && <em>{COPY.kpi.under(c.below_days)}</em>}
-      </div>}
-      {ctx.side && <div className="mh-kpi">
-        <strong className={ctx.side === "below" ? "mh-worse" : ""}>{ctx.side === "inside" ? "0%" : signedPct(ctx.dist, 0)}</strong>
-        <span>{COPY.kpi.band(ctx.side)}<Info title={COPY.pop.bandTitle} paras={COPY.pop.band()} /></span>
-      </div>}
-    </div>
-    <Controls range={range} setRange={setRange} overlays={overlays} setOverlays={setOverlays} />
-    <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov}
-      selBand={{ lo: band.lo, hi: band.hi }} markers={episodesOf(data, band).map(e => e.start)} today={today}
-      aria={`${COPY.panel.uptrend}, ${COPY.panel.btc}, ${RANGES.find(r => r.key === range).label}`} />
-    {c?.runs && <RunsChart cycle={c} since={ctx.since} />}
-    <Episodes data={data} band={band} setBandLabel={setBandLabel} ctx={ctx} />
-    {data.forward_test && <ForwardTest ft={data.forward_test} base={data.base} />}
-  </>;
-}
-
-function FearGreedTab({ data, rows, range, setRange }) {
-  const shown = inRange(rows, range);
-  const all = data.fear_greed || [];
-  // The KPI reads the chart's last day, so it matches the readout under the chart (the index may have a newer day).
-  const lastFg = [...rows].reverse().find(r => r.fg != null);
-  const latest = lastFg ? [lastFg.day, lastFg.fg] : all[all.length - 1];
-  const split = fgSplit(shown.map(r => r.fg));
-  const last = rows[rows.length - 1];
-  const since = all.length ? monthYear(all[0][0]) : "";
-  const labels = ["≤40", "41–69", "≥70"];
-  return <>
-    <div className="mh-kpis mh-kpis-fg">
-      <div className="mh-kpi">
-        <strong>{latest ? latest[1] : "—"}</strong>
-        <span>{COPY.kpi.fg}<Info title={COPY.pop.fgTitle} paras={COPY.pop.fg({ since })} /></span>
-        {latest && <em>{COPY.kpi.pct(percentileOf(all.map(v => v[1]), latest[1]))}</em>}
-      </div>
-      {split && <div className="mh-split" role="img" aria-label={labels.map((l, i) => `${l} ${split[i]}%`).join(", ")}>
-        <div className="mh-split-bar">{split.map((p, i) => <i key={i} className={`s${i}`} style={{ flexGrow: p }} />)}</div>
-        <div className="mh-split-labels">{split.map((p, i) => <span key={i} style={{ flexGrow: Math.max(p, 18) }}><b>{labels[i]}</b> {p}%</span>)}</div>
-      </div>}
-    </div>
-    <Controls range={range} setRange={setRange} />
-    <MarketHistoryChart mode="fear" rows={shown} range={range} today={{ row: last }} aria={`${COPY.panel.fg}, ${COPY.panel.btc}`} />
-  </>;
-}
-
-// Right-side drawer with the scanner's market history. Opens from the consensus and dial icons.
-export default function MarketHistoryDrawer({ tab, onTab, onClose }) {
-  const [data, setData] = useState(null);
-  const [failed, setFailed] = useState(false);
-  const [range, setRange] = useState("3m");
-  const closeRef = useRef(null);
-  const opener = useRef(typeof document !== "undefined" ? document.activeElement : null);
-  useEffect(() => {
-    let alive = true;
-    loadHistory().then(d => { if (!alive) return; if (d) setData(d); else setFailed(true); });
-    return () => { alive = false; };
-  }, []);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const prev = opener.current;
-    // Escape closes an open info popover first (HelpTip handles it), the drawer otherwise.
-    const onKey = e => { if (e.key === "Escape" && !document.querySelector(".alt-season-explanation")) onClose(); };
-    document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = overflow; prev?.focus?.(); };
-  }, [onClose]);
-  const fg = useMemo(() => fearGreedByDay(data), [data]);
-  const rows = useMemo(() => {
-    const weekly = data?.btc_band_weekly || [];
-    const alt = new Map(data?.alt_recent || []);
-    return rowsOf(data).map(r => {
-      const b = bandOn(weekly, r.day);
-      return { ...r, fg: fg.get(r.day) ?? null, bandLo: b?.[0] ?? null, bandHi: b?.[1] ?? null, alt: alt.get(r.day) ?? null };
-    });
-  }, [data, fg]);
-  return createPortal(<div className="reflex-terminal">
-    <div className="mh-backdrop" onClick={onClose} />
-    <aside className="mh-drawer" role="dialog" aria-modal="true" aria-labelledby="mh-title">
-      <header className="mh-head">
-        <h2 id="mh-title">{COPY.title}</h2>
-        <AsOf data={data} style={{ marginLeft: 8 }} />
-        <button ref={closeRef} type="button" className="mh-close" onClick={onClose}>{COPY.close}</button>
-      </header>
-      <Tabs label="History" value={tab} onChange={onTab} items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
-      <div className="mh-body">
-        {!data ? <p className="mh-muted">{failed ? COPY.unavailable : COPY.loading}</p>
-          : tab === "fear" ? <FearGreedTab data={data} rows={rows} range={range} setRange={setRange} />
-            : <BreadthTab data={data} rows={rows} range={range} setRange={setRange} />}
-      </div>
-    </aside>
-  </div>, document.body);
 }

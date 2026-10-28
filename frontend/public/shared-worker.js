@@ -30,7 +30,8 @@ let token = null;   // API token from the page (see src/auth.js)
 
 // CDN feeds (keep in step with src/utils/edgeUrl.js and backend/edge.py).
 const EDGE_PATHS = new Set(["/api/scan", "/api/scan/sparklines", "/api/scan/row", "/api/setup-map",
-  "/api/market-history", "/api/market-history/spark", "/api/hyperlens/consensus", "/api/hyperlens/positioning",
+  "/api/market-history", "/api/market-history/spark", "/api/market-history/wallets", "/api/hyperlens/consensus",
+  "/api/hyperlens/positioning",
   "/api/traders/leaderboard", "/api/tradfi", "/api/universe", "/api/sectors",
   "/api/portfolio/context", "/api/portfolio/events"]);
 let edgeAllowed = false;     // the page allows it (VITE_EDGE_CACHE)

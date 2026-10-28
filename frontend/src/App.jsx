@@ -57,6 +57,7 @@ const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 const BridgePage = lazy(() => import("./pages/BridgePage.jsx"));
 const TraderPage = lazy(() => import("./pages/TraderPage.jsx"));
 const IntelPage = lazy(() => import("./pages/IntelPage.jsx"));
+const MarketPage = lazy(() => import("./pages/MarketPage.jsx"));
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ const ROUTE_TO_TAB = {
   "/portfolio": "trading",
   "/settings": "settings",
   "/intel": "intel",
+  "/market": "market",
 };
 const TAB_TO_ROUTE = {
   "1d": "/scanner",
@@ -109,6 +111,7 @@ const TAB_TO_ROUTE = {
   trading: "/portfolio",
   settings: "/settings",
   intel: "/intel",
+  market: "/market",
 };
 // Page titles (h1 and browser tab) of the pages without their own title logic.
 const TAB_TITLES = {
@@ -122,6 +125,7 @@ const TAB_TITLES = {
   executor: "Executor",
   settings: "Settings",
   intel: "Intel",
+  market: "Market history",
   notfound: "Page not found",
 };
 const DEFAULT_SORT = "priority_score";
@@ -1126,6 +1130,12 @@ export default function App() {
         {activeTab === "intel" && (
           <Suspense fallback={<PageSkeleton style={pageMargin} />}>
             <IntelPage style={pageMargin} />
+          </Suspense>
+        )}
+
+        {activeTab === "market" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <MarketPage style={pageMargin} />
           </Suspense>
         )}
 

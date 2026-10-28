@@ -66,7 +66,7 @@ test('rows and ranges', () => {
   assert.deepEqual(rows[2], { day: 500, n: 50, uptrend: 0.8 });
   assert.equal(inRange(rows, '1y').length, 2);
   assert.equal(inRange(rows, 'all').length, 3);
-  assert.deepEqual(RANGES.map(r => r.key), ['3m', '1y', '3y', 'all']);
+  assert.deepEqual(RANGES.map(r => r.key), ['3m', '6m', '1y', '3y', 'all']);
   assert.equal(inRange(rows, '3m').length, 1);
 });
 

@@ -159,6 +159,10 @@ Before, each uncached profile view of a tracked wallet cost 40 to 240 weight in 
 
 **Off:** `FILLS_STORE_ENABLED=0` returns every page to live reads as before.
 
+## Daily record for the market history page
+
+Once a day, after the 00:00 UTC close, `backend/wallet_history.py` reads the sweep's all-market snapshot nearest the close for two groups, smart money (the Smart Money and Money Printer PnL cohorts) and whales (Tidal Whale and Leviathan), and keeps one row per group: wallets, positioned, long, short and their dollars. The rows go to `wallet_history_live.json` next to hyperlens.db, so they outlive `cohort_snapshots`' 180 days. Days before the sweep began are rebuilt from Hyperliquid's public records (`backend/backtest/wallet_history_rebuild.py`). The page draws them as long and short shares and z-scores under the Uptrend share; method and limits in docs/reviews/wallet-history.md. No extra Hyperliquid calls.
+
 ## Continuity
 
 Changing the cohort moves the Radar's trader counts and the stored lean series.
