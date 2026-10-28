@@ -3,11 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Tabs from "../components/Tabs.jsx";
 import AsOf from "../components/AsOf.jsx";
 import MarketHistoryChart from "../components/MarketHistoryChart.jsx";
-import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, loadHistory, loadWallets }
+import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, ageLevel, loadHistory, loadWallets }
   from "../components/MarketHistorySections.jsx";
-import { COPY, RANGES, bandOn, breadthContext, episodesOf, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
+import { COPY, RANGES, bandOn, breadthContext, dayDate, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
          percentileOf, rowsOf, signedPct, todayValues } from "../utils/marketHistory.js";
-import { GROUPS, SCOPES, WALLET_MODES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
+import { GROUPS, SCOPES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
 import "./market.css";
 
 // /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how Hyperliquid's
@@ -15,10 +15,11 @@ import "./market.css";
 // scanner's history drawer; the consensus card's history button and the dial open it (?view=fear for the dial).
 
 // A wallet group's (i): who is in it, how it is drawn, where the days come from.
-const walletInfo = (wallets, g, mode, scope) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
-  rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], mode, scope })} />;
+const walletInfo = (wallets, g, scope) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
+  rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], scope,
+  crowd: wallets?.crowd })} />;
 
-function Kpis({ data, rows, wallets, ctx, view, walletMode, scope }) {
+function Kpis({ data, rows, wallets, ctx, view, scope }) {
   const t = data.today, c = data.cycle;
   const fg = data.fear_greed || [];
   // The chart's last day, so the KPI matches the readout under the chart (the index may have a newer day).
@@ -30,11 +31,7 @@ function Kpis({ data, rows, wallets, ctx, view, walletMode, scope }) {
       <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, n: t.n, since: ctx.since })} /></span>
       <em>{COPY.kpi.pct(t.percentile)}</em>
     </div>
-    {c && <div className="mh-kpi" title={c.start != null ? monthYear(c.start) : undefined}>
-      <strong>{COPY.kpi.day(c.day)}</strong>
-      <span>{COPY.kpi.run(ctx.on)}</span>
-      {ctx.on && c.below_days > 0 && <em>{COPY.kpi.under(c.below_days)}</em>}
-    </div>}
+    {c && <RunAge c={c} on={ctx.on} />}
     {ctx.side && <div className="mh-kpi">
       <strong className={ctx.side === "below" ? "mh-worse" : ""}>{ctx.side === "inside" ? "0%" : signedPct(ctx.dist, 0)}</strong>
       <span>{COPY.kpi.band(ctx.side)}<Info title={COPY.pop.bandTitle} paras={COPY.pop.band()} /></span>
@@ -47,13 +44,27 @@ function Kpis({ data, rows, wallets, ctx, view, walletMode, scope }) {
     {GROUPS.map(g => {
       const r = latestOf(wallets, g.key, scope);
       if (!r) return null;
+      // A reading older than the chart's last day says its date (Outrider's rebuilt days end before the record).
+      const asOf = rows.length && rows[rows.length - 1].day - r.day > 1 ? dayDate(r.day, false) : null;
       return <div key={g.key} className="mh-kpi mkt-wallet-kpi">
         <strong><b className="is-long">{pct(r.L)}</b><i aria-hidden="true">·</i><b className="is-short">{pct(r.S)}</b></strong>
-        <span>{g.label}{walletInfo(wallets, g, walletMode, scope)}</span>
-        <em>{WCOPY.kpi.sub(scope)}</em>
+        <span>{g.label}{walletInfo(wallets, g, scope)}</span>
+        <em>{WCOPY.kpi.sub(g, scope)}{asOf && ` · ${asOf}`}</em>
       </div>;
     })}
     {view === "fear" && <FearSplit data={data} />}
+  </div>;
+}
+
+// Today's run age. A risk-on run is coloured by how many past runs ended before this age: yellow past half of them,
+// light red past 3 in 4, red past 9 in 10 (with 6 or more past runs). The colour flashes once when the page opens.
+function RunAge({ c, on }) {
+  const { level, outlasted, past } = ageLevel(c);
+  return <div className={`mh-kpi mkt-age is-l${level}`} title={c.start != null ? monthYear(c.start) : undefined}>
+    <strong><b className={level ? "mkt-age-num mkt-age-flash" : "mkt-age-num"}>{COPY.kpi.day(c.day)}</b></strong>
+    <span>{COPY.kpi.run(on)}</span>
+    {past > 0 && <em>{COPY.kpi.age(outlasted, past, on)}</em>}
+    {on && c.below_days > 0 && <em>{COPY.kpi.under(c.below_days)}</em>}
   </div>;
 }
 
@@ -78,7 +89,6 @@ export default function MarketPage({ style }) {
   const [wallets, setWallets] = useState(null);
   const [range, setRange] = useState("1y");
   const [overlays, setOverlays] = useState(["downtrend", "fg"]);
-  const [walletMode, setWalletMode] = useState("z");
   const [scope, setScope] = useState("all");
   const [bandLabel, setBandLabel] = useState(null);
 
@@ -112,9 +122,9 @@ export default function MarketPage({ style }) {
   const ov = view === "breadth" ? OVERLAYS().filter(o => overlays.includes(o.key)) : [];
   const last = rows[rows.length - 1];
   const today = view === "breadth" ? { ...todayValues(data), row: last } : { row: last };
-  const walletGroups = wallets ? GROUPS.filter(g => wallets.groups?.[g.key]?.length)
-    .map(g => ({ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, walletMode, scope) })) : [];
-  const walletProp = walletGroups.length ? { mode: walletMode, groups: walletGroups, from: firstDay(wallets) } : null;
+  const walletGroups = wallets ? GROUPS.filter(g => walletDays[g.key]?.size)
+    .map(g => ({ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, scope), from: firstDay(wallets, g.key) })) : [];
+  const walletProp = walletGroups.length ? { groups: walletGroups } : null;
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
   const aria = panel => [panel, COPY.panel.btc, ...walletGroups.map(g => g.label), RANGES.find(r => r.key === range)?.label].join(", ");
@@ -125,17 +135,15 @@ export default function MarketPage({ style }) {
         items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
       <AsOf data={data} also={wallets} />
     </div>
-    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} walletMode={walletMode} scope={scope} />
+    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} />
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
       {walletProp && <div className="mkt-wallet-controls">
         <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
-        <Tabs small label={WCOPY.modeLabel} items={WALLET_MODES} value={walletMode} onChange={setWalletMode} />
       </div>}
     </Controls>
     {view === "breadth"
       ? <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov}
-          selBand={{ lo: band.lo, hi: band.hi }} markers={episodesOf(data, band).map(e => e.start)} today={today}
-          wallets={walletProp} aria={aria(COPY.panel.uptrend)} />
+          today={today} wallets={walletProp} aria={aria(COPY.panel.uptrend)} />
       : <MarketHistoryChart mode="fear" rows={shown} range={range} today={today} wallets={walletProp} aria={aria(COPY.panel.fg)} />}
     {view === "breadth" && <>
       {data.cycle?.runs && <RunsChart cycle={data.cycle} since={ctx.since} />}

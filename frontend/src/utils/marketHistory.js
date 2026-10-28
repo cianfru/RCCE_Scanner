@@ -183,6 +183,15 @@ export function fanMedian(fan, s) {
   return b.map((q, i) => (q ? [i, q[2]] : null)).filter(Boolean);
 }
 
+// The past paths at knot i: lowest, highest and, with 4 or more paths, the middle half (quartiles as the method's,
+// the value at position floor(p * (n - 1)) of the sorted list). Null when no path reaches the knot.
+export function fanRange(fan, s, i) {
+  const vals = (fan?.paths?.[s] || []).map(p => p[i]).filter(v => v != null).sort((a, b) => a - b);
+  if (!vals.length) return null;
+  const q = p => vals[Math.floor(p * (vals.length - 1))];
+  return { lo: vals[0], hi: vals[vals.length - 1], mid: vals.length >= 4 ? [q(0.25), q(0.75)] : null };
+}
+
 // The typical alt shows in whole % in the readout: past paths are stored in whole % (the seed's alt_paths).
 const fmt = {
   uptrend: { v: pctLabel, n: v => String(Math.round(100 * v)) },
@@ -280,10 +289,10 @@ function legendLine(ctx) {
   const shaded = ctx.tooFew ? [] : FAN_SERIES.filter(s => ctx.show?.[s] === "bands" && (s !== "alt" || ctx.altShown));
   const thin = ctx.tooFew || FAN_SERIES.some(s => ctx.show?.[s] !== "bands" && (s !== "alt" || ctx.altShown));
   return [
-    !ctx.tooFew && "Dashed: median.",
-    thin && "Thin lines: past stretches.",
-    shaded.length && `Shading (${listWords(shaded.map(s => SERIES_NAME[s]))}): middle half and middle 8 in 10 of paths.`,
-    "Dotted: ordinary.",
+    !ctx.tooFew && "Line: median.",
+    shaded.length && `Shading (${listWords(shaded.map(s => SERIES_NAME[s]))}): middle half.`,
+    "Marks at +30 and +60 days: box, middle half; line, lowest to highest.",
+    thin && "Point past today to see each path.",
   ].filter(Boolean).join(" ");
 }
 
@@ -308,20 +317,20 @@ export const COPY = {
   overlaysLabel: "Add to the chart",
   overlays: { overheated: "Overheated", downtrend: "Downtrend", median_z: "Median z", fg: "Fear & Greed" },
 
-  caption: (paths, runs, tooFew) => `${plural(paths, "past path")} · ${plural(runs, "run")}${tooFew ? " · too few for a median" : ""}`,
+  caption: (paths, runs, tooFew) => `${plural(paths, "similar past day")} · ${plural(runs, "run")}${tooFew ? " · too few for a median" : ""}`,
   tooFewDays: "Too few similar days",
-  legend: { median: "median", ordinary: "ordinary" },
+  legend: { median: "median", mid: "middle half", range: "middle half · range" },
   axis: { today: "Today", h: k => `+${k}d` },
   panel: { btc: "BTC · weekly band", uptrend: "Uptrend share", alt: "Typical alt vs today", fg: "Fear & Greed" },
-  riskOn: "55%: RISK-ON",
+  riskOn: "Risk-on above 55%",
   zones: { greed: "Not greedy fails", fear: "Fear gate open" },
 
   readout: {
-    today: "Today", uptrend: "Uptrend", btc: "BTC", alt: "Typical alt", ordinary: "ordinary",
+    today: "Today", uptrend: "Uptrend", btc: "BTC", alt: "Typical alt", ordinary: "all days",
     overheated: "Overheated", downtrend: "Downtrend", median_z: "Median z", fg: "Fear & Greed",
     range: s => `range ${s}`,
     mid: s => `mid ${s}`,
-    fanHead: "Median of past paths",
+    fanHead: "After similar days",
     side: { above: "above band", inside: "inside band", below: "below band" },
     altVs: x => `${x} vs today`,
   },
@@ -331,28 +340,40 @@ export const COPY = {
     pct: p => `${ordinal(p)} percentile`,
     day: n => `Day ${n}`,
     run: on => (on ? "risk-on run" : "risk-off stretch"),
+    age: (n, m, on) => `longer than ${n} of ${m} past ${on ? "runs" : "stretches"}`,
     under: n => `${plural(n, "day")} under 55%`,
     band: side => `BTC ${side} its band`,
     fg: "Fear & Greed",
   },
 
   runs: {
-    head: on => (on ? "Risk-on runs" : "Risk-off stretches"),
+    head: on => (on ? "Past risk-on runs" : "Past risk-off stretches"),
     mark: (a, b) => `${a} of ${b}${b < MIN_RUNS ? ", too few" : ""}`,
-    hover: (start, len, peak, on = true) => `${monthYear(start)} · ${len} days · ${on ? "peak" : "low"} ${Math.round(100 * peak)}%`,
+    // The two lines' keys under the chart.
+    nowKey: (day, a, b, on) => `Today, day ${day}: ${a} of ${b} past ${on ? "runs" : "stretches"} lasted this long${b < MIN_RUNS ? " (too few to read)" : ""}`,
+    laterKey: (day, a, b) => `Day ${day}: ${a} of those ${b} lasted 30 days more`,
+    // The tooltip of a column.
+    tip: (start, len, peak, on = true) => [`${dayDate(start)} to ${dayDate(start + len - 1)}`, `${len} days`,
+      `${on ? "highest" : "lowest"} Uptrend share ${Math.round(100 * peak)}%`],
+    tipToday: (start, day, on) => [`Today's ${on ? "run" : "stretch"}, since ${dayDate(start)}`, `day ${day}`],
+    axis: "days",
     now: "today",
   },
 
   episodes: {
-    head: band => `Last times at ${band}`,
-    count: ({ study, later }) => `${study.better} of ${study.n} better${later.n ? ` · later ${later.better} of ${later.n}` : ""}`,
-    ordinary: x => `ordinary ${x}`,
+    head: band => `After past days at ${band}`,
+    sub: "Each bar: the typical alt over the 30 days after a past episode in this band.",
+    count: ({ study, later }) => `${study.better} of ${study.n} beat all days${later.n ? ` · later ${later.better} of ${later.n}` : ""}`,
+    ordinary: x => `all days ${x}`,
+    tip: (e, base) => [dayDate(e.start), `Uptrend ${pctLabel(e.breadth)}`, `typical alt ${signedPct(e.alt30)} in 30 days`,
+      e.btc30 != null ? `BTC ${signedPct(e.btc30)}` : null,
+      base != null ? `${signedInt(e.alt30 - base)} pts vs all days` : null].filter(Boolean),
     all: n => `All ${n} episodes`,
     fewer: "Newest 5",
     due: d => `due ${d}`,
     pts: v => `${signedInt(v)} pts`,
     ongoing: n => `${n}, ongoing`,
-    cols: ["Started", "Days", "Uptrend", "BTC 30d", "Typical alt 30d", "vs ordinary", "Typical alt 60d"],
+    cols: ["Started", "Days", "Uptrend", "BTC 30d", "Typical alt 30d", "vs all days", "Typical alt 60d"],
     column: (d, v) => `${dayDate(d)} · ${signedPct(v)}`,
     pending: d => `${dayDate(d)} · ${COPY.episodes.due(dayDate(d + 30, false))}`,
   },
@@ -360,8 +381,11 @@ export const COPY = {
   ft: {
     head: "Forward test",
     scored: n => `${n} of 6 scored`,
-    past: "Past cases, exploratory",
-    worse: (n, m) => `${n} of ${m} worse`,
+    past: "Past cases",
+    pastSub: "Each bar: the typical alt over the 60 days after an earlier case.",
+    worse: (n, m) => `${n} of ${m} below all days`,
+    tip: (h, base) => [dayDate(h[0]), `${plural(h[1], "day")}, ${Math.round(100 * h[2])}% in Uptrend`, `typical alt ${signedPct(h[5], 0)} in 60 days`,
+      base != null ? `${signedInt(h[5] - base)} pts vs all days` : null].filter(Boolean),
     table: "Table",
     cols: ["Started", "Days", "Share", "BTC 30d", "Typical alt 30d", "Typical alt 60d"],
     pending: "pending",
@@ -392,14 +416,14 @@ export const COPY = {
     band: () => ["BTC's weekly bull market support band: the 20-week SMA and 21-week EMA of Sunday closes, each used from the day after its week closes. The figure is BTC's distance from the nearer edge. Red shading: days BTC closed below the band."],
     runsTitle: "Runs",
     runs: ctx => [ctx.on
-      ? `A risk-on run starts on the first day with 55% or more of coins in Uptrend or Overheated and ends after 5 days in a row below 55%. Columns: runs that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's run. Solid line: today's day. Dotted line: 30 days later. Counts: runs that got that far.`
-      : `A risk-off stretch starts on the first of 5 or more days in a row below 55% of coins in Uptrend or Overheated and ends on the next day at 55% or more. Columns: stretches that ended since ${ctx.since}, by length in days, oldest first; the outlined column is today's. Solid line: today's day. Dotted line: 30 days later. Counts: stretches that got that far.`],
+      ? `A risk-on run starts on the first day with 55% or more of coins in Uptrend or Overheated and ends after 5 days in a row below 55%. Each column is one run that ended since ${ctx.since}, oldest first, as tall as it lasted; the outlined one is today's. Years mark where each year's runs begin. Solid line: today's day. Dotted: 30 days later. Point at a column for its dates.`
+      : `A risk-off stretch starts on the first of 5 or more days in a row below 55% of coins in Uptrend or Overheated and ends on the next day at 55% or more. Each column is one stretch that ended since ${ctx.since}, oldest first, as tall as it lasted; the outlined one is today's. Years mark where each year's stretches begin. Solid line: today's day. Dotted: 30 days later. Point at a column for its dates.`],
     episodesTitle: "Episodes",
-    episodes: ctx => [`An episode is a stretch of days in this band (gaps up to 5 days joined), from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: an ordinary 30 days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line is better than ordinary, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: closed later, counted apart; today's run left out.`],
+    episodes: ctx => [`An episode is a stretch of days in this band (gaps up to 5 days joined), from its first day. Columns: the typical alt's change over the next 30 days. Dotted line: all days (typical alt ${ctx.alt}, BTC ${ctx.btc}; medians of all days, ${ctx.from} to ${ctx.to}). Above the line beat all days, even below zero. Up to ${ctx.end}, ${ctx.better} of ${ctx.n} episodes did better: ${verdictWords(ctx.verdict)}. Paler columns: closed later, counted apart; today's run left out.`],
     ftTitle: "Forward test",
-    ft: ctx => [`Declared ${ctx.declared} with fixed rules. An episode starts when BTC closes under its weekly band's lower edge while ${ctx.share}% or more of coins are in Uptrend or Overheated. Only later episodes count. A square fills when its 60 days close: red if the typical alt did worse than an ordinary 60 days (${ctx.base}). No verdict before 6; then it holds at 75% red or more and fails at half or fewer. Past cases come from the same history, ${ctx.bear} of ${ctx.n} from the late-2021 to 2022 bear market.`],
+    ft: ctx => [`Declared ${ctx.declared} with fixed rules. An episode starts when BTC closes under its weekly band's lower edge while ${ctx.share}% or more of coins are in Uptrend or Overheated. Only later episodes count. A square fills when its 60 days close: red if the typical alt did worse than all days (${ctx.base}). No verdict before 6; then it holds at 75% red or more and fails at half or fewer. Past cases come from the same history, ${ctx.bear} of ${ctx.n} from the late-2021 to 2022 bear market.`],
     pastTitle: "Past cases",
-    past: ctx => [`Where the idea came from: ${ctx.n} earlier episodes found on the same history, so it is a hypothesis. Columns: the typical alt over the 60 days after each one's first day. Dotted line: an ordinary 60 days (${ctx.base}). Red: worse than ordinary.`],
+    past: ctx => [`Where the idea came from: ${ctx.n} earlier episodes found on the same history, so it is a hypothesis. Columns: the typical alt over the 60 days after each one's first day. Dotted line: all days over 60 days (${ctx.base}). Red: below it.`],
     fgTitle: "Fear & Greed",
     fg: ctx => [`Source: alternative.me, daily. The dial's bands are the scanner's own (20 / 40 / 60 / 80). At 70 or above the engine's Not greedy check fails on every market; at 40 or below the fear gate lets Accumulate setups in Accumulation and Capitulation revivals fire. Percentile: share of days since ${ctx.since} with a lower reading. No study has tested what followed each level, so this tab draws no paths.`],
   },
@@ -440,11 +464,14 @@ export function breadthContext(data, { range = "3m" } = {}) {
   };
 }
 
-// The words a tab shows outside tables, popovers, axis ticks and tab/toggle labels (the word budget).
-// Mirrors what the market history page renders (pages/MarketPage.jsx); the screenshots pass re-counts them on the page.
-export function visibleTexts(tab, data, { range = "3m", band } = {}) {
+// The words a tab shows outside tables, popovers, hover boxes, axis ticks and tab/toggle labels (the word budget).
+// Mirrors what the market history page renders (pages/MarketPage.jsx; the wallet panels' words are walletHistory's);
+// the screenshots pass re-counts them on the page.
+export function visibleTexts(tab, data, { range = "3m", band, overlays = ["downtrend", "fg"] } = {}) {
+  const fg = data.fear_greed || [];
+  const fgKpi = fg.length ? [COPY.kpi.fg, COPY.kpi.pct(50)] : [];
   if (tab === "fear") {
-    return [COPY.kpi.fg, COPY.kpi.pct(50), COPY.panel.btc, COPY.panel.fg, COPY.zones.greed, COPY.zones.fear,
+    return [...fgKpi, COPY.panel.btc, COPY.panel.fg, COPY.zones.greed, COPY.zones.fear,
       COPY.readout.btc, COPY.readout.fg, dayDate(data.today.day)];
   }
   const x = breadthContext(data, { range });
@@ -456,23 +483,27 @@ export function visibleTexts(tab, data, { range = "3m", band } = {}) {
   const marks = runsMarks(x.cycle);
   const ft = data.forward_test;
   const b60 = data.base?.["60"]?.alt?.median;
+  const c = x.cycle;
   const out = [
     COPY.kpi.uptrend, COPY.kpi.pct(x.t.percentile),
-    x.cycle && COPY.kpi.day(x.cycle.day), x.cycle && COPY.kpi.run(x.on), x.cycle?.below_days > 0 && COPY.kpi.under(x.cycle.below_days),
-    x.side && COPY.kpi.band(x.side),
+    c && COPY.kpi.day(c.day), c && COPY.kpi.run(x.on), c?.past && COPY.kpi.age(c.past - c.reached, c.past, x.on),
+    c?.below_days > 0 && COPY.kpi.under(c.below_days),
+    x.side && COPY.kpi.band(x.side), ...fgKpi,
     x.fan ? COPY.caption(x.fan.episodes.length, x.fan.runs, x.fan.too_few) : COPY.tooFewDays,
-    x.fan && !x.fan.too_few && COPY.legend.median, x.fan && COPY.legend.ordinary,
-    COPY.panel.btc, COPY.panel.uptrend, alt && COPY.panel.alt, COPY.riskOn,
-    x.fan && COPY.readout.fanHead, COPY.readout.today, COPY.axis.h(30), COPY.axis.h(60), COPY.readout.uptrend, COPY.readout.btc, COPY.readout.ordinary,
-    alt && COPY.readout.alt, alt && COPY.readout.ordinary,
-    marks && COPY.runs.head(x.on), marks?.now.text, marks?.later?.text,
-    COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts),
+    x.fan && !x.fan.too_few && COPY.legend.median, x.fan && COPY.legend.range,
+    COPY.panel.btc, COPY.panel.uptrend, ...overlays.map(k => COPY.overlays[k]), alt && COPY.panel.alt, COPY.riskOn,
+    COPY.axis.today, COPY.axis.h(30), COPY.axis.h(60),
+    x.fan && COPY.readout.fanHead, COPY.readout.today, COPY.axis.h(30), COPY.axis.h(60), COPY.readout.uptrend, COPY.readout.btc,
+    x.fan && COPY.readout.ordinary, alt && COPY.readout.alt, alt && x.fan && COPY.readout.ordinary,
+    marks && COPY.runs.head(x.on), marks && COPY.runs.nowKey(c.day, c.reached, c.past, x.on),
+    marks?.later && COPY.runs.laterKey(marks.later.day, c.lasted_more, c.reached),
+    COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts), COPY.episodes.sub,
     base != null && COPY.episodes.ordinary(signedPct(base)), eps.length > 5 && COPY.episodes.all(eps.length),
   ];
   if (ft) {
     const worse = ft.history.filter(h => b60 != null && h[5] < b60).length;
     out.push(COPY.ft.head, COPY.ft.scored(ft.episodes.filter(e => e.h60).length), COPY.ft.past,
-      COPY.ft.worse(worse, ft.history.length), COPY.ft.table);
+      COPY.ft.worse(worse, ft.history.length), COPY.ft.table, COPY.ft.pastSub, b60 != null && COPY.episodes.ordinary(signedPct(b60)));
   }
   return out.filter(Boolean);
 }

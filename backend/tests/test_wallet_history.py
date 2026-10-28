@@ -1,4 +1,5 @@
-"""Wallet positioning history: live rows from the cohort sweep's snapshots, merged after the rebuilt seed."""
+"""Wallet positioning history: live rows from the cohort sweep's snapshots, merged after the rebuilt seed; the
+profitable traders' share of positions long from HyperLens's record, after Outrider's rebuilt days."""
 import asyncio
 import json
 import os
@@ -19,19 +20,23 @@ def snap(ts, cohort, wallets, long, short, positioned=None, long_usd=0.0, short_
 
 class PositioningHistoryTests(unittest.TestCase):
     def setUp(self):
-        ph._seed, ph._live, ph._checked, ph._view = None, {}, None, None
+        ph._seed, ph._crowd_seed, ph._live, ph._checked, ph._view = None, None, {}, None, None
         self.dir = tempfile.mkdtemp(prefix="wh_test_")
         self.live = patch.object(ph, "_live_path", return_value=os.path.join(self.dir, "wallet_history_live.json"))
         self.live.start()
         self.seed_path = os.path.join(self.dir, "seed.json")
         self.seed = patch.object(ph, "SEED_PATH", ph.Path(self.seed_path))
         self.seed.start()
+        self.crowd_path = os.path.join(self.dir, "crowd.json")
+        self.crowd = patch.object(ph, "CROWD_SEED_PATH", ph.Path(self.crowd_path))
+        self.crowd.start()
 
     def tearDown(self):
         self.live.stop()
         self.seed.stop()
+        self.crowd.stop()
         shutil.rmtree(self.dir, ignore_errors=True)
-        ph._seed, ph._live, ph._checked, ph._view = None, {}, None, None
+        ph._seed, ph._crowd_seed, ph._live, ph._checked, ph._view = None, None, {}, None, None
 
     def write_seed(self, rows_by_group, start, end):
         with open(self.seed_path, "w") as fh:
@@ -62,7 +67,7 @@ class PositioningHistoryTests(unittest.TestCase):
             return [snap(close + 300, cohorts[0], 100 + day, 40, 30)]
 
         now = 105 * DAY + 2 * 3600                          # day 104's close was two hours ago
-        added = asyncio.run(ph.update(now=now, fetch=fetch, fetch_first=lambda: first))
+        added = asyncio.run(ph.update(now=now, fetch=fetch, fetch_first=lambda: first, fetch_lean=lambda lo, hi: []))
         self.assertEqual(added, 2 * 5 * 2)                   # days 99, 100, 101, 103, 104; both groups; all and BTC
         self.assertEqual(sorted(ph._live["smart"]), [99, 100, 101, 103, 104])
         self.assertEqual(ph._live["whales:BTC"][100], [100, 7, 3])
@@ -71,10 +76,11 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(saved["checked_through"], 104)
         self.assertEqual(saved["days"]["whales"][0][:5], [99, 199, 70, 40, 30])
         n = len(calls)
-        self.assertEqual(asyncio.run(ph.update(now=now + 600, fetch=fetch, fetch_first=lambda: first)), 0)
+        self.assertEqual(asyncio.run(ph.update(now=now + 600, fetch=fetch, fetch_first=lambda: first,
+                                               fetch_lean=lambda lo, hi: [])), 0)
         self.assertEqual(len(calls), n)                      # nothing looked up again, not even the empty day
         # A reload reads the file back.
-        ph._seed, ph._live, ph._checked, ph._view = None, {}, None, None
+        ph._seed, ph._crowd_seed, ph._live, ph._checked, ph._view = None, None, {}, None, None
         ph._load()
         self.assertEqual(ph._checked, 104)
         self.assertEqual(ph._live["smart"][103][1], 203)
@@ -133,7 +139,7 @@ class PositioningHistoryTests(unittest.TestCase):
                  "long_wallets": 1, "short_wallets": 1, "long_usd": 0, "short_usd": 0},
             ])
         with patch.object(sweeper, "_store", st):
-            added = asyncio.run(ph.update(now=base + 4 * DAY + 2 * 3600))
+            added = asyncio.run(ph.update(now=base + 4 * DAY + 2 * 3600, fetch_lean=lambda lo, hi: []))
         self.assertEqual(added, 15)                          # days 20749-20753: both groups, and smart's BTC row
         self.assertEqual(ph._live["smart:BTC"][20750], [20750, 1, 1])
         self.assertEqual(ph._live["smart"][20749], [20749, 1200, 850, 490, 300, 150_000_000, 90_000_000, 1200])
@@ -152,6 +158,93 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(v["groups"]["smart"], [[5, 10, 6, 4, 2, 0, 0, 10, 0]])
         self.assertEqual(v["recorded_from"], 5)
         self.assertIsNone(v["overlap"]["smart"])
+
+
+    # ------------------------------------------------------------------ profitable traders
+
+    def test_crowd_rows_sum_the_coins_at_the_bar_closing_the_day(self):
+        close = 101 * DAY
+
+        def fetch(lo, hi):
+            self.assertEqual((lo, hi), (close - ph.BAR_S, close + ph.BAR_S))
+            return [(close - ph.BAR_S, "coin:BTC", 99, 99),
+                    (close, "coin:BTC", 30, 10), (close, "coin:ETH", 20, 5), (close, "coin:DOGE", 4, 6),
+                    (close + ph.BAR_S, "coin:BTC", 1, 1)]
+        out = ph.crowd_rows([100], fetch)
+        self.assertEqual(out["crowd"][100], [100, 54, 21])            # positions over every coin, one bar only
+        self.assertEqual(out["crowd:BTC"][100], [100, 30, 10])
+        self.assertEqual(out["crowd:ETH"][100], [100, 20, 5])
+        self.assertNotIn("crowd:SOL", out)
+        # The 00:00 bar missing: the nearest one within four hours, the earlier on a tie.
+        out = ph.crowd_rows([100], lambda lo, hi: [(close - ph.BAR_S, "coin:BTC", 3, 1), (close + ph.BAR_S, "coin:BTC", 9, 9)])
+        self.assertEqual(out["crowd"][100], [100, 3, 1])
+        self.assertEqual(ph.crowd_rows([100], lambda lo, hi: []), {})
+
+    def test_fetch_lean_reads_roster_two_coin_rows_from_hyperlens(self):
+        import hl_persistence as hp
+        with patch.object(hp, "_DB_PATH", os.path.join(self.dir, "hyperlens.db")), patch.object(hp, "_conn", None):
+            close = 20750 * DAY
+            row = lambda lo, sh: {"long": lo, "short": sh, "long_usd": 1.0, "short_usd": 1.0}
+            hp.save_trader_lean(close, {"coin:BTC": row(30, 10), "sector:AI": row(5, 5)}, 2)
+            hp.save_trader_lean(close - ph.BAR_S, {"coin:BTC": row(8, 8)})            # before roster version 2
+            self.assertEqual(ph._fetch_lean(close - ph.BAR_S, close + ph.BAR_S), [(close, "coin:BTC", 30, 10)])
+            hp._conn.close()
+
+    def write_crowd(self, rows, picked=200):
+        with open(self.crowd_path, "w") as fh:
+            json.dump({"version": 1, "picked": picked, "columns": ["day", "long_share"], "rows": rows}, fh)
+
+    def test_crowd_view_puts_the_rebuilt_days_at_the_recorded_level(self):
+        self.write_crowd([[d, 0.6] for d in range(90, 101)])
+        ph._load()
+        # Recorded days 94-103: 65% of positions long (13 of 20), and BTC on two of them.
+        ph._live = {"crowd": {d: [d, 13, 7] for d in range(94, 104)}, "crowd:BTC": {100: [100, 3, 1], 101: [101, 0, 0]}}
+        c = ph.view()["crowd"]
+        rows = {r[0]: r for r in c["rows"]}
+        self.assertEqual(c["columns"], ["day", "long", "short", "long_share", "rebuilt"])
+        self.assertEqual(rows[90], [90, None, None, 0.65, 1])          # rebuilt, moved up 5 points
+        self.assertEqual(rows[94], [94, 13, 7, 0.65, 0])               # recorded where both exist
+        self.assertEqual(rows[103][-1], 0)
+        self.assertEqual(c["overlap"], {"days": 7, "from": 94, "to": 100, "offset_pts": 5.0, "gap_pts": 5.0})
+        self.assertEqual(c["rebuilt"], {"from": 90, "to": 100, "picked": 200})
+        self.assertEqual(c["recorded_from"], 94)
+        self.assertEqual(c["coins"]["BTC"], [[100, 3, 1, 0]])          # a day with no positions is left out
+        self.assertEqual(c["coins"]["ETH"], [])
+
+    def test_crowd_view_without_overlap_or_data(self):
+        self.write_crowd([[d, 0.7] for d in range(90, 95)])
+        ph._load()
+        ph._live = {"crowd": {94: [94, 1, 1]}}
+        c = ph.view()["crowd"]
+        self.assertIsNone(c["overlap"])
+        self.assertEqual({r[0]: r[3] for r in c["rows"]}, {90: 0.7, 91: 0.7, 92: 0.7, 93: 0.7, 94: 0.5})
+        ph._crowd_seed, ph._live, ph._view = {}, {}, None
+        self.assertIsNone(ph.view()["crowd"])
+
+    def test_update_keeps_the_crowd_rows_and_a_failing_record_keeps_the_rest(self):
+        first = 100 * DAY + 60
+        fetch = lambda dim, cohorts, lo, hi, symbol="": [] if symbol else [snap(lo + ph.SNAP_WINDOW_S, cohorts[0], 10, 4, 3)]
+        lean = lambda lo, hi: [(lo + ph.BAR_S, "coin:HYPE", 6, 2)]
+        added = asyncio.run(ph.update(now=102 * DAY + 2 * 3600, fetch=fetch, fetch_first=lambda: first, fetch_lean=lean))
+        self.assertEqual(added, 4 * 4)                                 # days 98-101: both groups, crowd and crowd:HYPE
+        self.assertEqual(ph._live["crowd:HYPE"][100], [100, 6, 2])
+        saved = json.load(open(os.path.join(self.dir, "wallet_history_live.json")))
+        self.assertEqual(saved["days"]["crowd"], [[d, 6, 2] for d in range(98, 102)])
+
+        def broken(lo, hi):
+            raise RuntimeError("no hyperlens db")
+        added = asyncio.run(ph.update(now=103 * DAY + 2 * 3600, fetch=fetch, fetch_first=lambda: first, fetch_lean=broken))
+        self.assertEqual(added, 2)                                     # day 102: the groups still recorded
+        self.assertNotIn(102, ph._live["crowd"])
+
+    def test_the_shipped_crowd_seed_reads_as_shares(self):
+        seed = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seeds",
+                                           "crowd_share_seed.json")))
+        days = [r[0] for r in seed["rows"]]
+        self.assertEqual(seed["columns"], ["day", "long_share"])
+        self.assertEqual(days, list(range(days[0], days[0] + len(days))), "one row a day, no gaps")
+        self.assertTrue(all(0 <= r[1] <= 1 for r in seed["rows"]))
+        self.assertEqual(days[-1], seed["picked"] - 1, "the last day closes on the day the roster was picked")
 
 
 if __name__ == "__main__":

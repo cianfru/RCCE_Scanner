@@ -1,8 +1,8 @@
-# Smart money and whales, long and short, at each daily close (method note, 28 October 2026)
+# Smart money, whales and profitable traders, long and short, at each daily close (method note, 28 October 2026)
 
-What the market history page (`/market`) draws under the Uptrend share and Fear & Greed: how many Hyperliquid smart-money wallets and whales were net long and net short at each 00:00 UTC close. The owner asked to see it next to the share of coins in Uptrend, without a study. It is a description of who held what. **Context, not a signal**: no test, no verdict, nothing here says what follows.
+What the market history page (`/market`) draws under the Uptrend share and Fear & Greed: how many Hyperliquid smart-money wallets and whales were net long and net short at each 00:00 UTC close, and how the profitable traders HyperLens follows (Outrider's crowd) split their positions. The owner asked to see it next to the share of coins in Uptrend, without a study. It is a description of who held what. **Context, not a signal**: no test, no verdict, nothing here says what follows.
 
-Code: `backend/wallet_history.py` (the feed, `/api/market-history/wallets`), `backend/backtest/wallet_history_rebuild.py` (the rebuilt days), `frontend/src/utils/walletHistory.js` (shares and z-scores), `frontend/src/pages/MarketPage.jsx`.
+Code: `backend/wallet_history.py` (the feed, `/api/market-history/wallets`), `backend/backtest/wallet_history_rebuild.py` (the rebuilt days), `backend/seeds/crowd_share_seed.json` (Outrider's rebuilt profitable-trader days), `frontend/src/utils/walletHistory.js` (shares), `frontend/src/pages/MarketPage.jsx`.
 
 ## Groups
 
@@ -12,15 +12,16 @@ The live cohort sweep's own groups (`backend/cohorts/assign.py`), as each wallet
 |---|---|---|
 | Smart money | all-time PnL $100K or more, perp equity $10K or more | Smart Money + Money Printer |
 | Whales | perp equity $1M or more | Tidal Whale + Leviathan |
+| Profitable traders | the best 600 by monthly return (30%+, $10K+ monthly profit, in profit before the month) | HyperLens's roster (not a sweep cohort) |
 
-A wallet can be in both. Market makers are out: monthly volume over 100 times the account value (as the live registry), or more than 25 open positions (as `cohorts.assign`).
+A wallet can be in more than one. Market makers are out: monthly volume over 100 times the account value (as the live registry), or more than 25 open positions (as `cohorts.assign`).
 
 ## Counting
 
 - Each wallet counts once per group: **long** or **short** by the sign of its net dollar position over all perpetual markets at the close (position size times the coin's daily close), as the sweep's `long_wallets` / `short_wallets`. Wallets with no position count in the total, as flat.
 - **Shares**: long wallets and short wallets as a share of the group's wallets that day. Shares, not counts, so a group that grows (more wallets reach $100K of PnL) does not read as more longs.
-- **Z-score** (the page's default view): each share against the 90 days before the day (the day itself left out, at least 30 earlier days). Green, above the zero line: the long share's z-score. Red, drawn downward: the short share's, so more shorts than usual reach lower. The filled area shows only on each line's own side; a line on the other side means fewer than usual (green below zero: fewer longs; red above zero: fewer shorts).
-- **Share** view: the long share up in green, the short share down in red.
+- **Drawn from zero** (owner, 28 October 2026: a z-score made "no longs" read −2): the long share rises above the zero line in green, the short share falls below it in red. No longs reads 0; more shorts reach lower. Each panel has its own scale, named by its ticks. The readout gives the counts behind the shares.
+- **Profitable traders** count positions, not wallets: each open wallet-coin position once, long or short, as Outrider's pulse and study S2 do. Their two shares sum to 100% (flat wallets have no position to count).
 - **Main coins** (BTC, ETH, SOL, HYPE): the same, with long or short meaning a position in that coin (the sweep's per-coin rows); wallets without one count in the group's total. A wallet can be short BTC and net long overall.
 
 ## Sources
@@ -35,6 +36,8 @@ A wallet can be in both. Market makers are out: monthly volume over 100 times th
 4. Positions: current positions, regular fills and timed-order slices since 1 September 2025. Each fill carries Hyperliquid's record of the position just before it, so a position at a close is the one right after the last fill before it or right before the next one (the current position when none follows); where a fill was not read and the two differ, the nearer in time. Leftovers under 1e-6 of a coin are flat (float noise of a full close).
 5. Very active wallets are read for their newest fills only (the latest 2,000 plus 2 more pages of regular fills, 1 more of slices; 2,000 a page), and Hyperliquid itself serves only about a wallet's latest 10,000 fills. Before the first fill read such a wallet is uncovered that day: left out, and the covered wallets' shares stand for it.
 
+**Profitable traders.** Recorded days come from HyperLens's own record (`trader_lean`, per coin at every 4-hour close since 26 September 2026, roster version 2 only): the bar closing at 00:00 UTC (or the nearest within 4 hours), long and short positions summed over the coins. The days before are Outrider's study S2, part B (Agent repository, `docs/studies/S2-lean-vs-price.md`; the daily series in `synth/data/research.json`), copied into `seeds/crowd_share_seed.json`: the same share rebuilt from public fills for Reflex's roster rule applied to the 10 October 2026 leaderboard. S2 dates a row by its 00:00 UTC reading; the seed dates it by the day that reading closes (one day earlier), as Reflex does. Where the two overlap by a week or more, the rebuilt shares are shifted by their mean difference (`crowd.overlap`).
+
 **Joining the two.** The page shows recorded days wherever the sweep has them and rebuilt days before them (and in any gap). The rebuilt counts are an estimate from a sample, so their level can sit a few points off the recorded one; left as is, the seam would read as wallets changing side in exactly the most recent days. Where the two overlap by a week or more, the rebuilt days are moved to the recorded level: each share (positioned, long, short) shifted by its mean difference over the overlap (`overlap.offset`, in points). The feed also gives the mean absolute gap before the shift (`overlap.long_pts`, `overlap.short_pts`), and the page's (i) quotes it.
 
 ## Limits
@@ -46,6 +49,7 @@ A wallet can be in both. Market makers are out: monthly volume over 100 times th
 - **Very active traders** drop out of the older days (uncovered); the rest are scaled to their group.
 - **Timed orders.** A slice history cut at its oldest end leaves positions built by slices alone unseen before it.
 - Recorded rows count readings up to 2.5 hours old at the close (the sweep's cadence); rebuilt rows count the position at the close.
+- **Profitable traders' rebuilt days are picked with hindsight**: the wallets are the ones that did well in the month before 10 October 2026 (S2's own bias statement), so before that month they are known winners. HyperLens's record has no such bias: each reading used the roster of its day.
 
 ## Refreshing the seed
 

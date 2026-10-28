@@ -7,6 +7,11 @@ One row per day and group, [day, wallets, positioned, long, short, long_usd, sho
 - smart: the cohort sweep's Smart Money and Money Printer PnL cohorts ($100K+ all-time PnL, $10K+ perp equity);
 - whales: its Tidal Whale and Leviathan equity cohorts ($1M+ perp equity).
 
+Beside them, ``crowd``: the profitable traders HyperLens follows (the roster Outrider reads as its crowd), as the
+share of their open positions that are long, each wallet-coin position once ([day, long, short]). Recorded days come
+from HyperLens's own record at each 4h close (trader_lean, roster version 2); the days before are Outrider's study S2
+rebuild (seeds/crowd_share_seed.json, share only), moved to the recorded level where the two overlap.
+
 A wallet is long or short by the sign of its net dollar position over all markets, as in cohorts.assign.aggregate.
 For the main coins (COINS) one more row per day and group, [day, long, short]: wallets long and short that coin (the
 sweep's symbol rows); the group's wallets that day are the total, as for all markets.
@@ -33,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 DAY_S = 86_400
 SEED_PATH = Path(__file__).resolve().parent / "seeds" / "wallet_history_seed.json"
+CROWD_SEED_PATH = Path(__file__).resolve().parent / "seeds" / "crowd_share_seed.json"
+CROWD_COLUMNS = ["day", "long", "short", "long_share", "rebuilt"]
+CROWD_ROSTER = 2                # trader_lean rows written under roster version 2 (600 wallets, $10K floors)
+BAR_S = 4 * 3600
 COLUMNS = ["day", "wallets", "positioned", "long", "short", "long_usd", "short_usd", "sampled"]
 COINS = ("BTC", "ETH", "SOL", "HYPE")
 COIN_COLUMNS = ["day", "long", "short"]
@@ -45,6 +54,7 @@ UPDATE_AFTER_S = 50 * 60        # the sweep is quiet 20 min after each 4h close;
 MIN_OVERLAP_DAYS = 7
 
 _seed: Optional[dict] = None
+_crowd_seed: Optional[dict] = None
 _live: Dict[str, Dict[int, list]] = {}  # "smart", "whales", and per coin "smart:BTC" ... -> day -> row
 _checked: Optional[int] = None    # the last day whose close has been looked up (with or without snapshots)
 _view: Optional[dict] = None
@@ -58,12 +68,16 @@ def _live_path() -> str:
 
 def _load() -> dict:
     """The seed ({} when this deploy has none) and, once, the live file."""
-    global _seed, _live, _checked
+    global _seed, _crowd_seed, _live, _checked
     if _seed is None:
         try:
             _seed = json.loads(SEED_PATH.read_text())
         except FileNotFoundError:
             _seed = {}
+        try:
+            _crowd_seed = json.loads(CROWD_SEED_PATH.read_text())
+        except FileNotFoundError:
+            _crowd_seed = {}
         try:
             saved = json.loads(Path(_live_path()).read_text())
             _live = {g: {int(r[0]): r for r in rows} for g, rows in saved.get("days", {}).items()}
@@ -133,6 +147,38 @@ def live_rows(days: List[int], fetch: Fetch = _fetch_snapshots) -> Dict[str, Dic
     return out
 
 
+LeanFetch = Callable[[int, int], List[Tuple[int, str, int, int]]]
+
+
+def _fetch_lean(lo: int, hi: int) -> List[Tuple[int, str, int, int]]:
+    """(bar_close, grp, long, short) of HyperLens's per-coin rows with lo <= bar_close <= hi, roster version 2."""
+    from hl_persistence import _get_conn
+    return _get_conn().execute(
+        "SELECT bar_close, grp, long, short FROM trader_lean WHERE grp >= ? AND grp < ? "
+        "AND bar_close BETWEEN ? AND ? AND roster_version = ? ORDER BY bar_close",
+        ("coin:", "coin:\uffff", lo, hi, CROWD_ROSTER)).fetchall()
+
+
+def crowd_rows(days: List[int], fetch: LeanFetch = _fetch_lean) -> Dict[str, Dict[int, list]]:
+    """Profitable traders at each day's close: long and short positions summed over the coins (a trader with a
+    position in five coins counts five times, as Outrider's pulse does), from the 4h bar closing at 00:00 UTC, or
+    the nearest bar within 4 hours when that one is missing. "crowd" rows and "crowd:COIN" rows, [day, long, short]."""
+    out: Dict[str, Dict[int, list]] = {}
+    for d in days:
+        close = (d + 1) * DAY_S
+        rows = fetch(close - BAR_S, close + BAR_S)
+        if not rows:
+            continue
+        bar = min({r[0] for r in rows}, key=lambda b: (abs(b - close), b))
+        at = [r for r in rows if r[0] == bar]
+        out.setdefault("crowd", {})[d] = [d, sum(r[2] for r in at), sum(r[3] for r in at)]
+        for _, grp, lo, sh in at:
+            coin = grp[5:]
+            if coin in COINS:
+                out.setdefault(f"crowd:{coin}", {})[d] = [d, lo, sh]
+    return out
+
+
 def first_snapshot_day(fetch_first: Optional[Callable[[], Optional[int]]] = None) -> Optional[int]:
     """The first day whose close window can hold a snapshot (collection started then), or None before any."""
     if fetch_first is None:
@@ -146,7 +192,7 @@ def first_snapshot_day(fetch_first: Optional[Callable[[], Optional[int]]] = None
 
 
 async def update(now: Optional[float] = None, fetch: Fetch = _fetch_snapshots,
-                 fetch_first: Optional[Callable[[], Optional[int]]] = None) -> int:
+                 fetch_first: Optional[Callable[[], Optional[int]]] = None, fetch_lean: LeanFetch = _fetch_lean) -> int:
     """Look up every day not yet looked up whose close window has passed (from the sweep's first snapshot on) and
     keep the rows found. Returns rows added."""
     global _view, _checked
@@ -160,6 +206,10 @@ async def update(now: Optional[float] = None, fetch: Fetch = _fetch_snapshots,
     if not todo:
         return 0
     rows = live_rows(todo, fetch)
+    try:
+        rows.update(crowd_rows(todo, fetch_lean))
+    except Exception as exc:                    # the crowd's record is a second source: its failure keeps the rest
+        logger.warning("Wallet history: profitable-trader rows unavailable (%s)", exc)
     added = 0
     for g, by_day in rows.items():
         for d, r in by_day.items():
@@ -243,6 +293,35 @@ def coin_rows(rebuilt: Dict[int, list], live: Dict[int, list], rebuilt_wallets: 
     return out
 
 
+def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int, list]]) -> Optional[dict]:
+    """Profitable traders, one row a day: recorded where HyperLens has the day, Outrider's rebuild otherwise, the
+    rebuilt shares shifted by the mean difference over a week or more of overlap (``overlap``, in points)."""
+    rebuilt = {int(r[0]): r[1] for r in (seed or {}).get("rows") or []}
+    rec = {d: r for d, r in live.items() if r[1] + r[2]}
+    if not rebuilt and not rec:
+        return None
+    share = lambda r: r[1] / (r[1] + r[2])
+    both = [d for d in sorted(rebuilt) if d in rec]
+    check, shift = None, 0.0
+    if len(both) >= MIN_OVERLAP_DAYS:
+        shift = sum(share(rec[d]) - rebuilt[d] for d in both) / len(both)
+        check = {"days": len(both), "from": both[0], "to": both[-1], "offset_pts": round(100 * shift, 1),
+                 "gap_pts": round(100 * sum(abs(share(rec[d]) - rebuilt[d]) for d in both) / len(both), 1)}
+    clamp = lambda v: round(min(1.0, max(0.0, v)), 4)
+    days = sorted(set(rebuilt) | set(rec))
+    rows = [[d, rec[d][1], rec[d][2], round(share(rec[d]), 4), 0] if d in rec else [d, None, None, clamp(rebuilt[d] + shift), 1]
+            for d in days]
+    return {
+        "columns": CROWD_COLUMNS,
+        "rows": rows,
+        "coin_columns": COIN_COLUMNS + ["rebuilt"],
+        "coins": {c: [list(r) + [0] for _, r in sorted(live_coins.get(c, {}).items()) if r[1] + r[2]] for c in COINS},
+        "rebuilt": {"from": min(rebuilt), "to": max(rebuilt), "picked": seed.get("picked")} if rebuilt else None,
+        "recorded_from": min(rec) if rec else None,
+        "overlap": check,
+    }
+
+
 def view() -> dict:
     """Per group, one row a day: recorded where the sweep has the day, rebuilt otherwise. Where the two overlap by a
     week or more, the rebuilt days are moved to the recorded level (the overlap's mean difference per share), so the
@@ -279,5 +358,6 @@ def view() -> dict:
         if seed else None,
         "recorded_from": live_days[0] if live_days else None,
         "overlap": checks,
+        "crowd": crowd_view(_crowd_seed or {}, _live.get("crowd", {}), {c: _live.get(f"crowd:{c}", {}) for c in COINS}),
     }
     return _view

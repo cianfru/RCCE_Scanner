@@ -759,9 +759,9 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .mh-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-bottom:2px;}
 .mh-toggles{display:flex;flex-wrap:wrap;gap:4px 14px;}
 .mh-toggles button{display:inline-flex;align-items:center;gap:6px;border:0;border-bottom:1px solid transparent;background:transparent;padding:4px 0;color:var(--t-text3);font:500 12px var(--font-geist-sans),sans-serif;cursor:pointer;}
-.mh-toggles button i{width:10px;height:2px;opacity:.4;}
+.mh-toggles button .mh-swatch{opacity:.45;}
 .mh-toggles button[aria-pressed="true"]{color:var(--t-text1);border-bottom-color:var(--t-text3);}
-.mh-toggles button[aria-pressed="true"] i{opacity:1;}
+.mh-toggles button[aria-pressed="true"] .mh-swatch{opacity:1;}
 .mh-chart{position:relative;width:100%;}
 .mh-chart svg{display:block;touch-action:pan-y;}
 .mh-chart-plot{position:relative;}
@@ -770,8 +770,6 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .mh-legend{display:inline-flex;align-items:center;gap:10px;color:var(--t-text2);}
 .mh-legend-item{display:inline-flex;align-items:center;gap:5px;}
 .mh-legend svg{display:block;}
-.mh-legend-median{stroke:var(--t-text2);stroke-width:1.5;stroke-dasharray:4 3;}
-.mh-legend-ordinary{stroke:var(--t-text2);stroke-width:1.25;stroke-dasharray:1 3;}
 .mh-btc-label{position:absolute;top:2px;display:inline-flex;align-items:center;padding:0 2px;font:500 11px var(--font-geist-sans),sans-serif;color:var(--t-text2);background:color-mix(in srgb,var(--t-bg) 85%,transparent);text-shadow:0 0 3px var(--t-bg),0 0 3px var(--t-bg);}
 .mh-btc-label .alt-season-info{margin-left:5px;}
 .mh-empty{padding:40px 0;color:var(--t-text3);font-size:13px;}
@@ -787,16 +785,15 @@ i.race-btc{background:var(--t-text1);height:2px;}
 .mh-line{stroke:var(--t-text3);stroke-width:1;stroke-dasharray:3 3;}
 .mh-marker{stroke:var(--t-accent);stroke-width:1.5;opacity:.7;}
 .mh-cursor{stroke:var(--t-text3);stroke-width:1;}
-/* The past-paths fan: future zone, Today, +30 / +60, median, bands, paths, landing dots, ordinary. */
+/* The past-paths fan: future zone, Today, +30 / +60, median, middle half, range marks, paths (on hover). */
 .mh-zone{fill:var(--t-overlay04);}
 .mh-today-line{stroke:var(--t-text3);stroke-width:1;}
 .mh-hair{stroke:var(--t-border);stroke-width:1;stroke-dasharray:3 3;}
 .mh-fan-outer{opacity:.10;stroke:none;}
 .mh-fan-mid{opacity:.22;stroke:none;}
-.mh-fan-path{fill:none;stroke-width:1;opacity:.35;}
-.mh-median{fill:none;stroke-width:1.5;stroke-dasharray:4 3;}
+.mh-fan-path{fill:none;stroke-width:1;opacity:.3;}
+.mh-median{fill:none;stroke-width:2;}
 .mh-median-dot{stroke:var(--t-bg);stroke-width:1.5;}
-.mh-land{opacity:.7;stroke-width:1;}
 .mh-ordinary{fill:none;stroke:var(--t-text2);stroke-width:1.25;stroke-dasharray:1 3;opacity:.8;}
 .mh-zone-greed{fill:#e5484d;opacity:.06;}
 .mh-zone-fear{fill:var(--t-accent);opacity:.06;}

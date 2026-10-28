@@ -16,6 +16,50 @@
 [data-theme="light"] .mkt-wallet-kpi .is-long{color:#047857;}
 [data-theme="light"] .mkt-wallet-kpi .is-short{color:#dc2626;}
 
+/* Keys: a small line, dashed line, range mark or box, then words (the Uptrend panel's key, the fan's, the toggles) */
+.mh-swatch{display:block;flex:none;}
+.mh-swatch line{stroke-width:1.75;}
+.mh-legend .mh-swatch line,.mh-legend .mh-swatch rect{stroke:var(--t-text2);}
+.mh-legend .mh-swatch rect{fill:var(--t-text2);stroke:none;}
+.mh-key{gap:4px 14px;flex-wrap:wrap;max-width:calc(100% - 64px);}
+.mh-key-item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+.mh-key-item b{font:500 11px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.mh-top-label{font:500 10px var(--font-geist-mono),monospace;fill:var(--t-text3);}
+.mh-fan-range line{stroke-width:1.25;opacity:.6;}
+.mh-fan-box{stroke:none;opacity:.85;}
+.mh-legend .mh-swatch rect.mh-fan-box{opacity:.85;}
+
+/* Mini charts under the main one: a hover box per column, keys and one line saying what a column is */
+.mh-mini-tip{position:relative;}
+.mh-tip{position:absolute;z-index:3;width:192px;box-sizing:border-box;pointer-events:none;display:flex;flex-direction:column;gap:1px;padding:7px 9px;border:1px solid var(--t-border);border-radius:6px;background-color:var(--t-bg);background-image:var(--t-popoverBg);box-shadow:0 8px 24px var(--t-shadow);font:500 11px/1.4 var(--font-geist-mono),monospace;color:var(--t-text2);}
+.mh-tip b{font:600 12px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.mh-keys{display:flex;flex-direction:column;gap:3px;margin-top:6px;font:500 12px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.mh-keys span{display:inline-flex;align-items:center;gap:8px;}
+.mh-keys svg{flex:none;}
+.mh-sub{margin:0 0 6px;font:500 12px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.mh-past{flex-direction:column;align-items:stretch;}
+.mh-past-head{gap:0 14px;flex-wrap:wrap;}
+.mh-past-head .mh-count{margin-left:4px;}
+
+/* Run age: today's risk-on run against past runs (yellow past half of them, light red past 3 in 4, red past 9 in 10) */
+.mkt-age.is-l1 .mkt-age-num{color:#fbbf24;}
+.mkt-age.is-l2 .mkt-age-num{color:#fb8a6a;}
+.mkt-age.is-l3 .mkt-age-num{color:#f87171;}
+.mkt-age.is-l1 em:first-of-type{color:#fbbf24;}
+.mkt-age.is-l2 em:first-of-type{color:#fb8a6a;}
+.mkt-age.is-l3 em:first-of-type{color:#f87171;}
+[data-theme="light"] .mkt-age.is-l1 .mkt-age-num,[data-theme="light"] .mkt-age.is-l1 em:first-of-type{color:#b45309;}
+[data-theme="light"] .mkt-age.is-l2 .mkt-age-num,[data-theme="light"] .mkt-age.is-l2 em:first-of-type{color:#c2410c;}
+[data-theme="light"] .mkt-age.is-l3 .mkt-age-num,[data-theme="light"] .mkt-age.is-l3 em:first-of-type{color:#dc2626;}
+.mkt-age-num{font:inherit;border-radius:4px;padding:0 2px;margin:0 -2px;}
+/* One flash when the page opens, like a price flash; it does not repeat */
+.mkt-age-flash{animation:mkt-age-flash 1.1s ease-out 2;}
+@keyframes mkt-age-flash{0%,100%{background:transparent;}35%{background:color-mix(in srgb,currentColor 28%,transparent);}}
+@media(prefers-reduced-motion:reduce){.mkt-age-flash{animation:none;}}
+.mh-run-today.is-l1{stroke:#fbbf24;fill:#fbbf24;fill-opacity:.25;}
+.mh-run-today.is-l2{stroke:#fb8a6a;fill:#fb8a6a;fill-opacity:.25;}
+.mh-run-today.is-l3{stroke:#f87171;fill:#f87171;fill-opacity:.3;}
+
 /* Wallet panels in the chart */
 .mh-wallet-bg{fill:var(--t-overlay02);}
 .mh-wallet-guide{stroke:var(--t-border);stroke-width:1;stroke-dasharray:2 3;}
@@ -33,13 +77,14 @@
 [data-theme="light"] .mh-wallet-key i.is-long{background:#047857;}
 [data-theme="light"] .mh-wallet-key i.is-short{background:#dc2626;}
 .mh-wallet-label .alt-season-info{margin-left:6px;}
-.mh-readout-wrap.has-wallets{min-height:196px;}
-.mh-readout-wrap.has-wallets.is-short{min-height:152px;}
+.mh-readout-wrap.has-wallets{min-height:218px;}
+.mh-readout-wrap.has-wallets.is-short{min-height:174px;}
 
 @media(max-width:640px){
   .mkt-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;}
   .mkt-wallet-kpi strong{gap:5px;}
   .mh-wallet-key{display:none;}
-  .mh-readout-wrap.has-wallets{min-height:236px;}
-  .mh-readout-wrap.has-wallets.is-short{min-height:184px;}
+  .mh-readout-wrap.has-wallets{min-height:262px;}
+  .mh-readout-wrap.has-wallets.is-short{min-height:208px;}
+  .mh-key{max-width:calc(100% - 52px);gap:2px 10px;}
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COPY, RANGES, altTicks, bandDistance, bandHead, bandOn, bandShort, breadthContext, btcSide, countWords, dayDate, episodesOf,
-  fanGeometry, fanMedian, fgSplit, inRange, logTicks, ordinal, percentileOf, popWords, readoutCells, rowsOf, runsMarks,
+  fanGeometry, fanMedian, fanRange, fgSplit, inRange, logTicks, ordinal, percentileOf, popWords, readoutCells, rowsOf, runsMarks,
   missDirection, signedPct, stripCounts, stripScale, todayValues, visibleTexts, visibleWords, wilson,
 } from './marketHistory.js';
 
@@ -93,8 +93,8 @@ test('strip counts: study and later apart, pending episodes and today\'s run lef
     { start: 50, alt30: 10, later: true }, { start: 60, alt30: -9, later: true }, { start: 90, alt30: 10.4, later: true }];
   assert.deepEqual(stripCounts(eps, -7.4, 80), { study: { better: 2, n: 4 }, later: { better: 1, n: 2 } });
   assert.deepEqual(stripCounts(eps, -7.4).later, { better: 2, n: 3 });
-  assert.equal(COPY.episodes.count(stripCounts(eps, -7.4, 80)), '2 of 4 better · later 1 of 2');
-  assert.equal(COPY.episodes.count({ study: { better: 9, n: 18 }, later: { better: 0, n: 0 } }), '9 of 18 better');
+  assert.equal(COPY.episodes.count(stripCounts(eps, -7.4, 80)), '2 of 4 beat all days · later 1 of 2');
+  assert.equal(COPY.episodes.count({ study: { better: 9, n: 18 }, later: { better: 0, n: 0 } }), '9 of 18 beat all days');
   // Today's payload: 9 of 18 in the study, and the 24 Aug 2026 episode (in today's run) is not counted.
   const p = makePayload();
   const c = stripCounts(episodesOf(p, p.bands[4]), -7.4, p.cycle.start);
@@ -113,7 +113,7 @@ test('strip counts: a study episode whose 30 days closed after the end day count
   assert.deepEqual(c, { study: { better: 1, n: 2 }, later: { better: 1, n: 2 } });
   assert.deepEqual([c.study.better, c.study.n], [band.verdict.alt.above_base, band.verdict.episodes]);
   const texts = visibleTexts('breadth', makePayload({ bands: p.bands.map(b => (b.label === '70-85%' ? { ...b, ...band } : b)) }));
-  assert.ok(texts.includes('1 of 2 better · later 1 of 2'));
+  assert.ok(texts.includes('1 of 2 beat all days · later 1 of 2'));
 });
 
 test('strip scale: the 90th percentile of the columns, 15 to 30 points', () => {
@@ -273,8 +273,11 @@ function allCopy() {
   walk(c.pop.fg({ since: 'Feb 2018' }));
   for (const [p, r, f] of [[12, 8, false], [4, 3, true], [1, 1, false]]) walk(c.caption(p, r, f));
   walk([c.axis.h(30), c.axis.h(60), c.readout.range('3–95'), c.readout.altVs('−6%'), c.kpi.pct(77), c.kpi.day(39), c.kpi.run(true), c.kpi.run(false),
-    c.kpi.under(1), c.kpi.under(2), ...['above', 'below', 'inside'].map(c.kpi.band), c.runs.head(true), c.runs.head(false), c.runs.mark(7, 12),
-    c.runs.mark(2, 4), c.runs.hover(20280, 96, 0.98), c.runs.hover(20280, 30, 0.21, false), c.readout.mid('−24/+5'),
+    c.kpi.under(1), c.kpi.under(2), ...['above', 'below', 'inside'].map(c.kpi.band), c.kpi.age(9, 12, true), c.kpi.age(1, 13, false),
+    c.runs.head(true), c.runs.head(false), c.runs.mark(7, 12), c.runs.mark(2, 4), c.runs.tip(20280, 96, 0.98), c.runs.tip(20280, 30, 0.21, false),
+    c.runs.tipToday(20748, 6, false), c.runs.nowKey(6, 12, 13, false), c.runs.nowKey(39, 3, 5, true), c.runs.laterKey(36, 8, 12), c.readout.mid('−24/+5'),
+    c.episodes.tip({ start: 20689, breadth: 0.54, alt30: 20.1, btc30: 23.9 }, -7.4), c.episodes.tip({ start: 20689, breadth: 0.54, alt30: -3, btc30: null }, null),
+    c.ft.tip([18965, 13, 0.77, -6, -4, -35], -13.1), c.ft.tip([18965, 13, 0.77, -6, -4, -35], null),
     c.episodes.head('70–85%'), c.episodes.count({ study: { better: 9, n: 18 }, later: { better: 3, n: 3 } }), c.episodes.ordinary('−7.4%'),
     c.episodes.all(22), c.episodes.due('23 Oct'), c.episodes.pts(18), c.episodes.pts(-16), c.episodes.ongoing(35), c.episodes.column(20689, 10.4),
     c.episodes.pending(20689), c.ft.scored(0), c.ft.worse(7, 8), c.ft.square(20730, null), c.ft.square(20730, -20)]);
@@ -325,7 +328,7 @@ test('fan popover: check wording follows the official result; the legend follows
     show: makeFan().show, altShown: true };
   const today = COPY.pop.fan({ ...ctx, check: makeFan().check })[0];
   assert.match(today, /Tested on 52 past episodes \(12 runs\) with only earlier data: BTC and Uptrend bands caught too few moves, so paths are drawn; the median was further off than the all-days median\./);
-  assert.match(today, /Dashed: median\. Thin lines: past stretches\. Shading \(typical alt\): middle half and middle 8 in 10 of paths\. Dotted: ordinary\./);
+  assert.match(today, /Line: median\. Shading \(typical alt\): middle half\. Marks at \+30 and \+60 days: box, middle half; line, lowest to highest\. Point past today to see each path\./);
   assert.match(COPY.pop.fan({ ...ctx, check: { scored: 52, series: { uptrend: { pass: true }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 1.13 } })[0],
     /the bands held about as often as drawn; the median was further off than the all-days median/);
   assert.match(COPY.pop.fan({ ...ctx, check: { scored: 52, series: { uptrend: { 30: [40, 52, 52], 60: [40, 52, 52], pass: false }, btc: { pass: true }, alt: { pass: true } }, median_vs_all: 0.85 } })[0],
@@ -334,23 +337,34 @@ test('fan popover: check wording follows the official result; the legend follows
   const few = COPY.pop.fan({ ...ctx, tooFew: true, runs: 5 })[0];
   assert.match(few, /Only 5 runs: too few for a median or bands/);
   assert.doesNotMatch(few, /median\.|Shading/);                // no median line and no shading are drawn
-  assert.match(few, /Thin lines: past stretches/);
+  assert.match(few, /Point past today to see each path/);
   const oneYear = COPY.pop.fan({ ...ctx, altShown: false, check: makeFan().check })[0];   // 1Y: no alt panel, nothing shaded
   assert.doesNotMatch(oneYear, /Shading/);
   assert.match(COPY.pop.fan({ ...ctx, side: 'either', check: null })[0], /BTC either side of its weekly band/);
 });
 
-test('visible words stay within budget: 80 on the Uptrend tab, 20 on Fear & Greed', () => {
+// The budget rose from 80 on 28 Oct 2026: the owner asked for each line and bar to say what it is on the page (keys
+// under the runs chart, a line under each strip); longer method text stays in the popovers and hover boxes.
+test('visible words stay within budget: 160 on the Uptrend tab, 20 on Fear & Greed', () => {
   const p = makePayload();
-  for (const range of ['3m', '1y']) assert.ok(visibleWords('breadth', p, { range }) <= 80, String(visibleWords('breadth', p, { range })));
-  assert.ok(visibleWords('breadth', makePayload({ cycle: { ...p.cycle, below_days: 2 } })) <= 80);
+  for (const range of ['3m', '1y']) assert.ok(visibleWords('breadth', p, { range }) <= 160, String(visibleWords('breadth', p, { range })));
+  assert.ok(visibleWords('breadth', makePayload({ cycle: { ...p.cycle, below_days: 2 } })) <= 160);
   assert.ok(visibleWords('fear', p) <= 20, String(visibleWords('fear', p)));
   assert.equal(countWords('82% Uptrend · +30d 7 of 12'), 3);
   const ctx = breadthContext(p);
   assert.equal(ctx.side, 'above');
-  assert.ok(visibleTexts('breadth', p).includes('Median of past paths'));
-  assert.ok(!visibleTexts('breadth', makePayload({ fan: null })).includes('Median of past paths'));
+  assert.ok(visibleTexts('breadth', p).includes('After similar days'));
+  assert.ok(!visibleTexts('breadth', makePayload({ fan: null })).includes('After similar days'));
+  assert.ok(visibleTexts('breadth', p).includes('Today, day 39: 7 of 12 past runs lasted this long'));
+  assert.ok(visibleTexts('breadth', p).includes('longer than 5 of 12 past runs'));
   assert.equal(ctx.fanCtx.paths, 3);
+});
+
+test('fan marks: lowest, highest and the middle half of the past paths at a knot', () => {
+  const f = makeFan({ paths: { uptrend: [[0.5, 0.1], [0.5, 0.9], [0.5, 0.4], [0.5, 0.6], [0.5, null]], btc: [], alt: [] } });
+  assert.deepEqual(fanRange(f, 'uptrend', 1), { lo: 0.1, hi: 0.9, mid: [0.1, 0.6] });   // positions floor(0.25 * 3), floor(0.75 * 3)
+  assert.deepEqual(fanRange(makeFan({ paths: { uptrend: [[0, 1], [0, 3]], btc: [], alt: [] } }), 'uptrend', 1), { lo: 1, hi: 3, mid: null });
+  assert.equal(fanRange(f, 'btc', 1), null);
 });
 
 test('formatting', () => {
