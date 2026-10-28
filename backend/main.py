@@ -1859,6 +1859,14 @@ async def start_backtest(body: BacktestRequest):
     return {"id": bt_id, "status": "started"}
 
 
+# Fixed sub-paths go above /api/backtest/{bt_id}, which would otherwise match them first.
+@app.get("/api/backtest/symbols")
+async def backtested_symbols():
+    """Return all symbols that appear in completed backtests."""
+    from backtest.runner import get_backtested_symbols
+    return {"symbols": get_backtested_symbols()}
+
+
 @app.get("/api/backtest/{bt_id}")
 async def get_backtest_status(bt_id: str):
     """Get backtest status and results."""
@@ -1970,13 +1978,6 @@ async def list_all_backtests():
     """List all backtests (running + completed)."""
     from backtest.runner import list_backtests
     return {"backtests": list_backtests()}
-
-
-@app.get("/api/backtest/symbols")
-async def backtested_symbols():
-    """Return all symbols that appear in completed backtests."""
-    from backtest.runner import get_backtested_symbols
-    return {"symbols": get_backtested_symbols()}
 
 
 # ---------------------------------------------------------------------------
