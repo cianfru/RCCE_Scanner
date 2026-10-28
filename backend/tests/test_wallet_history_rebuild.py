@@ -54,6 +54,14 @@ class PositionsTests(unittest.TestCase):
             self.assertFalse(wr.is_perp(f), f)
 
 
+class BucketTests(unittest.TestCase):
+    def test_a_charge_larger_than_the_bucket_still_goes_through(self):
+        b = wr.Bucket(600)                   # 10 a second, 60 at most in the bucket
+        b.take(100)                          # a full page's item weight: waits for a full bucket, then owes 40
+        self.assertLess(b.tokens, 0)
+        self.assertEqual(b.used, 100)
+
+
 class ReadTests(unittest.TestCase):
     """read_kind: one page for a quiet wallet, the newest window for a busy one, coverage cut near the API's cap."""
 

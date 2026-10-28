@@ -83,16 +83,19 @@ class Bucket:
         self.lock = threading.Lock()
 
     def take(self, n: float) -> None:
+        """Wait for n weight. A charge larger than the bucket (a full page's item weight) waits for a full bucket and
+        leaves it in debt, so later calls wait it off."""
         while True:
             with self.lock:
                 now = time.monotonic()
                 self.tokens = min(self.cap, self.tokens + (now - self.last) * self.rate)
                 self.last = now
-                if self.tokens >= n:
+                need = min(n, self.cap)
+                if self.tokens >= need:
                     self.tokens -= n
                     self.used += n
                     return
-                wait = (n - self.tokens) / self.rate
+                wait = (need - self.tokens) / self.rate
             time.sleep(min(wait, 5))
 
     def penalize(self, seconds: float) -> None:
@@ -101,6 +104,7 @@ class Bucket:
 
 
 BUCKET = Bucket(1050)
+STATS = {"429": 0, "errors": 0}
 
 
 def info(body: dict, retries: int = 6):
@@ -116,6 +120,7 @@ def info(body: dict, retries: int = 6):
             return out
         except urllib.error.HTTPError as e:
             if e.code == 429:
+                STATS["429"] += 1
                 BUCKET.penalize(20 * (attempt + 1))
                 time.sleep(5 * (attempt + 1))
             elif e.code >= 500:
@@ -123,6 +128,7 @@ def info(body: dict, retries: int = 6):
             else:
                 raise
         except Exception:
+            STATS["errors"] += 1
             time.sleep(3 * (attempt + 1))
     raise RuntimeError(f"{kind} failed after {retries} tries")
 
@@ -384,6 +390,7 @@ def fills_one(conn, addr):
 
 
 def run_pool(conn, todo, fn, workers, stop_at):
+    t0, done, last = time.time(), 0, time.time()
     with ThreadPoolExecutor(workers) as ex:
         futs = []
         for a in todo:
@@ -392,7 +399,13 @@ def run_pool(conn, todo, fn, workers, stop_at):
             futs.append(ex.submit(fn, conn, a))
             while sum(1 for f in futs if not f.done()) > workers * 2:
                 time.sleep(0.1)
+            done += sum(1 for f in futs if f.done())
             futs = [f for f in futs if not f.done()]
+            if time.time() - last >= 60:                  # one progress line a minute
+                last = time.time()
+                mins = (last - t0) / 60
+                print(f"{time.strftime('%H:%M')} {done} done, {BUCKET.used / mins:.0f} weight/min, "
+                      f"{STATS['429']} rate-limited, {STATS['errors']} errors", flush=True)
 
 
 def candles(conn):
