@@ -40,6 +40,27 @@ A wallet can be in more than one. Market makers are out: monthly volume over 100
 
 **Joining the two.** The page shows recorded days wherever the sweep has them and rebuilt days before them (and in any gap). The rebuilt counts are an estimate from a sample, so their level can sit a few points off the recorded one; left as is, the seam would read as wallets changing side in exactly the most recent days. Where the two overlap by a week or more, the rebuilt days are moved to the recorded level: each share (positioned, long, short) shifted by its mean difference over the overlap (`overlap.offset`, in points). The feed also gives the mean absolute gap before the shift (`overlap.long_pts`, `overlap.short_pts`), and the page's (i) quotes it.
 
+## Outrider's numbers beside these (checked 28 October 2026)
+
+The owner saw the two apps disagree. They count different people in different ways; where they count the same people (Outrider's crowd and HyperLens's profitable traders) the numbers are the same data.
+
+| Name on screen | App | Who | Counted as | How often |
+|---|---|---|---|---|
+| "Smart money" (Telegram pulse and its picture), "Crowd long" (desk) | Outrider | HyperLens's profitable traders: the best 600 by monthly return (30%+, $10K+ monthly profit, in profit before the month) | positions: each trader-coin position once; long ÷ (long + short), flat traders not counted | every poll (minutes), from `/api/hyperlens/positioning` |
+| "Profitable traders" (HyperLens, this page's third panel) | Reflex | the same roster | the same positions | the sweep; this page at each 00:00 UTC close |
+| "Big money" | Outrider | leaderboard account value $500K+ (spot and vaults included), in profit all-time, market makers out; one owner's wallets merged | one vote per owner per coin, from a $25K net position; long votes ÷ all votes | once a day |
+| "Smart money" (this page, Cohorts page) | Reflex | $100K+ all-time PnL and $10K+ perp equity (Smart Money and Money Printer cohorts) | wallets: net long or short over all coins; share of all the group's wallets, flat ones included | each 00:00 UTC close |
+| "Whales" (this page) | Reflex | $1M+ perp equity, profit not checked | as smart money | each 00:00 UTC close |
+| "Large accounts" (HyperLens) | Reflex | leaderboard account value $1M+, the largest 60, profit not checked | traders per coin | the sweep |
+
+What makes the readings differ:
+
+- **Same name, different people.** Outrider's "Smart money" is Reflex's "Profitable traders". Reflex's "Smart money" is the $100K+ all-time PnL cohorts.
+- **Positions against wallets.** A trader long five coins is five longs in Outrider's crowd and one long wallet here.
+- **Flat counted or not.** For example, 40% long, 29% short and 31% flat of a group's wallets reads as 58% long when flat wallets are left out, as Outrider does.
+- **Big money is not whales.** $500K of leaderboard account value and in profit, per owner and per coin, against $1M of perp equity whatever the profit, per wallet over all coins. On the 28 October leaderboard: 3,681 accounts pass Outrider's rule, 2,602 have $1M+ of account value, 7,085 pass the smart-money rule, 645 the profitable-trader rule.
+- **A long-leaning population.** The profitable traders held 69.5% of their positions long on average over Outrider's rebuilt year (S2). Levels of different groups are not comparable, only their moves.
+
 ## Limits
 
 - **Survivorship.** Candidates come from today's leaderboard. A wallet that has left it is missing from the past.

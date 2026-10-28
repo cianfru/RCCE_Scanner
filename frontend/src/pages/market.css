@@ -1,6 +1,7 @@
 /* /market: the market history page. The chart and section styles are the mh-* rules in terminal.css. */
 .mkt{color:var(--t-text2);padding-top:4px;}
 .mkt-head{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-bottom:14px;}
+.mkt-head-right{display:inline-flex;align-items:center;gap:16px;}
 .mkt-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 24px;margin-bottom:16px;}
 .mkt-split{grid-column:1 / -1;justify-self:start;max-width:420px;}
 .mkt .mh-controls{margin-bottom:6px;}
@@ -88,3 +89,16 @@
   .mh-readout-wrap.has-wallets.is-short{min-height:208px;}
   .mh-key{max-width:calc(100% - 52px);gap:2px 10px;}
 }
+
+/* Derive drawer: Smart options wallets against the price */
+.dd-drawer{width:min(1100px,calc(100vw - 96px));}
+.dd-drawer .mh-head h2{display:inline-flex;align-items:center;}
+.dd-drawer .mh-head h2 .alt-season-info{margin-left:8px;}
+.dd-drawer .mh-controls{margin:4px 0 10px;}
+.dd-chart .mh-btc-label{height:16px;}
+.dd-put{fill:#c4a5ff;opacity:.75;}
+[data-theme="light"] .dd-put{fill:#7c3aed;opacity:.6;}
+.dd-top{stroke:var(--t-text3);stroke-width:1;stroke-dasharray:3 4;opacity:.7;}
+.dd-readout{margin-top:6px;}
+.mkt-derive{white-space:nowrap;}
+@media(max-width:767px){.dd-drawer{width:100vw;}}

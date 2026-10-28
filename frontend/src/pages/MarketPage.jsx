@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Tabs from "../components/Tabs.jsx";
 import AsOf from "../components/AsOf.jsx";
@@ -8,7 +8,10 @@ import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, ageLevel, l
 import { COPY, RANGES, bandOn, breadthContext, dayDate, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
          percentileOf, rowsOf, signedPct, todayValues } from "../utils/marketHistory.js";
 import { GROUPS, SCOPES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
+import { DCOPY } from "../utils/deriveWallets.js";
 import "./market.css";
+
+const DeriveDrawer = lazy(() => import("../components/DeriveDrawer.jsx"));
 
 // /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how Hyperliquid's
 // smart money and whales stood (long or short) at each daily close underneath, on one time axis. It replaced the
@@ -91,6 +94,8 @@ export default function MarketPage({ style }) {
   const [overlays, setOverlays] = useState(["downtrend", "fg"]);
   const [scope, setScope] = useState("all");
   const [bandLabel, setBandLabel] = useState(null);
+  const [derive, setDerive] = useState(false);
+  const closeDerive = useCallback(() => setDerive(false), []);
 
   useEffect(() => {
     let alive = true;
@@ -133,8 +138,12 @@ export default function MarketPage({ style }) {
     <div className="mkt-head">
       <Tabs label="View" value={view} onChange={setView}
         items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
-      <AsOf data={data} also={wallets} />
+      <span className="mkt-head-right">
+        <button type="button" className="mh-link mkt-derive" aria-haspopup="dialog" onClick={() => setDerive(true)}>{DCOPY.open}</button>
+        <AsOf data={data} also={wallets} />
+      </span>
     </div>
+    {derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>}
     <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} />
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
       {walletProp && <div className="mkt-wallet-controls">

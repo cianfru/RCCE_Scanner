@@ -4363,11 +4363,20 @@ async def market_history_spark():
 
 @app.get("/api/market-history/wallets")
 async def market_history_positioning():
-    """Smart money and whales: wallets net long and net short at each daily close, rebuilt days then recorded ones.
-    The last good view, marked stale, if a rebuild fails (degrade.py)."""
+    """Smart money, whales and profitable traders: long and short at each daily close, rebuilt days then recorded
+    ones. The last good view, marked stale, if a rebuild fails (degrade.py)."""
     import degrade
     import wallet_history
     return degrade.LAST_GOOD.serve_sync(("market-history-wallets",), wallet_history.view)
+
+
+@app.get("/api/market-history/derive")
+async def market_history_derive():
+    """Derive's Smart options wallets at each daily close, as ranked then and as ranked today, and their new puts
+    (the market history page's Derive drawer; a seed built by hand, no Derive reads here)."""
+    import degrade
+    import derive_wallets
+    return degrade.LAST_GOOD.serve_sync(("market-history-derive",), derive_wallets.view)
 
 
 @app.get("/api/cohorts")
