@@ -75,7 +75,7 @@ ITEM_EXTRA = {"userFills", "userFillsByTime", "candleSnapshot", "userTwapSliceFi
 
 class Bucket:
     def __init__(self, per_min: float):
-        self.rate, self.cap = per_min / 60.0, per_min / 4
+        self.rate, self.cap = per_min / 60.0, per_min / 10
         self.tokens, self.last, self.used = self.cap, time.monotonic(), 0
         self.lock = threading.Lock()
 

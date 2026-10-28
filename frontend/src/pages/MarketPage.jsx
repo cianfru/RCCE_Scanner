@@ -14,14 +14,16 @@ import "./market.css";
 // smart money and whales stood (long or short) at each daily close underneath, on one time axis. It replaced the
 // scanner's history drawer; the consensus card's history button and the dial open it (?view=fear for the dial).
 
+// A wallet group's (i): who is in it, how it is drawn, where the days come from.
+const walletInfo = (wallets, g, mode) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
+  rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], mode })} />;
+
 function Kpis({ data, rows, wallets, ctx, view, walletMode }) {
   const t = data.today, c = data.cycle;
   const fg = data.fear_greed || [];
   // The chart's last day, so the KPI matches the readout under the chart (the index may have a newer day).
   const lastRow = [...rows].reverse().find(r => r.fg != null);
   const lastFg = lastRow ? [lastRow.day, lastRow.fg] : fg[fg.length - 1];
-  const popCtx = g => ({ rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key],
-    mode: walletMode });
   return <div className="mh-kpis mkt-kpis">
     <div className="mh-kpi">
       <strong>{pctLabel(t.uptrend)}</strong>
@@ -47,7 +49,7 @@ function Kpis({ data, rows, wallets, ctx, view, walletMode }) {
       if (!r) return null;
       return <div key={g.key} className="mh-kpi mkt-wallet-kpi">
         <strong><b className="is-long">{pct(r.L)}</b><i aria-hidden="true">·</i><b className="is-short">{pct(r.S)}</b></strong>
-        <span>{g.label}<Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, popCtx(g))} /></span>
+        <span>{g.label}{walletInfo(wallets, g, walletMode)}</span>
         <em>{WCOPY.kpi.sub}</em>
       </div>;
     })}
@@ -75,7 +77,7 @@ export default function MarketPage({ style }) {
   const [failed, setFailed] = useState(false);
   const [wallets, setWallets] = useState(null);
   const [range, setRange] = useState("1y");
-  const [overlays, setOverlays] = useState(["fg"]);
+  const [overlays, setOverlays] = useState(["downtrend", "fg"]);
   const [walletMode, setWalletMode] = useState("z");
   const [bandLabel, setBandLabel] = useState(null);
 
@@ -109,15 +111,12 @@ export default function MarketPage({ style }) {
   const ov = view === "breadth" ? OVERLAYS().filter(o => overlays.includes(o.key)) : [];
   const last = rows[rows.length - 1];
   const today = view === "breadth" ? { ...todayValues(data), row: last } : { row: last };
-  const walletGroups = wallets ? GROUPS.filter(g => wallets.groups?.[g.key]?.length).map(g => ({
-    ...g, info: <Info title={WCOPY.pop.title(g)}
-      paras={WCOPY.pop.group(g, { rebuiltTo: wallets.rebuilt?.to, recordedFrom: wallets.recorded_from,
-        overlap: wallets.overlap?.[g.key], mode: walletMode })} />,
-  })) : [];
+  const walletGroups = wallets ? GROUPS.filter(g => wallets.groups?.[g.key]?.length)
+    .map(g => ({ ...g, info: walletInfo(wallets, g, walletMode) })) : [];
   const walletProp = walletGroups.length ? { mode: walletMode, groups: walletGroups, from: firstDay(wallets) } : null;
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
-  const rangeLabel = RANGES.find(r => r.key === range)?.label;
+  const aria = panel => [panel, COPY.panel.btc, ...walletGroups.map(g => g.label), RANGES.find(r => r.key === range)?.label].join(", ");
 
   return <div className="mkt" style={style}>
     <div className="mkt-head">
@@ -132,9 +131,8 @@ export default function MarketPage({ style }) {
     {view === "breadth"
       ? <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov}
           selBand={{ lo: band.lo, hi: band.hi }} markers={episodesOf(data, band).map(e => e.start)} today={today}
-          wallets={walletProp} aria={`${COPY.panel.uptrend}, ${COPY.panel.btc}, ${walletGroups.map(g => g.label).join(", ")}, ${rangeLabel}`} />
-      : <MarketHistoryChart mode="fear" rows={shown} range={range} today={today} wallets={walletProp}
-          aria={`${COPY.panel.fg}, ${COPY.panel.btc}, ${walletGroups.map(g => g.label).join(", ")}, ${rangeLabel}`} />}
+          wallets={walletProp} aria={aria(COPY.panel.uptrend)} />
+      : <MarketHistoryChart mode="fear" rows={shown} range={range} today={today} wallets={walletProp} aria={aria(COPY.panel.fg)} />}
     {view === "breadth" && <>
       {data.cycle?.runs && <RunsChart cycle={data.cycle} since={ctx.since} />}
       <Episodes data={data} band={band} setBandLabel={setBandLabel} ctx={ctx} />

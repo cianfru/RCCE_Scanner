@@ -25,6 +25,7 @@ export const loadWallets = () => loadOnce("/api/market-history/wallets");
 
 export const OVERLAYS = () => [                      // a function: T is repainted on theme change
   { key: "overheated", color: T.yellow, dash: "4 3" },
+  { key: "downtrend", color: T.red, dash: "5 3" },
   { key: "median_z", color: "#91b9e8", axis: "z" },
   { key: "fg", color: "var(--t-text3)", dash: "1 3", scale: 100 },
 ];

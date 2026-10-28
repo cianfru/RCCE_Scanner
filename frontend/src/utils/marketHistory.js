@@ -306,7 +306,7 @@ export const COPY = {
   empty: "No history in this range.",
   rangeLabel: "Range",
   overlaysLabel: "Add to the chart",
-  overlays: { overheated: "Overheated", median_z: "Median z", fg: "Fear & Greed" },
+  overlays: { overheated: "Overheated", downtrend: "Downtrend", median_z: "Median z", fg: "Fear & Greed" },
 
   caption: (paths, runs, tooFew) => `${plural(paths, "past path")} · ${plural(runs, "run")}${tooFew ? " · too few for a median" : ""}`,
   tooFewDays: "Too few similar days",
@@ -318,7 +318,7 @@ export const COPY = {
 
   readout: {
     today: "Today", uptrend: "Uptrend", btc: "BTC", alt: "Typical alt", ordinary: "ordinary",
-    overheated: "Overheated", median_z: "Median z", fg: "Fear & Greed",
+    overheated: "Overheated", downtrend: "Downtrend", median_z: "Median z", fg: "Fear & Greed",
     range: s => `range ${s}`,
     mid: s => `mid ${s}`,
     fanHead: "Median of past paths",
