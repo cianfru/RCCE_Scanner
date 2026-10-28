@@ -112,7 +112,7 @@ test('strip counts: a study episode whose 30 days closed after the end day count
   const c = stripCounts(eps, -7.4, p.cycle.start);
   assert.deepEqual(c, { study: { better: 1, n: 2 }, later: { better: 1, n: 2 } });
   assert.deepEqual([c.study.better, c.study.n], [band.verdict.alt.above_base, band.verdict.episodes]);
-  const texts = visibleTexts('breadth', makePayload({ bands: p.bands.map(b => (b.label === '70-85%' ? { ...b, ...band } : b)) }));
+  const texts = visibleTexts('breadth', makePayload({ bands: p.bands.map(b => (b.label === '70-85%' ? { ...b, ...band } : b)) }), { more: true });
   assert.ok(texts.includes('1 of 2 beat all days · later 1 of 2'));
 });
 
@@ -282,7 +282,7 @@ function allCopy() {
     c.episodes.all(22), c.episodes.due('23 Oct'), c.episodes.pts(18), c.episodes.pts(-16), c.episodes.ongoing(35), c.episodes.column(20689, 10.4),
     c.episodes.pending(20689), c.ft.scored(0), c.ft.worse(7, 8), c.ft.square(20730, null), c.ft.square(20730, -20)]);
   for (const range of ['3m', '1y']) for (const cyc of [makePayload().cycle, { ...makePayload().cycle, type: 'off', below_days: 0 }, { ...makePayload().cycle, below_days: 2 }])
-    for (const fan of [makeFan(), null, makeFan({ too_few: true, runs: 4 })]) walk(visibleTexts('breadth', makePayload({ cycle: cyc, fan }), { range }));
+    for (const fan of [makeFan(), null, makeFan({ too_few: true, runs: 4 })]) walk(visibleTexts('breadth', makePayload({ cycle: cyc, fan }), { range, fan: true, more: true }));
   walk(visibleTexts('fear', makePayload()));
   return out;
 }
@@ -343,18 +343,25 @@ test('fan popover: check wording follows the official result; the legend follows
   assert.match(COPY.pop.fan({ ...ctx, side: 'either', check: null })[0], /BTC either side of its weekly band/);
 });
 
-// The budget rose from 80 on 28 Oct 2026: the owner asked for each line and bar to say what it is on the page (keys
-// under the runs chart, a line under each strip); longer method text stays in the popovers and hover boxes.
-test('visible words stay within budget: 160 on the Uptrend tab, 20 on Fear & Greed', () => {
+// The page opens on one question (owner, 28 Oct 2026: "the overwhelm of data"): 80 words with the fan off and the
+// older studies folded. Opened, the keys under the runs chart and the line under each strip say what they are
+// (owner, the same day: each line and bar should say what it is), so the full page may run to 160.
+test('visible words stay within budget: 80 as the Uptrend tab opens, 160 with everything open, 20 on Fear & Greed', () => {
   const p = makePayload();
-  for (const range of ['3m', '1y']) assert.ok(visibleWords('breadth', p, { range }) <= 160, String(visibleWords('breadth', p, { range })));
-  assert.ok(visibleWords('breadth', makePayload({ cycle: { ...p.cycle, below_days: 2 } })) <= 160);
+  for (const range of ['3m', '1y']) {
+    assert.ok(visibleWords('breadth', p, { range }) <= 80, String(visibleWords('breadth', p, { range })));
+    assert.ok(visibleWords('breadth', p, { range, fan: true, more: true }) <= 160, String(visibleWords('breadth', p, { range, fan: true, more: true })));
+  }
+  assert.ok(visibleWords('breadth', makePayload({ cycle: { ...p.cycle, below_days: 2 } })) <= 80);
   assert.ok(visibleWords('fear', p) <= 20, String(visibleWords('fear', p)));
   assert.equal(countWords('82% Uptrend · +30d 7 of 12'), 3);
   const ctx = breadthContext(p);
   assert.equal(ctx.side, 'above');
-  assert.ok(visibleTexts('breadth', p).includes('After similar days'));
-  assert.ok(!visibleTexts('breadth', makePayload({ fan: null })).includes('After similar days'));
+  assert.ok(!visibleTexts('breadth', p).includes('After similar days'), 'the fan is off as the page opens');
+  assert.ok(visibleTexts('breadth', p, { fan: true }).includes('After similar days'));
+  assert.ok(!visibleTexts('breadth', makePayload({ fan: null }), { fan: true }).includes('After similar days'));
+  assert.ok(!visibleTexts('breadth', p).includes('Forward test'), 'the older studies are folded');
+  assert.ok(visibleTexts('breadth', p, { more: true }).includes('Forward test'));
   assert.ok(visibleTexts('breadth', p).includes('Today, day 39: 7 of 12 past runs lasted this long'));
   assert.ok(visibleTexts('breadth', p).includes('longer than 5 of 12 past runs'));
   assert.equal(ctx.fanCtx.paths, 3);

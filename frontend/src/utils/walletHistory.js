@@ -89,6 +89,7 @@ export function shareScale(rows, keys) {
 
 export const WCOPY = {
   scopeLabel: "Wallet positions in",
+  groupLabel: "Wallet group",
   label: (g, scope) => (scope && scope !== "all" ? `${g.label} · ${scope}` : g.label),
   from: day => `Data from ${monthYear(day)}`,
   long: "long",

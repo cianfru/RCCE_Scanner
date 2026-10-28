@@ -316,6 +316,9 @@ export const COPY = {
   rangeLabel: "Range",
   overlaysLabel: "Add to the chart",
   overlays: { overheated: "Overheated", downtrend: "Downtrend", median_z: "Median z", fg: "Fear & Greed" },
+  fanToggle: "What followed similar days",
+  more: "More history: past episodes and the forward test",
+  less: "Less history",
 
   caption: (paths, runs, tooFew) => `${plural(paths, "similar past day")} · ${plural(runs, "run")}${tooFew ? " · too few for a median" : ""}`,
   tooFewDays: "Too few similar days",
@@ -467,7 +470,8 @@ export function breadthContext(data, { range = "3m" } = {}) {
 // The words a tab shows outside tables, popovers, hover boxes, axis ticks and tab/toggle labels (the word budget).
 // Mirrors what the market history page renders (pages/MarketPage.jsx; the wallet panels' words are walletHistory's);
 // the screenshots pass re-counts them on the page.
-export function visibleTexts(tab, data, { range = "3m", band, overlays = ["downtrend", "fg"] } = {}) {
+// The page opens with the fan off and the older studies folded (fan, more: what the page shows once opened).
+export function visibleTexts(tab, data, { range = "3m", band, overlays = ["fg"], fan: fanOn = false, more = false } = {}) {
   const fg = data.fear_greed || [];
   const fgKpi = fg.length ? [COPY.kpi.fg, COPY.kpi.pct(50)] : [];
   if (tab === "fear") {
@@ -487,20 +491,21 @@ export function visibleTexts(tab, data, { range = "3m", band, overlays = ["downt
   const out = [
     COPY.kpi.uptrend, COPY.kpi.pct(x.t.percentile),
     c && COPY.kpi.day(c.day), c && COPY.kpi.run(x.on), c?.past && COPY.kpi.age(c.past - c.reached, c.past, x.on),
-    c?.below_days > 0 && COPY.kpi.under(c.below_days),
-    x.side && COPY.kpi.band(x.side), ...fgKpi,
-    x.fan ? COPY.caption(x.fan.episodes.length, x.fan.runs, x.fan.too_few) : COPY.tooFewDays,
-    x.fan && !x.fan.too_few && COPY.legend.median, x.fan && COPY.legend.range,
+    c?.below_days > 0 && COPY.kpi.under(c.below_days), ...fgKpi,
     COPY.panel.btc, COPY.panel.uptrend, ...overlays.map(k => COPY.overlays[k]), alt && COPY.panel.alt, COPY.riskOn,
-    COPY.axis.today, COPY.axis.h(30), COPY.axis.h(60),
-    x.fan && COPY.readout.fanHead, COPY.readout.today, COPY.axis.h(30), COPY.axis.h(60), COPY.readout.uptrend, COPY.readout.btc,
-    x.fan && COPY.readout.ordinary, alt && COPY.readout.alt, alt && x.fan && COPY.readout.ordinary,
+    COPY.readout.today, COPY.readout.uptrend, COPY.readout.btc, alt && COPY.readout.alt,
     marks && COPY.runs.head(x.on), marks && COPY.runs.nowKey(c.day, c.reached, c.past, x.on),
     marks?.later && COPY.runs.laterKey(marks.later.day, c.lasted_more, c.reached),
-    COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts), COPY.episodes.sub,
-    base != null && COPY.episodes.ordinary(signedPct(base)), eps.length > 5 && COPY.episodes.all(eps.length),
   ];
-  if (ft) {
+  if (fanOn) {
+    out.push(x.fan ? COPY.caption(x.fan.episodes.length, x.fan.runs, x.fan.too_few) : COPY.tooFewDays,
+      x.fan && !x.fan.too_few && COPY.legend.median, x.fan && COPY.legend.range,
+      COPY.axis.today, COPY.axis.h(30), COPY.axis.h(60), x.fan && COPY.readout.fanHead, COPY.axis.h(30), COPY.axis.h(60),
+      x.fan && COPY.readout.ordinary, alt && x.fan && COPY.readout.ordinary);
+  }
+  if (more) out.push(COPY.episodes.head(bandHead(b)), COPY.episodes.count(counts), COPY.episodes.sub,
+    base != null && COPY.episodes.ordinary(signedPct(base)), eps.length > 5 && COPY.episodes.all(eps.length));
+  if (ft && more) {
     const worse = ft.history.filter(h => b60 != null && h[5] < b60).length;
     out.push(COPY.ft.head, COPY.ft.scored(ft.episodes.filter(e => e.h60).length), COPY.ft.past,
       COPY.ft.worse(worse, ft.history.length), COPY.ft.table, COPY.ft.pastSub, b60 != null && COPY.episodes.ordinary(signedPct(b60)));

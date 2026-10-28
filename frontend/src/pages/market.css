@@ -80,6 +80,8 @@
 .mh-wallet-label .alt-season-info{margin-left:6px;}
 .mh-readout-wrap.has-wallets{min-height:218px;}
 .mh-readout-wrap.has-wallets.is-short{min-height:174px;}
+/* Without the fan the table is one column of today's values (or the hovered day's): five rows at most */
+.mh-readout-wrap.has-wallets:not(.has-fan){min-height:132px;}
 
 @media(max-width:640px){
   .mkt-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;}
@@ -87,6 +89,7 @@
   .mh-wallet-key{display:none;}
   .mh-readout-wrap.has-wallets{min-height:262px;}
   .mh-readout-wrap.has-wallets.is-short{min-height:208px;}
+  .mh-readout-wrap.has-wallets:not(.has-fan){min-height:150px;}
   .mh-key{max-width:calc(100% - 52px);gap:2px 10px;}
 }
 
@@ -102,3 +105,21 @@
 .dd-readout{margin-top:6px;}
 .mkt-derive{white-space:nowrap;}
 @media(max-width:767px){.dd-drawer{width:100vw;}}
+
+/* One wallet panel: its header holds the group tabs, the key and the coin tabs */
+.mh-wallet-head{position:absolute;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:0 12px;flex-wrap:wrap;align-content:flex-end;}
+.mh-wallet-head .reflex-tabs-small button{padding:5px 8px;}
+.mkt-wallet-pick{display:inline-flex;align-items:center;gap:4px;min-width:0;}
+.mkt-wallet-pick .mh-wallet-key{margin-left:6px;font:500 11px var(--font-geist-sans),sans-serif;}
+.mkt-wallet-pick .alt-season-info{margin-left:6px;}
+
+/* The past-paths toggle sits with the line toggles and looks like them */
+.mkt-fan-toggle{display:inline-flex;align-items:center;gap:6px;border:0;border-bottom:1px solid transparent;background:transparent;padding:4px 0;color:var(--t-text3);font:500 12px var(--font-geist-sans),sans-serif;cursor:pointer;}
+.mkt-fan-toggle .mh-swatch path{fill:none;stroke:currentColor;stroke-width:1.5;}
+.mkt-fan-toggle[aria-pressed="true"]{color:var(--t-text1);border-bottom-color:var(--t-text3);}
+.mkt-more{display:block;margin-top:22px;}
+#mkt-more > .mh-section:first-child{margin-top:12px;}
+@media(max-width:640px){
+  .mh-wallet-head{gap:0 8px;}
+  .mh-wallet-head > .reflex-tabs{max-width:100%;}
+}

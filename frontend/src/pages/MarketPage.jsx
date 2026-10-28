@@ -6,23 +6,25 @@ import MarketHistoryChart from "../components/MarketHistoryChart.jsx";
 import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, ageLevel, loadHistory, loadWallets }
   from "../components/MarketHistorySections.jsx";
 import { COPY, RANGES, bandOn, breadthContext, dayDate, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
-         percentileOf, rowsOf, signedPct, todayValues } from "../utils/marketHistory.js";
+         percentileOf, rowsOf, todayValues } from "../utils/marketHistory.js";
 import { GROUPS, SCOPES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
 import { DCOPY } from "../utils/deriveWallets.js";
 import "./market.css";
 
 const DeriveDrawer = lazy(() => import("../components/DeriveDrawer.jsx"));
 
-// /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how Hyperliquid's
-// smart money and whales stood (long or short) at each daily close underneath, on one time axis. It replaced the
+// /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how one group of
+// Hyperliquid wallets stood (long or short) at each daily close underneath, on one time axis. It replaced the
 // scanner's history drawer; the consensus card's history button and the dial open it (?view=fear for the dial).
+// Kept to one question at a glance (owner, 28 October 2026: "the overwhelm of data"): one wallet group at a time,
+// the past-paths fan and the older studies one click away.
 
 // A wallet group's (i): who is in it, how it is drawn, where the days come from.
 const walletInfo = (wallets, g, scope) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
   rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], scope,
   crowd: wallets?.crowd })} />;
 
-function Kpis({ data, rows, wallets, ctx, view, scope }) {
+function Kpis({ data, rows, wallets, ctx, view, scope, group }) {
   const t = data.today, c = data.cycle;
   const fg = data.fear_greed || [];
   // The chart's last day, so the KPI matches the readout under the chart (the index may have a newer day).
@@ -34,17 +36,13 @@ function Kpis({ data, rows, wallets, ctx, view, scope }) {
       <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, n: t.n, since: ctx.since })} /></span>
       <em>{COPY.kpi.pct(t.percentile)}</em>
     </div>
-    {c && <RunAge c={c} on={ctx.on} />}
-    {ctx.side && <div className="mh-kpi">
-      <strong className={ctx.side === "below" ? "mh-worse" : ""}>{ctx.side === "inside" ? "0%" : signedPct(ctx.dist, 0)}</strong>
-      <span>{COPY.kpi.band(ctx.side)}<Info title={COPY.pop.bandTitle} paras={COPY.pop.band()} /></span>
-    </div>}
+    {c && view === "breadth" && <RunAge c={c} on={ctx.on} />}
     {lastFg && <div className="mh-kpi">
       <strong>{lastFg[1]}</strong>
       <span>{COPY.kpi.fg}<Info title={COPY.pop.fgTitle} paras={COPY.pop.fg({ since: monthYear(fg[0][0]) })} /></span>
       <em>{COPY.kpi.pct(percentileOf(fg.map(v => v[1]), lastFg[1]))}</em>
     </div>}
-    {GROUPS.map(g => {
+    {GROUPS.filter(g => g.key === group).map(g => {
       const r = latestOf(wallets, g.key, scope);
       if (!r) return null;
       // A reading older than the chart's last day says its date (Outrider's rebuilt days end before the record).
@@ -91,8 +89,11 @@ export default function MarketPage({ style }) {
   const [failed, setFailed] = useState(false);
   const [wallets, setWallets] = useState(null);
   const [range, setRange] = useState("1y");
-  const [overlays, setOverlays] = useState(["downtrend", "fg"]);
+  const [overlays, setOverlays] = useState(["fg"]);
   const [scope, setScope] = useState("all");
+  const [group, setGroup] = useState("smart");
+  const [fanOn, setFanOn] = useState(false);
+  const [more, setMore] = useState(false);
   const [bandLabel, setBandLabel] = useState(null);
   const [derive, setDerive] = useState(false);
   const closeDerive = useCallback(() => setDerive(false), []);
@@ -127,9 +128,19 @@ export default function MarketPage({ style }) {
   const ov = view === "breadth" ? OVERLAYS().filter(o => overlays.includes(o.key)) : [];
   const last = rows[rows.length - 1];
   const today = view === "breadth" ? { ...todayValues(data), row: last } : { row: last };
-  const walletGroups = wallets ? GROUPS.filter(g => walletDays[g.key]?.size)
-    .map(g => ({ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, scope), from: firstDay(wallets, g.key) })) : [];
-  const walletProp = walletGroups.length ? { groups: walletGroups } : null;
+  // The groups with data in this coin scope; the panel shows the one picked (the first with data if it has none).
+  const available = wallets ? GROUPS.filter(g => walletDays[g.key]?.size) : [];
+  const g = available.find(x => x.key === group) || available[0];
+  const walletGroups = g ? [{ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, scope), from: firstDay(wallets, g.key) }] : [];
+  const head = g && <>
+    <span className="mkt-wallet-pick">
+      <Tabs small label={WCOPY.groupLabel} items={available.map(x => ({ key: x.key, label: x.label }))} value={g.key} onChange={setGroup} />
+      <span className="mh-wallet-key" aria-hidden="true"><i className="is-long" />{WCOPY.long}<i className="is-short" />{WCOPY.short}</span>
+      {walletInfo(wallets, g, scope)}
+    </span>
+    <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
+  </>;
+  const walletProp = walletGroups.length ? { groups: walletGroups, head } : null;
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
   const aria = panel => [panel, COPY.panel.btc, ...walletGroups.map(g => g.label), RANGES.find(r => r.key === range)?.label].join(", ");
@@ -144,20 +155,23 @@ export default function MarketPage({ style }) {
       </span>
     </div>
     {derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>}
-    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} />
+    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} group={g?.key} />
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
-      {walletProp && <div className="mkt-wallet-controls">
-        <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
-      </div>}
+      {view === "breadth" && <button type="button" className="mkt-fan-toggle" aria-pressed={fanOn} onClick={() => setFanOn(v => !v)}>
+        <svg className="mh-swatch" width="18" height="12" aria-hidden="true"><path d="M1 6 L17 2 M1 6 L17 6 M1 6 L17 10" /></svg>{COPY.fanToggle}</button>}
     </Controls>
     {view === "breadth"
-      ? <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov}
+      ? <MarketHistoryChart mode="breadth" rows={shown} range={range} fan={fan} fanPop={fanPop} overlays={ov} fanOn={fanOn}
           today={today} wallets={walletProp} aria={aria(COPY.panel.uptrend)} />
       : <MarketHistoryChart mode="fear" rows={shown} range={range} today={today} wallets={walletProp} aria={aria(COPY.panel.fg)} />}
     {view === "breadth" && <>
       {data.cycle?.runs && <RunsChart cycle={data.cycle} since={ctx.since} />}
-      <Episodes data={data} band={band} setBandLabel={setBandLabel} ctx={ctx} />
-      {data.forward_test && <ForwardTest ft={data.forward_test} base={data.base} />}
+      <button type="button" className="mh-link mkt-more" aria-expanded={more} aria-controls="mkt-more" onClick={() => setMore(v => !v)}>
+        {more ? COPY.less : COPY.more}</button>
+      {more && <div id="mkt-more">
+        <Episodes data={data} band={band} setBandLabel={setBandLabel} ctx={ctx} />
+        {data.forward_test && <ForwardTest ft={data.forward_test} base={data.base} />}
+      </div>}
     </>}
   </div>;
 }

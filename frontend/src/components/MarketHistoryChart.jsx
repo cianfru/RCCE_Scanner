@@ -117,10 +117,11 @@ const overlayValue = (o, r) => (r?.[o.key] == null ? null : o.axis === "z" ? sig
  * future zone out to +60 days holding what followed similar past days (median, middle half where it passed its
  * check, and the lowest-to-highest range at +30 and +60 days; the single paths show while the pointer is there).
  */
-export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, overlays = [], today, aria, wallets = null }) {
+export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, overlays = [], today, aria, wallets = null,
+                                            fanOn = true }) {
   const [box, W] = useWidth();
   const [hover, setHover] = useState(null);
-  const future = mode === "breadth";
+  const future = mode === "breadth" && fanOn;     // the future zone only while the fan is on
   useEffect(() => {
     if (hover == null) return undefined;
     const off = e => { if (box.current && !box.current.contains(e.target)) setHover(null); };
@@ -143,7 +144,10 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
   const yU0 = yB0 + hB + gap, yA0 = yU0 + hU + gap;
   const marketBottom = showAlt ? yA0 + hA : yU0 + hU;
   // Wallet panels (the market history page): one per group under the market panels, each with room for its label.
-  const hW = phone ? 72 : Math.round(92 * k), labelH = 16;
+  // One panel with its own header (the group and coin tabs) is taller than a stack of labelled ones.
+  const head = wallets?.head;
+  const hW = head ? (phone ? 96 : Math.round(116 * k)) : (phone ? 72 : Math.round(92 * k));
+  const labelH = head ? (phone ? 62 : 34) : 16;
   const wGroups = wallets?.groups || [];
   const yW0 = wGroups.map((_, i) => marketBottom + gap + labelH + i * (hW + gap + labelH));
   const bottom = wGroups.length ? yW0[yW0.length - 1] + hW : marketBottom;
@@ -316,7 +320,8 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
         {overlays.map(o => <span key={o.key} className="mh-key-item"><Swatch color={o.color} dash={o.dash} />{COPY.overlays[o.key]}
           <b>{overlayValue(o, last) ?? "—"}</b></span>)}
       </span>
-      {wGroups.map((wg, i) => <span key={wg.key} className="mh-btc-label mh-wallet-label" style={{ left: padL + 2, top: yW0[i] - labelH - 1 }}>
+      {head && wGroups.length > 0 && <div className="mh-wallet-head" style={{ left: padL, right: padR - 4, top: yW0[0] - labelH, height: labelH }}>{head}</div>}
+      {!head && wGroups.map((wg, i) => <span key={wg.key} className="mh-btc-label mh-wallet-label" style={{ left: padL + 2, top: yW0[i] - labelH - 1 }}>
         {wg.label}<span className="mh-wallet-key" aria-hidden="true"><i className="is-long" />{WCOPY.long}<i className="is-short" />{WCOPY.short}</span>
         {wg.info}</span>)}
     </div>
@@ -347,7 +352,7 @@ function Readout({ mode, h, hover, fan, today, showAlt, overlays, wallets }) {
     if (showAlt && r.alt != null) body.push([R.alt, R.altVs(fmtSeries("alt", r.alt))]);
     for (const o of overlays) if (r[o.key] != null) body.push([R[o.key], o.axis === "z" ? r[o.key].toFixed(2) : o.key === "fg" ? Math.round(100 * r[o.key]) : pctLabel(r[o.key])]);
     for (const wg of wGroups) body.push([wg.label, WCOPY.readout(r.wallet?.[wg.key], wg)]);
-    return <div className={`mh-readout-wrap mh-readout-${mode}${showAlt ? "" : " is-short"}${wGroups.length ? " has-wallets" : ""}`}><table className="mh-readout">
+    return <div className={`mh-readout-wrap mh-readout-${mode}${showAlt ? "" : " is-short"}${wGroups.length ? " has-wallets" : ""}${fan ? " has-fan" : ""}`}><table className="mh-readout">
       <thead><tr><th scope="col" /><th scope="col">{head[0]}</th></tr></thead>
       <tbody>{body.map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td><b>{v}</b></td></tr>)}</tbody>
     </table></div>;
@@ -356,7 +361,7 @@ function Readout({ mode, h, hover, fan, today, showAlt, overlays, wallets }) {
   const label = i => (i === 0 ? R.today : COPY.axis.h(fan.k[i]));
   const cols = fan ? idx : [0];
   const wToday = today?.row?.wallet || {};
-  return <div className={`mh-readout-wrap${showAlt ? "" : " is-short"}${wGroups.length ? " has-wallets" : ""}`}><table className="mh-readout">
+  return <div className={`mh-readout-wrap${showAlt ? "" : " is-short"}${wGroups.length ? " has-wallets" : ""}${fan ? " has-fan" : ""}`}><table className="mh-readout">
     <thead><tr><th scope="col" className="mh-readout-what">{fan ? R.fanHead : ""}</th>{cols.map(i => <th key={i} scope="col">{label(i)}</th>)}</tr></thead>
     <tbody>
       <tr><th scope="row">{R.uptrend}</th>{cols.map(i => cell("uptrend", i))}</tr>
