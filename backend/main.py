@@ -324,6 +324,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Derive counts init failed (non-fatal): %s", e)
 
+    # BTC and ETH funding for the market history page's Chart view: closed days after the seed, read every few hours
+    try:
+        from funding_history import run_forever as run_funding_history
+        asyncio.create_task(run_funding_history())
+    except Exception as e:
+        logger.warning("Funding history init failed (non-fatal): %s", e)
+
     # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
     try:
         from exit_shadow import run_exit_shadow
@@ -4375,6 +4382,15 @@ async def market_history_positioning():
     import degrade
     import wallet_history
     return degrade.LAST_GOOD.serve_sync(("market-history-wallets",), wallet_history.view)
+
+
+@app.get("/api/market-history/funding")
+async def market_history_funding():
+    """BTC and ETH funding on Hyperliquid, summed per UTC day as a yearly rate (the Chart view's Funding pane; a seed,
+    then two public reads every few hours)."""
+    import degrade
+    import funding_history
+    return degrade.LAST_GOOD.serve_sync(("market-history-funding",), funding_history.view)
 
 
 @app.get("/api/market-history/derive")

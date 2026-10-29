@@ -199,6 +199,7 @@ export const INDICATORS = [
   { key: "uptrend", label: "Uptrend share", where: "pane", on: true },
   { key: "fg", label: "Fear & Greed", where: "pane", on: true },
   { key: "crowd", label: "Profitable traders", where: "pane", on: true },
+  { key: "funding", label: "Funding (BTC and ETH)", where: "pane", on: true },
   { key: "heat", label: "Market heat", where: "pane", on: false },
   { key: "smart", label: "Smart money", where: "pane", on: false },
   { key: "whales", label: "Whales", where: "pane", on: false },

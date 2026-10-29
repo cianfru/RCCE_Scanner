@@ -146,3 +146,7 @@ Owner: stablecoins are now too big to move price and, like ETF inflows, "kind of
 - Supply grew after rallies and said nothing for BTC's next month: it follows. The six surges came at the end of big rallies, so they restate what greed and a long broad uptrend already say.
 - Scale: 7.8% in 30 days was $6.6 billion in May 2021 and would be $23.5 billion now (supply $302 billion on 27 October 2026); supply stayed flat through 2026 ($305 billion in December 2025), including the 148-day broad uptrend from March. A fixed percentage does not mean the same thing across these years.
 - Decision: stablecoin supply is dropped from the forward-test candidates and is not added to the chart. Funding and whales' net position remain candidates.
+
+### Funding in the Chart view (owner, 29 October 2026: "add funding to the chart")
+
+The Chart view gains a Funding pane (on by default): the 7-day mean of BTC's and ETH's daily funding on Hyperliquid, as a yearly rate, around Hyperliquid's base of about 11% a year (green above: longs paying a premium; red below), with the day's BTC and ETH rates in its legend. Server: `backend/funding_history.py` (seed `seeds/funding_seed.json` from 12 May 2023, then two public `fundingHistory` reads every six hours from the shared Hyperliquid budget, kept in `funding_live.json`), served at `/api/market-history/funding` and loaded only when the pane is on. Context, not a signal; the forward test of its extremes waits for the owner's approval.

@@ -7,6 +7,7 @@ import { apiFetch } from "../edge.js";
 import { BCOPY, COLD, CROWD, GREED, HCOPY, HOT, INDICATORS, broadRuns, heatSeries, heatTurns, zoneOf } from "../utils/marketHeat.js";
 import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
+import { FCOPY, NEUTRAL, fundingByDay } from "../utils/funding.js";
 
 // The market history page's Chart view: one large BTC chart in the manner of a trading terminal. Indicators sit on the
 // price (the weekly band, broad uptrends with their roll-over and downturns' turn-up, median z turns, heat turns, hot
@@ -50,6 +51,8 @@ export const PANES = {
     kind: "baseline", base: 0, tone: "longshort" },
   median_z: { value: r => r.median_z, legend: r => (r.median_z == null ? null : `${r.median_z > 0 ? "+" : ""}${r.median_z.toFixed(2)}`),
     kind: "baseline", base: 0, tone: "heat" },
+  funding: { value: (r, x) => x.funding.get(r.day)?.avg7, legend: (r, x) => { const f = x.funding.get(r.day); return f?.avg7 == null ? null : FCOPY.legend(f); },
+    kind: "baseline", base: NEUTRAL, lines: [0], tone: "longshort" },
   derive: { value: (r, x) => x.derive.get(r.day)?.share, legend: (r, x) => { const d = x.derive.get(r.day); return d ? `${d.l} long · ${d.s} short` : null; },
     kind: "baseline", base: 50, range: [0, 100], tone: "longshort" },
 };
@@ -57,6 +60,8 @@ const LABEL = Object.fromEntries(INDICATORS.map(i => [i.key, i.label]));
 
 let deriveCache = null;
 const loadDerive = () => (deriveCache ||= apiFetch("/api/market-history/derive").then(r => (r.ok ? r.json() : null)).catch(() => null));
+let fundingCache = null;
+const loadFunding = () => (fundingCache ||= apiFetch("/api/market-history/funding").then(r => (r.ok ? r.json() : null)).catch(() => null));
 
 function palette() {
   const text1 = resolveToken("text1") || "#f5fefd";
@@ -81,13 +86,21 @@ export default function MarketChart({ rows, indicators, range }) {
   const [hover, setHover] = useState(null);
   const [tops, setTops] = useState([]);
   const [derive, setDerive] = useState(null);
+  const [funding, setFunding] = useState(null);
   const wantDerive = indicators.includes("derive");
+  const wantFunding = indicators.includes("funding");
   useEffect(() => {
     if (!wantDerive || derive) return undefined;
     let alive = true;
     loadDerive().then(d => { if (alive && d) setDerive(d); });
     return () => { alive = false; };
   }, [wantDerive, derive]);
+  useEffect(() => {
+    if (!wantFunding || funding) return undefined;
+    let alive = true;
+    loadFunding().then(d => { if (alive && d) setFunding(d); });
+    return () => { alive = false; };
+  }, [wantFunding, funding]);
 
   const ctx = useMemo(() => {
     const series = heatSeries(rows);
@@ -95,8 +108,9 @@ export default function MarketChart({ rows, indicators, range }) {
     for (const d of deriveRows(derive, "BTC")) {
       if (d.pitL + d.pitS > 0) dmap.set(d.day, { share: (100 * d.pitL) / (d.pitL + d.pitS), l: d.pitL, s: d.pitS });
     }
-    return { series, heat: new Map(series.map(s => [s.day, s])), turns: heatTurns(series), derive: dmap, broad: broadRuns(rows) };
-  }, [rows, derive]);
+    return { series, heat: new Map(series.map(s => [s.day, s])), turns: heatTurns(series), derive: dmap, broad: broadRuns(rows),
+             funding: fundingByDay(funding) };
+  }, [rows, derive, funding]);
   const panes = indicators.filter(k => PANES[k]);
   const height = MAIN_H() + panes.reduce((a, k) => a + paneH(k), 0);
 
@@ -178,7 +192,7 @@ export default function MarketChart({ rows, indicators, range }) {
       const def = PANES[key];
       const [c1, c2] = tone[def.tone];
       const opts = { lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
-        priceFormat: { type: "custom", formatter: v => (key === "median_z" ? v.toFixed(1) : `${Math.round(v)}`) },
+        priceFormat: { type: "custom", formatter: v => (key === "median_z" ? v.toFixed(1) : key === "funding" ? `${Math.round(v)}%` : `${Math.round(v)}`) },
         ...(def.range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: def.range[0], maxValue: def.range[1] } }) } : {}) };
       const s = def.kind === "baseline"
         ? chart.addSeries(BaselineSeries, { ...opts, baseValue: { type: "price", price: def.base },

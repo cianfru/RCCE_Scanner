@@ -53,6 +53,7 @@ EDGE_PATHS = frozenset({
     "/api/market-history/spark",
     "/api/market-history/wallets",
     "/api/market-history/derive",
+    "/api/market-history/funding",
     "/api/hyperlens/consensus",
     "/api/hyperlens/positioning",
     "/api/traders/leaderboard",

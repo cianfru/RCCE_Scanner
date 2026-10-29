@@ -10,7 +10,7 @@ import { RANGES, dayDate } from "../utils/marketHistory.js";
 // matters as much as BTC), with the broad uptrend's (or downturn's) day against past ones, its high (or low) and four
 // marks; Market heat beside it; then one large chart with the indicators the reader picks, on the price or under it.
 
-const KEY = "reflex-market-indicators-2";
+const KEY = "reflex-market-indicators-3";   // -3: Funding joined the defaults
 const loadPicks = () => { try { return pickIndicators(JSON.parse(localStorage.getItem(KEY))); } catch { return pickIndicators(null); } };
 const savePicks = keys => { try { localStorage.setItem(KEY, JSON.stringify(keys)); } catch { /* the pick still holds for this visit */ } };
 const pct = v => `${Math.round(100 * v)}%`;
