@@ -56,3 +56,49 @@ From 30 October 2026: the page's own series (recorded days, the `crowd` rows of 
 - One year of positioning, from a sample of wallets that were in smart money or whales at some point (smaller accounts are missing).
 - The reading counts every coin's positions; the outcome is BTC alone.
 - Episodes overlap in time with the market's own phases, so they are not independent of each other or of the past month's move.
+
+## Result (run 29 October 2026, after the rules above were committed)
+
+Run: `python -m research.positioning_extremes --live market_history_live.json` (the server's record to 27 October 2026; BTC closes through 27 October, so windows past it are censored). Output kept with the run, not in the repository.
+
+**Verdict: the bar is not met on either side. Too few episodes to read (3 extreme-short and 5 extreme-long episodes with a complete 30-day outcome, against 8 needed). Context, not a signal.**
+
+**Count corrected when running.** The pre-run count used the unrounded 10th percentile (30.03%); the declared line is 30.0%. As declared, 10 February 2026 (30.03%) is inside the line, so early and late February 2026 are two episodes: 39 days in 4 extreme-short episodes, not 40 in 3. The extreme-long side is unchanged (41 days at the declared 86.0%, the same 6 episodes). Either count is far under 8, so the verdict is the same.
+
+### Extreme short (30.0% long or less)
+
+| Episode start | Reading | BTC | BTC past 30 days | Next 7 days | Next 30 days | Next 60 days | Within 60 days: largest fall, largest rise | Same past month, 30 days | Seven years after a month like it: 30-day median (cases) |
+|---|---|---|---|---|---|---|---|---|---|
+| 6 Nov 2025 | 27.5% | $101,346 | -16.5% | -1.6% | -11.9% | -7.4% | -16.4% (day 16), +4.6% (day 4) | +2.7% | +0.2% (13) |
+| 3 Feb 2026 | 25.9% | $75,770 | -17.2% | -9.1% | -6.4% | -11.2% | -17.0% (day 2), never above the start | +2.7% | +1.1% (14) |
+| 18 Feb 2026 | 29.9% | $66,461 | -28.3% | +2.3% | +6.1% | +11.0% | -3.6% (day 6), +16.0% (day 58) | +2.7% | +0.4% (7) |
+| 25 Oct 2026 (running) | 29.6% | $80,154 | -4.7% | censored | censored | censored | +0.9% to 27 Oct | -11.4% | -4.5% (28) |
+
+- After the three finished episodes BTC fell further twice (November 2025 and early February 2026, with new lows 16-17% under the start) and was near its low once (late February 2026). Median 30-day change -6.4%, against +2.7% for days after the same kind of month with ordinary readings, and +0.2% for every day of the window. Random draws from the same past-month fifths: 5.5% at or below that median. First and second half: -11.9% and -0.2%.
+- **Today's episode** (from 25 October in the rebuilt series; the page's recorded reading on 29 October is 19% long) differs from the earlier three: BTC had fallen only 4.7% over the 30 days before it, while the share of coins in Uptrend fell from 86% to 42%. The extreme comes from the whole market's month more than BTC's. Over seven years, after a 30-day BTC change of -4.7% or worse (28 cases), BTC's next 30 days had a median of -4.5% and rose in 46% of cases; the next 60 days, -3.4% and 39%. Within this window, days after the same kind of BTC month with ordinary readings had a 30-day median of -11.4% (55 days, a falling year).
+- As short as the newest rebuilt reading (28.5% on 28 October, reported only): 4 episodes, from 6 November 2025, 3 February, 26 February and 26 October 2026; the finished three were followed by -11.9%, -6.4% and -1.6% over 30 days and -7.4%, -11.2% and +14.6% over 60.
+- At the 5th percentile (25.5%, reported only): 2 episodes, from 22 November 2025 (+4.6% over 30 days, +5.6% over 60) and 27 February 2026 (+0.2%, +15.9%).
+
+### Extreme long (86.0% long or more)
+
+| Episode start | Reading | BTC | BTC past 30 days | Next 7 days | Next 30 days | Next 60 days | Within 60 days: largest fall, largest rise | From the day back under the line: 30 days |
+|---|---|---|---|---|---|---|---|---|
+| 1 Oct 2025 (not counted: the series' first day) | 86.3% | $118,595 | +8.6% | +4.0% | -7.6% | -23.8% | -28.5% (day 52), +5.1% (day 5) | -16.7% |
+| 4 Jan 2026 | 93.1% | $91,530 | +2.5% | -0.6% | -17.2% | -22.5% | -31.3% (day 32), +5.9% (day 10) | -27.0% |
+| 28 Apr 2026 | 88.5% | $76,343 | +15.7% | +6.0% | -3.6% | -21.4% | -21.7% (day 58), +7.7% (day 12) | -16.9% |
+| 5 Jul 2026 | 86.9% | $63,650 | +4.2% | +0.2% | +0.7% | +27.7% | -2.1% (day 3), +27.7% (day 60) | +0.2% |
+| 19 Aug 2026 | 90.4% | $69,335 | +6.3% | +14.0% | +16.7% | +18.4% | +5.3% (day 1, never below), +24.9% (day 33) | +8.5% |
+| 12 Sep 2026 | 86.2% | $77,279 | +21.7% | +5.1% | +5.9% | censored | -2.1% (day 3), +12.1% (day 9) | censored |
+
+- Of the five counted episodes, two were followed by large falls (January 2026, and late April into May 2026, the owner's May case) and three by rises. Median 30-day change +0.7%, against +4.3% after the same kind of month with ordinary readings: 3.6 points under, short of the 5 the rule asks. Random draws: 38.7% at or below. Halves: -10.4% and +5.9%.
+- From the day the reading came back under 86% (reported only, chosen by nobody in advance as a signal): October 2025 -16.7%, January 2026 -27.0%, May 2026 -16.9%, July +0.2%, August +8.5% over the next 30 days. Three of five turns down from an extreme long were followed by falls of 16% or more, in a year whose every-day 60-day median was -6.8%.
+
+### Every day of the window (the base rate)
+
+BTC from 1 October 2025: over 7 days a median of -0.5% (up 45% of days), over 30 days +0.2% (51%), over 60 days -6.8% (44%). A year that fell from $119K to $60K and recovered to $81K.
+
+### What it means
+
+- No verdict: one year of positioning holds 3 finished extreme-short episodes and 5 extreme-long ones. Each reading is "in k of n" and too few to read.
+- In this year an extreme short was more often followed by further falls than by a bottom (2 of 3). The rebuilt list is last month's winners, so it reaches an extreme short after a falling month; what followed a falling month over seven years was close to even.
+- The out-of-sample run takes the page's recorded series from 30 October 2026. The running episode's 60 days complete on 24 December 2026; it is reported then, with any new episode.
