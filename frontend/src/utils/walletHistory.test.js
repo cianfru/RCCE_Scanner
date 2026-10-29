@@ -78,8 +78,10 @@ test('copy: no forecast words, popovers within the word budget', () => {
   const smart = GROUPS[0];
   texts.push(WCOPY.readout({ L: 0.41, S: 0.23, wallets: 1694 }, smart), WCOPY.readout({ L: 0.41, S: 0.23 }, smart), WCOPY.readout(null, smart));
   assert.equal(WCOPY.readout({ L: 0.41, S: 0.23, wallets: 1694 }, smart), '41% long · 23% short of 1,694 wallets');
+  const aligned = { ...CROWD, overlap: { days: 29, from: 20726, to: 20754, offset_pts: -12.6, gap_pts: 13.4 } };
   for (const g of GROUPS) {
-    for (const c of [ctx, {}, { rebuiltTo: 20750 }, { ...ctx, scope: 'BTC' }, { ...ctx, scope: 'HYPE' }, { ...ctx, crowd: { ...CROWD, rebuilt: null } }]) {
+    for (const c of [ctx, {}, { rebuiltTo: 20750 }, { ...ctx, scope: 'BTC' }, { ...ctx, scope: 'HYPE' }, { ...ctx, crowd: { ...CROWD, rebuilt: null } },
+      { ...ctx, scope: 'HYPE', crowd: aligned }]) {
       const paras = WCOPY.pop.group(g, c);
       texts.push(...paras);
       assert.ok(popWords(paras.join(' ')) <= 90, `${g.key}: ${popWords(paras.join(' '))} words: ${paras.join(' ')}`);
@@ -91,8 +93,17 @@ test('copy: no forecast words, popovers within the word budget', () => {
   assert.match(WCOPY.pop.group(smart, {}).join(' '), /up from zero/);
   const crowd = WCOPY.pop.group(GROUPS[2], ctx).join(' ');
   assert.match(crowd, /Outrider's crowd/);
-  assert.match(crowd, /Before 11 Jan 1970: rebuilt by Outrider's study S2/);
-  assert.match(crowd, /in the month before 11 Jan 1970/);
+  assert.match(crowd, /Picked again every day/);
+  assert.match(crowd, /Before 11 Jan 1970: rebuilt with the same pick/);
+  assert.match(crowd, /last month's winners, they lean the way that month went/);
+  assert.match(crowd, /set to the recorded level\. Since/, 'no gap quoted without an overlap');
+  assert.match(WCOPY.pop.group(GROUPS[2], { crowd: aligned }).join(' '), /set to the recorded level \(13 points apart where both exist\)/);
+  assert.match(WCOPY.pop.group(GROUPS[2], { crowd: aligned, scope: 'BTC' }).join(' '), /set to the recorded level\. Since/,
+    "the gap quoted is all markets', not the coin's");
+  assert.match(WCOPY.pop.group(smart, ctx).join(' '), /set to the recorded level \(3 points apart where both exist\)/);
+  assert.match(WCOPY.pop.group(smart, { ...ctx, scope: 'BTC' }).join(' '), /set to the recorded level; since/);
+  assert.match(WCOPY.pop.group(GROUPS[2], { crowd: { ...CROWD, recorded_from: null } }).join(' '), /^Picked again every day.* Rebuilt with the same pick/);
+  assert.match(WCOPY.pop.group(GROUPS[2], { crowd: { ...CROWD, rebuilt: null } }).join(' '), /Recorded by Reflex at each 00:00 UTC close/);
   for (const t of texts) {
     assert.doesNotMatch(t, FORBIDDEN, t);
     assert.doesNotMatch(t, /larsson/i, t);

@@ -9,8 +9,9 @@ One row per day and group, [day, wallets, positioned, long, short, long_usd, sho
 
 Beside them, ``crowd``: the profitable traders HyperLens follows (the roster Outrider reads as its crowd), as the
 share of their open positions that are long, each wallet-coin position once ([day, long, short]). Recorded days come
-from HyperLens's own record at each 4h close (trader_lean, roster version 2); the days before are Outrider's study S2
-rebuild (seeds/crowd_share_seed.json, share only), moved to the recorded level where the two overlap.
+from HyperLens's own record at each 4h close (trader_lean, roster version 2); the days before are rebuilt with the
+same daily rule on the wallet rebuild's sample (seeds/crowd_share_seed.json, backtest.crowd_history_rebuild), moved
+to the recorded level where the two overlap.
 
 A wallet is long or short by the sign of its net dollar position over all markets, as in cohorts.assign.aggregate.
 For the main coins (COINS) one more row per day and group, [day, long, short]: wallets long and short that coin (the
@@ -293,13 +294,17 @@ def coin_rows(rebuilt: Dict[int, list], live: Dict[int, list], rebuilt_wallets: 
     return out
 
 
-def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int, list]]) -> Optional[dict]:
-    """Profitable traders, one row a day: recorded where HyperLens has the day, Outrider's rebuild otherwise, the
-    rebuilt shares shifted by the mean difference over a week or more of overlap (``overlap``, in points)."""
-    rebuilt = {int(r[0]): r[1] for r in (seed or {}).get("rows") or []}
-    rec = {d: r for d, r in live.items() if r[1] + r[2]}
-    if not rebuilt and not rec:
-        return None
+def _seed_shares(rows: list, columns: list) -> Dict[int, float]:
+    """day -> share of positions long, from a seed in either form: [day, long_share] (Outrider's S2 rebuild, the
+    first seed) or [day, long, short] (backtest.crowd_history_rebuild)."""
+    if "long_share" in columns:
+        return {int(r[0]): r[1] for r in rows if r[1] is not None}
+    return {int(r[0]): r[1] / (r[1] + r[2]) for r in rows if r[1] + r[2]}
+
+
+def _joined(rebuilt: Dict[int, float], rec: Dict[int, list]) -> Tuple[List[list], Optional[dict]]:
+    """Recorded rows where present, rebuilt ones otherwise, the rebuilt shares shifted by their mean difference from
+    the recorded ones over a week or more of overlap. Rows [day, long, short, long_share, rebuilt]."""
     share = lambda r: r[1] / (r[1] + r[2])
     both = [d for d in sorted(rebuilt) if d in rec]
     check, shift = None, 0.0
@@ -308,15 +313,34 @@ def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int
         check = {"days": len(both), "from": both[0], "to": both[-1], "offset_pts": round(100 * shift, 1),
                  "gap_pts": round(100 * sum(abs(share(rec[d]) - rebuilt[d]) for d in both) / len(both), 1)}
     clamp = lambda v: round(min(1.0, max(0.0, v)), 4)
-    days = sorted(set(rebuilt) | set(rec))
     rows = [[d, rec[d][1], rec[d][2], round(share(rec[d]), 4), 0] if d in rec else [d, None, None, clamp(rebuilt[d] + shift), 1]
-            for d in days]
+            for d in sorted(set(rebuilt) | set(rec))]
+    return rows, check
+
+
+def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int, list]]) -> Optional[dict]:
+    """Profitable traders, one row a day: recorded where HyperLens has the day, rebuilt otherwise (the same daily
+    rule applied to the wallet rebuild's sample, backtest.crowd_history_rebuild), the rebuilt shares shifted by the
+    mean difference over a week or more of overlap (``overlap``, in points). The main coins follow the same rule."""
+    seed = seed or {}
+    rebuilt = _seed_shares(seed.get("rows") or [], seed.get("columns") or [])
+    rec = {d: r for d, r in live.items() if r[1] + r[2]}
+    if not rebuilt and not rec:
+        return None
+    rows, check = _joined(rebuilt, rec)
+    coin_cols = seed.get("coin_columns") or ["day", "long", "short"]
+    coins = {}
+    for c in COINS:
+        rows_c, _ = _joined(_seed_shares((seed.get("coins") or {}).get(c) or [], coin_cols),
+                            {d: r for d, r in live_coins.get(c, {}).items() if r[1] + r[2]})
+        coins[c] = rows_c
     return {
         "columns": CROWD_COLUMNS,
         "rows": rows,
-        "coin_columns": COIN_COLUMNS + ["rebuilt"],
-        "coins": {c: [list(r) + [0] for _, r in sorted(live_coins.get(c, {}).items()) if r[1] + r[2]] for c in COINS},
-        "rebuilt": {"from": min(rebuilt), "to": max(rebuilt), "picked": seed.get("picked")} if rebuilt else None,
+        "coin_columns": CROWD_COLUMNS,
+        "coins": coins,
+        "rebuilt": {"from": min(rebuilt), "to": max(rebuilt), "method": "daily" if "long_share" not in (seed.get("columns") or [])
+                    else "fixed", "picked": seed.get("picked")} if rebuilt else None,
         "recorded_from": min(rec) if rec else None,
         "overlap": check,
     }

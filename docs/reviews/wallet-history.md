@@ -1,8 +1,8 @@
-# Smart money, whales and profitable traders, long and short, at each daily close (method note, 28 October 2026)
+# Smart money, whales and profitable traders, long and short, at each daily close (method note, 28-29 October 2026)
 
 What the market history page (`/market`) draws under the Uptrend share and Fear & Greed: how many Hyperliquid smart-money wallets and whales were net long and net short at each 00:00 UTC close, and how the profitable traders HyperLens follows (Outrider's crowd) split their positions. The owner asked to see it next to the share of coins in Uptrend, without a study. It is a description of who held what. **Context, not a signal**: no test, no verdict, nothing here says what follows.
 
-Code: `backend/wallet_history.py` (the feed, `/api/market-history/wallets`), `backend/backtest/wallet_history_rebuild.py` (the rebuilt days), `backend/seeds/crowd_share_seed.json` (Outrider's rebuilt profitable-trader days), `frontend/src/utils/walletHistory.js` (shares), `frontend/src/pages/MarketPage.jsx`.
+Code: `backend/wallet_history.py` (the feed, `/api/market-history/wallets`), `backend/backtest/wallet_history_rebuild.py` (the rebuilt days), `backend/backtest/crowd_history_rebuild.py` and `backend/seeds/crowd_share_seed.json` (the profitable traders' rebuilt days), `frontend/src/utils/walletHistory.js` (shares), `frontend/src/pages/MarketPage.jsx`.
 
 ## Groups
 
@@ -12,7 +12,7 @@ The live cohort sweep's own groups (`backend/cohorts/assign.py`), as each wallet
 |---|---|---|
 | Smart money | all-time PnL $100K or more, perp equity $10K or more | Smart Money + Money Printer |
 | Whales | perp equity $1M or more | Tidal Whale + Leviathan |
-| Profitable traders | the best 600 by monthly return (30%+, $10K+ monthly profit, in profit before the month) | HyperLens's roster (not a sweep cohort) |
+| Profitable traders | the best 600 by monthly return (30%+, $10K+ monthly profit, in profit before the month), picked again every day | HyperLens's roster (not a sweep cohort) |
 
 A wallet can be in more than one. Market makers are out: monthly volume over 100 times the account value (as the live registry), or more than 25 open positions (as `cohorts.assign`).
 
@@ -37,7 +37,16 @@ A wallet can be in more than one. Market makers are out: monthly volume over 100
 4. Positions: current positions, regular fills and timed-order slices since 1 September 2025. Each fill carries Hyperliquid's record of the position just before it, so a position at a close is the one right after the last fill before it or right before the next one (the current position when none follows); where a fill was not read and the two differ, the nearer in time. Leftovers under 1e-6 of a coin are flat (float noise of a full close).
 5. Very active wallets are read for their newest fills only (the latest 2,000 plus 2 more pages of regular fills, 1 more of slices; 2,000 a page), and Hyperliquid itself serves only about a wallet's latest 10,000 fills. Before the first fill read such a wallet is uncovered that day: left out, and the covered wallets' shares stand for it.
 
-**Profitable traders.** Recorded days come from HyperLens's own record (`trader_lean`, per coin at every 4-hour close since 26 September 2026, roster version 2 only): the bar closing at 00:00 UTC (or the nearest within 4 hours), long and short positions summed over the coins. The days before are Outrider's study S2, part B (Agent repository, `docs/studies/S2-lean-vs-price.md`; the daily series in `synth/data/research.json`), copied into `seeds/crowd_share_seed.json`: the same share rebuilt from public fills for Reflex's roster rule applied to the 10 October 2026 leaderboard. S2 dates a row by its 00:00 UTC reading; the seed dates it by the day that reading closes (one day earlier), as Reflex does. Where the two overlap by a week or more, the rebuilt shares are shifted by their mean difference (`crowd.overlap`).
+**Profitable traders.** Recorded days come from HyperLens's own record (`trader_lean`, per coin at every 4-hour close since 26 September 2026, roster version 2 only): the bar closing at 00:00 UTC (or the nearest within 4 hours), long and short positions summed over the coins.
+
+The days before (from 1 October 2025) are rebuilt with HyperLens's daily pick (owner, 29 October 2026: the recorded measure "gives a much better picture"; the first seed, Outrider's study S2, held one roster picked from the 10 October 2026 leaderboard all year, so its share moved only between 53% and 90% long). Hyperliquid keeps no past leaderboards, and its account histories thin out to points days or weeks apart beyond the last month, too coarse for a 30-day return, so `python -m backtest.crowd_history_rebuild` applies the rule day by day to the wallets whose every trade the wallet rebuild already read (the sample's 1,011 wallets that were in smart money or whales on some day; no further Hyperliquid reads):
+
+1. 30-day profit: the positions at the close 30 days earlier and at the day's close, valued at each coin's close, less what the wallet paid and received in between (its fills); before fees and funding.
+2. Return: that profit over perp equity 30 days earlier plus what was added since (equity change less profit, when positive), equity from Hyperliquid's portfolio history. Of seven bases tried, this one came closest to the leaderboard's own (within 20% for half the wallets).
+3. On the list when the return is 30% or more, the profit $10K or more, all-time PnL was not negative before the 30 days, perp equity is $10K or more, the base at least $1,000 (a month that began nearly empty reads as a huge return, as HyperLens drops it) and it holds at most 25 positions. With more than 600 (weighted), the best 600 by return.
+4. The day's reading: the list's open positions at the close, each wallet-coin position once, weighted by one over each wallet's chance of being sampled.
+
+Checked against the 28 October leaderboard for 944 sampled wallets: the rebuilt 30-day profit matches the leaderboard's month PnL with correlation 0.83 and the same sign for 85%; returns match less closely (correlation 0.53, the base being harder to see); of the 68 sampled wallets the leaderboard's rule puts on the list, the rebuild puts 41 (60%), and 23 the leaderboard leaves off. Each rebuilt day rests on 13 to 116 sampled wallets on the list (median 41), standing for about 280 of HyperLens's 600 (median): the pool has no smaller accounts, so its level can sit apart from the recorded one, and the page moves it to the recorded level as below (`crowd.overlap`: `offset_pts` the shift, `gap_pts` the mean gap before it, quoted in the panel's (i)).
 
 **Joining the two.** The page shows recorded days wherever the sweep has them and rebuilt days before them (and in any gap). The rebuilt counts are an estimate from a sample, so their level can sit a few points off the recorded one; left as is, the seam would read as wallets changing side in exactly the most recent days. Where the two overlap by a week or more, the rebuilt days are moved to the recorded level: each share (positioned, long, short) shifted by its mean difference over the overlap (`overlap.offset`, in points). The feed also gives the mean absolute gap before the shift (`overlap.long_pts`, `overlap.short_pts`), and the page's (i) quotes it.
 
@@ -60,7 +69,7 @@ What makes the readings differ:
 - **Positions against wallets.** A trader long five coins is five longs in Outrider's crowd and one long wallet here.
 - **Flat counted or not.** For example, 40% long, 29% short and 31% flat of a group's wallets reads as 58% long when flat wallets are left out, as Outrider does.
 - **Big money is not whales.** $500K of leaderboard account value and in profit, per owner and per coin, against $1M of perp equity whatever the profit, per wallet over all coins. On the 28 October leaderboard: 3,681 accounts pass Outrider's rule, 2,602 have $1M+ of account value, 7,085 pass the smart-money rule, 645 the profitable-trader rule.
-- **A long-leaning population.** The profitable traders held 69.5% of their positions long on average over Outrider's rebuilt year (S2). Levels of different groups are not comparable, only their moves.
+- **A long-leaning population.** The profitable traders held 59% of their positions long on the median rebuilt day (16% to 95%; Outrider's fixed roster, S2, averaged 69.5%). Levels of different groups are not comparable, only their moves.
 
 ## Limits
 
@@ -71,11 +80,12 @@ What makes the readings differ:
 - **Very active traders** drop out of the older days (uncovered); the rest are scaled to their group.
 - **Timed orders.** A slice history cut at its oldest end leaves positions built by slices alone unseen before it.
 - Recorded rows count readings up to 2.5 hours old at the close (the sweep's cadence); rebuilt rows count the position at the close.
-- **Profitable traders' rebuilt days are picked with hindsight**: the wallets are the ones that did well in the month before 10 October 2026 (S2's own bias statement), so before that month they are known winners. HyperLens's record has no such bias: each reading used the roster of its day.
+- **Profitable traders are last month's winners**, so after a falling month the list fills with shorts and after a rising one with longs: over the rebuilt year the share long moved with BTC's change over the previous 30 days (correlation 0.77; Outrider's fixed roster 0.45). The panel shows how the recent winners are positioned; it is not apart from price. Recorded and rebuilt days share this, since the rule is the same.
+- **Profitable traders' rebuilt pool**: wallets that were in smart money or whales on some day, sampled; smaller accounts are missing, profit is before fees and funding, and the list agrees with the leaderboard's for about 60% of its wallets (above).
 
 ## Refreshing the seed
 
-From `backend/`: `census`, `fills`, `candles`, then `export` (each resumable; the cache defaults to `data/wallet_history_cache/`, gitignored). Raising `--share` adds wallets to the same sample. Recorded days need nothing: the server adds one a day.
+From `backend/`: `census`, `fills`, `candles`, then `export` (each resumable; the cache defaults to `data/wallet_history_cache/`, gitignored), then `python -m backtest.crowd_history_rebuild` for the profitable traders (minutes, from the same cache). Raising `--share` adds wallets to the same sample. Recorded days need nothing: the server adds one a day.
 
 ## Rebuild run
 
@@ -85,14 +95,14 @@ Run 28-29 October 2026 (seed built 29 October), at 900 weight a minute, about ei
 - **Sampled:** 2,207 (10% of candidates, 35% of likely whales), all with portfolio history read; 952 were ever in smart money and 394 ever whales on some day, and their fills were read: 1,011 wallets, no errors. 138 hit Hyperliquid's limit of about 10,000 fills, so their oldest days are uncovered.
 - **Seed:** 1 September 2025 to 28 October 2026, 423 days, every day present. Each day rests on 149 to 336 sampled smart-money wallets (median 182) and 29 to 104 whales (median 43); the older days have fewer because very active wallets are uncovered before their oldest fill. Estimated group sizes: about 1,500 smart-money wallets and 340 whales (median day), against 7,085 and 2,602 on the leaderboard's account value: most leaderboard accounts keep their money outside perps, and perp equity decides here as in the sweep.
 
-Readings at the year's breadth highs and lows, as rebuilt (the page moves them to the recorded level where the sweep has days, which can shift them by a few points). Long and short as shares of each group's wallets:
+Readings at the year's breadth highs and lows, as rebuilt (the page moves them to the recorded level where the sweep or HyperLens has days, which shifts them by the overlap's offset). Long and short as shares of each group's wallets; profitable traders as the share of their positions long (re-picked daily, 29 October seed):
 
-| Day | Uptrend share | Fear & Greed | Smart money long / short | Whales long / short |
-|---|---|---|---|---|
-| 6 Oct 2025 (BTC's high) | 89% | 71 | 61% / 16% | 42% / 24% |
-| 15 Dec 2025 (breadth low) | 5% | 16 | 27% / 32% | 22% / 49% |
-| 15 May 2026 (breadth high) | 96% | 43 | 39% / 24% | 36% / 34% |
-| 30 Sep 2026 (breadth high) | 86% | 71 | 60% / 24% | 76% / 9% |
-| 27 Oct 2026 | 42% | 48 | 55% / 24% | 53% / 24% |
+| Day | Uptrend share | Fear & Greed | Smart money long / short | Whales long / short | Profitable traders long (of positions) |
+|---|---|---|---|---|---|
+| 6 Oct 2025 (BTC's high) | 89% | 71 | 61% / 16% | 42% / 24% | 83% |
+| 15 Dec 2025 (breadth low) | 5% | 16 | 27% / 32% | 22% / 49% | 31% |
+| 15 May 2026 (breadth high) | 96% | 43 | 39% / 24% | 36% / 34% | 79% |
+| 30 Sep 2026 (breadth high) | 86% | 71 | 60% / 24% | 76% / 9% | 90% |
+| 27 Oct 2026 | 42% | 48 | 55% / 24% | 53% / 24% | 30% |
 
-Description only: over this year both groups held the most longs near breadth highs and the most shorts near the lows, and their shorts grew after the turns rather than before them. One year, two cycles, a sample: context, not a signal.
+Description only: over this year both groups held the most longs near breadth highs and the most shorts near the lows, and their shorts grew after the turns rather than before them. The profitable traders swung further (from 90% of positions long at the September high to 30% four weeks later), as last month's winners do. One year, two cycles, a sample: context, not a signal.

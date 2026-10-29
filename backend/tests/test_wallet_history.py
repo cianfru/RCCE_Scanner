@@ -206,9 +206,9 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(rows[94], [94, 13, 7, 0.65, 0])               # recorded where both exist
         self.assertEqual(rows[103][-1], 0)
         self.assertEqual(c["overlap"], {"days": 7, "from": 94, "to": 100, "offset_pts": 5.0, "gap_pts": 5.0})
-        self.assertEqual(c["rebuilt"], {"from": 90, "to": 100, "picked": 200})
+        self.assertEqual(c["rebuilt"], {"from": 90, "to": 100, "method": "fixed", "picked": 200})
         self.assertEqual(c["recorded_from"], 94)
-        self.assertEqual(c["coins"]["BTC"], [[100, 3, 1, 0]])          # a day with no positions is left out
+        self.assertEqual(c["coins"]["BTC"], [[100, 3, 1, 0.75, 0]])    # a day with no positions is left out
         self.assertEqual(c["coins"]["ETH"], [])
 
     def test_crowd_view_without_overlap_or_data(self):
@@ -237,14 +237,31 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(added, 2)                                     # day 102: the groups still recorded
         self.assertNotIn(102, ph._live["crowd"])
 
-    def test_the_shipped_crowd_seed_reads_as_shares(self):
+    def test_a_daily_rule_seed_joins_per_coin_too(self):
+        with open(self.crowd_path, "w") as fh:
+            json.dump({"version": 2, "columns": ["day", "long", "short"], "rows": [[d, 90, 10] for d in range(90, 101)],
+                       "coin_columns": ["day", "long", "short"], "coins": {"BTC": [[d, 8, 2] for d in range(90, 101)]}}, fh)
+        ph._load()
+        # Recorded days 94-103 at 70% long overall and 50% long on BTC: the rebuilt days move down 20 and 30 points.
+        ph._live = {"crowd": {d: [d, 7, 3] for d in range(94, 104)}, "crowd:BTC": {d: [d, 1, 1] for d in range(94, 104)}}
+        c = ph.view()["crowd"]
+        rows = {r[0]: r for r in c["rows"]}
+        self.assertEqual(rows[90], [90, None, None, 0.7, 1])
+        self.assertEqual(rows[95], [95, 7, 3, 0.7, 0])
+        self.assertEqual(c["rebuilt"]["method"], "daily")
+        btc = {r[0]: r for r in c["coins"]["BTC"]}
+        self.assertEqual(btc[90], [90, None, None, 0.5, 1])
+        self.assertEqual(btc[100], [100, 1, 1, 0.5, 0])
+        self.assertEqual(c["coins"]["ETH"], [])
+
+    def test_the_shipped_crowd_seed_is_one_row_a_day(self):
         seed = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seeds",
                                            "crowd_share_seed.json")))
         days = [r[0] for r in seed["rows"]]
-        self.assertEqual(seed["columns"], ["day", "long_share"])
+        self.assertEqual(seed["columns"], ["day", "long", "short"])
         self.assertEqual(days, list(range(days[0], days[0] + len(days))), "one row a day, no gaps")
-        self.assertTrue(all(0 <= r[1] <= 1 for r in seed["rows"]))
-        self.assertEqual(days[-1], seed["picked"] - 1, "the last day closes on the day the roster was picked")
+        self.assertTrue(all(r[1] >= 0 and r[2] >= 0 and r[1] + r[2] > 0 for r in seed["rows"]))
+        self.assertEqual(set(seed["coins"]), set(ph.COINS))
 
 
 if __name__ == "__main__":

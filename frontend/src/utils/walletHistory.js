@@ -4,8 +4,9 @@
 // 0 and more shorts reach lower.
 // - Smart money and whales: shares of the group's wallets that day (flat wallets count in the total), so a growing
 //   group does not read as more longs.
-// - Profitable traders (the roster Reflex's HyperLens follows, which Outrider calls its crowd): shares of their
-//   open positions, each wallet-coin position once, as Outrider's pulse counts them; the two shares sum to 100%.
+// - Profitable traders (the roster Reflex's HyperLens follows, picked again every day by the last 30 days' return;
+//   Outrider's crowd): shares of their open positions, each wallet-coin position once, as Outrider's pulse counts
+//   them; the two shares sum to 100%.
 
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -118,7 +119,7 @@ export const WCOPY = {
       const rebuilt = "rebuilt from Hyperliquid fills for a weighted sample";
       const src = !ctx.rebuiltTo ? "Recorded by Reflex's wallet sweep."
         : !ctx.recordedFrom ? `${rebuilt[0].toUpperCase()}${rebuilt.slice(1)}.`
-          : `Before ${dayDate(ctx.recordedFrom)} ${rebuilt}${o ? `, set to the recorded level (${Math.round(Math.max(o.long_pts, o.short_pts))} points apart where both exist)` : ""}; since, recorded by Reflex's wallet sweep.`;
+          : `Before ${dayDate(ctx.recordedFrom)} ${rebuilt}${o ? `, set to the recorded level${coin ? "" : ` (${Math.round(Math.max(o.long_pts, o.short_pts))} points apart where both exist)`}` : ""}; since, recorded by Reflex's wallet sweep.`;
       const count = coin
         ? `each counted once: long or short ${coin} at the 00:00 UTC close; those without a ${coin} position count in the total.`
         : "each counted once: long or short by net dollar position at the 00:00 UTC close; flat ones count in the total.";
@@ -131,9 +132,10 @@ export const WCOPY = {
 function crowdPop(ctx, coin) {
   const c = ctx.crowd || {};
   const from = c.recorded_from;
-  const src = c.rebuilt && from
-    ? `Before ${dayDate(from)}: rebuilt by Outrider's study S2 with today's rule applied to the past, so these are wallets that did well in the month before ${dayDate(c.rebuilt.picked ?? c.rebuilt.to + 1)}. Since: recorded by Reflex at each 00:00 UTC close.`
-    : "Recorded by Reflex at each 00:00 UTC close.";
-  return [`The best 600 Hyperliquid wallets by monthly return (30%+, in profit before the month, market makers out), as Reflex's HyperLens follows them: Outrider's crowd. Each open ${coin ? `${coin} position` : "position"} counts once, long or short; the two shares sum to 100%.`,
+  const gap = coin ? null : c.overlap?.gap_pts;     // all markets' figure: each coin is moved by its own
+  const rebuilt = "rebuilt with the same pick among wallets whose trades are rebuilt (once smart money or whales), so smaller accounts are missing";
+  const src = c.rebuilt && from ? `Before ${dayDate(from)}: ${rebuilt}; set to the recorded level${gap != null ? ` (${Math.round(gap)} points apart where both exist)` : ""}. Since: recorded at each 00:00 UTC close.`
+    : c.rebuilt ? `${rebuilt[0].toUpperCase()}${rebuilt.slice(1)}.` : "Recorded by Reflex at each 00:00 UTC close.";
+  return [`Picked again every day: the best 600 Hyperliquid wallets by 30-day return (30%+, $10K+, in profit before, market makers out), as HyperLens follows them (Outrider's crowd). Each open ${coin ? `${coin} position` : "position"} counts once. As last month's winners, they lean the way that month went.`,
     `${src} Context, not a signal.`];
 }
