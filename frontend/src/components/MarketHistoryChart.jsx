@@ -228,7 +228,7 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
     }
     let best = 0;
     for (let i = 0; i < rows.length; i++) if (Math.abs(rows[i].day - day) < Math.abs(rows[best].day - day)) best = i;
-    setHover({ row: best });
+    setHover({ row: best, py: ((e.clientY - rect.top) / rect.height) * H });
   };
   const h = hover?.row != null ? rows[hover.row] : null;
   const cursorX = h ? x(h.day) : inFuture ? kx(hover.i) : null;
@@ -324,8 +324,40 @@ export default function MarketHistoryChart({ mode, rows, range, fan, fanPop, ove
       {!head && wGroups.map((wg, i) => <span key={wg.key} className="mh-btc-label mh-wallet-label" style={{ left: padL + 2, top: yW0[i] - labelH - 1 }}>
         {wg.label}<span className="mh-wallet-key" aria-hidden="true"><i className="is-long" />{WCOPY.long}<i className="is-short" />{WCOPY.short}</span>
         {wg.info}</span>)}
+      {h && <HoverTip r={h} mode={mode} overlays={overlays} wGroups={wGroups} cursorX={cursorX} py={hover.py} W={W} H={H} />}
     </div>
-    <Readout mode={mode} h={h} hover={hover} fan={f} today={today} showAlt={showAlt} overlays={overlays} wallets={wallets} />
+    {/* While a past day is hovered its numbers sit beside the cursor; the table keeps today's. */}
+    <Readout mode={mode} h={null} hover={hover} fan={f} today={today} showAlt={showAlt} overlays={overlays} wallets={wallets} />
+  </div>;
+}
+
+// The hovered day's numbers in a box beside the cursor: the date, BTC, the Uptrend share (or Fear & Greed), the
+// lines drawn over it, and each wallet group's long and short. It sits right of the cursor, or left near the edge.
+const TIP_W = 204;
+function HoverTip({ r, mode, overlays, wGroups, cursorX, py, W, H }) {
+  const R = COPY.readout;
+  const side = btcSide(r.btc, r.bandLo != null ? [r.bandLo, r.bandHi] : null);
+  const lines = [[R.btc, `${usd(r.btc)}${side ? ` · ${R.side[side]}` : ""}`]];
+  if (mode === "breadth") lines.push([R.uptrend, pctLabel(r.uptrend)]);
+  if (mode === "fear") lines.push([R.fg, r.fg ?? "—"]);
+  for (const o of overlays) if (r[o.key] != null) lines.push([R[o.key], overlayValue(o, r)]);
+  const groups = wGroups.map(g => ({ g, w: r.wallet?.[g.key] }));
+  const estH = 30 + 17 * lines.length + 38 * groups.length;
+  const left = cursorX + 12 + TIP_W <= W - 4 ? cursorX + 12 : Math.max(0, cursorX - 12 - TIP_W);
+  // Beside the pointer on a wide chart; on a phone, at the far end from the finger so it stays readable.
+  const top = W < 520 ? ((py ?? 0) > H / 2 ? 0 : Math.max(0, H - estH))
+    : Math.max(0, Math.min(H - estH, (py ?? 0) - estH / 2));
+  return <div className="mh-tip mh-hover-tip" style={{ left, top, width: TIP_W }} role="status">
+    <b>{dayDate(r.day)}</b>
+    {lines.map(([k, v]) => <span key={k} className="mh-tip-row"><span>{k}</span><em>{v}</em></span>)}
+    {groups.map(({ g, w }) => {
+      const t = WCOPY.tip(w, g);
+      return <span key={g.key} className="mh-tip-group">
+        <span>{g.label}</span>
+        {t ? <em><i className="is-long">{t.long}</i> · <i className="is-short">{t.short}</i></em> : <em>—</em>}
+        {t?.of && <small>{t.of}</small>}
+      </span>;
+    })}
   </div>;
 }
 

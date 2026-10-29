@@ -102,6 +102,13 @@ export const WCOPY = {
     if (g?.positions) return r.positions ? `${shares} of ${num(r.positions)} positions` : `${shares} of positions`;
     return r.wallets ? `${shares} of ${num(r.wallets)} wallets` : shares;
   },
+  // The chart's hover box: the shares, coloured there, and the count behind them on a line of its own.
+  tip: (r, g) => {
+    if (r?.L == null) return null;
+    const n = g?.positions ? r.positions : r.wallets;
+    return { long: `${pct(r.L)} long`, short: `${pct(r.S)} short`,
+      of: n ? `of ${num(n)} ${g?.positions ? "positions" : "wallets"}` : null };
+  },
   kpi: {
     sub: (g, scope) => `${g?.positions ? "positions" : "wallets"} long · short${scope && scope !== "all" ? ` ${scope}` : ""}`,
   },

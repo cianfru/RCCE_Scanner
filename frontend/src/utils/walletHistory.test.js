@@ -72,6 +72,14 @@ test('each panel has its own scale: a round step above its largest share', () =>
   assert.equal(shareScale([{ wallet: { smart: { L: 0.05, S: 0.02 } } }], ['smart']), 0.2);
 });
 
+test("the hover box's wallet line: shares coloured apart, the count on its own line", () => {
+  const crowd = GROUPS.find(g => g.key === 'crowd');
+  assert.deepEqual(WCOPY.tip({ L: 0.19, S: 0.81, positions: 1161 }, crowd), { long: '19% long', short: '81% short', of: 'of 1,161 positions' });
+  assert.deepEqual(WCOPY.tip({ L: 0.4, S: 0.3, wallets: 1694 }, GROUPS[0]), { long: '40% long', short: '30% short', of: 'of 1,694 wallets' });
+  assert.equal(WCOPY.tip({ L: 0.7, S: 0.3, positions: null }, crowd).of, null, 'rebuilt days carry the share only');
+  assert.equal(WCOPY.tip(undefined, crowd), null);
+});
+
 test('copy: no forecast words, popovers within the word budget', () => {
   const ctx = { rebuiltTo: 20750, recordedFrom: 20722, overlap: { days: 30, long_pts: 2.4, short_pts: 3.1 }, crowd: CROWD };
   const texts = [WCOPY.from(20330), ...GROUPS.map(g => g.label)];

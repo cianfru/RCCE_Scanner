@@ -123,3 +123,18 @@
   .mh-wallet-head{gap:0 8px;}
   .mh-wallet-head > .reflex-tabs{max-width:100%;}
 }
+
+/* The main chart's hover box: the hovered day beside the cursor (the table under the chart keeps today's) */
+.mh-hover-tip{gap:2px;}
+.mh-hover-tip .mh-tip-row{display:flex;justify-content:space-between;gap:10px;}
+.mh-hover-tip .mh-tip-row>span{font:500 11px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.mh-hover-tip em,.mh-hover-tip i{font-style:normal;}
+.mh-hover-tip .mh-tip-row em{color:var(--t-text1);text-align:right;}
+.mh-hover-tip .mh-tip-group{display:flex;flex-direction:column;margin-top:3px;padding-top:4px;border-top:1px solid var(--t-border);}
+.mh-hover-tip .mh-tip-group>span{font:500 11px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.mh-hover-tip .mh-tip-group em{color:var(--t-text1);}
+.mh-hover-tip .is-long{color:#34d399;}
+.mh-hover-tip .is-short{color:#f87171;}
+[data-theme="light"] .mh-hover-tip .is-long{color:#047857;}
+[data-theme="light"] .mh-hover-tip .is-short{color:#dc2626;}
+.mh-hover-tip small{font-size:10.5px;color:var(--t-text3);}
