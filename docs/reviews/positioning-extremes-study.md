@@ -75,7 +75,7 @@ Run: `python -m research.positioning_extremes --live market_history_live.json` (
 | 25 Oct 2026 (running) | 29.6% | $80,154 | -4.7% | censored | censored | censored | +0.9% to 27 Oct | -11.4% | -4.5% (28) |
 
 - After the three finished episodes BTC fell further twice (November 2025 and early February 2026, with new lows 16-17% under the start) and was near its low once (late February 2026). Median 30-day change -6.4%, against +2.7% for days after the same kind of month with ordinary readings, and +0.2% for every day of the window. Random draws from the same past-month fifths: 5.5% at or below that median. First and second half: -11.9% and -0.2%.
-- **Today's episode** (from 25 October in the rebuilt series; the page's recorded reading on 29 October is 19% long) differs from the earlier three: BTC had fallen only 4.7% over the 30 days before it, while the share of coins in Uptrend fell from 86% to 42%. The extreme comes from the whole market's month more than BTC's. Over seven years, after a 30-day BTC change of -4.7% or worse (28 cases), BTC's next 30 days had a median of -4.5% and rose in 46% of cases; the next 60 days, -3.4% and 39%. Within this window, days after the same kind of BTC month with ordinary readings had a 30-day median of -11.4% (55 days, a falling year).
+- **Today's episode** (from 25 October in the rebuilt series; the page's recorded reading on 29 October is 19% long) differs from the earlier three: BTC had fallen only 4.7% over the 30 days before it, while the share of coins in Uptrend fell from 81% to 52% over the same 30 days (42% by 27 October). The extreme comes from the whole market's month more than BTC's. Over seven years, after a 30-day BTC change of -4.7% or worse (28 cases), BTC's next 30 days had a median of -4.5% and rose in 46% of cases; the next 60 days, -3.4% and 39%. Within this window, days after the same kind of BTC month with ordinary readings had a 30-day median of -11.4% (55 days, a falling year).
 - As short as the newest rebuilt reading (28.5% on 28 October, reported only): 4 episodes, from 6 November 2025, 3 February, 26 February and 26 October 2026; the finished three were followed by -11.9%, -6.4% and -1.6% over 30 days and -7.4%, -11.2% and +14.6% over 60.
 - At the 5th percentile (25.5%, reported only): 2 episodes, from 22 November 2025 (+4.6% over 30 days, +5.6% over 60) and 27 February 2026 (+0.2%, +15.9%).
 
@@ -91,11 +91,11 @@ Run: `python -m research.positioning_extremes --live market_history_live.json` (
 | 12 Sep 2026 | 86.2% | $77,279 | +21.7% | +5.1% | +5.9% | censored | -2.1% (day 3), +12.1% (day 9) | censored |
 
 - Of the five counted episodes, two were followed by large falls (January 2026, and late April into May 2026, the owner's May case) and three by rises. Median 30-day change +0.7%, against +4.3% after the same kind of month with ordinary readings: 3.6 points under, short of the 5 the rule asks. Random draws: 38.7% at or below. Halves: -10.4% and +5.9%.
-- From the day the reading came back under 86% (reported only, chosen by nobody in advance as a signal): October 2025 -16.7%, January 2026 -27.0%, May 2026 -16.9%, July +0.2%, August +8.5% over the next 30 days. Three of five turns down from an extreme long were followed by falls of 16% or more, in a year whose every-day 60-day median was -6.8%.
+- From the day the reading came back under 86% (reported, never deciding): October 2025 -16.7%, January 2026 -27.0%, May 2026 -16.9%, July +0.2%, August +8.5% over the next 30 days. Three of five turns down from an extreme long were followed by falls of 16% or more, in a year whose every-day 60-day median was -6.8%.
 
 ### Every day of the window (the base rate)
 
-BTC from 1 October 2025: over 7 days a median of -0.5% (up 45% of days), over 30 days +0.2% (51%), over 60 days -6.8% (44%). A year that fell from $119K to $60K and recovered to $81K.
+BTC from 1 October 2025: over 7 days a median of -0.5% (up 45% of days), over 30 days +0.2% (51%), over 60 days -6.8% (44%). A year that rose to $125K (6 October 2025), fell to $59K (30 June 2026) and came back to $81K.
 
 ### What it means
 
