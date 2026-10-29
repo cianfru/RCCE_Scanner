@@ -59,3 +59,83 @@ From 30 October 2026, the same code on the page's new days: new turns count towa
 - Market heat contains the Uptrend share, so a cooling turn often comes after the share has already fallen; Part 2 asks whether more fall followed.
 - One Fear & Greed series for the whole market; the traders' reading covers one year (two runs).
 - The 2026-08-20 run's start rests on one coin (risk-on cycles study): without that coin it would continue the 2026-03-20 run.
+
+## Result (run 29 October 2026, after the rules above were committed at cdf0c22)
+
+`python -m research.late_uptrends` on the page's rows to 27 October 2026. Every in-sample number is description (the series had been seen on the page); the out-of-sample run is the only clean test.
+
+### Part 1. How long until a broad uptrend rolls over
+
+| Start | Days | Peak share (day) | Roll-over: day (share) | Fear & Greed high (day) | Typical coin from roll-over, 30 / 60 days | 30 days after roll-over: Uptrend / Basing / Downtrend |
+|---|---:|---|---|---|---|---|
+| 1 May 2021 (start unknown) | 13 | 62% (0) | none | 73 (8) | — | — |
+| 6 Nov 2021 | 41 | 84% (18) | 41 (54%) | 84 (3) | +1% / -17% | 54% / 44% / 2% |
+| 23 Dec 2021 | 11 | 71% (4) | 12 (50%) | 41 (1) | -34% / -38% | 17% / 29% / 54% |
+| 17 Jan 2022 | 8 | 65% (1) | 8 (29%) | 24 (1) | -8% / +8% | 17% / 83% / 0% |
+| 2 Apr 2022 | 19 | 66% (5) | none | 53 (3) | — | — |
+| 20 Jul 2022 | 143 | 98% (20) | 123 (76%) | 47 (25) | -3% / +17% | 42% / 58% / 0% |
+| 13 Jan 2023 | 53 | 86% (16) | 50 (66%) | 62 (34) | 0% / -6% | 25% / 75% / 0% |
+| 22 Oct 2023 | 101 | 97% (27) | 88 (77%) | 76 (79) | +10% / +36% | 32% / 68% / 0% |
+| 26 Feb 2024 | 30 | 79% (19) | 29 (59%) | 90 (8) | -30% / -24% | 7% / 43% / 51% |
+| 25 Sep 2024 | 119 | 98% (55) | 109 (77%) | 94 (58) | -34% / -53% | 9% / 8% / 83% |
+| 15 May 2025 | 6 | 58% (2) | none | 78 (8) | — | — |
+| 11 Jul 2025 | 96 | 98% (15) | 95 (56%) | 79 (1) | -22% / -37% | 12% / 86% / 2% |
+| 20 Mar 2026 | 148 | 96% (56) | 102 (72%) | 50 (46) | -5% / +12% | 62% / 38% / 1% |
+| 20 Aug 2026 | 63 | 86% (41) | 61 (63%) | 78 (33) | censored | censored |
+
+- The share peaked early: first touch at a median of day 18 (quartiles 4.5 to 34) over the 13 counted runs.
+- The roll-over came late: 11 runs had one, at a median of day 61 (quartiles 29 to 102); 3 before day 30, 2 between 30 and 59, 6 at day 60 or later. 2 short runs ended without one.
+- The 6 runs that reached day 60 rolled over on days 61, 88, 95, 102, 109 and 123: 1 to 63 days after day 60.
+- From the roll-over day the typical coin's next 30 days were close to an ordinary day's (median -6.4% over the 10 runs with 30 days, against -6.3% on every day; 60 days: -11.5% against -12.0%). By the roll-over, much of the fall had usually happened.
+- Where the coins went: 30 days after the roll-over most had moved into the Basing states (Cooling off, Building a base); into Downtrend in 3 of 10 (December 2021, March 2024, January 2025).
+
+### Part 2. Do Cooling arrows come before coins leave their uptrend?
+
+| Arrow | Run day | Share | Share change, 30 days | Days at the same share | Typical coin 30 / 60 days |
+|---|---:|---:|---:|---:|---|
+| 17 Nov 2021 | 11 | 78% | -24 | -8 | -29% / -27% |
+| 23 Mar 2024 | 26 | 71% | -63 | -13 | -19% / -18% |
+| 27 Nov 2024 | 63 | 94% | -4 | -7 | -15% / -27% |
+| 23 Dec 2024 | 89 | 91% | -37 | -4 | -13% / -39% |
+| 10 Jan 2025 | 107 | 85% | -70 | -4 | -36% / -53% |
+| 2 Aug 2025 | 22 | 97% | -9 | -7 | 0% / +1% |
+| 20 Aug 2025 | 40 | 97% | -7 | -7 | -1% / -33% |
+| 30 Aug 2025 | 50 | 87% | -1 | -4 | -8% / -29% |
+| 11 Oct 2025 | 92 | 86% | -71 | -4 | -1% / -27% |
+| 16 May 2026 | 57 | 96% | -10 | -8 | -18% / -24% |
+| 8 Oct 2026 | 49 | 84% | censored | -4 | censored |
+| 17 Oct 2026 | 58 | 73% | censored | -12 | censored |
+
+- **Cooling: bar not met.** 10 arrows with 30 days. The share fell a median 16.7 points in the 30 days after, and further than days at the same share after 7 of 10; median excess -9.3 points against the bar's -10. Random draws: 5.7% at or below (inside the 10% bar); halves -33.0 and -2.0 (both negative). One check short, so **context, not a signal**: "in 7 of 10".
+- Every arrow came before the run's roll-over; the roll-over followed within 30 days after 5 of 10.
+- The typical coin was lower 30 days after 9 of the 10 arrows and flat after one (median -14%, every day -6.3%); 60 days after, lower after 9 of 10 (median -27%, every day -12%). Reported, not deciding: the comparison was declared on the share, not on prices.
+- After 5 arrows the share hardly moved in 30 days (November 2024, three in August 2025, May 2026) while over 60 days the typical coin fell 24-33% after four of them: the Uptrend label trailed prices.
+- **Lifting: bar met in sample.** 29 arrows; the share rose a median 16.9 points in 30 days, 18.5 more than days at the same share; random draws 100% at or below; halves +18.9 and +14.6. The typical coin over 30 days: median -1%, 48% up. As declared, this is description until new lifting arrows from 30 October 2026 meet the same bar. The arrow comes after the share has started rising, so much of this is the share's own momentum.
+
+### Part 3. Longs late in a broad uptrend, with greed and the crowd long
+
+| Days in a broad uptrend | Days | Typical coin 30 days (share up) | 60 days (share up) | Lowest within 60 days | Share change, 30 days |
+|---|---:|---|---|---|---|
+| Early, not greedy | 369 | -7% (33%) | -18% (24%) | -22% | -6 |
+| Early, greedy | 171 | 0% (50%) | -1% (47%) | -12% | -3 |
+| Late, not greedy | 235 | -9% (24%) | -12% (45%) | -18% | -16 |
+| Late, greedy | 73 | -20% (0%) | -42% (18%) | -44% | -38 |
+| Every day | 1,976 | -6% (35%) | -12% (36%) | -20% | 0 |
+
+Days overlap; the late, greedy days come from 3 runs. Per run:
+
+| Run | First early, greedy day | Typical coin 30 / 60 days | First late, greedy day | Typical coin 30 / 60 days |
+|---|---|---|---|---|
+| 22 Oct 2023 | 25 Oct 2023, day 3, F&G 72, 77% | +22% / +50% | 21 Dec 2023, day 60, F&G 70, 92% | -7% / +9% |
+| 25 Sep 2024 | 16 Oct 2024, day 21, F&G 73, 83% | +10% / +60% | 24 Nov 2024, day 60, F&G 80, 95% | -8% / -24% |
+| 11 Jul 2025 | 11 Jul 2025, day 0, F&G 71, 56% | +7% / +2% | 4 Oct 2025, day 85, F&G 71, 88%, crowd long | -38% / -46% |
+
+- **Too few to read** (3 paired runs; the bar needs 8), as stated before running. In all 3 the late, greedy day's typical coin over 60 days was below the early, greedy day's (median gap -48 points). Context, not a signal.
+- The crowd long (86% or more) met a late, greedy day once: 4 October 2025.
+- The latest run (from 20 August 2026) reached day 60 on 19 October with Fear & Greed at 59, under the engine's line, so it has no late, greedy day; Fear & Greed's high was 78 on day 33 and the share's peak 86% on day 41 (30 September). Cooling arrows on days 49 and 58, roll-over on day 61 (20 October), end on day 63 (22 October). Its outcomes are censored.
+
+### Reading (in sample; context, not a signal)
+
+- Breadth tops early and rolls over late. In the 13 broad uptrends since 2021, the share of coins in uptrend reached its high at a median of day 18; the 20-point roll-over came at a median of day 61. Runs that passed day 60 rolled over 1 to 63 days later.
+- The Uptrend share is slow. Prices of the typical coin turned down before the share did: after the Cooling arrows the typical coin fell in the next 30 days after 9 of 10, while the share fell much after only half. Waiting for the share to drop 20 points came late: from that day, the typical coin did about as well as on any day.
+- Greed early in a broad uptrend was not a warning in this record (typical coin flat over 30 and 60 days); greed after day 60 came before the worst outcomes in the table, in all three runs that had it. Three runs is too few to call it a rule.
