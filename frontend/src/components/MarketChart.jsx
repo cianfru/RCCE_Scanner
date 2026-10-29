@@ -9,7 +9,7 @@ import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
 
 // The market history page's Chart view: one large BTC chart in the manner of a trading terminal. Indicators sit on the
-// price (the weekly band, broad uptrends with their day 60 and roll-over, heat turns, hot and cold days) or in panes of
+// price (the weekly band, broad uptrends with their roll-over, heat turns, hot and cold days) or in panes of
 // their own under it (Uptrend share, taller, Fear & Greed, the wallet groups, Market heat...), all on one time axis;
 // drag and scroll to move and zoom, the range buttons to jump. Each pane names its indicator and its value at the
 // crosshair (the latest day otherwise). Context, not a signal.
@@ -122,7 +122,7 @@ export default function MarketChart({ rows, indicators, range }) {
     const t = d => d * DAY_S;
 
     // Price pane: broad uptrends and hot and cold days behind (full-height areas on hidden scales), BTC on a log scale,
-    // the weekly band, then the marks on BTC: day 60 and the roll-over of each broad uptrend, heat turns.
+    // the weekly band, then the marks on BTC: the roll-over of each broad uptrend, heat turns.
     const fill = (id, color, on) => {
       const z = chart.addSeries(AreaSeries, { priceScaleId: id, lineVisible: false, lineColor: "rgba(0,0,0,0)", topColor: color,
         bottomColor: color, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
@@ -149,7 +149,6 @@ export default function MarketChart({ rows, indicators, range }) {
     const marks = [];
     if (indicators.includes("runs")) {
       for (const run of ctx.broad.runs) {
-        if (run.day60 != null) marks.push({ time: t(run.day60), position: "aboveBar", color: p.text3, shape: "circle", size: 0.7, text: "60" });
         if (run.roll != null) marks.push({ time: t(run.roll), position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
       }
     }

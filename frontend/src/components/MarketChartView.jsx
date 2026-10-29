@@ -16,7 +16,7 @@ const savePicks = keys => { try { localStorage.setItem(KEY, JSON.stringify(keys)
 const pct = v => `${Math.round(100 * v)}%`;
 
 function Marks({ st, last }) {
-  const vals = { greed: last.fg, crowd: last.wallet?.crowd?.L == null ? null : pct(last.wallet.crowd.L) };
+  const vals = { greed: st.fgHigh, crowd: last.wallet?.crowd?.L == null ? null : pct(last.wallet.crowd.L) };
   return <span className="mch-marks">{Object.entries(BCOPY.marks).map(([k, label]) =>
     <span key={k} className={st.marks[k] ? "is-on" : ""}><i aria-hidden="true" />{label}
       {vals[k] != null && <b>{vals[k]}</b>}<span className="mch-sr">{st.marks[k] ? " (yes)" : " (no)"}</span></span>)}
@@ -36,6 +36,7 @@ function Headline({ rows }) {
     <span className="mch-title">{BCOPY.title}<Info title={BCOPY.title} paras={BCOPY.pop()} /></span>
     <strong className="mch-heat">{pct(st.share)}</strong>
     {run && <span className="mch-run">{st.on ? BCOPY.on(st.age) : BCOPY.ended(dayDate(run.end, false), run.end - run.start)}
+      {st.on && st.longer.n > 0 && <i>{BCOPY.longer(st.longer.k, st.longer.n)}</i>}
       <i>{BCOPY.high(pct(run.high), dayDate(run.highDay, false))}</i></span>}
     {st.on ? <Marks st={st} last={last} />
       : <span className="mch-parts">{last.fg != null && <span>{HCOPY.parts.fg} <b>{last.fg}</b></span>}

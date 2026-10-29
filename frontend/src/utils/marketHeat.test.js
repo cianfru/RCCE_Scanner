@@ -51,7 +51,7 @@ test('indicators: saved picks keep the catalogue order, defaults otherwise, copy
   const bpop = BCOPY.pop().join(' ');
   assert.ok(popWords(bpop) <= 90, `${popWords(bpop)} words`);
   for (const t of [pop, bpop, ...INDICATORS.map(i => i.label), ...Object.values(HCOPY.states), ...Object.values(HCOPY.parts),
-    ...Object.values(BCOPY.marks), BCOPY.on(61), BCOPY.ended('22 Oct', 63)]) {
+    ...Object.values(BCOPY.marks), BCOPY.on(61), BCOPY.ended('22 Oct', 63), BCOPY.longer(6, 13)]) {
     assert.doesNotMatch(t, FORBIDDEN, t);
     assert.doesNotMatch(t, /larsson/i, t);
   }
@@ -67,21 +67,25 @@ test('broad uptrends: 55% starts one, the 5th day under ends it on the first of 
   assert.ok(days.has(1018) && !days.has(1019), 'the 5th day under is outside');
 });
 
-test('broad uptrends: the high is its first touch, rolled over at 20 points under it, day 60 marked', () => {
+test('broad uptrends: the high is its first touch, rolled over at 20 points under it', () => {
   const { runs } = broadRuns(rowsOf([0.6, 0.8, 0.95, 0.95, 0.76, 0.74, 0.9]));
   assert.equal(runs[0].highDay, 1002);
   assert.equal(runs[0].roll, 1005, '95 -> 76 is 19 points; 74 is 21');
   assert.equal(broadRuns(rowsOf([0.95, 0.75])).runs[0].roll, 1001, 'exactly 20 points counts');
-  const long = broadRuns(rowsOf(Array(70).fill(0.7))).runs[0];
-  assert.equal(long.day60, 1060);
+  assert.equal(broadRuns(rowsOf([0.7, 0.4])).runs[0].first, true, 'under way on the first day: start unknown');
 });
 
-test('broad state: the marks inside a run, the last run outside one', () => {
-  const rows = rowsOf(Array(65).fill(0.8)).map((r, i) => (i === 64 ? { ...r, fg: 72, wallet: { crowd: { L: 0.9 } } } : r));
+test('broad state: age against past runs, greed over the last 30 days, the last run outside one', () => {
+  const past = [...Array(3).fill(0.4), ...Array(10).fill(0.8), ...Array(6).fill(0.4), ...Array(40).fill(0.8), ...Array(6).fill(0.4)];
+  const now = Array(25).fill(0.8);
+  const rows = rowsOf([...past, ...now]).map((r, i, a) => ({ ...r, fg: i === a.length - 20 ? 74 : 50,
+    wallet: i === a.length - 1 ? { crowd: { L: 0.9 } } : undefined }));
   const st = broadState(rows);
   assert.equal(st.on, true);
-  assert.equal(st.age, 64);
-  assert.deepEqual(st.marks, { late: true, greed: true, crowd: true, rolled: false });
+  assert.equal(st.age, 24);
+  assert.deepEqual(st.longer, { k: 1, n: 2 }, 'longer than the 10-day run, not the 40-day one');
+  assert.equal(st.fgHigh, 74, 'greed 19 days ago still counts');
+  assert.deepEqual(st.marks, { greed: true, crowd: true, rolled: false });
   const off = broadState([...rowsOf(Array(10).fill(0.8)), ...rowsOf(Array(6).fill(0.3)).map((r, i) => ({ ...r, day: 1010 + i }))]);
   assert.equal(off.on, false);
   assert.deepEqual([off.run.start, off.run.end], [1000, 1010]);

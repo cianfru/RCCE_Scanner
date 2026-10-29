@@ -139,3 +139,29 @@ Days overlap; the late, greedy days come from 3 runs. Per run:
 - Breadth tops early and rolls over late. In the 13 broad uptrends since 2021, the share of coins in uptrend reached its high at a median of day 18; the 20-point roll-over came at a median of day 61. Runs that passed day 60 rolled over 1 to 63 days later.
 - The Uptrend share is slow. Prices of the typical coin turned down before the share did: after the Cooling arrows the typical coin fell in the next 30 days after 9 of 10, while the share fell much after only half. Waiting for the share to drop 20 points came late: from that day, the typical coin did about as well as on any day.
 - Greed early in a broad uptrend was not a warning in this record (typical coin flat over 30 and 60 days); greed after day 60 came before the worst outcomes in the table, in all three runs that had it. Three runs is too few to call it a rule.
+
+## Exploratory: age as a scale, not a line (owner, 29 October 2026)
+
+Owner: "60 days was just an example. Don't be so strict with the rule." So, after the declared run and outside it (no verdict, description only): days in a broad uptrend (share 55% or more, the first run left out) by the run's age, with greed counted at any point in the last 30 days (Fear & Greed 70 or more). Typical coin's median change, with the share of days up; runs that contribute days.
+
+| Run age (days) | Greed in the last 30 days | Days (runs) | Typical coin 30 days (up) | 60 days (up) | Share change, 30 days |
+|---|---|---:|---|---|---:|
+| 0-14 | no | 98 (9) | -8% (41%) | -6% (41%) | 0 |
+| 0-14 | yes | 77 (6) | -1% (47%) | -8% (38%) | -1 |
+| 15-29 | no | 55 (5) | -9% (40%) | -15% (15%) | -3 |
+| 15-29 | yes | 84 (6) | 0% (46%) | -13% (38%) | -8 |
+| 30-44 | no | 46 (4) | -9% (9%) | -18% (4%) | -12 |
+| 30-44 | yes | 70 (5) | +5% (55%) | +4% (53%) | -5 |
+| 45-59 | no | 38 (3) | -13% (5%) | -24% (5%) | -11 |
+| 45-59 | yes | 60 (4) | 0% (44%) | -3% (38%) | -2 |
+| 60-89 | no | 81 (3) | -15% (11%) | -21% (0%) | -14 |
+| 60-89 | yes | 72 (4) | -15% (9%) | -30% (36%) | -30 |
+| 90+ | no | 109 (2) | -8% (27%) | +12% (74%) | -13 |
+| 90+ | yes | 46 (3) | -22% (24%) | -42% (24%) | -45 |
+
+Every day: -6.3% over 30 days, -12% over 60.
+
+- With recent greed, the typical coin's next 30 days were about flat through a run's first two months and turned down after: in each of the 3 runs with outcomes, the median from day 60 on was below the median before (October 2023 run +16% to -2%, September 2024 run +37% to -25%, July 2025 run -4% to -31%); over 60 days in 2 of 3 (the October 2023 run's later days were followed by the February-March 2024 rally). The August 2026 run had 3 such days, without outcomes yet.
+- Broad uptrends without greed were weak at most ages (mostly the 2022 bear-market rallies and the 2026 spring run, when Fear & Greed stayed low).
+- The change shows between the 45-59 and 60-89 rows, but it rests on 3 runs; with this few, no day can be named as the line. Context, not a signal.
+- In the Chart view (same day), the fixed day-60 mark went: the headline reads the run's day against how many past runs ended sooner, and the Greed mark lights for a reading of 70 or more in the last 30 days, showing that high.
