@@ -2,29 +2,48 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Tabs from "./Tabs.jsx";
 import MarketChart from "./MarketChart.jsx";
 import { Info } from "./MarketHistorySections.jsx";
-import { HCOPY, INDICATORS, heatSeries, heatState, heatTurns, pickIndicators } from "../utils/marketHeat.js";
+import { BCOPY, HCOPY, INDICATORS, broadRuns, broadState, heatSeries, heatState, heatTurns, pickIndicators }
+  from "../utils/marketHeat.js";
 import { RANGES, dayDate } from "../utils/marketHistory.js";
 
-// The market history page's Chart view: Market heat in one line on top (the number, its state and the three readings
-// behind it), then one large chart with the indicators the reader picks, on the price or in panes under it.
+// The market history page's Chart view: the share of coins in uptrend leads (owner, 29 October 2026: the market itself
+// matters as much as BTC), with the broad uptrend's day count, its high and four marks; Market heat beside it; then one
+// large chart with the indicators the reader picks, on the price or in panes under it.
 
-const KEY = "reflex-market-indicators";
+const KEY = "reflex-market-indicators-2";
 const loadPicks = () => { try { return pickIndicators(JSON.parse(localStorage.getItem(KEY))); } catch { return pickIndicators(null); } };
 const savePicks = keys => { try { localStorage.setItem(KEY, JSON.stringify(keys)); } catch { /* the pick still holds for this visit */ } };
+const pct = v => `${Math.round(100 * v)}%`;
+
+function Marks({ st, last }) {
+  const vals = { greed: last.fg, crowd: last.wallet?.crowd?.L == null ? null : pct(last.wallet.crowd.L) };
+  return <span className="mch-marks">{Object.entries(BCOPY.marks).map(([k, label]) =>
+    <span key={k} className={st.marks[k] ? "is-on" : ""}><i aria-hidden="true" />{label}
+      {vals[k] != null && <b>{vals[k]}</b>}<span className="mch-sr">{st.marks[k] ? " (yes)" : " (no)"}</span></span>)}
+  </span>;
+}
 
 function Headline({ rows }) {
+  const br = useMemo(() => broadRuns(rows), [rows]);
   const series = useMemo(() => heatSeries(rows), [rows]);
   const turns = useMemo(() => heatTurns(series), [series]);
-  const st = heatState(series, turns);
+  const st = broadState(rows, br);
+  const hs = heatState(series, turns);
   if (!st) return null;
-  const last = series[series.length - 1];
+  const last = rows[rows.length - 1];
+  const run = st.run;
   return <div className="mch-head">
-    <span className="mch-title">{HCOPY.title}<Info title={HCOPY.title} paras={HCOPY.pop()} /></span>
-    <strong className="mch-heat">{Math.round(st.heat)}</strong>
-    <span className={`mch-state is-${st.word.toLowerCase()}`}>{HCOPY.states[st.word]}
-      {st.since != null && <i>{HCOPY.since(dayDate(st.since, false))}</i>}</span>
-    <span className="mch-parts">{["uptrend", "fg", "traders"].filter(k => last.parts[k] != null)
-      .map(k => <span key={k}>{HCOPY.parts[k]} <b>{Math.round(last.parts[k])}</b></span>)}</span>
+    <span className="mch-title">{BCOPY.title}<Info title={BCOPY.title} paras={BCOPY.pop()} /></span>
+    <strong className="mch-heat">{pct(st.share)}</strong>
+    {run && <span className="mch-run">{st.on ? BCOPY.on(st.age) : BCOPY.ended(dayDate(run.end, false), run.end - run.start)}
+      <i>{BCOPY.high(pct(run.high), dayDate(run.highDay, false))}</i></span>}
+    {st.on ? <Marks st={st} last={last} />
+      : <span className="mch-parts">{last.fg != null && <span>{HCOPY.parts.fg} <b>{last.fg}</b></span>}
+        {last.wallet?.crowd?.L != null && <span>{HCOPY.parts.traders} <b>{pct(last.wallet.crowd.L)}</b></span>}</span>}
+    {hs && <span className="mch-side">{HCOPY.title} <b>{Math.round(hs.heat)}</b>
+      <span className={`mch-state is-${hs.word.toLowerCase()}`}>{HCOPY.states[hs.word]}
+        {hs.since != null && <i>{HCOPY.since(dayDate(hs.since, false))}</i>}</span>
+      <Info title={HCOPY.title} paras={HCOPY.pop()} /></span>}
   </div>;
 }
 

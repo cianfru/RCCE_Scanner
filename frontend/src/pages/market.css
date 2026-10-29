@@ -154,6 +154,20 @@
 [data-theme="light"] .mch-state.is-cold,[data-theme="light"] .mch-state.is-lifting{color:#0369a1;}
 .mch-parts{display:inline-flex;flex-wrap:wrap;gap:4px 12px;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .mch-parts b{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.mch-run{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;font:600 16px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.mch-run i{font:500 12px var(--font-geist-sans),sans-serif;font-style:normal;color:var(--t-text3);}
+.mch-marks{display:inline-flex;flex-wrap:wrap;gap:4px 14px;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.mch-marks>span{display:inline-flex;align-items:center;gap:5px;}
+.mch-marks>span>i{width:8px;height:8px;border-radius:2px;box-shadow:inset 0 0 0 1.5px currentColor;}
+.mch-marks>span.is-on{color:#fb923c;}
+.mch-marks>span.is-on>i{background:currentColor;}
+[data-theme="light"] .mch-marks>span.is-on{color:#c2410c;}
+.mch-marks b{font:600 12px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.mch-side{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-left:auto;font:500 12px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.mch-side>b{font:600 15px var(--font-geist-mono),monospace;color:var(--t-text1);}
+.mch-side .mch-state{font-size:13px;}
+.mch-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+.mc-run{font-style:normal;color:var(--t-accent);}
 .mch-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px;}
 .mch-menu{position:relative;}
 .mch-menu-btn{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 4px;border:0;background:none;cursor:pointer;font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);}
@@ -175,7 +189,8 @@
 [data-theme="light"] .mc-zone.is-cold{color:#0369a1;}
 @media (max-width:640px){
   .mch-heat{font-size:30px;}
-  .mch-parts{width:100%;}
+  .mch-parts,.mch-marks{width:100%;}
+  .mch-side{margin-left:0;width:100%;}
   .mc-legend{max-width:calc(100% - 60px);font-size:10.5px;}
   .mc-legend .mc-parts{display:none;}
 }

@@ -3,6 +3,8 @@
 // profitable traders' positions that are long (where the wallet feed has them, from October 2025; before that the
 // first two). The three tend to rise together after a rally, so a high reading says the market is stretched, not
 // what comes next. Context, not a signal (docs/reviews/market-heat.md).
+// Broad uptrends lead the view (owner, 29 October 2026: the share of coins in uptrend matters as much as BTC): how
+// long the market has been in one, its high, and four marks, as declared in docs/reviews/late-uptrends-study.md.
 
 export const HOT = 75;            // at or above: hot
 export const COLD = 25;           // at or below: cold
@@ -80,17 +82,73 @@ export function heatState(series, turns = heatTurns(series)) {
 // The zone a heat value sits in: "hot", "cold" or null.
 export const zoneOf = v => (v == null ? null : v >= HOT ? "hot" : v <= COLD ? "cold" : null);
 
+// ---------------------------------------------------------------- broad uptrends (docs/reviews/late-uptrends-study.md)
+
+export const ON = 0.55;           // a broad uptrend: 55% or more of coins in uptrend...
+export const OFF_DAYS = 5;        // ...until the 5th day in a row under 55% (shorter dips stay inside)
+export const ROLL = 0.2;          // rolled over: 20 points under the run's high so far
+export const LATE = 60;           // the owner's day 60
+export const GREED = 70;          // Fear & Greed at or above: the engine's own line (its Not greedy check fails)
+export const CROWD = 0.86;        // profitable traders' share long at or above: the positioning study's extreme-long line
+
+// Broad uptrends as known on each day (the study's rule, research/late_uptrends.py): { days: Map(day -> { start, age,
+// high, rolled }), runs: [{ start, end (first day of the 5 under 55%, null while on), high, highDay, roll, day60 }] }.
+export function broadRuns(rows) {
+  const days = new Map();
+  const runs = [];
+  let cur = null, below = 0;
+  rows.forEach((r, i) => {
+    const s = r.uptrend;
+    if (!cur) {
+      if (s == null || s < ON) return;
+      cur = { start: r.day, end: null, high: s, highDay: r.day, roll: null, day60: null };
+      below = 0;
+    } else {
+      below = s == null || s < ON ? below + 1 : 0;
+      if (below >= OFF_DAYS) {
+        cur.end = rows[i - OFF_DAYS + 1].day;
+        runs.push(cur);
+        cur = null;
+        return;
+      }
+    }
+    if (s != null && s > cur.high) { cur.high = s; cur.highDay = r.day; }
+    if (cur.roll == null && s != null && cur.high - s >= ROLL - 1e-9) cur.roll = r.day;
+    const age = r.day - cur.start;
+    if (cur.day60 == null && age >= LATE) cur.day60 = r.day;
+    days.set(r.day, { start: cur.start, age, high: cur.high, rolled: cur.roll != null });
+  });
+  if (cur) runs.push(cur);
+  return { days, runs };
+}
+
+// The latest day's reading: inside a broad uptrend, its age, high and the four marks; otherwise the last run.
+export function broadState(rows, br = broadRuns(rows)) {
+  const last = rows[rows.length - 1];
+  if (!last || last.uptrend == null) return null;
+  const d = br.days.get(last.day);
+  if (!d) return { on: false, share: last.uptrend, run: br.runs.filter(r => r.end != null).pop() || null };
+  const run = br.runs[br.runs.length - 1];
+  const crowd = last.wallet?.crowd?.L;
+  return {
+    on: true, share: last.uptrend, age: d.age, run,
+    marks: { late: d.age >= LATE, greed: last.fg != null && last.fg >= GREED, crowd: crowd != null && crowd >= CROWD,
+             rolled: d.rolled },
+  };
+}
+
 // ---------------------------------------------------------------- the Chart view's indicators
 
 // On the price pane or in a pane of their own below it; `on` ones show the first time the page opens.
 export const INDICATORS = [
   { key: "band", label: "BTC weekly band", where: "price", on: true },
-  { key: "zones", label: "Hot and cold days", where: "price", on: true },
+  { key: "runs", label: "Broad uptrends", where: "price", on: true },
   { key: "turns", label: "Heat turns", where: "price", on: true },
-  { key: "heat", label: "Market heat", where: "pane", on: true },
+  { key: "zones", label: "Hot and cold days", where: "price", on: false },
   { key: "uptrend", label: "Uptrend share", where: "pane", on: true },
+  { key: "fg", label: "Fear & Greed", where: "pane", on: true },
   { key: "crowd", label: "Profitable traders", where: "pane", on: true },
-  { key: "fg", label: "Fear & Greed", where: "pane", on: false },
+  { key: "heat", label: "Market heat", where: "pane", on: false },
   { key: "smart", label: "Smart money", where: "pane", on: false },
   { key: "whales", label: "Whales", where: "pane", on: false },
   { key: "median_z", label: "Median z", where: "pane", on: false },
@@ -103,6 +161,19 @@ export function pickIndicators(saved) {
   const keys = Array.isArray(saved) ? saved : DEFAULT_ON;
   return INDICATORS.map(i => i.key).filter(k => keys.includes(k));
 }
+
+export const BCOPY = {
+  title: "Coins in uptrend",
+  on: age => `Broad uptrend, day ${age}`,
+  high: (v, d) => `high ${v} on ${d}`,
+  ended: (d, n) => `Broad uptrend ended ${d} after ${n} days`,
+  marks: { late: "Day 60+", greed: "Greed", crowd: "Traders long", rolled: "Rolled over" },
+  day: age => `broad uptrend, day ${age}`,
+  pop: () => [
+    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under ${Math.round(100 * ON)}%. Marks: day ${LATE} or later; greed, Fear & Greed at ${GREED} or more (the engine's line); traders long, profitable traders ${Math.round(100 * CROWD)}% or more long; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
+    "Since 2021 the share peaked at a median of day 18 and rolled over at a median of day 61. Late, greedy days came before the weakest outcomes in all 3 runs that had them: too few to read. Context, not a signal.",
+  ],
+};
 
 export const HCOPY = {
   title: "Market heat",

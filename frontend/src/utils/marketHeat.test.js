@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COLD, DEFAULT_ON, HCOPY, HOT, INDICATORS, TURN, heatOf, heatSeries, heatState, heatTurns, pickIndicators, zoneOf }
-  from './marketHeat.js';
+import { BCOPY, COLD, DEFAULT_ON, HCOPY, HOT, INDICATORS, TURN, broadRuns, broadState, heatOf, heatSeries, heatState,
+  heatTurns, pickIndicators, zoneOf } from './marketHeat.js';
 import { popWords } from './marketHistory.js';
 
 const FORBIDDEN = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*)\b/i;
@@ -44,12 +44,46 @@ test('a cold episode lifts, and the state words follow the zones otherwise', () 
 test('indicators: saved picks keep the catalogue order, defaults otherwise, copy within the rules', () => {
   assert.deepEqual(pickIndicators(['crowd', 'band', 'nope']), ['band', 'crowd']);
   assert.deepEqual(pickIndicators(null), DEFAULT_ON);
-  assert.ok(DEFAULT_ON.includes('heat') && DEFAULT_ON.includes('uptrend') && DEFAULT_ON.includes('crowd'));
+  assert.ok(DEFAULT_ON.includes('runs') && DEFAULT_ON.includes('uptrend') && DEFAULT_ON.includes('crowd'));
   assert.equal(new Set(INDICATORS.map(i => i.key)).size, INDICATORS.length);
   const pop = HCOPY.pop().join(' ');
   assert.ok(popWords(pop) <= 90, `${popWords(pop)} words`);
-  for (const t of [pop, ...INDICATORS.map(i => i.label), ...Object.values(HCOPY.states), ...Object.values(HCOPY.parts)]) {
+  const bpop = BCOPY.pop().join(' ');
+  assert.ok(popWords(bpop) <= 90, `${popWords(bpop)} words`);
+  for (const t of [pop, bpop, ...INDICATORS.map(i => i.label), ...Object.values(HCOPY.states), ...Object.values(HCOPY.parts),
+    ...Object.values(BCOPY.marks), BCOPY.on(61), BCOPY.ended('22 Oct', 63)]) {
     assert.doesNotMatch(t, FORBIDDEN, t);
     assert.doesNotMatch(t, /larsson/i, t);
   }
+});
+
+const rowsOf = (shares, extra = {}) => shares.map((u, i) => ({ day: 1000 + i, uptrend: u, ...extra }));
+
+test('broad uptrends: 55% starts one, the 5th day under ends it on the first of the five, shorter dips stay inside', () => {
+  const shares = [0.5, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.6, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.6];
+  const { days, runs } = broadRuns(rowsOf(shares));
+  assert.deepEqual(runs.map(r => [r.start, r.end]), [[1003, 1015], [1021, null]], 'as research/late_uptrends.py');
+  assert.equal(days.get(1010).age, 7);
+  assert.ok(days.has(1018) && !days.has(1019), 'the 5th day under is outside');
+});
+
+test('broad uptrends: the high is its first touch, rolled over at 20 points under it, day 60 marked', () => {
+  const { runs } = broadRuns(rowsOf([0.6, 0.8, 0.95, 0.95, 0.76, 0.74, 0.9]));
+  assert.equal(runs[0].highDay, 1002);
+  assert.equal(runs[0].roll, 1005, '95 -> 76 is 19 points; 74 is 21');
+  assert.equal(broadRuns(rowsOf([0.95, 0.75])).runs[0].roll, 1001, 'exactly 20 points counts');
+  const long = broadRuns(rowsOf(Array(70).fill(0.7))).runs[0];
+  assert.equal(long.day60, 1060);
+});
+
+test('broad state: the marks inside a run, the last run outside one', () => {
+  const rows = rowsOf(Array(65).fill(0.8)).map((r, i) => (i === 64 ? { ...r, fg: 72, wallet: { crowd: { L: 0.9 } } } : r));
+  const st = broadState(rows);
+  assert.equal(st.on, true);
+  assert.equal(st.age, 64);
+  assert.deepEqual(st.marks, { late: true, greed: true, crowd: true, rolled: false });
+  const off = broadState([...rowsOf(Array(10).fill(0.8)), ...rowsOf(Array(6).fill(0.3)).map((r, i) => ({ ...r, day: 1010 + i }))]);
+  assert.equal(off.on, false);
+  assert.deepEqual([off.run.start, off.run.end], [1000, 1010]);
+  assert.equal(broadState([]), null);
 });
