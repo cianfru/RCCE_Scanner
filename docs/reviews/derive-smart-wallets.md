@@ -33,6 +33,8 @@ The pattern the owner saw appears mostly with hindsight.
 
 Why: today's ranking is on all trades so far, including the falls these wallets caught, so the wallets that were short before a fall rank high now. Ranked as they stood at the time, the Smart wallets were short before a top about as often as on any day, and their put buying mostly came after the turn. Nine tops are far too few to read either way.
 
+A declared study of this reading is drafted as Addendum C of Cowboy's options-traders study (`derive_scan` `docs/options-traders-study.md`, 29 October 2026, awaiting the owner's approval): it judges only the closes after its approval, since this exploration has seen the whole past.
+
 Two more cautions: dollar flows are concentrated (the largest wallet makes 29-89% of each half-year's Smart BTC delta), so the drawer counts wallets, not dollars; and in 2026 one wallet's deep in-the-money calls move the dollar book by tens of millions when a leg expires.
 
 ## Updating
