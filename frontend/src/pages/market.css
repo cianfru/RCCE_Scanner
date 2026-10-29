@@ -168,6 +168,7 @@
 .mch-side .mch-state{font-size:13px;}
 .mch-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
 .mc-run{font-style:normal;color:var(--t-accent);}
+.mc-down{font-style:normal;color:var(--t-text2);}
 .mch-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px;}
 .mch-menu{position:relative;}
 .mch-menu-btn{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 4px;border:0;background:none;cursor:pointer;font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);}

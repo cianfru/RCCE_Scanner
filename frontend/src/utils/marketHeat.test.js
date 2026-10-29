@@ -50,8 +50,11 @@ test('indicators: saved picks keep the catalogue order, defaults otherwise, copy
   assert.ok(popWords(pop) <= 90, `${popWords(pop)} words`);
   const bpop = BCOPY.pop().join(' ');
   assert.ok(popWords(bpop) <= 90, `${popWords(bpop)} words`);
+  const dpop = BCOPY.downPop().join(' ');
+  assert.ok(popWords(dpop) <= 90, `${popWords(dpop)} words`);
   for (const t of [pop, bpop, ...INDICATORS.map(i => i.label), ...Object.values(HCOPY.states), ...Object.values(HCOPY.parts),
-    ...Object.values(BCOPY.marks), BCOPY.on(61), BCOPY.ended('22 Oct', 63), BCOPY.longer(6, 13)]) {
+    ...Object.values(BCOPY.marks), BCOPY.on(61), BCOPY.ended('22 Oct', 63), BCOPY.longer(6, 13),
+    BCOPY.downPop().join(' '), ...Object.values(BCOPY.downMarks), BCOPY.down(5), BCOPY.downLonger(3, 13)]) {
     assert.doesNotMatch(t, FORBIDDEN, t);
     assert.doesNotMatch(t, /larsson/i, t);
   }
@@ -85,9 +88,32 @@ test('broad state: age against past runs, greed over the last 30 days, the last 
   assert.equal(st.age, 24);
   assert.deepEqual(st.longer, { k: 1, n: 2 }, 'longer than the 10-day run, not the 40-day one');
   assert.equal(st.fgHigh, 74, 'greed 19 days ago still counts');
-  assert.deepEqual(st.marks, { greed: true, crowd: true, rolled: false });
+  assert.deepEqual(st.marks, { greed: true, crowd: true, zturn: false, rolled: false });
   const off = broadState([...rowsOf(Array(10).fill(0.8)), ...rowsOf(Array(6).fill(0.3)).map((r, i) => ({ ...r, day: 1010 + i }))]);
   assert.equal(off.on, false);
   assert.deepEqual([off.run.start, off.run.end], [1000, 1010]);
   assert.equal(broadState([]), null);
+});
+
+test('z-turns: down inside a run at 0.75 under its high so far, up in a downturn at 0.75 over its low', () => {
+  const shares = [...Array(10).fill(0.8), ...Array(12).fill(0.3), ...Array(3).fill(0.8)];
+  const zs = [0.2, 1.5, 1.2, 0.8, 0.74, 1.6, 1.6, 1.6, 1.6, 1.6, 0, -1.5, -1.0, -0.76, 0.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const br = broadRuns(shares.map((u, i) => ({ day: 1000 + i, uptrend: u, median_z: zs[i] })));
+  assert.equal(br.runs[0].zTurn, 1004, '1.5 -> 0.8 is 0.7; 0.74 is 0.76 under, as research/turning_points.py');
+  assert.deepEqual([br.downs[0].start, br.downs[0].end], [1010, 1022]);
+  assert.equal(br.downs[0].zTurnUp, 1014, '-1.5 -> -0.76 is 0.74; 0.0 is 1.5 over the low');
+  assert.equal(br.downs[0].lowDay, 1010);
+  assert.ok(!br.downDays.has(1012) || br.downDays.get(1012).age === 2);
+});
+
+test('broad state in a downturn: its age against past downturns, fear over the last 30 days, traders short', () => {
+  const shares = [...Array(5).fill(0.8), ...Array(10).fill(0.3), ...Array(5).fill(0.8), ...Array(8).fill(0.2)];
+  const rows = shares.map((u, i, a) => ({ day: 1000 + i, uptrend: u, fg: i === 21 ? 20 : 50,
+    wallet: i === a.length - 1 ? { crowd: { L: 0.25 } } : undefined }));
+  const st = broadState(rows);
+  assert.equal(st.on, false);
+  assert.equal(st.age, 7);
+  assert.deepEqual(st.longer, { k: 0, n: 1 }, 'the 10-day downturn was longer');
+  assert.equal(st.fgLow, 20);
+  assert.deepEqual(st.marks, { fear: true, short: true, zup: false, turned: false });
 });

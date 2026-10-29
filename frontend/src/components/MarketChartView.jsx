@@ -7,8 +7,8 @@ import { BCOPY, HCOPY, INDICATORS, broadRuns, broadState, heatSeries, heatState,
 import { RANGES, dayDate } from "../utils/marketHistory.js";
 
 // The market history page's Chart view: the share of coins in uptrend leads (owner, 29 October 2026: the market itself
-// matters as much as BTC), with the broad uptrend's day count, its high and four marks; Market heat beside it; then one
-// large chart with the indicators the reader picks, on the price or in panes under it.
+// matters as much as BTC), with the broad uptrend's (or downturn's) day against past ones, its high (or low) and four
+// marks; Market heat beside it; then one large chart with the indicators the reader picks, on the price or under it.
 
 const KEY = "reflex-market-indicators-2";
 const loadPicks = () => { try { return pickIndicators(JSON.parse(localStorage.getItem(KEY))); } catch { return pickIndicators(null); } };
@@ -16,8 +16,9 @@ const savePicks = keys => { try { localStorage.setItem(KEY, JSON.stringify(keys)
 const pct = v => `${Math.round(100 * v)}%`;
 
 function Marks({ st, last }) {
-  const vals = { greed: st.fgHigh, crowd: last.wallet?.crowd?.L == null ? null : pct(last.wallet.crowd.L) };
-  return <span className="mch-marks">{Object.entries(BCOPY.marks).map(([k, label]) =>
+  const crowd = last.wallet?.crowd?.L == null ? null : `${(100 * last.wallet.crowd.L).toFixed(1)}%`;   // one decimal beside a 30% or 86% line
+  const vals = st.on ? { greed: st.fgHigh, crowd } : { fear: st.fgLow, short: crowd };
+  return <span className="mch-marks">{Object.entries(st.on ? BCOPY.marks : BCOPY.downMarks).map(([k, label]) =>
     <span key={k} className={st.marks[k] ? "is-on" : ""}><i aria-hidden="true" />{label}
       {vals[k] != null && <b>{vals[k]}</b>}<span className="mch-sr">{st.marks[k] ? " (yes)" : " (no)"}</span></span>)}
   </span>;
@@ -31,16 +32,18 @@ function Headline({ rows }) {
   const hs = heatState(series, turns);
   if (!st) return null;
   const last = rows[rows.length - 1];
-  const run = st.run;
+  const run = st.run, down = st.down;
+  const older = st.longer?.k > 0 && (st.on ? BCOPY.longer : BCOPY.downLonger)(st.longer.k, st.longer.n);
   return <div className="mch-head">
-    <span className="mch-title">{BCOPY.title}<Info title={BCOPY.title} paras={BCOPY.pop()} /></span>
+    <span className="mch-title">{BCOPY.title}<Info title={BCOPY.title} paras={st.on || !down ? BCOPY.pop() : BCOPY.downPop()} /></span>
     <strong className="mch-heat">{pct(st.share)}</strong>
-    {run && <span className="mch-run">{st.on ? BCOPY.on(st.age) : BCOPY.ended(dayDate(run.end, false), run.end - run.start)}
-      {st.on && st.longer.n > 0 && <i>{BCOPY.longer(st.longer.k, st.longer.n)}</i>}
+    {st.on && <span className="mch-run">{BCOPY.on(st.age)}{older && <i>{older}</i>}
       <i>{BCOPY.high(pct(run.high), dayDate(run.highDay, false))}</i></span>}
-    {st.on ? <Marks st={st} last={last} />
-      : <span className="mch-parts">{last.fg != null && <span>{HCOPY.parts.fg} <b>{last.fg}</b></span>}
-        {last.wallet?.crowd?.L != null && <span>{HCOPY.parts.traders} <b>{pct(last.wallet.crowd.L)}</b></span>}</span>}
+    {!st.on && down && <span className="mch-run">{BCOPY.down(st.age)}{older && <i>{older}</i>}
+      <i>{BCOPY.low(pct(down.low), dayDate(down.lowDay, false))}</i></span>}
+    {!st.on && !down && run && <span className="mch-run">{BCOPY.ended(dayDate(run.end, false), run.end - run.start)}
+      <i>{BCOPY.high(pct(run.high), dayDate(run.highDay, false))}</i></span>}
+    {(st.on || down) && <Marks st={st} last={last} />}
     {hs && <span className="mch-side">{HCOPY.title} <b>{Math.round(hs.heat)}</b>
       <span className={`mch-state is-${hs.word.toLowerCase()}`}>{HCOPY.states[hs.word]}
         {hs.since != null && <i>{HCOPY.since(dayDate(hs.since, false))}</i>}</span>

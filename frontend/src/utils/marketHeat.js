@@ -92,19 +92,26 @@ export const ROLL = 0.2;          // rolled over: 20 points under the run's high
 export const GREED = 70;          // Fear & Greed at or above: the engine's own line (its Not greedy check fails)...
 export const LOOKBACK = 30;       // ...at some point in the last 30 days
 export const CROWD = 0.86;        // profitable traders' share long at or above: the positioning study's extreme-long line
+// Turning points (docs/reviews/turning-points-study.md): the median z 0.75 off the run's high (or the downturn's low);
+// in downturns, extreme fear (Fear & Greed 25 or less in the last 30 days) and traders short (30% or less long).
+export const Z_TURN = 0.75;
+export const FEAR = 25;
+export const SHORT = 0.3;
 
-// Broad uptrends as known on each day (the study's rule, research/late_uptrends.py): { days: Map(day -> { start, age,
-// high, rolled }), runs: [{ start, end (first day of the 5 under 55%, null while on), first (under way on the first day,
-// start unknown), high, highDay, roll }] }.
+// Broad uptrends and the downturns between them as known on each day (research/late_uptrends.py, turning_points.py):
+// { days: Map(day -> { start, age, high, rolled, zTurned }), runs: [{ start, end (first day of the 5 under 55%, null
+// while on), first (under way on the first day, start unknown), high, highDay, roll, zTurn }], downDays: Map(day ->
+// { start, age, low, lowDay, turned, zUp }) for the days outside a run, downs: [{ start, end (next run's start, null
+// while on), low, lowDay, turnUp, zTurnUp }] }.
 export function broadRuns(rows) {
   const days = new Map();
   const runs = [];
   let cur = null, below = 0;
   rows.forEach((r, i) => {
-    const s = r.uptrend;
+    const s = r.uptrend, z = r.median_z;
     if (!cur) {
       if (s == null || s < ON) return;
-      cur = { start: r.day, end: null, first: i === 0, high: s, highDay: r.day, roll: null };
+      cur = { start: r.day, end: null, first: i === 0, high: s, highDay: r.day, roll: null, zHigh: null, zTurn: null };
       below = 0;
     } else {
       below = s == null || s < ON ? below + 1 : 0;
@@ -117,28 +124,66 @@ export function broadRuns(rows) {
     }
     if (s != null && s > cur.high) { cur.high = s; cur.highDay = r.day; }
     if (cur.roll == null && s != null && cur.high - s >= ROLL - 1e-9) cur.roll = r.day;
-    days.set(r.day, { start: cur.start, age: r.day - cur.start, high: cur.high, rolled: cur.roll != null });
+    if (z != null) {
+      cur.zHigh = cur.zHigh == null ? z : Math.max(cur.zHigh, z);
+      if (cur.zTurn == null && cur.zHigh - z >= Z_TURN - 1e-9) cur.zTurn = r.day;
+    }
+    days.set(r.day, { start: cur.start, age: r.day - cur.start, high: cur.high, rolled: cur.roll != null,
+                      zTurned: cur.zTurn != null });
   });
   if (cur) runs.push(cur);
-  return { days, runs };
+  const downDays = new Map();
+  const downs = runs.filter(run => run.end != null).map(run => {
+    const next = runs.find(x => x.start > run.end);
+    const dn = { start: run.end, end: next ? next.start : null, low: null, lowDay: null, turnUp: null, zLow: null, zTurnUp: null };
+    for (const r of rows) {
+      if (r.day < dn.start || (dn.end != null && r.day >= dn.end)) continue;
+      if (r.uptrend != null) {
+        if (dn.low == null || r.uptrend < dn.low) { dn.low = r.uptrend; dn.lowDay = r.day; }
+        if (dn.turnUp == null && r.uptrend - dn.low >= ROLL - 1e-9) dn.turnUp = r.day;
+      }
+      if (r.median_z != null) {
+        dn.zLow = dn.zLow == null ? r.median_z : Math.min(dn.zLow, r.median_z);
+        if (dn.zTurnUp == null && r.median_z - dn.zLow >= Z_TURN - 1e-9) dn.zTurnUp = r.day;
+      }
+      if (!days.has(r.day)) {
+        downDays.set(r.day, { start: dn.start, age: r.day - dn.start, low: dn.low, lowDay: dn.lowDay,
+                              turned: dn.turnUp != null, zUp: dn.zTurnUp != null });
+      }
+    }
+    return dn;
+  });
+  return { days, runs, downDays, downs };
 }
 
-// The latest day's reading: inside a broad uptrend, its age against the past runs (how many ended shorter), its high,
-// the highest Fear & Greed of the last 30 days and the three marks; otherwise the last run.
+// The latest day's reading. Inside a broad uptrend: its age against the past runs (how many ended sooner), its high,
+// the highest Fear & Greed of the last 30 days and the marks. In a downturn: the same against past downturns, its low,
+// the lowest Fear & Greed of the last 30 days and the downturn's marks.
 export function broadState(rows, br = broadRuns(rows)) {
   const last = rows[rows.length - 1];
   if (!last || last.uptrend == null) return null;
-  const d = br.days.get(last.day);
-  if (!d) return { on: false, share: last.uptrend, run: br.runs.filter(r => r.end != null).pop() || null };
-  const run = br.runs[br.runs.length - 1];
-  const past = br.runs.filter(r => r.end != null && !r.first);
   const fgs = rows.filter(r => r.day > last.day - LOOKBACK && r.fg != null).map(r => r.fg);
-  const fgHigh = fgs.length ? Math.max(...fgs) : null;
   const crowd = last.wallet?.crowd?.L;
+  const d = br.days.get(last.day);
+  if (d) {
+    const past = br.runs.filter(r => r.end != null && !r.first);
+    const fgHigh = fgs.length ? Math.max(...fgs) : null;
+    return {
+      on: true, share: last.uptrend, age: d.age, run: br.runs[br.runs.length - 1], fgHigh,
+      longer: { k: past.filter(r => r.end - r.start < d.age).length, n: past.length },
+      marks: { greed: fgHigh != null && fgHigh >= GREED, crowd: crowd != null && crowd >= CROWD, zturn: d.zTurned,
+               rolled: d.rolled },
+    };
+  }
+  const dn = br.downDays.get(last.day);
+  const run = br.runs.filter(r => r.end != null).pop() || null;
+  if (!dn) return { on: false, share: last.uptrend, run, down: null };
+  const past = br.downs.filter(x => x.end != null);
+  const fgLow = fgs.length ? Math.min(...fgs) : null;
   return {
-    on: true, share: last.uptrend, age: d.age, run, fgHigh,
-    longer: { k: past.filter(r => r.end - r.start < d.age).length, n: past.length },
-    marks: { greed: fgHigh != null && fgHigh >= GREED, crowd: crowd != null && crowd >= CROWD, rolled: d.rolled },
+    on: false, share: last.uptrend, run, age: dn.age, down: dn, fgLow,
+    longer: { k: past.filter(x => x.end - x.start < dn.age).length, n: past.length },
+    marks: { fear: fgLow != null && fgLow <= FEAR, short: crowd != null && crowd <= SHORT, zup: dn.zUp, turned: dn.turned },
   };
 }
 
@@ -148,6 +193,7 @@ export function broadState(rows, br = broadRuns(rows)) {
 export const INDICATORS = [
   { key: "band", label: "BTC weekly band", where: "price", on: true },
   { key: "runs", label: "Broad uptrends", where: "price", on: true },
+  { key: "zturns", label: "Median z turns", where: "price", on: true },
   { key: "turns", label: "Heat turns", where: "price", on: true },
   { key: "zones", label: "Hot and cold days", where: "price", on: false },
   { key: "uptrend", label: "Uptrend share", where: "pane", on: true },
@@ -173,11 +219,20 @@ export const BCOPY = {
   high: (v, d) => `high ${v} on ${d}`,
   ended: (d, n) => `Broad uptrend ended ${d} after ${n} days`,
   longer: (k, n) => `longer than ${k} of ${n} past runs`,
-  marks: { greed: "Greed", crowd: "Traders long", rolled: "Rolled over" },
+  marks: { greed: "Greed", crowd: "Traders long", zturn: "Z turned down", rolled: "Rolled over" },
   day: age => `broad uptrend, day ${age}`,
   pop: () => [
-    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under ${Math.round(100 * ON)}%. Marks: greed, Fear & Greed at ${GREED} or more in the last ${LOOKBACK} days (its high shown); traders long, profitable traders ${Math.round(100 * CROWD)}% or more long; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
-    "Since 2021 the share peaked at a median of day 18. With recent greed, the typical coin's next month was weaker in a run's third month than in its first two, in all 3 runs with outcomes: few cases. Context, not a signal.",
+    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under. Marks: greed, Fear & Greed ${GREED}+ in the last ${LOOKBACK} days (its high shown); traders long, ${Math.round(100 * CROWD)}%+ long; z turned down, the median z ${Z_TURN} under the run's high; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
+    "Since 2021 the median z turned down about a month before every roll-over. With recent greed, a run's third month was weaker for the typical coin than its first two, in all 3 cases. Context, not a signal.",
+  ],
+  down: age => `Broad downturn, day ${age}`,
+  low: (v, d) => `low ${v} on ${d}`,
+  downLonger: (k, n) => `longer than ${k} of ${n} past downturns`,
+  downMarks: { fear: "Fear", short: "Traders short", zup: "Z turned up", turned: "Turned up" },
+  downDay: age => `broad downturn, day ${age}`,
+  downPop: () => [
+    `Broad downturn: from a broad uptrend's end until ${Math.round(100 * ON)}% of coins are in uptrend again. Marks: fear, Fear & Greed ${FEAR} or less in the last ${LOOKBACK} days (its low shown); traders short, ${Math.round(100 * SHORT)}% or less long; z turned up, the median z ${Z_TURN} over the downturn's low; turned up, the share ${Math.round(100 * ROLL)} points over its low.`,
+    "Since 2021, extreme fear in a downturn's first month came before more falls; two to three months in, before the best months (5 downturns). Context, not a signal.",
   ],
 };
 

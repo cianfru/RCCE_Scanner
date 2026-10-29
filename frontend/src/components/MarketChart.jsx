@@ -9,8 +9,9 @@ import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
 
 // The market history page's Chart view: one large BTC chart in the manner of a trading terminal. Indicators sit on the
-// price (the weekly band, broad uptrends with their roll-over, heat turns, hot and cold days) or in panes of
-// their own under it (Uptrend share, taller, Fear & Greed, the wallet groups, Market heat...), all on one time axis;
+// price (the weekly band, broad uptrends with their roll-over and downturns' turn-up, median z turns, heat turns, hot
+// and cold days) or in panes of their own under it (Uptrend share, taller, Fear & Greed, the wallet groups, Market
+// heat...), all on one time axis;
 // drag and scroll to move and zoom, the range buttons to jump. Each pane names its indicator and its value at the
 // crosshair (the latest day otherwise). Context, not a signal.
 
@@ -151,6 +152,17 @@ export default function MarketChart({ rows, indicators, range }) {
       for (const run of ctx.broad.runs) {
         if (run.roll != null) marks.push({ time: t(run.roll), position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
       }
+      for (const dn of ctx.broad.downs) {
+        if (dn.turnUp != null) marks.push({ time: t(dn.turnUp), position: "belowBar", color: p.green, shape: "square", size: 0.7 });
+      }
+    }
+    if (indicators.includes("zturns")) {
+      for (const run of ctx.broad.runs) {
+        if (run.zTurn != null) marks.push({ time: t(run.zTurn), position: "aboveBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+      }
+      for (const dn of ctx.broad.downs) {
+        if (dn.zTurnUp != null) marks.push({ time: t(dn.zTurnUp), position: "belowBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+      }
     }
     if (indicators.includes("turns")) {
       for (const x of ctx.turns) {
@@ -215,6 +227,7 @@ export default function MarketChart({ rows, indicators, range }) {
   const r = (hover != null && byDay.get(hover)) || last;
   const heat = ctx.heat.get(r.day);
   const inRun = indicators.includes("runs") ? ctx.broad.days.get(r.day) : null;
+  const inDown = indicators.includes("runs") ? ctx.broad.downDays.get(r.day) : null;
   let below = MAIN_H();
   const fallback = panes.map(k => { const top = below; below += paneH(k); return top; });
   return <div className="mc">
@@ -223,6 +236,7 @@ export default function MarketChart({ rows, indicators, range }) {
       <b>BTC</b><span>{usd(r.btc)}</span>
       {indicators.includes("band") && r.bandLo > 0 && <i>band {kUsd(r.bandLo)}–{kUsd(r.bandHi)}</i>}
       {inRun && <em className="mc-run">{BCOPY.day(inRun.age)}{inRun.rolled ? ` · ${BCOPY.marks.rolled.toLowerCase()}` : ""}</em>}
+      {inDown && <em className="mc-down">{BCOPY.downDay(inDown.age)}{inDown.turned ? ` · ${BCOPY.downMarks.turned.toLowerCase()}` : ""}</em>}
       {heat && indicators.includes("zones") && zoneOf(heat.heat) && <em className={`mc-zone is-${zoneOf(heat.heat)}`}>{zoneOf(heat.heat) === "hot" ? "hot day" : "cold day"}</em>}
       <i>{dayDate(r.day)}</i>
     </div>
