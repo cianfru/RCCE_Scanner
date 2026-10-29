@@ -64,10 +64,12 @@ const rowsOf = (shares, extra = {}) => shares.map((u, i) => ({ day: 1000 + i, up
 
 test('broad uptrends: 55% starts one, the 5th day under ends it on the first of the five, shorter dips stay inside', () => {
   const shares = [0.5, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.6, 0.6, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.6];
-  const { days, runs } = broadRuns(rowsOf(shares));
+  const { days, runs, downDays } = broadRuns(rowsOf(shares));
   assert.deepEqual(runs.map(r => [r.start, r.end]), [[1003, 1015], [1021, null]], 'as research/late_uptrends.py');
-  assert.equal(days.get(1010).age, 7);
-  assert.ok(days.has(1018) && !days.has(1019), 'the 5th day under is outside');
+  assert.equal(days.get(1010).age, 7, 'a dip of 4 days inside a run that goes on stays in it');
+  assert.ok(!days.has(1015) && !days.has(1018) && !days.has(1019), 'once the run ends, its last dip belongs to the downturn');
+  assert.ok(days.has(1014));
+  assert.equal(downDays.get(1015).age, 0, 'the downturn starts on the run\'s end date');
 });
 
 test('broad uptrends: the high is its first touch, rolled over at 20 points under it', () => {

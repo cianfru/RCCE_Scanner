@@ -117,6 +117,8 @@ export function broadRuns(rows) {
       below = s == null || s < ON ? below + 1 : 0;
       if (below >= OFF_DAYS) {
         cur.end = rows[i - OFF_DAYS + 1].day;
+        // Once the run has ended, its last dip (the days from its end) belongs to the downturn, as its end date says.
+        for (let k = i - OFF_DAYS + 1; k < i; k++) days.delete(rows[k].day);
         runs.push(cur);
         cur = null;
         return;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, LineSeries, LineStyle, PriceScaleMode, createChart,
+import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, LineSeries, LineStyle, LineType, PriceScaleMode, createChart,
          createSeriesMarkers } from "lightweight-charts";
 import { useTheme } from "../ThemeContext.jsx";
 import { T as TH, col, resolveToken } from "../theme.js";
@@ -126,7 +126,7 @@ export default function MarketChart({ rows, indicators, range }) {
     // Price pane: broad uptrends and hot and cold days behind (full-height areas on hidden scales), BTC on a log scale,
     // the weekly band, then the marks on BTC: the roll-over of each broad uptrend, heat turns.
     const fill = (id, color, on) => {
-      const z = chart.addSeries(AreaSeries, { priceScaleId: id, lineVisible: false, lineColor: "rgba(0,0,0,0)", topColor: color,
+      const z = chart.addSeries(AreaSeries, { priceScaleId: id, lineType: LineType.WithSteps, lineVisible: false, lineColor: "rgba(0,0,0,0)", topColor: color,
         bottomColor: color, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }) }, 0);
       z.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
