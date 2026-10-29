@@ -54,3 +54,80 @@ From 30 October 2026 the same code on the page's new days; new turns and downtur
 - Today's coin list: coins that died are missing, which flatters bounces from a bottom most of all.
 - The median z and the share come from the same engine on the same coins, so they are not independent readings; the question is only which one moves first.
 - One Fear & Greed series; the traders' reading covers one year (one full downturn, from October 2025, and the current one).
+
+## Result (run 29 October 2026, after the rules above were committed at 8d57543)
+
+`python -m research.turning_points` on the page's rows to 27 October 2026. In sample, so description; the out-of-sample run is the only clean test.
+
+### Part A. Tops: does the median z turn down first?
+
+| Broad uptrend | Z-turn down: day (share) | Days to the roll-over | First Cooling arrow, days after the z-turn | Typical coin 30 / 60 days after the z-turn | Share change, 30 days |
+|---|---|---:|---:|---|---:|
+| 6 Nov 2021 | 29 (75%) | 12 | -18 | 0% / -31% | -25 |
+| 23 Dec 2021 | none | — | — | — | — |
+| 17 Jan 2022 | 4 (64%) | 4 | — | -11% / -7% | -37 |
+| 2 Apr 2022 | 9 (61%) | no roll-over | — | -48% / -53% | -29 |
+| 20 Jul 2022 | 30 (98%) | 93 | — | -13% / -13% | -12 |
+| 13 Jan 2023 | 27 (84%) | 23 | — | -16% / +1% | -50 |
+| 22 Oct 2023 | 30 (95%) | 58 | — | +27% / +29% | -3 |
+| 26 Feb 2024 | 19 (79%) | 10 | 7 | -30% / -24% | -55 |
+| 25 Sep 2024 | 83 (96%) | 26 | -20 | -18% / -45% | -35 |
+| 15 May 2025 | none | — | — | — | — |
+| 11 Jul 2025 | 21 (97%) | 74 | 1 | +1% / -6% | -10 |
+| 20 Mar 2026 | 58 (95%) | 44 | -1 | -15% / -23% | -8 |
+| 20 Aug 2026 | 26 (77%) | 35 | 23 | +15% / censored | 0 |
+
+- **A1, lead: bar met in sample.** In all 10 runs with both, the median z turned down before the share rolled over, a median of 30.5 days earlier (4 to 93). The same with 0.5 (10 of 10, median 48.5 days) and 1.0 (10 of 10, 20.5 days).
+- **A2, prices: bar not met.** After a z-turn the typical coin's next 30 days had a median of -13%, but only 3.4 points under days in broad uptrends at the same share (lower after 6 of 11; draws 20.5%; halves -3.4 and +4.0). Not met at 0.5 or 1.0 either.
+- **The share: met (reported).** It fell a median 25 points in the 30 days after a z-turn, 17.1 more than at the same share, after 9 of 11 (draws 3.2%; halves -22.3 and -2.4).
+- Against the Cooling arrows there is no fixed order: of the 6 runs with both, the z turned first in 3 and the arrow in 3.
+- The latest run: the median z turned down on 15 September (day 26, 77%), 35 days before the roll-over and 23 before the first Cooling arrow; the typical coin still rose 15% over the next 30 days, as the share went on to its 86% high on 30 September.
+
+### Part B. Bottoms
+
+| Downturn | Days | Share's low (day) | Turn-up: day | Z-turn up: day, days before the turn-up | Fear & Greed low (day) | Washed out with extreme fear: day | Typical coin 30 / 60 days from that day |
+|---|---:|---|---|---|---|---|---|
+| 14 May 2021 | 176 | 0% (32) | 102 | 73, 29 | 10 (10) | 16, BTC below its band | -21% / -17% |
+| 17 Dec 2021 | 6 | 50% (4) | none | none | 23 (0) | — | — |
+| 3 Jan 2022 | 14 | 44% (8) | none | none | 10 (5) | — | — |
+| 25 Jan 2022 | 67 | 14% (2) | 13 | 12, 1 | 12 (0) | — | — |
+| 21 Apr 2022 | 90 | 7% (24) | 68 | 24, 44 | 6 (58) | 22, BTC below | -26% / -30% |
+| 10 Dec 2022 | 34 | 41% (11) | none | 31 | 25 (21) | — | — |
+| 7 Mar 2023 | 229 | 2% (101) | 203 | 6, 197 | 30 (189) | — | — |
+| 31 Jan 2024 | 26 | 29% (15) | 22 | none | 60 (0) | — | — |
+| 27 Mar 2024 | 182 | 0% (54) | 149 | 26, 123 | 17 (132) | 107, BTC below | -17% / -10% |
+| 22 Jan 2025 | 113 | 2% (86) | 104 | 87, 17 | 10 (36) | 34, BTC below | -8% / -10% |
+| 21 May 2025 | 51 | 45% (20) | none | 42 | 42 (32) | — | — |
+| 15 Oct 2025 | 156 | 5% (61) | 96 | 26, 70 | 5 (120) | 27, BTC below, traders 30%+ long | -24% / -24% |
+| 15 Aug 2026 | 5 | 54% (1) | none | none | 31 (2) | — | — |
+| 22 Oct 2026 | ongoing | 42% (5) | — | — | 48 (5) | — | censored |
+
+- **B3, washed out with extreme fear: too few (5), and the wrong way.** In all 5 downturns the typical coin was lower 60 days after the first washed-out day with extreme fear (median -17%, against -9% on every downturn day). That day came early (days 16 to 107) and the share's low, Fear & Greed's low or both came later. Context, not a signal.
+- **The share's low was not the price low.** From the day of the share's lowest reading (known only afterwards) the typical coin's next 30 days were mixed: lower in 7 of 13, from -38% (May 2022) to +36%.
+- **B2, lead: too few (7), as declared.** The median z turned up before the share's turn-up in all 7 downturns with both, a median of 44 days earlier (1 to 197).
+- **B2, prices: bar met at 0.75 only.** After the z-turn up the typical coin's next 30 days had a median of +4%, 7 points over downturn days at the same share (6 of 9; draws 91.4%; halves +7.5 and +7.0). At 0.5 the excess is -14.7 (4 of 9) and at 1.0 it is -11.5 (3 of 8): the result reverses with the size of the turn, so it does not hold up, whatever the declared row says. Context, not a signal.
+- **The share's turn-up** came at a median of about day 100 of the downturn; from it the typical coin's next 30 days were lower in 5 of 8 (median about -3.5%).
+- **Traders short:** the reading covers one full downturn (October 2025 to March 2026), whose traders' low was 16% long, and the current one (26% at its lowest so far). Too little to read.
+
+### Exploratory: downturn days by age and extreme fear (owner: age as a scale)
+
+| Downturn age (days) | Extreme fear in the last 30 days | Days (downturns) | Typical coin 30 days (up) | 60 days (up) | Share change, 30 days |
+|---|---|---:|---|---|---:|
+| 0-29 | no | 128 (6) | -6% (40%) | -15% (21%) | -7 |
+| 0-29 | yes | 143 (8) | -21% (23%) | -21% (27%) | -6 |
+| 30-59 | no | 85 (4) | -10% (40%) | -23% (25%) | 0 |
+| 30-59 | yes | 150 (6) | -11% (36%) | -10% (40%) | +1 |
+| 60-89 | no | 60 (2) | -18% (7%) | -16% (0%) | -4 |
+| 60-89 | yes | 127 (5) | +16% (72%) | +5% (61%) | +17 |
+| 90-149 | no | 111 (4) | -7% (19%) | -12% (28%) | +7 |
+| 90-149 | yes | 152 (4) | -4% (36%) | -2% (43%) | +14 |
+| 150+ | no | 86 (2) | -1% (45%) | +29% (69%) | +30 |
+| 150+ | yes | 57 (3) | +5% (68%) | +1% (54%) | +51 |
+
+Every downturn day: -4% over 30 days, -9% over 60.
+
+### Reading (in sample; context, not a signal)
+
+- **Tops:** the median z is an early warning for the share, not for prices. It turned down about a month before the share rolled over, in every run that had both, at any of the three sizes. The typical coin's next month after it was no worse than at the same share; the price warning in this record remains the late-uptrends one (greed two-plus months into a broad uptrend).
+- **Bottoms mirror the tops.** Extreme fear early in a downturn, even with almost no coins in uptrend and BTC below its band, was followed by more falls (5 of 5 washed-out cases lower 60 days later; fearful days in the first month -21% over 30 days). Extreme fear two to three months into a downturn was followed by the best months in the table (+16% over 30 days, 72% of days up), across 5 downturns. "Coins bottom" (the share near 0) was not the price low.
+- The median z also turned up well before the share's turn-up, but the price follow-through depends on the size of the turn, so it is not a reading to lean on.
