@@ -26,8 +26,9 @@ smart = $100K+ all-time PnL and $10K+ perp equity; whales = $1M+ perp equity. St
 5. Daily closes per coin (candleSnapshot 1d) value each position; a wallet is long or short by the sign of its
    net dollar position, wallets with more than 25 positions are left out (cohorts.assign.MAX_POSITIONS).
 
-Rate: Hyperliquid allows 1,200 weight a minute per IP; this uses --rate (default 1,050). A sample of 10% / 35%
-took about six hours. The cache (--db) keeps every answer, so a run cut short continues where it stopped.
+Rate: Hyperliquid allows 1,200 weight a minute per IP; this uses --rate (default 1,050; the 28 October 2026 run used
+900, which drew no rate limits). A sample of 10% / 35% took about eight hours of reads, the fills nearly all of it.
+The cache (--db) keeps every answer, so a run cut short continues where it stopped.
 """
 from __future__ import annotations
 

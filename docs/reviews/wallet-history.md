@@ -79,4 +79,20 @@ From `backend/`: `census`, `fills`, `candles`, then `export` (each resumable; th
 
 ## Rebuild run
 
-To be added after the run.
+Run 28-29 October 2026 (seed built 29 October), at 900 weight a minute, about eight hours of reads across several restarts (the cache resumed each time):
+
+- **Candidates:** 14,343 wallets from the 28 October leaderboard (47,783 rows) after the rules above.
+- **Sampled:** 2,207 (10% of candidates, 35% of likely whales), all with portfolio history read; 952 were ever in smart money and 394 ever whales on some day, and their fills were read: 1,011 wallets, no errors. 138 hit Hyperliquid's limit of about 10,000 fills, so their oldest days are uncovered.
+- **Seed:** 1 September 2025 to 28 October 2026, 423 days, every day present. Each day rests on 149 to 336 sampled smart-money wallets (median 182) and 29 to 104 whales (median 43); the older days have fewer because very active wallets are uncovered before their oldest fill. Estimated group sizes: about 1,500 smart-money wallets and 340 whales (median day), against 7,085 and 2,602 on the leaderboard's account value: most leaderboard accounts keep their money outside perps, and perp equity decides here as in the sweep.
+
+Readings at the year's breadth highs and lows, as rebuilt (the page moves them to the recorded level where the sweep has days, which can shift them by a few points). Long and short as shares of each group's wallets:
+
+| Day | Uptrend share | Fear & Greed | Smart money long / short | Whales long / short |
+|---|---|---|---|---|
+| 6 Oct 2025 (BTC's high) | 89% | 71 | 61% / 16% | 42% / 24% |
+| 15 Dec 2025 (breadth low) | 5% | 16 | 27% / 32% | 22% / 49% |
+| 15 May 2026 (breadth high) | 96% | 43 | 39% / 24% | 36% / 34% |
+| 30 Sep 2026 (breadth high) | 86% | 71 | 60% / 24% | 76% / 9% |
+| 27 Oct 2026 | 42% | 48 | 55% / 24% | 53% / 24% |
+
+Description only: over this year both groups held the most longs near breadth highs and the most shorts near the lows, and their shorts grew after the turns rather than before them. One year, two cycles, a sample: context, not a signal.
