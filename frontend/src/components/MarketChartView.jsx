@@ -5,8 +5,6 @@ import { Info } from "./MarketHistorySections.jsx";
 import { BCOPY, HCOPY, INDICATORS, broadRuns, broadState, heatSeries, heatState, heatTurns, pickIndicators }
   from "../utils/marketHeat.js";
 import { RANGES, dayDate } from "../utils/marketHistory.js";
-import { FWCOPY } from "../utils/forwardTests.js";
-import { apiFetch } from "../edge.js";
 
 // The market history page's Chart view: the share of coins in uptrend leads (owner, 29 October 2026: the market itself
 // matters as much as BTC), with the broad uptrend's (or downturn's) day against past ones, its high (or low) and four
@@ -81,21 +79,6 @@ function IndicatorMenu({ picks, setPicks }) {
   </div>;
 }
 
-// The forward test's status, one quiet line under the chart (nothing while it loads or if the feed is missing).
-function ForwardLine() {
-  const [rec, setRec] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    apiFetch("/api/market-history/forward").then(r => (r.ok ? r.json() : null)).then(d => { if (alive && d) setRec(d); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  if (!rec?.funding) return null;
-  return <p className="mch-forward">
-    <span>{FWCOPY.title} <i>{FWCOPY.since}</i><Info title={FWCOPY.title} paras={FWCOPY.pop()} /></span>
-    {["funding", "whales"].map(k => <span key={k}>{FWCOPY.names[k]} <b>{FWCOPY.status(rec[k])}</b></span>)}
-  </p>;
-}
-
 export default function MarketChartView({ rows }) {
   const [picks, setPicksState] = useState(loadPicks);
   const [range, setRange] = useState("1y");
@@ -107,6 +90,5 @@ export default function MarketChartView({ rows }) {
       <IndicatorMenu picks={picks} setPicks={setPicks} />
     </div>
     <MarketChart rows={rows} indicators={picks} range={range} />
-    <ForwardLine />
   </div>;
 }

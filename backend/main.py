@@ -4393,15 +4393,6 @@ async def market_history_funding():
     return degrade.LAST_GOOD.serve_sync(("market-history-funding",), funding_history.view)
 
 
-@app.get("/api/market-history/forward")
-async def market_history_forward():
-    """The forward test of funding and whales (docs/reviews/funding-whales-forward-test.md): collecting, interim or
-    the verdict, from what the server already keeps; computed once per close."""
-    import degrade
-    import forward_signs
-    return degrade.LAST_GOOD.serve_sync(("market-history-forward",), forward_signs.view)
-
-
 @app.get("/api/market-history/derive")
 async def market_history_derive():
     """Derive's Smart options wallets at each daily close, as ranked then and as ranked today, and their new puts

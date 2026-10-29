@@ -1,4 +1,6 @@
-# Forward test: funding and whales (declared 29 October 2026, before any forward day)
+# Forward test: funding and whales (declared 29 October 2026, before any forward day; withdrawn the same day)
+
+**Withdrawn by the owner on 29 October 2026, before any forward day had an outcome** ("I don't want to wait a year. We can throw this idea out"). The server module, its endpoint and the line under the Chart view were removed (`forward_signs.py`, `/api/market-history/forward`); no result was ever computed. The rules below are kept as the record of what was declared.
 
 Approved by the owner on 29 October 2026 ("Go ahead please"), after the turn-signs study (docs/reviews/turn-signs-study.md) left two candidates:
 
