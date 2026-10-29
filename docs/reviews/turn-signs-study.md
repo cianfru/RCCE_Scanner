@@ -150,3 +150,7 @@ Owner: stablecoins are now too big to move price and, like ETF inflows, "kind of
 ### Funding in the Chart view (owner, 29 October 2026: "add funding to the chart")
 
 The Chart view gains a Funding pane (on by default): the 7-day mean of BTC's and ETH's daily funding on Hyperliquid, as a yearly rate, around Hyperliquid's base of about 11% a year (green above: longs paying a premium; red below), with the day's BTC and ETH rates in its legend. Server: `backend/funding_history.py` (seed `seeds/funding_seed.json` from 12 May 2023, then two public `fundingHistory` reads every six hours from the shared Hyperliquid budget, kept in `funding_live.json`), served at `/api/market-history/funding` and loaded only when the pane is on. Context, not a signal; the forward test of its extremes waits for the owner's approval.
+
+### Forward test (approved by the owner, 29 October 2026)
+
+Funding and the whales' net position are under a declared forward test from 30 October 2026: docs/reviews/funding-whales-forward-test.md, computed by the server (`backend/forward_signs.py`, `/api/market-history/forward`) and shown under the Chart view.
