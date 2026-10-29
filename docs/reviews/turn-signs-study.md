@@ -63,3 +63,71 @@ For each reading, its days with an outcome are split in two halves by date.
 - Today's coin list (dead coins missing) and Binance spot closes for the typical coin.
 - Correlations are about the typical day; a reading can matter only at its extremes (check 3) or only at turns (check 5).
 - The new series are third-party public data as fetched once; the fetch date and counts are above.
+
+## Result (run 29 October 2026, after the rules above were committed at ed3d70d)
+
+`python -m research.turn_signs` on the page's rows to 27 October 2026 and the series fetched the same day. In sample: description.
+
+### The everyday test: nothing survives
+
+Rank correlation with the typical coin's next 30 days, first half / second half (split late January 2024; funding late January 2025). Bold: the half's 90% interval excludes 0.
+
+| Reading | First half | Second half | With the last month held fixed | Survives |
+|---|---:|---:|---|---|
+| Share of coins in uptrend | -0.10 | 0.00 | -0.11 / 0.01 | no |
+| Its 14-day change | +0.07 | +0.15 | +0.07 / **+0.19** | no |
+| Median z | -0.08 | +0.07 | -0.11 / +0.11 | no |
+| Its 14-day change | +0.03 | **+0.20** | +0.03 / **+0.23** | no |
+| Share of coins in downtrend | -0.08 | +0.02 | -0.10 / +0.01 | no |
+| Typical coin, last 30 days | +0.02 | -0.02 | — | no |
+| BTC, last 30 days | +0.15 | +0.01 | **+0.26** / +0.06 | no |
+| BTC over its weekly band | +0.01 | -0.13 | +0.01 / -0.14 | no |
+| Divergence (BTC's range place minus the share's) | +0.18 | -0.18 | +0.18 / -0.18 | no (flips) |
+| Fear & Greed | +0.05 | -0.09 | +0.05 / -0.10 | no |
+| Its 14-day change | +0.10 | +0.12 | +0.10 / **+0.14** | no |
+| Market heat | -0.10 | -0.04 | -0.15 / -0.04 | no |
+| DVOL | -0.05 | -0.06 | -0.04 / -0.06 | no |
+| Its 14-day change | **+0.22** | -0.04 | **+0.22** / -0.04 | no |
+| BTC and ETH funding, 7-day mean | -0.11 | **-0.30** | -0.11 / **-0.31** | no |
+| Stablecoin supply, 30-day change | -0.03 | -0.17 | -0.03 / -0.17 | no |
+
+No reading has a stable everyday relation with the typical coin's next month in both halves, with or without the last month held fixed. Several held in one half and vanished or flipped in the other (BTC's last month, DVOL's change, the divergence). On BTC's next 30 days (reported) none survives either.
+
+### Extremes: one passes
+
+- **Stablecoin supply growing fast** (top 10%: 7.8% or more in 30 days): the typical coin's next 30 days were 12.5 points (first half) and 17.6 points (second half) under the half's median; BTC's too (reported). It rests on 6 episodes, each followed by a lower typical coin: May-June 2021 (median -28%), September 2021 (-2%), November 2021 to January 2022 (-20%), April 2024 (2 days, -24%), November-December 2024 (-20%), February 2025 (-28%). It has not recurred since February 2025.
+- No other extreme passes in both halves. **Very high funding** (top 10%: 47% a year or more) came before a lower typical coin in 4 of 5 episodes in 2023-24 (the exception November 2023), but funding has not reached that level since, so the second half has no case; low funding (bottom 10%) was mixed.
+
+### The share of coins in uptrend (reported outcome)
+
+For what the share itself does next month, several readings survive in both halves, also with the last month held fixed: the median z's 14-day change (+0.38 / +0.50), funding (-0.48 / -0.39), Market heat (-0.47 / -0.39), the share's own level (-0.48 / -0.38, it comes back toward the middle), its 14-day change and Fear & Greed's (positive). The median z leads the share, as in the turning-points study; high funding came before coins leaving their uptrends. None of this carried over to prices in both halves.
+
+### How the readings move together (same day)
+
+- Two families. **BTC's:** Fear & Greed and BTC's distance over its band (0.90), BTC's last month (0.70 with Fear & Greed), funding (0.69 with Fear & Greed, 0.71 with the band). **The coins':** the share in uptrend and the median z (0.93), Market heat (0.87 with the share).
+- Between the families the link is weak: the share in uptrend and Fear & Greed 0.20. The share of coins in uptrend is the only reading here that is not a version of BTC's trend.
+- DVOL moves with almost nothing else (under 0.4 with every reading); stablecoin growth goes with Fear & Greed and the band (0.33) and funding (0.36).
+
+### Before the turns (description)
+
+- 14 days before the 11 roll-overs: the share in uptrend stood higher than on 80% of days, the median z 74%, Market heat 78%, stablecoin growth 79%; Fear & Greed only 57% and BTC's last month 48%. Ahead of roll-overs the coins and the stablecoin inflow were stretched, BTC and Fear & Greed were not.
+- 14 days before the 8 turn-ups: the share 21%, the median z 26%, funding 16% (5 cases): little leverage. Fear & Greed 44%: not at an extreme.
+
+### Wallets, one year (description, one cycle)
+
+| Group | Next 30 days, typical coin / BTC | Last 30 days, typical coin / BTC |
+|---|---|---|
+| Smart money, net long | -0.05 / +0.06 | +0.44 / +0.44 |
+| Smart money in BTC | +0.08 / +0.14 | +0.48 / +0.46 |
+| Whales, net long | +0.34 / +0.38 | +0.37 / +0.32 |
+| Whales in BTC | +0.23 / +0.34 | +0.28 / +0.28 |
+| Profitable traders, share long | +0.03 / -0.03 | +0.83 / +0.81 |
+
+The profitable traders and smart money follow the last month; whales are the only group whose position went with the next month in this year. One year (about 13 independent months) cannot be split, so this is a lead to watch, not a result.
+
+### Reading (in sample; context, not a signal)
+
+- No single reading, old or new, tells the typical coin's next month day to day. Most of them restate the last month's prices (Fear & Greed is mostly BTC against its trend; the traders follow price).
+- What showed up is conditional: stablecoin supply surging (6 of 6 episodes followed by lower coins), very high funding (4 of 5, 2023-24), and from the earlier studies, greed late in a broad uptrend and fear two to three months into a downturn. These are rare states, so each rests on a handful of cases.
+- For the coins' own breadth, the median z's change and funding say something both halves agree on: coins tended to leave their uptrends after funding was high and the median z had turned down.
+- Candidates for a forward test from 30 October 2026, if the owner approves: stablecoin surges, funding at its extremes, and whales' net position.
