@@ -344,8 +344,9 @@ function HoverTip({ r, mode, overlays, wGroups, cursorX, py, W, H }) {
   const groups = wGroups.map(g => ({ g, w: r.wallet?.[g.key] }));
   const estH = 30 + 17 * lines.length + 38 * groups.length;
   const left = cursorX + 12 + TIP_W <= W - 4 ? cursorX + 12 : Math.max(0, cursorX - 12 - TIP_W);
-  // Beside the pointer on a wide chart; on a phone, at the far end from the finger so it stays readable.
-  const top = W < 520 ? ((py ?? 0) > H / 2 ? 0 : Math.max(0, H - estH))
+  // Beside the pointer on a wide chart. On a phone, at the top, clear of the finger and of the app's bottom bar;
+  // at the bottom only when the finger is on the top panel.
+  const top = W < 520 ? ((py ?? 0) > estH + 24 ? 0 : Math.max(0, H - estH))
     : Math.max(0, Math.min(H - estH, (py ?? 0) - estH / 2));
   return <div className="mh-tip mh-hover-tip" style={{ left, top, width: TIP_W }} role="status">
     <b>{dayDate(r.day)}</b>

@@ -125,12 +125,15 @@
 }
 
 /* The main chart's hover box: the hovered day beside the cursor (the table under the chart keeps today's) */
-.mh-hover-tip{gap:2px;}
+/* Frosted glass: the chart shows through, blurred; no outline, only a soft shadow lifts it */
+.mh-hover-tip{gap:2px;border:none;border-radius:10px;padding:9px 11px;background-color:color-mix(in srgb,var(--t-bg) 52%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 10%,transparent),color-mix(in srgb,var(--t-text1) 3%,transparent) 70%);-webkit-backdrop-filter:blur(14px) saturate(150%);backdrop-filter:blur(14px) saturate(150%);box-shadow:0 10px 30px var(--t-shadow);}
+[data-theme="light"] .mh-hover-tip{background-color:color-mix(in srgb,var(--t-bg) 62%,transparent);}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.mh-hover-tip{background-color:color-mix(in srgb,var(--t-bg) 94%,transparent);}}
 .mh-hover-tip .mh-tip-row{display:flex;justify-content:space-between;gap:10px;}
 .mh-hover-tip .mh-tip-row>span{font:500 11px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .mh-hover-tip em,.mh-hover-tip i{font-style:normal;}
 .mh-hover-tip .mh-tip-row em{color:var(--t-text1);text-align:right;}
-.mh-hover-tip .mh-tip-group{display:flex;flex-direction:column;margin-top:3px;padding-top:4px;border-top:1px solid var(--t-border);}
+.mh-hover-tip .mh-tip-group{display:flex;flex-direction:column;margin-top:4px;padding-top:5px;border-top:1px solid color-mix(in srgb,var(--t-text1) 12%,transparent);}
 .mh-hover-tip .mh-tip-group>span{font:500 11px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .mh-hover-tip .mh-tip-group em{color:var(--t-text1);}
 .mh-hover-tip .is-long{color:#34d399;}
