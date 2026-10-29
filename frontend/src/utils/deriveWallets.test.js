@@ -23,6 +23,13 @@ test('rows per coin: the coin\'s counts and puts, BTC\'s price for all coins', (
   assert.deepEqual(COINS.map(c => c.key), ['BTC', 'ETH', 'ALL']);
 });
 
+test("after the looking-back day the rows carry the ranked-at-the-time counts only", () => {
+  const live = [20368, 112000, 4200, ...[0, 1, 2].flatMap(() => [12, 6, null, null, null, null])];
+  const rows = deriveRows({ ...DATA, rows: [...DATA.rows, live] }, 'BTC');
+  assert.deepEqual(rows[3], { day: 20368, price: 112000, pitL: 12, pitS: 6, nowL: null, nowS: null, pitPuts: null, nowPuts: null });
+  assert.deepEqual(weekly(rows, 'pitPuts').at(-1), { day: 20367, sum: 3000, days: 2 }, 'a day without puts adds nothing');
+});
+
 test('weeks start on Monday and sum the days they hold', () => {
   // Day 20360 (29 Sep 2025) is a Monday, 20361 the Tuesday after; 20367 is the next Monday.
   const w = weekly(deriveRows(DATA, 'BTC'), 'pitPuts');
@@ -45,9 +52,10 @@ test('range, tops and the puts scale', () => {
 });
 
 test('copy: no forecast words, popovers within 90 words', () => {
-  const texts = [DCOPY.open, DCOPY.title, DCOPY.sub(20753, 483), DCOPY.sub(20753), ...Object.values(DCOPY.panel).map(v => (typeof v === 'function' ? v('ETH') : v)),
-    DCOPY.readout.counts(27, 10), DCOPY.readout.price('ALL')];
-  for (const pop of [DCOPY.pop.about(), DCOPY.pop.price(), DCOPY.pop.pit(), DCOPY.pop.now(483), DCOPY.pop.now(null), DCOPY.pop.puts()]) {
+  const texts = [DCOPY.open, DCOPY.title, DCOPY.sub(20753), DCOPY.panel.price('ETH'), DCOPY.panel.pit, DCOPY.panel.now(20753),
+    DCOPY.panel.now(null), DCOPY.panel.puts, DCOPY.readout.counts(27, 10), DCOPY.readout.counts(null, null),
+    DCOPY.readout.price('ALL'), DCOPY.readout.now(20753), DCOPY.readout.now(null)];
+  for (const pop of [DCOPY.pop.about(), DCOPY.pop.price(), DCOPY.pop.pit(), DCOPY.pop.now(483, 20753), DCOPY.pop.now(null, null), DCOPY.pop.puts()]) {
     assert.ok(popWords(pop.join(' ')) <= 90, `${popWords(pop.join(' '))}: ${pop.join(' ')}`);
     texts.push(...pop);
   }
@@ -56,7 +64,9 @@ test('copy: no forecast words, popovers within 90 words', () => {
     assert.doesNotMatch(t, /larsson/i, t);
     assert.doesNotMatch(t, /undefined|NaN|null/, t);
   }
-  assert.equal(DCOPY.sub(20753, 483), "Derive's best options traders against the price, data to 27 Oct 2026 · 483 Smart wallets today.");
-  assert.match(DCOPY.pop.now(483).join(' '), /today's 483 Smart wallets/);
-  assert.match(DCOPY.pop.now(null).join(' '), /for today's Smart wallets/);
+  assert.equal(DCOPY.sub(20756), "Derive's best options traders against the price, data to 30 Oct 2026.");
+  assert.equal(DCOPY.panel.now(20753), 'Smart wallets of 27 Oct 2026, looking back');
+  assert.match(DCOPY.pop.now(483, 20753).join(' '), /the 483 Smart wallets of 27 Oct 2026, each in its past/);
+  assert.match(DCOPY.pop.now(483, 20753).join(' '), /This panel ends on that day; the one above runs on/);
+  assert.equal(DCOPY.readout.counts(null, null), '—', 'after the looking-back day');
 });

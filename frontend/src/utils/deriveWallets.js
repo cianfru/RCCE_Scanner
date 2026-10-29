@@ -1,6 +1,7 @@
 // Pure helpers and copy for the market history page's Derive drawer (/api/market-history/derive): how Derive's
-// Smart options wallets were positioned at each daily close, as ranked at the time and as ranked today, and the
-// premium they paid on new puts. Exploration, not a study: context, not a signal.
+// Smart options wallets were positioned at each daily close, as ranked at the time and as ranked on the seed's last
+// day (looking back), and the premium they paid on new puts. The ranked-at-the-time rows run on after each daily
+// close (Cowboy's daily file); the looking-back rows end on `now_through`. Context, not a signal.
 
 const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -70,11 +71,11 @@ export const DCOPY = {
   unavailable: "Derive history is unavailable right now.",
   coinLabel: "Coin",
   rangeLabel: "Range",
-  sub: (through, n) => `Derive's best options traders against the price, data to ${dayDate(through)}${n ? ` · ${n} Smart wallets today` : ""}.`,
+  sub: through => `Derive's best options traders against the price, data to ${dayDate(through)}.`,
   panel: {
     price: coin => `${priceCoin(coin)} · tops marked`,
     pit: "Smart wallets, ranked at the time",
-    now: "Today's Smart wallets, looking back",
+    now: day => (day ? `Smart wallets of ${dayDate(day)}, looking back` : "Today's Smart wallets, looking back"),
     puts: "New puts bought per week, ranked at the time",
   },
   long: "net long",
@@ -82,21 +83,21 @@ export const DCOPY = {
   readout: {
     price: coin => priceCoin(coin),
     pit: "Ranked at the time",
-    now: "Today's, looking back",
+    now: day => (day ? `Ranked ${dayDate(day)}` : "Today's, looking back"),
     puts: "New puts that week",
-    counts: (l, s) => `${l} long · ${s} short`,
+    counts: (l, s) => (l == null || s == null ? "—" : `${l} long · ${s} short`),
   },
   // Popovers: each 90 words or fewer.
   pop: {
     aboutTitle: "Derive options",
-    about: () => ["Built from Cowboy's records of every Derive options trade since December 2023, with the same wallets and ranking as its app. Did Smart wallets turn short or buy puts as the market rolled over? The middle panels show who was short, ranked as they stood at the time and as they rank today; the bottom one, their new puts.",
+    about: () => ["Built from Cowboy's records of every Derive options trade since December 2023, with the same wallets and ranking as its app, and extended after each daily close. Did Smart wallets turn short or buy puts as the market rolled over? The middle panels show who was short, ranked as they stood at the time and as they ranked later; the bottom one, their new puts.",
       "Exploration, not a study: context, not a signal."],
     priceTitle: "Price and tops",
     price: () => ["Derive's daily index close (before 31 Oct 2024, the next day's 08:00 UTC settlement or the day's average index). Dashed lines: tops, the highest close within 30 days either side that was followed by a fall of 15% or more within 90 days. They are found with the closes after them, so they mark where tops were."],
     pitTitle: "Ranked at the time",
     pit: () => ["Derive's best directional options wallets as they ranked at each close, from what was known then: Cowboy's ranking replayed day by day, market makers, income sellers and hedgers left out. Green, up from zero: wallets whose open options delta was net long by $1,000 or more. Red, down: net short."],
-    nowTitle: "Today's Smart wallets",
-    now: n => [`The same count for ${n ? `today's ${n}` : "today's"} Smart wallets, each in its past. They rank on all their trades so far, including the falls they caught, so looking back they read shorter before tops than the wallets that ranked best at the time.`],
+    nowTitle: "Looking back",
+    now: (n, day) => [`The same count for the ${n ? `${n} ` : ""}Smart wallets of ${day ? dayDate(day) : "today"}, each in its past. They rank on all their trades up to then, including the falls they caught, so looking back they read shorter before tops than the wallets that ranked best at the time. This panel ends on that day; the one above runs on.`],
     putsTitle: "New puts",
     puts: () => ["Premium paid on new long puts (a wallet's long put position growing that day), summed per week, by the Smart wallets as ranked at the time. Buying back sold puts is left out. Weeks taller than the chart are notched; the readout has the amount."],
   },

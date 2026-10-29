@@ -1,8 +1,8 @@
 # Derive's Smart options wallets around market turns (exploration, 28 October 2026)
 
-The owner noticed that on Derive, "when big smart wallets start to go short or start buying puts" is when the market rolled over, and asked to see it next to the market history page. This note covers the market history page's Derive drawer (`/market`, "Derive options") and the exploration behind it. **Exploration, not a study: context, not a signal.** Nothing here was declared before the numbers were seen.
+The owner noticed that on Derive, "when big smart wallets start to go short or start buying puts" is when the market rolled over, and asked to see it next to the market history page. This note covers the market history page's Derive drawer (`/market`, "Derive options"), the exploration behind it and, since 29 October 2026, its daily update. **Exploration, not a study: context, not a signal.** Nothing here was declared before the numbers were seen.
 
-Code: `backend/backtest/derive_smart_series.py` (build the daily series from Cowboy's data, then the seed), `backend/seeds/derive_smart_seed.json`, `backend/derive_wallets.py` (`/api/market-history/derive`), `frontend/src/components/DeriveDrawer.jsx`, `frontend/src/utils/deriveWallets.js`.
+Code: `backend/backtest/derive_smart_series.py` (build the daily series from Cowboy's data, then the seed), `backend/seeds/derive_smart_seed.json`, `backend/derive_wallets.py` (`/api/market-history/derive`, with Cowboy's daily closes after the seed), `frontend/src/components/DeriveDrawer.jsx`, `frontend/src/utils/deriveWallets.js`.
 
 ## Data
 
@@ -37,11 +37,15 @@ Two more cautions: dollar flows are concentrated (the largest wallet makes 29-89
 
 ## Updating
 
-The drawer reads only the seed; nothing in Reflex reads Derive or Cowboy at run time, so it ends on the seed's last day (shown in the drawer). To extend it: a sparse copy of Cowboy's `data` branch (`history/`, `candles/`, about 40 MB), then from `backend/`:
+The seed holds the history to 27 October 2026. Since 29 October 2026 (owner: "this thing is frozen ... it doesn't update daily") the drawer runs on after each daily close: Cowboy keeps the same point-in-time counts one close at a time (`derive_scan` `backend/derive/smart_counts.py`, appended by its daily history job from 21 October 2026 on, in `history/smart_counts.json` on its data branch) and publishes the last 120 closes as `smart_counts.json` with its app files (`raw.githubusercontent.com/cianfru/cowboy-feed/site-data/smart_counts.json`). Reflex reads that file every three hours (conditional on its ETag; about 10 KB), keeps every close in `derive_live.json` next to hyperlens.db, and appends the closes after the seed's last day (`derive_wallets.merged`). Cowboy's rows matched the seed exactly on 22-27 October 2026 (counts, put premium and prices); the feed reports the days both cover and how many differ (`live_check`). Tops are marked again over the longer price history with the same rule, so a top shows once the 90 days after it hold the fall.
+
+Only the ranking of the time runs on. The looking-back lens is today's ranking applied to the whole past, which would change every day; it stays the seed's (the 483 Smart wallets of 27 October 2026) and its panel ends on that day (`now_through`).
+
+To rebuild the seed itself (for example after a change to Cowboy's classes): a sparse copy of Cowboy's `data` branch (`history/`, `candles/`, about 40 MB), then from `backend/`:
 
 ```
 python -m backtest.derive_smart_series build DATA_DIR series.json --derive-scan /path/to/derive_scan/backend
 python -m backtest.derive_smart_series seed series.json
 ```
 
-A daily update would need Cowboy to publish the compact series with its app files (about 170 bytes a day), which changes Cowboy's feed; Cowboy's public files today carry only the Smart balance for the last 30 closes. Derive data in Reflex goes against Cowboy's rule of 1 October 2026 ("Do not change the Reflex repo for Derive work"); the owner asked for it here on 28 October 2026.
+Derive data in Reflex goes against Cowboy's rule of 1 October 2026 ("Do not change the Reflex repo for Derive work"); the owner asked for it here on 28 October 2026, and for the daily update on 29 October.

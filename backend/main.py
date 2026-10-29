@@ -317,6 +317,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Wallet history init failed (non-fatal): %s", e)
 
+    # Derive's Smart options wallets after the drawer's seed: Cowboy's daily file, read every few hours
+    try:
+        from derive_wallets import run_forever as run_derive_counts
+        asyncio.create_task(run_derive_counts())
+    except Exception as e:
+        logger.warning("Derive counts init failed (non-fatal): %s", e)
+
     # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
     try:
         from exit_shadow import run_exit_shadow

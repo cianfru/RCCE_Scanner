@@ -9,9 +9,10 @@ import { compactUsd, dayDate, logTicks, monthOf, usd } from "../utils/marketHist
 import { COINS, DCOPY, RANGES, deriveRows, inRange, money, putScale, topsIn, weekly } from "../utils/deriveWallets.js";
 
 // The market history page's Derive drawer: Derive's Smart options wallets against the price, as ranked at the time
-// and as ranked today (the hindsight the owner's reading has to get past), and their new puts per week.
+// and as ranked on the seed's last day (the hindsight the owner's reading has to get past), and their new puts per
+// week. The first runs on after each daily close; the looking-back panel ends on its ranking day.
 
-let cached = null;                                    // one fetch per page load; the seed changes by hand
+let cached = null;                                    // one fetch per page load: it gains one close a day
 const loadDerive = () => (cached ||= apiFetch("/api/market-history/derive").then(r => (r.ok ? r.json() : null)).catch(() => null));
 
 const pts = list => list.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join("L");
@@ -29,7 +30,20 @@ function ticks(d0, d1, short) {
   return out;
 }
 
-function Chart({ rows, coin, tops, smartToday }) {
+// Runs of rows where get(r) is a number: [[day, value], ...] each (the looking-back counts end before the rows do).
+function runs(rows, get) {
+  const out = [];
+  let cur = null;
+  for (const r of rows) {
+    const v = get(r);
+    if (v == null) { cur = null; continue; }
+    if (!cur) { cur = []; out.push(cur); }
+    cur.push([r.day, v]);
+  }
+  return out;
+}
+
+function Chart({ rows, coin, tops, smartToday, nowThrough }) {
   const [box, W] = useWidth(900);
   const [hov, setHov] = useState(null);
   if (rows.length < 2) return <div ref={box} className="mh-empty">{DCOPY.unavailable}</div>;
@@ -49,7 +63,7 @@ function Chart({ rows, coin, tops, smartToday }) {
   const lo = Math.min(...ps), hi = Math.max(...ps);
   const yP = v => y0[0] + 3 + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo) || 1)) * (hP - 6);
   // Counts: one scale for both panels, so the two rankings compare.
-  const cmax = Math.max(4, ...rows.flatMap(r => [r.pitL, r.pitS, r.nowL, r.nowS])) * 1.08;
+  const cmax = Math.max(4, ...rows.flatMap(r => [r.pitL, r.pitS, r.nowL, r.nowS]).filter(v => v != null)) * 1.08;
   const yC = (top, v) => top + hC / 2 - (v / cmax) * (hC / 2 - 2);
   const weeks = weekly(rows, "pitPuts");
   const pm = putScale(weeks);
@@ -57,7 +71,8 @@ function Chart({ rows, coin, tops, smartToday }) {
   const bw = Math.max(1, (x(d0 + 7) - x(d0)) * 0.7);
   const green = TH.green, red = TH.red;
   const line = get => { let d = "", pen = false; for (const r of rows) { const v = get(r); if (v == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${x(r.day).toFixed(1)},${v.toFixed(1)}`; pen = true; } return d; };
-  const area = (top, get, sign) => `M${x(d0).toFixed(1)},${yC(top, 0).toFixed(1)}L${pts(rows.map(r => [x(r.day), yC(top, sign * get(r))]))}L${x(d1).toFixed(1)},${yC(top, 0).toFixed(1)}Z`;
+  const area = (top, get, sign) => runs(rows, get).map(run => `M${x(run[0][0]).toFixed(1)},${yC(top, 0).toFixed(1)}`
+    + `L${pts(run.map(([d, v]) => [x(d), yC(top, sign * v)]))}L${x(run[run.length - 1][0]).toFixed(1)},${yC(top, 0).toFixed(1)}Z`).join("");
   const counts = (top, L, S) => <g>
     <line className="mh-zero" x1={padL} x2={W - padR} y1={yC(top, 0)} y2={yC(top, 0)} />
     {[Math.round(cmax / 2), -Math.round(cmax / 2)].map(v => <g key={v}>
@@ -67,8 +82,8 @@ function Chart({ rows, coin, tops, smartToday }) {
     <text className="mh-tick" x={W - padR + 6} y={yC(top, 0) + 4}>0</text>
     <path className="mh-wallet-area" style={{ fill: green }} d={area(top, r => r[L], 1)} />
     <path className="mh-wallet-area" style={{ fill: red }} d={area(top, r => r[S], -1)} />
-    <path className="mh-wallet-line" style={{ stroke: green }} d={line(r => yC(top, r[L]))} />
-    <path className="mh-wallet-line" style={{ stroke: red }} d={line(r => yC(top, -r[S]))} />
+    <path className="mh-wallet-line" style={{ stroke: green }} d={line(r => (r[L] == null ? null : yC(top, r[L])))} />
+    <path className="mh-wallet-line" style={{ stroke: red }} d={line(r => (r[S] == null ? null : yC(top, -r[S])))} />
   </g>;
   const onMove = e => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -84,7 +99,7 @@ function Chart({ rows, coin, tops, smartToday }) {
     <div className="mh-chart-plot">
       <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" onPointerMove={onMove} onPointerDown={onMove}
         onPointerLeave={e => { if (e.pointerType === "mouse") setHov(null); }}
-        aria-label={`${DCOPY.panel.price(coin)}, ${DCOPY.panel.pit}, ${DCOPY.panel.now}, ${DCOPY.panel.puts}`}>
+        aria-label={`${DCOPY.panel.price(coin)}, ${DCOPY.panel.pit}, ${DCOPY.panel.now(nowThrough)}, ${DCOPY.panel.puts}`}>
         {logTicks(lo, hi).map(v => <g key={v}>
           <line className="mh-grid" x1={padL} x2={W - padR} y1={yP(v)} y2={yP(v)} />
           <text className="mh-tick" x={W - padR + 6} y={yP(v) + 4}>{compactUsd(v)}</text>
@@ -105,7 +120,7 @@ function Chart({ rows, coin, tops, smartToday }) {
       {label(0, DCOPY.panel.price(coin), <Info title={DCOPY.pop.priceTitle} paras={DCOPY.pop.price()} />)}
       {label(1, <>{DCOPY.panel.pit}<span className="mh-wallet-key" aria-hidden="true"><i className="is-long" />{DCOPY.long}<i className="is-short" />{DCOPY.short}</span></>,
         <Info title={DCOPY.pop.pitTitle} paras={DCOPY.pop.pit()} />)}
-      {label(2, DCOPY.panel.now, <Info title={DCOPY.pop.nowTitle} paras={DCOPY.pop.now(smartToday)} />)}
+      {label(2, DCOPY.panel.now(nowThrough), <Info title={DCOPY.pop.nowTitle} paras={DCOPY.pop.now(smartToday, nowThrough)} />)}
       {label(3, DCOPY.panel.puts, <Info title={DCOPY.pop.putsTitle} paras={DCOPY.pop.puts()} />)}
     </div>
     <table className="mh-readout dd-readout">
@@ -113,7 +128,7 @@ function Chart({ rows, coin, tops, smartToday }) {
       <tbody>
         <tr><th scope="row">{DCOPY.readout.price(coin)}</th><td><b>{usd(h.price)}</b></td></tr>
         <tr><th scope="row">{DCOPY.readout.pit}</th><td><b>{DCOPY.readout.counts(h.pitL, h.pitS)}</b></td></tr>
-        <tr><th scope="row">{DCOPY.readout.now}</th><td><b>{DCOPY.readout.counts(h.nowL, h.nowS)}</b></td></tr>
+        <tr><th scope="row">{DCOPY.readout.now(nowThrough)}</th><td><b>{DCOPY.readout.counts(h.nowL, h.nowS)}</b></td></tr>
         <tr><th scope="row">{DCOPY.readout.puts}</th><td><b>{money(wk?.sum)}</b></td></tr>
       </tbody>
     </table>
@@ -153,12 +168,12 @@ export default function DeriveDrawer({ onClose }) {
       </header>
       <div className="mh-body">
         {!data ? <p className="mh-muted">{failed ? DCOPY.unavailable : DCOPY.loading}</p> : <>
-          <p className="mh-sub">{DCOPY.sub(data.through, data.smart_today)}</p>
+          <p className="mh-sub">{DCOPY.sub(data.through)}</p>
           <div className="mh-controls">
             <Tabs small label={DCOPY.coinLabel} items={COINS} value={coin} onChange={setCoin} />
             <Tabs small label={DCOPY.rangeLabel} items={RANGES} value={range} onChange={setRange} />
           </div>
-          <Chart rows={rows} coin={coin} tops={tops} smartToday={data.smart_today} />
+          <Chart rows={rows} coin={coin} tops={tops} smartToday={data.smart_today} nowThrough={data.now_through ?? data.through} />
         </>}
       </div>
     </aside>
