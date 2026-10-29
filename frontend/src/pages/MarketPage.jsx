@@ -12,6 +12,7 @@ import { DCOPY } from "../utils/deriveWallets.js";
 import "./market.css";
 
 const DeriveDrawer = lazy(() => import("../components/DeriveDrawer.jsx"));
+const MarketChartView = lazy(() => import("../components/MarketChartView.jsx"));
 
 // /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how one group of
 // Hyperliquid wallets stood (long or short) at each daily close underneath, on one time axis. It replaced the
@@ -80,11 +81,24 @@ function FearSplit({ data }) {
   </div>;
 }
 
+// Market history rows joined with Fear & Greed (0-100), BTC's weekly band, the typical alt and the wallet groups.
+function joinRows(data, fg, walletDays) {
+  const weekly = data?.btc_band_weekly || [];
+  const alt = new Map(data?.alt_recent || []);
+  return rowsOf(data).map(r => {
+    const b = bandOn(weekly, r.day);
+    const wallet = {};
+    for (const g of GROUPS) { const w = walletDays[g.key]?.get(r.day); if (w) wallet[g.key] = w; }
+    return { ...r, fg: fg.get(r.day) ?? null, bandLo: b?.[0] ?? null, bandHi: b?.[1] ?? null, alt: alt.get(r.day) ?? null, wallet };
+  });
+}
+
 export default function MarketPage({ style }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const view = new URLSearchParams(location.search).get("view") === "fear" ? "fear" : "breadth";
-  const setView = v => navigate(v === "fear" ? "/market?view=fear" : "/market", { replace: true });
+  const q = new URLSearchParams(location.search).get("view");
+  const view = q === "fear" || q === "chart" ? q : "breadth";
+  const setView = v => navigate(v === "breadth" ? "/market" : `/market?view=${v}`, { replace: true });
   const [data, setData] = useState(null);
   const [failed, setFailed] = useState(false);
   const [wallets, setWallets] = useState(null);
@@ -107,18 +121,28 @@ export default function MarketPage({ style }) {
 
   const fg = useMemo(() => fearGreedByDay(data), [data]);
   const walletDays = useMemo(() => byDay(wallets, { scope }), [wallets, scope]);
-  const rows = useMemo(() => {
-    const weekly = data?.btc_band_weekly || [];
-    const alt = new Map(data?.alt_recent || []);
-    return rowsOf(data).map(r => {
-      const b = bandOn(weekly, r.day);
-      const wallet = {};
-      for (const g of GROUPS) { const w = walletDays[g.key]?.get(r.day); if (w) wallet[g.key] = w; }
-      return { ...r, fg: fg.get(r.day) ?? null, bandLo: b?.[0] ?? null, bandHi: b?.[1] ?? null, alt: alt.get(r.day) ?? null, wallet };
-    });
-  }, [data, fg, walletDays]);
+  const rows = useMemo(() => joinRows(data, fg, walletDays), [data, fg, walletDays]);
+  // The Chart view reads every wallet group over all markets, whatever coin the other views have picked.
+  const allDays = useMemo(() => byDay(wallets, { scope: "all" }), [wallets]);
+  const chartRows = useMemo(() => (view === "chart" ? joinRows(data, fg, allDays) : []), [view, data, fg, allDays]);
 
   if (!data) return <div className="mkt" style={style}><p className="mh-muted">{failed ? COPY.unavailable : COPY.loading}</p></div>;
+  const head = <div className="mkt-head">
+    <Tabs label="View" value={view} onChange={setView}
+      items={[{ key: "chart", label: COPY.tabs.chart }, { key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
+    <span className="mkt-head-right">
+      <button type="button" className="mh-link mkt-derive" aria-haspopup="dialog" onClick={() => setDerive(true)}>{DCOPY.open}</button>
+      <AsOf data={data} also={wallets} />
+    </span>
+  </div>;
+  const drawer = derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>;
+  if (view === "chart") {
+    return <div className="mkt" style={style}>
+      {head}
+      {drawer}
+      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChartView rows={chartRows} /></Suspense>
+    </div>;
+  }
 
   const ctx = breadthContext(data, { range });
   const band = data.bands.find(b => b.label === (bandLabel || data.today.band)) || data.bands[0];
@@ -132,7 +156,7 @@ export default function MarketPage({ style }) {
   const available = wallets ? GROUPS.filter(g => walletDays[g.key]?.size) : [];
   const g = available.find(x => x.key === group) || available[0];
   const walletGroups = g ? [{ ...g, label: WCOPY.label(g, scope), info: walletInfo(wallets, g, scope), from: firstDay(wallets, g.key) }] : [];
-  const head = g && <>
+  const walletHead = g && <>
     <span className="mkt-wallet-pick">
       <Tabs small label={WCOPY.groupLabel} items={available.map(x => ({ key: x.key, label: x.label }))} value={g.key} onChange={setGroup} />
       <span className="mh-wallet-key" aria-hidden="true"><i className="is-long" />{WCOPY.long}<i className="is-short" />{WCOPY.short}</span>
@@ -140,21 +164,14 @@ export default function MarketPage({ style }) {
     </span>
     <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
   </>;
-  const walletProp = walletGroups.length ? { groups: walletGroups, head } : null;
+  const walletProp = walletGroups.length ? { groups: walletGroups, head: walletHead } : null;
   const fanPop = fan ? <Info title={COPY.pop.fanTitle} paras={COPY.pop.fan(ctx.fanCtx)} />
     : <Info title={COPY.pop.fanTitle} paras={COPY.pop.fanNone({ since: ctx.since })} />;
   const aria = panel => [panel, COPY.panel.btc, ...walletGroups.map(g => g.label), RANGES.find(r => r.key === range)?.label].join(", ");
 
   return <div className="mkt" style={style}>
-    <div className="mkt-head">
-      <Tabs label="View" value={view} onChange={setView}
-        items={[{ key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
-      <span className="mkt-head-right">
-        <button type="button" className="mh-link mkt-derive" aria-haspopup="dialog" onClick={() => setDerive(true)}>{DCOPY.open}</button>
-        <AsOf data={data} also={wallets} />
-      </span>
-    </div>
-    {derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>}
+    {head}
+    {drawer}
     <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} group={g?.key} />
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
       {view === "breadth" && <button type="button" className="mkt-fan-toggle" aria-pressed={fanOn} onClick={() => setFanOn(v => !v)}>
