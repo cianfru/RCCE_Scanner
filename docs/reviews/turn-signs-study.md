@@ -131,3 +131,18 @@ The profitable traders and smart money follow the last month; whales are the onl
 - What showed up is conditional: stablecoin supply surging (6 of 6 episodes followed by lower coins), very high funding (4 of 5, 2023-24), and from the earlier studies, greed late in a broad uptrend and fear two to three months into a downturn. These are rare states, so each rests on a handful of cases.
 - For the coins' own breadth, the median z's change and funding say something both halves agree on: coins tended to leave their uptrends after funding was high and the median z had turned down.
 - Candidates for a forward test from 30 October 2026, if the owner approves: stablecoin surges, funding at its extremes, and whales' net position.
+
+### Stablecoins: they follow the market (owner's check, 29 October 2026)
+
+Owner: stablecoins are now too big to move price and, like ETF inflows, "kind of follow whatever the market is doing". Checked on the same data (description):
+
+| Rank correlation | 2021-05 to 2026-09 | 2021-05 to 2023-12 | 2024-01 to 2026-09 |
+|---|---:|---:|---:|
+| Stablecoin growth over the next 30 days vs BTC's last 30 days | +0.21 | +0.16 | +0.28 |
+| Stablecoin growth over the last 30 days vs BTC's next 30 days | -0.07 | -0.09 | -0.08 |
+| Stablecoin growth over the next 30 days vs the typical coin's last 30 days | +0.15 | +0.18 | +0.17 |
+| Stablecoin growth over the last 30 days vs the typical coin's next 30 days | -0.14 | -0.12 | -0.16 |
+
+- Supply grew after rallies and said nothing for BTC's next month: it follows. The six surges came at the end of big rallies, so they restate what greed and a long broad uptrend already say.
+- Scale: 7.8% in 30 days was $6.6 billion in May 2021 and would be $23.5 billion now (supply $302 billion on 27 October 2026); supply stayed flat through 2026 ($305 billion in December 2025), including the 148-day broad uptrend from March. A fixed percentage does not mean the same thing across these years.
+- Decision: stablecoin supply is dropped from the forward-test candidates and is not added to the chart. Funding and whales' net position remain candidates.
