@@ -168,6 +168,10 @@
 .mch-side .mch-state{font-size:13px;}
 .mch-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
 .mc-run{font-style:normal;color:var(--t-accent);}
+.mc-tip{position:absolute;z-index:4;width:256px;padding:8px 11px 9px;border-radius:10px;pointer-events:none;background-color:color-mix(in srgb,var(--t-bg) 62%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 8%,transparent),color-mix(in srgb,var(--t-text1) 2%,transparent) 70%);-webkit-backdrop-filter:blur(14px) saturate(150%);backdrop-filter:blur(14px) saturate(150%);box-shadow:0 10px 30px var(--t-shadow);font:500 12px/1.45 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.mc-tip b{font-weight:600;color:var(--t-text1);margin-right:8px;}
+.mc-tip i{font-style:normal;color:var(--t-text3);}
+.mc-tip p{margin:4px 0 0;}
 .mc-down{font-style:normal;color:var(--t-text2);}
 .mch-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px;}
 .mch-menu{position:relative;}

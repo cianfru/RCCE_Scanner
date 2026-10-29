@@ -4,7 +4,7 @@ import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, LineSeries, LineS
 import { useTheme } from "../ThemeContext.jsx";
 import { T as TH, col, resolveToken } from "../theme.js";
 import { apiFetch } from "../edge.js";
-import { BCOPY, COLD, CROWD, GREED, HCOPY, HOT, INDICATORS, broadRuns, heatSeries, heatTurns, zoneOf } from "../utils/marketHeat.js";
+import { BCOPY, COLD, CROWD, GREED, HCOPY, HOT, INDICATORS, MCOPY, broadRuns, heatSeries, heatTurns, zoneOf } from "../utils/marketHeat.js";
 import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
 
@@ -79,6 +79,7 @@ export default function MarketChart({ rows, indicators, range }) {
   const box = useRef(null);
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const [tip, setTip] = useState(null);           // the mark under the pointer: { x, y, kind, day, from }
   const [tops, setTops] = useState([]);
   const [derive, setDerive] = useState(null);
   const wantDerive = indicators.includes("derive");
@@ -147,28 +148,32 @@ export default function MarketChart({ rows, indicators, range }) {
         b.setData(rows.filter(r => r[k] > 0).map(r => ({ time: t(r.day), value: r[k] })));
       }
     }
+    // Each mark carries an id; the chart names it when the pointer is on it, and `meta` says what it means.
     const marks = [];
+    const meta = new Map();
+    const pctFrom = f => (f ? { v: 100 * f.v, day: f.day } : null);    // shares (0-1) read as percent
+    const mark = (kind, day, from, m) => { const id = `${kind}-${day}`; meta.set(id, { kind, day, from }); marks.push({ id, time: t(day), ...m }); };
     if (indicators.includes("runs")) {
       for (const run of ctx.broad.runs) {
-        if (run.roll != null) marks.push({ time: t(run.roll), position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
+        if (run.roll != null) mark("rolled", run.roll, pctFrom(run.rollFrom), { position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
       }
       for (const dn of ctx.broad.downs) {
-        if (dn.turnUp != null) marks.push({ time: t(dn.turnUp), position: "belowBar", color: p.green, shape: "square", size: 0.7 });
+        if (dn.turnUp != null) mark("turned", dn.turnUp, pctFrom(dn.turnFrom), { position: "belowBar", color: p.green, shape: "square", size: 0.7 });
       }
     }
     if (indicators.includes("zturns")) {
       for (const run of ctx.broad.runs) {
-        if (run.zTurn != null) marks.push({ time: t(run.zTurn), position: "aboveBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+        if (run.zTurn != null) mark("zdown", run.zTurn, null, { position: "aboveBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
       }
       for (const dn of ctx.broad.downs) {
-        if (dn.zTurnUp != null) marks.push({ time: t(dn.zTurnUp), position: "belowBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+        if (dn.zTurnUp != null) mark("zup", dn.zTurnUp, null, { position: "belowBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
       }
     }
     if (indicators.includes("turns")) {
       for (const x of ctx.turns) {
-        marks.push(x.kind === "cooling"
-          ? { time: t(x.day), position: "aboveBar", color: p.orange, shape: "arrowDown", size: 1 }
-          : { time: t(x.day), position: "belowBar", color: p.cold, shape: "arrowUp", size: 1 });
+        const from = { v: x.from.heat, day: x.from.day };
+        if (x.kind === "cooling") mark("cooling", x.day, from, { position: "aboveBar", color: p.orange, shape: "arrowDown", size: 1 });
+        else mark("lifting", x.day, from, { position: "belowBar", color: p.cold, shape: "arrowUp", size: 1 });
       }
     }
     if (marks.length) createSeriesMarkers(btc, marks.sort((a, b) => a.time - b.time));
@@ -200,7 +205,11 @@ export default function MarketChart({ rows, indicators, range }) {
       chart.priceScale("right", i).applyOptions({ mode: PriceScaleMode.Normal, scaleMargins: { top: 0.12, bottom: 0.08 } });
     }
 
-    chart.subscribeCrosshairMove(param => setHover(param?.time ? Math.round(param.time / DAY_S) : null));
+    chart.subscribeCrosshairMove(param => {
+      setHover(param?.time ? Math.round(param.time / DAY_S) : null);
+      const m = param?.point && meta.get(param.hoveredObjectId);
+      setTip(m ? { x: param.point.x, y: param.point.y, ...m } : null);
+    });
     try {
       if (kept) chart.timeScale().setVisibleRange(kept);
       else setRange(chart, rows, range);
@@ -232,6 +241,7 @@ export default function MarketChart({ rows, indicators, range }) {
   const fallback = panes.map(k => { const top = below; below += paneH(k); return top; });
   return <div className="mc">
     <div ref={box} className="mc-chart" style={{ height }} />
+    {tip && <MarkTip tip={tip} width={box.current?.clientWidth || 0} />}
     <div className="mc-legend" style={{ top: tops[0] ?? 0 }}>
       <b>BTC</b><span>{usd(r.btc)}</span>
       {indicators.includes("band") && r.bandLo > 0 && <i>band {kUsd(r.bandLo)}–{kUsd(r.bandHi)}</i>}
@@ -248,6 +258,17 @@ export default function MarketChart({ rows, indicators, range }) {
           .map(k => `${HCOPY.parts[k]} ${Math.round(heat.parts[k])}`).join(" · ")}</i>}
       </div>;
     })}
+  </div>;
+}
+
+// The glass box naming the mark under the pointer, beside it (to its left near the right edge).
+function MarkTip({ tip, width }) {
+  const c = MCOPY[tip.kind];
+  const from = tip.from ? { v: tip.from.v, d: dayDate(tip.from.day) } : null;
+  const left = tip.x + 270 > width ? Math.max(4, tip.x - 270) : tip.x + 14;
+  return <div className="mc-tip" role="tooltip" style={{ left, top: tip.y + 14 }}>
+    <b>{c.title}</b><i>{dayDate(tip.day)}</i>
+    <p>{c.body(from)}</p>
   </div>;
 }
 

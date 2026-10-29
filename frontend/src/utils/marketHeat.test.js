@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BCOPY, COLD, DEFAULT_ON, HCOPY, HOT, INDICATORS, TURN, broadRuns, broadState, heatOf, heatSeries, heatState,
+import { BCOPY, COLD, DEFAULT_ON, HCOPY, HOT, INDICATORS, MCOPY, TURN, broadRuns, broadState, heatOf, heatSeries, heatState,
   heatTurns, pickIndicators, zoneOf } from './marketHeat.js';
 import { popWords } from './marketHistory.js';
 
@@ -116,4 +116,17 @@ test('broad state in a downturn: its age against past downturns, fear over the l
   assert.deepEqual(st.longer, { k: 0, n: 1 }, 'the 10-day downturn was longer');
   assert.equal(st.fgLow, 20);
   assert.deepEqual(st.marks, { fear: true, short: true, zup: false, turned: false });
+});
+
+test('every mark explains itself: words within the rules, measured from the extreme it turned from', () => {
+  const from = { v: 82.4, d: '11 Oct 2026' };
+  for (const [k, c] of Object.entries(MCOPY)) {
+    const text = `${c.title} ${c.body(from)}`;
+    assert.doesNotMatch(text, FORBIDDEN, k);
+    assert.ok(popWords(text) <= 40, `${k}: ${popWords(text)} words`);
+  }
+  assert.equal(MCOPY.rolled.body({ v: 86.2, d: '30 Sep 2026' }), "Coins in uptrend are 20 points under this broad uptrend's high (86%, 30 Sep 2026).");
+  const br = broadRuns(rowsOf([0.3, 0.6, 0.9, 0.95, 0.7, 0.3, 0.3, 0.3, 0.3, 0.3, 0.1, 0.35, 0.6]));
+  assert.deepEqual(br.runs[0].rollFrom, { v: 0.95, day: 1003 });
+  assert.deepEqual(br.downs[0].turnFrom, { v: 0.1, day: 1010 });
 });

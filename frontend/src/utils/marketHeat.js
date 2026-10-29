@@ -123,7 +123,7 @@ export function broadRuns(rows) {
       }
     }
     if (s != null && s > cur.high) { cur.high = s; cur.highDay = r.day; }
-    if (cur.roll == null && s != null && cur.high - s >= ROLL - 1e-9) cur.roll = r.day;
+    if (cur.roll == null && s != null && cur.high - s >= ROLL - 1e-9) { cur.roll = r.day; cur.rollFrom = { v: cur.high, day: cur.highDay }; }
     if (z != null) {
       cur.zHigh = cur.zHigh == null ? z : Math.max(cur.zHigh, z);
       if (cur.zTurn == null && cur.zHigh - z >= Z_TURN - 1e-9) cur.zTurn = r.day;
@@ -140,7 +140,7 @@ export function broadRuns(rows) {
       if (r.day < dn.start || (dn.end != null && r.day >= dn.end)) continue;
       if (r.uptrend != null) {
         if (dn.low == null || r.uptrend < dn.low) { dn.low = r.uptrend; dn.lowDay = r.day; }
-        if (dn.turnUp == null && r.uptrend - dn.low >= ROLL - 1e-9) dn.turnUp = r.day;
+        if (dn.turnUp == null && r.uptrend - dn.low >= ROLL - 1e-9) { dn.turnUp = r.day; dn.turnFrom = { v: dn.low, day: dn.lowDay }; }
       }
       if (r.median_z != null) {
         dn.zLow = dn.zLow == null ? r.median_z : Math.min(dn.zLow, r.median_z);
@@ -222,8 +222,8 @@ export const BCOPY = {
   marks: { greed: "Greed", crowd: "Traders long", zturn: "Z turned down", rolled: "Rolled over" },
   day: age => `broad uptrend, day ${age}`,
   pop: () => [
-    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under. Marks: greed, Fear & Greed ${GREED}+ in the last ${LOOKBACK} days (its high shown); traders long, ${Math.round(100 * CROWD)}%+ long; z turned down, the median z ${Z_TURN} under the run's high; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
-    "Since 2021 the median z turned down about a month before every roll-over. With recent greed, a run's third month was weaker for the typical coin than its first two, in all 3 cases. Context, not a signal.",
+    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under. Marks: greed, Fear & Greed ${GREED}+ in the last ${LOOKBACK} days (high shown); traders long, ${Math.round(100 * CROWD)}%+ long; z turned down, median z ${Z_TURN} under its high; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
+    "Since 2021 the median z turned down about a month before the roll-over (10 of 10 runs with both). With recent greed, the typical coin did worse in a run's third month than its first two (3 cases). Context, not a signal.",
   ],
   down: age => `Broad downturn, day ${age}`,
   low: (v, d) => `low ${v} on ${d}`,
@@ -234,6 +234,17 @@ export const BCOPY = {
     `Broad downturn: from a broad uptrend's end until ${Math.round(100 * ON)}% of coins are in uptrend again. Marks: fear, Fear & Greed ${FEAR} or less in the last ${LOOKBACK} days (its low shown); traders short, ${Math.round(100 * SHORT)}% or less long; z turned up, the median z ${Z_TURN} over the downturn's low; turned up, the share ${Math.round(100 * ROLL)} points over its low.`,
     "Since 2021, extreme fear in a downturn's first month came before more falls; two to three months in, before the best months (5 downturns). Context, not a signal.",
   ],
+};
+
+// What each mark on the price says, shown when the pointer is on it (owner, 29 October 2026: every icon explains
+// itself on hover). `from` is the extreme the mark is measured from: { v (0-100), day }.
+export const MCOPY = {
+  cooling: { title: "Heat cooling", body: f => `Market heat ${TURN} points under its hot peak (${Math.round(f.v)}, ${f.d}), within ${TURN_DAYS} days.` },
+  lifting: { title: "Heat lifting", body: f => `Market heat ${TURN} points over its cold low (${Math.round(f.v)}, ${f.d}), within ${TURN_DAYS} days.` },
+  zdown: { title: "Median z turned down", body: () => `The typical coin's z-score is ${Z_TURN} under its high in this broad uptrend. In all 10 broad uptrends since 2021 that had both, it came about a month before the roll-over.` },
+  zup: { title: "Median z turned up", body: () => `The typical coin's z-score is ${Z_TURN} over its low in this downturn. In all 7 downturns since 2021 that had both, it came before the turn-up.` },
+  rolled: { title: "Rolled over", body: f => `Coins in uptrend are ${Math.round(100 * ROLL)} points under this broad uptrend's high (${Math.round(f.v)}%, ${f.d}).` },
+  turned: { title: "Turned up", body: f => `Coins in uptrend are ${Math.round(100 * ROLL)} points over this downturn's low (${Math.round(f.v)}%, ${f.d}).` },
 };
 
 export const HCOPY = {
