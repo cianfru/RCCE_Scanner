@@ -1089,9 +1089,9 @@ export default function BMSBChart({
           {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live</span>}
         </div>}
       </div>
-      {showPos && !error && recent && <RecentStrip data={recent.data} failed={recent.failed} group={posGroup} measure={posMeasure} />}
+      {showPos && !error && recent && <RecentStrip key={symbol} data={recent.data} failed={recent.failed} group={posGroup} measure={posMeasure} />}
       {showPos && !error && <PositioningBar group={posGroup} setGroup={setPosGroup} measure={posMeasure} setMeasure={setPosMeasure}
-        series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} failed={positioningFailed} />}
+        series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} failed={positioningFailed} recentOn={!!recent} />}
       {!loading && !error && spike && showTrend && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
         {spike.superseded
           ? <><strong style={{color:T.text2}}>Spike superseded</strong> · price has since closed above the spike's peak ({new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}), so the trend resumed and the after-the-spike zone no longer applies.</>
@@ -1140,7 +1140,7 @@ export default function BMSBChart({
 // latest reading otherwise), the measure, and the definitions.
 const POS_MEASURES = [{ key: "n", label: "Traders", title: "Wallets on each side" }, { key: "usd", label: "$", title: "Position value on each side" }];
 
-function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, rebuilds, hoverTime, failed }) {
+function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, rebuilds, hoverTime, failed, recentOn }) {
   const defs = groupDefinitions(useRosterCounts());
   const { width } = useViewport();
   const narrow = width < 640;
@@ -1162,7 +1162,8 @@ function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, re
     <span className="chart-pos-end">
       <Tabs small label="Measure" items={POS_MEASURES} value={measure} onChange={setMeasure} />
       <HelpTip title="Long and short" width={420}>
-        <p>The bars under the candles: wallets (or dollars) long above the line, short below it, one pair per candle from the reading at its close; the current candle shows the latest. Each wallet counts once.</p>
+        <p>The bars in the pane under the candles: wallets (or dollars) long above the line, short below it, one pair per candle from the reading at its close; the current candle shows the latest. Each wallet counts once.</p>
+        {recentOn && <p>The 24h strip under the chart: the last 24 hours, one pair per half hour (UTC) from the reading at its end, the newest on the right; dashed lines mark the 4-hour closes. Tap or point at a half hour to read it.</p>}
         <p>{defs.profitable}</p>
         <p>{defs.winners} {defs.losers} {defs.whales}</p>
         <p>{defs.windows} {defs.sweep}</p>
