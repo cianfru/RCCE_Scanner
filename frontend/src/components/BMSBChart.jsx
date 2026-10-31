@@ -11,7 +11,7 @@ import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import RegimeIcon from "./RegimeIcon.jsx";
 import Tabs from "./Tabs.jsx";
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -27,6 +27,10 @@ import { col, T, alpha, REGIME_META, SIGNAL_META, resolveToken, getBaseSymbol } 
 import { sideColor } from "../utils/traderFormat.js";
 import { markerTags } from "../utils/walletName.js";
 import { walletColor } from "../utils/walletAvatar.js";
+import { candleBars, rebuildCandles, points, latest, recorded, count } from "../utils/coinPositioning.js";
+import { COIN_GROUPS, groupDefinitions } from "../utils/traderGroups.js";
+import useRosterCounts from "../hooks/useRosterCounts.js";
+import useViewport from "../hooks/useViewport.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -63,6 +67,16 @@ const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
 // Fill marks: the side colours, ringed in the chart's background so overlapping marks stay apart.
 const fillColors = () => ({ long: sideColor("long"), short: sideColor("short"), ring: resolveToken("bg") || "#0b1417", edge: "rgba(0,0,0,0.25)" });
 
+// "#97fce4" at alpha a, for canvas colours (the chart cannot read CSS variables or color-mix).
+function withAlpha(color, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(color).trim());
+  if (!m) return color;
+  const n = parseInt(m[1], 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
+
 const TIMEFRAMES = [
   { key: "4h",  label: "4H",  limit: 600,  apiTf: "4h", barSpace: 8 },   // the server loads 600 bars (~100 days); the 200-day MA needs 1D
   { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
@@ -89,6 +103,10 @@ export default function BMSBChart({
   fills = null,              // classified fills (/api/traders/{address}/fills), drawn as marks at their price
   focusRange = null,         // {from, to} in seconds: the view to open on (and Reset view returns to)
   entryLabel = "Your entry", // the myEntry line's label
+  // Long/short bars of groups of wallets under the candles (coin page): the pane is drawn when
+  // positioningPane is true; positioning is the /api/coin-positioning body (null while loading).
+  positioningPane = false,
+  positioning = null,
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -117,6 +135,13 @@ export default function BMSBChart({
   const focusRef = useRef(focusRange);
   focusRef.current = focusRange;
   const [candleTimes, setCandleTimes] = useState(null);
+  const [posGroup, setPosGroup] = useState("profitable");
+  const [posMeasure, setPosMeasure] = useState("n");
+  const posMeasureRef = useRef("n");
+  posMeasureRef.current = posMeasure;
+  const posSeriesRef = useRef(null);       // {long, short, markers} in the bottom pane
+  const showPos = positioningPane && !compact;
+  const posH = showPos ? (height >= 500 ? 116 : 92) : 0;
   const trendSeriesRef = useRef(null);
   const ribbonSeriesRef = useRef([]);
   const spikeZoneRef = useRef(null);
@@ -141,13 +166,15 @@ export default function BMSBChart({
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
-      height,
+      height: height + posH,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: resolveToken("chartText"),
         fontFamily: "'SF Mono', 'Fira Code', monospace",
         fontSize: 12,
         attributionLogo: false,
+        // The long/short pane's divider: as quiet as the grid.
+        panes: { separatorColor: resolveToken("chartGrid") || "rgba(255,255,255,0.06)", separatorHoverColor: "rgba(151,252,228,0.15)", enableResize: false },
       },
       grid: {
         vertLines: { color: resolveToken("chartGrid") },
@@ -230,6 +257,19 @@ export default function BMSBChart({
       wickUpColor: "rgba(151,252,228,0.65)",
       wickDownColor: "rgba(216,160,148,0.65)",
     });
+
+    // ── Long/short pane: wallets (or dollars) long above the line and short below it, per candle ──
+    posSeriesRef.current = null;
+    if (showPos) {
+      const accent = resolveToken("accent") || "#97FCE4";
+      const fmt = v => (posMeasureRef.current === "usd" ? fmtUsdShort(Math.abs(v)) : String(Math.round(Math.abs(v))));
+      const opts = { lastValueVisible: false, priceLineVisible: false, base: 0,
+        priceFormat: { type: "custom", minMove: 1, formatter: fmt } };
+      const long = chart.addSeries(HistogramSeries, { ...opts, color: accent }, 1);
+      const short = chart.addSeries(HistogramSeries, { ...opts, color: withAlpha(accent, 0.42) }, 1);
+      try { chart.panes()[1]?.setHeight(posH); } catch (_) { /* older layouts: the pane keeps its share */ }
+      posSeriesRef.current = { long, short, markers: createSeriesMarkers(long, []) };
+    }
 
     // ── CTO ribbon (rendered behind BMSB; display only) ──
     const ribbonSeries = RIBBON_LINES.map(l => chart.addSeries(LineSeries, {
@@ -517,6 +557,7 @@ export default function BMSBChart({
       entryLinesRef.current = [];
       myEntryLineRef.current = null;
       fillPrimRef.current = null;
+      posSeriesRef.current = null;
       pressureLinesRef.current = [];
       patternSeriesRef.current = [];
       // The trend-line effect runs before the rebuild on a timeframe switch; it must not reach
@@ -528,7 +569,7 @@ export default function BMSBChart({
       try { chart.remove(); } catch (_) { /* ignore */ }
       chartRef.current = null;
     };
-  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode, compact]);
+  }, [symbol, height, signal, signalFirstSeenAt, signalTimeframe, regime, exhaustionState, floorConfirmed, mode, compact, showPos, posH]);
 
   // Overlay toggles: the trend line (with the after-the-spike zone) and the trend ribbon, off by default.
   useEffect(() => {
@@ -546,6 +587,28 @@ export default function BMSBChart({
     const cleanup = buildChart(activeTimeframe);
     return cleanup;
   }, [activeTimeframe, buildChart]);
+
+  // Long/short pane: one bar pair per candle from the group's record, dots where the
+  // profitable-trader list was rebuilt.
+  const tfSec = activeTimeframe === "1d" ? 86400 : 14400;
+  const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
+  const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes) : []),
+    [posSeries, posMeasure, tfSec, candleTimes]);
+  // Dots only where the list changed a lot (the daily rebuild usually swaps a handful of wallets).
+  const posRebuilds = useMemo(() => (showPos && posGroup === "profitable"
+    ? rebuildCandles(positioning?.rebuilds, tfSec, candleTimes).filter(r => r.rules || r.joined + r.left >= REBUILD_DOT_MIN) : []),
+    [showPos, posGroup, positioning, tfSec, candleTimes]);
+  useEffect(() => {
+    const s = posSeriesRef.current;
+    if (!s || !candleTimes) return;
+    try {
+      s.long.setData(posBars.map(b => ({ time: b.time, value: b.long })));
+      s.short.setData(posBars.map(b => ({ time: b.time, value: -b.short })));
+      const dot = resolveToken("text4") || "#5b6b6b";
+      s.markers.setMarkers(posRebuilds.map(r => ({ time: r.time, position: "aboveBar", shape: "circle", color: dot, size: 0.4 })));
+    } catch (_) { /* the chart was rebuilt meanwhile; the next run fills the new one */ }
+  }, [posBars, posRebuilds, candleTimes]);
+  const rosterCounts = useRosterCounts();
 
   // Patterns overlay (1D, off by default): necklines and anchor points, display only
   useEffect(() => {
@@ -992,7 +1055,7 @@ export default function BMSBChart({
 
       {/* ── Chart container; the candle readout floats over it only while the pointer is on a candle ── */}
       <div style={{ position: "relative" }}>
-        <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height }} />
+        <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height: height + posH }} />
         {hoverMark && <div className="candle-inspector fill-inspector" aria-label="Fill details">
           <strong style={{ color: sideColor(hoverMark.side) }}>{KIND_WORD[hoverMark.kind]} {hoverMark.side}</strong>
           <span>{fmtUsdShort(hoverMark.usd)} at <b>{fmtPrice(hoverMark.px)}</b></span>
@@ -1009,6 +1072,8 @@ export default function BMSBChart({
           {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live</span>}
         </div>}
       </div>
+      {showPos && !error && <PositioningBar group={posGroup} setGroup={setPosGroup} measure={posMeasure} setMeasure={setPosMeasure}
+        series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} counts={rosterCounts} />}
       {!loading && !error && spike && showTrend && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
         {spike.superseded
           ? <><strong style={{color:T.text2}}>Spike superseded</strong> · price has since closed above the spike's peak ({new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}), so the trend resumed and the after-the-spike zone no longer applies.</>
@@ -1051,4 +1116,38 @@ export default function BMSBChart({
       `}</style>
     </div>
   );
+}
+
+// Under the chart: which group the bottom pane shows, its numbers at the hovered candle (the
+// latest reading otherwise), the measure, and the definitions.
+const POS_MEASURES = [{ key: "n", label: "Traders", title: "Wallets on each side" }, { key: "usd", label: "$", title: "Position value on each side" }];
+
+function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, rebuilds, hoverTime, counts }) {
+  const defs = groupDefinitions(counts);
+  const { width } = useViewport();
+  const narrow = width < 640;
+  const pts = points(series, measure);
+  const fmt = measure === "usd" ? fmtUsdShort : count;
+  const at = hoverTime != null ? bars.find(b => b.time === hoverTime) : latest(pts);
+  const rebuilt = hoverTime != null && rebuilds.find(r => r.time === hoverTime);
+  let read;
+  if (!series) read = <span className="chart-pos-dim">Loading…</span>;
+  else if (!recorded(pts)) read = <span className="chart-pos-dim">Not recorded yet</span>;
+  else if (!at) read = <span className="chart-pos-dim">No reading at this candle</span>;
+  else read = <><b className="chart-pos-l">{fmt(at.long)}</b> long<span className="chart-pos-sep">·</span><b className="chart-pos-s">{fmt(at.short)}</b> short
+    {rebuilt && <span className="chart-pos-dim"> · {rebuilt.rules ? "list rules changed" : "list rebuilt"}</span>}</>;
+  return <div className="chart-pos-bar">
+    <Tabs small label="Wallet group" items={COIN_GROUPS.map(g => ({ key: g.key, label: narrow ? g.short : g.name, title: `${g.name}: ${g.sub}` }))} value={group} onChange={setGroup} />
+    <span className="chart-pos-read" aria-live="off">{read}</span>
+    <span className="chart-pos-end">
+      <Tabs small label="Measure" items={POS_MEASURES} value={measure} onChange={setMeasure} />
+      <HelpTip title="Long and short" width={420}>
+        <p>The bars under the candles: wallets (or dollars) long above the line, short below it, one pair per candle from the reading at its close; the current candle shows the latest. Each wallet counts once.</p>
+        <p>{defs.profitable}</p>
+        <p>{defs.winners} {defs.losers} {defs.whales}</p>
+        <p>{defs.windows} {defs.sweep}</p>
+        <p>Dots on Profitable traders: the list was rebuilt with {REBUILD_DOT_MIN} or more wallets joining or leaving, or its rules changed. A step there is the list changing, not trading.</p>
+      </HelpTip>
+    </span>
+  </div>;
 }

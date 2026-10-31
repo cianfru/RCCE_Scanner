@@ -22,8 +22,8 @@ export function groupDefinitions(counts = {}) {
 
 // The groups on a coin page's long/short chart, in display order.
 export const COIN_GROUPS = [
-  { key: "profitable", name: "Profitable traders", sub: "best monthly return" },
-  { key: "winners", name: "All-time winners", sub: "$100K+ profit" },
-  { key: "losers", name: "All-time losers", sub: "net loss" },
-  { key: "whales", name: "Whales", sub: "$1M+ account" },
+  { key: "profitable", name: "Profitable traders", short: "Profitable", sub: "best monthly return" },
+  { key: "winners", name: "All-time winners", short: "Winners", sub: "$100K+ profit" },
+  { key: "losers", name: "All-time losers", short: "Losers", sub: "net loss" },
+  { key: "whales", name: "Whales", short: "Whales", sub: "$1M+ account" },
 ];
