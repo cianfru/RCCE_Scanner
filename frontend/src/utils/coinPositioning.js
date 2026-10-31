@@ -8,30 +8,39 @@ export function points(group, measure) {
   return group.t.map((t, i) => ({ t, long: group[lk]?.[i] ?? null, short: group[sk]?.[i] ?? null }));
 }
 
-// Readings are taken at a candle's close (profitable traders) or up to about 25 minutes after it
-// (the wallet sweep, after the quiet window): those belong to the candle that just closed.
-export const SETTLE_S = 30 * 60;
-export const candleOf = (t, tfSec) => Math.floor((t - SETTLE_S) / tfSec) * tfSec;
+// The 4h close a stored reading describes. Profitable traders are stored at the close itself;
+// the wallet sweep stores the first snapshot after a close (some minutes into the next 4h).
+const H4 = 4 * 3600;
+export function closeOf(t, group) {
+  return group === "profitable" ? Math.round(t / H4) * H4 : Math.floor(t / H4) * H4;
+}
+// The chart candle that ended at a close (4h or daily), or that contains a moment.
+export const candleEndingAt = (end, tfSec) => Math.floor((end - 1) / tfSec) * tfSec;
 
-// One bar pair per candle on the chart: the last reading that belongs to it. Candles without a
-// reading get no bar (the record is shorter than the chart, or nothing was recorded then).
-export function candleBars(group, measure, tfSec, candleTimes) {
+// One bar pair per candle on the chart: the reading at its close; the current candle shows the
+// latest (live) reading. Candles without a reading get no bar (the record is shorter than the
+// chart, or nothing was recorded then).
+export function candleBars(series, measure, tfSec, candleTimes, group = "profitable") {
   const have = new Set(candleTimes || []);
   const by = new Map();
-  for (const p of [...points(group, measure)].sort((a, b) => a.t - b.t)) {
-    if (p.long == null || p.short == null) continue;
-    const c = candleOf(p.t, tfSec);
-    if (have.has(c)) by.set(c, { time: c, long: p.long, short: p.short, t: p.t });
-  }
+  const pts = points(series, measure);
+  pts.forEach((p, i) => {
+    if (p.long == null || p.short == null) return;
+    const live = !!series.live && i === pts.length - 1;
+    const c = candleEndingAt(live ? p.t + 1 : closeOf(p.t, group), tfSec);
+    const prev = by.get(c);
+    if (have.has(c) && (!prev || prev.t <= p.t)) by.set(c, { time: c, long: p.long, short: p.short, t: p.t, live });
+  });
   return [...by.values()].sort((a, b) => a.time - b.time);
 }
 
-// List rebuilds per candle (the candle in which the list changed), joined counts summed.
+// List rebuilds per candle (the candle in which the list changed; a rules change is stamped at
+// the close it took effect), joined counts summed.
 export function rebuildCandles(rebuilds, tfSec, candleTimes) {
   const have = new Set(candleTimes || []);
   const by = new Map();
   for (const r of rebuilds || []) {
-    const c = Math.floor(r.t / tfSec) * tfSec;
+    const c = r.note === "rules" ? candleEndingAt(r.t, tfSec) : Math.floor(r.t / tfSec) * tfSec;
     if (!have.has(c)) continue;
     const e = by.get(c) || { time: c, joined: 0, left: 0, rules: false };
     e.joined += r.joined || 0;

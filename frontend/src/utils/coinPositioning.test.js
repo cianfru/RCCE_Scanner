@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { points, candleOf, candleBars, rebuildCandles, latest, recorded, count } from "./coinPositioning.js";
+import { points, closeOf, candleEndingAt, candleBars, rebuildCandles, latest, recorded, count } from "./coinPositioning.js";
 import { groupDefinitions, COIN_GROUPS } from "./traderGroups.js";
 
 const H4 = 14400, D = 86400;
@@ -13,22 +13,28 @@ test("points pick the measure and keep gaps", () => {
   assert.deepEqual(points(null, "n"), []);
 });
 
-test("a reading at a close, or up to 30 minutes after it, belongs to the candle that closed", () => {
-  assert.equal(candleOf(c0 + H4 - 15, H4), c0);            // profitable traders: the close minus 15 s
-  assert.equal(candleOf(c0 + H4 + 21 * 60, H4), c0);       // the sweep: 21 minutes after the close
-  assert.equal(candleOf(c0 + H4 + 3 * 3600, H4), c0 + H4); // a live reading inside the next candle
-  assert.equal(candleOf(c0 + 12 * 3600 + 900, D), c0 - 12 * 3600);   // daily: 15 min after midnight, the day that closed
+test("a stored reading belongs to the candle that closed; the sweep's lands minutes later", () => {
+  assert.equal(closeOf(c0 + H4, "profitable"), c0 + H4);             // stored at the close
+  assert.equal(closeOf(c0 + H4 + 21 * 60, "winners"), c0 + H4);      // first snapshot after it
+  assert.equal(closeOf(c0 + H4 + 50 * 60, "whales"), c0 + H4);       // a late one still describes that close
+  assert.equal(candleEndingAt(c0 + H4, H4), c0);
+  assert.equal(candleEndingAt(c0 + 12 * 3600, D), c0 - 12 * 3600);  // daily: the midnight close ends that day
+  assert.equal(candleEndingAt(c0 + 8 * 3600, D), c0 - 12 * 3600);   // a 20:00 close is inside the same day
 });
 
-test("one bar pair per chart candle, the last reading in it; no bar without a candle or a reading", () => {
-  const g = { t: [c0 - 15, c0 + H4 - 15, c0 + H4 + 1260, c0 + 2 * H4 + 3600, c0 + 9 * H4], ln: [5, 6, 7, 8, 9], sn: [1, 1, 2, null, 3] };
+test("one bar pair per candle; the live reading goes to the current candle, never over a close", () => {
+  const prof = { t: [c0, c0 + H4, c0 + H4 + 600], ln: [5, 6, 7], sn: [1, 1, 2], live: true };
   const times = [c0 - H4, c0, c0 + H4];
-  assert.deepEqual(candleBars(g, "n", H4, times).map(b => [b.time, b.long, b.short]),
-    [[c0 - H4, 5, 1], [c0, 7, 2]]);                          // c0 + H4: its reading is a gap; c0 + 9 H4: no candle
+  assert.deepEqual(candleBars(prof, "n", H4, times, "profitable").map(b => [b.time, b.long, b.live]),
+    [[c0 - H4, 5, false], [c0, 6, false], [c0 + H4, 7, true]]);  // 10 min after the close: its own candle
+  const sweep = { t: [c0 + 1260, c0 + H4 + 1500, c0 + H4 + 1800 * 2], ln: [3, null, 4], sn: [1, null, 2], live: true };
+  assert.deepEqual(candleBars(sweep, "n", H4, times, "winners").map(b => [b.time, b.long]),
+    [[c0 - H4, 3], [c0 + H4, 4]]);                              // c0: its reading is a gap
+  assert.deepEqual(candleBars({ t: [c0 + 9 * H4], ln: [1], sn: [1] }, "n", H4, times, "winners"), []);  // no candle
 });
 
 test("rebuilds per candle, joined summed, the rules change kept", () => {
-  const r = [{ t: c0 + 3600, joined: 20 }, { t: c0 + 7200, joined: 14, left: 3 }, { t: c0 + H4 + 60, note: "rules" }];
+  const r = [{ t: c0 + 3600, joined: 20 }, { t: c0 + 7200, joined: 14, left: 3 }, { t: c0 + 2 * H4, note: "rules" }];
   assert.deepEqual(rebuildCandles(r, H4, [c0, c0 + H4]), [
     { time: c0, joined: 34, left: 3, rules: false }, { time: c0 + H4, joined: 0, left: 0, rules: true }]);
 });

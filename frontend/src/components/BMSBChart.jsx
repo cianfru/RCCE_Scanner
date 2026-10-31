@@ -28,6 +28,7 @@ import { sideColor } from "../utils/traderFormat.js";
 import { markerTags } from "../utils/walletName.js";
 import { walletColor } from "../utils/walletAvatar.js";
 import { candleBars, rebuildCandles, points, latest, recorded, count } from "../utils/coinPositioning.js";
+import { usd as fmtPosUsd } from "../utils/cohorts.js";
 import { COIN_GROUPS, groupDefinitions } from "../utils/traderGroups.js";
 import useRosterCounts from "../hooks/useRosterCounts.js";
 import useViewport from "../hooks/useViewport.js";
@@ -107,6 +108,7 @@ export default function BMSBChart({
   // positioningPane is true; positioning is the /api/coin-positioning body (null while loading).
   positioningPane = false,
   positioning = null,
+  positioningFailed = false,
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -273,7 +275,7 @@ export default function BMSBChart({
     posSeriesRef.current = null;
     if (showPos) {
       const accent = resolveToken("accent") || "#97FCE4";
-      const fmt = v => (posMeasureRef.current === "usd" ? fmtUsdShort(Math.abs(v)) : String(Math.round(Math.abs(v))));
+      const fmt = v => (posMeasureRef.current === "usd" ? fmtPosUsd(Math.abs(v)) : String(Math.round(Math.abs(v))));
       const opts = { lastValueVisible: false, priceLineVisible: false, base: 0,
         priceFormat: { type: "custom", minMove: 1, formatter: fmt } };
       const long = chart.addSeries(HistogramSeries, { ...opts, color: accent }, 1);
@@ -523,6 +525,7 @@ export default function BMSBChart({
         const candleCount = data.candles?.length || 0;
         resetViewRef.current = () => {
           candleSeries.priceScale().applyOptions({ autoScale: true });
+          if (showPos) { try { chart.priceScale("right", 1).applyOptions({ autoScale: true }); } catch (_) {} }
           const focus = focusRef.current;
           if (compact && focus && candleCount) {
             const times = data.candles.map(c => c.time);
@@ -608,8 +611,8 @@ export default function BMSBChart({
   // profitable-trader list was rebuilt.
   const tfSec = activeTimeframe === "1d" ? 86400 : 14400;
   const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
-  const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes) : []),
-    [posSeries, posMeasure, tfSec, candleTimes]);
+  const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes, posGroup) : []),
+    [posSeries, posMeasure, tfSec, candleTimes, posGroup]);
   // Dots only where the list changed a lot (the daily rebuild usually swaps a handful of wallets).
   const posRebuilds = useMemo(() => (showPos && posGroup === "profitable"
     ? rebuildCandles(positioning?.rebuilds, tfSec, candleTimes).filter(r => r.rules || r.joined + r.left >= REBUILD_DOT_MIN) : []),
@@ -624,7 +627,6 @@ export default function BMSBChart({
       s.markers.setMarkers(posRebuilds.map(r => ({ time: r.time, position: "aboveBar", shape: "circle", color: dot, size: 0.4 })));
     } catch (_) { /* the chart was rebuilt meanwhile; the next run fills the new one */ }
   }, [posBars, posRebuilds, candleTimes]);
-  const rosterCounts = useRosterCounts();
 
   // Patterns overlay (1D, off by default): necklines and anchor points, display only
   useEffect(() => {
@@ -1086,7 +1088,7 @@ export default function BMSBChart({
         </div>}
       </div>
       {showPos && !error && <PositioningBar group={posGroup} setGroup={setPosGroup} measure={posMeasure} setMeasure={setPosMeasure}
-        series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} counts={rosterCounts} />}
+        series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} failed={positioningFailed} />}
       {!loading && !error && spike && showTrend && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>
         {spike.superseded
           ? <><strong style={{color:T.text2}}>Spike superseded</strong> · price has since closed above the spike's peak ({new Intl.NumberFormat('en',{maximumSignificantDigits:6}).format(spike.peak)}), so the trend resumed and the after-the-spike zone no longer applies.</>
@@ -1135,20 +1137,22 @@ export default function BMSBChart({
 // latest reading otherwise), the measure, and the definitions.
 const POS_MEASURES = [{ key: "n", label: "Traders", title: "Wallets on each side" }, { key: "usd", label: "$", title: "Position value on each side" }];
 
-function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, rebuilds, hoverTime, counts }) {
-  const defs = groupDefinitions(counts);
+function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, rebuilds, hoverTime, failed }) {
+  const defs = groupDefinitions(useRosterCounts());
   const { width } = useViewport();
   const narrow = width < 640;
   const pts = points(series, measure);
-  const fmt = measure === "usd" ? fmtUsdShort : count;
+  const fmt = measure === "usd" ? fmtPosUsd : count;
   const at = hoverTime != null ? bars.find(b => b.time === hoverTime) : latest(pts);
   const rebuilt = hoverTime != null && rebuilds.find(r => r.time === hoverTime);
+  const stamp = hoverTime == null && at ? new Date(at.t * 1000).toISOString().slice(11, 16) : null;
   let read;
-  if (!series) read = <span className="chart-pos-dim">Loading…</span>;
+  if (!series) read = <span className="chart-pos-dim">{failed ? "Could not load the readings" : "Loading…"}</span>;
   else if (!recorded(pts)) read = <span className="chart-pos-dim">Not recorded yet</span>;
   else if (!at) read = <span className="chart-pos-dim">No reading at this candle</span>;
   else read = <><b className="chart-pos-l">{fmt(at.long)}</b> long<span className="chart-pos-sep">·</span><b className="chart-pos-s">{fmt(at.short)}</b> short
-    {rebuilt && <span className="chart-pos-dim"> · {rebuilt.rules ? "list rules changed" : "list rebuilt"}</span>}</>;
+    {rebuilt && <span className="chart-pos-dim"> · {rebuilt.rules ? "list rules changed" : "list rebuilt"}</span>}
+    {stamp && <span className="chart-pos-dim"> · {stamp} UTC</span>}</>;
   return <div className="chart-pos-bar">
     <Tabs small label="Wallet group" items={COIN_GROUPS.map(g => ({ key: g.key, label: narrow ? g.short : g.name, title: `${g.name}: ${g.sub}` }))} value={group} onChange={setGroup} />
     <span className="chart-pos-read" aria-live="off">{read}</span>
@@ -1176,7 +1180,7 @@ function PaneLabel({ top, group, measure }) {
 // Hovering the pane: the candle's numbers, and what a dot there means.
 function PaneTip({ tip, top, group, measure, bar, rebuild, tf, width }) {
   const g = COIN_GROUPS.find(x => x.key === group);
-  const fmt = measure === "usd" ? fmtUsdShort : count;
+  const fmt = measure === "usd" ? fmtPosUsd : count;
   const d = new Date(tip.time * 1000);
   const when = `${d.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })}${tf === "1d" ? "" : ` ${String(d.getUTCHours()).padStart(2, "0")}:00`} UTC`;
   const left = tip.x > width - 300 ? Math.max(8, tip.x - 292) : tip.x + 14;

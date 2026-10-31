@@ -360,7 +360,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           showSetup={false}
           myEntry={myEntry}
           positioningPane={!getBaseSymbol(data.symbol).toLowerCase().startsWith("xyz:")}
-          positioning={positioning}
+          positioning={positioning.data}
+          positioningFailed={positioning.failed}
         />
       </div>
 
