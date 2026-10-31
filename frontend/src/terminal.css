@@ -2324,6 +2324,20 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .chart-pos-sep{margin:0 6px;color:var(--t-text4);}
 .chart-pos-dim{color:var(--t-text4);font-weight:500;}
 .chart-pos-end{margin-left:auto;display:flex;align-items:center;gap:12px;}
+/* The last 24 hours every 30 minutes, under the chart (RecentStrip.jsx). */
+.chart-recent{padding:4px 18px 0;}
+.chart-recent-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;margin-bottom:2px;}
+.chart-recent-title{font:500 11px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.chart-recent-plot{width:100%;}
+.chart-recent-plot svg{display:block;touch-action:pan-y;cursor:crosshair;}
+.chart-recent-l{fill:var(--t-accent);opacity:.85;}
+.chart-recent-s{fill:var(--t-accent);opacity:.38;}
+.chart-recent-zero{stroke:var(--t-text4);stroke-width:1;}
+.chart-recent-close{stroke:var(--t-text4);stroke-width:1;stroke-dasharray:2 3;opacity:.7;}
+.chart-recent-now{fill:var(--t-accent);opacity:.06;}
+.chart-recent-hover{fill:var(--t-text1);opacity:.06;pointer-events:none;}
+.chart-recent-tick{font:500 10px var(--font-geist-mono),monospace;fill:var(--t-text3);}
+@media(max-width:600px){.chart-recent{padding:4px 12px 0;}}
 .chart-pane-label{position:absolute;left:12px;pointer-events:none;font:500 11px var(--font-geist-sans),sans-serif;color:var(--t-text3);text-shadow:0 0 4px var(--t-bg),0 0 2px var(--t-bg);}
 .chart-pane-tip{position:absolute;z-index:6;max-width:280px;display:flex;flex-direction:column;gap:3px;padding:8px 10px;pointer-events:none;
   border:1px solid var(--t-border);border-radius:8px;background:var(--t-stickyBg,var(--t-bg));font:500 12px var(--font-geist-mono),monospace;color:var(--t-text2);}
