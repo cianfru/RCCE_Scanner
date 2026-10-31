@@ -40,6 +40,12 @@ export function nearest(pts, t, maxGap = 3 * 3600) {
   return best && Math.abs(best.t - t) <= maxGap ? best : null;
 }
 
+// The group's newest recorded point (each group's latest reading can be at a different time).
+export function latest(pts) {
+  for (let i = pts.length - 1; i >= 0; i--) if (pts[i].long != null) return pts[i];
+  return null;
+}
+
 // Did anyone in the group hold the coin in this window?
 export const everHeld = pts => pts.some(p => (p.long || 0) + (p.short || 0) > 0);
 export const recorded = pts => pts.filter(p => p.long != null).length;

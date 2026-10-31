@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { points, runs, peak, nearest, everHeld, niceMax, count, tickLabel } from "./coinPositioning.js";
+import { points, runs, peak, nearest, latest, everHeld, niceMax, count, tickLabel } from "./coinPositioning.js";
 import { groupDefinitions, COIN_GROUPS } from "./traderGroups.js";
 
 const g = { t: [10, 20, 30, 40], ln: [1, null, 3, 0], sn: [2, null, 1, 0], lu: [100, null, 300, 0], su: [5, null, 9, 0] };
@@ -20,6 +20,9 @@ test("runs split at gaps; peak, nearest and everHeld read recorded points", () =
   assert.equal(peak(p), 3);
   assert.equal(nearest(p, 22, 15).t, 30);
   assert.equal(nearest(p, 200, 15), null);
+  assert.equal(latest(p).t, 40);
+  assert.equal(latest(points({ t: [1, 2], ln: [3, null], sn: [1, null] }, "n")).t, 1);
+  assert.equal(latest([]), null);
   assert.equal(everHeld(p), true);
   assert.equal(everHeld(points({ t: [1], ln: [0], sn: [0] }, "n")), false);
 });

@@ -3,9 +3,8 @@ import Tabs from "./Tabs.jsx";
 import HelpTip from "./HelpTip.jsx";
 import { apiJson } from "../edge.js";
 import { getBaseSymbol } from "../theme.js";
-import { sideBarColor } from "../utils/traderFormat.js";
 import { dayLabel, timeTicks, usd } from "../utils/cohorts.js";
-import { points, runs, peak, nearest, everHeld, recorded, niceMax, count, tickLabel } from "../utils/coinPositioning.js";
+import { points, runs, peak, nearest, latest, everHeld, recorded, niceMax, count, tickLabel } from "../utils/coinPositioning.js";
 import { COIN_GROUPS, groupDefinitions } from "../utils/traderGroups.js";
 import useRosterCounts from "../hooks/useRosterCounts.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
@@ -39,8 +38,7 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
       + `L${x(run[run.length - 1].t).toFixed(1)},${mid}Z`;
   };
   const edge = (run, side) => run.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${(side === "long" ? yl : ys)(p[side]).toFixed(1)}`).join("");
-  const at = hover ?? t1;
-  const p = nearest(pts, at);
+  const p = hover == null ? latest(pts) : nearest(pts, hover);
   const fmt = measure === "usd" ? usd : count;
   const held = everHeld(pts);
   const first = pts.find(q => q.long != null)?.t;
@@ -49,13 +47,12 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
     const r = e.currentTarget.getBoundingClientRect();
     onHover(Math.min(t1, Math.max(t0, t0 + ((e.clientX - r.left - padL) / plotW) * (t1 - t0))));
   };
-  const lc = sideBarColor("long"), sc = sideBarColor("short");
   return <div className="cpos-panel" role="group" aria-label={group.name}>
     <div className="cpos-ph">
       <span className="cpos-name">{group.name}</span>
       <span className="cpos-sub">{group.sub}</span>
       <span className="cpos-val">{p ? <>
-        <b style={{ color: lc }}>{fmt(p.long)}</b> long<span className="cpos-dot">·</span><b style={{ color: sc }}>{fmt(p.short)}</b> short
+        <b className="cpos-l">{fmt(p.long)}</b> long<span className="cpos-dot">·</span><b className="cpos-s">{fmt(p.short)}</b> short
       </> : "—"}</span>
     </div>
     {!held ? <p className="cpos-empty" style={{ height: H }}>{!recorded(pts) ? "Not recorded yet."
@@ -67,10 +64,10 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
         {rebuilds.map(r => <line key={r.t} className="cpos-rebuild" x1={x(r.t)} x2={x(r.t)} y1={padT} y2={padT + plotH}>
           <title>{r.note === "rules" ? `List rules changed ${when(r.t)}` : `List rebuilt ${when(r.t)}: ${r.joined} joined${r.left != null ? `, ${r.left} left` : ""}`}</title></line>)}
         {runs(pts).map(run => <g key={run[0].t}>
-          <path d={area(run, "long")} fill={lc} className="cpos-area" />
-          <path d={area(run, "short")} fill={sc} className="cpos-area" />
-          {run.length > 1 && <path d={edge(run, "long")} stroke={lc} className="cpos-edge" />}
-          {run.length > 1 && <path d={edge(run, "short")} stroke={sc} className="cpos-edge" />}
+          <path d={area(run, "long")} className="cpos-area cpos-l" />
+          <path d={area(run, "short")} className="cpos-area cpos-s" />
+          {run.length > 1 && <path d={edge(run, "long")} className="cpos-edge cpos-l" />}
+          {run.length > 1 && <path d={edge(run, "short")} className="cpos-edge cpos-s" />}
         </g>)}
         <line className="cpos-zero" x1={padL} x2={width - padR} y1={mid} y2={mid} />
         <text className="cpos-tick" x={padL - 6} y={padT + 9} textAnchor="end">{tickLabel(top, measure)}</text>
@@ -79,8 +76,8 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
         {first != null && first - t0 > 2 * 86400 && <text className="cpos-since" x={padL + 6} y={mid - 6}>from {dayLabel(first)}</text>}
         {hover != null && <>
           <line className="cpos-cursor" x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + plotH} />
-          {p && <><circle className="cpos-mark" cx={x(p.t)} cy={yl(p.long)} r={3} fill={lc} />
-            <circle className="cpos-mark" cx={x(p.t)} cy={ys(p.short)} r={3} fill={sc} /></>}
+          {p && <><circle className="cpos-mark cpos-l" cx={x(p.t)} cy={yl(p.long)} r={3} />
+            <circle className="cpos-mark cpos-s" cx={x(p.t)} cy={ys(p.short)} r={3} /></>}
         </>}
       </svg>
     )}
