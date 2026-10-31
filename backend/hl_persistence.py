@@ -413,14 +413,16 @@ def last_trader_lean_bar() -> int:
     return int(_get_conn().execute("SELECT MAX(bar_close) FROM trader_lean").fetchone()[0] or 0)
 
 
-def load_trader_lean(prefix: str, since: float) -> List[tuple]:
-    """(bar_close, grp, long, short, long_usd, short_usd) rows for groups starting with prefix."""
-    return _get_conn().execute(
-        # "+grp": keep this on the (bar_close, grp) key; idx_tl_grp would walk every stored close.
-        "SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
-        "WHERE +grp >= ? AND +grp < ? AND bar_close >= ? ORDER BY bar_close",
-        (prefix, prefix + "\uffff", int(since)),
-    ).fetchall()
+def load_trader_lean(prefix: str, since: float, min_version: Optional[int] = None) -> List[tuple]:
+    """(bar_close, grp, long, short, long_usd, short_usd) rows for groups starting with prefix;
+    with min_version, only rows counted that way or later (comparisons with today's counts)."""
+    q = ("SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
+         # "+grp": keep this on the (bar_close, grp) key; idx_tl_grp would walk every stored close.
+         "WHERE +grp >= ? AND +grp < ? AND bar_close >= ?")
+    args = [prefix, prefix + "\uffff", int(since)]
+    if min_version is not None:
+        q, args = q + " AND roster_version >= ?", args + [int(min_version)]
+    return _get_conn().execute(q + " ORDER BY bar_close", args).fetchall()
 
 
 def save_roster_rebuild(ts: float, profitable: List[str]) -> Tuple[Optional[int], Optional[int]]:

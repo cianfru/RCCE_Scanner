@@ -41,7 +41,8 @@ DAY_S = 86_400
 SEED_PATH = Path(__file__).resolve().parent / "seeds" / "wallet_history_seed.json"
 CROWD_SEED_PATH = Path(__file__).resolve().parent / "seeds" / "crowd_share_seed.json"
 CROWD_COLUMNS = ["day", "long", "short", "long_share", "rebuilt"]
-CROWD_ROSTER = 2                # trader_lean rows written under roster version 2 (600 wallets, $10K floors)
+CROWD_ROSTER = 2                # trader_lean rows written under roster version 2 (600 wallets, $10K floors) or
+                                # later (3: the same roster counted by net exposure from 31 Oct 2026, a step there)
 BAR_S = 4 * 3600
 COLUMNS = ["day", "wallets", "positioned", "long", "short", "long_usd", "short_usd", "sampled"]
 COINS = ("BTC", "ETH", "SOL", "HYPE")
@@ -152,11 +153,11 @@ LeanFetch = Callable[[int, int], List[Tuple[int, str, int, int]]]
 
 
 def _fetch_lean(lo: int, hi: int) -> List[Tuple[int, str, int, int]]:
-    """(bar_close, grp, long, short) of HyperLens's per-coin rows with lo <= bar_close <= hi, roster version 2."""
+    """(bar_close, grp, long, short) of HyperLens's per-coin rows with lo <= bar_close <= hi, roster version 2 or later."""
     from hl_persistence import _get_conn
     return _get_conn().execute(
         "SELECT bar_close, grp, long, short FROM trader_lean WHERE grp >= ? AND grp < ? "
-        "AND bar_close BETWEEN ? AND ? AND roster_version = ? ORDER BY bar_close",
+        "AND bar_close BETWEEN ? AND ? AND roster_version >= ? ORDER BY bar_close",
         ("coin:", "coin:\uffff", lo, hi, CROWD_ROSTER)).fetchall()
 
 

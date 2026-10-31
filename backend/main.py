@@ -4427,6 +4427,13 @@ _COIN_POS_LIVE: list = [0.0, {}]          # [when, profitable_lean_by_coin()]: t
 COIN_POS_REBUILD_MIN = 5                  # list changes smaller than this get no marker
 
 
+def _lean_min_version() -> Optional[int]:
+    """Day-ago changes and Radar trails compare stored closes with today's counts: once counting is
+    by net exposure, only closes counted the same way (none for the first day: no change shown)."""
+    import hl_intelligence as hl
+    return hl.LEAN_VERSION if hl._hedges.ready() else None
+
+
 def _profitable_live() -> Optional[dict]:
     """Profitable traders per coin from the latest readings, or None when the readings are stale."""
     import degrade
@@ -4681,7 +4688,7 @@ def _positioning_body(cohort: str) -> dict:
         from hl_persistence import load_trader_lean
         lean: dict = {}
         try:
-            for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600):
+            for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600, _lean_min_version()):
                 lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
         except Exception as exc:
             logger.debug("positioning: no trader record: %s", exc)
@@ -4850,7 +4857,7 @@ def _setup_map_build(tf: str) -> dict:
     now = time.time()
     lean: dict = {}
     try:
-        for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 8 * 86400):
+        for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 8 * 86400, _lean_min_version()):
             lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
     except Exception as exc:
         logger.debug("setup map: no trader record: %s", exc)
@@ -4993,7 +5000,7 @@ def _radar_day_ago(smap: dict, now: float) -> dict:
     import setup_map
     from hl_persistence import load_trader_lean
     lean: dict = {}
-    for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600):
+    for bar, grp, lo, sh, _, _ in load_trader_lean("coin:", now - 30 * 3600, _lean_min_version()):
         lean.setdefault(grp[5:], {})[int(bar)] = (lo, sh)
     return setup_map.day_ago(lean, [c["coin"] for c in smap.get("coins") or []], now)
 

@@ -153,7 +153,7 @@ async def run(build_map: Callable[[], dict], load_before: Callable[[dict, float]
             import hl_intelligence
             now = time.time()
             if READ_FROM <= now - day_of(now) <= READ_UNTIL:
-                n = await asyncio.to_thread(take, conn(), now, build_map, load_before, candles, hl_intelligence.ROSTER_VERSION)
+                n = await asyncio.to_thread(take, conn(), now, build_map, load_before, candles, hl_intelligence.record_version())
                 if n:
                     logger.info("Radar log: %d readings for the close of %s", n, time.strftime("%Y-%m-%d", time.gmtime(day_of(now))))
         except Exception:

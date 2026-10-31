@@ -20,6 +20,7 @@ def clean(monkeypatch):
     monkeypatch.setattr(hh, "_held", {})
     monkeypatch.setattr(hh, "_read_at", {})
     monkeypatch.setattr(hh, "_loaded", True)
+    monkeypatch.setattr(hh, "_ready", True)
     monkeypatch.setattr(hh, "_save", lambda: None)
     yield
 
@@ -27,11 +28,13 @@ def clean(monkeypatch):
 def test_spot_tokens_map_to_perp_coins_and_staked_hype_counts():
     held = hh.parse({"balances": [{"coin": "UBTC", "total": "2.5"}, {"coin": "HYPE", "total": "100"},
                                   {"coin": "USDC", "total": "1e6"}, {"coin": "UBONK", "total": "5000000"},
-                                  {"coin": "UFART", "total": "10"}, {"coin": "UNI", "total": "4"}]},
+                                  {"coin": "UFART", "total": "10"}, {"coin": "UDZ", "total": "7"},
+                                  {"coin": "PUMP", "total": "9"}, {"coin": "MON", "total": "3"}]},
                     {"delegated": "900", "undelegated": "0", "totalPendingWithdrawal": "50"})
     assert held["BTC"] == 2.5 and held["HYPE"] == 1050 and "USDC" not in held
-    assert held["KBONK"] == 5000 and held["BONK"] == 5_000_000        # k market: per 1,000 tokens
-    assert held["FARTCOIN"] == 10 and held["UNI"] == 4               # UNI is its own token
+    assert held["KBONK"] == 5000 and "BONK" not in held               # k market: per 1,000 tokens
+    assert held["FARTCOIN"] == 10 and held["2Z"] == 7
+    assert "PUMP" not in held and "MON" not in held                   # HIP-1 tokens of the same name: other assets
 
 
 def test_covered_shorts_are_left_out_or_cut_and_longs_untouched(clean):
@@ -107,3 +110,56 @@ def test_holdings_survive_a_restart(tmp_path, monkeypatch):
         assert hh._held == {"0xa": {"HYPE": 12.5}} and set(hh._read_at) == {"0xa", "0xb"}
         assert hp.mark_counting_change(now, "hedges") is True and hp.mark_counting_change(now + 5, "hedges") is False
         assert [r[4] for r in hp.load_roster_rebuilds(0)] == ["hedges"]
+
+
+def test_nothing_is_netted_until_nearly_every_short_holder_was_read(clean, monkeypatch):
+    monkeypatch.setattr(hh, "_ready", False)
+    hh._held["0xa"] = {"HYPE": 100.0}
+    ps = [pos("HYPE", "SHORT", 100, 50.0)]
+    assert hh.counted("0xa", ps, hl._normalize_coin) is ps            # not yet: counted as it is
+
+    class Resp:
+        def __init__(self, status, body): self.status, self.body = status, body
+        async def json(self, content_type=None): return self.body
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    class Session:
+        def __init__(self, fail=()): self.fail = fail
+        def post(self, url, json):
+            if json["user"] in self.fail:
+                return Resp(429, None)
+            return Resp(200, {"balances": [{"coin": "HYPE", "total": "100"}]} if json["type"] == "spotClearinghouseState" else {"delegated": "0"})
+
+    async def acquire(kind):
+        return 0.0
+
+    limited = []
+    shorts = {f"0x{i}": {"HYPE"} for i in range(20)}
+    asyncio.run(hh.refresh(Session(fail={"0x3", "0x4"}), shorts, acquire, now=5000.0, on_limited=lambda: limited.append(1)))
+    assert limited and not hh.ready()                                 # 18 of 20 read: under 95%
+    assert hh.due(shorts, 5000.0)[:2] == ["0x3", "0x4"]               # never read: first in line
+    asyncio.run(hh.refresh(Session(), shorts, acquire, now=5100.0))
+    assert hh.ready()
+    assert hh.counted("0x5", [pos("HYPE", "SHORT", 100, 50.0)], hl._normalize_coin) == []
+
+
+def test_a_failed_staking_read_keeps_the_last_holdings(clean):
+    hh._held["0xa"] = {"HYPE": 900.0}
+    hh._read_at["0xa"] = 0.0
+
+    class Resp:
+        def __init__(self, status, body): self.status, self.body = status, body
+        async def json(self, content_type=None): return self.body
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+    class Session:
+        def post(self, url, json):
+            return Resp(200, {"balances": []}) if json["type"] == "spotClearinghouseState" else Resp(502, None)
+
+    async def acquire(kind):
+        return 0.0
+
+    assert asyncio.run(hh.refresh(Session(), {"0xa": {"HYPE"}}, acquire, now=10_000.0)) == 0
+    assert hh._held["0xa"] == {"HYPE": 900.0} and hh._read_at["0xa"] == 0.0

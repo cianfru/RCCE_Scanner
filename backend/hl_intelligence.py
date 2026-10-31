@@ -1521,7 +1521,7 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     if not rows:
         return False
     try:
-        _db_save_trader_lean(bar, rows, LEAN_VERSION)
+        _db_save_trader_lean(bar, rows, record_version())
         _last_lean_bar = bar
     except Exception as exc:
         logger.warning("HyperLens DB: trader lean save error: %s", exc)
@@ -1530,7 +1530,23 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     return True
 
 
-async def _refresh_hedges() -> int:
+_hedge_task: Optional[asyncio.Task] = None
+
+
+def record_version() -> int:
+    """The version stamped on records of tracked-wallet counts (trader_lean, the Radar's readings):
+    3 once counting is by net exposure (hl_hedges.ready()), else the roster rules' version (2)."""
+    return LEAN_VERSION if _hedges.ready() else ROSTER_VERSION
+
+
+async def _refresh_hedges() -> None:
+    """Start a hedge read in the background (the loop does not wait for it); one at a time."""
+    global _hedge_task
+    if _hedge_task is None or _hedge_task.done():
+        _hedge_task = asyncio.get_running_loop().create_task(_read_hedges())
+
+
+async def _read_hedges() -> int:
     """Spot and staked holdings of tracked wallets holding shorts, at most hourly each (hl_hedges),
     then the consensus again so counts and the signal check use them at once."""
     shorts: Dict[str, set] = {}
@@ -1541,14 +1557,17 @@ async def _refresh_hedges() -> int:
         for p in snaps[-1].positions:
             if p.side == "SHORT" and not p.dex and not p.coin.startswith("xyz:"):
                 shorts.setdefault(w.address, set()).add(_normalize_coin(p.coin))
+    was_ready = _hedges.ready()
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
-            n = await _hedges.refresh(session, shorts, lambda kind: _hl_calls.acquire("positions", kind))
+            n = await _hedges.refresh(session, shorts, lambda kind: _hl_calls.acquire("positions", kind),
+                                      on_limited=lambda: _hl_calls.rate_limited("positions"))
     except Exception as exc:
         logger.warning("HyperLens: hedge read failed: %s", exc)
         return 0
-    if n:
+    if n or _hedges.ready() != was_ready:
         _recompute_consensus()
+    if _hedges.ready() and not was_ready:
         try:
             from hl_persistence import mark_counting_change
             if mark_counting_change(time.time(), "hedges"):

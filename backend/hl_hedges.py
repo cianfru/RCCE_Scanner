@@ -26,30 +26,44 @@ logger = logging.getLogger(__name__)
 
 REFRESH_S = 3600
 MIN_UNCOVERED = 0.2          # under 20% of the short left uncovered: not counted
-BATCH = 60                   # wallets read per call of refresh() (one loop tick)
+BATCH = 100                  # wallets read per refresh (oldest reading first)
+READY_SHARE = 0.95           # netting starts once this share of the wallets holding shorts was read
 _INFO_URL = "https://api.hyperliquid.xyz/info"
 
 # coin -> held amount in perp size units, per wallet; when each wallet was read
 _held: Dict[str, Dict[str, float]] = {}
 _read_at: Dict[str, float] = {}
 _loaded = False
+_ready = False               # latched: counting by net exposure from the first (nearly) complete pass
+
+
+def ready() -> bool:
+    """Is counting by net exposure on? Until (nearly) every wallet holding a short has been read
+    once, positions count as they are, so the switch happens at one moment for everyone."""
+    return _ready
+
+
+# Spot tokens that are the same asset as a perp: Hyperliquid's own tokens, and Unit-bridged ones
+# (checked against spotMeta's full names, e.g. UBTC "Unit Bitcoin", UDZ "Unit DoubleZero"). Other
+# HIP-1 tokens can share a perp's name without being the same asset (PUMP, MON, TRUMP...): never matched.
+SPOT_TOKENS = {
+    "HYPE": "HYPE", "PURR": "PURR",
+    "UBTC": "BTC", "UETH": "ETH", "USOL": "SOL", "UFART": "FARTCOIN", "UPUMP": "PUMP", "UUUSPX": "SPX",
+    "UBONK": "BONK", "UENA": "ENA", "UXPL": "XPL", "UWLD": "WLD", "UDZ": "2Z", "UDOGE": "DOGE",
+    "UMON": "MON", "UZEC": "ZEC", "UVIRT": "VIRTUAL", "UAVAX": "AVAX",
+}
 
 
 def _token_coins(token: str, amount: float) -> Dict[str, float]:
-    """The perp coins (scanner keys) a spot token covers, in perp size units. HYPE is HYPE; Unit
-    tokens are "U" + the coin (UBTC, UETH, USOL, UFART is FARTCOIN); a Unit token whose coin trades
-    as a k market (UBONK) covers KBONK at 1/1000 (k markets are quoted per 1,000 tokens)."""
+    """The perp coin (scanner key) a spot token covers, in perp size units: k markets (kBONK) are
+    quoted per 1,000 tokens, so 1,000 UBONK cover 1 KBONK."""
     from ticker_renames import K_BASES
-    out: Dict[str, float] = {}
-    name = token.upper()
-    bases = {name}                                   # a coin's own token (HYPE, PURR, UNI)
-    if name.startswith("U") and len(name) > 2:
-        bases.add("FARTCOIN" if name == "UFART" else name[1:])   # Unit-bridged: UBTC, UETH, USOL
-    for base in bases:
-        out[base] = out.get(base, 0.0) + amount
-        if base in K_BASES:
-            out["K" + base] = out.get("K" + base, 0.0) + amount / 1000.0
-    return out
+    base = SPOT_TOKENS.get(token.upper())
+    if base is None:
+        return {}
+    if base in K_BASES:
+        return {"K" + base: amount / 1000.0}
+    return {base: amount}
 
 
 def parse(spot: Optional[dict], delegator: Optional[dict] = None) -> Dict[str, float]:
@@ -79,6 +93,8 @@ def counted(address: str, positions: List, normalize) -> List:
     """The positions as counted: hedged shorts left out or cut to their uncovered part."""
     if not _loaded:
         _load()
+    if not _ready:
+        return positions
     held = _held.get(address)
     if not held:
         return positions
@@ -101,12 +117,17 @@ def counted(address: str, positions: List, normalize) -> List:
 
 def due(wallets_with_shorts: Iterable[str], now: Optional[float] = None) -> List[str]:
     now = time.time() if now is None else now
-    return [a for a in wallets_with_shorts if a not in _read_at or now - _read_at[a] >= REFRESH_S]
+    due_ = [a for a in wallets_with_shorts if a not in _read_at or now - _read_at[a] >= REFRESH_S]
+    return sorted(due_, key=lambda a: _read_at.get(a, 0.0))          # never read first, then the oldest
 
 
-async def refresh(session, shorts: Dict[str, set], acquire, now: Optional[float] = None) -> int:
+async def refresh(session, shorts: Dict[str, set], acquire, now: Optional[float] = None,
+                  on_limited=None) -> int:
     """Read the spot (and, if short HYPE, staked) holdings of up to BATCH wallets that are due.
-    ``shorts``: address -> the coins it is short. ``acquire(kind)``: the shared weight budget."""
+    ``shorts``: address -> the coins it is short. ``acquire(kind)``: the shared weight budget;
+    ``on_limited()``: told of a 429. A wallet whose read fails keeps its last holdings and is
+    tried again next time."""
+    global _ready
     _load()
     now = time.time() if now is None else now
     todo = due(shorts, now)[:BATCH]
@@ -115,6 +136,8 @@ async def refresh(session, shorts: Dict[str, set], acquire, now: Optional[float]
         try:
             await acquire("spotClearinghouseState")
             async with session.post(_INFO_URL, json={"type": "spotClearinghouseState", "user": a}) as resp:
+                if resp.status == 429 and on_limited:
+                    on_limited()
                 if resp.status != 200:
                     continue
                 spot = await resp.json(content_type=None)
@@ -122,8 +145,11 @@ async def refresh(session, shorts: Dict[str, set], acquire, now: Optional[float]
             if "HYPE" in shorts[a]:
                 await acquire("delegatorSummary")
                 async with session.post(_INFO_URL, json={"type": "delegatorSummary", "user": a}) as resp:
-                    if resp.status == 200:
-                        delegator = await resp.json(content_type=None)
+                    if resp.status == 429 and on_limited:
+                        on_limited()
+                    if resp.status != 200:
+                        continue                     # staked HYPE unknown: keep the last reading
+                    delegator = await resp.json(content_type=None)
             held = parse(spot, delegator)
             if held:
                 _held[a] = held
@@ -139,13 +165,15 @@ async def refresh(session, shorts: Dict[str, set], acquire, now: Optional[float]
     for a in [a for a in _read_at if a not in shorts]:
         _read_at.pop(a, None)
         _held.pop(a, None)
+    if not _ready and shorts and sum(1 for a in shorts if a in _read_at) >= READY_SHARE * len(shorts):
+        _ready = True
     if done:
         _save()
     return done
 
 
 def stats() -> dict:
-    return {"wallets_read": len(_read_at), "wallets_holding": len(_held)}
+    return {"ready": _ready, "wallets_read": len(_read_at), "wallets_holding": len(_held)}
 
 
 # --- persistence (hyperlens.db) -------------------------------------------------------
