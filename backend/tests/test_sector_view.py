@@ -30,7 +30,8 @@ class ProfitableTraderTests(unittest.TestCase):
             async def __aenter__(self): return self
             async def __aexit__(self, *a): return False
 
-        with mock.patch.object(hl.aiohttp, "ClientSession", Session):
+        with mock.patch.object(hl.aiohttp, "ClientSession", Session), \
+                mock.patch.object(hl, "_db_save_roster_rebuild", lambda *a: (None, None)):
             asyncio.run(hl.refresh_leaderboard())
         self.assertEqual([w.address for w in hl._roster_money_printers], ["0xproven"])
 

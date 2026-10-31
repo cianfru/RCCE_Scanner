@@ -9,8 +9,8 @@ const n = v => (v == null ? null : Number(v).toLocaleString("en-US"));
 export function groupDefinitions(counts = {}) {
   const mp = n(counts.money_printer_count), sm = n(counts.smart_money_count), elite = n(counts.elite_count);
   return {
-    profitable: `Profitable traders: Hyperliquid wallets up 30%+ and $10K+ over the last month and already in profit before it; the best 600 by monthly return${mp ? ` (${mp} qualify now)` : ""}. Rebuilt daily.`,
-    large: `Large accounts: the 60 largest Hyperliquid accounts ($1M and up), profit not checked.${elite ? ` ${elite} of them are also profitable traders.` : " Most of them are also profitable traders."}`,
+    profitable: `Profitable traders: Hyperliquid wallets up 30%+ and $10K+ over the last month and already in profit before it; up to 600, best monthly return first${mp ? ` (${mp} on the list now)` : ""}. Rebuilt daily.`,
+    large: `Large accounts: ${sm ? `${sm} ` : "about 60 "}Hyperliquid accounts of $1M and up: the profitable traders among the 300 largest accounts${elite ? ` (${elite} now)` : ""}, then the largest of the rest, whose profit is not checked.`,
     tracked: `All tracked wallets: both lists together${mp && sm ? `, ${n(Number(counts.money_printer_count) + Number(counts.smart_money_count) - Number(counts.elite_count || 0))} wallets` : ""}.`,
     winners: "All-time winners: up $100K+ over their whole Hyperliquid history.",
     losers: "All-time losers: a net loss over it.",

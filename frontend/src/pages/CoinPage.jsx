@@ -390,7 +390,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
       </section>
 
       {/* Long and short over time on this coin, per group of wallets. */}
-      <CoinPositioning symbol={data.symbol} />
+      <CoinPositioning symbol={data.symbol} spot={marketKind === "spot"} />
 
       {/* One click deeper: the full checklist, and every market reading. */}
       <details className="coin-more">

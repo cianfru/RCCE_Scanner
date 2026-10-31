@@ -61,10 +61,10 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
     {!held ? <p className="cpos-empty" style={{ height: H }}>{recorded(pts) ? "None held it in this period." : "Not recorded yet."}</p> : (
       <svg viewBox={`0 0 ${width} ${H}`} width={width} height={H} role="img"
         aria-label={`${group.name}: ${measure === "usd" ? "value" : "wallets"} long above the line, short below, over time`}
-        onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => onHover(null)}>
+        onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={e => { if (e.pointerType === "mouse") onHover(null); }}>
         {ticks.map(t => <line key={t.ts} className="cpos-vgrid" x1={x(t.ts)} x2={x(t.ts)} y1={padT} y2={padT + plotH} />)}
         {rebuilds.map(r => <line key={r.t} className="cpos-rebuild" x1={x(r.t)} x2={x(r.t)} y1={padT} y2={padT + plotH}>
-          <title>{`List rebuilt ${when(r.t)}: ${r.joined} joined${r.left != null ? `, ${r.left} left` : ""}`}</title></line>)}
+          <title>{r.note === "rules" ? `List rules changed ${when(r.t)}` : `List rebuilt ${when(r.t)}: ${r.joined} joined${r.left != null ? `, ${r.left} left` : ""}`}</title></line>)}
         {runs(pts).map(run => <g key={run[0].t}>
           <path d={area(run, "long")} fill={lc} className="cpos-area" />
           <path d={area(run, "short")} fill={sc} className="cpos-area" />
@@ -87,7 +87,7 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
 }
 
 // A coin's long and short over time for four groups of wallets (definitions behind the (i)).
-export default function CoinPositioning({ symbol }) {
+export default function CoinPositioning({ symbol, spot = false }) {
   const coin = getBaseSymbol(symbol || "");
   const [measure, setMeasure] = useState("n");
   const [days, setDays] = useState("30");
@@ -98,6 +98,8 @@ export default function CoinPositioning({ symbol }) {
   const box = useRef(null);
   const counts = useRosterCounts();
   const defs = groupDefinitions(counts);
+  // Builder-dex markets (xyz:) are in neither record: no card rather than empty panels.
+  const hidden = coin.toLowerCase().startsWith("xyz:") || data?.covered === false;
 
   useLayoutEffect(() => {
     if (!box.current) return undefined;
@@ -106,11 +108,11 @@ export default function CoinPositioning({ symbol }) {
     const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
     ro.observe(box.current);
     return () => ro.disconnect();
-  }, []);
+  }, [hidden]);
 
   useEffect(() => { setData(null); setHover(null); }, [coin]);
   useEffect(() => {
-    if (!coin) return undefined;
+    if (!coin || coin.toLowerCase().startsWith("xyz:")) return undefined;
     let alive = true;
     setFailed(false);
     const load = () => apiJson(`/api/coin-positioning?coin=${encodeURIComponent(coin)}&days=${days}`)
@@ -127,15 +129,16 @@ export default function CoinPositioning({ symbol }) {
   const cols = W >= 760 ? 2 : 1;
   const panelW = cols === 2 ? Math.floor((W - 28) / 2) : W;
   const latestLive = series.some(s => data?.groups?.[s.group.key]?.live);
+  if (hidden) return null;
 
   return <section className="analysis-card cpos">
     <div className="cpos-head">
-      <h3>Long and short on {coin} <HelpTip title="Who is counted" width={420}>
+      <h3>Long and short on {coin}{spot ? " (Hyperliquid perps)" : ""} <HelpTip title="Who is counted" width={420}>
         <p>{defs.profitable}</p>
         <p>{defs.winners} {defs.losers} {defs.whales}</p>
         <p>{defs.windows}</p>
         <p>Above the line long {coin}, below it short; each wallet counts once. Readings every 4 hours{latestLive ? ", plus the latest" : ""}.</p>
-        <p>Dotted lines: the profitable-trader list was rebuilt. A step there is the list changing, not trading.</p>
+        <p>Dotted lines: the profitable-trader list was rebuilt or its rules changed. A step there is the list changing, not trading.</p>
       </HelpTip></h3>
       <div className="cpos-ctl">
         <Tabs small label="Measure" items={MEASURES} value={measure} onChange={setMeasure} />

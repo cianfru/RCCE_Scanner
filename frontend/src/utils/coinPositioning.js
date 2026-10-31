@@ -8,13 +8,16 @@ export function points(group, measure) {
   return group.t.map((t, i) => ({ t, long: group[lk]?.[i] ?? null, short: group[sk]?.[i] ?? null }));
 }
 
-// Runs of consecutive recorded points: an area is drawn per run, so gaps stay gaps.
-export function runs(pts) {
+// Runs of consecutive recorded points: an area is drawn per run, so gaps stay gaps. Readings are
+// 4 hours apart; a longer silence (maxGap, one and a half readings) is a gap too, not a straight line.
+export const MAX_GAP_S = 6 * 3600;
+export function runs(pts, maxGap = MAX_GAP_S) {
   const out = [];
   let cur = [];
   for (const p of pts) {
-    if (p.long == null || p.short == null) { if (cur.length) out.push(cur); cur = []; }
-    else cur.push(p);
+    if (p.long == null || p.short == null) { if (cur.length) out.push(cur); cur = []; continue; }
+    if (cur.length && p.t - cur[cur.length - 1].t > maxGap) { out.push(cur); cur = []; }
+    cur.push(p);
   }
   if (cur.length) out.push(cur);
   return out;

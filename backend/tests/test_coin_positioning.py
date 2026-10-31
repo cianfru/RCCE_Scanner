@@ -90,7 +90,7 @@ def test_roster_rebuilds_count_who_joined_and_left(hl_db):
     t = int(time.time()) - 7200
     assert hp.save_roster_rebuild(t, ["a", "b", "c"]) == (None, None)
     assert hp.save_roster_rebuild(t + 3600, ["b", "c", "d", "e"]) == (2, 1)
-    assert hp.load_roster_rebuilds(0) == [(t, 3, None, None), (t + 3600, 4, 2, 1)]
+    assert hp.load_roster_rebuilds(0) == [(t, 3, None, None, None), (t + 3600, 4, 2, 1, None)]
 
 
 def test_past_rebuilds_are_estimated_from_first_snapshots(hl_db):
@@ -98,12 +98,25 @@ def test_past_rebuilds_are_estimated_from_first_snapshots(hl_db):
     conn = hp._get_conn()
     h0 = int(time.time() // 3600) * 3600 - 50 * 3600
     rows = [(f"old{i}", h0 + t * 3600) for i in range(10) for t in range(30)]      # tracked all along
+    rows += [(f"flat{i}", h0 + 2 * 3600 + 60 + t * 7200) for i in range(8) for t in range(14)]  # flat: read
+    #   every 2 h, so their oldest snapshot after the 30-day cut is hours after the oldest of all: no marker
     rows += [(f"new{i}", h0 + 20 * 3600 + 120) for i in range(6)]                   # six joined at hour 20
     rows += [("lone", h0 + 25 * 3600)]                                              # one: no marker
     conn.executemany("INSERT INTO snapshots (address, timestamp, account_value, positions_json) "
                      "VALUES (?, ?, 0, '[]')", rows)
     hp.save_roster_rebuild(h0 + 40 * 3600, ["x"])
-    assert hp.load_roster_rebuilds(0)[:-1] == [(h0 + 20 * 3600, None, 6, None)]
+    assert hp.load_roster_rebuilds(0)[:-1] == [(h0 + 20 * 3600, None, 6, None, None)]
+
+
+def test_the_switch_to_new_roster_rules_is_marked_once(hl_db):
+    hp = hl_db
+    b = int(time.time() // 14400) * 14400 - 10 * 14400
+    row = {"coin:BTC": {"long": 1, "short": 0, "long_usd": 1.0, "short_usd": 0.0}}
+    hp.save_trader_lean(b, row)                       # rules version 1: roster_version NULL
+    hp.save_trader_lean(b + 14400, row, 2)
+    hp.save_trader_lean(b + 28800, row, 2)
+    hp.save_roster_rebuild(b + 40000, ["a"])
+    assert hp.load_roster_rebuilds(0)[0] == (b + 14400, None, None, None, "rules")
 
 
 def test_coin_lean_zero_fills_closes_where_nobody_held_the_coin(hl_db):
@@ -145,4 +158,19 @@ def test_endpoint_merges_both_records_and_appends_live_points(tmp_path, hl_db):
     assert p["live"] is True
     w = body["groups"]["winners"]
     assert w["ln"] == [1] and w["lu"] == [300] and w["live"] is False   # the stored time is the latest
-    assert body["rebuilds"] == [{"t": bar - 3600, "joined": 6, "left": 1}]
+    assert body["rebuilds"] == [{"t": bar - 3600, "joined": 6, "left": 1, "note": None}]
+    assert body["covered"] is True
+
+
+def test_endpoint_cache_is_bounded_and_builder_dex_coins_are_not_covered(monkeypatch):
+    from fastapi.testclient import TestClient
+    import main
+    main._COIN_POS_CACHE.clear()
+    monkeypatch.setattr(main, "_coin_positioning_body",
+                        lambda c, d, now: {"coin": c, "days": d, "groups": {}, "rebuilds": [], "held": {}})
+    c = TestClient(main.app)
+    for i in range(main._COIN_POS_CACHE_MAX + 10):
+        assert c.get(f"/api/coin-positioning?coin=C{i}&days=7").json()["coin"] == f"C{i}"
+    assert len(main._COIN_POS_CACHE) == main._COIN_POS_CACHE_MAX
+    assert c.get("/api/coin-positioning?coin=xyz:GOLD").json()["covered"] is False
+    assert c.get("/api/coin-positioning?coin=BTC&days=180").status_code == 422

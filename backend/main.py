@@ -4389,7 +4389,8 @@ async def cohorts_status():
             "latest_ts": st.latest_ts(), **st.coverage(), "runs": st.runs(10)}
 
 
-_COIN_POS_CACHE: dict = {}
+_COIN_POS_CACHE: dict = {}                # (coin, days) -> (when, encoded body): a minute, at most 32
+_COIN_POS_CACHE_MAX = 32
 _COIN_POS_LIVE: list = [0.0, {}]          # [when, profitable_lean_by_coin()]: the live point, a minute
 COIN_POS_REBUILD_MIN = 5                  # list changes smaller than this get no marker
 
@@ -4457,32 +4458,40 @@ def _coin_positioning_body(coin: str, days: int, now: float) -> dict:
             c = lv[1].get("", {}).get(g)
             if c:
                 held[g] = int(c[0] + c[1])
-    rebuilds = [{"t": int(t), "joined": j, "left": lft} for t, _, j, lft in load_roster_rebuilds(since)
-                if j is not None and j + (lft or 0) >= COIN_POS_REBUILD_MIN]
+    rebuilds = [{"t": int(t), "joined": j, "left": lft, "note": note} for t, _, j, lft, note in load_roster_rebuilds(since)
+                if note or (j is not None and j + (lft or 0) >= COIN_POS_REBUILD_MIN)]
     return {"coin": coin, "days": days, "groups": groups, "rebuilds": rebuilds, "held": held}
 
 
 @app.get("/api/coin-positioning")
-async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), days: int = Query(30, ge=1, le=180)):
+async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), days: int = Query(30, ge=1, le=90)):
     """One coin's long and short over time for four groups of wallets: profitable traders
     (trader_lean, the 4h record) and three wallet-cohort groups (cohorts coin_positioning:
     winners $100K+ all-time PnL, losers below 0, whales $1M+ perp equity), each with its latest
     reading appended (``live``). Per group: t (unix s), wallets long and short (ln, sn) and USD
     long and short (lu, su), null where nothing was recorded for the coin. ``rebuilds``: when the
-    profitable-trader list changed, since its counts step there without any trading."""
+    profitable-trader list changed, since its counts step there without any trading.
+    Builder-dex coins (xyz:) are in neither record: ``covered`` is false."""
+    import json
+    from fastapi.responses import Response
     from hl_intelligence import _normalize_coin
     c = _normalize_coin(coin.strip())
     now = time.time()
     key = (c, days)
     hit = _COIN_POS_CACHE.get(key)
     if hit and now - hit[0] < 60:
-        return hit[1]
-    body = _coin_positioning_body(c, days, now)
-    if len(_COIN_POS_CACHE) >= 256:
-        for k in [k for k, v in _COIN_POS_CACHE.items() if now - v[0] >= 60]:
-            del _COIN_POS_CACHE[k]
-    _COIN_POS_CACHE[key] = (now, body)
-    return body
+        return Response(content=hit[1], media_type="application/json")
+    if c.startswith("xyz:"):
+        body = {"coin": c, "days": days, "covered": False, "groups": {}, "rebuilds": [], "held": {}}
+    else:
+        body = {**_coin_positioning_body(c, days, now), "covered": True}
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    for k in [k for k, v in _COIN_POS_CACHE.items() if now - v[0] >= 60]:
+        del _COIN_POS_CACHE[k]
+    while len(_COIN_POS_CACHE) >= _COIN_POS_CACHE_MAX:
+        del _COIN_POS_CACHE[min(_COIN_POS_CACHE, key=lambda k: _COIN_POS_CACHE[k][0])]
+    _COIN_POS_CACHE[key] = (now, raw)
+    return Response(content=raw, media_type="application/json")
 
 
 @app.get("/api/hyperlens/positions/{symbol}")

@@ -14,6 +14,9 @@ test("points pick the measure and keep gaps", () => {
 test("runs split at gaps; peak, nearest and everHeld read recorded points", () => {
   const p = points(g, "n");
   assert.deepEqual(runs(p).map(r => r.map(x => x.t)), [[10], [30, 40]]);
+  // A missing stretch longer than one and a half 4h readings (downtime) also splits a run.
+  const h = 3600, q = [0, 4, 8, 20, 24].map(k => ({ t: k * h, long: 1, short: 1 }));
+  assert.deepEqual(runs(q).map(r => r.length), [3, 2]);
   assert.equal(peak(p), 3);
   assert.equal(nearest(p, 22, 15).t, 30);
   assert.equal(nearest(p, 200, 15), null);
@@ -30,10 +33,11 @@ test("scale and number formats", () => {
 
 test("definitions: live counts, the overlap, and no forecast words", () => {
   const d = groupDefinitions({ money_printer_count: 429, smart_money_count: 60, elite_count: 49 });
-  assert.match(d.profitable, /429 qualify now/);
-  assert.match(d.large, /49 of them are also profitable traders/);
+  assert.match(d.profitable, /429 on the list now/);
+  assert.match(d.large, /^Large accounts: 60 Hyperliquid accounts .*among the 300 largest accounts \(49 now\)/);
   assert.match(d.tracked, /440 wallets/);
-  assert.doesNotMatch(groupDefinitions().profitable, /qualify now/);
+  assert.doesNotMatch(groupDefinitions().profitable, /on the list now/);
+  assert.match(groupDefinitions().large, /^Large accounts: about 60 /);
   const words = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*|proven|money printer|smart money|larsson)\b/i;
   for (const s of [...Object.values(d), ...COIN_GROUPS.flatMap(x => [x.name, x.sub])]) assert.doesNotMatch(s, words, s);
 });

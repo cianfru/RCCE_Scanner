@@ -305,11 +305,15 @@ class Store:
         times = [r[0] for r in self.db.execute(
             "SELECT DISTINCT ts FROM cohort_snapshots WHERE symbol != '' ORDER BY ts")]
         n = 0
-        for ts in times:
-            rows = [{"dimension": d, "cohort": c, "symbol": sym or None, **json.loads(data)}
-                    for d, c, sym, data in self.db.execute(
-                        "SELECT dimension, cohort, symbol, data FROM cohort_snapshots WHERE ts = ?", (ts,))]
-            n += self.write_coin_groups(ts, coin_groups_from_rows(rows), full=False, commit=False)
+        try:
+            for ts in times:
+                rows = [{"dimension": d, "cohort": c, "symbol": sym or None, **json.loads(data)}
+                        for d, c, sym, data in self.db.execute(
+                            "SELECT dimension, cohort, symbol, data FROM cohort_snapshots WHERE ts = ?", (ts,))]
+                n += self.write_coin_groups(ts, coin_groups_from_rows(rows), full=False, commit=False)
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.commit()
         return n
 
