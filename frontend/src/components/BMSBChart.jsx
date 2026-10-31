@@ -58,7 +58,6 @@ const RIBBON_LINES = [
 ];
 
 // Trader sides (long sky, short pink, exits grey) come from sideColor(), shared with the tables.
-const OPEN_LARGE_COLOR = { long: "#fcd34d", short: "#fb923c" };
 
 const PATTERN_COLOR = { 1: "#34d399", "-1": "#f87171", 0: "#c4b5fd" };
 
@@ -75,6 +74,7 @@ function withAlpha(color, a) {
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+const ENTRIES_KEY = "rcce-chart-entries";
 const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
 
 const TIMEFRAMES = [
@@ -129,7 +129,17 @@ export default function BMSBChart({
   const [trend, setTrend] = useState(null);
   const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
-  const [showEntries, setShowEntries] = useState(!compact);
+  // Trader fills on the price: off by default (busy on large coins), the viewer's choice remembered.
+  const [showEntries, setShowEntriesState] = useState(() => {
+    if (compact) return false;
+    try { return localStorage.getItem(ENTRIES_KEY) === "1"; } catch (_) { return false; }
+  });
+  const setShowEntries = useCallback(next => setShowEntriesState(prev => {
+    const v = typeof next === "function" ? next(prev) : next;
+    try { localStorage.setItem(ENTRIES_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
+    return v;
+  }), []);
+  const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
   const [hoverMark, setHoverMark] = useState(null);
   const fillPrimRef = useRef(null);
   const focusRef = useRef(focusRange);
@@ -268,6 +278,8 @@ export default function BMSBChart({
       const long = chart.addSeries(HistogramSeries, { ...opts, color: accent }, 1);
       const short = chart.addSeries(HistogramSeries, { ...opts, color: withAlpha(accent, 0.42) }, 1);
       try { chart.panes()[1]?.setHeight(posH); } catch (_) { /* older layouts: the pane keeps its share */ }
+      // Room above the tallest bar for the pane's label.
+      try { chart.priceScale("right", 1).applyOptions({ scaleMargins: { top: 0.24, bottom: 0.04 } }); } catch (_) {}
       posSeriesRef.current = { long, short, markers: createSeriesMarkers(long, []) };
     }
 
@@ -400,6 +412,7 @@ export default function BMSBChart({
             const candle = param.seriesData?.get(candleSeries);
             readCandle(candle?.open != null ? candle : null);
             if (compact) setHoverMark(param.point ? fillPrimRef.current?.hitTest(param.point.x, param.point.y) || null : null);
+            if (showPos) setPosTip(param.paneIndex === 1 && param.point && param.time != null ? { x: param.point.x, time: param.time } : null);
           });
           trendSeries.setData(data.trend?.line || []);
           setTrend(data.trend ? { kind: data.trend.kind, bars: data.trend.bars } : null);
@@ -653,15 +666,15 @@ export default function BMSBChart({
   // Profitable traders holding this coin: the page passes them in (it shows them in its own
   // card); elsewhere the chart loads them itself.
   const ownTraders = useCoinTraders(symbol, showEntries && !traders);
-  const entries = showEntries ? (traders ? traders.entries : ownTraders.entries) : null;
-  const opens = showEntries ? (traders ? traders.opens : ownTraders.opens) : null;
+  const entries = traders ? traders.entries : (showEntries ? ownTraders.entries : null);
+  const opens = showEntries && !traders ? ownTraders.opens : null;
 
   useEffect(() => {
     const series = candleSeriesRef.current;
     entryLinesRef.current.forEach(pl => { try { series?.removePriceLine(pl); } catch (_) {} });
     entryLinesRef.current = [];
     try { entryMarkersRef.current?.setMarkers([]); } catch (_) {}
-    if (!showEntries || !series || !candleTimes?.length || !(entries?.traders?.length || opens?.opens?.length)) return;
+    if (!series || !candleTimes?.length || !entries?.traders?.length) return;
     // The candle a fill belongs to: the last candle opening at or before it.
     const barOf = t => {
       if (t < candleTimes[0]) return null;
@@ -670,21 +683,12 @@ export default function BMSBChart({
       return candleTimes[lo];
     };
     const markers = [];
-    // Opens seen by the wallet sweep: circles for profitable traders, squares for large
-    // accounts, bigger for bigger positions. Placed at the entry price.
-    for (const o of opens?.opens || []) {
-      const time = barOf(o.t);
-      if (time == null) continue;
-      markers.push({
-        time, price: o.px, position: "atPriceMiddle", shape: o.cohort === "profitable" ? "circle" : "square",
-        size: o.usd >= 500_000 ? 2 : o.usd >= 50_000 ? 1.4 : 0.9,
-        color: o.cohort === "profitable" ? sideColor(o.side) : col(OPEN_LARGE_COLOR[o.side]),
-      });
-    }
-    // Each trader's arrows in their avatar colour, tagged with their codename's initials.
+    // With Trader entries on: each of the largest holders' fill bursts as an arrow in their
+    // avatar colour, tagged with their codename's initials. (New positions of every tracked
+    // wallet are no longer drawn on the price: the long/short pane shows them per candle.)
     const tags = markerTags((entries?.traders || []).map(tr => tr.address));
     const light = mode === "light";
-    for (const tr of entries?.traders || []) {
+    for (const tr of showEntries ? entries?.traders || [] : []) {
       const tag = tags.get(String(tr.address).toLowerCase()) || tr.label;
       const color = walletColor(tr.address, light);
       for (const b of tr.bursts || []) {
@@ -711,7 +715,7 @@ export default function BMSBChart({
         }));
       } catch (_) { /* the series was disposed by a rebuild */ }
     }
-  }, [showEntries, entries, opens, candleTimes, mode]);
+  }, [showEntries, entries, candleTimes, mode]);
 
   // Your entry: a thicker, longer-dashed line in the side colour, so it reads apart from the
   // traders' median-entry lines. Redrawn when the chart is rebuilt (candleTimes) or the theme changes.
@@ -741,6 +745,7 @@ export default function BMSBChart({
   // Zoom from a little before the earliest burst on the chart to the latest candle.
   const firstBurst = Math.min(...(entries?.traders || []).flatMap(tr => (tr.bursts || []).map(b => b.t)));
   const showEntriesRange = Number.isFinite(firstBurst) && candleTimes?.length ? () => {
+    setShowEntries(true);                       // asked for from the Traders card: draw the fills
     let i = candleTimes.findIndex(t => t > firstBurst) - 1;
     if (i < 0) i = firstBurst >= candleTimes[0] ? candleTimes.length - 1 : 0;
     const last = candleTimes.length - 1;
@@ -993,7 +998,8 @@ export default function BMSBChart({
             </button>
           ))}
           <HelpTip title="Chart layers" width={420}>
-            <p>Trader entries: profitable traders (see Traders) who hold this coin now, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. The dashed line is the median entry per side. Information, not a signal.</p>
+            <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
+            <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
             <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>
             <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
@@ -1056,6 +1062,10 @@ export default function BMSBChart({
       {/* ── Chart container; the candle readout floats over it only while the pointer is on a candle ── */}
       <div style={{ position: "relative" }}>
         <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height: height + posH }} />
+        {showPos && !loading && !error && <PaneLabel top={height} group={posGroup} measure={posMeasure} />}
+        {showPos && posTip && <PaneTip tip={posTip} top={height} group={posGroup} measure={posMeasure}
+          bar={posBars.find(b => b.time === posTip.time)} rebuild={posRebuilds.find(r => r.time === posTip.time)}
+          tf={activeTimeframe} width={containerRef.current?.clientWidth || 0} />}
         {hoverMark && <div className="candle-inspector fill-inspector" aria-label="Fill details">
           <strong style={{ color: sideColor(hoverMark.side) }}>{KIND_WORD[hoverMark.kind]} {hoverMark.side}</strong>
           <span>{fmtUsdShort(hoverMark.usd)} at <b>{fmtPrice(hoverMark.px)}</b></span>
@@ -1149,5 +1159,30 @@ function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, re
         <p>Dots on Profitable traders: the list was rebuilt with {REBUILD_DOT_MIN} or more wallets joining or leaving, or its rules changed. A step there is the list changing, not trading.</p>
       </HelpTip>
     </span>
+  </div>;
+}
+
+// The pane's own label, top left: which group, and which way is long.
+function PaneLabel({ top, group, measure }) {
+  const g = COIN_GROUPS.find(x => x.key === group);
+  return <div className="chart-pane-label" style={{ top: top + 6 }}>
+    {g?.name}<span className="chart-pane-label-more"> · {measure === "usd" ? "dollars" : "wallets"} long above the line, short below</span>
+  </div>;
+}
+
+// Hovering the pane: the candle's numbers, and what a dot there means.
+function PaneTip({ tip, top, group, measure, bar, rebuild, tf, width }) {
+  const g = COIN_GROUPS.find(x => x.key === group);
+  const fmt = measure === "usd" ? fmtUsdShort : count;
+  const d = new Date(tip.time * 1000);
+  const when = `${d.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" })}${tf === "1d" ? "" : ` ${String(d.getUTCHours()).padStart(2, "0")}:00`} UTC`;
+  const left = tip.x > width - 300 ? Math.max(8, tip.x - 292) : tip.x + 14;
+  return <div className="chart-pane-tip" style={{ left, top: top + 26 }} role="status">
+    <span className="chart-pane-tip-head">{g?.name} · {when}</span>
+    {bar ? <span><b className="chart-pos-l">{fmt(bar.long)}</b> long<span className="chart-pos-sep">·</span><b className="chart-pos-s">{fmt(bar.short)}</b> short</span>
+      : <span className="chart-pos-dim">No reading for this candle</span>}
+    {rebuild && <span className="chart-pane-tip-note">{rebuild.rules
+      ? "Dot: the list's rules changed here. A step at the dot is the list changing, not trading."
+      : `Dot: the list was rebuilt here: ${rebuild.joined} wallets joined${rebuild.left ? `, ${rebuild.left} left` : ""}. A step at the dot is the list changing, not trading.`}</span>}
   </div>;
 }
