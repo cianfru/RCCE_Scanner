@@ -140,6 +140,7 @@ export default function BMSBChart({
     return v;
   }), []);
   const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
+  const [posTop, setPosTop] = useState(null);   // where the long/short pane starts, px from the chart's top
   const [hoverMark, setHoverMark] = useState(null);
   const fillPrimRef = useRef(null);
   const focusRef = useRef(focusRange);
@@ -390,6 +391,8 @@ export default function BMSBChart({
 
           candleSeries.setData(data.candles);
           setCandleTimes(data.candles.map(c => c.time));
+          // The pane sits under the price pane; the date axis is below both.
+          if (showPos) requestAnimationFrame(() => { if (!cancelled) { try { setPosTop(chart.paneSize(0).height + 1); } catch (_) {} } });
           candleSeriesRef.current = candleSeries;
           if (compact) {
             const prim = new FillMarks(fillColors());
@@ -1062,8 +1065,8 @@ export default function BMSBChart({
       {/* ── Chart container; the candle readout floats over it only while the pointer is on a candle ── */}
       <div style={{ position: "relative" }}>
         <div className="price-chart-canvas" ref={containerRef} style={{ width: "100%", height: height + posH }} />
-        {showPos && !loading && !error && <PaneLabel top={height} group={posGroup} measure={posMeasure} />}
-        {showPos && posTip && <PaneTip tip={posTip} top={height} group={posGroup} measure={posMeasure}
+        {showPos && !loading && !error && posTop != null && <PaneLabel top={posTop} group={posGroup} measure={posMeasure} />}
+        {showPos && posTip && posTop != null && <PaneTip tip={posTip} top={posTop} group={posGroup} measure={posMeasure}
           bar={posBars.find(b => b.time === posTip.time)} rebuild={posRebuilds.find(r => r.time === posTip.time)}
           tf={activeTimeframe} width={containerRef.current?.clientWidth || 0} />}
         {hoverMark && <div className="candle-inspector fill-inspector" aria-label="Fill details">
@@ -1165,7 +1168,7 @@ function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, re
 // The pane's own label, top left: which group, and which way is long.
 function PaneLabel({ top, group, measure }) {
   const g = COIN_GROUPS.find(x => x.key === group);
-  return <div className="chart-pane-label" style={{ top: top + 6 }}>
+  return <div className="chart-pane-label" style={{ top: top + 5 }}>
     {g?.name}<span className="chart-pane-label-more"> · {measure === "usd" ? "dollars" : "wallets"} long above the line, short below</span>
   </div>;
 }
