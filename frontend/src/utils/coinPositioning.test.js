@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { points, closeOf, candleEndingAt, candleBars, rebuildCandles, latest, recorded, count } from "./coinPositioning.js";
+import { points, closeOf, candleEndingAt, candleBars, rebuildCandles, latest, recorded, count, slotBars } from "./coinPositioning.js";
 import { groupDefinitions, COIN_GROUPS } from "./traderGroups.js";
 
 const H4 = 14400, D = 86400;
@@ -37,6 +37,16 @@ test("rebuilds per candle, joined summed, the rules change kept", () => {
   const r = [{ t: c0 + 3600, joined: 20 }, { t: c0 + 7200, joined: 14, left: 3 }, { t: c0 + 2 * H4, note: "rules" }];
   assert.deepEqual(rebuildCandles(r, H4, [c0, c0 + H4]), [
     { time: c0, joined: 34, left: 3, rules: false }, { time: c0 + H4, joined: 0, left: 0, rules: true }]);
+});
+
+test("the last 24 hours in 30-minute slots: the last reading in each, gaps left empty", () => {
+  const S = 1800, end = c0 + 3 * S + 600;              // 10 minutes into the fourth slot
+  const g = { t: [c0 - S, c0 + 60, c0 + 900, c0 + 2 * S + 30, end], ln: [9, 1, 2, null, 7], sn: [9, 3, 4, null, 5], live: true };
+  const bars = slotBars(g, "n", S, end, 4);
+  assert.deepEqual(bars.map(b => b.t), [c0, c0 + S, c0 + 2 * S, c0 + 3 * S]);
+  assert.deepEqual(bars.map(b => b.long ?? null), [2, null, null, 7]);   // c0 - S is before the window
+  assert.equal(bars[3].live, true);
+  assert.equal(bars[0].at, c0 + 900);
 });
 
 test("latest, recorded and counts", () => {
