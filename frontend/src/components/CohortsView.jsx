@@ -149,7 +149,8 @@ export default function CohortsView() {
     <p className="coh-intro">
       How groups of Hyperliquid wallets lean, long or short.{" "}
       <HelpTip title="About cohorts" width={380}>
-        <p>{now?.population || "Hyperliquid leaderboard wallets with $100K+ perp equity, plus proven traders ($100K+ all-time PnL) with $10K+ perp equity. Market makers excluded."}</p>
+        <p>{now?.population || "Hyperliquid leaderboard wallets with $100K+ perp equity, plus wallets up $100K+ all time with $10K+ perp equity. Market makers excluded."}</p>
+        <p>These groups are by all-time result or account size, about 2,300 wallets. Profitable traders (Traders, Consensus) is a different, monthly list.</p>
         <p>Lean = (long − short) ÷ (long + short), by the dollar value of open positions: +100% all long, −100% all short. "vs usual" compares a group's lean with its own history, in standard deviations, once there are 3 days of readings.</p>
         <p>Readings every 30 minutes for all markets, every 4 hours per coin{now?.since ? `, since ${when(now.since)}` : ""}.</p>
       </HelpTip>
@@ -183,10 +184,10 @@ export default function CohortsView() {
       </ChartHead>
       <LeanChart series={series} aria={`Lean of each wallet group over ${days} days`} />
       {dimension === "pnl" && gaps.length > 0 && <>
-        <ChartHead title="Profitable vs losing wallets" info={<p>Two lean lines: wallets up $100K or more all-time, and wallets with an all-time loss on Hyperliquid. Each line adds up the long and short positions of every wallet in its group, weighted by dollar value. Lines far apart mean the two groups are positioned differently. Descriptive only: whether the gap leads price has not been tested yet; that needs about 30 days of readings.</p>} />
+        <ChartHead title="All-time winners vs losers" info={<p>Two lean lines: wallets up $100K or more all-time, and wallets with an all-time loss on Hyperliquid. Each line adds up the long and short positions of every wallet in its group, weighted by dollar value. Lines far apart mean the two groups are positioned differently. Descriptive only: whether the gap leads price has not been tested yet; that needs about 30 days of readings.</p>} />
         <LeanChart aria="Lean of wallets up $100K+ all-time and of wallets with an all-time loss"
-          series={[{ key: "w", label: "Up $100K+", color: T.accent, points: gaps.map(g => ({ ts: g.ts, v: g.winners })) },
-                   { key: "l", label: "Lost money", color: warmColor(), points: gaps.map(g => ({ ts: g.ts, v: g.losers })) }]} />
+          series={[{ key: "w", label: "All-time winners", color: T.accent, points: gaps.map(g => ({ ts: g.ts, v: g.winners })) },
+                   { key: "l", label: "All-time losers", color: warmColor(), points: gaps.map(g => ({ ts: g.ts, v: g.losers })) }]} />
       </>}
     </>}
   </div>;

@@ -4389,6 +4389,102 @@ async def cohorts_status():
             "latest_ts": st.latest_ts(), **st.coverage(), "runs": st.runs(10)}
 
 
+_COIN_POS_CACHE: dict = {}
+_COIN_POS_LIVE: list = [0.0, {}]          # [when, profitable_lean_by_coin()]: the live point, a minute
+COIN_POS_REBUILD_MIN = 5                  # list changes smaller than this get no marker
+
+
+def _profitable_live() -> Optional[dict]:
+    """Profitable traders per coin from the latest readings, or None when the readings are stale."""
+    import degrade
+    import hl_intelligence as hl
+    as_of = degrade.positions_as_of()
+    if not as_of or degrade.is_stale(as_of, degrade.positions_limit()) or not hl.profitable_traders_positioned():
+        return None
+    if time.time() - _COIN_POS_LIVE[0] > 60:
+        _COIN_POS_LIVE[:] = [time.time(), hl.profitable_lean_by_coin()]
+    return _COIN_POS_LIVE[1]
+
+
+def _coin_positioning_body(coin: str, days: int, now: float) -> dict:
+    from cohorts.assign import COIN_GROUPS
+    from cohorts.sweeper import live_coin_groups, store as cohort_store
+    from hl_persistence import load_coin_lean, load_roster_rebuilds
+    since = now - days * 86400
+    groups: dict = {}
+
+    def series():
+        return {"t": [], "ln": [], "sn": [], "lu": [], "su": [], "live": False}
+
+    def put(s, t, v):
+        s["t"].append(int(t))
+        for k, x in zip(("ln", "sn", "lu", "su"), v if v is not None else (None,) * 4):
+            s[k].append(None if x is None else int(round(x)))
+
+    # Profitable traders: the 4h record. A recorded close without the coin means none of them held it.
+    p = groups["profitable"] = series()
+    bars, vals = load_coin_lean(coin, since)
+    for b in bars:
+        put(p, b, vals.get(b, (0, 0, 0, 0)))
+    live = _profitable_live()
+    if live is not None and (not bars or now - bars[-1] > 60):
+        r = live.get(coin)
+        put(p, int(now // 60) * 60, (r["long"], r["short"], r["long_usd"], r["short_usd"]) if r else (0, 0, 0, 0))
+        p["live"] = True
+
+    # Wallet cohorts: the per-coin record. At times filled from the 40-coin rows (full = 0) a
+    # missing coin was not recorded: null, a gap.
+    times, cvals = cohort_store().coin_history(coin, since)
+    for i, g in enumerate(COIN_GROUPS):
+        s = groups[g] = series()
+        for ts, full in times:
+            v = cvals.get(ts)
+            put(s, ts, v[4 * i:4 * i + 4] if v is not None else ((0, 0, 0, 0) if full else None))
+    lv = live_coin_groups()
+    if lv and now - lv[0] < 3600 and (not times or lv[0] > times[-1][0]):
+        by = lv[1].get(coin, {})
+        for g in COIN_GROUPS:
+            put(groups[g], lv[0], by.get(g) or (0, 0, 0, 0))
+            groups[g]["live"] = True
+
+    # Wallets with a position now in each group (all markets), for the definitions.
+    held: dict = {}
+    if live is not None:
+        import hl_intelligence as hl
+        held["profitable"] = hl.profitable_traders_positioned()
+    if lv:
+        for g in COIN_GROUPS:
+            c = lv[1].get("", {}).get(g)
+            if c:
+                held[g] = int(c[0] + c[1])
+    rebuilds = [{"t": int(t), "joined": j, "left": lft} for t, _, j, lft in load_roster_rebuilds(since)
+                if j is not None and j + (lft or 0) >= COIN_POS_REBUILD_MIN]
+    return {"coin": coin, "days": days, "groups": groups, "rebuilds": rebuilds, "held": held}
+
+
+@app.get("/api/coin-positioning")
+async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), days: int = Query(30, ge=1, le=180)):
+    """One coin's long and short over time for four groups of wallets: profitable traders
+    (trader_lean, the 4h record) and three wallet-cohort groups (cohorts coin_positioning:
+    winners $100K+ all-time PnL, losers below 0, whales $1M+ perp equity), each with its latest
+    reading appended (``live``). Per group: t (unix s), wallets long and short (ln, sn) and USD
+    long and short (lu, su), null where nothing was recorded for the coin. ``rebuilds``: when the
+    profitable-trader list changed, since its counts step there without any trading."""
+    from hl_intelligence import _normalize_coin
+    c = _normalize_coin(coin.strip())
+    now = time.time()
+    key = (c, days)
+    hit = _COIN_POS_CACHE.get(key)
+    if hit and now - hit[0] < 60:
+        return hit[1]
+    body = _coin_positioning_body(c, days, now)
+    if len(_COIN_POS_CACHE) >= 256:
+        for k in [k for k, v in _COIN_POS_CACHE.items() if now - v[0] >= 60]:
+            del _COIN_POS_CACHE[k]
+    _COIN_POS_CACHE[key] = (now, body)
+    return body
+
+
 @app.get("/api/hyperlens/positions/{symbol}")
 async def hyperlens_symbol_positions(symbol: str):
     """Per-wallet position breakdown for a symbol."""

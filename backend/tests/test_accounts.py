@@ -147,11 +147,12 @@ def test_session_lifecycle(on, monkeypatch):
     assert wa.session_address(token, now=NOON + 60) == addr(1)
     assert wa.session_address(token, now=expires + 1) is None
     assert wa.session_address("nope", now=NOON) is None
-    assert wa.request_address({wa.HEADER: token}) == addr(1)
+    live, _ = wa.start_session(addr(1))      # request_address reads the clock: a session started now
+    assert wa.request_address({wa.HEADER: live}) == addr(1)
     monkeypatch.delenv("REFLEX_ACCOUNTS")
-    assert wa.request_address({wa.HEADER: token}) is None          # flag off: no accounts
+    assert wa.request_address({wa.HEADER: live}) is None           # flag off: no accounts
     monkeypatch.setenv("REFLEX_ACCOUNTS", "1")
-    assert wa.end_session(token) and wa.session_address(token) is None
+    assert wa.end_session(live) and wa.session_address(live) is None
 
 
 # ------------------------------------------------------------------ follows and watch list

@@ -29,8 +29,8 @@ WHALE_EQUITY = 100e3
 PROVEN_PNL = 100e3
 PROVEN_MIN_EQUITY = 10e3
 EQUITY_SHOWN = {"Small Whale", "Whale", "Tidal Whale", "Leviathan"}   # the equity view is whales only
-POPULATION = ("Hyperliquid leaderboard wallets with $100K+ perp equity, plus proven traders "
-              "($100K+ all-time PnL) with $10K+ perp equity. Market makers excluded.")
+POPULATION = ("Hyperliquid leaderboard wallets with $100K+ perp equity, plus wallets up $100K+ "
+              "all time with $10K+ perp equity. Market makers excluded.")
 YOUNG_S = 24 * 3600
 MAX_POSITIONS = 25            # more concurrent positions than this: market maker / vault, excluded
 
@@ -187,6 +187,72 @@ def zscore(history: List[float], value: Optional[float], min_points: int = 30) -
 # Divergence: winning traders against losing traders (a contrarian read).
 WINNERS = ("Smart Money", "Money Printer")
 LOSERS = ("Giga-Rekt", "Full Rekt", "Semi-Rekt", "Exit Liquidity")
+
+
+# Per-coin groups for the coin page. Every coin, not only the top 40: cohorts are merged into
+# three groups so a thin coin still has readable numbers. A wallet can be in more than one.
+WHALE_MIN_EQUITY = 1e6                     # Tidal Whale and Leviathan: $1M+ perp equity
+COIN_GROUPS = ("winners", "losers", "whales")
+
+
+def _coin_groups_of(w: WalletState) -> List[str]:
+    out = []
+    if w.all_time_pnl is not None and w.all_time_pnl >= PROVEN_PNL:     # WINNERS cohorts
+        out.append("winners")
+    if w.all_time_pnl is not None and w.all_time_pnl < 0:               # LOSERS cohorts
+        out.append("losers")
+    if w.equity >= WHALE_MIN_EQUITY:
+        out.append("whales")
+    return out
+
+
+def coin_groups(states: Iterable[WalletState]) -> Dict[str, Dict[str, List[float]]]:
+    """Per coin ('' = all markets), per group: [wallets long, wallets short, long USD, short USD].
+    A wallet counts on the side of its net USD (in that coin, or over all coins for ''); USD is
+    each position's value when the wallet was read. Market makers excluded; no row for a coin
+    nobody in the group holds."""
+    out: Dict[str, Dict[str, List[float]]] = {}
+    for w in states:
+        if not w.positions or len(w.positions) > MAX_POSITIONS:
+            continue
+        groups = _coin_groups_of(w)
+        if not groups:
+            continue
+        by: Dict[str, List[float]] = {}
+        for p in w.positions:
+            side = by.setdefault(p.coin, [0.0, 0.0])
+            side[0 if p.long else 1] += p.usd
+        by[""] = [sum(v[0] for v in by.values()), sum(v[1] for v in by.values())]
+        for coin, (lu, su) in by.items():
+            row = out.setdefault(coin, {})
+            for g in groups:
+                c = row.setdefault(g, [0, 0, 0.0, 0.0])
+                c[0] += lu > su
+                c[1] += su > lu
+                c[2] += lu
+                c[3] += su
+    return out
+
+
+def coin_groups_from_rows(rows: Iterable[dict]) -> Dict[str, Dict[str, List[float]]]:
+    """The same groups from stored per-cohort snapshot rows (``aggregate`` output): used to
+    fill the per-coin record for the coins that had cohort rows before it existed. Whales and
+    winners/losers come from different dimensions, so each wallet is still counted once per group."""
+    out: Dict[str, Dict[str, List[float]]] = {}
+    member = {**{c: "winners" for c in WINNERS}, **{c: "losers" for c in LOSERS}}
+    for r in rows:
+        if r["dimension"] == "pnl":
+            g = member.get(r["cohort"])
+        else:
+            g = "whales" if r["cohort"] in ("Tidal Whale", "Leviathan") else None
+        if g is None:
+            continue
+        c = out.setdefault(r["symbol"] or "", {}).setdefault(g, [0, 0, 0.0, 0.0])
+        c[0] += r.get("long_wallets") or 0
+        c[1] += r.get("short_wallets") or 0
+        c[2] += r.get("long_usd") or 0.0
+        c[3] += r.get("short_usd") or 0.0
+    return out
 
 
 def divergence(rows: List[dict], symbol: Optional[str] = None) -> dict:

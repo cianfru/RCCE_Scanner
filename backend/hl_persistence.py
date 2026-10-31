@@ -26,7 +26,7 @@ import time
 from collections import deque
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS position_changes (
     px REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pc_t1 ON position_changes(t1);
+
+-- When the profitable-trader list was rebuilt and how many wallets joined and left it. A step
+-- in a coin's stored counts at a rebuild is the list changing, not trading. roster_members is
+-- the last list (to count the next change). joined/left NULL: not known.
+CREATE TABLE IF NOT EXISTS roster_rebuilds (
+    ts INTEGER PRIMARY KEY,
+    profitable INTEGER,
+    joined INTEGER,
+    left INTEGER
+);
+CREATE TABLE IF NOT EXISTS roster_members (address TEXT PRIMARY KEY);
 
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
@@ -390,6 +401,59 @@ def load_trader_lean(prefix: str, since: float) -> List[tuple]:
         "WHERE grp >= ? AND grp < ? AND bar_close >= ? ORDER BY bar_close",
         (prefix, prefix + "\uffff", int(since)),
     ).fetchall()
+
+
+def save_roster_rebuild(ts: float, profitable: List[str]) -> Tuple[Optional[int], Optional[int]]:
+    """Record a rebuild of the profitable-trader list; returns (joined, left), None when the
+    previous list is not known. The first time, past rebuilds are estimated from the snapshots."""
+    conn = _get_conn()
+    if not conn.execute("SELECT 1 FROM roster_rebuilds LIMIT 1").fetchone():
+        _estimate_past_rebuilds(conn)
+    prev = {r[0] for r in conn.execute("SELECT address FROM roster_members")}
+    now = set(profitable)
+    joined, left = (len(now - prev), len(prev - now)) if prev else (None, None)
+    conn.execute("INSERT OR REPLACE INTO roster_rebuilds (ts, profitable, joined, left) VALUES (?, ?, ?, ?)",
+                 (int(ts), len(now), joined, left))
+    conn.execute("DELETE FROM roster_members")
+    conn.executemany("INSERT INTO roster_members (address) VALUES (?)", [(a,) for a in sorted(now)])
+    conn.execute("DELETE FROM roster_rebuilds WHERE ts < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
+    conn.commit()
+    return joined, left
+
+
+def _estimate_past_rebuilds(conn: sqlite3.Connection, min_joined: int = 5) -> int:
+    """Rebuilds before they were recorded: hours in which several tracked wallets had their first
+    stored snapshot (hourly saves, kept 30 days), so up to an hour after the rebuild. Both lists
+    count here, and wallets that left are not known."""
+    first = conn.execute("SELECT MIN(timestamp) FROM snapshots").fetchone()[0]
+    if first is None:
+        return 0
+    hours: Dict[int, int] = {}
+    for (ts,) in conn.execute("SELECT MIN(timestamp) FROM snapshots GROUP BY address"):
+        h = int(ts // 3600) * 3600
+        hours[h] = hours.get(h, 0) + 1
+    start = int(first // 3600) * 3600 + 3600          # the oldest hour is retention, not a rebuild
+    rows = [(h, None, n, None) for h, n in sorted(hours.items()) if h > start and n >= min_joined]
+    conn.executemany("INSERT OR IGNORE INTO roster_rebuilds (ts, profitable, joined, left) VALUES (?, ?, ?, ?)", rows)
+    return len(rows)
+
+
+def load_roster_rebuilds(since: float) -> List[tuple]:
+    """(ts, profitable, joined, left), oldest first."""
+    return _get_conn().execute(
+        "SELECT ts, profitable, joined, left FROM roster_rebuilds WHERE ts >= ? ORDER BY ts", (int(since),)).fetchall()
+
+
+def load_coin_lean(coin: str, since: float) -> Tuple[List[int], Dict[int, tuple]]:
+    """One coin's profitable-trader record: every recorded 4h close, and the coin's
+    (long, short, long_usd, short_usd) at the closes where any of them held it."""
+    conn = _get_conn()
+    bars = [r[0] for r in conn.execute(
+        "SELECT DISTINCT bar_close FROM trader_lean WHERE bar_close >= ? ORDER BY bar_close", (int(since),))]
+    vals = {r[0]: tuple(r[1:]) for r in conn.execute(
+        "SELECT bar_close, long, short, long_usd, short_usd FROM trader_lean WHERE bar_close >= ? AND grp = ?",
+        (int(since), f"coin:{coin}"))}
+    return bars, vals
 
 
 _CHANGES_RETENTION_DAYS = 30

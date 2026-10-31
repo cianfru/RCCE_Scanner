@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Tabs from "./Tabs.jsx";
 import TokenLogo from "./TokenLogo.jsx";
 import HelpTip from "./HelpTip.jsx";
+import { groupDefinitions } from "../utils/traderGroups.js";
+import useRosterCounts from "../hooks/useRosterCounts.js";
 import { T, col, SIGNAL_META, REGIME_META } from "../theme.js";
 import { MAP_FILTERS, MAP_MIN_TRADERS, matchOf, vsEntry } from "../utils/positioning.js";
 import { usd } from "../utils/traders.js";
@@ -75,6 +77,7 @@ export default function PositioningView() {
   const shown = showAll ? rows : rows.slice(0, TOP_N);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map(f => [f.key, (data?.rows || []).filter(MAP_FILTERS[f.key]).length])), [data]);
   const who = group === "profitable" ? "profitable traders" : "large accounts";
+  const defs = groupDefinitions(useRosterCounts());
 
   return (
     <div className="pos">
@@ -85,6 +88,8 @@ export default function PositioningView() {
       <p className="coh-intro">
         {data ? <>{data.wallets} {who} hold positions on {data.rows.length} coins. Updated {when(data.updated_at)}. <AsOf data={data} /></> : error ? `Positioning unavailable (${error}).` : "Loading positioning…"}
         {" "}<HelpTip title="Positioning map" width={380}>
+          <p>{defs.profitable}</p>
+          <p>{defs.large}</p>
           <p>Every coin where tracked wallets hold a perpetual position, from the latest wallet readings (every 10–15 minutes after a wallet trades, up to an hour when it has not, two hours when it holds nothing). Per side: how many wallets, their dollars, how many are in profit at the current price, and where price stands against their median entry.</p>
           <p>Agree: at least {MAP_MIN_TRADERS} {who} lean the same way as the engine's 4H signal (long signals against longs, exits or a downtrend against shorts). Opposed: they lean against it. Whether agreement leads price is being recorded; until then this is information, not a signal.</p>
         </HelpTip>

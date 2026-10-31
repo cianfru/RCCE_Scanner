@@ -22,6 +22,7 @@ import { codename, nameIn, shortAddr, viewNames } from "../utils/walletName.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
 import { apiFetch } from "../edge.js";
 import AsOf from "./AsOf.jsx";
+import { groupDefinitions } from "../utils/traderGroups.js";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -1789,12 +1790,13 @@ export default function HyperLensPanel({ isMobile }) {
               ))}
               <HelpTip title="Traders" width={380} label="About this page">
                 {bySide ? <>
-                  <p>{cohort === "money_printers"
-                    ? "Profitable traders: the top 600 Hyperliquid wallets by monthly return (at least 30% and $10K) that were also in profit before this month."
-                    : "Large accounts: the 300 largest Hyperliquid accounts ($1M and up); profit is not checked."}</p>
+                  <p>{groupDefinitions(status).profitable}</p>
+                  <p>{groupDefinitions(status).large}</p>
                   <p>One row per coin held by {SUMMARY_MIN} or more of them, most traders first: how many are long and short, their dollars, and the price against the median entry of the side most of them are on (green when that side is in profit). 24h is the change in traders long and short since a day ago. Open a row for the largest wallets on each side.</p>
                   <p>Bullish or bearish: at least 15% more of them long than short, or the reverse; otherwise mixed.</p>
                 </> : <>
+                  <p>{groupDefinitions(status).profitable}</p>
+                  <p>{groupDefinitions(status).large} {groupDefinitions(status).tracked}</p>
                   <p>{api ? (cohort === "money_printers" ? "Profitable traders" : "Large accounts") : "Every tracked wallet"}, per symbol. The trend weighs position size: past 15% either way it reads bullish or bearish. Symbols with fewer than {MIN_WALLETS} wallets positioned get no trend.</p>
                   <p>{BASIS_TITLE}</p>
                 </>}

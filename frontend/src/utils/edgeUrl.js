@@ -16,6 +16,7 @@ export const EDGE_PATHS = new Set([
   "/api/sectors",
   "/api/portfolio/context",
   "/api/portfolio/events",
+  "/api/coin-positioning",
 ]);
 
 export function edgePath(path) {

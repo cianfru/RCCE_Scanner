@@ -103,7 +103,7 @@ export const COLUMN_INFO = {
   },
   SM: {
     title: "Profitable Traders",
-    desc: "How Hyperliquid's proven profitable traders are positioned here: the top 600 by monthly return that were also in profit before this month. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's tracked-wallet check still uses all tracked wallets weighted by size (shown in the tooltip).",
+    desc: "How Hyperliquid's profitable traders are positioned here: wallets up 30%+ and $10K+ over the last month and already in profit before it, the best 600 by monthly return. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's tracked-wallet check still uses all tracked wallets weighted by size (shown in the tooltip).",
   },
   OI: {
     title: "Open Interest Trend",
