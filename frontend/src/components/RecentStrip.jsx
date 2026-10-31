@@ -36,7 +36,9 @@ export default function RecentStrip({ data, failed, group, measure }) {
   const name = COIN_GROUPS.find(g => g.key === group)?.name;
 
   const phone = W > 0 && W < 520;
-  const H = phone ? 58 : 66, padL = 34, padR = 6, labelH = 14;
+  const tick = fmt(top);
+  // The scale label sets the left margin (10px mono, about 6.2px a character): "$111.8M" must not be cut.
+  const H = phone ? 58 : 66, padL = Math.max(28, Math.ceil(tick.length * 6.2) + 8), padR = 6, labelH = 14;
   const plotW = Math.max(1, W - padL - padR);
   const slotW = plotW / SLOTS;
   const mid = (H - labelH) / 2;
@@ -76,8 +78,8 @@ export default function RecentStrip({ data, failed, group, measure }) {
             y={mid} height={(b.short / top) * half} />
         </g>)}
         <line className="chart-recent-zero" x1={padL} x2={W - padR} y1={mid} y2={mid} />
-        <text className="chart-recent-tick" x={padL - 5} y={9} textAnchor="end">{fmt(top)}</text>
-        <text className="chart-recent-tick" x={padL - 5} y={H - labelH - 1} textAnchor="end">{fmt(top)}</text>
+        <text className="chart-recent-tick" x={padL - 5} y={9} textAnchor="end">{tick}</text>
+        <text className="chart-recent-tick" x={padL - 5} y={H - labelH - 1} textAnchor="end">{tick}</text>
         {closes.map(c => <text key={c.t} className="chart-recent-tick" x={x(c.i)} y={H - 2} textAnchor="middle">{hhmm(c.t)}</text>)}
         {hover != null && <rect className="chart-recent-hover" x={x(hover)} y={0} width={slotW} height={H - labelH} />}
       </svg>}
