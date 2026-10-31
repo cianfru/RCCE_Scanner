@@ -39,7 +39,7 @@ from typing import Callable, List, Optional
 import aiohttp
 
 import hl_cadence
-from cohorts.assign import Position, WalletState, aggregate, in_focus, zscore
+from cohorts.assign import Position, WalletState, aggregate, coin_groups, in_focus, zscore
 from cohorts.source import ApiSource, RateLimited
 from cohorts.store import PIN_ELITE, Store
 
@@ -228,6 +228,7 @@ class Sweeper:
     def aggregate(self, now: float) -> List[dict]:
         states = self.store.load_states(now, STATE_MAX_AGE_S)
         rows = aggregate(states, now)
+        self.record_coin_groups(states, now)
         # All-market rows every sweep; per-symbol rows once per 4h candle (keeps the file ~1 MB/day).
         from scan_schedule import BAR_SECONDS
         last_sym = self.store.latest_symbol_ts()
@@ -243,6 +244,25 @@ class Sweeper:
         ts = int(now)
         self.store.write_snapshot(ts, rows)
         return rows
+
+    def record_coin_groups(self, states, now: float) -> None:
+        """The coin page's per-coin groups: kept in memory at every snapshot (the latest point),
+        stored once per 4h candle for every coin held."""
+        global _live_coin_groups
+        from scan_schedule import BAR_SECONDS
+        try:
+            groups = coin_groups(states)
+            _live_coin_groups = (int(now), groups)
+            last = self.store.latest_coin_ts()
+            if last is None:
+                n = self.store.backfill_coin_groups()
+                if n:
+                    logger.info("Cohorts: per-coin record filled with %d rows from cohort snapshots", n)
+            elif last // BAR_SECONDS == now // BAR_SECONDS:
+                return                    # this candle is recorded
+            self.store.write_coin_groups(int(now), groups)
+        except Exception:
+            logger.exception("Cohorts: per-coin record failed")
 
     async def loop(self) -> None:
         while True:
@@ -262,6 +282,11 @@ class Sweeper:
 # --- wiring -------------------------------------------------------------------------
 
 _store: Optional[Store] = None
+_live_coin_groups: Optional[tuple] = None      # (ts, assign.coin_groups output) from the latest snapshot
+
+
+def live_coin_groups() -> Optional[tuple]:
+    return _live_coin_groups
 
 
 def store() -> Store:

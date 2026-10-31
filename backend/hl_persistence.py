@@ -26,7 +26,7 @@ import time
 from collections import deque
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,18 @@ CREATE TABLE IF NOT EXISTS position_changes (
 );
 CREATE INDEX IF NOT EXISTS idx_pc_t1 ON position_changes(t1);
 
+-- When the profitable-trader list was rebuilt and how many wallets joined and left it. A step
+-- in a coin's stored counts at a rebuild is the list changing, not trading. roster_members is
+-- the last list (to count the next change). joined/left NULL: not known.
+CREATE TABLE IF NOT EXISTS roster_rebuilds (
+    ts INTEGER PRIMARY KEY,
+    profitable INTEGER,
+    joined INTEGER,
+    left INTEGER,
+    note TEXT
+);
+CREATE TABLE IF NOT EXISTS roster_members (address TEXT PRIMARY KEY);
+
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
     coin TEXT NOT NULL,
@@ -132,6 +144,8 @@ def _get_conn() -> sqlite3.Connection:
         cols = {r[1] for r in _conn.execute("PRAGMA table_info(trader_lean)")}
         if "roster_version" not in cols:      # rows from before roster version 2 keep NULL
             _conn.execute("ALTER TABLE trader_lean ADD COLUMN roster_version INTEGER")
+        # One coin's record (the coin page) without walking every group of every close.
+        _conn.execute("CREATE INDEX IF NOT EXISTS idx_tl_grp ON trader_lean(grp, bar_close)")
         _conn.commit()
         logger.info("HyperLens DB: opened at %s", _DB_PATH)
     return _conn
@@ -383,13 +397,97 @@ def save_trader_lean(bar_close: int, rows: Dict[str, dict], roster_version: Opti
     return len(rows)
 
 
+def last_trader_lean_bar() -> int:
+    """The newest recorded close (0 when none)."""
+    return int(_get_conn().execute("SELECT MAX(bar_close) FROM trader_lean").fetchone()[0] or 0)
+
+
 def load_trader_lean(prefix: str, since: float) -> List[tuple]:
     """(bar_close, grp, long, short, long_usd, short_usd) rows for groups starting with prefix."""
     return _get_conn().execute(
+        # "+grp": keep this on the (bar_close, grp) key; idx_tl_grp would walk every stored close.
         "SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
-        "WHERE grp >= ? AND grp < ? AND bar_close >= ? ORDER BY bar_close",
+        "WHERE +grp >= ? AND +grp < ? AND bar_close >= ? ORDER BY bar_close",
         (prefix, prefix + "\uffff", int(since)),
     ).fetchall()
+
+
+def save_roster_rebuild(ts: float, profitable: List[str]) -> Tuple[Optional[int], Optional[int]]:
+    """Record a rebuild of the profitable-trader list; returns (joined, left), None when the
+    previous list is not known. The first time, past rebuilds are estimated from the snapshots."""
+    conn = _get_conn()
+    if not conn.execute("SELECT 1 FROM roster_rebuilds LIMIT 1").fetchone():
+        _estimate_past_rebuilds(conn)
+    prev = {r[0] for r in conn.execute("SELECT address FROM roster_members")}
+    now = set(profitable)
+    joined, left = (len(now - prev), len(prev - now)) if prev else (None, None)
+    conn.execute("INSERT OR REPLACE INTO roster_rebuilds (ts, profitable, joined, left) VALUES (?, ?, ?, ?)",
+                 (int(ts), len(now), joined, left))
+    conn.execute("DELETE FROM roster_members")
+    conn.executemany("INSERT INTO roster_members (address) VALUES (?)", [(a,) for a in sorted(now)])
+    conn.execute("DELETE FROM roster_rebuilds WHERE ts < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
+    conn.commit()
+    return joined, left
+
+
+# Snapshots are cut at 30 days, so every wallet's oldest remaining one falls just after the cut:
+# a wallet with no position is read every 2 h and saved hourly, so its oldest one can be up to
+# about 3 h later than the oldest of all. Those hours are retention, not a rebuild.
+_ESTIMATE_SKIP_S = 4 * 3600
+
+
+def _estimate_past_rebuilds(conn: sqlite3.Connection, min_joined: int = 5) -> int:
+    """Rebuilds before they were recorded: hours in which several tracked wallets had their first
+    stored snapshot (hourly saves, kept 30 days), so up to an hour after the rebuild. Both lists
+    count here, and wallets that left are not known. Also marks the switch to roster version 2
+    (new rules) when the 4h record has rows from before it."""
+    first = conn.execute("SELECT MIN(timestamp) FROM snapshots").fetchone()[0]
+    rows: List[tuple] = []
+    if first is not None:
+        hours: Dict[int, int] = {}
+        for (ts,) in conn.execute("SELECT MIN(timestamp) FROM snapshots GROUP BY address"):
+            h = int(ts // 3600) * 3600
+            hours[h] = hours.get(h, 0) + 1
+        rows = [(h, None, n, None, None) for h, n in sorted(hours.items())
+                if h >= first + _ESTIMATE_SKIP_S and n >= min_joined]
+    v2 = conn.execute("SELECT MIN(bar_close) FROM trader_lean WHERE roster_version IS NOT NULL").fetchone()[0]
+    if v2 is not None and conn.execute(
+            "SELECT 1 FROM trader_lean WHERE roster_version IS NULL AND bar_close < ? LIMIT 1", (v2,)).fetchone():
+        rows.append((int(v2), None, None, None, "rules"))
+    conn.executemany("INSERT OR IGNORE INTO roster_rebuilds (ts, profitable, joined, left, note) VALUES (?, ?, ?, ?, ?)", rows)
+    return len(rows)
+
+
+def load_roster_rebuilds(since: float) -> List[tuple]:
+    """(ts, profitable, joined, left, note), oldest first. note "rules": the list's rules changed."""
+    return _get_conn().execute(
+        "SELECT ts, profitable, joined, left, note FROM roster_rebuilds WHERE ts >= ? ORDER BY ts",
+        (int(since),)).fetchall()
+
+
+_BARS_DAYS = 180
+_bars_cache: List = [None, []]        # [(connection, newest close), every close of the last _BARS_DAYS]
+
+
+def _recorded_bars(conn: sqlite3.Connection) -> List[int]:
+    """The 4h closes that were recorded, read again only when a new close arrives."""
+    newest = (id(conn), conn.execute("SELECT MAX(bar_close) FROM trader_lean").fetchone()[0])
+    if newest != _bars_cache[0]:
+        _bars_cache[:] = [newest, [r[0] for r in conn.execute(
+            "SELECT DISTINCT bar_close FROM trader_lean WHERE bar_close >= ? ORDER BY bar_close",
+            (int(time.time()) - _BARS_DAYS * 86400,))]]
+    return _bars_cache[1]
+
+
+def load_coin_lean(coin: str, since: float) -> Tuple[List[int], Dict[int, tuple]]:
+    """One coin's profitable-trader record: every recorded 4h close, and the coin's
+    (long, short, long_usd, short_usd) at the closes where any of them held it."""
+    conn = _get_conn()
+    bars = [b for b in _recorded_bars(conn) if b >= since]
+    vals = {r[0]: tuple(r[1:]) for r in conn.execute(
+        "SELECT bar_close, long, short, long_usd, short_usd FROM trader_lean WHERE grp = ? AND bar_close >= ?",
+        (f"coin:{coin}", int(since)))}
+    return bars, vals
 
 
 _CHANGES_RETENTION_DAYS = 30

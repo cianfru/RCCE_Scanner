@@ -171,3 +171,19 @@ Changing the cohort moves the Radar's trader counts and the stored lean series.
 - Cohort snapshots (the Cohorts tab, every 30 minutes) carry `"roster_version": 2` inside their data.
 - `position_opens` and `convergences` rows have a `roster_version` column (NULL before). The convergence forward test (docs/reviews/trader-convergence-forward-test.md) was declared on version 1: 300 wallets, $50K accounts, readings every 30 minutes, a 2-hour gap limit (now 2.5 hours, to cover the flat tier). Version 2 rows are a different variant and need their own declaration and count.
 - `/api/hyperlens/status` shows `roster_version`, the targets and the cadence.
+
+## Coin page: long and short over time
+
+Each coin page has a "Long and short" card: wallets (or dollars) long above a line and short below it, every 4 hours, for four groups. `GET /api/coin-positioning?coin=BTC&days=30` (an edge feed, cached a minute) returns them.
+
+| Group | Who | Record |
+|---|---|---|
+| Profitable traders | the monthly list (roster rules above) | `trader_lean` `coin:<COIN>` rows, every coin they hold, 400 days. A recorded close without the coin is 0/0. |
+| All-time winners | cohort sweep wallets up $100K+ all time (Smart Money and Money Printer cohorts) | `coin_positioning` in cohorts.db |
+| All-time losers | cohort sweep wallets with an all-time loss (the four Rekt cohorts) | same |
+| Whales | cohort sweep wallets with $1M+ perp equity (Tidal Whale, Leviathan) | same |
+
+- **`coin_positioning`** (cohorts.db, `WITHOUT ROWID`, key `(coin, ts)`): per group, wallets long and short and USD long and short, written at the first cohort snapshot of each 4h candle for every coin held (`assign.coin_groups`), with a `''` row for all markets that also marks the time as recorded. About 65 KB a day, kept 400 days. When the table is first created it is filled once from the per-symbol cohort rows already stored (the 40 largest coins); those times carry `full = 0`, so another coin missing there is a gap, not a zero.
+- **Live point:** each group's latest reading is appended (profitable traders from the current readings, the cohort groups from the last 30-minute snapshot), marked `live`.
+- **`roster_rebuilds`** (hyperlens.db): when the profitable-trader list was rebuilt and how many wallets joined and left. A step in the counts at a rebuild is the list changing, not trading; the chart marks rebuilds where 5 or more wallets changed. Rebuilds before the table existed are estimated once from the hourly snapshots (hours in which 5 or more tracked wallets had their first snapshot; who left is not known).
+- Builder-dex (`xyz:`) coins have no rows in either record.

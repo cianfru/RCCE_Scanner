@@ -16,6 +16,7 @@ import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
+import CoinPositioning from "../components/CoinPositioning.jsx";
 import useCoinTraders from "../hooks/useCoinTraders.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 import useFavorites from "../hooks/useFavorites.js";
@@ -387,6 +388,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"} price={data.price}
           onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
+
+      {/* Long and short over time on this coin, per group of wallets. */}
+      <CoinPositioning symbol={data.symbol} spot={marketKind === "spot"} />
 
       {/* One click deeper: the full checklist, and every market reading. */}
       <details className="coin-more">

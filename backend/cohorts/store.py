@@ -5,6 +5,8 @@ wallets              registry from the leaderboard: all-time PnL, polling schedu
 wallet_state_latest  one row per wallet, overwritten each poll (no per-wallet history)
 cohort_snapshots     aggregated rows per sweep: the time series
 sweep_runs           audit: duration, weight used, errors; an unfinished run is resumed
+coin_positioning     per coin, once per 4h candle: three merged groups (assign.COIN_GROUPS),
+                     wallets and USD per side; every coin held, plus '' for all markets
 """
 from __future__ import annotations
 
@@ -15,10 +17,11 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from cohorts.assign import Position, WalletState
+from cohorts.assign import COIN_GROUPS, Position, WalletState, coin_groups_from_rows
 from hl_cadence import SETTLED_STREAK
 
 RETENTION_DAYS = 180
+COIN_RETENTION_DAYS = 400      # coin_positioning: small (about 65 KB a day), kept as long as trader_lean
 RUNS_RETENTION_DAYS = 14       # sweep_runs rows (one per tick with work since the adaptive cadence)
 PIN_ROSTER, PIN_ELITE = 1, 2   # wallets.pinned: HyperLens roster wallet; elite (read at least every 15 min)
 
@@ -51,6 +54,18 @@ CREATE TABLE IF NOT EXISTS cohort_snapshots (
     PRIMARY KEY (ts, dimension, cohort, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_cs_series ON cohort_snapshots(dimension, cohort, symbol, ts);
+CREATE TABLE IF NOT EXISTS coin_positioning (
+    coin TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    full INTEGER NOT NULL DEFAULT 1,
+    winners_ln INTEGER NOT NULL DEFAULT 0, winners_sn INTEGER NOT NULL DEFAULT 0,
+    winners_lu INTEGER NOT NULL DEFAULT 0, winners_su INTEGER NOT NULL DEFAULT 0,
+    losers_ln INTEGER NOT NULL DEFAULT 0, losers_sn INTEGER NOT NULL DEFAULT 0,
+    losers_lu INTEGER NOT NULL DEFAULT 0, losers_su INTEGER NOT NULL DEFAULT 0,
+    whales_ln INTEGER NOT NULL DEFAULT 0, whales_sn INTEGER NOT NULL DEFAULT 0,
+    whales_lu INTEGER NOT NULL DEFAULT 0, whales_su INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (coin, ts)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sweep_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     started REAL NOT NULL,
@@ -239,6 +254,68 @@ class Store:
                 "SELECT ts, dimension, cohort, symbol, data FROM cohort_snapshots WHERE ts >= ?", (int(since),)):
             out.setdefault((d, c, s or None), []).append((ts, json.loads(data).get("bias")))
         return out
+
+    # --- per-coin record (coin page) -----------------------------------------------
+    # On the '' row, full = 1 when every coin held was written at that time; 0 for times filled
+    # from the 40-coin cohort rows, where a missing coin means "not recorded", not "nobody holds it".
+    _COIN_COLS = tuple(f"{g}_{k}" for g in COIN_GROUPS for k in ("ln", "sn", "lu", "su"))
+
+    def write_coin_groups(self, ts: int, groups: Dict[str, Dict[str, list]], full: bool = True,
+                          commit: bool = True) -> int:
+        rows = []
+        for coin, by in groups.items():
+            vals = []
+            for g in COIN_GROUPS:
+                c = by.get(g) or (0, 0, 0, 0)
+                vals += [int(c[0]), int(c[1]), int(round(c[2])), int(round(c[3]))]
+            rows.append((coin, int(ts), int(full), *vals))
+        if "" not in groups:              # the time marker: this time was recorded
+            rows.append(("", int(ts), int(full), *([0] * len(self._COIN_COLS))))
+        cols = ", ".join(self._COIN_COLS)
+        self.db.executemany(
+            f"INSERT OR REPLACE INTO coin_positioning (coin, ts, full, {cols}) "
+            f"VALUES ({', '.join('?' * (3 + len(self._COIN_COLS)))})", rows)
+        if commit:
+            # The key is (coin, ts), so deleting by time scans the table: at most once a day.
+            cutoff = int(ts) - COIN_RETENTION_DAYS * 86400
+            oldest = self.db.execute("SELECT MIN(ts) FROM coin_positioning WHERE coin = ''").fetchone()[0]
+            if oldest is not None and oldest < cutoff - 86400:
+                self.db.execute("DELETE FROM coin_positioning WHERE ts < ?", (cutoff,))
+            self.db.commit()
+        return len(rows)
+
+    def latest_coin_ts(self) -> Optional[int]:
+        row = self.db.execute("SELECT MAX(ts) FROM coin_positioning WHERE coin = ''").fetchone()
+        return row[0] if row and row[0] else None
+
+    def coin_history(self, coin: str, since: float) -> Tuple[List[Tuple[int, int]], Dict[int, tuple]]:
+        """([(ts, full)] of every recorded time, {ts: (12 values in _COIN_COLS order)} for the coin)."""
+        times = self.db.execute("SELECT ts, full FROM coin_positioning WHERE coin = '' AND ts >= ? ORDER BY ts",
+                                (int(since),)).fetchall()
+        cols = ", ".join(self._COIN_COLS)
+        vals = {r[0]: tuple(r[1:]) for r in self.db.execute(
+            f"SELECT ts, {cols} FROM coin_positioning WHERE coin = ? AND ts >= ?", (coin, int(since)))}
+        return times, vals
+
+    def backfill_coin_groups(self) -> int:
+        """Once, while coin_positioning is empty: fill it from the per-symbol cohort rows already
+        stored (the 40 largest coins at each 4h candle), so those coins start with their history."""
+        if self.db.execute("SELECT 1 FROM coin_positioning LIMIT 1").fetchone():
+            return 0
+        times = [r[0] for r in self.db.execute(
+            "SELECT DISTINCT ts FROM cohort_snapshots WHERE symbol != '' ORDER BY ts")]
+        n = 0
+        try:
+            for ts in times:
+                rows = [{"dimension": d, "cohort": c, "symbol": sym or None, **json.loads(data)}
+                        for d, c, sym, data in self.db.execute(
+                            "SELECT dimension, cohort, symbol, data FROM cohort_snapshots WHERE ts = ?", (ts,))]
+                n += self.write_coin_groups(ts, coin_groups_from_rows(rows), full=False, commit=False)
+        except Exception:
+            self.db.rollback()
+            raise
+        self.db.commit()
+        return n
 
     # --- sweep audit ---------------------------------------------------------------
     def open_run(self, now: float) -> Tuple[int, float, bool]:

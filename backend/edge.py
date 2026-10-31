@@ -62,6 +62,8 @@ EDGE_PATHS = frozenset({
     # The Portfolio page's per-coin scanner context: keyed by coin only, never an address.
     "/api/portfolio/context",
     "/api/portfolio/events",
+    # A coin page's long/short history: keyed by coin and range only.
+    "/api/coin-positioning",
 })
 
 # Public by design (access.PUBLIC_PREFIXES) and the same for every visitor: no key needed.

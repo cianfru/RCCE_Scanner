@@ -40,6 +40,8 @@ from hl_persistence import (
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
+    last_trader_lean_bar as _db_last_lean_bar,
+    save_roster_rebuild as _db_save_roster_rebuild,
     max_account_values as _db_max_account_values,
     save_position_changes as _db_save_changes,
     load_position_changes as _db_load_changes,
@@ -603,6 +605,10 @@ async def refresh_leaderboard() -> int:
             merged.append(w)
     _roster = merged
     _roster_updated_at = time.time()
+    try:                                   # coin charts mark the rebuild: counts step when the list changes
+        _db_save_roster_rebuild(_roster_updated_at, sorted(mp_addresses))
+    except Exception as exc:
+        logger.warning("HyperLens DB: roster rebuild record failed: %s", exc)
     try:                                   # the cohort sweep reads these on the adaptive cadence
         from cohorts.sweeper import pin_roster
         await asyncio.to_thread(pin_roster, [w.address for w in _roster], elite_addresses)
@@ -1492,6 +1498,12 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     from activity import is_active
     from scan_schedule import SETTLE_SECONDS, last_bar_close
     bar = int(last_bar_close(time.time() if now is None else now)) - SETTLE_SECONDS
+    if not _last_lean_bar:
+        # After a restart: a close already recorded is not written again from later readings.
+        try:
+            _last_lean_bar = _db_last_lean_bar()
+        except Exception as exc:
+            logger.debug("HyperLens DB: last recorded close unknown: %s", exc)
     if bar <= _last_lean_bar or not _roster:
         return False
     if not is_active() and not roster_via_cohorts():
@@ -1510,6 +1522,11 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
         return False
     logger.info("HyperLens: stored profitable-trader lean for %d groups at bar %d", len(rows), bar)
     return True
+
+
+def profitable_lean_by_coin() -> Dict[str, dict]:
+    """profitable_lean per coin, from the latest readings (the stored record's live point)."""
+    return profitable_lean(lambda coin: (coin,))
 
 
 def profitable_traders_positioned() -> int:
@@ -2143,7 +2160,9 @@ def _fire_tg_whale_alert(chat_id: int, event: dict) -> None:
     side = str(event.get("side", "?")).lower()
     coin = event.get("coin", "?")
     wallet = event.get("wallet", "")
-    cohort = event.get("cohort", "tracked").replace("_", " ")
+    # Plain names, as in the app (the internal keys are money_printer / smart_money / elite).
+    cohort = {"money_printer": "profitable trader", "smart_money": "large account",
+              "elite": "profitable trader, large account"}.get(event.get("cohort"), "tracked wallet")
     head = f"{ta.esc(codename(wallet))} {action} {ta.esc(side)} {ta.coin_b(coin)} {ta.usd(event.get('size_usd', 0))}"
     if action == "closed":
         pnl = event.get("pnl", 0) or 0

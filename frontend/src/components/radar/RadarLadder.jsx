@@ -121,7 +121,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
 
   if (!c) return null;
   const held = (counts.long_usd || 0) + (counts.short_usd || 0);
-  return <section className={`radar-ladder radar-mapcard${compact ? " compact" : ""}`} ref={host} aria-label={`${c.coin}: profitable wallets by entry price`}
+  return <section className={`radar-ladder radar-mapcard${compact ? " compact" : ""}`} ref={host} aria-label={`${c.coin}: profitable traders by entry price`}
     style={cardHeight ? { height: cardHeight } : undefined}>
     <div className="rl-head" ref={head}>
       {!compact && <div className="rl-t">
@@ -171,7 +171,7 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
             }} />)}
           {g.left.map((l, k) => <text key={`l${k}`} className="rl-line" x={l.x} y={l.y} textAnchor={l.anchor} style={{ fill: l.col }}>{l.t}</text>)}
           {g.right.map((l, k) => <text key={`r${k}`} className="rl-line" x={W - g.R - 4} y={l.y} textAnchor="end" style={{ fill: l.col }}>{l.t}</text>)}
-          {!g.ws.length && <text className="rl-axl" x={g.mid} y={g.T + 40} textAnchor="middle">No profitable wallet holds {c.coin}</text>}
+          {!g.ws.length && <text className="rl-axl" x={g.mid} y={g.T + 40} textAnchor="middle">No profitable trader holds {c.coin}</text>}
         </svg>}
       {d && tipBox && <div className={`rl-tip${tip.pinned ? " pinned" : ""}`} style={tipBox} role="status">
         <div className="row"><b><WalletTag address={d.w.address} name={nameIn(names, d.w.address)} size={20} /></b><span style={{ color: d.col, fontWeight: 600 }}>{d.w.side === "long" ? "Long" : "Short"}</span></div>
@@ -190,10 +190,10 @@ export default function RadarLadder({ c, tf, mark, cardHeight, plotHeight = 420,
 
 function LadderHelp({ tf }) {
   return <HelpTip title="Who is where" width={340}>
-    <p>Each dot is one profitable wallet at its entry price: longs left, shorts right. Dot area is the position in dollars, scaled to the largest wallet in this coin. Hover or tap a dot for the wallet; click it (or tap it again) to open the trader's profile.</p>
+    <p>Each dot is one profitable trader at its entry price: longs left, shorts right. Dot area is the position in dollars, scaled to the largest wallet in this coin. Hover or tap a dot for the wallet; click it (or tap it again) to open the trader's profile.</p>
     <p>Solid line: price. Shaded: the coin's weekly support band (between its 20-week average and 21-week exponential average of Sunday closes). Dashed grey: trend, the {trendNote(null, tf).replace(/\.$/, "")}. Dashed green: the average long entry, weighted by dollars. Dotted: the median entry on each side.</p>
     <p>In their entry zone: price is within 3% of that average, with 3 or more profitable traders long.</p>
-    <p>Wallets: the Hyperliquid profitable cohort, as on the Traders page.</p>
+    <p>Wallets: Hyperliquid profitable traders, as on the Traders page.</p>
   </HelpTip>;
 }
 
