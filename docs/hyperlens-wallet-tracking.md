@@ -167,7 +167,7 @@ Once a day, after the 00:00 UTC close, `backend/wallet_history.py` reads the swe
 
 Changing the cohort moves the Radar's trader counts and the stored lean series.
 
-- `trader_lean` rows (the 4-hour record per coin and group) have a `roster_version` column: 2 from this change on, empty (NULL) before. Split studies on it.
+- `trader_lean` rows (the 4-hour record per coin and group) have a `roster_version` column: 2 from this change on, empty (NULL) before, and 3 from 31 Oct 2026 (net-exposure counting, below). Split studies on it.
 - Cohort snapshots (the Cohorts tab, every 30 minutes) carry `"roster_version": 2` inside their data.
 - `position_opens` and `convergences` rows have a `roster_version` column (NULL before). The convergence forward test (docs/reviews/trader-convergence-forward-test.md) was declared on version 1: 300 wallets, $50K accounts, readings every 30 minutes, a 2-hour gap limit (now 2.5 hours, to cover the flat tier). Version 2 rows are a different variant and need their own declaration and count.
 - `/api/hyperlens/status` shows `roster_version`, the targets and the cadence.
@@ -187,3 +187,18 @@ Each coin page has a "Long and short" card: wallets (or dollars) long above a li
 - **Live point:** each group's latest reading is appended (profitable traders from the current readings, the cohort groups from the last 30-minute snapshot), marked `live`.
 - **`roster_rebuilds`** (hyperlens.db): when the profitable-trader list was rebuilt and how many wallets joined and left. A step in the counts at a rebuild is the list changing, not trading; the chart marks rebuilds where 5 or more wallets changed. Rebuilds before the table existed are estimated once from the hourly snapshots (hours in which 5 or more tracked wallets had their first snapshot; who left is not known).
 - Builder-dex (`xyz:`) coins have no rows in either record.
+
+## Net exposure: shorts covered by spot or staked HYPE (31 Oct 2026)
+
+A perp short covered by the same coin the wallet holds on Hyperliquid spot, or (for HYPE) staked, is a funding trade: the wallet collects funding without a bet on price. On 31 Oct 2026, 109 of the 150 profitable traders short HYPE held staked HYPE, and two thirds of the holders' HYPE short value was covered on spot.
+
+Since then tracked traders (profitable traders and large accounts) are counted by net exposure (`backend/hl_hedges.py`):
+
+- a short covered for more than 80% of its size is not counted; a partly covered one counts for its uncovered part; longs are unchanged;
+- spot tokens map to perp coins by name (HYPE, PURR), Unit tokens by "U" + coin (UBTC, UETH, USOL; UFART is FARTCOIN), and k markets at 1/1000 (UBONK covers KBONK);
+- it applies to the consensus (the signal's tracked-wallet check, approved by the owner), the 4h trader record, the positioning map and Radar, the per-coin lists and the coin chart. Opens, convergences, trader entries and profiles still show the raw positions. The cohort sweep's groups (all-time winners, losers, whales) are not netted (their spot is not read);
+- only Hyperliquid is visible: a hedge on another exchange still counts as a short.
+
+Readings: `spotClearinghouseState` (weight 2) for every tracked wallet holding a short, at most once an hour, and `delegatorSummary` (weight 20) when it is short HYPE; up to 60 wallets per HyperLens loop tick, through the "positions" weight budget (about 35 weight a minute). Holdings are kept in hyperlens.db (`wallet_hedges`, a few hundred rows) and reloaded after a restart.
+
+Records: `trader_lean` rows written since carry `roster_version` 3. The switch is a `roster_rebuilds` row with note `hedges`, shown on the coin chart as a dot with its explanation.
