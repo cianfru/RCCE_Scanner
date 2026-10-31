@@ -32,7 +32,6 @@ import { usd as fmtPosUsd } from "../utils/cohorts.js";
 import { COIN_GROUPS, groupDefinitions } from "../utils/traderGroups.js";
 import useRosterCounts from "../hooks/useRosterCounts.js";
 import useViewport from "../hooks/useViewport.js";
-import RecentStrip from "./RecentStrip.jsx";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -110,7 +109,6 @@ export default function BMSBChart({
   positioningPane = false,
   positioning = null,
   positioningFailed = false,
-  recent = null,             // {data, failed}: the last 24 hours every 30 minutes (/api/coin-positioning/recent)
 }) {
   const { mode } = useTheme();
   const resetViewRef = useRef(null);
@@ -1089,7 +1087,6 @@ export default function BMSBChart({
           {hoverCandle.live && <span style={{color:col('#91b9e8')}}>Live</span>}
         </div>}
       </div>
-      {showPos && !error && recent && <RecentStrip data={recent.data} failed={recent.failed} group={posGroup} measure={posMeasure} />}
       {showPos && !error && <PositioningBar group={posGroup} setGroup={setPosGroup} measure={posMeasure} setMeasure={setPosMeasure}
         series={posSeries} bars={posBars} rebuilds={posRebuilds} hoverTime={hoverCandle?.time ?? null} failed={positioningFailed} />}
       {!loading && !error && spike && showTrend && <div style={{padding:'10px 18px',fontSize:12,color:T.text3,borderTop:`1px solid ${T.border}`,lineHeight:1.6}}>

@@ -34,22 +34,6 @@ export function candleBars(series, measure, tfSec, candleTimes, group = "profita
   return [...by.values()].sort((a, b) => a.time - b.time);
 }
 
-// The last n slots of slotS seconds ending with the one that holds endT, oldest first: each
-// {t (slot start), long, short, live} from the last reading in it, or {t} when none.
-export function slotBars(series, measure, slotS, endT, n) {
-  const first = Math.floor(endT / slotS) * slotS - (n - 1) * slotS;
-  const out = Array.from({ length: n }, (_, i) => ({ t: first + i * slotS }));
-  const pts = points(series, measure);
-  pts.forEach((p, i) => {
-    if (p.long == null || p.short == null) return;
-    const k = Math.floor((p.t - first) / slotS);
-    if (k < 0 || k >= n) return;
-    const live = !!series?.live && i === pts.length - 1;
-    if (out[k].at == null || out[k].at <= p.t) out[k] = { t: out[k].t, at: p.t, long: p.long, short: p.short, live };
-  });
-  return out;
-}
-
 // List rebuilds per candle (the candle in which the list changed; a rules change is stamped at
 // the close it took effect), joined counts summed.
 export function rebuildCandles(rebuilds, tfSec, candleTimes) {
