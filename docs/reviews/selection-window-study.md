@@ -13,7 +13,7 @@ With the list's other rules unchanged, does ranking by return over 60 or 90 days
 - **Wallets.** One leaderboard snapshot (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, saved 31 October 2026 19:57 UTC): 48,238 rows, SHA-256 `31abadebc58cb61e7956e6be694b9425faac2ac612dc370c1bacd5d594871b1e`. A row is listed when it has $10M+ of all-time volume or a $100K+ account today; rows that lost everything stay listed if they traded $10M+.
 - **Sample.** A fixed hash of the address (the first 8 hex digits of its SHA-256, modulo 10,000, under 5,000) picks half: 24,075 wallets, market makers included (they are set aside in the analysis, below). Reading every wallet would take about 15 hours of Hyperliquid's per-IP allowance; half takes about 7. A wallet still unreadable after three fetch runs is left out and counted.
 - **History.** Each sampled wallet's Hyperliquid `portfolio` reply, kept whole: all-time account value and PnL (net of deposits and withdrawals), total and perps only. Points are about a week apart (up to two weeks in the oldest accounts, daily or closer in young accounts and the last days), at times of each wallet's own.
-- **As of, never interpolated.** A value at a time is the wallet's last point at or before it (0 before its first point). Nothing after a date enters that date's selection, and a selection and its outcome never share a span between two points. Each window and outcome therefore starts and ends up to one point gap early, by the same rule in every arm.
+- **As of, never interpolated.** A value at a time is the wallet's last point at or before it (0 before its first point). The floors and the activity rule are read as of the last point at or before the date of the series the outcome is measured on (total, or perps in the perps check), since the other series can have points between it and the date. Nothing after a date's outcome starts enters that date's selection, except the sample, the market-maker flag and the $10M flag, which come from the 31 October snapshot. Each window and outcome starts and ends up to one point gap early, by the same rule in every arm.
 - **Not the leaderboard's own numbers.** The leaderboard's monthly PnL is exactly 0 for 26,549 rows, so it is neither used nor compared. Every window here is measured the same way, from the account history, as the live list would see it if it ranked on that history.
 - **BTC.** Hyperliquid's BTC daily candles: the open at each date and 30 days later, for the market check below.
 
@@ -37,7 +37,7 @@ For each date, the hit rate of the 60-day arm and of the 90-day arm minus that o
 
 If both longer windows meet the bar, 60 days, unless 90 days meets conditions 1-3 against 60 days. If neither meets it, the list keeps 30 days, and the numbers are context, not a signal.
 
-**What the bar can see.** Simulated on conditions 1-3 with K = 200, half of each arm shared with the 30-day arm and a 50% hit rate (a per-date spread of 3.5 points), adding 0, 3 or 5 points of month-to-month spread: a true +3 passes 39%, 28% or 18% of the time; +5 93%, 76% or 56%; +8 100%, 100% or 90%; no difference about 0-1%. +3 is the minimum that counts, not one the bar reliably detects. A fail reads "not shown"; differences under about +5 to +8 points are not excluded.
+**What the bar can see.** Simulated on conditions 1-3 with K = 200, half of each arm shared with the 30-day arm and a 50% hit rate (a per-date spread of 3.5 points), adding 0, 3 or 5 points of month-to-month spread (20,000 draws each): a true +3 passes 39%, 27% or 17% of the time; +5 91%, 72% or 48%; +8 100%, 98% or 88%; no difference 0.1%, 0.4% or 0.8%. +3 is the minimum that counts, not one the bar reliably detects. A fail reads "not shown"; differences under about +5 to +8 points are not excluded.
 
 ## Also reported (context only, no verdict)
 
@@ -45,13 +45,13 @@ If both longer windows meet the bar, 60 days, unless 90 days meets conditions 1-
 - **Everyone** eligible at t (the list's rules without a window), unranked: whether any ranking beats the crowd.
 - **Today's rules as they are** for each window: ROI 30%+, at most 600 (300 in the sample).
 - **Other list sizes:** half and double K. **Market makers kept**, **no activity rule**, **sub-account rows left out** (rows whose portfolio volume is under 90% of the leaderboard's, or with no portfolio volume this month against leaderboard volume: the leaderboard adds sub-accounts the portfolio does not cover; they are measured on the master account's own history, which is what the app follows).
-- **By point age at t** (2 days or less, 2 to 7, over 7): each group ranked among itself, K scaled to its share of the eligible wallets. This shows whether wallets with stale points behave differently.
+- **By point age at t** (under 2 days, 2 to under 7, 7 or more): each group ranked among itself, K scaled to its share of the eligible wallets, with the median length each arm's window and outcome actually read. Point age also changes those lengths (with weekly points, a fresh point reads 35 / 63 / 91-day windows and a 28-day outcome), so this is context about sampling, not about stale points alone.
 - **Turnover:** the share of each arm's list replaced 30 days later. The lag-1 autocorrelation of the per-date differences.
-- **90 against 60** per date.
+- **90 against 60** per date (always; it decides the choice only when both pass).
 
 ## Known limits
 
-- **Wallets that left the leaderboard.** A wallet under $10M of volume whose account later fell under $100K is not in today's leaderboard, so not in the sample; such wallets are mostly ones that lost or withdrew. About a fifth of the sample (4,907 rows) is under $10M of volume. The $10M+ check in the bar is the guard; the share of such picks per arm is reported.
+- **Wallets that left the leaderboard.** A wallet under $10M of volume whose account later fell under $100K is not in today's leaderboard, so not in the sample; such wallets are mostly ones that lost or withdrew. About a fifth of the sample (4,907 rows) is under $10M of volume. The $10M+ check in the bar is a partial guard: those rows are listed whatever happened to their account, but a wallet under $10M at a date reaches it only by trading on after it, so the check is not free of survivorship either (in simulation it moved the arms' differences by under half a point), and the per-arm share under $10M cannot show it.
 - **Market makers** are flagged from today's snapshot, not as they stood at each date.
 - **Weekly points** shift each window's ends back by up to a week, by the same rule in every arm, and move a 30-day window's length most in relative terms.
 - **Twelve dates, one market.** The months share the market's moves and are assumed independent; a lag-1 autocorrelation of 0.3 to 0.5 would raise the false-positive rate of conditions 1-3 from about 1% to 3-6%. The BTC check guards against one window simply suiting a rising or a falling year.
@@ -64,4 +64,10 @@ Not computed yet.
 
 ## Deviations
 
-None.
+**31 October 2026, before the first result** (the histories were being read; nothing had been analysed). A second review (code against this declaration with 68 mutation tests, and a no-skill simulation of the whole analysis over 200 seeds: mean differences -0.04 and -0.07 points, the bar never met) found one path that could change a number, and gaps in wording and tests:
+
+- **Floors read where the outcome starts.** The floors and the activity rule were read as of the date on each series. A wallet's perps points can fall a few days after its total points, so a perps reading inside the outcome's span could decide eligibility. They are now read as of the outcome series' last point at or before the date (code and test).
+- **Choices the code makes, now stated.** Without the BTC record there is no verdict. A date on which any window has no eligible wallet gives no difference, and then neither window has a verdict. The $10M+ and perps checks average the dates that have both arms and are not met when none has. In the perps check the floors stay the total account's $10K and the perps $5K, while PnL, base, ROI, the all-time rule and activity use the perps series.
+- **Context:** the 90-against-60 differences are reported for every date; the point-age groups are "under 2 days, 2 to under 7, 7 or more", with each arm's effective window and outcome lengths.
+- **Wording:** the power figures are from a larger simulation; the $10M+ check's survivorship and the snapshot flags are stated.
+- **Tests:** 22 tests added (`backend/tests/test_selection_window_rules.py`), pinning the rules at their edges, the choice between 60 and 90, each part of condition 4, the BTC dates and the refusal paths.

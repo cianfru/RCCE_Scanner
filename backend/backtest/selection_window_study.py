@@ -146,12 +146,34 @@ def active(w: Wallet, t: float) -> bool:
     return i >= 2 and w.ppnl.v[i - 1] != w.ppnl.v[i - 2]
 
 
-def eligible_base(w: Wallet, t: float, need_active: bool = True, drop_mm: bool = True) -> bool:
+def eligible_base(w: Wallet, t: float, need_active: bool = True, drop_mm: bool = True, perps: bool = False) -> bool:
+    """The floors and the activity rule, read as of c: the last point at or before t of the series the outcome is
+    measured on (total, or perps for the perps arms). The other series can have points between c and t, which
+    belong to the outcome's span; nothing after c is read."""
     if drop_mm and w.market_maker():
         return False
-    if w.av.asof(t) < MIN_AV or w.pav.asof(t) < MIN_PERP:
+    ser = w.pav if perps else w.av
+    i = bisect.bisect_right(ser.t, t)
+    if not i:
         return False
-    return active(w, t) if need_active else True
+    c = ser.t[i - 1]
+    if w.av.asof(c) < MIN_AV or w.pav.asof(c) < MIN_PERP:
+        return False
+    return active(w, c) if need_active else True
+
+
+def last_point(ser: Series, x: float) -> Optional[float]:
+    i = bisect.bisect_right(ser.t, x)
+    return ser.t[i - 1] if i else None
+
+
+def effective_days(w: Wallet, a: float, b: float) -> Optional[float]:
+    """Days between the points a window from a to b actually reads (from the first point if a is before it)."""
+    pb = last_point(w.av, b)
+    if pb is None:
+        return None
+    pa = last_point(w.av, a)
+    return (pb - (pa if pa is not None else w.av.t[0])) / DAY
 
 
 def ranked(wallets: Sequence[Wallet], t: float, days: int, min_roi: Optional[float] = None, perps: bool = False,
@@ -159,7 +181,7 @@ def ranked(wallets: Sequence[Wallet], t: float, days: int, min_roi: Optional[flo
     """(ROI, address) of the wallets meeting the list's rules for a ``days`` window at t, best first (ties: address)."""
     out = []
     for w in wallets:
-        if not eligible_base(w, t, need_active, drop_mm):
+        if not eligible_base(w, t, need_active, drop_mm, perps):
             continue
         pnl, roi, _ = window(w, t - days * DAY, t, perps)
         alltime = (w.ppnl if perps else w.pnl).asof(t)
@@ -306,7 +328,11 @@ def analyse(wallets: Sequence[Wallet], share: float, btc_up: Optional[Sequence[b
             members = {w.addr for w in base_w if lo * DAY <= w.av.staleness(t) < hi * DAY}
             ks = max(1, round(k * len(members) / max(1, len(base_w))))
             sarms, _ = equal_arms(within(members), ks)
-            strata[f"{lo}-{hi}d"] = {"k": ks, "eligible": len(members), **{d: metrics(out(sarms[d])) for d in WINDOWS}}
+            lengths = {d: {"window_days": median([x for a in sarms[d] if (x := effective_days(by[a], t - d * DAY, t)) is not None]),
+                           "outcome_days": median([x for a in sarms[d] if (x := effective_days(by[a], t, t + OUTCOME_D * DAY)) is not None])}
+                       for d in WINDOWS}
+            strata[f"{lo}-{hi}d"] = {"k": ks, "eligible": len(members), "lengths": lengths,
+                                     **{d: metrics(out(sarms[d])) for d in WINDOWS}}
         res["strata"].append(strata)
 
     def diffs(key, d, ref=WINDOWS[0], field="hit"):
@@ -333,6 +359,7 @@ def analyse(wallets: Sequence[Wallet], share: float, btc_up: Optional[Sequence[b
         v["met"] = v["met"] and all(c["met"] for c in checks.values())
         verdict[d] = v
     passing = [d for d in WINDOWS[1:] if verdict[d]["met"]]
+    per_date_90_60 = diffs("primary", 90, ref=60)                   # context, always
     between = None
     if len(passing) == 2:
         between = core([x for x in diffs("primary", 90, ref=60)])
@@ -343,7 +370,8 @@ def analyse(wallets: Sequence[Wallet], share: float, btc_up: Optional[Sequence[b
                      "replaced": 100.0 * (1 - len(lists[d][i] & lists[d][i + 1]) / len(lists[d][i + 1]))
                      if lists[d][i + 1] else None} for i in range(len(lists[d]) - 1)] for d in WINDOWS}
     return {"k": k, "cap": cap, "share": share, "wallets": len(wallets), **res, "turnover": turnover,
-            "verdict": verdict, "ninety_vs_sixty": between, "chosen_window": chosen, "signal": bool(passing)}
+            "verdict": verdict, "ninety_vs_sixty": between, "ninety_vs_sixty_per_date": per_date_90_60,
+            "chosen_window": chosen, "signal": bool(passing)}
 
 
 # --- fetching ----------------------------------------------------------------------------------
