@@ -22,4 +22,5 @@ wallet_history_live.json
 backend/data/larsson_cache/
 backend/data/larsson_runs/
 backend/data/wallet_history_cache/
+backend/data/selection_window_cache/
 backend/hyperliquid_universe.json
