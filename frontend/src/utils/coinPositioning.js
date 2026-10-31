@@ -49,6 +49,13 @@ export function niceMax(v) {
   return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
 }
 
+// Axis label for a scale top from niceMax: "$500M", "$1B", "$20K", or a plain count.
+export function tickLabel(v, measure) {
+  if (measure !== "usd") return count(v);
+  for (const [d, u] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) if (v >= d) return `$${+(v / d).toFixed(1)}${u}`;
+  return `$${Math.round(v)}`;
+}
+
 export function count(v) {
   if (v == null) return "—";
   return v >= 10_000 ? `${Math.round(v / 1000)}K` : String(Math.round(v));

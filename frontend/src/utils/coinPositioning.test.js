@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { points, runs, peak, nearest, everHeld, niceMax, count } from "./coinPositioning.js";
+import { points, runs, peak, nearest, everHeld, niceMax, count, tickLabel } from "./coinPositioning.js";
 import { groupDefinitions, COIN_GROUPS } from "./traderGroups.js";
 
 const g = { t: [10, 20, 30, 40], ln: [1, null, 3, 0], sn: [2, null, 1, 0], lu: [100, null, 300, 0], su: [5, null, 9, 0] };
@@ -24,6 +24,8 @@ test("runs split at gaps; peak, nearest and everHeld read recorded points", () =
 test("scale and number formats", () => {
   assert.deepEqual([niceMax(0), niceMax(3), niceMax(13), niceMax(160), niceMax(4.2e8)], [1, 5, 20, 200, 5e8]);
   assert.deepEqual([count(null), count(7), count(12_400)], ["—", "7", "12K"]);
+  assert.deepEqual([tickLabel(5e8, "usd"), tickLabel(1e9, "usd"), tickLabel(2e4, "usd"), tickLabel(500, "usd"), tickLabel(50, "n")],
+    ["$500M", "$1B", "$20K", "$500", "50"]);
 });
 
 test("definitions: live counts, the overlap, and no forecast words", () => {

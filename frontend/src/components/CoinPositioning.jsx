@@ -5,7 +5,7 @@ import { apiJson } from "../edge.js";
 import { getBaseSymbol } from "../theme.js";
 import { sideBarColor } from "../utils/traderFormat.js";
 import { dayLabel, timeTicks, usd } from "../utils/cohorts.js";
-import { points, runs, peak, nearest, everHeld, recorded, niceMax, count } from "../utils/coinPositioning.js";
+import { points, runs, peak, nearest, everHeld, recorded, niceMax, count, tickLabel } from "../utils/coinPositioning.js";
 import { COIN_GROUPS, groupDefinitions } from "../utils/traderGroups.js";
 import useRosterCounts from "../hooks/useRosterCounts.js";
 import { pollWhileVisible } from "../utils/visiblePoll.js";
@@ -72,8 +72,8 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
           {run.length > 1 && <path d={edge(run, "short")} stroke={sc} className="cpos-edge" />}
         </g>)}
         <line className="cpos-zero" x1={padL} x2={width - padR} y1={mid} y2={mid} />
-        <text className="cpos-tick" x={padL - 6} y={padT + 9} textAnchor="end">{fmt(top)}</text>
-        <text className="cpos-tick" x={padL - 6} y={padT + plotH} textAnchor="end">{fmt(top)}</text>
+        <text className="cpos-tick" x={padL - 6} y={padT + 9} textAnchor="end">{tickLabel(top, measure)}</text>
+        <text className="cpos-tick" x={padL - 6} y={padT + plotH} textAnchor="end">{tickLabel(top, measure)}</text>
         {ticks.map(t => <text key={t.ts} className="cpos-tick" x={x(t.ts)} y={H - 4} textAnchor="middle">{t.label}</text>)}
         {first != null && first - t0 > 2 * 86400 && <text className="cpos-since" x={padL + 6} y={mid - 6}>from {dayLabel(first)}</text>}
         {hover != null && <>
