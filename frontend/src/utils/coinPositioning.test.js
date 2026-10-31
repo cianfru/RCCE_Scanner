@@ -36,7 +36,8 @@ test("one bar pair per candle; the live reading goes to the current candle, neve
 test("rebuilds per candle, joined summed, the rules change kept", () => {
   const r = [{ t: c0 + 3600, joined: 20 }, { t: c0 + 7200, joined: 14, left: 3 }, { t: c0 + 2 * H4, note: "rules" }];
   assert.deepEqual(rebuildCandles(r, H4, [c0, c0 + H4]), [
-    { time: c0, joined: 34, left: 3, rules: false }, { time: c0 + H4, joined: 0, left: 0, rules: true }]);
+    { time: c0, joined: 34, left: 3, rules: false, hedges: false }, { time: c0 + H4, joined: 0, left: 0, rules: true, hedges: false }]);
+  assert.equal(rebuildCandles([{ t: c0 + 60, note: "hedges" }], H4, [c0])[0].hedges, true);
 });
 
 test("the last 24 hours in 30-minute slots: the last reading in each, gaps left empty", () => {

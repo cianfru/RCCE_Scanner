@@ -113,6 +113,17 @@ CREATE TABLE IF NOT EXISTS roster_rebuilds (
 );
 CREATE TABLE IF NOT EXISTS roster_members (address TEXT PRIMARY KEY);
 
+-- Spot (and staked HYPE) holdings of tracked wallets holding shorts (hl_hedges): a short covered
+-- by them is a funding trade and is counted by net exposure. coin '' marks a wallet read with
+-- nothing held. Replaced as a whole on each save (a few hundred rows).
+CREATE TABLE IF NOT EXISTS wallet_hedges (
+    address TEXT NOT NULL,
+    coin TEXT NOT NULL,
+    amount REAL NOT NULL,
+    ts REAL NOT NULL,
+    PRIMARY KEY (address, coin)
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS position_first_seen (
     address TEXT NOT NULL,
     coin TEXT NOT NULL,
@@ -456,6 +467,34 @@ def _estimate_past_rebuilds(conn: sqlite3.Connection, min_joined: int = 5) -> in
         rows.append((int(v2), None, None, None, "rules"))
     conn.executemany("INSERT OR IGNORE INTO roster_rebuilds (ts, profitable, joined, left, note) VALUES (?, ?, ?, ?, ?)", rows)
     return len(rows)
+
+
+def save_hedges(held: Dict[str, tuple], empty: Dict[str, float]) -> int:
+    """held: address -> (read at, {coin: amount}); empty: address -> read at (nothing held)."""
+    rows = [(a, c, float(v), float(ts)) for a, (ts, coins) in held.items() for c, v in coins.items()]
+    rows += [(a, "", 0.0, float(ts)) for a, ts in empty.items()]
+    conn = _get_conn()
+    conn.execute("DELETE FROM wallet_hedges")
+    conn.executemany("INSERT OR REPLACE INTO wallet_hedges (address, coin, amount, ts) VALUES (?, ?, ?, ?)", rows)
+    conn.commit()
+    return len(rows)
+
+
+def load_hedges(since: float) -> List[tuple]:
+    """(address, coin, amount, ts) read at or after since."""
+    return _get_conn().execute(
+        "SELECT address, coin, amount, ts FROM wallet_hedges WHERE ts >= ?", (float(since),)).fetchall()
+
+
+def mark_counting_change(ts: float, note: str) -> bool:
+    """Once: a dated marker that the way positions are counted changed (the coin chart's dot)."""
+    conn = _get_conn()
+    if conn.execute("SELECT 1 FROM roster_rebuilds WHERE note = ?", (note,)).fetchone():
+        return False
+    conn.execute("INSERT OR IGNORE INTO roster_rebuilds (ts, profitable, joined, left, note) VALUES (?, NULL, NULL, NULL, ?)",
+                 (int(ts), note))
+    conn.commit()
+    return True
 
 
 def load_roster_rebuilds(since: float) -> List[tuple]:

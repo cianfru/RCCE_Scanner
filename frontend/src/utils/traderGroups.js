@@ -15,6 +15,7 @@ export function groupDefinitions(counts = {}) {
     winners: "All-time winners: up $100K+ over their whole Hyperliquid history.",
     losers: "All-time losers: a net loss over it.",
     whales: "Whales: $1M+ in their perp account.",
+    netting: "Profitable traders and large accounts are counted by net exposure: a short covered by the same coin held on Hyperliquid spot or staked is a funding trade, not a bet on price, and is left out (a partly covered one counts for the rest). Hedges on other exchanges cannot be seen.",
     windows: "Profitable traders is about this month; all-time winners about every month since the wallet started. A wallet can be in several groups.",
     sweep: "All-time winners, losers and whales: about 2,300 wallets with $100K+ in perps, or $100K+ all-time profit and $10K+ in perps; market makers left out.",
   };
