@@ -4526,6 +4526,69 @@ async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), 
     return Response(content=raw, media_type="application/json")
 
 
+def _coin_recent_body(coin: str, hours: int, now: float) -> dict:
+    from cohorts.store import RECENT_GROUPS
+    from cohorts.sweeper import live_coin_groups, store as cohort_store
+    since = now - hours * 3600
+    groups: dict = {}
+
+    def put(s, t, v):
+        s["t"].append(int(t))
+        for k, x in zip(("ln", "sn", "lu", "su"), v if v is not None else (None,) * 4):
+            s[k].append(None if x is None else int(round(x)))
+
+    times, vals = cohort_store().recent_history(coin, since)
+    for i, g in enumerate(RECENT_GROUPS):
+        s = groups[g] = {"t": [], "ln": [], "sn": [], "lu": [], "su": [], "live": False}
+        for ts, prof_ok in times:
+            v = vals.get(ts)
+            if g == "profitable" and not prof_ok:
+                put(s, ts, None)
+            else:
+                put(s, ts, v[4 * i:4 * i + 4] if v is not None else (0, 0, 0, 0))
+    last = times[-1][0] if times else 0
+    live = _profitable_live()
+    if live is not None and now - last > 60:
+        r = live.get(coin)
+        put(groups["profitable"], int(now // 60) * 60,
+            (r["long"], r["short"], r["long_usd"], r["short_usd"]) if r else (0, 0, 0, 0))
+        groups["profitable"]["live"] = True
+    lv = live_coin_groups()
+    if lv and lv[0] > last and now - lv[0] < 3600:
+        by = lv[1].get(coin, {})
+        for g in RECENT_GROUPS[1:]:
+            put(groups[g], lv[0], by.get(g) or (0, 0, 0, 0))
+            groups[g]["live"] = True
+    return {"coin": coin, "hours": hours, "slot_s": 1800, "groups": groups}
+
+
+@app.get("/api/coin-positioning/recent")
+async def coin_positioning_recent(coin: str = Query(..., min_length=1, max_length=40), hours: int = Query(24, ge=1, le=72)):
+    """The last hours of one coin's long and short, one reading per 30 minutes, for profitable
+    traders and the three wallet-cohort groups (cohorts coin_recent, kept 3 days), with each
+    group's latest reading appended (``live``). Same shape as /api/coin-positioning."""
+    import json
+    from fastapi.responses import Response
+    from hl_intelligence import _normalize_coin
+    c = _normalize_coin(coin.strip())
+    now = time.time()
+    key = ("recent", c, hours)
+    hit = _COIN_POS_CACHE.get(key)
+    if hit and now - hit[0] < 60:
+        return Response(content=hit[1], media_type="application/json")
+    if not c or c.startswith("xyz:"):
+        body = {"coin": c, "hours": hours, "covered": False, "groups": {}}
+    else:
+        body = {**_coin_recent_body(c, hours, now), "covered": True}
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    for k in [k for k, v in _COIN_POS_CACHE.items() if now - v[0] >= 60]:
+        del _COIN_POS_CACHE[k]
+    while len(_COIN_POS_CACHE) >= _COIN_POS_CACHE_MAX:
+        del _COIN_POS_CACHE[min(_COIN_POS_CACHE, key=lambda k: _COIN_POS_CACHE[k][0])]
+    _COIN_POS_CACHE[key] = (now, raw)
+    return Response(content=raw, media_type="application/json")
+
+
 @app.get("/api/hyperlens/positions/{symbol}")
 async def hyperlens_symbol_positions(symbol: str):
     """Per-wallet position breakdown for a symbol."""

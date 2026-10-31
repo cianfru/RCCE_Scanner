@@ -35,7 +35,7 @@ const EDGE_PATHS = new Set(["/api/scan", "/api/scan/sparklines", "/api/scan/row"
   "/api/hyperlens/positioning",
   "/api/traders/leaderboard", "/api/tradfi", "/api/universe", "/api/sectors",
   "/api/portfolio/context", "/api/portfolio/events",
-  "/api/coin-positioning"]);
+  "/api/coin-positioning", "/api/coin-positioning/recent"]);
 let edgeAllowed = false;     // the page allows it (VITE_EDGE_CACHE)
 let edgeCfg = null;          // { prefix, key, expiresAt } while the API has it on
 let edgeCheckedAt = 0;

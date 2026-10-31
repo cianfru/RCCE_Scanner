@@ -213,3 +213,48 @@ def test_endpoint_cache_is_bounded_and_builder_dex_coins_are_not_covered(monkeyp
     assert len(main._COIN_POS_CACHE) == main._COIN_POS_CACHE_MAX
     assert c.get("/api/coin-positioning?coin=xyz:GOLD").json()["covered"] is False
     assert c.get("/api/coin-positioning?coin=BTC&days=180").status_code == 422
+
+
+def test_recent_record_once_per_30_minutes_with_profitable_traders(tmp_path, monkeypatch):
+    import cohorts.sweeper as mod
+    st = _store(tmp_path)
+    sw = Sweeper(st, None, TokenBucket(6000))
+    prof = {"BTC": {"long": 4, "short": 9, "long_usd": 40.0, "short_usd": 90.0}}
+    monkeypatch.setattr(mod, "_profitable_now", lambda: prof)
+    monkeypatch.setattr(st, "load_states", lambda now, age: STATES)
+    s0 = 1800 * 1_000_000
+    sw.record_recent(s0 + 60)
+    sw.record_recent(s0 + 900)                       # same slot: not written again
+    monkeypatch.setattr(mod, "_profitable_now", lambda: None)   # HyperLens stale: a gap for them
+    sw.record_recent(s0 + 1800 + 60)
+    times, vals = st.recent_history("BTC", 0)
+    assert times == [(s0 + 60, True), (s0 + 1860, False)]
+    assert vals[s0 + 60][:4] == (4, 9, 40, 90) and vals[s0 + 60][4:8] == (1, 1, 300, 50)
+    assert vals[s0 + 1860][:4] == (None, None, None, None)
+    times, vals = st.recent_history("PURR", 0)
+    assert vals[s0 + 60][:4] == (0, 0, 0, 0) and vals[s0 + 60][12:16] == (0, 1, 0, 9)
+    assert sw._states is None
+
+
+def test_recent_endpoint_marks_gaps_and_appends_live_points(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import cohorts.sweeper as mod
+    import main
+    old = mod._store
+    mod._store = _store(tmp_path)
+    main._COIN_POS_CACHE.clear()
+    try:
+        now = time.time()
+        s0 = int(now // 1800) * 1800 - 3 * 1800
+        monkeypatch.setattr(mod, "_profitable_now", lambda: {"BTC": {"long": 4, "short": 9, "long_usd": 40.0, "short_usd": 90.0}})
+        mod._store.write_recent(s0, mod.coin_groups(STATES), mod._profitable_now())
+        mod._store.write_recent(s0 + 1800, mod.coin_groups(STATES), None)
+        monkeypatch.setattr(main, "_profitable_live", lambda: {"BTC": {"long": 5, "short": 8, "long_usd": 50.0, "short_usd": 80.0}})
+        monkeypatch.setattr(mod, "_live_coin_groups", None)
+        body = TestClient(main.app).get("/api/coin-positioning/recent?coin=BTC&hours=24").json()
+    finally:
+        mod._store = old
+    p = body["groups"]["profitable"]
+    assert p["ln"] == [4, None, 5] and p["live"] is True
+    assert body["groups"]["winners"]["ln"] == [1, 1] and body["groups"]["winners"]["live"] is False
+    assert body["covered"] is True and body["slot_s"] == 1800
