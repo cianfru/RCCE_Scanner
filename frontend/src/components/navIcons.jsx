@@ -33,6 +33,12 @@ const GLYPHS = {
     <rect x="6.5" y="3" width="3" height="10" rx="0.5" {...S}/>
     <rect x="11" y="5" width="3" height="8" rx="0.5" {...S}/>
   </>,
+  // Market history: longs above the line, shorts below it.
+  market: <>
+    <path d="M2 8.5h12" {...S} strokeLinecap="round"/>
+    <path d="M4 8.5V5M7 8.5V3M10 8.5V4.5M13 8.5V6" {...S} strokeLinecap="round"/>
+    <path d="M5.5 8.5v2.5M8.5 8.5v4M11.5 8.5v2" {...S} strokeLinecap="round"/>
+  </>,
   analytics: <>
     <path d="M2 13h12" {...S} strokeLinecap="round"/>
     <path d="M3 10v3M6 7v6M9 5v8M12 3v10" {...S} strokeLinecap="round"/>

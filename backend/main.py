@@ -310,6 +310,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Market history init failed (non-fatal): %s", e)
 
+    # Smart money and whales long/short at each daily close, kept past the sweep's retention (market history page)
+    try:
+        from wallet_history import run_forever as run_wallet_history
+        asyncio.create_task(run_wallet_history())
+    except Exception as e:
+        logger.warning("Wallet history init failed (non-fatal): %s", e)
+
+    # Derive's Smart options wallets after the drawer's seed: Cowboy's daily file, read every few hours
+    try:
+        from derive_wallets import run_forever as run_derive_counts
+        asyncio.create_task(run_derive_counts())
+    except Exception as e:
+        logger.warning("Derive counts init failed (non-fatal): %s", e)
+
     # Forward shadow log for RCCE exits (research; reads 1D results once a day, never trades)
     try:
         from exit_shadow import run_exit_shadow
@@ -4352,6 +4366,24 @@ async def market_history_spark():
         return market_history.spark()
     except FileNotFoundError:
         return JSONResponse({"detail": "Market history seed missing from this deploy"}, status_code=503)
+
+
+@app.get("/api/market-history/wallets")
+async def market_history_positioning():
+    """Smart money, whales and profitable traders: long and short at each daily close, rebuilt days then recorded
+    ones. The last good view, marked stale, if a rebuild fails (degrade.py)."""
+    import degrade
+    import wallet_history
+    return degrade.LAST_GOOD.serve_sync(("market-history-wallets",), wallet_history.view)
+
+
+@app.get("/api/market-history/derive")
+async def market_history_derive():
+    """Derive's Smart options wallets at each daily close, as ranked then and as ranked today, and their new puts
+    (the market history page's Derive drawer; a seed built by hand, no Derive reads here)."""
+    import degrade
+    import derive_wallets
+    return degrade.LAST_GOOD.serve_sync(("market-history-derive",), derive_wallets.view)
 
 
 @app.get("/api/cohorts")

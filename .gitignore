@@ -13,6 +13,7 @@ backend/feature_flags.json
 *.db-shm
 *.db-wal
 market_history_live.json
+wallet_history_live.json
 *.pkl
 
 # Study data: the paid third-party files in backend/data/private/ are tracked (the repo
@@ -20,4 +21,5 @@ market_history_live.json
 # cache and run outputs are regenerated on demand.
 backend/data/larsson_cache/
 backend/data/larsson_runs/
+backend/data/wallet_history_cache/
 backend/hyperliquid_universe.json

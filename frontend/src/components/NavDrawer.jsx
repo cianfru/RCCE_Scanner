@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
   {
     label: "Research",
     items: [
+      { key: "market", label: "Market history", desc: "Uptrend share, Fear & Greed and wallets since 2019" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
       { key: "bridge", label: "Bridge", desc: "USDC in and out of Hyperliquid" },

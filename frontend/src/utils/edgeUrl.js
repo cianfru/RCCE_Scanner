@@ -8,6 +8,8 @@ export const EDGE_PATHS = new Set([
   "/api/setup-map",
   "/api/market-history",
   "/api/market-history/spark",
+  "/api/market-history/wallets",
+  "/api/market-history/derive",
   "/api/hyperlens/consensus",
   "/api/hyperlens/positioning",
   "/api/traders/leaderboard",

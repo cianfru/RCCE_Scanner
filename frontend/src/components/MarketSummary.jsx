@@ -5,8 +5,7 @@ import HelpTip from "./HelpTip.jsx";
 import FearGreedDial from "./FearGreedDial.jsx";
 import SignalLadder from "./SignalLadder.jsx";
 import HistoryButton from "./SparkHistoryButton.jsx";   // the history button drawn as a sparkline (plain icon until it loads)
-import MarketHistoryDrawer from "./MarketHistoryDrawer.jsx";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { CONSENSUS_LINE, CONSENSUS_NOTES, regimeMix } from "../utils/marketSummary.js";
 
 const CONSENSUS_COLORS = () => ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-OFF": T.red, ACCUMULATION: T.cyan, MIXED: T.text2 });
@@ -14,7 +13,7 @@ const CONSENSUS_COLORS = () => ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-
 // Market summary: consensus and regime mix | Fear & Greed dial | signal counts.
 export default function MarketSummary({ regimeRows, signalRows, consensus, sentiment, timeframe, scopeLabel, spot = false,
                                         activeSignalFilter, onSignalFilter }) {
-  const [history, setHistory] = useState(null);       // null | "breadth" | "fear": the history drawer
+  const navigate = useNavigate();                     // the history buttons open the market history page
   const label = consensus?.consensus || null;
   const mix = regimeMix(regimeRows, label || "MIXED");
   const color = (label && CONSENSUS_COLORS()[label]) || "var(--t-text3)";
@@ -40,7 +39,7 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
             <p>This is the same count the engine uses, so it covers both market kinds whichever one the grid shows.</p>
             <p>Consensus is one of the nine core checks behind a long signal: it passes on RISK-ON or ACCUMULATION. Two paths read it the other way: Light long in Uptrend (moderate z) and the Re-accumulating setups need RISK-ON or MIXED. RISK-OFF also blocks most Accumulate paths (not Capitulation absorption or funding-squeeze setups) and lets Risk-off exits fire.</p>
           </HelpTip>
-          <HistoryButton label="Uptrend share through history" onClick={() => setHistory("breadth")} />
+          <HistoryButton label="Uptrend share through history" onClick={() => navigate("/market")} />
           <span className="ms-eyebrow-meta ms-all" title="Perps and spot together: the count the engine uses">all markets</span>
         </div>
         <strong className="ms-headline" style={{ "--consensus-color": color }}>{label || "Awaiting analysis"}</strong>
@@ -62,10 +61,9 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
         </ul>}
         {label && <p className="ms-note">{CONSENSUS_NOTES[label] || CONSENSUS_NOTES.MIXED}</p>}
       </div>
-      <FearGreedDial value={sentiment?.fear_greed_value} loaded={sentiment != null} onHistory={() => setHistory("fear")} />
+      <FearGreedDial value={sentiment?.fear_greed_value} loaded={sentiment != null} onHistory={() => navigate("/market?view=fear")} />
       <SignalLadder rows={signalRows} timeframe={timeframe} scopeLabel={scopeLabel} spot={spot}
         active={activeSignalFilter} onChange={onSignalFilter} />
     </GlassCard>
-    {history && <MarketHistoryDrawer tab={history} onTab={setHistory} onClose={() => setHistory(null)} />}
   </FadeIn>;
 }
