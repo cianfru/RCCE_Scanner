@@ -16,7 +16,7 @@ import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
-import CoinPositioning from "../components/CoinPositioning.jsx";
+import useCoinPositioning from "../hooks/useCoinPositioning.js";
 import useCoinTraders from "../hooks/useCoinTraders.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 import useFavorites from "../hooks/useFavorites.js";
@@ -250,6 +250,8 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   useEffect(() => { window.scrollTo(0, 0); }, [urlSymbol]);
   // Tracked traders on this coin: loaded once, drawn on the chart and listed in the Traders card.
   const traders = useCoinTraders(data?.symbol, !!data);
+  // Long and short of groups of wallets, as bars under the chart's candles.
+  const positioning = useCoinPositioning(data?.symbol, !!data);
   const traderApi = useRef(null);
 
   // Set document title
@@ -357,6 +359,9 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           traderApi={traderApi}
           showSetup={false}
           myEntry={myEntry}
+          positioningPane={!getBaseSymbol(data.symbol).toLowerCase().startsWith("xyz:")}
+          positioning={positioning.data}
+          positioningFailed={positioning.failed}
         />
       </div>
 
@@ -388,9 +393,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"} price={data.price}
           onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
-
-      {/* Long and short over time on this coin, per group of wallets. */}
-      <CoinPositioning symbol={data.symbol} spot={marketKind === "spot"} />
 
       {/* One click deeper: the full checklist, and every market reading. */}
       <details className="coin-more">

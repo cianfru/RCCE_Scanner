@@ -1,37 +1,50 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { points, runs, peak, nearest, latest, everHeld, niceMax, count, tickLabel } from "./coinPositioning.js";
+import { points, closeOf, candleEndingAt, candleBars, rebuildCandles, latest, recorded, count } from "./coinPositioning.js";
 import { groupDefinitions, COIN_GROUPS } from "./traderGroups.js";
 
-const g = { t: [10, 20, 30, 40], ln: [1, null, 3, 0], sn: [2, null, 1, 0], lu: [100, null, 300, 0], su: [5, null, 9, 0] };
+const H4 = 14400, D = 86400;
+const c0 = 1793448000;                     // 31 Oct 2026 12:00 UTC, a 4h candle open
 
 test("points pick the measure and keep gaps", () => {
+  const g = { t: [10, 20], ln: [1, null], sn: [2, null], lu: [100, null], su: [5, null] };
   assert.deepEqual(points(g, "n")[1], { t: 20, long: null, short: null });
-  assert.deepEqual(points(g, "usd")[2], { t: 30, long: 300, short: 9 });
+  assert.deepEqual(points(g, "usd")[0], { t: 10, long: 100, short: 5 });
   assert.deepEqual(points(null, "n"), []);
 });
 
-test("runs split at gaps; peak, nearest and everHeld read recorded points", () => {
-  const p = points(g, "n");
-  assert.deepEqual(runs(p).map(r => r.map(x => x.t)), [[10], [30, 40]]);
-  // A missing stretch longer than one and a half 4h readings (downtime) also splits a run.
-  const h = 3600, q = [0, 4, 8, 20, 24].map(k => ({ t: k * h, long: 1, short: 1 }));
-  assert.deepEqual(runs(q).map(r => r.length), [3, 2]);
-  assert.equal(peak(p), 3);
-  assert.equal(nearest(p, 22, 15).t, 30);
-  assert.equal(nearest(p, 200, 15), null);
-  assert.equal(latest(p).t, 40);
-  assert.equal(latest(points({ t: [1, 2], ln: [3, null], sn: [1, null] }, "n")).t, 1);
-  assert.equal(latest([]), null);
-  assert.equal(everHeld(p), true);
-  assert.equal(everHeld(points({ t: [1], ln: [0], sn: [0] }, "n")), false);
+test("a stored reading belongs to the candle that closed; the sweep's lands minutes later", () => {
+  assert.equal(closeOf(c0 + H4, "profitable"), c0 + H4);             // stored at the close
+  assert.equal(closeOf(c0 + H4 + 21 * 60, "winners"), c0 + H4);      // first snapshot after it
+  assert.equal(closeOf(c0 + H4 + 50 * 60, "whales"), c0 + H4);       // a late one still describes that close
+  assert.equal(candleEndingAt(c0 + H4, H4), c0);
+  assert.equal(candleEndingAt(c0 + 12 * 3600, D), c0 - 12 * 3600);  // daily: the midnight close ends that day
+  assert.equal(candleEndingAt(c0 + 8 * 3600, D), c0 - 12 * 3600);   // a 20:00 close is inside the same day
 });
 
-test("scale and number formats", () => {
-  assert.deepEqual([niceMax(0), niceMax(3), niceMax(13), niceMax(160), niceMax(4.2e8)], [1, 5, 20, 200, 5e8]);
+test("one bar pair per candle; the live reading goes to the current candle, never over a close", () => {
+  const prof = { t: [c0, c0 + H4, c0 + H4 + 600], ln: [5, 6, 7], sn: [1, 1, 2], live: true };
+  const times = [c0 - H4, c0, c0 + H4];
+  assert.deepEqual(candleBars(prof, "n", H4, times, "profitable").map(b => [b.time, b.long, b.live]),
+    [[c0 - H4, 5, false], [c0, 6, false], [c0 + H4, 7, true]]);  // 10 min after the close: its own candle
+  const sweep = { t: [c0 + 1260, c0 + H4 + 1500, c0 + H4 + 1800 * 2], ln: [3, null, 4], sn: [1, null, 2], live: true };
+  assert.deepEqual(candleBars(sweep, "n", H4, times, "winners").map(b => [b.time, b.long]),
+    [[c0 - H4, 3], [c0 + H4, 4]]);                              // c0: its reading is a gap
+  assert.deepEqual(candleBars({ t: [c0 + 9 * H4], ln: [1], sn: [1] }, "n", H4, times, "winners"), []);  // no candle
+});
+
+test("rebuilds per candle, joined summed, the rules change kept", () => {
+  const r = [{ t: c0 + 3600, joined: 20 }, { t: c0 + 7200, joined: 14, left: 3 }, { t: c0 + 2 * H4, note: "rules" }];
+  assert.deepEqual(rebuildCandles(r, H4, [c0, c0 + H4]), [
+    { time: c0, joined: 34, left: 3, rules: false }, { time: c0 + H4, joined: 0, left: 0, rules: true }]);
+});
+
+test("latest, recorded and counts", () => {
+  const p = points({ t: [1, 2], ln: [3, null], sn: [1, null] }, "n");
+  assert.equal(latest(p).t, 1);
+  assert.equal(latest([]), null);
+  assert.equal(recorded(p), true);
   assert.deepEqual([count(null), count(7), count(12_400)], ["—", "7", "12K"]);
-  assert.deepEqual([tickLabel(5e8, "usd"), tickLabel(1e9, "usd"), tickLabel(2e4, "usd"), tickLabel(500, "usd"), tickLabel(50, "n")],
-    ["$500M", "$1B", "$20K", "$500", "50"]);
 });
 
 test("definitions: live counts, the overlap, and no forecast words", () => {
