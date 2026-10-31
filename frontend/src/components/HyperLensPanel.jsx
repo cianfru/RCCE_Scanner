@@ -1792,6 +1792,7 @@ export default function HyperLensPanel({ isMobile }) {
                 {bySide ? <>
                   <p>{groupDefinitions(status).profitable}</p>
                   <p>{groupDefinitions(status).large}</p>
+                  <p>{groupDefinitions(status).netting}</p>
                   <p>One row per coin held by {SUMMARY_MIN} or more of them, most traders first: how many are long and short, their dollars, and the price against the median entry of the side most of them are on (green when that side is in profit). 24h is the change in traders long and short since a day ago. Open a row for the largest wallets on each side.</p>
                   <p>Bullish or bearish: at least 15% more of them long than short, or the reverse; otherwise mixed.</p>
                 </> : <>

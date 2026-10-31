@@ -28,6 +28,7 @@ import aiohttp
 import hl_cadence as _cadence
 import hl_entities as _entities_rule
 import hl_calls as _hl_calls
+import hl_hedges as _hedges
 from ticker_renames import K_BASES as _K_BASES, k_key as _k_key, hl_name
 from hl_persistence import (
     save_snapshots as _db_save_snapshots,
@@ -138,6 +139,9 @@ _PERP_EQUITY_LOOKBACK_S = 7 * 86400        # ...but a tracked wallet's highest r
 # and convergences rows, cohort snapshots); rows from before have none (version 1: 300 + 300
 # wallets, $50K floors, every wallet read each 30-minute sweep).
 ROSTER_VERSION = _cadence.ROSTER_VERSION
+# trader_lean rows: 3 = roster version 2 counted by net exposure (spot-covered shorts left out,
+# hl_hedges), from the first hedge reading after the change; 2 before it; NULL under version 1.
+LEAN_VERSION = 3
 _POLL_SLEEP = 0.5                          # seconds between wallet fetches (was 1.5)
 
 # Consensus thresholds
@@ -1305,7 +1309,9 @@ def _recompute_consensus() -> None:
         is_mp = addr in mp_addresses
         is_sm = addr in sm_addresses
 
-        for pos in latest.positions:
+        # Net exposure: a short covered by the same coin on Hyperliquid spot (or staked HYPE) is a
+        # funding trade; it is left out or cut to its uncovered part (hl_hedges).
+        for pos in _hedges.counted(addr, latest.positions, _normalize_coin):
             # Normalize coin name: kPEPE→KPEPE, preserve existing xyz: prefix
             raw = pos.coin
             if raw.startswith("xyz:") or pos.dex == _XYZ_DEX:
@@ -1515,13 +1521,60 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     if not rows:
         return False
     try:
-        _db_save_trader_lean(bar, rows, ROSTER_VERSION)
+        _db_save_trader_lean(bar, rows, record_version())
         _last_lean_bar = bar
     except Exception as exc:
         logger.warning("HyperLens DB: trader lean save error: %s", exc)
         return False
     logger.info("HyperLens: stored profitable-trader lean for %d groups at bar %d", len(rows), bar)
     return True
+
+
+_hedge_task: Optional[asyncio.Task] = None
+
+
+def record_version() -> int:
+    """The version stamped on records of tracked-wallet counts (trader_lean, the Radar's readings):
+    3 once counting is by net exposure (hl_hedges.ready()), else the roster rules' version (2)."""
+    return LEAN_VERSION if _hedges.ready() else ROSTER_VERSION
+
+
+async def _refresh_hedges() -> None:
+    """Start a hedge read in the background (the loop does not wait for it); one at a time."""
+    global _hedge_task
+    if _hedge_task is None or _hedge_task.done():
+        _hedge_task = asyncio.get_running_loop().create_task(_read_hedges())
+
+
+async def _read_hedges() -> int:
+    """Spot and staked holdings of tracked wallets holding shorts, at most hourly each (hl_hedges),
+    then the consensus again so counts and the signal check use them at once."""
+    shorts: Dict[str, set] = {}
+    for w in _roster:
+        snaps = _snapshots.get(w.address)
+        if not snaps:
+            continue
+        for p in snaps[-1].positions:
+            if p.side == "SHORT" and not p.dex and not p.coin.startswith("xyz:"):
+                shorts.setdefault(w.address, set()).add(_normalize_coin(p.coin))
+    was_ready = _hedges.ready()
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            n = await _hedges.refresh(session, shorts, lambda kind: _hl_calls.acquire("positions", kind),
+                                      on_limited=lambda: _hl_calls.rate_limited("positions"))
+    except Exception as exc:
+        logger.warning("HyperLens: hedge read failed: %s", exc)
+        return 0
+    if n or _hedges.ready() != was_ready:
+        _recompute_consensus()
+    if _hedges.ready() and not was_ready:
+        try:
+            from hl_persistence import mark_counting_change
+            if mark_counting_change(time.time(), "hedges"):
+                logger.info("HyperLens: counting by net exposure (spot-covered shorts) from now on")
+        except Exception as exc:
+            logger.debug("HyperLens: counting marker: %s", exc)
+    return n
 
 
 def profitable_lean_by_coin() -> Dict[str, dict]:
@@ -1728,7 +1781,7 @@ def cohort_positions(coin: str, cohort: str = "profitable") -> List[dict]:
     trades alone), so counts can take a group once."""
     out = []
     for wallet, latest in _cohort_readings(cohort):
-        for p in latest.positions:
+        for p in _hedges.counted(wallet.address, latest.positions, _normalize_coin):
             if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size or _normalize_coin(p.coin) != coin:
                 continue
             roe = p.return_on_equity * 100 if p.return_on_equity else (
@@ -1766,7 +1819,7 @@ def positioning_map(cohort: str = "profitable") -> dict:
         ent = entity_of(wallet.address)
         traders.add(ent)
         held = False
-        for p in latest.positions:
+        for p in _hedges.counted(wallet.address, latest.positions, _normalize_coin):
             if p.coin.startswith("xyz:") or p.dex == _XYZ_DEX or not p.size:
                 continue
             held = True
@@ -1850,7 +1903,7 @@ def get_symbol_positions(symbol: str) -> List[dict]:
         # AV filter — same as consensus
         if 0 < latest.account_value < _DISPLAY_MIN_AV:
             continue
-        for pos in latest.positions:
+        for pos in _hedges.counted(wallet.address, latest.positions, _normalize_coin):
             # Normalize pos.coin the same way as consensus
             raw = pos.coin
             if raw.startswith("xyz:") or pos.dex == _XYZ_DEX:
@@ -3095,6 +3148,7 @@ async def run_hyperlens_loop() -> None:
             if _roster and (is_active() or (roster_via_cohorts() and _followed_any())):
                 await poll_positions()
             if _roster:
+                await _refresh_hedges()
                 await record_lean_at_bar_close()
 
             # DB cleanup every 6 hours

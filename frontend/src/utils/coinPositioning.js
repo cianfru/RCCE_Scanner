@@ -42,10 +42,11 @@ export function rebuildCandles(rebuilds, tfSec, candleTimes) {
   for (const r of rebuilds || []) {
     const c = r.note === "rules" ? candleEndingAt(r.t, tfSec) : Math.floor(r.t / tfSec) * tfSec;
     if (!have.has(c)) continue;
-    const e = by.get(c) || { time: c, joined: 0, left: 0, rules: false };
+    const e = by.get(c) || { time: c, joined: 0, left: 0, rules: false, hedges: false };
     e.joined += r.joined || 0;
     e.left += r.left || 0;
     e.rules = e.rules || r.note === "rules";
+    e.hedges = e.hedges || r.note === "hedges";       // counting by net exposure from here on
     by.set(c, e);
   }
   return [...by.values()].sort((a, b) => a.time - b.time);

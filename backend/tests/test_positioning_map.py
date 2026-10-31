@@ -79,7 +79,7 @@ def test_positioning_endpoint_adds_the_count_a_day_ago(monkeypatch):
     monkeypatch.setattr(hl, "_roster_smart_money", [b])
     monkeypatch.setattr(hl, "_snapshots", snaps)
     monkeypatch.setattr(hl_persistence, "load_trader_lean",
-                        lambda prefix, since: [(int(now - 86400), "coin:SUI", 1, 2, 300, 600)])
+                        lambda prefix, since, min_version=None: [(int(now - 86400), "coin:SUI", 1, 2, 300, 600)])
     main._POSITIONING_CACHE.clear()
     c = TestClient(main.app)
     sui = next(r for r in c.get("/api/hyperlens/positioning?cohort=profitable").json()["rows"] if r["coin"] == "SUI")

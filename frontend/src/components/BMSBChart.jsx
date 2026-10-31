@@ -615,7 +615,7 @@ export default function BMSBChart({
     [posSeries, posMeasure, tfSec, candleTimes, posGroup]);
   // Dots only where the list changed a lot (the daily rebuild usually swaps a handful of wallets).
   const posRebuilds = useMemo(() => (showPos && posGroup === "profitable"
-    ? rebuildCandles(positioning?.rebuilds, tfSec, candleTimes).filter(r => r.rules || r.joined + r.left >= REBUILD_DOT_MIN) : []),
+    ? rebuildCandles(positioning?.rebuilds, tfSec, candleTimes).filter(r => r.rules || r.hedges || r.joined + r.left >= REBUILD_DOT_MIN) : []),
     [showPos, posGroup, positioning, tfSec, candleTimes]);
   useEffect(() => {
     const s = posSeriesRef.current;
@@ -1151,7 +1151,7 @@ function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, re
   else if (!recorded(pts)) read = <span className="chart-pos-dim">Not recorded yet</span>;
   else if (!at) read = <span className="chart-pos-dim">No reading at this candle</span>;
   else read = <><b className="chart-pos-l">{fmt(at.long)}</b> long<span className="chart-pos-sep">·</span><b className="chart-pos-s">{fmt(at.short)}</b> short
-    {rebuilt && <span className="chart-pos-dim"> · {rebuilt.rules ? "list rules changed" : "list rebuilt"}</span>}
+    {rebuilt && <span className="chart-pos-dim"> · {rebuilt.hedges ? "counting changed" : rebuilt.rules ? "list rules changed" : "list rebuilt"}</span>}
     {stamp && <span className="chart-pos-dim"> · {stamp} UTC</span>}</>;
   return <div className="chart-pos-bar">
     <Tabs small label="Wallet group" items={COIN_GROUPS.map(g => ({ key: g.key, label: narrow ? g.short : g.name, title: `${g.name}: ${g.sub}` }))} value={group} onChange={setGroup} />
@@ -1163,7 +1163,8 @@ function PositioningBar({ group, setGroup, measure, setMeasure, series, bars, re
         <p>{defs.profitable}</p>
         <p>{defs.winners} {defs.losers} {defs.whales}</p>
         <p>{defs.windows} {defs.sweep}</p>
-        <p>Dots on Profitable traders: the list was rebuilt with {REBUILD_DOT_MIN} or more wallets joining or leaving, or its rules changed. A step there is the list changing, not trading.</p>
+        <p>{defs.netting}</p>
+        <p>Dots on Profitable traders: the list was rebuilt with {REBUILD_DOT_MIN} or more wallets joining or leaving, its rules changed, or the counting changed. A step there is the list changing, not trading.</p>
       </HelpTip>
     </span>
   </div>;
@@ -1188,7 +1189,9 @@ function PaneTip({ tip, top, group, measure, bar, rebuild, tf, width }) {
     <span className="chart-pane-tip-head">{g?.name} · {when}</span>
     {bar ? <span><b className="chart-pos-l">{fmt(bar.long)}</b> long<span className="chart-pos-sep">·</span><b className="chart-pos-s">{fmt(bar.short)}</b> short</span>
       : <span className="chart-pos-dim">No reading for this candle</span>}
-    {rebuild && <span className="chart-pane-tip-note">{rebuild.rules
+    {rebuild && <span className="chart-pane-tip-note">{rebuild.hedges
+      ? "Dot: from here, shorts covered by the same coin held on Hyperliquid spot or staked are not counted (a funding trade, not a bet on price). A step at the dot is the counting changing, not trading."
+      : rebuild.rules
       ? "Dot: the list's rules changed here. A step at the dot is the list changing, not trading."
       : `Dot: the list was rebuilt here: ${rebuild.joined} wallets joined${rebuild.left ? `, ${rebuild.left} left` : ""}. A step at the dot is the list changing, not trading.`}</span>}
   </div>;

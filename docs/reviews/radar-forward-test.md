@@ -117,7 +117,7 @@ An **event** on coin X at close D when, at D, all of these hold:
 
 ## Deviations
 
-None.
+31 October 2026, counting by net exposure (owner decision). From the first complete reading of the tracked wallets' Hyperliquid spot and staked holdings after this date, a profitable trader's short covered by the same coin held on spot or staked is not counted, and a partly covered one counts for its uncovered part (`backend/hl_hedges.py`). It changes the map's long/short counts, most of all on HYPE. Readings from then on carry `roster_version` 3. This run counts `roster_version` 2 readings only, so it ends at that date and its reports use the version 2 readings. A run on version 3 readings needs its own declaration before any of its outcomes are seen.
 
 Clarification, 29 September 2026, before any reading was logged: "all coins" in the benchmark means the coins read at close D (the unit above), each with a close at D and D + 14.
 
