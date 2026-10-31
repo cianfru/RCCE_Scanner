@@ -19,6 +19,7 @@ export const EDGE_PATHS = new Set([
   "/api/portfolio/context",
   "/api/portfolio/events",
   "/api/coin-positioning",
+  "/api/coin-positioning/recent",
 ]);
 
 export function edgePath(path) {

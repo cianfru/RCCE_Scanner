@@ -139,6 +139,7 @@ class Sweeper:
         self.on_flush = on_flush        # after each saved batch (HyperLens recomputes its consensus)
         self.clock, self.sleep, self.respect_quiet = clock, sleep, respect_quiet
         self.last: dict = {}
+        self._states = None             # (when, states) loaded by this tick's snapshot, reused once
 
     async def run_once(self) -> dict:
         t0 = self.clock()
@@ -220,6 +221,7 @@ class Sweeper:
         now = self.clock()
         last = self.store.latest_ts()
         rows = self.aggregate(now) if last is None or now - last >= SNAPSHOT_EVERY_S - TICK_S / 2 else []
+        self.record_recent(now)
         self.store.close_run(run_id, now)
         self.last = {"run_id": run_id, "resumed": resumed, "wallets_due": len(todo), "rows": len(rows),
                      "duration_s": round(now - t0, 1)}
@@ -227,6 +229,7 @@ class Sweeper:
 
     def aggregate(self, now: float) -> List[dict]:
         states = self.store.load_states(now, STATE_MAX_AGE_S)
+        self._states = (now, states)
         rows = aggregate(states, now)
         self.record_coin_groups(states, now)
         # All-market rows every sweep; per-symbol rows once per 4h candle (keeps the file ~1 MB/day).
@@ -264,6 +267,24 @@ class Sweeper:
         except Exception:
             logger.exception("Cohorts: per-coin record failed")
 
+    def record_recent(self, now: float) -> None:
+        """Once per 30-minute slot: every coin's groups and profitable traders (the coin page's
+        last-24-hours strip). Profitable traders come from HyperLens's book, which these same
+        readings feed; left out (NULL) while its readings are stale."""
+        from cohorts.store import RECENT_SLOT_S
+        cached, self._states = self._states, None       # never kept past this tick
+        try:
+            last = self.store.latest_recent_ts()
+            if last is not None and last // RECENT_SLOT_S == now // RECENT_SLOT_S:
+                return
+            states = cached[1] if cached and now - cached[0] < 60 else self.store.load_states(now, STATE_MAX_AGE_S)
+            groups = coin_groups(states)
+            global _live_coin_groups
+            _live_coin_groups = (int(now), groups)
+            self.store.write_recent(int(now), groups, _profitable_now())
+        except Exception:
+            logger.exception("Cohorts: 30-minute record failed")
+
     async def loop(self) -> None:
         while True:
             if not enabled() or not self.store.registry_size():
@@ -287,6 +308,20 @@ _live_coin_groups: Optional[tuple] = None      # (ts, assign.coin_groups output)
 
 def live_coin_groups() -> Optional[tuple]:
     return _live_coin_groups
+
+
+def _profitable_now() -> Optional[dict]:
+    """Profitable traders per coin from HyperLens's current book, or None when its readings are
+    stale or it holds none (HyperLens off, or the roster not built yet)."""
+    try:
+        import degrade
+        import hl_intelligence as hl
+        as_of = degrade.positions_as_of()
+        if not as_of or degrade.is_stale(as_of, degrade.positions_limit()) or not hl.profitable_traders_positioned():
+            return None
+        return hl.profitable_lean_by_coin()
+    except Exception:
+        return None
 
 
 def store() -> Store:

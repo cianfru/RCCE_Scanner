@@ -64,6 +64,7 @@ EDGE_PATHS = frozenset({
     "/api/portfolio/events",
     # A coin page's long/short history: keyed by coin and range only.
     "/api/coin-positioning",
+    "/api/coin-positioning/recent",
 })
 
 # Public by design (access.PUBLIC_PREFIXES) and the same for every visitor: no key needed.

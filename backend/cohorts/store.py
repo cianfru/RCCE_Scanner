@@ -7,6 +7,8 @@ cohort_snapshots     aggregated rows per sweep: the time series
 sweep_runs           audit: duration, weight used, errors; an unfinished run is resumed
 coin_positioning     per coin, once per 4h candle: three merged groups (assign.COIN_GROUPS),
                      wallets and USD per side; every coin held, plus '' for all markets
+coin_recent          the same groups plus profitable traders, once per 30 minutes, kept 3 days
+                     (the coin page's last-24-hours strip)
 """
 from __future__ import annotations
 
@@ -21,6 +23,9 @@ from cohorts.assign import COIN_GROUPS, Position, WalletState, coin_groups_from_
 from hl_cadence import SETTLED_STREAK
 
 RETENTION_DAYS = 180
+RECENT_SLOT_S = 30 * 60        # coin_recent: one reading per 30-minute slot
+RECENT_RETENTION_DAYS = 3
+RECENT_GROUPS = ("profitable",) + COIN_GROUPS
 COIN_RETENTION_DAYS = 400      # coin_positioning: small (about 65 KB a day), kept as long as trader_lean
 RUNS_RETENTION_DAYS = 14       # sweep_runs rows (one per tick with work since the adaptive cadence)
 PIN_ROSTER, PIN_ELITE = 1, 2   # wallets.pinned: HyperLens roster wallet; elite (read at least every 15 min)
@@ -58,6 +63,18 @@ CREATE TABLE IF NOT EXISTS coin_positioning (
     coin TEXT NOT NULL,
     ts INTEGER NOT NULL,
     full INTEGER NOT NULL DEFAULT 1,
+    winners_ln INTEGER NOT NULL DEFAULT 0, winners_sn INTEGER NOT NULL DEFAULT 0,
+    winners_lu INTEGER NOT NULL DEFAULT 0, winners_su INTEGER NOT NULL DEFAULT 0,
+    losers_ln INTEGER NOT NULL DEFAULT 0, losers_sn INTEGER NOT NULL DEFAULT 0,
+    losers_lu INTEGER NOT NULL DEFAULT 0, losers_su INTEGER NOT NULL DEFAULT 0,
+    whales_ln INTEGER NOT NULL DEFAULT 0, whales_sn INTEGER NOT NULL DEFAULT 0,
+    whales_lu INTEGER NOT NULL DEFAULT 0, whales_su INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (coin, ts)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS coin_recent (
+    coin TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    profitable_ln INTEGER, profitable_sn INTEGER, profitable_lu INTEGER, profitable_su INTEGER,
     winners_ln INTEGER NOT NULL DEFAULT 0, winners_sn INTEGER NOT NULL DEFAULT 0,
     winners_lu INTEGER NOT NULL DEFAULT 0, winners_su INTEGER NOT NULL DEFAULT 0,
     losers_ln INTEGER NOT NULL DEFAULT 0, losers_sn INTEGER NOT NULL DEFAULT 0,
@@ -316,6 +333,49 @@ class Store:
             raise
         self.db.commit()
         return n
+
+    # --- the last few days every 30 minutes (coin page strip) ----------------------
+    # profitable_* NULL on the '' row: profitable traders were not available at that time (a gap);
+    # otherwise a coin missing at a recorded time means nobody in the group held it.
+    _RECENT_COLS = tuple(f"{g}_{k}" for g in RECENT_GROUPS for k in ("ln", "sn", "lu", "su"))
+
+    def write_recent(self, ts: int, groups: Dict[str, Dict[str, list]], profitable: Optional[Dict[str, dict]]) -> int:
+        coins = set(groups) | set(profitable or {}) | {""}
+        rows = []
+        for coin in coins:
+            if profitable is None:
+                vals = [None] * 4
+            else:
+                p = profitable.get(coin) or {}
+                vals = [int(p.get("long") or 0), int(p.get("short") or 0),
+                        int(round(p.get("long_usd") or 0)), int(round(p.get("short_usd") or 0))]
+            by = groups.get(coin, {})
+            for g in COIN_GROUPS:
+                c = by.get(g) or (0, 0, 0, 0)
+                vals += [int(c[0]), int(c[1]), int(round(c[2])), int(round(c[3]))]
+            rows.append((coin, int(ts), *vals))
+        cols = ", ".join(self._RECENT_COLS)
+        self.db.executemany(f"INSERT OR REPLACE INTO coin_recent (coin, ts, {cols}) "
+                            f"VALUES ({', '.join('?' * (2 + len(self._RECENT_COLS)))})", rows)
+        cutoff = int(ts) - RECENT_RETENTION_DAYS * 86400
+        oldest = self.db.execute("SELECT MIN(ts) FROM coin_recent WHERE coin = ''").fetchone()[0]
+        if oldest is not None and oldest < cutoff - 3600:       # at most hourly: the delete scans the table
+            self.db.execute("DELETE FROM coin_recent WHERE ts < ?", (cutoff,))
+        self.db.commit()
+        return len(rows)
+
+    def latest_recent_ts(self) -> Optional[int]:
+        row = self.db.execute("SELECT MAX(ts) FROM coin_recent WHERE coin = ''").fetchone()
+        return row[0] if row and row[0] else None
+
+    def recent_history(self, coin: str, since: float) -> Tuple[List[Tuple[int, bool]], Dict[int, tuple]]:
+        """([(ts, profitable recorded)] of every recorded time, {ts: 16 values in _RECENT_COLS order})."""
+        times = [(ts, p is not None) for ts, p in self.db.execute(
+            "SELECT ts, profitable_ln FROM coin_recent WHERE coin = '' AND ts >= ? ORDER BY ts", (int(since),))]
+        cols = ", ".join(self._RECENT_COLS)
+        vals = {r[0]: tuple(r[1:]) for r in self.db.execute(
+            f"SELECT ts, {cols} FROM coin_recent WHERE coin = ? AND ts >= ?", (coin, int(since)))}
+        return times, vals
 
     # --- sweep audit ---------------------------------------------------------------
     def open_run(self, now: float) -> Tuple[int, float, bool]:
