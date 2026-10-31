@@ -38,6 +38,10 @@ test("definitions: live counts, the overlap, and no forecast words", () => {
   assert.match(d.tracked, /440 wallets/);
   assert.doesNotMatch(groupDefinitions().profitable, /on the list now/);
   assert.match(groupDefinitions().large, /^Large accounts: about 60 /);
+  const zero = groupDefinitions({ money_printer_count: 0, smart_money_count: 0, elite_count: 0 });  // just after a start
+  assert.doesNotMatch(zero.profitable, /on the list now/);
+  assert.match(zero.large, /^Large accounts: about 60 /);
+  assert.doesNotMatch(zero.tracked, /\d/);
   const words = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*|proven|money printer|smart money|larsson)\b/i;
   for (const s of [...Object.values(d), ...COIN_GROUPS.flatMap(x => [x.name, x.sub])]) assert.doesNotMatch(s, words, s);
 });

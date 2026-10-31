@@ -40,6 +40,7 @@ from hl_persistence import (
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
+    last_trader_lean_bar as _db_last_lean_bar,
     save_roster_rebuild as _db_save_roster_rebuild,
     max_account_values as _db_max_account_values,
     save_position_changes as _db_save_changes,
@@ -1497,6 +1498,12 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     from activity import is_active
     from scan_schedule import SETTLE_SECONDS, last_bar_close
     bar = int(last_bar_close(time.time() if now is None else now)) - SETTLE_SECONDS
+    if not _last_lean_bar:
+        # After a restart: a close already recorded is not written again from later readings.
+        try:
+            _last_lean_bar = _db_last_lean_bar()
+        except Exception as exc:
+            logger.debug("HyperLens DB: last recorded close unknown: %s", exc)
     if bar <= _last_lean_bar or not _roster:
         return False
     if not is_active() and not roster_via_cohorts():

@@ -397,11 +397,17 @@ def save_trader_lean(bar_close: int, rows: Dict[str, dict], roster_version: Opti
     return len(rows)
 
 
+def last_trader_lean_bar() -> int:
+    """The newest recorded close (0 when none)."""
+    return int(_get_conn().execute("SELECT MAX(bar_close) FROM trader_lean").fetchone()[0] or 0)
+
+
 def load_trader_lean(prefix: str, since: float) -> List[tuple]:
     """(bar_close, grp, long, short, long_usd, short_usd) rows for groups starting with prefix."""
     return _get_conn().execute(
+        # "+grp": keep this on the (bar_close, grp) key; idx_tl_grp would walk every stored close.
         "SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
-        "WHERE grp >= ? AND grp < ? AND bar_close >= ? ORDER BY bar_close",
+        "WHERE +grp >= ? AND +grp < ? AND bar_close >= ? ORDER BY bar_close",
         (prefix, prefix + "\uffff", int(since)),
     ).fetchall()
 
@@ -444,11 +450,10 @@ def _estimate_past_rebuilds(conn: sqlite3.Connection, min_joined: int = 5) -> in
             hours[h] = hours.get(h, 0) + 1
         rows = [(h, None, n, None, None) for h, n in sorted(hours.items())
                 if h >= first + _ESTIMATE_SKIP_S and n >= min_joined]
-    v1 = conn.execute("SELECT MAX(bar_close) FROM trader_lean WHERE roster_version IS NULL").fetchone()[0]
-    if v1 is not None:
-        v2 = conn.execute("SELECT MIN(bar_close) FROM trader_lean WHERE roster_version IS NOT NULL").fetchone()[0]
-        if v2 is not None and v2 > v1:
-            rows.append((int(v2), None, None, None, "rules"))
+    v2 = conn.execute("SELECT MIN(bar_close) FROM trader_lean WHERE roster_version IS NOT NULL").fetchone()[0]
+    if v2 is not None and conn.execute(
+            "SELECT 1 FROM trader_lean WHERE roster_version IS NULL AND bar_close < ? LIMIT 1", (v2,)).fetchone():
+        rows.append((int(v2), None, None, None, "rules"))
     conn.executemany("INSERT OR IGNORE INTO roster_rebuilds (ts, profitable, joined, left, note) VALUES (?, ?, ?, ?, ?)", rows)
     return len(rows)
 

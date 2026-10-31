@@ -58,7 +58,8 @@ function Panel({ group, pts, t0, t1, width, hover, onHover, rebuilds, measure })
         <b style={{ color: lc }}>{fmt(p.long)}</b> long<span className="cpos-dot">·</span><b style={{ color: sc }}>{fmt(p.short)}</b> short
       </> : "—"}</span>
     </div>
-    {!held ? <p className="cpos-empty" style={{ height: H }}>{recorded(pts) ? "None held it in this period." : "Not recorded yet."}</p> : (
+    {!held ? <p className="cpos-empty" style={{ height: H }}>{!recorded(pts) ? "Not recorded yet."
+      : first - t0 > 2 * 86400 ? `None held it since ${dayLabel(first)}, when its record starts.` : "None held it in this period."}</p> : (
       <svg viewBox={`0 0 ${width} ${H}`} width={width} height={H} role="img"
         aria-label={`${group.name}: ${measure === "usd" ? "value" : "wallets"} long above the line, short below, over time`}
         onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={e => { if (e.pointerType === "mouse") onHover(null); }}>
@@ -111,6 +112,7 @@ export default function CoinPositioning({ symbol, spot = false }) {
   }, [hidden]);
 
   useEffect(() => { setData(null); setHover(null); }, [coin]);
+  useEffect(() => { setHover(null); }, [days]);      // a pinned (tapped) time can fall outside the new range
   useEffect(() => {
     if (!coin || coin.toLowerCase().startsWith("xyz:")) return undefined;
     let alive = true;
@@ -136,7 +138,7 @@ export default function CoinPositioning({ symbol, spot = false }) {
       <h3>Long and short on {coin}{spot ? " (Hyperliquid perps)" : ""} <HelpTip title="Who is counted" width={420}>
         <p>{defs.profitable}</p>
         <p>{defs.winners} {defs.losers} {defs.whales}</p>
-        <p>{defs.windows}</p>
+        <p>{defs.windows} {defs.sweep}</p>
         <p>Above the line long {coin}, below it short; each wallet counts once. Readings every 4 hours{latestLive ? ", plus the latest" : ""}.</p>
         <p>Dotted lines: the profitable-trader list was rebuilt or its rules changed. A step there is the list changing, not trading.</p>
       </HelpTip></h3>
@@ -147,7 +149,7 @@ export default function CoinPositioning({ symbol, spot = false }) {
     </div>
     <div className="cpos-at" aria-live="off">{t1 ? (hover == null ? `Latest · ${when(t1)}` : when(hover)) : " "}</div>
     <div ref={box} className="cpos-grid" data-cols={cols}>
-      {!data ? <p className="cpos-empty">{failed ? "Could not load the readings." : "Loading…"}</p>
+      {!data || (failed && String(data.days) !== days) ? <p className="cpos-empty">{failed ? "Could not load the readings." : "Loading…"}</p>
         : !all.length ? <p className="cpos-empty">No readings for {coin} yet.</p>
         : W > 0 && series.map(({ group, pts }) => <Panel key={group.key} group={group} pts={pts} t0={t0} t1={t1} width={panelW}
           hover={hover} onHover={setHover} measure={measure} rebuilds={group.key === "profitable" ? (data.rebuilds || []).filter(r => r.t >= t0 && r.t <= t1) : []} />)}

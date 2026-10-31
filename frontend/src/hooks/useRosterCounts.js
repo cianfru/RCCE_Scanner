@@ -14,7 +14,7 @@ export default function useRosterCounts() {
     pending = pending || fetch(`${API_BASE}/api/hyperlens/status`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (d) {
+        if (d?.money_printer_count) {        // 0 right after a start: the lists are not built yet
           cached = { money_printer_count: d.money_printer_count, smart_money_count: d.smart_money_count, elite_count: d.elite_count };
           cachedAt = Date.now();
         }

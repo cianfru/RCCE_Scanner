@@ -4481,7 +4481,7 @@ async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), 
     hit = _COIN_POS_CACHE.get(key)
     if hit and now - hit[0] < 60:
         return Response(content=hit[1], media_type="application/json")
-    if c.startswith("xyz:"):
+    if not c or c.startswith("xyz:"):
         body = {"coin": c, "days": days, "covered": False, "groups": {}, "rebuilds": [], "held": {}}
     else:
         body = {**_coin_positioning_body(c, days, now), "covered": True}

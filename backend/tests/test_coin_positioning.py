@@ -119,6 +119,45 @@ def test_the_switch_to_new_roster_rules_is_marked_once(hl_db):
     assert hp.load_roster_rebuilds(0)[0] == (b + 14400, None, None, None, "rules")
 
 
+def test_rules_marker_when_a_restart_left_both_versions_at_the_switch_close(hl_db):
+    hp = hl_db
+    b = int(time.time() // 14400) * 14400 - 10 * 14400
+    two = {"coin:BTC": {"long": 1, "short": 0, "long_usd": 1.0, "short_usd": 0.0},
+           "coin:PURR": {"long": 1, "short": 0, "long_usd": 1.0, "short_usd": 0.0}}
+    hp.save_trader_lean(b, two)
+    hp.save_trader_lean(b + 14400, two)                                    # old process
+    hp.save_trader_lean(b + 14400, {"coin:BTC": two["coin:BTC"]}, 2)       # new process rewrote part of it
+    hp.save_trader_lean(b + 28800, {"coin:BTC": two["coin:BTC"]}, 2)
+    hp.save_roster_rebuild(b + 40000, ["a"])
+    assert [r for r in hp.load_roster_rebuilds(0) if r[4] == "rules"] == [(b + 14400, None, None, None, "rules")]
+
+
+def test_prefix_reads_stay_on_the_close_key(hl_db):
+    hp = hl_db
+    plan = " ".join(str(r) for r in hp._get_conn().execute(
+        "EXPLAIN QUERY PLAN SELECT bar_close, grp, long, short, long_usd, short_usd FROM trader_lean "
+        "WHERE +grp >= ? AND +grp < ? AND bar_close >= ? ORDER BY bar_close", ("coin:", "coin:\uffff", 0)))
+    assert "idx_tl_grp" not in plan
+    one = " ".join(str(r) for r in hp._get_conn().execute(
+        "EXPLAIN QUERY PLAN SELECT bar_close FROM trader_lean WHERE grp = ? AND bar_close >= ?", ("coin:BTC", 0)))
+    assert "idx_tl_grp" in one
+
+
+def test_a_restart_does_not_rewrite_a_recorded_close(hl_db, monkeypatch):
+    import hl_intelligence as hl
+    import scan_schedule
+    hp = hl_db
+    now = time.time()
+    bar = int(scan_schedule.last_bar_close(now)) - scan_schedule.SETTLE_SECONDS
+    hp.save_trader_lean(bar, {"coin:BTC": {"long": 7, "short": 0, "long_usd": 7.0, "short_usd": 0.0}}, 2)
+    monkeypatch.setattr(hl, "_last_lean_bar", 0)
+    monkeypatch.setattr(hl, "_roster", ["w"])
+    monkeypatch.setattr(hl, "_mp_book", {"e": {"BTC": -5.0}})
+    monkeypatch.setattr("activity.is_active", lambda: True)
+    assert asyncio.run(hl.record_lean_at_bar_close(now)) is False
+    assert hp.load_coin_lean("BTC", 0)[1] == {bar: (7, 0, 7.0, 0.0)}
+
+
 def test_coin_lean_zero_fills_closes_where_nobody_held_the_coin(hl_db):
     hp = hl_db
     b = int(time.time()) - 28800
