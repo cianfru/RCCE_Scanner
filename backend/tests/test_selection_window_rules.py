@@ -283,3 +283,45 @@ def test_effective_days_follow_the_points_read():
     assert s.effective_days(w, T - 30 * DAY, T) == 28.0
     assert s.effective_days(w, T, T + 30 * DAY) == 31.0
     assert s.effective_days(w, T - 90 * DAY, T) == 35.0       # from the first point
+
+
+# --- added on 1 November 2026, after a blind cross-check, before any result ----------------
+
+def test_young_series_is_measured_from_its_own_first_point():
+    """'A wallet younger than the window is measured from its first point': the start values are that point's."""
+    w = _pts_w("0xyoung", {T - 45 * DAY: 100_000, T: 130_000}, {T - 45 * DAY: 20_000, T: 50_000})
+    assert s.window(w, T - 60 * DAY, T) == (30_000.0, 0.30, 100_000.0)
+    assert s.window(w, T - 90 * DAY, T) == s.window(w, T - 45 * DAY, T)
+    # Hyperliquid's histories open at account value 0 and PnL 0, where this equals measuring from an empty account
+    z = _pts_w("0xzero", {T - 45 * DAY - 3600: 0, T - 45 * DAY: 100_000, T: 130_000},
+               {T - 45 * DAY - 3600: 0, T - 45 * DAY: 20_000, T: 50_000})
+    assert s.window(z, T - 60 * DAY, T) == (50_000.0, 50_000 / 80_000, 80_000.0)
+    # a window that starts after the first point, and a series with no point by the window's end, are unchanged
+    assert s.window(w, T - 30 * DAY, T) == (30_000.0, 0.30, 100_000.0)
+    assert s.window(w, T - 90 * DAY, T - 50 * DAY) == (0.0, None, 0.0)
+
+
+def test_young_perps_series_is_measured_from_the_perps_first_point():
+    tot = [T - 45 * DAY, T - 20 * DAY, T, T + 30 * DAY]
+    per = [T - 41 * DAY, T - 16 * DAY, T + 4 * DAY, T + 30 * DAY]
+    reply = [["month", {"vlm": "1000000"}],
+             ["allTime", {"accountValueHistory": [[x * 1000, "200000"] for x in tot],
+                          "pnlHistory": [[x * 1000, str(v)] for x, v in zip(tot, (0, 20_000, 40_000, 40_000))], "vlm": "2e7"}],
+             ["perpAllTime", {"accountValueHistory": [[x * 1000, str(v)] for x, v in zip(per, (50_000, 60_000, 70_000, 70_000))],
+                              "pnlHistory": [[x * 1000, str(v)] for x, v in zip(per, (-3_000, 12_000, 22_000, 22_000))]}]]
+    w = s.Wallet("0xperpyoung", reply, BIG)
+    pnl, roi, base = s.window(w, T - 60 * DAY, T, perps=True)
+    assert (pnl, base) == (15_000.0, 50_000.0)               # from -3,000 at T - 41 d to 12,000 at T - 16 d
+    assert roi == 0.30
+    assert "0xperpyoung" not in _addrs(s.ranked([w], T, 60, perps=True))   # all-time 12,000 < window 15,000
+
+
+def test_a_level_btc_month_is_on_neither_side(tmp_path):
+    sm = s.side_means([5, 5, 5, -1, -1, -1, 9], [True] * 3 + [False] * 3 + [None])
+    assert (sm["up_dates"], sm["down_dates"], sm["up_mean"], sm["down_mean"]) == (3, 3, 5.0, -1.0)
+    conn = s.connect(tmp_path / "db.sqlite")
+    pts = [T + 30 * DAY] + s.dates() + [s.dates()[-1] - 30 * DAY]
+    opens = {t: 100.0 + i for i, t in enumerate(pts)}          # falling every month
+    opens[s.dates()[2]] = opens[s.dates()[3]]                 # except the month after date 3: exactly level
+    conn.execute("INSERT INTO meta VALUES ('btc_open', ?)", (json.dumps(opens),))
+    assert s.btc_up(conn) == [False] * 3 + [None] + [False] * (s.N_DATES - 4)

@@ -71,3 +71,13 @@ Not computed yet.
 - **Context:** the 90-against-60 differences are reported for every date; the point-age groups are "under 2 days, 2 to under 7, 7 or more", with each arm's effective window and outcome lengths.
 - **Wording:** the power figures are from a larger simulation; the $10M+ check's survivorship and the snapshot flags are stated.
 - **Tests:** 22 tests added (`backend/tests/test_selection_window_rules.py`), pinning the rules at their edges, the choice between 60 and 90, each part of condition 4, the BTC dates and the refusal paths.
+
+**1 November 2026, before the first result** (the histories were still being read; nothing had been analysed). Two re-implementations written from this declaration alone, without seeing the code, were run with the code on seven synthetic databases: no edge, a 60-day edge, a 90-day edge, boundary cases, exact decimals, dates without eligible wallets, and full scale. All three chose the same window on every database. Every field that differed traced to one of five causes:
+
+- **A wallet younger than the window** was measured from an empty account (the 0 before its first point), not from its first point as Method says. The code now starts such a window at the series' own first point (total, or perps in the perps check). Every one of the 22,800 histories read so far opens at account value 0 and PnL 0, and there the two readings give the same numbers. Code and two tests.
+- **A month in which BTC closed exactly level** counted as a month it fell. It is now on neither side. Code and a test.
+- **A value exactly on a threshold** to the last decimal can read a hair under it, because the code reads values as binary floats; the re-implementations use exact decimals. Not changed. The check against the re-implementations on the real data shows any wallet this moves, and the Results report it.
+- **A timestamp repeated within a history** is read as two points, the larger value last. The declaration leaves this open, and no history read so far repeats a timestamp (all 22,800 are strictly increasing). Not changed.
+- **A date without a difference, or an incomplete BTC record**: the three report the refusal differently, and all keep 30 days.
+
+With the first two changes made and the last three switched off, the three agree on all 450 compared fields of every database.

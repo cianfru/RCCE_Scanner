@@ -131,6 +131,9 @@ def window(w: Wallet, start: float, end: float, perps: bool = False) -> Tuple[fl
     largest cumulative net deposit (change in account value - PnL since start) at any point in (start, end], when
     positive: deposits enlarge it, withdrawals never shrink it. ROI None when the base is under MIN_BASE."""
     av, pn = (w.pav, w.ppnl) if perps else (w.av, w.pnl)
+    firsts = [s.t[0] for s in (av, pn) if s.t]
+    if firsts and start < min(firsts) <= end:
+        start = min(firsts)       # a series younger than the window is measured from its own first point
     a0, p0 = av.asof(start), pn.asof(start)
     top = 0.0
     for x in sorted(set(av.times(start, end)) | set(pn.times(start, end))):
@@ -244,9 +247,10 @@ def core(diffs: Sequence[float]) -> dict:
             "met": mean >= BAR_PP and positive >= BAR_DATES and p <= BAR_P}
 
 
-def side_means(diffs: Sequence[float], up: Sequence[bool]) -> dict:
-    ups = [d for d, u in zip(diffs, up) if u]
-    downs = [d for d, u in zip(diffs, up) if not u]
+def side_means(diffs: Sequence[float], up: Sequence[Optional[bool]]) -> dict:
+    """A month BTC closed exactly level (None) is on neither side."""
+    ups = [d for d, u in zip(diffs, up) if u is True]
+    downs = [d for d, u in zip(diffs, up) if u is False]
     out = {"up_dates": len(ups), "down_dates": len(downs),
            "up_mean": sum(ups) / len(ups) if ups else None, "down_mean": sum(downs) / len(downs) if downs else None}
     out["required"] = len(ups) >= MIN_SIDE and len(downs) >= MIN_SIDE
@@ -274,8 +278,8 @@ def equal_arms(pools: Dict[int, List[Tuple[float, str]]], k: int) -> Tuple[Dict[
     return {d: [a for _, a in p[:size]] for d, p in pools.items()}, size
 
 
-def analyse(wallets: Sequence[Wallet], share: float, btc_up: Optional[Sequence[bool]] = None) -> dict:
-    """``btc_up``: per date (newest first), whether BTC closed higher 30 days after it."""
+def analyse(wallets: Sequence[Wallet], share: float, btc_up: Optional[Sequence[Optional[bool]]] = None) -> dict:
+    """``btc_up``: per date (newest first), whether BTC closed higher 30 days after it (None: exactly level)."""
     k = max(1, round(K_FULL * share))
     cap = max(1, round(CAP_FULL * share))
     by = {w.addr: w for w in wallets}
@@ -447,13 +451,14 @@ def load_btc(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def btc_up(conn: sqlite3.Connection) -> Optional[List[bool]]:
+def btc_up(conn: sqlite3.Connection) -> Optional[List[Optional[bool]]]:
+    """Per date, whether BTC rose over the next 30 days (None: it closed exactly level). None if an open is missing."""
     row = conn.execute("SELECT v FROM meta WHERE k = 'btc_open'").fetchone()
     if not row:
         return None
     opens = {int(k): v for k, v in json.loads(row[0]).items()}
     try:
-        return [opens[t + OUTCOME_D * DAY] > opens[t] for t in dates()]
+        return [None if opens[t + OUTCOME_D * DAY] == opens[t] else opens[t + OUTCOME_D * DAY] > opens[t] for t in dates()]
     except KeyError:
         return None
 
