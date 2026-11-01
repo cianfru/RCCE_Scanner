@@ -60,7 +60,58 @@ If both longer windows meet the bar, 60 days, unless 90 days meets conditions 1-
 
 ## Results
 
-Not computed yet.
+Computed once on 1 November 2026 at 06:35 UTC, by `analyse` at commit 4e126f4. All 24,075 sampled wallets were read and none was left out; the leaderboard snapshot's SHA-256 matches the one declared above. Every date's arms filled to 200, from pools of 304 to 1,247 wallets.
+
+**Verdict: neither longer window meets the bar. The list keeps its 30-day window, and the numbers below are context, not a signal.**
+
+| Bar | 60 against 30 | 90 against 30 | Needed |
+|---|---|---|---|
+| 1. Mean difference in hit rate | -1.4 points | -0.1 points | +3 or more |
+| 2. Dates above 0 | 5 of 12 | 5 of 12 | 10 or more |
+| 3. Exact sign-flip p | 0.71 | 0.51 | 0.025 or less |
+| 4. Months BTC rose (4) / fell (8) | -8.6 / +2.3 | -6.4 / +3.0 | both above 0 |
+| 4. $10M+ wallets, ranked again | -0.7 | +0.5 | above 0 |
+| 4. Perps only | -1.0 | +0.1 | above 0 |
+| 4. Mean clipped ROI, next 30 days | -0.16 points | -0.16 points | 0 or more |
+
+Hit rate of each arm (200 wallets; a hit is +$100 or more over the next 30 days), and of everyone eligible:
+
+| Date | BTC next 30 days | 30 days | 60 days | 90 days | Everyone eligible |
+|---|---|---|---|---|---|
+| 2026-10-01 | -7.5% | 18.0 | 22.0 | 19.5 | 32.8 |
+| 2026-09-01 | +6.4% | 72.5 | 66.0 | 62.5 | 63.2 |
+| 2026-08-02 | +25.1% | 43.5 | 36.5 | 48.0 | 67.4 |
+| 2026-07-03 | +2.0% | 38.0 | 28.0 | 27.0 | 38.3 |
+| 2026-06-03 | -7.7% | 58.0 | 52.0 | 59.5 | 49.6 |
+| 2026-05-04 | -15.0% | 66.0 | 73.0 | 55.5 | 60.5 |
+| 2026-04-04 | +17.3% | 51.5 | 40.5 | 42.5 | 53.1 |
+| 2026-03-05 | -7.9% | 61.5 | 58.0 | 58.5 | 51.3 |
+| 2026-02-03 | -7.7% | 25.5 | 45.0 | 60.5 | 33.6 |
+| 2026-01-04 | -13.2% | 37.5 | 39.5 | 42.5 | 55.2 |
+| 2025-12-05 | -1.6% | 58.0 | 59.0 | 56.5 | 28.2 |
+| 2025-11-05 | -9.3% | 46.0 | 40.0 | 42.0 | 26.3 |
+| **Mean** | | **48.0** | **46.6** | **47.9** | **46.6** |
+
+**Checked.** The two re-implementations written from this declaration alone (see Deviations, 1 November) were run on the same data and agree with the run on all 450 compared fields: every arm's members and order, the pools, hit rates, differences, p-values, each part of condition 4 and the chosen window. The re-implementations read values as exact decimals, so no value on a threshold moved a wallet. Across all 24,075 replies, every history opens at account value 0 and PnL 0, and no history has a repeated or out-of-order time. No month's BTC open equals the open 30 days later.
+
+### Context (no verdict)
+
+- **The ranking itself.** The 30-day list's hit rate is 48.0% on average, against 46.6% for every wallet that meets the list's rules without a window (about 3,000 a date). It is above that crowd on 6 of the 12 dates. Over these twelve months, a high ROI over the past 30, 60 or 90 days told little about whether a wallet made money over the next 30.
+- **The market sets the level.** The hit rates run from 18% to 72.5% from one month to the next, far more than any window moves them. In the months BTC rose, the longer windows did worse than 30 days (-8.6 and -6.4 points); in the months it fell, slightly better (+2.3 and +3.0). There are four rising months, so this is a description, not a finding.
+- **One month carries the longer windows' best result.** On 3 February 2026 the 60- and 90-day lists beat 30 days by 19.5 and 35.0 points. Without that date both differences are negative on average.
+- **Money made, not just hits.** The mean next-30-day ROI (clipped to +-100%) is negative for every list and for everyone eligible (about -2.6% and -3.1%). Weighted by capital, the 30-, 60- and 90-day lists returned +0.4%, +2.2% and +4.3% a month on average (summed PnL over summed base). The mean and median ROI barely differ between the lists, so that difference comes from the larger accounts, not the typical wallet.
+- **Other cuts.** None shows a longer window clearly ahead: today's rules as they are (ROI 30%+, at most 300) 47.1 / 48.0 / 49.6; half K 44.0 / 43.6 / 45.8; double K 49.7 / 49.8 / 49.8; market makers kept 46.4 / 46.1 / 48.0; no activity rule 47.6 / 46.4 / 47.5; sub-account rows left out 46.9 / 46.4 / 47.1 (hit rates for 30 / 60 / 90 days, means over the 12 dates).
+- **90 against 60:** +1.25 points on average, above 0 on 7 of 12 dates.
+- **Turnover.** Each month, the 30-day list replaces 85% of its wallets, the 60-day list 68% and the 90-day list 61%.
+- **Months look independent.** The lag-1 autocorrelation of the per-date differences is 0.02 (60) and 0.03 (90), consistent with the bar's assumption of independent months.
+- **Point age.** Wallets whose last point at the date was 7 or more days old hit more often (about 50-55%) than those with a point in the last 2 days (41-44%), in every window. Their outcomes read about 35 days instead of 28, so this is about sampling, not skill.
+- **Who is on the lists.** At most 1.1% of each list stopped trading over the next 30 days, about 9-10% have under $10M of volume, and 6-7% are leaderboard rows that add sub-accounts.
+
+### What this means for the app
+
+The profitable traders stay ranked on 30 days. A longer window was not shown to pick wallets that keep making money, and its observed difference is about zero or below, so there is no case for the change. The bar could not see a true difference smaller than about +5 to +8 points; the observed ones are -1.4 and -0.1.
+
+The study measured profit, not positioning. Whether the list's long and short counts lead price is a separate question that it does not answer.
 
 ## Deviations
 
