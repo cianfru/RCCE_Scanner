@@ -17,6 +17,7 @@ import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
 import useCoinPositioning from "../hooks/useCoinPositioning.js";
+import useCoinPositioningRecent from "../hooks/useCoinPositioningRecent.js";
 import useCoinTraders from "../hooks/useCoinTraders.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 import useFavorites from "../hooks/useFavorites.js";
@@ -252,6 +253,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const traders = useCoinTraders(data?.symbol, !!data);
   // Long and short of groups of wallets, as bars under the chart's candles.
   const positioning = useCoinPositioning(data?.symbol, !!data);
+  const recentPositioning = useCoinPositioningRecent(data?.symbol, !!data);
   const traderApi = useRef(null);
 
   // Set document title
@@ -362,6 +364,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           positioningPane={!getBaseSymbol(data.symbol).toLowerCase().startsWith("xyz:")}
           positioning={positioning.data}
           positioningFailed={positioning.failed}
+          recent={recentPositioning}
         />
       </div>
 

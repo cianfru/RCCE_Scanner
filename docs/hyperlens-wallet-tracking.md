@@ -195,7 +195,7 @@ A perp short covered by the same coin the wallet holds on Hyperliquid spot, or (
 Since then tracked traders (profitable traders and large accounts) are counted by net exposure (`backend/hl_hedges.py`):
 
 - a short covered for more than 80% of its size is not counted; a partly covered one counts for its uncovered part; longs are unchanged;
-- spot tokens map to perp coins by name (HYPE, PURR), Unit tokens by "U" + coin (UBTC, UETH, USOL; UFART is FARTCOIN), and k markets at 1/1000 (UBONK covers KBONK);
+- spot tokens map to perp coins by an explicit list (`hl_hedges.SPOT_TOKENS`): Hyperliquid's own tokens (HYPE, PURR) and Unit-bridged ones checked against spotMeta's full names (UBTC, UETH, USOL; UFART is FARTCOIN, UDZ is 2Z), k markets at 1/1000 (UBONK covers KBONK). Other tokens that share a perp's name are never matched;
 - it applies to the consensus (the signal's tracked-wallet check, approved by the owner), the 4h trader record, the positioning map and Radar, the per-coin lists and the coin chart. Opens, convergences, trader entries and profiles still show the raw positions. The cohort sweep's groups (all-time winners, losers, whales) are not netted (their spot is not read);
 - only Hyperliquid is visible: a hedge on another exchange still counts as a short.
 
