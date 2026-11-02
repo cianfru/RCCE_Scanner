@@ -1910,7 +1910,7 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 
 /* Hover cards (portaled into the page) */
 .pf-tip{position:fixed;z-index:1000;box-sizing:border-box;padding:10px 12px;border:1px solid var(--t-border);border-radius:10px;background:var(--t-popoverBg);
- backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 12px 32px var(--t-shadow);font:12px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);cursor:default;}
+ box-shadow:0 12px 32px var(--t-shadow);font:12px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);cursor:default;}
 .pf-tip .m{font-family:var(--font-geist-mono),monospace;font-variant-numeric:tabular-nums;}
 .pf-pop{display:flex;flex-direction:column;gap:2px;}
 .pf-pop-row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;white-space:nowrap;}

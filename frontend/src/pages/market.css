@@ -125,10 +125,11 @@
 }
 
 /* The main chart's hover box: the hovered day beside the cursor (the table under the chart keeps today's) */
-/* Frosted glass: the chart shows through, blurred; no outline, only a soft shadow lifts it */
-.mh-hover-tip{gap:2px;border:none;border-radius:10px;padding:9px 11px;background-color:color-mix(in srgb,var(--t-bg) 52%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 10%,transparent),color-mix(in srgb,var(--t-text1) 3%,transparent) 70%);-webkit-backdrop-filter:blur(14px) saturate(150%);backdrop-filter:blur(14px) saturate(150%);box-shadow:0 10px 30px var(--t-shadow);}
-[data-theme="light"] .mh-hover-tip{background-color:color-mix(in srgb,var(--t-bg) 62%,transparent);}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.mh-hover-tip{background-color:color-mix(in srgb,var(--t-bg) 94%,transparent);}}
+/* Near-opaque, no outline, only a soft shadow lifts it. No backdrop blur on boxes that come and go with the cursor:
+   in Chrome and Brave on a Mac, a blur layer appearing and disappearing leaves part of the page redrawn a shade
+   darker than the rest, with a visible line between them. */
+.mh-hover-tip{gap:2px;border:none;border-radius:10px;padding:9px 11px;background-color:color-mix(in srgb,var(--t-bg) 94%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 10%,transparent),color-mix(in srgb,var(--t-text1) 3%,transparent) 70%);box-shadow:0 10px 30px var(--t-shadow);}
+[data-theme="light"] .mh-hover-tip{background-color:color-mix(in srgb,var(--t-bg) 96%,transparent);}
 .mh-hover-tip .mh-tip-row{display:flex;justify-content:space-between;gap:10px;}
 .mh-hover-tip .mh-tip-row>span{font:500 11px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .mh-hover-tip em,.mh-hover-tip i{font-style:normal;}
@@ -168,7 +169,7 @@
 .mch-side .mch-state{font-size:13px;}
 .mch-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
 .mc-run{font-style:normal;color:var(--t-accent);}
-.mc-tip{position:absolute;z-index:4;width:256px;padding:8px 11px 9px;border-radius:10px;pointer-events:none;background-color:color-mix(in srgb,var(--t-bg) 62%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 8%,transparent),color-mix(in srgb,var(--t-text1) 2%,transparent) 70%);-webkit-backdrop-filter:blur(14px) saturate(150%);backdrop-filter:blur(14px) saturate(150%);box-shadow:0 10px 30px var(--t-shadow);font:500 12px/1.45 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.mc-tip{position:absolute;z-index:4;width:256px;padding:8px 11px 9px;border-radius:10px;pointer-events:none;background-color:color-mix(in srgb,var(--t-bg) 94%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 8%,transparent),color-mix(in srgb,var(--t-text1) 2%,transparent) 70%);box-shadow:0 10px 30px var(--t-shadow);font:500 12px/1.45 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .mc-tip b{font-weight:600;color:var(--t-text1);margin-right:8px;}
 .mc-tip i{font-style:normal;color:var(--t-text3);}
 .mc-tip p{margin:4px 0 0;}
@@ -178,7 +179,7 @@
 .mch-menu-btn{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 4px;border:0;background:none;cursor:pointer;font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .mch-menu-btn svg path{stroke:currentColor;}
 .mch-menu-btn[aria-expanded="true"],.mch-menu-btn:hover{color:var(--t-text1);}
-.mch-menu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:230px;padding:6px 12px 10px;border-radius:12px;background-color:color-mix(in srgb,var(--t-bg) 70%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 8%,transparent),color-mix(in srgb,var(--t-text1) 2%,transparent) 70%);-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);box-shadow:0 14px 40px var(--t-shadow);}
+.mch-menu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:230px;padding:6px 12px 10px;border-radius:12px;background-color:color-mix(in srgb,var(--t-bg) 96%,transparent);background-image:linear-gradient(160deg,color-mix(in srgb,var(--t-text1) 8%,transparent),color-mix(in srgb,var(--t-text1) 2%,transparent) 70%);box-shadow:0 14px 40px var(--t-shadow);}
 .mch-group h4{margin:8px 0 2px;font:500 11px var(--font-geist-sans),sans-serif;color:var(--t-text3);}
 .mch-group label{display:flex;align-items:center;gap:9px;min-height:30px;font:500 13px var(--font-geist-sans),sans-serif;color:var(--t-text2);cursor:pointer;}
 .mch-group input{accent-color:var(--t-accent);margin:0;}
