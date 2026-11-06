@@ -258,3 +258,41 @@ def test_recent_endpoint_marks_gaps_and_appends_live_points(tmp_path, monkeypatc
     assert p["ln"] == [4, None, 5] and p["live"] is True
     assert body["groups"]["winners"]["ln"] == [1, 1] and body["groups"]["winners"]["live"] is False
     assert body["covered"] is True and body["slot_s"] == 1800
+
+
+def test_traders_as_a_whole_are_counted_once_each(monkeypatch):
+    import hl_intelligence as hl
+    # Three traders hold positions: one long two coins, one short, one hedged to zero; a fourth is counted, flat.
+    monkeypatch.setattr(hl, "_mp_book", {"a": {"BTC": 50.0, "ETH": 10.0}, "b": {"SOL": -20.0}, "c": {"BTC": 5.0, "ETH": -5.0}})
+    monkeypatch.setattr(hl, "_mp_counted", {"a", "b", "c", "d"})
+    assert hl.profitable_traders_counts() == {"counted": 4, "positioned": 3, "long": 1, "short": 1}
+    monkeypatch.setattr(hl, "_mp_book", {})
+    monkeypatch.setattr(hl, "_mp_counted", set())
+    assert hl.profitable_traders_counts() == {"counted": 0, "positioned": 0, "long": 0, "short": 0}
+
+
+def test_the_close_stores_the_traders_beside_the_positions(hl_db, monkeypatch):
+    import hl_intelligence as hl
+    import scan_schedule
+    hp = hl_db
+    now = time.time()
+    bar = int(scan_schedule.last_bar_close(now)) - scan_schedule.SETTLE_SECONDS
+    monkeypatch.setattr(hl, "_last_lean_bar", bar - 14400)
+    monkeypatch.setattr(hl, "_roster", ["w"])
+    monkeypatch.setattr(hl, "_mp_book", {"e": {"BTC": -5.0}, "f": {"BTC": 3.0, "ETH": 2.0}})
+    monkeypatch.setattr(hl, "_mp_counted", {"e", "f", "g"})
+    monkeypatch.setattr("activity.is_active", lambda: True)
+    assert asyncio.run(hl.record_lean_at_bar_close(now)) is True
+    assert hp.load_trader_counts(bar, bar) == [(bar, 3, 2, 1, 1)]
+    assert hp.load_coin_lean("BTC", 0)[1][bar][:2] == (1, 1)      # positions per coin, as before
+
+
+def test_trader_counts_round_trip_and_age_out(hl_db):
+    hp = hl_db
+    now = int(time.time())
+    hp.save_trader_counts(now - 14400, {"counted": 590, "positioned": 410, "long": 100, "short": 300}, 3)
+    hp.save_trader_counts(now - 14400, {"counted": 591, "positioned": 411, "long": 101, "short": 301}, 3)   # same bar
+    assert hp.load_trader_counts(now - 20000, now) == [(now - 14400, 591, 411, 101, 301)]
+    hp.save_trader_counts(now - 401 * 86400, {"counted": 1, "positioned": 1, "long": 1, "short": 0})
+    hp.save_trader_counts(now, {"counted": 2, "positioned": 2, "long": 2, "short": 0})
+    assert [r[0] for r in hp.load_trader_counts(0, now)] == [now - 14400, now]

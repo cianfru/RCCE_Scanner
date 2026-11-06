@@ -87,6 +87,18 @@ CREATE TABLE IF NOT EXISTS trader_lean (
     PRIMARY KEY (bar_close, grp)
 );
 
+-- Profitable traders as a whole at the same closes: how many were counted (fresh readings that pass the
+-- consensus filters), how many of them held any position, and how many were net long or net short over all
+-- their coins. trader_lean counts positions (a trader in five coins counts five times); this counts traders.
+CREATE TABLE IF NOT EXISTS trader_lean_traders (
+    bar_close INTEGER PRIMARY KEY,
+    counted INTEGER NOT NULL,
+    positioned INTEGER NOT NULL,
+    long INTEGER NOT NULL,
+    short INTEGER NOT NULL,
+    roster_version INTEGER
+);
+
 -- Position change log: one row per coin whose size changed between two readings of a tracked
 -- wallet (beyond dust, hl_cadence.changed). t0/t1: the previous and this reading, so the change
 -- happened in between. Read by hl_entities (lockstep wallets); kept _CHANGES_RETENTION_DAYS.
@@ -406,6 +418,25 @@ def save_trader_lean(bar_close: int, rows: Dict[str, dict], roster_version: Opti
     conn.execute("DELETE FROM trader_lean WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
     conn.commit()
     return len(rows)
+
+
+def save_trader_counts(bar_close: int, counts: dict, roster_version: Optional[int] = None) -> None:
+    """Store one close's profitable traders as a whole (idempotent per bar): counted, positioned, long, short."""
+    conn = _get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO trader_lean_traders (bar_close, counted, positioned, long, short, roster_version) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (int(bar_close), counts["counted"], counts["positioned"], counts["long"], counts["short"], roster_version),
+    )
+    conn.execute("DELETE FROM trader_lean_traders WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
+    conn.commit()
+
+
+def load_trader_counts(lo: int, hi: int) -> List[tuple]:
+    """(bar_close, counted, positioned, long, short) for lo <= bar_close <= hi, oldest first."""
+    return _get_conn().execute(
+        "SELECT bar_close, counted, positioned, long, short FROM trader_lean_traders WHERE bar_close BETWEEN ? AND ? "
+        "ORDER BY bar_close", (int(lo), int(hi))).fetchall()
 
 
 def last_trader_lean_bar() -> int:

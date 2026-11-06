@@ -205,6 +205,7 @@ export const INDICATORS = [
   { key: "heat", label: "Market heat", where: "pane", on: true },
   { key: "fg", label: "Fear & Greed", where: "pane", on: true },
   { key: "crowd", label: "Profitable traders", where: "pane", on: true },
+  { key: "positions", label: "Profitable traders' positions", where: "pane", on: false },
   { key: "smart", label: "Smart money", where: "pane", on: false },
   { key: "whales", label: "Whales", where: "pane", on: false },
   { key: "median_z", label: "Median z", where: "pane", on: false },
@@ -254,7 +255,12 @@ export const MCOPY = {
   zup: { title: "Typical coin recovering", body: () => `The typical coin has climbed back toward its own average price (median z ${Z_TURN} over its low). In all 7 downturns since 2021 with both marks, this came before the uptrend share turned up.` },
   rolled: { title: "Uptrend share rolled over", body: (f, at) => `Coins in uptrend fell from ${n0(f.v)}% at this broad uptrend's high (${f.d}) to ${n0(at)}%.` },
   turned: { title: "Uptrend share turned up", body: (f, at) => `Coins in uptrend rose from ${n0(f.v)}% at this downturn's low (${f.d}) to ${n0(at)}%.` },
+  netcount: { title: "Counted by net exposure from here", body: () => "From this day a short covered by the same coin held on Hyperliquid spot (or staked HYPE) is a funding trade and is left out, so the count steps here." },
 };
+
+// Days the profitable traders' positions began to be counted another way (HyperLens's dated marker): a step there is
+// the counting, not traders moving. 20759 = 2 Nov 2026, the first daily close counted by net exposure.
+export const COUNTING_CHANGES = [{ day: 20759, kind: "netcount" }];
 
 export const HCOPY = {
   title: "Market heat",

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, LineSeries, LineStyle, LineType, PriceScaleMode, createChart,
-         createSeriesMarkers } from "lightweight-charts";
+import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode,
+         createChart, createSeriesMarkers } from "lightweight-charts";
 import { useTheme } from "../ThemeContext.jsx";
 import { T as TH, col, resolveToken } from "../theme.js";
 import { apiFetch } from "../edge.js";
-import { BCOPY, COLD, CROWD, GREED, HCOPY, HOT, INDICATORS, MCOPY, broadRuns, heatSeries, heatTurns, zoneOf } from "../utils/marketHeat.js";
+import { BCOPY, COLD, COUNTING_CHANGES, CROWD, GREED, HCOPY, HOT, INDICATORS, MCOPY, broadRuns, heatSeries, heatTurns,
+         zoneOf } from "../utils/marketHeat.js";
 import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
 
@@ -24,7 +25,11 @@ const PLAIN = { top: 0.12, bottom: 0.08 };
 const MARKED = { top: 0.2, bottom: 0.14 };
 const GAP_PX = 7;                  // a mark's near edge, this far off its line
 const paneH = key => Math.round(PANE_H() * (TALL[key] || 1));
-const FEAR_GATE = 40;              // Fear & Greed at or below: the engine's fear gate (the dial's own line)
+const FEAR_GATE = 40;
+const num = v => Math.round(v).toLocaleString("en-US");
+// A day's profitable-trader positions (recorded days only; rebuilt days carry the share alone), and the traders
+// behind them where recorded.
+const posOf = r => { const w = r.wallet?.crowd; return w?.long == null || w?.short == null ? null : w; };              // Fear & Greed at or below: the engine's fear gate (the dial's own line)
 
 // "#rrggbb" (or "#rgb") at an opacity, as the chart's canvas needs it; other colour strings pass through.
 export function hexA(hex, a) {
@@ -42,6 +47,10 @@ export const PANES = {
     kind: "baseline", base: 50, range: [0, 100], lines: [HOT, COLD], tone: "heat" },
   uptrend: { value: r => (r.uptrend == null ? null : 100 * r.uptrend), legend: r => (r.uptrend == null ? null : `${Math.round(100 * r.uptrend)}%`),
     kind: "line", range: [0, 100], lines: [55], tone: "accent" },
+  positions: { value: r => { const w = posOf(r); return w ? w.long + w.short : null; },
+    long: r => posOf(r)?.long ?? null,
+    legend: r => { const w = posOf(r); return w ? `${num(w.long + w.short)} · ${num(w.long)} long · ${num(w.short)} short${w.traders != null ? ` · ${num(w.traders)} traders` : ""}` : null; },
+    kind: "stack", tone: "longshort" },
   crowd: { value: r => (r.wallet?.crowd?.L == null ? null : 100 * r.wallet.crowd.L),
     legend: r => { const w = r.wallet?.crowd; return w?.L == null ? null : `${Math.round(100 * w.L)}% long · ${Math.round(100 * w.S)}% short`; },
     kind: "baseline", base: 50, range: [0, 100], lines: [100 * CROWD], tone: "longshort" },
@@ -217,6 +226,18 @@ export default function MarketChart({ rows, indicators, range }) {
     panes.forEach((key, i) => {
       const def = PANES[key];
       const [c1, c2] = tone[def.tone];
+      if (def.kind === "stack") {
+        // Positions as bars: all of them in the short colour, the long ones over them from zero, so each bar reads
+        // long (bottom) and short (top).
+        const fmt = { type: "custom", formatter: v => (v < 0 ? "" : num(v)) };
+        const all = chart.addSeries(HistogramSeries, { color: hexA(c2, 0.7), priceLineVisible: false, lastValueVisible: true, priceFormat: fmt }, i + 1);
+        const long = chart.addSeries(HistogramSeries, { color: hexA(c1, 0.8), priceLineVisible: false, lastValueVisible: false, priceFormat: fmt }, i + 1);
+        const pts = rows.filter(r => def.value(r, ctx) != null);
+        all.setData(pts.map(r => ({ time: t(r.day), value: def.value(r, ctx) })));
+        long.setData(pts.map(r => ({ time: t(r.day), value: def.long(r) })));
+        paneSeries[key] = all;
+        return;
+      }
       const opts = { lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
         // A 0-100 pane names no value outside its range (the room left for marks above 100 and below 0).
         priceFormat: { type: "custom", formatter: v => (key === "median_z" ? v.toFixed(1)
@@ -237,6 +258,15 @@ export default function MarketChart({ rows, indicators, range }) {
     const byTime = (a, b) => a.time - b.time;
     if (shareMarks.length && paneSeries.uptrend) createSeriesMarkers(paneSeries.uptrend, shareMarks.sort(byTime));
     if (heatMarks.length && paneSeries.heat) createSeriesMarkers(paneSeries.heat, heatMarks.sort(byTime));
+    if (paneSeries.positions) {
+      const shown = new Set(rows.filter(r => PANES.positions.value(r, ctx) != null).map(r => r.day));
+      const steps = COUNTING_CHANGES.filter(c => shown.has(c.day)).map(c => {
+        const id = `${c.kind}-${c.day}`;
+        meta.set(id, { kind: c.kind, day: c.day, from: null, at: null });
+        return { id, time: t(c.day), position: "aboveBar", color: p.text3, shape: "circle", size: 0.6 };
+      });
+      if (steps.length) createSeriesMarkers(paneSeries.positions, steps);
+    }
     const ps = chart.panes();
     ps[0]?.setStretchFactor(MAIN_H() / PANE_H());
     for (let i = 1; i < ps.length; i++) ps[i].setStretchFactor(paneH(panes[i - 1]) / PANE_H());

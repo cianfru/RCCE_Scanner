@@ -180,6 +180,33 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(out["crowd"][100], [100, 3, 1])
         self.assertEqual(ph.crowd_rows([100], lambda lo, hi: []), {})
 
+    def test_crowd_rows_carry_the_traders_of_the_same_bar(self):
+        close = 101 * DAY
+        lean = lambda lo, hi: [(close, "coin:BTC", 30, 10), (close, "coin:ETH", 20, 5)]
+        asked = []
+
+        def traders(lo, hi):
+            asked.append((lo, hi))
+            return [(close, 590, 410, 120, 280)]
+        self.assertEqual(ph.crowd_rows([100], lean, traders)["crowd"][100], [100, 50, 15, 410, 590, 120, 280])
+        self.assertEqual(asked, [(close, close)])                      # the bar the positions came from, only
+        self.assertEqual(ph.crowd_rows([100], lean, lambda lo, hi: [])["crowd"][100], [100, 50, 15])
+
+        def broken(lo, hi):
+            raise RuntimeError("no table yet")
+        self.assertEqual(ph.crowd_rows([100], lean, broken)["crowd"][100], [100, 50, 15])
+        self.assertEqual(ph.crowd_rows([100], lean)["crowd"][100], [100, 50, 15])   # a test source: no HyperLens read
+
+    def test_crowd_view_shows_the_traders_where_recorded(self):
+        self.write_crowd([[d, 0.6] for d in range(90, 95)])
+        ph._load()
+        ph._live = {"crowd": {94: [94, 13, 7], 95: [95, 12, 8, 410, 590, 120, 280]}, "crowd:BTC": {95: [95, 3, 1]}}
+        c = ph.view()["crowd"]
+        rows = {r[0]: r for r in c["rows"]}
+        self.assertEqual(rows[94][5:], [None, None, None, None])
+        self.assertEqual(rows[95], [95, 12, 8, 0.6, 0, 410, 590, 120, 280])
+        self.assertEqual(c["coins"]["BTC"], [[95, 3, 1, 0.75, 0]])     # per coin: positions only
+
     def test_fetch_lean_reads_roster_two_coin_rows_from_hyperlens(self):
         import hl_persistence as hp
         with patch.object(hp, "_DB_PATH", os.path.join(self.dir, "hyperlens.db")), patch.object(hp, "_conn", None):
@@ -188,6 +215,9 @@ class PositioningHistoryTests(unittest.TestCase):
             hp.save_trader_lean(close, {"coin:BTC": row(30, 10), "sector:AI": row(5, 5)}, 2)
             hp.save_trader_lean(close - ph.BAR_S, {"coin:BTC": row(8, 8)})            # before roster version 2
             self.assertEqual(ph._fetch_lean(close - ph.BAR_S, close + ph.BAR_S), [(close, "coin:BTC", 30, 10)])
+            hp.save_trader_counts(close, {"counted": 590, "positioned": 410, "long": 120, "short": 280}, 3)
+            self.assertEqual(ph._fetch_traders(close, close), [(close, 590, 410, 120, 280)])
+            self.assertEqual(ph.crowd_rows([close // DAY - 1])["crowd"][close // DAY - 1], [close // DAY - 1, 30, 10, 410, 590, 120, 280])
             hp._conn.close()
 
     def write_crowd(self, rows, picked=200):
@@ -201,10 +231,12 @@ class PositioningHistoryTests(unittest.TestCase):
         ph._live = {"crowd": {d: [d, 13, 7] for d in range(94, 104)}, "crowd:BTC": {100: [100, 3, 1], 101: [101, 0, 0]}}
         c = ph.view()["crowd"]
         rows = {r[0]: r for r in c["rows"]}
-        self.assertEqual(c["columns"], ["day", "long", "short", "long_share", "rebuilt"])
-        self.assertEqual(rows[90], [90, None, None, 0.65, 1])          # rebuilt, moved up 5 points
-        self.assertEqual(rows[94], [94, 13, 7, 0.65, 0])               # recorded where both exist
-        self.assertEqual(rows[103][-1], 0)
+        self.assertEqual(c["columns"], ["day", "long", "short", "long_share", "rebuilt",
+                                        "traders", "counted", "traders_long", "traders_short"])
+        self.assertEqual(c["coin_columns"], ["day", "long", "short", "long_share", "rebuilt"])
+        self.assertEqual(rows[90], [90, None, None, 0.65, 1, None, None, None, None])    # rebuilt, moved up 5 points
+        self.assertEqual(rows[94], [94, 13, 7, 0.65, 0, None, None, None, None])         # recorded where both exist
+        self.assertEqual(rows[103][4], 0)
         self.assertEqual(c["overlap"], {"days": 7, "from": 94, "to": 100, "offset_pts": 5.0, "gap_pts": 5.0})
         self.assertEqual(c["rebuilt"], {"from": 90, "to": 100, "method": "fixed", "picked": 200})
         self.assertEqual(c["recorded_from"], 94)
@@ -246,8 +278,8 @@ class PositioningHistoryTests(unittest.TestCase):
         ph._live = {"crowd": {d: [d, 7, 3] for d in range(94, 104)}, "crowd:BTC": {d: [d, 1, 1] for d in range(94, 104)}}
         c = ph.view()["crowd"]
         rows = {r[0]: r for r in c["rows"]}
-        self.assertEqual(rows[90], [90, None, None, 0.7, 1])
-        self.assertEqual(rows[95], [95, 7, 3, 0.7, 0])
+        self.assertEqual(rows[90][:5], [90, None, None, 0.7, 1])
+        self.assertEqual(rows[95][:5], [95, 7, 3, 0.7, 0])
         self.assertEqual(c["rebuilt"]["method"], "daily")
         btc = {r[0]: r for r in c["coins"]["BTC"]}
         self.assertEqual(btc[90], [90, None, None, 0.5, 1])

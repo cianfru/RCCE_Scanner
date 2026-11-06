@@ -91,7 +91,8 @@ export default function MarketToday({ data, rows, wallets, onPick, onHoverCycle 
   const fgAll = data?.fear_greed || [];
   const fg = fgAll.length ? { day: fgAll[fgAll.length - 1][0], v: fgAll[fgAll.length - 1][1] } : null;
   const crowdPts = useMemo(() => [...(byDay(wallets, { scope: "all" }).crowd?.values() || [])]
-    .map(r => ({ day: r.day, v: r.L, S: r.S })).sort((a, b) => a.day - b.day), [wallets]);
+    .map(r => ({ day: r.day, v: r.L, S: r.S, n: r.long != null && r.short != null ? r.long + r.short : null, traders: r.traders ?? null }))
+    .sort((a, b) => a.day - b.day), [wallets]);
   const crowd = crowdPts.length ? crowdPts[crowdPts.length - 1] : null;
   const ago = (pts, scale) => [["1d", 1, "yesterday"], ["1w", 7, "a week ago"]].map(([key, n, words]) => {
     const r = readingAgo(pts, n);
@@ -123,13 +124,13 @@ export default function MarketToday({ data, rows, wallets, onPick, onHoverCycle 
     </Tile>}
     {crowd && <Tile label="Profitable traders" tab="positioning" onPick={onPick}
       aria={`Profitable traders ${pct(crowd.v)} long, ${pct(crowd.S)} short. Open the Positioning tab`}
-      info={<Info title="Profitable traders" paras={["The share of the profitable traders' open positions that are long and short, on all coins, at the latest reading.", "The thin marks show where the long share was yesterday (1d) and a week ago (1w)."]} />}>
+      info={<Info title="Profitable traders" paras={["The share of the profitable traders' open positions that are long and short, on all coins, at the latest reading.", "The thin marks show where the long share was yesterday (1d) and a week ago (1w).", "Under it, how many positions they hold: a trader in five coins counts five times. Fewer positions means traders left or hold fewer coins; the Positioning tab shows the count over time."]} />}>
       <strong><b className="is-long">{pct(crowd.v)}</b><i aria-hidden="true"> · </i><b className="is-short">{pct(crowd.S)}</b></strong>
       <span className="mt-split has-ago" aria-hidden="true">
         <span className="is-long" style={{ flexGrow: crowd.v }} /><span className="is-short" style={{ flexGrow: crowd.S }} />
         <Ago marks={ago(crowdPts, 100)} />
       </span>
-      <em>long · short, all coins</em>
+      <em>{crowd.n ? `long · short of ${crowd.n.toLocaleString("en-US")} positions${crowd.traders != null ? ` · ${crowd.traders.toLocaleString("en-US")} traders` : ""}` : "long · short, all coins"}</em>
     </Tile>}
   </div>;
 }
