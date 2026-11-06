@@ -211,7 +211,7 @@
    (the page colour under its gradient), so rows never ghost through the labels; with nothing to see through,
    the backdrop blur is dropped. It clips its own contents, so the active bar's glow stays inside it. */
 .mobile-tabbar{position:fixed;left:var(--gutter);right:var(--gutter);bottom:calc(12px + env(safe-area-inset-bottom,0px));height:60px;z-index:100;
- display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden;
+ display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:hidden;
  background:var(--t-headerBg);background-color:var(--t-bg);border:1px solid var(--t-border);border-radius:16px;
  box-shadow:inset 0 1px 0 var(--t-overlay04),0 -8px 32px var(--t-shadow);}
 .mobile-tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;color:var(--t-text3);font:500 12px var(--font-geist-sans),sans-serif;text-decoration:none;-webkit-tap-highlight-color:transparent;}

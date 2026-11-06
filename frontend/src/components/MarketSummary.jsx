@@ -39,7 +39,7 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
             <p>This is the same count the engine uses, so it covers both market kinds whichever one the grid shows.</p>
             <p>Consensus is one of the nine core checks behind a long signal: it passes on RISK-ON or ACCUMULATION. Two paths read it the other way: Light long in Uptrend (moderate z) and the Re-accumulating setups need RISK-ON or MIXED. RISK-OFF also blocks most Accumulate paths (not Capitulation absorption or funding-squeeze setups) and lets Risk-off exits fire.</p>
           </HelpTip>
-          <HistoryButton label="Uptrend share through history" onClick={() => navigate("/market")} />
+          <HistoryButton label="Uptrend share through history" onClick={() => navigate("/market?view=breadth")} />
           <span className="ms-eyebrow-meta ms-all" title="Perps and spot together: the count the engine uses">all markets</span>
         </div>
         <strong className="ms-headline" style={{ "--consensus-color": color }}>{label || "Awaiting analysis"}</strong>

@@ -4,14 +4,13 @@ import { NAV_ICONS } from "./navIcons.jsx";
 import { getAdminKey } from "../auth.js";
 import { useAccount } from "../account.js";
 
-// More: the rarely used pages, one tap from the hamburger. The four main pages live in the
+// More: the rarely used pages, one tap from the hamburger. The five main pages live in the
 // header tabs (and the phone tab bar), so they are not repeated here. The theme switch is in
 // the header; /settings is the owner's page, opened by its address, so it is not listed.
 const NAV_SECTIONS = [
   {
     label: "Research",
     items: [
-      { key: "market", label: "Market history", desc: "Uptrend share, Fear & Greed and wallets since 2019" },
       { key: "signals", label: "Signal Log", desc: "Historical signal events" },
       { key: "analytics", label: "Analytics", desc: "Signal performance attribution" },
       { key: "bridge", label: "Bridge", desc: "USDC in and out of Hyperliquid" },

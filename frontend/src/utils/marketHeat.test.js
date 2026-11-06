@@ -45,6 +45,7 @@ test('indicators: saved picks keep the catalogue order, defaults otherwise, copy
   assert.deepEqual(pickIndicators(['crowd', 'band', 'nope']), ['band', 'crowd']);
   assert.deepEqual(pickIndicators(null), DEFAULT_ON);
   assert.ok(DEFAULT_ON.includes('runs') && DEFAULT_ON.includes('uptrend') && DEFAULT_ON.includes('crowd'));
+  assert.deepEqual(pickIndicators(['turns', 'zturns']), ['zturns', 'turns', 'uptrend', 'heat'], 'a mark brings the pane it sits on');
   assert.equal(new Set(INDICATORS.map(i => i.key)).size, INDICATORS.length);
   const pop = HCOPY.pop().join(' ');
   assert.ok(popWords(pop) <= 90, `${popWords(pop)} words`);
@@ -123,11 +124,13 @@ test('broad state in a downturn: its age against past downturns, fear over the l
 test('every mark explains itself: words within the rules, measured from the extreme it turned from', () => {
   const from = { v: 82.4, d: '11 Oct 2026' };
   for (const [k, c] of Object.entries(MCOPY)) {
-    const text = `${c.title} ${c.body(from)}`;
+    const text = `${c.title} ${c.body(from, 61.6)}`;
     assert.doesNotMatch(text, FORBIDDEN, k);
     assert.ok(popWords(text) <= 40, `${k}: ${popWords(text)} words`);
   }
-  assert.equal(MCOPY.rolled.body({ v: 86.2, d: '30 Sep 2026' }), "Coins in uptrend are 20 points under this broad uptrend's high (86%, 30 Sep 2026).");
+  assert.equal(MCOPY.rolled.body({ v: 86.2, d: '30 Sep 2026' }, 65.9), "Coins in uptrend fell from 86% at this broad uptrend's high (30 Sep 2026) to 66%.");
+  assert.equal(MCOPY.turned.body({ v: 22.1, d: '5 Nov 2026' }, 42.4), "Coins in uptrend rose from 22% at this downturn's low (5 Nov 2026) to 42%.");
+  assert.doesNotMatch(Object.values(MCOPY).map(c => c.body({ v: 50, d: 'x' }, 40)).join(' '), /points|percentile/);
   const br = broadRuns(rowsOf([0.3, 0.6, 0.9, 0.95, 0.7, 0.3, 0.3, 0.3, 0.3, 0.3, 0.1, 0.35, 0.6]));
   assert.deepEqual(br.runs[0].rollFrom, { v: 0.95, day: 1003 });
   assert.deepEqual(br.downs[0].turnFrom, { v: 0.1, day: 1010 });

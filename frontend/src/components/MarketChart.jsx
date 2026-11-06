@@ -9,8 +9,8 @@ import { RANGES, dayDate, kUsd, usd } from "../utils/marketHistory.js";
 import { deriveRows } from "../utils/deriveWallets.js";
 
 // The market history page's Chart view: one large BTC chart in the manner of a trading terminal. Indicators sit on the
-// price (the weekly band, broad uptrends with their roll-over and downturns' turn-up, median z turns, heat turns, hot
-// and cold days) or in panes of their own under it (Uptrend share, taller, Fear & Greed, the wallet groups, Market
+// price (the weekly band, broad uptrends shaded, hot and cold days) or in panes of their own under it, with the marks
+// on the pane they describe (the Uptrend share's turns and the typical coin's on Uptrend share, heat turns on Market heat) (Uptrend share, taller, Fear & Greed, the wallet groups, Market
 // heat...), all on one time axis;
 // drag and scroll to move and zoom, the range buttons to jump. Each pane names its indicator and its value at the
 // crosshair (the latest day otherwise). Context, not a signal.
@@ -148,35 +148,39 @@ export default function MarketChart({ rows, indicators, range }) {
         b.setData(rows.filter(r => r[k] > 0).map(r => ({ time: t(r.day), value: r[k] })));
       }
     }
-    // Each mark carries an id; the chart names it when the pointer is on it, and `meta` says what it means.
-    const marks = [];
+    // Each mark carries an id; the chart names it when the pointer is on it, and `meta` says what it means. The marks sit
+    // on the pane they describe (owner, 6 November 2026): the Uptrend share's turns and the typical coin's on the Uptrend
+    // share, heat turns on Market heat; on the BTC price they read as if they were about BTC.
+    const shareMarks = [], heatMarks = [];
     const meta = new Map();
     const pctFrom = f => (f ? { v: 100 * f.v, day: f.day } : null);    // shares (0-1) read as percent
-    const mark = (kind, day, from, m) => { const id = `${kind}-${day}`; meta.set(id, { kind, day, from }); marks.push({ id, time: t(day), ...m }); };
-    if (indicators.includes("runs")) {
+    const shareOn = new Map(rows.map(r => [r.day, r.uptrend == null ? null : 100 * r.uptrend]));
+    const mark = (list, kind, day, from, at, m) => { const id = `${kind}-${day}`; meta.set(id, { kind, day, from, at }); list.push({ id, time: t(day), ...m }); };
+    if (indicators.includes("shareturns")) {
       for (const run of ctx.broad.runs) {
-        if (run.roll != null) mark("rolled", run.roll, pctFrom(run.rollFrom), { position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
+        if (run.roll != null) mark(shareMarks, "rolled", run.roll, pctFrom(run.rollFrom), shareOn.get(run.roll), { position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
       }
       for (const dn of ctx.broad.downs) {
-        if (dn.turnUp != null) mark("turned", dn.turnUp, pctFrom(dn.turnFrom), { position: "belowBar", color: p.green, shape: "square", size: 0.7 });
+        if (dn.turnUp != null) mark(shareMarks, "turned", dn.turnUp, pctFrom(dn.turnFrom), shareOn.get(dn.turnUp), { position: "belowBar", color: p.green, shape: "square", size: 0.7 });
       }
     }
     if (indicators.includes("zturns")) {
       for (const run of ctx.broad.runs) {
-        if (run.zTurn != null) mark("zdown", run.zTurn, null, { position: "aboveBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+        if (run.zTurn != null) mark(shareMarks, "zdown", run.zTurn, null, null, { position: "aboveBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
       }
       for (const dn of ctx.broad.downs) {
-        if (dn.zTurnUp != null) mark("zup", dn.zTurnUp, null, { position: "belowBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
+        if (dn.zTurnUp != null) mark(shareMarks, "zup", dn.zTurnUp, null, null, { position: "belowBar", color: p.text3, shape: "circle", size: 0.6, text: "z" });
       }
     }
     if (indicators.includes("turns")) {
       for (const x of ctx.turns) {
         const from = { v: x.from.heat, day: x.from.day };
-        if (x.kind === "cooling") mark("cooling", x.day, from, { position: "aboveBar", color: p.orange, shape: "arrowDown", size: 1 });
-        else mark("lifting", x.day, from, { position: "belowBar", color: p.cold, shape: "arrowUp", size: 1 });
+        const at = ctx.heat.get(x.day)?.heat;
+        if (x.kind === "cooling") mark(heatMarks, "cooling", x.day, from, at, { position: "aboveBar", color: p.orange, shape: "arrowDown", size: 1 });
+        else mark(heatMarks, "lifting", x.day, from, at, { position: "belowBar", color: p.cold, shape: "arrowUp", size: 1 });
       }
     }
-    if (marks.length) createSeriesMarkers(btc, marks.sort((a, b) => a.time - b.time));
+    const paneSeries = {};
 
     // One pane per indicator below the price.
     panes.forEach((key, i) => {
@@ -190,12 +194,16 @@ export default function MarketChart({ rows, indicators, range }) {
             topLineColor: c1, topFillColor1: hexA(c1, 0.32), topFillColor2: hexA(c1, 0.04),
             bottomLineColor: c2, bottomFillColor1: hexA(c2, 0.04), bottomFillColor2: hexA(c2, 0.32) }, i + 1)
         : chart.addSeries(LineSeries, { ...opts, color: c1 }, i + 1);
+      paneSeries[key] = s;
       s.setData(rows.map(r => ({ r, v: def.value(r, ctx) })).filter(o => o.v != null && Number.isFinite(o.v))
         .map(o => ({ time: t(o.r.day), value: o.v })));
       for (const price of def.lines || []) {
         s.createPriceLine({ price, color: hexA(p.text3, 0.55), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
       }
     });
+    const byTime = (a, b) => a.time - b.time;
+    if (shareMarks.length && paneSeries.uptrend) createSeriesMarkers(paneSeries.uptrend, shareMarks.sort(byTime));
+    if (heatMarks.length && paneSeries.heat) createSeriesMarkers(paneSeries.heat, heatMarks.sort(byTime));
     const ps = chart.panes();
     ps[0]?.setStretchFactor(MAIN_H() / PANE_H());
     for (let i = 1; i < ps.length; i++) ps[i].setStretchFactor(paneH(panes[i - 1]) / PANE_H());
@@ -245,13 +253,15 @@ export default function MarketChart({ rows, indicators, range }) {
     <div className="mc-legend" style={{ top: tops[0] ?? 0 }}>
       <b>BTC</b><span>{usd(r.btc)}</span>
       {indicators.includes("band") && r.bandLo > 0 && <i>band {kUsd(r.bandLo)}–{kUsd(r.bandHi)}</i>}
-      {inRun && <em className="mc-run">{BCOPY.day(inRun.age)}{inRun.rolled ? ` · ${BCOPY.marks.rolled.toLowerCase()}` : ""}</em>}
-      {inDown && <em className="mc-down">{BCOPY.downDay(inDown.age)}{inDown.turned ? ` · ${BCOPY.downMarks.turned.toLowerCase()}` : ""}</em>}
+      {inRun && <em className="mc-run">{BCOPY.day(inRun.age + 1)}{inRun.rolled ? ` · ${BCOPY.marks.rolled.toLowerCase()}` : ""}</em>}
+      {inDown && <em className="mc-down">{BCOPY.downDay(inDown.age + 1)}{inDown.turned ? ` · ${BCOPY.downMarks.turned.toLowerCase()}` : ""}</em>}
       {heat && indicators.includes("zones") && zoneOf(heat.heat) && <em className={`mc-zone is-${zoneOf(heat.heat)}`}>{zoneOf(heat.heat) === "hot" ? "hot day" : "cold day"}</em>}
       <i>{dayDate(r.day)}</i>
     </div>
     {panes.map((key, i) => {
-      const text = PANES[key].legend(r, ctx);
+      // Not hovering: the pane's latest reading (a wallet group's feed can end a day before the market history).
+      const rr = hover != null ? r : [...rows].reverse().find(x => PANES[key].legend(x, ctx) != null) || r;
+      const text = PANES[key].legend(rr, ctx);
       return <div key={key} className="mc-legend" style={{ top: tops[i + 1] ?? fallback[i] }}>
         <b>{LABEL[key]}</b><span>{text ?? "—"}</span>
         {key === "heat" && heat && <i className="mc-parts">{["uptrend", "fg", "traders"].filter(k => heat.parts[k] != null)
@@ -268,7 +278,7 @@ function MarkTip({ tip, width }) {
   const left = tip.x + 270 > width ? Math.max(4, tip.x - 270) : tip.x + 14;
   return <div className="mc-tip" role="tooltip" style={{ left, top: tip.y + 14 }}>
     <b>{c.title}</b><i>{dayDate(tip.day)}</i>
-    <p>{c.body(from)}</p>
+    <p>{c.body(from, tip.at)}</p>
   </div>;
 }
 
