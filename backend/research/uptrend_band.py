@@ -55,6 +55,8 @@ MIN_BARS = 200            # a coin counts on a day once it has 200 daily candles
 MIN_ALTS = 20
 CHECK_TOL = {"alt_recent": 0.5, "episodes": 1.0, "junction_median": 0.5, "junction_max": 1.5}
 OOS_FROM = 20764          # 7 November 2026: new crossings from here count out of sample
+OOS_A_FROM = 20744        # 18 October 2026: Part A's out-of-sample crossings start here; that crossing had no 60 days
+                          # in sample and counts as the first new case (owner, 6 November 2026, after the result)
 KINDS = ("under", "over")
 SIGN = {"under": -1, "over": +1}
 
@@ -234,7 +236,7 @@ def part_a(rows: list, band: dict, cx: dict, vals: Values, state: dict, oos: boo
     res = {}
     for kind in KINDS:
         allx = crossing_days(cx, kind)
-        events = [d for d in counted(allx) if (d >= OOS_FROM) == oos]
+        events = [d for d in counted(allx) if (d >= OOS_A_FROM) == oos]
         sign = SIGN[kind]
         blocks = {}
         for key in ("alt60", "btc60", "alt30", "btc30", "share30"):
@@ -476,7 +478,7 @@ def shape(snap: dict) -> dict:
 def run_study(snap: dict, closes: dict | None, seed: dict | None = None, oos: bool = False) -> dict:
     rows, vals, band, cx, state, runs = build(snap, closes, seed)
     if oos:
-        return {"declared": "docs/reviews/uptrend-band-study.md (6 November 2026)", "out_of_sample_from": iso(OOS_FROM),
+        return {"declared": "docs/reviews/uptrend-band-study.md (6 November 2026)", "out_of_sample_from": iso(OOS_FROM), "part_a_out_of_sample_from": iso(OOS_A_FROM),
                 "days": [iso(rows[0]["day"]), iso(vals.last), len(rows)],
                 "part_a": part_a(rows, band, cx, vals, state, oos=True),
                 "part_b": part_b(rows, band, cx, vals, state, runs, since=OOS_FROM),
