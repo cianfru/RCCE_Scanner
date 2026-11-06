@@ -41,8 +41,11 @@ DAY_S = 86_400
 SEED_PATH = Path(__file__).resolve().parent / "seeds" / "wallet_history_seed.json"
 CROWD_SEED_PATH = Path(__file__).resolve().parent / "seeds" / "crowd_share_seed.json"
 CROWD_COLUMNS = ["day", "long", "short", "long_share", "rebuilt"]
+# Recorded from 6 Nov 2026 (trader_lean_traders): the traders behind the positions, each once. traders: holding any
+# position; counted: with a fresh reading; traders_long / traders_short: net long or short over all their coins.
+CROWD_TRADER_COLUMNS = ["traders", "counted", "traders_long", "traders_short"]
 CROWD_ROSTER = 2                # trader_lean rows written under roster version 2 (600 wallets, $10K floors) or
-                                # later (3: the same roster counted by net exposure from 31 Oct 2026, a step there)
+                                # later (3: the same roster counted by net exposure, from the 2 Nov 2026 close; a step there)
 BAR_S = 4 * 3600
 COLUMNS = ["day", "wallets", "positioned", "long", "short", "long_usd", "short_usd", "sampled"]
 COINS = ("BTC", "ETH", "SOL", "HYPE")
@@ -150,6 +153,7 @@ def live_rows(days: List[int], fetch: Fetch = _fetch_snapshots) -> Dict[str, Dic
 
 
 LeanFetch = Callable[[int, int], List[Tuple[int, str, int, int]]]
+TraderFetch = Callable[[int, int], List[tuple]]
 
 
 def _fetch_lean(lo: int, hi: int) -> List[Tuple[int, str, int, int]]:
@@ -161,10 +165,21 @@ def _fetch_lean(lo: int, hi: int) -> List[Tuple[int, str, int, int]]:
         ("coin:", "coin:\uffff", lo, hi, CROWD_ROSTER)).fetchall()
 
 
-def crowd_rows(days: List[int], fetch: LeanFetch = _fetch_lean) -> Dict[str, Dict[int, list]]:
+def _fetch_traders(lo: int, hi: int) -> List[tuple]:
+    """(bar_close, counted, positioned, long, short) of HyperLens's traders-as-a-whole rows (from 6 Nov 2026)."""
+    from hl_persistence import load_trader_counts
+    return load_trader_counts(lo, hi)
+
+
+def crowd_rows(days: List[int], fetch: LeanFetch = _fetch_lean,
+               fetch_traders: Optional[TraderFetch] = None) -> Dict[str, Dict[int, list]]:
     """Profitable traders at each day's close: long and short positions summed over the coins (a trader with a
     position in five coins counts five times, as Outrider's pulse does), from the 4h bar closing at 00:00 UTC, or
-    the nearest bar within 4 hours when that one is missing. "crowd" rows and "crowd:COIN" rows, [day, long, short]."""
+    the nearest bar within 4 hours when that one is missing. "crowd" rows and "crowd:COIN" rows, [day, long, short];
+    where the same bar has the traders as a whole, the "crowd" row goes on with [traders positioned, counted, net
+    long, net short]."""
+    if fetch_traders is None:                   # HyperLens's own counts go with its own positions
+        fetch_traders = _fetch_traders if fetch is _fetch_lean else (lambda lo, hi: [])
     out: Dict[str, Dict[int, list]] = {}
     for d in days:
         close = (d + 1) * DAY_S
@@ -173,7 +188,16 @@ def crowd_rows(days: List[int], fetch: LeanFetch = _fetch_lean) -> Dict[str, Dic
             continue
         bar = min({r[0] for r in rows}, key=lambda b: (abs(b - close), b))
         at = [r for r in rows if r[0] == bar]
-        out.setdefault("crowd", {})[d] = [d, sum(r[2] for r in at), sum(r[3] for r in at)]
+        row = [d, sum(r[2] for r in at), sum(r[3] for r in at)]
+        try:
+            t = fetch_traders(bar, bar)
+        except Exception as exc:                # a second record: its failure keeps the positions
+            logger.warning("Wallet history: trader counts unavailable (%s)", exc)
+            t = []
+        if t:
+            _, counted, positioned, long, short = t[0]
+            row += [positioned, counted, long, short]
+        out.setdefault("crowd", {})[d] = row
         for _, grp, lo, sh in at:
             coin = grp[5:]
             if coin in COINS:
@@ -194,7 +218,8 @@ def first_snapshot_day(fetch_first: Optional[Callable[[], Optional[int]]] = None
 
 
 async def update(now: Optional[float] = None, fetch: Fetch = _fetch_snapshots,
-                 fetch_first: Optional[Callable[[], Optional[int]]] = None, fetch_lean: LeanFetch = _fetch_lean) -> int:
+                 fetch_first: Optional[Callable[[], Optional[int]]] = None, fetch_lean: LeanFetch = _fetch_lean,
+                 fetch_traders: Optional[TraderFetch] = None) -> int:
     """Look up every day not yet looked up whose close window has passed (from the sweep's first snapshot on) and
     keep the rows found. Returns rows added."""
     global _view, _checked
@@ -209,7 +234,7 @@ async def update(now: Optional[float] = None, fetch: Fetch = _fetch_snapshots,
         return 0
     rows = live_rows(todo, fetch)
     try:
-        rows.update(crowd_rows(todo, fetch_lean))
+        rows.update(crowd_rows(todo, fetch_lean, fetch_traders))
     except Exception as exc:                    # the crowd's record is a second source: its failure keeps the rest
         logger.warning("Wallet history: profitable-trader rows unavailable (%s)", exc)
     added = 0
@@ -303,9 +328,10 @@ def _seed_shares(rows: list, columns: list) -> Dict[int, float]:
     return {int(r[0]): r[1] / (r[1] + r[2]) for r in rows if r[1] + r[2]}
 
 
-def _joined(rebuilt: Dict[int, float], rec: Dict[int, list]) -> Tuple[List[list], Optional[dict]]:
+def _joined(rebuilt: Dict[int, float], rec: Dict[int, list], traders: bool = False) -> Tuple[List[list], Optional[dict]]:
     """Recorded rows where present, rebuilt ones otherwise, the rebuilt shares shifted by their mean difference from
-    the recorded ones over a week or more of overlap. Rows [day, long, short, long_share, rebuilt]."""
+    the recorded ones over a week or more of overlap. Rows [day, long, short, long_share, rebuilt], and with
+    ``traders`` the CROWD_TRADER_COLUMNS after them (None where the day has none)."""
     share = lambda r: r[1] / (r[1] + r[2])
     both = [d for d in sorted(rebuilt) if d in rec]
     check, shift = None, 0.0
@@ -316,6 +342,10 @@ def _joined(rebuilt: Dict[int, float], rec: Dict[int, list]) -> Tuple[List[list]
     clamp = lambda v: round(min(1.0, max(0.0, v)), 4)
     rows = [[d, rec[d][1], rec[d][2], round(share(rec[d]), 4), 0] if d in rec else [d, None, None, clamp(rebuilt[d] + shift), 1]
             for d in sorted(set(rebuilt) | set(rec))]
+    if traders:
+        none = [None] * len(CROWD_TRADER_COLUMNS)
+        rows = [r + (list(rec[r[0]][3:3 + len(none)]) if r[0] in rec and len(rec[r[0]]) >= 3 + len(none) else none)
+                for r in rows]
     return rows, check
 
 
@@ -328,7 +358,7 @@ def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int
     rec = {d: r for d, r in live.items() if r[1] + r[2]}
     if not rebuilt and not rec:
         return None
-    rows, check = _joined(rebuilt, rec)
+    rows, check = _joined(rebuilt, rec, traders=True)
     coin_cols = seed.get("coin_columns") or ["day", "long", "short"]
     coins = {}
     for c in COINS:
@@ -336,7 +366,7 @@ def crowd_view(seed: dict, live: Dict[int, list], live_coins: Dict[str, Dict[int
                             {d: r for d, r in live_coins.get(c, {}).items() if r[1] + r[2]})
         coins[c] = rows_c
     return {
-        "columns": CROWD_COLUMNS,
+        "columns": CROWD_COLUMNS + CROWD_TRADER_COLUMNS,
         "rows": rows,
         "coin_columns": CROWD_COLUMNS,
         "coins": coins,

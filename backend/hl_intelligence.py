@@ -41,6 +41,7 @@ from hl_persistence import (
     load_full_trade_history as _db_load_full_trades,
     cleanup_old_data as _db_cleanup,
     save_trader_lean as _db_save_trader_lean,
+    save_trader_counts as _db_save_trader_counts,
     last_trader_lean_bar as _db_last_lean_bar,
     save_roster_rebuild as _db_save_roster_rebuild,
     max_account_values as _db_max_account_values,
@@ -284,6 +285,7 @@ _consensus: Dict[str, SymbolConsensus] = {}
 # Profitable traders' open positions: address -> {coin: signed USD (+long / -short)}.
 # Lets sector views count each wallet once per group (see profitable_lean).
 _mp_book: Dict[str, Dict[str, float]] = {}
+_mp_counted: Set[str] = set()      # profitable traders (entities) whose fresh readings passed the consensus filters
 _consensus_updated_at: float = 0.0
 # Wallets behind the last consensus: updated within _SNAPSHOT_MAX_AGE_S, and of
 # those, the ones that passed the MM and account-value filters.
@@ -1267,10 +1269,11 @@ def _recompute_consensus() -> None:
     Counts are of traders, not wallets: wallets that trade as one (hl_entities) count once per
     coin, on the side of their combined dollars. Dollars are summed over every wallet.
     """
-    global _consensus, _mp_book, _fresh_wallets, _consensus_wallets
+    global _consensus, _mp_book, _mp_counted, _fresh_wallets, _consensus_wallets
 
     now = time.time()
     mp_book: Dict[str, Dict[str, float]] = {}
+    mp_counted: Set[str] = set()
     score_map = {w.address: w.score for w in _roster}
     mp_addresses = {w.address for w in _roster_money_printers}
     sm_addresses = {w.address for w in _roster_smart_money}
@@ -1308,6 +1311,8 @@ def _recompute_consensus() -> None:
         fresh_entities.add(ent)
         is_mp = addr in mp_addresses
         is_sm = addr in sm_addresses
+        if is_mp:
+            mp_counted.add(ent)
 
         # Net exposure: a short covered by the same coin on Hyperliquid spot (or staked HYPE) is a
         # funding trade; it is left out or cut to its uncovered part (hl_hedges).
@@ -1456,6 +1461,7 @@ def _recompute_consensus() -> None:
 
     _consensus = new_consensus
     _mp_book = mp_book
+    _mp_counted = mp_counted
     _fresh_wallets = recent_count
     _consensus_wallets = fresh_wallet_count
 
@@ -1526,6 +1532,10 @@ async def record_lean_at_bar_close(now: Optional[float] = None) -> bool:
     except Exception as exc:
         logger.warning("HyperLens DB: trader lean save error: %s", exc)
         return False
+    try:                                   # traders as a whole, beside the per-group positions (from 6 Nov 2026)
+        _db_save_trader_counts(bar, profitable_traders_counts(), record_version())
+    except Exception as exc:
+        logger.warning("HyperLens DB: trader counts save error: %s", exc)
     logger.info("HyperLens: stored profitable-trader lean for %d groups at bar %d", len(rows), bar)
     return True
 
@@ -1584,6 +1594,20 @@ def profitable_lean_by_coin() -> Dict[str, dict]:
 
 def profitable_traders_positioned() -> int:
     return sum(1 for b in _mp_book.values() if b)
+
+
+def profitable_traders_counts() -> dict:
+    """The profitable traders as a whole at the latest readings, each entity once: counted (fresh readings that
+    pass the consensus filters), positioned (holding any position the lean counts; xyz markets aside), and net long
+    or net short by the sign of their dollars summed over all coins. The lean's records count positions; this counts
+    traders, so a drop in positions reads as traders leaving or as traders holding fewer coins."""
+    long = short = 0
+    for book in _mp_book.values():
+        net = sum(book.values())
+        long += net > 0
+        short += net < 0
+    return {"counted": len(_mp_counted | set(_mp_book)), "positioned": sum(1 for b in _mp_book.values() if b),
+            "long": long, "short": short}
 
 
 # ---------------------------------------------------------------------------

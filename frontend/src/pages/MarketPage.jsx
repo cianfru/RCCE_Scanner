@@ -51,7 +51,7 @@ function joinRows(data, fg, walletDays) {
 
 // The tabs, in reading order. The page opens on Cycles: where today's broad downturn (or uptrend) sits against past ones.
 const VIEWS = ["cycles", "breadth", "positioning", "fear", "chart"];
-const POSITIONING = ["band", "crowd", "smart", "whales"];
+const POSITIONING = ["band", "crowd", "positions", "smart", "whales"];
 
 export default function MarketPage({ style }) {
   const location = useLocation();
