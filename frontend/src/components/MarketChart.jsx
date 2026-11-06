@@ -18,7 +18,11 @@ import { deriveRows } from "../utils/deriveWallets.js";
 const DAY_S = 86_400;
 const MAIN_H = () => (typeof window !== "undefined" && window.innerWidth < 640 ? 300 : Math.max(360, Math.min(560, Math.round(window.innerHeight * 0.5))));
 const PANE_H = () => (typeof window !== "undefined" && window.innerWidth < 640 ? 92 : 118);
-const TALL = { uptrend: 1.5 };     // the Uptrend share's pane, taller than the others
+const TALL = { uptrend: 1.5, heat: 1.25 };   // the Uptrend share's and Market heat's panes (they carry marks), taller
+// A pane's room above and below its 0-100 range, as shares of its height: more where marks sit off the line.
+const PLAIN = { top: 0.12, bottom: 0.08 };
+const MARKED = { top: 0.2, bottom: 0.14 };
+const GAP_PX = 7;                  // a mark's near edge, this far off its line
 const paneH = key => Math.round(PANE_H() * (TALL[key] || 1));
 const FEAR_GATE = 40;              // Fear & Greed at or below: the engine's fear gate (the dial's own line)
 
@@ -155,7 +159,34 @@ export default function MarketChart({ rows, indicators, range }) {
     const meta = new Map();
     const pctFrom = f => (f ? { v: 100 * f.v, day: f.day } : null);    // shares (0-1) read as percent
     const shareOn = new Map(rows.map(r => [r.day, r.uptrend == null ? null : 100 * r.uptrend]));
-    const mark = (list, kind, day, from, at, m) => { const id = `${kind}-${day}`; meta.set(id, { kind, day, from, at }); list.push({ id, time: t(day), ...m }); };
+    // Each mark sits GAP_PX clear of its line (owner, 6 November 2026: a blue arrow on the blue heat line was hard to
+    // see): above the line's highest value within NEAR days of it, or below its lowest, so a steep move next to the mark
+    // does not run through it. The gap is set in pixels: the pane's height and its fixed 0-100 range give the value one
+    // pixel is worth. Near the pane's edge the mark comes closer to the line rather than off the pane.
+    const NEAR = 5;
+    const marked = { uptrend: indicators.includes("shareturns") || indicators.includes("zturns"), heat: indicators.includes("turns") };
+    const margins = key => (marked[key] ? MARKED : PLAIN);
+    const valueOn = { uptrend: d => shareOn.get(d), heat: d => ctx.heat.get(d)?.heat };
+    const offLine = (key, day, m) => {
+      const vs = [];
+      for (let d = day - NEAR; d <= day + NEAR; d++) { const v = valueOn[key](d); if (v != null && Number.isFinite(v)) vs.push(v); }
+      if (!vs.length) return m;
+      const mg = margins(key);
+      const h = paneH(key) * 0.95;                          // less its share of the time axis
+      const per = 100 / (h * (1 - mg.top - mg.bottom));     // value per pixel
+      const far = (12 * (m.size ?? 1) + (m.text ? 14 : 0) + 2) * per;   // from the mark's near edge to its far one
+      if (m.position === "aboveBar") {
+        const y = Math.max(...vs);
+        return { ...m, position: "atPriceTop", price: Math.max(y, Math.min(y + GAP_PX * per, 100 + mg.top * h * per - far)) };
+      }
+      const y = Math.min(...vs);
+      return { ...m, position: "atPriceBottom", price: Math.min(y, Math.max(y - GAP_PX * per, -mg.bottom * h * per + far)) };
+    };
+    const mark = (list, kind, day, from, at, m) => {
+      const id = `${kind}-${day}`;
+      meta.set(id, { kind, day, from, at });
+      list.push({ id, time: t(day), ...offLine(list === heatMarks ? "heat" : "uptrend", day, m) });
+    };
     if (indicators.includes("shareturns")) {
       for (const run of ctx.broad.runs) {
         if (run.roll != null) mark(shareMarks, "rolled", run.roll, pctFrom(run.rollFrom), shareOn.get(run.roll), { position: "aboveBar", color: p.red, shape: "square", size: 0.7 });
@@ -187,7 +218,9 @@ export default function MarketChart({ rows, indicators, range }) {
       const def = PANES[key];
       const [c1, c2] = tone[def.tone];
       const opts = { lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
-        priceFormat: { type: "custom", formatter: v => (key === "median_z" ? v.toFixed(1) : `${Math.round(v)}`) },
+        // A 0-100 pane names no value outside its range (the room left for marks above 100 and below 0).
+        priceFormat: { type: "custom", formatter: v => (key === "median_z" ? v.toFixed(1)
+          : def.range && (v > def.range[1] + 0.5 || v < def.range[0] - 0.5) ? "" : `${Math.round(v)}`) },
         ...(def.range ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: def.range[0], maxValue: def.range[1] } }) } : {}) };
       const s = def.kind === "baseline"
         ? chart.addSeries(BaselineSeries, { ...opts, baseValue: { type: "price", price: def.base },
@@ -210,13 +243,20 @@ export default function MarketChart({ rows, indicators, range }) {
     // Each pane's own scale: log for the price, linear for the indicators (set per pane, last, so neither leaks).
     chart.priceScale("right", 0).applyOptions({ mode: PriceScaleMode.Logarithmic, scaleMargins: { top: 0.1, bottom: 0.06 } });
     for (let i = 1; i < ps.length; i++) {
-      chart.priceScale("right", i).applyOptions({ mode: PriceScaleMode.Normal, scaleMargins: { top: 0.12, bottom: 0.08 } });
+      chart.priceScale("right", i).applyOptions({ mode: PriceScaleMode.Normal, scaleMargins: margins(panes[i - 1]) });
     }
 
     chart.subscribeCrosshairMove(param => {
       setHover(param?.time ? Math.round(param.time / DAY_S) : null);
       const m = param?.point && meta.get(param.hoveredObjectId);
-      setTip(m ? { x: param.point.x, y: param.point.y, ...m } : null);
+      if (!m) { setTip(null); return; }
+      // The point is measured from the top of the pane it is in: add that pane's top, so the explanation opens at the
+      // pointer (owner, 6 November 2026: on a small screen it opened up on the BTC pane, out of sight). In the lower part
+      // of the window it opens above the pointer, clear of the phone's tab bar.
+      const box = el.getBoundingClientRect();
+      const pane = chart.panes()[param.paneIndex ?? 0]?.getHTMLElement();
+      const y = param.point.y + (pane ? pane.getBoundingClientRect().top - box.top : 0);
+      setTip({ x: param.point.x, y, up: box.top + y > window.innerHeight * 0.55, ...m });
     });
     try {
       if (kept) chart.timeScale().setVisibleRange(kept);
@@ -276,7 +316,7 @@ function MarkTip({ tip, width }) {
   const c = MCOPY[tip.kind];
   const from = tip.from ? { v: tip.from.v, d: dayDate(tip.from.day) } : null;
   const left = tip.x + 270 > width ? Math.max(4, tip.x - 270) : tip.x + 14;
-  return <div className="mc-tip" role="tooltip" style={{ left, top: tip.y + 14 }}>
+  return <div className="mc-tip" role="tooltip" style={tip.up ? { left, top: tip.y - 14, transform: "translateY(-100%)" } : { left, top: tip.y + 14 }}>
     <b>{c.title}</b><i>{dayDate(tip.day)}</i>
     <p>{c.body(from, tip.at)}</p>
   </div>;
