@@ -73,3 +73,13 @@ export const CYCOPY = {
     : ["A broad uptrend starts when 55% of coins are in uptrend and ends on the first of 5 days in a row under 55%.",
        "Each grey line is one past uptrend, from its first day; the dot is the day it ended. Today's is the coloured line. The bars below show how long each lasted. What happened, not what comes next."],
 };
+
+// A reading `days` before the latest one: the last point on or before (latest day - days). points: [{ day, v }], oldest
+// first. { day, v } or null. "Yesterday" and "a week ago" on the market page's tiles.
+export function readingAgo(points, days) {
+  const xs = points.filter(p => p.v != null);
+  if (!xs.length) return null;
+  const at = xs[xs.length - 1].day - days;
+  for (let i = xs.length - 1; i >= 0; i--) if (xs[i].day <= at) return xs[i];
+  return null;
+}

@@ -265,3 +265,23 @@
 .cyc-bar.is-last rect:not(.cyc-bar-hit){fill:var(--t-text1);opacity:.85;}
 .cyc-last-label{font:600 12px var(--font-geist-sans),sans-serif;fill:var(--t-text1);}
 .cyc-head .reflex-tabs{flex-shrink:0;}
+
+/* Yesterday (1d) and a week ago (1w) on a tile's bar: a thin line through it, its name under it */
+.mt-bar.has-ago,.mt-split.has-ago{margin-bottom:12px;}
+.mt-split{position:relative;}
+.mt-ago{position:absolute;top:-4px;bottom:-4px;width:1px;margin-left:-.5px;background:var(--t-text1);opacity:.75;}
+.mt-ago-label{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:1px;font:500 9.5px/1 var(--font-geist-mono),monospace;color:var(--t-text2);white-space:nowrap;}
+.mt-ago-label.is-left{transform:translateX(calc(-100% - 2px));}
+.mt-ago-label.is-right{transform:translateX(2px);}
+/* The downturn tile's dots: pointing names the nearest past one with its line beside today's */
+.mt-lengths{cursor:crosshair;touch-action:pan-y;}
+.mt-lengths-dot.is-hov{background:var(--t-text1);transform:scale(1.5);}
+.mt-pop{position:absolute;top:calc(100% + 8px);z-index:6;display:flex;flex-direction:column;gap:2px;box-sizing:border-box;padding:9px 11px;border-radius:10px;
+  background-color:var(--t-bg)!important;pointer-events:none;text-align:left;font:500 11.5px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
+.mt-pop b{font:600 12.5px/1.4 var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.mt-spark{display:block;margin:4px 0 2px;overflow:visible;}
+.mt-spark line{stroke:var(--t-text3);stroke-width:1;stroke-dasharray:3 3;}
+.mt-spark-past{fill:none;stroke:var(--t-text2);stroke-width:1.5;}
+.mt-spark-now{fill:none;stroke:var(--t-accent);stroke-width:2;}
+.mt-tile{position:relative;}
+.mt-tile:hover{z-index:5;}

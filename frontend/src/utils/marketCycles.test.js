@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CYCOPY, marketCycles, shareBelow } from "./marketCycles.js";
+import { CYCOPY, marketCycles, readingAgo, shareBelow } from "./marketCycles.js";
 
 // Days 0-9 at 60% (a run under way on the first day), 10-19 at 30% (a downturn of 10 days), 20-29 at 60% (a run of
 // 10 days), then 30% from day 30.
@@ -82,4 +82,12 @@ test("copy: no forecast words", () => {
   const words = [...CYCOPY.pop("down"), ...CYCOPY.pop("up"), CYCOPY.head("down"), CYCOPY.head("up"), CYCOPY.lasted,
     ...CYCOPY.tip({ start: 0, end: 10, days: 10, low: 0.1, high: 0.8, btc: -0.2 }, "down", d => `${d}`)].join(" ");
   assert.doesNotMatch(words, /\b(will|expect|likely|predict|target|probability|odds)\b/i);
+});
+
+test("readingAgo: the last reading on or before the day asked, skipping gaps", () => {
+  const pts = [{ day: 1, v: 0.1 }, { day: 3, v: 0.3 }, { day: 7, v: null }, { day: 8, v: 0.8 }, { day: 10, v: 1 }];
+  assert.deepEqual(readingAgo(pts, 1), { day: 8, v: 0.8 }, "day 9 is missing: day 8");
+  assert.deepEqual(readingAgo(pts, 7), { day: 3, v: 0.3 });
+  assert.equal(readingAgo(pts, 20), null);
+  assert.equal(readingAgo([], 1), null);
 });

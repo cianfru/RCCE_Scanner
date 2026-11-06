@@ -13,15 +13,18 @@ import { dayDate, monthYear } from "../utils/marketHistory.js";
 
 const pathD = (pts, x, y) => pts.map((p, i) => `${i ? "L" : "M"}${x(p.d).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
 
-export default function CyclesChart({ rows }) {
+export default function CyclesChart({ rows, highlight = null }) {
   const [box, W] = useWidth(900);
   const [pick, setPick] = useState(null);           // "down" | "up", or null for the phase under way
-  const [hov, setHov] = useState(null);            // index into past
+  const [hovOwn, setHov] = useState(null);         // index into past, pointed at here
   const [tip, setTip] = useState(null);            // { x, y, lines }
   const c = useMemo(() => marketCycles(rows, undefined, pick), [rows, pick]);
   const kinds = c?.now ? CYCOPY.kinds.map(k => (k.key === c.now ? { ...k, label: `${k.label} · now` } : k)) : CYCOPY.kinds;
   const tabs = <Tabs small label="Phase" items={kinds} value={c?.kind || "down"} onChange={k => { setPick(k); setHov(null); setTip(null); }} />;
   if (!c || !c.past.length) return <div ref={box} className="cyc">{tabs}</div>;
+  // A past one pointed at in the tiles above lights here too, when this chart shows that phase.
+  const fromTiles = highlight && highlight.kind === c.kind ? c.past.findIndex(p => p.start === highlight.start) : -1;
+  const hov = hovOwn != null ? hovOwn : fromTiles >= 0 ? fromTiles : null;
   const phone = W < 560;
   const padL = 40, padR = phone ? 12 : 160, padT = 14, padB = 24;
   const H = phone ? 240 : 340;
