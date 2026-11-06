@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { activeMainTab, mainTabTargets, MAIN_TABS } from "./mainNav.js";
 
-test("four main tabs in order", () => {
-  assert.deepEqual(MAIN_TABS.map(t => t.label), ["Scanner", "Radar", "Traders", "Portfolio"]);
+test("five main tabs in order", () => {
+  assert.deepEqual(MAIN_TABS.map(t => t.label), ["Scanner", "Radar", "Traders", "Market", "Portfolio"]);
 });
 
 test("scanner and coin pages activate Scanner; coin pages opened from the Radar activate Radar", () => {
@@ -17,6 +17,7 @@ test("scanner and coin pages activate Scanner; coin pages opened from the Radar 
   assert.equal(activeMainTab("/traders/leaderboard", ""), "traders");
   assert.equal(activeMainTab("/trader/0x91867345424fb158888ff9c5f1b1b2e7cd7d65d5", ""), "traders");
   assert.equal(activeMainTab("/portfolio", ""), "portfolio");
+  assert.equal(activeMainTab("/market", "?view=chart"), "market");
 });
 
 test("More pages, settings and unknown addresses have no active tab", () => {
@@ -26,7 +27,7 @@ test("More pages, settings and unknown addresses have no active tab", () => {
 
 test("targets: last scanner view, Radar on the last timeframe", () => {
   assert.deepEqual(mainTabTargets({ lastScanner: "/scanner?market=spot&tf=4h&q=ETH", lastScannerTf: "4h" }), {
-    scanner: "/scanner?market=spot&tf=4h&q=ETH", radar: "/radar?tf=4h", traders: "/traders", portfolio: "/portfolio",
+    scanner: "/scanner?market=spot&tf=4h&q=ETH", radar: "/radar?tf=4h", traders: "/traders", market: "/market", portfolio: "/portfolio",
   });
   assert.equal(mainTabTargets({}).scanner, "/scanner");
   assert.equal(mainTabTargets({}).radar, "/radar?tf=1d");

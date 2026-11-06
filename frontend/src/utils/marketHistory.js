@@ -309,7 +309,7 @@ function liveLine(live, show) {
 export const COPY = {
   title: "Market history",
   close: "Close",
-  tabs: { chart: "Chart", breadth: "Uptrend share", fear: "Fear & Greed" },
+  tabs: { cycles: "Cycles", breadth: "Uptrend share", positioning: "Positioning", fear: "Fear & Greed", chart: "Chart" },
   loading: "Loading history…",
   unavailable: "History is unavailable right now.",
   empty: "No history in this range.",

@@ -125,7 +125,7 @@ const TAB_TITLES = {
   executor: "Executor",
   settings: "Settings",
   intel: "Intel",
-  market: "Market history",
+  market: "Market",
   notfound: "Page not found",
 };
 const DEFAULT_SORT = "priority_score";

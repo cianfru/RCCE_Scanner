@@ -4,7 +4,7 @@ import { NavIcon } from "./navIcons.jsx";
 
 const prefetchRadar = () => { import("../pages/RadarPage.jsx").catch(() => {}); };
 
-// Below 900px: the four main tabs in a floating glass bar, the capsule's twin at the bottom.
+// Below 900px: the five main tabs in a floating glass bar, the capsule's twin at the bottom.
 // No More item: the hamburger in the capsule is More.
 export default function MobileTabBar({ activeKey, targets }) {
   const location = useLocation();

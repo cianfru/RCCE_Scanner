@@ -3,16 +3,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Tabs from "../components/Tabs.jsx";
 import AsOf from "../components/AsOf.jsx";
 import MarketHistoryChart from "../components/MarketHistoryChart.jsx";
-import { Controls, Episodes, ForwardTest, Info, OVERLAYS, RunsChart, ageLevel, loadHistory, loadWallets }
-  from "../components/MarketHistorySections.jsx";
-import { COPY, RANGES, bandOn, breadthContext, dayDate, fearGreedByDay, fgSplit, inRange, monthYear, pctLabel,
-         percentileOf, rowsOf, todayValues } from "../utils/marketHistory.js";
-import { GROUPS, SCOPES, WCOPY, byDay, firstDay, latestOf, pct } from "../utils/walletHistory.js";
+import { Controls, Episodes, ForwardTest, Info, OVERLAYS, loadHistory, loadWallets } from "../components/MarketHistorySections.jsx";
+import CyclesChart from "../components/CyclesChart.jsx";
+import MarketToday from "../components/MarketToday.jsx";
+import { COPY, RANGES, bandOn, breadthContext, fearGreedByDay, fgSplit, inRange, rowsOf, todayValues } from "../utils/marketHistory.js";
+import { GROUPS, SCOPES, WCOPY, byDay, firstDay } from "../utils/walletHistory.js";
 import { DCOPY } from "../utils/deriveWallets.js";
 import "./market.css";
 
 const DeriveDrawer = lazy(() => import("../components/DeriveDrawer.jsx"));
 const MarketChartView = lazy(() => import("../components/MarketChartView.jsx"));
+const MarketChart = lazy(() => import("../components/MarketChart.jsx"));
 
 // /market: the share of coins in each regime since 2019 against BTC and Fear & Greed, with how one group of
 // Hyperliquid wallets stood (long or short) at each daily close underneath, on one time axis. It replaced the
@@ -24,51 +25,6 @@ const MarketChartView = lazy(() => import("../components/MarketChartView.jsx"));
 const walletInfo = (wallets, g, scope) => <Info title={WCOPY.pop.title(g)} paras={WCOPY.pop.group(g, {
   rebuiltTo: wallets?.rebuilt?.to, recordedFrom: wallets?.recorded_from, overlap: wallets?.overlap?.[g.key], scope,
   crowd: wallets?.crowd })} />;
-
-function Kpis({ data, rows, wallets, ctx, view, scope, group }) {
-  const t = data.today, c = data.cycle;
-  const fg = data.fear_greed || [];
-  // The chart's last day, so the KPI matches the readout under the chart (the index may have a newer day).
-  const lastRow = [...rows].reverse().find(r => r.fg != null);
-  const lastFg = lastRow ? [lastRow.day, lastRow.fg] : fg[fg.length - 1];
-  return <div className="mh-kpis mkt-kpis">
-    <div className="mh-kpi">
-      <strong>{pctLabel(t.uptrend)}</strong>
-      <span>{COPY.kpi.uptrend}<Info title={COPY.pop.uptrendTitle} paras={COPY.pop.uptrend({ coins: data.coins, n: t.n, since: ctx.since })} /></span>
-      <em>{COPY.kpi.pct(t.percentile)}</em>
-    </div>
-    {c && view === "breadth" && <RunAge c={c} on={ctx.on} />}
-    {lastFg && <div className="mh-kpi">
-      <strong>{lastFg[1]}</strong>
-      <span>{COPY.kpi.fg}<Info title={COPY.pop.fgTitle} paras={COPY.pop.fg({ since: monthYear(fg[0][0]) })} /></span>
-      <em>{COPY.kpi.pct(percentileOf(fg.map(v => v[1]), lastFg[1]))}</em>
-    </div>}
-    {GROUPS.filter(g => g.key === group).map(g => {
-      const r = latestOf(wallets, g.key, scope);
-      if (!r) return null;
-      // A reading older than the chart's last day says its date (Outrider's rebuilt days end before the record).
-      const asOf = rows.length && rows[rows.length - 1].day - r.day > 1 ? dayDate(r.day, false) : null;
-      return <div key={g.key} className="mh-kpi mkt-wallet-kpi">
-        <strong><b className="is-long">{pct(r.L)}</b><i aria-hidden="true">·</i><b className="is-short">{pct(r.S)}</b></strong>
-        <span>{g.label}{walletInfo(wallets, g, scope)}</span>
-        <em>{WCOPY.kpi.sub(g, scope)}{asOf && ` · ${asOf}`}</em>
-      </div>;
-    })}
-    {view === "fear" && <FearSplit data={data} />}
-  </div>;
-}
-
-// Today's run age. A risk-on run is coloured by how many past runs ended before this age: yellow past half of them,
-// light red past 3 in 4, red past 9 in 10 (with 6 or more past runs). The colour flashes once when the page opens.
-function RunAge({ c, on }) {
-  const { level, outlasted, past } = ageLevel(c);
-  return <div className={`mh-kpi mkt-age is-l${level}`} title={c.start != null ? monthYear(c.start) : undefined}>
-    <strong><b className={level ? "mkt-age-num mkt-age-flash" : "mkt-age-num"}>{COPY.kpi.day(c.day)}</b></strong>
-    <span>{COPY.kpi.run(on)}</span>
-    {past > 0 && <em>{COPY.kpi.age(outlasted, past, on)}</em>}
-    {on && c.below_days > 0 && <em>{COPY.kpi.under(c.below_days)}</em>}
-  </div>;
-}
 
 // Share of days at <=40, 41-69 and >=70 over the whole index history.
 function FearSplit({ data }) {
@@ -93,12 +49,16 @@ function joinRows(data, fg, walletDays) {
   });
 }
 
+// The tabs, in reading order. The page opens on Cycles: where today's broad downturn (or uptrend) sits against past ones.
+const VIEWS = ["cycles", "breadth", "positioning", "fear", "chart"];
+const POSITIONING = ["band", "crowd", "smart", "whales"];
+
 export default function MarketPage({ style }) {
   const location = useLocation();
   const navigate = useNavigate();
   const q = new URLSearchParams(location.search).get("view");
-  const view = q === "fear" || q === "chart" ? q : "breadth";
-  const setView = v => navigate(v === "breadth" ? "/market" : `/market?view=${v}`, { replace: true });
+  const view = VIEWS.includes(q) ? q : "cycles";
+  const setView = v => navigate(v === "cycles" ? "/market" : `/market?view=${v}`, { replace: true });
   const [data, setData] = useState(null);
   const [failed, setFailed] = useState(false);
   const [wallets, setWallets] = useState(null);
@@ -122,25 +82,43 @@ export default function MarketPage({ style }) {
   const fg = useMemo(() => fearGreedByDay(data), [data]);
   const walletDays = useMemo(() => byDay(wallets, { scope }), [wallets, scope]);
   const rows = useMemo(() => joinRows(data, fg, walletDays), [data, fg, walletDays]);
-  // The Chart view reads every wallet group over all markets, whatever coin the other views have picked.
+  // The tiles, Cycles and Chart read every wallet group over all markets, whatever coin the other tabs have picked.
   const allDays = useMemo(() => byDay(wallets, { scope: "all" }), [wallets]);
-  const chartRows = useMemo(() => (view === "chart" ? joinRows(data, fg, allDays) : []), [view, data, fg, allDays]);
+  const allRows = useMemo(() => joinRows(data, fg, allDays), [data, fg, allDays]);
 
   if (!data) return <div className="mkt" style={style}><p className="mh-muted">{failed ? COPY.unavailable : COPY.loading}</p></div>;
-  const head = <div className="mkt-head">
-    <Tabs label="View" value={view} onChange={setView}
-      items={[{ key: "chart", label: COPY.tabs.chart }, { key: "breadth", label: COPY.tabs.breadth }, { key: "fear", label: COPY.tabs.fear }]} />
-    <span className="mkt-head-right">
-      <button type="button" className="mh-link mkt-derive" aria-haspopup="dialog" onClick={() => setDerive(true)}>{DCOPY.open}</button>
-      <AsOf data={data} also={wallets} />
-    </span>
-  </div>;
+  const head = <>
+    <MarketToday data={data} rows={allRows} wallets={wallets} onPick={setView} />
+    <div className="mkt-head">
+      <Tabs label="View" value={view} onChange={setView}
+        items={[{ key: "cycles", label: COPY.tabs.cycles }, { key: "breadth", label: COPY.tabs.breadth },
+          { key: "positioning", label: COPY.tabs.positioning }, { key: "fear", label: COPY.tabs.fear }, { key: "chart", label: COPY.tabs.chart }]} />
+      <span className="mkt-head-right">
+        <button type="button" className="mh-link mkt-derive" aria-haspopup="dialog" onClick={() => setDerive(true)}>{DCOPY.open}</button>
+        <AsOf data={data} also={wallets} />
+      </span>
+    </div>
+  </>;
   const drawer = derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>;
+  if (view === "cycles") {
+    return <div className="mkt" style={style}>{head}{drawer}<CyclesChart rows={allRows} /></div>;
+  }
   if (view === "chart") {
     return <div className="mkt" style={style}>
       {head}
       {drawer}
-      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChartView rows={chartRows} /></Suspense>
+      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChartView rows={allRows} /></Suspense>
+    </div>;
+  }
+  if (view === "positioning") {
+    return <div className="mkt" style={style}>
+      {head}
+      {drawer}
+      <div className="mch-tools">
+        <Tabs small label="Range" items={RANGES} value={range} onChange={setRange} />
+        <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
+      </div>
+      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChart rows={rows} indicators={POSITIONING} range={range} /></Suspense>
     </div>;
   }
 
@@ -172,7 +150,7 @@ export default function MarketPage({ style }) {
   return <div className="mkt" style={style}>
     {head}
     {drawer}
-    <Kpis data={data} rows={rows} wallets={wallets} ctx={ctx} view={view} scope={scope} group={g?.key} />
+    {view === "fear" && <FearSplit data={data} />}
     <Controls ranges={RANGES} range={range} setRange={setRange} overlays={overlays} setOverlays={view === "breadth" ? setOverlays : null}>
       {view === "breadth" && <button type="button" className="mkt-fan-toggle" aria-pressed={fanOn} onClick={() => setFanOn(v => !v)}>
         <svg className="mh-swatch" width="18" height="12" aria-hidden="true"><path d="M1 6 L17 2 M1 6 L17 6 M1 6 L17 10" /></svg>{COPY.fanToggle}</button>}
@@ -182,7 +160,6 @@ export default function MarketPage({ style }) {
           today={today} wallets={walletProp} aria={aria(COPY.panel.uptrend)} />
       : <MarketHistoryChart mode="fear" rows={shown} range={range} today={today} wallets={walletProp} aria={aria(COPY.panel.fg)} />}
     {view === "breadth" && <>
-      {data.cycle?.runs && <RunsChart cycle={data.cycle} since={ctx.since} />}
       <button type="button" className="mh-link mkt-more" aria-expanded={more} aria-controls="mkt-more" onClick={() => setMore(v => !v)}>
         {more ? COPY.less : COPY.more}</button>
       {more && <div id="mkt-more">

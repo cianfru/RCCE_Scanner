@@ -191,17 +191,20 @@ export function broadState(rows, br = broadRuns(rows)) {
 
 // ---------------------------------------------------------------- the Chart view's indicators
 
-// On the price pane or in a pane of their own below it; `on` ones show the first time the page opens.
+// On the price pane, as marks on the pane they describe, or in a pane of their own below the price; `on` ones show the
+// first time the page opens. The marks sit on the Uptrend share and Market heat panes (owner, 6 November 2026: on the
+// BTC price they read as if they were about BTC), and picking one shows its pane.
 export const INDICATORS = [
   { key: "band", label: "BTC weekly band", where: "price", on: true },
-  { key: "runs", label: "Broad uptrends", where: "price", on: true },
-  { key: "zturns", label: "Median z turns", where: "price", on: true },
-  { key: "turns", label: "Heat turns", where: "price", on: true },
+  { key: "runs", label: "Broad uptrends (shaded)", where: "price", on: true },
   { key: "zones", label: "Hot and cold days", where: "price", on: false },
+  { key: "shareturns", label: "Uptrend share rolled over or turned up", where: "marks", on: true, pane: "uptrend" },
+  { key: "zturns", label: "Typical coin weakening or recovering", where: "marks", on: true, pane: "uptrend" },
+  { key: "turns", label: "Market heat cooling or lifting", where: "marks", on: true, pane: "heat" },
   { key: "uptrend", label: "Uptrend share", where: "pane", on: true },
+  { key: "heat", label: "Market heat", where: "pane", on: true },
   { key: "fg", label: "Fear & Greed", where: "pane", on: true },
   { key: "crowd", label: "Profitable traders", where: "pane", on: true },
-  { key: "heat", label: "Market heat", where: "pane", on: false },
   { key: "smart", label: "Smart money", where: "pane", on: false },
   { key: "whales", label: "Whales", where: "pane", on: false },
   { key: "median_z", label: "Median z", where: "pane", on: false },
@@ -209,10 +212,12 @@ export const INDICATORS = [
 ];
 export const DEFAULT_ON = INDICATORS.filter(i => i.on).map(i => i.key);
 
-// The indicators to draw from a saved list: known keys only, in the catalogue's order; the defaults when none is saved.
+// The indicators to draw from a saved list: known keys only, in the catalogue's order, each mark with the pane it sits
+// on; the defaults when none is saved.
 export function pickIndicators(saved) {
-  const keys = Array.isArray(saved) ? saved : DEFAULT_ON;
-  return INDICATORS.map(i => i.key).filter(k => keys.includes(k));
+  const keys = new Set(Array.isArray(saved) ? saved : DEFAULT_ON);
+  for (const i of INDICATORS) if (i.pane && keys.has(i.key)) keys.add(i.pane);
+  return INDICATORS.map(i => i.key).filter(k => keys.has(k));
 }
 
 export const BCOPY = {
@@ -221,32 +226,34 @@ export const BCOPY = {
   high: (v, d) => `high ${v} on ${d}`,
   ended: (d, n) => `Broad uptrend ended ${d} after ${n} days`,
   longer: (k, n) => `longer than ${k} of ${n} past runs`,
-  marks: { greed: "Greed", crowd: "Traders long", zturn: "Z turned down", rolled: "Rolled over" },
+  marks: { greed: "Greed", crowd: "Traders mostly long", zturn: "Typical coin weakening", rolled: "Rolled over" },
   day: age => `broad uptrend, day ${age}`,
   pop: () => [
-    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under. Marks: greed, Fear & Greed ${GREED}+ in the last ${LOOKBACK} days (high shown); traders long, ${Math.round(100 * CROWD)}%+ long; z turned down, median z ${Z_TURN} under its high; rolled over, ${Math.round(100 * ROLL)} points under the run's high.`,
-    "Since 2021 the median z turned down about a month before the roll-over (10 of 10 runs with both). With recent greed, the typical coin did worse in a run's third month than its first two (3 cases). Context, not a signal.",
+    `Broad uptrend: ${Math.round(100 * ON)}% or more of coins in uptrend, until ${OFF_DAYS} days under. Marks: greed, Fear & Greed ${GREED}+ in ${LOOKBACK} days; traders long, ${Math.round(100 * CROWD)}%+ long; typical coin weakening (median z ${Z_TURN} under its high); rolled over, coins in uptrend ${Math.round(100 * ROLL)} below the high (say 80% to 60%).`,
+    "Since 2021 the typical coin weakened about a month before the roll-over (10 of 10 runs with both). With recent greed, the typical coin did worse in a run's third month than its first two (3 cases). Context, not a signal.",
   ],
   down: age => `Broad downturn, day ${age}`,
   low: (v, d) => `low ${v} on ${d}`,
   downLonger: (k, n) => `longer than ${k} of ${n} past downturns`,
-  downMarks: { fear: "Fear", short: "Traders short", zup: "Z turned up", turned: "Turned up" },
+  downMarks: { fear: "Extreme fear", short: "Traders mostly short", zup: "Typical coin recovering", turned: "Turned up" },
   downDay: age => `broad downturn, day ${age}`,
   downPop: () => [
-    `Broad downturn: from a broad uptrend's end until ${Math.round(100 * ON)}% of coins are in uptrend again. Marks: fear, Fear & Greed ${FEAR} or less in the last ${LOOKBACK} days (its low shown); traders short, ${Math.round(100 * SHORT)}% or less long; z turned up, the median z ${Z_TURN} over the downturn's low; turned up, the share ${Math.round(100 * ROLL)} points over its low.`,
-    "Since 2021, extreme fear in a downturn's first month came before more falls; two to three months in, before the best months (5 downturns). Context, not a signal.",
+    `Broad downturn: from a broad uptrend's end until ${Math.round(100 * ON)}% of coins are in uptrend again. Marks: extreme fear, Fear & Greed ${FEAR} or less in ${LOOKBACK} days; traders mostly short, ${Math.round(100 * SHORT)}% or less long; typical coin recovering (median z ${Z_TURN} over its low); turned up, coins in uptrend ${Math.round(100 * ROLL)} above the downturn's low (say 22% to 42%).`,
+    "Since 2021, extreme fear early in a downturn came before more falls; two to three months in, before the best months (5 downturns). Context, not a signal.",
   ],
 };
 
-// What each mark on the price says, shown when the pointer is on it (owner, 29 October 2026: every icon explains
-// itself on hover). `from` is the extreme the mark is measured from: { v (0-100), day }.
+// What each mark says, shown when the pointer is on it (owner, 29 October 2026: every icon explains itself on hover;
+// 6 November: real numbers, not "points"). `from` is the extreme the mark is measured from: { v (0-100), d (date) };
+// `at` is the value on the mark's day (0-100).
+const n0 = v => Math.round(v);
 export const MCOPY = {
-  cooling: { title: "Heat cooling", body: f => `Market heat ${TURN} points under its hot peak (${Math.round(f.v)}, ${f.d}), within ${TURN_DAYS} days.` },
-  lifting: { title: "Heat lifting", body: f => `Market heat ${TURN} points over its cold low (${Math.round(f.v)}, ${f.d}), within ${TURN_DAYS} days.` },
-  zdown: { title: "Median z turned down", body: () => `The typical coin's z-score is ${Z_TURN} under its high in this broad uptrend. In all 10 broad uptrends since 2021 that had both, it came about a month before the roll-over.` },
-  zup: { title: "Median z turned up", body: () => `The typical coin's z-score is ${Z_TURN} over its low in this downturn. In all 7 downturns since 2021 that had both, it came before the turn-up.` },
-  rolled: { title: "Rolled over", body: f => `Coins in uptrend are ${Math.round(100 * ROLL)} points under this broad uptrend's high (${Math.round(f.v)}%, ${f.d}).` },
-  turned: { title: "Turned up", body: f => `Coins in uptrend are ${Math.round(100 * ROLL)} points over this downturn's low (${Math.round(f.v)}%, ${f.d}).` },
+  cooling: { title: "Market heat cooling", body: (f, at) => `Market heat fell from ${n0(f.v)} (${f.d}) to ${n0(at)}. Market heat is the average of coins in uptrend, Fear & Greed and the share of profitable traders long, each 0-100.` },
+  lifting: { title: "Market heat lifting", body: (f, at) => `Market heat rose from ${n0(f.v)} (${f.d}) to ${n0(at)}. Market heat is the average of coins in uptrend, Fear & Greed and the share of profitable traders long, each 0-100.` },
+  zdown: { title: "Typical coin weakening", body: () => `The typical coin has fallen back toward its own average price (median z ${Z_TURN} under its high). In all 10 broad uptrends since 2021 with both marks, this came about a month before the roll-over.` },
+  zup: { title: "Typical coin recovering", body: () => `The typical coin has climbed back toward its own average price (median z ${Z_TURN} over its low). In all 7 downturns since 2021 with both marks, this came before the uptrend share turned up.` },
+  rolled: { title: "Uptrend share rolled over", body: (f, at) => `Coins in uptrend fell from ${n0(f.v)}% at this broad uptrend's high (${f.d}) to ${n0(at)}%.` },
+  turned: { title: "Uptrend share turned up", body: (f, at) => `Coins in uptrend rose from ${n0(f.v)}% at this downturn's low (${f.d}) to ${n0(at)}%.` },
 };
 
 export const HCOPY = {
@@ -256,9 +263,10 @@ export const HCOPY = {
   since: d => `since ${d}`,
   indicators: "Indicators",
   onPrice: "On the price",
+  marks: "Marks",
   below: "Below the price",
   pop: () => [
     `The average of three readings, each 0 to 100: the share of coins in uptrend, Fear & Greed, and the share of the profitable traders' positions that are long (from October 2025; before, the first two). Hot from ${HOT}, cold at ${COLD} or under.`,
-    `A turn is ${TURN} points off a hot peak (cooling) or up from a cold trough (lifting) within ${TURN_DAYS} days. The three rise together after rallies, so heat describes how stretched the market is, not what comes next. Context, not a signal.`,
+    `Cooling: heat fell ${TURN} or more from a hot peak within ${TURN_DAYS} days; lifting: it rose ${TURN} or more from a cold low. The three rise together after rallies, so heat describes how stretched the market is, not what comes next. Context, not a signal.`,
   ],
 };
