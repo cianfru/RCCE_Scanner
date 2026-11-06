@@ -70,6 +70,7 @@ export default function MarketPage({ style }) {
   const [more, setMore] = useState(false);
   const [bandLabel, setBandLabel] = useState(null);
   const [derive, setDerive] = useState(false);
+  const [hiCycle, setHiCycle] = useState(null);     // the past cycle pointed at in the tiles: { kind, start }
   const closeDerive = useCallback(() => setDerive(false), []);
 
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function MarketPage({ style }) {
 
   if (!data) return <div className="mkt" style={style}><p className="mh-muted">{failed ? COPY.unavailable : COPY.loading}</p></div>;
   const head = <>
-    <MarketToday data={data} rows={allRows} wallets={wallets} onPick={setView} />
+    <MarketToday data={data} rows={allRows} wallets={wallets} onPick={setView} onHoverCycle={setHiCycle} />
     <div className="mkt-head">
       <Tabs label="View" value={view} onChange={setView}
         items={[{ key: "cycles", label: COPY.tabs.cycles }, { key: "breadth", label: COPY.tabs.breadth },
@@ -101,7 +102,7 @@ export default function MarketPage({ style }) {
   </>;
   const drawer = derive && <Suspense fallback={null}><DeriveDrawer onClose={closeDerive} /></Suspense>;
   if (view === "cycles") {
-    return <div className="mkt" style={style}>{head}{drawer}<CyclesChart rows={allRows} /></div>;
+    return <div className="mkt" style={style}>{head}{drawer}<CyclesChart rows={allRows} highlight={hiCycle} /></div>;
   }
   if (view === "chart") {
     return <div className="mkt" style={style}>
