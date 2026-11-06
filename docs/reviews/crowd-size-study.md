@@ -81,3 +81,54 @@ From 7 November 2026, the same code with `run --oos` on later saved responses, r
 ## Results
 
 To be added below after the run. Nothing above changes. Any later change is listed under Deviations, with its reason and whether it came before or after the first result.
+
+Computed once on 6 November 2026 by `run` at commit 654f4c4, the commit that holds this declaration. Inputs: the files named above (same SHA-256). The typical alt's data check passed. Every number is in sample (the rebuilt year), so this is description against the declared bar.
+
+**Verdict: not met.** The year holds one hot crowded episode, against 8 needed, and no comparison day was left for it. Context, not a signal.
+
+### The deciding question
+
+| Episode | Long positions | Share long | Fear & Greed | Coins in uptrend | Run day | Rolled over within 30 days | Typical alt 30 / 14 days | BTC 30 / 14 days |
+|---|---:|---:|---:|---:|---:|---|---|---|
+| 21 Aug 2026 | 1,133 (the most of its 90 days) | 79.3% | 72 | 57.2% | 2 | no | +7.3% / -3.7% | +3.6% / +1.7% |
+
+Comparison days: none. Every hot day of the year was crowded or fell within 30 days after a crowded stretch began, so no check could be computed beyond the count (1 of 8).
+
+### The wider layer: crowded in any broad uptrend (reported, never deciding)
+
+| Episode | Long positions | Share long | Fear & Greed | Coins in uptrend | Run day | Rolled over within 30 days | Typical alt 30 days | BTC 30 days |
+|---|---:|---:|---:|---:|---:|---|---:|---:|
+| 7 Apr 2026 | 500 | 68.4% | 11 | 76.6% | 19 | no | +13.6% | +11.2% |
+| 3 Jul 2026 | 564 | 83.2% | 21 | 67.1% | 106 | no | -11.2% | +1.6% |
+| 20 Aug 2026 | 976 | 87.8% | 62 | 55.2% | 1 | no | +18.5% | +11.3% |
+| 25 Sep 2026 (the owner's, reported apart) | 1,599 | 87.4% | 71 | 80.7% | 37 | yes | -20.0% | -4.7% |
+
+Against the 89 broad-uptrend days that were not crowded (outside the month after a stretch began):
+
+| | Counted episodes | Comparison days | Needed for a verdict |
+|---|---|---|---|
+| Rolled over within 30 days | 0 of 3 | 52.8% | 8 episodes, 75%, 25 points over |
+| Typical alt, 30 days (median) | +13.6% | -3.2% (excess +16.8 points, the other side) | 8 episodes, 5 points under |
+| BTC, 30 days (median) | +11.2% | +4.3% | reported |
+
+### Broad-uptrend days by their long positions (the days overlap: description)
+
+Where each day's long positions sat in its own 90 days, 29 November 2025 to 28 September 2026:
+
+| Long positions | Days | Rolled over within 30 days | Typical alt 30 days (median) | BTC 30 days (median) |
+|---|---:|---:|---:|---:|
+| Lower third | 35 | 80% | +13.3% | +20.3% |
+| Middle third | 38 | 47% | -2.6% | +4.5% |
+| Upper third | 119 | 19% | -3.2% | +2.1% |
+| Greedy days among them (all 20 in the upper third) | 20 | 45% | +2.0% | +3.0% |
+
+### Reading
+
+- In this year a big, long crowd came with strength, not just before roll-overs. Most broad-uptrend days had the long positions in the upper third of their 90 days, and those were the days least often followed by a roll-over within 30 days (19%). Roll-overs were most common after days when the long positions had already fallen to the lower third (80%).
+- The one crowded episode followed by a roll-over is the owner's own, late September 2026, which this study saw before declaring and does not count.
+- That fits the owner's second observation, the crowd leaving, more than the first. The crowd falling as a sign was not declared here; it would need its own study, rules first.
+- One rebuilt year, a sample of wallets, overlapping days: none of this is a signal.
+
+### Deviations
+
+None.
