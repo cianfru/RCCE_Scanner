@@ -259,3 +259,9 @@
 .cyc-bar-label{font:500 11.5px var(--font-geist-sans),sans-serif;fill:var(--t-text2);}
 .cyc-today-mark{stroke:var(--t-accent);stroke-width:2;}
 .cyc-tip{position:absolute;z-index:4;pointer-events:none;}
+/* Without today's line (the other phase), the most recent past one is picked out in the text colour */
+.cyc-past.is-last path{stroke:var(--t-text1);stroke-width:2;opacity:.9;}
+.cyc-past.is-last circle{fill:var(--t-text1);opacity:1;}
+.cyc-bar.is-last rect:not(.cyc-bar-hit){fill:var(--t-text1);opacity:.85;}
+.cyc-last-label{font:600 12px var(--font-geist-sans),sans-serif;fill:var(--t-text1);}
+.cyc-head .reflex-tabs{flex-shrink:0;}

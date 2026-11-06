@@ -46,6 +46,27 @@ test("in a broad uptrend: past uptrends (not the one under way on the first day)
   assert.equal(c.past[0].high, 0.6);
 });
 
+test("the other phase on request: past ones only, the most recent marked, no today", () => {
+  const c = marketCycles(series(36), undefined, "up");
+  assert.equal(c.now, "down");
+  assert.equal(c.kind, "up");
+  assert.equal(c.today, null);
+  assert.equal(c.sooner, null);
+  assert.deepEqual(c.past.map(p => [p.start, p.end, p.days]), [[20, 30, 10]], "the run under way on the first day is left out");
+  assert.equal(c.latest, 0);
+  const d = marketCycles(series(36));
+  assert.equal(d.kind, "down");
+  assert.equal(d.now, "down");
+});
+
+test("the phase switches by itself on the first day back at 55%", () => {
+  const c = marketCycles(series(36, [[37, 0.56]]));
+  assert.equal(c.now, "up");
+  assert.equal(c.kind, "up");
+  assert.equal(c.today.days, 1);
+  assert.deepEqual(marketCycles(series(36, [[37, 0.56]]), undefined, "down").past.map(p => p.days), [10, 7]);
+});
+
 test("no rows, or a first day inside no phase: nothing", () => {
   assert.equal(marketCycles([]), null);
   assert.equal(marketCycles([{ day: 0, uptrend: 0.3 }, { day: 1, uptrend: 0.3 }]), null);

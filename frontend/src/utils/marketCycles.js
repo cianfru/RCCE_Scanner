@@ -13,32 +13,35 @@ function pathOf(rows, start, last) {
 
 const change = (a, b) => (a > 0 && b > 0 ? b / a - 1 : null);
 
-// { kind: "down" | "up", today: { start, days, path, low|high, lowDay|highDay }, past: [{ start, end, days, path,
-// low|high, lowDay|highDay, btc }], sooner } or null when the latest day sits in neither (no phase known yet).
-export function marketCycles(rows, br = broadRuns(rows)) {
+// { kind: "down" | "up", now: the phase the latest day is in ("down", "up" or null), today: { start, days, path,
+// low|high, lowDay|highDay } or null when `kind` is not the phase under way, past: [{ start, end, days, path, low|high,
+// lowDay|highDay, btc }], sooner (past ones shorter than today's, or null), latest (index of the most recent past one) }.
+// `want` picks the phase to show; by default the one under way. The phase switches by itself: a broad uptrend starts on
+// the first day at 55% or more of coins in uptrend and ends on the first of 5 days in a row under 55%.
+export function marketCycles(rows, br = broadRuns(rows), want = null) {
   const last = rows[rows.length - 1];
   if (!last) return null;
+  const now = br.days.has(last.day) ? "up" : br.downDays.has(last.day) ? "down" : null;
+  const kind = want || now;
+  if (!kind) return null;
   const btcOn = new Map(rows.map(r => [r.day, r.btc]));
-  const run = br.days.get(last.day);
-  if (run) {
+  const past = kind === "up"
+    ? br.runs.filter(r => r.end != null && !r.first).map(r => ({
+        start: r.start, end: r.end, days: r.end - r.start, path: pathOf(rows, r.start, r.end), high: r.high, highDay: r.highDay,
+        btc: change(btcOn.get(r.start), btcOn.get(r.end)) }))
+    : br.downs.filter(x => x.end != null).map(x => ({
+        start: x.start, end: x.end, days: x.end - x.start, path: pathOf(rows, x.start, x.end), low: x.low, lowDay: x.lowDay,
+        btc: change(btcOn.get(x.start), btcOn.get(x.end)) }));
+  let today = null;
+  if (kind === now && kind === "up") {
     const cur = br.runs[br.runs.length - 1];
-    const past = br.runs.filter(r => r.end != null && !r.first).map(r => ({
-      start: r.start, end: r.end, days: r.end - r.start, path: pathOf(rows, r.start, r.end), high: r.high, highDay: r.highDay,
-      btc: change(btcOn.get(r.start), btcOn.get(r.end)),
-    }));
-    const days = last.day - cur.start + 1;
-    return { kind: "up", today: { start: cur.start, days, path: pathOf(rows, cur.start, last.day), high: cur.high, highDay: cur.highDay },
-      past, sooner: past.filter(p => p.days < days).length };
+    today = { start: cur.start, days: last.day - cur.start + 1, path: pathOf(rows, cur.start, last.day), high: cur.high, highDay: cur.highDay };
+  } else if (kind === now) {
+    const dn = br.downDays.get(last.day);
+    today = { start: dn.start, days: last.day - dn.start + 1, path: pathOf(rows, dn.start, last.day), low: dn.low, lowDay: dn.lowDay };
   }
-  const dn = br.downDays.get(last.day);
-  if (!dn) return null;
-  const past = br.downs.filter(x => x.end != null).map(x => ({
-    start: x.start, end: x.end, days: x.end - x.start, path: pathOf(rows, x.start, x.end), low: x.low, lowDay: x.lowDay,
-    btc: change(btcOn.get(x.start), btcOn.get(x.end)),
-  }));
-  const days = last.day - dn.start + 1;
-  return { kind: "down", today: { start: dn.start, days, path: pathOf(rows, dn.start, last.day), low: dn.low, lowDay: dn.lowDay },
-    past, sooner: past.filter(p => p.days < days).length };
+  const latest = past.length ? past.reduce((k, p, i) => (p.start > past[k].start ? i : k), 0) : null;
+  return { kind, now, today, past, latest, sooner: today ? past.filter(p => p.days < today.days).length : null };
 }
 
 // Where a value sits among past values, in words a person reads at a glance: "lower than on 2 in 3 days".
@@ -51,9 +54,11 @@ export function shareBelow(values, v) {
 export const CYCOPY = {
   tab: "Cycles",
   head: kind => (kind === "down" ? "Every broad downturn since 2021, from its first day" : "Every broad uptrend since 2021, from its first day"),
+  kinds: [{ key: "down", label: "Downturns" }, { key: "up", label: "Uptrends" }],
+  latest: (p, fmtMonth) => `last one, ${fmtMonth(p.start)}: ${p.days} days`,
   lasted: "How long each lasted",
   today: (kind, days) => `today, day ${days}`,
-  end: kind => (kind === "down" ? "back to 55%" : "55%"),
+  end: kind => (kind === "down" ? "back to 55%" : "ends 5 days under 55%"),
   sooner: (k, n, kind) => `${k} of ${n} ended sooner`,
   dayAxis: "day",
   tip: (p, kind, fmtDay) => [
