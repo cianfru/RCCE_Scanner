@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AreaSeries, BaselineSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode,
          createChart, createSeriesMarkers } from "lightweight-charts";
 import { useTheme } from "../ThemeContext.jsx";
@@ -18,13 +18,32 @@ import { deriveRows } from "../utils/deriveWallets.js";
 
 const DAY_S = 86_400;
 const MAIN_H = () => (typeof window !== "undefined" && window.innerWidth < 640 ? 300 : Math.max(360, Math.min(560, Math.round(window.innerHeight * 0.5))));
-const PANE_H = () => (typeof window !== "undefined" && window.innerWidth < 640 ? 92 : 118);
-const TALL = { uptrend: 1.5, heat: 1.25 };   // the Uptrend share's and Market heat's panes (they carry marks), taller
+// The price as a slim strip, for tabs where BTC is the time reference rather than the subject (owner, 6 November 2026:
+// the Positioning tab read as too many panes under a big BTC chart).
+const SLIM_H = () => (typeof window !== "undefined" && window.innerWidth < 640 ? 120 : 170);
+const PHONE = () => typeof window !== "undefined" && window.innerWidth < 640;
+const PANE_H = () => (PHONE() ? 92 : 118);
+// The Uptrend share's and Market heat's panes (they carry marks) taller, and the panes that draw two readings.
+const TALL = { uptrend: 1.5, heat: 1.25, traders: 1.9, groups: 1.3 };
 // A pane's room above and below its 0-100 range, as shares of its height: more where marks sit off the line.
 const PLAIN = { top: 0.12, bottom: 0.08 };
 const MARKED = { top: 0.2, bottom: 0.14 };
 const GAP_PX = 7;                  // a mark's near edge, this far off its line
-const paneH = key => Math.round(PANE_H() * (TALL[key] || 1));
+// On a phone the smart money and whales legend takes two lines: that pane is taller there, its lines kept below it.
+const paneH = key => Math.round(PANE_H() * (key === "groups" && PHONE() ? 1.7 : TALL[key] || 1));
+const GROUPS_MARGINS = () => (PHONE() ? { top: 0.34, bottom: 0.06 } : { top: 0.16, bottom: 0.08 });
+// Panes that draw two readings on one pane, so a tab can show all of them in fewer panes (owner, 6 November 2026):
+// the profitable traders' long share over their positions (as a price over its volume), and smart money and whales on
+// their one net-long scale (whales the thin line).
+export const COMBOS = {
+  traders: { label: "Profitable traders", parts: ["crowd", "positions"] },
+  groups: { label: "Smart money · Whales", parts: ["smart", "whales"] },
+};
+// In the traders pane the share keeps the top part and the positions the bottom part, with the positions' own legend
+// between them (as a share of the pane's height).
+const SHARE_IN_TRADERS = { top: 0.13, bottom: 0.45 };
+const BARS_IN_TRADERS = { top: 0.7, bottom: 0 };
+const BARS_LEGEND_AT = 0.555;
 const FEAR_GATE = 40;
 const num = v => Math.round(v).toLocaleString("en-US");
 // A day's profitable-trader positions (recorded days only; rebuilt days carry the share alone), and the traders
@@ -66,7 +85,10 @@ export const PANES = {
   derive: { value: (r, x) => x.derive.get(r.day)?.share, legend: (r, x) => { const d = x.derive.get(r.day); return d ? `${d.l} long · ${d.s} short` : null; },
     kind: "baseline", base: 50, range: [0, 100], tone: "longshort" },
 };
-const LABEL = Object.fromEntries(INDICATORS.map(i => [i.key, i.label]));
+const LABEL = { ...Object.fromEntries(INDICATORS.map(i => [i.key, i.label])),
+  ...Object.fromEntries(Object.entries(COMBOS).map(([k, c]) => [k, c.label])) };
+// The positions' line inside the traders pane, where the label above already names the traders.
+const positionsLine = r => { const w = posOf(r); return w ? `${num(w.long + w.short)} positions · ${num(w.long)} long · ${num(w.short)} short${w.traders != null ? ` · ${num(w.traders)} traders` : ""}` : null; };
 
 let deriveCache = null;
 const loadDerive = () => (deriveCache ||= apiFetch("/api/market-history/derive").then(r => (r.ok ? r.json() : null)).catch(() => null));
@@ -87,7 +109,7 @@ function tones(p) {
   };
 }
 
-export default function MarketChart({ rows, indicators, range }) {
+export default function MarketChart({ rows, indicators, range, slim = false }) {
   const { mode } = useTheme();
   const box = useRef(null);
   const chartRef = useRef(null);
@@ -111,8 +133,9 @@ export default function MarketChart({ rows, indicators, range }) {
     }
     return { series, heat: new Map(series.map(s => [s.day, s])), turns: heatTurns(series), derive: dmap, broad: broadRuns(rows) };
   }, [rows, derive]);
-  const panes = indicators.filter(k => PANES[k]);
-  const height = MAIN_H() + panes.reduce((a, k) => a + paneH(k), 0);
+  const panes = indicators.filter(k => PANES[k] || COMBOS[k]);
+  const mainH = slim ? SLIM_H() : MAIN_H();
+  const height = mainH + panes.reduce((a, k) => a + paneH(k), 0);
 
   // Build the chart (again when the indicators or the theme change), keeping the visible range.
   useEffect(() => {
@@ -174,7 +197,7 @@ export default function MarketChart({ rows, indicators, range }) {
     // pixel is worth. Near the pane's edge the mark comes closer to the line rather than off the pane.
     const NEAR = 5;
     const marked = { uptrend: indicators.includes("shareturns") || indicators.includes("zturns"), heat: indicators.includes("turns") };
-    const margins = key => (marked[key] ? MARKED : PLAIN);
+    const margins = key => (key === "traders" ? SHARE_IN_TRADERS : key === "groups" ? GROUPS_MARGINS() : marked[key] ? MARKED : PLAIN);
     const valueOn = { uptrend: d => shareOn.get(d), heat: d => ctx.heat.get(d)?.heat };
     const offLine = (key, day, m) => {
       const vs = [];
@@ -222,21 +245,20 @@ export default function MarketChart({ rows, indicators, range }) {
     }
     const paneSeries = {};
 
-    // One pane per indicator below the price.
-    panes.forEach((key, i) => {
+    // One indicator's series on a pane; `extra` overrides its options (another scale, a thinner line).
+    const draw = (key, pane, extra = {}) => {
       const def = PANES[key];
       const [c1, c2] = tone[def.tone];
       if (def.kind === "stack") {
         // Positions as bars: all of them in the short colour, the long ones over them from zero, so each bar reads
         // long (bottom) and short (top).
         const fmt = { type: "custom", formatter: v => (v < 0 ? "" : num(v)) };
-        const all = chart.addSeries(HistogramSeries, { color: hexA(c2, 0.7), priceLineVisible: false, lastValueVisible: true, priceFormat: fmt }, i + 1);
-        const long = chart.addSeries(HistogramSeries, { color: hexA(c1, 0.8), priceLineVisible: false, lastValueVisible: false, priceFormat: fmt }, i + 1);
+        const all = chart.addSeries(HistogramSeries, { color: hexA(c2, 0.7), priceLineVisible: false, lastValueVisible: true, priceFormat: fmt, ...extra }, pane);
+        const long = chart.addSeries(HistogramSeries, { color: hexA(c1, 0.8), priceLineVisible: false, lastValueVisible: false, priceFormat: fmt, ...extra }, pane);
         const pts = rows.filter(r => def.value(r, ctx) != null);
         all.setData(pts.map(r => ({ time: t(r.day), value: def.value(r, ctx) })));
         long.setData(pts.map(r => ({ time: t(r.day), value: def.long(r) })));
-        paneSeries[key] = all;
-        return;
+        return all;
       }
       const opts = { lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
         // A 0-100 pane names no value outside its range (the room left for marks above 100 and below 0).
@@ -246,14 +268,27 @@ export default function MarketChart({ rows, indicators, range }) {
       const s = def.kind === "baseline"
         ? chart.addSeries(BaselineSeries, { ...opts, baseValue: { type: "price", price: def.base },
             topLineColor: c1, topFillColor1: hexA(c1, 0.32), topFillColor2: hexA(c1, 0.04),
-            bottomLineColor: c2, bottomFillColor1: hexA(c2, 0.04), bottomFillColor2: hexA(c2, 0.32) }, i + 1)
-        : chart.addSeries(LineSeries, { ...opts, color: c1 }, i + 1);
-      paneSeries[key] = s;
+            bottomLineColor: c2, bottomFillColor1: hexA(c2, 0.04), bottomFillColor2: hexA(c2, 0.32), ...extra }, pane)
+        : chart.addSeries(LineSeries, { ...opts, color: c1, ...extra }, pane);
       s.setData(rows.map(r => ({ r, v: def.value(r, ctx) })).filter(o => o.v != null && Number.isFinite(o.v))
         .map(o => ({ time: t(o.r.day), value: o.v })));
       for (const price of def.lines || []) {
         s.createPriceLine({ price, color: hexA(p.text3, 0.55), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
       }
+      return s;
+    };
+    // One pane per indicator below the price; a combined pane draws both its readings.
+    const clear = "rgba(0,0,0,0)";
+    panes.forEach((key, i) => {
+      if (key === "traders") {
+        paneSeries.crowd = draw("crowd", i + 1);
+        paneSeries.positions = draw("positions", i + 1, { priceScaleId: "positions", lastValueVisible: false });
+        paneSeries.positions.priceScale().applyOptions({ scaleMargins: BARS_IN_TRADERS });
+      } else if (key === "groups") {
+        paneSeries.smart = draw("smart", i + 1);
+        paneSeries.whales = draw("whales", i + 1, { lineWidth: 1,
+          topFillColor1: clear, topFillColor2: clear, bottomFillColor1: clear, bottomFillColor2: clear });
+      } else paneSeries[key] = draw(key, i + 1);
     });
     const byTime = (a, b) => a.time - b.time;
     if (shareMarks.length && paneSeries.uptrend) createSeriesMarkers(paneSeries.uptrend, shareMarks.sort(byTime));
@@ -268,10 +303,10 @@ export default function MarketChart({ rows, indicators, range }) {
       if (steps.length) createSeriesMarkers(paneSeries.positions, steps);
     }
     const ps = chart.panes();
-    ps[0]?.setStretchFactor(MAIN_H() / PANE_H());
+    ps[0]?.setStretchFactor(mainH / PANE_H());
     for (let i = 1; i < ps.length; i++) ps[i].setStretchFactor(paneH(panes[i - 1]) / PANE_H());
     // Each pane's own scale: log for the price, linear for the indicators (set per pane, last, so neither leaks).
-    chart.priceScale("right", 0).applyOptions({ mode: PriceScaleMode.Logarithmic, scaleMargins: { top: 0.1, bottom: 0.06 } });
+    chart.priceScale("right", 0).applyOptions({ mode: PriceScaleMode.Logarithmic, scaleMargins: slim ? { top: 0.24, bottom: 0.08 } : { top: 0.1, bottom: 0.06 } });
     for (let i = 1; i < ps.length; i++) {
       chart.priceScale("right", i).applyOptions({ mode: PriceScaleMode.Normal, scaleMargins: margins(panes[i - 1]) });
     }
@@ -303,7 +338,7 @@ export default function MarketChart({ rows, indicators, range }) {
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => requestAnimationFrame(place)) : null;
     ro?.observe(el);
     return () => { cancelAnimationFrame(raf); ro?.disconnect(); };
-  }, [rows, ctx, indicators.join(","), mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, ctx, indicators.join(","), mode, slim]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (chartRef.current) setRange(chartRef.current, rows, range); }, [range]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { chartRef.current?.remove(); chartRef.current = null; }, []);
@@ -315,7 +350,7 @@ export default function MarketChart({ rows, indicators, range }) {
   const heat = ctx.heat.get(r.day);
   const inRun = indicators.includes("runs") ? ctx.broad.days.get(r.day) : null;
   const inDown = indicators.includes("runs") ? ctx.broad.downDays.get(r.day) : null;
-  let below = MAIN_H();
+  let below = mainH;
   const fallback = panes.map(k => { const top = below; below += paneH(k); return top; });
   return <div className="mc">
     <div ref={box} className="mc-chart" style={{ height }} />
@@ -330,15 +365,36 @@ export default function MarketChart({ rows, indicators, range }) {
     </div>
     {panes.map((key, i) => {
       // Not hovering: the pane's latest reading (a wallet group's feed can end a day before the market history).
-      const rr = hover != null ? r : [...rows].reverse().find(x => PANES[key].legend(x, ctx) != null) || r;
-      const text = PANES[key].legend(rr, ctx);
-      return <div key={key} className="mc-legend" style={{ top: tops[i + 1] ?? fallback[i] }}>
+      const at = legend => (hover != null ? r : [...rows].reverse().find(x => legend(x, ctx) != null) || r);
+      const say = legend => legend(at(legend), ctx);
+      const style = { top: tops[i + 1] ?? fallback[i] };
+      if (key === "groups") {
+        return <div key={key} className="mc-legend" style={style}>
+          {COMBOS.groups.parts.map(k => <span key={k} className="mc-part">
+            <b><LineKey thin={k === "whales"} />{LABEL[k]}</b><span>{say(PANES[k].legend) ?? "—"}</span></span>)}
+        </div>;
+      }
+      if (key === "traders") {
+        const pos = say(positionsLine);
+        return <Fragment key={key}>
+          <div className="mc-legend" style={style}><b>{LABEL[key]}</b><span>{say(PANES.crowd.legend) ?? "—"}</span></div>
+          {pos && <div className="mc-legend mc-sub" style={{ top: style.top + Math.round(BARS_LEGEND_AT * paneH(key)) }}><i>{pos}</i></div>}
+        </Fragment>;
+      }
+      const text = say(PANES[key].legend);
+      return <div key={key} className="mc-legend" style={style}>
         <b>{LABEL[key]}</b><span>{text ?? "—"}</span>
         {key === "heat" && heat && <i className="mc-parts">{["uptrend", "fg", "traders"].filter(k => heat.parts[k] != null)
           .map(k => `${HCOPY.parts[k]} ${Math.round(heat.parts[k])}`).join(" · ")}</i>}
       </div>;
     })}
   </div>;
+}
+
+// A line's weight in a legend, as the pane draws it: thick, or thin.
+function LineKey({ thin }) {
+  return <svg className="mc-key" width="14" height="6" viewBox="0 0 14 6" aria-hidden="true">
+    <line x1="0" y1="3" x2="14" y2="3" stroke="currentColor" strokeWidth={thin ? 1 : 2.5} /></svg>;
 }
 
 // The glass box naming the mark under the pointer, beside it (to its left near the right edge).
