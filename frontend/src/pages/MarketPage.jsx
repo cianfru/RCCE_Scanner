@@ -9,6 +9,7 @@ import MarketToday from "../components/MarketToday.jsx";
 import { COPY, RANGES, bandOn, breadthContext, fearGreedByDay, fgSplit, inRange, rowsOf, todayValues } from "../utils/marketHistory.js";
 import { GROUPS, SCOPES, WCOPY, byDay, firstDay } from "../utils/walletHistory.js";
 import { DCOPY } from "../utils/deriveWallets.js";
+import { stretchByDay } from "../utils/bandStretch.js";
 import "./market.css";
 
 const DeriveDrawer = lazy(() => import("../components/DeriveDrawer.jsx"));
@@ -41,11 +42,13 @@ function FearSplit({ data }) {
 function joinRows(data, fg, walletDays) {
   const weekly = data?.btc_band_weekly || [];
   const alt = new Map(data?.alt_recent || []);
+  const stretch = stretchByDay(data);
   return rowsOf(data).map(r => {
     const b = bandOn(weekly, r.day);
     const wallet = {};
     for (const g of GROUPS) { const w = walletDays[g.key]?.get(r.day); if (w) wallet[g.key] = w; }
-    return { ...r, fg: fg.get(r.day) ?? null, bandLo: b?.[0] ?? null, bandHi: b?.[1] ?? null, alt: alt.get(r.day) ?? null, wallet };
+    return { ...r, fg: fg.get(r.day) ?? null, bandLo: b?.[0] ?? null, bandHi: b?.[1] ?? null, alt: alt.get(r.day) ?? null, wallet,
+      stretch: stretch.get(r.day) ?? null };
   });
 }
 

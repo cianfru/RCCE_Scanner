@@ -4502,6 +4502,15 @@ def _coin_positioning_body(coin: str, days: int, now: float) -> dict:
     return {"coin": coin, "days": days, "groups": groups, "rebuilds": rebuilds, "held": held}
 
 
+@app.get("/api/band-stretch")
+async def band_stretch_coin(symbol: str = Query(..., min_length=1, max_length=40)):
+    """One coin's band stretch (band_stretch.py) on Hyperliquid's daily candles: today's distance from the weekly
+    band mid in percent (pct), band z (a, the stretch scaled to the coin's usual distance), the line the app draws
+    (line) and band z over the last year (history: [day, a]). Context, not a signal. Cached until the next close."""
+    import band_stretch
+    return await band_stretch.coin_reading(symbol.strip())
+
+
 @app.get("/api/coin-positioning")
 async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), days: int = Query(30, ge=1, le=90)):
     """One coin's long and short over time for four groups of wallets: profitable traders

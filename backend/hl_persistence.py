@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS trader_lean (
 -- Profitable traders as a whole at the same closes: how many were counted (fresh readings that pass the
 -- consensus filters), how many of them held any position, and how many were net long or net short over all
 -- their coins. trader_lean counts positions (a trader in five coins counts five times); this counts traders.
+CREATE TABLE IF NOT EXISTS band_stretch_record (
+    day   INTEGER NOT NULL,
+    pair  TEXT    NOT NULL,
+    close REAL,
+    mid   REAL,
+    a     REAL,
+    c     REAL,
+    d_a   INTEGER,
+    d_c   INTEGER,
+    PRIMARY KEY (day, pair)
+);
+
 CREATE TABLE IF NOT EXISTS trader_lean_traders (
     bar_close INTEGER PRIMARY KEY,
     counted INTEGER NOT NULL,
@@ -430,6 +442,27 @@ def save_trader_counts(bar_close: int, counts: dict, roster_version: Optional[in
     )
     conn.execute("DELETE FROM trader_lean_traders WHERE bar_close < ?", (time.time() - _LEAN_RETENTION_DAYS * 86400,))
     conn.commit()
+
+
+def save_band_stretch(day: int, per_pair: Dict[str, dict]) -> int:
+    """The daily band-stretch readings of the market history's coins (band_stretch.py), one row per coin per day,
+    kept for a fair test of the readings on tops after the stretch-at-tops study. Idempotent per day and coin."""
+    rows = [(int(day), pair, v.get("close"), v.get("mid"), v.get("a"), v.get("c"),
+             None if v.get("d_a") is None else int(v["d_a"]), None if v.get("d_c") is None else int(v["d_c"]))
+            for pair, v in per_pair.items()]
+    if not rows:
+        return 0
+    conn = _get_conn()
+    conn.executemany("INSERT OR REPLACE INTO band_stretch_record (day, pair, close, mid, a, c, d_a, d_c) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    conn.commit()
+    return len(rows)
+
+
+def load_band_stretch(day: int) -> List[tuple]:
+    """(pair, close, mid, a, c, d_a, d_c) recorded for one day."""
+    return _get_conn().execute("SELECT pair, close, mid, a, c, d_a, d_c FROM band_stretch_record WHERE day = ? "
+                               "ORDER BY pair", (int(day),)).fetchall()
 
 
 def load_trader_counts(lo: int, hi: int) -> List[tuple]:

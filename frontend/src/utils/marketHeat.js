@@ -203,6 +203,7 @@ export const INDICATORS = [
   { key: "turns", label: "Market heat cooling or lifting", where: "marks", on: true, pane: "heat" },
   { key: "uptrend", label: "Uptrend share", where: "pane", on: true },
   { key: "heat", label: "Market heat", where: "pane", on: true },
+  { key: "stretched", label: "Coins stretched above their band", where: "pane", on: true },
   { key: "fg", label: "Fear & Greed", where: "pane", on: true },
   { key: "crowd", label: "Profitable traders", where: "pane", on: true },
   { key: "positions", label: "Profitable traders' positions", where: "pane", on: false },
