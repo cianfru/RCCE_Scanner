@@ -55,7 +55,9 @@ GROUPS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "whales": ("equity", ("Tidal Whale", "Leviathan")),
 }
 SNAP_WINDOW_S = 3600            # a close's row comes from the snapshot nearest it within an hour either side
-UPDATE_AFTER_S = 50 * 60        # the sweep is quiet 20 min after each 4h close; its next snapshot follows
+# The daily look-up runs once the close window has passed (5 min after it): at 50 min it ran before the window ended
+# and skipped the day just closed, so each day showed a day late (found 7 November 2026).
+UPDATE_AFTER_S = SNAP_WINDOW_S + 5 * 60
 MIN_OVERLAP_DAYS = 7
 
 _seed: Optional[dict] = None

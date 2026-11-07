@@ -269,6 +269,13 @@ class PositioningHistoryTests(unittest.TestCase):
         self.assertEqual(added, 2)                                     # day 102: the groups still recorded
         self.assertNotIn(102, ph._live["crowd"])
 
+    def test_the_daily_run_after_a_close_takes_the_day_just_closed(self):
+        first = 100 * DAY + 60
+        fetch = lambda dim, cohorts, lo, hi, symbol="": [] if symbol else [snap(lo + ph.SNAP_WINDOW_S, cohorts[0], 10, 4, 3)]
+        lean = lambda lo, hi: [(lo + ph.BAR_S, "coin:HYPE", 6, 2)]
+        asyncio.run(ph.update(now=103 * DAY + ph.UPDATE_AFTER_S, fetch=fetch, fetch_first=lambda: first, fetch_lean=lean))
+        self.assertIn(102, ph._live["crowd"])                          # day 102 closed at 103 * DAY
+
     def test_a_daily_rule_seed_joins_per_coin_too(self):
         with open(self.crowd_path, "w") as fh:
             json.dump({"version": 2, "columns": ["day", "long", "short"], "rows": [[d, 90, 10] for d in range(90, 101)],

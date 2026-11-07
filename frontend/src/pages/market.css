@@ -188,6 +188,8 @@
 .mc-legend{position:absolute;left:6px;z-index:2;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;max-width:calc(100% - 76px);margin-top:4px;padding:3px 8px;border-radius:8px;pointer-events:none;background-color:color-mix(in srgb,var(--t-bg) 55%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font:500 11px/1.45 var(--font-geist-mono),monospace;color:var(--t-text1);}
 .mc-legend b{font:600 11px/1.45 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .mc-legend i{font-style:normal;color:var(--t-text3);}
+.mc-legend .mc-key{display:inline-block;margin-right:5px;vertical-align:middle;color:var(--t-text3);}
+.mc-legend .mc-part{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap;}
 .mc-zone{font-style:normal;}
 .mc-zone.is-hot{color:#fb923c;}
 .mc-zone.is-cold{color:#7dd3fc;}

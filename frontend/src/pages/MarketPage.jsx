@@ -51,7 +51,9 @@ function joinRows(data, fg, walletDays) {
 
 // The tabs, in reading order. The page opens on Cycles: where today's broad downturn (or uptrend) sits against past ones.
 const VIEWS = ["cycles", "breadth", "positioning", "fear", "chart"];
-const POSITIONING = ["band", "crowd", "positions", "smart", "whales"];
+// Positioning: BTC as a slim strip for time, then two panes (owner, 6 November 2026: five panes under a big BTC chart
+// read as too dense): the profitable traders' long share over their positions, smart money and whales together.
+const POSITIONING = ["band", "traders", "groups"];
 
 export default function MarketPage({ style }) {
   const location = useLocation();
@@ -119,7 +121,7 @@ export default function MarketPage({ style }) {
         <Tabs small label="Range" items={RANGES} value={range} onChange={setRange} />
         <Tabs small label={WCOPY.scopeLabel} items={SCOPES} value={scope} onChange={setScope} />
       </div>
-      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChart rows={rows} indicators={POSITIONING} range={range} /></Suspense>
+      <Suspense fallback={<p className="mh-muted">{COPY.loading}</p>}><MarketChart rows={rows} indicators={POSITIONING} range={range} slim /></Suspense>
     </div>;
   }
 
