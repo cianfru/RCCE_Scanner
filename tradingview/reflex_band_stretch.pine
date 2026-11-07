@@ -1,0 +1,93 @@
+//@version=6
+// Reflex band stretch: how far price is from the weekly band (bull market support band), scaled to the coin.
+//
+// - The band is the scanner's (backend/engines/heatmap_engine.py): the 20-week SMA and the 21-week EMA of weekly
+//   closes, the week under way counted with its close so far, and their mid. Weeks start Thursday 00:00 UTC, as
+//   Hyperliquid's weekly candles do (TradingView's own weeks start Monday; switch in the settings).
+// - Stretch is the log distance of price from the band mid: 0 on the band, above 0 above it.
+// - Band z divides the stretch by how far the coin usually sits from the band: the root mean square of its stretch
+//   over the last two years (no re-centring on a recent average, so a long stay far from the band still reads far).
+//   +2 is twice the coin's usual distance above the band.
+// - The status line also shows the plain distance from the band mid in percent.
+//
+// Context, not a signal: this is a reading to look at next to the engine's z (tradingview/reflex_zscore.pine),
+// not part of the engine. Any use in the engine would need its own declared study first.
+indicator("Reflex band stretch", shorttitle = "Band stretch", overlay = false, precision = 2)
+
+smaLen   = input.int(20, "Band SMA (weeks)", minval = 2)
+emaLen   = input.int(21, "Band EMA (weeks)", minval = 2)
+weekFrom = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
+normDays = input.int(730, "Usual distance measured over (days)", minval = 30)
+minDays  = input.int(180, "Shown once this many days exist", minval = 30)
+upper    = input.float(2.0, "Stretched above", group = "Guides")
+lower    = input.float(-2.0, "Stretched below", group = "Guides")
+showBand = input.bool(false, "Draw the band on the price chart")
+
+// Weeks: 1 January 1970 was a Thursday, so Thursday weeks are whole weeks since then; Monday weeks start 4 days later.
+WEEK_MS  = 7 * 86400000
+offsetMs = weekFrom == "Monday (TradingView)" ? 4 * 86400000 : 0
+wk       = math.floor((time - offsetMs) / WEEK_MS)
+
+// Completed weekly closes, and the EMA over them (seeded with the SMA of the first emaLen weeks, as the engine does).
+k = 2.0 / (emaLen + 1)
+var array<float> weeks = array.new_float()
+var float emaDone = na
+if bar_index > 0 and wk != wk[1]
+    weeks.push(close[1])
+    nDone = weeks.size()
+    if nDone == emaLen
+        emaDone := weeks.avg()
+    else if nDone > emaLen
+        emaDone := close[1] * k + emaDone * (1 - k)
+
+// The band now, with the week under way at its close so far.
+n = weeks.size()
+float sma = na
+float ema = na
+if n >= smaLen - 1
+    float s = close
+    for i = n - (smaLen - 1) to n - 1
+        s += weeks.get(i)
+    sma := s / smaLen
+if n >= emaLen
+    ema := close * k + emaDone * (1 - k)
+else if n == emaLen - 1
+    ema := (weeks.sum() + close) / emaLen
+mid = (sma + ema) / 2
+
+stretch = math.log(close / mid)
+pct     = 100 * (close / mid - 1)
+
+// The coin's usual distance from the band: root mean square of the stretch over the last normDays (all of it while
+// there is less), kept in an array so the window does not depend on the chart's history buffer.
+barsPerDay = 86400.0 / timeframe.in_seconds()
+normBars   = math.min(100000, math.max(2, int(math.round(normDays * barsPerDay))))
+minBars    = math.max(1, int(math.round(minDays * barsPerDay)))
+var array<float> sq = array.new_float()
+var float sumSq = 0.0
+if not na(stretch)
+    s2 = stretch * stretch
+    sq.push(s2)
+    sumSq += s2
+    if sq.size() > normBars
+        sumSq -= sq.shift()
+rms = sq.size() > 0 ? math.sqrt(math.max(sumSq, 0.0) / sq.size()) : na
+bz  = sq.size() >= minBars and rms > 0 ? stretch / rms : na
+
+cHot  = #fb923c
+cCold = #38bdf8
+cMid  = #26a69a
+col = bz >= 0 ? color.from_gradient(bz, 0, upper, cMid, cHot) : color.from_gradient(bz, lower, 0, cCold, cMid)
+plot(bz, "Band z", col, 2)
+plot(pct, "% from band mid", color.gray, display = display.status_line + display.data_window)
+hline(0, "Band", color.new(color.gray, 40), hline.style_solid)
+hline(1, "+1", color.new(color.gray, 70), hline.style_dotted)
+hline(-1, "-1", color.new(color.gray, 70), hline.style_dotted)
+hline(upper, "Stretched above", color.new(cHot, 30), hline.style_dashed)
+hline(lower, "Stretched below", color.new(cCold, 30), hline.style_dashed)
+
+plot(showBand ? sma : na, "Band SMA", color.new(cMid, 20), 1, force_overlay = true)
+plot(showBand ? ema : na, "Band EMA", color.new(cMid, 50), 1, force_overlay = true)
+
+alertcondition(ta.crossover(bz, upper), "Band z above Stretched above", "{{ticker}}: band z crossed above the Stretched above guide")
+alertcondition(ta.crossunder(bz, lower), "Band z below Stretched below", "{{ticker}}: band z crossed below the Stretched below guide")
