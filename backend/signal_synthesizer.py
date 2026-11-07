@@ -36,6 +36,11 @@ HEAT_ENTRY_ZONE = 70    # Accumulate only when heat < 70
 HEAT_WARNING = 80       # Include warning when heat >= 80
 HEAT_BLOCK_STRONG = 85  # Block STRONG_LONG when heat >= 85
 HEAT_FORCE_TRIM = 95    # Force TRIM when heat >= 95
+# The exit above the weekly band (docs/reviews/band-exit-study.md). "heat" (today): heat >= the force-trim level.
+# "band": above the band, band z (band_stretch.py, the row's "band_z") at or above BAND_Z_EXIT instead; below the band,
+# in CAP and ACCUM, and wherever band z is unknown, the heat rule as today. Off until the owner approves a change.
+TOP_EXIT = "heat"
+BAND_Z_EXIT = 1.61      # the stretch-at-tops study's guide for band z
 
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG
@@ -551,8 +556,16 @@ def _synthesize_signal(
     # STEP 1: EXIT RULES (highest priority — any single trigger fires)
     # -----------------------------------------------------------------------
 
-    # 1a. Heat force-trim (extreme overextension, regime-adaptive)
-    if heat >= heat_force:
+    # 1a. Heat force-trim (extreme overextension, regime-adaptive); above the band, band z instead when TOP_EXIT is "band"
+    band_z = result.get("band_z")
+    if (TOP_EXIT == "band" and band_z is not None and result.get("heat_direction", 0) >= 0
+            and regime not in ("CAP", "ACCUM")):
+        if band_z >= BAND_Z_EXIT:
+            out.signal = "TRIM"
+            out.reason = f"Band z={band_z:.2f} >= {BAND_Z_EXIT} (stretched above the weekly band)"
+            out.warnings = [f"Band z at {band_z:.2f} above the weekly band — forced exit"]
+            return out
+    elif heat >= heat_force:
         # Heat measures distance from the weekly BMSB in either direction. Above the
         # band this is overextension; far below it the same rule acts as a crash exit.
         # Both behaviours are part of the backtested strategy; only the wording differs.

@@ -197,3 +197,64 @@ async def coin_reading(symbol: str, now: Optional[float] = None, fetch=None) -> 
             del _COIN_CACHE[k]
     _COIN_CACHE[symbol] = (valid, body)
     return body
+
+
+# ---------------------------------------------------------------------------------------------------------- replay
+def bar_state(days: np.ndarray, close: np.ndarray) -> Dict[str, np.ndarray]:
+    """For each day of a daily series, what a bar on that day can know before the day closes: the weekly closes of
+    the completed weeks before the day's week (their count, the sum of the last SMA_WEEKS - 1, the EMA through them,
+    and their sum while fewer than EMA_WEEKS), and the root mean square of the daily stretch over the RMS_DAYS
+    completed days before the day (with how many there were). band_z_at() then reads band z at any price that day
+    (docs/reviews/band-exit-study.md)."""
+    days = np.asarray(days, dtype=np.int64)
+    close = np.asarray(close, dtype=float)
+    n = len(close)
+    k = 2.0 / (EMA_WEEKS + 1)
+    nw = np.zeros(n, dtype=np.int64)
+    s_sma = np.full(n, np.nan)
+    ema = np.full(n, np.nan)
+    s_all = np.full(n, np.nan)
+    weeks: List[float] = []
+    ema_done = None
+    for i in range(n):
+        if i > 0 and days[i] // 7 != days[i - 1] // 7:
+            weeks.append(float(close[i - 1]))
+            m = len(weeks)
+            if m == EMA_WEEKS:
+                ema_done = sum(weeks) / m
+            elif m > EMA_WEEKS:
+                ema_done = weeks[-1] * k + ema_done * (1 - k)
+        m = len(weeks)
+        nw[i] = m
+        if m >= SMA_WEEKS - 1:
+            s_sma[i] = sum(weeks[m - (SMA_WEEKS - 1):])
+        if m >= EMA_WEEKS:
+            ema[i] = ema_done
+        if m == EMA_WEEKS - 1:
+            s_all[i] = sum(weeks)
+    rd = readings(days, close)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        s = np.log(close / rd["mid"])
+    ms, cnt = _rolling_mean(s * s, RMS_DAYS)
+    rms_before = np.concatenate([[np.nan], np.sqrt(ms[:-1])]) if n else ms
+    cnt_before = np.concatenate([[0.0], cnt[:-1]]) if n else cnt
+    return {"days": days, "nw": nw, "s_sma": s_sma, "ema": ema, "s_all": s_all, "rms": rms_before, "cnt": cnt_before}
+
+
+def band_z_at(state: Dict[str, np.ndarray], day: int, price: float) -> Optional[float]:
+    """Band z on `day` at `price` (the day's close so far): the band with the week under way at that price, over the
+    RMS of the completed days before the day. None when the band or 180 days of stretch are not there yet."""
+    days = state["days"]
+    if not len(days) or price is None or price <= 0:
+        return None
+    i = int(day - days[0])
+    if i < 0 or i >= len(days) or days[i] != day:
+        return None
+    m = state["nw"][i]
+    if m < SMA_WEEKS - 1 or m < EMA_WEEKS - 1 or state["cnt"][i] < MIN_DAYS or not state["rms"][i] > 0:
+        return None
+    k = 2.0 / (EMA_WEEKS + 1)
+    sma = (price + state["s_sma"][i]) / SMA_WEEKS
+    ema = price * k + state["ema"][i] * (1 - k) if m >= EMA_WEEKS else (state["s_all"][i] + price) / EMA_WEEKS
+    mid = (sma + ema) / 2
+    return float(np.log(price / mid) / state["rms"][i])

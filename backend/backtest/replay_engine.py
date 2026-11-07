@@ -32,6 +32,10 @@ from decision_pipeline import evaluate_decision, new_state
 
 logger = logging.getLogger(__name__)
 
+# A study's extra inputs per row, set before each synthesis: BAR_HOOK(row, close_ms) may add keys to the row
+# (docs/reviews/band-exit-study.md adds "band_z"). close_ms is when the row's bar closes. None: rows as they are.
+BAR_HOOK: Optional[Callable[[dict, int], None]] = None
+
 # ---------------------------------------------------------------------------
 # Output containers
 # ---------------------------------------------------------------------------
@@ -321,6 +325,8 @@ async def run_replay(
         btc_daily_regime = cached_1d_results.get("BTC/USDT", {}).get("regime", "FLAT")
         for daily in cached_1d_results.values():
             daily["divergence"] = detect_divergence(daily["regime"], btc_daily_regime)
+            if BAR_HOOK is not None:            # the daily rows read the last completed day
+                BAR_HOOK(daily, (current_ts // TF_MS["1d"]) * TF_MS["1d"])
             try:
                 evaluate_decision(daily, {"consensus": daily_consensus, "sentiment": sentiment_dict}, decision_state,
                                   as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
@@ -335,6 +341,8 @@ async def run_replay(
         for r in bar_results_raw:
             if daily_cool:   # 4H entries wait while the daily chart is still unwinding its spike
                 r["cool_off"] = (cached_1d_results.get(r["symbol"]) or {}).get("cool_off", {"active": False})
+            if BAR_HOOK is not None:
+                BAR_HOOK(r, current_ts)
             try:
                 evaluate_decision(r, {"consensus": consensus, "sentiment": sentiment_dict}, decision_state,
                                   as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",

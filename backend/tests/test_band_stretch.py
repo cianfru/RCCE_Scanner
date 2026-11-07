@@ -111,3 +111,49 @@ def test_the_market_view_reads_seed_then_live_rows(monkeypatch):
     assert mh.stretch_rows_all() == [[1, 50, 5, 0.1], [2, 39, 4, 0.2], [3, 50, 6, 0.3], [4, 51, 7, 0.4]]
     v = mh.stretch_view({"min_coins": 40})
     assert v["line"] == B.LINE and [r[0] for r in v["rows"]] == [1, 3, 4]      # day 2 had too few coins
+
+
+def test_band_z_at_a_bar_is_the_band_with_the_bars_price_over_the_days_before():
+    rng = np.random.default_rng(9)
+    days = np.arange(19000, 19000 + 900)
+    close = 50 * np.exp(np.cumsum(rng.normal(0.0004, 0.04, len(days))))
+    st = B.bar_state(days, close)
+    for i in (400, 401, 405, 600, 899):
+        price = close[i] * 1.013
+        c2 = close[: i + 1].copy(); c2[i] = price
+        mid = B.band_mid(days[: i + 1], c2)[i]
+        s = np.log(close[:i] / B.band_mid(days[:i], close[:i]))
+        s = s[np.isfinite(s)][-730:]
+        expected = np.log(price / mid) / np.sqrt(np.mean(s * s))
+        assert abs(B.band_z_at(st, int(days[i]), price) - expected) < 1e-12
+    assert B.band_z_at(st, int(days[100]), close[100]) is None          # no band yet
+    assert B.band_z_at(st, int(days[-1]) + 1, close[-1]) is None        # outside the series
+    # at the day's own close, band z over the days before matches the readings but for the RMS's last day
+    i = 700
+    a = B.readings(days, close)["a"][i]
+    assert abs(B.band_z_at(st, int(days[i]), close[i]) / a - 1) < 0.02
+
+
+def test_the_replay_switch_sets_the_exit_and_gives_rows_their_band_z(monkeypatch):
+    import signal_synthesizer as ss
+    import backtest.replay_engine as re_mod
+    from backtest import live_logic_replay as lr
+    days, close = _walk(900)
+
+    class FakeBH:
+        def load(self, pair, tf, start, end):
+            assert tf == "1d" and start == "2017-01-01"
+            return {"timestamp": days * 86_400_000.0, "close": close} if pair == "ABCUSDT" else None
+
+    monkeypatch.setattr(ss, "TOP_EXIT", "heat")
+    monkeypatch.setattr(re_mod, "BAR_HOOK", None)
+    lr._band_exit(FakeBH(), ["ABC", "XYZ"])
+    assert ss.TOP_EXIT == "band" and re_mod.BAR_HOOK is not None
+    row = {"symbol": "ABC/USDT", "decision_price": float(close[700])}
+    close_ms = int(days[700] + 1) * 86_400_000                         # the bar closing at the end of day 700
+    re_mod.BAR_HOOK(row, close_ms)
+    st = B.bar_state(days, close)
+    assert row["band_z"] == B.band_z_at(st, int(days[700]), float(close[700]))
+    other = {"symbol": "XYZ/USDT", "decision_price": 1.0}
+    re_mod.BAR_HOOK(other, close_ms)
+    assert other["band_z"] is None

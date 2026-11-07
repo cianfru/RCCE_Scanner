@@ -88,6 +88,32 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(synthesize_signal(row, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
 
 
+class TopExitSwitchTests(unittest.TestCase):
+    """docs/reviews/band-exit-study.md: the exit above the weekly band on band z, behind a switch that is off."""
+
+    def run_with(self, mode, **row):
+        import signal_synthesizer as ss
+        with patch.object(ss, "TOP_EXIT", mode):
+            r = favorable(); r.update(row)
+            return synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT)
+
+    def test_off_by_default_and_band_z_is_ignored(self):
+        import signal_synthesizer as ss
+        self.assertEqual(ss.TOP_EXIT, "heat")
+        r = favorable(); r.update(heat=96, band_z=0.2)
+        self.assertEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+        r = favorable(); r.update(band_z=3.0)
+        self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+
+    def test_band_mode_exits_on_band_z_above_the_band_only(self):
+        self.assertEqual(self.run_with("band", band_z=1.61).signal, "TRIM")
+        self.assertIn("Band z", self.run_with("band", band_z=2.0).reason)
+        self.assertNotEqual(self.run_with("band", heat=96, band_z=1.0).signal, "TRIM")     # heat no longer exits above
+        self.assertEqual(self.run_with("band", heat=96, heat_direction=-1, band_z=-2.0).signal, "TRIM")   # crash exit
+        self.assertEqual(self.run_with("band", heat=96, band_z=None).signal, "TRIM")       # unknown: today's rule
+        self.assertEqual(self.run_with("band", regime="ACCUM", heat=100, band_z=0.5).signal, "TRIM")   # bottoms: today
+
+
 class CandleTests(unittest.TestCase):
     def test_close_boundary_and_no_unconditional_last_bar_drop(self):
         data = candles(3)

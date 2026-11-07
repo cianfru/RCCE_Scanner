@@ -108,6 +108,30 @@ def _bh():
     return mod
 
 
+def _band_exit(bh, symbols):
+    """Switch the synthesizer's exit above the band to band z, and give each row its band z: Binance daily closes
+    from 2017 (completed days before the bar's day) and the bar's own close (docs/reviews/band-exit-study.md)."""
+    import band_stretch
+    import signal_synthesizer
+    import backtest.replay_engine as re_mod
+    states = {}
+    for s in symbols:
+        d = bh.load(f"{s}USDT", "1d", "2017-01-01", DATA_END)
+        if d is not None and len(d["close"]):
+            days, close = band_stretch.daily_series(d["timestamp"], d["close"])
+            states[f"{s}/USDT"] = band_stretch.bar_state(days, close)
+    day_ms = 86_400_000
+
+    def hook(row, close_ms):
+        st = states.get(row.get("symbol"))
+        price = row.get("decision_price")
+        row["band_z"] = (None if st is None or not price
+                         else band_stretch.band_z_at(st, int((int(close_ms) - 1) // day_ms), float(price)))
+
+    signal_synthesizer.TOP_EXIT = "band"
+    re_mod.BAR_HOOK = hook
+
+
 def _fear_greed():
     raw = json.loads(urllib.request.urlopen("https://api.alternative.me/fng/?limit=0&format=json", timeout=30).read())
     return {datetime.fromtimestamp(int(x["timestamp"]), tz=timezone.utc).strftime("%Y-%m-%d"): int(x["value"])
@@ -127,6 +151,8 @@ def main(argv=None):
     ap.add_argument("--zbase", choices=("current", "G", "F1", "G1d", "K1d"), default="current",
                     help="z baseline variant (docs/reviews/z-baseline-study.md, z-daily-study.md)")
     ap.add_argument("--tf", choices=("4h", "1d"), default="4h", help="traded (primary) timeframe")
+    ap.add_argument("--topexit", choices=("heat", "band"), default="heat",
+                    help="the exit above the weekly band (docs/reviews/band-exit-study.md): heat (today) or band z")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
@@ -159,6 +185,8 @@ def main(argv=None):
         rcce.COOL_OFF_SOURCE = args.cooloff_source
     import engines.rcce_engine as rcce
     _zbase(rcce, args.zbase)
+    if args.topexit == "band":
+        _band_exit(bh, symbols)
     from backtest.replay_engine import run_replay
     from candle_snapshot import TF_MS
     primary = data[args.tf]
