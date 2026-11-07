@@ -1,0 +1,63 @@
+//@version=6
+// Reflex z-score: the scanner's z-score for TradingView, the same calculation as
+// backend/engines/rcce_engine.py (_calc_zscore_hybrid and the warm-up scaling in compute_rcce).
+//
+// - Baseline: a 300-bar linear regression of log price (a 200-bar average until 300 bars exist).
+// - The distance from the baseline is standardised over its last 200 bars (fewer while the coin is new).
+// - While a coin has fewer than 400 bars, z is scaled down, as the scanner does.
+//
+// The scanner reads Hyperliquid perp candles and scores closed 4h and 1d bars, so on a Hyperliquid
+// perp chart the value at each bar's close is the scanner's. The bar still forming moves until it closes.
+// Keep the settings in step with the engine's constants (LEN_LONG, LEN_REGRESSION, Z_SMOOTH, Z_SCALE and
+// the Z_ levels) if they change.
+indicator("Reflex z-score", shorttitle = "Reflex z", overlay = false, precision = 2)
+
+lenMA   = input.int(200, "Normalisation bars", minval = 2)
+lenReg  = input.int(300, "Regression bars", minval = 2)
+zSmooth = input.int(1, "Smoothing bars (1 = off)", minval = 1)
+zScale  = input.float(1.0, "Scale", step = 0.1)
+damp    = input.bool(true, "Scale down coins with a short history (as the scanner)")
+zHigh   = input.float(2.5, "Blow-off", group = "Levels")
+zTrim   = input.float(3.0, "Trim", group = "Levels")
+zHard   = input.float(3.5, "Hard trim", group = "Levels")
+zLow    = input.float(-1.0, "Capitulation", group = "Levels")
+
+EPS = 1e-10
+logp = math.log(math.max(close, EPS))
+
+// Baseline: the regression once lenReg bars exist, the simple average before.
+reg  = ta.linreg(logp, lenReg, 0)
+avg  = ta.sma(logp, lenMA)
+base = na(reg) ? avg : reg
+dev  = logp - base
+
+// Standardise the distance over its last lenMA values; while fewer exist, over all of them.
+// Population standard deviation, worked out as the engine does: mean of squares less the squared mean.
+var int nDev = 0
+if not na(dev)
+    nDev += 1
+win    = math.max(1, math.min(lenMA, nDev))
+mean   = ta.sma(dev, win)
+meanSq = ta.sma(dev * dev, win)
+sd     = math.sqrt(math.max(meanSq - mean * mean, 0.0))
+
+float z = na(dev) ? na : (na(sd) or sd < EPS) ? 0.0 : (dev - mean) / sd
+z := ta.sma(z * zScale, zSmooth)
+
+// The scanner scales z by how far the coin's history is past lenMA bars, up to 2 x lenMA.
+warmup = math.min(1.0, math.max(0.0, float(bar_index + 1 - lenMA) / lenMA))
+if damp
+    z := z * warmup
+
+cHigh = #fb923c
+cLow  = #38bdf8
+cMid  = #26a69a
+plot(z, "z", z >= zHigh ? cHigh : z <= zLow ? cLow : cMid, 2)
+hline(0, "Zero", color.new(color.gray, 50), hline.style_solid)
+hline(zHigh, "Blow-off", color.new(cHigh, 20), hline.style_dashed)
+hline(zTrim, "Trim", color.new(cHigh, 50), hline.style_dotted)
+hline(zHard, "Hard trim", color.new(cHigh, 50), hline.style_dotted)
+hline(zLow, "Capitulation", color.new(cLow, 20), hline.style_dashed)
+
+alertcondition(ta.crossover(z, zHigh), "z crossed above Blow-off", "{{ticker}}: Reflex z crossed above the Blow-off level")
+alertcondition(ta.crossunder(z, zLow), "z crossed below Capitulation", "{{ticker}}: Reflex z crossed below the Capitulation level")
