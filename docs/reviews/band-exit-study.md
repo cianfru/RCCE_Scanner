@@ -64,3 +64,42 @@ Reported per run: compounded return, per-window returns, worst-window drawdown, 
 - The replay's daily rows read the last completed day; live, the scanner reads the latest bar.
 - Band z here comes from Binance spot closes, while live Reflex trades Hyperliquid perps. If V ships, the live engine needs band z from its own daily candles; that is a separate change for the owner to approve.
 - A replay tests the rule on one path of history, with this manager's sizing and exits.
+
+## Results (windows 1-9, costed PositionManager, run 7 November 2026, after the declaration was committed)
+
+| Run | | Compounded return | Worst window | Median Sharpe | Trades | TRIM bars |
+|---|---|---:|---:|---:|---:|---:|
+| **Primary 4H (deciding)** | C | **+43.1%** | −10.4% | 0.32 | 314 | 4,036 |
+| | V | **+23.8%** (−19.4) | −10.5% (−0.1) | 0.23 | 334 | 6,743 |
+| **Secondary 4H (guard)** | C | **+45.3%** | −14.6% | −0.80 | 725 | 8,975 |
+| | V | **+30.9%** (−14.4) | −9.7% (+4.9) | −0.56 | 820 | 17,776 |
+| Primary 1D (reported) | C | +36.5% | −13.9% | −0.30 | 138 | 617 |
+| | V | +22.6% (−13.9) | −12.4% (+1.5) | −0.30 | 170 | 1,196 |
+| Secondary 1D (reported) | C | +4.9% | −20.0% | −0.42 | 398 | 1,384 |
+| | V | +4.4% (−0.5) | −18.0% (+2.0) | −0.38 | 518 | 2,989 |
+
+Per-window returns, C / V (%):
+
+| Run | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 |
+|---|---|---|---|---|---|---|---|---|---|
+| Primary 4H | +1.2 / +1.6 | 0 / 0 | +5.0 / +5.0 | −1.9 / −0.8 | +35.6 / +28.6 | −9.9 / −9.9 | +11.8 / +1.1 | +6.4 / +6.7 | −5.6 / −6.4 |
+| Secondary 4H | −3.8 / −2.5 | 0 / 0 | +2.7 / +3.0 | −2.6 / −3.2 | +40.9 / +41.9 | −8.5 / −8.2 | +24.4 / +8.6 | −3.6 / −2.7 | −2.3 / −2.3 |
+| Primary 1D | −8.8 / −8.8 | 0 / 0 | −1.9 / −1.9 | −5.9 / −5.9 | +50.2 / +37.0 | −4.0 / −3.4 | +14.8 / +11.0 | +9.1 / +9.0 | −10.1 / −9.2 |
+| Secondary 1D | −17.0 / −16.3 | 0 / 0 | +0.7 / +0.6 | −0.5 / −0.4 | +36.0 / +34.2 | −2.7 / −2.8 | +6.7 / +5.9 | −7.9 / −7.1 | −3.0 / −3.0 |
+
+C reproduces the published runs on primary 4H, secondary 4H and secondary 1D exactly. Primary 1D reads +36.5% / −13.9% / 138 trades against the published +36.6% / −14.0% / 138; the difference is reported, not explained, and moves no verdict.
+
+## Verdict: nothing ships. Context, not a signal.
+
+- **Condition 1 fails:** on the deciding run V returns 19.4 points less than C; the bar was 5 points more.
+- Condition 2 holds: the worst window is 0.1 points deeper, within 1.
+- **Condition 3 fails:** on the guard run V returns 14.4 points less than C; the limit was 5.
+
+The switch stays off (`TOP_EXIT = "heat"`); live and paper trading are unchanged.
+
+## Reading
+
+- **Band z exits about twice as often as heat** (TRIM bars 1.7 to 2.2 times C's) and gives up return in every run, most of it in the two rally windows: W5 (October 2023 to April 2024) and W7 (October 2024 to April 2025). The 4H runs lose 7.0 and 10.7 points there (primary), 15.8 in W7 (secondary).
+- **It does soften the worst window** in three runs of four (by 1.5 to 4.9 points), but not by enough to pay for the return it gives up.
+- **Why:** band z at 1.61 is each coin's top 5% of stretch. The stretch-at-tops study found that about 4 in 10 of its alarm episodes did not end at a top. As an exit, those are the trends that kept going. Heat at 95 (about 7.6 weekly ATRs from the band) lets a strong trend run further. This repeats the overheated-regime study's lesson: an earlier exit at tops cuts winners in trends that are not over.
+- **Band z stays useful as a reading of how stretched a coin and the market are** (the coin page and the Market page's share of stretched coins). Whether a stricter band z (a higher level, or band z with the divergence mark) would beat heat as an exit is a new hypothesis. It needs its own declared study, judged on windows other than these.
