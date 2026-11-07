@@ -77,3 +77,66 @@ Otherwise: context, not a signal, and the script stays as it is.
 - Binance spot closes, not Hyperliquid perps; weeks start Thursday as on Hyperliquid, not Monday as on Binance.
 - A top is known only afterwards. The study asks which reading stood out before tops, not whether a top can be called at the time.
 - Coins chosen by volume before 2020 include later failures and leave out later listings.
+
+## Results (run 7 November 2026, after the declaration was committed)
+
+Same data as declared (SHA-256 `4eaec6a275653ae5c13e966b54253d78cad32e2d841fa24af7a3a29c6f6acdab`). Guides, the 95th percentile of the calibration coins' days: **A 1.61, B 1.37, C 9.20**, E 2.31. The script's own +2 line marks 3.2% of calibration days.
+
+### Test coins (the verdict): 19 coins, 99 counted tops, 40,520 days
+
+| | Tops caught | Chance | Episodes at a top | Alarm days |
+|---|---:|---:|---:|---:|
+| **A** (the script) | **61.6%** (61) | 8.8 | **59.4%** (60 of 101) | 2,032 (5.0%) |
+| B | 63.6% (63) | 8.9 | 64.9% (63 of 97) | 2,164 (5.3%) |
+| C | 67.7% (67) | 9.2 | 63.1% (65 of 103) | 2,004 (4.9%) |
+| A with D | 69.7% (69) | | 61.6% (69 of 112) | 2,112 (5.2%) |
+| B with D | 69.7% (69) | | 62.2% (69 of 111) | 2,235 (5.5%) |
+| C with D | 76.8% (76) | | 64.1% (75 of 117) | 2,090 (5.2%) |
+| E (engine z, reported) | 46.5% (46) | 11.5 | 31.5% (46 of 146) | 2,247 (5.5%) |
+
+### Calibration coins (reported): 18 coins, 94 counted tops
+
+| | Tops caught | Episodes at a top | Alarm days |
+|---|---:|---:|---:|
+| A | 53.2% (50) | 56.3% (49 of 87) | 1,993 |
+| B | 62.8% (59) | 62.0% (57 of 92) | 1,993 |
+| C | 61.7% (58) | 57.4% (54 of 94) | 1,993 |
+| A with D | 62.8% (59) | 55.2% (58 of 105) | 2,100 |
+| C with D | 68.1% (64) | 55.0% (60 of 109) | 2,089 |
+| E | 47.9% (45) | 31.9% (44 of 138) | 1,993 |
+
+### ETH and BTC (seen, reported apart): 11 counted tops
+
+Each reading's highest value in the 14 days to the top; * at or above its guide.
+
+| Top | Close | From band | A | B | C | E |
+|---|---:|---:|---:|---:|---:|---:|
+| BTC 26 Jun 2019 | 13,094 | +101% | +2.71* | +2.71* | +15.6* | +1.95 |
+| BTC 13 Apr 2021 | 63,575 | +50% | +1.47 | +1.58* | +10.1* | −0.68 |
+| BTC 8 Nov 2021 | 67,526 | +37% | +1.17 | +1.21 | +7.5 | +1.89 |
+| BTC 6 Oct 2025 | 124,659 | +11% | +0.62 | +0.45 | +4.0 | +1.23 |
+| ETH 26 Jun 2019 | 339 | +67% | +1.22 | +1.22 | +9.2* | +1.01 |
+| ETH 14 Feb 2020 | 285 | +57% | +1.32 | +1.24 | +9.5* | +3.82* |
+| ETH 11 May 2021 | 4,173 | +111% | +2.28* | +2.02* | +14.3* | +1.01 |
+| ETH 8 Nov 2021 | 4,808 | +45% | +1.15 | +1.05 | +6.7 | +1.42 |
+| ETH 11 Mar 2024 | 4,065 | +58% | +2.02* | +1.46* | +13.0* | +2.07 |
+| ETH 8 Dec 2024 | 4,004 | +37% | +2.07* | +1.05 | +10.8* | +2.82* |
+| ETH 22 Aug 2025 | 4,832 | +55% | +2.52* | +1.74* | +15.0* | +2.23 |
+
+Caught: A 5, B 5, C 8, A with D 9, C with D 11, E 2 of 11.
+
+## Verdict: nothing ships. Context, not a signal.
+
+- **Question 1, the scaling:** neither B nor C clears the hit bar on the test coins. B catches 2.0 points more tops than A, C 6.1 points more; the bar is 10. Both pass the precision, alarm-days and tops conditions. The script keeps A.
+- **Question 2, the divergence mark on A:** A with D catches 8.1 points more tops; the bar is 10. It passes the other three conditions. No mark is added.
+
+Nothing changed in the scripts or the engine.
+
+## Reading
+
+- **The band stretch stands out before tops, on coins it was not calibrated on.** At about 5% of days, every scaling had an alarm in the two weeks to 6 or 7 of every 10 test tops, and about 6 in 10 of its alarm episodes ended at a top. The same alarm days placed at random in time catch about 9 of the 99 tops.
+- **The engine's z does worse at the same rate:** 46.5% of test tops, and 31.5% of its episodes at a top (reported, not decided on). It matches what the owner saw on TradingView.
+- **C and the mark point the same way on both halves but short of the bar:** C +6.1 points on the test coins and +8.5 on the calibration coins; A with D +8.1 and +9.6. That is a direction, not evidence enough to change the script.
+- **The second, less stretched tops stay unmarked by any scaling.** On ETH and BTC (seen) the three such tops (November 2021 on both, BTC October 2025) read under every guide; D marks them, but D was built from them, so that is not evidence.
+- **The guide line.** The 95th-percentile guide for A is 1.61. The script's +2 line marks fewer days (3.2%); set at 1.6 in the script's settings it marks the alarm days this study counted.
+- A follow-up (for example C with D) would be a new hypothesis. Judged on these coins it would reuse data already seen; a fair test needs new tops, from November 2026 on.
