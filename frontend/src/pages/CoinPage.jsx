@@ -19,8 +19,6 @@ import TradersCard from "../components/TradersCard.jsx";
 import useCoinPositioning from "../hooks/useCoinPositioning.js";
 import useCoinPositioningRecent from "../hooks/useCoinPositioningRecent.js";
 import useCoinTraders from "../hooks/useCoinTraders.js";
-import useBandStretch from "../hooks/useBandStretch.js";
-import { SCOPY, stretchReading } from "../utils/bandStretch.js";
 import { timeframeFrom, backHref } from "../utils/researchNavigation.js";
 import useFavorites from "../hooks/useFavorites.js";
 import useSetupMap from "../hooks/useSetupMap.js";
@@ -255,7 +253,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const traders = useCoinTraders(data?.symbol, !!data);
   // Long and short of groups of wallets, as bars under the chart's candles.
   const positioning = useCoinPositioning(data?.symbol, !!data);
-  const stretch = stretchReading(useBandStretch(data?.symbol));
   const recentPositioning = useCoinPositioningRecent(data?.symbol, !!data);
   const traderApi = useRef(null);
 
@@ -377,15 +374,12 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
             <p>Entry checks: how many of the engine's entry conditions are met now, not a win probability.</p>
             <p>Regime confidence: the cycle engine's confidence in its phase classification.</p>
             <p>Timeframe agreement: how far the 4H and daily views agree, 0 to 100.</p>
-            <p>{SCOPY.help}</p>
           </HelpTip></h2>
           <p className="analysis-lead">{evidenceSummary(data)}</p>
           <div className="analysis-definitions">
             <div><span>Entry checks</span><strong>{data.conditions_total > 0 ? `${data.conditions_met}/${data.conditions_total}` : "\u2014"}</strong></div>
             <div><span>Regime confidence</span><strong>{formatPercent(data.confidence)}</strong></div>
             <div><span>Timeframe agreement</span><strong>{data.confluence?.score != null ? `${Math.round(data.confluence.score)}/100` : "\u2014"}</strong></div>
-            <div><span>{SCOPY.label}{stretch?.pct && <i className="coin-stretch-pct"> · {stretch.pct} from band</i>}</span>
-              <strong className={stretch?.tone ? `coin-stretch is-${stretch.tone}` : "coin-stretch"}>{stretch ? stretch.value : "\u2014"}</strong></div>
           </div>
           {against.length > 0 && <div className="coin-against">
             <span>Against it now</span>

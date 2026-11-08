@@ -145,60 +145,6 @@ def aggregate(day: int, per_coin: Dict[str, dict]) -> Optional[list]:
     return [int(day), len(vals), sum(1 for v in vals if v >= LINE), round(float(np.median(vals)), 3)]
 
 
-def coin_view(days: np.ndarray, close: np.ndarray, history_days: int = 365) -> Optional[dict]:
-    """The coin page's reading: the last day's values and band z over the last history_days."""
-    if len(close) == 0:
-        return None
-    rd = readings(days, close)
-    i = len(close) - 1
-    if not np.isfinite(rd["mid"][i]):
-        return None
-    lo = max(0, i - history_days + 1)
-    hist = [[int(days[j]), round(float(rd["a"][j]), 3)] for j in range(lo, i + 1) if np.isfinite(rd["a"][j])]
-    return {"day": int(days[i]), "close": float(close[i]), "mid": float(rd["mid"][i]), "pct": _num(rd["pct"][i]),
-            "a": _num(rd["a"][i]), "line": LINE, "history": hist}
-
-
-# ---------------------------------------------------------------------------------------------------------- coin page
-_COIN_CACHE: Dict[str, tuple] = {}     # symbol -> (valid until, payload): one Hyperliquid read per coin per day
-_COIN_CACHE_MAX = 300
-COIN_DAYS = 1000                       # 730 days of stretch after the band's 21 weeks, and some
-
-
-def _next_refresh(now: float) -> float:
-    return (int(now) // DAY_S + 1) * DAY_S + 15 * 60        # 15 minutes after the next daily close
-
-
-async def coin_reading(symbol: str, now: Optional[float] = None, fetch=None) -> dict:
-    """One coin's band stretch on Hyperliquid's daily candles (closed days only), cached until the next close."""
-    import time as _time
-    now = _time.time() if now is None else now
-    hit = _COIN_CACHE.get(symbol)
-    if hit and now < hit[0]:
-        return hit[1]
-    if fetch is None:
-        from data_fetcher import _fetch_ohlcv_hyperliquid as fetch
-    try:
-        data = await fetch(symbol, "1d", COIN_DAYS)
-    except Exception:                                        # rate limited or unreachable: try again in a while
-        data = None
-    body: dict = {"symbol": symbol, "available": False}
-    valid = now + 600
-    if data and len(data.get("close", [])):
-        ts = np.asarray(data["timestamp"], dtype=float)
-        closed = ts + DAY_S * 1000 <= now * 1000
-        days, close = daily_series(ts[closed], np.asarray(data["close"], dtype=float)[closed])
-        view = coin_view(days, close)
-        if view is not None:
-            body = {"symbol": symbol, "available": True, **view}
-        valid = _next_refresh(now)
-    if len(_COIN_CACHE) >= _COIN_CACHE_MAX:
-        for k in sorted(_COIN_CACHE, key=lambda k: _COIN_CACHE[k][0])[: _COIN_CACHE_MAX // 4]:
-            del _COIN_CACHE[k]
-    _COIN_CACHE[symbol] = (valid, body)
-    return body
-
-
 # ---------------------------------------------------------------------------------------------------------- replay
 def bar_state(days: np.ndarray, close: np.ndarray) -> Dict[str, np.ndarray]:
     """For each day of a daily series, what a bar on that day can know before the day closes: the weekly closes of

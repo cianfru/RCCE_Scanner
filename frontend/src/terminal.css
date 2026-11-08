@@ -279,11 +279,6 @@
 .analysis-definitions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:24px 0;}
 .analysis-definitions span{display:block;font-size:12px;color:var(--t-text3);margin-bottom:8px;}
 .analysis-definitions strong{font:500 21px var(--font-geist-mono),monospace;color:var(--t-text1);}
-.analysis-definitions .coin-stretch-pct{font-style:normal;white-space:nowrap;}
-.analysis-definitions .coin-stretch.is-hot{color:#fb923c;}
-.analysis-definitions .coin-stretch.is-cold{color:#7dd3fc;}
-[data-theme="light"] .analysis-definitions .coin-stretch.is-hot{color:#c2410c;}
-[data-theme="light"] .analysis-definitions .coin-stretch.is-cold{color:#0369a1;}
 .analysis-definitions p{font-size:12px;line-height:1.5;color:var(--t-text3);}
 .analysis-method{margin:16px 0;border-top:1px solid var(--t-border);padding-top:12px;}
 .analysis-method summary{cursor:pointer;color:var(--t-text2);font-size:13px;}
@@ -1601,9 +1596,9 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .coin-evidence{margin-top:4px;}
 .coin-evidence .tc{margin-top:0;}
 .reflex-terminal .coin-evidence .analysis-definitions{margin:20px 0 4px;}
-.reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+.reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
 .reflex-terminal .coin-evidence .analysis-definitions>div{display:flex;flex-direction:column;justify-content:space-between;}
-@media(max-width:600px){.reflex-terminal .coin-evidence .analysis-definitions strong{font-size:18px;}.reflex-terminal .coin-evidence .analysis-definitions{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:600px){.reflex-terminal .coin-evidence .analysis-definitions strong{font-size:18px;}}
 .analysis-card>h2 .alt-season-info{vertical-align:middle;margin-left:6px;}
 .coin-against{margin:18px 0 0;padding:10px 0 2px 12px;box-shadow:inset 2px 0 #b6a07c;font:13px/1.55 var(--font-geist-sans),sans-serif;color:var(--t-text2);}
 .coin-against>span{display:block;font-size:12px;font-weight:600;color:var(--t-text1);}

@@ -1,4 +1,4 @@
-"""band_stretch.py: the same readings as the stretch-at-tops study, the market rows, the record and the coin page."""
+"""band_stretch.py: the same readings as the stretch-at-tops study, the market rows, the record and the replay."""
 import asyncio
 import json
 import os
@@ -72,36 +72,6 @@ def test_the_record_round_trip(monkeypatch):
         assert hp.load_band_stretch(20000)[0][1:] == (1.1, 0.9, 1.3, 8.1, 1, 1)
         hp._conn.close()
         monkeypatch.setattr(hp, "_conn", None)
-
-
-def test_the_coin_reading_uses_closed_days_and_is_cached():
-    days, close = _walk(1000)
-    now = float((days[-1] + 1) * 86_400 + 3600)                  # an hour into the day after the last close
-    ts = list((days * 86_400_000).astype(float)) + [float((days[-1] + 1) * 86_400_000)]   # plus the forming day
-    calls = []
-
-    async def fetch(symbol, tf, limit):
-        calls.append((symbol, tf, limit))
-        return {"timestamp": ts, "close": list(close) + [close[-1] * 3]}       # the forming day is far off
-
-    B._COIN_CACHE.clear()
-    r = asyncio.run(B.coin_reading("ABC/USDT", now=now, fetch=fetch))
-    assert r["available"] and r["day"] == int(days[-1]) and r["line"] == B.LINE
-    expected = B.coin_view(days, close)
-    assert r["a"] == expected["a"] and len(r["history"]) == 365
-    asyncio.run(B.coin_reading("ABC/USDT", now=now + 60, fetch=fetch))
-    assert len(calls) == 1                                       # cached until the next close
-    asyncio.run(B.coin_reading("ABC/USDT", now=now + 86_400, fetch=fetch))
-    assert len(calls) == 2
-
-
-def test_the_coin_reading_without_data_retries_soon():
-    async def fetch(symbol, tf, limit):
-        return None
-    B._COIN_CACHE.clear()
-    r = asyncio.run(B.coin_reading("NONE/USDT", now=1_000_000.0, fetch=fetch))
-    assert r == {"symbol": "NONE/USDT", "available": False}
-    assert B._COIN_CACHE["NONE/USDT"][0] == 1_000_000.0 + 600
 
 
 def test_the_market_view_reads_seed_then_live_rows(monkeypatch):

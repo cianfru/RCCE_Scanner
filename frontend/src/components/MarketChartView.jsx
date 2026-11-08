@@ -8,7 +8,7 @@ import { RANGES, dayDate } from "../utils/marketHistory.js";
 // The market page's Chart tab: Market heat today, then one large chart with the indicators the reader picks, on the
 // price, as marks on their panes, or in panes under it. Where the market stands today is in the tiles above the tabs.
 
-const KEY = "reflex-market-indicators-5";      // -5: the coins-stretched pane, on by default (7 Nov 2026)
+const KEY = "reflex-market-indicators-4";      // -4: the marks moved onto their panes (6 Nov 2026)
 const loadPicks = () => { try { return pickIndicators(JSON.parse(localStorage.getItem(KEY))); } catch { return pickIndicators(null); } };
 const savePicks = keys => { try { localStorage.setItem(KEY, JSON.stringify(keys)); } catch { /* the pick still holds for this visit */ } };
 const pct = v => `${Math.round(100 * v)}%`;
