@@ -1,0 +1,98 @@
+//@version=6
+// Reflex heat: the engine's heat for TradingView, the same calculation as backend/engines/heatmap_engine.py.
+//
+// - Heat is the distance of the close from the weekly band mid (the mean of the 20-week SMA and the 21-week EMA of
+//   weekly closes) in units of the 20-week average of the weekly ATR(14), times 12.5, capped at 100:
+//   heat = min(100, round(12.5 x |close - mid| / SMA20(weekly ATR14))).
+//   With fewer than about 33 weeks of history the engine uses the chart's ATR(14) x 0.15 instead of the weekly one.
+// - Completed weeks only, as the scanner reads them; weeks start Thursday 00:00 UTC like Hyperliquid's (TradingView's
+//   own weeks start Monday; switch in the settings). The weekly candles are built from the chart's own bars.
+// - The engine's rules on it: at 95 or more it exits (above the band an overextension exit, far below it a crash exit);
+//   at 85 or more no new entries. In Capitulation and Accumulation both levels are 100; in Overheated 85 and 75.
+// - The scanner reads heat on its 4H and 1D charts with that chart's close: use a Hyperliquid perp chart, 4H or 1D,
+//   and compare at a bar's close.
+indicator("Reflex heat", shorttitle = "Heat", overlay = false, precision = 0)
+
+weekFrom  = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
+exitLevel = input.int(95, "Exit at", minval = 1, maxval = 100)
+blockLevel = input.int(85, "No new entries at", minval = 1, maxval = 100)
+showBand  = input.bool(false, "Draw the band on the price chart")
+
+WEEK_MS  = 7 * 86400000
+offsetMs = weekFrom == "Monday (TradingView)" ? 4 * 86400000 : 0
+wk       = math.floor((time - offsetMs) / WEEK_MS)
+closesWeek = math.floor((time_close - offsetMs) / WEEK_MS) > wk    // this bar's close ends its week
+
+SMA_W = 20
+EMA_W = 21
+ATR_W = 14
+k = 2.0 / (EMA_W + 1)
+
+// The week under way, and the completed weeks.
+var float wh = na
+var float wl = na
+var float prevClose = na
+var array<float> closes = array.new_float()
+var float ema = na
+var array<float> trSeed = array.new_float()
+var float atrW = na
+var array<float> atrs = array.new_float()
+
+wh := na(wh) ? high : math.max(wh, high)
+wl := na(wl) ? low : math.min(wl, low)
+if closesWeek
+    tr = na(prevClose) ? wh - wl : math.max(wh - wl, math.abs(wh - prevClose), math.abs(wl - prevClose))
+    closes.push(close)
+    n = closes.size()
+    if n == EMA_W
+        ema := closes.avg()
+    else if n > EMA_W
+        ema := close * k + ema * (1 - k)
+    if na(atrW)
+        trSeed.push(tr)
+        if trSeed.size() == ATR_W
+            atrW := trSeed.avg()
+            atrs.push(atrW)
+    else
+        atrW := (atrW * (ATR_W - 1) + tr) / ATR_W
+        atrs.push(atrW)
+    prevClose := close
+    wh := na
+    wl := na
+
+// The band mid over the completed weeks.
+nW = closes.size()
+float mid = na
+float sma = na
+if nW >= EMA_W
+    float s = 0.0
+    for i = nW - SMA_W to nW - 1
+        s += closes.get(i)
+    sma := s / SMA_W
+    mid := (sma + ema) / 2
+
+// Weekly ATR's 20-week average; the chart's ATR(14) x 0.15 while it is not there yet.
+nA = atrs.size()
+float atrAvg = na
+if nA >= SMA_W
+    float a = 0.0
+    for i = nA - SMA_W to nA - 1
+        a += atrs.get(i)
+    atrAvg := a / SMA_W
+atrChart = ta.atr(14)
+dev = close - mid
+x = na(mid) ? na : not na(atrAvg) and atrAvg > 0 ? math.abs(dev) / atrAvg : atrChart > 0 ? math.abs(dev) / atrChart * 0.15 : na
+heat = na(x) ? na : math.min(100, math.round(x * 12.5))
+
+cAbove = #fb923c
+cBelow = #38bdf8
+plot(heat, "Heat", dev >= 0 ? cAbove : cBelow, 2, plot.style_line)
+hline(exitLevel, "Exit", color.new(color.gray, 20), hline.style_dashed)
+hline(blockLevel, "No new entries", color.new(color.gray, 55), hline.style_dotted)
+hline(0, "Band", color.new(color.gray, 70), hline.style_solid)
+plot(dev >= 0 ? 1 : -1, "Above (1) or below (-1) the band", display = display.data_window)
+
+plot(showBand ? mid : na, "Band mid", color.new(#26a69a, 20), 1, force_overlay = true)
+
+alertcondition(ta.crossover(heat, exitLevel) and dev >= 0, "Heat at the exit level, above the band", "{{ticker}}: Reflex heat reached the exit level above the weekly band")
+alertcondition(ta.crossover(heat, exitLevel) and dev < 0, "Heat at the exit level, below the band", "{{ticker}}: Reflex heat reached the exit level far below the weekly band")
