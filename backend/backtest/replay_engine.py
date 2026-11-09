@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 # A study's extra inputs per row, set before each synthesis: BAR_HOOK(row, close_ms) may add keys to the row
 # (docs/reviews/band-exit-study.md adds "band_z"). close_ms is when the row's bar closes. None: rows as they are.
 BAR_HOOK: Optional[Callable[[dict, int], None]] = None
+# Live-only context for a study (docs/reviews/strong-long-replay-study.md): CONTEXT_HOOK(row, close_ms) returns
+# (context, metadata) to merge into the decision's own, e.g. positioning (funding) and stablecoin readings known at the
+# bar's close. None (the default) leaves the replay as it was.
+CONTEXT_HOOK: Optional[Callable[[dict, int], tuple]] = None
+
+
+def _with_context(row: dict, close_ms: int, context: dict, metadata: dict):
+    if CONTEXT_HOOK is None:
+        return context, metadata
+    extra_ctx, extra_meta = CONTEXT_HOOK(row, close_ms)
+    return {**context, **extra_ctx}, {**metadata, **extra_meta}
 
 # ---------------------------------------------------------------------------
 # Output containers
@@ -328,9 +339,11 @@ async def run_replay(
             if BAR_HOOK is not None:            # the daily rows read the last completed day
                 BAR_HOOK(daily, (current_ts // TF_MS["1d"]) * TF_MS["1d"])
             try:
-                evaluate_decision(daily, {"consensus": daily_consensus, "sentiment": sentiment_dict}, decision_state,
-                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
-                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}}, synthesizer=synthesize_signal)
+                ctx, meta = _with_context(daily, current_ts, {"consensus": daily_consensus, "sentiment": sentiment_dict},
+                                          {"sentiment": {"source": "historical_fear_greed",
+                                           "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}})
+                evaluate_decision(daily, ctx, decision_state, as_of=current_ts / 1000, metadata=meta,
+                                  synthesizer=synthesize_signal)
             except Exception:
                 daily["signal"] = "WAIT"
                 logger.exception("Daily synthesis unavailable for %s", daily.get("symbol"))
@@ -344,9 +357,10 @@ async def run_replay(
             if BAR_HOOK is not None:
                 BAR_HOOK(r, current_ts)
             try:
-                evaluate_decision(r, {"consensus": consensus, "sentiment": sentiment_dict}, decision_state,
-                                  as_of=current_ts / 1000, metadata={"sentiment": {"source": "historical_fear_greed",
-                                  "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}},
+                ctx, meta = _with_context(r, current_ts, {"consensus": consensus, "sentiment": sentiment_dict},
+                                          {"sentiment": {"source": "historical_fear_greed",
+                                           "observed_at": (current_ts - TF_MS["1d"]) / 1000 if sentiment_dict else None}})
+                evaluate_decision(r, ctx, decision_state, as_of=current_ts / 1000, metadata=meta,
                                   synthesizer=synthesize_signal)
                 sym = r["symbol"]
                 c = compute_confluence(r, cached_1d_results.get(sym))

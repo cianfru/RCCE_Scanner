@@ -184,6 +184,9 @@ def main(argv=None):
     ap.add_argument("--tf", choices=("4h", "1d"), default="4h", help="traded (primary) timeframe")
     ap.add_argument("--topexit", choices=("heat", "band"), default="heat",
                     help="the exit above the weekly band (docs/reviews/band-exit-study.md): heat (today) or band z")
+    ap.add_argument("--context", choices=("off", "live"), default="off",
+                    help="live-only context (docs/reviews/strong-long-replay-study.md): off (today) or historical "
+                         "funding and stablecoin supply as the live scanner reads them")
     ap.add_argument("--divexit", type=int, choices=(0, 30, 90), default=0,
                     help="top-divergence exit window in days (docs/reviews/top-divergence-exit-study.md); 0 = off")
     args = ap.parse_args(argv)
@@ -222,6 +225,10 @@ def main(argv=None):
         _band_exit(bh, symbols)
     if args.divexit:
         _div_exit(symbols, args.divexit)
+    if args.context == "live":
+        import backtest.replay_engine as re_mod
+        from backtest.live_context import make_hook
+        re_mod.CONTEXT_HOOK = make_hook(symbols)
     from backtest.replay_engine import run_replay
     from candle_snapshot import TF_MS
     primary = data[args.tf]
