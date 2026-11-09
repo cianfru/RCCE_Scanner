@@ -169,3 +169,41 @@ The owner's go-ahead (9 November 2026): "yes" to a check run of the engine the r
 - **How it is read.** This is a check on windows already seen, not a new verdict; nothing in it re-decides either study.
   - It answers whether K is worse than C. If it is not, the cap alone covers the harm found here.
   - If it is (by more than 5 points on primary 4H, or on both 4H runs), the extra entries that known context lets through are a problem too. That needs its own declared study before any change beyond the cap.
+
+## Check results (run 9 November 2026; windows already seen: a check, not a verdict)
+
+| Run | C (today's replay) | S (context, Strong long) | K (context, capped) | KD (K + 90-day exit) |
+|---|---:|---:|---:|---:|
+| **Primary 4H** | +43.1% (−10.4%) | +34.8% (−17.5%) | **+46.4%** (−11.8%) | **+57.3%** (−9.8%) |
+| **Secondary 4H** | +45.3% (−14.6%) | +30.2% (−19.6%) | **+33.9%** (−14.7%) | **+35.1%** (−14.7%) |
+| Primary 1D | +36.5% (−13.9%) | +50.2% (−21.4%) | +36.1% (−16.1%) | +43.9% (−14.1%) |
+| Secondary 1D | +4.9% (−20.0%) | −4.9% (−30.4%) | +12.2% (−22.1%) | +13.3% (−22.4%) |
+
+Compounded return over windows 1–9, worst window in brackets. Trades on primary 4H: C 314, S 373, K 373, KD 321.
+
+Per-window returns, K / KD (%):
+
+| Run | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 |
+|---|---|---|---|---|---|---|---|---|---|
+| Primary 4H | −1.4 / +1.6 | 0 / 0 | +3.1 / +3.1 | −4.3 / −4.3 | +49.8 / +47.1 | −11.0 / −7.8 | +19.8 / +19.6 | +2.0 / +3.5 | −7.5 / −6.5 |
+| Secondary 4H | −8.6 / −5.9 | 0 / 0 | +1.3 / +1.3 | −2.8 / −2.8 | +40.9 / +36.5 | −9.2 / −7.7 | +25.7 / +25.2 | −4.9 / −4.9 | −2.7 / −2.7 |
+| Primary 1D | −8.6 / −5.3 | 0 / 0 | −1.8 / −1.8 | −8.7 / −8.7 | +62.5 / +60.6 | −6.3 / −6.3 | +12.1 / +13.1 | +9.7 / +10.5 | −11.2 / −9.8 |
+| Secondary 1D | −13.6 / −8.3 | 0 / 0 | +0.5 / +0.5 | −3.5 / −3.5 | +51.0 / +45.5 | −5.6 / −4.2 | +4.6 / +1.8 | −7.3 / −7.3 | −3.2 / −3.2 |
+
+**Reading, as set down.**
+- K is 3.3 points above C on primary 4H, and below it on one 4H run only (secondary, −11.4). By the reading set down before running, K is not worse than C: the cap alone covers the harm found here.
+- **Not explained away:** on the secondary coins at 4H, the entries that known context lets through cost 11.4 points against C. On the daily runs they do not (secondary +7.3, primary −0.4). This is context, not a finding, and changes nothing by itself.
+
+**What the two changes would do to the engine as it runs live.**
+- Live already knows funding and stablecoins for most coins and gives Strong long, so the closest replay of today's live engine is S, not C.
+- Turning on the cap and the 90-day exit moves it from S to KD:
+
+| Run | S | KD | Return | Worst window |
+|---|---:|---:|---:|---:|
+| Primary 4H | +34.8% (−17.5%) | +57.3% (−9.8%) | +22.5 | 7.7 shallower |
+| Secondary 4H | +30.2% (−19.6%) | +35.1% (−14.7%) | +4.9 | 4.9 shallower |
+| Primary 1D | +50.2% (−21.4%) | +43.9% (−14.1%) | −6.3 | 7.3 shallower |
+| Secondary 1D | −4.9% (−30.4%) | +13.3% (−22.4%) | +18.2 | 8.0 shallower |
+
+- KD returns more than S on three runs of four and has a shallower worst window on all four.
+- These are windows already seen, and live is not the replay (no CoinGlass; HyperLens live; funding from the live sources).
