@@ -57,6 +57,7 @@ VARIANTS: Dict[str, dict] = {
     "E": {"MARKUP_FADE_BLOCK": True},
     "G": {"STRONG_LONG_CAP": False, "MARKUP_STRONG_OK": False},
     "H": {"CROWDED_BLOWOFF_OK": False},
+    "J": {"ACCUM_STRONG_OK": False},                # round 2, declared after the round 1 results
 }
 BEFORE = {"STRONG_LONG_CAP": False, "DIV_EXIT": False}       # the rules before the two changes of 8 Nov 2026
 DECAY_DAYS = (3.3, 7, 10, 20, 40, None)                      # family F: days of Wait before a position is closed

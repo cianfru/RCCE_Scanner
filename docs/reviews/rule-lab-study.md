@@ -68,3 +68,17 @@ For F the same four rules apply over the two sets of the timeframe (rule 2: both
 - Windows 1–9 have been used by many earlier studies. Splitting them into selection and confirmation reduces chance findings but does not remove them; window 10 is the only untouched data.
 - The backtest manager is not the live executor: the executor has no decay exit, has a breakeven stop and enters on Accumulate. Results describe the rules, not the account.
 - Historical funding and stablecoin context are reconstructions (`backtest/live_context.py`).
+
+## Round 2 (declared 9 November 2026, after the round 1 results on three data sets, before any round 2 result)
+
+What was seen when this was written: the round 1 variant results and a trade breakdown of the live rules on windows 1–9 for primary 4H, primary 1D and secondary 1D. Secondary 4H was still being captured. Window 10 was unread.
+
+The breakdown showed that entries taken in the Accumulation regime are flat or negative in all three sets (−$191 over 81 trades, −$282 over 29, −$34 over 76), while Uptrend entries carry all the profit. These entries come from one path: the Strong long for Accumulation and Capitulation (capped to Light long since 9 November). A comment in the code credits that path with a 68% win rate; the replay shows 18% to 36%.
+
+| Name | Switch | Question |
+|---|---|---|
+| J | `ACCUM_STRONG_OK` off (today on) | Does the engine do better with no entry from the Accumulation / Capitulation Strong long path? |
+
+- J was chosen by looking at windows 1–9, windows 7–9 included. Its selection and confirmation results are therefore not independent evidence; only window 10 is a clean test of it.
+- The bar is unchanged: J must pass selection, confirmation and then window 10, as written above. The one holdout read per data set is still one read.
+- Entries with Fear & Greed below 40 also lost in all three sets, but on 8 to 26 trades per set. That is too few to judge, so no variant is declared for it; it is reported as context.

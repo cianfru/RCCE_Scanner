@@ -24,7 +24,8 @@ def signal(r, consensus="RISK-ON", **ctx):
 class RuleSwitchTests(unittest.TestCase):
     def test_defaults_are_the_rules_as_they_ran(self):
         self.assertEqual((ss.LIGHT_LONG_MIN, ss.MARKUP_ENTRY_Z_MAX, ss.MODERATE_MIXED_OK, ss.MARKUP_FADE_BLOCK,
-                          ss.MARKUP_STRONG_OK, ss.CROWDED_BLOWOFF_OK), (0.40, None, True, False, True, True))
+                          ss.MARKUP_STRONG_OK, ss.CROWDED_BLOWOFF_OK, ss.ACCUM_STRONG_OK),
+                         (0.40, None, True, False, True, True, True))
 
     def test_light_long_minimum(self):
         thin = dict(sentiment={"fear_greed_value": 80}, stablecoin={"trend": "CONTRACTING"})
@@ -72,6 +73,14 @@ class RuleSwitchTests(unittest.TestCase):
             self.assertEqual(signal(row(zscore=1.4), **crowded), "LIGHT_LONG")
         with patch.object(ss, "MARKUP_ENTRY_Z_MAX", 1.0):
             self.assertEqual(signal(row(zscore=1.4), **crowded), "WAIT")
+
+
+    def test_accumulation_strong_path_can_be_switched_off(self):
+        acc = row(regime="ACCUM", zscore=-.5)
+        self.assertEqual(signal(acc), "LIGHT_LONG")                        # Strong long, capped
+        with patch.object(ss, "ACCUM_STRONG_OK", False):
+            self.assertNotIn(signal(acc), ("LIGHT_LONG", "STRONG_LONG"))
+            self.assertEqual(signal(row()), "LIGHT_LONG")                  # Uptrend entries unchanged
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ MODERATE_MIXED_OK = True     # False: the plain Uptrend entry needs a risk-on ma
 MARKUP_FADE_BLOCK = False    # True: no Uptrend entry while the coin's heat phase is Fading or Exhaustion
 MARKUP_STRONG_OK = True      # False: the Uptrend Strong long path gives a Light long (only seen with the cap off)
 CROWDED_BLOWOFF_OK = True    # False: the crowded-funding Light long in Uptrend also stops at the blow-off z
+ACCUM_STRONG_OK = True       # False: no entry from the Accumulation / Capitulation Strong long path
 
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG
@@ -804,7 +805,7 @@ def _synthesize_signal(
             out.warnings = warnings
             return _cvd_return()
         # ACCUM/CAP with full confirmation (68.4% WR zone — keep as-is)
-        if regime in ("ACCUM", "CAP"):
+        if regime in ("ACCUM", "CAP") and ACCUM_STRONG_OK:
             _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
             out.signal = strong_long_label
             out.reason = " + ".join(_reason_parts()) + f" {_tag}{instability_note}"
