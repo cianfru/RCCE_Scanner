@@ -142,7 +142,7 @@ Trades by the signal that opened them (`backtest/live_logic_trades.py`). P&L is 
 
   So S has more trades (314 → 373 and 725 → 787), and its Strong long entries are sized twice Light long.
 - **What it does to returns: it amplifies both ways.**
-  - S makes more in the two rally windows: W5 (October 2023 to April 2024) +65.8% against +35.6% on primary 4H, and W7 (October 2024 to April 2025).
+  - S makes more in the rally window W5 (October 2023 to April 2024) in every run: +65.8% against +35.6% on primary 4H. It also makes more in W7 (October 2024 to April 2025), but on the primary coins only.
   - It loses more in almost every other window.
   - Over the nine windows the losses outweigh the gains on three runs of four; the primary 1D run is the exception, with a much deeper worst window.
 - **Strong long's own trades are not better entries.**
