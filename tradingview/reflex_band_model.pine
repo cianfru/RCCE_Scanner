@@ -19,7 +19,10 @@
 //   Diamonds:             divergences: a new 1-year high (low) inside the stretch line after an Overheated
 //                         (Capitulating) state 30-365 days back.
 //   Lost the band (grey): a close under a falling band.
+//   Reclaim (blue):       the first close back above the band within 60 days of Capitulating.
 //   Marks of a kind are at least 30 days apart (the buy: once per visit to the zone).
+// SHOWN: the location, the zones, Overheated / Capitulating and the divergences. The other marks are under test
+// (docs/reviews/band-model-marks-study.md) and hidden unless "Show untested marks" is ticked.
 indicator("Reflex band model", shorttitle = "Band model", overlay = false, precision = 2, max_bars_back = 5000)
 
 weekFrom    = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
@@ -37,6 +40,8 @@ speedDays   = input.int(20, "Speed: days", minval = 2, group = "Windows")
 volDays     = input.int(365, "Speed: volatility over days", minval = 30, group = "Windows")
 normDays    = input.int(730, "Usual distance over days", minval = 60, group = "Windows")
 onPrice     = input.bool(true, "Marks and shading on the price chart too")
+showTest    = input.bool(false, "Show untested marks (buy, take profit, turns, reclaim, lost the band)")
+reclaimDays = input.int(60, "Reclaim: within days of Capitulating", minval = 1, group = "Marks")
 showTable   = input.bool(true, "Readout")
 
 barsPerDay = 86400.0 / timeframe.in_seconds()
@@ -134,6 +139,7 @@ basing     = not cold and sinceCold <= nTurn and loc >= loLoc + turnDrop
 topDiv = hotBack and close >= hiClose and loc > 0 and loc < stretchLine
 botDiv = coldBack and close <= loClose and loc < 0 and loc > -stretchLine
 lost = close < mid and not rising
+reclaim = sinceCold <= bars(reclaimDays) and close > mid and close[1] <= mid[1]
 
 var int lastExh = na
 var int lastBase = na
@@ -141,6 +147,7 @@ var int lastTop = na
 var int lastBot = na
 var int lastLeg = na
 var int lastLost = na
+var int lastReclaim = na
 var int lastTopCand = na
 var bool armed = true
 exhStart  = exhausting and not exhausting[1]
@@ -153,6 +160,7 @@ topMark  = topDiv and (na(lastTop) or bar_index - lastTop > nGap)
 botMark  = botDiv and (na(lastBot) or bar_index - lastBot > nGap)
 legMark  = legCand and (na(lastLeg) or bar_index - lastLeg > nGap)
 lostMark = lostStart and (na(lastLost) or bar_index - lastLost > nGap)
+reclaimMark = reclaim and (na(lastReclaim) or bar_index - lastReclaim > nGap)
 buyMark  = inZone and rising and turnUp and armed
 if exhStart
     lastExh := bar_index
@@ -167,6 +175,8 @@ if legCand
     lastLeg := bar_index
 if lostStart
     lastLost := bar_index
+if reclaim
+    lastReclaim := bar_index
 if buyMark
     armed := false
 if not inZone
@@ -190,18 +200,21 @@ bgcolor(hot ? color.new(cHot, 82) : cold ? color.new(cCold, 82) : na, title = "O
 priceShade = onPrice and hot ? color.new(cHot, 88) : onPrice and cold ? color.new(cCold, 88) : na
 bgcolor(priceShade, title = "Overheated / Capitulating on price", force_overlay = true)
 
-plotshape(buyMark, "Buy", shape.triangleup, location.bottom, cBuy, size = size.tiny)
-plotshape(exhMark or legMark, "Take profit", shape.triangledown, location.top, cHot, size = size.tiny)
-plotshape(baseMark, "Capitulation turn", shape.triangleup, location.bottom, cCold, size = size.tiny)
 plotshape(topMark, "Top divergence", shape.diamond, location.top, color.new(cHot, 30), size = size.tiny)
 plotshape(botMark, "Bottom divergence", shape.diamond, location.bottom, color.new(cCold, 30), size = size.tiny)
-plotshape(lostMark, "Lost the band", shape.xcross, location.top, color.gray, size = size.tiny)
-plotshape(onPrice and buyMark, "Buy (price)", shape.triangleup, location.belowbar, cBuy, size = size.small, force_overlay = true)
-plotshape(onPrice and (exhMark or legMark), "Take profit (price)", shape.triangledown, location.abovebar, cHot, size = size.small, force_overlay = true)
-plotshape(onPrice and baseMark, "Capitulation turn (price)", shape.triangleup, location.belowbar, cCold, size = size.small, force_overlay = true)
-plotshape(onPrice and topMark, "Top divergence (price)", shape.diamond, location.abovebar, color.new(cHot, 30), size = size.tiny, force_overlay = true)
-plotshape(onPrice and botMark, "Bottom divergence (price)", shape.diamond, location.belowbar, color.new(cCold, 30), size = size.tiny, force_overlay = true)
-plotshape(onPrice and lostMark, "Lost the band (price)", shape.xcross, location.abovebar, color.gray, size = size.tiny, force_overlay = true)
+plotshape(onPrice and topMark, "Top divergence (price)", shape.diamond, location.abovebar, color.new(cHot, 30), size = size.small, force_overlay = true)
+plotshape(onPrice and botMark, "Bottom divergence (price)", shape.diamond, location.belowbar, color.new(cCold, 30), size = size.small, force_overlay = true)
+// untested marks, hidden by default
+plotshape(showTest and buyMark, "Buy", shape.triangleup, location.bottom, cBuy, size = size.tiny)
+plotshape(showTest and (exhMark or legMark), "Take profit", shape.triangledown, location.top, cHot, size = size.tiny)
+plotshape(showTest and baseMark, "Capitulation turn", shape.triangleup, location.bottom, cCold, size = size.tiny)
+plotshape(showTest and reclaimMark, "Reclaim", shape.circle, location.bottom, cCold, size = size.tiny)
+plotshape(showTest and lostMark, "Lost the band", shape.xcross, location.top, color.gray, size = size.tiny)
+plotshape(showTest and onPrice and buyMark, "Buy (price)", shape.triangleup, location.belowbar, cBuy, size = size.small, force_overlay = true)
+plotshape(showTest and onPrice and (exhMark or legMark), "Take profit (price)", shape.triangledown, location.abovebar, cHot, size = size.small, force_overlay = true)
+plotshape(showTest and onPrice and baseMark, "Capitulation turn (price)", shape.triangleup, location.belowbar, cCold, size = size.small, force_overlay = true)
+plotshape(showTest and onPrice and reclaimMark, "Reclaim (price)", shape.circle, location.belowbar, cCold, size = size.small, force_overlay = true)
+plotshape(showTest and onPrice and lostMark, "Lost the band (price)", shape.xcross, location.abovebar, color.gray, size = size.tiny, force_overlay = true)
 plot(onPrice ? mid : na, "Band mid", color.new(cMid, 30), 1, force_overlay = true)
 
 zone = hot ? "Overheated" : cold ? "Capitulating" : stretched ? "Stretched" : deep ? "Deep below" : inZone ? "At the band" : loc > zoneHi ? "Above" : "Below"
@@ -210,8 +223,5 @@ if showTable and barstate.islast
     txt = zone + (rising ? " · band rising" : " · band falling") + "   location " + str.tostring(loc, "#.##") + " · speed " + str.tostring(speed, "#.##")
     table.cell(box, 0, 0, txt, text_color = hot or stretched ? cHot : cold or deep ? cCold : inZone ? cBuy : color.gray, text_size = size.small, bgcolor = color.new(color.black, 100))
 
-alertcondition(buyMark, "Buy", "{{ticker}}: Reflex band model: buy at the band (rising band, turn up)")
-alertcondition(exhMark or legMark, "Take profit", "{{ticker}}: Reflex band model: take profit (exhausting or second-leg top)")
-alertcondition(baseMark, "Capitulation turn", "{{ticker}}: Reflex band model: turning up after capitulating")
-alertcondition(topMark or botMark, "Divergence", "{{ticker}}: Reflex band model: divergence at a 1-year high or low")
-alertcondition(lostMark, "Lost the band", "{{ticker}}: Reflex band model: a close under a falling band")
+alertcondition(topMark, "Top divergence", "{{ticker}}: Reflex band model: a new 1-year high, less stretched, after Overheated")
+alertcondition(botMark, "Bottom divergence", "{{ticker}}: Reflex band model: a new 1-year low, less stretched, after Capitulating")
