@@ -1,0 +1,217 @@
+//@version=6
+// Reflex band model: entries and exits around the weekly band (the bull market support band). A reading to inspect
+// on charts, not a signal: the engine does not use it. Defaults are starting points to tune by eye; any rule kept
+// later is tested on coins and dates the tuning did not use.
+//
+// LOCATION, scaled each side on its own: the log distance of the close from the weekly band mid (20-week SMA and
+// 21-week EMA of weekly closes, the week under way counted, Thursday weeks as on Hyperliquid), divided above the band
+// by the coin's usual distance above it, and below by its usual distance below it (root mean squares over two years),
+// so +1.6 and -1.6 are about as rare. Coins stretch further above their band than below (across 39 coins the 95th
+// percentile is about +113% above and -45% below), which a single scale reads unevenly.
+// ZONES: deep below (<= -1.6), below, AT THE BAND (the entry zone, -0.3 to +0.8), above, stretched (>= 1.6);
+// OVERHEATED = stretched and fast, CAPITULATING = deep below and fast (speed: the 20-day move in units of its usual size).
+// TREND: the band is rising when its mid is above its value 28 days ago.
+// MARKS
+//   Buy (green):          in the entry zone, band rising, a close above the previous bar's high; once per visit.
+//   Take profit (orange): Exhausting, stretch off its peak by 0.5 within 10 days of Overheated; or a second-leg
+//                         top, stretch reaching 1.2 within 60 days of a top divergence.
+//   Capitulation (blue):  Turning up, stretch off its low by 0.5 within 10 days of Capitulating.
+//   Diamonds:             divergences: a new 1-year high (low) inside the stretch line after an Overheated
+//                         (Capitulating) state 30-365 days back.
+//   Lost the band (grey): a close under a falling band.
+//   Marks of a kind are at least 30 days apart (the buy: once per visit to the zone).
+indicator("Reflex band model", shorttitle = "Band model", overlay = false, precision = 2, max_bars_back = 5000)
+
+weekFrom    = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
+zoneLo      = input.float(-0.3, "Entry zone from", step = 0.1, group = "Zones")
+zoneHi      = input.float(0.8, "Entry zone to", step = 0.1, group = "Zones")
+stretchLine = input.float(1.6, "Stretched at (either side)", step = 0.1, group = "Zones")
+speedLine   = input.float(2.0, "Fast at (speed)", step = 0.1, group = "Zones")
+slopeDays   = input.int(28, "Band rising: mid above its value this many days ago", minval = 1, group = "Trend")
+turnDrop    = input.float(0.5, "Turn: stretch off its extreme by", step = 0.1, group = "Marks")
+turnDays    = input.int(10, "Turn: within days of the extreme state", minval = 1, group = "Marks")
+legLevel    = input.float(1.2, "Second leg: stretch reaches", step = 0.1, group = "Marks")
+legDays     = input.int(60, "Second leg: within days of a top divergence", minval = 1, group = "Marks")
+gapDays     = input.int(30, "Marks of a kind: at least days apart", minval = 0, group = "Marks")
+speedDays   = input.int(20, "Speed: days", minval = 2, group = "Windows")
+volDays     = input.int(365, "Speed: volatility over days", minval = 30, group = "Windows")
+normDays    = input.int(730, "Usual distance over days", minval = 60, group = "Windows")
+onPrice     = input.bool(true, "Marks and shading on the price chart too")
+showTable   = input.bool(true, "Readout")
+
+barsPerDay = 86400.0 / timeframe.in_seconds()
+bars(d) => math.min(4900, math.max(1, int(math.round(d * barsPerDay))))
+
+// ---------------------------------------------------------------- the band
+WEEK_MS  = 7 * 86400000
+offsetMs = weekFrom == "Monday (TradingView)" ? 4 * 86400000 : 0
+wk       = math.floor((time - offsetMs) / WEEK_MS)
+k = 2.0 / 22
+var array<float> weeks = array.new_float()
+var float emaDone = na
+if bar_index > 0 and wk != wk[1]
+    weeks.push(close[1])
+    nDone = weeks.size()
+    if nDone == 21
+        emaDone := weeks.avg()
+    else if nDone > 21
+        emaDone := close[1] * k + emaDone * (1 - k)
+n = weeks.size()
+float sma = na
+float ema = na
+if n >= 19
+    float s0 = close
+    for i = n - 19 to n - 1
+        s0 += weeks.get(i)
+    sma := s0 / 20
+if n >= 21
+    ema := close * k + emaDone * (1 - k)
+else if n == 20
+    ema := (weeks.sum() + close) / 21
+mid = (sma + ema) / 2
+stretch = math.log(close / mid)
+
+// ---------------------------------------------------------------- location, each side on its own scale
+var array<float> q = array.new_float()
+var float sumUp = 0.0
+var float sumDn = 0.0
+var int cntUp = 0
+var int cntDn = 0
+if not na(stretch)
+    q.push(stretch)
+    if stretch > 0
+        sumUp += stretch * stretch
+        cntUp += 1
+    else if stretch < 0
+        sumDn += stretch * stretch
+        cntDn += 1
+    if q.size() > bars(normDays)
+        old = q.shift()
+        if old > 0
+            sumUp -= old * old
+            cntUp -= 1
+        else if old < 0
+            sumDn -= old * old
+            cntDn -= 1
+rmsAll = q.size() > 0 ? math.sqrt(math.max(sumUp + sumDn, 0.0) / q.size()) : na
+rmsUp = cntUp >= bars(30) ? math.sqrt(math.max(sumUp, 0.0) / cntUp) : rmsAll
+rmsDn = cntDn >= bars(30) ? math.sqrt(math.max(sumDn, 0.0) / cntDn) : rmsAll
+loc = q.size() >= bars(180) and not na(stretch) ? (stretch >= 0 ? stretch / rmsUp : stretch / rmsDn) : na
+
+// ---------------------------------------------------------------- speed, trend, zones
+nSpeed = bars(speedDays)
+r1 = math.log(close / close[1])
+sigma = ta.stdev(r1, bars(volDays))
+speed = sigma > 0 ? math.log(close / close[nSpeed]) / (sigma * math.sqrt(nSpeed)) : na
+rising = mid > mid[bars(slopeDays)]
+inZone = loc >= zoneLo and loc <= zoneHi
+stretched = loc >= stretchLine
+deep = loc <= -stretchLine
+hot  = stretched and speed >= speedLine
+cold = deep and speed <= -speedLine
+
+// ---------------------------------------------------------------- marks
+// (every ta.* call on every bar: in v6 "and" stops early, so none sits inside a condition)
+nTurn = bars(turnDays)
+nGap  = bars(gapDays)
+sinceHot  = ta.barssince(hot)
+sinceCold = ta.barssince(cold)
+hiLoc = ta.highest(loc, nTurn)
+loLoc = ta.lowest(loc, nTurn)
+nYear = bars(365)
+nSkip = bars(30)
+hotNum  = hot ? 1.0 : 0.0
+coldNum = cold ? 1.0 : 0.0
+hotBack  = ta.highest(hotNum[nSkip], nYear - nSkip) > 0
+coldBack = ta.highest(coldNum[nSkip], nYear - nSkip) > 0
+hiClose = ta.highest(close, nYear)
+loClose = ta.lowest(close, nYear)
+crossLeg = ta.crossover(loc, legLevel)
+turnUp = close > high[1]
+
+exhausting = not hot and sinceHot <= nTurn and loc <= hiLoc - turnDrop
+basing     = not cold and sinceCold <= nTurn and loc >= loLoc + turnDrop
+topDiv = hotBack and close >= hiClose and loc > 0 and loc < stretchLine
+botDiv = coldBack and close <= loClose and loc < 0 and loc > -stretchLine
+lost = close < mid and not rising
+
+var int lastExh = na
+var int lastBase = na
+var int lastTop = na
+var int lastBot = na
+var int lastLeg = na
+var int lastLost = na
+var int lastTopCand = na
+var bool armed = true
+exhStart  = exhausting and not exhausting[1]
+baseStart = basing and not basing[1]
+lostStart = lost and not lost[1]
+legCand   = crossLeg and not na(lastTopCand) and bar_index - lastTopCand <= bars(legDays)
+exhMark  = exhStart and (na(lastExh) or bar_index - lastExh > nGap)
+baseMark = baseStart and (na(lastBase) or bar_index - lastBase > nGap)
+topMark  = topDiv and (na(lastTop) or bar_index - lastTop > nGap)
+botMark  = botDiv and (na(lastBot) or bar_index - lastBot > nGap)
+legMark  = legCand and (na(lastLeg) or bar_index - lastLeg > nGap)
+lostMark = lostStart and (na(lastLost) or bar_index - lastLost > nGap)
+buyMark  = inZone and rising and turnUp and armed
+if exhStart
+    lastExh := bar_index
+if baseStart
+    lastBase := bar_index
+if topDiv
+    lastTop := bar_index
+    lastTopCand := bar_index
+if botDiv
+    lastBot := bar_index
+if legCand
+    lastLeg := bar_index
+if lostStart
+    lastLost := bar_index
+if buyMark
+    armed := false
+if not inZone
+    armed := true
+
+// ---------------------------------------------------------------- drawing
+cHot  = #fb923c
+cCold = #38bdf8
+cBuy  = #22c55e
+cMid  = #26a69a
+lineCol = hot ? cHot : stretched ? color.new(cHot, 40) : cold ? cCold : deep ? color.new(cCold, 40) : inZone ? cBuy : cMid
+plot(speed, "Speed", speed >= 0 ? color.new(cHot, 80) : color.new(cCold, 80), 1, plot.style_columns)
+hZoneLo = hline(zoneLo, "Entry zone from", color.new(cBuy, 70), hline.style_dotted)
+hZoneHi = hline(zoneHi, "Entry zone to", color.new(cBuy, 70), hline.style_dotted)
+fill(hZoneLo, hZoneHi, color.new(cBuy, 90), "Entry zone")
+hline(0, "Band", color.new(color.gray, 60), hline.style_solid)
+hline(stretchLine, "Stretched", color.new(cHot, 40), hline.style_dashed)
+hline(-stretchLine, "Deep below", color.new(cCold, 40), hline.style_dashed)
+plot(loc, "Location (each side scaled)", lineCol, 2)
+bgcolor(hot ? color.new(cHot, 82) : cold ? color.new(cCold, 82) : na, title = "Overheated / Capitulating")
+priceShade = onPrice and hot ? color.new(cHot, 88) : onPrice and cold ? color.new(cCold, 88) : na
+bgcolor(priceShade, title = "Overheated / Capitulating on price", force_overlay = true)
+
+plotshape(buyMark, "Buy", shape.triangleup, location.bottom, cBuy, size = size.tiny)
+plotshape(exhMark or legMark, "Take profit", shape.triangledown, location.top, cHot, size = size.tiny)
+plotshape(baseMark, "Capitulation turn", shape.triangleup, location.bottom, cCold, size = size.tiny)
+plotshape(topMark, "Top divergence", shape.diamond, location.top, color.new(cHot, 30), size = size.tiny)
+plotshape(botMark, "Bottom divergence", shape.diamond, location.bottom, color.new(cCold, 30), size = size.tiny)
+plotshape(lostMark, "Lost the band", shape.xcross, location.top, color.gray, size = size.tiny)
+plotshape(onPrice and buyMark, "Buy (price)", shape.triangleup, location.belowbar, cBuy, size = size.small, force_overlay = true)
+plotshape(onPrice and (exhMark or legMark), "Take profit (price)", shape.triangledown, location.abovebar, cHot, size = size.small, force_overlay = true)
+plotshape(onPrice and baseMark, "Capitulation turn (price)", shape.triangleup, location.belowbar, cCold, size = size.small, force_overlay = true)
+plotshape(onPrice and topMark, "Top divergence (price)", shape.diamond, location.abovebar, color.new(cHot, 30), size = size.tiny, force_overlay = true)
+plotshape(onPrice and botMark, "Bottom divergence (price)", shape.diamond, location.belowbar, color.new(cCold, 30), size = size.tiny, force_overlay = true)
+plotshape(onPrice and lostMark, "Lost the band (price)", shape.xcross, location.abovebar, color.gray, size = size.tiny, force_overlay = true)
+plot(onPrice ? mid : na, "Band mid", color.new(cMid, 30), 1, force_overlay = true)
+
+zone = hot ? "Overheated" : cold ? "Capitulating" : stretched ? "Stretched" : deep ? "Deep below" : inZone ? "At the band" : loc > zoneHi ? "Above" : "Below"
+var table box = table.new(position.top_right, 1, 1)
+if showTable and barstate.islast
+    txt = zone + (rising ? " · band rising" : " · band falling") + "   location " + str.tostring(loc, "#.##") + " · speed " + str.tostring(speed, "#.##")
+    table.cell(box, 0, 0, txt, text_color = hot or stretched ? cHot : cold or deep ? cCold : inZone ? cBuy : color.gray, text_size = size.small, bgcolor = color.new(color.black, 100))
+
+alertcondition(buyMark, "Buy", "{{ticker}}: Reflex band model: buy at the band (rising band, turn up)")
+alertcondition(exhMark or legMark, "Take profit", "{{ticker}}: Reflex band model: take profit (exhausting or second-leg top)")
+alertcondition(baseMark, "Capitulation turn", "{{ticker}}: Reflex band model: turning up after capitulating")
+alertcondition(topMark or botMark, "Divergence", "{{ticker}}: Reflex band model: divergence at a 1-year high or low")
+alertcondition(lostMark, "Lost the band", "{{ticker}}: Reflex band model: a close under a falling band")
