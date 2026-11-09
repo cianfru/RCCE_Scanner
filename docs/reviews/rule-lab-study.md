@@ -82,3 +82,90 @@ The breakdown showed that entries taken in the Accumulation regime are flat or n
 - J was chosen by looking at windows 1–9, windows 7–9 included. Its selection and confirmation results are therefore not independent evidence; only window 10 is a clean test of it.
 - The bar is unchanged: J must pass selection, confirmation and then window 10, as written above. The one holdout read per data set is still one read.
 - Entries with Fear & Greed below 40 also lost in all three sets, but on 8 to 26 trades per set. That is too few to judge, so no variant is declared for it; it is reported as context.
+
+## Results (9 November 2026)
+
+**Verdict: no variant clears the bar. Context, not a signal. The live rules stay as they are.**
+
+### Checks
+
+All four captures pass: the lab's `live` rows equal the capture's replay rows and the earlier check run, row for row (primary 4H 115,290 rows; secondary 4H 323,050; secondary 1D 56,756).
+
+Correction to the Method section: `before` (cap off, divergence exit off) reproduces column S of the Strong long study (the run with live context), not column C.
+
+| Windows 1–9, compounded (worst window) | Primary 4H | Secondary 4H | Primary 1D | Secondary 1D |
+|---|---|---|---|---|
+| `live` | +57.3% (−7.8) | +35.1% (−7.7) | +43.9% (−9.8) | +13.3% (−8.3) |
+| `before` | +34.8% (−15.3) | +30.2% (−12.4) | +50.2% (−16.5) | −4.9% (−20.4) |
+
+### Variants: gain against `live`, in points
+
+| Variant | Selection W1–6: P4H, S4H, P1D, S1D | Mean | Confirmation W7–9 mean | W1–9 mean | Bar |
+|---|---|---|---|---|---|
+| A50 | 0.0, 0.0, 0.0, 0.0 | 0.0 | 0.0 | 0.0 | fails (no change) |
+| A60 | −2.4, −0.6, 0.0, 0.0 | −0.8 | 0.0 | −0.8 | fails |
+| A70 | −2.4, −1.0, −5.4, −0.6 | −2.3 | +0.1 | −2.5 | fails |
+| B15 | −2.2, −0.7, −6.1, −10.1 | −4.8 | −4.0 | −9.4 | fails |
+| B10 | −12.6, −5.0, −13.3, −16.2 | −11.8 | −6.5 | −20.1 | fails |
+| C | 0.0, +1.1, −0.4, +0.1 | +0.2 | 0.0 | +0.2 | fails (mean below +3) |
+| D_greed60 | +1.3, 0.0, +0.8, −0.2 | +0.5 | +0.2 | +0.8 | fails (mean below +3) |
+| D_greed80 | +1.6, +0.9, −0.2, +0.6 | +0.7 | +0.1 | +0.9 | fails (mean below +3) |
+| D_fear30, D_fear50 | 0.0 everywhere | 0.0 | 0.0 | 0.0 | fails (no change) |
+| E | −2.0, −0.4, −1.4, −1.9 | −1.4 | −0.1 | −1.7 | fails |
+| G | −1.2, +2.3, −6.8, −1.5 | −1.8 | −1.8 | −4.1 | fails |
+| H | −0.3, 0.0, 0.0, 0.0 | −0.1 | 0.0 | −0.1 | fails |
+| J (round 2) | +1.3, +1.5, +2.2, −5.5 | −0.1 | −0.1 | −0.2 | fails (mean; secondary 1D worst window 5.5 points worse) |
+
+What this says:
+- Stricter entries cost return. Late Uptrend entries (z above 1.0 or 1.5) are where much of the return is: B15 and B10 are the largest losses in the table.
+- The Light long threshold of 0.40 is not binding at 0.50 and costs return above it.
+- The greed level is nearly neutral between 60 and 80.
+- The fear level has no effect in this backtest: only Accumulate signals use it, and the backtest manager does not enter on Accumulate.
+- J: the trade breakdown showed Accumulation-regime entries flat or negative, yet removing them helps two sets and hurts two. The breakdown was a misleading guide; the declared test caught it.
+
+### Family F (decay), compounded return in %
+
+| Days of Wait | Primary 4H: W1–6, W7–9 | Secondary 4H: W1–6, W7–9 | Primary 1D: W1–6, W7–9 | Secondary 1D: W1–6, W7–9 |
+|---|---|---|---|---|
+| 3.3 | **+36.0, +15.6** | **+16.7, +15.8** | +12.0, +9.6 | +14.7, −11.6 |
+| 7 | +32.4, +21.0 | +5.3, +14.4 | +16.2, +14.0 | +17.4, −13.1 |
+| 10 | +30.6, +19.5 | +5.3, +9.4 | +15.0, +13.8 | +18.1, −8.4 |
+| 20 | +34.6, +16.5 | +10.7, +5.1 | **+27.6, +12.7** | **+24.0, −8.7** |
+| 40 | +28.6, +13.9 | +15.6, +1.1 | +31.8, +12.7 | +27.1, −11.1 |
+| never | +28.3, +13.9 | +15.6, +1.1 | +31.8, +12.7 | +25.7, −11.1 |
+
+Bold is today's rule (20 bars).
+- 4H: no level beats today's 3.3 days on windows 1–6 in both sets. Nothing selected.
+- 1D: 40 days passes selection (+4.2 and +3.1 points; "never" has the same sign) and fails confirmation (0.0 and −2.4). Not confirmed.
+- So 20 bars on each timeframe stands, although it means 3.3 days on one and 20 days on the other. A decay exit helps on 4H: without it primary 4H falls from +57.3% to +46.1% and secondary 4H from +35.1% to +16.8% over windows 1–9.
+
+### Holdout, window 10 (read once per data set, 9 November 2026 23:40–23:43 UTC)
+
+No chosen set, so the read covered `before` and `live` only. The marker file is in a git-ignored folder; this section is the record. Window 10 must not be read again on these data sets.
+
+| Window 10 return | Primary 4H | Secondary 4H | Primary 1D | Secondary 1D |
+|---|---|---|---|---|
+| `before` | −2.8% | −4.0% | +2.2% | +0.8% |
+| `live` | −2.3% | −3.2% | +2.4% | +0.4% |
+| Difference | +0.5 | +0.8 | +0.2 | −0.4 |
+
+- The 9 November changes (Strong long capped, top-divergence exit) do not lose out of sample: better in 3 of 4 sets, mean +0.3 points.
+- The window was quiet: 17 to 66 trades per set and the same trades and exits under both sets of rules (the difference is position size from the cap). No trim exit fired, so the top-divergence exit was not exercised. This is a weak confirmation, not a strong one.
+
+### Trade breakdown of the live rules, windows 1–9 (context only; in-sample, not a declared test)
+
+- Stop losses are the cost centre: 137 of 321 exits on primary 4H (−$6,592), 100 of 154 on primary 1D (−$5,555), 301 of 417 on secondary 1D (−$5,818). Trim exits carry the gains (+$6,254, +$7,300, +$4,762). Stops were tested in `stop-rules-study.md` and are not reopened here.
+- Entries at higher z do better than entries near zero, in agreement with B15 and B10.
+- Entries with Fear & Greed below 40 lost in three sets, on 8 to 26 trades each: too few to judge.
+- Funding is neutral at nearly every entry (316 of 321 on primary 4H), so the funding rules decide almost nothing in the replay.
+
+### Flaws found in review
+
+| Flaw | Status |
+|---|---|
+| A code comment credited the Accumulation Strong long path with a 68.4% win rate (n=38). The replay shows 18–36%. | Comment corrected. The path stays (J failed). |
+| The Light long block lists the Accumulation regime but has no branch for it. | Harmless; left as is. |
+| With crowded funding the Uptrend Light long has no upper z bound. | Tested (H): no measurable effect. Left as is. |
+| The fear level and Accumulate entries cannot be judged by the backtest, because the manager ignores Accumulate while the executor enters on it. | Recommendation: add Accumulate entries to the backtest manager in a declared study. |
+| The executor has no decay exit; the backtest closes after 20 bars of Wait, which is worth 11 to 18 points on 4H over windows 1–9. | Recommendation for the owner; the executor stays as it is without explicit approval. |
+| Decay is counted in bars, so it means 3.3 days on 4H and 20 days on 1D. | Tested (F): today's level is the best supported on each timeframe. |

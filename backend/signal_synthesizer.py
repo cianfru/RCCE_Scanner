@@ -804,7 +804,9 @@ def _synthesize_signal(
             out.reason = " + ".join(_reason_parts()) + f" [MARKUP downgrade: eff={eff_pct:.0%} or z={z:.2f} outside strict band]{instability_note}"
             out.warnings = warnings
             return _cvd_return()
-        # ACCUM/CAP with full confirmation (68.4% WR zone — keep as-is)
+        # ACCUM/CAP with full confirmation. The 68.4% win rate quoted above (n=38) was not reproduced by the
+        # replay: 18-36% over windows 1-9, P&L flat to slightly negative. Removing the path did not clear the
+        # declared bar either (variant J, docs/reviews/rule-lab-study.md), so it stays.
         if regime in ("ACCUM", "CAP") and ACCUM_STRONG_OK:
             _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
             out.signal = strong_long_label
