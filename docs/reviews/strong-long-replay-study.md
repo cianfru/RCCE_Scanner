@@ -75,3 +75,84 @@ Reported per run:
 - Settled Binance funding, not the live real-time estimate. Hyperliquid's own funding, used live for coins not on Binance, is not rebuilt.
 - The HyperLens checks live (up to 1 point of a 10 or 11 total) cannot be rebuilt, so Strong long's score is out of 9 here, as live for coins without HyperLens data.
 - The windows are 2021–2026; the holdout stays unread. A replay tests the rule on one path of history, with this manager's sizing and exits.
+
+## Results (windows 1–9, costed PositionManager, run 9 November 2026, after the declaration was committed)
+
+| Run | | Compounded return | Worst window | Median Sharpe | Trades |
+|---|---|---:|---:|---:|---:|
+| **Primary 4H (deciding)** | C | **+43.1%** | −10.4% | 0.32 | 314 |
+| | S | **+34.8%** (−8.4) | −17.5% (−7.2) | 0.00 | 373 |
+| **Secondary 4H (guard)** | C | **+45.3%** | −14.6% | −0.80 | 725 |
+| | S | **+30.2%** (−15.1) | −19.6% (−5.0) | −1.15 | 787 |
+| Primary 1D (reported) | C | +36.5% | −13.9% | −0.30 | 138 |
+| | S | +50.2% (+13.7) | −21.4% (−7.4) | −0.43 | 174 |
+| Secondary 1D (reported) | C | +4.9% | −20.0% | −0.42 | 398 |
+| | S | −4.9% (−9.8) | −30.4% (−10.4) | −0.88 | 448 |
+
+Per-window returns, C / S (%):
+
+| Run | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 |
+|---|---|---|---|---|---|---|---|---|---|
+| Primary 4H | +1.2 / −7.7 | 0 / 0 | +5.0 / +0.7 | −1.9 / −5.1 | +35.6 / +65.8 | −9.9 / −15.3 | +11.8 / +23.4 | +6.4 / +0.8 | −5.6 / −12.6 |
+| Secondary 4H | −3.8 / −12.4 | 0 / 0 | +2.7 / −0.2 | −2.6 / −4.9 | +40.9 / +60.6 | −8.5 / −11.2 | +24.4 / +22.9 | −3.6 / −7.1 | −2.3 / −3.9 |
+| Primary 1D | −8.8 / −13.9 | 0 / 0 | −1.9 / −4.1 | −5.9 / −14.5 | +50.2 / +93.8 | −4.0 / −8.3 | +14.8 / +20.5 | +9.1 / +18.8 | −10.1 / −16.5 |
+| Secondary 1D | −17.0 / −20.4 | 0 / 0 | +0.7 / −0.5 | −0.5 / −6.2 | +36.0 / +56.9 | −2.7 / −9.1 | +6.7 / +2.0 | −7.9 / −8.0 | −3.0 / −4.3 |
+
+Bars by signal, C → S:
+
+| Run | Strong long | Light long | Accumulate | Wait | Trim |
+|---|---:|---:|---:|---:|---:|
+| Primary 4H | 0 → 9,581 | 16,800 → 14,400 | 2,381 → 2,687 | 90,912 → 83,425 | 4,036 → 4,036 |
+| Secondary 4H | 0 → 20,410 | 39,131 → 33,731 | 6,349 → 6,684 | 267,119 → 251,833 | 8,975 → 8,975 |
+| Primary 1D | 0 → 2,387 | 3,609 → 2,820 | 416 → 426 | 14,704 → 13,096 | 617 → 617 |
+| Secondary 1D | 0 → 5,343 | 9,599 → 7,780 | 756 → 727 | 44,933 → 41,438 | 1,384 → 1,384 |
+
+Trades by the signal that opened them (`backtest/live_logic_trades.py`). P&L is summed as % of a window's starting capital; the median trade is the price move from entry to exit.
+
+| Run | | Opened by | Trades | Wins | Summed P&L | Median trade |
+|---|---|---|---:|---:|---:|---:|
+| Primary 4H | C | Light long | 314 | 132 | +44.3% | −3.5% |
+| | S | Light long | 209 | 100 | +53.4% | −1.2% |
+| | S | **Strong long** | **164** | 47 | **−0.8%** | **−8.1%** |
+| Secondary 4H | C | Light long | 725 | 251 | +48.3% | −8.0% |
+| | S | Light long | 447 | 155 | +37.6% | −8.0% |
+| | S | **Strong long** | **340** | 84 | **+8.0%** | **−8.3%** |
+| Primary 1D | C | Light long | 138 | 43 | +44.0% | −8.6% |
+| | S | Light long | 93 | 27 | +20.0% | −8.6% |
+| | S | **Strong long** | **81** | 19 | **+57.2%** | **−8.4%** |
+| Secondary 1D | C | Light long | 398 | 82 | +12.9% | −9.6% |
+| | S | Light long | 266 | 57 | +36.0% | −9.5% |
+| | S | **Strong long** | **182** | 25 | **−24.6%** | **−9.3%** |
+
+**Harness check.** C re-run on primary 1D with today's code (hook off) gives +36.5%, −13.9%, 138 trades and the same per-window returns as the 7 November run. The hook changes nothing when off.
+
+## Verdict: Strong long hurts
+
+- **On the deciding run** S returns 8.4 points less than C; the bar was at least 5 less.
+- **On the guard run** S is below C, by 15.1 points.
+- **Its worst window is deeper in every run:** by 5.0 to 10.4 points.
+
+**The declared recommendation:** cap Strong long at Light long live. That is a signal change, made only with the owner's approval. Until then nothing changes live; the harness keeps C as its default.
+
+## Reading
+
+- **What S changes.** Knowing funding and stablecoins does two things at once:
+  - **Strong long becomes reachable.** It takes over about 2,400 Light long bars on the primary 4H chart and 5,400 on the secondary.
+  - **More bars pass the entry checks.** About 7,500 Wait bars become entries on primary 4H and 15,300 on secondary. Unknown checks had counted as unmet, so with them known, more bars clear the thresholds.
+
+  So S has more trades (314 → 373 and 725 → 787), and its Strong long entries are sized twice Light long.
+- **What it does to returns: it amplifies both ways.**
+  - S makes more in the two rally windows: W5 (October 2023 to April 2024) +65.8% against +35.6% on primary 4H, and W7 (October 2024 to April 2025).
+  - It loses more in almost every other window.
+  - Over the nine windows the losses outweigh the gains on three runs of four; the primary 1D run is the exception, with a much deeper worst window.
+- **Strong long's own trades are not better entries.**
+  - On the deciding run, its median trade is −8.1% against −1.2% for Light long in the same run.
+  - On the other runs the medians are about level (−8.3% to −9.3% against −8.0% to −9.5%).
+  - Its summed P&L is negative on two runs, about flat on one, and positive only on primary 1D.
+  - The extra size buys more exposure, not better selection.
+- **What the recommendation would test, and what it would not.**
+  - The cap keeps the context: live, funding and stablecoins are known for most coins. So a capped engine is S with Strong long sized as Light long, not C.
+  - That engine was not one of the declared variants. A run of it on the same windows would be seen data: a check of the recommendation, not a new verdict.
+- **Why the live scorecard may read differently.**
+  - Live Strong long has its own record (the comments in `signal_synthesizer.py` cite 40.7% wins in MARKUP and 68.4% in ACCUM, from a small sample).
+  - This replay's Strong long fires on Binance spot history with no CoinGlass and no HyperLens, scored by one position manager with its own stops and sizing. The two are not the same measurement.
