@@ -156,3 +156,16 @@ Trades by the signal that opened them (`backtest/live_logic_trades.py`). P&L is 
 - **Why the live scorecard may read differently.**
   - Live Strong long has its own record (the comments in `signal_synthesizer.py` cite 40.7% wins in MARKUP and 68.4% in ACCUM, from a small sample).
   - This replay's Strong long fires on Binance spot history with no CoinGlass and no HyperLens, scored by one position manager with its own stops and sizing. The two are not the same measurement.
+
+## Check of the recommendation (set down 9 November 2026, before running)
+
+The owner's go-ahead (9 November 2026): "yes" to a check run of the engine the recommendation would put live, before deciding.
+
+- **Why.** Live knows funding and stablecoins for most coins, so capping Strong long live gives S with Strong long sized as Light long, not C. That engine was not a declared variant.
+- **Variants:**
+  - **K:** S with `signal_synthesizer.STRONG_LONG_CAP` on (`--context live --cap on`). Every row that would be Strong long is Light long.
+  - **KD:** K plus the 90-day top-divergence exit (`--divexit 90`). This is the engine both pending changes would make; the two were tested apart.
+- **Runs:** both coin sets, 4H and 1D, against C and S above. The harness is unchanged.
+- **How it is read.** This is a check on windows already seen, not a new verdict; nothing in it re-decides either study.
+  - It answers whether K is worse than C. If it is not, the cap alone covers the harm found here.
+  - If it is (by more than 5 points on primary 4H, or on both 4H runs), the extra entries that known context lets through are a problem too. That needs its own declared study before any change beyond the cap.

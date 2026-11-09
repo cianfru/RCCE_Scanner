@@ -189,6 +189,8 @@ def main(argv=None):
                          "funding and stablecoin supply as the live scanner reads them")
     ap.add_argument("--divexit", type=int, choices=(0, 30, 90), default=0,
                     help="top-divergence exit window in days (docs/reviews/top-divergence-exit-study.md); 0 = off")
+    ap.add_argument("--cap", choices=("off", "on"), default="off",
+                    help="Strong long capped at Light long (docs/reviews/strong-long-replay-study.md)")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
@@ -225,6 +227,9 @@ def main(argv=None):
         _band_exit(bh, symbols)
     if args.divexit:
         _div_exit(symbols, args.divexit)
+    if args.cap == "on":
+        import signal_synthesizer
+        signal_synthesizer.STRONG_LONG_CAP = True
     if args.context == "live":
         import backtest.replay_engine as re_mod
         from backtest.live_context import make_hook

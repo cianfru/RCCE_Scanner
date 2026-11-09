@@ -109,6 +109,26 @@ class DivExitSwitchTests(unittest.TestCase):
             self.assertEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, base)
 
 
+class StrongLongCapTests(unittest.TestCase):
+    """docs/reviews/strong-long-replay-study.md: Strong long capped at Light long, behind a switch that is off."""
+
+    def test_off_by_default(self):
+        import signal_synthesizer as ss
+        self.assertFalse(ss.STRONG_LONG_CAP)
+        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
+
+    def test_on_strong_long_is_light_long_everywhere_the_final_check_runs(self):
+        import signal_synthesizer as ss
+        from signal_synthesizer import enforce_signal_constraints
+        with patch.object(ss, "STRONG_LONG_CAP", True):
+            out = synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT)
+            self.assertEqual(out.signal, "LIGHT_LONG")
+            self.assertIn("Strong long capped", out.reason)
+            self.assertEqual(enforce_signal_constraints("STRONG_LONG"), "LIGHT_LONG")
+            self.assertEqual(enforce_signal_constraints("LIGHT_LONG"), "LIGHT_LONG")
+            self.assertEqual(enforce_signal_constraints("STRONG_LONG", entry_blocked=True), "WAIT")
+
+
 class TopExitSwitchTests(unittest.TestCase):
     """docs/reviews/band-exit-study.md: the exit above the weekly band on band z, behind a switch that is off."""
 

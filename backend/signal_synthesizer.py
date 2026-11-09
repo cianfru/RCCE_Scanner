@@ -45,6 +45,9 @@ BAND_Z_EXIT = 1.61      # the stretch-at-tops study's guide for band z
 # (a top divergence of the TradingView band model on the coin's daily candles within the study's window, completed
 # days only) exits and takes no new long. Off until the owner approves a change.
 DIV_EXIT = False
+# Strong long capped at Light long (docs/reviews/strong-long-replay-study.md): when on, a row that would be Strong long
+# is Light long, in every path that applies the final eligibility check. Off until the owner approves a change.
+STRONG_LONG_CAP = False
 
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG
@@ -931,7 +934,7 @@ def enforce_signal_constraints(signal: str, *, entry_blocked=False, strong_long_
     """Final eligibility check; modifiers may not erase mandatory restrictions."""
     if signal in _BULL_SIGNALS and entry_blocked:
         return "WAIT"
-    if signal == "STRONG_LONG" and strong_long_blockers:
+    if signal == "STRONG_LONG" and (strong_long_blockers or STRONG_LONG_CAP):
         return "LIGHT_LONG"
     return signal
 
@@ -942,7 +945,8 @@ def synthesize_signal(*args, **kwargs) -> SynthesizedSignal:
     final = enforce_signal_constraints(out.signal, entry_blocked=out.entry_blocked,
                                        strong_long_blockers=out.strong_long_blockers)
     if final != out.signal:
-        reason = "entries blocked" if out.entry_blocked else ", ".join(out.strong_long_blockers)
+        reason = ("entries blocked" if out.entry_blocked else ", ".join(out.strong_long_blockers)
+                  or "Strong long capped at Light long")
         out.reason += f" [final eligibility: {reason}]"
         out.warnings.append(reason)
         out.signal = final
