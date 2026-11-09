@@ -102,6 +102,18 @@ CREATE TABLE IF NOT EXISTS band_stretch_record (
     PRIMARY KEY (day, pair)
 );
 
+CREATE TABLE IF NOT EXISTS band_mark_events (
+    pair  TEXT    NOT NULL,
+    day   INTEGER NOT NULL,
+    kind  TEXT    NOT NULL,
+    PRIMARY KEY (pair, day, kind)
+);
+
+CREATE TABLE IF NOT EXISTS band_mark_coverage (
+    pair  TEXT    PRIMARY KEY,
+    day   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS trader_lean_traders (
     bar_close INTEGER PRIMARY KEY,
     counted INTEGER NOT NULL,
@@ -463,6 +475,35 @@ def load_band_stretch(day: int) -> List[tuple]:
     """(pair, close, mid, a, c, d_a, d_c) recorded for one day."""
     return _get_conn().execute("SELECT pair, close, mid, a, c, d_a, d_c FROM band_stretch_record WHERE day = ? "
                                "ORDER BY pair", (int(day),)).fetchall()
+
+
+def save_band_marks(day: int, per_pair: Dict[str, Dict[str, List[int]]]) -> int:
+    """The band model's marks of the market history's coins (band_marks_live.py), computed on the run for `day`:
+    each coin's mark days by kind, and the day its marks were last computed. Idempotent. Returns the marks added."""
+    conn = _get_conn()
+    before = conn.total_changes
+    conn.executemany("INSERT OR IGNORE INTO band_mark_events (pair, day, kind) VALUES (?, ?, ?)",
+                     [(pair, int(d), kind) for pair, kinds in per_pair.items() for kind, ds in kinds.items() for d in ds])
+    added = conn.total_changes - before
+    conn.executemany("INSERT OR REPLACE INTO band_mark_coverage (pair, day) VALUES (?, ?)",
+                     [(pair, int(day)) for pair in per_pair])
+    conn.commit()
+    return added
+
+
+def load_band_marks(since_day: int) -> Tuple[List[tuple], Dict[str, int]]:
+    """(pair, day, kind) of the marks from since_day on, and each coin's last computed day."""
+    conn = _get_conn()
+    events = conn.execute("SELECT pair, day, kind FROM band_mark_events WHERE day >= ? ORDER BY pair, day",
+                          (int(since_day),)).fetchall()
+    coverage = dict(conn.execute("SELECT pair, day FROM band_mark_coverage").fetchall())
+    return events, coverage
+
+
+def last_band_marks_day() -> Optional[int]:
+    """The latest day the marks were computed for, or None before the first run."""
+    row = _get_conn().execute("SELECT MAX(day) FROM band_mark_coverage").fetchone()
+    return None if not row or row[0] is None else int(row[0])
 
 
 def load_trader_counts(lo: int, hi: int) -> List[tuple]:

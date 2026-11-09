@@ -204,6 +204,23 @@ async def _fetch_json(session, url: str):
     return None
 
 
+async def _marks_of(session, pair: str, kl, last_day: int) -> Optional[dict]:
+    """The band model's recent marks for one pair (band_marks_live.marks), from the newest page of daily candles and,
+    when it is full, the 1,000 days before it. None when they cannot be computed."""
+    import band_marks_live
+    try:
+        rows = list(kl)
+        if len(rows) >= 1000:
+            first = int(float(rows[0][0]))
+            older = await _fetch_json(session, KLINES_URL.format(pair=pair) + f"&endTime={first - 1}")
+            if older:
+                rows = [r for r in older if float(r[0]) < first] + rows
+        return await asyncio.to_thread(band_marks_live.marks, rows, last_day)
+    except Exception as exc:
+        logger.debug("Market history: band-model marks for %s skipped (%s)", pair, exc)
+        return None
+
+
 async def update(now: Optional[float] = None) -> int:
     """Append every closed day missing since the last stored one. Returns the number added. Also fills the
     per-coin closes of seed days from 60 days before the study's end day, which score the episodes after it."""
@@ -217,13 +234,21 @@ async def update(now: Optional[float] = None) -> int:
     stretch_last = stretch_rows[-1][0] if stretch_rows else yesterday - 1
     stretch_missing = list(range(stretch_last + 1, yesterday + 1))
     backfill = {d[0]: d[1] for d in seed["days"] if d[0] > seed["end_day"] - max(HORIZONS) and d[0] not in _closes}
+    try:                                             # the band model's marks (band_marks_live.py), once a day
+        from hl_persistence import last_band_marks_day
+        marks_last = last_band_marks_day()
+        marks_due = marks_last is None or marks_last < yesterday
+    except Exception as exc:
+        logger.warning("Market history: band-model marks skipped (%s)", exc)
+        marks_due = False
     added = 0
     async with aiohttp.ClientSession() as session:
-        if missing or backfill or stretch_missing:
+        if missing or backfill or stretch_missing or marks_due:
             sem = asyncio.Semaphore(FETCH_CONCURRENCY)
             per_day: Dict[int, Dict[str, tuple]] = {d: {} for d in missing}
             per_stretch: Dict[int, Dict[str, dict]] = {d: {} for d in stretch_missing}
             filled: Dict[int, Dict[str, float]] = {d: {} for d in backfill}
+            per_marks: Dict[str, dict] = {}
 
             async def one(pair):
                 async with sem:
@@ -237,6 +262,11 @@ async def update(now: Optional[float] = None) -> int:
                 if stretch_missing and kl:
                     for day, v in (await asyncio.to_thread(stretch_on_days, kl, stretch_missing)).items():
                         per_stretch[day][pair] = v
+                if marks_due and kl:
+                    async with sem:                  # at most FETCH_CONCURRENCY older pages held at once
+                        m = await _marks_of(session, pair, kl, yesterday)
+                    if m is not None:
+                        per_marks[pair] = m
 
             await asyncio.gather(*(one(p) for p in seed["pairs"]))
             for day in missing:
@@ -262,6 +292,15 @@ async def update(now: Optional[float] = None) -> int:
                         logger.warning("Market history: band-stretch record skipped for day %d (%s)", day, exc)
             if stretch_added:
                 logger.info("Market history: %d band-stretch day(s) added", stretch_added)
+            if marks_due and len(per_marks) >= seed["min_coins"]:     # a thin run is retried on the next update
+                try:
+                    import band_marks_live
+                    from hl_persistence import save_band_marks
+                    new_marks = save_band_marks(yesterday, per_marks)
+                    band_marks_live.reset_view()
+                    logger.info("Market history: band-model marks for %d coins, %d new", len(per_marks), new_marks)
+                except Exception as exc:
+                    logger.warning("Market history: band-model marks not recorded (%s)", exc)
             if added:
                 try:
                     log_fans(missing)

@@ -77,7 +77,8 @@ def evaluate_decision(row: dict, context: dict, state, *, as_of: float,
                      "heat_direction", "bmsb_valid", "bmsb_mid", "previous_heat", "vol_state", "vol_scale",
                      "is_climax", "is_absorption", "floor_confirmed", "exhaustion_state", "divergence",
                      "signal_bar_close_time", "decision_input_id", "decision_price", "price", "cto", "structure", "engine_errors",
-                     "confluence", "momentum", "rel_vol", "asset_class", "normalization_ready", "buy_sell_ratio", "vpin")
+                     "confluence", "momentum", "rel_vol", "asset_class", "normalization_ready", "buy_sell_ratio", "vpin",
+                     "top_div_window")
     row["decision_input"] = {key: copy.deepcopy(row[key]) for key in engine_fields if key in row}
     row["decision_context"] = copy.deepcopy(context)
     row["input_metadata"] = copy.deepcopy(metadata or {})

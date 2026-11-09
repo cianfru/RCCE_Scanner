@@ -60,6 +60,7 @@ from engines.heatmap_engine import compute_heatmap
 from engines.exhaustion_engine import compute_exhaustion
 from engines.positioning_engine import compute_positioning, OI_CHANGE_THRESHOLD, interpret_oi_context
 from signal_synthesizer import synthesize_signal, compute_signal_score, enforce_signal_constraints
+import band_marks_live
 from candle_snapshot import closed_candles, consistent_weekly, snapshot_key, TF_MS
 from market_data import (
     fetch_global_metrics, GlobalMetrics,
@@ -999,6 +1000,11 @@ async def _synthesize_and_enrich(
             metadata[name] = {"source": source, "observed_at": getattr(obj, "timestamp", None)}
         metadata["hyperlens"] = {"source": "hyperlens", "observed_at": _consensus_updated_at if hl_data else None}
         r["input_metadata"] = metadata
+        # The top-divergence window (band_marks_live.py); the engine acts on it only when DIV_EXIT is on.
+        try:
+            r["top_div_window"] = band_marks_live.in_window(symbol)
+        except Exception:
+            r["top_div_window"] = None
         # Cross-TF safety uses current stored context rather than an older attached object.
         other = other_rows.get(symbol)
         if other:
