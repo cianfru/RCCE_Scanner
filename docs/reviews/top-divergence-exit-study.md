@@ -129,3 +129,28 @@ Per-window returns, C / D30 / D90 (%):
   - Stops and decay exits fall (123 to 100, and 167 to 143): fewer re-entries after a top.
 - **The daily runs agree in direction on the primary coins** (+11.1 points, worst window 1.7 shallower). On the secondary coins they are about level (+0.6 points, worst window 0.4 deeper).
 - **A small base.** 17 marks decide the primary runs and 13 the secondary runs. The pass rests on a handful of exits. Live, it should be watched as a new rule, not taken as proven.
+
+## The live mark (built 9 November 2026; the switch stays off)
+
+The owner's go-ahead (9 November 2026): "yes" to building the live mark before deciding on the switch.
+
+**How it is computed** (`backend/band_marks_live.py`, tests `backend/tests/test_band_marks_live.py`):
+- The market-history job runs once a day, 18 minutes after the daily close. It now also computes the band model's marks for its 151 coins with the studies' own code (`research/band_marks.model`).
+- **Same data as the study:** Binance USDT spot daily candles, completed days only. About 2,000 days per coin (two pages of 1,000).
+  - That is enough for every input of a recent day to match a computation on the full history.
+  - Checked on 8 coins at 158 end days: every top divergence and capitulation turn of the last 120 days is the same.
+- **Recorded:** each coin's marks of the last 120 days (`band_mark_events`) and the day they were computed (`band_mark_coverage`).
+- **Read by the scanner:** each row gets `top_div_window`, true when the coin had a top divergence within the last 90 completed days. The engine acts on it only when `signal_synthesizer.DIV_EXIT` is on.
+- **Capitulation turns are recorded too.** The layers study's candidate (a capitulation turn while the market's median z is in its high half) can then be looked at with the market history's daily median z. Nothing reads them yet.
+
+**Coverage and timing.**
+- 146 of the scanner's 212 coins on 9 November map to one of the 151 pairs. Hyperliquid's per-1,000 markets (KPEPE) take the token's pair; the marks do not depend on the price's unit.
+- On the other 66 coins the exit never fires.
+- A day's mark is known once the job has run, about 18 minutes after the close. In the replay, it counted from the close.
+
+**What it would do on 9 November 2026** (last completed day 8 November):
+- **One coin is inside its window:** ZEC, top divergence on 21 August 2026, day 80 of 90.
+- ZEC is Light long on 4H and Strong long on the daily chart. With the switch on, it would be Trim on both for 10 more days.
+- No other covered coin had a top divergence in the last 120 days.
+
+**Cost:** about 0.15 to 0.45 seconds of CPU per coin once a day, 5 MB at most per coin while it runs, with at most 6 coins' older pages held at once. The extra Binance requests are ingress, which is free.
