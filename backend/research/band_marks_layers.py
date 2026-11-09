@@ -264,12 +264,16 @@ def layer_values(series: Dict[str, dict], marks: Dict[str, List[dict]], fetch: b
 
 # ---------------------------------------------------------------------------------------------------------- the test
 def split(rows: List[dict], vals: List[dict], layer: str, how: str):
-    """The marks with a value, cut into (high, low, cut): binary on 1/0; otherwise at the median of those values."""
+    """The marks with a value, cut into (high, low, cut): binary on 1/0; otherwise at the median of those values,
+    ties high, unless that leaves the low group empty (a median at the lowest value): then ties low."""
     have = [(r, v[layer]) for r, v in zip(rows, vals) if v.get(layer) is not None]
     if not have:
         return [], [], None
     cut = 0.5 if how == "binary" else float(np.median([x for _, x in have]))
-    return [r for r, x in have if x >= cut], [r for r, x in have if x < cut], cut
+    hi, lo = [r for r, x in have if x >= cut], [r for r, x in have if x < cut]
+    if how != "binary" and not lo:
+        hi, lo = [r for r, x in have if x > cut], [r for r, x in have if x <= cut]
+    return hi, lo, cut
 
 
 def _parts(rows: List[dict], pt: Dict[str, List[str]]) -> Dict[str, List[dict]]:

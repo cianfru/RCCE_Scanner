@@ -42,6 +42,8 @@ def test_the_split_cuts_at_the_median_ties_high_and_skips_missing():
     assert cut == 2.0 and [r["i"] for r in hi] == [1, 2, 3, 5] and [r["i"] for r in lo] == [0]
     hi, lo, cut = L.split(rows, [{"x": v} for v in (1.0, 0.0, 1.0, None, 0.0, 1.0)], "x", "binary")
     assert [r["i"] for r in hi] == [0, 2, 5] and [r["i"] for r in lo] == [1, 4]
+    hi, lo, cut = L.split(rows, [{"x": v} for v in (0.0, 0.0, 0.0, 0.2, None, 0.1)], "x", "median")   # median 0
+    assert cut == 0.0 and [r["i"] for r in hi] == [3, 5] and [r["i"] for r in lo] == [0, 1, 2]
 
 
 def _rows(n, coin, era, right):

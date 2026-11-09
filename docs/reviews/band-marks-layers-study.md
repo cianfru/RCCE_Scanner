@@ -18,7 +18,7 @@ Code: `backend/research/band_marks_layers.py` (tests `backend/tests/test_band_ma
 - **Reflex's positioning layers** (report only, see below): profitable traders long, the 600 (`seeds/crowd_share_seed.json`, from 1 October 2025), and smart money and whales long (`seeds/wallet_history_seed.json`, from 1 September 2025): the share of long among their long and short positions, market-wide.
 - **Fear and Greed** (alternative.me, the index the Market page shows), by day.
 - **Futures layers** (Binance USDT-M perpetuals, public archives on data.binance.vision): funding payments (monthly archives from September 2019), and the daily metrics files (open interest, top traders' and all accounts' long/short ratios) for each mark's day and the day 30 days before.
-- **Layers' data:** SHA-256 recorded at the data check below.
+- **Layers' data** (`check`): Fear and Greed, funding and the metrics read, SHA-256 `6842e690f03e5aa73aa0b04618ef5246125b1898fab4c383e7d742acf6c7c16b`.
 
 ## The layers, read at a mark (the mark's daily close; nothing after it)
 
@@ -38,7 +38,7 @@ Code: `backend/research/band_marks_layers.py` (tests `backend/tests/test_band_ma
 | Smart money long (Reflex) | share long, market-wide | at the median, report only |
 | Whales long (Reflex) | share long, market-wide | at the median, report only |
 
-- **The split:** a mark's counted marks with a value of the layer are cut into a **high** and a **low** group at the median of those values (ties go high); BTC's band splits into above and below.
+- **The split:** a mark's counted marks with a value of the layer are cut into a **high** and a **low** group at the median of those values (ties go high, unless that leaves the low group empty, when ties go low); BTC's band splits into above and below.
 - **Judged or reported only:** a layer is judged on a mark when it has a value on at least 90% of that mark's counted marks. The three positioning layers are reported only: their history starts in September and October 2025, so they cover too few marks (none before 2022) to be judged.
 
 ## The bar
@@ -60,7 +60,20 @@ The better group is found after looking; the four parts are what guards against 
 
 - The marks study's results by mark (all marks, no split by any layer).
 - Layer values were not looked at against any outcome. The owner's idea that a mark works better "if traders are bullish" (8 November) is what the positioning and long/short layers stand for; the direction is not assumed (either group can clear the bar).
-- **Coverage** (`check`, no outcomes): see the table below.
+- **One rule changed after the data check, before any outcome was read:** with ties going high, a layer whose median is its lowest value left the low group empty (coins stretched: the median was 0% on the Capitulation turn, Reclaim, Bottom divergence and Lost the band). Ties now go low in that case (the split becomes "none stretched" against "some").
+- **Coverage** (`check`, no outcomes): marks with a value; **J** = judged (90% or more), the rest reported only.
+
+| Mark | Marks | Uptrend share | Coins stretched | Market z | Fear and Greed | BTC band | Coin z | Funding | Open interest | Top traders | All accounts | Traders, smart money, whales |
+|---|---:|---|---|---|---|---|---|---|---|---|---|---|
+| Buy | 878 | 851 J | 824 J | 851 J | 878 J | 878 J | 861 J | 784 | 451 | 433 | 466 | 35, 55, 55 |
+| Take profit | 224 | 218 J | 210 J | 218 J | 224 J | 224 J | 222 J | 191 | 95 | 96 | 96 | 2, 2, 2 |
+| Capitulation turn | 91 | 91 J | 78 | 91 J | 91 J | 91 J | 89 J | 83 J | 67 | 45 | 67 | 23, 23, 23 |
+| Reclaim | 19 | 19 J | 14 | 19 J | 19 J | 19 J | 19 J | 17 | 6 | 4 | 6 | 0 |
+| Top divergence | 47 | 46 J | 46 J | 46 J | 47 J | 47 J | 47 J | 43 J | 17 | 16 | 16 | 0 |
+| Bottom divergence | 95 | 95 J | 95 J | 95 J | 95 J | 95 J | 95 J | 90 J | 90 J | 60 | 90 J | 42, 42, 42 |
+| Lost the band | 494 | 475 J | 447 J | 475 J | 494 J | 494 J | 487 J | 424 | 302 | 273 | 320 | 37, 44, 44 |
+
+  The futures layers cover most marks only from 2022 (Binance's metrics files for most of these coins start then), so they are judged on the Bottom divergence alone (all its marks are from 2022). A median split of the Top divergence (47 marks) or the Reclaim (19) leaves groups under 30: only a lopsided BTC band split could reach 30 there.
 
 ## Limits
 
