@@ -42,12 +42,12 @@ HEAT_FORCE_TRIM = 95    # Force TRIM when heat >= 95
 TOP_EXIT = "heat"
 BAND_Z_EXIT = 1.61      # the stretch-at-tops study's guide for band z
 # The top-divergence exit (docs/reviews/top-divergence-exit-study.md): when on, a row whose "top_div_window" is true
-# (a top divergence of the TradingView band model on the coin's daily candles within the study's window, completed
-# days only) exits and takes no new long. Off until the owner approves a change.
-DIV_EXIT = False
+# (a top divergence of the TradingView band model on the coin's daily candles within the last 90 completed days,
+# band_marks_live.py) exits and takes no new long. On since 9 November 2026, approved by the owner.
+DIV_EXIT = True
 # Strong long capped at Light long (docs/reviews/strong-long-replay-study.md): when on, a row that would be Strong long
-# is Light long, in every path that applies the final eligibility check. Off until the owner approves a change.
-STRONG_LONG_CAP = False
+# is Light long, in every path that applies the final eligibility check. On since 9 November 2026, approved by the owner.
+STRONG_LONG_CAP = True
 
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG

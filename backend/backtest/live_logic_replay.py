@@ -190,7 +190,8 @@ def main(argv=None):
     ap.add_argument("--divexit", type=int, choices=(0, 30, 90), default=0,
                     help="top-divergence exit window in days (docs/reviews/top-divergence-exit-study.md); 0 = off")
     ap.add_argument("--cap", choices=("off", "on"), default="off",
-                    help="Strong long capped at Light long (docs/reviews/strong-long-replay-study.md)")
+                    help="Strong long capped at Light long (docs/reviews/strong-long-replay-study.md); live has it on "
+                         "since 9 November 2026, the harness keeps off as its default so earlier runs reproduce")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
@@ -222,14 +223,14 @@ def main(argv=None):
         rcce.COOL_OFF_RELEASE_Z = args.cooloff
         rcce.COOL_OFF_SOURCE = args.cooloff_source
     import engines.rcce_engine as rcce
+    import signal_synthesizer
     _zbase(rcce, args.zbase)
     if args.topexit == "band":
         _band_exit(bh, symbols)
+    signal_synthesizer.DIV_EXIT = False                    # live has it on; here only with --divexit
     if args.divexit:
         _div_exit(symbols, args.divexit)
-    if args.cap == "on":
-        import signal_synthesizer
-        signal_synthesizer.STRONG_LONG_CAP = True
+    signal_synthesizer.STRONG_LONG_CAP = args.cap == "on"
     if args.context == "live":
         import backtest.replay_engine as re_mod
         from backtest.live_context import make_hook

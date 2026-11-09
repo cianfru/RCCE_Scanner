@@ -207,3 +207,10 @@ Per-window returns, K / KD (%):
 
 - KD returns more than S on three runs of four and has a shallower worst window on all four.
 - These are windows already seen, and live is not the replay (no CoinGlass; HyperLens live; funding from the live sources).
+
+## Shipped (9 November 2026)
+
+The owner approved the cap ("Merge it yes. Clear improvements").
+- `signal_synthesizer.STRONG_LONG_CAP = True`: every row that would be Strong long is Light long, live and in paper trading.
+- The 90-day top-divergence exit went on at the same time (`docs/reviews/top-divergence-exit-study.md`).
+- The replay harness keeps the cap off unless run with `--cap on`, so earlier runs reproduce. Later engine studies on the live engine run `--context live --cap on --divexit 90`.

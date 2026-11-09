@@ -45,7 +45,9 @@ class SignalTests(unittest.TestCase):
                 self.assertTrue(out.strong_long_blockers)
 
     def test_favorable_complete_context_still_produces_strong_long(self):
-        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
+        import signal_synthesizer as ss
+        with patch.object(ss, "STRONG_LONG_CAP", False):      # the engine's own Strong long path, without the cap
+            self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
 
     def test_missing_context_is_unknown_and_does_not_earn_points(self):
         out = synthesize_signal(favorable(), {"consensus": "RISK-ON"})
@@ -89,13 +91,14 @@ class SignalTests(unittest.TestCase):
 
 
 class DivExitSwitchTests(unittest.TestCase):
-    """docs/reviews/top-divergence-exit-study.md: out while a top divergence is recent, behind a switch that is off."""
+    """docs/reviews/top-divergence-exit-study.md: out while a top divergence is recent (on since 9 November 2026)."""
 
-    def test_off_by_default_and_the_window_is_ignored(self):
+    def test_on_since_approval_and_off_ignores_the_window(self):
         import signal_synthesizer as ss
-        self.assertFalse(ss.DIV_EXIT)
-        r = favorable(); r.update(top_div_window=True)
-        self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+        self.assertTrue(ss.DIV_EXIT)
+        with patch.object(ss, "DIV_EXIT", False):
+            r = favorable(); r.update(top_div_window=True)
+            self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
 
     def test_on_it_exits_inside_the_window_only(self):
         import signal_synthesizer as ss
@@ -110,12 +113,14 @@ class DivExitSwitchTests(unittest.TestCase):
 
 
 class StrongLongCapTests(unittest.TestCase):
-    """docs/reviews/strong-long-replay-study.md: Strong long capped at Light long, behind a switch that is off."""
+    """docs/reviews/strong-long-replay-study.md: Strong long capped at Light long (on since 9 November 2026)."""
 
-    def test_off_by_default(self):
+    def test_on_since_approval_and_off_gives_strong_long_back(self):
         import signal_synthesizer as ss
-        self.assertFalse(ss.STRONG_LONG_CAP)
-        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
+        self.assertTrue(ss.STRONG_LONG_CAP)
+        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "LIGHT_LONG")
+        with patch.object(ss, "STRONG_LONG_CAP", False):
+            self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
 
     def test_on_strong_long_is_light_long_everywhere_the_final_check_runs(self):
         import signal_synthesizer as ss
@@ -271,6 +276,7 @@ class PipelineTests(unittest.TestCase):
         row.update(signal="WAIT", entry_blocked=True, signal_bar_close_time=200)
         self.assertEqual(process(row, [], cache).adjusted_signal, "WAIT")
 
+    @patch("signal_synthesizer.STRONG_LONG_CAP", False)       # inertia itself, without the cap
     def test_inertia_confirmation_counts_candles_instead_of_polls(self):
         from agent_layer import process
         cache = SimpleNamespace()

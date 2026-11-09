@@ -154,3 +154,9 @@ The owner's go-ahead (9 November 2026): "yes" to building the live mark before d
 - No other covered coin had a top divergence in the last 120 days.
 
 **Cost:** about 0.15 to 0.45 seconds of CPU per coin once a day, 5 MB at most per coin while it runs, with at most 6 coins' older pages held at once. The extra Binance requests are ingress, which is free.
+
+## Shipped (9 November 2026)
+
+The owner approved turning it on ("Merge it yes. Clear improvements"), after the check of the capped engine with this exit (KD in `docs/reviews/strong-long-replay-study.md`).
+- `signal_synthesizer.DIV_EXIT = True`, with the 90-day window computed by `band_marks_live.py`.
+- The replay harness keeps it off unless run with `--divexit`, so earlier runs reproduce.
