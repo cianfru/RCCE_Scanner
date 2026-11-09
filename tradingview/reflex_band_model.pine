@@ -11,18 +11,26 @@
 // ZONES: deep below (<= -1.6), below, AT THE BAND (the entry zone, -0.3 to +0.8), above, stretched (>= 1.6);
 // OVERHEATED = stretched and fast, CAPITULATING = deep below and fast (speed: the 20-day move in units of its usual size).
 // TREND: the band is rising when its mid is above its value 28 days ago.
-// MARKS
+// MARKS, tested on daily candles of 36 coins (docs/reviews/band-model-marks-study.md): the close 90 days later on the
+// mark's side, against ordinary days on the same coins (chance). A mark is shown when it beat chance by 10 points
+// overall and in each part (both coin halves, before 2022, from 2022). Context, not a signal: the engine does not
+// use them. The results are for the daily chart; on other timeframes days are turned into bars and marks differ.
+//  Shown:
+//   Top divergence (orange diamond): a new 1-year high inside the stretch line after an Overheated state 30-365
+//                         days back. Lower 90 days later 68% of the time (chance 46%), 47 marks.
+//   Capitulation turn (blue): stretch off its low by 0.5 within 10 days of Capitulating. Higher 90 days later 57%
+//                         (chance 42%), 91 marks; early: the median close 30 days later was 10% lower.
+//  Hidden (tick "Show marks that did not pass the test"):
 //   Buy (green):          in the entry zone, band rising, a close above the previous bar's high; once per visit.
-//   Take profit (orange): Exhausting, stretch off its peak by 0.5 within 10 days of Overheated; or a second-leg
-//                         top, stretch reaching 1.2 within 60 days of a top divergence.
-//   Capitulation (blue):  Turning up, stretch off its low by 0.5 within 10 days of Capitulating.
-//   Diamonds:             divergences: a new 1-year high (low) inside the stretch line after an Overheated
-//                         (Capitulating) state 30-365 days back.
-//   Lost the band (grey): a close under a falling band.
-//   Reclaim (blue):       the first close back above the band within 60 days of Capitulating.
+//                         Higher 90 days later 40% (chance 48%): worse than ordinary days.
+//   Take profit (orange): Exhausting (stretch off its peak by 0.5 within 10 days of Overheated) or a second-leg top
+//                         (stretch reaching 1.2 within 60 days of a top divergence). Lower 60% (chance 51%).
+//   Bottom divergence (blue diamond): a new 1-year low inside the stretch line after Capitulating 30-365 days back.
+//                         Higher 47% (chance 36%), but no marks before 2022 to check it on.
+//   Reclaim (blue circle): the first close back above the band within 60 days of Capitulating. Higher 74% (chance
+//                         51%), but 19 marks, too few to judge.
+//   Lost the band (grey): a close under a falling band. Lower 57% (chance 56%).
 //   Marks of a kind are at least 30 days apart (the buy: once per visit to the zone).
-// SHOWN: the location, the zones, Overheated / Capitulating and the divergences. The other marks are under test
-// (docs/reviews/band-model-marks-study.md) and hidden unless "Show untested marks" is ticked.
 indicator("Reflex band model", shorttitle = "Band model", overlay = false, precision = 2, max_bars_back = 5000)
 
 weekFrom    = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
@@ -40,7 +48,7 @@ speedDays   = input.int(20, "Speed: days", minval = 2, group = "Windows")
 volDays     = input.int(365, "Speed: volatility over days", minval = 30, group = "Windows")
 normDays    = input.int(730, "Usual distance over days", minval = 60, group = "Windows")
 onPrice     = input.bool(true, "Marks and shading on the price chart too")
-showTest    = input.bool(false, "Show untested marks (buy, take profit, turns, reclaim, lost the band)")
+showFailed  = input.bool(false, "Show marks that did not pass the test (buy, take profit, bottom divergence, reclaim, lost the band)")
 reclaimDays = input.int(60, "Reclaim: within days of Capitulating", minval = 1, group = "Marks")
 showTable   = input.bool(true, "Readout")
 
@@ -200,21 +208,22 @@ bgcolor(hot ? color.new(cHot, 82) : cold ? color.new(cCold, 82) : na, title = "O
 priceShade = onPrice and hot ? color.new(cHot, 88) : onPrice and cold ? color.new(cCold, 88) : na
 bgcolor(priceShade, title = "Overheated / Capitulating on price", force_overlay = true)
 
+// passed the test
 plotshape(topMark, "Top divergence", shape.diamond, location.top, color.new(cHot, 30), size = size.tiny)
-plotshape(botMark, "Bottom divergence", shape.diamond, location.bottom, color.new(cCold, 30), size = size.tiny)
+plotshape(baseMark, "Capitulation turn", shape.triangleup, location.bottom, cCold, size = size.tiny)
 plotshape(onPrice and topMark, "Top divergence (price)", shape.diamond, location.abovebar, color.new(cHot, 30), size = size.small, force_overlay = true)
-plotshape(onPrice and botMark, "Bottom divergence (price)", shape.diamond, location.belowbar, color.new(cCold, 30), size = size.small, force_overlay = true)
-// untested marks, hidden by default
-plotshape(showTest and buyMark, "Buy", shape.triangleup, location.bottom, cBuy, size = size.tiny)
-plotshape(showTest and (exhMark or legMark), "Take profit", shape.triangledown, location.top, cHot, size = size.tiny)
-plotshape(showTest and baseMark, "Capitulation turn", shape.triangleup, location.bottom, cCold, size = size.tiny)
-plotshape(showTest and reclaimMark, "Reclaim", shape.circle, location.bottom, cCold, size = size.tiny)
-plotshape(showTest and lostMark, "Lost the band", shape.xcross, location.top, color.gray, size = size.tiny)
-plotshape(showTest and onPrice and buyMark, "Buy (price)", shape.triangleup, location.belowbar, cBuy, size = size.small, force_overlay = true)
-plotshape(showTest and onPrice and (exhMark or legMark), "Take profit (price)", shape.triangledown, location.abovebar, cHot, size = size.small, force_overlay = true)
-plotshape(showTest and onPrice and baseMark, "Capitulation turn (price)", shape.triangleup, location.belowbar, cCold, size = size.small, force_overlay = true)
-plotshape(showTest and onPrice and reclaimMark, "Reclaim (price)", shape.circle, location.belowbar, cCold, size = size.small, force_overlay = true)
-plotshape(showTest and onPrice and lostMark, "Lost the band (price)", shape.xcross, location.abovebar, color.gray, size = size.tiny, force_overlay = true)
+plotshape(onPrice and baseMark, "Capitulation turn (price)", shape.triangleup, location.belowbar, cCold, size = size.small, force_overlay = true)
+// did not pass, hidden by default
+plotshape(showFailed and buyMark, "Buy", shape.triangleup, location.bottom, cBuy, size = size.tiny)
+plotshape(showFailed and (exhMark or legMark), "Take profit", shape.triangledown, location.top, cHot, size = size.tiny)
+plotshape(showFailed and botMark, "Bottom divergence", shape.diamond, location.bottom, color.new(cCold, 30), size = size.tiny)
+plotshape(showFailed and reclaimMark, "Reclaim", shape.circle, location.bottom, cCold, size = size.tiny)
+plotshape(showFailed and lostMark, "Lost the band", shape.xcross, location.top, color.gray, size = size.tiny)
+plotshape(showFailed and onPrice and buyMark, "Buy (price)", shape.triangleup, location.belowbar, cBuy, size = size.small, force_overlay = true)
+plotshape(showFailed and onPrice and (exhMark or legMark), "Take profit (price)", shape.triangledown, location.abovebar, cHot, size = size.small, force_overlay = true)
+plotshape(showFailed and onPrice and botMark, "Bottom divergence (price)", shape.diamond, location.belowbar, color.new(cCold, 30), size = size.small, force_overlay = true)
+plotshape(showFailed and onPrice and reclaimMark, "Reclaim (price)", shape.circle, location.belowbar, cCold, size = size.small, force_overlay = true)
+plotshape(showFailed and onPrice and lostMark, "Lost the band (price)", shape.xcross, location.abovebar, color.gray, size = size.tiny, force_overlay = true)
 plot(onPrice ? mid : na, "Band mid", color.new(cMid, 30), 1, force_overlay = true)
 
 zone = hot ? "Overheated" : cold ? "Capitulating" : stretched ? "Stretched" : deep ? "Deep below" : inZone ? "At the band" : loc > zoneHi ? "Above" : "Below"
@@ -224,4 +233,4 @@ if showTable and barstate.islast
     table.cell(box, 0, 0, txt, text_color = hot or stretched ? cHot : cold or deep ? cCold : inZone ? cBuy : color.gray, text_size = size.small, bgcolor = color.new(color.black, 100))
 
 alertcondition(topMark, "Top divergence", "{{ticker}}: Reflex band model: a new 1-year high, less stretched, after Overheated")
-alertcondition(botMark, "Bottom divergence", "{{ticker}}: Reflex band model: a new 1-year low, less stretched, after Capitulating")
+alertcondition(baseMark, "Capitulation turn", "{{ticker}}: Reflex band model: stretch turning up after Capitulating")
