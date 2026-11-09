@@ -61,7 +61,7 @@ BAR_PART_MARKS = 5
 
 
 # ---------------------------------------------------------------------------------------------------------- data
-def fetch(coin: str) -> Optional[dict]:
+def fetch(coin: str, end: str = END) -> Optional[dict]:
     """Binance spot daily candles for COINUSDT (the public market-data mirror; the monthly archive for delisted
     pairs), through the repository's cached loader, on every day from the first to the last; a missing day takes the
     close before it as its high, low and close."""
@@ -69,13 +69,18 @@ def fetch(coin: str) -> Optional[dict]:
     pair = f"{coin}USDT"
     data, source = None, "api"
     try:
-        data = bh.load(pair, "1d", start=START, end=END)
+        data = bh.load(pair, "1d", start=START, end=end)
     except urllib.error.HTTPError:
         data = None
     if data is None or len(data["close"]) == 0:
-        data, source = bh.load(pair, "1d", start=START, end=END, archive=True), "archive"
+        data, source = bh.load(pair, "1d", start=START, end=end, archive=True), "archive"
     if data is None or len(data["close"]) == 0:
         return None
+    return {"coin": coin, "source": source, **on_grid(data)}
+
+
+def on_grid(data: dict) -> dict:
+    """Loaded daily candles on every day from the first to the last (a missing day takes the close before it)."""
     by_day = {day_of(t): (float(h), float(lo), float(c))
               for t, h, lo, c in zip(data["timestamp"], data["high"], data["low"], data["close"])}
     days = np.arange(min(by_day), max(by_day) + 1)
@@ -87,8 +92,7 @@ def fetch(coin: str) -> Optional[dict]:
         else:
             filled += 1
             hi.append(last[2]); lo.append(last[2]); cl.append(last[2])
-    return {"coin": coin, "days": days, "high": np.array(hi), "low": np.array(lo), "close": np.array(cl),
-            "filled": filled, "source": source}
+    return {"days": days, "high": np.array(hi), "low": np.array(lo), "close": np.array(cl), "filled": filled}
 
 
 def digest(series: Dict[str, dict]) -> str:

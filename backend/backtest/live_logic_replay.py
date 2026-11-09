@@ -25,6 +25,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 HERE = Path(__file__).resolve().parent
 SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "DOGE", "DOT", "LINK"]   # the study's primary set
 DATA_START = "2020-10-01"          # 4h warm-up before W1 (2021-10-21)
@@ -132,6 +134,35 @@ def _band_exit(bh, symbols):
     re_mod.BAR_HOOK = hook
 
 
+def _div_exit(symbols, window_days):
+    """Switch the synthesizer's top-divergence exit on, and give each row "top_div_window": a top divergence of the
+    band model (research/band_marks.py, the TradingView script's rules on Binance daily candles from 2017) on one of
+    the last `window_days` completed days before the bar (docs/reviews/top-divergence-exit-study.md)."""
+    from research import band_marks as M
+    import signal_synthesizer
+    import backtest.replay_engine as re_mod
+    active = {}
+    for s in symbols:
+        g = M.fetch(s, end=DATA_END)
+        if g is None:
+            continue
+        o = M.model(g["days"], g["high"], g["low"], g["close"])
+        on = set()
+        for i in np.flatnonzero(o["top_div"]):
+            d = int(g["days"][i])
+            on.update(range(d, d + window_days))
+        active[f"{s}/USDT"] = on
+    day_ms = 86_400_000
+
+    def hook(row, close_ms):
+        last_done = int(close_ms) // day_ms - 1          # the last day whose close is at or before the bar's close
+        row["top_div_window"] = last_done in active.get(row.get("symbol"), ())
+
+    signal_synthesizer.DIV_EXIT = True
+    re_mod.BAR_HOOK = hook
+    return active
+
+
 def _fear_greed():
     raw = json.loads(urllib.request.urlopen("https://api.alternative.me/fng/?limit=0&format=json", timeout=30).read())
     return {datetime.fromtimestamp(int(x["timestamp"]), tz=timezone.utc).strftime("%Y-%m-%d"): int(x["value"])
@@ -153,6 +184,8 @@ def main(argv=None):
     ap.add_argument("--tf", choices=("4h", "1d"), default="4h", help="traded (primary) timeframe")
     ap.add_argument("--topexit", choices=("heat", "band"), default="heat",
                     help="the exit above the weekly band (docs/reviews/band-exit-study.md): heat (today) or band z")
+    ap.add_argument("--divexit", type=int, choices=(0, 30, 90), default=0,
+                    help="top-divergence exit window in days (docs/reviews/top-divergence-exit-study.md); 0 = off")
     args = ap.parse_args(argv)
     bh = _bh()
     data = {tf: {} for tf in ("4h", "1d", "1w")}
@@ -187,6 +220,8 @@ def main(argv=None):
     _zbase(rcce, args.zbase)
     if args.topexit == "band":
         _band_exit(bh, symbols)
+    if args.divexit:
+        _div_exit(symbols, args.divexit)
     from backtest.replay_engine import run_replay
     from candle_snapshot import TF_MS
     primary = data[args.tf]

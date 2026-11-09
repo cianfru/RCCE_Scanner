@@ -41,6 +41,10 @@ HEAT_FORCE_TRIM = 95    # Force TRIM when heat >= 95
 # in CAP and ACCUM, and wherever band z is unknown, the heat rule as today. Off until the owner approves a change.
 TOP_EXIT = "heat"
 BAND_Z_EXIT = 1.61      # the stretch-at-tops study's guide for band z
+# The top-divergence exit (docs/reviews/top-divergence-exit-study.md): when on, a row whose "top_div_window" is true
+# (a top divergence of the TradingView band model on the coin's daily candles within the study's window, completed
+# days only) exits and takes no new long. Off until the owner approves a change.
+DIV_EXIT = False
 
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG
@@ -555,6 +559,13 @@ def _synthesize_signal(
     # -----------------------------------------------------------------------
     # STEP 1: EXIT RULES (highest priority — any single trigger fires)
     # -----------------------------------------------------------------------
+
+    # 1. The top-divergence exit, behind its switch (off): out while a top divergence is recent.
+    if DIV_EXIT and result.get("top_div_window"):
+        out.signal = "TRIM"
+        out.reason = "Top divergence on the daily chart (a new 1-year high, less stretched, after Overheated)"
+        out.warnings = ["Top divergence within its window — forced exit"]
+        return out
 
     # 1a. Heat force-trim (extreme overextension, regime-adaptive); above the band, band z instead when TOP_EXIT is "band"
     band_z = result.get("band_z")

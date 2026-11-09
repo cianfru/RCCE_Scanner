@@ -166,3 +166,33 @@ def test_the_parts_leave_out_the_seen_coins():
     pt = M.parts()
     every = pt["calibration"] + pt["test"]
     assert not set(every) & set(M.SEEN) and "SOL" not in every and len(every) == 37   # FTT left out at the data
+
+
+def test_the_replays_divergence_window_reads_completed_days_only(monkeypatch):
+    import signal_synthesizer as ss
+    import backtest.replay_engine as re_mod
+    from backtest import live_logic_replay as lr
+    days, high, low, close = _walk(seed=11)
+    o = M.model(days, high, low, close)
+    tops = [int(days[i]) for i in np.flatnonzero(o["top_div"])]
+    assert tops, "the walk needs a top divergence"
+    grid = {"days": days, "high": high, "low": low, "close": close, "filled": 0}
+    monkeypatch.setattr(M, "fetch", lambda coin, end=M.END: dict(grid, coin=coin, source="api") if coin == "ABC" else None)
+    monkeypatch.setattr(ss, "DIV_EXIT", False)
+    monkeypatch.setattr(re_mod, "BAR_HOOK", None)
+    lr._div_exit(["ABC", "XYZ"], 30)
+    assert ss.DIV_EXIT and re_mod.BAR_HOOK is not None
+    d = tops[0]
+    day_ms = 86_400_000
+
+    def window(close_ms, sym="ABC/USDT"):
+        row = {"symbol": sym}
+        re_mod.BAR_HOOK(row, close_ms)
+        return row["top_div_window"]
+    assert not window((d + 1) * day_ms - 4 * 3_600_000)      # a 4H bar inside the mark's own day: not yet closed
+    assert window((d + 1) * day_ms)                            # the bar closing with the mark's day
+    assert window((d + 30) * day_ms + 4 * 3_600_000)           # day d+29 is the last completed day: inside
+    later = [t for t in tops if t > d and t < d + 31]
+    if not later:
+        assert not window((d + 31) * day_ms)                   # day d+30: outside the 30 days
+    assert not window((d + 1) * day_ms, "XYZ/USDT")            # no data: never in a window

@@ -88,6 +88,27 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(synthesize_signal(row, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
 
 
+class DivExitSwitchTests(unittest.TestCase):
+    """docs/reviews/top-divergence-exit-study.md: out while a top divergence is recent, behind a switch that is off."""
+
+    def test_off_by_default_and_the_window_is_ignored(self):
+        import signal_synthesizer as ss
+        self.assertFalse(ss.DIV_EXIT)
+        r = favorable(); r.update(top_div_window=True)
+        self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+
+    def test_on_it_exits_inside_the_window_only(self):
+        import signal_synthesizer as ss
+        with patch.object(ss, "DIV_EXIT", True):
+            r = favorable(); r.update(top_div_window=True)
+            out = synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT)
+            self.assertEqual(out.signal, "TRIM")
+            self.assertIn("Top divergence", out.reason)
+            r = favorable(); r.update(top_div_window=False)
+            base = synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal
+            self.assertEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, base)
+
+
 class TopExitSwitchTests(unittest.TestCase):
     """docs/reviews/band-exit-study.md: the exit above the weekly band on band z, behind a switch that is off."""
 
