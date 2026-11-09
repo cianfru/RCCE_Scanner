@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import hl_persistence as hp
 import market_history as mh
 
 
@@ -17,12 +18,22 @@ class MarketHistoryTests(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix="mh_test_")
         self.tmp = patch.object(mh, "_live_path", return_value=os.path.join(self.dir, "mh_test_live.json"))
         self.tmp.start()
+        # the band-stretch record goes to a test database, not the local one
+        self._db = (hp._DB_PATH, hp._conn)
+        hp._DB_PATH, hp._conn = os.path.join(self.dir, "mh_test.db"), None
+        mh._stretch.clear()
+        mh._stretch_seed = None
 
     def tearDown(self):
         self.tmp.stop()
+        if hp._conn is not None:
+            hp._conn.close()
+        hp._DB_PATH, hp._conn = self._db
         shutil.rmtree(self.dir, ignore_errors=True)
         mh._seed, mh._live, mh._fng, mh._view = None, [], {}, None
         mh._closes.clear()
+        mh._stretch.clear()
+        mh._stretch_seed = None
 
     def test_aggregate_matches_seed_columns(self):
         row = mh.aggregate(100, {"BTCUSDT": ("MARKUP", 1.0, 50.0), "A": ("MARKUP", 2.0, 1.0),
@@ -51,6 +62,34 @@ class MarketHistoryTests(unittest.TestCase):
         out = mh.episodes_after(days, 9, bands_def)
         self.assertEqual(out["high"], [[10, 16, .6], [30, 30, .7]])
         self.assertEqual(out["low"], [[17, 17, .4]])
+
+    def test_update_appends_the_band_stretch_rows_and_records_each_coin(self):
+        import numpy as np
+        seed = mh._load()
+        last = seed["days"][-1][0]
+        mh._stretch_seed = {"rows": [[last - 1, 50, 5, 0.1]]}         # the stretch history ends the day before
+        n = 1000
+        rng = np.random.default_rng(5)
+        series = {p: 100 * np.exp(np.cumsum(rng.normal(0.0005, 0.03, n))) for p in seed["pairs"][:45]}
+
+        async def fake_fetch(session, url):
+            if "alternative" in url:
+                return {"data": []}
+            pair = url.split("symbol=")[1].split("&")[0]
+            c = series.get(pair)
+            if c is None:
+                return None
+            return [[float((last + 2 - n + i) * 86_400_000), 0, 0, 0, float(c[i]), 0] for i in range(n)]
+
+        rows = lambda kl, days, w, m: {d: ("MARKUP", 1.0, 100.0) for d in days}
+        with patch.object(mh, "_fetch_json", fake_fetch), patch.object(mh, "day_rows", rows):
+            asyncio.run(mh.update(now=(last + 2) * 86_400 + 100))
+        self.assertEqual(sorted(mh._stretch), [last, last + 1])         # the day after the history, and yesterday
+        row = mh._stretch[last + 1]
+        self.assertEqual(row[1], 45)
+        recorded = hp.load_band_stretch(last + 1)
+        self.assertEqual(len(recorded), 45)
+        self.assertEqual(mh.view()["stretch"]["rows"][-1], row)
 
     def test_update_appends_missing_days(self):
         seed = mh._load()

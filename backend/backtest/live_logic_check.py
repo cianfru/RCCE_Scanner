@@ -33,7 +33,8 @@ def _daily(curve):
     return [by_day[d] for d in sorted(by_day)]
 
 
-def score(rows, bmsb):
+def score(rows, bmsb, sink=None):
+    """Per-window metrics; with a list as sink, each window's closed trades are appended as (window, trade)."""
     by_ts = collections.defaultdict(list)
     for r in rows:
         by_ts[r["timestamp"]].append(r)
@@ -56,6 +57,8 @@ def score(rows, bmsb):
             exposure.append(value / eq if eq > 0 else 0.0)
         pm.close_all_at_end(span[-1])
         pm.equity_curve[-1] = (span[-1], pm.get_equity())
+        if sink is not None:
+            sink.extend((w["index"], t) for t in pm.trades)
         trades = [dict(pnl=t.pnl_usd, r=None, bars=t.bars_held, exit=t.exit_signal) for t in pm.trades]
         m = metrics(_daily(pm.equity_curve), exposure, trades, (w["end_ms"] - w["start_ms"]) / 86_400_000)
         out.append(dict(window=w["index"], **m))

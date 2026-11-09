@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 DAY_MS = 86_400_000
 SEED_PATH = Path(__file__).resolve().parent / "seeds" / "market_history_seed.json"   # data/ is not in the image
+# The share of the same coins stretched above their weekly band (band_stretch.py), rebuilt since 2019 by
+# `python -m backtest.stretch_history build`; the daily update appends from the day after its last.
+STRETCH_SEED_PATH = Path(__file__).resolve().parent / "seeds" / "band_stretch_seed.json"
 KLINES_URL = "https://data-api.binance.vision/api/v3/klines?symbol={pair}&interval=1d&limit=1000"
 FNG_URL = "https://api.alternative.me/fng/?limit=0&format=json"
 UPDATE_AFTER_S = 18 * 60         # run 18 minutes after the daily close
@@ -40,6 +43,8 @@ _live: List[list] = []
 _fng: Dict[int, int] = {}
 _closes: Dict[int, Dict[str, float]] = {}     # daily closes per coin: live days, and seed days from 60 before the end day
 _fan_log: List[list] = []                     # the fan at each new drawer episode's first day, from FAN_LOG_FROM
+_stretch: Dict[int, list] = {}                # live band-stretch rows: [day, coins, at or above the line, median]
+_stretch_seed: Optional[dict] = None
 
 # Forward test (docs/reviews/btc-band-breadth-forward-test.md): BTC below its weekly band
 # while the Uptrend share is 55% or more. Only episodes starting after the declaration count.
@@ -80,6 +85,7 @@ def _load() -> dict:
             _fng = {int(k): v for k, v in saved.get("fear_greed", {}).items()}
             _closes.update({int(k): v for k, v in saved.get("closes", {}).items()})
             _fan_log = saved.get("fan_log", [])
+            _stretch.update({int(r[0]): r for r in saved.get("stretch", [])})
         except FileNotFoundError:
             pass
         except Exception as exc:
@@ -91,7 +97,8 @@ def _save() -> None:
     path = Path(_live_path())
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps({"days": _live, "fear_greed": {str(k): v for k, v in _fng.items()},
-                               "closes": {str(k): v for k, v in _closes.items()}, "fan_log": _fan_log},
+                               "closes": {str(k): v for k, v in _closes.items()}, "fan_log": _fan_log,
+                               "stretch": [_stretch[d] for d in sorted(_stretch)]},
                               separators=(",", ":")))
     os.replace(tmp, path)
 
@@ -138,6 +145,37 @@ def day_closes(klines, days: List[int], min_bars: int) -> Dict[int, float]:
     return out
 
 
+def stretch_seed() -> dict:
+    global _stretch_seed
+    if _stretch_seed is None:
+        try:
+            _stretch_seed = json.loads(STRETCH_SEED_PATH.read_text())
+        except FileNotFoundError:
+            _stretch_seed = {"rows": []}
+    return _stretch_seed
+
+
+def stretch_rows_all() -> List[list]:
+    """The seed's band-stretch rows, then the live ones after its last day."""
+    rows = list(stretch_seed().get("rows", []))
+    last = rows[-1][0] if rows else -1
+    return rows + [_stretch[d] for d in sorted(_stretch) if d > last]
+
+
+def stretch_on_days(klines, days: List[int]) -> Dict[int, dict]:
+    """Band-stretch readings on the requested days, from daily klines (band_stretch.py)."""
+    import band_stretch
+    try:
+        ts = [float(r[0]) for r in klines or []]
+        cl = [float(r[4]) for r in klines or []]
+    except (TypeError, ValueError, IndexError):
+        return {}
+    if not ts:
+        return {}
+    d, c = band_stretch.daily_series(ts, cl)
+    return band_stretch.on_days(d, c, days)
+
+
 def aggregate(day: int, per_coin: Dict[str, tuple]) -> Optional[list]:
     """One seed-format row: [day, n, uptrend, overheated, downtrend, basing, median_z, btc]."""
     rs = list(per_coin.values())
@@ -166,6 +204,23 @@ async def _fetch_json(session, url: str):
     return None
 
 
+async def _marks_of(session, pair: str, kl, last_day: int) -> Optional[dict]:
+    """The band model's recent marks for one pair (band_marks_live.marks), from the newest page of daily candles and,
+    when it is full, the 1,000 days before it. None when they cannot be computed."""
+    import band_marks_live
+    try:
+        rows = list(kl)
+        if len(rows) >= 1000:
+            first = int(float(rows[0][0]))
+            older = await _fetch_json(session, KLINES_URL.format(pair=pair) + f"&endTime={first - 1}")
+            if older:
+                rows = [r for r in older if float(r[0]) < first] + rows
+        return await asyncio.to_thread(band_marks_live.marks, rows, last_day)
+    except Exception as exc:
+        logger.debug("Market history: band-model marks for %s skipped (%s)", pair, exc)
+        return None
+
+
 async def update(now: Optional[float] = None) -> int:
     """Append every closed day missing since the last stored one. Returns the number added. Also fills the
     per-coin closes of seed days from 60 days before the study's end day, which score the episodes after it."""
@@ -175,13 +230,25 @@ async def update(now: Optional[float] = None) -> int:
     now = time.time() if now is None else now
     yesterday = int(now * 1000) // DAY_MS - 1
     missing = list(range(all_days()[-1][0] + 1, yesterday + 1))
+    stretch_rows = stretch_rows_all()
+    stretch_last = stretch_rows[-1][0] if stretch_rows else yesterday - 1
+    stretch_missing = list(range(stretch_last + 1, yesterday + 1))
     backfill = {d[0]: d[1] for d in seed["days"] if d[0] > seed["end_day"] - max(HORIZONS) and d[0] not in _closes}
+    try:                                             # the band model's marks (band_marks_live.py), once a day
+        from hl_persistence import last_band_marks_day
+        marks_last = last_band_marks_day()
+        marks_due = marks_last is None or marks_last < yesterday
+    except Exception as exc:
+        logger.warning("Market history: band-model marks skipped (%s)", exc)
+        marks_due = False
     added = 0
     async with aiohttp.ClientSession() as session:
-        if missing or backfill:
+        if missing or backfill or stretch_missing or marks_due:
             sem = asyncio.Semaphore(FETCH_CONCURRENCY)
             per_day: Dict[int, Dict[str, tuple]] = {d: {} for d in missing}
+            per_stretch: Dict[int, Dict[str, dict]] = {d: {} for d in stretch_missing}
             filled: Dict[int, Dict[str, float]] = {d: {} for d in backfill}
+            per_marks: Dict[str, dict] = {}
 
             async def one(pair):
                 async with sem:
@@ -192,6 +259,14 @@ async def update(now: Optional[float] = None) -> int:
                         per_day[day][pair] = v
                 for day, c in day_closes(kl, list(backfill), seed["min_bars"]).items():
                     filled[day][pair] = c
+                if stretch_missing and kl:
+                    for day, v in (await asyncio.to_thread(stretch_on_days, kl, stretch_missing)).items():
+                        per_stretch[day][pair] = v
+                if marks_due and kl:
+                    async with sem:                  # at most FETCH_CONCURRENCY older pages held at once
+                        m = await _marks_of(session, pair, kl, yesterday)
+                    if m is not None:
+                        per_marks[pair] = m
 
             await asyncio.gather(*(one(p) for p in seed["pairs"]))
             for day in missing:
@@ -203,6 +278,29 @@ async def update(now: Optional[float] = None) -> int:
             for day, n in backfill.items():
                 if len(filled[day]) >= 0.9 * n:              # a partial fetch is retried on the next update
                     _closes[day] = filled[day]
+            stretch_added = 0
+            for day in stretch_missing:
+                import band_stretch
+                row = band_stretch.aggregate(day, per_stretch[day])
+                if row and row[1] >= seed["min_coins"]:
+                    _stretch[day] = row
+                    stretch_added += 1
+                    try:                                     # the record never blocks the market rows
+                        from hl_persistence import save_band_stretch
+                        save_band_stretch(day, per_stretch[day])
+                    except Exception as exc:
+                        logger.warning("Market history: band-stretch record skipped for day %d (%s)", day, exc)
+            if stretch_added:
+                logger.info("Market history: %d band-stretch day(s) added", stretch_added)
+            if marks_due and len(per_marks) >= seed["min_coins"]:     # a thin run is retried on the next update
+                try:
+                    import band_marks_live
+                    from hl_persistence import save_band_marks
+                    new_marks = save_band_marks(yesterday, per_marks)
+                    band_marks_live.reset_view()
+                    logger.info("Market history: band-model marks for %d coins, %d new", len(per_marks), new_marks)
+                except Exception as exc:
+                    logger.warning("Market history: band-model marks not recorded (%s)", exc)
             if added:
                 try:
                     log_fans(missing)
@@ -755,8 +853,18 @@ def view() -> dict:
         "forward_test": forward_test(days, band),
         "fan": _guarded("fan", lambda: fan_view(seed, days, band), None),
         "alt_recent": _guarded("alt_recent", lambda: alt_recent(days), []),
+        # The share of the coins at or above the band-stretch line each day (band_stretch.py; context, not a signal).
+        "stretch": _guarded("stretch", lambda: stretch_view(seed), None),
     }
     return _view
+
+
+def stretch_view(seed: dict) -> Optional[dict]:
+    import band_stretch
+    rows = [r for r in stretch_rows_all() if r[1] >= seed["min_coins"]]
+    if not rows:
+        return None
+    return {"line": band_stretch.LINE, "columns": ["day", "coins", "above", "median"], "rows": rows}
 
 
 def spark_payload(v: dict) -> dict:

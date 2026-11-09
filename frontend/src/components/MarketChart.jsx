@@ -74,6 +74,10 @@ export const PANES = {
     legend: r => { const w = r.wallet?.crowd; return w?.L == null ? null : `${Math.round(100 * w.L)}% long · ${Math.round(100 * w.S)}% short`; },
     kind: "baseline", base: 50, range: [0, 100], lines: [100 * CROWD], tone: "longshort" },
   fg: { value: r => r.fg, legend: r => (r.fg == null ? null : `${r.fg}`), kind: "line", range: [0, 100], lines: [GREED, FEAR_GATE], tone: "orange" },
+  // The share of the market history's coins at band stretch 1.6 or more (each against its own usual distance).
+  stretched: { value: r => (r.stretch?.share == null ? null : 100 * r.stretch.share),
+    legend: r => { const s = r.stretch; return s?.share == null ? null : `${Math.round(100 * s.share)}% · ${s.above} of ${s.coins} coins · median ${s.median >= 0 ? "+" : ""}${s.median.toFixed(2)}`; },
+    kind: "line", range: [0, 100], tone: "orange" },
   smart: { value: r => { const w = r.wallet?.smart; return w?.L == null ? null : 100 * (w.L - w.S); },
     legend: r => { const w = r.wallet?.smart; return w?.L == null ? null : `${Math.round(100 * w.L)}% long · ${Math.round(100 * w.S)}% short`; },
     kind: "baseline", base: 0, tone: "longshort" },

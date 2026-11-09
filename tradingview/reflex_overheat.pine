@@ -1,0 +1,165 @@
+//@version=6
+// Reflex overheat: price overheating in both directions (euphoria, capitulation), from price and volume alone.
+// A reading to inspect, not a signal: the engine does not use it (exits stay on heat, entries on the z-score).
+//
+// Three questions, mirrored above and below:
+// 1. Where is price? STRETCH: band z, the log distance from the weekly band mid (20-week SMA and 21-week EMA, the week
+//    under way counted, Thursday weeks as on Hyperliquid) over its root mean square across two years
+//    (as tradingview/reflex_band_stretch.pine). The main line.
+// 2. How fast did it get there? SPEED: the last 20 days' log move over the coin's daily volatility across a year,
+//    scaled to 20 days (a 20-day move in units of its usual size). The columns.
+// 3. Is it breaking? TURN: after an extreme state, band z coming off its extreme by 0.5 within 10 days (triangles).
+//    DIVERGENCE: a new 1-year closing high while band z is inside the stretch line, with a full Overheated state 30
+//    to 365 days back (or the mirror: a new 1-year low after a Capitulating state) (diamonds): the slow tops and
+//    lows that are neither stretched nor fast.
+//    A mark never follows another of its kind within 30 days.
+// States: OVERHEATED (stretch and speed both at or past their lines, above) and CAPITULATING (both, below) shade the
+// pane; WARM and COLD (one of the two) colour the line. Volume (5-day over 90-day average) is shown for context.
+// The 1.6 stretch line is the stretch-at-tops study's guide; the other levels are starting points to inspect.
+indicator("Reflex overheat", shorttitle = "Overheat", overlay = false, precision = 2, max_bars_back = 5000)
+
+weekFrom    = input.string("Thursday (Hyperliquid)", "Weeks start", options = ["Thursday (Hyperliquid)", "Monday (TradingView)"])
+stretchLine = input.float(1.6, "Stretch line (band z)", step = 0.1, group = "Levels")
+speedLine   = input.float(2.0, "Speed line (20-day move in its usual sizes)", step = 0.1, group = "Levels")
+turnDrop    = input.float(0.5, "Turn: band z off its extreme by", step = 0.1, group = "Levels")
+turnDays    = input.int(10, "Turn: within days of the extreme state", minval = 1, group = "Levels")
+gapDays     = input.int(30, "Marks: at least days apart", minval = 0, group = "Levels")
+speedDays   = input.int(20, "Speed: days", minval = 2, group = "Windows")
+volDays     = input.int(365, "Speed: volatility over days", minval = 30, group = "Windows")
+normDays    = input.int(730, "Stretch: usual distance over days", minval = 30, group = "Windows")
+shadePrice  = input.bool(true, "Shade the price chart too")
+showDiv     = input.bool(true, "Divergence marks")
+showTable   = input.bool(true, "Readout")
+
+barsPerDay = 86400.0 / timeframe.in_seconds()
+bars(d) => math.min(4900, math.max(1, int(math.round(d * barsPerDay))))
+
+// ---------------------------------------------------------------- 1. stretch (band z)
+WEEK_MS  = 7 * 86400000
+offsetMs = weekFrom == "Monday (TradingView)" ? 4 * 86400000 : 0
+wk       = math.floor((time - offsetMs) / WEEK_MS)
+k = 2.0 / 22
+var array<float> weeks = array.new_float()
+var float emaDone = na
+if bar_index > 0 and wk != wk[1]
+    weeks.push(close[1])
+    nDone = weeks.size()
+    if nDone == 21
+        emaDone := weeks.avg()
+    else if nDone > 21
+        emaDone := close[1] * k + emaDone * (1 - k)
+n = weeks.size()
+float sma = na
+float ema = na
+if n >= 19
+    float s = close
+    for i = n - 19 to n - 1
+        s += weeks.get(i)
+    sma := s / 20
+if n >= 21
+    ema := close * k + emaDone * (1 - k)
+else if n == 20
+    ema := (weeks.sum() + close) / 21
+mid = (sma + ema) / 2
+stretch = math.log(close / mid)
+var array<float> sq = array.new_float()
+var float sumSq = 0.0
+if not na(stretch)
+    s2 = stretch * stretch
+    sq.push(s2)
+    sumSq += s2
+    if sq.size() > bars(normDays)
+        sumSq -= sq.shift()
+rms = sq.size() > 0 ? math.sqrt(math.max(sumSq, 0.0) / sq.size()) : na
+bz = sq.size() >= bars(180) and rms > 0 ? stretch / rms : na
+
+// ---------------------------------------------------------------- 2. speed
+nSpeed = bars(speedDays)
+r1 = math.log(close / close[1])
+sigma = ta.stdev(r1, bars(volDays))
+speed = sigma > 0 ? math.log(close / close[nSpeed]) / (sigma * math.sqrt(nSpeed)) : na
+
+// volume, for context: the last 5 days over the last 90
+volRatio = ta.sma(volume, bars(5)) / ta.sma(volume, bars(90))
+
+// ---------------------------------------------------------------- states
+hot  = bz >= stretchLine and speed >= speedLine
+cold = bz <= -stretchLine and speed <= -speedLine
+warm = not hot and (bz >= stretchLine or speed >= speedLine)
+cool = not cold and (bz <= -stretchLine or speed <= -speedLine)
+
+// ---------------------------------------------------------------- 3. turns and divergences
+// (every ta.* call on every bar: in v6 "and" stops early, so none sits inside a condition)
+nTurn = bars(turnDays)
+sinceHot  = ta.barssince(hot)
+sinceCold = ta.barssince(cold)
+hiBz = ta.highest(bz, nTurn)
+loBz = ta.lowest(bz, nTurn)
+exhausting = not hot and sinceHot <= nTurn and bz <= hiBz - turnDrop
+basing     = not cold and sinceCold <= nTurn and bz >= loBz + turnDrop
+exhaustStart = exhausting and not exhausting[1]
+baseStart    = basing and not basing[1]
+
+nYear = bars(365)
+nSkip = bars(30)
+hotNum  = hot ? 1.0 : 0.0
+coldNum = cold ? 1.0 : 0.0
+hotBack  = ta.highest(hotNum[nSkip], nYear - nSkip) > 0
+coldBack = ta.highest(coldNum[nSkip], nYear - nSkip) > 0
+hiClose = ta.highest(close, nYear)
+loClose = ta.lowest(close, nYear)
+topDiv = showDiv and hotBack and close >= hiClose and bz > 0 and bz < stretchLine
+botDiv = showDiv and coldBack and close <= loClose and bz < 0 and bz > -stretchLine
+
+// A mark only when its kind has been quiet for gapDays (a candidate inside the gap restarts it).
+nGap = bars(gapDays)
+var int lastExh = na
+var int lastBase = na
+var int lastTop = na
+var int lastBot = na
+exhaustMark = exhaustStart and (na(lastExh) or bar_index - lastExh > nGap)
+baseMark    = baseStart and (na(lastBase) or bar_index - lastBase > nGap)
+topMark     = topDiv and (na(lastTop) or bar_index - lastTop > nGap)
+botMark     = botDiv and (na(lastBot) or bar_index - lastBot > nGap)
+if exhaustStart
+    lastExh := bar_index
+if baseStart
+    lastBase := bar_index
+if topDiv
+    lastTop := bar_index
+if botDiv
+    lastBot := bar_index
+
+// ---------------------------------------------------------------- drawing
+cHot  = #fb923c
+cCold = #38bdf8
+cMid  = #26a69a
+lineCol = hot ? cHot : warm ? color.new(cHot, 45) : cold ? cCold : cool ? color.new(cCold, 45) : cMid
+plot(speed, "Speed", speed >= 0 ? color.new(cHot, 78) : color.new(cCold, 78), 1, plot.style_columns)
+plot(bz, "Stretch (band z)", lineCol, 2)
+hline(0, "Band", color.new(color.gray, 60), hline.style_solid)
+hline(stretchLine, "Stretch line", color.new(cHot, 40), hline.style_dashed)
+hline(-stretchLine, "Stretch line below", color.new(cCold, 40), hline.style_dashed)
+bgcolor(hot ? color.new(cHot, 82) : cold ? color.new(cCold, 82) : na, title = "Overheated / Capitulating")
+priceShade = shadePrice and hot ? color.new(cHot, 88) : shadePrice and cold ? color.new(cCold, 88) : na
+bgcolor(priceShade, title = "Overheated / Capitulating on price", force_overlay = true)
+plotshape(exhaustMark, "Exhausting", shape.triangledown, location.top, cHot, size = size.tiny)
+plotshape(baseMark, "Turning up", shape.triangleup, location.bottom, cCold, size = size.tiny)
+plotshape(topMark, "Top divergence", shape.diamond, location.top, color.new(cHot, 30), size = size.tiny)
+plotshape(botMark, "Bottom divergence", shape.diamond, location.bottom, color.new(cCold, 30), size = size.tiny)
+plot(volRatio, "Volume (5d / 90d)", color.gray, display = display.data_window + display.status_line)
+
+state = hot ? "Overheated" : cold ? "Capitulating" : exhausting ? "Exhausting" : basing ? "Turning up" : warm ? "Warm" : cool ? "Cold" : "Calm"
+var table box = table.new(position.top_right, 1, 1)
+if showTable and barstate.islast
+    txt = state + "   stretch " + str.tostring(bz, "#.##") + " · speed " + str.tostring(speed, "#.##") +
+          " · volume ×" + str.tostring(volRatio, "#.#")
+    table.cell(box, 0, 0, txt, text_color = hot or exhausting ? cHot : cold or basing ? cCold : color.gray,
+               text_size = size.small, bgcolor = color.new(color.black, 100))
+
+alertcondition(hot and not hot[1], "Overheated", "{{ticker}}: Reflex overheat: Overheated (stretched and fast above the band)")
+alertcondition(exhaustMark, "Exhausting", "{{ticker}}: Reflex overheat: Exhausting (stretch off its extreme after Overheated)")
+alertcondition(cold and not cold[1], "Capitulating", "{{ticker}}: Reflex overheat: Capitulating (stretched and fast below the band)")
+alertcondition(baseMark, "Turning up", "{{ticker}}: Reflex overheat: Turning up (stretch off its low after Capitulating)")
+alertcondition(topMark, "Top divergence", "{{ticker}}: Reflex overheat: a new 1-year high, less stretched than an earlier high")
+alertcondition(botMark, "Bottom divergence", "{{ticker}}: Reflex overheat: a new 1-year low, less stretched than an earlier low")

@@ -45,7 +45,9 @@ class SignalTests(unittest.TestCase):
                 self.assertTrue(out.strong_long_blockers)
 
     def test_favorable_complete_context_still_produces_strong_long(self):
-        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
+        import signal_synthesizer as ss
+        with patch.object(ss, "STRONG_LONG_CAP", False):      # the engine's own Strong long path, without the cap
+            self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
 
     def test_missing_context_is_unknown_and_does_not_earn_points(self):
         out = synthesize_signal(favorable(), {"consensus": "RISK-ON"})
@@ -86,6 +88,76 @@ class SignalTests(unittest.TestCase):
     def test_hard_exit_is_not_erased_by_entry_blocks(self):
         row = favorable(); row.update(heat=100, heat_direction=-1)
         self.assertEqual(synthesize_signal(row, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+
+
+class DivExitSwitchTests(unittest.TestCase):
+    """docs/reviews/top-divergence-exit-study.md: out while a top divergence is recent (on since 9 November 2026)."""
+
+    def test_on_since_approval_and_off_ignores_the_window(self):
+        import signal_synthesizer as ss
+        self.assertTrue(ss.DIV_EXIT)
+        with patch.object(ss, "DIV_EXIT", False):
+            r = favorable(); r.update(top_div_window=True)
+            self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+
+    def test_on_it_exits_inside_the_window_only(self):
+        import signal_synthesizer as ss
+        with patch.object(ss, "DIV_EXIT", True):
+            r = favorable(); r.update(top_div_window=True)
+            out = synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT)
+            self.assertEqual(out.signal, "TRIM")
+            self.assertIn("Top divergence", out.reason)
+            r = favorable(); r.update(top_div_window=False)
+            base = synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal
+            self.assertEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, base)
+
+
+class StrongLongCapTests(unittest.TestCase):
+    """docs/reviews/strong-long-replay-study.md: Strong long capped at Light long (on since 9 November 2026)."""
+
+    def test_on_since_approval_and_off_gives_strong_long_back(self):
+        import signal_synthesizer as ss
+        self.assertTrue(ss.STRONG_LONG_CAP)
+        self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "LIGHT_LONG")
+        with patch.object(ss, "STRONG_LONG_CAP", False):
+            self.assertEqual(synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT).signal, "STRONG_LONG")
+
+    def test_on_strong_long_is_light_long_everywhere_the_final_check_runs(self):
+        import signal_synthesizer as ss
+        from signal_synthesizer import enforce_signal_constraints
+        with patch.object(ss, "STRONG_LONG_CAP", True):
+            out = synthesize_signal(favorable(), {"consensus": "RISK-ON"}, **CONTEXT)
+            self.assertEqual(out.signal, "LIGHT_LONG")
+            self.assertIn("Strong long capped", out.reason)
+            self.assertEqual(enforce_signal_constraints("STRONG_LONG"), "LIGHT_LONG")
+            self.assertEqual(enforce_signal_constraints("LIGHT_LONG"), "LIGHT_LONG")
+            self.assertEqual(enforce_signal_constraints("STRONG_LONG", entry_blocked=True), "WAIT")
+
+
+class TopExitSwitchTests(unittest.TestCase):
+    """docs/reviews/band-exit-study.md: the exit above the weekly band on band z, behind a switch that is off."""
+
+    def run_with(self, mode, **row):
+        import signal_synthesizer as ss
+        with patch.object(ss, "TOP_EXIT", mode):
+            r = favorable(); r.update(row)
+            return synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT)
+
+    def test_off_by_default_and_band_z_is_ignored(self):
+        import signal_synthesizer as ss
+        self.assertEqual(ss.TOP_EXIT, "heat")
+        r = favorable(); r.update(heat=96, band_z=0.2)
+        self.assertEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+        r = favorable(); r.update(band_z=3.0)
+        self.assertNotEqual(synthesize_signal(r, {"consensus": "RISK-ON"}, **CONTEXT).signal, "TRIM")
+
+    def test_band_mode_exits_on_band_z_above_the_band_only(self):
+        self.assertEqual(self.run_with("band", band_z=1.61).signal, "TRIM")
+        self.assertIn("Band z", self.run_with("band", band_z=2.0).reason)
+        self.assertNotEqual(self.run_with("band", heat=96, band_z=1.0).signal, "TRIM")     # heat no longer exits above
+        self.assertEqual(self.run_with("band", heat=96, heat_direction=-1, band_z=-2.0).signal, "TRIM")   # crash exit
+        self.assertEqual(self.run_with("band", heat=96, band_z=None).signal, "TRIM")       # unknown: today's rule
+        self.assertEqual(self.run_with("band", regime="ACCUM", heat=100, band_z=0.5).signal, "TRIM")   # bottoms: today
 
 
 class CandleTests(unittest.TestCase):
@@ -204,6 +276,7 @@ class PipelineTests(unittest.TestCase):
         row.update(signal="WAIT", entry_blocked=True, signal_bar_close_time=200)
         self.assertEqual(process(row, [], cache).adjusted_signal, "WAIT")
 
+    @patch("signal_synthesizer.STRONG_LONG_CAP", False)       # inertia itself, without the cap
     def test_inertia_confirmation_counts_candles_instead_of_polls(self):
         from agent_layer import process
         cache = SimpleNamespace()
