@@ -2,6 +2,7 @@
 Record every decision input of one replay of the live logic (step 1 of the rule lab, docs/reviews/rule-lab-study.md).
 
     python backtest/rule_capture.py --symbols primary|secondary --tf 4h|1d --out <prefix>
+    python backtest/rule_capture.py --symbols-file <universe.json> --tf 4h --out <prefix>
 
 The replay is backtest/live_logic_replay.py in the live configuration (funding and stablecoin context, the
 top-divergence exit on a 90-day window, Strong long capped). The engines are the slow part and do not depend on
@@ -10,7 +11,8 @@ as passed, the context and the metadata. backtest/rule_lab.py then re-runs only 
 once per rule variant, in seconds instead of hours.
 
 Two files: <prefix>.cap holds windows 1-9, <prefix>.holdout.cap the holdout window. The lab opens the second
-only for the one declared holdout read.
+only for the one declared holdout read. The replay's own rows are saved beside them (<prefix>.rows.pkl and
+<prefix>.holdout.rows.pkl).
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ def _ms(day: str) -> int:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--symbols", choices=("primary", "secondary"), default="primary")
+    ap.add_argument("--symbols-file", help="JSON with a \"symbols\" list; replaces --symbols")
     ap.add_argument("--tf", choices=("4h", "1d"), default="4h")
     ap.add_argument("--out", required=True)
     ap.add_argument("--end", help="last day of data, exclusive (default: the study's freeze date)")
@@ -51,7 +54,9 @@ def main(argv=None):
     if args.tf == "1d":
         start["1d"] = L.DATA_START_1D_PRIMARY
     symbols = L.SYMBOLS
-    if args.symbols == "secondary":
+    if args.symbols_file:
+        symbols = json.loads(Path(args.symbols_file).read_text())["symbols"]
+    elif args.symbols == "secondary":
         from backtest.larsson_scenarios import SECONDARY_FILE
         symbols = json.loads(SECONDARY_FILE.read_text())["symbols"]
     cut = _ms(args.until) if args.until else None
@@ -113,6 +118,7 @@ def main(argv=None):
         f.close()
     rows = [{k: getattr(r, k, None) for k in L.FIELDS} for r in res]
     Path(f"{args.out}.rows.pkl").write_bytes(pickle.dumps([r for r in rows if r["timestamp"] < split_ms]))
+    Path(f"{args.out}.holdout.rows.pkl").write_bytes(pickle.dumps([r for r in rows if r["timestamp"] >= split_ms]))
     print(f"{len(rows)} bar results, {st['calls']} decisions ({1e6 * st['eval_s'] / max(st['calls'], 1):.0f} us each) "
           f"in {time.time() - t0:.0f}s -> {args.out}.cap")
 

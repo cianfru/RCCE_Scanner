@@ -103,13 +103,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", nargs="+", required=True, help="<name>.rows.pkl from backtest/rule_capture.py (4H)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--all-windows", action="store_true", help="windows 1-10 (a coin set whose window 10 is unread)")
     args = ap.parse_args(argv)
-    wins = [w for w in windows() if w["index"] < HOLDOUT]
-    bmsb = rule_lab.bmsb_filter(windows()[HOLDOUT - 2]["end"])
+    from backtest.larsson_study import FREEZE_END
+    wins = [w for w in windows() if args.all_windows or w["index"] < HOLDOUT]
+    bmsb = rule_lab.bmsb_filter(FREEZE_END if args.all_windows else windows()[HOLDOUT - 2]["end"])
     res = {}
     for path in args.rows:
         name = Path(path).name.replace(".rows.pkl", "")
         rows = pickle.loads(Path(path).read_bytes())
+        if args.all_windows:
+            rows = rows + pickle.loads(Path(path.replace(".rows.pkl", ".holdout.rows.pkl")).read_bytes())
         res[name] = {"reference": rule_lab.score(rows, bmsb, wins)}        # the unchanged backtest manager
         for v, flags in VARIANTS.items():
             res[name][v] = rule_lab.score(rows, bmsb, wins, pm_class=manager(**flags))
@@ -117,8 +121,8 @@ def main(argv=None):
             exits = collections.Counter()
             for w in ws:
                 exits.update(w["exits"])
-            print(f"{name:<14}{v:<18}W1-6 {compounded(ws[:6]):+7.1f}  W7-9 {compounded(ws[6:]):+7.1f}  "
-                  f"W1-9 {compounded(ws):+7.1f}  worst {min(w['total_return_pct'] for w in ws):+6.1f}  {dict(exits)}")
+            print(f"{name:<14}{v:<18}W1-6 {compounded(ws[:6]):+7.1f}  W7+ {compounded(ws[6:]):+7.1f}  "
+                  f"all {compounded(ws):+7.1f}  worst {min(w['total_return_pct'] for w in ws):+6.1f}  {dict(exits)}")
     Path(args.out).write_text(json.dumps({"variants": VARIANTS, "results": res}, indent=1, default=float))
 
 

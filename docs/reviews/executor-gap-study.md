@@ -99,3 +99,26 @@ Limits that matter for the decision: no untouched window remains for these data 
 
 1. Record, alongside the live executor, what the band block and the decay exit would have done on each scan (a shadow record; no orders). This is the only clean test left, because it uses data that does not exist yet.
 2. If the owner prefers to act now: the band entry block is the lower-risk change. It only withholds entries and passed the bar on its own.
+
+## Two independent checks (declared 10 November 2026, before running either)
+
+The owner will not wait months for a shadow record. Two sources of evidence exist today that no study has used.
+
+### Check 1: a third coin set, all ten windows
+
+- Coins: ranks 31 to 60 by the secondary set's own rule (Binance quote volume in the 90 days before window 1; listed before February 2020). Ranks 1 to 30 reproduce the secondary set exactly. The 30 coins: ENJ, ARPA, ONT, XMR, ZEC, DASH, WAVES, ZIL, RVN, OGN, REN, CVC, TROY, ICX, TFUEL, ANKR, FUN, MTL, NKN, STX, RLC, BAND, TOMO, BAT, NANO, COS, ZRX, VITE, KEY, ONG. Some were later delisted; their series end where the data ends.
+- No study has replayed these coins, so all ten windows are untouched for them, window 10 included.
+- Same replay, same live rules on 4H, same scoring. Variants X0, X1_decay20, X2_band, X5_decay20_band (the others are reported, not judged).
+- **Bar, per variant, against X0 over windows 1–10:** the compounded gain is at least **+3 points**; the gain is not negative in either half (windows 1–5 and 6–10); the worst window is not more than 3 points worse than X0's.
+
+### Check 2: the executor's own closed trades
+
+- Source: the executor's trade record in production (read only).
+- For each closed long, the BTC weekly-band state at the entry time, by the same function the backtest uses.
+- **Bar for the band block:** the trades entered while the block was on sum to a loss, and there are at least 20 of them. Fewer than 20: context only.
+- The decay exit cannot be checked this way (the record does not hold each coin's signal history between entry and exit).
+
+### What the checks lead to
+
+- A rule that passes Check 1 has out-of-sample support on unseen coins and an unseen window. It is then recommended to the owner for the executor; the change still needs the owner's explicit approval.
+- A rule that fails Check 1 is not recommended, whatever it did on the first two coin sets.
