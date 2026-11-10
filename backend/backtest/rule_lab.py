@@ -142,8 +142,9 @@ def bmsb_filter(end: str):
     return m, sorted(m)
 
 
-def score(rows: List[dict], bmsb, wins: List[dict], decay: int = DECAY_TODAY) -> List[dict]:
-    """Per-window metrics, as backtest/live_logic_check.score, for the given windows and decay threshold (bars)."""
+def score(rows: List[dict], bmsb, wins: List[dict], decay: int = DECAY_TODAY, pm_class=None) -> List[dict]:
+    """Per-window metrics, as backtest/live_logic_check.score, for the given windows and decay threshold (bars).
+    `pm_class` replaces the costed position manager (backtest/executor_gap.py)."""
     import collections
     from types import SimpleNamespace
     import backtest.position_manager as PM
@@ -158,7 +159,7 @@ def score(rows: List[dict], bmsb, wins: List[dict], decay: int = DECAY_TODAY) ->
     PM._SIGNAL_DECAY_THRESHOLD = decay
     try:
         for w in wins:
-            pm = _costed_pm_class()(INITIAL_CAPITAL, syms)
+            pm = (pm_class or _costed_pm_class())(INITIAL_CAPITAL, syms)
             span = [t for t in stamps if w["start_ms"] <= t < w["end_ms"]]
             exposure = []
             for ts in span:

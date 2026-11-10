@@ -66,7 +66,7 @@ For F the same four rules apply over the two sets of the timeframe (rule 2: both
 ## Known limits, stated before the results
 
 - Windows 1–9 have been used by many earlier studies. Splitting them into selection and confirmation reduces chance findings but does not remove them; window 10 is the only untouched data.
-- The backtest manager is not the live executor: the executor has no decay exit, has a breakeven stop and enters on Accumulate. Results describe the rules, not the account.
+- The backtest manager is not the live executor: the executor has no decay exit and no weekly-band entry block, has a breakeven stop, and closes one coin on Risk-off (corrected 10 November; see `executor-gap-study.md`). Results describe the rules, not the account.
 - Historical funding and stablecoin context are reconstructions (`backtest/live_context.py`).
 
 ## Round 2 (declared 9 November 2026, after the round 1 results on three data sets, before any round 2 result)
@@ -166,6 +166,6 @@ No chosen set, so the read covered `before` and `live` only. The marker file is 
 | A code comment credited the Accumulation Strong long path with a 68.4% win rate (n=38). The replay shows 18–36%. | Comment corrected. The path stays (J failed). |
 | The Light long block lists the Accumulation regime but has no branch for it. | Harmless; left as is. |
 | With crowded funding the Uptrend Light long has no upper z bound. | Tested (H): no measurable effect. Left as is. |
-| The fear level and Accumulate entries cannot be judged by the backtest, because the manager ignores Accumulate while the executor enters on it. | Recommendation: add Accumulate entries to the backtest manager in a declared study. |
+| The fear level has no effect in the backtest: only Accumulate uses it and neither the backtest manager nor the executor enters on Accumulate. | None needed. (Corrected 10 November: an earlier version of this row said the executor enters on Accumulate. It does not; see `entry-quality-study.md`.) |
 | The executor has no decay exit; the backtest closes after 20 bars of Wait, which is worth 11 to 18 points on 4H over windows 1–9. | Recommendation for the owner; the executor stays as it is without explicit approval. |
 | Decay is counted in bars, so it means 3.3 days on 4H and 20 days on 1D. | Tested (F): today's level is the best supported on each timeframe. |
