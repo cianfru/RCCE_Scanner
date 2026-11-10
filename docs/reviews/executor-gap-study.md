@@ -141,3 +141,47 @@ Source: 1,018 closed longs and 43 priced open positions, 11 March to 9 November 
 Also seen in the record (context, not part of the bar):
 - 1,018 closures in eight months; the median gap between an exit and the next entry on the same coin is 3 hours, and 464 of 905 re-entries come within 4 hours. `reentry-replay.md` studied this in September and found a cooldown worth too little to act on.
 - Hard stops cost −$2,098; breakeven stops −$166.
+
+## Check 1 result: the third coin set (10 November 2026)
+
+**Verdict: the band entry block passes. The decay exit fails, alone and combined with the band block.**
+
+Data: the 30 coins declared above, 4H, windows 1 to 10 (332,608 bar results). The plain capture takes about 130 minutes for this set and was stopped by a two-hour job limit at July 2025. The capture was then run with the per-coin engine step computed in four parallel time chunks; the decision steps ran in one process as before. Its records match the stopped run's on all 573,237 records that run had written (compared by value).
+
+Compounded %, executor as it is (X0) and the three declared variants; `B` is the backtest manager, for reference.
+
+| Variant | W1–10 | W1–5 | W6–10 | Worst window | Gain W1–10 | Gain W1–5 | Gain W6–10 | Worst window change | Bar |
+|---|---|---|---|---|---|---|---|---|---|
+| X0 (executor today) | −7.2 | +8.2 | −14.2 | −11.6 | | | | | |
+| X1_decay20 | −1.2 | −2.6 | +1.4 | −10.3 | +6.0 | −10.8 | +15.7 | +1.3 | fail |
+| X2_band | +1.0 | +16.9 | −13.7 | −12.0 | +8.2 | +8.7 | +0.6 | −0.4 | **pass** |
+| X5_decay20_band | +2.2 | +3.3 | −1.1 | −10.0 | +9.4 | −4.9 | +13.2 | +1.6 | fail |
+| B | +6.3 | +4.5 | +1.7 | −9.6 | | | | | |
+
+Per window, %:
+
+| Variant | W1 | W2 | W3 | W4 | W5 | W6 | W7 | W8 | W9 | W10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| X0 | −11.6 | −4.4 | −5.4 | −5.2 | +42.9 | −11.5 | −5.1 | −1.2 | +0.2 | +3.1 |
+| X1_decay20 | −10.3 | −4.3 | −4.1 | −4.3 | +23.7 | −9.3 | +9.3 | −2.7 | +0.8 | +4.3 |
+| X2_band | −10.3 | 0.0 | −3.2 | −5.7 | +42.9 | −12.0 | −4.9 | −1.3 | +1.9 | +2.6 |
+| X5_decay20_band | −9.8 | 0.0 | −2.6 | −4.9 | +23.7 | −10.0 | +9.5 | −3.1 | +1.9 | +1.8 |
+
+- **Band entry block:** gain +8.2 points over ten windows, not negative in either half, worst window 0.4 points lower. It now has the same sign on three coin sets (W1–9 gain +10.1 on primary, +2.8 on secondary). The gain comes mostly from 2022 (windows 1 to 3); in window 10, the months the real record covers, it is 0.5 points behind.
+- **Decay exit:** it fails for the reason the first part showed on the primary set. In the one strong run (window 5) it cuts +42.9% to +23.7%; it then adds 14 points in window 7. The total is positive, the halves disagree.
+- This set loses money as the executor trades it (−7.2% over five years). It holds older, smaller coins.
+- Not part of the declared check: without the breakeven stop this set does better (−0.5%), the opposite of the first two sets. Context only; the breakeven stop stays.
+
+## Overall (10 November 2026)
+
+| Rule | First two sets | Third set (Check 1) | Real record (Check 2) | Outcome |
+|---|---|---|---|---|
+| Band entry block | pass | pass | bar met by the letter; complete record against | recommended by the declared rule, with the caveat below |
+| Decay exit, 20 bars | fail (neighbour test) | fail | cannot be checked | not recommended |
+| Both together | pass | fail | | not recommended |
+| Risk-off closes everything | no difference | | | nothing to change |
+| Remove breakeven stop | fail | | | stays |
+
+- The band entry block is the only one of the backtest's management rules with consistent replay support: three coin sets, one of them unseen, including the unseen window. Its size is modest and most of it is the 2022 bear market.
+- Caveat: in the eight months of real paper trading, the entries it would have refused are the profitable group, and the replay's window 10 agrees in sign for that period. The block is a bear-market protection; it costs a little in a period like 2026.
+- The executor is unchanged. Adding the block is the owner's decision.
