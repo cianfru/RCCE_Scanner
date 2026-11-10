@@ -122,3 +122,22 @@ The owner will not wait months for a shadow record. Two sources of evidence exis
 
 - A rule that passes Check 1 has out-of-sample support on unseen coins and an unseen window. It is then recommended to the owner for the executor; the change still needs the owner's explicit approval.
 - A rule that fails Check 1 is not recommended, whatever it did on the first two coin sets.
+
+## Check 2 result: the executor's own trades (10 November 2026)
+
+**Verdict: the declared bar is met on closed trades, but the complete record points the other way. The real record does not support the band entry block.**
+
+Source: 1,018 closed longs and 43 priced open positions, 11 March to 9 November 2026 (paper mode, no fees). Five closures with a verified price error are left out.
+
+| Entered while the band block was | Closed trades | Realised | Open positions | Unrealised | Together |
+|---|---|---|---|---|---|
+| on (BTC below its weekly band) | 438 | −$297 | 30 | +$846 | **+$549** |
+| off | 575 | −$1,016 | 13 | +$195 | **−$821** |
+
+- The bar as declared looked only at closed trades: 438 trades entered with the block on sum to a loss, so it is met by the letter.
+- That bar was badly designed, and I say so here rather than lean on it. The executor's closed record is almost all losers by construction (593 breakeven stops, 407 hard stops, 15 winners in 1,018), because winning positions stay open. Counting the open positions, the entries the band block would have refused are the profitable group, led by one position (HYPE, +$502).
+- This is eight months and one market regime, and one position carries most of the profit. It does not overturn six years of replay, but it is the only real-account evidence and it does not agree with it.
+
+Also seen in the record (context, not part of the bar):
+- 1,018 closures in eight months; the median gap between an exit and the next entry on the same coin is 3 hours, and 464 of 905 re-entries come within 4 hours. `reentry-replay.md` studied this in September and found a cooldown worth too little to act on.
+- Hard stops cost −$2,098; breakeven stops −$166.
