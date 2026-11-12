@@ -214,3 +214,42 @@ def test_day_ago_reads_the_close_nearest_24h_back():
     assert sm.day_ago(lean, ["SUI", "BTC"], now) == {"SUI": {"long": 4, "short": 1}, "BTC": {"long": 0, "short": 0}}
     assert sm.day_ago({"SUI": {now - 3600: (6, 1)}}, ["SUI"], now) == {}       # no close near a day ago
     assert sm.day_ago({}, ["SUI"], now) == {}
+
+
+# ------------------------------------------------------------------ band z and heat signs
+def test_band_reading_matches_band_stretch_and_caches_per_day():
+    import band_stretch
+    sm._band_cache.clear()
+    rng = np.random.default_rng(5)
+    first = 20000
+    vals = np.exp(np.cumsum(rng.normal(0.001, 0.03, 500))) * 5
+    closes = {first + k: float(v) for k, v in enumerate(vals)}
+    now = (first + 500) * DAY + 3600          # the last candle (day first+499) has closed
+    r = sm.band_reading("FET/USDT", daily(closes), now)
+    days, cl = band_stretch.daily_series([d * DAY * 1000 for d in sorted(closes)], [closes[d] for d in sorted(closes)])
+    want = band_stretch.readings(days, cl)["a"]
+    assert r["z"] == round(float(want[-1]), 3) and len(r["days"]) == sm.BAND_Z_DAYS
+    assert r["days"][-1] == r["z"] and r["day"] == first + 499
+    assert sm.band_reading("FET/USDT", {"timestamp": np.array([1.0]), "close": np.array([1.0])}, now) is None
+    assert sm.band_reading("FET/USDT", daily(closes), now) is r     # same last close: cached
+    assert sm.band_reading("OLD/USDT", daily(closes), now + 15 * DAY) is None   # delisted: stale candles
+
+
+def test_band_reading_leaves_out_the_unfinished_day():
+    sm._band_cache.clear()
+    first = 20000
+    closes = {first + k: 10.0 + 0.01 * k for k in range(400)}
+    closes[first + 400] = 1000.0               # today's candle, still open
+    r = sm.band_reading("X", daily(closes), (first + 400) * DAY + 3600)
+    assert r["day"] == first + 399 and r["z"] < 5
+
+
+def test_heat_signs():
+    hot = {"heat": 55, "heat_direction": 1, "heat_phase": "Extension", "positioning": {"funding_regime": "CROWDED_LONG"}}
+    item = {"band_z": {"z": 1.7}, "crowd": "holding", "trail": {"n": [6, 5, 4]}}
+    assert sm.heat_signs(hot, item) == {"band": True, "heat": True, "funding": True, "traders": True}
+    cold = {"heat": 55, "heat_direction": -1, "heat_phase": "Neutral", "positioning": {"funding_regime": "NEUTRAL"}}
+    assert sm.heat_signs(cold, {"band_z": {"z": 1.59}, "crowd": "early", "trail": {"n": [4, 5]}}) == \
+        {"band": False, "heat": False, "funding": False, "traders": False}
+    none = sm.heat_signs({"heat_phase": "Exhaustion"}, {"band_z": None, "crowd": "crowded"})
+    assert none == {"band": None, "heat": True, "funding": None, "traders": True}
