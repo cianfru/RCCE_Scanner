@@ -27,6 +27,8 @@ import RadarRail, { FocusBody } from "../components/radar/RadarRail.jsx";
 import RadarLadder, { LadderWallets } from "../components/radar/RadarLadder.jsx";
 import RadarSheet from "../components/radar/RadarSheet.jsx";
 import { RM, store } from "../components/radar/shared.jsx";
+import { BandChanges, BandMap } from "../components/radar/RadarBand.jsx";
+import { bandVisible } from "../utils/radarBand.js";
 
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
 const VIEW_ITEMS = [{ key: "setups", label: "Setups with traders" }, { key: "all", label: "All coins" }];
@@ -184,6 +186,8 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const sector = params.get("sector") || null;
   const showAll = params.get("view") === "all";
   const spotArrival = params.get("market") === "spot";
+  // Preview of the band view (distance from the weekly band, heat signs); the current map stays the default.
+  const bandView = params.get("design") === "band";
 
   // Change the address: the followed coin and the timeframe replace the entry, the rest adds one.
   const setParams = useCallback((changes, replace) => {
@@ -216,7 +220,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const coins = useMemo(() => (data?.coins || []).filter(c => allowed.has(c.symbol)), [data, allowed]);
   const box = data?.box || { z: [-0.5, 1.5], n: [1, 8] };
   const keep = useMemo(() => new Set([...watched, ...mineBy.keys(), ...(focus ? [focus] : [])]), [watched, mineBy, focus]);
-  const pts = useMemo(() => visible(coins, { all: showAll, keep, side }), [coins, showAll, keep, side]);
+  const pts = useMemo(() => (bandView ? bandVisible(coins, { all: showAll, keep }) : visible(coins, { all: showAll, keep, side })), [coins, showAll, keep, side, bandView]);
   const top = useMemo(() => picks(coins, box), [coins, box]);
   const inBoxN = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
   const fresh = useMemo(() => newEarly(coins, box, Infinity), [coins, box]);
@@ -322,13 +326,17 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
       </div>}
       {spotArrival && <p className="radar-spot-note">The Radar covers Hyperliquid perpetuals.</p>}
 
-      <RadarPicks top={top} box={box} tf={tf} focus={focusC ? focus : null} watched={watched} inBox={inBoxN} loaded={loaded} onPick={pick} />
+      {bandView
+        ? <BandChanges coins={coins} tf={tf} loaded={loaded} focus={focusC ? focus : null} watched={watched} onPick={pick} />
+        : <RadarPicks top={top} box={box} tf={tf} focus={focusC ? focus : null} watched={watched} inBox={inBoxN} loaded={loaded} onPick={pick} />}
 
       <div className="radar-main" ref={mainRef}>
-        <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
-          mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} side={side} />
+        {bandView
+          ? <BandMap pts={loaded ? pts : []} height={mapH} focus={focusC ? focus : null} watched={watched} onPick={pick} side={side} tf={tf} />
+          : <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
+            mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} side={side} />}
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          fresh={fresh} shorted={side === "short" ? shorted : null} box={box} focus={focusC ? focus : null} onPick={pick} />
+          fresh={bandView ? [] : fresh} shorted={side === "short" ? shorted : null} box={box} focus={focusC ? focus : null} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">

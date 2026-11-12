@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 TF_S = {"4h": 4 * 3600, "1d": 86400}
@@ -238,6 +240,57 @@ def weekly_band(ohlcv: Optional[dict], price: Optional[float], now: float) -> Op
             "week": (days[-1] + 1) * 86400, **band_state(lo, hi, wc, price)}
 
 
+# ------------------------------------------------------------------ band stretch and heat signs
+# The Radar's band view: each coin's band z (band_stretch.py: distance from the weekly band's mid, scaled to how far
+# the coin usually sits from it), the last BAND_Z_DAYS daily readings for what changed this week, and four heat
+# signs from readings the app already makes. Context, not a signal: nothing in the engine reads these.
+BAND_Z_DAYS = 8                  # today and the seven days before it
+HEAT_SIGNS = ("band", "heat", "funding", "traders")
+TRADERS_LEAVING = 2              # profitable traders net long down by at least this over the trail
+_band_cache: Dict[str, tuple] = {}
+
+
+def band_reading(symbol: str, ohlcv: Optional[dict], now: float) -> Optional[dict]:
+    """Band z on the last BAND_Z_DAYS completed days (oldest first; None where not yet defined) and the percent
+    from the band mid on the last one, from the stored daily candles; None with under 180 days or a last close older than BAND_STALE_DAYS. Cached
+    per coin until a new day closes."""
+    import band_stretch
+    ts, cs = closes(ohlcv, "1d", now)
+    if len(cs) < band_stretch.MIN_DAYS or now - ts[-1] > BAND_STALE_DAYS * 86400:     # short or stale history
+        return None
+    hit = _band_cache.get(symbol)
+    if hit and hit[0] == ts[-1]:
+        return hit[1]
+    days, cl = band_stretch.daily_series([1000 * (t - 86400) for t in ts], cs)
+    rd = band_stretch.readings(days, cl)
+    a = rd["a"][-BAND_Z_DAYS:]
+    out = None
+    if np.isfinite(a[-1]):
+        out = {"z": round(float(a[-1]), 3), "days": [None if not np.isfinite(v) else round(float(v), 3) for v in a],
+               "pct": round(float(rd["pct"][-1]), 2), "day": int(days[-1])}
+    _band_cache[symbol] = (ts[-1], out)
+    return out
+
+
+def heat_signs(row: dict, item: dict) -> dict:
+    """Four signs of heat, each True, False or None (no reading): band (band z at or above the stretch line, 1.6),
+    heat (the heat engine at or above STRETCHED_HEAT on the way up, or in its Exhaustion phase), funding (the
+    positioning engine's crowded-long funding) and traders (crowded, or profitable traders net long down by
+    TRADERS_LEAVING or more over the trail)."""
+    import band_stretch
+    bz = (item.get("band_z") or {}).get("z")
+    up = (row.get("heat_direction") or 0) > 0
+    pos = row.get("positioning") or {}
+    trail_n = [v for v in ((item.get("trail") or {}).get("n") or []) if v is not None]
+    leaving = len(trail_n) >= 2 and trail_n[0] - trail_n[-1] >= TRADERS_LEAVING
+    return {
+        "band": None if bz is None else bz >= band_stretch.LINE,
+        "heat": (up and (row.get("heat") or 0) >= STRETCHED_HEAT) or row.get("heat_phase") == "Exhaustion",
+        "funding": None if not pos.get("funding_regime") else pos["funding_regime"] == "CROWDED_LONG",
+        "traders": item.get("crowd") == "crowded" or leaving,
+    }
+
+
 # ------------------------------------------------------------------ entry zone
 # Declared in docs/reviews/radar-forward-test.md (H2 uses the same rule): at least ENTRY_MIN_TRADERS
 # profitable traders long (lockstep entities once) and price within ENTRY_BAND of their dollar-weighted
@@ -318,6 +371,12 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
                     item["trail"] = {"t": times, "z": zs, "n": ns}
             except Exception as exc:                  # one market's history never blanks the map
                 logger.debug("setup map: no trail for %s: %s", coin, exc)
+        try:
+            item["band_z"] = band_reading(r["symbol"], store.get(r["symbol"], "1d") if store else None, now)
+        except Exception as exc:                      # one market's history never blanks the map
+            item["band_z"] = None
+            logger.debug("setup map: no band z for %s: %s", coin, exc)
+        item["heat_signs"] = heat_signs(r, item)
         out.append(item)
     return {"tf": tf, "updated_at": now, "box": {"z": [BOX_Z0, BOX_Z1], "n": [BOX_N0, BOX_N1]},
             "stretched_z": STRETCHED_Z, "coins": out}

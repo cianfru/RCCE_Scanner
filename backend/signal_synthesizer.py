@@ -49,6 +49,16 @@ DIV_EXIT = True
 # is Light long, in every path that applies the final eligibility check. On since 9 November 2026, approved by the owner.
 STRONG_LONG_CAP = True
 
+# Entry rules the rule-lab study varies (docs/reviews/rule-lab-study.md). The defaults are the rules as they
+# have always run; the lab sets other values in its own process only.
+LIGHT_LONG_MIN = 0.40        # share of the entry checks a Light long needs
+MARKUP_ENTRY_Z_MAX = None    # None: Uptrend entries allowed up to the blow-off z; a number lowers that cap
+MODERATE_MIXED_OK = True     # False: the plain Uptrend entry needs a risk-on market, a mixed one is not enough
+MARKUP_FADE_BLOCK = False    # True: no Uptrend entry while the coin's heat phase is Fading or Exhaustion
+MARKUP_STRONG_OK = True      # False: the Uptrend Strong long path gives a Light long (only seen with the cap off)
+CROWDED_BLOWOFF_OK = True    # False: the crowded-funding Light long in Uptrend also stops at the blow-off z
+ACCUM_STRONG_OK = True       # False: no entry from the Accumulation / Capitulation Strong long path
+
 # Confidence thresholds
 CONF_STRONG = 0.60      # Required for STRONG_LONG
 CONF_LIGHT = 0.50       # Required for LIGHT_LONG
@@ -321,6 +331,11 @@ def _synthesize_signal(
     z_trim = Z_TRIM * vs
     z_trim_hard = Z_TRIM_HARD * vs
     z_blowoff = Z_BLOWOFF * vs
+    markup_z_max = z_blowoff if MARKUP_ENTRY_Z_MAX is None else min(z_blowoff, MARKUP_ENTRY_Z_MAX * vs)
+    # The crowded-funding Light long has never had an upper z bound; it gets one only from a switch.
+    crowded_z_max = (markup_z_max if (MARKUP_ENTRY_Z_MAX is not None or not CROWDED_BLOWOFF_OK) else float("inf"))
+    markup_fade_blocked = (MARKUP_FADE_BLOCK and regime == "MARKUP"
+                           and result.get("heat_phase", "Neutral") in ("Fading", "Exhaustion"))
 
     # ── Regime-adaptive heat thresholds (Feature B) ──
     # BLOWOFF: overextension is more dangerous → tighter thresholds
@@ -776,21 +791,23 @@ def _synthesize_signal(
             warnings.append(f"Regime flipped {regime_changes_7d} times in 7d — conviction capped")
 
         # MARKUP: stricter — needs 85% + early-trend z-score
-        if regime == "MARKUP" and eff_pct >= 0.85 and 0 < z < 1.0:
+        if regime == "MARKUP" and eff_pct >= 0.85 and 0 < z < 1.0 and not markup_fade_blocked:
             _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%}) MARKUP-strict]"
-            out.signal = strong_long_label
+            out.signal = strong_long_label if MARKUP_STRONG_OK else "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + f" {_tag}{instability_note}"
             out.warnings = warnings
             return _cvd_return()
         # MARKUP with 75-85% or extended z: downgrade to LIGHT_LONG
         # (the 40.7% WR zone we're trying to avoid)
-        if regime == "MARKUP" and z > -0.5 and z < z_blowoff:
+        if regime == "MARKUP" and z > -0.5 and z < markup_z_max and not markup_fade_blocked:
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + f" [MARKUP downgrade: eff={eff_pct:.0%} or z={z:.2f} outside strict band]{instability_note}"
             out.warnings = warnings
             return _cvd_return()
-        # ACCUM/CAP with full confirmation (68.4% WR zone — keep as-is)
-        if regime in ("ACCUM", "CAP"):
+        # ACCUM/CAP with full confirmation. The 68.4% win rate quoted above (n=38) was not reproduced by the
+        # replay: 18-36% over windows 1-9, P&L flat to slightly negative. Removing the path did not clear the
+        # declared bar either (variant J, docs/reviews/rule-lab-study.md), so it stays.
+        if regime in ("ACCUM", "CAP") and ACCUM_STRONG_OK:
             _tag = f"[{conditions_met}/{conditions_total} cond, {effective:.1f}/{total_max:.0f} eff ({eff_pct:.0%})]"
             out.signal = strong_long_label
             out.reason = " + ".join(_reason_parts()) + f" {_tag}{instability_note}"
@@ -799,7 +816,8 @@ def _synthesize_signal(
     # STRONG_LONG with 55%+ effective but blocked by funding
     elif eff_pct >= 0.55 and funding_regime == "CROWDED_LONG":
         # Downgrade STRONG_LONG → LIGHT_LONG due to crowded funding
-        if regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV":
+        if (regime in ("MARKUP", "ACCUM") and divergence != "BEAR-DIV"
+                and not (regime == "MARKUP" and (markup_fade_blocked or z >= crowded_z_max))):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + " [downgraded: crowded funding]"
             out.warnings = warnings
@@ -866,9 +884,9 @@ def _synthesize_signal(
         return _cvd_return()
 
     # --- LIGHT_LONG: >= 40% effective weighted score + supportive regime ---
-    if eff_pct >= 0.40 and regime in ("MARKUP", "REACC", "ACCUM"):
+    if eff_pct >= LIGHT_LONG_MIN and regime in ("MARKUP", "REACC", "ACCUM") and not markup_fade_blocked:
         # MARKUP LIGHT_LONG: extended z (1.0-2.0) with decent confidence
-        if (regime == "MARKUP" and 1.0 < z < z_blowoff
+        if (regime == "MARKUP" and 1.0 < z < markup_z_max
                 and confidence > CONF_LIGHT
                 and heat < HEAT_WARNING
                 and mkt_consensus != "RISK-OFF"
@@ -879,10 +897,10 @@ def _synthesize_signal(
             return _cvd_return()
 
         # MARKUP LIGHT_LONG: moderate z with conditions support
-        if (regime == "MARKUP" and 0 < z < z_blowoff
+        if (regime == "MARKUP" and 0 < z < markup_z_max
                 and confidence > CONF_LIGHT
                 and heat < heat_block
-                and mkt_consensus in ("RISK-ON", "MIXED")
+                and mkt_consensus in (("RISK-ON", "MIXED") if MODERATE_MIXED_OK else ("RISK-ON",))
                 and divergence != "BEAR-DIV"):
             out.signal = "LIGHT_LONG"
             out.reason = " + ".join(_reason_parts()) + f" [{effective:.1f}/{total_max:.0f} effective]"
