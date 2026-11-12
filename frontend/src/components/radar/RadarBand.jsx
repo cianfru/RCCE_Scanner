@@ -28,8 +28,8 @@ function HeatKey() {
 
 export function AboutBand({ tf }) {
   return <HelpTip title="Reading the band view">
-    <p>Left to right: how far price sits from the coin's weekly bull market support band (20-week SMA and 21-week EMA), scaled to how far that coin usually sits from it over two years. 0 is the band; the 1.6 line is where the stretch study put a coin's top 5% of days.</p>
-    <p>Bottom to top: profitable Hyperliquid traders long minus short. Size: their dollars in the coin.</p>
+    <p>Up and down: how far price sits above or below the coin's weekly bull market support band (20-week SMA and 21-week EMA), scaled to how far that coin usually sits from it over two years. 0 is the band; the 1.6 line is where the stretch study put a coin's top 5% of days.</p>
+    <p>Left to right: profitable Hyperliquid traders long minus short. Size: their dollars in the coin.</p>
     <p>Colour: how many of four heat signs are lit. {SIGNS.map(k => SIGN_WORD[k]).join("; ")}. Far above its band: 1.6 or more. Heat engine hot: heat 40 or more on the way up, or its exhaustion phase. Funding crowded long: over 0.01% an hour. Traders: crowded, or 2 or more fewer net long over the last {tf === "1d" ? "5 days" : "24 hours"}.</p>
     <p>What changed: coins that crossed their band in the last 7 days, traders arriving, and coins with 3 or 4 signs lit. Context, not a signal.</p>
   </HelpTip>;
@@ -74,19 +74,22 @@ export function BandMap({ pts, height, focus, watched, onPick, side = "long", tf
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const small = W < 600, H = height, L = 40, R = 14, T = 26, B = 40;
+  // Up: distance from the weekly band, so a coin sits above or below the zero line as its price sits above or
+  // below the band. Right: profitable traders net long (net short in Short).
+  const small = W < 600, H = height, L = 40, R = 14, T = 14, B = 40;
   const net = c => netFor(c, side);
   const nets = pts.map(net);
-  const ys = [symlog(Math.min(-4, ...nets)), symlog(Math.max(side === "short" ? 10 : 25, ...nets))];
-  const xd = xDomain(pts.map(bandZ));
-  const X = z => L + ((clampX(z, xd) - xd[0]) / (xd[1] - xd[0])) * (W - L - R);
-  const Y = v => T + (1 - (symlog(v) - ys[0]) / (ys[1] - ys[0])) * (H - T - B);
+  const xs = [symlog(Math.min(-4, ...nets)), symlog(Math.max(side === "short" ? 10 : 25, ...nets))];
+  const yd = xDomain(pts.map(bandZ));
   const size = sizeFor(side), G = maxMoney(pts, size), rmax = rmaxFor(W);
+  const P = rmax + 4;                                   // the largest bubble stays inside the plot
+  const X = v => L + P + ((symlog(v) - xs[0]) / (xs[1] - xs[0])) * (W - L - R - 2 * P);
+  const Y = z => T + P / 2 + (1 - (clampX(z, yd) - yd[0]) / (yd[1] - yd[0])) * (H - T - B - P);
   const items = useMemo(() => pts.map(c => {
     const r = grossOf(c) > 0 ? bubbleRadius(c, G, rmax, size) : 3;
-    return { c, x: X(bandZ(c)), y: Y(net(c)), r, n: heatCount(c) };
+    return { c, x: X(net(c)), y: Y(bandZ(c)), r, n: heatCount(c) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }).sort((a, b) => b.r - a.r), [pts, W, H, side, G, xd[0], xd[1]]);
+  }).sort((a, b) => b.r - a.r), [pts, W, H, side, G, yd[0], yd[1]]);
   const labels = useMemo(() => placeBandLabels(items.filter(it => it.c.coin === focus || it.n >= 2 || crossed(it.c) || watched?.has(it.c.coin) || it.r >= 6 || Math.abs(net(it.c)) >= 3)
     .map(it => ({ key: it.c.coin, x: it.x, y: it.y, r: it.r, w: 8 * it.c.coin.length + 6, h: 14,
       rank: (it.c.coin === focus ? 100 : 0) + (watched?.has(it.c.coin) ? 50 : 0) + 10 * it.n + (crossed(it.c) ? 8 : 0) + it.r })), W, H, small ? 12 : 28,
@@ -94,20 +97,22 @@ export function BandMap({ pts, height, focus, watched, onPick, side = "long", tf
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [items, focus, watched, W, H, small]);
   const pick = c => onPick(c.coin);
+  const zoneX = W - R - 8;
   return <div className="radar-mapcard rb-mapcard" ref={host}>
     <svg width={W} height={H} role="img" aria-label="Coins by distance from their weekly band and profitable-trader lean">
-      <rect className="rb-under" x={L} y={T} width={X(0) - L} height={H - T - B} />
-      <rect className="rb-stretched" x={X(BAND_LINE)} y={T} width={W - R - X(BAND_LINE)} height={H - T - B} />
-      {Y_TICKS.filter(t => symlog(t) >= ys[0] && symlog(t) <= ys[1]).map(t => <g key={`y${t}`}>
-        <line className="smap-ax" x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} opacity={t === 0 ? 1 : 0.5} />
-        <text className="smap-axt" x={L - 6} y={Y(t) + 4} textAnchor="end">{t > 0 ? "+" : ""}{t}</text></g>)}
-      {X_TICKS.filter(t => t >= xd[0] && t <= xd[1] && !(t === 2 && xd[1] - xd[0] > 5 && small) && !(small && t === 1)).map(t => <text key={`x${t}`} className="smap-axt" x={X(t)} y={H - B + 16} textAnchor="middle">{t === BAND_LINE ? "1.6" : zText(t).replace(".0", "")}</text>)}
-      <line className="rb-bandline" x1={X(0)} x2={X(0)} y1={T - 8} y2={H - B} />
-      <line className="rb-line16" x1={X(BAND_LINE)} x2={X(BAND_LINE)} y1={T - 8} y2={H - B} />
-      <text className="rb-zone" x={(L + X(0)) / 2} y={T - 10} textAnchor="middle">Under band</text>
-      <text className="rb-zone" x={(X(0) + X(BAND_LINE)) / 2} y={T - 10} textAnchor="middle">Above band</text>
-      <text className="rb-zone hot" x={(X(BAND_LINE) + W - R) / 2} y={T - 10} textAnchor="middle">Stretched</text>
-      <text className="smap-axt" x={W - R} y={H - 6} textAnchor="end">Distance from weekly band →</text>
+      <rect className="rb-under" x={L} y={Y(0)} width={W - L - R} height={H - B - Y(0)} />
+      <rect className="rb-stretched" x={L} y={T} width={W - L - R} height={Math.max(0, Y(BAND_LINE) - T)} />
+      {Y_TICKS.filter(t => symlog(t) >= xs[0] && symlog(t) <= xs[1] && !(small && Math.abs(t) === 1)).map(t => <g key={`x${t}`}>
+        <line className="smap-ax" x1={X(t)} x2={X(t)} y1={T} y2={H - B} opacity={t === 0 ? 1 : 0.5} />
+        <text className="smap-axt" x={X(t)} y={H - B + 16} textAnchor="middle">{t > 0 ? "+" : ""}{t}</text></g>)}
+      {X_TICKS.filter(t => t >= yd[0] && t <= yd[1] && t !== 0 && !(Math.abs(t - BAND_LINE) < 0.5 && t !== BAND_LINE)).map(t => <text key={`y${t}`} className="smap-axt" x={L - 6} y={Y(t) + 4} textAnchor="end">{t === BAND_LINE ? "1.6" : zText(t).replace(".0", "")}</text>)}
+      <line className="rb-bandline" x1={L - 4} x2={W - R} y1={Y(0)} y2={Y(0)} />
+      <text className="smap-axt rb-bandtick" x={L - 6} y={Y(0) + 4} textAnchor="end">0</text>
+      <line className="rb-line16" x1={L} x2={W - R} y1={Y(BAND_LINE)} y2={Y(BAND_LINE)} />
+      <text className="rb-zone hot" x={zoneX} y={Y(BAND_LINE) - 7} textAnchor="end">Stretched</text>
+      <text className="rb-zone" x={zoneX} y={Y(0) - 7} textAnchor="end">Above band</text>
+      <text className="rb-zone" x={zoneX} y={Y(0) + 16} textAnchor="end">Under band</text>
+      <text className="smap-axt" x={W - R} y={H - 6} textAnchor="end">{side === "short" ? "More profitable traders short →" : "More profitable traders long →"}</text>
       {items.map(({ c, x, y, r, n }) => <g key={c.coin} data-coin={c.coin} className={`rb-dot${focus === c.coin ? " on" : ""}`} onClick={() => pick(c)}
         onPointerEnter={() => setTip({ c, x, y, r })} onPointerLeave={() => setTip(t => (t?.c === c ? null : t))}>
         <circle cx={x} cy={y} r={r + 6} fill="transparent" />

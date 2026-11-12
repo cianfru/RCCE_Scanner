@@ -2367,6 +2367,7 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .rb-under{fill:var(--rd-red);fill-opacity:.035;}
 .rb-stretched{fill:var(--rh-3);fill-opacity:.06;}
 .rb-bandline{stroke:var(--rd-bandline);stroke-width:1.4;}
+.rb-bandtick{fill:var(--rd-inband);}
 .rb-line16{stroke:var(--rh-3);stroke-opacity:.6;stroke-width:1;stroke-dasharray:4 3;}
 .rb-zone{font:500 11.5px var(--font-geist-sans),sans-serif;fill:var(--t-text3);}
 .rb-zone.hot{fill:var(--rh-3);}
