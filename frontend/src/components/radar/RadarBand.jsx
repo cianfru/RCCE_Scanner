@@ -6,7 +6,7 @@ import { bubbleRadius, fmtUsd, grossOf, maxMoney, rmaxFor, sizeFor } from "../..
 import { BAND_LINE, SIGNS, SIGN_WORD, xDomain, bandChanges, bandZ, clampX, crossed, heatCount, pctFromBand, placeBandLabels, trailDelta, zText } from "../../utils/radarBand.js";
 import { Pin } from "./shared.jsx";
 
-// Radar, band view (preview): every coin placed by how far it sits from its own weekly band (band z) and by
+// Radar, band view: every coin placed by how far it sits from its own weekly band (band z) and by
 // profitable-trader lean, coloured by how many of four heat signs are lit. Above it, what changed this week.
 // Context, not a signal.
 

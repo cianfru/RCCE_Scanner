@@ -1,4 +1,4 @@
-// Radar, band view (preview at /radar?design=band): pure helpers. The server sends each coin's band z
+// Radar (band view): pure helpers. The server sends each coin's band z
 // (backend setup_map.band_reading: distance from the weekly band's mid, scaled to how far the coin usually sits
 // from it; the last eight daily readings) and four heat signs (setup_map.heat_signs). This file counts the signs,
 // lists what changed and places labels. Context, not a signal.

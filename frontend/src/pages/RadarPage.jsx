@@ -12,8 +12,7 @@ import { useWallet } from "../WalletContext.jsx";
 import { timeframeFrom } from "../utils/researchNavigation.js";
 import { altBaseline, groupStats, inGroup, SECTOR_SHORT } from "../utils/sectors.js";
 import { fmtIn, nextCloses } from "../utils/intel.js";
-import { SIDES, forwardLine, isAddress, mostShorted, newEarly, picks, sideOf, visible, watchToast } from "../utils/setupMap.js";
-import { moneyMode, sameSpot } from "../utils/radarDepth.js";
+import { SIDES, isAddress, mostShorted, sideOf, watchToast } from "../utils/setupMap.js";
 import { clampLeft, placeVertical } from "../utils/tooltipPosition.js";
 import PageTitle from "../components/PageTitle.jsx";
 import { delayedLine, lockHelp, LOCK_TITLE } from "../utils/account.js";
@@ -21,8 +20,6 @@ import AsOf from "../components/AsOf.jsx";
 import HelpTip from "../components/HelpTip.jsx";
 import Tabs from "../components/Tabs.jsx";
 import SetupIntelDrawer from "../components/SetupIntelDrawer.jsx";
-import RadarPicks from "../components/radar/RadarPicks.jsx";
-import RadarMap from "../components/radar/RadarMap.jsx";
 import RadarRail, { FocusBody } from "../components/radar/RadarRail.jsx";
 import RadarLadder, { LadderWallets } from "../components/radar/RadarLadder.jsx";
 import RadarSheet from "../components/radar/RadarSheet.jsx";
@@ -31,7 +28,7 @@ import { BandChanges, BandMap } from "../components/radar/RadarBand.jsx";
 import { bandVisible } from "../utils/radarBand.js";
 
 const TF_ITEMS = [{ key: "4h", label: "4H" }, { key: "1d", label: "1D" }];
-const VIEW_ITEMS = [{ key: "setups", label: "Setups with traders" }, { key: "all", label: "All coins" }];
+const VIEW_ITEMS = [{ key: "setups", label: "Active coins" }, { key: "all", label: "All coins" }];
 const MINUS = "−";
 const pct = x => (x === 0 ? "0%" : `${x > 0 ? "+" : MINUS}${Math.abs(x)}%`);
 
@@ -106,7 +103,7 @@ function ViewPicker({ showAll, onView, mineOn, onMine }) {
   const pos = usePopover(open, setOpen, anchor, pop, 240);
   return <>
     <button ref={anchor} type="button" className="radar-sector-btn" aria-haspopup="true" aria-expanded={open} aria-controls={open ? id : undefined}
-      onClick={() => setOpen(o => !o)}>{showAll ? "All coins" : "Setups with traders"}{mineOn ? " · My trades" : ""}</button>
+      onClick={() => setOpen(o => !o)}>{showAll ? "All coins" : "Active coins"}{mineOn ? " · My trades" : ""}</button>
     {open && createPortal(<div ref={pop} id={id} className="radar-sector-pop reflex-terminal" role="group" aria-label="Coins on the map"
       style={{ ...pos, visibility: pos ? "visible" : "hidden" }}>
       {VIEW_ITEMS.map(v => <button key={v.key} type="button" aria-pressed={(v.key === "all") === showAll} className="radar-sector-opt"
@@ -122,46 +119,22 @@ function ViewPicker({ showAll, onView, mineOn, onMine }) {
   </>;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-// The declared forward test's status, one quiet line; read when the (i) opens (it mounts only then).
-function ForwardLine() {
-  const [st, setSt] = useState(null);
-  useEffect(() => {
-    let live = true;
-    fetch(`${API_BASE}/api/radar/forward-test`).then(r => (r.ok ? r.json() : null)).then(j => { if (live) setSt(j); }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-  const text = forwardLine(st);
-  return text ? <p className="radar-ft">{text}</p> : null;
-}
-
 // The (i) beside the title: what the Radar is, why it exists, how to read it and what to take
 // from it, in plain words. Opens on a click or tap; Escape or a tap outside closes it.
 function RadarAbout() {
   return <HelpTip title="How to read the Radar" width={420} trigger="click" size={18} label="About the Radar" className="radar-about">
     <div className="radar-explain">
     <h4>What it is</h4>
-    <p>A map of the scanner's setups, one bubble per coin.</p>
+    <p>A map of Hyperliquid perpetuals, one bubble per coin.</p>
     <ul>
-      <li><b>Across:</b> how stretched the coin is against its own recent average. This is its z-score: 0 is at the average, 2 is far above it.</li>
-      <li><b>Up:</b> how many profitable traders on Hyperliquid (a crypto futures exchange) are net long, meaning more of them bet on a rise than on a fall.</li>
+      <li><b>Up and down:</b> how far price sits above or below the coin's weekly bull market support band (its 20-week and 21-week averages), scaled to how far that coin usually sits from it. 0 is the band; above 1.6 is stretched.</li>
+      <li><b>Across:</b> profitable Hyperliquid traders net long (right) or net short (left).</li>
       <li><b>Bubble size:</b> the dollars those traders hold in it.</li>
-      <li><b>Ring:</b> how far price is from the coin's weekly support band, the zone between its 20-week and 21-week averages of weekly closes.</li>
+      <li><b>Colour:</b> how many of four heat signs are lit: far above its band, heat engine hot, funding crowded long, traders crowded or leaving.</li>
+      <li><b>Dashed ring:</b> crossed above (green) or fell below (red) its band in the last 7 days.</li>
     </ul>
-    <h4>Why we built it</h4>
-    <p>To see at a glance which setups have profitable traders behind them, and which are still early rather than already stretched or crowded.</p>
-    <h4>How to read it</h4>
-    <ul>
-      <li><b>Early setups box:</b> not yet stretched, with a few profitable traders already in.</li>
-      <li><b>Top right:</b> stretched and crowded (many traders already in), so late.</li>
-      <li><b>Ring:</b> empty when price is far above the band, full at the band, violet inside it, red when the last weekly close ended under it.</li>
-      <li><b>Dashed ring:</b> price is within 3% of where profitable traders entered on average — buying near where they bought, not after them.</li>
-      <li><b>Long · Short · Both:</b> Short shows where profitable traders are net short, sized by the dollars short, with stretched coins they short boxed top right; Both splits each bubble into dollars long and short.</li>
-    </ul>
-    <h4>What you can take from it</h4>
-    <p>A shortlist to research, not a trade signal. Click a bubble to see who holds it and at what price, then click a trader to open their profile. Replay shows how the coins moved over recent closes.</p>
-    <ForwardLine />
+    <h4>How to use it</h4>
+    <p>Start with What changed: coins that crossed their band this week, traders arriving, and coins with 3 or 4 heat signs lit. Click a coin to see who holds it and at what price. Context, not a trade signal.</p>
     </div>
   </HelpTip>;
 }
@@ -186,8 +159,6 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const sector = params.get("sector") || null;
   const showAll = params.get("view") === "all";
   const spotArrival = params.get("market") === "spot";
-  // Preview of the band view (distance from the weekly band, heat signs); the current map stays the default.
-  const bandView = params.get("design") === "band";
 
   // Change the address: the followed coin and the timeframe replace the entry, the rest adds one.
   const setParams = useCallback((changes, replace) => {
@@ -220,12 +191,8 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
   const coins = useMemo(() => (data?.coins || []).filter(c => allowed.has(c.symbol)), [data, allowed]);
   const box = data?.box || { z: [-0.5, 1.5], n: [1, 8] };
   const keep = useMemo(() => new Set([...watched, ...mineBy.keys(), ...(focus ? [focus] : [])]), [watched, mineBy, focus]);
-  const pts = useMemo(() => (bandView ? bandVisible(coins, { all: showAll, keep }) : visible(coins, { all: showAll, keep, side })), [coins, showAll, keep, side, bandView]);
-  const top = useMemo(() => picks(coins, box), [coins, box]);
-  const inBoxN = useMemo(() => coins.filter(c => c.zone === "watch").length, [coins]);
-  const fresh = useMemo(() => newEarly(coins, box, Infinity), [coins, box]);
+  const pts = useMemo(() => bandVisible(coins, { all: showAll, keep }), [coins, showAll, keep]);
   const shorted = useMemo(() => (side === "short" ? mostShorted(coins, 6) : []), [coins, side]);
-  const moneyOn = useMemo(() => moneyMode(coins), [coins]);
   const byCoin = useMemo(() => new Map(coins.map(c => [c.coin, c])), [coins]);
   const focusC = focus ? byCoin.get(focus) || null : null;
   const rowFor = useCallback(coin => results.find(r => getBaseSymbol(r.symbol) === coin) || null, [results]);
@@ -255,13 +222,7 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
     if (t > 0 && Math.abs(t - mainTop) > 1) setMainTop(t);
   });
   const mapH = width >= 1200 ? Math.max(480, Math.min(760, vh - mainTop - 52 - 2 - 16)) : width >= 768 ? 480 : 400;
-  // Where each coin sits on the map at rest, for the ladder's "Same spot" (coins stacked there).
-  const [restPos, setRestPos] = useState(null);
-  const onRest = useCallback(pos => setRestPos(prev => {
-    if (prev && prev.size === pos.size && [...pos].every(([k, p]) => { const q = prev.get(k); return q && Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5; })) return prev;
-    return new Map(pos);
-  }), []);
-  const stack = useMemo(() => (focusC && restPos ? sameSpot(restPos, focusC.coin) : []), [focusC, restPos]);
+  const stack = [];
 
   const stripWatch = [...watched].map(c => byCoin.get(c)).filter(Boolean);
   const stripMine = [...mineBy.values()].map(m => [byCoin.get(m.coin), m]).filter(x => x[0]);
@@ -326,17 +287,12 @@ export default function RadarPage({ results4h, results1d, onSelect }) {
       </div>}
       {spotArrival && <p className="radar-spot-note">The Radar covers Hyperliquid perpetuals.</p>}
 
-      {bandView
-        ? <BandChanges coins={coins} tf={tf} loaded={loaded} focus={focusC ? focus : null} watched={watched} onPick={pick} />
-        : <RadarPicks top={top} box={box} tf={tf} focus={focusC ? focus : null} watched={watched} inBox={inBoxN} loaded={loaded} onPick={pick} />}
+      <BandChanges coins={coins} tf={tf} loaded={loaded} focus={focusC ? focus : null} watched={watched} onPick={pick} />
 
       <div className="radar-main" ref={mainRef}>
-        {bandView
-          ? <BandMap pts={loaded ? pts : []} height={mapH} focus={focusC ? focus : null} watched={watched} onPick={pick} side={side} tf={tf} />
-          : <RadarMap pts={pts} byCoin={byCoin} box={box} data={loaded ? data : null} tf={tf} height={mapH} focus={focusC ? focus : null} watched={watched}
-            mineBy={mineBy} mineOn={mineOn} keep={keep} onPick={pick} onRest={onRest} moneyOn={moneyOn} side={side} />}
+        <BandMap pts={loaded ? pts : []} height={mapH} focus={focusC ? focus : null} watched={watched} onPick={pick} side={side} tf={tf} />
         <RadarRail focusSlot={focusSlot} stripWatch={stripWatch} stripMine={stripMine} mineOn={mineOn} mineLoading={mineLoading}
-          fresh={bandView ? [] : fresh} shorted={side === "short" ? shorted : null} box={box} focus={focusC ? focus : null} onPick={pick} />
+          fresh={[]} shorted={side === "short" ? shorted : null} box={box} focus={focusC ? focus : null} onPick={pick} />
       </div>
 
       {phone && <RadarSheet open={!!focusC} onClose={clear} labelledBy="radar-sheet-h">
