@@ -2390,3 +2390,11 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .rb-ring.up{border-color:var(--rd-long);}
 .rb-ring.down{border-color:var(--rd-red);}
 @media (max-width:900px){.rb-cols{grid-template-columns:repeat(2,minmax(0,1fr));}}
+.rb-svg{display:block;touch-action:pan-y;user-select:none;-webkit-user-select:none;}
+.rb-svg.zoomed{touch-action:none;cursor:grab;}
+.rb-svg.zoomed:active{cursor:grabbing;}
+.rb-zoom{position:absolute;top:10px;left:48px;display:flex;gap:4px;z-index:4;}
+.rb-zoom button{min-width:28px;height:28px;padding:0 8px;border:1px solid var(--t-border);border-radius:6px;background:var(--rd-tip);color:var(--t-text1);font:500 15px/1 var(--font-geist-sans),sans-serif;cursor:pointer;}
+.rb-zoom button:hover:not(:disabled){border-color:var(--t-borderH);}
+.rb-zoom button:disabled{opacity:.35;cursor:default;}
+.rb-zoom .rb-zoom-reset{font-size:12.5px;}
