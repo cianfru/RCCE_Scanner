@@ -60,3 +60,30 @@ test("x range keeps the band and the 1.6 line in view", () => {
   assert.deepEqual(xDomain([]), [-1.5, 2.5]);
   assert.deepEqual(xDomain([-9, 9, null]), [-3.5, 4]);
 });
+
+import { MAX_ZOOM, VIEW0, clampView, panBy, pinch, zoomAt } from "./radarBand.js";
+const BOX = { x0: 40, x1: 440, y0: 10, y1: 310 };
+
+test("zoom keeps the point under the cursor and stays in bounds", () => {
+  const v = zoomAt(VIEW0, 2, 240, 160, BOX);
+  assert.equal(v.k, 2);
+  assert.equal(v.tx + 2 * 240, 240);                 // the plot point at 240 is still at 240
+  assert.deepEqual(zoomAt(v, 0.5, 100, 100, BOX), VIEW0);
+  assert.equal(zoomAt(VIEW0, 99, 0, 0, BOX).k, MAX_ZOOM);
+});
+
+test("panning cannot leave the plot", () => {
+  const v = zoomAt(VIEW0, 2, 240, 160, BOX);
+  const far = panBy(v, 5000, 5000, BOX);
+  assert.equal(far.tx + 2 * BOX.x0, BOX.x0);         // left edge pinned at the plot's left
+  assert.equal(far.ty + 2 * BOX.y0, BOX.y0);
+  assert.deepEqual(panBy(VIEW0, 50, 50, BOX), VIEW0);  // nothing to pan at zoom 1
+  assert.deepEqual(clampView({ k: 0.3, tx: 9, ty: 9 }, BOX), VIEW0);
+});
+
+test("a pinch scales by the fingers' distance around their midpoint", () => {
+  const v = pinch(VIEW0, 100, { x: 200, y: 150 }, 300, { x: 200, y: 150 }, BOX);
+  assert.equal(v.k, 3);
+  assert.equal(v.tx + 3 * 200, 200);
+  assert.equal(v.ty + 3 * 150, 150);
+});

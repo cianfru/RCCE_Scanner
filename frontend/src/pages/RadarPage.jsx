@@ -134,7 +134,7 @@ function RadarAbout() {
       <li><b>Dashed ring:</b> crossed above (green) or fell below (red) its band in the last 7 days.</li>
     </ul>
     <h4>How to use it</h4>
-    <p>Start with What changed: coins that crossed their band this week, traders arriving, and coins with 3 or 4 heat signs lit. Click a coin to see who holds it and at what price. Context, not a trade signal.</p>
+    <p>Start with What changed: coins that crossed their band this week, traders arriving, and coins with 3 or 4 heat signs lit. Click a coin to see who holds it and at what price. Pinch, or Ctrl/Cmd + scroll, to zoom; drag to move once zoomed. Context, not a trade signal.</p>
     </div>
   </HelpTip>;
 }

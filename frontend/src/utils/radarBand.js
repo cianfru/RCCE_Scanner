@@ -91,3 +91,31 @@ export function placeBandLabels(items, W, H, max = 24, obstacles = []) {
 const MINUS = "−";
 export const zText = z => (z == null ? "-" : `${z < 0 ? MINUS : z > 0 ? "+" : ""}${Math.abs(z).toFixed(1)}`);
 export const pctFromBand = p => (p == null ? "" : `${p < 0 ? MINUS : "+"}${Math.abs(p) >= 10 ? Math.round(Math.abs(p)) : Math.abs(p).toFixed(1)}%`);
+
+// ---------------------------------------------------------------- zoom and pan
+// A view {k, tx, ty} maps a plot point p to t + k * p (screen pixels). Zoom stays between 1 and MAX_ZOOM and the
+// plot area `box` {x0, x1, y0, y1} is always fully covered, so the map can never be dragged off its edges.
+export const MAX_ZOOM = 8;
+export const VIEW0 = { k: 1, tx: 0, ty: 0 };
+
+export function clampView(v, box) {
+  const k = Math.max(1, Math.min(MAX_ZOOM, v.k));
+  const cl = (t, a, b) => Math.max(b * (1 - k), Math.min(a * (1 - k), t));
+  return { k, tx: cl(v.tx, box.x0, box.x1), ty: cl(v.ty, box.y0, box.y1) };
+}
+
+// Zoom to k2 keeping the screen point (px, py) over the same plot point.
+export function zoomAt(v, k2, px, py, box) {
+  const k = Math.max(1, Math.min(MAX_ZOOM, k2));
+  const ux = (px - v.tx) / v.k, uy = (py - v.ty) / v.k;
+  return clampView({ k, tx: px - k * ux, ty: py - k * uy }, box);
+}
+
+export const panBy = (v, dx, dy, box) => clampView({ k: v.k, tx: v.tx + dx, ty: v.ty + dy }, box);
+
+// A two-finger gesture: the view at its start, the fingers' distance and midpoint then and now.
+export function pinch(v0, d0, m0, d, m, box) {
+  const k = Math.max(1, Math.min(MAX_ZOOM, v0.k * (d0 > 0 ? d / d0 : 1)));
+  const ux = (m0.x - v0.tx) / v0.k, uy = (m0.y - v0.ty) / v0.k;
+  return clampView({ k, tx: m.x - k * ux, ty: m.y - k * uy }, box);
+}
