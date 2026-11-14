@@ -108,3 +108,4 @@ Over a fixed 10 days, coins with a long signal did not beat the coins without on
 ## Deviation from the declaration
 
 - `--window10` could not read window 10 for the primary and secondary sets: their captures predate the saving of window-10 rows. The script now skips a set without them. Window 10 does not count, so the verdict is unaffected.
+- The list was built on the scanner (`frontend/src/components/LongsNow.jsx`), in the priority order as declared, with the 14-day move against the median coin (`setup_map.add_strength`), profitable traders and band readings as context. The Radar already shows the same readings per coin, so it was not added there.
