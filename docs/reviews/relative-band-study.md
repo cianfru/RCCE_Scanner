@@ -80,7 +80,7 @@ The declared measure compares a median with an era mean, and these ratio changes
 | Cross up | 966 | −6.9 | −2.6 | 40% |
 | Cross down | 780 | −6.4 | −4.5 | 41% |
 
-Read against ordinary days (−1.6), the cross up is still worse, and being above the band is worse still: coins above their band against BTC gave back about 11 points more than usual over the next 60 days (median), and only a third did better than usual. The effect is stronger from 2023.
+Read against ordinary days (−1.6), the cross up is still worse, and being above the band is worse still: coins above their band against BTC gave back about 11 points more than usual over the next 60 days (median), and only a third did better than usual. For crosses up, the effect is stronger from 2023 (−8.5 at 60 days, against −3.8 before).
 
 ## Reading
 

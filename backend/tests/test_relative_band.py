@@ -40,6 +40,15 @@ def test_summary_and_history():
     r = np.concatenate([np.linspace(1, 0.5, 300), np.linspace(0.5, 1.2, 200)])   # falls against BTC, then rises
     s = rb.summary(d, r)
     assert s["state"] == "above" and s["trend"] == "up" and s["since"] > d[300]
+    st = rb.readings(d, r)["state"]
+    first_above = int(np.where(st == 1)[0][0])
+    assert s["since"] == d[first_above]                     # never back under since then
+    r2 = np.concatenate([r, np.full(30, 0.3), np.linspace(0.3, 1.5, 60)])  # a dip under, then back above
+    d2 = days_from(len(r2))
+    s2 = rb.summary(d2, r2)
+    st2 = rb.readings(d2, r2)["state"]
+    last_under = int(np.where(st2 == -1)[0][-1])
+    assert s2["state"] == "above" and s2["since"] > d2[last_under]
     assert s["spark"]["r"][-1] == 1.0 and len(s["spark"]["r"]) == rb.SPARK_DAYS // rb.SPARK_STEP
     assert s["chg30"] > 0
     h = rb.history(d, r, 365)
@@ -60,3 +69,29 @@ def test_study_events_and_verdict():
     assert st.verdict({"C0": by["C0"]})["verdict"] == "too few"
     flat = {c: [{**e, 60: -0.01} for e in es] for c, es in by.items()}
     assert st.verdict(flat)["verdict"] == "not met"
+
+
+def test_vs_btc_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+    import data_fetcher
+    import main
+    first, n = 20000, 420
+    day = 86_400
+    now = (first + n) * day + 3600
+    btc = np.full(n, 100.0)
+    coin = np.array([0.998 ** k if k < 250 else 0.998 ** 250 * 1.01 ** (k - 250) for k in range(n)])
+
+    class Store:
+        def get(self, sym, tf):
+            if tf != "1d":
+                return None
+            return {"timestamp": np.array([(first + k) * day * 1000 for k in range(n)], dtype=float),
+                    "close": btc if sym.startswith("BTC") else coin}
+    monkeypatch.setattr(data_fetcher, "_ohlcv_store", Store())
+    monkeypatch.setattr(main.time, "time", lambda: now)
+    main._VS_BTC_CACHE.clear()
+    c = TestClient(main.app)
+    body = c.get("/api/vs-btc?symbol=INJ&days=365").json()
+    assert body["available"] and len(body["days"]) == 365 and body["summary"]["state"] == "above"
+    assert body["up"] and len(body["ratio"]) == len(body["lo"]) == 365
+    assert c.get("/api/vs-btc?symbol=BTC/USDT").json()["available"] is False

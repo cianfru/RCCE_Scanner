@@ -55,22 +55,23 @@ def crosses(state: np.ndarray, gap: int = GAP_DAYS) -> Dict[str, List[int]]:
 
 
 def summary(days: np.ndarray, ratio: np.ndarray) -> Optional[dict]:
-    """What the scanner and the coin page show: today's state, the last cross and its day, the ratio's change over
-    30 and 90 days, and a small sparkline of the last SPARK_DAYS days (ratio and band edges, as a share of the
-    last ratio). None while the band is not defined."""
+    """What the scanner and the coin page show: today's state; when above (under), the first close above (under) the
+    band since the ratio last closed on the other side ("since"); the ratio's change over 30 and 90 days; and a
+    small sparkline of the last SPARK_DAYS days (ratio and band edges, as a share of the last ratio). None while the
+    band is not defined."""
     if len(ratio) < 2:
         return None
     rd = readings(days, ratio)
     if np.isnan(rd["state"][-1]):
         return None
-    cx = crosses(rd["state"])
-    last_up = cx["up"][-1] if cx["up"] else None
-    last_down = cx["down"][-1] if cx["down"] else None
+    st = rd["state"]
     trend, since = None, None
-    if last_up is not None and (last_down is None or last_up > last_down):
-        trend, since = "up", int(days[last_up])
-    elif last_down is not None:
-        trend, since = "down", int(days[last_down])
+    if st[-1] != 0:                                  # above (or under) since the first such close after the last
+        side = st[-1]                                # close on the other side of the band
+        other = np.where(st == -side)[0]
+        start = other[-1] + 1 if len(other) else int(np.argmax(~np.isnan(st)))
+        run = np.where(st[start:] == side)[0]
+        trend, since = ("up" if side == 1 else "down"), int(days[start + run[0]])
     k = slice(max(0, len(ratio) - SPARK_DAYS), len(ratio))
     ref = float(ratio[-1])
 

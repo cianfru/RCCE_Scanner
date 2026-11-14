@@ -291,29 +291,50 @@ def heat_signs(row: dict, item: dict) -> dict:
     }
 
 
-# ------------------------------------------------------------------ strength against the market
-# How much a coin rose or fell over the last STRENGTH_DAYS completed days against the map's median coin. Shown as
-# context in the scanner's list of long signals: the ranking study (docs/reviews/ranking-study.md) found it did not
-# pick better trades among many long signals, so nothing orders or filters by it.
-STRENGTH_DAYS = 14
+# ------------------------------------------------------------------ against BTC
+# Each coin's ratio to BTC with the weekly band on the ratio (relative_band.py): today's state, the last cross and a
+# small sparkline, for the scanner's list of long signals. Context: the relative band study
+# (docs/reviews/relative-band-study.md) found that a coin above its band against BTC more often gave the lead back.
+_rel_cache: Dict[str, tuple] = {}
 
 
-def log_return_days(ohlcv: Optional[dict], now: float, days: int = STRENGTH_DAYS) -> Optional[float]:
-    """Log return over the last `days` completed daily closes; None when short or stale (last close over 2 days old)."""
-    ts, cs = closes(ohlcv, "1d", now)
-    if len(cs) <= days or now - ts[-1] > 2 * 86400:
+def vs_btc(symbol: str, ohlcv: Optional[dict], btc: Optional[tuple], now: float) -> Optional[dict]:
+    """relative_band.summary of coin / BTC from the stored daily candles; None for BTC itself, without BTC, or with a
+    stale or short history. Cached per coin until a new day closes."""
+    import relative_band as rb
+    if btc is None or symbol.split("/")[0] == "BTC":
         return None
-    return float(np.log(cs[-1] / cs[-1 - days]))
+    ts, cs = closes(ohlcv, "1d", now)
+    if len(cs) < band_stretch_min_days() or now - ts[-1] > BAND_STALE_DAYS * 86400:
+        return None
+    hit = _rel_cache.get(symbol)
+    if hit and hit[0] == (ts[-1], int(btc[0][-1])):
+        return hit[1]
+    days, cl = rb.series([1000 * (t - 86400) for t in ts], cs)
+    d, r = rb.align(days, cl, *btc)
+    out = rb.summary(d, r) if len(d) else None
+    _rel_cache[symbol] = ((ts[-1], int(btc[0][-1])), out)
+    return out
 
 
-def add_strength(items: List[dict]) -> None:
-    """Each item's {"ret_pct", "vs_market_pct"} from its "_lr" (removed), against the median of the items' "_lr"."""
-    lrs = [it["_lr"] for it in items if it.get("_lr") is not None]
-    med = float(np.median(lrs)) if lrs else None
-    for it in items:
-        lr = it.pop("_lr", None)
-        it["strength"] = None if lr is None or med is None else {
-            "ret_pct": round(float(100 * (np.exp(lr) - 1)), 1), "vs_market_pct": round(float(100 * (np.exp(lr - med) - 1)), 1)}
+def band_stretch_min_days() -> int:
+    import band_stretch
+    return band_stretch.MIN_DAYS
+
+
+def btc_daily(store, now: float) -> Optional[tuple]:
+    """BTC's consecutive daily closes from the store (days, closes), or None."""
+    import relative_band as rb
+    if not store:
+        return None
+    for sym in ("BTC/USDT", "BTC/USDC", "BTC"):
+        try:
+            ts, cs = closes(store.get(sym, "1d"), "1d", now)
+        except Exception:
+            ts, cs = [], []
+        if cs:
+            return rb.series([1000 * (t - 86400) for t in ts], cs)
+    return None
 
 
 # ------------------------------------------------------------------ entry zone
@@ -360,6 +381,11 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
     from hl_intelligence import _normalize_coin
     n = TRAIL[tf]
     out = []
+    try:
+        btc = btc_daily(store, now)
+    except Exception as exc:                          # no BTC history: no against-BTC readings
+        btc = None
+        logger.debug("setup map: no BTC daily closes: %s", exc)
     for r in rows:
         if r.get("market_kind", "perpetual") != "perpetual" or not r.get("symbol"):
             continue
@@ -399,13 +425,12 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
         try:
             daily = store.get(r["symbol"], "1d") if store else None
             item["band_z"] = band_reading(r["symbol"], daily, now)
-            item["_lr"] = log_return_days(daily, now)
+            item["vs_btc"] = vs_btc(r["symbol"], daily, btc, now)
         except Exception as exc:                      # one market's history never blanks the map
             item["band_z"] = None
             logger.debug("setup map: no band z for %s: %s", coin, exc)
         item["heat_signs"] = heat_signs(r, item)
         out.append(item)
-    add_strength(out)
     return {"tf": tf, "updated_at": now, "box": {"z": [BOX_Z0, BOX_Z1], "n": [BOX_N0, BOX_N1]},
             "stretched_z": STRETCHED_Z, "coins": out}
 
