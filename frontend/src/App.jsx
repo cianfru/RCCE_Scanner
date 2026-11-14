@@ -26,6 +26,7 @@ import AdminNotice from "./components/AdminNotice.jsx";
 import { matchesSignal } from "./utils/marketSummary.js";
 import { ladderItems } from "./components/SignalLadder.jsx";
 import PositionAlerts from "./components/PositionAlerts.jsx";
+import LongsNow from "./components/LongsNow.jsx";
 import DataTable from "./components/DataTable.jsx";
 import DetailPanel from "./components/DetailPanel.jsx";
 import GroupModal from "./components/GroupModal.jsx";
@@ -1018,6 +1019,10 @@ export default function App() {
           value={sectorFilter} onChange={v => { setSectorFilter(v); updateScannerQuery("sector", v); }} timeframe={activeTab === "4h" ? "4h" : "1d"} spot={marketKind === "spot"} />}
 
         {showDashboard && <PositionAlerts isMobile={isMobile} />}
+
+        {showDashboard && marketKind !== "spot" && tfMarketRows.length > 0 && (activeTab === "4h" || activeTab === "1d") && (
+          <LongsNow rows={tfScopeRows} timeframe={activeTab} onSelect={handleSelectCoin} />
+        )}
 
         {showDashboard && marketKind === "spot" && (
           <p style={{ margin: `${isMobile ? 12 : 16}px 0 0`, fontSize: 12, lineHeight: 1.5, color: T.text3, fontFamily: T.font }}>

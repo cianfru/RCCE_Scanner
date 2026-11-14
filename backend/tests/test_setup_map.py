@@ -253,3 +253,33 @@ def test_heat_signs():
         {"band": False, "heat": False, "funding": False, "traders": False}
     none = sm.heat_signs({"heat_phase": "Exhaustion"}, {"band_z": None, "crowd": "crowded"})
     assert none == {"band": None, "heat": True, "funding": None, "traders": True}
+
+
+def test_strength_against_the_median_coin():
+    first = 20000
+    now = (first + 30) * DAY + 3600
+    up = daily({first + k: 10.0 * (1.01 ** k) for k in range(30)})
+    flat = daily({first + k: 10.0 for k in range(30)})
+    lr = sm.log_return_days(up, now)
+    assert abs(lr - 14 * np.log(1.01)) < 1e-9
+    assert sm.log_return_days(daily({first + k: 1.0 for k in range(10)}), now) is None          # too short
+    assert sm.log_return_days(up, now + 5 * DAY) is None                                        # stale
+    items = [{"_lr": lr}, {"_lr": 0.0}, {"_lr": 0.0}, {"_lr": None}]
+    sm.add_strength(items)
+    assert items[0]["strength"]["vs_market_pct"] == round(100 * (1.01 ** 14 - 1), 1)            # median coin is flat
+    assert items[1]["strength"] == {"ret_pct": 0.0, "vs_market_pct": 0.0}
+    assert items[3]["strength"] is None and all("_lr" not in it for it in items)
+    sm.add_strength([])                                                                         # nothing to rank
+
+
+def test_build_adds_strength():
+    first = 20009
+    closes = {d: 10.0 * (1 + 0.001 * (d - first)) for d in range(first - 600, first + 7 * 30)}
+    now = (first + 7 * 30) * DAY
+
+    class Store:
+        def get(self, sym, tf):
+            return daily(closes) if tf == "1d" else None
+    out = sm.build([dict(row(price=11.0), market_kind="perpetual")], "1d", Store(), {}, {}, [], {}, now)
+    c = out["coins"][0]
+    assert c["strength"]["vs_market_pct"] == 0.0 and c["strength"]["ret_pct"] > 0 and "_lr" not in c
