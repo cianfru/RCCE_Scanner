@@ -31,12 +31,14 @@ DIV_HIGH, DIV_SKIP = 365, 30   # the divergence mark: a new 365-day closing high
 DAY_S = 86_400
 
 
-def band_mid(days: np.ndarray, close: np.ndarray) -> np.ndarray:
-    """The band's mid each day (days: whole days since 1 January 1970, a Thursday, one per row, consecutive)."""
+def band_edges(days: np.ndarray, close: np.ndarray) -> tuple:
+    """The band's 20-week SMA and 21-week EMA each day (days: whole days since 1 January 1970, a Thursday, one per
+    row, consecutive); nan until 20 weeks have completed."""
     k = 2.0 / (EMA_WEEKS + 1)
     weeks: List[float] = []
     ema_done = None
-    mid = np.full(len(close), np.nan)
+    sma_out = np.full(len(close), np.nan)
+    ema_out = np.full(len(close), np.nan)
     for i in range(len(close)):
         if i > 0 and days[i] // 7 != days[i - 1] // 7:
             weeks.append(float(close[i - 1]))
@@ -48,10 +50,15 @@ def band_mid(days: np.ndarray, close: np.ndarray) -> np.ndarray:
         n = len(weeks)
         if n < SMA_WEEKS - 1 or n < EMA_WEEKS - 1:
             continue
-        sma = (close[i] + sum(weeks[n - (SMA_WEEKS - 1):])) / SMA_WEEKS
-        ema = close[i] * k + ema_done * (1 - k) if n >= EMA_WEEKS else (sum(weeks) + close[i]) / EMA_WEEKS
-        mid[i] = (sma + ema) / 2
-    return mid
+        sma_out[i] = (close[i] + sum(weeks[n - (SMA_WEEKS - 1):])) / SMA_WEEKS
+        ema_out[i] = close[i] * k + ema_done * (1 - k) if n >= EMA_WEEKS else (sum(weeks) + close[i]) / EMA_WEEKS
+    return sma_out, ema_out
+
+
+def band_mid(days: np.ndarray, close: np.ndarray) -> np.ndarray:
+    """The band's mid each day (days: whole days since 1 January 1970, a Thursday, one per row, consecutive)."""
+    sma, ema = band_edges(days, close)
+    return (sma + ema) / 2
 
 
 def _rolling_mean(x: np.ndarray, window: int) -> tuple:
