@@ -47,3 +47,43 @@ Cross downs are reported the same way, without a verdict.
 - The list is today's Market page coins; coins that died before today are missing, and most survivors were listed later than 2017.
 - Crosses of one coin can follow each other within the horizon; the coin halves and time halves are the guard, not a p-value.
 - Binance spot, not Hyperliquid: the ratio of two spot closes, no funding.
+
+## Results (run 14 November 2026, after the declaration was committed)
+
+Data check (counts only, before the run): 149 pairs with data, 215,017 coin-days.
+
+**Verdict: not met. Context, not a signal.** After a cross up, coins did worse against BTC than they usually did at that time, not better.
+
+Excess change of the ratio coin / BTC after a cross, over the coin's era mean (median; share of crosses positive):
+
+| Crosses | n | 30 days | 60 days | 90 days |
+|---|---|---|---|---|
+| **Up, all** | 966 (130 coins) | −5.2 (39%) | **−6.9 (40%)** | −8.2 (40%) |
+| Up, coins A | 497 | −6.1 (37%) | −6.3 (41%) | −8.5 (38%) |
+| Up, coins B | 469 | −4.7 (42%) | −7.0 (38%) | −7.4 (41%) |
+| Up, before 2023 | 322 | −3.9 (43%) | −3.8 (44%) | −0.1 (49%) |
+| Up, from 2023 | 644 | −5.8 (38%) | −8.5 (37%) | −11.2 (35%) |
+| Down, all | 780 (127 coins) | −3.5 (42%) | −6.4 (41%) | −8.0 (37%) |
+
+Conditions: 1 met (966 crosses, 130 coins); 2, 3, 4 and 5 not met.
+
+### Context, not part of the bar
+
+The declared measure compares a median with an era mean, and these ratio changes are skewed (a few large pumps), so even an ordinary day's median excess is below zero. The same measure on every 10th day the band is defined, by the ratio's state that day (60 days):
+
+| Days | n | Median | Mean | Positive |
+|---|---|---|---|---|
+| All | 18,140 | −1.6 | +0.4 | 47% |
+| Above the band | 3,742 | **−10.8** | −7.8 | 34% |
+| Inside | 1,253 | −3.9 | −2.0 | 43% |
+| Under the band | 13,145 | +0.7 | +3.1 | 51% |
+| Cross up | 966 | −6.9 | −2.6 | 40% |
+| Cross down | 780 | −6.4 | −4.5 | 41% |
+
+Read against ordinary days (−1.6), the cross up is still worse, and being above the band is worse still: coins above their band against BTC gave back about 11 points more than usual over the next 60 days (median), and only a third did better than usual. The effect is stronger from 2023.
+
+## Reading
+
+- On these 149 coins since 2017, beating BTC did not persist as a trend: once a coin's ratio to BTC was above its weekly band, it more often gave the lead back over the following one to three months. This agrees with the ranking study, where 14-day leaders gave back on the smaller coins.
+- INJ today is above its band against BTC. The pattern above describes what happened to coins in that state before; it is not a statement about INJ.
+- As declared, the against-BTC view is shown as context: today's state, the last cross and the ratio with its band, with this finding in its (i).
