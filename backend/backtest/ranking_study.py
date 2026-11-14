@@ -205,8 +205,11 @@ def main(argv=None):
         res = run(rows, wins)
         per_set[name] = {s: {str(h): summary(res["spreads"][s][h]) for h in HORIZONS} for s in SCORES}
         per_set[name]["_crowded_days"] = res["crowded_days"]
-        if args.window10:
-            hold = pickle.loads(Path(path.replace(".rows.pkl", ".holdout.rows.pkl")).read_bytes())
+        hold_path = Path(path.replace(".rows.pkl", ".holdout.rows.pkl"))
+        if args.window10 and not hold_path.exists():
+            extra[name] = None                       # captured before the holdout rows were saved
+        elif args.window10:
+            hold = pickle.loads(hold_path.read_bytes())
             r10 = run(rows + hold, [w for w in windows() if w["index"] == HOLDOUT])
             extra[name] = {s: {str(h): summary(r10["spreads"][s][h], halves=()) for h in HORIZONS} for s in SCORES}
     clean = {s: {k: v for k, v in res.items() if not k.startswith("_")} for s, res in per_set.items()}

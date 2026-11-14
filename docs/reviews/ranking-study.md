@@ -55,3 +55,56 @@ If more than one passes, the one with the highest mean of the three sets' median
 - The coin sets are lists fixed in advance; coins delisted later drop out where their data ends, and coins without a price 10 or 20 days on drop out of that day.
 - Crowded days follow each other, so the days are not independent; the halves and the three sets are the guard, not a p-value.
 - Five scores are compared; the bar asks for every condition on every set to limit picking the luckiest.
+
+## Results (run 14 November 2026, after the declaration was committed)
+
+**Verdict: no score passes. Context, not a signal.** On crowded days, neither strength against the market nor the priority score picked coins that did better over the next 10 or 20 days than the ones they ranked last.
+
+Median spread, top third minus bottom third of the long-signal coins, percentage points (windows 1-9):
+
+| Set (crowded days) | Score | 10 days | Halves (W1-5, W6-9) | Days positive | 20 days |
+|---|---|---|---|---|---|
+| primary (405) | P | −0.01 | −0.24, +0.25 | 50% | −1.87 |
+| | RS14 | −0.36 | −1.17, +0.48 | 48% | −2.82 |
+| | RR14 | +0.69 | −0.33, +1.99 | 54% | −1.12 |
+| | RS30 | −0.50 | −0.21, −0.68 | 48% | −1.04 |
+| | RR30 | −0.38 | −0.48, +0.42 | 49% | −2.11 |
+| secondary (296) | P | −0.49 | −0.59, −0.38 | 47% | +0.35 |
+| | RS14 | −0.38 | −1.05, +1.12 | 49% | −2.34 |
+| | RR14 | −0.95 | −1.77, +0.47 | 45% | −2.20 |
+| | RS30 | +0.49 | −0.04, +1.00 | 51% | −1.20 |
+| | RR30 | −0.74 | −0.71, −1.14 | 45% | −2.17 |
+| third (281) | P | −1.28 | −1.15, −2.23 | 42% | −1.33 |
+| | RS14 | −2.13 | −2.08, −2.34 | 37% | −1.15 |
+| | RR14 | −2.03 | −2.58, −0.96 | 36% | −1.15 |
+| | RS30 | −2.35 | −2.76, −1.71 | 36% | −1.09 |
+| | RR30 | −2.14 | −2.33, −1.71 | 37% | −0.06 |
+
+- Every strength score fails condition 1 on every set (the best median is +0.69, against +2.0 needed).
+- On the third set (30 smaller coins) the order is reversed: the coins that had beaten the market most did about 2 points worse over the next 10 days than those that had beaten it least, in both halves. On the other two sets the spreads are within half a point of zero.
+- Crowded days come in a few episodes (most in windows 3, 5 and 7); window 2 has none.
+- **Check:** RS14 recomputed with separate code (pandas pivot tables) gives the same day counts and the same medians on all three sets (−0.36, −0.38, −2.13).
+- **Window 10** (does not count): only the third set has its window-10 rows saved. It holds 13 crowded days in one episode, all spreads −11 to −13 points.
+
+### Context, not part of the bar
+
+Long-signal coins against the set's other coins over 10 days (median of the daily difference of means):
+
+| Set | Crowded days | Quiet days (some longs, under 25% of coins) |
+|---|---|---|
+| primary | +1.00 (56% of days positive) | −0.36 (48%) |
+| secondary | −0.04 (50%) | +0.35 (53%) |
+| third | −0.41 (47%) | −2.01 (40%) |
+
+Over a fixed 10 days, coins with a long signal did not beat the coins without one by much on any set, on crowded days or on quiet ones.
+
+## Reading
+
+- In broad rallies, which coin beat the market most over the last two to four weeks did not tell which would do best over the next two to four; on smaller coins the leaders tended to give some back. Ranking by strength would not have helped choose among many long signals, and the priority score did not either.
+- The quiet-day row bears on the owner's MERL case: a coin rising while the market falls is real information about what happened, but on these sets it did not, on average, keep beating the other coins over the next 10 days.
+- The engine's replay gains come from when it is in and out (the regime, the exits, the BTC band block), not from picking which coin beats another over a fixed 10 days. That fits the earlier entry-quality and sector-tilt studies.
+- As declared, the "Best longs now" list can still be built, ordered as today, with its reasons shown as context.
+
+## Deviation from the declaration
+
+- `--window10` could not read window 10 for the primary and secondary sets: their captures predate the saving of window-10 rows. The script now skips a set without them. Window 10 does not count, so the verdict is unaffected.
