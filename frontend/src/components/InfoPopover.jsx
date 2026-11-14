@@ -101,10 +101,6 @@ export const COLUMN_INFO = {
     title: "Funding Rate",
     desc: "Perpetual futures funding rate from the exchange. Positive means longs pay shorts (bullish crowding), negative means shorts pay longs (bearish crowding).",
   },
-  SM: {
-    title: "Profitable Traders",
-    desc: "How Hyperliquid's profitable traders are positioned here: wallets up 30%+ and $10K+ over the last month and not down before it; up to 600, best monthly return first. Up arrow: most of them are long (shown as long / positioned); down arrow: most are short; mixed: no clear side; dash: fewer than 3 positioned. Display only. The signal's tracked-wallet check still uses all tracked wallets weighted by size (shown in the tooltip).",
-  },
   OI: {
     title: "Open Interest Trend",
     desc: "Direction and behavior of open interest in perpetual futures. Reveals positioning dynamics.",

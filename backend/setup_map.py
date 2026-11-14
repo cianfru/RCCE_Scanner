@@ -291,52 +291,6 @@ def heat_signs(row: dict, item: dict) -> dict:
     }
 
 
-# ------------------------------------------------------------------ against BTC
-# Each coin's ratio to BTC with the weekly band on the ratio (relative_band.py): today's state, the last cross and a
-# small sparkline, for the scanner's list of long signals. Context: the relative band study
-# (docs/reviews/relative-band-study.md) found that a coin above its band against BTC more often gave the lead back.
-_rel_cache: Dict[str, tuple] = {}
-
-
-def vs_btc(symbol: str, ohlcv: Optional[dict], btc: Optional[tuple], now: float) -> Optional[dict]:
-    """relative_band.summary of coin / BTC from the stored daily candles; None for BTC itself, without BTC, or with a
-    stale or short history. Cached per coin until a new day closes."""
-    import relative_band as rb
-    if btc is None or symbol.split("/")[0] == "BTC":
-        return None
-    ts, cs = closes(ohlcv, "1d", now)
-    if len(cs) < band_stretch_min_days() or now - ts[-1] > BAND_STALE_DAYS * 86400:
-        return None
-    hit = _rel_cache.get(symbol)
-    if hit and hit[0] == (ts[-1], int(btc[0][-1])):
-        return hit[1]
-    days, cl = rb.series([1000 * (t - 86400) for t in ts], cs)
-    d, r = rb.align(days, cl, *btc)
-    out = rb.summary(d, r) if len(d) else None
-    _rel_cache[symbol] = ((ts[-1], int(btc[0][-1])), out)
-    return out
-
-
-def band_stretch_min_days() -> int:
-    import band_stretch
-    return band_stretch.MIN_DAYS
-
-
-def btc_daily(store, now: float) -> Optional[tuple]:
-    """BTC's consecutive daily closes from the store (days, closes), or None."""
-    import relative_band as rb
-    if not store:
-        return None
-    for sym in ("BTC/USDT", "BTC/USDC", "BTC"):
-        try:
-            ts, cs = closes(store.get(sym, "1d"), "1d", now)
-        except Exception:
-            ts, cs = [], []
-        if cs:
-            return rb.series([1000 * (t - 86400) for t in ts], cs)
-    return None
-
-
 # ------------------------------------------------------------------ entry zone
 # Declared in docs/reviews/radar-forward-test.md (H2 uses the same rule): at least ENTRY_MIN_TRADERS
 # profitable traders long (lockstep entities once) and price within ENTRY_BAND of their dollar-weighted
@@ -381,11 +335,6 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
     from hl_intelligence import _normalize_coin
     n = TRAIL[tf]
     out = []
-    try:
-        btc = btc_daily(store, now)
-    except Exception as exc:                          # no BTC history: no against-BTC readings
-        btc = None
-        logger.debug("setup map: no BTC daily closes: %s", exc)
     for r in rows:
         if r.get("market_kind", "perpetual") != "perpetual" or not r.get("symbol"):
             continue
@@ -423,9 +372,7 @@ def build(rows: List[dict], tf: str, store, prof: dict, large: dict, opens: List
             except Exception as exc:                  # one market's history never blanks the map
                 logger.debug("setup map: no trail for %s: %s", coin, exc)
         try:
-            daily = store.get(r["symbol"], "1d") if store else None
-            item["band_z"] = band_reading(r["symbol"], daily, now)
-            item["vs_btc"] = vs_btc(r["symbol"], daily, btc, now)
+            item["band_z"] = band_reading(r["symbol"], store.get(r["symbol"], "1d") if store else None, now)
         except Exception as exc:                      # one market's history never blanks the map
             item["band_z"] = None
             logger.debug("setup map: no band z for %s: %s", coin, exc)
@@ -500,22 +447,15 @@ def state_of(item: dict) -> dict:
     return {"zone": item["zone"], "crowd": item["crowd"], "regime": item["regime"], "signal": item["signal"]}
 
 
-_ZONE_WORD = {"watch": "the box", "late": "stretched", "crowded": "crowded", "quiet": "nobody in yet", "outside": "outside the box"}
-
-
 def changes(prev: Optional[dict], cur: dict) -> List[str]:
     """What is worth a message between two readings (first reading: nothing)."""
     if not prev:
         return []
+    # The box and crowd changes (profitable-trader readings) no longer send messages (owner, 14 November 2026: the
+    # 30-day list picked no better traders than the crowd, docs/reviews/selection-window-study.md).
     out = []
-    if cur["zone"] == "watch" and prev["zone"] != "watch":
-        out.append("entered the box")
-    elif prev["zone"] == "watch" and cur["zone"] != "watch":
-        out.append(f"left the box ({_ZONE_WORD.get(cur['zone'], cur['zone'])})")
     if cur["regime"] == "MARKUP" and prev["regime"] != "MARKUP":
         out.append("confirmed Uptrend")
-    if cur["crowd"] == "crowded" and prev["crowd"] != "crowded":
-        out.append("turned crowded")
     if cur["signal"] in EXITS and cur["signal"] != prev["signal"]:
         out.append(f"exit signal {cur['signal'].replace('_', ' ').title()}")
     return out
@@ -533,10 +473,8 @@ def check(maps: Dict[str, dict]) -> List[str]:
         cur = state_of(item)
         what = changes(w.get("state"), cur)
         if what:
-            t = item["traders"]
             msgs.append(f"{coin} {w['tf'].upper()}: {', '.join(what)}.\n"
-                        f"Stretch {item['zscore'] or 0:.1f} · profitable traders {t['pl']} long, {t['ps']} short · "
-                        f"{str(item['signal'] or 'wait').replace('_', ' ').lower()}")
+                        f"Stretch {item['zscore'] or 0:.1f} · {str(item['signal'] or 'wait').replace('_', ' ').lower()}")
         if cur != w.get("state"):
             w["state"] = cur
             dirty = True

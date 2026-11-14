@@ -16,7 +16,6 @@ import PositioningPanel from "../components/PositioningPanel.jsx";
 import CrossExchangePanel from "../components/CrossExchangePanel.jsx";
 import PanelHeader from "../components/PanelHeader.jsx";
 import TradersCard from "../components/TradersCard.jsx";
-import AgainstBtc from "../components/AgainstBtc.jsx";
 import useCoinPositioning from "../hooks/useCoinPositioning.js";
 import useCoinPositioningRecent from "../hooks/useCoinPositioningRecent.js";
 import useCoinTraders from "../hooks/useCoinTraders.js";
@@ -168,8 +167,7 @@ function EngineValues({ data }) {
 
 export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
-  const { isMobile, width: vpWidth } = useViewport();
-  const vsBtcWidth = Math.max(300, (vpWidth || 1200) - (isMobile ? 80 : 160));
+  const { isMobile } = useViewport();
   const location = useLocation();
   // The timeframe lives in the address (?tf=), so links and reloads keep it.
   const timeframe = timeframeFrom(location.search);
@@ -398,8 +396,6 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
         <TradersCard symbol={data.symbol} sm={data.smart_money} traders={traders} spot={marketKind === "spot"} price={data.price}
           onShowEntries={() => { traderApi.current?.showEntries?.(); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </section>
-
-      <section className="coin-vsbtc"><AgainstBtc symbol={data.symbol} width={vsBtcWidth} /></section>
 
       {/* One click deeper: the full checklist, and every market reading. */}
       <details className="coin-more">

@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Info } from "./MarketHistorySections.jsx";
 import { CYCOPY, marketCycles, readingAgo, shareBelow } from "../utils/marketCycles.js";
 import { dayDate, monthYear } from "../utils/marketHistory.js";
-import { byDay } from "../utils/walletHistory.js";
 
 // The market page's top row, above its tabs: where the market stands today in four tiles, each a number and a small
 // picture of it; the number opens its tab. Coins in uptrend against the 55% line, with yesterday and a week ago marked;
@@ -81,7 +80,7 @@ function Tile({ label, info, tab, onPick, aria, children }) {
   </div>;
 }
 
-export default function MarketToday({ data, rows, wallets, onPick, onHoverCycle }) {
+export default function MarketToday({ data, rows, onPick, onHoverCycle }) {
   const c = useMemo(() => marketCycles(rows), [rows]);
   const last = rows[rows.length - 1];
   const share = data?.today?.uptrend ?? last?.uptrend;
@@ -90,10 +89,6 @@ export default function MarketToday({ data, rows, wallets, onPick, onHoverCycle 
   // Fear & Greed: the index's newest reading, which can be a day newer than the market history.
   const fgAll = data?.fear_greed || [];
   const fg = fgAll.length ? { day: fgAll[fgAll.length - 1][0], v: fgAll[fgAll.length - 1][1] } : null;
-  const crowdPts = useMemo(() => [...(byDay(wallets, { scope: "all" }).crowd?.values() || [])]
-    .map(r => ({ day: r.day, v: r.L, S: r.S, n: r.long != null && r.short != null ? r.long + r.short : null, traders: r.traders ?? null }))
-    .sort((a, b) => a.day - b.day), [wallets]);
-  const crowd = crowdPts.length ? crowdPts[crowdPts.length - 1] : null;
   const ago = (pts, scale) => [["1d", 1, "yesterday"], ["1w", 7, "a week ago"]].map(([key, n, words]) => {
     const r = readingAgo(pts, n);
     return { key, v: r ? scale * r.v : null, title: r ? `${words} (${dayDate(r.day, false)}): ${Math.round(scale * r.v)}%` : null };
@@ -121,16 +116,6 @@ export default function MarketToday({ data, rows, wallets, onPick, onHoverCycle 
       <strong>{fg.v}</strong>
       <Bar v={fg.v} marks={[25, 75]} tone="orange" label={`Fear and Greed ${fg.v} of 100; lines at 25 and 75`} />
       <em>0 fear · 100 greed</em>
-    </Tile>}
-    {crowd && <Tile label="Profitable traders" tab="positioning" onPick={onPick}
-      aria={`Profitable traders ${pct(crowd.v)} long, ${pct(crowd.S)} short. Open the Positioning tab`}
-      info={<Info title="Profitable traders" paras={["The share of the profitable traders' open positions that are long and short, on all coins, at the latest reading.", "The thin marks show where the long share was yesterday (1d) and a week ago (1w).", "Under it, how many positions they hold: a trader in five coins counts five times. Fewer positions means traders left or hold fewer coins; the Positioning tab shows the count over time."]} />}>
-      <strong><b className="is-long">{pct(crowd.v)}</b><i aria-hidden="true"> · </i><b className="is-short">{pct(crowd.S)}</b></strong>
-      <span className="mt-split has-ago" aria-hidden="true">
-        <span className="is-long" style={{ flexGrow: crowd.v }} /><span className="is-short" style={{ flexGrow: crowd.S }} />
-        <Ago marks={ago(crowdPts, 100)} />
-      </span>
-      <em>{crowd.n ? `long · short of ${crowd.n.toLocaleString("en-US")} positions${crowd.traders != null ? ` · ${crowd.traders.toLocaleString("en-US")} traders` : ""}` : "long · short, all coins"}</em>
     </Tile>}
   </div>;
 }

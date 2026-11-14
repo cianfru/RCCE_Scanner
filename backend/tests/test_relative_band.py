@@ -69,29 +69,3 @@ def test_study_events_and_verdict():
     assert st.verdict({"C0": by["C0"]})["verdict"] == "too few"
     flat = {c: [{**e, 60: -0.01} for e in es] for c, es in by.items()}
     assert st.verdict(flat)["verdict"] == "not met"
-
-
-def test_vs_btc_endpoint(monkeypatch):
-    from fastapi.testclient import TestClient
-    import data_fetcher
-    import main
-    first, n = 20000, 420
-    day = 86_400
-    now = (first + n) * day + 3600
-    btc = np.full(n, 100.0)
-    coin = np.array([0.998 ** k if k < 250 else 0.998 ** 250 * 1.01 ** (k - 250) for k in range(n)])
-
-    class Store:
-        def get(self, sym, tf):
-            if tf != "1d":
-                return None
-            return {"timestamp": np.array([(first + k) * day * 1000 for k in range(n)], dtype=float),
-                    "close": btc if sym.startswith("BTC") else coin}
-    monkeypatch.setattr(data_fetcher, "_ohlcv_store", Store())
-    monkeypatch.setattr(main.time, "time", lambda: now)
-    main._VS_BTC_CACHE.clear()
-    c = TestClient(main.app)
-    body = c.get("/api/vs-btc?symbol=INJ&days=365").json()
-    assert body["available"] and len(body["days"]) == 365 and body["summary"]["state"] == "above"
-    assert body["up"] and len(body["ratio"]) == len(body["lo"]) == 365
-    assert c.get("/api/vs-btc?symbol=BTC/USDT").json()["available"] is False

@@ -13,7 +13,6 @@ export const SCANNER_COLUMNS = [
   [null,             "DIV",     900],
   [null,             "EXHAUST", 1024],  // state + ✓ when floor confirmed
   ["energy",         "ENERGY",  1024],
-  [null,             "SM",      1200],  // HyperLens smart money consensus
   [null,             "OI",      1440],  // OI trend — wide monitors only
 ];
 
@@ -38,6 +37,5 @@ export const COLUMN_FIT = {
   DIV:       { w: [70, 66, 62],    rank: 6 },
   EXHAUST:   { w: [86, 82, 78],    rank: 5 },
   ENERGY:    { w: [76, 72, 68],    rank: 3 },
-  SM:        { w: [74, 70, 66],    rank: 8 },
   OI:        { w: [86, 82, 78],    rank: 'cheap1' },
 };

@@ -203,12 +203,10 @@ def test_followed_trader_opens_closes_and_flips(sent, tmp_path, monkeypatch):
 def test_watch_events_and_entry_zone():
     base = {"zone": "outside", "signal": "WAIT", "regime": "ACCUM", "crowd": "quiet", "entry": None}
     assert ta.watch_events(None, base) == []
-    cur = dict(base, zone="watch", entry=True)
-    kinds = [(c, k) for c, k, _ in ta.watch_events(base, cur)]
-    assert kinds == [("watched", "early"), ("watched", "entry")]
+    cur = dict(base, zone="watch", entry=True, crowd="crowded")
+    assert ta.watch_events(base, cur) == []                                   # trader readings: no message
     ex = [(c, k, w) for c, k, w in ta.watch_events(cur, dict(cur, zone="late", signal="TRIM", regime="MARKUP"))]
-    assert ("watched", "exit", "exit signal Trim") in ex and ("watched_more", "left", "left Early setups") in ex
-    assert ("watched_more", "uptrend", "Uptrend confirmed") in ex
+    assert ex == [("watched", "exit", "exit signal Trim"), ("watched_more", "uptrend", "Uptrend confirmed")]
     assert ta.entry_in({"price": 5}) is None
     assert ta.entry_in({"price": 5, "entry": {"lo": 4, "hi": 6}}) is True
     assert ta.entry_in({"price": 7, "entry": [4, 6]}) is False
@@ -222,10 +220,11 @@ def test_check_watched_sends_once(sent, monkeypatch):
             "traders": {"pl": 2, "ps": 0}}
     m = lambda **kw: {"1d": {"coins": [dict(item, **kw)]}}
     assert run(ta.check_watched(m(), now=NOON)) == []                         # first reading
-    assert run(ta.check_watched(m(zone="watch"), now=NOON + 300)) == ["sent"]
-    run(ta.check_watched(m(), now=NOON + 600))                                # left: watched_more, off
-    assert run(ta.check_watched(m(zone="watch"), now=NOON + 900)) == ["dup"]  # back in: once a day
-    assert len(sent) == 1 and sent[0][1].startswith("<b>SUI</b> · entered Early setups\nStretch 0.3")
+    assert run(ta.check_watched(m(zone="watch"), now=NOON + 300)) == []       # the box: no message
+    assert run(ta.check_watched(m(signal="TRIM"), now=NOON + 600)) == ["sent"]
+    run(ta.check_watched(m(), now=NOON + 900))
+    assert run(ta.check_watched(m(signal="TRIM"), now=NOON + 1200)) == ["dup"]  # again: once a day
+    assert len(sent) == 1 and sent[0][1].startswith("<b>SUI</b> · exit signal Trim\nStretch 0.3") and "profitable" not in sent[0][1]
 
 
 # ------------------------------------------------------------------ the brief
@@ -252,8 +251,11 @@ def brief_ctx(**kw):
             "positions": [{"coin": "ETH", "symbol": "ETH/USDT", "side": "LONG"},
                           {"coin": "SUI", "symbol": "SUI/USDT", "side": "LONG"}],
             "results": {"ETH/USDT": {"signal": "TRIM"}, "SUI/USDT": {"signal": "LIGHT_LONG"}},
-            "watched": 2, "changes": ["<b>SUI</b> entered Early setups"],
+            "watched": 2, "changes": ["<b>SUI</b> exit signal Trim"], "band": {"blocked": True, "weeks_below": 2},
             "held": [{"line": "<b>LINK</b> exit signal Trim"}], "app_url": "https://app.example", **kw}
+
+
+LONGS = "1 · Light 1"
 
 
 def test_brief_lines(sent):
@@ -262,24 +264,23 @@ def test_brief_lines(sent):
         "Risk-on · 85% in Uptrend · risk-on run day 40",
         "Fear &amp; Greed 73 · Greed",
         "",
-        "<b>Early setups</b>",
-        "<b>SUI</b> · new · 5 traders · $2.1M · 4% above band",
-        "<b>ENA</b> · 3 traders · $640K · in band",
-        "<b>TAO</b> · 2 traders · $310K · in entry zone",
+        "<b>BTC under its weekly band</b> 2 weeks · new longs paused",
+        f"Long signals 1D: {LONGS}",
         "",
         "Positions: 2 open · 1 agree · 1 against: <b>ETH</b>",
-        "Watched: <b>SUI</b> entered Early setups",
+        "Watched: <b>SUI</b> exit signal Trim",
         "Held: <b>LINK</b> exit signal Trim",
         "",
-        '<a href="https://app.example/radar?tf=1d">Open Radar</a>',
+        '<a href="https://app.example/scanner?tf=1d">Open the scanner</a>',
         "<i>Reflex · 08:00</i>",
     ]
+    assert not any("traders" in ln for ln in lines)
     assert len([ln for ln in lines if ln]) <= 12
 
 
 def test_brief_without_wallet_or_watch_list(sent):
-    lines = tb.compose(brief_ctx(positions=None, watched=0, held=[], app_url="", smap={"coins": []}))
-    assert "Early setups: none" in lines
+    lines = tb.compose(brief_ctx(positions=None, watched=0, held=[], app_url="", smap={"coins": []}, results={}, band=None))
+    assert "Long signals 1D: none" in lines and not any("weekly band" in ln for ln in lines)
     assert not any(ln.startswith(("Positions", "Watched", "Held", "<a ")) for ln in lines)
     assert lines[-1] == "<i>Reflex · 08:00</i>"
 
@@ -289,7 +290,9 @@ def test_brief_words():
     assert tb.stance("SHORT", "STRONG_LONG") == "against" and tb.stance("LONG", "WAIT") == "none"
     assert tb.band_note({"band": {"state": "closed_under"}}) == "closed under band"
     held = [{"line": f"<b>C{i}</b>"} for i in range(5)]
-    assert tb.compose(brief_ctx(held=held))[10] == "Held: <b>C0</b> · <b>C1</b> · +3 more"
+    assert "Held: <b>C0</b> · <b>C1</b> · +3 more" in tb.compose(brief_ctx(held=held))
+    assert tb.band_line({"blocked": False, "weeks_below": 1}) == "BTC closed one week under its weekly band · longs allowed"
+    assert tb.band_line({"blocked": False, "weeks_below": 0}) == "BTC above its weekly band · longs allowed"
 
 
 def test_brief_image_smoke():

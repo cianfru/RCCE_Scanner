@@ -4502,37 +4502,14 @@ def _coin_positioning_body(coin: str, days: int, now: float) -> dict:
     return {"coin": coin, "days": days, "groups": groups, "rebuilds": rebuilds, "held": held}
 
 
-_VS_BTC_CACHE: dict = {}
-
-
-@app.get("/api/vs-btc")
-async def vs_btc_view(symbol: str = Query(..., min_length=1, max_length=40), days: int = Query(365, ge=90, le=540)):
-    """A coin against BTC for the coin page (relative_band.py): the ratio of their daily closes over the last `days`
-    days with the weekly band drawn on the ratio, the cross days, and today's summary. From the stored daily
-    candles; cached per coin until a new day closes. Context (docs/reviews/relative-band-study.md)."""
-    import relative_band as rb
-    import setup_map
-    from data_fetcher import _ohlcv_store
-    now = time.time()
-    sym = symbol.strip()
-    if "/" not in sym:
-        sym = f"{sym}/USDT"
-    btc = setup_map.btc_daily(_ohlcv_store, now)
-    ts, cs = setup_map.closes(_ohlcv_store.get(sym, "1d"), "1d", now)
-    if btc is None or not cs or sym.split("/")[0] == "BTC":
-        return {"symbol": sym, "available": False}
-    key = (sym, days, ts[-1], int(btc[0][-1]))
-    hit = _VS_BTC_CACHE.get(sym)
-    if hit and hit[0] == key:
-        return hit[1]
-    d, c = rb.series([1000 * (t - 86400) for t in ts], cs)
-    dd, r = rb.align(d, c, *btc)
-    body = {"symbol": sym, "available": bool(len(dd)), **(rb.history(dd, r, days) if len(dd) else {}),
-            "summary": rb.summary(dd, r) if len(dd) else None}
-    if len(_VS_BTC_CACHE) > 400:
-        _VS_BTC_CACHE.clear()
-    _VS_BTC_CACHE[sym] = (key, body)
-    return body
+@app.get("/api/btc-band")
+async def btc_band_view():
+    """The BTC weekly-band entry block (btc_band_block.py): blocked, weeks closed under the band's mid in a row,
+    the mid and the last weekly close. The executor takes no new long while blocked."""
+    import btc_band_block
+    from executor import BAND_BLOCK
+    st = btc_band_block.current()
+    return {"on": BAND_BLOCK, "available": st is not None, **(st or {})}
 
 
 @app.get("/api/coin-positioning")
@@ -4976,8 +4953,8 @@ async def setup_map_watched():
 
 @app.post("/api/setup-map/watch", dependencies=[Depends(_owner_only)])
 async def setup_map_watch(body: dict):
-    """Watch a coin: Telegram alerts when it enters Early setups or the entry zone or gets an
-    exit signal (tg_alerts), and a line in the daily brief when anything changed. Body: {coin, tf}.
+    """Watch a coin: a Telegram alert when it gets an exit signal (tg_alerts), and a line in the daily brief
+    when that or its Uptrend changed. Body: {coin, tf}.
     Needs the admin key once set."""
     import setup_map
     from hl_intelligence import _normalize_coin

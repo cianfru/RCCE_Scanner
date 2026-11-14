@@ -185,3 +185,9 @@ Per window, %:
 - The band entry block is the only one of the backtest's management rules with consistent replay support: three coin sets, one of them unseen, including the unseen window. Its size is modest and most of it is the 2022 bear market.
 - Caveat: in the eight months of real paper trading, the entries it would have refused are the profitable group, and the replay's window 10 agrees in sign for that period. The block is a bear-market protection; it costs a little in a period like 2026.
 - The executor is unchanged. Adding the block is the owner's decision.
+
+## Decision (14 November 2026)
+
+- The owner approved the band entry block for the executor. It is on from this release (`backend/btc_band_block.py`, `executor.BAND_BLOCK`): no new long while BTC's last two or more completed weekly closes (Monday to Sunday) are under the band's mid. Open positions keep their exits. The scanner shows the state (`/api/btc-band`).
+- The same day the owner asked to drop views that no declared study supports: the profitable-trader list as a signal (the selection-window study found it no better than any trader), the Radar, the long-signals list and the against-BTC view (`ranking-study.md`, `relative-band-study.md`). Their study code and documents stay.
+- State at the decision: BTC's weekly close of 8 November (74,851) was under the mid (about 75,111), the close of 1 November above it. The block is off; it turns on if the week ending Sunday 15 November also closes under the mid.

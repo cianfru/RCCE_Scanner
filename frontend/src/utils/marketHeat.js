@@ -1,8 +1,9 @@
 // Market heat, for the market history page's Chart view: how stretched the market reads on a day, as the plain
-// average of three readings on one 0-100 scale: the share of coins in uptrend, Fear & Greed, and the share of the
-// profitable traders' positions that are long (where the wallet feed has them, from October 2025; before that the
-// first two). The three tend to rise together after a rally, so a high reading says the market is stretched, not
-// what comes next. Context, not a signal (docs/reviews/market-heat.md).
+// average of two readings on one 0-100 scale: the share of coins in uptrend and Fear & Greed. (The profitable
+// traders' long share was a third reading until 14 November 2026; it left at the owner's request, as the 30-day list
+// picked no better traders than the crowd, docs/reviews/selection-window-study.md.) The two tend to rise together
+// after a rally, so a high reading says the market is stretched, not what comes next. Context, not a signal
+// (docs/reviews/market-heat.md).
 // Broad uptrends lead the view (owner, 29 October 2026: the share of coins in uptrend matters as much as BTC): how
 // long the market has been in one against past runs, its high, and three marks (docs/reviews/late-uptrends-study.md;
 // owner, same day: "60 days was just an example", so age reads against past runs, not a fixed day, and greed counts
@@ -20,7 +21,6 @@ export function heatOf(r) {
   const parts = {
     uptrend: r?.uptrend == null ? null : 100 * r.uptrend,
     fg: r?.fg == null ? null : r.fg,
-    traders: r?.wallet?.crowd?.L == null ? null : 100 * r.wallet.crowd.L,
   };
   if (parts.uptrend == null) return null;
   const vals = Object.values(parts).filter(v => v != null);
@@ -205,8 +205,6 @@ export const INDICATORS = [
   { key: "heat", label: "Market heat", where: "pane", on: true },
   { key: "stretched", label: "Coins stretched above their band", where: "pane", on: false },
   { key: "fg", label: "Fear & Greed", where: "pane", on: true },
-  { key: "crowd", label: "Profitable traders", where: "pane", on: true },
-  { key: "positions", label: "Profitable traders' positions", where: "pane", on: false },
   { key: "smart", label: "Smart money", where: "pane", on: false },
   { key: "whales", label: "Whales", where: "pane", on: false },
   { key: "median_z", label: "Median z", where: "pane", on: false },
@@ -266,7 +264,7 @@ export const COUNTING_CHANGES = [{ day: 20759, kind: "netcount" }];
 export const HCOPY = {
   title: "Market heat",
   states: { Hot: "Hot", Cooling: "Cooling", Cold: "Cold", Lifting: "Lifting", Neutral: "Neutral" },
-  parts: { uptrend: "Uptrend", fg: "Fear & Greed", traders: "Traders long" },
+  parts: { uptrend: "Uptrend", fg: "Fear & Greed" },
   since: d => `since ${d}`,
   indicators: "Indicators",
   onPrice: "On the price",

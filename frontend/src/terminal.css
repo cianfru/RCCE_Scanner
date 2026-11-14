@@ -681,7 +681,8 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .regime-legend{grid-template-columns:minmax(0,1fr);}
 }
 @media(max-width:767px){
- .market-summary{padding:16px;column-gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto auto;grid-template-areas:"regime dial" "legend dial" "note note" "signals signals";}
+ .market-summary{padding:16px;column-gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto auto auto;grid-template-areas:"regime dial" "legend dial" "note note" "band band" "signals signals";}
+ .ms-band{grid-area:band;}
  .ms-detail{display:contents;}                       /* the legend fills the space beside the dial */
  .regime-legend{grid-area:legend;margin-top:12px;}
  .ms-note{grid-area:note;margin-top:12px;}
@@ -2346,8 +2347,8 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 @media(max-width:600px){.chart-pos-bar{padding:6px 12px 10px;} .chart-pos-read{order:3;width:100%;} .chart-pane-label-more{display:none;}}
 
 /* Radar: band view */
-.radar-page,.ln-card{--rh-0:#5f8a82;--rh-1:#d9cb7a;--rh-2:#fbbf24;--rh-3:#fb923c;--rh-4:#ef4444;}
-[data-theme="light"] .radar-page,[data-theme="light"] .ln-card{--rh-0:#6b8f88;--rh-1:#a8860b;--rh-2:#d97706;--rh-3:#c2410c;--rh-4:#dc2626;}
+.radar-page{--rh-0:#5f8a82;--rh-1:#d9cb7a;--rh-2:#fbbf24;--rh-3:#fb923c;--rh-4:#ef4444;}
+[data-theme="light"] .radar-page{--rh-0:#6b8f88;--rh-1:#a8860b;--rh-2:#d97706;--rh-3:#c2410c;--rh-4:#dc2626;}
 .rb-changes{display:flex;flex-direction:column;gap:10px;min-width:0;}
 .rb-cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
 .rb-col{background:var(--t-glassBg);border:1px solid var(--t-border);border-radius:6px;padding:10px 12px;min-width:0;}
@@ -2399,69 +2400,8 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .rb-zoom button:disabled{opacity:.35;cursor:default;}
 .rb-zoom .rb-zoom-reset{font-size:12.5px;}
 
-/* Scanner: long signals with their context */
-.ln-card{margin-top:16px;padding:16px 20px 14px;}
-.ln-eyebrow{margin-bottom:10px;}
-.ln-grid{display:flex;flex-direction:column;}
-.ln-row{display:grid;grid-template-columns:150px 80px minmax(260px,360px) 90px 150px;justify-content:start;align-items:center;gap:12px;width:100%;padding:7px 6px;background:none;border:0;border-top:1px solid var(--t-overlay08);color:var(--t-text2);font:13.5px var(--font-geist-sans),sans-serif;text-align:left;cursor:pointer;border-radius:0;}
-.ln-row:hover{background:var(--t-overlay04);}
-.ln-hd{cursor:default;border-top:0;padding-top:0;font:500 11px var(--font-geist-sans),sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--t-text3);}
-.ln-hd:hover{background:none;}
-.ln-coin{display:inline-flex;align-items:center;gap:8px;color:var(--t-text1);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ln-sig{color:var(--t-text2);}
-.ln-sig.strong{color:var(--t-green,#34d399);}
-.ln-r{text-align:right;}
-.ln-num{font-family:var(--font-geist-mono),ui-monospace,monospace;font-variant-numeric:tabular-nums;}
-.ln-new{font-style:normal;color:var(--rd-long,#34d399);}
-.ln-vs{display:flex;align-items:center;gap:10px;min-width:0;}
-.ln-vs-txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t-text3);font-size:12.5px;}
-.ln-vs-txt b{font-weight:600;color:var(--t-text2);}
-.ln-vs-txt b.above{color:var(--t-accent);}
-.ln-vs-txt b.under{color:#fda4af;}
-[data-theme="light"] .ln-vs-txt b.under{color:#be123c;}
-.ln-dim{color:var(--t-text3);}
-.ln-spark{flex:none;overflow:visible;}
-.ln-spark-band{fill:var(--rd-band,rgba(192,132,252,.13));stroke:none;}
-.ln-card .ln-spark-band{fill:rgba(192,132,252,.16);}
-[data-theme="light"] .ln-card .ln-spark-band{fill:rgba(124,58,237,.12);}
-.ln-spark-line{fill:none;stroke-width:1.5;stroke-linejoin:round;}
-.ln-spark.up .ln-spark-line,.ln-spark.up .ln-spark-dot{stroke:var(--t-accent);fill:none;}
-.ln-spark.in .ln-spark-line{stroke:var(--t-text2);}
-.ln-spark.dn .ln-spark-line{stroke:#fda4af;}
-.ln-spark-dot{fill:var(--t-text1);stroke:none;}
-.ln-spark.up .ln-spark-dot{fill:var(--t-accent);stroke:none;}
-.ln-band{display:flex;align-items:center;gap:8px;justify-content:flex-end;}
-.ln-more{margin-top:8px;}
-.ln-none{margin:2px 0 0;color:var(--t-text3);font-size:13px;}
-@media (max-width:640px){
-  .ln-card{padding:14px 14px 12px;}
-  .ln-row{grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) 40px 62px;justify-content:stretch;gap:8px;font-size:13px;}
-  .ln-vs .ln-long{display:none;}
-  .ln-row>:nth-child(2){display:none;}
-  .ln-band .ln-num{display:none;}
-}
-
-/* Coin page: against BTC */
-.coin-vsbtc{margin-top:24px;}
-.ab-card h2{display:flex;align-items:center;gap:8px;}
-.ab-line{margin:4px 0 14px;color:var(--t-text3);font:13.5px var(--font-geist-sans),sans-serif;}
-.ab-line b{font-weight:600;color:var(--t-text1);}
-.ab-line b.above{color:var(--t-accent);}
-.ab-line b.under{color:#fda4af;}
-[data-theme="light"] .ab-line b.under{color:#be123c;}
-.ab-chart{display:block;overflow:visible;}
-.ab-grid{stroke:var(--t-overlay06);stroke-width:1;}
-.ab-tick{fill:var(--t-text3);font:11px var(--font-geist-mono),ui-monospace,monospace;}
-.ab-band{fill:rgba(192,132,252,.16);stroke:rgba(192,132,252,.5);stroke-width:.8;}
-[data-theme="light"] .ab-band{fill:rgba(124,58,237,.10);stroke:rgba(124,58,237,.45);}
-.ab-line-path{fill:none;stroke:var(--t-text1);stroke-width:1.8;stroke-linejoin:round;}
-.ab-line-path.above{stroke:var(--t-accent);}
-.ab-mark{stroke:var(--t-bg);stroke-width:1.5;}
-.ab-mark.up{fill:var(--rd-long,#34d399);}
-.ab-mark.down{fill:var(--rd-red,#ef4444);}
-.coin-vsbtc .ab-mark.up{fill:#34d399;}
-.coin-vsbtc .ab-mark.down{fill:#ef4444;}
-.ab-end{fill:var(--t-text1);}
-.ab-end.above{fill:var(--t-accent);}
-.ab-endlab{fill:var(--t-text2);font:600 11.5px var(--font-geist-sans),sans-serif;}
-.ab-skel{border-radius:8px;}
+/* Scanner: the BTC weekly-band go/no-go for new longs */
+.ms-band{margin:10px 0 0;font:13px/1.6 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.ms-band b{font-weight:600;}
+.ms-band > :last-child{vertical-align:middle;}
+@media (max-width:640px){.ms-band b{display:block;}.ms-band-sep{display:none;}}

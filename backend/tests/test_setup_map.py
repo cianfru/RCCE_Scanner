@@ -51,8 +51,8 @@ def test_changes_between_readings():
     prev = {"zone": "outside", "crowd": "holding", "regime": "ACCUM", "signal": "WAIT"}
     cur = {"zone": "watch", "crowd": "crowded", "regime": "MARKUP", "signal": "LIGHT_LONG"}
     assert sm.changes(None, cur) == []
-    assert sm.changes(prev, cur) == ["entered the box", "confirmed Uptrend", "turned crowded"]
-    assert sm.changes(cur, dict(cur, zone="late", signal="TRIM")) == ["left the box (stretched)", "exit signal Trim"]
+    assert sm.changes(prev, cur) == ["confirmed Uptrend"]                       # box and crowd: no message
+    assert sm.changes(cur, dict(cur, zone="late", signal="TRIM")) == ["exit signal Trim"]
 
 
 def test_watch_check_sends_once_per_change(tmp_path, monkeypatch):
@@ -65,8 +65,10 @@ def test_watch_check_sends_once_per_change(tmp_path, monkeypatch):
     maps = {"1d": {"coins": [item]}}
     assert sm.check(maps) == []                               # first reading is the baseline
     item.update(zone="watch")
+    assert sm.check(maps) == []                               # the box no longer sends a message
+    item.update(signal="TRIM")
     msgs = sm.check(maps)
-    assert len(msgs) == 1 and "FET 1D: entered the box" in msgs[0]
+    assert len(msgs) == 1 and "FET 1D: exit signal Trim" in msgs[0] and "profitable" not in msgs[0]
     assert sm.check(maps) == []                               # no repeat
     assert (tmp_path / "w.json").exists()
 
@@ -253,23 +255,3 @@ def test_heat_signs():
         {"band": False, "heat": False, "funding": False, "traders": False}
     none = sm.heat_signs({"heat_phase": "Exhaustion"}, {"band_z": None, "crowd": "crowded"})
     assert none == {"band": None, "heat": True, "funding": None, "traders": True}
-
-
-def test_vs_btc_from_the_store():
-    sm._rel_cache.clear()
-    first = 20000
-    now = (first + 400) * DAY + 3600
-    btc = {first + k: 100.0 for k in range(400)}
-    coin = {first + k: 1.0 * (0.998 ** k if k < 250 else 0.998 ** 250 * 1.01 ** (k - 250)) for k in range(400)}
-
-    class Store:
-        def get(self, sym, tf):
-            return daily(btc if sym.startswith("BTC") else coin) if tf == "1d" else None
-    out = sm.build([dict(row(price=1.0), market_kind="perpetual"), dict(row(symbol="BTC/USDT"), market_kind="perpetual")],
-                   "1d", Store(), {}, {}, [], {}, now)
-    fet, b = out["coins"]
-    assert fet["vs_btc"]["state"] == "above" and fet["vs_btc"]["trend"] == "up" and fet["vs_btc"]["since"] > first + 250
-    assert b["vs_btc"] is None
-    assert sm.vs_btc("FET/USDT", daily(coin), None, now) is None
-
-

@@ -183,13 +183,13 @@ def compose(ctx: dict) -> List[str]:
     fg = ctx.get("fear_greed")
     if fg and fg[0] is not None:
         lines.append(esc(f"Fear & Greed {fg[0]}" + (f" · {fg[1]}" if fg[1] else "")))
-    picks = early_setups(ctx.get("smap") or {}) if ctx.get("smap") else []
+    # The Early setups list (profitable-trader readings) was replaced on 14 November 2026 by the BTC weekly-band block
+    # and the day's long signals (owner's request; docs/reviews/selection-window-study.md).
     lines.append("")
-    if picks:
-        lines.append("<b>Early setups</b>")
-        lines.extend(setup_line(c) for c in picks)
-    else:
-        lines.append("Early setups: none")
+    if ctx.get("band"):
+        lines.append(band_line(ctx["band"]))
+    if ctx.get("results") is not None:
+        lines.append(longs_line(ctx["results"]))
     tail = []
     if ctx.get("positions") is not None:
         tail.append(positions_line(ctx["positions"], ctx.get("results") or {}))
@@ -205,9 +205,31 @@ def compose(ctx: dict) -> List[str]:
     lines.append("")
     url = ctx.get("app_url")
     if url:
-        lines.append(f'<a href="{esc(url)}/radar?tf=1d">Open Radar</a>')
+        lines.append(f'<a href="{esc(url)}/scanner?tf=1d">Open the scanner</a>')
     lines.append(f"<i>Reflex · {ta.hm(now)}</i>")
     return lines
+
+
+LONG_WORDS = (("STRONG_LONG", "Strong"), ("LIGHT_LONG", "Light"), ("REVIVAL_SEED", "Revival"))
+
+
+def band_line(band: dict) -> str:
+    """The BTC weekly-band block in one line (btc_band_block.state)."""
+    if band.get("blocked"):
+        return f"<b>BTC under its weekly band</b> {band.get('weeks_below', 0)} weeks · new longs paused"
+    if band.get("weeks_below") == 1:
+        return "BTC closed one week under its weekly band · longs allowed"
+    return "BTC above its weekly band · longs allowed"
+
+
+def longs_line(results: dict) -> str:
+    """The day's long signals on 1D: the count and the split by kind."""
+    rows = [r for r in results.values() if isinstance(r, dict)]
+    counts = [(w, sum(1 for r in rows if r.get("signal") == k)) for k, w in LONG_WORDS]
+    n = sum(c for _, c in counts)
+    if not n:
+        return "Long signals 1D: none"
+    return f"Long signals 1D: {n} · " + " · ".join(f"{w} {c}" for w, c in counts if c)
 
 
 def picks_of(smap: Optional[dict]) -> List[str]:
@@ -270,6 +292,11 @@ async def gather(now: Optional[float] = None) -> dict:
         except Exception as exc:
             logger.warning("brief: no setup map: %s", exc)
     try:
+        import btc_band_block
+        ctx["band"] = btc_band_block.current()
+    except Exception as exc:
+        logger.debug("brief: BTC band not read: %s", exc)
+    try:
         import setup_map
         watched = setup_map.watched()
         ctx["watched"] = len(watched)
@@ -318,7 +345,7 @@ async def send_brief(chats: Optional[List[int]] = None, now: Optional[float] = N
         return 0
     ctx = await gather(now)
     held = ta.take_held()
-    png = await asyncio.to_thread(render_image, ctx.get("smap"), now)
+    png = None                                     # the Radar picture went with the Radar (14 November 2026)
     sent = 0
     for cid in chats:
         c = dict(ctx, held=held, positions=await _positions(wallet_for(cid)))
