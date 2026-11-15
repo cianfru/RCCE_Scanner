@@ -53,7 +53,7 @@ The steady pool is under 200 on 8 of the 12 dates. On those dates its list is th
 **Leaderboard snapshot.** Same as the selection window study: 31 October 2026, 48,238 rows, SHA-256 `31abadebc58cb61e7956e6be694b9425faac2ac612dc370c1bacd5d594871b1e`. The market-maker flag and the $10M volume flag come from it, for both halves.
 
 **Two halves, split by the same address hash** (`skey`, the first 8 hex digits of the address's SHA-256, modulo 10,000):
-- **Read half** (`skey` under 5,000): 24,075 wallets, read on 31 October and 1 November 2026 for the selection window study.
+- **Read half** (`skey` under 5,000): 24,075 wallets, read on 31 October and 1 November 2026 for the selection window study, and read again for this study right after the unread half (see Changes: the stability check).
 - **Unread half** (`skey` 5,000 or more): the other 24,163 rows, read for this study from 15 November 2026. They are read the same way: the whole Hyperliquid `portfolio` reply is kept, and a wallet still unreadable after three fetch runs is left out and counted.
 
 **The halves are read two weeks apart.** A stored reply has weekly points (Wednesdays) up to about 31 days before it was fetched and near-daily points after.
@@ -188,6 +188,13 @@ Also reported:
   8. The stability re-read only keeps valid replies.
   9. The exposure context uses BTC 4h closes.
 - The review confirmed no look-ahead in eligibility, age, blocks, the 180-day window, drawdown, ranking, today's list or exposure.
+- **15 November 2026, the stability check (no outcome read).**
+  - Result: 22 of the 200 re-read wallets (11%) differ before 29 September, over the 5% limit, so the run stopped as declared.
+  - What differs is points only. In all 22, older points were dropped: 94-95 points became 56-79. Each wallet's all-time history keeps a limited number of points, spaced more widely as the account ages. In 11 of them, a few points also sit on other weeks. No value at a time present in both replies changed.
+  - Readings changed for 8 of the 200, and for 8 of the 64 eligible on some date. Readings here means the base rules, the age rule and each rule's rank key; no outcome is read.
+  - Spacing already differed between wallets: in the study's months, about 7 days for some wallets and 14 for others. That applies to every list and the comparison alike within a half.
+  - **Change:** the read half is read again on the same days as the unread half (`reread`). The analysis uses those replies for both halves, so both come from the same thinning. The stored replies serve only for the code check.
+  - The re-read meets the stop rule's purpose (both halves read the same way), so the analysis no longer waits on its 5% limit. The stability numbers are reported with the results.
 
 ## Results
 

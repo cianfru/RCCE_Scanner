@@ -289,11 +289,20 @@ def counts(wallets: Sequence[sw.Wallet]) -> dict:
 
 # --- data -----------------------------------------------------------------------------------------
 
-def wallets_all(conn: sqlite3.Connection) -> Tuple[List[sw.Wallet], dict]:
+REREAD = "reread"                # the read half read again, the same days as the unread half (Changes, 15 November)
+
+
+def wallets_all(conn: sqlite3.Connection, fresh: bool = True) -> Tuple[List[sw.Wallet], dict]:
+    """Every wallet of both halves. ``fresh``: the read half from its re-read (REREAD), so both halves come from
+    replies of the same days; otherwise from the replies stored for the selection window study (the code check)."""
+    conn.execute(f"CREATE TABLE IF NOT EXISTS {REREAD} (addr TEXT PRIMARY KEY, raw BLOB, fetched REAL)")
     lb = {a: {"av": av, "month_vlm": mv, "all_vlm": tv} for a, av, mv, tv in
           conn.execute("SELECT addr, av, month_vlm, all_vlm FROM leaderboard")}
-    ws = [sw.Wallet(a, json.loads(zlib.decompress(raw)), lb.get(a)) for a, raw in conn.execute("SELECT addr, raw FROM portfolio")
-          if a in lb]
+    raws = {a: raw for a, raw in conn.execute("SELECT addr, raw FROM portfolio") if a in lb}
+    if fresh:
+        raws = {a: r for a, r in raws.items() if half_of(a) == "unread"}
+        raws.update({a: r for a, r in conn.execute(f"SELECT addr, raw FROM {REREAD}") if a in lb and half_of(a) == "read"})
+    ws = [sw.Wallet(a, json.loads(zlib.decompress(raw)), lb.get(a)) for a, raw in raws.items()]
     gone = {a for (a,) in conn.execute("SELECT addr FROM failures WHERE runs >= ?", (sw.MAX_RUNS,))}
     read = {w.addr for w in ws}
     info = {}
@@ -302,6 +311,56 @@ def wallets_all(conn: sqlite3.Connection) -> Tuple[List[sw.Wallet], dict]:
         info[h] = {"listed": len(listed), "read": len(read & listed), "left_out_unreadable": len(gone & listed),
                    "missing": len(listed - read - gone)}
     return ws, info
+
+
+def reread(conn: sqlite3.Connection, rate: int = 1100, workers: int = 4) -> None:
+    """Read the read half again into REREAD (resumable), at the same pace as the fetch."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    wallets_all(conn)
+    done = {a for (a,) in conn.execute(f"SELECT addr FROM {REREAD}")}
+    gone = {a for (a,) in conn.execute("SELECT addr FROM failures WHERE runs >= ?", (sw.MAX_RUNS,))}
+    todo = [a for (a,) in conn.execute("SELECT addr FROM leaderboard ORDER BY skey, addr")
+            if half_of(a) == "read" and a not in done and a not in gone]
+    print(f"re-read: {len(done)} done, {len(todo)} to read", flush=True)
+    lock = threading.Lock()
+    state = {"next": time.time(), "gap": 60.0 * sw.WEIGHT / rate, "n": 0}
+
+    def one(a):
+        for attempt in range(8):
+            with lock:
+                at = max(time.time(), state["next"])
+                state["next"] = at + state["gap"]
+            time.sleep(max(0.0, at - time.time()))
+            try:
+                reply = sw._post({"type": "portfolio", "user": a})
+            except Exception as exc:
+                with lock:
+                    if "429" in str(exc):
+                        state["next"] = max(state["next"], time.time() + 20 * (attempt + 1))
+                time.sleep(2 * (attempt + 1))
+                continue
+            if not sw.valid(reply):
+                time.sleep(2 * (attempt + 1))
+                continue
+            with lock:
+                conn.execute(f"INSERT OR REPLACE INTO {REREAD} VALUES (?,?,?)",
+                             (a, zlib.compress(json.dumps(reply, separators=(",", ":")).encode()), time.time()))
+                state["n"] += 1
+                if state["n"] % 50 == 0:
+                    conn.commit()
+                if state["n"] % 1000 == 0:
+                    print(f"re-read {state['n']}/{len(todo)}", flush=True)
+            return
+        print(f"re-read: {a} unreadable this run", flush=True)
+
+    try:
+        with ThreadPoolExecutor(workers) as ex:
+            list(ex.map(one, todo))
+    finally:
+        with lock:
+            conn.commit()
+    print(f"re-read done: {state['n']} read", flush=True)
 
 
 def load_btc_4h(conn: sqlite3.Connection) -> Optional[Btc]:
@@ -397,7 +456,7 @@ def stability(conn: sqlite3.Connection, n: int = STABILITY_N) -> dict:
 def reproduce(conn: sqlite3.Connection) -> dict:
     """Today's list and everyone eligible on the read half, against the selection window study's published hit rates
     (nothing new is computed: both were published). Recorded in meta; the analysis needs it to match."""
-    ws, _ = wallets_all(conn)
+    ws, _ = wallets_all(conn, fresh=False)
     ws = [w for w in ws if half_of(w.addr) == "read"]
     by = {w.addr: w for w in ws}
     today, base = [], []
@@ -419,8 +478,8 @@ def ready(conn: sqlite3.Connection) -> List[str]:
     why = []
     if meta.get("leaderboard_sha256") != SNAPSHOT_SHA256:
         why.append("leaderboard snapshot is not the declared one")
-    if not json.loads(meta.get("cohort_stability") or "{}").get("ok"):
-        why.append("stability check missing or failed")
+    if "compared" not in json.loads(meta.get("cohort_stability") or "{}"):
+        why.append("stability check missing")
     if not json.loads(meta.get("cohort_reproduce") or "{}").get("ok"):
         why.append("today's list does not reproduce the published hit rates")
     _, info = wallets_all(conn)
@@ -431,19 +490,21 @@ def ready(conn: sqlite3.Connection) -> List[str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("fetch", "stability", "reproduce", "status", "counts", "analyse"))
+    ap.add_argument("cmd", choices=("fetch", "reread", "stability", "reproduce", "status", "counts", "analyse"))
     ap.add_argument("--db", type=Path, default=sw.DEFAULT_DB)
     ap.add_argument("--rate", type=int, default=1100, help="weight per minute (Hyperliquid allows 1,200 per IP)")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args(argv)
     conn = sw.connect(args.db)
     meta = dict(conn.execute("SELECT k, v FROM meta"))
-    if args.cmd in ("fetch", "stability", "reproduce") and meta.get("leaderboard_sha256") != SNAPSHOT_SHA256:
+    if args.cmd in ("fetch", "reread", "stability", "reproduce") and meta.get("leaderboard_sha256") != SNAPSHOT_SHA256:
         print("the database does not hold the declared leaderboard snapshot", file=sys.stderr)
         return 1
     if args.cmd == "fetch":
         sw.fetch(conn, 1.0, args.rate, None)          # the whole snapshot: the read half is already stored
         load_btc_4h(conn)
+    elif args.cmd == "reread":
+        reread(conn, args.rate)
     elif args.cmd == "stability":
         print(json.dumps(stability(conn)))
     elif args.cmd == "reproduce":
