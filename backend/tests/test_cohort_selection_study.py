@@ -140,9 +140,10 @@ def test_btc_correlation_reads_pnl_changes_against_btc_moves():
 
 # --- the bar -----------------------------------------------------------------------------------------
 
-def _row(hit, roi=0.0, base_hit=50.0, base_roi=0.0):
-    m = lambda h, r: {"hit": h, "mean_roi_clipped": r}
-    return {"baseline": m(base_hit, base_roi), **{r: m(hit, roi) for r in c.CANDIDATES}}
+def _row(hit, roi=0.0, base_hit=50.0, base_roi=0.0, traded=None):
+    m = lambda h, r, a: {"hit": h, "mean_roi_clipped": r, "hit_active": a}
+    return {"seasoned": m(base_hit, base_roi, base_hit), "baseline": m(0.0, -50.0, 0.0),
+            **{r: m(hit, roi, hit if traded is None else traded) for r in c.CANDIDATES}}
 
 
 UP = [k % 3 == 0 for k in range(sw.N_DATES)]
@@ -160,9 +161,20 @@ def test_bar_needs_size_breadth_p_roi_and_both_btc_sides():
     one_side = [_row(70.0 if not UP[k] else 45.0, 1.0) for k in range(12)]   # only months BTC fell
     v = c.judge(one_side, "steady", UP)
     assert not v["met"] and not v["btc"]["met"]
-    missing = good[:11] + [{"baseline": {"hit": 50.0, "mean_roi_clipped": 0.0},
-                            **{r: {"hit": None, "mean_roi_clipped": None} for r in c.CANDIDATES}}]
+    more_by_trading_more = [_row(60.0, 1.0, traded=48.0) for _ in range(12)]   # fewer idle, not better
+    v = c.judge(more_by_trading_more, "steady", UP)
+    assert not v["met"] and not v["traded"]["met"]
+    missing = good[:11] + [{"seasoned": {"hit": 50.0, "mean_roi_clipped": 0.0, "hit_active": 50.0},
+                            **{r: {"hit": None, "mean_roi_clipped": None, "hit_active": None} for r in c.CANDIDATES}}]
     assert not c.judge(missing, "steady", UP)["met"]
+    assert not c.judge(good, "steady", None)["met"]                   # no BTC record: no verdict
+    assert "required" not in c.judge(good, "steady", UP)["btc"]
+
+
+def test_the_comparison_is_everyone_180_days_old_not_everyone():
+    # The baseline (everyone eligible) is far below in _row; only the seasoned group counts.
+    rows = [_row(52.0, 1.0) for _ in range(12)]
+    assert c.COMPARE == "seasoned" and not c.judge(rows, "steady", UP)["met"]
 
 
 def test_p_value_condition():
@@ -199,12 +211,38 @@ def test_counts_read_no_outcome():
     assert set(out["read"]["dates"][0]) == {"date", "baseline", "seasoned", *c.CANDIDATES}
 
 
-def test_stability_compare_points_before_the_end():
-    t = c.STABILITY_END
-    times = [t - 20 * DAY, t - 10 * DAY, t + 5 * DAY]
+def test_stability_compares_all_four_series_in_a_span():
+    t = c.STABLE_BEFORE
+    times = [t - 40 * DAY, t - 10 * DAY, t + 5 * DAY]
     a = _reply(times, lambda x: 1.0, lambda x: 2.0)
-    b = _reply(times[:2] + [t + 6 * DAY], lambda x: 1.0, lambda x: 2.0)
-    assert c.compare_points(a, b)["same"]                         # a later point does not count
-    d = _reply([t - 20 * DAY, t - 9 * DAY], lambda x: 1.0, lambda x: 2.0)
-    r = c.compare_points(a, d)
-    assert not r["same"] and r["differing"] == 4
+    b = _reply(times[:2] + [t + 6 * DAY], lambda x: 1.0, lambda x: 2.0)    # the recent tail thinned or moved
+    assert c.compare_points(a, b)["same"]                                    # before STABLE_BEFORE: identical
+    late = c.compare_points(a, b, c.STABLE_BEFORE, c.STABILITY_END)
+    assert not late["same"] and late["differing"] == 8                       # 2 points x 4 series
+    d = _reply([t - 40 * DAY, t - 9 * DAY], lambda x: 1.0, lambda x: 2.0)
+    assert c.compare_points(a, d)["differing"] == 8
+
+
+def test_readings_hold_no_outcome():
+    t = sw.T0
+    times = _weekly()
+    a = _wallet("0xq", lambda x: 200_000.0, lambda x: 300.0 * (x - START) / DAY + (x // DAY) % 3, times=times)
+    b = _wallet("0xq", lambda x: 200_000.0, lambda x: 300.0 * (x - START) / DAY + (x // DAY) % 3
+                + (5e5 if x > t + DAY else 0), times=times)
+    assert c.readings(a) == c.readings(b)
+
+
+def test_today_list_is_the_selection_window_studys_30_day_arm():
+    ws = [_steady(_addr("read", i), per_day=600.0 + 37 * i) for i in range(8)]
+    ref = sw.analyse(ws, 0.5)
+    for i, t in enumerate(sw.dates()):
+        today = [a for _, a in sw.ranked(ws, t, 30)[:c.K]]
+        assert len(today) == ref["sizes"][i]
+        by = {w.addr: w for w in ws}
+        assert sw.metrics([sw._outcome(by[a], t) for a in today])["hit"] == ref["primary"][i][30]["hit"]
+
+
+def test_btc_price_is_the_last_closed_candle():
+    b = c.Btc({0: 1.0, 4 * 3600: 2.0, 8 * 3600: 3.0}, 4 * 3600)
+    assert b.at(4 * 3600 - 1) is None and b.at(4 * 3600) == 1.0
+    assert b.at(8 * 3600 + 3599) == 2.0 and b.at(12 * 3600) == 3.0

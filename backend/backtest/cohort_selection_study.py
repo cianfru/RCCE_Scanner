@@ -45,8 +45,17 @@ CANDIDATES = ("dollars", "steady", "risk")
 BAR_PP, BAR_DATES, BAR_P = 5.0, 9, 0.01
 CORR_FLAT = 0.2                   # context: |correlation| of PnL changes with BTC's moves under this: little exposure
 MIN_PAIRS = 8                     # context: point pairs needed for that correlation
+COMPARE = "seasoned"              # the comparison: everyone eligible whose first point is 180+ days old
 STABILITY_N = 200
 STABILITY_END = int(sw.T0 + sw.OUTCOME_D * DAY)   # 31 October 2026 00:00 UTC: the last outcome's end
+STABLE_BEFORE = int(sw.T0 - 2 * DAY)              # 29 September 2026: before it, stored points are the weekly grid
+STABILITY_MAX_DIFF = 0.05         # more than 5% of the re-read wallets differing before STABLE_BEFORE stops the run
+SNAPSHOT_SHA256 = "31abadebc58cb61e7956e6be694b9425faac2ac612dc370c1bacd5d594871b1e"
+BTC_STEP = 4 * 3600               # BTC 4h candles for the exposure context
+# The selection window study's published hit rates on the read half (its 30-day arm and everyone eligible), newest
+# date first: the code check that must match before the analysis runs.
+PUBLISHED_TODAY = (18.0, 72.5, 43.5, 38.0, 58.0, 66.0, 51.5, 61.5, 25.5, 37.5, 58.0, 46.0)
+PUBLISHED_BASELINE = (32.8, 63.2, 67.4, 38.3, 49.6, 60.5, 53.1, 51.3, 33.6, 55.2, 28.2, 26.3)
 BTC_FROM = sw.T0 - (sw.N_DATES - 1) * sw.OUTCOME_D * DAY - LONG_D * DAY - 5 * DAY
 
 
@@ -126,15 +135,17 @@ def pick(wallets: Sequence[sw.Wallet], t: float, rule: str, k: int = K) -> Tuple
 # --- context: exposure to BTC --------------------------------------------------------------------
 
 class Btc:
-    """BTC daily closes {day open (s): close}; the price at x is the close of the last day ended at or before x."""
+    """BTC closes {candle open (s): close} of candles ``step`` seconds long; the price at x is the close of the last
+    candle ended at or before x."""
 
-    def __init__(self, closes: Dict[int, float]):
+    def __init__(self, closes: Dict[int, float], step: int = DAY):
         self.days = sorted(closes)
         self.c = closes
+        self.step = step
 
     def at(self, x: float) -> Optional[float]:
         import bisect
-        i = bisect.bisect_right(self.days, x - DAY)
+        i = bisect.bisect_right(self.days, x - self.step)
         return self.c[self.days[i - 1]] if i else None
 
 
@@ -183,22 +194,32 @@ def core(diffs: Sequence[float]) -> dict:
             "met": mean >= BAR_PP and positive >= BAR_DATES and p <= BAR_P}
 
 
+def _mean_diff(per_date: List[dict], rule: str, field: str) -> dict:
+    d = [p[rule][field] - p[COMPARE][field] for p in per_date
+         if p[rule][field] is not None and p[COMPARE][field] is not None]
+    out = {"mean_pp": sum(d) / len(d) if d else None, "dates": len(d)}
+    out["met"] = len(d) == len(per_date) and out["mean_pp"] > 0
+    return out
+
+
 def judge(per_date: List[dict], rule: str, btc_up: Optional[Sequence[Optional[bool]]]) -> dict:
-    """The bar for one rule on one half. ``per_date``: each date's metrics per arm, newest first."""
-    hd = [p[rule]["hit"] - p["baseline"]["hit"] if p[rule]["hit"] is not None else None for p in per_date]
+    """The bar for one rule on one half, against COMPARE. ``per_date``: each date's metrics per arm, newest first.
+    No verdict (not met) when the rule's list is empty on a date or the BTC record is missing."""
+    hd = [p[rule]["hit"] - p[COMPARE]["hit"] if p[rule]["hit"] is not None and p[COMPARE]["hit"] is not None
+          else None for p in per_date]
     if any(x is None for x in hd):
         return {"met": False, "missing_dates": sum(1 for x in hd if x is None)}
     v = core(hd)
-    rd = [p[rule]["mean_roi_clipped"] - p["baseline"]["mean_roi_clipped"] for p in per_date
-          if p[rule]["mean_roi_clipped"] is not None and p["baseline"]["mean_roi_clipped"] is not None]
-    roi = {"mean_pp": sum(rd) / len(rd) if rd else None, "dates": len(rd)}
-    roi["met"] = len(rd) == len(per_date) and roi["mean_pp"] > 0
-    side = sw.side_means(hd, btc_up) if btc_up is not None else {"met": False, "missing": "btc"}
-    if btc_up is not None:
+    roi = _mean_diff(per_date, rule, "mean_roi_clipped")
+    traded = _mean_diff(per_date, rule, "hit_active")
+    if btc_up is None:
+        side = {"met": False, "missing": "btc"}
+    else:
+        side = {k: x for k, x in sw.side_means(hd, btc_up).items() if k != "required"}
         side["met"] = bool(side["up_mean"] is not None and side["down_mean"] is not None
                            and side["up_mean"] > 0 and side["down_mean"] > 0)
-    v.update(per_date_pp=hd, roi=roi, btc=side, lag1=sw.lag1(hd))
-    v["met"] = v["met"] and roi["met"] and side["met"]
+    v.update(per_date_pp=hd, roi=roi, traded=traded, btc=side, lag1=sw.lag1(hd))
+    v["met"] = v["met"] and roi["met"] and traded["met"] and side["met"]
     return v
 
 
@@ -283,69 +304,150 @@ def wallets_all(conn: sqlite3.Connection) -> Tuple[List[sw.Wallet], dict]:
     return ws, info
 
 
-def load_btc_daily(conn: sqlite3.Connection) -> Optional[Btc]:
-    row = conn.execute("SELECT v FROM meta WHERE k = 'btc_daily_close'").fetchone()
+def load_btc_4h(conn: sqlite3.Connection) -> Optional[Btc]:
+    """BTC 4h closes from May 2025 to 31 October 2026 (Hyperliquid), stored once; for the exposure context."""
+    row = conn.execute("SELECT v FROM meta WHERE k = 'btc_4h_close'").fetchone()
     if not row:
-        candles = sw._post({"type": "candleSnapshot", "req": {"coin": "BTC", "interval": "1d",
+        candles = sw._post({"type": "candleSnapshot", "req": {"coin": "BTC", "interval": "4h",
                                                               "startTime": int(BTC_FROM) * 1000,
                                                               "endTime": (STABILITY_END + DAY) * 1000}})
-        closes = {int(c["t"]) // 1000: float(c["c"]) for c in candles if int(c["T"]) // 1000 <= STABILITY_END + DAY}
-        conn.execute("INSERT OR REPLACE INTO meta VALUES ('btc_daily_close', ?)", (json.dumps(closes),))
+        closes = {int(c["t"]) // 1000: float(c["c"]) for c in candles if int(c["t"]) // 1000 + BTC_STEP <= STABILITY_END + DAY}
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('btc_4h_close', ?)", (json.dumps(closes),))
         conn.commit()
         row = (json.dumps(closes),)
     closes = {int(k): v for k, v in json.loads(row[0]).items()}
-    return Btc(closes) if closes else None
+    return Btc(closes, BTC_STEP) if closes else None
 
 
-def compare_points(old_reply, new_reply, end: float = STABILITY_END) -> dict:
-    """Points before ``end`` (s) in the all-time account value and PnL series: are they the same in both replies?"""
-    def pts(reply, key):
+SERIES = (("allTime", "accountValueHistory"), ("allTime", "pnlHistory"),
+          ("perpAllTime", "accountValueHistory"), ("perpAllTime", "pnlHistory"))
+
+
+def compare_points(old_reply, new_reply, start: float = 0, end: float = STABLE_BEFORE) -> dict:
+    """Points with start <= time < end (s) in the all-time and perps-only account value and PnL series: the same in
+    both replies?"""
+    def pts(reply, part, key):
         d = dict(reply) if isinstance(reply, list) else {}
-        return [(int(p[0]), str(p[1])) for p in ((d.get("allTime") or {}).get(key) or []) if int(p[0]) < end * 1000]
-    out = {"same": True, "old_points": 0, "new_points": 0, "differing": 0}
-    for key in ("accountValueHistory", "pnlHistory"):
-        a, b = pts(old_reply, key), pts(new_reply, key)
+        return {(int(p[0]), str(p[1])) for p in ((d.get(part) or {}).get(key) or [])
+                if start * 1000 <= int(p[0]) < end * 1000}
+    out = {"old_points": 0, "new_points": 0, "differing": 0}
+    for part, key in SERIES:
+        a, b = pts(old_reply, part, key), pts(new_reply, part, key)
         out["old_points"] += len(a)
         out["new_points"] += len(b)
-        out["differing"] += len(set(a) ^ set(b))
+        out["differing"] += len(a ^ b)
     out["same"] = out["differing"] == 0
     return out
 
 
+def readings(w: sw.Wallet) -> list:
+    """What the study reads of a wallet at each date, outcomes excepted: the base rules, the comparison group and
+    each rule's rank key."""
+    return [(sw.eligible_base(w, t), old_enough(w, t), *[score(r, w, t) for r in CANDIDATES]) for t in sw.dates()]
+
+
 def stability(conn: sqlite3.Connection, n: int = STABILITY_N) -> dict:
-    """Re-read n wallets of the read half (lowest skey, then address) and compare their points before 31 October."""
+    """Re-read n wallets of the read half (lowest skey, then address). Points before STABLE_BEFORE must be identical;
+    later points up to 31 October are counted, and so are wallets whose readings (no outcome) change."""
     conn.execute("CREATE TABLE IF NOT EXISTS stability (addr TEXT PRIMARY KEY, raw BLOB, fetched REAL)")
-    rows = sorted((sw.skey(a), a, raw) for a, raw in conn.execute("SELECT addr, raw FROM portfolio") if half_of(a) == "read")[:n]
+    lb = {a: {"av": av, "month_vlm": mv, "all_vlm": tv} for a, av, mv, tv in
+          conn.execute("SELECT addr, av, month_vlm, all_vlm FROM leaderboard")}
+    rows = sorted((sw.skey(a), a, raw) for a, raw in conn.execute("SELECT addr, raw FROM portfolio")
+                  if half_of(a) == "read")[:n]
     res = []
     for _, a, raw in rows:
         got = conn.execute("SELECT raw FROM stability WHERE addr = ?", (a,)).fetchone()
         if got:
             new = json.loads(zlib.decompress(got[0]))
         else:
-            time.sleep(60.0 * sw.WEIGHT / 1000)
-            new = sw._post({"type": "portfolio", "user": a})
+            new = None
+            for attempt in range(8):
+                time.sleep(60.0 * sw.WEIGHT / 1000)
+                try:
+                    reply = sw._post({"type": "portfolio", "user": a})
+                except Exception:
+                    time.sleep(10 * (attempt + 1))
+                    continue
+                if sw.valid(reply):
+                    new = reply
+                    break
+            if new is None:
+                raise RuntimeError(f"stability: {a} unreadable; run again")
             conn.execute("INSERT OR REPLACE INTO stability VALUES (?,?,?)",
                          (a, zlib.compress(json.dumps(new, separators=(",", ":")).encode()), time.time()))
             conn.commit()
-        res.append(compare_points(json.loads(zlib.decompress(raw)), new))
-    return {"compared": len(res), "identical": sum(1 for r in res if r["same"]),
-            "points_compared": sum(r["old_points"] for r in res), "points_differing": sum(r["differing"] for r in res)}
+        old = json.loads(zlib.decompress(raw))
+        before = compare_points(old, new)
+        after = compare_points(old, new, STABLE_BEFORE, STABILITY_END)
+        wo, wn = sw.Wallet(a, old, lb.get(a)), sw.Wallet(a, new, lb.get(a))
+        ro = readings(wo)
+        res.append({"before": before["same"], "after": after["same"], "readings": ro == readings(wn),
+                    "eligible": any(r[0] for r in ro)})
+    elig = [r for r in res if r["eligible"]]
+    out = {"compared": len(res), "same_before": sum(r["before"] for r in res),
+           "same_after": sum(r["after"] for r in res), "same_readings": sum(r["readings"] for r in res),
+           "eligible_on_a_date": len(elig), "eligible_same_before": sum(r["before"] for r in elig),
+           "eligible_same_readings": sum(r["readings"] for r in elig)}
+    out["ok"] = len(res) == n and (len(res) - out["same_before"]) <= STABILITY_MAX_DIFF * n
+    conn.execute("INSERT OR REPLACE INTO meta VALUES ('cohort_stability', ?)", (json.dumps(out),))
+    conn.commit()
+    return out
+
+
+def reproduce(conn: sqlite3.Connection) -> dict:
+    """Today's list and everyone eligible on the read half, against the selection window study's published hit rates
+    (nothing new is computed: both were published). Recorded in meta; the analysis needs it to match."""
+    ws, _ = wallets_all(conn)
+    ws = [w for w in ws if half_of(w.addr) == "read"]
+    by = {w.addr: w for w in ws}
+    today, base = [], []
+    for t in sw.dates():
+        tl = [a for _, a in sw.ranked(ws, t, 30)[:K]]
+        bl = [w.addr for w in ws if sw.eligible_base(w, t)]
+        today.append(round(sw.metrics([sw._outcome(by[a], t) for a in tl])["hit"], 1))
+        base.append(round(sw.metrics([sw._outcome(by[a], t) for a in bl])["hit"], 1))
+    out = {"today": today, "baseline": base,
+           "ok": tuple(today) == PUBLISHED_TODAY and tuple(base) == PUBLISHED_BASELINE}
+    conn.execute("INSERT OR REPLACE INTO meta VALUES ('cohort_reproduce', ?)", (json.dumps(out),))
+    conn.commit()
+    return out
+
+
+def ready(conn: sqlite3.Connection) -> List[str]:
+    """What still stops the analysis: the snapshot, the stability check, the code check, unread wallets."""
+    meta = dict(conn.execute("SELECT k, v FROM meta"))
+    why = []
+    if meta.get("leaderboard_sha256") != SNAPSHOT_SHA256:
+        why.append("leaderboard snapshot is not the declared one")
+    if not json.loads(meta.get("cohort_stability") or "{}").get("ok"):
+        why.append("stability check missing or failed")
+    if not json.loads(meta.get("cohort_reproduce") or "{}").get("ok"):
+        why.append("today's list does not reproduce the published hit rates")
+    _, info = wallets_all(conn)
+    if any(info[h]["missing"] for h in HALVES):
+        why.append(f"wallets still to read: {info}")
+    return why
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("fetch", "stability", "status", "counts", "analyse"))
+    ap.add_argument("cmd", choices=("fetch", "stability", "reproduce", "status", "counts", "analyse"))
     ap.add_argument("--db", type=Path, default=sw.DEFAULT_DB)
     ap.add_argument("--rate", type=int, default=1100, help="weight per minute (Hyperliquid allows 1,200 per IP)")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args(argv)
     conn = sw.connect(args.db)
     meta = dict(conn.execute("SELECT k, v FROM meta"))
+    if args.cmd in ("fetch", "stability", "reproduce") and meta.get("leaderboard_sha256") != SNAPSHOT_SHA256:
+        print("the database does not hold the declared leaderboard snapshot", file=sys.stderr)
+        return 1
     if args.cmd == "fetch":
         sw.fetch(conn, 1.0, args.rate, None)          # the whole snapshot: the read half is already stored
-        load_btc_daily(conn)
+        load_btc_4h(conn)
     elif args.cmd == "stability":
         print(json.dumps(stability(conn)))
+    elif args.cmd == "reproduce":
+        print(json.dumps(reproduce(conn)))
     elif args.cmd == "status":
         _, info = wallets_all(conn)
         print(json.dumps({**info, "leaderboard_sha256": meta.get("leaderboard_sha256")}))
@@ -353,11 +455,12 @@ def main(argv=None) -> int:
         ws, _ = wallets_all(conn)
         print(json.dumps(counts(ws), indent=1))
     else:
-        ws, info = wallets_all(conn)
-        if any(info[h]["missing"] for h in HALVES):
-            print(f"not ready: {json.dumps(info)}", file=sys.stderr)
+        why = ready(conn)
+        if why:
+            print("not ready: " + "; ".join(why), file=sys.stderr)
             return 1
-        res = analyse(ws, sw.btc_up(conn), load_btc_daily(conn))
+        ws, info = wallets_all(conn)
+        res = analyse(ws, sw.btc_up(conn), load_btc_4h(conn))
         res["data"] = {**info, "leaderboard_sha256": meta.get("leaderboard_sha256")}
         text = json.dumps(res, indent=1, default=str)
         if args.out:
