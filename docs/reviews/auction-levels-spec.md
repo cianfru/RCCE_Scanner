@@ -30,7 +30,7 @@ To move a rule from O to checked, it needs the video and the timestamp where it 
 | 1.2 | The value area holds about 70% of a session's volume. VAH and VAL are its edges; the POC is the price with the most volume. | Mechanical | O, P, A | See "Exact definitions" below. | **Drawn.** |
 | 1.2 | The POC "acts as a price magnet". | (claim) | O, P | A claim about what follows, not a definition. | Study S2. |
 | 2.1 | Mark the previous day's high and low (PDH, PDL). | Mechanical | O, P | High and low of the previous UTC day, from daily candles. | **Drawn.** |
-| 2.1 | Mark the overnight high and low (ONH, ONL). | Mechanical | O only | Not defined for crypto: a market open 24 hours has no overnight session. The public scripts use the Initial Balance instead (high and low of the first hour after 00:00 UTC). | Not drawn. Needs the video to say which session he means. |
+| 2.1 | Mark the overnight high and low (ONH, ONL). | Mechanical | O only | Not defined for crypto: a market open 24 hours has no overnight session. The public scripts use the Initial Balance instead (high and low of the first hour after 00:00 UTC), which the 1H chart draws. | Not drawn. Needs the video to say which session he means. |
 | 2.1 | Mark naked POCs: POCs price has not revisited. | Mechanical | O, P | A finished session's POC until a later candle's low-to-high range includes it. | **Drawn.** |
 | 2.2 | Profile shape gives bias: P (volume near the top), b (near the bottom), bell (balanced). | Approximated | O, A | Proposed. P: the POC is in the top third of the session's range; b: the bottom third; bell: otherwise. | Not drawn. |
 | 3.1 | Setup A, failed auction. Price pushes beyond VAH or VAL (often sweeping PDH or PDL), a 1-hour candle closes back inside the value area with a rejection wick and high volume. Enter on that close, stop beyond the wick, exit at the POC or the opposite edge. | Mechanical | O, A; P for the "80% rule" form (a day that opens outside the previous day's value area) | Proposed. A 1-hour candle whose high is above the previous day's VAH and whose close is below it (mirror at VAL). "Rejection wick": the wick beyond the level is at least half the candle's range. "High volume": at least 1.5 times the median of the previous 20 candles. | Not drawn. Studies S1 and S3 first. |
@@ -44,7 +44,7 @@ In the public scripts but not in the outline:
 |---|---|
 | Daily, weekly and monthly opens | **Drawn** (D open, W open, M open). |
 | Previous day's and previous week's midpoint (EQ) | Not drawn. |
-| Initial Balance (first hour after 00:00 UTC) | Not drawn: the chart's shortest candle is 4 hours. |
+| Initial Balance (first hour after 00:00 UTC) | **Drawn on the 1H chart** (IB high, IB low). On 4H a day is six candles and the first hour cannot be seen. |
 | Daily, weekly and monthly VWAP | Not drawn. |
 | "CCV": the 80% rule for a day opening outside the previous day's value area | Study S1. |
 
@@ -58,8 +58,11 @@ Code: `backend/engines/auction_engine.py`, served by `backend/auction.py` at `/a
 
 | Chart | Sessions drawn | Outer sessions (ticks only) | Candles read |
 |---|---|---|---|
+| 1H | days | weeks | 15-minute, 30 days (one answer shared with 4H) |
 | 4H | days | weeks | 15-minute, 30 days |
 | 1D | weeks | months | 1-hour, 180 days |
+
+The 1H chart is a view of the chart only (a 1H switch in the chart's toolbar; its 600 candles are read from Hyperliquid on demand and kept for 2 minutes). The scan, its signals, the trend line and the ribbon stay on 4H and 1D.
 
 **Profile of a session.**
 
@@ -72,7 +75,7 @@ A session the candles start inside is left out.
 
 **Naked POC.** A finished session's POC is naked until a later candle's range includes it. The running session's POC moves and is never naked.
 
-**Opens and prior extremes** come from the stored daily candles: today's open, the previous day's high and low, this week's and this month's open on 4H; this week's and month's open and the previous week's high and low on 1D.
+**Opens and prior extremes** come from the stored daily candles: today's open, the previous day's high and low, this week's and this month's open on 1H and 4H; this week's and month's open and the previous week's high and low on 1D. On 1H, the **Initial Balance** is added: the high and low of the running day's first hour, from the 15-minute candles.
 
 **How close candle-built profiles are.** A profile built from candles is an approximation of one built from every trade. One check, on two finished days (14 and 15 November 2026) of BTC and ETH on Hyperliquid, against the same days built from 1-minute candles:
 
@@ -91,7 +94,7 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 - a dashed gold line running on from each naked POC;
 - dashed grey lines carrying the last finished session's VAH and VAL forward;
 - on the left, volume by price of the sessions in view (the POC row in gold, the value-area rows brighter);
-- right of the last candle, labelled ticks: the opens, the previous day's (or week's) high and low, the previous outer session's VAH, POC and VAL (PW on 4H, PM on 1D), and older outer POCs still naked (W nPOC, M nPOC).
+- right of the last candle, labelled ticks: the opens, the previous day's (or week's) high and low, the previous outer session's VAH, POC and VAL (PW on 1H and 4H, PM on 1D), older outer POCs still naked (W nPOC, M nPOC), and on 1H the first hour's high and low (IB high, IB low).
 
 The layer says what happened and where. It does not mark setups, entries or exits.
 
@@ -99,7 +102,7 @@ The layer says what happened and where. It does not mark setups, entries or exit
 
 - No candles are stored and nothing runs in the background. A build happens when someone turns the layer on.
 - Each answer (about 10 KB) is kept for 15 minutes, the newest 48 at most: under 1 MB.
-- A build costs 68 (4H) or 92 (1D) of Hyperliquid's request weight. The layer has its own share of 240 a minute, about three new charts a minute; beyond that the toggle reads "Value: busy" and the page tries again after 30 seconds. The scan's share is untouched.
+- A build costs 68 (1H and 4H, shared) or 92 (1D) of Hyperliquid's request weight, and the 1H chart's candles 30. Together they have their own share of 240 a minute, about three new charts a minute; beyond that the toggle reads "Value: busy" (or the 1H chart says so) and the page tries again after 30 seconds. The scan's share is untouched.
 - The endpoint is in the "exchange" rate-limit class, like `/api/chart`.
 
 ## Studies to declare (none run)
@@ -119,4 +122,3 @@ Data that can carry them: Binance futures 1-minute candles (they include taker b
 ## Open
 
 - The videos: a list of them, or their transcripts, to check the O rules and fill in rule 2.1's overnight levels.
-- A 1-hour chart: the daily levels are intraday tools. On the 4-hour chart a day is six candles, and the Initial Balance and the 1-hour signal candle of rule 3.1 cannot be seen.

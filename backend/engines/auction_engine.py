@@ -41,6 +41,7 @@ GRID_ROWS = 120                       # rows of the coarse grid behind the chart
 
 # Chart timeframe -> the candles read and the sessions built from them.
 PLANS: Dict[str, dict] = {
+    "1h": {"interval": "15m", "days": 30, "period": "day", "outer": "week"},
     "4h": {"interval": "15m", "days": 30, "period": "day", "outer": "week"},
     "1d": {"interval": "1h", "days": 180, "period": "week", "outer": "month"},
 }
@@ -126,6 +127,18 @@ def value_area(vol: np.ndarray, share: float = VALUE_SHARE) -> Tuple[int, int, i
     return poc, lo, hi
 
 
+def session_levels(high, low, volume, step: float) -> Tuple[float, float, float]:
+    """(POC, VAH, VAL) of one session's candles, each kept inside the session's own range."""
+    high = np.asarray(high, dtype=np.float64)
+    low = np.asarray(low, dtype=np.float64)
+    base, rows = profile(high, low, volume, step)
+    poc, lo, hi = value_area(rows)
+    top, bottom = float(high.max()), float(low.min())
+    return (min(max(base + (poc + 0.5) * step, bottom), top),
+            min(base + (hi + 1) * step, top),
+            max(base + lo * step, bottom))
+
+
 def _arrays(candles: dict):
     ts = np.asarray(candles["timestamp"], dtype=np.int64)
     return (ts,) + tuple(np.asarray(candles[k], dtype=np.float64) for k in ("open", "high", "low", "close", "volume"))
@@ -151,10 +164,7 @@ def sessions(candles: dict, period: str, step: float, now_ms: float,
             continue
         if not v[idx].sum() > 0:
             continue
-        base, rows = profile(h[idx], l[idx], v[idx], step)
-        poc, lo, hi = value_area(rows)
-        high, low = float(h[idx].max()), float(l[idx].min())
-        price = min(max(base + (poc + 0.5) * step, low), high)
+        price, vah, val = session_levels(h[idx], l[idx], v[idx], step)
         end = session_end(int(s), period)
         live = end > now_ms
         touched = None
@@ -164,10 +174,8 @@ def sessions(candles: dict, period: str, step: float, now_ms: float,
                 touched = int(ts[later[0]] // 1000)
         row = {
             "start": int(s // 1000), "end": int(end // 1000), "live": bool(live),
-            "open": float(o[idx[0]]), "high": high, "low": low, "close": float(c[idx[-1]]),
-            "poc": round(price, dec),
-            "vah": round(min(base + (hi + 1) * step, high), dec),
-            "val": round(max(base + lo * step, low), dec),
+            "open": float(o[idx[0]]), "high": float(h[idx].max()), "low": float(l[idx].min()), "close": float(c[idx[-1]]),
+            "poc": round(price, dec), "vah": round(vah, dec), "val": round(val, dec),
             "touched": touched,
         }
         if grid is not None:
@@ -216,6 +224,14 @@ def reference_levels(daily: Optional[dict], period: str, now_ms: float) -> Dict[
     return out
 
 
+def initial_balance(candles: dict, now_ms: float) -> Dict[str, float]:
+    """High and low of the running UTC day's first hour (the Initial Balance), once it has a candle."""
+    ts, _, h, l, _, _ = _arrays(candles)
+    today = int(now_ms) // DAY_MS * DAY_MS
+    first = (ts >= today) & (ts < today + 3_600_000)
+    return {"ib_high": float(h[first].max()), "ib_low": float(l[first].min())} if first.any() else {}
+
+
 def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -> dict:
     """The Value layer of one chart: sessions with their value areas, the outer period's
     sessions (weeks under days, months under weeks) and the reference levels."""
@@ -234,6 +250,9 @@ def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -
     outer = [{k: s[k] for k in ("start", "end", "live", "poc", "vah", "val", "touched")}
              for s in sessions(candles, plan["outer"], outer_step, now_ms)]
     dec = _decimals(step)
+    refs = reference_levels(daily, plan["period"], now_ms)
+    if plan["period"] == "day":
+        refs.update(initial_balance(candles, now_ms))
     return {
         "version": AUCTION_VERSION,
         "timeframe": timeframe,
@@ -246,5 +265,5 @@ def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -
         "sessions": inner,
         "outer": outer,
         "grid": {"low": g_low, "step": g_step, "rows": GRID_ROWS},
-        "levels": {k: round(p, dec) for k, p in reference_levels(daily, plan["period"], now_ms).items()},
+        "levels": {k: round(p, dec) for k, p in refs.items()},
     }

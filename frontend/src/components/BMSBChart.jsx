@@ -93,7 +93,12 @@ const ENTRIES_KEY = "rcce-chart-entries";
 const VALUE_KEY = "rcce-chart-value";
 const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
 
+// Seconds per candle. 1H is a view of the chart only: the scan and its signals run on 4H and 1D.
+const TF_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
+const pageTf = tf => (tf === "1d" ? "1d" : "4h");
+
 const TIMEFRAMES = [
+  { key: "1h",  label: "1H",  limit: 600,  apiTf: "1h", barSpace: 8 },   // 25 days, read on demand
   { key: "4h",  label: "4H",  limit: 600,  apiTf: "4h", barSpace: 8 },   // the server loads 600 bars (~100 days); the 200-day MA needs 1D
   { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
 ];
@@ -135,8 +140,8 @@ export default function BMSBChart({
   const [loading, setLoading] = useState(true);
   const [hoverCandle, setHoverCandle] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
-  useEffect(() => { setActiveTimeframe(initialTimeframe === "1d" ? "1d" : "4h"); }, [initialTimeframe]);
+  const [activeTimeframe, setActiveTimeframe] = useState(pageTf(initialTimeframe));
+  useEffect(() => { setActiveTimeframe(pageTf(initialTimeframe)); }, [initialTimeframe]);
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
@@ -182,7 +187,7 @@ export default function BMSBChart({
   const posMeasureRef = useRef("n");
   posMeasureRef.current = posMeasure;
   const posSeriesRef = useRef(null);       // {long, short, markers} in the bottom pane
-  const showPos = positioningPane && !compact;
+  const showPos = positioningPane && !compact && activeTimeframe !== "1h";   // the long/short record is per 4H candle
   const posH = showPos ? (height >= 500 ? 116 : 92) : 0;
   const trendSeriesRef = useRef(null);
   const ribbonSeriesRef = useRef([]);
@@ -444,7 +449,7 @@ export default function BMSBChart({
           const volumes = new Map((data.volume || []).map(v => [v.time, v.value]));
           const readCandle = candle => setHoverCandle(candle ? {
             ...candle, change:candleChange(candle), volume:volumes.get(candle.time),
-            live: candle.time <= Date.now()/1000 && candle.time + (apiTf === '1d' ? 86400 : 14400) > Date.now()/1000,
+            live: candle.time <= Date.now()/1000 && candle.time + TF_SEC[apiTf] > Date.now()/1000,
           } : null);
           chart.subscribeCrosshairMove(param => {
             if (cancelled) return;
@@ -474,7 +479,7 @@ export default function BMSBChart({
           if (markerDef) {
             const last = data.candles[data.candles.length - 1];
             const markerTime = (!signalTimeframe || signalTimeframe === apiTf)
-              ? signalCandleTime(data.candles, signalFirstSeenAt, apiTf === "4h" ? 14400 : 86400)
+              ? signalCandleTime(data.candles, signalFirstSeenAt, TF_SEC[apiTf])
               : null;
             const markers = markerTime == null ? [] : [{
               time: markerTime,
@@ -523,8 +528,8 @@ export default function BMSBChart({
 
         // ── 200-day MA (computed from candle closes) ──
         if (data.candles?.length > 0) {
-          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day)
-          const period = tf === "4h" ? 1200 : 200;
+          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day), 4800 for 1H
+          const period = 200 * 86400 / TF_SEC[tf];
           const closes = data.candles.map(c => c.close);
           const maData = [];
           let sum = 0;
@@ -644,7 +649,7 @@ export default function BMSBChart({
 
   // Long/short pane: one bar pair per candle from the group's record, dots where the
   // profitable-trader list was rebuilt.
-  const tfSec = activeTimeframe === "1d" ? 86400 : 14400;
+  const tfSec = TF_SEC[activeTimeframe];
 
   // Value layer: read when turned on (the server keeps each coin's answer for 15 minutes), then
   // handed to the chart's primitive once the candles are in. "Busy" is tried again after 30 s.
@@ -992,7 +997,7 @@ export default function BMSBChart({
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Back to the position's period">Reset view</button>
             {timeframeControl && (
-              <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
+              <Tabs small label="Chart timeframe" items={TIMEFRAMES.filter(tf => tf.key !== "1h").map(tf => ({ key: tf.key, label: tf.label }))}
                 value={activeTimeframe} onChange={setActiveTimeframe} />
             )}
           </div>
@@ -1055,8 +1060,8 @@ export default function BMSBChart({
             { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
             { key: "value", on: showValue, set: setShowValue, long: valueLabel, short: valueLabel },
-            { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
-            { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
+            activeTimeframe !== "1h" && { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
+            activeTimeframe !== "1h" && { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
             activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
           ].filter(Boolean).map(t => (
             <button key={t.key} type="button" onClick={() => t.set(v => !v)} aria-pressed={t.on}
@@ -1074,16 +1079,26 @@ export default function BMSBChart({
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
             <p>{activeTimeframe === "1d"
               ? "Value: a band over each week's value area (the prices where 70% of its volume traded; weeks start Monday 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished week's band edges. Left: volume by price of the weeks in view. Right: this week's and month's open, the previous week's high and low (PWH, PWL), the previous month's value area (PM). From Hyperliquid 1-hour candles. Display only; not used by signals."
-              : "Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW). From Hyperliquid 15-minute candles. Display only; not used by signals."}</p>
-            <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>
-            <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
+              : `Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW)${activeTimeframe === "1h" ? ", the high and low of the day's first hour (IB)" : ""}. From Hyperliquid 15-minute candles. Display only; not used by signals.`}</p>
+            {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
+            {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
+            {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}
             {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
           </HelpTip>
 
-          {/* Timeframe toggle, only where the chart owns its timeframe */}
-          {timeframeControl && (
+          {/* Timeframe toggle where the chart owns its timeframe; where the page owns it (4H or 1D),
+              one switch to this chart's 1-hour candles and back. */}
+          {timeframeControl ? (
             <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
               value={activeTimeframe} onChange={setActiveTimeframe} />
+          ) : (
+            <button type="button" aria-pressed={activeTimeframe === "1h"} title="One-hour candles, for this chart only"
+              onClick={() => setActiveTimeframe(tf => (tf === "1h" ? pageTf(initialTimeframe) : "1h"))}
+              style={{
+                padding: "3px 2px", border: 0, borderBottom: `2px solid ${activeTimeframe === "1h" ? T.accent : "transparent"}`, borderRadius: 0,
+                cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
+                background: "transparent", color: activeTimeframe === "1h" ? T.text1 : T.text4,
+              }}>1H</button>
           )}
         </div>
       </div>

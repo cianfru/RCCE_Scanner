@@ -28,7 +28,7 @@ export default class ValueAreas {
   setData(body, times, tfSec, colors) {
     if (colors) this.colors = colors;
     this.placed = body && times?.length ? placeSessions(body.sessions, times, tfSec) : [];
-    this.ticks = body ? ticks(body) : [];
+    this.ticks = body ? ticks(body, { firstHour: tfSec <= 3600 }) : [];
     this.grid = body?.grid || null;
     this.last = times?.length ? times.length - 1 : 0;
     this.requestUpdate?.();

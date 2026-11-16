@@ -109,6 +109,8 @@ class SessionTests(unittest.TestCase):
         now = T0 + 3 * DAY - 1
         body = ae.build(candles(rows), None, "4h", now)
         self.assertEqual((body["period"], body["outer_period"], body["interval"]), ("day", "week", "15m"))
+        # The first hour of the running day (the Initial Balance): its four 15-minute candles.
+        self.assertEqual((body["levels"]["ib_high"], body["levels"]["ib_low"]), (110.0, 108.0))
         self.assertEqual(len(body["sessions"]), 10)
         self.assertTrue(body["sessions"][-1]["live"])
         self.assertEqual([s["live"] for s in body["outer"]], [False, True])      # last week, this week
@@ -145,6 +147,26 @@ class LayerCacheTests(unittest.TestCase):
         self.assertIs(a, b)
         self.assertIs(a, c)
         self.assertEqual(calls, [("BTC/USDT", "4h"), ("BTC/USDT", "1d")])
+
+    def test_the_hourly_and_four_hour_charts_share_one_build(self):
+        calls = []
+
+        async def fake_build(symbol, timeframe):
+            calls.append(timeframe)
+            return {"symbol": symbol, "timeframe": timeframe, "sessions": [1]}
+
+        async def run():
+            real, auction._build = auction._build, fake_build
+            auction._cache.clear()
+            try:
+                return await auction.levels("BTC/USDT", "4h"), await auction.levels("BTC/USDT", "1h")
+            finally:
+                auction._build = real
+                auction._cache.clear()
+
+        four, one = asyncio.run(run())
+        self.assertEqual(calls, ["4h"])                      # both read 15-minute candles
+        self.assertEqual((four["timeframe"], one["timeframe"], one["sessions"]), ("4h", "1h", [1]))
 
     def test_a_failed_build_is_not_kept(self):
         async def failing(symbol, timeframe):
@@ -189,6 +211,36 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(self.get("/api/auction/BTC/USDT", auction.NoData("No intraday candles for this market")).status_code, 404)
         self.assertEqual(self.get("/api/auction/ETH/BTC", {}).status_code, 422)
         self.assertEqual(self.get("/api/auction/BTC/USDT?timeframe=1w", {}).status_code, 422)
+
+    def test_the_hourly_chart_is_candles_read_on_demand(self):
+        from unittest import mock
+        from fastapi.testclient import TestClient
+        import main
+        n = 120
+        ts = (T0 + np.arange(n) * 3_600_000).astype(np.float64)
+        price = 100 + np.arange(n) * 0.1
+        candles_1h = {"timestamp": ts, "open": price, "high": price + 1, "low": price - 1, "close": price + 0.5, "volume": np.full(n, 7.0)}
+
+        async def hourly(symbol):
+            self.asked = symbol
+            return candles_1h
+
+        async def stored(symbol, timeframe, **_):
+            return None                                   # no weekly band without stored candles
+
+        with mock.patch.object(auction, "hour_candles", hourly), mock.patch("data_fetcher.fetch_ohlcv", stored):
+            r = TestClient(main.app).get("/api/chart/BTC-USDT?timeframe=1h&limit=100")
+        body = r.json()
+        self.assertEqual((r.status_code, self.asked, body["timeframe"], len(body["candles"])), (200, "BTC/USDT", "1h", 100))
+        self.assertEqual(body["candles"][-1], {"time": int(ts[-1] // 1000), "open": price[-1], "high": price[-1] + 1,
+                                               "low": price[-1] - 1, "close": price[-1] + 0.5})
+        self.assertEqual((body["volume"][-1]["value"], body["trend"], body["cto_ribbon"], body["patterns"], body["bmsb_mid"]),
+                         (7.0, None, None, [], []))
+
+        async def busy(symbol):
+            raise auction.Busy("budget")
+        with mock.patch.object(auction, "hour_candles", busy):
+            self.assertEqual(TestClient(main.app).get("/api/chart/BTC/USDT?timeframe=1h").status_code, 503)
 
 
 if __name__ == "__main__":

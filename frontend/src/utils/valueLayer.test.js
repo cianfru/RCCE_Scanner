@@ -38,6 +38,12 @@ test("ticks: the levels, the previous outer session's value area and older untou
   assert.deepEqual(ticks(null), []);
 });
 
+test("the first hour's high and low are ticks on the 1-hour chart only", () => {
+  const body = { outer_period: "week", levels: { d_open: 100, ib_high: 103, ib_low: 98 }, outer: [] };
+  assert.deepEqual(ticks(body).map(t => t.label), ["D open"]);
+  assert.deepEqual(ticks(body, { firstHour: true }).map(t => `${t.label} ${t.price}`), ["D open 100", "IB high 103", "IB low 98"]);
+});
+
 test("no forecast words in the tick labels", () => {
   const labels = ticks({ outer_period: "week", levels: { d_open: 1, pd_high: 1, pd_low: 1, w_open: 1, m_open: 1, pw_high: 1, pw_low: 1 },
     outer: [{ poc: 1, vah: 1, val: 1, live: false, touched: null }, { poc: 1, vah: 1, val: 1, live: false }] }).map(t => t.label).join(" ");

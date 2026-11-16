@@ -1623,7 +1623,7 @@ async def auction_levels(
     """The coin chart's Value layer: value areas, points of control and reference levels (display only)."""
     import auction
     if timeframe not in auction.auction_engine.PLANS:
-        raise HTTPException(status_code=422, detail="Use 4h or 1d")
+        raise HTTPException(status_code=422, detail="Use 1h, 4h or 1d")
     from hyperliquid_universe import MARKETS
     symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
     from spot_quality import volume_reason
@@ -1641,10 +1641,53 @@ async def auction_levels(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+async def _chart_hourly(symbol: str, limit: int) -> dict:
+    """The 1-hour chart: candles and volume read on demand (auction.hour_candles) and the weekly band.
+    The scan's analysis runs on 4h and 1d candles only, so the trend, ribbon and pattern fields are empty."""
+    import auction
+    import numpy as np
+    from data_fetcher import fetch_ohlcv
+    from engines.heatmap_engine import compute_bmsb_series, bmsb_implausible
+    from candle_snapshot import consistent_weekly
+    try:
+        ohlcv = await auction.hour_candles(symbol)
+    except auction.Busy:
+        raise HTTPException(status_code=503, detail="Busy: try again in a minute", headers={"Retry-After": "30"})
+    except auction.NoData as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    times = [int(t / 1000) for t in ohlcv["timestamp"]]
+    o, h, l, c, v = (ohlcv[k] for k in ("open", "high", "low", "close", "volume"))
+    candles = [{"time": times[i], "open": float(o[i]), "high": float(h[i]), "low": float(l[i]), "close": float(c[i])}
+               for i in range(len(times))]
+    volume = [{"time": times[i], "value": round(float(v[i]), 2),
+               "color": "rgba(52,211,153,0.18)" if c[i] >= o[i] else "rgba(248,113,113,0.18)"} for i in range(len(times))]
+    band = {"mid": [], "ema": [], "sma": []}
+    try:
+        weekly = consistent_weekly(await fetch_ohlcv(symbol, "1w", limit=250), await fetch_ohlcv(symbol, "1d"), "1d")
+        if weekly is not None:
+            series = compute_bmsb_series(np.asarray(weekly["close"], dtype=np.float64), np.asarray(weekly["timestamp"], dtype=np.float64))
+            if series["mid"] and not bmsb_implausible(series["mid"][-1]["value"], c, ohlcv["timestamp"]):
+                last = float(c[-1])
+                prec = max(6, int(np.ceil(-np.log10(last))) + 3) if 0 < last < 0.01 else 6
+                for key, pts in series.items():
+                    if len(pts) >= 2:
+                        st, sv = [p["time"] for p in pts], [p["value"] for p in pts]
+                        band[key] = [{"time": t, "value": round(float(np.interp(t, st, sv)), prec)}
+                                     for t in times[-limit:] if st[0] <= t <= st[-1]]
+    except Exception:
+        logger.warning("BMSB computation failed for %s (1h)", symbol)
+    return {
+        "symbol": symbol, "timeframe": "1h", "trend": None, "spike": None, "expected_range": None,
+        "volume_unit": symbol.split("/")[0], "candles": candles[-limit:], "volume": volume[-limit:],
+        "bmsb_mid": band["mid"], "bmsb_ema": band["ema"], "bmsb_sma": band["sma"],
+        "cto_fast": [], "cto_slow": [], "cto_snapshot": None, "cto_preview": None, "cto_ribbon": None, "patterns": [],
+    }
+
+
 @app.get("/api/chart/{symbol:path}")
 async def chart_data(
     symbol: str,
-    timeframe: str = Query("1d", description="4h or 1d"),
+    timeframe: str = Query("1d", description="1h, 4h or 1d"),
     limit: int = Query(365, ge=50, le=600, description="Number of displayed candles"),
 ):
     """Return OHLCV + BMSB overlay data for charting."""
@@ -1654,8 +1697,8 @@ async def chart_data(
     from engines.cto_engine import compute_cto_chart, CTO_HISTORY_BARS
     import numpy as np
 
-    if timeframe not in ("4h", "1d"):
-        raise HTTPException(status_code=422, detail="Use 4h or 1d")
+    if timeframe not in ("1h", "4h", "1d"):
+        raise HTTPException(status_code=422, detail="Use 1h, 4h or 1d")
 
     from hyperliquid_universe import MARKETS
     symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
@@ -1665,6 +1708,8 @@ async def chart_data(
     reason = volume_reason(market)
     if reason:
         raise HTTPException(status_code=422, detail=f"Spot analysis unavailable: {reason}")
+    if timeframe == "1h":
+        return await _chart_hourly(symbol, limit)
 
     # More history: 365 for 1d (~1yr), 500 for 4h (~83 days)
     effective_limit = CTO_HISTORY_BARS + 1  # identical CTO warmup to the scanner

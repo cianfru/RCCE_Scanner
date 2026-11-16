@@ -5,6 +5,7 @@
 export const VALUE_SHARE = 0.7;
 
 const LEVEL_LABELS = { d_open: "D open", pd_high: "PDH", pd_low: "PDL", w_open: "W open", m_open: "M open", pw_high: "PWH", pw_low: "PWL" };
+const FIRST_HOUR_LABELS = { ib_high: "IB high", ib_low: "IB low" };   // the day's first hour: readable on the 1-hour chart only
 const PERIOD_LETTER = { day: "D", week: "W", month: "M" };
 
 // The candle a time falls on: the first candle opening at or after it. Past the last candle,
@@ -28,9 +29,9 @@ export function placeSessions(sessions, times, tfSec) {
 // The labelled levels: opens and prior extremes, the last finished outer session's value area
 // (the previous week under days, the previous month under weeks), and older outer points of
 // control price has not traded back to.
-export function ticks(body) {
+export function ticks(body, { firstHour = false } = {}) {
   const out = [];
-  for (const [key, label] of Object.entries(LEVEL_LABELS)) {
+  for (const [key, label] of Object.entries(firstHour ? { ...LEVEL_LABELS, ...FIRST_HOUR_LABELS } : LEVEL_LABELS)) {
     const price = body?.levels?.[key];
     if (Number.isFinite(price)) out.push({ key, label, price, kind: "level" });
   }
