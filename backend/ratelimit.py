@@ -140,6 +140,7 @@ _EXCHANGE_READS = re.compile(
     r"setup-map/(ladder|mine)"
     r"|trade/(account|positions|fills|history)"
     r"|chart/.+"
+    r"|auction/.+"
     r"|positioning/cross-exchange/.+"
     r"|perpetuals/hyperliquid(/debug)?"
     r"|hyperlens/entries/.+"

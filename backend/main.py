@@ -1615,6 +1615,32 @@ async def confluence_for_symbol(symbol: str):
 # Chart data endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/api/auction/{symbol:path}")
+async def auction_levels(
+    symbol: str,
+    timeframe: str = Query("4h", description="4h or 1d"),
+):
+    """The coin chart's Value layer: value areas, points of control and reference levels (display only)."""
+    import auction
+    if timeframe not in auction.auction_engine.PLANS:
+        raise HTTPException(status_code=422, detail="Use 4h or 1d")
+    from hyperliquid_universe import MARKETS
+    symbol = symbol.upper() if symbol.upper() in MARKETS else symbol.upper().replace("-", "/")
+    from spot_quality import volume_reason
+    reason = volume_reason(MARKETS.get(symbol, {}))
+    if reason:
+        raise HTTPException(status_code=422, detail=f"Spot analysis unavailable: {reason}")
+    # A pair quoted in another coin (ALT/BTC) is a ratio of two markets: it has no volume of its own.
+    if symbol not in MARKETS and symbol.rsplit("/", 1)[-1] not in ("USDT", "USDC", "USD"):
+        raise HTTPException(status_code=422, detail="Value areas need a market with its own volume")
+    try:
+        return await auction.levels(symbol, timeframe)
+    except auction.Busy:
+        raise HTTPException(status_code=503, detail="Busy: try again in a minute", headers={"Retry-After": "30"})
+    except auction.NoData as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @app.get("/api/chart/{symbol:path}")
 async def chart_data(
     symbol: str,

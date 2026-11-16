@@ -1,6 +1,7 @@
 import { useTheme } from "../ThemeContext.jsx";
 import SpikeZone from "./SpikeZone.js";
 import FillMarks from "./FillMarks.js";
+import ValueAreas from "./ValueAreas.js";
 import { fillMarks, fmtPrice, fmtStamp, KIND_WORD } from "../utils/traderBoard.js";
 import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
@@ -76,7 +77,20 @@ function withAlpha(color, a) {
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+// Value layer colours as [r, g, b] (the primitive sets its own alphas): the chart's text colour, gold for the POC,
+// and the page background behind the tick labels.
+function rgbOf(color, fallback) {
+  const str = String(color || "").trim();
+  const hex = /^#?([0-9a-f]{6})$/i.exec(str);
+  if (hex) { const n = parseInt(hex[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(str);
+  return rgb ? [+rgb[1], +rgb[2], +rgb[3]] : fallback;
+}
+const valueColors = () => ({ ink: rgbOf(resolveToken("chartText"), [245, 254, 253]), poc: rgbOf(col("#fcd34d"), [252, 211, 77]),
+  bg: rgbOf(resolveToken("bg"), [4, 6, 12]) });
+
 const ENTRIES_KEY = "rcce-chart-entries";
+const VALUE_KEY = "rcce-chart-value";
 const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
 
 const TIMEFRAMES = [
@@ -143,6 +157,19 @@ export default function BMSBChart({
     try { localStorage.setItem(ENTRIES_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
     return v;
   }), []);
+  // Value areas and points of control (/api/auction): off until asked for, the choice remembered.
+  const [showValue, setShowValueState] = useState(() => {
+    if (compact) return false;
+    try { return localStorage.getItem(VALUE_KEY) === "1"; } catch (_) { return false; }
+  });
+  const setShowValue = useCallback(next => setShowValueState(prev => {
+    const v = typeof next === "function" ? next(prev) : next;
+    try { localStorage.setItem(VALUE_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
+    return v;
+  }), []);
+  const [value, setValue] = useState(null);           // {key, body}: the layer of one coin and timeframe
+  const [valueNote, setValueNote] = useState(null);   // "loading" | "busy" | "none" while there is nothing to draw
+  const valuePrimRef = useRef(null);
   const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
   const [posTop, setPosTop] = useState(null);   // where the long/short pane starts, px from the chart's top
   const [hoverMark, setHoverMark] = useState(null);
@@ -398,6 +425,11 @@ export default function BMSBChart({
           // The pane sits under the price pane; the date axis is below both.
           if (showPos) requestAnimationFrame(() => { if (!cancelled) { try { setPosTop(chart.paneSize(0).height + 1); } catch (_) {} } });
           candleSeriesRef.current = candleSeries;
+          if (!compact) {
+            const layer = new ValueAreas(valueColors());
+            candleSeries.attachPrimitive(layer);
+            valuePrimRef.current = layer;
+          }
           if (compact) {
             const prim = new FillMarks(fillColors());
             candleSeries.attachPrimitive(prim);
@@ -578,6 +610,7 @@ export default function BMSBChart({
       entryLinesRef.current = [];
       myEntryLineRef.current = null;
       fillPrimRef.current = null;
+      valuePrimRef.current = null;
       posSeriesRef.current = null;
       pressureLinesRef.current = [];
       patternSeriesRef.current = [];
@@ -612,6 +645,36 @@ export default function BMSBChart({
   // Long/short pane: one bar pair per candle from the group's record, dots where the
   // profitable-trader list was rebuilt.
   const tfSec = activeTimeframe === "1d" ? 86400 : 14400;
+
+  // Value layer: read when turned on (the server keeps each coin's answer for 15 minutes), then
+  // handed to the chart's primitive once the candles are in. "Busy" is tried again after 30 s.
+  const valueKey = `${symbol}|${activeTimeframe}`;
+  useEffect(() => {
+    if (!showValue || compact || !symbol) { setValueNote(null); return; }
+    let cancelled = false, timer = null;
+    const load = () => {
+      setValueNote("loading");
+      fetch(`${API_BASE}/api/auction/${encodeURIComponent(symbol)}?timeframe=${activeTimeframe}`)
+        .then(async r => {
+          if (cancelled) return;
+          if (r.status === 503 || r.status === 429) { setValueNote("busy"); timer = setTimeout(load, 30000); return; }
+          if (!r.ok) { setValueNote("none"); return; }
+          const body = await r.json();
+          if (!cancelled) { setValue({ key: `${symbol}|${activeTimeframe}`, body }); setValueNote(null); }
+        })
+        .catch(() => { if (!cancelled) setValueNote("none"); });
+    };
+    load();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [showValue, symbol, activeTimeframe, compact]);
+  useEffect(() => {
+    const layer = valuePrimRef.current;
+    if (!layer) return;
+    const body = showValue && candleTimes?.length && value?.key === valueKey ? value.body : null;
+    layer.setData(body, candleTimes, tfSec, valueColors());
+    layer.setVisible(!!body);
+  }, [showValue, value, valueKey, candleTimes, tfSec, mode]);
+  const valueLabel = !showValue || !valueNote ? "Value" : valueNote === "loading" ? "Loading…" : valueNote === "busy" ? "Value: busy" : "Value: no data";
   const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
   const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes, posGroup) : []),
     [posSeries, posMeasure, tfSec, candleTimes, posGroup]);
@@ -991,6 +1054,7 @@ export default function BMSBChart({
           {[
             { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
+            { key: "value", on: showValue, set: setShowValue, long: valueLabel, short: valueLabel },
             { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
             { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
             activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
@@ -1008,6 +1072,9 @@ export default function BMSBChart({
             <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
             <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
+            <p>{activeTimeframe === "1d"
+              ? "Value: a band over each week's value area (the prices where 70% of its volume traded; weeks start Monday 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished week's band edges. Left: volume by price of the weeks in view. Right: this week's and month's open, the previous week's high and low (PWH, PWL), the previous month's value area (PM). From Hyperliquid 1-hour candles. Display only; not used by signals."
+              : "Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW). From Hyperliquid 15-minute candles. Display only; not used by signals."}</p>
             <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>
             <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
             {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
