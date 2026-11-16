@@ -121,4 +121,66 @@ Touches from 17 November 2026 on, the same code on newly fetched months.
 
 ## Results
 
-To be added below after the run. Nothing above changes. Any later change is listed under Deviations, with its reason and whether it came before or after the first result.
+Added after the run. Nothing above changed. Any later change is listed under Deviations, with its reason and whether it came before or after the first result.
+
+Computed once on 16 November 2026 by `run` at commit a2978de, the commit that holds this declaration, then `run --holdout` once at the same commit. Inputs: the candles with the hash above.
+
+**No row met its bar. At the zone price turned a little less than half the time, the same as at the other depths of a pullback. A POC in the zone made no difference, and the trade made nothing. Context, not a signal.**
+
+Brackets are 95% intervals from resampling months.
+
+| Row | In sample | Held out | Bar |
+|---|---|---|---|
+| **R1** the zone turns price | **46.6%** (41.9 to 51.3) of 1,602 decided races; halves 47.1%, 46.2% | 41.5% (34.8 to 47.6) of 217 | not met (needs 55%) |
+| **R2** zone minus the unnamed depths | **-0.9 points** (-4.6 to +2.6) | -5.4 points (-14.2 to +1.4) | not met (needs 5 points) |
+| **R3** a POC in the zone | 45.9% of 741 with, 47.3% of 861 without: **-1.4 points** (-6.7 to +3.7) | 37.0% of 108 with, 45.9% of 109 without: -8.8 points (-25.0 to +5.6) | not met |
+| **R4** the trade | **-0.33%** (-2.69 to +2.29), 1,609 trades; halves -1.01%, +0.27% | -3.07% (-6.31 to -0.47), 218 trades | not met |
+
+The upper end of R1's interval is 51.3%: a zone that turns price 55% of the time or more is not just unshown, it is outside what these swings allow.
+
+### Turns at every depth
+
+| Depth | In sample | Held out |
+|---|---|---|
+| 0.30 | 46.5% of 3,881 | 44.3% of 427 |
+| 0.382 (named) | 45.2% of 2,982 | 46.7% of 323 |
+| 0.45 | 45.6% of 2,441 | 41.4% of 273 |
+| 0.5 (named) | 45.2% of 2,135 | 39.7% of 252 |
+| 0.56 | 45.6% of 1,834 | 42.4% of 236 |
+| **0.618 (the zone)** | **46.6% of 1,602** | **41.5% of 217** |
+| 0.70 | 50.7% of 1,279 | 43.9% of 173 |
+| 0.786 (named) | 50.7% of 979 | 49.6% of 137 |
+| 0.85 | 49.2% of 801 | 62.3% of 114 |
+
+- No named level stands out. At 0.382 and 0.5 price turned no more often than at the unnamed depths beside them.
+- Down to the zone, turns were a little under half: a pullback that had come that far more often went on. Past 0.70 it was about even.
+- Ties and undecided races were rare: 5 and 2 of the zone's 1,609.
+
+### The zone, split
+
+- **By side.** Pullbacks in up-legs: 42.9% of 948 turned. Rallies in down-legs: 52.0% of 654. Held out: 35.6% of 149 and 54.4% of 68.
+- **By year.** 2021: 51.8%. 2022: 39.7%. 2023: 48.6%. 2024: 48.0%. 2025 to July: 43.5%.
+- **By coin.** Over half in 23 of the 71 coins. BTC: 38.1% of 21.
+
+### The trade
+
+- Before costs -0.13% (-2.49 to +2.49), or -0.05 of the risk taken (-0.26 to +0.19).
+- It stopped out in 78.6% and reached the leg's extreme in 19.6%. A price with no memory gives about 21%.
+- With a POC in the zone -0.37%; without -0.29%. Up-legs -0.31%; down-legs -0.36%. BTC alone (21 trades) -1.29%.
+- Held out: stopped in 82.6%, reached the extreme in 15.6%.
+- Funding is not in these numbers, and would lower the longs further.
+
+### Checks
+
+- The zone's races were recounted for BTC, ETH and SOL with separately written code (plain loops, its own daily candles, ATR, swings, legs and race). Same outcomes: BTC 8 turns and 13 deeper, ETH 8 and 8, SOL 8, 9 and a tie.
+- The run scores the touches `shape` counted (tested).
+
+### What this says, and what it does not
+
+- Taken at every major swing the rule finds, the 0.618 to 0.66 zone did not turn price more than chance, nor more than any other depth, on 71 coins over four and a half years. A weekly or monthly POC inside it did not change that.
+- The two known biases, survivors and uncounted funding, both flatter the zone, and it still shows nothing.
+- It does not test the swing a trader picks by eye, nor Elliott wave counts, nor the zone combined with judgement about the wider market. If the edge of the method is in that choosing, this cannot see it; it can only say the zone by itself is not where it is.
+
+### Deviations
+
+None.

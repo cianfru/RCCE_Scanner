@@ -8,7 +8,7 @@ This document does three things:
 2. gives the exact definition the app uses for the rules it draws (the coin chart's **Value** layer);
 3. lists what is not drawn yet and the studies to declare before any rule becomes more than a drawing.
 
-Nothing here is a signal. The Value layer is display only: no scanner signal, alert or executor code reads it. Six studies have been run (below). No trade paid; one comparison row was confirmed.
+Nothing here is a signal. The Value layer is display only: no scanner signal, alert or executor code reads it. Seven studies have been run (below). No trade paid; one comparison row was confirmed.
 
 ## Sources, and how far each is checked
 
@@ -140,7 +140,9 @@ Each was declared, with its rules and bars, before any outcome was computed. Wit
 | S5 | Confluence: is a sweep worth more with other levels at the same price? | No difference (-0.17% against -0.18%). **No bar met.** |
 | S6 | The 80% rule on New York hours (09:30 to 16:15). | 34% to 39% reached the other edge. The trade lost 0.18%. **One row met its bar and was confirmed**: opening outside did add there (39% against 29% for sessions that opened inside). It is not a trade. |
 
-S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md.
+| S7 | The 0.618 to 0.66 retracement zone of major swings (the band the chart draws): does price turn there, more than at other depths, and more with a weekly or monthly POC in it? | Price turned in 46.6% of 1,602 touches, the same as at other depths (45% to 51%). A POC in the zone made no difference. The trade made nothing. **No bar met.** |
+
+S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md. S7: docs/reviews/fib-zone-study.md (71 coins, March 2021 to July 2025, with November 2025 to July 2026 held out).
 
 Data: Binance futures 5-minute candles (with taker buy volume) and 5-minute open interest for twelve coins, January 2021 to April 2026, with May to October 2026 held out. Hyperliquid serves only the latest 5,000 candles per series, too few for a study.
 
