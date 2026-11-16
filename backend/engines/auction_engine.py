@@ -47,6 +47,11 @@ PLANS: Dict[str, dict] = {
 }
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000}
 
+# The retracement zone of major swings (studied in docs/reviews/fib-zone-study.md).
+FIB_REVERSAL = 3.0                    # a swing is confirmed when price has come back 3 daily ATRs from it
+FIB_MIN_LEG = 6.0                     # a leg counts once it is 6 daily ATRs tall
+FIB_ZONE = (0.618, 0.66)
+
 
 def session_starts(ts_ms, period: str) -> np.ndarray:
     """The start (ms) of the session each timestamp falls in."""
@@ -232,6 +237,75 @@ def initial_balance(candles: dict, now_ms: float) -> Dict[str, float]:
     return {"ib_high": float(h[first].max()), "ib_low": float(l[first].min())} if first.any() else {}
 
 
+def swings(high: np.ndarray, low: np.ndarray, atr: np.ndarray, k: float = FIB_REVERSAL) -> list:
+    """Swing highs and lows of daily candles: (kind, price, its day, the day it was confirmed).
+    A high is confirmed on the first later day whose low is k ATRs (the day before's) under it; lows mirror."""
+    n = len(high)
+    i0 = next((i for i in range(n) if np.isfinite(atr[i])), n)
+    if i0 >= n - 1:
+        return []
+    out, mode = [], None
+    hi, hi_i, lo, lo_i = high[i0], i0, low[i0], i0
+    for i in range(i0 + 1, n):
+        a = atr[i - 1]
+        if mode != "down" and high[i] > hi:
+            hi, hi_i = high[i], i
+        if mode != "up" and low[i] < lo:
+            lo, lo_i = low[i], i
+        if mode != "down" and hi_i < i and low[i] <= hi - k * a:
+            out.append(("H", float(hi), hi_i, i))
+            mode = "down"
+            j = hi_i + 1 + int(np.argmin(low[hi_i + 1:i + 1]))
+            lo, lo_i = low[j], j
+        elif mode != "up" and lo_i < i and high[i] >= lo + k * a:
+            out.append(("L", float(lo), lo_i, i))
+            mode = "up"
+            j = lo_i + 1 + int(np.argmax(high[lo_i + 1:i + 1]))
+            hi, hi_i = high[j], j
+    # A first "swing" on the very first day is only where the candles begin, not a turn in price.
+    return out[1:] if out and out[0][2] == i0 else out
+
+
+def fib_zones(daily: Optional[dict]) -> List[dict]:
+    """The 0.618 to 0.66 retracement band of each live major leg, from daily candles (the live day included).
+
+    A leg runs from the last confirmed swing low to the highest price since (an up-leg; the band is where a
+    pullback of it would be), or from the last confirmed swing high to the lowest price since (a down-leg). It is
+    live until price trades beyond its start, and shown once it is FIB_MIN_LEG daily ATRs tall. ``touched``: price
+    has traded into the band since the leg's extreme. Times in seconds."""
+    if not daily or len(daily.get("timestamp", [])) < 30:
+        return []
+    from engines.levels_engine import wilder_atr
+    ts = np.asarray(daily["timestamp"], dtype=np.int64)
+    hi, lo, cl = (np.asarray(daily[k], dtype=np.float64) for k in ("high", "low", "close"))
+    atr = wilder_atr(hi, lo, cl)
+    unit = atr[-2] if len(atr) > 1 else np.nan           # the last finished day's ATR
+    if not np.isfinite(unit) or unit <= 0:
+        return []
+    piv = swings(hi, lo, atr)
+    out = []
+    for kind, s in (("L", 1), ("H", -1)):
+        mine = [p for p in piv if p[0] == kind]
+        if not mine:
+            continue
+        _, base, at, _ = mine[-1]
+        up, down = (hi, lo) if s > 0 else (-lo, -hi)        # a down-leg is an up-leg of the negated prices
+        b = s * base
+        if at + 1 < len(ts) and down[at + 1:].min() < b:
+            continue                                         # price has traded beyond the leg's start
+        k = at + int(np.argmax(up[at:]))
+        top = float(up[k])
+        height = top - b
+        if height < FIB_MIN_LEG * unit:
+            continue
+        first, second = (top - d * height for d in FIB_ZONE)
+        touched = bool(k + 1 < len(ts) and down[k + 1:].min() <= first)
+        out.append({"direction": s, "base": float(base), "base_time": int(ts[at] // 1000),
+                    "extreme": s * top, "extreme_time": int(ts[k] // 1000),
+                    "from": s * first, "to": s * second, "touched": touched})
+    return out
+
+
 def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -> dict:
     """The Value layer of one chart: sessions with their value areas, the outer period's
     sessions (weeks under days, months under weeks) and the reference levels."""
@@ -266,4 +340,5 @@ def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -
         "outer": outer,
         "grid": {"low": g_low, "step": g_step, "rows": GRID_ROWS},
         "levels": {k: round(p, dec) for k, p in refs.items()},
+        "fib": [{**z, **{k: round(z[k], dec) for k in ("base", "extreme", "from", "to")}} for z in fib_zones(daily)],
     }

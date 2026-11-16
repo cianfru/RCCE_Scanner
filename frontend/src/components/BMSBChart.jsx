@@ -87,7 +87,7 @@ function rgbOf(color, fallback) {
   return rgb ? [+rgb[1], +rgb[2], +rgb[3]] : fallback;
 }
 const valueColors = () => ({ ink: rgbOf(resolveToken("chartText"), [245, 254, 253]), poc: rgbOf(col("#fcd34d"), [252, 211, 77]),
-  bg: rgbOf(resolveToken("bg"), [4, 6, 12]) });
+  fib: rgbOf(col("#c4b5fd"), [196, 181, 253]), bg: rgbOf(resolveToken("bg"), [4, 6, 12]) });
 
 const ENTRIES_KEY = "rcce-chart-entries";
 const VALUE_KEY = "rcce-chart-value";
@@ -1080,6 +1080,7 @@ export default function BMSBChart({
             <p>{activeTimeframe === "1d"
               ? "Value: a band over each week's value area (the prices where 70% of its volume traded; weeks start Monday 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished week's band edges. Left: volume by price of the weeks in view. Right: this week's and month's open, the previous week's high and low (PWH, PWL), the previous month's value area (PM). From Hyperliquid 1-hour candles. Display only; not used by signals."
               : `Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW)${activeTimeframe === "1h" ? ", the high and low of the day's first hour (IB)" : ""}. From Hyperliquid 15-minute candles. Display only; not used by signals.`}</p>
+            <p>Value, violet: the dotted line is the latest major swing on daily candles (a swing counts once price has come back 3 average daily ranges from it); the band is its 0.618 to 0.66 retracement, fainter once price has traded into it. Its label adds POC when a point of control sits in it.</p>
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
             {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
             {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}

@@ -26,6 +26,28 @@ export function placeSessions(sessions, times, tfSec) {
     .filter(s => s.to > s.from);
 }
 
+// The 0.618 to 0.66 retracement bands of the live major legs, with where each starts on the chart's candles
+// (the leg's start, or the first candle when that is earlier), the leg itself as a line from its start to its
+// extreme (when both are on the chart), and whether a point of control sits in the band:
+// the previous outer session's, or one price has not traded back to. "In" allows 0.25% beyond the edges.
+export const FIB_LABEL = "0.618\u20130.66";
+export function fibBands(body, times, tfSec) {
+  if (!times?.length) return [];
+  const done = (body?.outer || []).filter(s => !s.live);
+  const pocs = [
+    ...done.filter((s, i) => i === done.length - 1 || s.touched == null).map(s => s.poc),
+    ...(body?.sessions || []).filter(s => !s.live && s.touched == null).map(s => s.poc),
+  ];
+  return (body?.fib || []).map(z => {
+    const top = Math.max(z.from, z.to), bottom = Math.min(z.from, z.to);
+    const onChart = z.base_time >= times[0];
+    return { top, bottom, touched: !!z.touched, direction: z.direction,
+      from: onChart ? barIndex(times, z.base_time, tfSec) : 0,
+      leg: onChart ? { from: barIndex(times, z.base_time, tfSec), base: z.base, to: barIndex(times, z.extreme_time, tfSec), extreme: z.extreme } : null,
+      poc: pocs.some(p => p >= bottom * 0.9975 && p <= top * 1.0025) };
+  });
+}
+
 // The labelled levels: opens and prior extremes, the last finished outer session's value area
 // (the previous week under days, the previous month under weeks), and older outer points of
 // control price has not traded back to.
@@ -47,6 +69,11 @@ export function ticks(body, { firstHour = false } = {}) {
     if (s.touched == null) out.push({ key: `n_${s.start}`, label: `${letter} nPOC`, price: s.poc, kind: "poc" });
   }
   return out;
+}
+
+// One tick per retracement band, at its middle.
+export function fibTicks(bands) {
+  return bands.map((b, i) => ({ key: `fib_${i}`, label: b.poc ? `${FIB_LABEL} \u00b7 POC` : FIB_LABEL, price: (b.top + b.bottom) / 2, kind: "fib" }));
 }
 
 // POC row and value-area rows of a profile: the same rule as the backend (two rows at a time

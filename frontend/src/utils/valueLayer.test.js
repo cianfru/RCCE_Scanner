@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, placeSessions, ticks, valueArea, composite, spread, mergeTicks } from "./valueLayer.js";
+import { barIndex, placeSessions, ticks, valueArea, composite, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
 const T0 = 1788739200;                                    // Monday 2026-09-07 00:00 UTC
@@ -79,4 +79,23 @@ test("ticks at one price share a label, and a word they end in", () => {
     { label: "M open", y: 100.9, kind: "level" }, { label: "PW POC", y: 101.2, kind: "poc" }, { label: "PDL", y: 140, kind: "level" }];
   assert.deepEqual(mergeTicks(rows).map(t => [t.label, t.y, t.kind]),
     [["PDH", 60, "level"], ["D \u00b7 W \u00b7 M open \u00b7 PW POC", 100, "poc"], ["PDL", 140, "level"]]);
+});
+
+test("retracement bands: where they start, the leg they measure, and whether a point of control sits in them", () => {
+  const body = {
+    fib: [{ direction: 1, base_time: T0 + DAY, base: 100, extreme_time: T0 + 2 * DAY, extreme: 160, from: 122.92, to: 120.4, touched: false },
+      { direction: -1, base_time: T0 - 9 * DAY, base: 160, extreme_time: T0 + DAY, extreme: 100, from: 137.08, to: 139.6, touched: true }],
+    outer: [{ poc: 139, live: false, touched: 5 }, { poc: 50, live: false, touched: 7 }, { poc: 200, live: true }],
+    sessions: [{ poc: 121, live: false, touched: null }, { poc: 138, live: false, touched: 9 }],
+  };
+  const bands = fibBands(body, times, H4);
+  assert.deepEqual(bands.map(b => [b.top, b.bottom, b.from, b.touched, b.poc]),
+    [[122.92, 120.4, 6, false, true],        // a daily POC not traded back to (121) is inside
+      [139.6, 137.08, 0, true, false]]);     // the leg began before the chart; 139 and 138 were traded back to
+  assert.deepEqual(bands[0].leg, { from: 6, base: 100, to: 12, extreme: 160 });
+  assert.equal(bands[1].leg, null);          // its start is off the chart: the band only
+  assert.deepEqual(fibTicks(bands).map(t => [t.label, t.kind]), [[`${FIB_LABEL} \u00b7 POC`, "fib"], [FIB_LABEL, "fib"]]);
+  assert.equal(fibTicks(bands)[0].price, (122.92 + 120.4) / 2);
+  assert.deepEqual(fibBands({ fib: [] }, times, H4), []);
+  assert.deepEqual(fibBands(body, [], H4), []);
 });

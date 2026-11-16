@@ -102,6 +102,27 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(week, {"w_open": 107.0, "m_open": 101.0, "pw_high": 116.0, "pw_low": 90.0})
         self.assertEqual(ae.reference_levels(None, "day", now), {})
 
+    def test_the_retracement_band_of_a_live_major_leg(self):
+        # Flat near 100 (ATR about 1), a swing low at 95, a leg up to 150, then a pullback to 140.
+        prices = [100] * 20 + [95] + list(np.linspace(100, 150, 12)) + [146, 142, 140]
+        day0 = T0 - 40 * DAY
+        daily = candles([(day0 + i * DAY, p, p + 0.5, p - 0.5, p, 1.0) for i, p in enumerate(prices)])
+        zones = ae.fib_zones(daily)
+        up = [z for z in zones if z["direction"] == 1]
+        self.assertEqual(len(up), 1)
+        z = up[0]
+        self.assertEqual((z["base"], z["extreme"]), (94.5, 150.5))            # the swing low and the highest price since
+        self.assertAlmostEqual(z["from"], 150.5 - 0.618 * 56, places=6)
+        self.assertAlmostEqual(z["to"], 150.5 - 0.66 * 56, places=6)
+        self.assertFalse(z["touched"])                                        # the pullback stopped at 139.5
+        self.assertEqual(z["base_time"], (day0 + 20 * DAY) // 1000)
+        # Deeper, into the band: touched. Under the swing low: the leg is gone.
+        deeper = candles([(day0 + i * DAY, p, p + 0.5, p - 0.5, p, 1.0) for i, p in enumerate(prices + [116])])
+        self.assertTrue([z for z in ae.fib_zones(deeper) if z["direction"] == 1][0]["touched"])
+        gone = candles([(day0 + i * DAY, p, p + 0.5, p - 0.5, p, 1.0) for i, p in enumerate(prices + [116, 94])])
+        self.assertEqual([z for z in ae.fib_zones(gone) if z["direction"] == 1], [])
+        self.assertEqual(ae.fib_zones(None), [])
+
     def test_build_gives_the_chart_sessions_bins_and_levels(self):
         rows = []
         for d in range(10):
@@ -111,6 +132,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual((body["period"], body["outer_period"], body["interval"]), ("day", "week", "15m"))
         # The first hour of the running day (the Initial Balance): its four 15-minute candles.
         self.assertEqual((body["levels"]["ib_high"], body["levels"]["ib_low"]), (110.0, 108.0))
+        self.assertEqual(body["fib"], [])                                    # no daily candles were given
         self.assertEqual(len(body["sessions"]), 10)
         self.assertTrue(body["sessions"][-1]["live"])
         self.assertEqual([s["live"] for s in body["outer"]], [False, True])      # last week, this week

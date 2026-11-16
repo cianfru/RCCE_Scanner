@@ -116,6 +116,8 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 - on the left, volume by price of the sessions in view (the POC row in gold, the value-area rows brighter);
 - right of the last candle, labelled ticks: the opens, the previous day's (or week's) high and low, the previous outer session's VAH, POC and VAL (PW on 1H and 4H, PM on 1D), older outer POCs still naked (W nPOC, M nPOC), and on 1H the first hour's high and low (IB high, IB low).
 
+- in violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
+
 The layer says what happened and where. It does not mark setups, entries or exits.
 
 ## Cost

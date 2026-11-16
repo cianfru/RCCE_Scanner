@@ -4,7 +4,7 @@
 // last finished session's band edges are carried forward. Left edge: volume by price of the
 // sessions in view. Right of the last candle: labelled ticks (opens, prior extremes, the
 // previous outer session's value area). What happened, drawn where it happened: no forecast.
-import { placeSessions, ticks, composite, spread, mergeTicks } from "../utils/valueLayer.js";
+import { placeSessions, ticks, composite, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
 
 const LABEL_FONT = "10px 'SF Mono', 'Fira Code', monospace";
 const LABEL_GAP = 12;
@@ -13,10 +13,11 @@ const PROFILE_MAX = 130;
 
 export default class ValueAreas {
   constructor(colors) {
-    this.colors = colors;        // {ink, poc, bg}: [r, g, b] each
+    this.colors = colors;        // {ink, poc, fib, bg}: [r, g, b] each
     this.visible = false;
     this.placed = [];
     this.ticks = [];
+    this.bands = [];
     this.grid = null;
     this.last = 0;
     // Bands and lines sit behind the candles; the tick labels go on top so no line strikes through them.
@@ -28,7 +29,8 @@ export default class ValueAreas {
   setData(body, times, tfSec, colors) {
     if (colors) this.colors = colors;
     this.placed = body && times?.length ? placeSessions(body.sessions, times, tfSec) : [];
-    this.ticks = body ? ticks(body, { firstHour: tfSec <= 3600 }) : [];
+    this.bands = body ? fibBands(body, times, tfSec) : [];
+    this.ticks = body ? [...ticks(body, { firstHour: tfSec <= 3600 }), ...fibTicks(this.bands)] : [];
     this.grid = body?.grid || null;
     this.last = times?.length ? times.length - 1 : 0;
     this.requestUpdate?.();
@@ -51,6 +53,7 @@ export default class ValueAreas {
     const y = p => this.series.priceToCoordinate(p);
     const ink = a => `rgba(${this.colors.ink.join(",")},${a})`;
     const gold = a => `rgba(${this.colors.poc.join(",")},${a})`;
+    const violet = a => `rgba(${this.colors.fib.join(",")},${a})`;
 
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const W = mediaSize.width, H = mediaSize.height;
@@ -61,7 +64,24 @@ export default class ValueAreas {
         ctx.moveTo(xa, py); ctx.lineTo(xb, py); ctx.stroke();
       };
       ctx.save();
-      if (layer === "top") { this.paintTicks(ctx, W, H, edge, y, ink, gold); ctx.restore(); return; }
+      if (layer === "top") { this.paintTicks(ctx, W, H, edge, y, ink, gold, violet); ctx.restore(); return; }
+
+      // The 0.618 to 0.66 retracement band of each live major leg, from the leg's start to the right edge,
+      // fainter once price has traded into it; and the leg it measures, as a dotted line.
+      for (const b of this.bands) {
+        const xa = Math.max(0, edge(b.from)), top = y(b.top), bottom = y(b.bottom);
+        if (top == null || bottom == null || xa >= W) continue;
+        ctx.fillStyle = violet(b.touched ? 0.06 : 0.13);
+        ctx.fillRect(xa, top, W - xa, Math.max(1, bottom - top));
+        line(xa, W, top, violet(b.touched ? 0.25 : 0.5));
+        line(xa, W, bottom, violet(b.touched ? 0.25 : 0.5));
+        const ya = b.leg ? y(b.leg.base) : null, yb = b.leg ? y(b.leg.extreme) : null;
+        if (ya != null && yb != null) {
+          ctx.beginPath(); ctx.setLineDash([2, 4]); ctx.strokeStyle = violet(0.7); ctx.lineWidth = 1;
+          ctx.moveTo(edge(b.leg.from) + half, ya); ctx.lineTo(edge(b.leg.to) + half, yb); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
 
       // Volume by price of the sessions in view, from the left edge.
       const prof = this.grid ? composite(this.placed, this.grid.rows, range.from, range.to) : null;
@@ -106,14 +126,14 @@ export default class ValueAreas {
     });
   }
   // Labelled ticks right of the last candle, where there is room for them. Levels at one price share a label.
-  paintTicks(ctx, W, H, edge, y, ink, gold) {
+  paintTicks(ctx, W, H, edge, y, ink, gold, violet) {
     const xl = edge(this.last + 1) + 6;
     if (xl > W - 46) return;
     const rows = mergeTicks(this.ticks.map(t => ({ ...t, y: y(t.price) })).filter(t => t.y != null && t.y > 8 && t.y < H - 8));
     const ys = spread(rows.map(t => t.y), LABEL_GAP);
     ctx.font = LABEL_FONT; ctx.textBaseline = "middle"; ctx.setLineDash([]); ctx.lineJoin = "round";
     rows.forEach((t, i) => {
-      const color = t.kind === "poc" ? gold(1) : ink(t.kind === "edge" ? 0.75 : 0.92);
+      const color = t.kind === "poc" ? gold(1) : t.kind === "fib" ? violet(1) : ink(t.kind === "edge" ? 0.75 : 0.92);
       ctx.strokeStyle = color; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(xl, Math.round(t.y) + 0.5); ctx.lineTo(xl + 12, Math.round(t.y) + 0.5);
       ctx.lineTo(xl + 16, Math.round(ys[i]) + 0.5); ctx.stroke();
