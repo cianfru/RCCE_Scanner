@@ -184,4 +184,85 @@ Days from 17 November 2026 on, the same code on newly fetched months.
 
 ## Results
 
-To be added below after the run. Nothing above changes. Any later change is listed under Deviations, with its reason and whether it came before or after the first result.
+Added after the run. Nothing above changed. Any later change is listed under Deviations, with its reason and whether it came before or after the first result.
+
+Computed once on 16 November 2026 by `run` at commit f96193c, the commit that holds this declaration, then `run --holdout` once at the same commit. Inputs: the candles and open interest with the hashes above.
+
+**Twelve of the thirteen rows did not meet their bars. Every trade lost after costs and made about nothing before them. One comparison row met its bar and the held-out months confirmed it: on New York hours, opening outside the value area did add (S6-R2, one close). It is not a trade.**
+
+Brackets are 95% intervals from resampling days (S2: weeks).
+
+| Row | In sample | Held out | Bar |
+|---|---|---|---|
+| **S2-R1** fresh: POC traded first | 51.5% (50.2 to 52.9) of 8,865 decided | 52.3% (48.6 to 56.3) of 810 | not met (needs 55%) |
+| **S2-R2** old: POC traded first | 48.7% (46.7 to 50.7) of 6,810 decided | 50.4% (43.1 to 57.5) of 585 | not met |
+| **S3-R1** trade after acceptance outside | -0.14% (-0.26 to -0.01), 8,798 trades; BTC -0.24% | -0.05% (-0.31 to +0.24), 906 trades | not met |
+| **S4-R1** fading a sweep | -0.18% (-0.22 to -0.13), 10,771 trades; BTC -0.22% | -0.27% (-0.34 to -0.20), 1,062 trades | not met |
+| **S4-R2** flush minus no flush | -0.01% (-0.08 to +0.06) | +0.07% (-0.06 to +0.19) | not met (needs 0.10%) |
+| **S4-R3** absorbed minus the rest | -0.03% (-0.10 to +0.04) | -0.10% (-0.23 to +0.02) | not met |
+| **S5-R1** other levels near minus alone | +0.01% (-0.06 to +0.08) | -0.06% (-0.18 to +0.06) | not met |
+| **S6-R1** reached the other edge, two closes | 34.4% (31.7 to 37.2) of 2,289 | 35.3% (26.4 to 44.4) of 218 | not met (needs 75%) |
+| **S6-R1**, one close | 39.3% (36.9 to 41.7) of 3,525 | 40.5% (32.2 to 48.7) of 328 | not met |
+| **S6-R2** rule minus control, two closes | +8.5 points (4.7 to 12.3) | +12.6 points (0.1 to 25.0) | not met (needs 10 points) |
+| **S6-R2**, one close | **+10.7 points** (7.2 to 14.2); halves +12.3, +9.3 | **+13.3 points** (2.5 to 24.2) | **met, confirmed** |
+| **S6-R3** the trade, two closes | -0.17% (-0.26 to -0.09); BTC -0.34% | -0.10% (-0.23 to +0.02) | not met |
+| **S6-R3**, one close | -0.18% (-0.25 to -0.10); BTC -0.23% | -0.16% (-0.31 to -0.02) | not met |
+
+### S2. Naked POCs
+
+- **Fresh.** Of 8,983 races with their candles: the POC first in 4,569, the mirror first in 4,296, a tie in 70, neither in 48. A tilt of 1.5 points to the POC, the same in both halves (51.8%, 51.3%), and far from the 55% the bar asks.
+- **Old.** Of 7,303 races: the POC first in 3,318, the mirror first in 3,492, neither in 493. No pull: a POC left untouched for a day was reached before its mirror slightly less than half the time.
+- By distance, fresh: 51.8% (0.25 to 0.5%), 51.4% (0.5 to 1%), 53.6% (1 to 2%), 47.2% (over 2%). BTC alone: 50.7% of 611 fresh, 51.6% of 550 old.
+- **How soon POCs were traded again** (no comparison). Of 22,809 daily POCs: 68.6% within a day, 80.2% within 3 days, 86.9% within 7, 93.6% within 30.
+
+  | POC's distance from the close | POCs | Within 1 day | 7 days | 30 days |
+  |---|---|---|---|---|
+  | under 0.25% | 4,046 | 97.2% | 99.0% | 99.5% |
+  | 0.25 to 1% | 6,571 | 85.3% | 94.7% | 97.7% |
+  | 1 to 2% | 4,671 | 67.9% | 88.1% | 94.5% |
+  | over 2% | 7,521 | 39.0% | 73.0% | 86.2% |
+
+- **Reading.** Most POCs are traded again soon because most are close to price. But a POC was reached before an equally distant price on the other side barely more than half the time. "Price comes back to the POC" is true of the past; "the POC pulls price" is not shown.
+
+### S3. Accepted outside the value area
+
+- 8,798 trades on 1,770 days. Before costs +0.06% (-0.06 to +0.19): nothing to pay costs from. 73.5% ended with a close back inside the value area; the day closed outside on that side in 57.4%.
+- By side: above -0.00%, below -0.28%. With a price stop one row back inside the edge: -0.14% (-0.24 to -0.02).
+- **A correction to a reported figure.** "The trade taken one bar earlier, at the first close outside" came out at +0.16% (+0.03 to +0.30). That number is not a rule anyone could trade: it was computed only on days where the next bar also closed outside, which is not known at the first close. The tradable form, computed after the first result: every first close outside, held until a close back inside or the day's end, 12,685 trades on 1,834 days: **-0.14%** (-0.23 to -0.04), BTC -0.19%.
+
+### S4. Sweeps of the previous day's high and low
+
+- 10,771 fades on 1,883 days. Before costs +0.02% (-0.02 to +0.07), or 0.06 of the risk taken. The stop came first in 64.5%; the previous day's POC was reached in 25.9%.
+- Highs -0.15%, lows -0.20%. Negative in every year (-0.14% to -0.26%) and for all twelve coins (-0.07% DOT to -0.25% DOGE).
+- **Open interest and delta sorted nothing.** With a flush -0.19%, without -0.18%. Absorbed -0.20%, the rest -0.17%. Both together (1,534 sweeps) -0.22%; neither (3,099) -0.17%.
+
+### S5. Confluence
+
+- With another level near: -0.17% (3,233 fades). Alone: -0.18% (7,538). No difference.
+- By the number of other levels near: none -0.18%, one -0.17% (2,523), two -0.15% (577), three or more -0.32% (133).
+- A profile level near: -0.16% (2,120). Only an open or extreme near: -0.21% (1,113).
+
+### S6. The 80% rule on New York hours
+
+- 16,668 coin-sessions. Two closes: 34.4% of 2,289 events reached the other edge by 16:15. One close: 39.3% of 3,525. Not 80%, and no higher than on UTC days (about 40%).
+- By the value area's width (one close): narrow third 53.9%, middle 41.6%, wide 22.3%. By year: 41.4%, 41.8%, 35.4%, 39.3%, 39.0%, 36.5%.
+- The trade made nothing before costs (+0.03% and +0.02%) and lost after them. The stop came first in 20% (25% with one close); the POC was reached first in 59.1% of 1,799 and 64.3% of 3,030, with no comparison.
+- **The confirmed row.** Sessions that opened outside the value area and came back in reached the other edge more often than sessions that opened inside, closed outside and came back: 39.3% against 28.5% (of 1,897), held out 40.5% against 27.2%. On UTC days it was the other way round (40.4% against 43.3%).
+- **Is that only timing?** Checked after the first result. The control's events come later in the session (accepted in the fifth bar at the median, the rule's in the third), so they have less time left. Giving the rule's events the control's timing, its share is 37.7%, against 28.5%: the gap stays at about 9 points. Accepted in the first hour, both reach the other edge in 45.5%; after that the rule's events do better (45.4% against 36.8%, 40.4% against 26.4%, 22.2% against 14.7%).
+- **What it is worth.** It says that on New York hours the open against the previous session's value area carries some information. It does not make the rule's trade pay (-0.18%), and 39% is not 80%.
+
+### Checks
+
+- BTC recounted with separately written code (plain loops, its own POC routine). S4: 880 sweeps, mean net -0.22%, as the study. S2 fresh: 611 decided races, the POC first in 50.7%, as the study.
+- The run scores the events `shape` counted (tested), except races whose window lacked candles (2 fresh, 24 old), left out as declared.
+
+### What this says, and what it does not
+
+- No rule tested here made money when traded mechanically. Before costs every trade was within a few hundredths of a percent of zero; costs of 0.20% did the rest.
+- Open interest falling, one-sided delta and other levels nearby did not tell good sweeps from bad ones.
+- It does not test the method as traded, with judgement over which levels and which reactions to take. It tests whether the named levels and triggers, taken every time, carry an edge. On these twelve coins they did not.
+
+### Deviations
+
+- Before the first result: none after the declaration was committed (f96193c).
+- After the first result: two checks were added and are labelled above (the timing of S6's events; the tradable form of S3's "one bar earlier"). No declared definition, row or bar changed.

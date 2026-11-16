@@ -8,7 +8,7 @@ This document does three things:
 2. gives the exact definition the app uses for the rules it draws (the coin chart's **Value** layer);
 3. lists what is not drawn yet and the studies to declare before any rule becomes more than a drawing.
 
-Nothing here is a signal. The Value layer is display only: no scanner signal, alert or executor code reads it. One study has been run (S1, the 80% rule); it met no bar.
+Nothing here is a signal. The Value layer is display only: no scanner signal, alert or executor code reads it. Six studies have been run (below). No trade paid; one comparison row was confirmed.
 
 ## Sources, and how far each is checked
 
@@ -125,21 +125,26 @@ The layer says what happened and where. It does not mark setups, entries or exit
 - A build costs 68 (1H and 4H, shared) or 92 (1D) of Hyperliquid's request weight, and the 1H chart's candles 30. Together they have their own share of 240 a minute, about three new charts a minute; beyond that the toggle reads "Value: busy" (or the 1H chart says so) and the page tries again after 30 seconds. The scan's share is untouched.
 - The endpoint is in the "exchange" rate-limit class, like `/api/chart`.
 
-## Studies (S1 run; the rest to declare)
+## Studies (all run on 16 November 2026)
 
-Each gets its own declaration, with its rules and bar, committed before any outcome is computed. Without a result that clears its bar, a finding reads "context, not a signal".
+Each was declared, with its rules and bars, before any outcome was computed. Without a result that clears its bar, a finding reads "context, not a signal".
 
-| # | Question |
-|---|---|
-| S1 | The 80% rule: a day opens outside the previous day's value area and comes back inside. How often does it reach the other edge, against days that open inside? **Run 16 November 2026: about 40%, not 80%; no bar met; context, not a signal** (docs/reviews/value-area-rule-study.md). |
-| S2 | Naked POCs: are they traded back to more often than other prices at the same distance? |
-| S3 | Value-area edges: what followed acceptance outside (rule 3.2) against rejection back inside (rule 3.1)? |
-| S4 | Sweeps of PDH, PDL, VAH and VAL: does the outcome differ by open interest falling or rising, and by CVD divergence? |
-| S5 | Confluence: is the reaction larger where several levels sit at one price? |
+| # | Question | Result |
+|---|---|---|
+| S1 | The 80% rule on UTC days: a day opens outside the previous day's value area and comes back inside. | About 40% reached the other edge, not 80%. Opening outside did not help. The trade lost 0.25%. **No bar met.** |
+| S2 | Naked POCs: is price drawn to them, more than to a price as far away on the other side? | The POC was reached first in 51.5% of fresh races and 48.7% of old ones. **No bar met.** Most POCs are traded again soon (69% within a day), because most are near price. |
+| S3 | Accepted outside the value area: does price go on? | The trade lost 0.14%; before costs +0.06%. **No bar met.** |
+| S4 | Sweeps of the previous day's high and low: does fading them pay, and do open interest and delta help? | The fade lost 0.18%. A flush or absorption made no difference. **No bar met.** |
+| S5 | Confluence: is a sweep worth more with other levels at the same price? | No difference (-0.17% against -0.18%). **No bar met.** |
+| S6 | The 80% rule on New York hours (09:30 to 16:15). | 34% to 39% reached the other edge. The trade lost 0.18%. **One row met its bar and was confirmed**: opening outside did add there (39% against 29% for sessions that opened inside). It is not a trade. |
 
-Data that can carry them: Binance futures 1-minute candles (they include taker buy volume, so CVD) and 5-minute open interest, both public at data.binance.vision and going back years. Hyperliquid serves only the latest 5,000 candles per series, too few for a study.
+S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md.
+
+Data: Binance futures 5-minute candles (with taker buy volume) and 5-minute open interest for twelve coins, January 2021 to April 2026, with May to October 2026 held out. Hyperliquid serves only the latest 5,000 candles per series, too few for a study.
+
+What the studies do not test: the method as traded, with judgement over which levels and reactions to take. They test whether the named levels and triggers, taken every time, carry an edge.
 
 ## Open
 
-- The videos: their transcripts (pasted, or the videos named), to check the O rules against what Daniel says.
+- The videos: their transcripts, to check the O rules against what Daniel says. docs/reviews/auction-video-brief.md says which videos, what to look for and the form of the answer.
 - The members' "CCV 2.0" manual: it would say how Chart Champions state the 80% rule today (which session, what counts as a range day).
