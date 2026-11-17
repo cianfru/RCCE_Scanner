@@ -432,6 +432,27 @@
 [data-theme="light"] .price-chart-canvas{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
 [data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.9);}
 .price-chart-panel .chart-levels-label-short{display:none;}
+/* Layer switches: inline on wide screens; on phones behind one "Layers" control, opening as a single row that scrolls sideways. */
+.price-chart-panel .chart-layers{display:contents;}
+.price-chart-panel .chart-layers-btn{display:none;}
+@media(max-width:600px){
+  .price-chart-panel .chart-layers-btn{display:inline-flex;align-items:center;padding:3px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;font-family:var(--font-geist-mono),monospace;font-weight:700;letter-spacing:.04em;cursor:pointer;}
+  .price-chart-panel .chart-layers-btn[aria-expanded=true]{border-bottom-color:var(--t-accent);color:var(--t-text1)!important;}
+  /* The controls join the toolbar's own row (kept to the right), so the open switches take the one row under it. */
+  .price-chart-panel .chart-toolbar:not(.chart-toolbar-compact)>div:last-child{display:contents!important;}   /* over its inline display:flex */
+  .price-chart-panel .chart-toolbar:not(.chart-toolbar-compact)>div:last-child>:first-child{margin-left:auto;}
+  .price-chart-panel .chart-layers{display:none;}
+  .price-chart-panel .chart-layers.is-open{display:flex;order:9;flex:0 0 100%;min-width:0;gap:12px;overflow-x:auto;scrollbar-width:none;}
+  .price-chart-panel .chart-layers.is-open::-webkit-scrollbar{display:none;}
+  .price-chart-panel .chart-layers button{flex:none;white-space:nowrap;}
+}
+/* What a Value line or tag is, at the pointer. */
+.chart-value-tip{gap:8px;max-width:284px;}
+.chart-value-tip-row{display:flex;flex-direction:column;gap:2px;}
+.chart-value-tip-row+.chart-value-tip-row{padding-top:8px;border-top:1px solid var(--t-border);}
+.chart-value-tip-title{font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
+.chart-value-tip i{font-style:normal;font-weight:500;color:var(--t-text3);}
+.chart-value-tip b{font-weight:600;color:var(--t-text1);}
 @media(max-width:600px){.price-chart-panel .chart-levels-label{display:none;}.price-chart-panel .chart-levels-label-short{display:inline;}.price-chart-panel .chart-toolbar{padding:10px 14px!important;gap:8px;}.price-chart-panel .chart-toolbar>div{gap:6px!important;}}
 
 /* Grid: one-line regime notes keep rows a uniform height; phones stack regime over signal. */

@@ -103,6 +103,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(c("GET", "/api/setup-map/ladder", {"coin": "BTC"}), "exchange")
         self.assertEqual(c("GET", "/api/setup-map/mine", {}), "exchange")
         self.assertEqual(c("GET", "/api/chart/BTC/USDT", {}), "exchange")
+        self.assertEqual(c("GET", "/api/auction/BTC/USDT", {}), "exchange")
         self.assertEqual(c("GET", "/api/trade/fills", {}), "exchange")
         self.assertEqual(c("GET", "/api/notifications/position-warnings", {"address": addr}), "exchange")
         self.assertIsNone(c("GET", "/api/notifications/market-setups", {}))
