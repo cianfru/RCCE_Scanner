@@ -156,9 +156,11 @@ def census(conn, leaderboard: dict, minutes: float) -> None:
 def funding(conn, minutes: float) -> None:
     """Every funding row of each wallet between its first and its last day as a whale."""
     done = {r[0] for r in conn.execute("SELECT addr FROM funding")}
+    listed = conn.execute("SELECT value FROM meta WHERE key='addresses'").fetchone()
+    wanted = set(json.loads(listed[0])) if listed else None            # the wallets of the declared rule only
     todo = []
     for a, eq in conn.execute("SELECT addr, eq FROM wallets ORDER BY addr"):
-        days = whale_days(unpack(eq)) if a not in done else None
+        days = whale_days(unpack(eq)) if a not in done and (wanted is None or a in wanted) else None
         if days:
             todo.append((a, days[0], days[-1]))
     todo.sort(key=lambda x: (R.skey(x[0]), x[0]))
