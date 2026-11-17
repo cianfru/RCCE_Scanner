@@ -162,4 +162,33 @@ The made-up level is a slow part plus daily noise, mixed so that the level and i
 
 ## Result
 
-To be added after the run.
+### In sample (1 December 2024 to 31 May 2026; run 17 November 2026)
+
+**No row met its bar. Whales by coin stay context, not a signal.**
+
+| Row | Size | Mean | 90% interval | Halves | Beyond the last week's price | Bar |
+|---|---|---|---|---|---|---|
+| **R1** level | 547 days | +0.003 | -0.027 to +0.025 | +0.012, -0.006 | +0.000 (-0.029 to +0.023) | not met |
+| **R2** change | 547 days | -0.018 | -0.033 to -0.002 | -0.023, -0.013 | -0.021 (-0.037 to -0.005) | not met |
+| **T1** trade on the level | 79 weeks | -1.35% a week | -2.66% to -0.22% | -2.23%, -0.49% | | not met |
+| **T2** trade on the change | 79 weeks | -0.99% a week | -1.66% to +0.20% | -1.38%, -0.61% | | not met |
+
+R rows: the mean daily rank correlation. T rows: the weekly return after costs.
+
+- **The level says nothing.** The coins more whales were long in did neither better nor worse than the others the next week (+0.003, inside what no relation at all gives).
+- **The change leans the other way.** The coins whales moved into over a week did slightly worse than the others the next week (-0.018, interval below 0, negative in both halves and with the last week's price held fixed). This is the direction the study did not declare, so it gets no verdict; it would need its own declared test on new data.
+- **Both trades lost.** Before costs -0.95% a week on the level and -0.59% on the change.
+  - Against the day's middle coin, the top third made +0.60% and the bottom third +1.55% (level); +0.74% and +1.33% (change). The coins whales leaned against did better than the ones they leaned into.
+- My expectation before running (both within 0.02 of zero) held.
+
+Reported, never deciding:
+
+- **By quarter, level:** 2024 Q4 +0.029, 2025 Q1 +0.027, 2025 Q2 -0.022, 2025 Q3 +0.017, 2025 Q4 +0.011, 2026 Q1 -0.042, 2026 Q2 +0.023.
+- **By quarter, change:** 2024 Q4 -0.046, 2025 Q1 -0.025, 2025 Q2 -0.025, 2025 Q3 +0.001, 2025 Q4 -0.050, 2026 Q1 +0.023, 2026 Q2 -0.023.
+- **From the next day's close:** level +0.006, change -0.013.
+- **The level in dollars held:** -0.022 (-0.044 to -0.004); beyond the last week's price -0.021. Also the other way.
+- **How much each reading follows the last week's return:** level +0.026, change +0.040. Whales by coin barely follow the last week's price.
+
+### Held out
+
+To be added after the in-sample result above is committed.
