@@ -1,13 +1,15 @@
 """
-Auction levels (version ``auction-1``): the volume profile of each session, its value area and
-point of control, the points of control price has not come back to, and the opens and prior
-extremes drawn with them. Display only: nothing here is read by signals or the executor.
-The rules and what they stand for are in docs/reviews/auction-levels-spec.md.
+Auction levels (version ``auction-2``): the volume profile of each swing (the move from a swing
+low to the next swing high, or from a high to the next low), its value area and point of
+control, and the opens and prior extremes drawn with them. Display only: nothing here is read
+by signals or the executor. The rules and what they stand for are in
+docs/reviews/auction-levels-spec.md.
 
-Sessions are UTC: a day starts at 00:00, a week on Monday 00:00, a month on its first day.
+The chart draws swings (``swing_ranges``, from hourly candles). The profiles of calendar
+sessions (``sessions``: UTC days, weeks from Monday, months) are what version 1 drew and what
+the declared studies measured; they stay here for those.
 
-Profile of a session, from candles one step below the chart's (15m for days, 1h for weeks
-and months):
+Profile of a swing or a session, from candles below the chart's:
 
 1. Rows of ``step`` (a round number near a fixed fraction of price, STEP_FRACTION). Row k
    covers [base + k * step, base + (k + 1) * step).
@@ -31,20 +33,18 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-AUCTION_VERSION = "auction-1"
+AUCTION_VERSION = "auction-2"
 VALUE_SHARE = 0.70
 DAY_MS = 86_400_000
 WEEK_MS = 7 * DAY_MS
 _MONDAY_MS = 4 * DAY_MS               # 1970-01-05, the first Monday
-STEP_FRACTION = {"day": 2e-4, "week": 5e-4, "month": 1e-3}
-GRID_ROWS = 120                       # rows of the coarse grid behind the chart's side histogram
+STEP_FRACTION = {"day": 2e-4, "week": 5e-4, "month": 1e-3, "swing": 5e-4}
+GRID_ROWS = 120                       # rows of the coarse grid a window of sessions shares
+RANGE_ROWS = 60                       # rows of each swing's own histogram, from its low to its high
+RANGE_PULLBACK = 0.5                  # a pullback of less than half a move does not end it, when the move then goes on
 
-# Chart timeframe -> the candles read and the sessions built from them.
-PLANS: Dict[str, dict] = {
-    "1h": {"interval": "15m", "days": 30, "period": "day", "outer": "week"},
-    "4h": {"interval": "15m", "days": 30, "period": "day", "outer": "week"},
-    "1d": {"interval": "1h", "days": 180, "period": "week", "outer": "month"},
-}
+# The charts the layer is drawn on. All three read the same candles, so one answer serves them.
+PLANS: Dict[str, dict] = {tf: {"interval": "1h", "days": 180} for tf in ("1h", "4h", "1d")}
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000}
 
 # The retracement zone of major swings (studied in docs/reviews/fib-zone-study.md).
@@ -306,39 +306,107 @@ def fib_zones(daily: Optional[dict]) -> List[dict]:
     return out
 
 
-def build(candles: dict, daily: Optional[dict], timeframe: str, now_ms: float) -> dict:
-    """The Value layer of one chart: sessions with their value areas, the outer period's
-    sessions (weeks under days, months under weeks) and the reference levels."""
-    plan = PLANS[timeframe]
-    ts, _, h, l, c, v = _arrays(candles)
-    price = float(c[-1])
-    step = nice_step(price * STEP_FRACTION[plan["period"]])
-    outer_step = nice_step(price * STEP_FRACTION[plan["outer"]])
-    g_low, g_high = float(l.min()), float(h.max())
-    g_step = (g_high - g_low) / GRID_ROWS or step
-    inner = sessions(candles, plan["period"], step, now_ms, grid=(g_low, g_step, GRID_ROWS))
-    # The side histogram only compares rows, so bins go out as whole parts per million of the window's volume.
-    total = sum(float(s["bins"]["v"].sum()) for s in inner) or 1.0
-    for s in inner:
-        s["bins"]["v"] = [int(x) for x in np.rint(s["bins"]["v"] * 1e6 / total)]
-    outer = [{k: s[k] for k in ("start", "end", "live", "poc", "vah", "val", "touched")}
-             for s in sessions(candles, plan["outer"], outer_step, now_ms)]
+def merge_moves(points: list, share: float = RANGE_PULLBACK) -> list:
+    """Swing points (kind "L" or "H", price, ...) in turn, without the pullbacks that did not end a move.
+
+    A rise from a low to a high, a dip, then a higher high: when the dip gave back less than ``share`` of the rise,
+    the dip's two points are dropped and the rise runs on to the higher high. Falls mirror. A merged move is
+    measured again against the pullback after it, and the move before it against the merged one."""
+    pts = list(points)
+    i = 0
+    while i + 3 < len(pts):
+        a, b, c, d = pts[i:i + 4]
+        s = 1 if a[0] == "L" else -1
+        size, back, beyond = s * (b[1] - a[1]), s * (b[1] - c[1]), s * (d[1] - b[1])
+        if size > 0 and back < share * size and beyond > 0:
+            del pts[i + 1:i + 3]
+            i = max(i - 2, 0)
+        else:
+            i += 1
+    return pts
+
+
+def swing_ranges(candles: dict, daily: Optional[dict], step: float, now_ms: float) -> List[dict]:
+    """The volume profile of each move inside ``candles`` (hourly, oldest first): every rise from a swing low to
+    the next swing high, every fall from a high to the next low, and the move still running from the last swing.
+
+    Swings are the daily ones the retracement zone uses (``swings``: a high is a swing once price has come back
+    FIB_REVERSAL daily ATRs from it), with the price furthest from the last swing as the running move's end, and
+    without the pullbacks that did not end a move (``merge_moves``). A move starts at the candle with the lowest
+    low of the swing low's day (the highest high of a swing high's day) and ends at the candle of the next swing;
+    the running move ends at the last candle and is ``live``. A move the candles start inside is left out: its
+    profile would be a part of it.
+
+    Each entry: ``direction`` (1 up, -1 down), ``start`` and ``end`` (seconds; ``end`` is the close of its last
+    candle), ``low`` and ``high``, ``poc``, ``vah`` and ``val`` (the same rule as a session's), and ``bins``
+    {"low", "step", "v"}: its volume on RANGE_ROWS rows from low to high, in whole parts per thousand of the
+    fullest row.
+    """
+    if not daily or len(daily.get("timestamp", [])) < 30:
+        return []
+    from engines.levels_engine import wilder_atr
+    ts, _, h, l, _, v = _arrays(candles)
+    if len(ts) < 2:
+        return []
+    dts = np.asarray(daily["timestamp"], dtype=np.int64)
+    dh, dl, dc = (np.asarray(daily[k], dtype=np.float64) for k in ("high", "low", "close"))
+    piv = swings(dh, dl, wilder_atr(dh, dl, dc))
+    if not piv:
+        return []
+    kind, _, day, _ = piv[-1]
+    if day + 1 < len(dts):                                   # where the running move has reached so far
+        j = day + 1 + int(np.argmax(dh[day + 1:]) if kind == "L" else np.argmin(dl[day + 1:]))
+        piv = piv + [("H", float(dh[j]), j, j) if kind == "L" else ("L", float(dl[j]), j, j)]
+        piv = merge_moves(piv)[:-1]                          # its end is the last candle, not that price
+    else:
+        piv = merge_moves(piv)
+    span = int(np.median(np.diff(ts)))
+
+    def anchor(kind: str, day: int) -> Optional[int]:
+        idx = np.flatnonzero((ts >= dts[day]) & (ts < dts[day] + DAY_MS))
+        if not idx.size:
+            return None
+        return int(idx[np.argmax(h[idx])] if kind == "H" else idx[np.argmin(l[idx])])
+
+    marks = [(kind, anchor(kind, day)) for kind, _, day, _ in piv]
+    legs = [(1 if k0 == "L" else -1, a, b, False) for (k0, a), (_, b) in zip(marks, marks[1:])
+            if a is not None and b is not None and b > a]
+    kind, a = marks[-1]
+    if a is not None and a < len(ts) - 1:
+        legs.append((1 if kind == "L" else -1, a, len(ts) - 1, True))
     dec = _decimals(step)
-    refs = reference_levels(daily, plan["period"], now_ms)
-    if plan["period"] == "day":
-        refs.update(initial_balance(candles, now_ms))
+    out: List[dict] = []
+    for direction, a, b, live in legs:
+        hh, ll, vv = h[a:b + 1], l[a:b + 1], v[a:b + 1]
+        if not vv.sum() > 0:
+            continue
+        poc, vah, val = session_levels(hh, ll, vv, step)
+        low, high = float(ll.min()), float(hh.max())
+        r_step = (high - low) / RANGE_ROWS or step
+        _, rows = profile(hh, ll, vv, r_step, base=low, rows=RANGE_ROWS)
+        out.append({
+            "direction": direction, "start": int(ts[a] // 1000), "end": int((ts[b] + span) // 1000), "live": live,
+            "low": round(low, dec), "high": round(high, dec),
+            "poc": round(poc, dec), "vah": round(vah, dec), "val": round(val, dec),
+            "bins": {"low": low, "step": r_step, "v": [int(x) for x in np.rint(rows * 1000 / (rows.max() or 1.0))]},
+        })
+    return out
+
+
+def build(candles: dict, daily: Optional[dict], now_ms: float) -> dict:
+    """The Value layer of a coin's charts: the profile of each swing, the reference levels (the day's and the
+    week's; the chart picks its own) and the retracement zone."""
+    ts, _, _, _, c, _ = _arrays(candles)
+    step = nice_step(float(c[-1]) * STEP_FRACTION["swing"])
+    dec = _decimals(step)
+    refs = {**reference_levels(daily, "week", now_ms), **reference_levels(daily, "day", now_ms), **initial_balance(candles, now_ms)}
     return {
         "version": AUCTION_VERSION,
-        "timeframe": timeframe,
-        "interval": plan["interval"],
-        "period": plan["period"],
-        "outer_period": plan["outer"],
+        "interval": PLANS["1d"]["interval"],
         "as_of": int(now_ms // 1000),
         "from": int(ts[0] // 1000),
         "step": step,
-        "sessions": inner,
-        "outer": outer,
-        "grid": {"low": g_low, "step": g_step, "rows": GRID_ROWS},
+        "ranges": swing_ranges(candles, daily, step, now_ms),
         "levels": {k: round(p, dec) for k, p in refs.items()},
         "fib": [{**z, **{k: round(z[k], dec) for k in ("base", "extreme", "from", "to")}} for z in fib_zones(daily)],
     }

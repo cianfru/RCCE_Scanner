@@ -1,27 +1,27 @@
 // Lightweight Charts v5 series primitive: the coin chart's Value layer (/api/auction).
-// Per session (a day on 4H, a week on 1D): a band over its value area and a line at its point
-// of control (POC). A dashed line runs on from a POC price has not traded back to, and the
-// last finished session's band edges are carried forward. Left edge: volume by price of the
-// sessions in view. Right of the last candle: labelled ticks (opens, prior extremes, the
-// previous outer session's value area). What happened, drawn where it happened: no forecast.
-import { placeSessions, ticks, composite, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
+// Per swing (the move from a swing low to the next swing high, or from a high to the next low, and the move
+// still running): a box over its candles, its volume by price along the box's left edge, a line at its point
+// of control (POC) and lines at the edges of its value area. The last finished swing's three lines run on,
+// dashed, to the right edge. Right of the last candle: labelled ticks (those three, the opens, prior
+// extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone.
+// What happened, drawn where it happened: no forecast.
+import { placeRanges, lastDone, histogram, ticks, rangeTicks, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
 
 const LABEL_FONT = "10px 'SF Mono', 'Fira Code', monospace";
 const LABEL_GAP = 12;
-const PROFILE_SHARE = 0.14;      // widest histogram bar, as a share of the pane's width
-const PROFILE_MAX = 130;
+const PROFILE_SHARE = 0.3;       // a swing's widest histogram bar, as a share of the part of its box in view
+const PROFILE_MAX = 120;
 
 export default class ValueAreas {
   constructor(colors) {
     this.colors = colors;        // {ink, poc, fib, bg}: [r, g, b] each
     this.visible = false;
-    this.placed = [];
+    this.ranges = [];
     this.ticks = [];
     this.bands = [];
     this.hits = [];              // what is drawn where (media pixels), lowest priority first: see hitTest
-    this.grid = null;
     this.last = 0;
-    // Bands and lines sit behind the candles; the tick labels go on top so no line strikes through them.
+    // Boxes and lines sit behind the candles; the tick labels go on top so no line strikes through them.
     this.views = ["bottom", "top"].map(z => ({ zOrder: () => z, renderer: () => ({ draw: target => this.draw(target, z) }) }));
   }
   attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.requestUpdate = requestUpdate; requestUpdate(); }
@@ -29,10 +29,10 @@ export default class ValueAreas {
   // body: the /api/auction answer (null clears); times: the chart's candle times (seconds).
   setData(body, times, tfSec, colors) {
     if (colors) this.colors = colors;
-    this.placed = body && times?.length ? placeSessions(body.sessions, times, tfSec) : [];
+    this.ranges = body && times?.length ? placeRanges(body.ranges, times).map(r => ({ ...r, rows: histogram(r) })) : [];
     this.bands = body ? fibBands(body, times, tfSec) : [];
-    this.ticks = body ? [...ticks(body, { firstHour: tfSec <= 3600 }), ...fibTicks(this.bands)] : [];
-    this.grid = body?.grid || null;
+    const tf = tfSec <= 3600 ? "1h" : tfSec < 86400 ? "4h" : "1d";
+    this.ticks = body ? [...ticks(body, tf), ...rangeTicks(this.ranges), ...fibTicks(this.bands)] : [];
     this.last = times?.length ? times.length - 1 : 0;
     this.requestUpdate?.();
   }
@@ -40,7 +40,7 @@ export default class ValueAreas {
   updateAllViews() {}
   paneViews() { return this.views; }
   // What is drawn under a point of the price pane: {kind, ...} for utils/valueLayer.describe, or null.
-  // Tags win over lines, lines over bands, bands over the histogram.
+  // Tags win over lines, lines over the pullback zone, the zone over a swing's box.
   hitTest(x, y) {
     if (!this.visible) return null;
     for (let i = this.hits.length - 1; i >= 0; i--) {
@@ -54,7 +54,7 @@ export default class ValueAreas {
     try { this.paint(target, layer); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
   }
   paint(target, layer) {
-    if (!this.visible || !this.chart || !this.series || !this.placed.length) return;
+    if (!this.visible || !this.chart || !this.series || !(this.ranges.length || this.bands.length || this.ticks.length)) return;
     const ts = this.chart.timeScale();
     const x0 = ts.logicalToCoordinate(0), x1 = ts.logicalToCoordinate(1);
     const range = ts.getVisibleLogicalRange();
@@ -76,9 +76,42 @@ export default class ValueAreas {
       };
       ctx.save();
       if (layer === "top") { this.paintTicks(ctx, W, H, edge, y, ink, gold, violet); ctx.restore(); return; }
-      const hits = [];
-      const area = (x0, y0, x1, y1, info) => { if (x1 > x0 && y0 != null && y1 != null) hits.push({ x0, y0: Math.min(y0, y1), x1, y1: Math.max(y0, y1), info }); };
-      const near = (x0, x1, yy, info) => { if (yy != null) area(x0, yy - 6, x1, yy + 6, info); };
+      const boxes = [], zones = [], lines = [];
+      const area = (list, xa, ya, xb, yb, info) => { if (xb > xa && ya != null && yb != null) list.push({ x0: xa, y0: Math.min(ya, yb), x1: xb, y1: Math.max(ya, yb), info }); };
+      const near = (xa, xb, yy, info) => { if (yy != null) area(lines, xa, yy - 6, xb, yy + 6, info); };
+
+      // Each swing: a box over its candles, its volume by price from the box's left edge, the edges of its value
+      // area and its POC across the box. The move still running is fainter.
+      for (const r of this.ranges) {
+        if (r.to < range.from - 1 || r.from > range.to + 1) continue;
+        const xa = edge(r.from), xb = edge(r.to), top = y(r.high), bottom = y(r.low);
+        if (top == null || bottom == null) continue;
+        ctx.fillStyle = ink(r.live ? 0.03 : 0.055);
+        ctx.fillRect(xa, top, xb - xa, bottom - top);
+        area(boxes, xa, top, xb, bottom, { kind: "range", r });
+        // Its volume by price, from the box's left edge, or from the pane's when that edge is scrolled out of view.
+        const xh = Math.max(xa, 0), maxW = Math.min(PROFILE_MAX, (Math.min(xb, W) - xh) * PROFILE_SHARE);
+        for (const row of r.rows) {
+          const rt = y(row.high), rb = y(row.low);
+          if (rt == null || rb == null || rb < 0 || rt > H || maxW <= 0) continue;
+          ctx.fillStyle = row.kind === "poc" ? gold(0.6) : ink(row.kind === "value" ? 0.26 : 0.11);
+          ctx.fillRect(xh, rt, Math.max(1, row.share * maxW), Math.max(1, rb - rt - (rb - rt > 3 ? 1 : 0)));
+        }
+        line(xa, xb, y(r.vah), ink(0.55));
+        line(xa, xb, y(r.val), ink(0.55));
+        line(xa, xb, y(r.poc), gold(0.95), 2);
+        for (const which of ["vah", "val", "poc"]) near(xa, xb, y(r[which]), { kind: "rline", which, r });
+      }
+
+      // The last finished swing's three lines run on to the right edge.
+      const done = lastDone(this.ranges);
+      if (done) {
+        const xb = edge(done.to);
+        line(xb, W, y(done.vah), ink(0.42), 1, [5, 4]);
+        line(xb, W, y(done.val), ink(0.42), 1, [5, 4]);
+        line(xb, W, y(done.poc), gold(0.75), 1, [5, 4]);
+        for (const which of ["vah", "val", "poc"]) near(xb, W, y(done[which]), { kind: "rline", which, r: done });
+      }
 
       // The 0.618 to 0.66 retracement band of each live major leg, from the leg's start to the right edge,
       // fainter once price has traded into it; and the leg it measures, as a dotted line.
@@ -87,7 +120,7 @@ export default class ValueAreas {
         if (top == null || bottom == null || xa >= W) continue;
         ctx.fillStyle = violet(b.touched ? 0.06 : 0.13);
         ctx.fillRect(xa, top, W - xa, Math.max(1, bottom - top));
-        area(xa, top - 3, W, bottom + 3, { kind: "fib", band: b });
+        area(zones, xa, top - 3, W, bottom + 3, { kind: "fib", band: b });
         line(xa, W, top, violet(b.touched ? 0.25 : 0.5));
         line(xa, W, bottom, violet(b.touched ? 0.25 : 0.5));
         const ya = b.leg ? y(b.leg.base) : null, yb = b.leg ? y(b.leg.extreme) : null;
@@ -97,55 +130,7 @@ export default class ValueAreas {
           ctx.setLineDash([]);
         }
       }
-
-      // Volume by price of the sessions in view, from the left edge.
-      const prof = this.grid ? composite(this.placed, this.grid.rows, range.from, range.to) : null;
-      if (prof) {
-        const maxW = Math.min(PROFILE_MAX, W * PROFILE_SHARE);
-        area(0, 0, maxW, H, { kind: "profile" });
-        for (let r = 0; r < prof.v.length; r++) {
-          if (!prof.v[r]) continue;
-          const top = y(this.grid.low + (r + 1) * this.grid.step), bottom = y(this.grid.low + r * this.grid.step);
-          if (top == null || bottom == null || bottom < 0 || top > H) continue;
-          const h = Math.max(1, bottom - top - (bottom - top > 3 ? 1 : 0));
-          ctx.fillStyle = r === prof.poc ? gold(0.55) : ink(r >= prof.lo && r <= prof.hi ? 0.2 : 0.09);
-          ctx.fillRect(0, top, Math.max(1, prof.v[r] / prof.max * maxW), h);
-        }
-      }
-
-      // Each session: its value area as a band, its POC as a line.
-      for (const s of this.placed) {
-        if (s.to < range.from - 1 || s.from > range.to + 1) continue;
-        const xa = edge(s.from) + 1, xb = edge(s.to) - 1;
-        const top = y(s.vah), bottom = y(s.val);
-        if (top != null && bottom != null) {
-          ctx.fillStyle = ink(s.live ? 0.045 : 0.07);
-          ctx.fillRect(xa, top, xb - xa, bottom - top);
-          area(xa, top, xb, bottom, { kind: "value", s });
-          line(xa, xb, top, ink(0.3));
-          line(xa, xb, bottom, ink(0.3));
-        }
-        line(xa, xb, y(s.poc), gold(0.9), 2);
-      }
-
-      // The last finished session's band edges carried forward, and every POC not traded back to.
-      const done = this.placed.filter(s => !s.live);
-      const prev = done[done.length - 1];
-      if (prev) {
-        line(edge(prev.to), W, y(prev.vah), ink(0.38), 1, [5, 4]);
-        line(edge(prev.to), W, y(prev.val), ink(0.38), 1, [5, 4]);
-        near(edge(prev.to), W, y(prev.vah), { kind: "edge", which: "vah", s: prev });
-        near(edge(prev.to), W, y(prev.val), { kind: "edge", which: "val", s: prev });
-      }
-      for (const s of this.placed) {
-        if (s.to >= range.from - 1 && s.from <= range.to + 1) near(edge(s.from) + 1, edge(s.to) - 1, y(s.poc), { kind: "poc", s });
-      }
-      for (const s of done) {
-        if (s.touched != null) continue;
-        line(edge(s.to), W, y(s.poc), gold(0.75), 1, [5, 4]);
-        near(edge(s.to), W, y(s.poc), { kind: "naked", s });
-      }
-      this.hits = hits;                                    // the tags are added on top of these by paintTicks
+      this.hits = [...boxes, ...zones, ...lines];          // the tags are added on top of these by paintTicks
 
       ctx.restore();
     });
