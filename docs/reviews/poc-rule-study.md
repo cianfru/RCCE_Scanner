@@ -87,6 +87,25 @@ Months are the unit: the trades of one month are resampled together (95% interva
 
 A rule with no edge meets a bar about 3 times in 100. A rule worth 1% a trade is found almost surely if coins move apart, and about 1 time in 5 if they move as one.
 
-## Result
+## Result (run 17 November 2026, after the rules above were committed at 1f82e48)
 
-To be added after the run.
+`python -m research.poc_rule run`, then `run --holdout` after the in-sample rows below were committed.
+
+**No row met its bar. The rule made a little on average, before and after costs, and that average cannot be told from zero. Context, not a signal.**
+
+### In sample (orders placed March 2021 to July 2025)
+
+| Row | Mean net return a trade (95% interval) | By half | Bar |
+|---|---|---|---|
+| **R1** both sides | **+0.32%** (-0.39 to +1.00), 2,045 trades over 54 months | +0.10%, +0.54% | not met (interval reaches under 0) |
+| **R2** sell at the POC after a close under VAL | **-0.06%** (-1.30 to +1.08), 1,052 trades | -0.33%, +0.22% | not met |
+| **R3** buy at the POC after a close over VAH | **+0.73%** (-0.40 to +1.73), 993 trades | +0.57%, +0.87% | not met (interval reaches under 0) |
+
+Reported:
+
+- **Before costs** +0.52% a trade (-0.19 to +1.20), or 0.06 of the risk taken. The exit came first in 55.6%, the stop in 42.4%, neither within 30 days in 2.0%.
+- **Against a price with no memory:** of the trades that ended at the stop or the exit, 56.7% (53.4 to 59.9) reached the exit; a price with no memory would give 54.3% (53.2 to 55.3). 2.5 points more, with intervals that overlap.
+- **By side, before costs:** sells +0.14%, buys +0.93%.
+- **After a rise** +0.36% net, **after a fall** +0.29%. **With the move** (buying after a rise, selling after a fall) -0.04%; **against it** +0.53%.
+- **By year, net:** 2021 +1.00%, 2022 -0.02%, 2023 -0.45%, 2024 +0.83%, 2025 +0.10%. Every year's interval holds 0.
+- **BTC:** 24 trades, +0.93% (-1.23 to +3.34).
