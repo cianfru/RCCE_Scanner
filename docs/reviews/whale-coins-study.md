@@ -189,6 +189,35 @@ Reported, never deciding:
 - **The level in dollars held:** -0.022 (-0.044 to -0.004); beyond the last week's price -0.021. Also the other way.
 - **How much each reading follows the last week's return:** level +0.026, change +0.040. Whales by coin barely follow the last week's price.
 
-### Held out
+### Held out (1 June to 8 November 2026; run after the in-sample result was committed at ee1ec15; reported, no verdict)
 
-To be added after the in-sample result above is committed.
+| Row | Size | Mean | 90% interval | Halves | Beyond the last week's price |
+|---|---|---|---|---|---|
+| **R1** level | 161 days | +0.021 | +0.004 to +0.056 | +0.002, +0.039 | +0.018 (+0.001 to +0.048) |
+| **R2** change | 161 days | -0.015 | -0.070 to +0.025 | -0.090, +0.058 | -0.015 (-0.074 to +0.023) |
+| **T1** trade on the level | 23 weeks | +0.75% a week | -0.15% to +1.49% | +0.12%, +1.33% | |
+| **T2** trade on the change | 23 weeks | -1.36% a week | -3.12% to -0.57% | -2.74%, -0.10% | |
+
+- **Nothing here confirms anything:** no row met its bar in sample.
+- **The level was positive in these months** (+0.021) after nothing in sample, and its trade made +0.75% a week after costs with an interval that holds zero. By quarter: 2026 Q2 -0.038, 2026 Q3 +0.041, 2026 Q4 +0.018.
+- **The change stayed slightly negative** (-0.015 after -0.018 in sample), but its two halves disagree (-0.090 then +0.058) and its interval holds zero. By quarter: 2026 Q2 -0.127, 2026 Q3 -0.007, 2026 Q4 +0.052.
+- **The level in dollars changed sign:** +0.009 (-0.028 to +0.074) after -0.022 in sample.
+- From the next day's close: level +0.014, change -0.008. How much each reading follows the last week's return: level +0.069, change +0.015.
+
+### Independent recount
+
+Both periods were counted again with separately written code on the same reads (tables instead of the study's loops; its own rules for who is a whale on a day, what a wallet holds, the levels, the returns, the rank correlations, the last week held fixed, and the weekly trade).
+
+- The same 2,280 whale wallets, days (547 and 161) and weeks (79 and 23).
+- The same means, halves and trade returns to every digit shown above, for both readings in both periods.
+- Its intervals come from different random draws: within 0.002 of the study's for the rank correlations, within 0.1 of a point for the trades.
+- Before the run, the two were compared on a made-up cache and agreed there too.
+
+### Reading
+
+- **No row met its bar**, in a study that sees a relation of 0.05 nine times in ten and 0.03 about half the time. If the coins whales are long in do better the next week, it is by less than this study can reliably see.
+- **The level:** nothing in sample, +0.02 held out. A true +0.02 fits both and is below what this study can see, so it is neither shown nor ruled out.
+- **The change:** slightly negative in both periods (-0.018 and -0.015). That is the direction the study did not declare, and held out its halves disagree and its interval holds zero. It would need its own declared test on new data.
+- **Both trades lost in sample** (-1.35% and -0.99% a week after costs). Held out, one made money and one lost.
+- **What this does not cover:** horizons other than a week, groups other than the large wallets (the profitable ones, for instance), and whale positions with their hedges taken out.
+- **Context, not a signal.** Nothing changes in the app.
