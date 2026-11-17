@@ -41,7 +41,7 @@ export function fibBands(body, times, tfSec) {
   return (body?.fib || []).map(z => {
     const top = Math.max(z.from, z.to), bottom = Math.min(z.from, z.to);
     const onChart = z.base_time >= times[0];
-    return { top, bottom, touched: !!z.touched, direction: z.direction,
+    return { top, bottom, touched: !!z.touched, direction: z.direction, base: z.base, extreme: z.extreme,
       from: onChart ? barIndex(times, z.base_time, tfSec) : 0,
       leg: onChart ? { from: barIndex(times, z.base_time, tfSec), base: z.base, to: barIndex(times, z.extreme_time, tfSec), extreme: z.extreme } : null,
       poc: pocs.some(p => p >= bottom * 0.9975 && p <= top * 1.0025) };
@@ -138,76 +138,109 @@ export function mergeTicks(rows, within = 1.5) {
 }
 
 // ─── What a line or tag is, in plain words (shown at the pointer) ────────────────────────────────────────────────
-// Each says what the level is and, where a declared study looked at it, what was found (docs/reviews). What
-// happened, never what comes next.
+// Each entry: a plain title, then short lines in this order: what it is (with this chart's own numbers), how
+// traders who follow the method use it, and what a declared study found where one looked (docs/reviews).
+// What happened, never what comes next. No trader shorthand without its meaning beside it.
 
 const PREV = { day: "yesterday", week: "last week", month: "last month" };
-const PREV_S = { day: "Yesterday's", week: "Last week's", month: "Last month's" };
-const cap = s => s[0].toUpperCase() + s.slice(1);
-const NAKED_NOTE = "Tested here: price came back to levels like this about as often as it reached a price equally far the other way.";
-const SWEEP_NOTE = "Traders watch for a push through it that closes back inside. Tested here: fading those made nothing before costs.";
-
-const TICK_COPY = {
-  d_open: () => ["Day open", "Where today began, at 00:00 UTC."],
-  w_open: () => ["Week open", "Where this week began, Monday 00:00 UTC."],
-  m_open: () => ["Month open", "Where this month began."],
-  pd_high: () => ["Yesterday's high", `Yesterday's highest price. ${SWEEP_NOTE}`],
-  pd_low: () => ["Yesterday's low", `Yesterday's lowest price. ${SWEEP_NOTE}`],
-  pw_high: () => ["Last week's high", "Last week's highest price."],
-  pw_low: () => ["Last week's low", "Last week's lowest price."],
-  ib_high: () => ["First hour's high", "The top of today's first hour, 00:00 to 01:00 UTC."],
-  ib_low: () => ["First hour's low", "The bottom of today's first hour, 00:00 to 01:00 UTC."],
-  p_vah: o => [`${PREV_S[o]} value area high`, `The top of the band that held 70% of ${PREV[o]}'s volume. Above it, price is outside where most of that business was done.`],
-  p_val: o => [`${PREV_S[o]} value area low`, `The bottom of the band that held 70% of ${PREV[o]}'s volume. Below it, price is outside where most of that business was done.`],
-  p_poc: o => [`${PREV_S[o]} point of control`, `The price with the most volume ${PREV[o]}. Traders use it as a first exit, not as an entry.`],
-};
-
+const THIS = { day: "today", week: "this week", month: "this month" };
+const BEGAN = { day: "00:00 UTC", week: "Monday 00:00 UTC", month: "the 1st, 00:00 UTC" };
+const cap = str => str[0].toUpperCase() + str.slice(1);
 const utcDay = t => new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
-const when = (s, period) => (period === "day" ? utcDay(s.start) : `${period} of ${utcDay(s.start)}`);
+const when = (start, period) => (period === "day" ? utcDay(start) : `the ${period} of ${utcDay(start)}`);
+
+const POC_USE = "Traders use a price like this as the place to take profit.";
+const NAKED_USE = "Traders treat a price like this as a magnet: one the market comes back to.";
+const NAKED_TEST = "Tested here: price reached these about as often as any other price the same distance away.";
+
+const openCopy = period => [`${cap(THIS[period])}'s opening price`, [
+  `The price when ${THIS[period]} began (${BEGAN[period]}).`,
+  `Traders read price above it as buyers being ahead ${THIS[period]}, below it as sellers being ahead.`]];
+
+// The fade of yesterday's extremes was tested (S4); last week's were not.
+const extremeCopy = (period, high) => [`${cap(PREV[period])}'s ${high ? "high" : "low"}`, [
+  `The ${high ? "highest" : "lowest"} price reached ${PREV[period]}.`,
+  high ? "Traders watch for price to poke above it and fall straight back, then sell."
+    : "Traders watch for price to dip below it and climb straight back, then buy.",
+  period === "day" ? `Tested here: ${high ? "selling those pokes" : "buying those dips"} made nothing before fees and lost after them.` : ""]];
+
+const firstHourCopy = high => [`${high ? "High" : "Low"} of today's first hour`, [
+  `The ${high ? "highest" : "lowest"} price in today's first hour (00:00 to 01:00 UTC).`,
+  "Traders use the first hour's range as an early gauge: a move beyond it is read as the day picking a direction."]];
+
+const nakedCopy = (start, period) => [`Most-traded price of ${when(start, period)}, not revisited`, [
+  `More was traded at this price than at any other that ${period} (its point of control, POC). Price has not been back since.`,
+  NAKED_USE, NAKED_TEST]];
 
 // Everything under the pointer: a tag that stands for several levels at one price gives one entry each.
-export function describeAll(hit, body) {
-  if (hit.kind !== "tick") return [describe(hit, body)];
-  return (hit.tick.members || [hit.tick]).map(t => describe({ kind: "tick", tick: t, bands: hit.bands }, body));
+export function describeAll(hit, body, fmt = String) {
+  if (hit.kind !== "tick") return [describe(hit, body, fmt)];
+  return (hit.tick.members || [hit.tick]).map(t => describe({ kind: "tick", tick: t, bands: hit.bands }, body, fmt));
 }
 
-// hit: what ValueAreas.hitTest returned. Returns { title, tag, price, text } (price null for the histogram).
-export function describe(hit, body) {
+// hit: what ValueAreas.hitTest returned; fmt: how to write a price. Returns { title, tag, price, range, lines }
+// (price null where the thing is a band or the histogram; tag is the shorthand drawn on the chart, if any).
+export function describe(hit, body, fmt = String) {
   const period = body?.period || "day", outer = body?.outer_period || "week";
+  const entry = ([title, lines], extra = {}) => ({ title, tag: null, price: null, range: null, lines: lines.filter(Boolean), ...extra });
   if (hit.kind === "tick") {
-    const t = hit.tick;
-    if (t.kind === "fib") return describe({ kind: "fib", band: (hit.bands || [])[Number(String(t.key).split("_")[1])] || { top: t.price, bottom: t.price } }, body);
-    if (t.key.startsWith("n_")) {
-      return { title: `Older ${outer === "week" ? "weekly" : "monthly"} point of control`, tag: t.label, price: t.price,
-        text: `The most-traded price of an earlier ${outer}, not traded back to since. ${NAKED_NOTE}` };
-    }
-    const [title, text] = (TICK_COPY[t.key] || (() => [t.label, ""]))(outer);
-    return { title, tag: t.label, price: t.price, text };
+    const t = hit.tick, at = { tag: t.label, price: t.price };
+    if (t.kind === "fib") return describe({ kind: "fib", band: (hit.bands || [])[Number(String(t.key).split("_")[1])] }, body, fmt);
+    if (t.key.startsWith("n_")) return entry(nakedCopy(Number(t.key.slice(2)), outer), at);
+    const prev = (body?.outer || []).filter(x => !x.live).slice(-1)[0];
+    const band = prev ? `70% of ${PREV[outer]}'s trading happened between ${fmt(prev.val)} and ${fmt(prev.vah)}. ` : "";
+    const edge = high => [`${high ? "Top" : "Bottom"} of ${PREV[outer]}'s main trading range`, [
+      `${band}This is the ${high ? "top" : "bottom"} of that band (its value area ${high ? "high, VAH" : "low, VAL"}).`,
+      `Traders treat the band as ${PREV[outer]}'s fair prices. ${high ? "Above it they watch whether price holds up there or falls back in."
+        : "Below it they watch whether price stays down there or climbs back in."}`]];
+    const copy = {
+      d_open: () => openCopy("day"), w_open: () => openCopy("week"), m_open: () => openCopy("month"),
+      pd_high: () => extremeCopy("day", true), pd_low: () => extremeCopy("day", false),
+      pw_high: () => extremeCopy("week", true), pw_low: () => extremeCopy("week", false),
+      ib_high: () => firstHourCopy(true), ib_low: () => firstHourCopy(false),
+      p_vah: () => edge(true), p_val: () => edge(false),
+      p_poc: () => [`${cap(PREV[outer])}'s most-traded price`, [
+        `More was traded at this price than at any other ${PREV[outer]} (its point of control, POC).`, POC_USE]],
+    }[t.key];
+    return entry(copy ? copy() : [t.label, []], at);
   }
   if (hit.kind === "fib") {
-    const b = hit.band;
-    return { title: "0.618 to 0.66 pullback zone", tag: null, price: (b.top + b.bottom) / 2,
-      text: `Between 61.8% and 66% of the way back along the dotted swing. Tested here: price turned in this zone about as often as at any other depth of a pullback.${b.poc ? " A point of control sits inside it." : ""}` };
+    const b = hit.band || {};
+    const up = b.direction > 0, drawn = b.leg ? " (the dotted line)" : "";
+    return entry(["Pullback zone (0.618 to 0.66)", [
+      b.base == null ? "" : up
+        ? `Price rose from ${fmt(b.base)} to ${fmt(b.extreme)}${drawn}. This band is where a dip has given back about two thirds of that rise (61.8% to 66%).`
+        : `Price fell from ${fmt(b.base)} to ${fmt(b.extreme)}${drawn}. This band is where a bounce has taken back about two thirds of that fall (61.8% to 66%).`,
+      `Traders use it as the place to ${up ? "buy the dip" : "sell the bounce"}.`,
+      "Tested here on 71 coins: after reaching this band, price turned back 47 times in 100 and kept going 53. The same happened at every other distance tested.",
+      b.poc ? "A most-traded price (POC) sits inside the band, which traders count as a second reason. Tested here: it made no difference." : "",
+      b.touched ? "Price has already traded into this band." : "",
+    ]], { range: b.top != null ? [b.bottom, b.top] : null });
   }
-  if (hit.kind === "naked") {
-    return { title: `Point of control, ${when(hit.s, period)}`, tag: "not traded back to", price: hit.s.poc,
-      text: `The price with the most volume that ${period}, not traded back to since. ${NAKED_NOTE}` };
-  }
+  if (hit.kind === "naked") return entry(nakedCopy(hit.s.start, period), { price: hit.s.poc });
   if (hit.kind === "poc") {
-    return { title: `Point of control, ${when(hit.s, period)}`, tag: hit.s.live ? "so far" : null, price: hit.s.poc,
-      text: `The price with the most volume that ${period}${hit.s.live ? " so far" : ""}.` };
+    return entry([`Most-traded price, ${when(hit.s.start, period)}`, [
+      `More was traded at this price than at any other that ${period}${hit.s.live ? " so far" : ""} (its point of control, POC).`, POC_USE,
+    ]], { price: hit.s.poc, tag: hit.s.live ? "so far" : null });
   }
   if (hit.kind === "edge") {
     const high = hit.which === "vah";
-    return { title: `${PREV_S[period]} value area ${high ? "high" : "low"}`, tag: null, price: high ? hit.s.vah : hit.s.val,
-      text: `The ${high ? "top" : "bottom"} of the last finished ${period}'s value area, carried forward.${period === "day" ? " Tested here: when a day opened outside this band and came back in, price reached the other edge about 4 times in 10." : ""}` };
+    return entry([`${high ? "Top" : "Bottom"} of ${PREV[period]}'s main trading range`, [
+      `70% of ${PREV[period]}'s trading happened between ${fmt(hit.s.val)} and ${fmt(hit.s.vah)}. This dashed line is the ${high ? "top" : "bottom"} of that band, carried into ${THIS[period]}.`,
+      "Traders watch whether price holds outside the band or comes back in. Their rule: after opening outside and coming back in, price crosses to the other side 8 times in 10.",
+      `Tested here${period === "day" ? "" : " on days, not weeks"}: it crossed 4 times in 10.`,
+    ]], { price: high ? hit.s.vah : hit.s.val });
   }
   if (hit.kind === "value") {
-    return { title: `Value area, ${when(hit.s, period)}`, tag: hit.s.live ? "so far" : null, price: null, range: [hit.s.val, hit.s.vah],
-      text: `70% of that ${period}'s volume traded inside this band${hit.s.live ? " so far" : ""}. The gold line is the price with the most.` };
+    return entry([`Main trading range, ${when(hit.s.start, period)}`, [
+      `70% of that ${period}'s trading${hit.s.live ? " so far" : ""} happened inside this band (its value area). The gold line is the single most-traded price.`,
+      `Traders treat the band as that ${period}'s fair prices and look for trades at its edges.`,
+    ]], { range: [hit.s.val, hit.s.vah], tag: hit.s.live ? "so far" : null });
   }
-  return { title: "Volume by price", tag: null, price: null,
-    text: `How much traded at each price over the ${period}s in view. Gold: the price with the most. Brighter rows: the band that held 70%.` };
+  return entry(["Trading by price", [
+    `Each bar is how much was traded at that price over the ${period}s on screen: longer means more.`,
+    "Gold is the most-traded price. The brighter bars hold 70% of the trading.",
+  ]]);
 }
 
 // How far a level is from the last price, as the tip words it ("3.2% above the last price").
@@ -216,6 +249,14 @@ export function distanceNote(price, last) {
   const d = (price - last) / last * 100;
   if (Math.abs(d) < 0.05) return "at the last price";
   return `${Math.abs(d) >= 10 ? Math.abs(d).toFixed(0) : Math.abs(d).toFixed(1)}% ${d > 0 ? "above" : "below"} the last price`;
+}
+
+// The same for a band: to its nearer edge, or that the last price is inside it.
+export function rangeNote(range, last) {
+  if (!range || !(last > 0)) return "";
+  const [lo, hi] = range;
+  if (last >= lo && last <= hi) return "the last price is inside";
+  return distanceNote(last < lo ? lo : hi, last);
 }
 
 // A stable name for what is under the pointer, so the tip is redrawn only when it changes.

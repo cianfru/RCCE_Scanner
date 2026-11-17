@@ -2,7 +2,7 @@ import { useTheme } from "../ThemeContext.jsx";
 import SpikeZone from "./SpikeZone.js";
 import FillMarks from "./FillMarks.js";
 import ValueAreas from "./ValueAreas.js";
-import { describeAll, distanceNote, hitKey } from "../utils/valueLayer.js";
+import { describeAll, distanceNote, rangeNote, hitKey } from "../utils/valueLayer.js";
 import { fillMarks, fmtPrice, fmtStamp, KIND_WORD } from "../utils/traderBoard.js";
 import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
@@ -1301,17 +1301,19 @@ function PaneLabel({ top, group, measure }) {
 
 // Hovering the pane: the candle's numbers, and what a dot there means.
 // What the Value line or tag under the pointer is: its plain name, its price and how far that is from the
-// last price, and one or two sentences. Beside the pointer; above it in the lower half of the chart.
+// last price, then what it is, how traders use it and what was found where it was tested. Beside the pointer;
+// above it in the lower half of the chart.
 function ValueTip({ tip, body, last, width, height }) {
   const left = tip.x > width - 300 ? Math.max(8, tip.x - 292) : tip.x + 14;
   const up = tip.y > height * 0.55;
   return <div className="chart-pane-tip chart-value-tip" role="tooltip"
     style={up ? { left, top: tip.y - 12, transform: "translateY(-100%)" } : { left, top: tip.y + 14 }}>
-    {describeAll(tip.hit, body).map((d, i) => <div key={i} className="chart-value-tip-row">
+    {describeAll(tip.hit, body, fmtPrice).map((d, i) => <div key={i} className="chart-value-tip-row">
       <span className="chart-value-tip-title">{d.title}{d.tag ? <i> {d.tag}</i> : null}</span>
       {d.price != null && <span><b>{fmtPrice(d.price)}</b>{last ? <i> {distanceNote(d.price, last)}</i> : null}</span>}
-      {d.range && <span><b>{fmtPrice(d.range[0])}</b> to <b>{fmtPrice(d.range[1])}</b></span>}
-      {d.text && <span className="chart-pane-tip-note">{d.text}</span>}
+      {d.range && <span><b>{fmtPrice(d.range[0])}</b> to <b>{fmtPrice(d.range[1])}</b>
+        {last ? <i> {rangeNote(d.range, last)}</i> : null}</span>}
+      {d.lines.map((line, k) => <span key={k} className="chart-pane-tip-note">{line}</span>)}
     </div>)}
   </div>;
 }
