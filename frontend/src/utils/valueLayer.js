@@ -131,7 +131,94 @@ export function mergeTicks(rows, within = 1.5) {
       const shared = a.length > 1 && b.length === 2 && a[a.length - 1] === b[1];
       prev.label = shared ? `${a.slice(0, -1).join(" ")} \u00b7 ${b[0]} ${b[1]}` : `${prev.label} \u00b7 ${t.label}`;
       if (t.kind === "poc") prev.kind = "poc";
-    } else out.push({ ...t });
+      prev.members.push(t);
+    } else out.push({ ...t, members: [t] });
   }
   return out;
+}
+
+// ─── What a line or tag is, in plain words (shown at the pointer) ────────────────────────────────────────────────
+// Each says what the level is and, where a declared study looked at it, what was found (docs/reviews). What
+// happened, never what comes next.
+
+const PREV = { day: "yesterday", week: "last week", month: "last month" };
+const PREV_S = { day: "Yesterday's", week: "Last week's", month: "Last month's" };
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const NAKED_NOTE = "Tested here: price came back to levels like this about as often as it reached a price equally far the other way.";
+const SWEEP_NOTE = "Traders watch for a push through it that closes back inside. Tested here: fading those made nothing before costs.";
+
+const TICK_COPY = {
+  d_open: () => ["Day open", "Where today began, at 00:00 UTC."],
+  w_open: () => ["Week open", "Where this week began, Monday 00:00 UTC."],
+  m_open: () => ["Month open", "Where this month began."],
+  pd_high: () => ["Yesterday's high", `Yesterday's highest price. ${SWEEP_NOTE}`],
+  pd_low: () => ["Yesterday's low", `Yesterday's lowest price. ${SWEEP_NOTE}`],
+  pw_high: () => ["Last week's high", "Last week's highest price."],
+  pw_low: () => ["Last week's low", "Last week's lowest price."],
+  ib_high: () => ["First hour's high", "The top of today's first hour, 00:00 to 01:00 UTC."],
+  ib_low: () => ["First hour's low", "The bottom of today's first hour, 00:00 to 01:00 UTC."],
+  p_vah: o => [`${PREV_S[o]} value area high`, `The top of the band that held 70% of ${PREV[o]}'s volume. Above it, price is outside where most of that business was done.`],
+  p_val: o => [`${PREV_S[o]} value area low`, `The bottom of the band that held 70% of ${PREV[o]}'s volume. Below it, price is outside where most of that business was done.`],
+  p_poc: o => [`${PREV_S[o]} point of control`, `The price with the most volume ${PREV[o]}. Traders use it as a first exit, not as an entry.`],
+};
+
+const utcDay = t => new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+const when = (s, period) => (period === "day" ? utcDay(s.start) : `${period} of ${utcDay(s.start)}`);
+
+// Everything under the pointer: a tag that stands for several levels at one price gives one entry each.
+export function describeAll(hit, body) {
+  if (hit.kind !== "tick") return [describe(hit, body)];
+  return (hit.tick.members || [hit.tick]).map(t => describe({ kind: "tick", tick: t, bands: hit.bands }, body));
+}
+
+// hit: what ValueAreas.hitTest returned. Returns { title, tag, price, text } (price null for the histogram).
+export function describe(hit, body) {
+  const period = body?.period || "day", outer = body?.outer_period || "week";
+  if (hit.kind === "tick") {
+    const t = hit.tick;
+    if (t.kind === "fib") return describe({ kind: "fib", band: (hit.bands || [])[Number(String(t.key).split("_")[1])] || { top: t.price, bottom: t.price } }, body);
+    if (t.key.startsWith("n_")) {
+      return { title: `Older ${outer === "week" ? "weekly" : "monthly"} point of control`, tag: t.label, price: t.price,
+        text: `The most-traded price of an earlier ${outer}, not traded back to since. ${NAKED_NOTE}` };
+    }
+    const [title, text] = (TICK_COPY[t.key] || (() => [t.label, ""]))(outer);
+    return { title, tag: t.label, price: t.price, text };
+  }
+  if (hit.kind === "fib") {
+    const b = hit.band;
+    return { title: "0.618 to 0.66 pullback zone", tag: null, price: (b.top + b.bottom) / 2,
+      text: `Between 61.8% and 66% of the way back along the dotted swing. Tested here: price turned in this zone about as often as at any other depth of a pullback.${b.poc ? " A point of control sits inside it." : ""}` };
+  }
+  if (hit.kind === "naked") {
+    return { title: `Point of control, ${when(hit.s, period)}`, tag: "not traded back to", price: hit.s.poc,
+      text: `The price with the most volume that ${period}, not traded back to since. ${NAKED_NOTE}` };
+  }
+  if (hit.kind === "poc") {
+    return { title: `Point of control, ${when(hit.s, period)}`, tag: hit.s.live ? "so far" : null, price: hit.s.poc,
+      text: `The price with the most volume that ${period}${hit.s.live ? " so far" : ""}.` };
+  }
+  if (hit.kind === "edge") {
+    const high = hit.which === "vah";
+    return { title: `${PREV_S[period]} value area ${high ? "high" : "low"}`, tag: null, price: high ? hit.s.vah : hit.s.val,
+      text: `The ${high ? "top" : "bottom"} of the last finished ${period}'s value area, carried forward.${period === "day" ? " Tested here: when a day opened outside this band and came back in, price reached the other edge about 4 times in 10." : ""}` };
+  }
+  if (hit.kind === "value") {
+    return { title: `Value area, ${when(hit.s, period)}`, tag: hit.s.live ? "so far" : null, price: null, range: [hit.s.val, hit.s.vah],
+      text: `70% of that ${period}'s volume traded inside this band${hit.s.live ? " so far" : ""}. The gold line is the price with the most.` };
+  }
+  return { title: "Volume by price", tag: null, price: null,
+    text: `How much traded at each price over the ${period}s in view. Gold: the price with the most. Brighter rows: the band that held 70%.` };
+}
+
+// How far a level is from the last price, as the tip words it ("3.2% above the last price").
+export function distanceNote(price, last) {
+  if (!(price > 0) || !(last > 0)) return "";
+  const d = (price - last) / last * 100;
+  if (Math.abs(d) < 0.05) return "at the last price";
+  return `${Math.abs(d) >= 10 ? Math.abs(d).toFixed(0) : Math.abs(d).toFixed(1)}% ${d > 0 ? "above" : "below"} the last price`;
+}
+
+// A stable name for what is under the pointer, so the tip is redrawn only when it changes.
+export function hitKey(hit) {
+  return hit ? `${hit.kind}:${hit.tick?.key ?? hit.s?.start ?? hit.band?.top ?? ""}:${hit.which ?? ""}` : "";
 }
