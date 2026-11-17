@@ -447,8 +447,8 @@
   .price-chart-panel .chart-layers button{flex:none;white-space:nowrap;}
 }
 /* What a Value line or tag is, at the pointer. */
-.chart-value-tip{gap:8px;max-width:284px;}
-.chart-value-tip-row{display:flex;flex-direction:column;gap:2px;}
+.chart-value-tip{gap:8px;max-width:300px;}
+.chart-value-tip-row{display:flex;flex-direction:column;gap:5px;}
 .chart-value-tip-row+.chart-value-tip-row{padding-top:8px;border-top:1px solid var(--t-border);}
 .chart-value-tip-title{font:600 12px var(--font-geist-sans),sans-serif;color:var(--t-text1);}
 .chart-value-tip i{font-style:normal;font-weight:500;color:var(--t-text3);}
