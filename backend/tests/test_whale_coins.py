@@ -100,6 +100,30 @@ def cache(wallets, closes, listed=None):
 WHALE = [[(D0 - 3) * DAY, 2e6], [(D0 + 9) * DAY, 2e6]]
 
 
+class PositionRead(unittest.TestCase):
+    def test_rows_already_held_at_the_last_time_are_not_added_twice(self):
+        rows = [[1, "A", "1", 24], [2, "A", "1", 24], [2, "B", "1", 24]]
+        self.assertEqual(W.add_page(rows, [[2, "B", "1", 24], [2, "C", "1", 24], [3, "A", "1", 24]]), 2)
+        self.assertEqual([(r[0], r[1]) for r in rows], [(1, "A"), (2, "A"), (2, "B"), (2, "C"), (3, "A")])
+
+    def test_a_page_that_ends_inside_a_day_loses_no_row(self):
+        record = [{"time": d * DAY, "delta": {"coin": f"C{c}", "szi": "1.0", "nSamples": 24}}
+                  for d in range(D0, D0 + 200) for c in range(7)]             # 1,400 rows: pages of 500 end inside a day
+        eq = [[(D0 + k) * DAY - 1, 2e6] for k in range(0, 201, 10)]
+        conn = cache({"0xa": (eq, None, 0)}, {})
+        real, W.info = W.info, lambda body: [r for r in record if body["startTime"] <= r["time"] <= body["endTime"]][:W.PAGE]
+        try:
+            W.funding(conn, 1)
+        finally:
+            W.info = real
+        blob, pages, cut = conn.execute("SELECT rows, pages, truncated FROM funding").fetchone()
+        got = [(r[0], r[1]) for r in W.unpack(blob)]
+        days = W.whale_days(eq)
+        want = [(r["time"], r["delta"]["coin"]) for r in record if days[0] <= r["time"] // DAY <= days[-1]]
+        self.assertEqual(got, want)
+        self.assertEqual((pages, cut), (3, 0))
+
+
 class Table(unittest.TestCase):
     def test_whales_long_and_short_a_coin_in_wallets_and_dollars(self):
         wallets = {f"0x{i}": (WHALE, [daily(D0, "AAA", s)], 0) for i, s in enumerate([1, 2, 3, 4, -5, -6])}

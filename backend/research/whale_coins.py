@@ -153,6 +153,17 @@ def census(conn, leaderboard: dict, minutes: float) -> None:
         conn.commit()
 
 
+def add_page(rows: list, page: list) -> int:
+    """Adds to rows the rows of a page that are not there yet; returns how many were new. A page can end in the
+    middle of the rows that share one time (a day's row for every coin held), so the next page starts at that time
+    again and brings back some rows already held."""
+    last = rows[-1][0] if rows else None
+    have = {r[1] for r in rows if r[0] == last}
+    new = [r for r in page if not (r[0] == last and r[1] in have)]
+    rows += new
+    return len(new)
+
+
 def funding(conn, minutes: float) -> None:
     """Every funding row of each wallet between its first and its last day as a whale."""
     done = {r[0] for r in conn.execute("SELECT addr FROM funding")}
@@ -171,13 +182,13 @@ def funding(conn, minutes: float) -> None:
         while True:
             page = info({"type": "userFunding", "user": a, "startTime": t, "endTime": end})
             pages += 1
-            rows += [[r["time"], r["delta"]["coin"], r["delta"]["szi"], r["delta"].get("nSamples")] for r in page]
+            new = add_page(rows, [[r["time"], r["delta"]["coin"], r["delta"]["szi"], r["delta"].get("nSamples")] for r in page])
             if len(page) < PAGE:
                 break
             if pages >= PAGE_CAP:
                 trunc = 1
                 break
-            t = page[-1]["time"] + 1
+            t = page[-1]["time"] + (0 if new else 1)        # the same time again, unless that brought nothing new
         return a, pack(rows), pages, trunc, first, last
     for row in _pool(todo, one, minutes):
         conn.execute("INSERT OR REPLACE INTO funding VALUES (?,?,?,?,?,?)", row)

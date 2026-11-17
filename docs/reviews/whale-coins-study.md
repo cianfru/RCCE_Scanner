@@ -88,6 +88,11 @@ Code: `backend/research/whale_coins.py` (tests `backend/tests/test_whale_coins.p
 - **Two years, one exchange.** December 2024 to November 2026 holds one long rally and one long fall.
 - **The day's mean position**, not the position at the close. A wallet that reversed during the day reads by the side it held longer.
 
+## Read log
+
+- **Census (17 November):** all 8,800 wallets read. 2,280 were a whale on at least one day of the two periods.
+- **A flaw in the first position read, fixed before any price was read.** Hyperliquid returns 500 rows a page. Where a page ended in the middle of a day, the reader skipped the rest of that day's coins (973 page ends over the 146 wallets read so far with more than one page). Found by counting the coins on those days against the days around them. The reader now asks for that day again and keeps the rows it does not have yet. The 146 wallets were read again from the start.
+
 ## Shape and power
 
 To be added before the run.
