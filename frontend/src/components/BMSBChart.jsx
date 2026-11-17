@@ -703,7 +703,7 @@ export default function BMSBChart({
     const layer = valuePrimRef.current;
     if (!layer) return;
     const body = showValue && candleTimes?.length && value?.key === valueKey ? value.body : null;
-    layer.setData(body, candleTimes, tfSec, valueColors());
+    layer.setData(body, candleTimes, tfSec, valueColors(), lastCloseRef.current);
     layer.setVisible(!!body);
   }, [showValue, value, valueKey, candleTimes, tfSec, mode]);
   const layersOn = [showEntries, showPressure, showValue, activeTimeframe !== "1h" && showTrend, activeTimeframe !== "1h" && showRibbon,
@@ -1112,7 +1112,7 @@ export default function BMSBChart({
             <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
             <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>Value: where trading was heaviest in each swing. A box covers each move from a swing low to the next swing high, or from a high to the next low, and the move still running. Bars on its left: volume by price. Gold line: the price that traded most (POC). Grey lines: the band that held 70% of the volume (value area high and low). The last finished swing's lines run on, dashed. Violet: the latest major swing's 0.618 to 0.66 pullback zone. Tap or hover any line or tag to see what it is. Display only; not used by signals.</p>
+            <p>Value: where trading was heaviest in each swing. A box covers each move from a swing low to the next swing high, or from a high to the next low, and the move still running. Bars on its left: volume by price. Gold line: the price that traded most (POC). Grey lines: the band that held 70% of the volume (value area high and low). The last finished swing's lines run on, dashed; while the last price is outside its value area, the POC tag adds the method's rule: short from the POC below the band, long from it above. Violet: the latest major swing's 0.618 to 0.66 pullback zone. Tap or hover any line or tag to see what it is. Display only; not used by signals.</p>
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
             {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
             {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}

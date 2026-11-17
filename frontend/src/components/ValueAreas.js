@@ -2,10 +2,11 @@
 // Per swing (the move from a swing low to the next swing high, or from a high to the next low, and the move
 // still running): a box over its candles, its volume by price along the box's left edge, a line at its point
 // of control (POC) and lines at the edges of its value area. The last finished swing's three lines run on,
-// dashed, to the right edge. Right of the last candle: labelled ticks (those three, the opens, prior
+// dashed, to the right edge; while the last price is outside its value area, its POC tag adds the side the
+// method trades it from (short below the value area, long above). Right of the last candle: labelled ticks (those three, the opens, prior
 // extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone.
 // What happened, drawn where it happened: no forecast.
-import { placeRanges, lastDone, histogram, ticks, rangeTicks, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
+import { placeRanges, lastDone, histogram, ticks, rangeTicks, pocRule, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
 
 const LABEL_FONT = "10px 'SF Mono', 'Fira Code', monospace";
 const LABEL_GAP = 12;
@@ -26,13 +27,14 @@ export default class ValueAreas {
   }
   attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.requestUpdate = requestUpdate; requestUpdate(); }
   detached() { this.chart = null; this.series = null; this.requestUpdate = null; }
-  // body: the /api/auction answer (null clears); times: the chart's candle times (seconds).
-  setData(body, times, tfSec, colors) {
+  // body: the /api/auction answer (null clears); times: the chart's candle times (seconds); last: the last price.
+  setData(body, times, tfSec, colors, last) {
     if (colors) this.colors = colors;
     this.ranges = body && times?.length ? placeRanges(body.ranges, times).map(r => ({ ...r, rows: histogram(r) })) : [];
     this.bands = body ? fibBands(body, times, tfSec) : [];
     const tf = tfSec <= 3600 ? "1h" : tfSec < 86400 ? "4h" : "1d";
-    this.ticks = body ? [...ticks(body, tf), ...rangeTicks(this.ranges), ...fibTicks(this.bands)] : [];
+    this.rule = pocRule(lastDone(this.ranges), last);      // the side the method trades the last finished swing's POC from
+    this.ticks = body ? [...ticks(body, tf), ...rangeTicks(this.ranges, last), ...fibTicks(this.bands)] : [];
     this.last = times?.length ? times.length - 1 : 0;
     this.requestUpdate?.();
   }
@@ -110,7 +112,7 @@ export default class ValueAreas {
         line(xb, W, y(done.vah), ink(0.42), 1, [5, 4]);
         line(xb, W, y(done.val), ink(0.42), 1, [5, 4]);
         line(xb, W, y(done.poc), gold(0.75), 1, [5, 4]);
-        for (const which of ["vah", "val", "poc"]) near(xb, W, y(done[which]), { kind: "rline", which, r: done });
+        for (const which of ["vah", "val", "poc"]) near(xb, W, y(done[which]), { kind: "rline", which, r: done, rule: which === "poc" ? this.rule : null });
       }
 
       // The 0.618 to 0.66 retracement band of each live major leg, from the leg's start to the right edge,

@@ -68,11 +68,22 @@ export function ticks(body, tf = "4h") {
   return out;
 }
 
-// The value area and point of control of the last finished swing, as ticks.
-export function rangeTicks(placed) {
+// The method's rule on a finished swing: with the last price under its value area, its point of control is where
+// traders go short if price comes back to it; with the last price over the value area, where they go long.
+// null inside the value area, or without a price.
+export function pocRule(r, last) {
+  if (!r || !(last > 0)) return null;
+  return last < r.val ? "short" : last > r.vah ? "long" : null;
+}
+
+// The value area and point of control of the last finished swing, as ticks. The POC's tag adds the rule's side
+// while the last price is outside the value area.
+export function rangeTicks(placed, last) {
   const r = lastDone(placed);
   if (!r) return [];
-  return [{ key: "r_vah", label: "VAH", price: r.vah, kind: "edge", range: r }, { key: "r_poc", label: "POC", price: r.poc, kind: "poc", range: r },
+  const rule = pocRule(r, last);
+  return [{ key: "r_vah", label: "VAH", price: r.vah, kind: "edge", range: r },
+    { key: "r_poc", label: rule ? `POC \u00b7 ${rule}` : "POC", price: r.poc, kind: "poc", range: r, rule },
     { key: "r_val", label: "VAL", price: r.val, kind: "edge", range: r }];
 }
 
@@ -173,11 +184,15 @@ function rangeCopy(r, fmt) {
     UNTESTED]];
 }
 
-function lineCopy(r, which, fmt) {
+// rule: "short" or "long" while the last price is outside the swing's value area (pocRule), else null.
+function lineCopy(r, which, fmt, rule = null) {
   const m = move(r, fmt), far = r.live ? " so far" : "";
   if (which === "poc") {
+    const use = rule === "short" ? `Price is now below the ${m.noun}'s main trading range (under ${fmt(r.val)}). The method's rule then: sell (go short) at this price if price climbs back to it.`
+      : rule === "long" ? `Price is now above the ${m.noun}'s main trading range (over ${fmt(r.vah)}). The method's rule then: buy (go long) at this price if price dips back to it.`
+        : POC_USE;
     return [`Most-traded price of the ${m.noun}`, [
-      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, POC_USE, UNTESTED]];
+      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, use, UNTESTED]];
   }
   const high = which === "vah";
   return [`${high ? "Top" : "Bottom"} of the ${m.noun}'s main trading range`, [
@@ -200,7 +215,7 @@ export function describe(hit, body, fmt = String) {
   if (hit.kind === "tick") {
     const t = hit.tick, at = { tag: t.label, price: t.price };
     if (t.kind === "fib") return describe({ kind: "fib", band: (hit.bands || [])[Number(String(t.key).split("_")[1])] }, body, fmt);
-    if (t.range) return entry(lineCopy(t.range, t.key.slice(2), fmt), at);
+    if (t.range) return entry(lineCopy(t.range, t.key.slice(2), fmt, t.rule), at);
     return entry(LEVEL_COPY[t.key] ? LEVEL_COPY[t.key]() : [t.label, []], at);
   }
   if (hit.kind === "fib") {
@@ -217,7 +232,7 @@ export function describe(hit, body, fmt = String) {
     ]], { range: b.top != null ? [b.bottom, b.top] : null });
   }
   if (hit.kind === "rline") {
-    return entry(lineCopy(hit.r, hit.which, fmt), { price: hit.r[hit.which], tag: hit.r.live ? "so far" : null });
+    return entry(lineCopy(hit.r, hit.which, fmt, hit.rule), { price: hit.r[hit.which], tag: hit.r.live ? "so far" : null });
   }
   return entry(rangeCopy(hit.r, fmt), { range: [hit.r.low, hit.r.high], tag: hit.r.live ? "so far" : null });
 }

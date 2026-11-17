@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, barAt, placeRanges, lastDone, ticks, rangeTicks, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
+import { barIndex, barAt, placeRanges, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
   describe, describeAll, distanceNote, rangeNote, hitKey } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
@@ -45,6 +45,28 @@ test("the last finished swing's value area and point of control are ticks", () =
     [["r_vah", "VAH", 140, "edge"], ["r_poc", "POC", 121, "poc"], ["r_val", "VAL", 112, "edge"]]);
   assert.equal(rangeTicks(placed)[0].range.direction, 1);
   assert.deepEqual(rangeTicks(placeRanges([FALL], times)), []);
+});
+
+test("the rule on the last finished swing: short from its POC below its value area, long from it above", () => {
+  assert.equal(pocRule(RISE, 111.9), "short");
+  assert.equal(pocRule(RISE, 140.1), "long");
+  assert.equal(pocRule(RISE, 112), null);                   // on the edge is inside
+  assert.equal(pocRule(RISE, 130), null);
+  assert.equal(pocRule(RISE, undefined), null);
+  assert.equal(pocRule(null, 100), null);
+  const placed = placeRanges([RISE, FALL], times);
+  assert.deepEqual(rangeTicks(placed, 100).map(t => t.label), ["VAH", "POC \u00b7 short", "VAL"]);
+  assert.deepEqual(rangeTicks(placed, 150).map(t => t.label), ["VAH", "POC \u00b7 long", "VAL"]);
+  assert.deepEqual(rangeTicks(placed, 120).map(t => [t.label, t.rule || null]), [["VAH", null], ["POC", null], ["VAL", null]]);
+  // The tag and the dashed line it sits on say the same, and say that the rule is not tested.
+  const tag = describe({ kind: "tick", tick: rangeTicks(placed, 100)[1] }, {}, fmt);
+  assert.deepEqual([tag.title, tag.tag], ["Most-traded price of the rise", "POC \u00b7 short"]);
+  assert.equal(tag.lines[1], "Price is now below the rise's main trading range (under $112). The method's rule then: sell (go short) at this price if price climbs back to it.");
+  assert.equal(tag.lines[2], "Not tested here.");
+  assert.deepEqual(describe({ kind: "rline", which: "poc", r: RISE, rule: "short" }, {}, fmt).lines, tag.lines);
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: "long" }, {}, fmt).lines[1],
+    "Price is now above the rise's main trading range (over $140). The method's rule then: buy (go long) at this price if price dips back to it.");
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[1], "Traders use a price like this as the place to take profit.");
 });
 
 test("a swing's histogram: its rows by price, the point of control's row and the value area marked", () => {
@@ -186,6 +208,7 @@ test("no forecast words and no bare shorthand in any description", () => {
   const band = { top: 2, bottom: 1, direction: 1, base: 1, extreme: 3, leg: {}, poc: true, touched: true };
   const hits = [...keys.map(key => tick(key, "x")), ...rangeTicks(placeRanges([RISE], times)).map(t => ({ kind: "tick", tick: t })),
     ...[RISE, FALL].flatMap(r => [{ kind: "range", r }, ...["vah", "val", "poc"].map(which => ({ kind: "rline", which, r }))]),
+    { kind: "rline", which: "poc", r: RISE, rule: "short" }, { kind: "rline", which: "poc", r: FALL, rule: "long" },
     { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } }];
   for (const h of hits) {
     const d = describe(h, {});
