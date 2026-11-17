@@ -18,6 +18,7 @@ export default class ValueAreas {
     this.placed = [];
     this.ticks = [];
     this.bands = [];
+    this.hits = [];              // what is drawn where (media pixels), lowest priority first: see hitTest
     this.grid = null;
     this.last = 0;
     // Bands and lines sit behind the candles; the tick labels go on top so no line strikes through them.
@@ -38,6 +39,16 @@ export default class ValueAreas {
   setVisible(v) { this.visible = v; this.requestUpdate?.(); }
   updateAllViews() {}
   paneViews() { return this.views; }
+  // What is drawn under a point of the price pane: {kind, ...} for utils/valueLayer.describe, or null.
+  // Tags win over lines, lines over bands, bands over the histogram.
+  hitTest(x, y) {
+    if (!this.visible) return null;
+    for (let i = this.hits.length - 1; i >= 0; i--) {
+      const h = this.hits[i];
+      if (x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1) return h.info;
+    }
+    return null;
+  }
   // A paint queued while the chart is being torn down finds a disposed chart: skip it.
   draw(target, layer) {
     try { this.paint(target, layer); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
@@ -65,6 +76,9 @@ export default class ValueAreas {
       };
       ctx.save();
       if (layer === "top") { this.paintTicks(ctx, W, H, edge, y, ink, gold, violet); ctx.restore(); return; }
+      const hits = [];
+      const area = (x0, y0, x1, y1, info) => { if (x1 > x0 && y0 != null && y1 != null) hits.push({ x0, y0: Math.min(y0, y1), x1, y1: Math.max(y0, y1), info }); };
+      const near = (x0, x1, yy, info) => { if (yy != null) area(x0, yy - 6, x1, yy + 6, info); };
 
       // The 0.618 to 0.66 retracement band of each live major leg, from the leg's start to the right edge,
       // fainter once price has traded into it; and the leg it measures, as a dotted line.
@@ -73,6 +87,7 @@ export default class ValueAreas {
         if (top == null || bottom == null || xa >= W) continue;
         ctx.fillStyle = violet(b.touched ? 0.06 : 0.13);
         ctx.fillRect(xa, top, W - xa, Math.max(1, bottom - top));
+        area(xa, top - 3, W, bottom + 3, { kind: "fib", band: b });
         line(xa, W, top, violet(b.touched ? 0.25 : 0.5));
         line(xa, W, bottom, violet(b.touched ? 0.25 : 0.5));
         const ya = b.leg ? y(b.leg.base) : null, yb = b.leg ? y(b.leg.extreme) : null;
@@ -87,6 +102,7 @@ export default class ValueAreas {
       const prof = this.grid ? composite(this.placed, this.grid.rows, range.from, range.to) : null;
       if (prof) {
         const maxW = Math.min(PROFILE_MAX, W * PROFILE_SHARE);
+        area(0, 0, maxW, H, { kind: "profile" });
         for (let r = 0; r < prof.v.length; r++) {
           if (!prof.v[r]) continue;
           const top = y(this.grid.low + (r + 1) * this.grid.step), bottom = y(this.grid.low + r * this.grid.step);
@@ -105,6 +121,7 @@ export default class ValueAreas {
         if (top != null && bottom != null) {
           ctx.fillStyle = ink(s.live ? 0.045 : 0.07);
           ctx.fillRect(xa, top, xb - xa, bottom - top);
+          area(xa, top, xb, bottom, { kind: "value", s });
           line(xa, xb, top, ink(0.3));
           line(xa, xb, bottom, ink(0.3));
         }
@@ -117,10 +134,18 @@ export default class ValueAreas {
       if (prev) {
         line(edge(prev.to), W, y(prev.vah), ink(0.38), 1, [5, 4]);
         line(edge(prev.to), W, y(prev.val), ink(0.38), 1, [5, 4]);
+        near(edge(prev.to), W, y(prev.vah), { kind: "edge", which: "vah", s: prev });
+        near(edge(prev.to), W, y(prev.val), { kind: "edge", which: "val", s: prev });
+      }
+      for (const s of this.placed) {
+        if (s.to >= range.from - 1 && s.from <= range.to + 1) near(edge(s.from) + 1, edge(s.to) - 1, y(s.poc), { kind: "poc", s });
       }
       for (const s of done) {
-        if (s.touched == null) line(edge(s.to), W, y(s.poc), gold(0.75), 1, [5, 4]);
+        if (s.touched != null) continue;
+        line(edge(s.to), W, y(s.poc), gold(0.75), 1, [5, 4]);
+        near(edge(s.to), W, y(s.poc), { kind: "naked", s });
       }
+      this.hits = hits;                                    // the tags are added on top of these by paintTicks
 
       ctx.restore();
     });
@@ -128,6 +153,7 @@ export default class ValueAreas {
   // Labelled ticks right of the last candle, where there is room for them. Levels at one price share a label.
   paintTicks(ctx, W, H, edge, y, ink, gold, violet) {
     const xl = edge(this.last + 1) + 6;
+    this.hits = this.hits.filter(h => h.info.kind !== "tick");
     if (xl > W - 46) return;
     const rows = mergeTicks(this.ticks.map(t => ({ ...t, y: y(t.price) })).filter(t => t.y != null && t.y > 8 && t.y < H - 8));
     const ys = spread(rows.map(t => t.y), LABEL_GAP);
@@ -143,6 +169,8 @@ export default class ValueAreas {
       ctx.strokeText(t.label, tx, ys[i]);
       ctx.fillStyle = color;
       ctx.fillText(t.label, tx, ys[i]);
+      this.hits.push({ x0: Math.min(xl, tx) - 4, x1: tx + ctx.measureText(t.label).width + 6,
+        y0: Math.min(t.y, ys[i]) - 8, y1: Math.max(t.y, ys[i]) + 8, info: { kind: "tick", tick: t, bands: this.bands } });
     });
   }
 }

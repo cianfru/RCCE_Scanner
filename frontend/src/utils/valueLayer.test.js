@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, placeSessions, ticks, valueArea, composite, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL } from "./valueLayer.js";
+import { barIndex, placeSessions, ticks, valueArea, composite, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL, describe, describeAll, distanceNote } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
 const T0 = 1788739200;                                    // Monday 2026-09-07 00:00 UTC
@@ -79,6 +79,7 @@ test("ticks at one price share a label, and a word they end in", () => {
     { label: "M open", y: 100.9, kind: "level" }, { label: "PW POC", y: 101.2, kind: "poc" }, { label: "PDL", y: 140, kind: "level" }];
   assert.deepEqual(mergeTicks(rows).map(t => [t.label, t.y, t.kind]),
     [["PDH", 60, "level"], ["D \u00b7 W \u00b7 M open \u00b7 PW POC", 100, "poc"], ["PDL", 140, "level"]]);
+  assert.deepEqual(mergeTicks(rows)[1].members.map(t => t.label), ["D open", "W open", "M open", "PW POC"]);   // each is still told apart
 });
 
 test("retracement bands: where they start, the leg they measure, and whether a point of control sits in them", () => {
@@ -98,4 +99,52 @@ test("retracement bands: where they start, the leg they measure, and whether a p
   assert.equal(fibTicks(bands)[0].price, (122.92 + 120.4) / 2);
   assert.deepEqual(fibBands({ fib: [] }, times, H4), []);
   assert.deepEqual(fibBands(body, [], H4), []);
+});
+
+const BODY = { period: "day", outer_period: "week" };
+const session = { start: T0, end: T0 + DAY, poc: 100, vah: 104, val: 97, live: false };
+
+test("every tag and line has a plain-words description", () => {
+  const tick = (key, label, kind = "level") => ({ kind: "tick", tick: { key, label, price: 100, kind } });
+  assert.deepEqual(describe(tick("d_open", "D open"), BODY), { title: "Day open", tag: "D open", price: 100, text: "Where today began, at 00:00 UTC." });
+  assert.equal(describe(tick("p_vah", "PW VAH", "edge"), BODY).title, "Last week's value area high");
+  assert.equal(describe(tick("p_poc", "PM POC", "poc"), { period: "week", outer_period: "month" }).title, "Last month's point of control");
+  assert.match(describe(tick("pd_high", "PDH"), BODY).text, /^Yesterday's highest price\. Traders watch/);
+  assert.equal(describe(tick("n_123", "W nPOC", "poc"), BODY).title, "Older weekly point of control");
+  assert.equal(describe(tick("n_123", "M nPOC", "poc"), { period: "week", outer_period: "month" }).title, "Older monthly point of control");
+  assert.equal(describe({ kind: "poc", s: session }, BODY).title, "Point of control, 7 Sept");
+  assert.equal(describe({ kind: "poc", s: { ...session, live: true } }, BODY).tag, "so far");
+  assert.equal(describe({ kind: "naked", s: session }, { period: "week", outer_period: "month" }).title, "Point of control, week of 7 Sept");
+  assert.deepEqual(describe({ kind: "value", s: session }, BODY).range, [97, 104]);
+  assert.equal(describe({ kind: "edge", which: "val", s: session }, BODY).price, 97);
+  assert.match(describe({ kind: "edge", which: "vah", s: session }, BODY).text, /about 4 times in 10/);
+  assert.doesNotMatch(describe({ kind: "edge", which: "vah", s: session }, { period: "week", outer_period: "month" }).text, /Tested/);   // the 80% rule study was on days
+  assert.equal(describe({ kind: "profile" }, BODY).title, "Volume by price");
+  const band = { top: 122.92, bottom: 120.4, poc: true };
+  assert.match(describe({ kind: "fib", band }, BODY).text, /A point of control sits inside it\.$/);
+  assert.equal(describe({ kind: "tick", tick: { key: "fib_0", label: FIB_LABEL, price: 121.66, kind: "fib" }, bands: [band] }, BODY).title, "0.618 to 0.66 pullback zone");
+});
+
+test("a tag standing for several levels describes each", () => {
+  const merged = mergeTicks([{ key: "d_open", label: "D open", price: 100, y: 50, kind: "level" }, { key: "w_open", label: "W open", price: 100, y: 50.5, kind: "level" }])[0];
+  assert.deepEqual(describeAll({ kind: "tick", tick: merged }, BODY).map(d => d.title), ["Day open", "Week open"]);
+  assert.equal(describeAll({ kind: "profile" }, BODY).length, 1);
+});
+
+test("no forecast words in any description", () => {
+  const words = /\b(will|expect|expected|likely|predict|target|probability|odds)\b/i;
+  const keys = ["d_open", "w_open", "m_open", "pd_high", "pd_low", "pw_high", "pw_low", "ib_high", "ib_low", "p_vah", "p_val", "p_poc", "n_1"];
+  const hits = [...keys.map(key => ({ kind: "tick", tick: { key, label: "x", price: 1, kind: "level" } })),
+    { kind: "poc", s: session }, { kind: "naked", s: session }, { kind: "value", s: session }, { kind: "edge", which: "vah", s: session },
+    { kind: "edge", which: "val", s: session }, { kind: "profile" }, { kind: "fib", band: { top: 2, bottom: 1, poc: true } }];
+  for (const body of [BODY, { period: "week", outer_period: "month" }]) {
+    for (const h of hits) { const d = describe(h, body); assert.doesNotMatch(`${d.title} ${d.text} ${d.tag || ""}`, words, d.title); }
+  }
+});
+
+test("distance from the last price, in words", () => {
+  assert.equal(distanceNote(103.2, 100), "3.2% above the last price");
+  assert.equal(distanceNote(82, 100), "18% below the last price");
+  assert.equal(distanceNote(100.01, 100), "at the last price");
+  assert.equal(distanceNote(null, 100), "");
 });

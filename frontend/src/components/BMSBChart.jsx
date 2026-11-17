@@ -2,6 +2,7 @@ import { useTheme } from "../ThemeContext.jsx";
 import SpikeZone from "./SpikeZone.js";
 import FillMarks from "./FillMarks.js";
 import ValueAreas from "./ValueAreas.js";
+import { describeAll, distanceNote, hitKey } from "../utils/valueLayer.js";
 import { fillMarks, fmtPrice, fmtStamp, KIND_WORD } from "../utils/traderBoard.js";
 import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
@@ -175,6 +176,11 @@ export default function BMSBChart({
   const [value, setValue] = useState(null);           // {key, body}: the layer of one coin and timeframe
   const [valueNote, setValueNote] = useState(null);   // "loading" | "busy" | "none" while there is nothing to draw
   const valuePrimRef = useRef(null);
+  // What a Value line or tag is, shown at the pointer: on hover, or on a tap (kept until the next tap or a pan).
+  const [valueTip, setValueTip] = useState(null);     // {x, y, hit}
+  const tipPinnedRef = useRef(false);
+  const lastCloseRef = useRef(null);
+  const [layersOpen, setLayersOpen] = useState(false);   // phones: the layer switches sit behind one "Layers" control
   const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
   const [posTop, setPosTop] = useState(null);   // where the long/short pane starts, px from the chart's top
   const [hoverMark, setHoverMark] = useState(null);
@@ -395,6 +401,8 @@ export default function BMSBChart({
     setSpike(null);
     setTrend(null);
     setCandleTimes(null);
+    setValueTip(null);
+    tipPinnedRef.current = false;
     entryMarkersRef.current = null;
     entryLinesRef.current = [];
     zoneEndRef.current = null;
@@ -451,10 +459,28 @@ export default function BMSBChart({
             ...candle, change:candleChange(candle), volume:volumes.get(candle.time),
             live: candle.time <= Date.now()/1000 && candle.time + TF_SEC[apiTf] > Date.now()/1000,
           } : null);
+          const valueHit = param => (param.point && (param.paneIndex == null || param.paneIndex === 0)
+            ? valuePrimRef.current?.hitTest(param.point.x, param.point.y) || null : null);
+          const showTip = (param, hit) => setValueTip(prev => (hit
+            ? (prev && hitKey(prev.hit) === hitKey(hit) ? prev : { x: param.point.x, y: param.point.y, hit })
+            : null));
+          chart.subscribeClick(param => {
+            if (cancelled || compact) return;
+            const hit = valueHit(param);
+            // A tap has no hover to end it: the box stays until the next tap or until the chart is moved.
+            tipPinnedRef.current = !!hit && !!window.matchMedia?.("(hover: none)").matches;
+            showTip(param, hit);
+          });
+          chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+            if (cancelled || !tipPinnedRef.current) return;
+            tipPinnedRef.current = false;
+            setValueTip(null);
+          });
           chart.subscribeCrosshairMove(param => {
             if (cancelled) return;
             const candle = param.seriesData?.get(candleSeries);
             readCandle(candle?.open != null ? candle : null);
+            if (!compact && !tipPinnedRef.current) showTip(param, valueHit(param));
             if (compact) setHoverMark(param.point ? fillPrimRef.current?.hitTest(param.point.x, param.point.y) || null : null);
             if (showPos) setPosTip(param.paneIndex === 1 && param.point && param.time != null ? { x: param.point.x, time: param.time } : null);
           });
@@ -514,6 +540,7 @@ export default function BMSBChart({
 
           // ── Current price line ──
           const lastCandle = data.candles[data.candles.length - 1];
+          lastCloseRef.current = lastCandle.close;
           const priceUp = lastCandle.close >= lastCandle.open;
           candleSeries.createPriceLine({
             price: lastCandle.close,
@@ -679,6 +706,8 @@ export default function BMSBChart({
     layer.setData(body, candleTimes, tfSec, valueColors());
     layer.setVisible(!!body);
   }, [showValue, value, valueKey, candleTimes, tfSec, mode]);
+  const layersOn = [showEntries, showPressure, showValue, activeTimeframe !== "1h" && showTrend, activeTimeframe !== "1h" && showRibbon,
+    activeTimeframe === "1d" && showPatterns].filter(Boolean).length;
   const valueLabel = !showValue || !valueNote ? "Value" : valueNote === "loading" ? "Loading…" : valueNote === "busy" ? "Value: busy" : "Value: no data";
   const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
   const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes, posGroup) : []),
@@ -1054,8 +1083,13 @@ export default function BMSBChart({
         {/* Right: pressure toggle + timeframe toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {toolbarAction}
-          <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price">Reset view</button>
+          <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price"><span className="chart-levels-label">Reset view</span><span className="chart-levels-label-short">Reset</span></button>
+          {/* Phones: the layer switches open from one control, in a single row that scrolls sideways. */}
+          <button type="button" className="chart-layers-btn" aria-expanded={layersOpen} onClick={() => setLayersOpen(o => !o)}>
+            Layers{layersOn ? ` ${layersOn}` : ""}
+          </button>
           {/* Overlays: Trader entries on, the rest off until asked for. One (i) explains them all. */}
+          <span className={`chart-layers${layersOpen ? " is-open" : ""}`}>
           {[
             { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
@@ -1073,14 +1107,12 @@ export default function BMSBChart({
               <span className="chart-levels-label">{t.long}</span><span className="chart-levels-label-short">{t.short}</span>
             </button>
           ))}
+          </span>
           <HelpTip title="Chart layers" width={420}>
             <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
             <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>{activeTimeframe === "1d"
-              ? "Value: a band over each week's value area (the prices where 70% of its volume traded; weeks start Monday 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished week's band edges. Left: volume by price of the weeks in view. Right: this week's and month's open, the previous week's high and low (PWH, PWL), the previous month's value area (PM). From Hyperliquid 1-hour candles. Display only; not used by signals."
-              : `Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW)${activeTimeframe === "1h" ? ", the high and low of the day's first hour (IB)" : ""}. From Hyperliquid 15-minute candles. Display only; not used by signals.`}</p>
-            <p>Value, violet: the dotted line is the latest major swing on daily candles (a swing counts once price has come back 3 average daily ranges from it); the band is its 0.618 to 0.66 retracement, fainter once price has traded into it. Its label adds POC when a point of control sits in it.</p>
+            <p>Value: where trading was heaviest. Grey bands: each {activeTimeframe === "1d" ? "week" : "day"}'s value area (the prices that held 70% of its volume), with a gold line at the price that traded most (POC). Dashed gold: a POC price has not come back to. Violet: the latest major swing and its 0.618 to 0.66 pullback zone. Left: volume by price. Tap or hover any line or tag to see what it is. Display only; not used by signals.</p>
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
             {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
             {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}
@@ -1156,6 +1188,8 @@ export default function BMSBChart({
         {showPos && posTip && posTop != null && <PaneTip tip={posTip} top={posTop} group={posGroup} measure={posMeasure}
           bar={posBars.find(b => b.time === posTip.time)} rebuild={posRebuilds.find(r => r.time === posTip.time)}
           tf={activeTimeframe} width={containerRef.current?.clientWidth || 0} />}
+        {valueTip && value?.body && <ValueTip tip={valueTip} body={value.body} last={lastCloseRef.current}
+          width={containerRef.current?.clientWidth || 0} height={height} />}
         {hoverMark && <div className="candle-inspector fill-inspector" aria-label="Fill details">
           <strong style={{ color: sideColor(hoverMark.side) }}>{KIND_WORD[hoverMark.kind]} {hoverMark.side}</strong>
           <span>{fmtUsdShort(hoverMark.usd)} at <b>{fmtPrice(hoverMark.px)}</b></span>
@@ -1266,6 +1300,22 @@ function PaneLabel({ top, group, measure }) {
 }
 
 // Hovering the pane: the candle's numbers, and what a dot there means.
+// What the Value line or tag under the pointer is: its plain name, its price and how far that is from the
+// last price, and one or two sentences. Beside the pointer; above it in the lower half of the chart.
+function ValueTip({ tip, body, last, width, height }) {
+  const left = tip.x > width - 300 ? Math.max(8, tip.x - 292) : tip.x + 14;
+  const up = tip.y > height * 0.55;
+  return <div className="chart-pane-tip chart-value-tip" role="tooltip"
+    style={up ? { left, top: tip.y - 12, transform: "translateY(-100%)" } : { left, top: tip.y + 14 }}>
+    {describeAll(tip.hit, body).map((d, i) => <div key={i} className="chart-value-tip-row">
+      <span className="chart-value-tip-title">{d.title}{d.tag ? <i> {d.tag}</i> : null}</span>
+      {d.price != null && <span><b>{fmtPrice(d.price)}</b>{last ? <i> {distanceNote(d.price, last)}</i> : null}</span>}
+      {d.range && <span><b>{fmtPrice(d.range[0])}</b> to <b>{fmtPrice(d.range[1])}</b></span>}
+      {d.text && <span className="chart-pane-tip-note">{d.text}</span>}
+    </div>)}
+  </div>;
+}
+
 function PaneTip({ tip, top, group, measure, bar, rebuild, tf, width }) {
   const g = COIN_GROUPS.find(x => x.key === group);
   const fmt = measure === "usd" ? fmtPosUsd : count;
