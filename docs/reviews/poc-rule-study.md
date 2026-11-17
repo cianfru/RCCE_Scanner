@@ -109,3 +109,28 @@ Reported:
 - **After a rise** +0.36% net, **after a fall** +0.29%. **With the move** (buying after a rise, selling after a fall) -0.04%; **against it** +0.53%.
 - **By year, net:** 2021 +1.00%, 2022 -0.02%, 2023 -0.45%, 2024 +0.83%, 2025 +0.10%. Every year's interval holds 0.
 - **BTC:** 24 trades, +0.93% (-1.23 to +3.34).
+
+### Held out (orders placed November 2025 to July 2026; reported, no verdict)
+
+| Row | Mean net return a trade (95% interval) | By half |
+|---|---|---|
+| R1 both sides | +0.41% (-0.36 to +1.23), 240 trades over 10 months | +0.57%, +0.21% |
+| R2 sells | +1.36% (-0.05 to +2.52), 132 trades | +2.20%, +0.10% |
+| R3 buys | -0.75% (-1.83 to +0.87), 108 trades | -1.95%, +0.32% |
+
+- Before costs +0.61% (-0.16 to +1.43). The exit came first in 56.3%, the stop in 42.9%.
+- Of the decided trades 56.7% (50.4 to 62.5) reached the exit, against 54.3% for a price with no memory: the same 2.4 points as in sample.
+- The sides changed places: in sample the buys carried the average, held out the sells did.
+
+### Independent recount
+
+BTC, ETH and SOL in sample, recounted with separately written code (plain loops; its own daily and hourly candles, ATR, swings, merging of pullbacks, profile, orders, fills and trades): 24, 27 and 23 trades with mean net +0.9307%, -0.7275% and +0.6283%, the same as the study to the last digit shown.
+
+### Reading
+
+- Both periods lean the same way: about +0.3% to +0.4% a trade after costs, and the exit reached about 2.5 points more often than a price with no memory would. That is what a small real edge would look like. It is also inside what chance gives: every interval holds zero, in sample and held out.
+- Neither side is steady. Buys led in sample and lost held out; sells did the reverse. A rule whose good side changes from one period to the next has not shown which side to trust.
+- It is the first rule from this method that did not lose after costs on these candles. The calendar-session rules lost 0.14% to 0.33% a trade.
+- To tell +0.3% a trade from zero with trades this wide (a typical win or loss is 6% to 7%) would take several times the history there is.
+- **Context, not a signal.** The chart keeps showing the rule as the method's rule, with this result in its tip.
+

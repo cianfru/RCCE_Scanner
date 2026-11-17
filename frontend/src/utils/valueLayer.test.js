@@ -58,12 +58,13 @@ test("the rule on the last finished swing: short from its POC below its value ar
   assert.deepEqual(rangeTicks(placed, 100).map(t => t.label), ["VAH", "POC \u00b7 short", "VAL"]);
   assert.deepEqual(rangeTicks(placed, 150).map(t => t.label), ["VAH", "POC \u00b7 long", "VAL"]);
   assert.deepEqual(rangeTicks(placed, 120).map(t => [t.label, t.rule || null]), [["VAH", null], ["POC", null], ["VAL", null]]);
-  // The tag and the dashed line it sits on say the same, and say that the rule is not tested.
+  // The tag and the dashed line it sits on say the same, with what the rule's test found.
   const tag = describe({ kind: "tick", tick: rangeTicks(placed, 100)[1] }, {}, fmt);
   assert.deepEqual([tag.title, tag.tag], ["Most-traded price of the rise", "POC \u00b7 short"]);
   assert.equal(tag.lines[1], "Price is now below the rise's main trading range (under $112). The method's rule then: sell (go short) at this price if price climbs back to it.");
-  assert.equal(tag.lines[2], "Not tested here.");
+  assert.equal(tag.lines[2], "Tested here on 71 coins since 2021: the rule made about 0.3% a trade after fees, too little to tell from nothing.");
   assert.deepEqual(describe({ kind: "rline", which: "poc", r: RISE, rule: "short" }, {}, fmt).lines, tag.lines);
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[2], "Not tested here.");
   assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: "long" }, {}, fmt).lines[1],
     "Price is now above the rise's main trading range (over $140). The method's rule then: buy (go long) at this price if price dips back to it.");
   assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[1], "Traders use a price like this as the place to take profit.");

@@ -112,7 +112,7 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 - along the box's left edge, the move's volume by price (the POC row in gold, the value-area rows brighter); when that edge is scrolled out of view, the bars sit at the pane's left edge;
 - across the box, a gold line at the move's POC and grey lines at its VAH and VAL;
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
-- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test is `docs/reviews/poc-rule-study.md`;
+- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found;
 - right of the last candle, the other labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low);
 - tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The swing levels are **not tested here**, and the tips say so; the studies below measured calendar sessions.
 
@@ -127,7 +127,7 @@ The layer says what happened and where. It does not mark setups, entries or exit
 - A build costs 92 of Hyperliquid's request weight and serves the coin's three charts (version 1 needed 68 for 1H and 4H and another 92 for 1D). The 1H chart's candles cost 30. Together they have their own share of 240 a minute; beyond that the toggle reads "Value: busy" (or the 1H chart says so) and the page tries again after 30 seconds. The scan's share is untouched.
 - The endpoint is in the "exchange" rate-limit class, like `/api/chart`.
 
-## Studies (all run on 16 November 2026)
+## Studies (S1 to S7 run on 16 November 2026, S8 on 17 November)
 
 Each was declared, with its rules and bars, before any outcome was computed. Without a result that clears its bar, a finding reads "context, not a signal".
 
@@ -141,6 +141,7 @@ Each was declared, with its rules and bars, before any outcome was computed. Wit
 | S6 | The 80% rule on New York hours (09:30 to 16:15). | 34% to 39% reached the other edge. The trade lost 0.18%. **One row met its bar and was confirmed**: opening outside did add there (39% against 29% for sessions that opened inside). It is not a trade. |
 
 | S7 | The 0.618 to 0.66 retracement zone of major swings (the band the chart draws): does price turn there, more than at other depths, and more with a weekly or monthly POC in it? | Price turned in 46.6% of 1,602 touches, the same as at other depths (45% to 51%). A POC in the zone made no difference. The trade made nothing. **No bar met.** |
+| S8 | The POC rule on swing profiles (17 November 2026; `docs/reviews/poc-rule-study.md`): after a daily close under the last finished swing's VAL, sell at its POC; after a close over its VAH, buy at its POC. Stop at the far edge of the value area, exit at the edge price broke. | +0.32% a trade after costs on 2,045 trades (-0.39 to +1.00), +0.41% on 240 held-out trades (-0.36 to +1.23). The first rule here that did not lose after costs, and not told from zero. **No bar met.** |
 
 S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md. S7: docs/reviews/fib-zone-study.md (71 coins, March 2021 to July 2025, with November 2025 to July 2026 held out).
 

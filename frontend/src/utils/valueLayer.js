@@ -145,6 +145,8 @@ const utcDay = t => new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: "
 
 const POC_USE = "Traders use a price like this as the place to take profit.";
 const UNTESTED = "Not tested here.";
+// docs/reviews/poc-rule-study.md: +0.32% a trade after costs in sample, +0.41% held out, every interval holding zero.
+const RULE_TEST = "Tested here on 71 coins since 2021: the rule made about 0.3% a trade after fees, too little to tell from nothing.";
 
 const openCopy = period => [`${cap(THIS[period])}'s opening price`, [
   `The price when ${THIS[period]} began (${BEGAN[period]}).`,
@@ -192,7 +194,7 @@ function lineCopy(r, which, fmt, rule = null) {
       : rule === "long" ? `Price is now above the ${m.noun}'s main trading range (over ${fmt(r.vah)}). The method's rule then: buy (go long) at this price if price dips back to it.`
         : POC_USE;
     return [`Most-traded price of the ${m.noun}`, [
-      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, use, UNTESTED]];
+      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, use, rule ? RULE_TEST : UNTESTED]];
   }
   const high = which === "vah";
   return [`${high ? "Top" : "Bottom"} of the ${m.noun}'s main trading range`, [
