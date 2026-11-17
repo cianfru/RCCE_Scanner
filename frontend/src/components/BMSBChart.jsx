@@ -153,7 +153,8 @@ export default function BMSBChart({
   const [trend, setTrend] = useState(null);
   const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
-  // Trader fills on the price: off by default (busy on large coins), the viewer's choice remembered.
+  // Where the profitable traders are (their median entry per side, and their fills): off by default
+  // so the chart stays clean, the viewer's choice remembered.
   const [showEntries, setShowEntriesState] = useState(() => {
     if (compact) return false;
     try { return localStorage.getItem(ENTRIES_KEY) === "1"; } catch (_) { return false; }
@@ -787,9 +788,10 @@ export default function BMSBChart({
       return candleTimes[lo];
     };
     const markers = [];
-    // With Trader entries on: each of the largest holders' fill bursts as an arrow in their
-    // avatar colour, tagged with their codename's initials. (New positions of every tracked
-    // wallet are no longer drawn on the price: the long/short pane shows them per candle.)
+    // With Traders on: each of the largest holders' fill bursts as an arrow in their avatar
+    // colour, tagged with their codename's initials, and a dashed line at each side's median
+    // entry. (New positions of every tracked wallet are no longer drawn on the price: the
+    // long/short pane shows them per candle.)
     const tags = markerTags((entries?.traders || []).map(tr => tr.address));
     const light = mode === "light";
     for (const tr of showEntries ? entries?.traders || [] : []) {
@@ -809,7 +811,7 @@ export default function BMSBChart({
     // The markers belong to one series; after a rebuild the old one is disposed, so start anew.
     try { if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers); else entryMarkersRef.current = createSeriesMarkers(series, markers); }
     catch (_) { entryMarkersRef.current = null; try { entryMarkersRef.current = createSeriesMarkers(series, markers); } catch (__) { return; } }
-    for (const side of ["long", "short"]) {
+    for (const side of showEntries ? ["long", "short"] : []) {
       const sd = entries?.sides?.[side];
       if (!sd?.n || !sd.median_entry) continue;
       try {
@@ -1088,10 +1090,10 @@ export default function BMSBChart({
           <button type="button" className="chart-layers-btn" aria-expanded={layersOpen} onClick={() => setLayersOpen(o => !o)}>
             Layers{layersOn ? ` ${layersOn}` : ""}
           </button>
-          {/* Overlays: Trader entries on, the rest off until asked for. One (i) explains them all. */}
+          {/* Overlays: all off until asked for. One (i) explains them all. */}
           <span className={`chart-layers${layersOpen ? " is-open" : ""}`}>
           {[
-            { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
+            { key: "entries", on: showEntries, set: setShowEntries, long: "Traders", short: "Traders" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
             { key: "value", on: showValue, set: setShowValue, long: valueLabel, short: valueLabel },
             activeTimeframe !== "1h" && { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
@@ -1109,8 +1111,7 @@ export default function BMSBChart({
           ))}
           </span>
           <HelpTip title="Chart layers" width={420}>
-            <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
-            <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
+            <p>Traders (off until turned on): where the largest profitable traders holding this coin are. Dashed lines: their median entry, per side. Arrows: their fills, each in the colour of the trader's avatar and tagged with their name's initials (Arctic Mako is AM). An arrow is a burst of fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
             <p>Value: where trading was heaviest. Grey bands: each {activeTimeframe === "1d" ? "week" : "day"}'s value area (the prices that held 70% of its volume), with a gold line at the price that traded most (POC). Dashed gold: a POC price has not come back to. Violet: the latest major swing and its 0.618 to 0.66 pullback zone. Left: volume by price. Tap or hover any line or tag to see what it is. Display only; not used by signals.</p>
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
