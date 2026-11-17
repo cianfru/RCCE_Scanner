@@ -196,6 +196,206 @@ Also reported:
   - **Change:** the read half is read again on the same days as the unread half (`reread`). The analysis uses those replies for both halves, so both come from the same thinning. The stored replies serve only for the code check.
   - The re-read meets the stop rule's purpose (both halves read the same way), so the analysis no longer waits on its 5% limit. The stability numbers are reported with the results.
 
-## Results
+## Results (17 November 2026)
 
-Not yet computed.
+**Context, not a signal.** No rule meets the bar on either half, so none passes. Nothing in the app, the engine or the executor changes.
+
+### The run
+
+- **Read dates.** Unread half: 24,163 wallets, read from 15 November 19:49 UTC to 17 November 09:25 UTC. Read half: 24,075 wallets, read again on 17 November from 09:27 to 17:05 UTC. No wallet was left out as unreadable.
+- **Snapshot.** Its SHA-256 is the declared one.
+- **Code check.** Today's list and everyone eligible, from the replies stored for the selection window study, reproduce its published hit rates on all 12 dates, to one decimal.
+- **Stability check** (15 November, 200 wallets, no outcome read):
+  - 178 of 200 identical before 29 September; none identical from 29 September to 31 October;
+  - readings unchanged for 192 of 200;
+  - of the 64 eligible on some date, 55 identical before 29 September and 56 with unchanged readings.
+
+  As listed under Changes, the read half was read again and the analysis uses those replies.
+- **Effect of the re-read on the read half** (same wallets, replies of 17 November instead of 31 October):
+  - today's list's hit rate moves by 0 to 1.5 points on 11 dates and by 3.5 on 1 October (18.0 to 14.5);
+  - everyone eligible moves by 0 to 0.5 points on 11 dates and by 2.7 on 1 October (32.8 to 30.1).
+
+  With the re-read, both halves' near-daily points start in mid-October, so both read the 1 October date from weekly points. The Data section's difference between the halves around 1 October no longer applies.
+- **Pool sizes** from the re-read differ from the counts table above by a few wallets (steady on 1 October: 420, against 415).
+
+### The bar, per rule and half
+
+The two "BTC" columns give the mean difference over the months BTC rose and fell, with the number of months in brackets.
+
+| Rule | Half | Mean difference (points) | Dates above 0 | p | Clipped ROI difference | Traded-only hit difference | BTC rose | BTC fell | Bar |
+|---|---|---|---|---|---|---|---|---|---|
+| Dollars | Read half | +4.2 | 6 of 12 | 0.135 | +3.76 | +3.7 | -1.7 (4) | +7.2 (8) | not met |
+| Dollars | Unread half | +5.9 | 8 of 12 | 0.079 | +4.10 | +5.5 | -1.8 (4) | +9.7 (8) | not met |
+| Steady | Read half | +6.6 | 10 of 12 | 0.034 | +2.57 | +6.3 | +0.7 (4) | +9.6 (8) | not met |
+| Steady | Unread half | +8.1 | 7 of 12 | 0.033 | +3.94 | +7.7 | +1.3 (4) | +11.5 (8) | not met |
+| Risk | Read half | +5.7 | 8 of 12 | 0.041 | +2.89 | +5.6 | -1.0 (4) | +9.1 (8) | not met |
+| Risk | Unread half | +6.2 | 7 of 12 | 0.042 | +3.47 | +6.2 | -2.1 (4) | +10.4 (8) | not met |
+
+What each rule missed:
+- **Steady.** Read half: every condition is met except the p (0.034, against 0.01 or less). Unread half: above 0 on 7 of 12 dates (9 needed), and p 0.033.
+- **Risk.** Read half: 8 of 12 dates, p 0.041, and under the comparison over the months BTC rose (-1.0). Unread half: 7 of 12 dates, p 0.042, and -2.1 over the months BTC rose.
+- **Dollars.** Read half: a mean of +4.2 (under +5), 6 of 12 dates, p 0.135, and -1.7 over the months BTC rose. Unread half: 8 of 12 dates, p 0.079, and -1.8 over the months BTC rose.
+
+### What the numbers show (context, no verdict)
+
+- **All three lists made money more often than the comparison group, on both halves.**
+  - The comparison group's mean hit rate is 47.7% on each half; the lists' are 51.9% to 55.8%.
+  - The mean difference is +4.2 to +8.1 points. The clipped ROI and the hit rate among wallets that traded are higher too.
+- **Not month after month.**
+  - The per-date differences run from -12.3 to +36.3 points, with a standard deviation of 10 to 14.
+  - By the declaration's table, with a spread of 10 to 15 points a true +8 meets conditions 1-3 on one half 22-53% of the time, and a true +5 9-19%. The fail reads "not shown", not "no difference".
+- **The difference sits in the months BTC fell:** +7.2 to +11.5 points over the 8 months it fell, -2.1 to +1.3 over the 4 it rose.
+- **The lists lean against BTC.** Averaged over the dates, 38-44% of a list's wallets earned when BTC fell over the 180 days before ("against BTC"), against 18-19% of everyone eligible. BTC fell over 8 of the 12 outcome months.
+- **The lean follows the last 180 days** (described after the run, not declared).
+  - The lists leaned with BTC on the two dates that followed a 180-day rise (1 October, 1 September) and on 5 November 2025 (BTC about level over the 180 days before). They leaned against it on the eight dates that followed a 180-day fall of 16% or more.
+  - On the 6-7 dates where a list's lean matched BTC's direction over the next month, it beat the comparison by +10.7 to +16.6 points. On the other 5-6 dates the difference was -5.5 to +0.1.
+  - So the lists made money more often when the market kept going the way it had gone, and not otherwise. The 12 months cannot separate that from skill.
+- **The halves agree,** so chance among wallets is not the issue; the 12 months are. Mean hit rates, read half then unread half:
+  - comparison 47.7 and 47.7;
+  - dollars 51.9 and 53.6;
+  - steady 54.3 and 55.8;
+  - risk 53.4 and 54.0.
+- **Today's list** made money as often as the comparison (47.2% and 47.1%, against 47.7%), as in the selection window study. Its differences spread the most from month to month (16.5 and 17.5 points).
+- **Turnover.** In 30 days, dollars replaces 39-41% of its wallets, steady 45-47%, risk 49-50% and today's list 85%.
+- **The steady list is short.** It is under 200 on 8 of the 12 dates in both halves (94 to 200 wallets on the read half, 112 to 200 on the unread half).
+
+### Read half: hit rate per date (% of wallets making $100 or more over the next 30 days)
+
+| Date | 180+ days old (comparison) | Dollars | Steady | Risk | Today's list | Everyone eligible |
+|---|---|---|---|---|---|---|
+| 2026-10-01 | 28.4 | 20.0 | 31.0 | 29.5 | 14.5 | 30.1 |
+| 2026-09-01 | 67.2 | 87.0 | 83.0 | 79.5 | 71.5 | 63.7 |
+| 2026-08-02 | 70.4 | 59.5 | 75.5 | 61.0 | 43.5 | 67.4 |
+| 2026-07-03 | 37.3 | 29.5 | 26.0 | 35.5 | 37.5 | 38.4 |
+| 2026-06-03 | 52.1 | 74.5 | 62.7 | 63.5 | 57.0 | 50.1 |
+| 2026-05-04 | 63.9 | 63.5 | 66.4 | 67.0 | 64.5 | 60.7 |
+| 2026-04-04 | 55.3 | 47.5 | 48.4 | 50.0 | 52.0 | 52.7 |
+| 2026-03-05 | 54.2 | 57.0 | 69.8 | 59.0 | 61.0 | 51.7 |
+| 2026-02-03 | 33.8 | 55.5 | 67.0 | 59.5 | 24.5 | 33.6 |
+| 2026-01-04 | 58.8 | 56.5 | 59.4 | 57.0 | 37.5 | 55.2 |
+| 2025-12-05 | 25.5 | 42.5 | 36.3 | 45.0 | 57.5 | 28.0 |
+| 2025-11-05 | 25.6 | 30.0 | 26.0 | 34.5 | 45.5 | 26.3 |
+| **Mean** | **47.7** | **51.9** | **54.3** | **53.4** | **47.2** | **46.5** |
+
+Difference from the comparison group, in points:
+
+| Date | Dollars | Steady | Risk | Today's list | Everyone eligible |
+|---|---|---|---|---|---|
+| 2026-10-01 | -8.4 | +2.6 | +1.1 | -13.9 | +1.7 |
+| 2026-09-01 | +19.8 | +15.8 | +12.3 | +4.3 | -3.5 |
+| 2026-08-02 | -10.9 | +5.1 | -9.4 | -26.9 | -3.0 |
+| 2026-07-03 | -7.8 | -11.3 | -1.8 | +0.2 | +1.1 |
+| 2026-06-03 | +22.4 | +10.6 | +11.4 | +4.9 | -1.9 |
+| 2026-05-04 | -0.4 | +2.5 | +3.1 | +0.6 | -3.2 |
+| 2026-04-04 | -7.8 | -7.0 | -5.3 | -3.3 | -2.7 |
+| 2026-03-05 | +2.8 | +15.6 | +4.8 | +6.8 | -2.6 |
+| 2026-02-03 | +21.7 | +33.2 | +25.7 | -9.3 | -0.2 |
+| 2026-01-04 | -2.3 | +0.6 | -1.8 | -21.3 | -3.6 |
+| 2025-12-05 | +17.0 | +10.8 | +19.5 | +32.0 | +2.5 |
+| 2025-11-05 | +4.4 | +0.4 | +8.9 | +19.9 | +0.7 |
+
+### Unread half: hit rate per date
+
+| Date | 180+ days old (comparison) | Dollars | Steady | Risk | Today's list | Everyone eligible |
+|---|---|---|---|---|---|---|
+| 2026-10-01 | 31.7 | 22.0 | 27.0 | 27.5 | 16.5 | 33.3 |
+| 2026-09-01 | 65.3 | 80.5 | 85.0 | 75.0 | 66.0 | 62.9 |
+| 2026-08-02 | 67.3 | 58.0 | 63.9 | 55.0 | 41.5 | 64.5 |
+| 2026-07-03 | 36.3 | 26.0 | 27.5 | 35.0 | 29.5 | 37.7 |
+| 2026-06-03 | 52.4 | 76.0 | 75.3 | 73.0 | 59.5 | 49.0 |
+| 2026-05-04 | 62.7 | 66.0 | 72.9 | 69.0 | 55.0 | 59.4 |
+| 2026-04-04 | 54.6 | 52.0 | 52.2 | 50.0 | 63.0 | 51.7 |
+| 2026-03-05 | 54.3 | 59.5 | 63.6 | 64.5 | 60.5 | 51.7 |
+| 2026-02-03 | 36.0 | 64.0 | 72.3 | 58.5 | 26.0 | 36.4 |
+| 2026-01-04 | 59.9 | 60.0 | 59.3 | 57.0 | 39.5 | 55.4 |
+| 2025-12-05 | 25.6 | 48.5 | 44.2 | 44.5 | 60.5 | 29.5 |
+| 2025-11-05 | 26.5 | 31.0 | 26.5 | 38.5 | 48.0 | 27.3 |
+| **Mean** | **47.7** | **53.6** | **55.8** | **54.0** | **47.1** | **46.6** |
+
+Difference from the comparison group, in points:
+
+| Date | Dollars | Steady | Risk | Today's list | Everyone eligible |
+|---|---|---|---|---|---|
+| 2026-10-01 | -9.7 | -4.7 | -4.2 | -15.2 | +1.6 |
+| 2026-09-01 | +15.2 | +19.7 | +9.7 | +0.7 | -2.4 |
+| 2026-08-02 | -9.3 | -3.4 | -12.3 | -25.8 | -2.8 |
+| 2026-07-03 | -10.3 | -8.8 | -1.3 | -6.8 | +1.4 |
+| 2026-06-03 | +23.6 | +22.9 | +20.6 | +7.1 | -3.4 |
+| 2026-05-04 | +3.3 | +10.2 | +6.3 | -7.7 | -3.3 |
+| 2026-04-04 | -2.6 | -2.3 | -4.6 | +8.4 | -2.9 |
+| 2026-03-05 | +5.2 | +9.4 | +10.2 | +6.2 | -2.5 |
+| 2026-02-03 | +28.0 | +36.3 | +22.5 | -10.0 | +0.4 |
+| 2026-01-04 | +0.1 | -0.7 | -2.9 | -20.4 | -4.5 |
+| 2025-12-05 | +22.9 | +18.6 | +18.9 | +34.9 | +3.9 |
+| 2025-11-05 | +4.5 | +0.0 | +12.0 | +21.5 | +0.8 |
+
+### Context: means over the 12 dates
+
+ROI and returns are in % over the 30 days. "Stopped trading" is the share with PnL under $100 either way.
+
+| Half | List | Hit rate | Hit rate, traded only | Median ROI | Mean clipped ROI | Capital-weighted return | Stopped trading | List size (min-max) | Pool (min-max) |
+|---|---|---|---|---|---|---|---|---|---|
+| Read half | 180+ days old (comparison) | 47.7 | 48.6 | -0.95 | -1.50 | +2.29 | 1.8 | 1,792-2,446 |  |
+| Read half | Dollars | 51.9 | 52.2 | +0.27 | +2.27 | +1.98 | 0.6 | 200-200 | 372-877 |
+| Read half | Steady | 54.3 | 54.8 | -0.09 | +1.08 | +1.42 | 1.1 | 94-200 | 94-420 |
+| Read half | Risk | 53.4 | 54.1 | +1.00 | +1.40 | +0.92 | 1.3 | 200-200 | 371-875 |
+| Read half | Today's list | 47.2 | 47.4 | -1.42 | -2.89 | +0.22 | 0.5 | 200-200 |  |
+| Read half | Everyone eligible | 46.5 | 47.3 | -1.78 | -3.11 | +0.60 | 1.7 | 2,688-3,270 |  |
+| Unread half | 180+ days old (comparison) | 47.7 | 48.6 | -1.25 | -1.89 | +2.48 | 1.9 | 1,740-2,418 |  |
+| Unread half | Dollars | 53.6 | 54.0 | +0.63 | +2.21 | +2.27 | 0.8 | 200-200 | 405-899 |
+| Unread half | Steady | 55.8 | 56.3 | +0.94 | +2.05 | +1.82 | 1.0 | 112-200 | 112-428 |
+| Unread half | Risk | 54.0 | 54.8 | +1.03 | +1.58 | +1.75 | 1.5 | 200-200 | 405-899 |
+| Unread half | Today's list | 47.1 | 47.4 | -2.79 | -3.69 | -0.51 | 0.6 | 200-200 |  |
+| Unread half | Everyone eligible | 46.6 | 47.3 | -1.92 | -3.35 | +1.29 | 1.7 | 2,689-3,218 |  |
+
+Turnover, overlap with today's list and exposure to BTC, in % (means over the dates):
+
+| Half | List | Replaced 30 days later | Also on today's list | With BTC | Against BTC | Little exposure | Unknown |
+|---|---|---|---|---|---|---|---|
+| Read half | Dollars | 40.8 | 19.8 | 33.5 | 38.0 | 28.5 | 0.0 |
+| Read half | Steady | 46.7 | 11.3 | 28.1 | 40.2 | 31.8 | 0.0 |
+| Read half | Risk | 50.2 | 17.8 | 27.7 | 39.8 | 32.5 | 0.0 |
+| Read half | Today's list | 84.9 |  | 34.2 | 29.7 | 23.4 | 12.7 |
+| Read half | Everyone eligible | n/a |  | 45.0 | 18.3 | 28.5 | 8.2 |
+| Unread half | Dollars | 38.5 | 18.3 | 28.5 | 44.1 | 27.4 | 0.0 |
+| Unread half | Steady | 44.5 | 11.4 | 25.7 | 43.5 | 30.9 | 0.0 |
+| Unread half | Risk | 49.4 | 18.7 | 25.2 | 43.2 | 31.6 | 0.0 |
+| Unread half | Today's list | 85.5 |  | 32.0 | 28.8 | 24.8 | 14.5 |
+| Unread half | Everyone eligible | n/a |  | 43.5 | 19.3 | 28.8 | 8.3 |
+
+### Independent check
+
+- A separate re-implementation was written from this declaration and the selection window study's Data and Method sections alone. It did not read the study code, its tests or its results.
+- Its group sizes, pool sizes and hit rates are identical to the study's on all 144 rows (2 halves, 12 dates, 6 groups).
+- The bar's conditions were recomputed from the per-date numbers and match the study's output.
+- It also reproduces the 60 pool counts of the declaration's counts table from the first reading, with no outcome read.
+- One reading changes who is eligible: the perps floor and the activity rule are read as of the wallet's last total-account point at or before the date, as the selection window study states. Reading them as of the date itself would move 27 to 172 wallets per date and half. It listed 14 other points open to two readings; none changes group membership materially.
+- Not covered by it: the snapshot's SHA-256, the stability check and the code check.
+
+### Also computed (not in the declaration; selection only, no outcome)
+
+On the unread half, the share of a list still on it later (mean over the dates):
+
+| List | After 1 month | After 3 months | After 6 months |
+|---|---|---|---|
+| Today's list | 14.5% | 9.3% | 4.7% |
+| Dollars | 61.5% | 40.0% | 23.8% |
+| Steady | 55.5% | 36.1% | 16.4% |
+| Risk | 50.6% | 28.1% | 11.7% |
+
+The three lists share about half their wallets: dollars and steady 47.0%, dollars and risk 45.5%, steady and risk 59.2%.
+
+### What follows
+
+As declared for "none passes":
+- The profitable list stays a viewing tool in the Traders tab. Step 2 is not run, and no further selection studies are planned.
+- Nothing in the signals, the scanner or the executor uses a cohort.
+
+What the declared sentence "past profit did not pick wallets that kept making money more often than the crowd" means here: it was not shown to the declared standard. The 180-day lists did make money more often on both halves, in the months the market kept its direction.
+
+### Deviations
+
+1. **The re-read** (listed under Changes, before any result): the read half is analysed from replies of 17 November, not those of 31 October.
+2. **The download ran in several sessions** from 15 to 17 November. One pass of the re-read stopped on a database lock on 17 November and resumed; all 24,075 wallets are present.
+3. **Selection-side numbers before the run.** On 17 November, at the owner's request and before the re-read finished, the unread half's turnover, overlap, pool sizes and exposure were computed with the outcome function disabled. No outcome was read before the analysis ran.
+4. **The lean description** ("The lean follows the last 180 days") was computed after the results. It is not part of the bar.
