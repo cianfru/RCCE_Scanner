@@ -1,6 +1,7 @@
 import { useTheme } from "../ThemeContext.jsx";
 import SpikeZone from "./SpikeZone.js";
 import FillMarks from "./FillMarks.js";
+import ValueAreas from "./ValueAreas.js";
 import { fillMarks, fmtPrice, fmtStamp, KIND_WORD } from "../utils/traderBoard.js";
 import { fmtUsd as fmtUsdShort } from "../utils/traderFormat.js";
 import TraderEntries from "./TraderEntries.jsx";
@@ -76,10 +77,28 @@ function withAlpha(color, a) {
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+// Value layer colours as [r, g, b] (the primitive sets its own alphas): the chart's text colour, gold for the POC,
+// and the page background behind the tick labels.
+function rgbOf(color, fallback) {
+  const str = String(color || "").trim();
+  const hex = /^#?([0-9a-f]{6})$/i.exec(str);
+  if (hex) { const n = parseInt(hex[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(str);
+  return rgb ? [+rgb[1], +rgb[2], +rgb[3]] : fallback;
+}
+const valueColors = () => ({ ink: rgbOf(resolveToken("chartText"), [245, 254, 253]), poc: rgbOf(col("#fcd34d"), [252, 211, 77]),
+  fib: rgbOf(col("#c4b5fd"), [196, 181, 253]), bg: rgbOf(resolveToken("bg"), [4, 6, 12]) });
+
 const ENTRIES_KEY = "rcce-chart-entries";
+const VALUE_KEY = "rcce-chart-value";
 const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
 
+// Seconds per candle. 1H is a view of the chart only: the scan and its signals run on 4H and 1D.
+const TF_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
+const pageTf = tf => (tf === "1d" ? "1d" : "4h");
+
 const TIMEFRAMES = [
+  { key: "1h",  label: "1H",  limit: 600,  apiTf: "1h", barSpace: 8 },   // 25 days, read on demand
   { key: "4h",  label: "4H",  limit: 600,  apiTf: "4h", barSpace: 8 },   // the server loads 600 bars (~100 days); the 200-day MA needs 1D
   { key: "1d",  label: "1D",  limit: 500,  apiTf: "1d", barSpace: 10 },  // ~500 days — enough for 200 MA + visible range
 ];
@@ -121,8 +140,8 @@ export default function BMSBChart({
   const [loading, setLoading] = useState(true);
   const [hoverCandle, setHoverCandle] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTimeframe, setActiveTimeframe] = useState(initialTimeframe === "1d" ? "1d" : "4h");
-  useEffect(() => { setActiveTimeframe(initialTimeframe === "1d" ? "1d" : "4h"); }, [initialTimeframe]);
+  const [activeTimeframe, setActiveTimeframe] = useState(pageTf(initialTimeframe));
+  useEffect(() => { setActiveTimeframe(pageTf(initialTimeframe)); }, [initialTimeframe]);
   const [showPressure, setShowPressure] = useState(false);
   const [pressureData, setPressureData] = useState(null);
   const [pressureLoading, setPressureLoading] = useState(false);
@@ -143,6 +162,19 @@ export default function BMSBChart({
     try { localStorage.setItem(ENTRIES_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
     return v;
   }), []);
+  // Value areas and points of control (/api/auction): off until asked for, the choice remembered.
+  const [showValue, setShowValueState] = useState(() => {
+    if (compact) return false;
+    try { return localStorage.getItem(VALUE_KEY) === "1"; } catch (_) { return false; }
+  });
+  const setShowValue = useCallback(next => setShowValueState(prev => {
+    const v = typeof next === "function" ? next(prev) : next;
+    try { localStorage.setItem(VALUE_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
+    return v;
+  }), []);
+  const [value, setValue] = useState(null);           // {key, body}: the layer of one coin and timeframe
+  const [valueNote, setValueNote] = useState(null);   // "loading" | "busy" | "none" while there is nothing to draw
+  const valuePrimRef = useRef(null);
   const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
   const [posTop, setPosTop] = useState(null);   // where the long/short pane starts, px from the chart's top
   const [hoverMark, setHoverMark] = useState(null);
@@ -155,7 +187,7 @@ export default function BMSBChart({
   const posMeasureRef = useRef("n");
   posMeasureRef.current = posMeasure;
   const posSeriesRef = useRef(null);       // {long, short, markers} in the bottom pane
-  const showPos = positioningPane && !compact;
+  const showPos = positioningPane && !compact && activeTimeframe !== "1h";   // the long/short record is per 4H candle
   const posH = showPos ? (height >= 500 ? 116 : 92) : 0;
   const trendSeriesRef = useRef(null);
   const ribbonSeriesRef = useRef([]);
@@ -398,6 +430,11 @@ export default function BMSBChart({
           // The pane sits under the price pane; the date axis is below both.
           if (showPos) requestAnimationFrame(() => { if (!cancelled) { try { setPosTop(chart.paneSize(0).height + 1); } catch (_) {} } });
           candleSeriesRef.current = candleSeries;
+          if (!compact) {
+            const layer = new ValueAreas(valueColors());
+            candleSeries.attachPrimitive(layer);
+            valuePrimRef.current = layer;
+          }
           if (compact) {
             const prim = new FillMarks(fillColors());
             candleSeries.attachPrimitive(prim);
@@ -412,7 +449,7 @@ export default function BMSBChart({
           const volumes = new Map((data.volume || []).map(v => [v.time, v.value]));
           const readCandle = candle => setHoverCandle(candle ? {
             ...candle, change:candleChange(candle), volume:volumes.get(candle.time),
-            live: candle.time <= Date.now()/1000 && candle.time + (apiTf === '1d' ? 86400 : 14400) > Date.now()/1000,
+            live: candle.time <= Date.now()/1000 && candle.time + TF_SEC[apiTf] > Date.now()/1000,
           } : null);
           chart.subscribeCrosshairMove(param => {
             if (cancelled) return;
@@ -442,7 +479,7 @@ export default function BMSBChart({
           if (markerDef) {
             const last = data.candles[data.candles.length - 1];
             const markerTime = (!signalTimeframe || signalTimeframe === apiTf)
-              ? signalCandleTime(data.candles, signalFirstSeenAt, apiTf === "4h" ? 14400 : 86400)
+              ? signalCandleTime(data.candles, signalFirstSeenAt, TF_SEC[apiTf])
               : null;
             const markers = markerTime == null ? [] : [{
               time: markerTime,
@@ -491,8 +528,8 @@ export default function BMSBChart({
 
         // ── 200-day MA (computed from candle closes) ──
         if (data.candles?.length > 0) {
-          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day)
-          const period = tf === "4h" ? 1200 : 200;
+          // Always 200-day MA: 200 bars for 1D, 1200 bars for 4H (6 bars/day), 4800 for 1H
+          const period = 200 * 86400 / TF_SEC[tf];
           const closes = data.candles.map(c => c.close);
           const maData = [];
           let sum = 0;
@@ -578,6 +615,7 @@ export default function BMSBChart({
       entryLinesRef.current = [];
       myEntryLineRef.current = null;
       fillPrimRef.current = null;
+      valuePrimRef.current = null;
       posSeriesRef.current = null;
       pressureLinesRef.current = [];
       patternSeriesRef.current = [];
@@ -611,7 +649,37 @@ export default function BMSBChart({
 
   // Long/short pane: one bar pair per candle from the group's record, dots where the
   // profitable-trader list was rebuilt.
-  const tfSec = activeTimeframe === "1d" ? 86400 : 14400;
+  const tfSec = TF_SEC[activeTimeframe];
+
+  // Value layer: read when turned on (the server keeps each coin's answer for 15 minutes), then
+  // handed to the chart's primitive once the candles are in. "Busy" is tried again after 30 s.
+  const valueKey = `${symbol}|${activeTimeframe}`;
+  useEffect(() => {
+    if (!showValue || compact || !symbol) { setValueNote(null); return; }
+    let cancelled = false, timer = null;
+    const load = () => {
+      setValueNote("loading");
+      fetch(`${API_BASE}/api/auction/${encodeURIComponent(symbol)}?timeframe=${activeTimeframe}`)
+        .then(async r => {
+          if (cancelled) return;
+          if (r.status === 503 || r.status === 429) { setValueNote("busy"); timer = setTimeout(load, 30000); return; }
+          if (!r.ok) { setValueNote("none"); return; }
+          const body = await r.json();
+          if (!cancelled) { setValue({ key: `${symbol}|${activeTimeframe}`, body }); setValueNote(null); }
+        })
+        .catch(() => { if (!cancelled) setValueNote("none"); });
+    };
+    load();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [showValue, symbol, activeTimeframe, compact]);
+  useEffect(() => {
+    const layer = valuePrimRef.current;
+    if (!layer) return;
+    const body = showValue && candleTimes?.length && value?.key === valueKey ? value.body : null;
+    layer.setData(body, candleTimes, tfSec, valueColors());
+    layer.setVisible(!!body);
+  }, [showValue, value, valueKey, candleTimes, tfSec, mode]);
+  const valueLabel = !showValue || !valueNote ? "Value" : valueNote === "loading" ? "Loading…" : valueNote === "busy" ? "Value: busy" : "Value: no data";
   const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
   const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes, posGroup) : []),
     [posSeries, posMeasure, tfSec, candleTimes, posGroup]);
@@ -929,7 +997,7 @@ export default function BMSBChart({
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Back to the position's period">Reset view</button>
             {timeframeControl && (
-              <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
+              <Tabs small label="Chart timeframe" items={TIMEFRAMES.filter(tf => tf.key !== "1h").map(tf => ({ key: tf.key, label: tf.label }))}
                 value={activeTimeframe} onChange={setActiveTimeframe} />
             )}
           </div>
@@ -991,8 +1059,9 @@ export default function BMSBChart({
           {[
             { key: "entries", on: showEntries, set: setShowEntries, long: "Trader entries", short: "Entries" },
             { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
-            { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
-            { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
+            { key: "value", on: showValue, set: setShowValue, long: valueLabel, short: valueLabel },
+            activeTimeframe !== "1h" && { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
+            activeTimeframe !== "1h" && { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
             activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
           ].filter(Boolean).map(t => (
             <button key={t.key} type="button" onClick={() => t.set(v => !v)} aria-pressed={t.on}
@@ -1008,15 +1077,29 @@ export default function BMSBChart({
             <p>Dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
             <p>Trader entries (off until turned on): those traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>
-            <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>
+            <p>{activeTimeframe === "1d"
+              ? "Value: a band over each week's value area (the prices where 70% of its volume traded; weeks start Monday 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished week's band edges. Left: volume by price of the weeks in view. Right: this week's and month's open, the previous week's high and low (PWH, PWL), the previous month's value area (PM). From Hyperliquid 1-hour candles. Display only; not used by signals."
+              : `Value: a band over each day's value area (the prices where 70% of its volume traded; days start 00:00 UTC) and a gold line at its point of control (POC), the price with the most volume. Dashed gold: a POC price has not traded back to. Dashed grey: the last finished day's band edges. Left: volume by price of the days in view. Right: the day's, week's and month's open, the previous day's high and low (PDH, PDL), the previous week's value area (PW)${activeTimeframe === "1h" ? ", the high and low of the day's first hour (IB)" : ""}. From Hyperliquid 15-minute candles. Display only; not used by signals.`}</p>
+            <p>Value, violet: the dotted line is the latest major swing on daily candles (a swing counts once price has come back 3 average daily ranges from it); the band is its 0.618 to 0.66 retracement, fainter once price has traded into it. Its label adds POC when a point of control sits in it.</p>
+            {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
+            {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
+            {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}
             {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
           </HelpTip>
 
-          {/* Timeframe toggle, only where the chart owns its timeframe */}
-          {timeframeControl && (
+          {/* Timeframe toggle where the chart owns its timeframe; where the page owns it (4H or 1D),
+              one switch to this chart's 1-hour candles and back. */}
+          {timeframeControl ? (
             <Tabs small label="Chart timeframe" items={TIMEFRAMES.map(tf => ({ key: tf.key, label: tf.label }))}
               value={activeTimeframe} onChange={setActiveTimeframe} />
+          ) : (
+            <button type="button" aria-pressed={activeTimeframe === "1h"} title="One-hour candles, for this chart only"
+              onClick={() => setActiveTimeframe(tf => (tf === "1h" ? pageTf(initialTimeframe) : "1h"))}
+              style={{
+                padding: "3px 2px", border: 0, borderBottom: `2px solid ${activeTimeframe === "1h" ? T.accent : "transparent"}`, borderRadius: 0,
+                cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
+                background: "transparent", color: activeTimeframe === "1h" ? T.text1 : T.text4,
+              }}>1H</button>
           )}
         </div>
       </div>
