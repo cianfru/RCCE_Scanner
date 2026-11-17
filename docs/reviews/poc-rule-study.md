@@ -1,0 +1,92 @@
+# The POC rule on swing profiles: does trading from the POC pay? (declared 17 November 2026, before running)
+
+Owner (17 November 2026), after the chart's profiles were moved from days and weeks to swings: "and then put a rule such as -- if price goes below VAL, trade from POC. vice versa".
+
+The rule is on the chart as the method's rule (the POC tag reads "POC · short" or "POC · long"). This asks whether it paid. Everything below is fixed before any trade is scored. Without a row that meets its bar and is confirmed on the held-out months, the rule stays **context, not a signal**.
+
+Code: `backend/research/poc_rule.py` (tests `backend/tests/test_poc_rule.py`). Run from `backend/`: `python -m research.poc_rule shape | power | run [--holdout]`. It reads the candles already on disk from the earlier studies and costs nothing.
+
+## The rule, as tested
+
+- **The profile** is the one the chart draws: the last finished move's (a rise from a swing low to the next swing high, or a fall from a high to the next low), with its POC, VAH and VAL. Swings are daily, confirmed once price has come back 3 daily ATRs; a pullback of less than half a move does not end it when the move then goes on (`engines/auction_engine`).
+- **As it stood each day.** At every day's close the structure is rebuilt from what was known then: the swings confirmed by that close, the pullbacks merged by then, and the profile of the move that was then the last finished one. A later swing or merge never reaches back.
+- **Price goes below VAL:** a day closes under the move's VAL. **Trade from POC:** a sell order rests at the move's POC from the next day; it fills in the first 5-minute candle whose range holds the POC.
+- **Vice versa:** a day closes over the move's VAH; a buy order rests at its POC.
+- **One order per move and side**, the first time its condition is met. The order lapses after 30 days, or when another move becomes the last finished one.
+- **The POC must have room:** at least 0.5% from each edge of the value area.
+- **Stop:** the far edge of the value area (VAH for a sell, VAL for a buy). **Exit:** the edge price broke (VAL for a sell, VAH for a buy). After 30 days the trade is closed at the last price. When one 5-minute candle holds both the stop and the exit, it counts as the stop.
+- **Costs:** 0.20% a trade (10 bps a side). Funding is not counted.
+
+The stop and the exit are my reading: the owner's sentence names the entry only. They are the two nearest levels of the same profile, so the trade stays inside the value area it is taken from.
+
+## Data
+
+- The 71 Binance USDT perpetuals of the retracement study, 5-minute candles, the same files (hash below). Profiles are built from hourly candles made of them, as the chart builds its own from Hyperliquid's hourly candles.
+- **In sample:** orders placed 1 March 2021 to 31 July 2025. **Held out:** 1 November 2025 to 31 July 2026, run only after the in-sample result is written down. The same split as the retracement study; no outcome of this rule has been computed on either.
+
+## Rows and bars
+
+Months are the unit: the trades of one month are resampled together (95% interval, 10,000 draws).
+
+| Row | Claim | Bar, in sample |
+|---|---|---|
+| **R1** | The rule pays, both sides together | 200 or more trades over 30 or more months; mean net return above 0; its interval above 0; above 0 in each half |
+| **R2** | Selling at the POC after a close under VAL pays | 100 or more trades over 20 or more months; the same |
+| **R3** | Buying at the POC after a close over VAH pays | the same |
+
+- **Confirmed** when a row that met its bar has a mean net return above 0 on the held-out months.
+- A row that does not meet its bar gets no verdict, whatever the held-out months show.
+
+## Reported, never deciding
+
+- The trade before costs and in multiples of the risk taken; how often the stop came first, how often the exit, how often neither in 30 days.
+- Of the trades that ended at the stop or the exit, the share that reached the exit, against the share a price with no memory would give (the distance to the stop over the two distances together).
+- By side, after a rise and after a fall, with the move and against it, by year, and BTC alone.
+
+## Known before running
+
+- From the earlier studies on these candles: every mechanical rule on calendar-session profiles made about nothing before costs and lost after them; the retracement zone turned price no more than chance.
+- Never computed: any outcome on swing profiles.
+- My expectation, stated before running: about zero before costs for both sides, so a loss of about the costs after them.
+
+## Limits
+
+- **Binance, not Hyperliquid.** The chart reads Hyperliquid; the test needs five years of history, which only Binance has. Levels differ a little between the two.
+- **Hourly profiles** differ from tick-built ones by a few tenths of a percent (spec, "How close candle-built profiles are").
+- **The swings are the engine's**, not a trader's eye. A trader may anchor the profile elsewhere, and may judge which breaks to take.
+- **Survivors.** The 71 coins are those still trading in October 2026.
+- **One order per move and side.** A trader could take the same level again; the test takes it once.
+
+## Shape (counts only, 17 November 2026; no trade scored)
+
+`python -m research.poc_rule shape`. Candles sha256 `f85a0a4c5041ad7c…` (the retracement study's files).
+
+| | In sample | Held out |
+|---|---:|---:|
+| Orders placed | 5,140 | 684 |
+| Orders filled | 2,045 over 54 months | 240 over 10 months |
+| Sells, buys | 1,052, 993 | 132, 108 |
+| Fills a month (least, median, most) | 5, 36, 87 | 5, 21, 46 |
+| POC to stop (10th, 50th, 90th percentile) | 2.6%, 7.4%, 20.4% | 2.6%, 6.5%, 18.3% |
+| POC to exit | 2.3%, 6.1%, 16.3% | 1.9%, 5.5%, 12.3% |
+| Days from the close to the fill | 1, 4, 14 | 1, 4, 12 |
+
+- All 71 coins have fills; BTC has 24 in sample.
+- A price with no memory would reach the exit before the stop in 54% of trades: the exit is a little nearer than the stop.
+
+## Power (made-up outcomes, 2,000 runs each)
+
+`python -m research.poc_rule power`. Made-up trades with these fills per month; a trade's return spreads by 6.7% around its mean (the size of a typical win or loss here). Two cases: the trades of a month independent, or all sharing one outcome (the coins moving as one). The truth is between.
+
+| True mean net return a trade | R1, independent | R1, one outcome a month | R2 or R3, independent | R2 or R3, one outcome a month |
+|---|---:|---:|---:|---:|
+| 0 | 3% | 3% | 3% | 3% |
+| +0.5% | 91% | 8% | 66 to 68% | 7 to 9% |
+| +1% | 100% | 18% | 100% | 16 to 17% |
+| +2% | 100% | 52% | 100% | 46 to 51% |
+
+A rule with no edge meets a bar about 3 times in 100. A rule worth 1% a trade is found almost surely if coins move apart, and about 1 time in 5 if they move as one.
+
+## Result
+
+To be added after the run.
