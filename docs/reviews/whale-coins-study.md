@@ -93,9 +93,72 @@ Code: `backend/research/whale_coins.py` (tests `backend/tests/test_whale_coins.p
 - **Census (17 November):** all 8,800 wallets read. 2,280 were a whale on at least one day of the two periods.
 - **A flaw in the first position read, fixed before any price was read.** Hyperliquid returns 500 rows a page. Where a page ended in the middle of a day, the reader skipped the rest of that day's coins (973 page ends over the 146 wallets read so far with more than one page). Found by counting the coins on those days against the days around them. The reader now asks for that day again and keeps the rows it does not have yet. The 146 wallets were read again from the start.
 
-## Shape and power
+## Shape and power (counted 17 November 2026, before any return was read)
 
-To be added before the run.
+**Reads**
+
+- 8,800 wallets; 2,280 were a whale on at least one day. All their positions are read (6,657 pages; 6 wallets stopped at the 80-page cap and count up to the day before their last row). Daily candles for all 225 coins they held.
+
+**Counts**
+
+| | In sample (1 Dec 2024 to 31 May 2026) | Held out (1 Jun to 8 Nov 2026) |
+|---|---|---|
+| Days that count (both readings) | 547 of 547 | 161 of 161 |
+| Weeks of the trade | 79 | 23 |
+| Whales a day, median (lowest to highest) | 312 (97 to 500) | 276 (235 to 324) |
+| Whale-days with positions on record | 99.7% | 98.9% |
+| Of those, left out for holding over 25 markets | 8% | 14% |
+| Of those, holding something | 74% | 66% |
+| Coins with a level, median a day | 44 | 37 |
+| Coins with a change, median a day | 40 | 34 |
+| The day's levels against the levels a week before (rank correlation) | 0.66 | 0.74 |
+| The same for the change | -0.31 | -0.27 |
+
+- The level is slow: most of a coin's level is still there a week later. The change partly undoes itself the week after.
+- By month (medians):
+
+| Month | Whales | Coins with a level | Coins with a change |
+|---|---|---|---|
+| 2024-12 | 129 | 34 | 30 |
+| 2025-01 | 169 | 37 | 32 |
+| 2025-02 | 194 | 45 | 41 |
+| 2025-03 | 193 | 45 | 40 |
+| 2025-04 | 200 | 43 | 36 |
+| 2025-05 | 277 | 44 | 38 |
+| 2025-06 | 304 | 48 | 42 |
+| 2025-07 | 428 | 49 | 43 |
+| 2025-08 | 428 | 51 | 46 |
+| 2025-09 | 479 | 61 | 55 |
+| 2025-10 | 364 | 53 | 48 |
+| 2025-11 | 368 | 52 | 48 |
+| 2025-12 | 350 | 42 | 40 |
+| 2026-01 | 352 | 45 | 40 |
+| 2026-02 | 321 | 42 | 38 |
+| 2026-03 | 321 | 41 | 39 |
+| 2026-04 | 310 | 39 | 37 |
+| 2026-05 | 296 | 36 | 33 |
+| 2026-06 | 242 | 31 | 28 |
+| 2026-07 | 268 | 34 | 29 |
+| 2026-08 | 269 | 37 | 33 |
+| 2026-09 | 296 | 38 | 36 |
+| 2026-10 | 285 | 45 | 43 |
+| 2026-11 | 282 | 41 | 39 |
+
+**The bars on made-up returns** (`power`: 547 days, 44 coins for the level and 40 for the change, 400 runs each; no real return involved)
+
+The made-up level is a slow part plus daily noise, mixed so that the level and its change stay the same from week to week as much as counted above. Made-up returns follow yesterday's reading by a set amount.
+
+| True mean daily rank correlation | R1 met | R2 met | T1 met | T2 met |
+|---|---|---|---|---|
+| none | 2 in 100 | under 1 in 100 | under 1 in 100 | 1 in 100 |
+| 0.02 | 24 in 100 | 20 in 100 | 11 in 100 | 8 in 100 |
+| 0.03 | 44 in 100 | 51 in 100 | 20 in 100 | 22 in 100 |
+| 0.05 | 92 in 100 | 98 in 100 | 62 in 100 | 57 in 100 |
+
+- With no relation at all, the mean over the 547 days lands between -0.023 and +0.023 for the level and between -0.017 and +0.017 for the change, 9 times in 10.
+- **What the study can see:** a relation of 0.05 almost always, 0.03 about half the time, 0.02 rarely. "No bar met" would mean the relation is smaller than about 0.05, not that there is none.
+- The trade rows rest on a guess (a week's returns spread by 10% across the coins), so their rates are rougher.
+- A bar is met by chance 2 times in 100 at most.
 
 ## Result
 

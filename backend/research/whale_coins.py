@@ -521,13 +521,29 @@ def shape(conn, first_s: str, last_s: str) -> dict:
     return out
 
 
+def level_model(level_same: float, change_same: float) -> tuple:
+    """(share, week) of a made-up level that is a slow part plus daily noise: the slow part's share of the variance
+    and its correlation a week apart, chosen so that the level and its 7-day change stay the same from one week to
+    the next as much as the counted ones do. With L = share * week (the level a week apart), the change a week
+    apart is (2L - 1 - share * week^2) / (2 (1 - L))."""
+    lv = float(np.clip(level_same, 0.0, 0.995))
+    if lv <= 0:
+        return 0.0, 0.0
+    two_weeks = float(np.clip(2 * lv - 1 - 2 * change_same * (1 - lv), 0.0, lv))      # the level two weeks apart
+    week = float(np.clip(two_weeks / lv, 0.0, 0.995))
+    return (float(np.clip(lv / week, 0.0, 1.0)) if week > 0 else 0.0), week
+
+
 def power(shape_json: dict, reps: int = 400, truths=(0.0, 0.02, 0.03, 0.05), spread: float = 0.10) -> dict:
     """How often each bar is met on made-up returns, with this study's days, coins a day and how much each reading
-    stays the same from week to week. Made-up reading: one slow series per coin. Made-up daily returns: noise plus a
-    part that follows yesterday's reading, sized so that the mean daily rank correlation with the next week is the
-    stated truth. For the trade, a week's returns spread by `spread` across the coins (a guess)."""
+    stays the same from week to week. Made-up level: per coin, a slow series plus daily noise (level_model); the
+    made-up change is that level minus itself 7 days before. Made-up daily returns: noise plus a part that follows
+    yesterday's reading, sized so that the mean daily rank correlation with the next week is the stated truth. For
+    the trade, a week's returns spread by `spread` across the coins (a guess)."""
     rng = np.random.default_rng(SEED)
-    out = {"spread": spread, "reps": reps}
+    share, week = level_model(shape_json["readings"]["level"]["same_a_week_later"], shape_json["readings"]["change"]["same_a_week_later"])
+    phi = week ** (1 / HORIZON)
+    out = {"spread": spread, "reps": reps, "level_model": {"slow_share": round(share, 3), "slow_a_week_apart": round(week, 3)}}
 
     def rank_rows(a):
         return np.argsort(np.argsort(a, axis=1), axis=1).astype(float)
@@ -536,13 +552,16 @@ def power(shape_json: dict, reps: int = 400, truths=(0.0, 0.02, 0.03, 0.05), spr
         a, b = a - a.mean(1, keepdims=True), b - b.mean(1, keepdims=True)
         return (a * b).sum(1) / np.sqrt((a * a).sum(1) * (b * b).sum(1))
 
-    def sim(days, n, phi, beta):
+    def sim(days, n, kind, beta):
         burn, m = 60, days + 60 + 2 * HORIZON + 1
         e = rng.standard_normal((m, n)) * np.sqrt(1 - phi * phi)
-        x = np.empty((m, n))
-        x[0] = rng.standard_normal(n)
+        slow = np.empty((m, n))
+        slow[0] = rng.standard_normal(n)
         for t in range(1, m):
-            x[t] = phi * x[t - 1] + e[t]
+            slow[t] = phi * slow[t - 1] + e[t]
+        x = np.sqrt(share) * slow + np.sqrt(1 - share) * rng.standard_normal((m, n))
+        if kind == "change":
+            x[HORIZON:] = (x[HORIZON:] - x[:-HORIZON]) / np.sqrt(2 * (1 - share * week))
         r = rng.standard_normal((m, n))
         r[1:] += beta * x[:-1]
         c = np.vstack([np.zeros((1, n)), np.cumsum(r, axis=0)])
@@ -556,34 +575,34 @@ def power(shape_json: dict, reps: int = 400, truths=(0.0, 0.02, 0.03, 0.05), spr
         wk = nxt[::HORIZON] / nxt[::HORIZON].std(axis=1, keepdims=True) * spread
         top = np.take_along_axis(wk, order[:, :k], 1).mean(1)
         bottom = np.take_along_axis(wk, order[:, -k:], 1).mean(1)
-        return xy, pic, top - bottom - COST
+        same = row_corr(rx[HORIZON:], rx[:-HORIZON]).mean()
+        return xy, pic, top - bottom - COST, same
 
-    def calibrate(n, phi, truth):
-        if truth == 0:
-            return 0.0
-        lo, hi = 0.0, 0.2
-        for _ in range(14):
-            mid = (lo + hi) / 2
-            lo, hi = (mid, hi) if sim(3000, n, phi, mid)[0].mean() < truth else (lo, mid)
-        return (lo + hi) / 2
+    def strength(n, kind, ref=0.08):
+        """The rank correlation that a following part of size 1 gives. Measured on a strong relation over many days,
+        where it is read precisely; while small, the two are proportional."""
+        return float(sim(20000, n, kind, ref)[0].mean()) / ref
 
     for kind, r in shape_json["readings"].items():
         days, n = int(r["days"]), int(r["coins_median"])
         if days < 2 * BLOCK_DAYS or n < 6:
             out[kind] = None
             continue
-        phi = float(np.clip(r["same_a_week_later"], 0.0, 0.995)) ** (1 / HORIZON)
-        block = {"days": days, "coins": n, "ic_row": {}, "trade_row": {}}
+        block = {"days": days, "coins": n, "same_a_week_later": round(float(sim(3000, n, kind, 0.0)[3]), 3), "ic_row": {}, "trade_row": {},
+                 "mean_seen": {}}
+        per_unit = strength(n, kind)
         for truth in truths:
-            beta, met_ic, met_tr = calibrate(n, phi, truth), 0, 0
+            beta, met_ic, met_tr, seen = truth / per_unit, 0, 0, []
             for _ in range(reps):
-                ic, pic, net = sim(days, n, phi, beta)
+                ic, pic, net, _ = sim(days, n, kind, beta)
+                seen.append(float(ic.mean()))
                 a, b = block_interval(ic, BLOCK_DAYS), block_interval(pic, BLOCK_DAYS)
                 met_ic += days >= MIN_DAYS and ic.mean() >= IC_BAR and a[0] > 0 and min(halves(ic)) > 0 and b[0] > 0
                 w = block_interval(net, BLOCK_WEEKS)
                 met_tr += bool(len(net) >= MIN_WEEKS and net.mean() > 0 and w and w[0] > 0 and min(halves(net)) > 0)
             block["ic_row"][str(truth)] = round(met_ic / reps, 3)
             block["trade_row"][str(truth)] = round(met_tr / reps, 3)
+            block["mean_seen"][str(truth)] = [round(float(np.mean(seen)), 4), round(float(np.percentile(seen, 5)), 4), round(float(np.percentile(seen, 95)), 4)]
         out[kind] = block
     return out
 

@@ -249,6 +249,15 @@ class Rows(unittest.TestCase):
 
 
 class ShapeAndPower(unittest.TestCase):
+    def test_the_made_up_level_and_its_change_stay_the_same_as_much_as_counted(self):
+        share, week = W.level_model(0.66, -0.31)
+        self.assertAlmostEqual(share * week, 0.66, places=6)                              # the level, a week apart
+        self.assertAlmostEqual((2 * 0.66 - 1 - share * week ** 2) / (2 * (1 - 0.66)), -0.31, places=6)      # its change
+        share, week = W.level_model(1.0, 0.0)                                             # a level that never moves
+        self.assertEqual(share, 1.0)
+        self.assertAlmostEqual(week, 0.995, places=3)
+        self.assertEqual(W.level_model(0.0, -0.5), (0.0, 0.0))                            # pure noise
+
     def test_power_on_made_up_returns_gives_a_rate_for_each_truth(self):
         shape = {"readings": {"level": {"days": 330, "coins_median": 20.0, "same_a_week_later": 0.8},
                               "change": {"days": 40, "coins_median": 20.0, "same_a_week_later": 0.1}}}
