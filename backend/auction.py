@@ -1,15 +1,16 @@
 """
 Chart data read on demand, when someone asks for it on a coin's chart:
 
-* the Value layer: value areas, points of control and reference levels
-  (engines/auction_engine.py), from Hyperliquid candles a step below the chart's (15m under
-  1h and 4h, 1h under 1d) and the stored daily candles; the answer is kept for 15 minutes;
+* the Value layer: the volume profile of each swing with its value area and point of control,
+  and the reference levels (engines/auction_engine.py), from 180 days of Hyperliquid's hourly
+  candles and the stored daily candles; one answer serves a coin's 1h, 4h and 1d charts and is
+  kept for 15 minutes;
 * the 1-hour chart's candles (the scan stores 4h, 1d and 1w only), kept for 2 minutes.
 
 Only the newest answers are kept (MAX_CACHED of each, a few KB to 60 KB), so this adds no
 standing memory and no background work.
 
-A Value build costs 68 to 92 of Hyperliquid's weight (20 a request plus 1 per 60 candles), an
+A Value build costs 92 of Hyperliquid's weight (20 a request plus 1 per 60 candles), an
 hourly chart 30. Both draw on one small share of the per-IP budget so chart views cannot crowd
 out the scan: when that share is used up the request is answered "busy" and the page tries
 again later.
@@ -19,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 import aiohttp
 
@@ -36,10 +37,9 @@ HOUR_BARS = 600               # the 1-hour chart: 25 days
 HOUR_CACHE_S = 120
 HOUR_MAX_CACHED = 24
 BUSY_WAIT_S = 6               # how long a view waits for its share of the budget before "busy"
-MIN_SESSIONS = 2
 _bucket = TokenBucket(240, capacity=240)
 
-_cache: Dict[Tuple[str, str], tuple] = {}            # (symbol, candle interval) -> (built_at, body)
+_cache: Dict[str, tuple] = {}                        # symbol -> (built_at, body)
 _hour_cache: Dict[str, tuple] = {}                   # symbol -> (read_at, candles)
 _building: Dict[tuple, asyncio.Future] = {}
 
@@ -73,9 +73,9 @@ async def _candles(coin: str, interval: str, start: int, now_ms: int) -> Optiona
             return _parse_hl_candles(await resp.json(content_type=None))
 
 
-async def _build(symbol: str, timeframe: str) -> dict:
+async def _build(symbol: str) -> dict:
     from data_fetcher import _hl_coin_name, fetch_ohlcv
-    plan = auction_engine.PLANS[timeframe]
+    plan = auction_engine.PLANS["1d"]
     now_ms = int(time.time() * 1000)
     start = (now_ms // auction_engine.DAY_MS - plan["days"]) * auction_engine.DAY_MS
     candles = await _candles(_hl_coin_name(symbol), plan["interval"], start, now_ms)
@@ -86,8 +86,8 @@ async def _build(symbol: str, timeframe: str) -> dict:
         daily = await fetch_ohlcv(symbol, "1d")
     except Exception:
         logger.warning("Value layer: no daily candles for %s", symbol)
-    body = auction_engine.build(candles, daily, timeframe, now_ms)
-    if len(body["sessions"]) < MIN_SESSIONS:
+    body = auction_engine.build(candles, daily, now_ms)
+    if not body["ranges"] and not body["levels"]:
         raise NoData("Too little history for a value area")
     body["symbol"] = symbol
     return body
@@ -121,10 +121,9 @@ async def _shared(store: dict, key, ttl: float, keep: int, build):
 
 
 async def levels(symbol: str, timeframe: str) -> dict:
-    """The Value layer for one chart. Charts built from the same candles (1h and 4h) share one answer."""
-    interval = auction_engine.PLANS[timeframe]["interval"]
-    body = await _shared(_cache, (symbol, interval), CACHE_S, MAX_CACHED, lambda: _build(symbol, timeframe))
-    return body if body.get("timeframe") == timeframe else {**body, "timeframe": timeframe}
+    """The Value layer for one chart. A coin's charts are built from the same candles and share one answer."""
+    body = await _shared(_cache, symbol, CACHE_S, MAX_CACHED, lambda: _build(symbol))
+    return {**body, "timeframe": timeframe}
 
 
 async def hour_candles(symbol: str) -> dict:

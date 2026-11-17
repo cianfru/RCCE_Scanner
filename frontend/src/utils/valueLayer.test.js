@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, placeSessions, ticks, valueArea, composite, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL, describe, describeAll, distanceNote } from "./valueLayer.js";
+import { barIndex, barAt, placeRanges, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
+  describe, describeAll, distanceNote, rangeNote, hitKey } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
 const T0 = 1788739200;                                    // Monday 2026-09-07 00:00 UTC
@@ -10,63 +11,86 @@ test("a time sits on the first candle at or after it; past the last candle bars 
   assert.equal(barIndex(times, T0, H4), 0);
   assert.equal(barIndex(times, T0 + DAY, H4), 6);
   assert.equal(barIndex(times, T0 + DAY + 1, H4), 7);
-  assert.equal(barIndex(times, T0 + 3 * DAY, H4), 18);      // the running day ends 4 bars after the last candle
+  assert.equal(barIndex(times, T0 + 3 * DAY, H4), 18);      // 4 bars after the last candle
 });
 
-test("sessions get their span in candles; ones that ended before the chart are dropped", () => {
-  const sessions = [
-    { start: T0 - DAY, end: T0 }, { start: T0, end: T0 + DAY }, { start: T0 + 2 * DAY, end: T0 + 3 * DAY, live: true },
-  ];
-  assert.deepEqual(placeSessions(sessions, times, H4).map(s => [s.from, s.to]), [[0, 6], [12, 18]]);
-  assert.deepEqual(placeSessions(sessions, [], H4), []);
+test("a moment is inside the last candle that opened at or before it", () => {
+  assert.equal(barAt(times, T0), 0);
+  assert.equal(barAt(times, T0 + H4 - 1), 0);
+  assert.equal(barAt(times, T0 + H4), 1);
+  assert.equal(barAt(times, T0 + DAY + 3600), 6);
+  assert.equal(barAt(times, T0 - DAY), 0);                  // before the chart: its first candle
+  assert.equal(barAt(times, T0 + 9 * DAY), 14);             // after it: its last
 });
 
-test("ticks: the levels, the previous outer session's value area and older untouched POCs", () => {
-  const body = {
-    outer_period: "week", levels: { d_open: 100, pd_high: 110, pd_low: 90, w_open: 95 },
-    outer: [
-      { start: 1, poc: 70, vah: 75, val: 65, live: false, touched: null },
-      { start: 2, poc: 80, vah: 85, val: 78, live: false, touched: 5 },
-      { start: 3, poc: 99, vah: 104, val: 96, live: false, touched: null },
-      { start: 4, poc: 101, vah: 102, val: 100, live: true, touched: null },
-    ],
-  };
-  assert.deepEqual(ticks(body).map(t => `${t.label} ${t.price}`),
-    ["D open 100", "PDH 110", "PDL 90", "W open 95", "PW VAH 104", "PW POC 99", "PW VAL 96", "W nPOC 70"]);
-  assert.deepEqual(ticks({ outer_period: "month", levels: { pw_high: 9 }, outer: [{ poc: 5, vah: 6, val: 4, live: false }] }).map(t => t.label),
-    ["PWH", "PM VAH", "PM POC", "PM VAL"]);
+// A rise that began an hour into the chart and ended in the fifth candle, the fall after it still running.
+const RISE = { direction: 1, start: T0 + 3600, end: T0 + 4 * H4 + 7200, live: false, low: 100, high: 160, poc: 121, vah: 140, val: 112,
+  bins: { low: 100, step: 10, v: [50, 200, 1000, 400, 0, 20] } };
+const FALL = { direction: -1, start: T0 + 4 * H4 + 3600, end: T0 + 15 * H4, live: true, low: 130, high: 160, poc: 150, vah: 156, val: 141,
+  bins: { low: 130, step: 5, v: [10, 20, 30, 1000, 60, 5] } };
+
+test("swings get their span in candles, from the candle holding their start to the one holding their end", () => {
+  const placed = placeRanges([{ ...RISE, start: T0 - 9 * DAY, end: T0 - DAY }, RISE, FALL], times);
+  assert.deepEqual(placed.map(r => [r.direction, r.from, r.to]), [[1, 0, 5], [-1, 4, 15]]);     // the one that ended before the chart is dropped
+  assert.deepEqual(placeRanges([{ ...RISE, start: T0 - DAY }], times).map(r => [r.from, r.to]), [[0, 5]]);   // began before it: clipped
+  assert.deepEqual(placeRanges([RISE], []), []);
+  assert.deepEqual(placeRanges(null, times), []);
+  assert.equal(lastDone(placed).direction, 1);              // the last swing that has ended
+  assert.equal(lastDone(placeRanges([FALL], times)), null);
+});
+
+test("the last finished swing's value area and point of control are ticks", () => {
+  const placed = placeRanges([RISE, FALL], times);
+  assert.deepEqual(rangeTicks(placed).map(t => [t.key, t.label, t.price, t.kind]),
+    [["r_vah", "VAH", 140, "edge"], ["r_poc", "POC", 121, "poc"], ["r_val", "VAL", 112, "edge"]]);
+  assert.equal(rangeTicks(placed)[0].range.direction, 1);
+  assert.deepEqual(rangeTicks(placeRanges([FALL], times)), []);
+});
+
+test("the rule on the last finished swing: short from its POC below its value area, long from it above", () => {
+  assert.equal(pocRule(RISE, 111.9), "short");
+  assert.equal(pocRule(RISE, 140.1), "long");
+  assert.equal(pocRule(RISE, 112), null);                   // on the edge is inside
+  assert.equal(pocRule(RISE, 130), null);
+  assert.equal(pocRule(RISE, undefined), null);
+  assert.equal(pocRule(null, 100), null);
+  const placed = placeRanges([RISE, FALL], times);
+  assert.deepEqual(rangeTicks(placed, 100).map(t => t.label), ["VAH", "POC \u00b7 short", "VAL"]);
+  assert.deepEqual(rangeTicks(placed, 150).map(t => t.label), ["VAH", "POC \u00b7 long", "VAL"]);
+  assert.deepEqual(rangeTicks(placed, 120).map(t => [t.label, t.rule || null]), [["VAH", null], ["POC", null], ["VAL", null]]);
+  // The tag and the dashed line it sits on say the same, with what the rule's test found.
+  const tag = describe({ kind: "tick", tick: rangeTicks(placed, 100)[1] }, {}, fmt);
+  assert.deepEqual([tag.title, tag.tag], ["Most-traded price of the rise", "POC \u00b7 short"]);
+  assert.equal(tag.lines[1], "Price is now below the rise's main trading range (under $112). The method's rule then: sell (go short) at this price if price climbs back to it.");
+  assert.equal(tag.lines[2], "Tested here on 71 coins since 2021: the rule made about 0.3% a trade after fees, too little to tell from nothing.");
+  assert.deepEqual(describe({ kind: "rline", which: "poc", r: RISE, rule: "short" }, {}, fmt).lines, tag.lines);
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[2], "Not tested here.");
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: "long" }, {}, fmt).lines[1],
+    "Price is now above the rise's main trading range (over $140). The method's rule then: buy (go long) at this price if price dips back to it.");
+  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[1], "Traders use a price like this as the place to take profit.");
+});
+
+test("a swing's histogram: its rows by price, the point of control's row and the value area marked", () => {
+  const rows = histogram(RISE);
+  assert.deepEqual(rows.map(r => [r.low, r.high, r.share, r.kind]),
+    [[100, 110, 0.05, "rest"], [110, 120, 0.2, "value"], [120, 130, 1, "poc"], [130, 140, 0.4, "value"], [150, 160, 0.02, "rest"]]);   // the empty row is left out
+  assert.deepEqual(histogram({}), []);
+  assert.deepEqual(histogram({ bins: { low: 1, step: 0, v: [1] } }), []);
+});
+
+test("each chart shows its own levels: the day's on 1H and 4H, the week's on 1D, the first hour on 1H only", () => {
+  const body = { levels: { d_open: 100, pd_high: 110, pd_low: 90, w_open: 95, m_open: 80, pw_high: 120, pw_low: 70, ib_high: 103, ib_low: 98 } };
+  assert.deepEqual(ticks(body, "4h").map(t => `${t.label} ${t.price}`), ["D open 100", "PDH 110", "PDL 90", "W open 95", "M open 80"]);
+  assert.deepEqual(ticks(body, "1h").map(t => t.label), ["D open", "PDH", "PDL", "W open", "M open", "IB high", "IB low"]);
+  assert.deepEqual(ticks(body, "1d").map(t => `${t.label} ${t.price}`), ["W open 95", "M open 80", "PWH 120", "PWL 70"]);
+  assert.deepEqual(ticks({ levels: { d_open: 100 } }, "1d"), []);
   assert.deepEqual(ticks(null), []);
 });
 
-test("the first hour's high and low are ticks on the 1-hour chart only", () => {
-  const body = { outer_period: "week", levels: { d_open: 100, ib_high: 103, ib_low: 98 }, outer: [] };
-  assert.deepEqual(ticks(body).map(t => t.label), ["D open"]);
-  assert.deepEqual(ticks(body, { firstHour: true }).map(t => `${t.label} ${t.price}`), ["D open 100", "IB high 103", "IB low 98"]);
-});
-
 test("no forecast words in the tick labels", () => {
-  const labels = ticks({ outer_period: "week", levels: { d_open: 1, pd_high: 1, pd_low: 1, w_open: 1, m_open: 1, pw_high: 1, pw_low: 1 },
-    outer: [{ poc: 1, vah: 1, val: 1, live: false, touched: null }, { poc: 1, vah: 1, val: 1, live: false }] }).map(t => t.label).join(" ");
+  const all = { d_open: 1, pd_high: 1, pd_low: 1, w_open: 1, m_open: 1, pw_high: 1, pw_low: 1, ib_high: 1, ib_low: 1 };
+  const labels = [...ticks({ levels: all }, "1h"), ...ticks({ levels: all }, "1d"), ...rangeTicks(placeRanges([RISE], times))].map(t => t.label).join(" ");
   assert.doesNotMatch(labels, /\b(will|expect|likely|predict|target|probability|odds)\b/i);
-});
-
-test("value area: two rows at a time towards more volume, the same rule as the server", () => {
-  assert.deepEqual(valueArea([1, 1, 5, 9, 20, 9, 8, 8, 1, 1]), { poc: 4, lo: 2, hi: 6, max: 20 });
-  assert.equal(valueArea([7, 1, 1, 7, 1, 1, 1]).poc, 3);    // a tie goes to the row nearest the middle
-  assert.equal(valueArea([0, 0, 0]), null);
-});
-
-test("the profile in view adds the sessions overlapping the visible candles", () => {
-  const placed = [
-    { from: 0, to: 6, bins: { from: 2, v: [10, 30] } },
-    { from: 6, to: 12, bins: { from: 3, v: [5, 50, 5] } },
-    { from: 12, to: 18, bins: { from: 0, v: [99] } },
-  ];
-  const p = composite(placed, 6, 0, 11.5);
-  assert.deepEqual(p.v, [0, 0, 10, 35, 50, 5]);
-  assert.equal(p.poc, 4);
-  assert.equal(composite(placed, 6, 14, 20).poc, 0);
-  assert.equal(composite(placed, 6, 30, 40), null);
 });
 
 test("labels that would overlap are pushed down, the rest stay put", () => {
@@ -76,69 +100,124 @@ test("labels that would overlap are pushed down, the rest stay put", () => {
 
 test("ticks at one price share a label, and a word they end in", () => {
   const rows = [{ label: "W open", y: 100.4, kind: "level" }, { label: "PDH", y: 60, kind: "level" }, { label: "D open", y: 100, kind: "level" },
-    { label: "M open", y: 100.9, kind: "level" }, { label: "PW POC", y: 101.2, kind: "poc" }, { label: "PDL", y: 140, kind: "level" }];
+    { label: "M open", y: 100.9, kind: "level" }, { label: "POC", y: 101.2, kind: "poc" }, { label: "PDL", y: 140, kind: "level" }];
   assert.deepEqual(mergeTicks(rows).map(t => [t.label, t.y, t.kind]),
-    [["PDH", 60, "level"], ["D \u00b7 W \u00b7 M open \u00b7 PW POC", 100, "poc"], ["PDL", 140, "level"]]);
-  assert.deepEqual(mergeTicks(rows)[1].members.map(t => t.label), ["D open", "W open", "M open", "PW POC"]);   // each is still told apart
+    [["PDH", 60, "level"], ["D · W · M open · POC", 100, "poc"], ["PDL", 140, "level"]]);
+  assert.deepEqual(mergeTicks(rows)[1].members.map(t => t.label), ["D open", "W open", "M open", "POC"]);   // each is still told apart
 });
 
-test("retracement bands: where they start, the leg they measure, and whether a point of control sits in them", () => {
+test("retracement bands: where they start, the leg they measure, and whether a finished swing's point of control sits in them", () => {
   const body = {
     fib: [{ direction: 1, base_time: T0 + DAY, base: 100, extreme_time: T0 + 2 * DAY, extreme: 160, from: 122.92, to: 120.4, touched: false },
       { direction: -1, base_time: T0 - 9 * DAY, base: 160, extreme_time: T0 + DAY, extreme: 100, from: 137.08, to: 139.6, touched: true }],
-    outer: [{ poc: 139, live: false, touched: 5 }, { poc: 50, live: false, touched: 7 }, { poc: 200, live: true }],
-    sessions: [{ poc: 121, live: false, touched: null }, { poc: 138, live: false, touched: 9 }],
+    ranges: [{ poc: 121, live: false }, { poc: 138, live: true }],
   };
   const bands = fibBands(body, times, H4);
   assert.deepEqual(bands.map(b => [b.top, b.bottom, b.from, b.touched, b.poc]),
-    [[122.92, 120.4, 6, false, true],        // a daily POC not traded back to (121) is inside
-      [139.6, 137.08, 0, true, false]]);     // the leg began before the chart; 139 and 138 were traded back to
+    [[122.92, 120.4, 6, false, true],        // the finished swing's POC (121) is inside
+      [139.6, 137.08, 0, true, false]]);     // the leg began before the chart; 138 belongs to the move still running
   assert.deepEqual(bands[0].leg, { from: 6, base: 100, to: 12, extreme: 160 });
   assert.equal(bands[1].leg, null);          // its start is off the chart: the band only
-  assert.deepEqual(fibTicks(bands).map(t => [t.label, t.kind]), [[`${FIB_LABEL} \u00b7 POC`, "fib"], [FIB_LABEL, "fib"]]);
+  assert.deepEqual([bands[0].base, bands[0].extreme, bands[0].direction], [100, 160, 1]);
+  assert.deepEqual(fibTicks(bands).map(t => [t.label, t.kind]), [[`${FIB_LABEL} · POC`, "fib"], [FIB_LABEL, "fib"]]);
   assert.equal(fibTicks(bands)[0].price, (122.92 + 120.4) / 2);
   assert.deepEqual(fibBands({ fib: [] }, times, H4), []);
   assert.deepEqual(fibBands(body, [], H4), []);
 });
 
-const BODY = { period: "day", outer_period: "week" };
-const session = { start: T0, end: T0 + DAY, poc: 100, vah: 104, val: 97, live: false };
+const fmt = p => `$${p}`;
+const tick = (key, label, kind = "level") => ({ kind: "tick", tick: { key, label, price: 100, kind } });
 
-test("every tag and line has a plain-words description", () => {
-  const tick = (key, label, kind = "level") => ({ kind: "tick", tick: { key, label, price: 100, kind } });
-  assert.deepEqual(describe(tick("d_open", "D open"), BODY), { title: "Day open", tag: "D open", price: 100, text: "Where today began, at 00:00 UTC." });
-  assert.equal(describe(tick("p_vah", "PW VAH", "edge"), BODY).title, "Last week's value area high");
-  assert.equal(describe(tick("p_poc", "PM POC", "poc"), { period: "week", outer_period: "month" }).title, "Last month's point of control");
-  assert.match(describe(tick("pd_high", "PDH"), BODY).text, /^Yesterday's highest price\. Traders watch/);
-  assert.equal(describe(tick("n_123", "W nPOC", "poc"), BODY).title, "Older weekly point of control");
-  assert.equal(describe(tick("n_123", "M nPOC", "poc"), { period: "week", outer_period: "month" }).title, "Older monthly point of control");
-  assert.equal(describe({ kind: "poc", s: session }, BODY).title, "Point of control, 7 Sept");
-  assert.equal(describe({ kind: "poc", s: { ...session, live: true } }, BODY).tag, "so far");
-  assert.equal(describe({ kind: "naked", s: session }, { period: "week", outer_period: "month" }).title, "Point of control, week of 7 Sept");
-  assert.deepEqual(describe({ kind: "value", s: session }, BODY).range, [97, 104]);
-  assert.equal(describe({ kind: "edge", which: "val", s: session }, BODY).price, 97);
-  assert.match(describe({ kind: "edge", which: "vah", s: session }, BODY).text, /about 4 times in 10/);
-  assert.doesNotMatch(describe({ kind: "edge", which: "vah", s: session }, { period: "week", outer_period: "month" }).text, /Tested/);   // the 80% rule study was on days
-  assert.equal(describe({ kind: "profile" }, BODY).title, "Volume by price");
-  const band = { top: 122.92, bottom: 120.4, poc: true };
-  assert.match(describe({ kind: "fib", band }, BODY).text, /A point of control sits inside it\.$/);
-  assert.equal(describe({ kind: "tick", tick: { key: "fib_0", label: FIB_LABEL, price: 121.66, kind: "fib" }, bands: [band] }, BODY).title, "0.618 to 0.66 pullback zone");
+test("the opens and prior extremes say what they are and how traders use them", () => {
+  assert.deepEqual(describe(tick("d_open", "D open"), {}), { title: "Today's opening price", tag: "D open", price: 100, range: null,
+    lines: ["The price when today began (00:00 UTC).", "Traders read price above it as buyers being ahead today, below it as sellers being ahead."] });
+  assert.equal(describe(tick("m_open", "M open"), {}).title, "This month's opening price");
+  // Yesterday's extremes carry the finding of the study on fading them; last week's were not tested.
+  const pdh = describe(tick("pd_high", "PDH"), {});
+  assert.equal(pdh.title, "Yesterday's high");
+  assert.deepEqual(pdh.lines.map(l => l.split(" ")[0]), ["The", "Traders", "Tested"]);
+  assert.match(describe(tick("pd_low", "PDL"), {}).lines[2], /buying those dips made nothing before fees/);
+  assert.equal(describe(tick("pw_low", "PWL"), {}).title, "Last week's low");
+  assert.equal(describe(tick("pw_low", "PWL"), {}).lines.length, 2);
+  assert.equal(describe(tick("ib_low", "IB low"), {}).title, "Low of today's first hour");
+});
+
+test("a swing's box says the move it covers, where it traded most and how traders use that", () => {
+  const d = describe({ kind: "range", r: RISE }, {}, fmt);
+  assert.equal(d.title, "Trading by price in the rise, 7 Sept");                    // began and ended the same day
+  assert.deepEqual(d.range, [100, 160]);
+  assert.equal(d.price, null);
+  assert.equal(d.tag, null);
+  assert.equal(d.lines[0], "Price rose from $100 to $160. Each bar is how much was traded at that price on the way: longer means more.");
+  assert.equal(d.lines[1], "70% of it was traded between $112 and $140 (the value area, the brighter bars). The gold line, $121, is the single most-traded price (the point of control, POC).");
+  assert.match(d.lines[2], /^Traders treat that band as the move's fair prices/);
+  assert.equal(d.lines[3], "Not tested here.");
+  const live = describe({ kind: "range", r: FALL }, {}, fmt);
+  assert.equal(live.title, "Trading by price in the fall, 7 Sept to 9 Sept");
+  assert.equal(live.tag, "so far");
+  assert.match(live.lines[0], /^Price fell from \$160 to \$130 and the move is still running\./);
+});
+
+test("a swing's lines, and the tags that carry them on, give the same words", () => {
+  const vah = describe({ kind: "rline", which: "vah", r: RISE }, {}, fmt);
+  assert.equal(vah.title, "Top of the rise's main trading range");
+  assert.equal(vah.price, 140);
+  assert.equal(vah.lines[0], "70% of the trading in the rise from $100 to $160 happened between $112 and $140. This is the top of that band (its value area high, VAH).");
+  assert.match(vah.lines[1], /Above it they watch whether price holds up there or falls back in\.$/);
+  const val = describe({ kind: "rline", which: "val", r: FALL }, {}, fmt);
+  assert.equal(val.title, "Bottom of the fall's main trading range");
+  assert.equal([val.price, val.tag].join(), "141,so far");
+  assert.match(val.lines[0], /^70% of the trading in the fall from \$160 to \$130 so far happened between \$141 and \$156\. This is the bottom of that band \(its value area low, VAL\)\.$/);
+  const poc = describe({ kind: "rline", which: "poc", r: RISE }, {}, fmt);
+  assert.equal(poc.title, "Most-traded price of the rise");
+  assert.deepEqual(poc.lines, ["More was traded at this price than at any other in the rise from $100 to $160 (its point of control, POC).",
+    "Traders use a price like this as the place to take profit.", "Not tested here."]);
+  const [t] = rangeTicks(placeRanges([RISE], times));
+  const tagged = describe({ kind: "tick", tick: t }, {}, fmt);
+  assert.deepEqual([tagged.title, tagged.tag, tagged.price, tagged.lines], [vah.title, "VAH", 140, vah.lines]);
+});
+
+test("the pullback zone is described with the swing it measures", () => {
+  const leg = { from: 6, base: 100, to: 12, extreme: 160 };
+  const up = { top: 122.92, bottom: 120.4, direction: 1, base: 100, extreme: 160, leg, poc: true, touched: false };
+  const d = describe({ kind: "fib", band: up }, {}, fmt);
+  assert.equal(d.title, "Pullback zone (0.618 to 0.66)");
+  assert.deepEqual(d.range, [120.4, 122.92]);
+  assert.equal(d.lines[0], "Price rose from $100 to $160 (the dotted line). This band is where a dip has given back about two thirds of that rise (61.8% to 66%).");
+  assert.equal(d.lines[1], "Traders use it as the place to buy the dip.");
+  assert.match(d.lines[2], /^Tested here on 71 coins: .* turned back 47 times in 100/);
+  assert.match(d.lines[3], /^A most-traded price \(POC\) sits inside the band/);
+  assert.equal(d.lines.length, 4);
+  // A fall, with its start off the chart (no dotted line), already traded into, and no POC inside.
+  const down = { top: 139.6, bottom: 137.08, direction: -1, base: 160, extreme: 100, leg: null, poc: false, touched: true };
+  const e = describe({ kind: "fib", band: down }, {}, fmt);
+  assert.equal(e.lines[0], "Price fell from $160 to $100. This band is where a bounce has taken back about two thirds of that fall (61.8% to 66%).");
+  assert.equal(e.lines[1], "Traders use it as the place to sell the bounce.");
+  assert.equal(e.lines[3], "Price has already traded into this band.");
+  assert.deepEqual(describe({ kind: "tick", tick: { key: "fib_1", label: FIB_LABEL, price: 138.34, kind: "fib" }, bands: [up, down] }, {}, fmt), e);
 });
 
 test("a tag standing for several levels describes each", () => {
   const merged = mergeTicks([{ key: "d_open", label: "D open", price: 100, y: 50, kind: "level" }, { key: "w_open", label: "W open", price: 100, y: 50.5, kind: "level" }])[0];
-  assert.deepEqual(describeAll({ kind: "tick", tick: merged }, BODY).map(d => d.title), ["Day open", "Week open"]);
-  assert.equal(describeAll({ kind: "profile" }, BODY).length, 1);
+  assert.deepEqual(describeAll({ kind: "tick", tick: merged }, {}).map(d => d.title), ["Today's opening price", "This week's opening price"]);
+  assert.equal(describeAll({ kind: "range", r: RISE }, {}).length, 1);
 });
 
-test("no forecast words in any description", () => {
+test("no forecast words and no bare shorthand in any description", () => {
   const words = /\b(will|expect|expected|likely|predict|target|probability|odds)\b/i;
-  const keys = ["d_open", "w_open", "m_open", "pd_high", "pd_low", "pw_high", "pw_low", "ib_high", "ib_low", "p_vah", "p_val", "p_poc", "n_1"];
-  const hits = [...keys.map(key => ({ kind: "tick", tick: { key, label: "x", price: 1, kind: "level" } })),
-    { kind: "poc", s: session }, { kind: "naked", s: session }, { kind: "value", s: session }, { kind: "edge", which: "vah", s: session },
-    { kind: "edge", which: "val", s: session }, { kind: "profile" }, { kind: "fib", band: { top: 2, bottom: 1, poc: true } }];
-  for (const body of [BODY, { period: "week", outer_period: "month" }]) {
-    for (const h of hits) { const d = describe(h, body); assert.doesNotMatch(`${d.title} ${d.text} ${d.tag || ""}`, words, d.title); }
+  const keys = ["d_open", "w_open", "m_open", "pd_high", "pd_low", "pw_high", "pw_low", "ib_high", "ib_low"];
+  const band = { top: 2, bottom: 1, direction: 1, base: 1, extreme: 3, leg: {}, poc: true, touched: true };
+  const hits = [...keys.map(key => tick(key, "x")), ...rangeTicks(placeRanges([RISE], times)).map(t => ({ kind: "tick", tick: t })),
+    ...[RISE, FALL].flatMap(r => [{ kind: "range", r }, ...["vah", "val", "poc"].map(which => ({ kind: "rline", which, r }))]),
+    { kind: "rline", which: "poc", r: RISE, rule: "short" }, { kind: "rline", which: "poc", r: FALL, rule: "long" },
+    { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } }];
+  for (const h of hits) {
+    const d = describe(h, {});
+    assert.ok(d.lines.length >= 2, d.title);
+    const all = `${d.title} ${d.lines.join(" ")}`;
+    assert.doesNotMatch(all, words, d.title);
+    assert.doesNotMatch(d.title, /\b(POC|VAH|VAL|IB|PDH|PDL|PWH|PWL)\b/, d.title);             // titles are plain words
+    assert.doesNotMatch(all, /undefined|NaN|null/, d.title);
   }
 });
 
@@ -147,4 +226,15 @@ test("distance from the last price, in words", () => {
   assert.equal(distanceNote(82, 100), "18% below the last price");
   assert.equal(distanceNote(100.01, 100), "at the last price");
   assert.equal(distanceNote(null, 100), "");
+  assert.equal(rangeNote([120, 125], 100), "20% above the last price");      // to the nearer edge
+  assert.equal(rangeNote([80, 90], 100), "10% below the last price");
+  assert.equal(rangeNote([97, 104], 100), "the last price is inside");
+  assert.equal(rangeNote(null, 100), "");
+});
+
+test("what is under the pointer has a stable name", () => {
+  assert.equal(hitKey({ kind: "rline", which: "poc", r: RISE }), `rline:${RISE.start}:poc`);
+  assert.equal(hitKey({ kind: "range", r: FALL }), `range:${FALL.start}:`);
+  assert.equal(hitKey(tick("d_open", "D open")), "tick:d_open:");
+  assert.equal(hitKey(null), "");
 });

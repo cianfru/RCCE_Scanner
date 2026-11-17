@@ -1,4 +1,4 @@
-"""The coin chart's Value layer: profiles, value areas, naked points of control, reference levels."""
+"""The coin chart's Value layer: profiles, value areas, swings and their profiles, reference levels."""
 import asyncio
 import unittest
 
@@ -123,35 +123,116 @@ class SessionTests(unittest.TestCase):
         self.assertEqual([z for z in ae.fib_zones(gone) if z["direction"] == 1], [])
         self.assertEqual(ae.fib_zones(None), [])
 
-    def test_build_gives_the_chart_sessions_bins_and_levels(self):
-        rows = []
-        for d in range(10):
-            rows += [(T0 - 7 * DAY + d * DAY + i * 900_000, 100 + d, 101 + d, 99 + d, 100 + d, 5.0) for i in range(96)]
-        now = T0 + 3 * DAY - 1
-        body = ae.build(candles(rows), None, "4h", now)
-        self.assertEqual((body["period"], body["outer_period"], body["interval"]), ("day", "week", "15m"))
-        # The first hour of the running day (the Initial Balance): its four 15-minute candles.
-        self.assertEqual((body["levels"]["ib_high"], body["levels"]["ib_low"]), (110.0, 108.0))
-        self.assertEqual(body["fib"], [])                                    # no daily candles were given
-        self.assertEqual(len(body["sessions"]), 10)
-        self.assertTrue(body["sessions"][-1]["live"])
-        self.assertEqual([s["live"] for s in body["outer"]], [False, True])      # last week, this week
-        # Bins are whole parts per million of the window's volume on one shared grid.
-        total = sum(sum(s["bins"]["v"]) for s in body["sessions"])
-        self.assertAlmostEqual(total, 1_000_000, delta=200)
-        last = body["sessions"][-1]["bins"]
-        self.assertLessEqual(last["from"] + len(last["v"]), body["grid"]["rows"])
-        self.assertGreater(last["from"], body["sessions"][0]["bins"]["from"])   # later days sit higher
+
+def swing_market(heavy=(120.0, 122.0)):
+    """Hourly candles for 44 days and the daily candles they add up to: flat at 100 for 20 days, a low at 95 on
+    day 20, a rise to 150 by day 32, a fall to 118 by day 40, then 4 quiet days. Hours between `heavy` prices
+    trade 50 times the volume of the rest."""
+    days = [100.0] * 20 + [95.0] + list(np.linspace(100, 150, 12)) + list(np.linspace(146, 118, 8)) + [119.0, 120.0, 119.0]
+    start = T0 - 40 * DAY
+    hours = []
+    for d, (p0, p1) in enumerate(zip(days, days[1:])):
+        for i in range(24):
+            p = p0 + (p1 - p0) * i / 24
+            hours.append((start + d * DAY + i * 3_600_000, p, p + 0.5, p - 0.5, p, 500.0 if heavy[0] <= p < heavy[1] else 10.0))
+    a = np.array(hours)
+    daily = [(start + d * DAY, a[d * 24, 1], a[d * 24:(d + 1) * 24, 2].max(), a[d * 24:(d + 1) * 24, 3].min(), a[(d + 1) * 24 - 1, 4],
+              a[d * 24:(d + 1) * 24, 5].sum()) for d in range(len(days) - 1)]
+    return candles(hours), candles(daily), start
+
+
+class SwingRangeTests(unittest.TestCase):
+    def test_each_swing_gets_its_own_profile(self):
+        hourly, daily, start = swing_market()
+        now = start + 43 * DAY - 1
+        up, down = ae.swing_ranges(hourly, daily, 0.5, now)
+        # The rise: from the hour of the low on day 20 to the hour of the high on day 32.
+        self.assertEqual((up["direction"], up["live"]), (1, False))
+        self.assertEqual((up["low"], up["high"]), (94.5, 150.5))
+        self.assertEqual(up["start"], (start + 20 * DAY) // 1000)                     # day 20 opens at its low
+        self.assertEqual(up["end"], (start + 32 * DAY + 3_600_000) // 1000)           # day 32 opens at its high; the candle's close
+        self.assertTrue(120 <= up["poc"] < 122)                                       # where the volume was
+        self.assertTrue(up["low"] <= up["val"] <= up["poc"] <= up["vah"] <= up["high"])
+        bins = up["bins"]
+        self.assertEqual((len(bins["v"]), max(bins["v"]), bins["low"]), (ae.RANGE_ROWS, 1000, 94.5))
+        self.assertAlmostEqual(bins["step"], 56 / ae.RANGE_ROWS)
+        fullest = bins["low"] + (int(np.argmax(bins["v"])) + 0.5) * bins["step"]
+        self.assertTrue(119.5 <= fullest <= 122.5)
+        # The fall still running: from that high to the last candle.
+        self.assertEqual((down["direction"], down["live"]), (-1, True))
+        self.assertEqual(down["start"], (start + 32 * DAY) // 1000)
+        self.assertEqual(down["end"], (start + 43 * DAY) // 1000)
+        self.assertEqual((down["high"], down["low"]), (150.5, 117.5))
+
+    def test_a_pullback_of_less_than_half_a_move_does_not_end_it_when_the_move_goes_on(self):
+        L, H = (lambda p: ("L", p)), (lambda p: ("H", p))
+        # A rise of 20, a dip of 7 (35%), then a higher high: one rise from 62 to 87.
+        self.assertEqual(ae.merge_moves([L(62), H(82), L(75), H(87)]), [L(62), H(87)])
+        # A dip of 51% ends the rise. So does a dip of 35% that is not followed by a higher high.
+        self.assertEqual(ae.merge_moves([L(58), H(67), L(62.4), H(82)]), [L(58), H(67), L(62.4), H(82)])
+        self.assertEqual(ae.merge_moves([L(62), H(82), L(75), H(80)]), [L(62), H(82), L(75), H(80)])
+        # Falls mirror: a bounce of 43% of the fall, then a lower low.
+        self.assertEqual(ae.merge_moves([H(2810), L(2173), H(2450), L(1710)]), [H(2810), L(1710)])
+        # The merged rise is measured against the next dip too, and the points before it stay.
+        self.assertEqual(ae.merge_moves([H(70), L(62), H(82), L(75), H(87), L(80), H(95)]), [H(70), L(62), H(95)])
+        # A move that grows by a merge can take in the pullback before it: 100 to 110, back to 106, up to 109 (not
+        # beyond 110), back to 108, then 120: first 106 to 120 becomes one rise, then 100 to 120.
+        self.assertEqual(ae.merge_moves([L(100), H(110), L(106), H(109), L(108), H(120)]), [L(100), H(120)])
+        self.assertEqual(ae.merge_moves([L(1), H(2)]), [L(1), H(2)])
+
+    def test_the_running_moves_reach_can_merge_it_with_the_move_before(self):
+        # The rise to 150, a dip to 136 (a quarter of the rise from 95) that turns into a swing, then 160 without
+        # a new swing: one rise from the low, still running.
+        days = [100.0] * 20 + [95.0] + list(np.linspace(100, 150, 12)) + list(np.linspace(147, 136, 4)) + list(np.linspace(140, 160, 6))
+        start = T0 - 40 * DAY
+        hours = [(start + d * DAY + i * 3_600_000, p0 + (p1 - p0) * i / 24, p0 + (p1 - p0) * i / 24 + 0.5, p0 + (p1 - p0) * i / 24 - 0.5,
+                  p0 + (p1 - p0) * i / 24, 10.0) for d, (p0, p1) in enumerate(zip(days, days[1:])) for i in range(24)]
+        a = np.array(hours)
+        n = len(days) - 1
+        daily = candles([(start + d * DAY, a[d * 24, 1], a[d * 24:(d + 1) * 24, 2].max(), a[d * 24:(d + 1) * 24, 3].min(), a[(d + 1) * 24 - 1, 4], 240.0)
+                         for d in range(n)])
+        kinds = [p[0] for p in ae.swings(daily["high"], daily["low"], __import__("engines.levels_engine", fromlist=["wilder_atr"]).wilder_atr(daily["high"], daily["low"], daily["close"]))]
+        self.assertEqual(kinds, ["L", "H", "L"])                                     # the dip was a swing of its own
+        ranges = ae.swing_ranges(candles(hours), daily, 0.5, start + n * DAY - 1)
+        self.assertEqual([(r["direction"], r["live"], r["low"]) for r in ranges], [(1, True, 94.5)])
+        self.assertEqual(ranges[0]["start"], (start + 20 * DAY) // 1000)
+
+    def test_a_swing_the_candles_start_inside_is_left_out(self):
+        hourly, daily, start = swing_market()
+        late = {k: v[25 * 24:] for k, v in hourly.items()}                            # hourly candles from day 25, inside the rise
+        ranges = ae.swing_ranges(late, daily, 0.5, start + 43 * DAY - 1)
+        self.assertEqual([(r["direction"], r["live"]) for r in ranges], [(-1, True)])
+
+    def test_no_swings_without_daily_candles(self):
+        hourly, daily, start = swing_market()
+        self.assertEqual(ae.swing_ranges(hourly, None, 0.5, start + 43 * DAY), [])
+        short = {k: v[:20] for k, v in daily.items()}
+        self.assertEqual(ae.swing_ranges(hourly, short, 0.5, start + 43 * DAY), [])
+
+    def test_build_gives_a_coins_charts_their_swings_levels_and_zone(self):
+        hourly, daily, start = swing_market()
+        now = start + 43 * DAY - 1
+        body = ae.build(hourly, daily, now)
+        self.assertEqual((body["version"], body["interval"], body["from"]), ("auction-2", "1h", start // 1000))
+        self.assertEqual([r["direction"] for r in body["ranges"]], [1, -1])
+        # The day's and the week's levels together; each chart shows its own.
+        self.assertEqual(set(body["levels"]), {"d_open", "pd_high", "pd_low", "w_open", "pw_high", "pw_low", "m_open", "ib_high", "ib_low"})
+        self.assertEqual(body["levels"]["ib_high"], 120.5)                            # the running day's first hourly candle (120 to 120.5)
+        self.assertNotIn("sessions", body)
+        down = [z for z in body["fib"] if z["direction"] == -1]
+        self.assertEqual((down[0]["base"], down[0]["extreme"]), (150.5, 117.5))
+        bare = ae.build(hourly, None, now)
+        self.assertEqual((bare["ranges"], bare["fib"], set(bare["levels"])), ([], [], {"ib_high", "ib_low"}))
 
 
 class LayerCacheTests(unittest.TestCase):
     def test_views_of_one_chart_share_a_build_and_its_answer(self):
         calls = []
 
-        async def fake_build(symbol, timeframe):
-            calls.append((symbol, timeframe))
+        async def fake_build(symbol):
+            calls.append(symbol)
             await asyncio.sleep(0.01)
-            return {"symbol": symbol, "timeframe": timeframe}
+            return {"symbol": symbol, "ranges": [1]}
 
         async def run():
             real, auction._build = auction._build, fake_build
@@ -159,39 +240,38 @@ class LayerCacheTests(unittest.TestCase):
             try:
                 a, b = await asyncio.gather(auction.levels("BTC/USDT", "4h"), auction.levels("BTC/USDT", "4h"))
                 c = await auction.levels("BTC/USDT", "4h")
-                await auction.levels("BTC/USDT", "1d")
+                await auction.levels("ETH/USDT", "4h")
                 return a, b, c
             finally:
                 auction._build = real
                 auction._cache.clear()
 
         a, b, c = asyncio.run(run())
-        self.assertIs(a, b)
-        self.assertIs(a, c)
-        self.assertEqual(calls, [("BTC/USDT", "4h"), ("BTC/USDT", "1d")])
+        self.assertEqual((a, b), (c, c))
+        self.assertEqual(calls, ["BTC/USDT", "ETH/USDT"])
 
-    def test_the_hourly_and_four_hour_charts_share_one_build(self):
+    def test_a_coins_three_charts_share_one_build(self):
         calls = []
 
-        async def fake_build(symbol, timeframe):
-            calls.append(timeframe)
-            return {"symbol": symbol, "timeframe": timeframe, "sessions": [1]}
+        async def fake_build(symbol):
+            calls.append(symbol)
+            return {"symbol": symbol, "ranges": [1]}
 
         async def run():
             real, auction._build = auction._build, fake_build
             auction._cache.clear()
             try:
-                return await auction.levels("BTC/USDT", "4h"), await auction.levels("BTC/USDT", "1h")
+                return await auction.levels("BTC/USDT", "4h"), await auction.levels("BTC/USDT", "1h"), await auction.levels("BTC/USDT", "1d")
             finally:
                 auction._build = real
                 auction._cache.clear()
 
-        four, one = asyncio.run(run())
-        self.assertEqual(calls, ["4h"])                      # both read 15-minute candles
-        self.assertEqual((four["timeframe"], one["timeframe"], one["sessions"]), ("4h", "1h", [1]))
+        four, one, day = asyncio.run(run())
+        self.assertEqual(calls, ["BTC/USDT"])                # all three read the same hourly candles
+        self.assertEqual((four["timeframe"], one["timeframe"], day["timeframe"], day["ranges"]), ("4h", "1h", "1d", [1]))
 
     def test_a_failed_build_is_not_kept(self):
-        async def failing(symbol, timeframe):
+        async def failing(symbol):
             raise auction.NoData("No intraday candles for this market")
 
         async def run():
