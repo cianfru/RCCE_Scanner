@@ -368,8 +368,9 @@ if nq > 0
                                 line.delete(other.ln)
                                 array.remove(active, at)
                         else if at < 0
+                            // Its second point is in a later candle than the swing's: two points in one candle read as a vertical line.
                             int t0 = p.isHigh ? array.get(dHT, p.day) : array.get(dLT, p.day)
-                            line ln = line.new(t0, price, t0 + HOUR, price, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 30), style = line.style_dotted, width = 1)
+                            line ln = line.new(t0, price, math.max(time, t0 + tfSec * 1000), price, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 30), style = line.style_dotted, width = 1)
                             array.push(active, Level.new(key, p.isHigh, price, t0, na, na, na, na, 0, ln, na))
 
             curDay := dk
@@ -522,12 +523,15 @@ if barstate.islast
                     float val = math.max(base + loR * st, lowP)
                     bool rise = not pa.isHigh
                     string rule = lastC < val ? "short" : lastC > vah ? "long" : ""
+                    // The dashed lines run on from the swing's last candle: their second point is a later candle, or TradingView
+                    // reads two points in one candle as a vertical line.
+                    int tEnd = math.max(time, tb + tfSec * 1000)
                     array.push(marks, line.new(ta, vah, tb, vah, xloc = xloc.bar_time, color = color.new(INK, 45), width = 1))
                     array.push(marks, line.new(ta, val, tb, val, xloc = xloc.bar_time, color = color.new(INK, 45), width = 1))
                     array.push(marks, line.new(ta, pocP, tb, pocP, xloc = xloc.bar_time, color = pocCol, width = 2))
-                    array.push(marks, line.new(tb, vah, tb + HOUR, vah, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
-                    array.push(marks, line.new(tb, val, tb + HOUR, val, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
-                    array.push(marks, line.new(tb, pocP, tb + HOUR, pocP, xloc = xloc.bar_time, extend = extend.right, color = color.new(pocCol, 25), style = line.style_dashed, width = 1))
+                    array.push(marks, line.new(tb, vah, tEnd, vah, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
+                    array.push(marks, line.new(tb, val, tEnd, val, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
+                    array.push(marks, line.new(tb, pocP, tEnd, pocP, xloc = xloc.bar_time, extend = extend.right, color = color.new(pocCol, 25), style = line.style_dashed, width = 1))
                     array.push(tags, label.new(right, vah, "VAH", xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = color.new(INK, 25), size = size.small, tooltip = vaTip("vah", rise, lowP, highP, val, vah, rule)))
                     array.push(tags, label.new(right, val, "VAL", xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = color.new(INK, 25), size = size.small, tooltip = vaTip("val", rise, lowP, highP, val, vah, rule)))
                     array.push(tags, label.new(right, pocP, rule == "" ? "POC" : "POC · " + rule, xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = pocCol, size = size.small, tooltip = vaTip("poc", rise, lowP, highP, val, vah, rule)))
