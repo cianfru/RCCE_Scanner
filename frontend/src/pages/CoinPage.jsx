@@ -167,7 +167,10 @@ function EngineValues({ data }) {
 
 export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
   const navigate = useNavigate();
-  const { isMobile } = useViewport();
+  const { isMobile, height: viewportH } = useViewport();
+  // The price chart is the page's main thing: on a desktop it takes most of the window's height (in steps, so
+  // dragging the window's edge does not rebuild it at every pixel). The long/short pane sits under it.
+  const chartH = isMobile ? 400 : Math.max(620, Math.min(900, Math.round((viewportH - 260) / 40) * 40));
   const location = useLocation();
   // The timeframe lives in the address (?tf=), so links and reloads keep it.
   const timeframe = timeframeFrom(location.search);
@@ -350,7 +353,7 @@ export default function CoinPage({ scanData4h, scanData1d, urlSymbol }) {
           symbol={data.symbol}
           timeframe={timeframe}
           timeframeControl={false}
-          height={isMobile ? 400 : 580}
+          height={chartH}
           signal={data.signal}
           signalFirstSeenAt={data.signal_first_seen_at}
           signalTimeframe={data.timeframe}

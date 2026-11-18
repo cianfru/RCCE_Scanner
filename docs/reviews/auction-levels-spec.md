@@ -135,25 +135,39 @@ Four coin-days is a small sample. Levels also differ from charts that read anoth
 
 ## What the chart draws
 
-The coin chart has a **Value** toggle next to Wallet levels, off until turned on; the choice is remembered. With it on:
+**One Layers control** (owner, 18 November 2026: "the chart itself, the main point of interest", the rest in "a drop-down menu" with "multiple choices"). Everything that can be drawn over the candles sits behind it, on every screen size. It opens a list of switches in three groups, and any number can be on:
+
+| Group | Switches |
+|---|---|
+| Price | Swing profiles, Levels, Pullback zone, Opens, prior highs and lows |
+| Trend | Averages (the 200-day average and the BMSB), Trend line, Ribbon, Patterns |
+| Traders | Trader entries, Wallet levels |
+
+- The button shows how many are on. **Clear all** leaves the candles alone.
+- Averages is on until turned off; the rest are off until turned on. The four Price switches, Averages and Trader entries are remembered.
+- The four Price switches are the parts of what was one Value switch, and one answer serves them: one request with any of them on, none with all off. Someone who had Value on keeps the profiles, the pullback zone and the opens.
+- One (i) beside the control explains every switch.
+- On a desktop the coin page's chart takes most of the window's height (620 to 900 px, in steps of 40).
+
+**Swing profiles.** With it on:
 
 - a box over each move, from its first candle to its last and from its low to its high (the running move fainter);
 - along the box's left edge, the move's volume by price (the POC row in gold, the value-area rows brighter); when that edge is scrolled out of view, the bars sit at the pane's left edge;
 - across the box, a gold line at the move's POC and grey lines at its VAH and VAL;
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
-- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found;
-- right of the last candle, the other labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low);
-- tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The profiles' own lines are **not tested here**, and the tips say so; S1 to S6 measured calendar sessions.
+- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found.
 
-- in violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
+**Opens, prior highs and lows.** Right of the last candle, labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low).
 
-**Levels** is a switch of its own, next to Value, off until turned on and remembered (owner, 18 November 2026: these should "only appear when you press the levels button", because the charts were getting busy). It can be on without Value, on a chart with nothing else. With it on:
+**Pullback zone.** In violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
+
+**Levels** (owner, 18 November 2026: these should "only appear when you press the levels button", because the charts were getting busy). With it on:
 
 - **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter;
 - **a ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken;
 - the tip says where price turned, how far it went beyond and how long it took to close back, and what S9 found for trading back into the range after it.
 
-Value and Levels read the same answer, so having both on costs one request. With both off nothing is requested. On phones the wallet switch reads "Wallets", so "Levels" names one thing.
+Tapping or hovering a box, a line, a ring or a tag says what it is in plain words, with its own prices. The profiles' own lines are **not tested here**, and the tips say so; S1 to S6 measured calendar sessions.
 
 The layers say what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
 

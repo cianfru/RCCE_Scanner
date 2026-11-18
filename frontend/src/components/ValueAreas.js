@@ -4,10 +4,11 @@
 // of control (POC) and lines at the edges of its value area. The last finished swing's three lines run on,
 // dashed, to the right edge; while the last price is outside its value area, its POC tag adds the side the
 // method trades it from (short below the value area, long above). Right of the last candle: labelled ticks (those three, the opens, prior
-// extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone.
-// The chart's Levels switch, on its own or with the above. Dotted: each swing high and low carried on as a
-// price level until a candle trades through it, with a ring where it was then swept (an hourly candle closed
-// back inside it within three days).
+// extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone. Dotted: each swing high and low
+// carried on as a price level until a candle trades through it, with a ring where it was then swept (an hourly
+// candle closed back inside it within three days).
+// Four parts, each with its own switch in the chart's Layers menu: the profiles, the pullback zone, the opens and
+// prior extremes, and the levels.
 // What happened, drawn where it happened: no forecast.
 import { placeRanges, placeLevels, lastDone, histogram, ticks, rangeTicks, pocRule, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
 
@@ -32,17 +33,18 @@ export default class ValueAreas {
   attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.requestUpdate = requestUpdate; requestUpdate(); }
   detached() { this.chart = null; this.series = null; this.requestUpdate = null; }
   // body: the /api/auction answer (null clears); times: the chart's candle times (seconds); last: the last price.
-  // show: which of the two switches are on. value: the swings' profiles, their lines, the tags and the pullback
-  // zone. levels: the swing highs and lows as price levels, with their sweeps.
-  setData(body, times, tfSec, colors, last, show = { value: true, levels: true }) {
+  // show: which of the chart's switches are on. profiles: each swing's box, volume by price and lines, with the
+  // tags of the last finished one. zone: the pullback zone. opens: the opens and prior extremes. levels: the swing
+  // highs and lows as price levels, with their sweeps.
+  setData(body, times, tfSec, colors, last, show = { profiles: true, zone: true, opens: true, levels: true }) {
     if (colors) this.colors = colors;
-    const value = body && show.value ? body : null;
-    this.ranges = value && times?.length ? placeRanges(value.ranges, times).map(r => ({ ...r, rows: histogram(r) })) : [];
-    this.bands = value ? fibBands(value, times, tfSec) : [];
-    this.levels = body && show.levels ? placeLevels(body, times) : [];
+    const on = part => (body && show[part] ? body : null);
+    this.ranges = on("profiles") && times?.length ? placeRanges(body.ranges, times).map(r => ({ ...r, rows: histogram(r) })) : [];
+    this.bands = on("zone") ? fibBands(body, times, tfSec) : [];
+    this.levels = on("levels") ? placeLevels(body, times) : [];
     const tf = tfSec <= 3600 ? "1h" : tfSec < 86400 ? "4h" : "1d";
     this.rule = pocRule(lastDone(this.ranges), last);      // the side the method trades the last finished swing's POC from
-    this.ticks = value ? [...ticks(value, tf), ...rangeTicks(this.ranges, last), ...fibTicks(this.bands)] : [];
+    this.ticks = body ? [...(on("opens") ? ticks(body, tf) : []), ...rangeTicks(this.ranges, last), ...fibTicks(this.bands)] : [];
     this.last = times?.length ? times.length - 1 : 0;
     this.requestUpdate?.();
   }
