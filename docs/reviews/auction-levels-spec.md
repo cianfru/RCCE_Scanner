@@ -173,6 +173,8 @@ Each was declared, with its rules and bars, before any outcome was computed. Wit
 | S7 | The 0.618 to 0.66 retracement zone of major swings (the band the chart draws): does price turn there, more than at other depths, and more with a weekly or monthly POC in it? | Price turned in 46.6% of 1,602 touches, the same as at other depths (45% to 51%). A POC in the zone made no difference. The trade made nothing. **No bar met.** |
 | S8 | The POC rule on swing profiles (17 November 2026; `docs/reviews/poc-rule-study.md`): after a daily close under the last finished swing's VAL, sell at its POC; after a close over its VAH, buy at its POC. Stop at the far edge of the value area, exit at the edge price broke. | +0.32% a trade after costs on 2,045 trades (-0.39 to +1.00), +0.41% on 240 held-out trades (-0.36 to +1.23). The first rule here that did not lose after costs, and not told from zero. **No bar met.** |
 
+| S9 | The cheat sheets' entry triggers on the chart's swing levels (18 November 2026; `docs/reviews/entry-trigger-study.md`): entering after a 5-minute structure change, the 3rd touch, and whether open interest or a CVD divergence on the retest sorts the trades. | Declared, not run yet. |
+
 S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md. S7: docs/reviews/fib-zone-study.md (71 coins, March 2021 to July 2025, with November 2025 to July 2026 held out).
 
 Data: Binance futures 5-minute candles (with taker buy volume) and 5-minute open interest for twelve coins, January 2021 to April 2026, with May to October 2026 held out. Hyperliquid serves only the latest 5,000 candles per series, too few for a study.
