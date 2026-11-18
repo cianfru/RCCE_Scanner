@@ -155,7 +155,7 @@ Four coin-days is a small sample. Levels also differ from charts that read anoth
 - along the box's left edge, the move's volume by price (the POC row in gold, the value-area rows brighter); when that edge is scrolled out of view, the bars sit at the pane's left edge;
 - across the box, a gold line at the move's POC and grey lines at its VAH and VAL;
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
-- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found.
+- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar.
 
 **Opens, prior highs and lows.** Right of the last candle, labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low).
 
@@ -165,9 +165,9 @@ Four coin-days is a small sample. Levels also differ from charts that read anoth
 
 - **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter;
 - **a ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken;
-- the tip says where price turned, how far it went beyond and how long it took to close back, and what S9 found for trading back into the range after it.
+- the tip says where price turned, how far it went beyond and how long it took to close back.
 
-Tapping or hovering a box, a line, a ring or a tag says what it is in plain words, with its own prices. The profiles' own lines are **not tested here**, and the tips say so; S1 to S6 measured calendar sessions.
+Tapping or hovering a box, a line, a ring or a tag says what it is in plain words, with its own prices, and how the method's traders use it. **The tips carry no study results** (owner, 18 November 2026: "Just give an explanation of what it is ... do not include the testing results"). What each study found stays in the table below and in its own document.
 
 The layers say what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
 

@@ -143,9 +143,9 @@ export function mergeTicks(rows, within = 1.5) {
 }
 
 // ─── What a line or tag is, in plain words (shown at the pointer) ────────────────────────────────────────────────
-// Each entry: a plain title, then short lines in this order: what it is (with this chart's own numbers), how
-// traders who follow the method use it, and what a declared study found where one looked (docs/reviews).
-// What happened, never what comes next. No trader shorthand without its meaning beside it.
+// Each entry: a plain title, then short lines in this order: what it is (with this chart's own numbers), then
+// how traders who follow the method use it. No study results here (owner, 18 November 2026): those stay in
+// docs/reviews. What happened, never what comes next. No trader shorthand without its meaning beside it.
 
 const PREV = { day: "yesterday", week: "last week" };
 const THIS = { day: "today", week: "this week", month: "this month" };
@@ -154,20 +154,15 @@ const cap = str => str[0].toUpperCase() + str.slice(1);
 const utcDay = t => new Date(t * 1000).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 
 const POC_USE = "Traders use a price like this as the place to take profit.";
-const UNTESTED = "Not tested here.";
-// docs/reviews/poc-rule-study.md: +0.32% a trade after costs in sample, +0.41% held out, every interval holding zero.
-const RULE_TEST = "Tested here on 71 coins since 2021: the rule made about 0.3% a trade after fees, too little to tell from nothing.";
 
 const openCopy = period => [`${cap(THIS[period])}'s opening price`, [
   `The price when ${THIS[period]} began (${BEGAN[period]}).`,
   `Traders read price above it as buyers being ahead ${THIS[period]}, below it as sellers being ahead.`]];
 
-// The fade of yesterday's extremes was tested (S4); last week's were not.
 const extremeCopy = (period, high) => [`${cap(PREV[period])}'s ${high ? "high" : "low"}`, [
   `The ${high ? "highest" : "lowest"} price reached ${PREV[period]}.`,
   high ? "Traders watch for price to poke above it and fall straight back, then sell."
-    : "Traders watch for price to dip below it and climb straight back, then buy.",
-  period === "day" ? `Tested here: ${high ? "selling those pokes" : "buying those dips"} made nothing before fees and lost after them.` : ""]];
+    : "Traders watch for price to dip below it and climb straight back, then buy."]];
 
 const firstHourCopy = high => [`${high ? "High" : "Low"} of today's first hour`, [
   `The ${high ? "highest" : "lowest"} price in today's first hour (00:00 to 01:00 UTC).`,
@@ -192,8 +187,7 @@ function rangeCopy(r, fmt) {
   return [`Trading by price in the ${m.noun}, ${m.days}`, [
     `Price ${m.verb} from ${m.from} to ${m.to}${r.live ? " and the move is still running" : ""}. Each bar is how much was traded at that price on the way: longer means more.`,
     `70% of it was traded between ${fmt(r.val)} and ${fmt(r.vah)} (the value area, the brighter bars). The gold line, ${fmt(r.poc)}, is the single most-traded price (the point of control, POC).`,
-    "Traders treat that band as the move's fair prices: they look for trades at its edges and take profit at the most-traded price.",
-    UNTESTED]];
+    "Traders treat that band as the move's fair prices: they look for trades at its edges and take profit at the most-traded price."]];
 }
 
 // rule: "short" or "long" while the last price is outside the swing's value area (pocRule), else null.
@@ -204,22 +198,14 @@ function lineCopy(r, which, fmt, rule = null) {
       : rule === "long" ? `Price is now above the ${m.noun}'s main trading range (over ${fmt(r.vah)}). The method's rule then: buy (go long) at this price if price dips back to it.`
         : POC_USE;
     return [`Most-traded price of the ${m.noun}`, [
-      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, use, rule ? RULE_TEST : UNTESTED]];
+      `More was traded at this price than at any other in the ${m.noun} from ${m.from} to ${m.to}${far} (its point of control, POC).`, use]];
   }
   const high = which === "vah";
   return [`${high ? "Top" : "Bottom"} of the ${m.noun}'s main trading range`, [
     `70% of the trading in the ${m.noun} from ${m.from} to ${m.to}${far} happened between ${fmt(r.val)} and ${fmt(r.vah)}. This is the ${high ? "top" : "bottom"} of that band (its value area ${high ? "high, VAH" : "low, VAL"}).`,
     `Traders treat the band as the move's fair prices. ${high ? "Above it they watch whether price holds up there or falls back in."
-      : "Below it they watch whether price stays down there or climbs back in."}`,
-    UNTESTED]];
+      : "Below it they watch whether price stays down there or climbs back in."}`]];
 }
-
-// docs/reviews/entry-trigger-study.md (S9): of the swing levels price traded through, 91% were swept; trading back
-// into the range (at the close back, after a 5-minute change of structure, or on the retest) made -0.29% to -0.36%
-// a trade after costs in sample and -0.78% to -1.19% held out.
-const SWEEP_TEST = "Tested here on 71 coins since 2021: trading back into the range after such a push lost about 0.3% a trade after fees, with each of the method's entries.";
-const SWEPT_TEST = "Tested here on 71 coins since 2021: 9 in 10 swing levels that price traded through were swept like this, and trading back into the range afterwards lost about 0.3% a trade after fees.";
-const BROKEN_TEST = "Counted here on 71 coins since 2021: 1 in 10 swing levels that price traded through ended this way; the other 9 were swept.";
 
 // A swing high or low as a level: where price turned, what became of it, and how the method's traders use it.
 // asOf: when the chart's data was read (seconds), to tell "not within three days" from "not so far".
@@ -228,19 +214,18 @@ function swingLevelCopy(v, fmt, asOf) {
   const high = v.side === "high", past = high ? "above" : "below", back = high ? "under" : "over";
   const made = `Price turned ${high ? "down" : "up"} at ${fmt(v.price)} on ${utcDay(v.time)}`;
   const use = `Traders assume stop orders rest just ${past} a swing ${v.side} like this (they call it liquidity). They wait for price to push through it and close back ${back} it, then trade the other way.`;
-  if (v.taken == null) return [`Swing ${v.side} not traded through`, [`${made} and has not traded ${past} it since.`, use, SWEEP_TEST]];
+  if (v.taken == null) return [`Swing ${v.side} not traded through`, [`${made} and has not traded ${past} it since.`, use]];
   const went = `On ${utcDay(v.taken)} it traded ${past} it${v.extreme != null ? `, as far as ${fmt(v.extreme)}` : ""}`;
   if (v.back == null) {
     const open = asOf > 0 && asOf - v.taken < SWEEP_WINDOW;
     return [`Swing ${v.side} traded through`, [
       `${made}. ${went}, and no hourly candle ${open ? `has closed back ${back} it so far` : `closed back ${back} it in the three days after`}.`,
-      `Traders read a level that price holds beyond as broken: the old ${v.side} is then watched from the other side.`, open ? "" : BROKEN_TEST]];
+      `Traders read a level that price holds beyond as broken: the old ${v.side} is then watched from the other side.`]];
   }
   const hours = Math.max(1, Math.round((v.back - v.taken) / 3600));
   return [`Swing ${v.side} swept`, [
     `${made}. ${went}, and an hourly candle closed back ${back} it ${hours <= 1 ? "within the hour" : `${hours} hours later`}.`,
-    `Traders call this a swing failure when it is quick and a failed auction when it takes hours. They read it as stop orders being filled with no follow-through, and trade back ${high ? "down" : "up"} into the range.`,
-    SWEPT_TEST]];
+    `Traders call this a swing failure when it is quick and a failed auction when it takes hours. They read it as stop orders being filled with no follow-through, and trade back ${high ? "down" : "up"} into the range.`]];
 }
 
 // Everything under the pointer: a tag that stands for several levels at one price gives one entry each.
@@ -267,8 +252,7 @@ export function describe(hit, body, fmt = String) {
         ? `Price rose from ${fmt(b.base)} to ${fmt(b.extreme)}${drawn}. This band is where a dip has given back about two thirds of that rise (61.8% to 66%).`
         : `Price fell from ${fmt(b.base)} to ${fmt(b.extreme)}${drawn}. This band is where a bounce has taken back about two thirds of that fall (61.8% to 66%).`,
       `Traders use it as the place to ${up ? "buy the dip" : "sell the bounce"}.`,
-      "Tested here on 71 coins: after reaching this band, price turned back 47 times in 100 and kept going 53. The same happened at every other distance tested.",
-      b.poc ? "A most-traded price (POC) sits inside the band, which traders count as a second reason. Tested here: it made no difference." : "",
+      b.poc ? "A most-traded price (POC) sits inside the band, which traders count as a second reason." : "",
       b.touched ? "Price has already traded into this band." : "",
     ]], { range: b.top != null ? [b.bottom, b.top] : null });
   }

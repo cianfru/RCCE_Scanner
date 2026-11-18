@@ -132,5 +132,5 @@ BTC, ETH and SOL in sample, recounted with separately written code (plain loops;
 - Neither side is steady. Buys led in sample and lost held out; sells did the reverse. A rule whose good side changes from one period to the next has not shown which side to trust.
 - It is the first rule from this method that did not lose after costs on these candles. The calendar-session rules lost 0.14% to 0.33% a trade.
 - To tell +0.3% a trade from zero with trades this wide (a typical win or loss is 6% to 7%) would take several times the history there is.
-- **Context, not a signal.** The chart keeps showing the rule as the method's rule, with this result in its tip.
+- **Context, not a signal.** The chart keeps showing the rule as the method's rule. Its tip carried this result until 18 November 2026, when the owner asked for tips without study results.
 
