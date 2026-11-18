@@ -142,13 +142,20 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 - across the box, a gold line at the move's POC and grey lines at its VAH and VAL;
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
 - **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found;
-- **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter. **A ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken. The tip says where price turned, how far it went beyond and how long it took to close back;
 - right of the last candle, the other labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low);
 - tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The swing levels are **not tested here**, and the tips say so; the studies below measured calendar sessions.
 
 - in violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
 
-The layer says what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
+**Levels** is a switch of its own, next to Value, off until turned on and remembered (owner, 18 November 2026: these should "only appear when you press the levels button", because the charts were getting busy). It can be on without Value, on a chart with nothing else. With it on:
+
+- **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter;
+- **a ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken;
+- the tip says where price turned, how far it went beyond and how long it took to close back.
+
+Value and Levels read the same answer, so having both on costs one request. With both off nothing is requested. On phones the wallet switch reads "Wallets", so "Levels" names one thing.
+
+The layers say what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
 
 ## Cost
 
