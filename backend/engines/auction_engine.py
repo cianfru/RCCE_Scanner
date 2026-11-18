@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-AUCTION_VERSION = "auction-2"
+AUCTION_VERSION = "auction-3"
 VALUE_SHARE = 0.70
 DAY_MS = 86_400_000
 WEEK_MS = 7 * DAY_MS
@@ -42,6 +42,8 @@ STEP_FRACTION = {"day": 2e-4, "week": 5e-4, "month": 1e-3, "swing": 5e-4}
 GRID_ROWS = 120                       # rows of the coarse grid a window of sessions shares
 RANGE_ROWS = 60                       # rows of each swing's own histogram, from its low to its high
 RANGE_PULLBACK = 0.5                  # a pullback of less than half a move does not end it, when the move then goes on
+LEVEL_DAYS = 180                      # a swing's high or low is a price level for 180 days
+SWEEP_HOURS = 72                      # a sweep: an hourly candle closes back inside the level within 72 hours of the first trade beyond it
 
 # The charts the layer is drawn on. All three read the same candles, so one answer serves them.
 PLANS: Dict[str, dict] = {tf: {"interval": "1h", "days": 180} for tf in ("1h", "4h", "1d")}
@@ -393,9 +395,111 @@ def swing_ranges(candles: dict, daily: Optional[dict], step: float, now_ms: floa
     return out
 
 
+def structure_at(piv: list, high: np.ndarray, low: np.ndarray, i: int, known: int) -> list:
+    """The swing points as the chart draws them at the close of day i: the first ``known`` swings (those confirmed
+    by then) without the pullbacks that did not end a move, measured with the running move's reach so far. The
+    reach itself, which is not a swing yet, is left out."""
+    pts = piv[:known]
+    if not pts:
+        return []
+    kind, _, day, _ = pts[-1]
+    if day + 1 > i:
+        return merge_moves(pts)
+    j = day + 1 + int(np.argmax(high[day + 1:i + 1]) if kind == "L" else np.argmin(low[day + 1:i + 1]))
+    tail = ("H", float(high[j]), j, j) if kind == "L" else ("L", float(low[j]), j, j)
+    return merge_moves(pts + [tail])[:-1]
+
+
+def swing_levels(candles: dict, daily: Optional[dict]) -> List[dict]:
+    """The swing highs and lows of the chart's structure as price levels, and what became of each.
+
+    At each day's close the structure is rebuilt from what was known then (``structure_at``). Each of its points
+    made in the last LEVEL_DAYS days that price has not traded beyond since is a level for the next day; a pullback
+    low or high stops being one when the move runs on from it and the structure drops it. The first hourly candle
+    that trades beyond a level takes it. If an hourly candle then closes back inside the level
+    within SWEEP_HOURS hours of the taking candle's open (that candle included), the level was swept: traders
+    call a quick one a swing failure and a slow one a failed auction.
+
+    ``candles`` are hourly, oldest first; ``daily`` may begin earlier. Each entry, oldest swing first:
+    ``side`` ("high" or "low"), ``price``, ``time`` (the swing's candle, or its day before the candles begin),
+    ``known`` (the close from which it was a level), ``taken`` (the taking candle's open; None while untaken),
+    ``back`` (the close of the candle that closed back inside; None without one) and ``extreme`` (the furthest
+    price from the take to that close, or so far). Times in seconds. A level taken on a day without hourly
+    candles is left out: where it was taken is not known.
+    """
+    if not daily or len(daily.get("timestamp", [])) < 30:
+        return []
+    from engines.levels_engine import wilder_atr
+    ts, _, h, l, c, _ = _arrays(candles)
+    if len(ts) < 2:
+        return []
+    dts = np.asarray(daily["timestamp"], dtype=np.int64)
+    dh, dl, dc = (np.asarray(daily[k], dtype=np.float64) for k in ("high", "low", "close"))
+    piv = swings(dh, dl, wilder_atr(dh, dl, dc))
+    span = int(np.median(np.diff(ts)))
+    n = len(dts)
+    # Each day's high and low as the hourly candles have them, where they cover the day: a level is then taken
+    # on the chart's own candles even when the daily ones come from another exchange.
+    eh, el = dh.copy(), dl.copy()
+    of = np.searchsorted(dts, ts, side="right") - 1
+    covered = (of >= 0) & (ts < dts[np.clip(of, 0, n - 1)] + DAY_MS)
+    if covered.any():
+        days, first = np.unique(of[covered], return_index=True)
+        eh[days], el[days] = np.maximum.reduceat(h[covered], first), np.minimum.reduceat(l[covered], first)
+    out: Dict[tuple, dict] = {}
+    done = set()
+    known, state, merged = 0, None, []
+    for i in range(n):
+        while known < len(piv) and piv[known][3] <= i:
+            known += 1
+        if not known:
+            continue
+        kind, _, day, _ = piv[known - 1]
+        reach = None if day + 1 > i else float(dh[day + 1:i + 1].max() if kind == "L" else dl[day + 1:i + 1].min())
+        if (known, reach) != state:                          # the structure only changes with a new swing or a new reach
+            state, merged = (known, reach), structure_at(piv, dh, dl, i, known)
+            points = {(kind, d) for kind, _, d, _ in merged}
+            for key in [k for k in out if k not in done and k not in points]:
+                del out[key]                                 # a pullback the move has since run on from: no longer a swing
+        a, b = (int(x) for x in np.searchsorted(ts, [dts[i + 1], dts[i + 1] + DAY_MS])) if i + 1 < n else (0, 0)
+        for kind, _, d, _ in merged:
+            key = (kind, d)
+            if key in done:
+                continue
+            s = 1 if kind == "H" else -1
+            far, far_d = (h, eh) if s > 0 else (l, el)
+            price = float(far_d[d])
+            if dts[i] - dts[d] > LEVEL_DAYS * DAY_MS or (d + 1 <= i and (s * far_d[d + 1:i + 1]).max() > s * price):
+                done.add(key)                                # too old, or traded beyond while it was not a level
+                out.pop(key, None)
+                continue
+            if key not in out:
+                at = np.flatnonzero((ts >= dts[d]) & (ts < dts[d] + DAY_MS))
+                g = int(at[np.argmax(s * far[at])]) if at.size else None
+                out[key] = {"side": "high" if s > 0 else "low", "price": price,
+                            "time": int((ts[g] if g is not None else dts[d]) // 1000), "known": int((dts[i] + DAY_MS) // 1000),
+                            "taken": None, "back": None, "extreme": None}
+            if b > a:
+                beyond = np.flatnonzero(s * far[a:b] > s * price)
+                if not beyond.size:
+                    continue
+                g = a + int(beyond[0])
+                z = int(np.searchsorted(ts, ts[g] + SWEEP_HOURS * 3_600_000))
+                inside = np.flatnonzero(s * c[g:z] < s * price)
+                r = g + int(inside[0]) if inside.size else z - 1
+                out[key].update(taken=int(ts[g] // 1000), back=int((ts[r] + span) // 1000) if inside.size else None,
+                                extreme=float(s * (s * far[g:r + 1]).max()))
+                done.add(key)
+            elif i + 1 < n and s * far_d[i + 1] > s * price:
+                done.add(key)                                # taken on a day without hourly candles
+                out.pop(key, None)
+    return sorted(out.values(), key=lambda e: (e["time"], e["side"]))
+
+
 def build(candles: dict, daily: Optional[dict], now_ms: float) -> dict:
-    """The Value layer of a coin's charts: the profile of each swing, the reference levels (the day's and the
-    week's; the chart picks its own) and the retracement zone."""
+    """The Value layer of a coin's charts: the profile of each swing, the swing highs and lows as price levels
+    with what became of each, the reference levels (the day's and the week's; the chart picks its own) and the
+    retracement zone."""
     ts, _, _, _, c, _ = _arrays(candles)
     step = nice_step(float(c[-1]) * STEP_FRACTION["swing"])
     dec = _decimals(step)
@@ -407,6 +511,8 @@ def build(candles: dict, daily: Optional[dict], now_ms: float) -> dict:
         "from": int(ts[0] // 1000),
         "step": step,
         "ranges": swing_ranges(candles, daily, step, now_ms),
+        "swing_levels": [{**e, "price": round(e["price"], dec), "extreme": None if e["extreme"] is None else round(e["extreme"], dec)}
+                         for e in swing_levels(candles, daily)],
         "levels": {k: round(p, dec) for k, p in refs.items()},
         "fib": [{**z, **{k: round(z[k], dec) for k in ("base", "extreme", "from", "to")}} for z in fib_zones(daily)],
     }

@@ -18,6 +18,7 @@ Nothing here is a signal. The Value layer is display only: no scanner signal, al
 | P | Two community TradingView scripts written from the videos: [Chart Champions Part 2: CCV, IBs, POCs](https://www.tradingview.com/script/dkGe7rmo-Chart-Champions-Part-2-CCV-IBs-POCs) and [Chart Champions Value, Points of Interest](https://in.tradingview.com/script/AHNKTwcK-Trading-Ideas-Chart-Champions-Value-Points-of-Interest). | Read on 16 November 2026. They give levels and session times, not entries, stops or exits. |
 | A | Standard Auction Market Theory (Steidlmayer; Dalton, *Mind Over Markets*), which the method is built on. | General knowledge, not specific to Daniel. |
 | S | Chart Champions' own public guides on chartchampions.com (written by "Chart Champions Team", not signed by Daniel). | Read on 16 November 2026 **as a search engine's excerpts only**: the site refuses automated readers, so no wording could be checked on the page itself. |
+| C | Two of Chart Champions' member cheat sheets, supplied by the owner on 18 November 2026: "Entry Triggers" (9 pages) and "Liquidity" (15 pages). | **Read in full.** Summarised below in our own words; the files are not kept in the repository. |
 
 **The videos could not be read.** On 16 November 2026 YouTube refused transcript requests from the research machine (it asks for a sign-in) and the public pages' transcript panel loaded once and then stayed empty; no way around that was tried. To move a rule from O to checked, it still needs the video and the timestamp where it is said: the owner can paste transcripts, or name the videos.
 
@@ -38,7 +39,27 @@ Nothing here is a signal. The Value layer is display only: no scanner signal, al
 | Open interest and delta | Not entry triggers on their own: "an extra layer of confluence once price reaches your level". | Study S4. |
 | Risk | At most 1% of the account a trade; stop for the day after three losing trades; reward at least twice the risk. | Not used by the app. |
 
-The "CCV 2.0" manual, the cheat sheets and the daily level sheets are for members only and were not read.
+The "CCV 2.0" manual, the other cheat sheets and the daily level sheets are for members only and were not read.
+
+## What the two cheat sheets add (source C)
+
+They cover what to wait for once price reaches a level, and where the stop goes. Nothing in them says to trade the touch of a level.
+
+| Topic | What the sheets say | Effect here |
+|---|---|---|
+| Where stops rest ("liquidity") | Longs put their stops under a support level, shorts over a resistance level. Most stops sit at the edges of a range or consolidation, at swing highs and lows. | **Drawn**: each swing high and low of the chart's structure is carried on as a level until price trades through it. |
+| Swing failure (SFP) | Price swings beyond a significant high or low and the candle closes back inside the previous range. Also called a stop hunt or liquidity grab. Preferred on 5 to 30 minute candles. No close back, no setup. The setup is wrong once price returns to the SFP candle's extreme. | **Drawn** as a sweep, on hourly closes (the chart's candles). The plain fade was tested on the previous day's high and low (S4). |
+| Failed auction | The same, but price stays beyond the level for hours or days before it comes back. Preferred on 30 minutes and 4 hours; "the higher the timeframe the more follow-through". Preferred when open interest rose on the breakout. Daniel likes it when price is in a sideways range. | **Drawn** as a sweep that took more than an hour. |
+| The order of an entry | Wait for the level to be hit. Then, on the 1 or 5 minute chart: check volume, delta and open interest; wait for a change of market structure; on the retest, check for a CVD divergence. | Study S9 (declared separately). |
+| Market structure change | After resistance is hit: a lower high, then a break of the low between. That break is the entry; the stop goes above the high. Mirror at support. | Study S9. |
+| Retest with a CVD divergence | After the level is hit, look for trapped traders in the order flow; on the retest, a CVD divergence is the entry. Called the more aggressive entry. | Study S9, with candle-level delta. Trapped traders need a footprint chart, which is not feasible here. |
+| When not to enter | Open interest falls on the pullback from the level, then rises again on the retest with new positions in the direction of the break: no fade. | Study S9. |
+| Mini range | The same triggers inside a small range on a low timeframe, often when price stops short of a key level. | Not defined well enough to test. |
+| 3rd touch | First pivot: a key high or low. Second: a swing failure or failed auction of it. Third: the retest of the first pivot's price, which is the entry; the stop goes beyond the sweep's candle. | Study S9. |
+| Exits | Depend on context: first at the POC of the range (or of a fixed range), second at the far side of the range; a structure change in the trade's favour lets the rest run. After the first exit the stop may go to the entry. | The studies exit at the range's POC. |
+| Their numbers | Two only, "collected during a bear market", with no sample size: 26% and 52% for a reversal at the last low or high before a swing failure. On both pages the words and the picture disagree about which side is meant. | Not used. |
+
+Every chart in the sheets is an example that worked. No setup comes with a rate of success.
 
 ## The rules
 
@@ -68,7 +89,7 @@ In the public scripts but not in the outline:
 | Daily, weekly and monthly VWAP | Not drawn. |
 | "CCV": the 80% rule for a day opening outside the previous day's value area | Study S1. |
 
-## Exact definitions (the Value layer, engine version `auction-2`)
+## Exact definitions (the Value layer, engine version `auction-3`)
 
 Code: `backend/engines/auction_engine.py`, served by `backend/auction.py` at `/api/auction/{symbol}`, drawn by `frontend/src/components/ValueAreas.js`.
 
@@ -79,6 +100,14 @@ Code: `backend/engines/auction_engine.py`, served by `backend/auction.py` at `/a
 - **A move's candles** run from the hourly candle with the lowest low of the swing low's day (the highest high of a swing high's day) to the hourly candle of the next swing. The running move ends at the last candle. A move the candles start inside is left out.
 - **Candles read:** Hyperliquid's 1-hour candles, 180 days. One answer serves a coin's 1H, 4H and 1D charts.
 - The running move changes as it goes: its profile grows with each candle, and a move that looked finished is joined to the next one when price goes beyond its end after a pullback of under half.
+
+**Swing levels and sweeps** (version 3, 18 November 2026; owner, on the cheat sheets: "are we going to be able to draw the levels they are referring to, to the charts?"). `engines/auction_engine.swing_levels`.
+
+- **A level** is the high or low of a swing point of the structure above, as that structure stood at a day's close: only swings confirmed by then, with the pullbacks merged by then. It is a level from the next day, for 180 days, until price trades beyond it. A pullback low or high stops being a level when the move runs on from it and the structure drops it.
+- **Taken:** the first hourly candle that trades beyond the level.
+- **Swept:** an hourly candle closes back inside the level within 72 hours of the taking candle's open (that candle included). Within the hour is what the sheets call a swing failure; later, a failed auction. No close back within 72 hours is a break.
+- Each day's extremes are read from the chart's own hourly candles where they cover the day, so a level is taken on the candles the chart shows even when the daily candles come from another exchange.
+- Hourly closes, not the 5 to 30 minute candles the sheets prefer: the layer reads hourly candles only.
 
 **Sessions** (what version 1 drew, and what the studies below measured) are UTC. A day starts at 00:00, a week on Monday 00:00, a month on its first day. Their code stays in the engine for the studies.
 
@@ -106,28 +135,50 @@ Four coin-days is a small sample. Levels also differ from charts that read anoth
 
 ## What the chart draws
 
-The coin chart has a **Value** toggle next to Wallet levels, off until turned on; the choice is remembered. With it on:
+**One Layers control** (owner, 18 November 2026: "the chart itself, the main point of interest", the rest in "a drop-down menu" with "multiple choices"). Everything that can be drawn over the candles sits behind it, on every screen size. It opens a list of switches in three groups, and any number can be on:
+
+| Group | Switches |
+|---|---|
+| Price | Swing profiles, Levels, Pullback zone, Opens, prior highs and lows |
+| Trend | Averages (the 200-day average and the BMSB), Trend line, Ribbon, Patterns |
+| Traders | Trader entries, Wallet levels |
+
+- The button shows how many are on. **Clear all** leaves the candles alone.
+- Averages is on until turned off; the rest are off until turned on. The four Price switches, Averages and Trader entries are remembered.
+- The four Price switches are the parts of what was one Value switch, and one answer serves them: one request with any of them on, none with all off. Someone who had Value on keeps the profiles, the pullback zone and the opens.
+- One (i) beside the control explains every switch.
+- On a desktop the coin page's chart takes most of the window's height (620 to 900 px, in steps of 40).
+
+**Swing profiles.** With it on:
 
 - a box over each move, from its first candle to its last and from its low to its high (the running move fainter);
 - along the box's left edge, the move's volume by price (the POC row in gold, the value-area rows brighter); when that edge is scrolled out of view, the bars sit at the pane's left edge;
 - across the box, a gold line at the move's POC and grey lines at its VAH and VAL;
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
-- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found;
-- right of the last candle, the other labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low);
-- tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The swing levels are **not tested here**, and the tips say so; the studies below measured calendar sessions.
+- **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found.
 
-- in violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
+**Opens, prior highs and lows.** Right of the last candle, labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low).
 
-The layer says what happened and where. It does not mark setups, entries or exits.
+**Pullback zone.** In violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
+
+**Levels** (owner, 18 November 2026: these should "only appear when you press the levels button", because the charts were getting busy). With it on:
+
+- **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter;
+- **a ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken;
+- the tip says where price turned, how far it went beyond and how long it took to close back, and what S9 found for trading back into the range after it.
+
+Tapping or hovering a box, a line, a ring or a tag says what it is in plain words, with its own prices. The profiles' own lines are **not tested here**, and the tips say so; S1 to S6 measured calendar sessions.
+
+The layers say what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
 
 ## Cost
 
 - No candles are stored and nothing runs in the background. A build happens when someone turns the layer on.
-- Each answer (2 to 4 KB) is kept for 15 minutes, the newest 48 at most: under 200 KB.
+- Each answer (3 to 5 KB with the swing levels, which need no extra request) is kept for 15 minutes, the newest 48 at most: under 250 KB.
 - A build costs 92 of Hyperliquid's request weight and serves the coin's three charts (version 1 needed 68 for 1H and 4H and another 92 for 1D). The 1H chart's candles cost 30. Together they have their own share of 240 a minute; beyond that the toggle reads "Value: busy" (or the 1H chart says so) and the page tries again after 30 seconds. The scan's share is untouched.
 - The endpoint is in the "exchange" rate-limit class, like `/api/chart`.
 
-## Studies (S1 to S7 run on 16 November 2026, S8 on 17 November)
+## Studies (S1 to S7 run on 16 November 2026, S8 on 17 November, S9 on 18 November)
 
 Each was declared, with its rules and bars, before any outcome was computed. Without a result that clears its bar, a finding reads "context, not a signal".
 
@@ -142,6 +193,8 @@ Each was declared, with its rules and bars, before any outcome was computed. Wit
 
 | S7 | The 0.618 to 0.66 retracement zone of major swings (the band the chart draws): does price turn there, more than at other depths, and more with a weekly or monthly POC in it? | Price turned in 46.6% of 1,602 touches, the same as at other depths (45% to 51%). A POC in the zone made no difference. The trade made nothing. **No bar met.** |
 | S8 | The POC rule on swing profiles (17 November 2026; `docs/reviews/poc-rule-study.md`): after a daily close under the last finished swing's VAL, sell at its POC; after a close over its VAH, buy at its POC. Stop at the far edge of the value area, exit at the edge price broke. | +0.32% a trade after costs on 2,045 trades (-0.39 to +1.00), +0.41% on 240 held-out trades (-0.36 to +1.23). The first rule here that did not lose after costs, and not told from zero. **No bar met.** |
+
+| S9 | The cheat sheets' entry triggers on the chart's swing levels (18 November 2026; `docs/reviews/entry-trigger-study.md`): entering after a 5-minute structure change, the 3rd touch, and whether open interest or a CVD divergence on the retest sorts the trades. | Structure change -0.36% a trade after costs on 3,219 trades (-1.41 to +0.74), 3rd touch -0.29% on 2,274 (-0.99 to +0.44), the plain fade on the same levels -0.33%; held out -0.78%, -0.79% and -1.19%. Open interest on the retest: +0.31% the sheets' way in sample, -1.09% held out. A CVD divergence: nothing. Nine in ten levels taken were swept. **No bar met.** |
 
 S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md. S7: docs/reviews/fib-zone-study.md (71 coins, March 2021 to July 2025, with November 2025 to July 2026 held out).
 
