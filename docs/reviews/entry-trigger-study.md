@@ -163,4 +163,36 @@ If all the trades of a month share one outcome (the coins moving as one):
 
 ## Result
 
-To be added after the run.
+### In sample (levels taken 1 March 2021 to 31 July 2025; run 18 November 2026, after the counts were committed at 5aa909a)
+
+**No row met its bar. The triggers stay context, not a signal.**
+
+| Row | Mean net return a trade (95% interval) | Size | By half | Bar |
+|---|---|---|---|---|
+| **R1** structure change | -0.36% (-1.41 to +0.74) | 3,219 trades over 53 months | -1.41%, +0.51% | not met |
+| **R2** 3rd touch | -0.29% (-0.99 to +0.44) | 2,274 trades over 53 months | -0.89%, +0.20% | not met |
+| **R3** open interest on the retest | gap +0.31% (-0.54 to +1.15) | did not rise -0.18% on 1,356; rose -0.49% on 1,316 | -0.54%, +0.86% | not met |
+| **R4** CVD divergence | gap -0.19% (-2.51 to +1.64) | with -0.49% on 1,087; without -0.30% on 2,132 | -2.62%, +1.62% | not met |
+
+- **Waiting for the structure to change did not help.** R1 lost 0.36% a trade after costs, about what the plain fade lost on the same levels (-0.33%).
+- **The 3rd touch lost about the same** (-0.29%).
+- **Open interest on the retest:** the trades the sheets would keep did 0.31% better than the ones they would skip. That is the direction the sheets say, with an interval that holds zero and a first half that went the other way.
+- **A CVD divergence did not mark better trades:** those with it did slightly worse.
+- My expectation before running (a loss of 0.1% to 0.3% a trade) was close. The reason I gave for it (tight stops) was wrong, as the counts showed.
+
+Reported, never deciding:
+
+- **R1:** before costs -0.16%, or -0.06 of the risk taken. The stop came first in 61.8%, the POC was reached in 22.9%; the rest ended at the 14-day limit. Of the trades that reached one or the other, the POC came first in 27.1%, against 31.5% for a price with no memory.
+- **R2:** before costs -0.09%, or -0.03 of the risk taken. The stop came first in 78.9%, the POC was reached in 11.8%; the rest ended at the 14-day limit. Of the trades that reached one or the other, the POC came first in 13.0%, against 15.6% for a price with no memory.
+- **B:** before costs -0.13%, or -0.08 of the risk taken. The stop came first in 71.9%, the POC was reached in 16.7%; the rest ended at the 14-day limit. Of the trades that reached one or the other, the POC came first in 18.9%, against 22.8% for a price with no memory. Net -0.33% (-1.12 to +0.49) on 3,370 trades.
+- **Price came back to the POC a little less often than chance.** In all three, the POC came first less often than for a price with no memory (by 2.6 to 4.4 points). After a swing level was taken, the move beyond it went on slightly more often than it reversed.
+- **Shorts at swing highs lost; longs at swing lows did not.** R1: shorts -1.19% (-2.15 to -0.11), longs +0.28% (-1.56 to +2.34). R2: shorts -0.56% (-1.17 to +0.14), longs -0.07% (-1.39 to +1.34).
+- **By year, R1:** 2021 -1.05%, 2022 -2.67%, 2023 +0.58%, 2024 -0.12%, 2025 +2.22%. **R2:** 2021 -1.00%, 2022 -1.24%, 2023 +0.31%, 2024 -0.22%, 2025 +1.07%. Both were negative in three of the five years.
+- **After quick and slow sweeps, R1:** -0.39% and +0.03%. On the 56 takes that were never swept, R1 lost 8.59% a trade.
+- **Bitcoin alone:** R1 -1.97% (-3.67 to -0.47) on 47 trades; R2 -0.66% on 39.
+- **The sheets' full open-interest condition** (fell on the pullback, then rose on the retest): R1's trades with it: -1.29% (-2.35 to -0.07) on 815. Worse than the rest, as the sheets say; not a declared row.
+- **The readings on the other trades.** Open interest rose and did not rise: R2 -0.31% and -0.04%; B -0.14% and -0.44% (for B the reading is across the sweep). With and without a divergence: R2 -0.43% and -0.21%; B +0.09% and -0.48%.
+
+### Held out
+
+To be added after the in-sample result above is committed.
