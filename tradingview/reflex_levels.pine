@@ -1,0 +1,595 @@
+//@version=6
+// Reflex levels: the coin chart's Levels, its last swing's value area and its Pullback zone on TradingView, by the
+// rules of the app's engine (backend/engines/auction_engine.py, version auction-3), from hourly candles. On the same
+// exchange's candles the lines are the app's.
+//
+// SWINGS: UTC days built from hourly candles. A swing high is confirmed on the first later day whose low is 3 daily
+// ATRs (Wilder, 14 days, the day before's) under it; lows mirror. A pullback of less than half a move does not end
+// the move when price then goes beyond its extreme. The structure is rebuilt at each day's close from what was known
+// at that close.
+// LEVELS: each swing high and low of that structure is a level from the next day, for 180 days, until price trades
+// beyond it. Dotted to the right edge while not traded through, with its price at the right. Traded through: the line
+// stops at that candle. A ring there: SWEPT, an hourly candle closed back inside within 72 hours of the hour that
+// traded through (that hour counted). No ring: price stayed beyond, the level broke.
+// LAST SWING: the volume profile of the move between the last two swing points (hourly candles, rows of 0.05% of the
+// price, the 70% value area grown two rows at a time from the POC). Its POC tag adds "short" while the last price is
+// under the VAL and "long" while it is over the VAH: the method's rule on a swing's POC.
+// PULLBACK ZONE: 0.618 to 0.66 of the latest major leg (6 daily ATRs or taller), until price trades beyond its start.
+// Hover a ring or a tag for what it is. What happened, drawn where it happened: not a signal.
+//
+// Charts of 1 hour and over read the hourly candles inside each bar. Under 1 hour, the chart's candles are joined into
+// hours, so a take or a sweep shows once its hour has closed. Where TradingView has no hourly candles for an old bar,
+// the bar itself stands in for them.
+
+indicator("Reflex levels", shorttitle = "Levels", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 20)
+
+// ─── Inputs ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+const string GS = "Swings"
+reversal   = input.float(3.0, "A swing turns after (daily ATRs)", minval = 0.5, step = 0.5, group = GS)
+atrLen     = input.int(14, "Daily ATR length", minval = 2, group = GS)
+mergeShare = input.float(0.5, "Pullbacks under this share of a move do not end it", minval = 0.0, maxval = 1.0, step = 0.05, group = GS)
+const string GL = "Levels"
+showLevels = input.bool(true, "Swing levels and sweeps", group = GL)
+lifeDays   = input.int(180, "A level lasts (days)", minval = 1, group = GL)
+sweepHours = input.int(72, "A sweep closes back within (hours)", minval = 1, group = GL)
+showTags   = input.bool(true, "Price tags on levels not traded through", group = GL)
+const string GP = "Last swing"
+showVa     = input.bool(true, "VAH, POC and VAL of the last finished swing", group = GP)
+vaPct      = input.float(70.0, "Value area (% of volume)", minval = 10.0, maxval = 99.0, group = GP)
+const string GZ = "Pullback zone"
+showZone   = input.bool(true, "0.618 to 0.66 pullback zone", group = GZ)
+minLeg     = input.float(6.0, "Shown once the leg is (daily ATRs)", minval = 0.0, group = GZ)
+zoneFrom   = input.float(0.618, "Zone from", minval = 0.0, maxval = 1.0, group = GZ)
+zoneTo     = input.float(0.66, "Zone to", minval = 0.0, maxval = 1.0, group = GZ)
+const string GC = "Colours"
+pocCol     = input.color(#fcd34d, "POC", group = GC)
+zoneCol    = input.color(#c4b5fd, "Pullback zone", group = GC)
+
+const int DAY  = 86400000
+const int HOUR = 3600000
+INK = chart.fg_color
+CLEAR = color.new(color.black, 100)
+
+// ─── Types and helpers ───────────────────────────────────────────────────────────────────────────────────────────────
+type Pivot
+    bool  isHigh
+    float price
+    int   day
+    int   conf
+
+type Level
+    int   key
+    bool  isHigh
+    float price
+    int   t
+    int   taken
+    int   back
+    float extreme
+    int   deadline
+    int   state     // 0 not traded through, 1 traded through and watched, 2 swept, 3 broken
+    line  ln
+    label ring
+
+// Swing points in turn, without the pullbacks that did not end a move (auction_engine.merge_moves).
+mergeMoves(array<Pivot> src, float shr) =>
+    array<Pivot> pts = array.copy(src)
+    int i = 0
+    while i + 3 < array.size(pts)
+        Pivot pa = array.get(pts, i)
+        Pivot pb = array.get(pts, i + 1)
+        Pivot pc = array.get(pts, i + 2)
+        Pivot pd = array.get(pts, i + 3)
+        float sg = pa.isHigh ? -1.0 : 1.0
+        float mv = sg * (pb.price - pa.price)
+        float giveBack = sg * (pb.price - pc.price)
+        float further = sg * (pd.price - pb.price)
+        if mv > 0 and giveBack < shr * mv and further > 0
+            array.remove(pts, i + 2)
+            array.remove(pts, i + 1)
+            i := math.max(i - 2, 0)
+        else
+            i += 1
+    pts
+
+// The swing points at the close of day i (auction_engine.structure_at): the running move's reach so far decides the
+// merging and is then left out. live: a running day after day i, with its high and low.
+structureAt(array<Pivot> piv, array<float> dH, array<float> dL, int i, bool live, float liveH, float liveL, float shr) =>
+    array<Pivot> out = array.new<Pivot>()
+    int n = array.size(piv)
+    if n > 0
+        Pivot lastP = array.get(piv, n - 1)
+        float best = na
+        int bestJ = na
+        if lastP.day + 1 <= i
+            for j = lastP.day + 1 to i
+                float x = lastP.isHigh ? array.get(dL, j) : array.get(dH, j)
+                if na(best) or (lastP.isHigh ? x < best : x > best)
+                    best := x
+                    bestJ := j
+        if live
+            float y = lastP.isHigh ? liveL : liveH
+            if na(best) or (lastP.isHigh ? y < best : y > best)
+                best := y
+                bestJ := i + 1
+        if na(best)
+            out := mergeMoves(piv, shr)
+        else
+            array<Pivot> withTail = array.copy(piv)
+            array.push(withTail, Pivot.new(not lastP.isHigh, best, bestJ, bestJ))
+            out := mergeMoves(withTail, shr)
+            array.pop(out)
+    out
+
+// The largest of 1, 2, 2.5 and 5 times a power of ten that is at most raw (auction_engine.nice_step).
+niceStep(float raw) =>
+    float unit = math.pow(10.0, math.floor(math.log10(raw)))
+    float st = unit
+    if 5.0 * unit <= raw * (1 + 1e-12)
+        st := 5.0 * unit
+    else if 2.5 * unit <= raw * (1 + 1e-12)
+        st := 2.5 * unit
+    else if 2.0 * unit <= raw * (1 + 1e-12)
+        st := 2.0 * unit
+    st
+
+px(float p) => str.tostring(p, format.mintick)
+dayTxt(int t) => str.format_time(t, "d MMM yyyy", "UTC")
+
+untakenTip(Level lv) =>
+    string side = lv.isHigh ? "high" : "low"
+    string past = lv.isHigh ? "above" : "below"
+    "Swing " + side + " not traded through\nPrice turned " + (lv.isHigh ? "down" : "up") + " at " + px(lv.price) + " on " + dayTxt(lv.t) + " and has not traded " + past + " it since.\nTraders assume stop orders rest just " + past + " a swing " + side + " like this (they call it liquidity). They wait for price to push through it and close back " + (lv.isHigh ? "under" : "over") + " it, then trade the other way."
+
+sweptTip(Level lv) =>
+    string side = lv.isHigh ? "high" : "low"
+    int hrs = math.max(1, math.round((lv.back - lv.taken) / HOUR))
+    "Swing " + side + " swept\nPrice turned " + (lv.isHigh ? "down" : "up") + " at " + px(lv.price) + " on " + dayTxt(lv.t) + ". On " + dayTxt(lv.taken) + " it traded " + (lv.isHigh ? "above" : "below") + " it, as far as " + px(lv.extreme) + ", and an hourly candle closed back " + (lv.isHigh ? "under" : "over") + " it " + (hrs <= 1 ? "within the hour" : str.tostring(hrs) + " hours later") + ".\nTraders call this a swing failure when it is quick and a failed auction when it takes hours. They read it as stop orders being filled with no follow-through, and trade back " + (lv.isHigh ? "down" : "up") + " into the range."
+
+vaTip(string which, bool rise, float lowP, float highP, float val, float vah, string rule) =>
+    string noun = rise ? "rise" : "fall"
+    string span = " from " + px(rise ? lowP : highP) + " to " + px(rise ? highP : lowP)
+    string tip = ""
+    if which == "poc"
+        string use = rule == "short" ? "Price is now below the " + noun + "'s main trading range (under " + px(val) + "). The method's rule then: sell (go short) at this price if price climbs back to it." : rule == "long" ? "Price is now above the " + noun + "'s main trading range (over " + px(vah) + "). The method's rule then: buy (go long) at this price if price dips back to it." : "Traders use a price like this as the place to take profit."
+        tip := "Most-traded price of the " + noun + "\nMore was traded at this price than at any other in the " + noun + span + " (its point of control, POC).\n" + use
+    else
+        bool top = which == "vah"
+        tip := (top ? "Top" : "Bottom") + " of the " + noun + "'s main trading range\n" + str.tostring(math.round(vaPct)) + "% of the trading in the " + noun + span + " happened between " + px(val) + " and " + px(vah) + ". This is the " + (top ? "top" : "bottom") + " of that band (its value area " + (top ? "high, VAH" : "low, VAL") + ").\nTraders treat the band as the move's fair prices. " + (top ? "Above it they watch whether price holds up there or falls back in." : "Below it they watch whether price stays down there or climbs back in.")
+    tip
+
+// ─── State ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+var int   curDay = na      // the day being built, in days since 1970 (UTC)
+var float curH = na
+var float curL = na
+var float curC = na
+var int   curHT = na       // the hour of its high, and of its low
+var int   curLT = na
+var array<int>   dT   = array.new<int>()       // finished days: start, high, low, close, the hours of the extremes, ATR
+var array<float> dH   = array.new<float>()
+var array<float> dL   = array.new<float>()
+var array<float> dC   = array.new<float>()
+var array<int>   dHT  = array.new<int>()
+var array<int>   dLT  = array.new<int>()
+var array<float> dAtr = array.new<float>()
+var float trSum = 0.0
+var int   mode = 0         // 1 after a swing low (rising), -1 after a swing high (falling)
+var int   i0 = na          // the first day with an ATR
+var bool  firstSeen = false
+var float hi = na
+var int   hiI = na
+var float lo = na
+var int   loI = na
+var array<Pivot> piv    = array.new<Pivot>()
+var array<Pivot> merged = array.new<Pivot>()
+var array<Level> active = array.new<Level>()   // levels not yet swept or broken
+var array<int>   done   = array.new<int>()     // levels traded through or gone, by key (day x 2, +1 for a high)
+var array<int>   hT = array.new<int>()         // hourly candles of the last 400 days, for the last swing's profile
+var array<float> hH = array.new<float>()
+var array<float> hL = array.new<float>()
+var array<float> hV = array.new<float>()
+var float lastC = na
+
+// ─── This bar's hourly candles ───────────────────────────────────────────────────────────────────────────────────────
+int tfSec = timeframe.in_seconds()
+string ltf = tfSec >= 3600 ? "60" : timeframe.period
+[iT, iH, iL, iC, iV] = request.security_lower_tf(syminfo.tickerid, ltf, [time, high, low, close, volume])
+
+array<int>   qT = array.new<int>()
+array<float> qH = array.new<float>()
+array<float> qL = array.new<float>()
+array<float> qC = array.new<float>()
+array<float> qV = array.new<float>()
+var int   aT = na          // under 1 hour: the hour being joined from the chart's candles
+var float aH = na
+var float aL = na
+var float aC = na
+var float aV = na
+if tfSec >= 3600
+    int m = array.size(iT)
+    if m > 0
+        for j = 0 to m - 1
+            array.push(qT, array.get(iT, j))
+            array.push(qH, array.get(iH, j))
+            array.push(qL, array.get(iL, j))
+            array.push(qC, array.get(iC, j))
+            array.push(qV, nz(array.get(iV, j)))
+    else
+        array.push(qT, time)
+        array.push(qH, high)
+        array.push(qL, low)
+        array.push(qC, close)
+        array.push(qV, nz(volume))
+else
+    int hk = math.floor(time / HOUR) * HOUR
+    if na(aT)
+        aT := hk
+        aH := high
+        aL := low
+        aC := close
+        aV := nz(volume)
+    else if hk != aT
+        array.push(qT, aT)
+        array.push(qH, aH)
+        array.push(qL, aL)
+        array.push(qC, aC)
+        array.push(qV, aV)
+        aT := hk
+        aH := high
+        aL := low
+        aC := close
+        aV := nz(volume)
+    else
+        aH := math.max(aH, high)
+        aL := math.min(aL, low)
+        aC := close
+        aV += nz(volume)
+
+// ─── Each hourly candle in turn ──────────────────────────────────────────────────────────────────────────────────────
+int nq = array.size(qT)
+if nq > 0
+    for q = 0 to nq - 1
+        int   t = array.get(qT, q)
+        float h = array.get(qH, q)
+        float l = array.get(qL, q)
+        float c = array.get(qC, q)
+        float v = array.get(qV, q)
+        int dk = math.floor(t / DAY)
+        if na(curDay)
+            curDay := dk
+            curH := h
+            curL := l
+            curC := c
+            curHT := t
+            curLT := t
+        else if dk != curDay
+            // The day before has closed: its candle, its ATR, the swings, the structure and the levels.
+            array.push(dT, curDay * DAY)
+            array.push(dH, curH)
+            array.push(dL, curL)
+            array.push(dC, curC)
+            array.push(dHT, curHT)
+            array.push(dLT, curLT)
+            int i = array.size(dT) - 1
+            float tr = i == 0 ? curH - curL : math.max(curH - curL, math.abs(curH - array.get(dC, i - 1)), math.abs(curL - array.get(dC, i - 1)))
+            float dayAtr = na
+            if i < atrLen - 1
+                trSum += tr
+            else if i == atrLen - 1
+                dayAtr := (trSum + tr) / atrLen
+            else
+                dayAtr := (array.get(dAtr, i - 1) * (atrLen - 1) + tr) / atrLen
+            array.push(dAtr, dayAtr)
+
+            // Swings (auction_engine.swings): a high is confirmed once a later day's low is `reversal` ATRs under it.
+            if na(i0)
+                if not na(dayAtr)
+                    i0 := i
+                    hi := curH
+                    hiI := i
+                    lo := curL
+                    loI := i
+            else
+                float a = array.get(dAtr, i - 1)
+                float hD = array.get(dH, i)
+                float lD = array.get(dL, i)
+                if mode != -1 and hD > hi
+                    hi := hD
+                    hiI := i
+                if mode != 1 and lD < lo
+                    lo := lD
+                    loI := i
+                if mode != -1 and hiI < i and lD <= hi - reversal * a
+                    bool skipFirst = false
+                    if not firstSeen
+                        firstSeen := true
+                        skipFirst := hiI == i0      // the candles' first day is where they begin, not a turn
+                    if not skipFirst
+                        array.push(piv, Pivot.new(true, hi, hiI, i))
+                    mode := -1
+                    lo := array.get(dL, hiI + 1)
+                    loI := hiI + 1
+                    for j = hiI + 1 to i
+                        if array.get(dL, j) < lo
+                            lo := array.get(dL, j)
+                            loI := j
+                else if mode != 1 and loI < i and hD >= lo + reversal * a
+                    bool skipFirst = false
+                    if not firstSeen
+                        firstSeen := true
+                        skipFirst := loI == i0
+                    if not skipFirst
+                        array.push(piv, Pivot.new(false, lo, loI, i))
+                    mode := 1
+                    hi := array.get(dH, loI + 1)
+                    hiI := loI + 1
+                    for j = loI + 1 to i
+                        if array.get(dH, j) > hi
+                            hi := array.get(dH, j)
+                            hiI := j
+
+            merged := structureAt(piv, dH, dL, i, false, na, na, mergeShare)
+
+            // Levels (auction_engine.swing_levels): each point of the structure as it stands at this close.
+            if showLevels
+                array<int> keys = array.new<int>()
+                for p in merged
+                    array.push(keys, p.day * 2 + (p.isHigh ? 1 : 0))
+                int na0 = array.size(active)
+                if na0 > 0
+                    for jj = 0 to na0 - 1
+                        int j = na0 - 1 - jj
+                        Level lv = array.get(active, j)
+                        if lv.state == 0 and not array.includes(keys, lv.key)
+                            line.delete(lv.ln)               // a pullback the move has since run on from
+                            array.remove(active, j)
+                for p in merged
+                    int key = p.day * 2 + (p.isHigh ? 1 : 0)
+                    if not array.includes(done, key)
+                        float sg = p.isHigh ? 1.0 : -1.0
+                        float price = p.isHigh ? array.get(dH, p.day) : array.get(dL, p.day)
+                        bool gone = array.get(dT, i) - array.get(dT, p.day) > lifeDays * DAY
+                        if not gone and p.day + 1 <= i
+                            for j = p.day + 1 to i
+                                float x = p.isHigh ? array.get(dH, j) : array.get(dL, j)
+                                if sg * x > sg * price
+                                    gone := true
+                                    break
+                        int at = -1
+                        int na1 = array.size(active)
+                        if na1 > 0
+                            for j = 0 to na1 - 1
+                                Level other = array.get(active, j)
+                                if other.key == key
+                                    at := j
+                        if gone
+                            array.push(done, key)
+                            if at >= 0
+                                Level other = array.get(active, at)
+                                line.delete(other.ln)
+                                array.remove(active, at)
+                        else if at < 0
+                            int t0 = p.isHigh ? array.get(dHT, p.day) : array.get(dLT, p.day)
+                            line ln = line.new(t0, price, t0 + HOUR, price, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 30), style = line.style_dotted, width = 1)
+                            array.push(active, Level.new(key, p.isHigh, price, t0, na, na, na, na, 0, ln, na))
+
+            curDay := dk
+            curH := h
+            curL := l
+            curC := c
+            curHT := t
+            curLT := t
+        else
+            if h > curH
+                curH := h
+                curHT := t
+            if l < curL
+                curL := l
+                curLT := t
+            curC := c
+
+        // Takes and sweeps in this hour.
+        if showLevels
+            int na2 = array.size(active)
+            if na2 > 0
+                for jj = 0 to na2 - 1
+                    int j = na2 - 1 - jj
+                    Level lv = array.get(active, j)
+                    if lv.state == 0
+                        if lv.isHigh ? h > lv.price : l < lv.price
+                            lv.taken := t
+                            lv.deadline := t + sweepHours * HOUR
+                            lv.extreme := lv.isHigh ? h : l
+                            lv.state := 1
+                            array.push(done, lv.key)
+                            line.set_x2(lv.ln, t)
+                            line.set_extend(lv.ln, extend.none)
+                            line.set_color(lv.ln, color.new(INK, 65))
+                            if lv.isHigh ? c < lv.price : c > lv.price
+                                lv.back := t + HOUR
+                                lv.state := 2
+                    else if lv.state == 1
+                        if t >= lv.deadline
+                            lv.state := 3
+                        else
+                            lv.extreme := lv.isHigh ? math.max(lv.extreme, h) : math.min(lv.extreme, l)
+                            if lv.isHigh ? c < lv.price : c > lv.price
+                                lv.back := t + HOUR
+                                lv.state := 2
+                    if lv.state == 2
+                        lv.ring := label.new(lv.taken, lv.price, "○", xloc = xloc.bar_time, yloc = yloc.price, color = CLEAR, style = label.style_label_center, textcolor = INK, size = size.normal, tooltip = sweptTip(lv))
+                    if lv.state >= 2
+                        array.remove(active, j)
+
+        if showVa and t >= last_bar_time - 400 * DAY
+            array.push(hT, t)
+            array.push(hH, h)
+            array.push(hL, l)
+            array.push(hV, v)
+        lastC := c
+
+// ─── At the last bar: price tags, the last swing's value area, the pullback zone ────────────────────────────────────
+var array<label> tags  = array.new<label>()
+var array<line>  marks = array.new<line>()
+var array<box>   zones = array.new<box>()
+if barstate.islast
+    while array.size(tags) > 0
+        label.delete(array.pop(tags))
+    while array.size(marks) > 0
+        line.delete(array.pop(marks))
+    while array.size(zones) > 0
+        box.delete(array.pop(zones))
+    int right = bar_index + 3
+    int n = array.size(dT)
+
+    if showLevels and showTags
+        for lv in active
+            if lv.state == 0
+                array.push(tags, label.new(right, lv.price, px(lv.price), xloc = xloc.bar_index, yloc = yloc.price, color = CLEAR, style = label.style_label_left, textcolor = color.new(INK, 20), size = size.small, tooltip = untakenTip(lv)))
+
+    // The last finished swing: the move between the last two swing points, the running day's reach counted.
+    if showVa and n > 0 and array.size(hT) > 0 and not na(lastC)
+        array<Pivot> pts = structureAt(piv, dH, dL, n - 1, true, curH, curL, mergeShare)
+        int np = array.size(pts)
+        if np >= 2
+            Pivot pa = array.get(pts, np - 2)
+            Pivot pb = array.get(pts, np - 1)
+            int ta = pa.isHigh ? array.get(dHT, pa.day) : array.get(dLT, pa.day)
+            int tb = pb.isHigh ? array.get(dHT, pb.day) : array.get(dLT, pb.day)
+            int nh = array.size(hT)
+            float lowP = na
+            float highP = na
+            for j = 0 to nh - 1
+                int tj = array.get(hT, j)
+                if tj >= ta and tj <= tb
+                    lowP := na(lowP) ? array.get(hL, j) : math.min(lowP, array.get(hL, j))
+                    highP := na(highP) ? array.get(hH, j) : math.max(highP, array.get(hH, j))
+            if not na(lowP)
+                float st = niceStep(lastC * 0.0005)
+                float base = math.floor(lowP / st) * st
+                int rows = math.floor((highP - base) / st) + 1
+                array<float> edges = array.new<float>(rows + 1, 0.0)
+                for j = 0 to nh - 1
+                    int tj = array.get(hT, j)
+                    if tj >= ta and tj <= tb
+                        int r0 = math.min(math.max(math.floor((array.get(hL, j) - base) / st), 0), rows - 1)
+                        int r1 = math.min(math.max(math.floor((array.get(hH, j) - base) / st), r0), rows - 1)
+                        float per = array.get(hV, j) / (r1 - r0 + 1)
+                        array.set(edges, r0, array.get(edges, r0) + per)
+                        array.set(edges, r1 + 1, array.get(edges, r1 + 1) - per)
+                array<float> vol = array.new<float>(rows, 0.0)
+                float run = 0.0
+                for r = 0 to rows - 1
+                    run += array.get(edges, r)
+                    array.set(vol, r, run)
+                float peak = array.max(vol)
+                for r = 0 to rows - 1
+                    if array.get(vol, r) < peak * 1e-12
+                        array.set(vol, r, 0.0)
+                peak := array.max(vol)
+                if peak > 0
+                    // POC: of the fullest rows, the one nearest the middle (the lower one on a tie).
+                    int poc = 0
+                    float bestDist = 1e18
+                    float mid = (rows - 1) / 2.0
+                    for r = 0 to rows - 1
+                        if array.get(vol, r) >= peak * (1 - 1e-12) and math.abs(r - mid) < bestDist
+                            bestDist := math.abs(r - mid)
+                            poc := r
+                    // Value area: from the POC, the next two rows on the fuller side, until it holds vaPct of the volume.
+                    int loR = poc
+                    int hiR = poc
+                    float held = array.get(vol, poc)
+                    float wanted = vaPct / 100.0 * array.sum(vol)
+                    while held < wanted and (loR > 0 or hiR < rows - 1)
+                        float up = -1.0
+                        if hiR < rows - 1
+                            up := array.get(vol, hiR + 1)
+                            if hiR + 2 <= rows - 1
+                                up += array.get(vol, hiR + 2)
+                        float down = -1.0
+                        if loR > 0
+                            down := array.get(vol, loR - 1)
+                            if loR - 2 >= 0
+                                down += array.get(vol, loR - 2)
+                        if up >= down
+                            hiR := math.min(hiR + 2, rows - 1)
+                            held += up
+                        else
+                            loR := math.max(loR - 2, 0)
+                            held += down
+                    float pocP = math.min(math.max(base + (poc + 0.5) * st, lowP), highP)
+                    float vah = math.min(base + (hiR + 1) * st, highP)
+                    float val = math.max(base + loR * st, lowP)
+                    bool rise = not pa.isHigh
+                    string rule = lastC < val ? "short" : lastC > vah ? "long" : ""
+                    array.push(marks, line.new(ta, vah, tb, vah, xloc = xloc.bar_time, color = color.new(INK, 45), width = 1))
+                    array.push(marks, line.new(ta, val, tb, val, xloc = xloc.bar_time, color = color.new(INK, 45), width = 1))
+                    array.push(marks, line.new(ta, pocP, tb, pocP, xloc = xloc.bar_time, color = pocCol, width = 2))
+                    array.push(marks, line.new(tb, vah, tb + HOUR, vah, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
+                    array.push(marks, line.new(tb, val, tb + HOUR, val, xloc = xloc.bar_time, extend = extend.right, color = color.new(INK, 58), style = line.style_dashed, width = 1))
+                    array.push(marks, line.new(tb, pocP, tb + HOUR, pocP, xloc = xloc.bar_time, extend = extend.right, color = color.new(pocCol, 25), style = line.style_dashed, width = 1))
+                    array.push(tags, label.new(right, vah, "VAH", xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = color.new(INK, 25), size = size.small, tooltip = vaTip("vah", rise, lowP, highP, val, vah, rule)))
+                    array.push(tags, label.new(right, val, "VAL", xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = color.new(INK, 25), size = size.small, tooltip = vaTip("val", rise, lowP, highP, val, vah, rule)))
+                    array.push(tags, label.new(right, pocP, rule == "" ? "POC" : "POC · " + rule, xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = pocCol, size = size.small, tooltip = vaTip("poc", rise, lowP, highP, val, vah, rule)))
+
+    // Pullback zone (auction_engine.fib_zones), the running day counted.
+    if showZone and n > 0 and not na(array.get(dAtr, n - 1))
+        float unit = array.get(dAtr, n - 1)
+        for side = 0 to 1
+            bool wantHigh = side == 1          // 0: the leg up from the last swing low; 1: the leg down from the last swing high
+            float sg = wantHigh ? -1.0 : 1.0
+            int at = -1
+            float basePx = na
+            int npv = array.size(piv)
+            if npv > 0
+                for jj = 0 to npv - 1
+                    Pivot p = array.get(piv, npv - 1 - jj)
+                    if p.isHigh == wantHigh
+                        at := p.day
+                        basePx := p.price
+                        break
+            if at >= 0
+                // In mirrored prices, so that both legs read as a rise: up = the side the leg went, down = the other.
+                float b = sg * basePx
+                bool beyond = false
+                if at + 1 <= n - 1
+                    for j = at + 1 to n - 1
+                        float dn = wantHigh ? -array.get(dH, j) : array.get(dL, j)
+                        if dn < b
+                            beyond := true
+                            break
+                if (wantHigh ? -curH : curL) < b
+                    beyond := true
+                if not beyond
+                    float topM = wantHigh ? -array.get(dL, at) : array.get(dH, at)
+                    int k = at
+                    for j = at to n - 1
+                        float upv = wantHigh ? -array.get(dL, j) : array.get(dH, j)
+                        if upv > topM
+                            topM := upv
+                            k := j
+                    if (wantHigh ? -curL : curH) > topM
+                        topM := wantHigh ? -curL : curH
+                        k := n
+                    float height = topM - b
+                    if height >= minLeg * unit
+                        float firstM = topM - zoneFrom * height
+                        float secondM = topM - zoneTo * height
+                        bool touched = false
+                        if k + 1 <= n - 1
+                            for j = k + 1 to n - 1
+                                float dn = wantHigh ? -array.get(dH, j) : array.get(dL, j)
+                                if dn <= firstM
+                                    touched := true
+                                    break
+                        if k <= n - 1 and (wantHigh ? -curH : curL) <= firstM
+                            touched := true
+                        float zA = sg * firstM
+                        float zB = sg * secondM
+                        float ext = sg * topM
+                        int tk = k <= n - 1 ? array.get(dT, k) : curDay * DAY
+                        array.push(zones, box.new(array.get(dT, at), math.max(zA, zB), time, math.min(zA, zB), xloc = xloc.bar_time, extend = extend.right, border_color = color.new(zoneCol, touched ? 75 : 50), bgcolor = color.new(zoneCol, touched ? 94 : 87)))
+                        array.push(marks, line.new(array.get(dT, at), basePx, tk, ext, xloc = xloc.bar_time, color = color.new(zoneCol, 30), style = line.style_dotted, width = 1))
+                        string noun = wantHigh ? "fall" : "rise"
+                        string zTip = "Pullback zone (" + str.tostring(zoneFrom) + " to " + str.tostring(zoneTo) + ")\nPrice " + (wantHigh ? "fell" : "rose") + " from " + px(basePx) + " to " + px(ext) + " (the dotted line). This band is where a " + (wantHigh ? "bounce has taken back" : "dip has given back") + " about two thirds of that " + noun + ".\nTraders use it as the place to " + (wantHigh ? "sell the bounce" : "buy the dip") + "." + (touched ? "\nPrice has already traded into this band." : "")
+                        array.push(tags, label.new(right, (zA + zB) / 2, str.tostring(zoneFrom) + "–" + str.tostring(zoneTo), xloc = xloc.bar_index, color = CLEAR, style = label.style_label_left, textcolor = zoneCol, size = size.small, tooltip = zTip))

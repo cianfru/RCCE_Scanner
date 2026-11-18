@@ -171,6 +171,16 @@ Tapping or hovering a box, a line, a ring or a tag says what it is in plain word
 
 The layers say what happened and where. A ring is a sweep that has happened; it does not mark an entry or an exit.
 
+## On TradingView
+
+`tradingview/reflex_levels.pine` (owner, 18 November 2026: "is there a way where we can create a TV indicator?") draws the Levels, the last finished swing's VAH, POC and VAL with the POC rule's tag, and the pullback zone, by the rules above. Paste it into TradingView's Pine Editor and add it to a chart.
+
+- **The same rules, from hourly candles.** Before it was written, its logic was modelled line by line in Python and run on the saved BTC, ETH and SOL candles: the same levels, takes, sweeps and extremes as `swing_levels`, the same last swing's POC, VAH and VAL, and the same pullback zones as the app.
+- **The exchange decides the numbers.** The app reads Hyperliquid's candles. On another exchange's chart the swings and levels are found the same way, on that exchange's prices.
+- **Under 1 hour** the chart's candles are joined into hours, so a take or a sweep shows once its hour has closed. Where TradingView has no hourly candles for an old bar, the bar itself stands in for them.
+- **Differences from the app:** a swing confirmed by the running day shows from the next day; only the last finished swing's profile is drawn (TradingView's own Fixed Range Volume Profile draws any other); the opens and prior highs and lows are left to TradingView's own tools.
+- Hovering a ring or a tag shows what it is and how the method uses it, with no study results.
+
 ## Cost
 
 - No candles are stored and nothing runs in the background. A build happens when someone turns the layer on.
