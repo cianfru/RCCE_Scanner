@@ -47,6 +47,7 @@ GAP = A.GAP                              # R3, R4: one group's mean net return o
 MIN_TRADES, MIN_MONTHS = 200, 30
 MIN_GROUP, MIN_GROUP_MONTHS = 100, 20
 ROWS = ("R1", "R2", "B")
+TRUTHS = (0.0, 0.002, 0.005, 0.01, 0.02, 0.05)      # power: the made-up mean net return a trade, or gap between two groups
 
 
 def hourly(d: dict) -> dict:
@@ -344,7 +345,7 @@ def power(shape_json: dict, reps: int = 2000) -> dict:
             draw = (lambda n, m: rng.normal(m, spread, len(n)) * n) if shared else (lambda n, m: rng.normal(m * n, spread * np.sqrt(n)))
             enough = per.sum() >= MIN_TRADES and len(per) >= MIN_MONTHS
             block[name] = {"spread": round(spread, 4)}
-            for mean in (0.0, 0.002, 0.005, 0.01):
+            for mean in TRUTHS:
                 met = 0
                 for _ in range(reps):
                     v, se, a, b = summary(draw(per, mean), per)
@@ -360,7 +361,7 @@ def power(shape_json: dict, reps: int = 2000) -> dict:
             h = len(per) // 2
             sums = (lambda n, m: rng.normal(m, spread, len(n)) * n) if shared else (lambda n, m: rng.normal(m * n, spread * np.sqrt(n)))
             block[name] = {}
-            for diff in (0.0, 0.002, 0.005, 0.01):
+            for diff in TRUTHS:
                 met = 0
                 for _ in range(reps if enough and h else 0):
                     sa, sb = sums(na, diff), sums(nb, 0.0)

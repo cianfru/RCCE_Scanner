@@ -282,7 +282,7 @@ class ShapeAndPower(unittest.TestCase):
                  "div": {"first": 30, "second": 370, "months_first": 20, "months_second": 50, "per_month": [[1, 7]] * 50}}
         out = E.power(shape, reps=200)
         free = out["independent"]
-        self.assertEqual(set(free["R1"]) - {"spread"}, {"0.0", "0.002", "0.005", "0.01"})
+        self.assertEqual(set(free["R1"]) - {"spread"}, {str(x) for x in E.TRUTHS})
         self.assertEqual(free["R1"]["spread"], 0.02)
         self.assertLessEqual(free["R1"]["0.0"], 0.1)
         self.assertGreaterEqual(free["R1"]["0.01"], 0.95)                           # 400 trades, 2% wide: 1% a trade always shows

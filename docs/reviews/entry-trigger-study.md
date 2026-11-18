@@ -105,9 +105,61 @@ Written for a swing high (trades are short). At a swing low everything is mirror
 - **The held-out months were used before**, by S7 and S8, for other rules on the same candles.
 - **Survivors:** the 71 coins are those listed since 2020 and still trading.
 
-## Shape and power
+## Shape and power (counted 18 November 2026, before any trade was scored)
 
-To be added before the run.
+**Counts**
+
+| | In sample (1 Mar 2021 to 31 Jul 2025) | Held out (1 Nov 2025 to 31 Jul 2026) |
+|---|---|---|
+| Levels taken | 3,751 | 473 |
+| Swept: an hourly close back within 72 hours | 3,411 (91%) | 431 (91%) |
+| ... within the hour | 2,075 (55%) | 263 (56%) |
+| Broken: no close back in 72 hours | 340 (9%) | 42 (9%) |
+| R1 trades (shorts, longs) | 3,219 (1,415, 1,804) over 53 months | 390 (109, 281) over 10 months |
+| R2 trades (shorts, longs) | 2,274 (1,032, 1,242) over 53 months | 293 (74, 219) over 10 months |
+| B trades (shorts, longs) | 3,370 (1,490, 1,880) over 53 months | 430 (114, 316) over 10 months |
+| Not taken, the POC under 0.5% away: R1, R2, B | 55, 0, 41 | 2, 0, 1 |
+| R1: from the entry to the stop, median (10% to 90%) | 6.1% (2.5 to 17.9) | 4.2% (1.9 to 13.0) |
+| R1: from the entry to the POC | 16.6% (6.1 to 42.7) | 12.1% (4.8 to 34.0) |
+| R2: from the entry to the stop | 2.3% (0.3 to 13.1) | 1.4% (0.2 to 8.1) |
+| R2: from the entry to the POC | 18.6% (7.8 to 46.6) | 14.4% (6.8 to 36.4) |
+| The POC first, for a price with no memory: R1, R2, B | 31%, 17%, 24% | 29%, 14%, 20% |
+| Hours from the take to the entry, median: R1, R2 | 4.5, 7.6 | 5.7, 7.4 |
+| R3: R1 trades where open interest did not rise, and rose | 1,356 and 1,316, over 48 and 47 months | 180 and 210, over 9 and 10 months |
+| R4: R1 trades with a divergence, and without | 1,087 and 2,132, over 53 and 53 months | 158 and 232, over 9 and 10 months |
+
+- All 71 coins have trades in sample, and every row has the trades and months its bar asks for.
+- **Open interest** is on record for all 71 coins from December 2021 (Bitcoin from December 2020). For nine coins the record ends early, between July 2024 and January 2026. R1 trades without both readings (about 1 in 6 in sample, mostly from 2021) are left out of R3.
+- **Nine in ten levels that are taken are swept by this definition.** An hourly close back inside within three days is what usually happens, and over half the time it happens within the hour. The sheets' swing failure and failed auction are the common case, not a rare one.
+- **The stops are not tight.** I expected them to be. By the time the structure has changed, price is well under the high it made: R1's stop is a median 6% away, R2's 2%. Costs of 0.20% are a small part of that, so the reason I gave for expecting a loss does not hold. The expectation stays as written.
+- **The POC is far**: a median 17% from the entry, about three times the distance to the stop. Many trades will end at the 14-day limit, not at the stop or the POC.
+
+**The bars on made-up trades** (`power`: this study's trades a month; a trade's return spread by 10% around its mean for R1 and 6.6% for R2; 2,000 runs each; no real outcome involved)
+
+How often each bar is met, by the true mean net return a trade (for R3 and R4: the true gap between the groups).
+
+If every trade is independent:
+
+| Truth | R1 | R2 | R3 | R4 |
+|---|---|---|---|---|
+| none | 2 in 100 | 3 in 100 | 3 in 100 | 3 in 100 |
+| 0.2% | 20 in 100 | 33 in 100 | 10 in 100 | 8 in 100 |
+| 0.5% | 79 in 100 | 94 in 100 | 28 in 100 | 28 in 100 |
+| 1% | 100 in 100 | 100 in 100 | 72 in 100 | 78 in 100 |
+| 2% | 100 in 100 | 100 in 100 | 100 in 100 | 100 in 100 |
+
+If all the trades of a month share one outcome (the coins moving as one):
+
+| Truth | R1 | R2 | R3 | R4 |
+|---|---|---|---|---|
+| none | 3 in 100 | 3 in 100 | 3 in 100 | 3 in 100 |
+| 0.5% | 5 in 100 | 8 in 100 | 4 in 100 | 4 in 100 |
+| 1% | 11 in 100 | 19 in 100 | 8 in 100 | 8 in 100 |
+| 2% | 27 in 100 | 52 in 100 | 14 in 100 | 14 in 100 |
+| 5% | 90 in 100 | 100 in 100 | 55 in 100 | 56 in 100 |
+
+- **What the study can see:** with trades close to independent, +0.5% a trade (R1 and R2) and a gap of 1% (R3 and R4). If a month's trades win and lose together, only several percent a trade would show. The truth is between the two.
+- A bar is met by chance about 3 times in 100. With four rows, about 1 study in 10 like this has a row meet its in-sample bar by chance; the held-out months are the guard.
 
 ## Result
 
