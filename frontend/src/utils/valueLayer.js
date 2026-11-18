@@ -214,6 +214,13 @@ function lineCopy(r, which, fmt, rule = null) {
     UNTESTED]];
 }
 
+// docs/reviews/entry-trigger-study.md (S9): of the swing levels price traded through, 91% were swept; trading back
+// into the range (at the close back, after a 5-minute change of structure, or on the retest) made -0.29% to -0.36%
+// a trade after costs in sample and -0.78% to -1.19% held out.
+const SWEEP_TEST = "Tested here on 71 coins since 2021: trading back into the range after such a push lost about 0.3% a trade after fees, with each of the method's entries.";
+const SWEPT_TEST = "Tested here on 71 coins since 2021: 9 in 10 swing levels that price traded through were swept like this, and trading back into the range afterwards lost about 0.3% a trade after fees.";
+const BROKEN_TEST = "Counted here on 71 coins since 2021: 1 in 10 swing levels that price traded through ended this way; the other 9 were swept.";
+
 // A swing high or low as a level: where price turned, what became of it, and how the method's traders use it.
 // asOf: when the chart's data was read (seconds), to tell "not within three days" from "not so far".
 const SWEEP_WINDOW = 72 * 3600;
@@ -221,19 +228,19 @@ function swingLevelCopy(v, fmt, asOf) {
   const high = v.side === "high", past = high ? "above" : "below", back = high ? "under" : "over";
   const made = `Price turned ${high ? "down" : "up"} at ${fmt(v.price)} on ${utcDay(v.time)}`;
   const use = `Traders assume stop orders rest just ${past} a swing ${v.side} like this (they call it liquidity). They wait for price to push through it and close back ${back} it, then trade the other way.`;
-  if (v.taken == null) return [`Swing ${v.side} not traded through`, [`${made} and has not traded ${past} it since.`, use, UNTESTED]];
+  if (v.taken == null) return [`Swing ${v.side} not traded through`, [`${made} and has not traded ${past} it since.`, use, SWEEP_TEST]];
   const went = `On ${utcDay(v.taken)} it traded ${past} it${v.extreme != null ? `, as far as ${fmt(v.extreme)}` : ""}`;
   if (v.back == null) {
     const open = asOf > 0 && asOf - v.taken < SWEEP_WINDOW;
     return [`Swing ${v.side} traded through`, [
       `${made}. ${went}, and no hourly candle ${open ? `has closed back ${back} it so far` : `closed back ${back} it in the three days after`}.`,
-      `Traders read a level that price holds beyond as broken: the old ${v.side} is then watched from the other side.`, UNTESTED]];
+      `Traders read a level that price holds beyond as broken: the old ${v.side} is then watched from the other side.`, open ? "" : BROKEN_TEST]];
   }
   const hours = Math.max(1, Math.round((v.back - v.taken) / 3600));
   return [`Swing ${v.side} swept`, [
     `${made}. ${went}, and an hourly candle closed back ${back} it ${hours <= 1 ? "within the hour" : `${hours} hours later`}.`,
     `Traders call this a swing failure when it is quick and a failed auction when it takes hours. They read it as stop orders being filled with no follow-through, and trade back ${high ? "down" : "up"} into the range.`,
-    UNTESTED]];
+    SWEPT_TEST]];
 }
 
 // Everything under the pointer: a tag that stands for several levels at one price gives one entry each.

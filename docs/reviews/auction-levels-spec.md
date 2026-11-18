@@ -143,7 +143,7 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 - the last finished move's three lines run on, dashed, to the right edge, with the tags VAH, POC and VAL;
 - **the POC rule** (owner, 17 November 2026: "if price goes below VAL, trade from POC. vice versa"): while the last price is under that move's VAL the POC tag reads "POC · short", and over its VAH "POC · long"; the tip gives the rule in words. Shown as the method's rule, not as a signal: its test (`docs/reviews/poc-rule-study.md`) met no bar, and the tip says what it found;
 - right of the last candle, the other labelled ticks: the opens, the previous day's high and low (the previous week's on 1D), and on 1H the first hour's high and low (IB high, IB low);
-- tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The swing levels are **not tested here**, and the tips say so; the studies below measured calendar sessions.
+- tapping or hovering a box, a line or a tag says what it is in plain words, with the move's own prices. The profiles' own lines are **not tested here**, and the tips say so; S1 to S6 measured calendar sessions.
 
 - in violet, the latest major swing as a dotted line and a band over its 0.618 to 0.66 retracement (Chart Champions' "Champion Channel"), fainter once price has traded into it. Its label adds "POC" when a point of control sits in the band. Swings come from the stored daily candles, so this costs no extra request: a swing high is confirmed once a later day's low is 3 daily ATRs under it (lows mirror), and a leg is shown once it is 6 ATRs tall and until price trades beyond its start (`engines/auction_engine.fib_zones`).
 
@@ -151,7 +151,7 @@ The coin chart has a **Value** toggle next to Wallet levels, off until turned on
 
 - **swing levels** (the cheat sheets' "liquidity"): each swing high and low carried on as a dotted line from its candle, to the right edge while price has not traded through it, otherwise to the candle that did, fainter;
 - **a ring** on that candle marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken;
-- the tip says where price turned, how far it went beyond and how long it took to close back.
+- the tip says where price turned, how far it went beyond and how long it took to close back, and what S9 found for trading back into the range after it.
 
 Value and Levels read the same answer, so having both on costs one request. With both off nothing is requested. On phones the wallet switch reads "Wallets", so "Levels" names one thing.
 
@@ -164,7 +164,7 @@ The layers say what happened and where. A ring is a sweep that has happened; it 
 - A build costs 92 of Hyperliquid's request weight and serves the coin's three charts (version 1 needed 68 for 1H and 4H and another 92 for 1D). The 1H chart's candles cost 30. Together they have their own share of 240 a minute; beyond that the toggle reads "Value: busy" (or the 1H chart says so) and the page tries again after 30 seconds. The scan's share is untouched.
 - The endpoint is in the "exchange" rate-limit class, like `/api/chart`.
 
-## Studies (S1 to S7 run on 16 November 2026, S8 on 17 November)
+## Studies (S1 to S7 run on 16 November 2026, S8 on 17 November, S9 on 18 November)
 
 Each was declared, with its rules and bars, before any outcome was computed. Without a result that clears its bar, a finding reads "context, not a signal".
 
@@ -180,7 +180,7 @@ Each was declared, with its rules and bars, before any outcome was computed. Wit
 | S7 | The 0.618 to 0.66 retracement zone of major swings (the band the chart draws): does price turn there, more than at other depths, and more with a weekly or monthly POC in it? | Price turned in 46.6% of 1,602 touches, the same as at other depths (45% to 51%). A POC in the zone made no difference. The trade made nothing. **No bar met.** |
 | S8 | The POC rule on swing profiles (17 November 2026; `docs/reviews/poc-rule-study.md`): after a daily close under the last finished swing's VAL, sell at its POC; after a close over its VAH, buy at its POC. Stop at the far edge of the value area, exit at the edge price broke. | +0.32% a trade after costs on 2,045 trades (-0.39 to +1.00), +0.41% on 240 held-out trades (-0.36 to +1.23). The first rule here that did not lose after costs, and not told from zero. **No bar met.** |
 
-| S9 | The cheat sheets' entry triggers on the chart's swing levels (18 November 2026; `docs/reviews/entry-trigger-study.md`): entering after a 5-minute structure change, the 3rd touch, and whether open interest or a CVD divergence on the retest sorts the trades. | Declared, not run yet. |
+| S9 | The cheat sheets' entry triggers on the chart's swing levels (18 November 2026; `docs/reviews/entry-trigger-study.md`): entering after a 5-minute structure change, the 3rd touch, and whether open interest or a CVD divergence on the retest sorts the trades. | Structure change -0.36% a trade after costs on 3,219 trades (-1.41 to +0.74), 3rd touch -0.29% on 2,274 (-0.99 to +0.44), the plain fade on the same levels -0.33%; held out -0.78%, -0.79% and -1.19%. Open interest on the retest: +0.31% the sheets' way in sample, -1.09% held out. A CVD divergence: nothing. Nine in ten levels taken were swept. **No bar met.** |
 
 S1: docs/reviews/value-area-rule-study.md. S2 to S6: docs/reviews/auction-level-studies.md. S7: docs/reviews/fib-zone-study.md (71 coins, March 2021 to July 2025, with November 2025 to July 2026 held out).
 

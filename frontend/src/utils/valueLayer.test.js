@@ -61,17 +61,21 @@ test("a swing level says where price turned, what became of it and how traders u
   assert.ok(open.lines[0].startsWith("Price turned down at at 160 on 4 Sep"), open.lines[0]);
   assert.ok(open.lines[0].endsWith("and has not traded above it since."), open.lines[0]);
   assert.ok(open.lines[1].includes("stop orders rest just above a swing high like this (they call it liquidity)"), open.lines[1]);
+  assert.ok(open.lines[2].startsWith("Tested here on 71 coins since 2021: trading back into the range after such a push lost about 0.3%"), open.lines[2]);
   const swept = describe({ kind: "level", v: SWEPT }, {}, fmt);
   assert.equal(swept.title, "Swing low swept");
   assert.ok(swept.lines[0].includes("it traded below it, as far as at 98.5, and an hourly candle closed back over it within the hour."), swept.lines[0]);
   assert.ok(swept.lines[1].includes("swing failure when it is quick and a failed auction when it takes hours"), swept.lines[1]);
+  assert.ok(swept.lines[2].includes("9 in 10 swing levels that price traded through were swept like this"), swept.lines[2]);
   const slow = describe({ kind: "level", v: { ...SWEPT, back: SWEPT.taken + 7 * 3600 } }, {}, fmt);
   assert.ok(slow.lines[0].endsWith("closed back over it 7 hours later."), slow.lines[0]);
   const broken = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 9 * DAY }, fmt);
   assert.equal(broken.title, "Swing high traded through");
   assert.ok(broken.lines[0].endsWith("as far as at 158, and no hourly candle closed back under it in the three days after."), broken.lines[0]);
   const fresh = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 5 * 3600 }, fmt);       // traded through five hours ago
+  assert.ok(broken.lines[2].startsWith("Counted here on 71 coins since 2021: 1 in 10"), broken.lines[2]);
   assert.ok(fresh.lines[0].endsWith("and no hourly candle has closed back under it so far."), fresh.lines[0]);
+  assert.equal(fresh.lines.length, 2);                      // still inside the three days: not counted as broken yet
 });
 
 test("the last finished swing's value area and point of control are ticks", () => {

@@ -193,6 +193,36 @@ Reported, never deciding:
 - **The sheets' full open-interest condition** (fell on the pullback, then rose on the retest): R1's trades with it: -1.29% (-2.35 to -0.07) on 815. Worse than the rest, as the sheets say; not a declared row.
 - **The readings on the other trades.** Open interest rose and did not rise: R2 -0.31% and -0.04%; B -0.14% and -0.44% (for B the reading is across the sweep). With and without a divergence: R2 -0.43% and -0.21%; B +0.09% and -0.48%.
 
-### Held out
+### Held out (levels taken 1 November 2025 to 31 July 2026; run after the in-sample result was committed at d00f157; reported, no verdict)
 
-To be added after the in-sample result above is committed.
+| Row | Mean net return a trade (95% interval) | Size | By half |
+|---|---|---|---|
+| **R1** structure change | -0.78% (-2.41 to +0.79) | 390 trades over 10 months | -1.03%, -0.55% |
+| **R2** 3rd touch | -0.79% (-1.80 to +0.30) | 293 trades over 10 months | -0.86%, -0.72% |
+| **R3** open interest on the retest | gap -1.09% (-3.84 to +1.17) | did not rise -1.37% on 180; rose -0.28% on 210 | +0.29%, -2.35% |
+| **R4** CVD divergence | gap -0.22% (-1.91 to +2.74) | with -0.91% on 158; without -0.69% on 232 | +1.10%, -1.43% |
+
+- **Nothing here confirms anything:** no row met its bar in sample. Both trades lost more here than in sample.
+- **The plain fade** lost 1.19% (-2.19 to +0.09) on 430 trades.
+- **The open-interest gap changed sign.** Here the trades the sheets would skip did better. The sheets' full condition too: +0.95% on 107 trades, after -1.29% in sample.
+- **The sides changed places.** R1: shorts +1.32%, longs -1.60%; in sample -1.19% and +0.28%.
+- **The stop came first** in 68.5% (R1), 87.0% (R2) and 81.4% (B).
+- **The POC came first less often than chance again:** R1 22.8% against 29.6% for a price with no memory, R2 8.9% against 14.0%, B 12.9% against 20.5%.
+
+### Independent recount
+
+BTC, ETH and SOL in both periods, recounted with separately written code: plain loops, with its own daily and hourly candles, ATR, swings, merging of pullbacks, the structure at each day's close, levels, takes, sweeps, the range's profile, the 5-minute structure change, the 3rd touch and the trades.
+
+- The same number of trades and the same mean net return for each of R1, R2 and B, for each coin and period, to the last digit shown. In sample for BTC: 47, 39 and 52 trades at -1.9728%, -0.6598% and -1.6440%.
+- Before the run, the two were compared on made-up markets, and on where the entries of these three coins fall (no outcome computed). They agreed there too.
+
+### Reading
+
+- **None of the sheets' entries paid when taken every time.** In at the close back, after a change of structure, or on the retest: each lost about 0.3% a trade in sample and 0.8% to 1.2% held out. Before costs, in sample, each was within 0.2% of nothing.
+- **Waiting for the structure to change moved the stops, not the result.** R1 was stopped less often than the plain fade (62% against 72%) and ended at the same mean.
+- **A sweep is the usual thing, not a signal.** Nine in ten swing levels that price traded through were swept. Something that follows nine breaks in ten says little about what comes after.
+- **After a level was taken, price came back to the range's POC less often than chance**, in sample and held out. That leans toward the move going on, the opposite of the fade. It was not a declared row and would need its own test.
+- **The open-interest rule** went the sheets' way in sample and the other way held out. **A CVD divergence** marked nothing in either.
+- **What the study could have seen:** +0.5% a trade if trades were close to independent. A smaller edge, or one hidden by coins moving together, would not show.
+- **What this does not test:** the method as a person trades it, choosing levels by eye, reading a footprint, taking part off and moving stops. It tests the named triggers, taken every time, at the chart's swing levels.
+- **Context, not a signal.** The chart keeps drawing the levels and the sweeps as what happened, and the tips say what this found.
