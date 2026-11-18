@@ -4,9 +4,11 @@
 // of control (POC) and lines at the edges of its value area. The last finished swing's three lines run on,
 // dashed, to the right edge; while the last price is outside its value area, its POC tag adds the side the
 // method trades it from (short below the value area, long above). Right of the last candle: labelled ticks (those three, the opens, prior
-// extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone.
+// extremes). Violet: the latest major swing's 0.618 to 0.66 pullback zone. Dotted: each swing high and low
+// carried on as a price level until a candle trades through it, with a ring where it was then swept (an hourly
+// candle closed back inside it within three days).
 // What happened, drawn where it happened: no forecast.
-import { placeRanges, lastDone, histogram, ticks, rangeTicks, pocRule, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
+import { placeRanges, placeLevels, lastDone, histogram, ticks, rangeTicks, pocRule, spread, mergeTicks, fibBands, fibTicks } from "../utils/valueLayer.js";
 
 const LABEL_FONT = "10px 'SF Mono', 'Fira Code', monospace";
 const LABEL_GAP = 12;
@@ -20,6 +22,7 @@ export default class ValueAreas {
     this.ranges = [];
     this.ticks = [];
     this.bands = [];
+    this.levels = [];            // swing highs and lows as price levels
     this.hits = [];              // what is drawn where (media pixels), lowest priority first: see hitTest
     this.last = 0;
     // Boxes and lines sit behind the candles; the tick labels go on top so no line strikes through them.
@@ -32,6 +35,7 @@ export default class ValueAreas {
     if (colors) this.colors = colors;
     this.ranges = body && times?.length ? placeRanges(body.ranges, times).map(r => ({ ...r, rows: histogram(r) })) : [];
     this.bands = body ? fibBands(body, times, tfSec) : [];
+    this.levels = body ? placeLevels(body, times) : [];
     const tf = tfSec <= 3600 ? "1h" : tfSec < 86400 ? "4h" : "1d";
     this.rule = pocRule(lastDone(this.ranges), last);      // the side the method trades the last finished swing's POC from
     this.ticks = body ? [...ticks(body, tf), ...rangeTicks(this.ranges, last), ...fibTicks(this.bands)] : [];
@@ -56,7 +60,7 @@ export default class ValueAreas {
     try { this.paint(target, layer); } catch (e) { if (!/disposed/i.test(String(e?.message))) throw e; }
   }
   paint(target, layer) {
-    if (!this.visible || !this.chart || !this.series || !(this.ranges.length || this.bands.length || this.ticks.length)) return;
+    if (!this.visible || !this.chart || !this.series || !(this.ranges.length || this.bands.length || this.ticks.length || this.levels.length)) return;
     const ts = this.chart.timeScale();
     const x0 = ts.logicalToCoordinate(0), x1 = ts.logicalToCoordinate(1);
     const range = ts.getVisibleLogicalRange();
@@ -113,6 +117,21 @@ export default class ValueAreas {
         line(xb, W, y(done.val), ink(0.42), 1, [5, 4]);
         line(xb, W, y(done.poc), gold(0.75), 1, [5, 4]);
         for (const which of ["vah", "val", "poc"]) near(xb, W, y(done[which]), { kind: "rline", which, r: done, rule: which === "poc" ? this.rule : null });
+      }
+
+      // Each swing high and low as a price level: dotted from the swing's candle to the candle that traded through
+      // it, or to the right edge while none has. A ring where one was swept: traded through, then closed back.
+      for (const v of this.levels) {
+        const yy = y(v.price);
+        const xa = v.before ? 0 : edge(v.from) + half, xb = v.to == null ? W : edge(v.to) + half;
+        if (yy == null || yy < -6 || yy > H + 6 || xb < 0 || xa > W) continue;
+        line(Math.max(xa, 0), xb, yy, ink(v.to == null ? 0.7 : 0.32), 1, [1, 3]);
+        near(Math.max(xa, 0), xb, yy, { kind: "level", v });
+        if (!v.swept) continue;
+        ctx.beginPath(); ctx.setLineDash([]); ctx.arc(xb, Math.round(yy) + 0.5, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.colors.bg.join(",")},1)`; ctx.fill();
+        ctx.strokeStyle = ink(0.9); ctx.lineWidth = 1.5; ctx.stroke();
+        area(lines, xb - 8, yy - 8, xb + 8, yy + 8, { kind: "level", v });
       }
 
       // The 0.618 to 0.66 retracement band of each live major leg, from the leg's start to the right edge,

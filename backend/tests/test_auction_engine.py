@@ -213,7 +213,7 @@ class SwingRangeTests(unittest.TestCase):
         hourly, daily, start = swing_market()
         now = start + 43 * DAY - 1
         body = ae.build(hourly, daily, now)
-        self.assertEqual((body["version"], body["interval"], body["from"]), ("auction-2", "1h", start // 1000))
+        self.assertEqual((body["version"], body["interval"], body["from"]), ("auction-3", "1h", start // 1000))
         self.assertEqual([r["direction"] for r in body["ranges"]], [1, -1])
         # The day's and the week's levels together; each chart shows its own.
         self.assertEqual(set(body["levels"]), {"d_open", "pd_high", "pd_low", "w_open", "pw_high", "pw_low", "m_open", "ib_high", "ib_low"})
@@ -221,8 +221,109 @@ class SwingRangeTests(unittest.TestCase):
         self.assertNotIn("sessions", body)
         down = [z for z in body["fib"] if z["direction"] == -1]
         self.assertEqual((down[0]["base"], down[0]["extreme"]), (150.5, 117.5))
+        self.assertEqual([(e["side"], e["price"], e["taken"]) for e in body["swing_levels"]], [("low", 94.5, None), ("high", 150.5, None)])
         bare = ae.build(hourly, None, now)
-        self.assertEqual((bare["ranges"], bare["fib"], set(bare["levels"])), ([], [], {"ib_high", "ib_low"}))
+        self.assertEqual((bare["ranges"], bare["fib"], bare["swing_levels"], set(bare["levels"])), ([], [], [], {"ib_high", "ib_low"}))
+
+
+def then_hours(extra, pad=119.0):
+    """swing_market's 43 days, then these hourly candles (open, high, low, close) from day 43 on, the last day
+    filled up with quiet hours at ``pad``. Returns hourly, daily, and day 43's start."""
+    hourly, _, start = swing_market()
+    rows = list(zip(*(hourly[k] for k in ("timestamp", "open", "high", "low", "close", "volume"))))
+    extra = list(extra) + [(pad, pad + 0.5, pad - 0.5, pad)] * (-len(extra) % 24)
+    t0 = start + 43 * DAY
+    rows += [(t0 + i * HOUR, o, h, l, c, 10.0) for i, (o, h, l, c) in enumerate(extra)]
+    a = np.array(rows)
+    daily = [(a[d * 24, 0], a[d * 24, 1], a[d * 24:(d + 1) * 24, 2].max(), a[d * 24:(d + 1) * 24, 3].min(), a[(d + 1) * 24 - 1, 4], 1.0)
+             for d in range(len(a) // 24)]
+    return candles(rows), candles(daily), t0
+
+
+HOUR = 3_600_000
+UP = [(119 + i, 120.5 + i, 118.5 + i, 120 + i) for i in range(30)]          # 30 hours up from 119 to 149: under the high at 150.5
+ABOVE = (151.0, 152.0, 150.8, 151.5)                                        # an hour that stays above 150.5
+
+
+class SwingLevelTests(unittest.TestCase):
+    def high(self, hourly, daily):
+        return [e for e in ae.swing_levels(hourly, daily) if e["side"] == "high" and e["price"] == 150.5][0]
+
+    def test_a_swing_is_a_level_from_the_close_that_confirmed_it_and_open_until_price_trades_beyond(self):
+        hourly, daily, start = swing_market()
+        low, high = ae.swing_levels(hourly, daily)
+        self.assertEqual((low["side"], low["price"], low["time"]), ("low", 94.5, (start + 20 * DAY) // 1000))
+        self.assertEqual(low["known"], (start + 22 * DAY) // 1000)                    # confirmed on day 21: a level from its close
+        self.assertEqual((high["side"], high["price"], high["known"]), ("high", 150.5, (start + 35 * DAY) // 1000))
+        self.assertEqual([(e["taken"], e["back"], e["extreme"]) for e in (low, high)], [(None, None, None)] * 2)
+
+    def test_a_poke_through_the_high_that_closes_back_in_the_same_hour_is_a_sweep(self):
+        hourly, daily, t0 = then_hours(UP + [(149.0, 151.2, 148.8, 150.0)], pad=140.0)
+        e = self.high(hourly, daily)
+        take = t0 + 30 * HOUR
+        self.assertEqual((e["taken"], e["back"], e["extreme"]), (take // 1000, (take + HOUR) // 1000, 151.2))
+
+    def test_hours_beyond_the_high_and_then_a_close_back_under_it_is_a_sweep_too(self):
+        hourly, daily, t0 = then_hours(UP + [(149.0, 151.2, 148.8, 151.0)] + [ABOVE] * 4 + [(151.5, 152.4, 149.0, 149.5)], pad=140.0)
+        e = self.high(hourly, daily)
+        take = t0 + 30 * HOUR
+        self.assertEqual((e["taken"], e["back"], e["extreme"]), (take // 1000, (take + 6 * HOUR) // 1000, 152.4))
+
+    def test_no_close_back_within_72_hours_is_a_break(self):
+        back = (151.5, 152.0, 149.0, 149.5)
+        for hours_above, swept in ((70, True), (71, False)):                          # the close back in the 72nd hour, or the 73rd
+            hourly, daily, t0 = then_hours(UP + [(149.0, 151.2, 148.8, 151.0)] + [ABOVE] * hours_above + [back], pad=140.0)
+            e = self.high(hourly, daily)
+            self.assertEqual(e["taken"], (t0 + 30 * HOUR) // 1000)
+            self.assertEqual(e["back"] is not None, swept)
+            self.assertEqual(e["extreme"], 152.0)
+
+    def test_a_pullback_the_move_ran_on_from_is_no_longer_a_level(self):
+        # After the high at 150.5: a dip to 135 (under half of the rise from 94.5), then a rise through the high.
+        days = [100.0] * 20 + [95.0] + list(np.linspace(100, 150, 12)) + list(np.linspace(147, 135, 5)) + list(np.linspace(139, 163, 7)) + [163.0]
+        start = T0 - 40 * DAY
+        hours = [(start + d * DAY + i * HOUR, p0 + (p1 - p0) * i / 24, p0 + (p1 - p0) * i / 24 + 0.5, p0 + (p1 - p0) * i / 24 - 0.5,
+                  p0 + (p1 - p0) * (i + 1) / 24, 10.0) for d, (p0, p1) in enumerate(zip(days, days[1:])) for i in range(24)]
+        a = np.array(hours)
+        daily = candles([(a[d * 24, 0], a[d * 24, 1], a[d * 24:(d + 1) * 24, 2].max(), a[d * 24:(d + 1) * 24, 3].min(), a[(d + 1) * 24 - 1, 4], 1.0)
+                         for d in range(len(a) // 24)])
+        hourly = candles(hours)
+        from engines.levels_engine import wilder_atr
+        piv = ae.swings(np.array(daily["high"]), np.array(daily["low"]), wilder_atr(*(np.array(daily[k]) for k in ("high", "low", "close"))))
+        self.assertEqual([p[0] for p in piv], ["L", "H", "L"])                         # the dip's low is a swing of its own
+        levels = ae.swing_levels(hourly, daily)
+        self.assertEqual([(e["side"], e["price"], e["taken"] is not None) for e in levels],
+                         [("low", 94.5, False), ("high", 150.5, True)])                  # the high was traded through; the dip's low is gone
+
+    def test_a_level_is_one_for_180_days(self):
+        hourly, daily, _ = swing_market()
+        keep = ae.LEVEL_DAYS
+        try:
+            ae.LEVEL_DAYS = 15                                                        # the low of day 20 is too old by day 36
+            self.assertEqual([e["side"] for e in ae.swing_levels(hourly, daily)], ["high"])
+        finally:
+            ae.LEVEL_DAYS = keep
+
+    def test_before_the_hourly_candles_begin(self):
+        hourly, daily, t0 = then_hours(UP + [(149.0, 151.2, 148.8, 150.0)], pad=140.0)
+        late = {k: v[36 * 24:] for k, v in hourly.items()}                            # hourly candles from day 36 on
+        low, high = [e for e in ae.swing_levels(late, daily) if e["price"] in (94.5, 150.5)]
+        start = t0 - 43 * DAY
+        self.assertEqual((low["time"], high["time"]), ((start + 20 * DAY) // 1000, (start + 32 * DAY) // 1000))      # the swing's day
+        self.assertEqual(high["taken"], (t0 + 30 * HOUR) // 1000)
+        gone = {k: v[45 * 24:] for k, v in hourly.items()}                            # from day 45: the high was taken on day 44
+        self.assertEqual([e["price"] for e in ae.swing_levels(gone, daily) if e["side"] == "high" and e["price"] == 150.5], [])
+
+    def test_the_charts_own_candles_decide_when_daily_candles_differ(self):
+        hourly, daily, t0 = then_hours(UP, pad=140.0)
+        other = {**daily, "high": [x + 0.4 for x in daily["high"]]}                   # another exchange's daily highs, a little higher
+        highs = [e for e in ae.swing_levels(hourly, other) if e["side"] == "high"]
+        self.assertEqual([(e["price"], e["taken"]) for e in highs], [(150.5, None)])
+
+    def test_nothing_without_daily_candles(self):
+        hourly, daily, _ = swing_market()
+        self.assertEqual(ae.swing_levels(hourly, None), [])
+        self.assertEqual(ae.swing_levels(hourly, {k: v[:20] for k, v in daily.items()}), [])
 
 
 class LayerCacheTests(unittest.TestCase):

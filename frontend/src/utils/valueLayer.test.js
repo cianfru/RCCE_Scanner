@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, barAt, placeRanges, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
+import { barIndex, barAt, placeRanges, placeLevels, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
   describe, describeAll, distanceNote, rangeNote, hitKey } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
@@ -37,6 +37,41 @@ test("swings get their span in candles, from the candle holding their start to t
   assert.deepEqual(placeRanges(null, times), []);
   assert.equal(lastDone(placed).direction, 1);              // the last swing that has ended
   assert.equal(lastDone(placeRanges([FALL], times)), null);
+});
+
+// Swing levels: a high made before the chart and still open, a low swept two candles in, a high broken later.
+const OPEN = { side: "high", price: 160, time: T0 - 3 * DAY, known: T0 - DAY, taken: null, back: null, extreme: null };
+const SWEPT = { side: "low", price: 100, time: T0 + 3600, known: T0 + DAY, taken: T0 + DAY + 2 * H4 + 3600, back: T0 + DAY + 2 * H4 + 7200, extreme: 98.5 };
+const BROKEN = { side: "high", price: 150, time: T0 + H4, known: T0 + DAY, taken: T0 + 2 * DAY, back: null, extreme: 158 };
+
+test("swing levels run from their swing's candle to the candle that traded through them", () => {
+  const placed = placeLevels({ swing_levels: [OPEN, SWEPT, BROKEN, { ...BROKEN, time: T0 - 9 * DAY, taken: T0 - DAY }] }, times);
+  assert.deepEqual(placed.map(v => [v.side, v.before, v.from, v.to, v.swept]),
+    [["high", true, 0, null, false], ["low", false, 0, 8, true], ["high", false, 1, 12, false]]);     // taken before the chart: dropped
+  assert.deepEqual(placeLevels({ swing_levels: [OPEN] }, []), []);
+  assert.deepEqual(placeLevels({}, times), []);
+  assert.deepEqual(placeLevels(null, times), []);
+});
+
+test("a swing level says where price turned, what became of it and how traders use it", () => {
+  const fmt = x => `at ${x}`;
+  const open = describe({ kind: "level", v: OPEN }, {}, fmt);
+  assert.equal(open.title, "Swing high not traded through");
+  assert.equal(open.price, 160);
+  assert.ok(open.lines[0].startsWith("Price turned down at at 160 on 4 Sep"), open.lines[0]);
+  assert.ok(open.lines[0].endsWith("and has not traded above it since."), open.lines[0]);
+  assert.ok(open.lines[1].includes("stop orders rest just above a swing high like this (they call it liquidity)"), open.lines[1]);
+  const swept = describe({ kind: "level", v: SWEPT }, {}, fmt);
+  assert.equal(swept.title, "Swing low swept");
+  assert.ok(swept.lines[0].includes("it traded below it, as far as at 98.5, and an hourly candle closed back over it within the hour."), swept.lines[0]);
+  assert.ok(swept.lines[1].includes("swing failure when it is quick and a failed auction when it takes hours"), swept.lines[1]);
+  const slow = describe({ kind: "level", v: { ...SWEPT, back: SWEPT.taken + 7 * 3600 } }, {}, fmt);
+  assert.ok(slow.lines[0].endsWith("closed back over it 7 hours later."), slow.lines[0]);
+  const broken = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 9 * DAY }, fmt);
+  assert.equal(broken.title, "Swing high traded through");
+  assert.ok(broken.lines[0].endsWith("as far as at 158, and no hourly candle closed back under it in the three days after."), broken.lines[0]);
+  const fresh = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 5 * 3600 }, fmt);       // traded through five hours ago
+  assert.ok(fresh.lines[0].endsWith("and no hourly candle has closed back under it so far."), fresh.lines[0]);
 });
 
 test("the last finished swing's value area and point of control are ticks", () => {
@@ -210,7 +245,8 @@ test("no forecast words and no bare shorthand in any description", () => {
   const hits = [...keys.map(key => tick(key, "x")), ...rangeTicks(placeRanges([RISE], times)).map(t => ({ kind: "tick", tick: t })),
     ...[RISE, FALL].flatMap(r => [{ kind: "range", r }, ...["vah", "val", "poc"].map(which => ({ kind: "rline", which, r }))]),
     { kind: "rline", which: "poc", r: RISE, rule: "short" }, { kind: "rline", which: "poc", r: FALL, rule: "long" },
-    { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } }];
+    { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } },
+    ...[OPEN, SWEPT, BROKEN, { ...OPEN, side: "low" }, { ...SWEPT, side: "high" }, { ...BROKEN, side: "low" }].map(v => ({ kind: "level", v }))];
   for (const h of hits) {
     const d = describe(h, {});
     assert.ok(d.lines.length >= 2, d.title);
@@ -236,5 +272,6 @@ test("what is under the pointer has a stable name", () => {
   assert.equal(hitKey({ kind: "rline", which: "poc", r: RISE }), `rline:${RISE.start}:poc`);
   assert.equal(hitKey({ kind: "range", r: FALL }), `range:${FALL.start}:`);
   assert.equal(hitKey(tick("d_open", "D open")), "tick:d_open:");
+  assert.equal(hitKey({ kind: "level", v: SWEPT }), `level:${SWEPT.time}:low`);
   assert.equal(hitKey(null), "");
 });

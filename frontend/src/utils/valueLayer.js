@@ -40,6 +40,16 @@ export function placeRanges(ranges, times) {
 // The swing whose levels are carried on to the right edge: the last one that has ended.
 export const lastDone = placed => placed.filter(r => !r.live).slice(-1)[0] || null;
 
+// Swing highs and lows as price levels (body.swing_levels) on the chart's candles: each from its swing's candle
+// (`before`: the swing is older than the first candle) to the candle that traded through it, `to`, null while
+// none has. `swept`: an hourly candle then closed back inside it within three days. Levels traded through
+// before the first candle are dropped.
+export function placeLevels(body, times) {
+  if (!times?.length) return [];
+  return (body?.swing_levels || []).filter(v => v.taken == null || v.taken >= times[0]).map(v => ({
+    ...v, before: v.time < times[0], from: barAt(times, v.time), to: v.taken == null ? null : barAt(times, v.taken), swept: v.back != null }));
+}
+
 // The 0.618 to 0.66 retracement bands of the live major legs, with where each starts on the chart's candles
 // (the leg's start, or the first candle when that is earlier), the leg itself as a line from its start to its
 // extreme (when both are on the chart), and whether a finished swing's point of control sits in the band.
@@ -204,6 +214,28 @@ function lineCopy(r, which, fmt, rule = null) {
     UNTESTED]];
 }
 
+// A swing high or low as a level: where price turned, what became of it, and how the method's traders use it.
+// asOf: when the chart's data was read (seconds), to tell "not within three days" from "not so far".
+const SWEEP_WINDOW = 72 * 3600;
+function swingLevelCopy(v, fmt, asOf) {
+  const high = v.side === "high", past = high ? "above" : "below", back = high ? "under" : "over";
+  const made = `Price turned ${high ? "down" : "up"} at ${fmt(v.price)} on ${utcDay(v.time)}`;
+  const use = `Traders assume stop orders rest just ${past} a swing ${v.side} like this (they call it liquidity). They wait for price to push through it and close back ${back} it, then trade the other way.`;
+  if (v.taken == null) return [`Swing ${v.side} not traded through`, [`${made} and has not traded ${past} it since.`, use, UNTESTED]];
+  const went = `On ${utcDay(v.taken)} it traded ${past} it${v.extreme != null ? `, as far as ${fmt(v.extreme)}` : ""}`;
+  if (v.back == null) {
+    const open = asOf > 0 && asOf - v.taken < SWEEP_WINDOW;
+    return [`Swing ${v.side} traded through`, [
+      `${made}. ${went}, and no hourly candle ${open ? `has closed back ${back} it so far` : `closed back ${back} it in the three days after`}.`,
+      `Traders read a level that price holds beyond as broken: the old ${v.side} is then watched from the other side.`, UNTESTED]];
+  }
+  const hours = Math.max(1, Math.round((v.back - v.taken) / 3600));
+  return [`Swing ${v.side} swept`, [
+    `${made}. ${went}, and an hourly candle closed back ${back} it ${hours <= 1 ? "within the hour" : `${hours} hours later`}.`,
+    `Traders call this a swing failure when it is quick and a failed auction when it takes hours. They read it as stop orders being filled with no follow-through, and trade back ${high ? "down" : "up"} into the range.`,
+    UNTESTED]];
+}
+
 // Everything under the pointer: a tag that stands for several levels at one price gives one entry each.
 export function describeAll(hit, body, fmt = String) {
   if (hit.kind !== "tick") return [describe(hit, body, fmt)];
@@ -236,6 +268,7 @@ export function describe(hit, body, fmt = String) {
   if (hit.kind === "rline") {
     return entry(lineCopy(hit.r, hit.which, fmt, hit.rule), { price: hit.r[hit.which], tag: hit.r.live ? "so far" : null });
   }
+  if (hit.kind === "level") return entry(swingLevelCopy(hit.v, fmt, body?.as_of), { price: hit.v.price });
   return entry(rangeCopy(hit.r, fmt), { range: [hit.r.low, hit.r.high], tag: hit.r.live ? "so far" : null });
 }
 
@@ -257,5 +290,5 @@ export function rangeNote(range, last) {
 
 // A stable name for what is under the pointer, so the tip is redrawn only when it changes.
 export function hitKey(hit) {
-  return hit ? `${hit.kind}:${hit.tick?.key ?? hit.r?.start ?? hit.band?.top ?? ""}:${hit.which ?? ""}` : "";
+  return hit ? `${hit.kind}:${hit.tick?.key ?? hit.r?.start ?? hit.band?.top ?? hit.v?.time ?? ""}:${hit.which ?? hit.v?.side ?? ""}` : "";
 }
