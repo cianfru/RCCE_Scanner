@@ -225,4 +225,4 @@ BTC, ETH and SOL in both periods, recounted with separately written code: plain 
 - **The open-interest rule** went the sheets' way in sample and the other way held out. **A CVD divergence** marked nothing in either.
 - **What the study could have seen:** +0.5% a trade if trades were close to independent. A smaller edge, or one hidden by coins moving together, would not show.
 - **What this does not test:** the method as a person trades it, choosing levels by eye, reading a footprint, taking part off and moving stops. It tests the named triggers, taken every time, at the chart's swing levels.
-- **Context, not a signal.** The chart keeps drawing the levels and the sweeps as what happened, and the tips say what this found.
+- **Context, not a signal.** The chart keeps drawing the levels and the sweeps as what happened. Its tips say what each one is and how the method uses it; at the owner's request (18 November 2026) they carry no study results.
