@@ -159,8 +159,12 @@ def binom_sf(k: int, n: int, p: float) -> float:
         return 1.0
     if p <= 0:
         return 0.0
-    from math import comb
-    return min(1.0, sum(comb(n, x) * p ** x * (1 - p) ** (n - x) for x in range(k, n + 1)))
+    if p >= 1:
+        return 1.0
+    from math import exp, lgamma, log
+    lp, lq = log(p), log(1 - p)     # in logs: the plain binomial terms overflow a float past a few hundred events
+    return min(1.0, sum(exp(lgamma(n + 1) - lgamma(x + 1) - lgamma(n - x + 1) + x * lp + (n - x) * lq)
+                        for x in range(k, n + 1)))
 
 
 def share(xs, f) -> Optional[float]:
@@ -274,15 +278,17 @@ def bn_symbols() -> List[str]:
 
 
 def bn_one(sym: str) -> Optional[dict]:
+    from urllib.parse import quote
+    q = quote(sym)                      # some symbols are not ASCII
     prints: Prints = []
     candles: Candles = []
     for m in MONTHS:
-        for r in _csv_rows(_get(f"https://data.binance.vision/data/futures/um/monthly/fundingRate/{sym}/{sym}-fundingRate-{m}.zip")):
+        for r in _csv_rows(_get(f"https://data.binance.vision/data/futures/um/monthly/fundingRate/{q}/{q}-fundingRate-{m}.zip")):
             prints.append((int(r[0]) // 1000 // 60 * 60, float(r[2]), float(r[1])))
     if not prints:
         return None
     for m in MONTHS:
-        for r in _csv_rows(_get(f"https://data.binance.vision/data/futures/um/monthly/klines/{sym}/4h/{sym}-4h-{m}.zip")):
+        for r in _csv_rows(_get(f"https://data.binance.vision/data/futures/um/monthly/klines/{q}/4h/{q}-4h-{m}.zip")):
             candles.append((int(r[0]) // 1000, float(r[1]), float(r[2]), float(r[3]), float(r[4])))
     return {"prints": sorted(set(prints)), "candles": sorted(set(candles))}
 

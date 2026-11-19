@@ -75,6 +75,7 @@ def test_binomial_tail():
     assert abs(nf.binom_sf(1, 1, 0.3) - 0.3) < 1e-12
     assert abs(nf.binom_sf(2, 2, 0.5) - 0.25) < 1e-12
     assert nf.binom_sf(0, 5, 0.1) == 1.0
+    assert nf.binom_sf(1105, 1105, 0.05) < 1e-300 and abs(nf.binom_sf(500, 1000, 0.5) - 0.5126) < 1e-3
 
 
 def _o(t, up7, r168):
