@@ -25,4 +25,5 @@ backend/data/wallet_history_cache/
 backend/data/selection_window_cache/
 backend/data/value_area_cache/
 backend/data/whale_coins_cache/
+backend/data/negative_funding_cache/
 backend/hyperliquid_universe.json
