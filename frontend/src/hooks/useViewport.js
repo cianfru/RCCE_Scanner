@@ -3,14 +3,15 @@ import { useState, useEffect } from "react";
 export default function useViewport() {
   const [vp, setVp] = useState(() => {
     const w = typeof window !== "undefined" ? window.innerWidth : 1280;
-    return { width: w, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 };
+    const h = typeof window !== "undefined" ? window.innerHeight : 800;
+    return { width: w, height: h, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 };
   });
 
   useEffect(() => {
     let ticking = false;
     const update = () => {
       const w = window.innerWidth;
-      setVp({ width: w, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 });
+      setVp({ width: w, height: window.innerHeight, isMobile: w < 768, isTablet: w >= 768 && w < 1024, isDesktop: w >= 1024 });
     };
     const onResize = () => {
       if (!ticking) {

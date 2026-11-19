@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { barIndex, barAt, placeRanges, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
+import { barIndex, barAt, placeRanges, placeLevels, lastDone, ticks, rangeTicks, pocRule, histogram, spread, mergeTicks, fibBands, fibTicks, FIB_LABEL,
   describe, describeAll, distanceNote, rangeNote, hitKey } from "./valueLayer.js";
 
 const H4 = 14400, DAY = 86400;
@@ -39,6 +39,45 @@ test("swings get their span in candles, from the candle holding their start to t
   assert.equal(lastDone(placeRanges([FALL], times)), null);
 });
 
+// Swing levels: a high made before the chart and still open, a low swept two candles in, a high broken later.
+const OPEN = { side: "high", price: 160, time: T0 - 3 * DAY, known: T0 - DAY, taken: null, back: null, extreme: null };
+const SWEPT = { side: "low", price: 100, time: T0 + 3600, known: T0 + DAY, taken: T0 + DAY + 2 * H4 + 3600, back: T0 + DAY + 2 * H4 + 7200, extreme: 98.5 };
+const BROKEN = { side: "high", price: 150, time: T0 + H4, known: T0 + DAY, taken: T0 + 2 * DAY, back: null, extreme: 158 };
+
+test("swing levels run from their swing's candle to the candle that traded through them", () => {
+  const placed = placeLevels({ swing_levels: [OPEN, SWEPT, BROKEN, { ...BROKEN, time: T0 - 9 * DAY, taken: T0 - DAY }] }, times);
+  assert.deepEqual(placed.map(v => [v.side, v.before, v.from, v.to, v.swept]),
+    [["high", true, 0, null, false], ["low", false, 0, 8, true], ["high", false, 1, 12, false]]);     // taken before the chart: dropped
+  assert.deepEqual(placeLevels({ swing_levels: [OPEN] }, []), []);
+  assert.deepEqual(placeLevels({}, times), []);
+  assert.deepEqual(placeLevels(null, times), []);
+});
+
+test("a swing level says where price turned, what became of it and how traders use it", () => {
+  const fmt = x => `at ${x}`;
+  const open = describe({ kind: "level", v: OPEN }, {}, fmt);
+  assert.equal(open.title, "Swing high not traded through");
+  assert.equal(open.price, 160);
+  assert.ok(open.lines[0].startsWith("Price turned down at at 160 on 4 Sep"), open.lines[0]);
+  assert.ok(open.lines[0].endsWith("and has not traded above it since."), open.lines[0]);
+  assert.ok(open.lines[1].includes("stop orders rest just above a swing high like this (they call it liquidity)"), open.lines[1]);
+  assert.equal(open.lines.length, 2);
+  const swept = describe({ kind: "level", v: SWEPT }, {}, fmt);
+  assert.equal(swept.title, "Swing low swept");
+  assert.ok(swept.lines[0].includes("it traded below it, as far as at 98.5, and an hourly candle closed back over it within the hour."), swept.lines[0]);
+  assert.ok(swept.lines[1].includes("swing failure when it is quick and a failed auction when it takes hours"), swept.lines[1]);
+  assert.equal(swept.lines.length, 2);
+  const slow = describe({ kind: "level", v: { ...SWEPT, back: SWEPT.taken + 7 * 3600 } }, {}, fmt);
+  assert.ok(slow.lines[0].endsWith("closed back over it 7 hours later."), slow.lines[0]);
+  const broken = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 9 * DAY }, fmt);
+  assert.equal(broken.title, "Swing high traded through");
+  assert.ok(broken.lines[0].endsWith("as far as at 158, and no hourly candle closed back under it in the three days after."), broken.lines[0]);
+  const fresh = describe({ kind: "level", v: BROKEN }, { as_of: BROKEN.taken + 5 * 3600 }, fmt);       // traded through five hours ago
+  assert.ok(broken.lines[1].startsWith("Traders read a level that price holds beyond as broken"), broken.lines[1]);
+  assert.ok(fresh.lines[0].endsWith("and no hourly candle has closed back under it so far."), fresh.lines[0]);
+  assert.deepEqual([broken.lines.length, fresh.lines.length], [2, 2]);
+});
+
 test("the last finished swing's value area and point of control are ticks", () => {
   const placed = placeRanges([RISE, FALL], times);
   assert.deepEqual(rangeTicks(placed).map(t => [t.key, t.label, t.price, t.kind]),
@@ -58,13 +97,12 @@ test("the rule on the last finished swing: short from its POC below its value ar
   assert.deepEqual(rangeTicks(placed, 100).map(t => t.label), ["VAH", "POC \u00b7 short", "VAL"]);
   assert.deepEqual(rangeTicks(placed, 150).map(t => t.label), ["VAH", "POC \u00b7 long", "VAL"]);
   assert.deepEqual(rangeTicks(placed, 120).map(t => [t.label, t.rule || null]), [["VAH", null], ["POC", null], ["VAL", null]]);
-  // The tag and the dashed line it sits on say the same, with what the rule's test found.
+  // The tag and the dashed line it sits on say the same: what the price is, then the rule.
   const tag = describe({ kind: "tick", tick: rangeTicks(placed, 100)[1] }, {}, fmt);
   assert.deepEqual([tag.title, tag.tag], ["Most-traded price of the rise", "POC \u00b7 short"]);
   assert.equal(tag.lines[1], "Price is now below the rise's main trading range (under $112). The method's rule then: sell (go short) at this price if price climbs back to it.");
-  assert.equal(tag.lines[2], "Tested here on 71 coins since 2021: the rule made about 0.3% a trade after fees, too little to tell from nothing.");
+  assert.equal(tag.lines.length, 2);
   assert.deepEqual(describe({ kind: "rline", which: "poc", r: RISE, rule: "short" }, {}, fmt).lines, tag.lines);
-  assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[2], "Not tested here.");
   assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: "long" }, {}, fmt).lines[1],
     "Price is now above the rise's main trading range (over $140). The method's rule then: buy (go long) at this price if price dips back to it.");
   assert.equal(describe({ kind: "rline", which: "poc", r: RISE, rule: null }, {}, fmt).lines[1], "Traders use a price like this as the place to take profit.");
@@ -132,11 +170,10 @@ test("the opens and prior extremes say what they are and how traders use them", 
   assert.deepEqual(describe(tick("d_open", "D open"), {}), { title: "Today's opening price", tag: "D open", price: 100, range: null,
     lines: ["The price when today began (00:00 UTC).", "Traders read price above it as buyers being ahead today, below it as sellers being ahead."] });
   assert.equal(describe(tick("m_open", "M open"), {}).title, "This month's opening price");
-  // Yesterday's extremes carry the finding of the study on fading them; last week's were not tested.
   const pdh = describe(tick("pd_high", "PDH"), {});
   assert.equal(pdh.title, "Yesterday's high");
-  assert.deepEqual(pdh.lines.map(l => l.split(" ")[0]), ["The", "Traders", "Tested"]);
-  assert.match(describe(tick("pd_low", "PDL"), {}).lines[2], /buying those dips made nothing before fees/);
+  assert.deepEqual(pdh.lines, ["The highest price reached yesterday.", "Traders watch for price to poke above it and fall straight back, then sell."]);
+  assert.equal(describe(tick("pd_low", "PDL"), {}).lines[1], "Traders watch for price to dip below it and climb straight back, then buy.");
   assert.equal(describe(tick("pw_low", "PWL"), {}).title, "Last week's low");
   assert.equal(describe(tick("pw_low", "PWL"), {}).lines.length, 2);
   assert.equal(describe(tick("ib_low", "IB low"), {}).title, "Low of today's first hour");
@@ -151,7 +188,7 @@ test("a swing's box says the move it covers, where it traded most and how trader
   assert.equal(d.lines[0], "Price rose from $100 to $160. Each bar is how much was traded at that price on the way: longer means more.");
   assert.equal(d.lines[1], "70% of it was traded between $112 and $140 (the value area, the brighter bars). The gold line, $121, is the single most-traded price (the point of control, POC).");
   assert.match(d.lines[2], /^Traders treat that band as the move's fair prices/);
-  assert.equal(d.lines[3], "Not tested here.");
+  assert.equal(d.lines.length, 3);
   const live = describe({ kind: "range", r: FALL }, {}, fmt);
   assert.equal(live.title, "Trading by price in the fall, 7 Sept to 9 Sept");
   assert.equal(live.tag, "so far");
@@ -171,7 +208,7 @@ test("a swing's lines, and the tags that carry them on, give the same words", ()
   const poc = describe({ kind: "rline", which: "poc", r: RISE }, {}, fmt);
   assert.equal(poc.title, "Most-traded price of the rise");
   assert.deepEqual(poc.lines, ["More was traded at this price than at any other in the rise from $100 to $160 (its point of control, POC).",
-    "Traders use a price like this as the place to take profit.", "Not tested here."]);
+    "Traders use a price like this as the place to take profit."]);
   const [t] = rangeTicks(placeRanges([RISE], times));
   const tagged = describe({ kind: "tick", tick: t }, {}, fmt);
   assert.deepEqual([tagged.title, tagged.tag, tagged.price, tagged.lines], [vah.title, "VAH", 140, vah.lines]);
@@ -185,15 +222,15 @@ test("the pullback zone is described with the swing it measures", () => {
   assert.deepEqual(d.range, [120.4, 122.92]);
   assert.equal(d.lines[0], "Price rose from $100 to $160 (the dotted line). This band is where a dip has given back about two thirds of that rise (61.8% to 66%).");
   assert.equal(d.lines[1], "Traders use it as the place to buy the dip.");
-  assert.match(d.lines[2], /^Tested here on 71 coins: .* turned back 47 times in 100/);
-  assert.match(d.lines[3], /^A most-traded price \(POC\) sits inside the band/);
-  assert.equal(d.lines.length, 4);
+  assert.equal(d.lines[2], "A most-traded price (POC) sits inside the band, which traders count as a second reason.");
+  assert.equal(d.lines.length, 3);
   // A fall, with its start off the chart (no dotted line), already traded into, and no POC inside.
   const down = { top: 139.6, bottom: 137.08, direction: -1, base: 160, extreme: 100, leg: null, poc: false, touched: true };
   const e = describe({ kind: "fib", band: down }, {}, fmt);
   assert.equal(e.lines[0], "Price fell from $160 to $100. This band is where a bounce has taken back about two thirds of that fall (61.8% to 66%).");
   assert.equal(e.lines[1], "Traders use it as the place to sell the bounce.");
-  assert.equal(e.lines[3], "Price has already traded into this band.");
+  assert.equal(e.lines[2], "Price has already traded into this band.");
+  assert.equal(e.lines.length, 3);
   assert.deepEqual(describe({ kind: "tick", tick: { key: "fib_1", label: FIB_LABEL, price: 138.34, kind: "fib" }, bands: [up, down] }, {}, fmt), e);
 });
 
@@ -203,14 +240,15 @@ test("a tag standing for several levels describes each", () => {
   assert.equal(describeAll({ kind: "range", r: RISE }, {}).length, 1);
 });
 
-test("no forecast words and no bare shorthand in any description", () => {
+test("no forecast words, no bare shorthand and no study results in any description", () => {
   const words = /\b(will|expect|expected|likely|predict|target|probability|odds)\b/i;
   const keys = ["d_open", "w_open", "m_open", "pd_high", "pd_low", "pw_high", "pw_low", "ib_high", "ib_low"];
   const band = { top: 2, bottom: 1, direction: 1, base: 1, extreme: 3, leg: {}, poc: true, touched: true };
   const hits = [...keys.map(key => tick(key, "x")), ...rangeTicks(placeRanges([RISE], times)).map(t => ({ kind: "tick", tick: t })),
     ...[RISE, FALL].flatMap(r => [{ kind: "range", r }, ...["vah", "val", "poc"].map(which => ({ kind: "rline", which, r }))]),
     { kind: "rline", which: "poc", r: RISE, rule: "short" }, { kind: "rline", which: "poc", r: FALL, rule: "long" },
-    { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } }];
+    { kind: "fib", band }, { kind: "fib", band: { ...band, direction: -1 } },
+    ...[OPEN, SWEPT, BROKEN, { ...OPEN, side: "low" }, { ...SWEPT, side: "high" }, { ...BROKEN, side: "low" }].map(v => ({ kind: "level", v }))];
   for (const h of hits) {
     const d = describe(h, {});
     assert.ok(d.lines.length >= 2, d.title);
@@ -218,6 +256,7 @@ test("no forecast words and no bare shorthand in any description", () => {
     assert.doesNotMatch(all, words, d.title);
     assert.doesNotMatch(d.title, /\b(POC|VAH|VAL|IB|PDH|PDL|PWH|PWL)\b/, d.title);             // titles are plain words
     assert.doesNotMatch(all, /undefined|NaN|null/, d.title);
+    assert.doesNotMatch(all, /\b(tested|counted|study|studies|fees|a trade|in 10|in 100)\b/i, d.title);      // what it is and how it is used: no study results
   }
 });
 
@@ -236,5 +275,6 @@ test("what is under the pointer has a stable name", () => {
   assert.equal(hitKey({ kind: "rline", which: "poc", r: RISE }), `rline:${RISE.start}:poc`);
   assert.equal(hitKey({ kind: "range", r: FALL }), `range:${FALL.start}:`);
   assert.equal(hitKey(tick("d_open", "D open")), "tick:d_open:");
+  assert.equal(hitKey({ kind: "level", v: SWEPT }), `level:${SWEPT.time}:low`);
   assert.equal(hitKey(null), "");
 });

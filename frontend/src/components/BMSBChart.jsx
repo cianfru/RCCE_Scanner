@@ -13,6 +13,8 @@ import { signalCandleTime } from "../utils/signalTiming.js";
 import HelpTip from "./HelpTip.jsx";
 import RegimeIcon from "./RegimeIcon.jsx";
 import Tabs from "./Tabs.jsx";
+import ChartLayersMenu from "./ChartLayersMenu.jsx";
+import { menuGroups, layerCount, auctionNote } from "../utils/chartLayers.js";
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   createChart,
@@ -92,6 +94,27 @@ const valueColors = () => ({ ink: rgbOf(resolveToken("chartText"), [245, 254, 25
 
 const ENTRIES_KEY = "rcce-chart-entries";
 const VALUE_KEY = "rcce-chart-value";
+const SWING_KEY = "rcce-chart-swing-levels";
+const ZONE_KEY = "rcce-chart-zone";
+const OPENS_KEY = "rcce-chart-opens";
+const AVERAGES_KEY = "rcce-chart-averages";
+
+// A switch whose choice is remembered. Until one is made it is `fallback` (a value, or a function read once).
+// `never`: always off and not stored (the compact chart has no layers).
+function useStoredSwitch(key, fallback = false, never = false) {
+  const [on, setOn] = useState(() => {
+    if (never) return false;
+    const first = () => (typeof fallback === "function" ? fallback() : fallback);
+    try { const v = localStorage.getItem(key); return v == null ? first() : v === "1"; } catch (_) { return first(); }
+  });
+  const set = useCallback(next => setOn(prev => {
+    const v = typeof next === "function" ? next(prev) : next;
+    try { localStorage.setItem(key, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
+    return v;
+  }), [key]);
+  return [on, set];
+}
+const storedOn = key => { try { return localStorage.getItem(key) === "1"; } catch (_) { return false; } };
 const REBUILD_DOT_MIN = 25;     // wallets joining plus leaving the profitable-trader list in one candle
 
 // Seconds per candle. 1H is a view of the chart only: the scan and its signals run on 4H and 1D.
@@ -164,16 +187,15 @@ export default function BMSBChart({
     try { localStorage.setItem(ENTRIES_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
     return v;
   }), []);
-  // Value areas and points of control (/api/auction): off until asked for, the choice remembered.
-  const [showValue, setShowValueState] = useState(() => {
-    if (compact) return false;
-    try { return localStorage.getItem(VALUE_KEY) === "1"; } catch (_) { return false; }
-  });
-  const setShowValue = useCallback(next => setShowValueState(prev => {
-    const v = typeof next === "function" ? next(prev) : next;
-    try { localStorage.setItem(VALUE_KEY, v ? "1" : "0"); } catch (_) { /* private mode: not remembered */ }
-    return v;
-  }), []);
+  // The parts of /api/auction's answer, a switch each, off until asked for and remembered: the swings' volume
+  // profiles, the swing highs and lows as levels, the pullback zone, and the opens and prior extremes. The last
+  // two came with the profiles until they were split: someone who had those on keeps them.
+  const [showValue, setShowValue] = useStoredSwitch(VALUE_KEY, false, compact);
+  const [showSwing, setShowSwing] = useStoredSwitch(SWING_KEY, false, compact);
+  const [showZone, setShowZone] = useStoredSwitch(ZONE_KEY, () => storedOn(VALUE_KEY), compact);
+  const [showOpens, setShowOpens] = useStoredSwitch(OPENS_KEY, () => storedOn(VALUE_KEY), compact);
+  // The 200-day average and the bull-market support band: on unless turned off.
+  const [showAverages, setShowAverages] = useStoredSwitch(AVERAGES_KEY, true, compact);
   const [value, setValue] = useState(null);           // {key, body}: the layer of one coin and timeframe
   const [valueNote, setValueNote] = useState(null);   // "loading" | "busy" | "none" while there is nothing to draw
   const valuePrimRef = useRef(null);
@@ -181,7 +203,6 @@ export default function BMSBChart({
   const [valueTip, setValueTip] = useState(null);     // {x, y, hit}
   const tipPinnedRef = useRef(false);
   const lastCloseRef = useRef(null);
-  const [layersOpen, setLayersOpen] = useState(false);   // phones: the layer switches sit behind one "Layers" control
   const [posTip, setPosTip] = useState(null);   // {x, time}: the pointer over the long/short pane
   const [posTop, setPosTop] = useState(null);   // where the long/short pane starts, px from the chart's top
   const [hoverMark, setHoverMark] = useState(null);
@@ -201,6 +222,8 @@ export default function BMSBChart({
   const spikeZoneRef = useRef(null);
   const showTrendRef = useRef(false);
   const showRibbonRef = useRef(false);
+  const averageSeriesRef = useRef([]);
+  const showAveragesRef = useRef(showAverages);
   const zoneEndRef = useRef(null);
   const patternSeriesRef = useRef([]);
   const entryMarkersRef = useRef(null);
@@ -387,8 +410,9 @@ export default function BMSBChart({
     const trendSeries = chart.addSeries(LineSeries, { color: col("#91b9e8"), lineWidth: 1, lineStyle: LineStyle.Dashed, title: "Trend",
       lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible: showTrendRef.current });
     trendSeriesRef.current = trendSeries;
-    if (compact) {
-      for (const ser of [ma200Series, bmsbEmaSeries, bmsbSmaSeries, bmsbMidSeries]) ser.applyOptions({ visible: false });
+    averageSeriesRef.current = [ma200Series, bmsbEmaSeries, bmsbSmaSeries, bmsbMidSeries];
+    if (compact || !showAveragesRef.current) {
+      for (const ser of averageSeriesRef.current) ser.applyOptions({ visible: false });
     }
 
     // ── Fetch data ──
@@ -669,6 +693,10 @@ export default function BMSBChart({
     showRibbonRef.current = showRibbon;
     for (const ser of ribbonSeriesRef.current) { try { ser.applyOptions({ visible: showRibbon }); } catch (_) {} }
   }, [showRibbon, activeTimeframe]);
+  useEffect(() => {
+    showAveragesRef.current = showAverages;
+    for (const ser of averageSeriesRef.current) { try { ser.applyOptions({ visible: showAverages && !compact }); } catch (_) {} }
+  }, [showAverages, activeTimeframe, compact]);
 
   useEffect(() => {
     const cleanup = buildChart(activeTimeframe);
@@ -679,11 +707,13 @@ export default function BMSBChart({
   // profitable-trader list was rebuilt.
   const tfSec = TF_SEC[activeTimeframe];
 
-  // Value layer: read when turned on (the server keeps each coin's answer for 15 minutes), then
-  // handed to the chart's primitive once the candles are in. "Busy" is tried again after 30 s.
+  // Profiles, levels, the pullback zone and the opens: one answer serves all four. Read when any is turned on
+  // (the server keeps each coin's answer for 15 minutes), then handed to the chart's primitive once the candles
+  // are in. "Busy" is tried again after 30 s.
   const valueKey = `${symbol}|${activeTimeframe}`;
+  const wantAuction = showValue || showSwing || showZone || showOpens;
   useEffect(() => {
-    if (!showValue || compact || !symbol) { setValueNote(null); return; }
+    if (!wantAuction || compact || !symbol) { setValueNote(null); return; }
     let cancelled = false, timer = null;
     const load = () => {
       setValueNote("loading");
@@ -699,17 +729,15 @@ export default function BMSBChart({
     };
     load();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [showValue, symbol, activeTimeframe, compact]);
+  }, [wantAuction, symbol, activeTimeframe, compact]);
   useEffect(() => {
     const layer = valuePrimRef.current;
     if (!layer) return;
-    const body = showValue && candleTimes?.length && value?.key === valueKey ? value.body : null;
-    layer.setData(body, candleTimes, tfSec, valueColors(), lastCloseRef.current);
+    const body = wantAuction && candleTimes?.length && value?.key === valueKey ? value.body : null;
+    layer.setData(body, candleTimes, tfSec, valueColors(), lastCloseRef.current,
+      { profiles: showValue, levels: showSwing, zone: showZone, opens: showOpens });
     layer.setVisible(!!body);
-  }, [showValue, value, valueKey, candleTimes, tfSec, mode]);
-  const layersOn = [showEntries, showPressure, showValue, activeTimeframe !== "1h" && showTrend, activeTimeframe !== "1h" && showRibbon,
-    activeTimeframe === "1d" && showPatterns].filter(Boolean).length;
-  const valueLabel = !showValue || !valueNote ? "Value" : valueNote === "loading" ? "Loading…" : valueNote === "busy" ? "Value: busy" : "Value: no data";
+  }, [showValue, showSwing, showZone, showOpens, wantAuction, value, valueKey, candleTimes, tfSec, mode]);
   const posSeries = showPos ? positioning?.groups?.[posGroup] : null;
   const posBars = useMemo(() => (posSeries ? candleBars(posSeries, posMeasure, tfSec, candleTimes, posGroup) : []),
     [posSeries, posMeasure, tfSec, candleTimes, posGroup]);
@@ -788,7 +816,7 @@ export default function BMSBChart({
       return candleTimes[lo];
     };
     const markers = [];
-    // With Traders on: each of the largest holders' fill bursts as an arrow in their avatar
+    // With Trader entries on: each of the largest holders' fill bursts as an arrow in their avatar
     // colour, tagged with their codename's initials, and a dashed line at each side's median
     // entry. (New positions of every tracked wallet are no longer drawn on the price: the
     // long/short pane shows them per candle.)
@@ -1013,6 +1041,18 @@ export default function BMSBChart({
   const sm = signal ? SIGNAL_META[signal] || SIGNAL_META.WAIT : null;
   // Failed patterns stay listed but are not counted as something current.
   const activePatterns = patterns.filter(p => p.status === "forming" || p.status === "confirmed").length;
+  // The Layers menu: every switch of this chart, in groups, any number on at once.
+  const layerSwitches = {
+    profiles: [showValue, setShowValue], levels: [showSwing, setShowSwing], zone: [showZone, setShowZone], opens: [showOpens, setShowOpens],
+    averages: [showAverages, setShowAverages], trend: [showTrend, setShowTrend], ribbon: [showRibbon, setShowRibbon],
+    patterns: [showPatterns, setShowPatterns], entries: [showEntries, setShowEntries], wallets: [showPressure, setShowPressure],
+  };
+  const layersOnMap = Object.fromEntries(Object.entries(layerSwitches).map(([k, [on]]) => [k, on]));
+  const waiting = auctionNote(valueNote);
+  const layerGroups = menuGroups(activeTimeframe, layersOnMap,
+    { profiles: waiting, levels: waiting, zone: waiting, opens: waiting, wallets: pressureLoading ? "Loading…" : "" },
+    { patterns: `Patterns${activePatterns ? ` (${activePatterns})` : ""}` });
+  const layersOn = layerCount(activeTimeframe, layersOnMap);
 
   return (
     <div className={`price-chart-panel${compact ? " price-chart-compact" : ""}`} style={{
@@ -1086,38 +1126,25 @@ export default function BMSBChart({
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {toolbarAction}
           <button type="button" className="chart-reset" disabled={loading || !!error} onClick={() => resetViewRef.current?.()} title="Return to the default candle density and latest price"><span className="chart-levels-label">Reset view</span><span className="chart-levels-label-short">Reset</span></button>
-          {/* Phones: the layer switches open from one control, in a single row that scrolls sideways. */}
-          <button type="button" className="chart-layers-btn" aria-expanded={layersOpen} onClick={() => setLayersOpen(o => !o)}>
-            Layers{layersOn ? ` ${layersOn}` : ""}
-          </button>
-          {/* Overlays: all off until asked for. One (i) explains them all. */}
-          <span className={`chart-layers${layersOpen ? " is-open" : ""}`}>
-          {[
-            { key: "entries", on: showEntries, set: setShowEntries, long: "Traders", short: "Traders" },
-            { key: "levels", on: showPressure, set: setShowPressure, long: pressureLoading ? "Loading…" : "Wallet levels", short: pressureLoading ? "Loading…" : "Levels" },
-            { key: "value", on: showValue, set: setShowValue, long: valueLabel, short: valueLabel },
-            activeTimeframe !== "1h" && { key: "trend", on: showTrend, set: setShowTrend, long: "Trend", short: "Trend" },
-            activeTimeframe !== "1h" && { key: "ribbon", on: showRibbon, set: setShowRibbon, long: "Ribbon", short: "Ribbon" },
-            activeTimeframe === "1d" && { key: "patterns", on: showPatterns, set: setShowPatterns, long: `Patterns${activePatterns ? ` (${activePatterns})` : ""}`, short: "Patterns" },
-          ].filter(Boolean).map(t => (
-            <button key={t.key} type="button" onClick={() => t.set(v => !v)} aria-pressed={t.on}
-              style={{
-                padding: "3px 2px", border: 0, borderBottom: `2px solid ${t.on ? T.accent : "transparent"}`, borderRadius: 0,
-                cursor: "pointer", fontFamily: T.mono, fontWeight: 700, letterSpacing: "0.04em",
-                background: "transparent", color: t.on ? T.text1 : T.text4,
-              }}>
-              <span className="chart-levels-label">{t.long}</span><span className="chart-levels-label-short">{t.short}</span>
-            </button>
-          ))}
-          </span>
+          {/* Everything that can be drawn over the candles sits behind one control: a list of switches in
+              groups, any number on at once. One (i) explains them all. */}
+          <ChartLayersMenu groups={layerGroups} count={layersOn} maxHeight={height + posH - 14}
+            onToggle={key => layerSwitches[key]?.[1](v => !v)}
+            onClear={() => Object.values(layerSwitches).forEach(([, set]) => set(false))} />
           <HelpTip title="Chart layers" width={420}>
-            <p>Traders (off until turned on): where the largest profitable traders holding this coin are. Dashed lines: their median entry, per side. Arrows: their fills, each in the colour of the trader's avatar and tagged with their name's initials (Arctic Mako is AM). An arrow is a burst of fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
-            <p>Wallet levels: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>Value: where trading was heaviest in each swing. A box covers each move from a swing low to the next swing high, or from a high to the next low, and the move still running. Bars on its left: volume by price. Gold line: the price that traded most (POC). Grey lines: the band that held 70% of the volume (value area high and low). The last finished swing's lines run on, dashed; while the last price is outside its value area, the POC tag adds the method's rule: short from the POC below the band, long from it above. Violet: the latest major swing's 0.618 to 0.66 pullback zone. Tap or hover any line or tag to see what it is. Display only; not used by signals.</p>
+            <p>Layers opens the list of what can be drawn over the candles. Turn on as many as you want; Clear all leaves the candles alone. Everything in it is display only and not used by signals, unless it says otherwise.</p>
+            <p><b>Swing profiles</b>: where trading was heaviest in each swing. A box covers each move from a swing low to the next swing high, or from a high to the next low, and the move still running. Bars on its left: volume by price. Gold line: the price that traded most (POC). Grey lines: the band that held 70% of the volume (value area high and low). The last finished swing's lines run on, dashed; while the last price is outside its value area, the POC tag adds the method's rule: short from the POC below the band, long from it above.</p>
+            <p><b>Levels</b>: each swing high and low as a dotted line, carried on until price trades through it. The method reads these as where stop orders rest. A ring marks a sweep: price traded through and an hourly candle closed back within three days. A line that ends without a ring was broken.</p>
+            <p><b>Pullback zone</b>: in violet, the latest major swing's 0.618 to 0.66 retracement.</p>
+            <p><b>Opens, prior highs and lows</b>: this day's, week's and month's opening price, and the previous day's or week's high and low, as tags right of the last candle.</p>
+            <p>Tap or hover any of these lines, rings or tags to see what it is.</p>
+            <p><b>Averages</b>: the 200-day moving average (orange) and the bull-market support band (BMSB), the 20-week average with its band. The app's regime reads use these.</p>
+            {activeTimeframe !== "1h" && <p><b>Trend line</b>: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
+            {activeTimeframe !== "1h" && <p><b>Ribbon</b>: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""}</p>}
+            {activeTimeframe === "1d" && <p><b>Patterns</b>: detected chart patterns with their measured track record.</p>}
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
-            {activeTimeframe !== "1h" && <p>Trend: {trendNote(trend, activeTimeframe)} After a spike, the box shows where past spikes bottomed.</p>}
-            {activeTimeframe !== "1h" && <p>Ribbon: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""} Display only; not used by signals.</p>}
-            {activeTimeframe === "1d" && <p>Patterns: detected chart patterns with their measured track record. Display only; never used by signals.</p>}
+            <p><b>Trader entries</b>: where the largest profitable traders holding this coin are. Dashed lines: their median entry, per side. Arrows: their fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
+            <p><b>Wallet levels</b>: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
           </HelpTip>
 
           {/* Timeframe toggle where the chart owns its timeframe; where the page owns it (4H or 1D),

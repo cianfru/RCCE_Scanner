@@ -432,19 +432,29 @@
 [data-theme="light"] .price-chart-canvas{background:radial-gradient(ellipse at top,rgba(14,116,144,.045),transparent 65%);}
 [data-theme="light"] .price-chart-panel .candle-inspector{background:rgba(255,255,255,.9);}
 .price-chart-panel .chart-levels-label-short{display:none;}
-/* Layer switches: inline on wide screens; on phones behind one "Layers" control, opening as a single row that scrolls sideways. */
-.price-chart-panel .chart-layers{display:contents;}
-.price-chart-panel .chart-layers-btn{display:none;}
+/* Layers: one control on every screen. It opens a list of switches in groups; any number can be on. */
+.price-chart-panel .chart-layers-menu{position:relative;display:inline-flex;}
+.price-chart-panel .chart-layers-btn{display:inline-flex;align-items:center;padding:3px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;font-family:var(--font-geist-mono),monospace;font-weight:700;letter-spacing:.04em;cursor:pointer;}
+.price-chart-panel .chart-layers-btn:hover{color:var(--t-text1)!important;}
+.price-chart-panel .chart-layers-btn[aria-expanded=true]{border-bottom-color:var(--t-accent);color:var(--t-text1)!important;}
+.price-chart-panel .chart-layers-panel{position:absolute;top:calc(100% + 10px);right:0;z-index:30;width:268px;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;padding:14px 16px 8px;overflow-y:auto;border:1px solid var(--t-border);border-radius:10px;background:var(--t-bg);box-shadow:0 18px 44px rgba(0,0,0,.4);}
+.price-chart-panel .chart-layers-group{display:flex;flex-direction:column;}
+.price-chart-panel .chart-layers-heading{padding-bottom:2px;font:600 10px var(--font-geist-mono),monospace!important;letter-spacing:.12em;text-transform:uppercase;color:var(--t-text4);}
+.price-chart-panel .chart-layers-item{display:flex;align-items:center;gap:10px;width:100%;min-height:32px;padding:2px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px var(--font-geist-sans),sans-serif!important;color:var(--t-text3)!important;cursor:pointer;}
+.price-chart-panel .chart-layers-item:hover,.price-chart-panel .chart-layers-item[aria-checked=true]{color:var(--t-text1)!important;}
+.price-chart-panel .chart-layers-box{flex:none;width:12px;height:12px;box-sizing:border-box;border:1px solid var(--t-text4);border-radius:2px;}
+.price-chart-panel .chart-layers-item[aria-checked=true] .chart-layers-box{border-color:var(--t-accent);background:var(--t-accent);box-shadow:inset 0 0 0 2px var(--t-bg);}
+.price-chart-panel .chart-layers-name{flex:1;min-width:0;font-size:13px!important;}
+.price-chart-panel .chart-layers-item i{flex:none;font-style:normal;font-size:11px;color:var(--t-text4);}
+.price-chart-panel .chart-layers-clear{width:100%;min-height:32px;padding:6px 0 2px;border:0;border-top:1px solid var(--t-border);border-radius:0;background:transparent;text-align:left;font:12px var(--font-geist-sans),sans-serif!important;color:var(--t-text3)!important;cursor:pointer;}
+.price-chart-panel .chart-layers-clear:hover:not(:disabled){color:var(--t-accent)!important;}
+.price-chart-panel .chart-layers-clear:disabled{opacity:.4;cursor:default;}
 @media(max-width:600px){
-  .price-chart-panel .chart-layers-btn{display:inline-flex;align-items:center;padding:3px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;font-family:var(--font-geist-mono),monospace;font-weight:700;letter-spacing:.04em;cursor:pointer;}
-  .price-chart-panel .chart-layers-btn[aria-expanded=true]{border-bottom-color:var(--t-accent);color:var(--t-text1)!important;}
-  /* The controls join the toolbar's own row (kept to the right), so the open switches take the one row under it. */
+  /* The controls join the toolbar's own row (kept to the right); the list opens across the toolbar's width. */
   .price-chart-panel .chart-toolbar:not(.chart-toolbar-compact)>div:last-child{display:contents!important;}   /* over its inline display:flex */
   .price-chart-panel .chart-toolbar:not(.chart-toolbar-compact)>div:last-child>:first-child{margin-left:auto;}
-  .price-chart-panel .chart-layers{display:none;}
-  .price-chart-panel .chart-layers.is-open{display:flex;order:9;flex:0 0 100%;min-width:0;gap:12px;overflow-x:auto;scrollbar-width:none;}
-  .price-chart-panel .chart-layers.is-open::-webkit-scrollbar{display:none;}
-  .price-chart-panel .chart-layers button{flex:none;white-space:nowrap;}
+  .price-chart-panel .chart-layers-menu{position:static;}
+  .price-chart-panel .chart-layers-panel{top:100%;left:10px;right:10px;width:auto;}
 }
 /* What a Value line or tag is, at the pointer. */
 .chart-value-tip{gap:8px;max-width:300px;}
