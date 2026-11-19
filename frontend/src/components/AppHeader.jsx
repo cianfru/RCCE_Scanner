@@ -78,7 +78,7 @@ export default function AppHeader({
 
         {showTabs && <>
           <span className="header-divider" aria-hidden="true" />
-          <HeaderTabs activeKey={activeMainTab} targets={tabTargets} showIcons={width >= 1280} />
+          <HeaderTabs activeKey={activeMainTab} targets={tabTargets} showIcons={width >= 1280} radarTf={radarTf} />
         </>}
 
         <div className="header-spacer" />

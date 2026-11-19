@@ -303,7 +303,7 @@ test("read-only, no wallet client, or Keep: nothing is sent on either path", asy
   }
 });
 
-test("watch: the same toggle and key; the Radar link left both pages (14 November 2026)", () => {
+test("watch and Radar: the same toggle and key; Radar's focus fixed only for k markets", () => {
   // Old: onWatch(appKey) with appKey = kKey(coin) -> toggleWatch(coin, "4h") and watchToast.
   assert.ok(OLD.includes("onClick={() => onWatch(appKey)}"));
   assert.ok(OLD.includes("const appKey = kKey(coin);"));
@@ -311,8 +311,12 @@ test("watch: the same toggle and key; the Radar link left both pages (14 Novembe
   assert.ok(OLD.includes(toggle));
   assert.ok(PAGE.includes(toggle.replace("setWatchMsg", "setToast")));
   assert.match(ROW, /onClick=\{\(\) => onWatch\(kKey\(row\.coin\)\)\}/);
-  assert.ok(!OLD.includes("/radar?") && !ROW.includes("radarHref"));
-  assert.equal(radarHref("kPEPE"), "/radar?tf=4h&focus=KPEPE");   // the helper stays for links typed by hand
+  // Old link: `/radar?tf=4h&focus=${encodeURIComponent(coin)}` with Hyperliquid's name.
+  assert.ok(OLD.includes("to={`/radar?tf=4h&focus=${encodeURIComponent(coin)}`}"));
+  const oldHref = coin => `/radar?tf=4h&focus=${encodeURIComponent(coin)}`;
+  for (const c of ["BTC", "ETH", "HYPE", "PUMP"]) assert.equal(radarHref(c), oldHref(c));
+  assert.equal(radarHref("kPEPE"), "/radar?tf=4h&focus=KPEPE");   // the Radar's key; kPEPE matched nothing there
+  assert.match(ROW, /to=\{radarHref\(row\.coin\)\}/);
 });
 
 test("the old page's open-orders read and the new one send the same request", async () => {

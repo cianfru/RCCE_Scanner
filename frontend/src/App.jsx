@@ -53,6 +53,7 @@ const AnalyticsPanel = lazy(() => import("./components/AnalyticsPanel.jsx"));
 const TradFiPanel = lazy(() => import("./components/TradFiPanel.jsx"));
 const HyperLensPanel = lazy(() => import("./components/HyperLensPanel.jsx"));
 const CoinPage = lazy(() => import("./pages/CoinPage.jsx"));
+const RadarPage = lazy(() => import("./pages/RadarPage.jsx"));
 const BridgePage = lazy(() => import("./pages/BridgePage.jsx"));
 const TraderPage = lazy(() => import("./pages/TraderPage.jsx"));
 const IntelPage = lazy(() => import("./pages/IntelPage.jsx"));
@@ -816,7 +817,6 @@ export default function App() {
   if (path === "/hyperlens") return <Navigate to={"/traders" + location.search} replace />;
   if (traderAddress && traderAddress !== traderAddress.toLowerCase()) return <Navigate to={profilePath(traderAddress) + location.search} replace />;
   if (path === "/ai") return <Navigate to="/scanner" replace />;   // the retired AI Assist page
-  if (path === "/radar") return <Navigate to="/scanner" replace />;   // the retired Radar (14 November 2026)
 
   const pageMargin = { marginTop: isMobile ? 16 : 20 };
 
@@ -1042,6 +1042,11 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === "radar" && (
+          <Suspense fallback={<PageSkeleton style={pageMargin} />}>
+            <RadarPage results4h={data4h} results1d={data1d} onSelect={row => handleSelectCoin(row, null, `${location.pathname}${location.search}`)} />
+          </Suspense>
+        )}
 
         {activeTab === "backtest" && (
           <Suspense fallback={<PageSkeleton style={pageMargin} />}>
