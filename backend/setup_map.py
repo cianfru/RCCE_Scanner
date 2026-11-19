@@ -447,22 +447,15 @@ def state_of(item: dict) -> dict:
     return {"zone": item["zone"], "crowd": item["crowd"], "regime": item["regime"], "signal": item["signal"]}
 
 
-_ZONE_WORD = {"watch": "the box", "late": "stretched", "crowded": "crowded", "quiet": "nobody in yet", "outside": "outside the box"}
-
-
 def changes(prev: Optional[dict], cur: dict) -> List[str]:
     """What is worth a message between two readings (first reading: nothing)."""
     if not prev:
         return []
+    # The box and crowd changes (profitable-trader readings) no longer send messages (owner, 14 November 2026: the
+    # 30-day list picked no better traders than the crowd, docs/reviews/selection-window-study.md).
     out = []
-    if cur["zone"] == "watch" and prev["zone"] != "watch":
-        out.append("entered the box")
-    elif prev["zone"] == "watch" and cur["zone"] != "watch":
-        out.append(f"left the box ({_ZONE_WORD.get(cur['zone'], cur['zone'])})")
     if cur["regime"] == "MARKUP" and prev["regime"] != "MARKUP":
         out.append("confirmed Uptrend")
-    if cur["crowd"] == "crowded" and prev["crowd"] != "crowded":
-        out.append("turned crowded")
     if cur["signal"] in EXITS and cur["signal"] != prev["signal"]:
         out.append(f"exit signal {cur['signal'].replace('_', ' ').title()}")
     return out
@@ -480,10 +473,8 @@ def check(maps: Dict[str, dict]) -> List[str]:
         cur = state_of(item)
         what = changes(w.get("state"), cur)
         if what:
-            t = item["traders"]
             msgs.append(f"{coin} {w['tf'].upper()}: {', '.join(what)}.\n"
-                        f"Stretch {item['zscore'] or 0:.1f} · profitable traders {t['pl']} long, {t['ps']} short · "
-                        f"{str(item['signal'] or 'wait').replace('_', ' ').lower()}")
+                        f"Stretch {item['zscore'] or 0:.1f} · {str(item['signal'] or 'wait').replace('_', ' ').lower()}")
         if cur != w.get("state"):
             w["state"] = cur
             dirty = True

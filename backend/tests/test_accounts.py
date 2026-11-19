@@ -296,10 +296,12 @@ def test_watched_coins_per_account(on, outbox):
         calls.append(tf)
         return maps[tf]
     assert run(ua.check_watched(provider, now=NOON)) == {addr(1): []}            # first reading
-    item["zone"] = "watch"
-    assert run(ua.check_watched(provider, now=NOON + 300)) == {addr(1): ["sent"]}
-    assert run(ua.check_watched(provider, now=NOON + 600)) == {addr(1): []}
-    assert "entered Early setups" in outbox[0][1] and calls == ["1d"] * 3
+    item["zone"] = "watch"                                                      # the box no longer alerts
+    assert run(ua.check_watched(provider, now=NOON + 300)) == {addr(1): []}
+    item["signal"] = "TRIM"
+    assert run(ua.check_watched(provider, now=NOON + 600)) == {addr(1): ["sent"]}
+    assert run(ua.check_watched(provider, now=NOON + 900)) == {addr(1): []}
+    assert "exit signal" in outbox[0][1].lower() and calls == ["1d"] * 4
 
 
 def test_brief_per_account(on, outbox, monkeypatch):

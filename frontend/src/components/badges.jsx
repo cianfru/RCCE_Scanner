@@ -1,4 +1,3 @@
-import { traderLean, usd } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import SignalContext, { CONTEXT_META } from "./SignalContext.jsx";
 import { signalContext, friendlyReason } from "../utils/signalPresentation.js";
@@ -221,35 +220,6 @@ export function CVDBadge({ trend, divergence, bsr, isMobile }) {
     </span>
   );
 }
-
-// Profitable traders on this market (grid column "SM"); all tracked wallets in the tooltip.
-export function SmartMoneyBadge({ sm }) {
-  if (!sm) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;
-  const l = traderLean(sm.profitable);
-  const all = sm.trend ? `All tracked wallets, weighted by size: ${sm.trend.toLowerCase()} (${sm.long_count} long / ${sm.short_count} short)` : "";
-  if (!l.side || l.side === "mixed") {
-    const title = [l.n ? `Profitable traders: ${l.long} long / ${l.short} short` : "Fewer than 3 profitable traders positioned", all].filter(Boolean).join("\n");
-    // Empty is the same dash as every other empty cell; "mixed" stays a word.
-    if (l.side !== "mixed") return <span title={title} style={{ color: T.text4 }}>{"\u2014"}</span>;
-    return <span title={title} style={{ fontFamily: T.mono, fontSize: 12, color: T.text4, opacity: 0.6 }}>mixed</span>;
-  }
-  const color = l.side === "long" ? T.green : T.red;
-  return (
-    <span
-      title={`Profitable traders: ${l.long} long (${usd(l.longUsd)}) / ${l.short} short (${usd(l.shortUsd)})\n${all}`}
-      className="terminal-status" style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        padding: "3px 7px", borderRadius: 20,
-        background: color + "14", border: `1px solid ${color}25`,
-        fontFamily: T.mono, fontSize: 12, color, fontWeight: 600,
-      }}
-    >
-      {l.side === "long" ? "\u25b2" : "\u25bc"}
-      <span style={{ fontSize: 12, opacity: 0.8 }}>{l.side === "long" ? l.long : l.short}/{l.n}</span>
-    </span>
-  );
-}
-
 
 export function ConfluenceBadge({ score, label }) {
   if (score == null && !label) return <span style={{ color: T.text4 }}>{"\u2014"}</span>;

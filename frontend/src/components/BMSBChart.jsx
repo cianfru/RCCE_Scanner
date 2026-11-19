@@ -176,7 +176,8 @@ export default function BMSBChart({
   const [trend, setTrend] = useState(null);
   const [showRibbon, setShowRibbon] = useState(false);
   const [spike, setSpike] = useState(null);
-  // Trader fills on the price: off by default (busy on large coins), the viewer's choice remembered.
+  // Where the profitable traders are (their median entry per side, and their fills): off by default
+  // so the chart stays clean, the viewer's choice remembered.
   const [showEntries, setShowEntriesState] = useState(() => {
     if (compact) return false;
     try { return localStorage.getItem(ENTRIES_KEY) === "1"; } catch (_) { return false; }
@@ -815,9 +816,10 @@ export default function BMSBChart({
       return candleTimes[lo];
     };
     const markers = [];
-    // With Trader entries on: each of the largest holders' fill bursts as an arrow in their
-    // avatar colour, tagged with their codename's initials. (New positions of every tracked
-    // wallet are no longer drawn on the price: the long/short pane shows them per candle.)
+    // With Trader entries on: each of the largest holders' fill bursts as an arrow in their avatar
+    // colour, tagged with their codename's initials, and a dashed line at each side's median
+    // entry. (New positions of every tracked wallet are no longer drawn on the price: the
+    // long/short pane shows them per candle.)
     const tags = markerTags((entries?.traders || []).map(tr => tr.address));
     const light = mode === "light";
     for (const tr of showEntries ? entries?.traders || [] : []) {
@@ -837,7 +839,7 @@ export default function BMSBChart({
     // The markers belong to one series; after a rebuild the old one is disposed, so start anew.
     try { if (entryMarkersRef.current) entryMarkersRef.current.setMarkers(markers); else entryMarkersRef.current = createSeriesMarkers(series, markers); }
     catch (_) { entryMarkersRef.current = null; try { entryMarkersRef.current = createSeriesMarkers(series, markers); } catch (__) { return; } }
-    for (const side of ["long", "short"]) {
+    for (const side of showEntries ? ["long", "short"] : []) {
       const sd = entries?.sides?.[side];
       if (!sd?.n || !sd.median_entry) continue;
       try {
@@ -1141,9 +1143,8 @@ export default function BMSBChart({
             {activeTimeframe !== "1h" && <p><b>Ribbon</b>: four moving averages coloured by trend on closed candles: gold up, blue down, grey no clear trend.{ribbon?.current === "grey" && ribbon.last_actionable ? ` The last trend was ${ribbon.last_actionable}.` : ""}</p>}
             {activeTimeframe === "1d" && <p><b>Patterns</b>: detected chart patterns with their measured track record.</p>}
             {activeTimeframe === "1h" && <p>1H: one-hour candles, for this chart only. Signals, the trend line and the ribbon are computed on 4H and 1D.</p>}
-            <p><b>Trader entries</b>: the largest profitable traders' fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
+            <p><b>Trader entries</b>: where the largest profitable traders holding this coin are. Dashed lines: their median entry, per side. Arrows: their fills, each drawn in the colour of their avatar and tagged with their name's initials (Arctic Mako is AM). Each arrow is a burst of their fills on Hyperliquid at its average price: up for buying, down for selling, tagged "exit" when it reduced the position. Information, not a signal.</p>
             <p><b>Wallet levels</b>: liquidation clusters and the stop, take-profit and limit-order levels of tracked wallets. Orders can change or be cancelled.</p>
-            <p>Always drawn, as dashed lines: the median entry of the largest profitable traders holding this coin, per side.</p>
           </HelpTip>
 
           {/* Timeframe toggle where the chart owns its timeframe; where the page owns it (4H or 1D),

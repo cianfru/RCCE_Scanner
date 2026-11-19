@@ -7,10 +7,10 @@ import { popWords } from './marketHistory.js';
 const FORBIDDEN = /\b(will|expect\w*|likely|predict\w*|forecast\w*|probab\w*|odds|target\w*)\b/i;
 const day = (d, heat) => ({ day: d, heat });
 
-test('heat is the average of the readings a day has, Uptrend share required', () => {
+test('heat is the average of the Uptrend share and Fear & Greed; the traders are not read', () => {
   assert.deepEqual(heatOf({ uptrend: 0.9, fg: 78, wallet: { crowd: { L: 0.84 } } }),
-    { heat: (90 + 78 + 84) / 3, parts: { uptrend: 90, fg: 78, traders: 84 }, n: 3 });
-  assert.equal(heatOf({ uptrend: 0.4, fg: 50 }).heat, 45, 'before the traders reading: two readings');
+    { heat: (90 + 78) / 2, parts: { uptrend: 90, fg: 78 }, n: 2 });
+  assert.equal(heatOf({ uptrend: 0.4, fg: 50 }).heat, 45);
   assert.equal(heatOf({ uptrend: 0.4 }), null, 'one reading is not a heat');
   assert.equal(heatOf({ fg: 50, wallet: { crowd: { L: 0.5 } } }), null, 'no Uptrend share, no heat');
   assert.deepEqual(heatSeries([{ day: 1, uptrend: 0.5, fg: 50 }, { day: 2, uptrend: null, fg: 40 }]).map(s => s.day), [1]);
@@ -42,9 +42,9 @@ test('a cold episode lifts, and the state words follow the zones otherwise', () 
 });
 
 test('indicators: saved picks keep the catalogue order, defaults otherwise, copy within the rules', () => {
-  assert.deepEqual(pickIndicators(['crowd', 'band', 'nope']), ['band', 'crowd']);
+  assert.deepEqual(pickIndicators(['fg', 'band', 'nope', 'crowd']), ['band', 'fg']);      // a saved 'crowd' is dropped
   assert.deepEqual(pickIndicators(null), DEFAULT_ON);
-  assert.ok(DEFAULT_ON.includes('runs') && DEFAULT_ON.includes('uptrend') && DEFAULT_ON.includes('crowd'));
+  assert.ok(DEFAULT_ON.includes('runs') && DEFAULT_ON.includes('uptrend') && !DEFAULT_ON.includes('crowd'));
   assert.deepEqual(pickIndicators(['turns', 'zturns']), ['zturns', 'turns', 'uptrend', 'heat'], 'a mark brings the pane it sits on');
   assert.equal(new Set(INDICATORS.map(i => i.key)).size, INDICATORS.length);
   const pop = HCOPY.pop().join(' ');

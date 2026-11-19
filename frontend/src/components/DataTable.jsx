@@ -1,4 +1,3 @@
-import { traderLean } from "../utils/traders.js";
 import HelpTip from "./HelpTip.jsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Star } from "lucide-react";
@@ -17,7 +16,7 @@ import { TableSkeleton } from "./Skeleton.jsx";
 import {
   ZScoreBar, RegimeBadge, SignalDot, DivergencePill,
   HeatCell, ExhaustBadge, FundingCell, OITrendBadge, ConfluenceBadge, CVDBadge,
-  SmartMoneyBadge,
+
 } from "./badges.jsx";
 import SparklineCell from "./SparklineCell.jsx";
 import InfoButton, { COLUMN_INFO, ColumnHelp } from "./InfoPopover.jsx";
@@ -32,14 +31,13 @@ import { sideColor, fmtPx } from "../utils/traderFormat.js";
 const EMPTY_WHEN = {
   DIV: r => !r.divergence,
   EXHAUST: r => !r.exhaustion_state || r.exhaustion_state === "NEUTRAL",
-  SM: r => !["long", "short"].includes(traderLean(r.smart_money?.profitable).side),
   OI: r => !r.positioning?.oi_trend || ["STABLE", "UNKNOWN"].includes(r.positioning.oi_trend),
   CVD: r => !r.cvd_trend || ["NEUTRAL", "UNAVAILABLE"].includes(r.cvd_trend),
 };
 
 // Plain names for the Column guide's "hidden to fit" line.
 const SHORT_NAME = { "#": "#", "Z-SCORE": "Z-score", SPARK: "Spark", COND: "Cond", HEAT: "Heat", CVD: "CVD", CONF: "Conf",
-  DIV: "Div", EXHAUST: "Exhaust", ENERGY: "Energy", SM: "SM", OI: "OI" };
+  DIV: "Div", EXHAUST: "Exhaust", ENERGY: "Energy", OI: "OI" };
 const ALIGNED_TITLE = "Group aligned regime and signal setups first, preserving the selected order within each strength. Does not change engine scores.";
 const NO_REF = { current: null };
 const DASH = <span style={{ color: T.text4 }}>{"—"}</span>;
@@ -138,8 +136,6 @@ function CellContent({ colLabel, row, index, isMobile, cellPad, phone, tight, ba
       return <td style={{ padding: cellPad }}><ExhaustBadge state={row.exhaustion_state} floorConfirmed={row.floor_confirmed} /></td>;
     case "FUNDING":
       return <td style={{ padding: cellPad }}><FundingCell rate={row.positioning?.funding_rate} /></td>;
-    case "SM":
-      return <td style={{ padding: cellPad, textAlign: "center" }}><SmartMoneyBadge sm={row.smart_money} /></td>;
     case "OI":
       return <td style={{ padding: cellPad }}><OITrendBadge trend={row.positioning?.oi_trend} /></td>;
     case "CVD":

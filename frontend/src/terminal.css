@@ -712,7 +712,8 @@ i.race-btc{background:var(--t-text1);height:2px;}
  .regime-legend{grid-template-columns:minmax(0,1fr);}
 }
 @media(max-width:767px){
- .market-summary{padding:16px;column-gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto auto;grid-template-areas:"regime dial" "legend dial" "note note" "signals signals";}
+ .market-summary{padding:16px;column-gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto auto auto;grid-template-areas:"regime dial" "legend dial" "note note" "band band" "signals signals";}
+ .ms-band{grid-area:band;}
  .ms-detail{display:contents;}                       /* the legend fills the space beside the dial */
  .regime-legend{grid-area:legend;margin-top:12px;}
  .ms-note{grid-area:note;margin-top:12px;}
@@ -2429,3 +2430,9 @@ a.rl-tip-go:focus-visible{outline:2px solid var(--t-accent);outline-offset:2px;}
 .rb-zoom button:hover:not(:disabled){border-color:var(--t-borderH);}
 .rb-zoom button:disabled{opacity:.35;cursor:default;}
 .rb-zoom .rb-zoom-reset{font-size:12.5px;}
+
+/* Scanner: the BTC weekly-band go/no-go for new longs */
+.ms-band{margin:10px 0 0;font:13px/1.6 var(--font-geist-sans),sans-serif;color:var(--t-text3);}
+.ms-band b{font-weight:600;}
+.ms-band > :last-child{vertical-align:middle;}
+@media (max-width:640px){.ms-band b{display:block;}.ms-band-sep{display:none;}}

@@ -2,17 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { activeMainTab, mainTabTargets, MAIN_TABS } from "./mainNav.js";
 
-test("five main tabs in order", () => {
-  assert.deepEqual(MAIN_TABS.map(t => t.label), ["Scanner", "Radar", "Traders", "Market", "Portfolio"]);
+test("four main tabs in order", () => {
+  assert.deepEqual(MAIN_TABS.map(t => t.label), ["Scanner", "Traders", "Market", "Portfolio"]);
 });
 
-test("scanner and coin pages activate Scanner; coin pages opened from the Radar activate Radar", () => {
+test("scanner and coin pages activate Scanner; the Radar has no tab", () => {
   assert.equal(activeMainTab("/scanner", "?tf=4h&market=spot"), "scanner");
   assert.equal(activeMainTab("/scanner/", ""), "scanner");
   assert.equal(activeMainTab("/scanner/BTC", "?market=perpetual&tf=1d"), "scanner");
   assert.equal(activeMainTab("/scanner/BTC", "?from=" + encodeURIComponent("/scanner?tf=4h")), "scanner");
-  assert.equal(activeMainTab("/scanner/BTC", "?tf=1d&from=" + encodeURIComponent("/radar?tf=1d&focus=BTC")), "radar");
-  assert.equal(activeMainTab("/radar", "?tf=4h"), "radar");
+  assert.equal(activeMainTab("/scanner/BTC", "?tf=1d&from=" + encodeURIComponent("/radar?tf=1d&focus=BTC")), "scanner");
+  assert.equal(activeMainTab("/radar", "?tf=4h"), null);
   assert.equal(activeMainTab("/traders", ""), "traders");
   assert.equal(activeMainTab("/traders/leaderboard", ""), "traders");
   assert.equal(activeMainTab("/trader/0x91867345424fb158888ff9c5f1b1b2e7cd7d65d5", ""), "traders");
@@ -25,12 +25,11 @@ test("More pages, settings and unknown addresses have no active tab", () => {
     assert.equal(activeMainTab(p, ""), null, p);
 });
 
-test("targets: last scanner view, Radar on the last timeframe", () => {
-  assert.deepEqual(mainTabTargets({ lastScanner: "/scanner?market=spot&tf=4h&q=ETH", lastScannerTf: "4h" }), {
-    scanner: "/scanner?market=spot&tf=4h&q=ETH", radar: "/radar?tf=4h", traders: "/traders", market: "/market", portfolio: "/portfolio",
+test("targets: the last scanner view", () => {
+  assert.deepEqual(mainTabTargets({ lastScanner: "/scanner?market=spot&tf=4h&q=ETH" }), {
+    scanner: "/scanner?market=spot&tf=4h&q=ETH", traders: "/traders", market: "/market", portfolio: "/portfolio",
   });
   assert.equal(mainTabTargets({}).scanner, "/scanner");
-  assert.equal(mainTabTargets({}).radar, "/radar?tf=1d");
   for (const bad of ["https://example.com", "//evil", "/scanner.evil", "/radar", null])
     assert.equal(mainTabTargets({ lastScanner: bad }).scanner, "/scanner", String(bad));
 });

@@ -528,31 +528,23 @@ def watch_state(item: dict) -> dict:
 
 def watch_events(prev: Optional[dict], cur: dict) -> List[Tuple[str, str, str]]:
     """(category, kind, words) for what changed between two readings of a watched coin.
-    Instant: entered Early setups, entered the entry zone, exit signal. The rest goes to
-    ``watched_more`` (off by default). First reading: nothing."""
+    Instant: exit signal. Uptrend confirmed goes to ``watched_more`` (off by default). First reading: nothing.
+    The Early setups, entry zone and crowded messages (profitable-trader readings) were removed on 14 November
+    2026 at the owner's request: the 30-day list picked no better traders than the crowd
+    (docs/reviews/selection-window-study.md)."""
     if not prev:
         return []
     out = []
-    if cur["zone"] == "watch" and prev.get("zone") != "watch":
-        out.append(("watched", "early", "entered Early setups"))
-    if cur.get("entry") is True and prev.get("entry") is not True:
-        out.append(("watched", "entry", "entered the entry zone"))
     if cur.get("signal") in EXITS and cur.get("signal") != prev.get("signal"):
         out.append(("watched", "exit", f"exit signal {signal_word(cur['signal'])}"))
-    if prev.get("zone") == "watch" and cur["zone"] != "watch":
-        out.append(("watched_more", "left", "left Early setups"))
     if cur.get("regime") == "MARKUP" and prev.get("regime") != "MARKUP":
         out.append(("watched_more", "uptrend", "Uptrend confirmed"))
-    if cur.get("crowd") == "crowded" and prev.get("crowd") != "crowded":
-        out.append(("watched_more", "crowded", "turned crowded"))
     return out
 
 
 def watched_text(coin: str, words: str, item: dict) -> str:
-    t = item.get("traders") or {}
     return (f"{coin_b(coin)} · {esc(words)}\n"
-            f"Stretch {item.get('zscore') or 0:.1f} · {t.get('pl', 0)} profitable traders long, {t.get('ps', 0)} short"
-            f" · {esc(signal_word(item.get('signal')))}")
+            f"Stretch {item.get('zscore') or 0:.1f} · {esc(signal_word(item.get('signal')))}")
 
 
 async def watch_pass(watched: Dict[str, dict], maps: Dict[str, dict], last: Dict[str, dict],

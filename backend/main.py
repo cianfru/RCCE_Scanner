@@ -4573,6 +4573,16 @@ def _coin_positioning_body(coin: str, days: int, now: float) -> dict:
     return {"coin": coin, "days": days, "groups": groups, "rebuilds": rebuilds, "held": held}
 
 
+@app.get("/api/btc-band")
+async def btc_band_view():
+    """The BTC weekly-band entry block (btc_band_block.py): blocked, weeks closed under the band's mid in a row,
+    the mid and the last weekly close. The executor takes no new long while blocked."""
+    import btc_band_block
+    from executor import BAND_BLOCK
+    st = btc_band_block.current()
+    return {"on": BAND_BLOCK, "available": st is not None, **(st or {})}
+
+
 @app.get("/api/coin-positioning")
 async def coin_positioning(coin: str = Query(..., min_length=1, max_length=40), days: int = Query(30, ge=1, le=90)):
     """One coin's long and short over time for four groups of wallets: profitable traders
@@ -5014,8 +5024,8 @@ async def setup_map_watched():
 
 @app.post("/api/setup-map/watch", dependencies=[Depends(_owner_only)])
 async def setup_map_watch(body: dict):
-    """Watch a coin: Telegram alerts when it enters Early setups or the entry zone or gets an
-    exit signal (tg_alerts), and a line in the daily brief when anything changed. Body: {coin, tf}.
+    """Watch a coin: a Telegram alert when it gets an exit signal (tg_alerts), and a line in the daily brief
+    when that or its Uptrend changed. Body: {coin, tf}.
     Needs the admin key once set."""
     import setup_map
     from hl_intelligence import _normalize_coin

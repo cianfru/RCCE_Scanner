@@ -51,8 +51,8 @@ def test_changes_between_readings():
     prev = {"zone": "outside", "crowd": "holding", "regime": "ACCUM", "signal": "WAIT"}
     cur = {"zone": "watch", "crowd": "crowded", "regime": "MARKUP", "signal": "LIGHT_LONG"}
     assert sm.changes(None, cur) == []
-    assert sm.changes(prev, cur) == ["entered the box", "confirmed Uptrend", "turned crowded"]
-    assert sm.changes(cur, dict(cur, zone="late", signal="TRIM")) == ["left the box (stretched)", "exit signal Trim"]
+    assert sm.changes(prev, cur) == ["confirmed Uptrend"]                       # box and crowd: no message
+    assert sm.changes(cur, dict(cur, zone="late", signal="TRIM")) == ["exit signal Trim"]
 
 
 def test_watch_check_sends_once_per_change(tmp_path, monkeypatch):
@@ -65,8 +65,10 @@ def test_watch_check_sends_once_per_change(tmp_path, monkeypatch):
     maps = {"1d": {"coins": [item]}}
     assert sm.check(maps) == []                               # first reading is the baseline
     item.update(zone="watch")
+    assert sm.check(maps) == []                               # the box no longer sends a message
+    item.update(signal="TRIM")
     msgs = sm.check(maps)
-    assert len(msgs) == 1 and "FET 1D: entered the box" in msgs[0]
+    assert len(msgs) == 1 and "FET 1D: exit signal Trim" in msgs[0] and "profitable" not in msgs[0]
     assert sm.check(maps) == []                               # no repeat
     assert (tmp_path / "w.json").exists()
 

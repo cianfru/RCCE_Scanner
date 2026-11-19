@@ -54,9 +54,9 @@ function joinRows(data, fg, walletDays) {
 
 // The tabs, in reading order. The page opens on Cycles: where today's broad downturn (or uptrend) sits against past ones.
 const VIEWS = ["cycles", "breadth", "positioning", "fear", "chart"];
-// Positioning: BTC as a slim strip for time, then two panes (owner, 6 November 2026: five panes under a big BTC chart
-// read as too dense): the profitable traders' long share over their positions, smart money and whales together.
-const POSITIONING = ["band", "traders", "groups"];
+// Positioning: BTC as a slim strip for time, then smart money and whales together. The profitable traders' pane left
+// on 14 November 2026 at the owner's request (the 30-day list picked no better traders than the crowd).
+const POSITIONING = ["band", "groups"];
 
 export default function MarketPage({ style }) {
   const location = useLocation();
@@ -94,7 +94,7 @@ export default function MarketPage({ style }) {
 
   if (!data) return <div className="mkt" style={style}><p className="mh-muted">{failed ? COPY.unavailable : COPY.loading}</p></div>;
   const head = <>
-    <MarketToday data={data} rows={allRows} wallets={wallets} onPick={setView} onHoverCycle={setHiCycle} />
+    <MarketToday data={data} rows={allRows} onPick={setView} onHoverCycle={setHiCycle} />
     <div className="mkt-head">
       <Tabs label="View" value={view} onChange={setView}
         items={[{ key: "cycles", label: COPY.tabs.cycles }, { key: "breadth", label: COPY.tabs.breadth },

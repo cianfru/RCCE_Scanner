@@ -7,6 +7,8 @@ import SignalLadder from "./SignalLadder.jsx";
 import HistoryButton from "./SparkHistoryButton.jsx";   // the history button drawn as a sparkline (plain icon until it loads)
 import { useNavigate } from "react-router-dom";
 import { CONSENSUS_LINE, CONSENSUS_NOTES, regimeMix } from "../utils/marketSummary.js";
+import useBtcBand from "../hooks/useBtcBand.js";
+import { bandWords } from "../utils/btcBand.js";
 
 const CONSENSUS_COLORS = () => ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-OFF": T.red, ACCUMULATION: T.cyan, MIXED: T.text2 });
 
@@ -14,6 +16,7 @@ const CONSENSUS_COLORS = () => ({ "RISK-ON": T.green, EUPHORIA: T.yellow, "RISK-
 export default function MarketSummary({ regimeRows, signalRows, consensus, sentiment, timeframe, scopeLabel, spot = false,
                                         activeSignalFilter, onSignalFilter }) {
   const navigate = useNavigate();                     // the history buttons open the market history page
+  const band = bandWords(useBtcBand());
   const label = consensus?.consensus || null;
   const mix = regimeMix(regimeRows, label || "MIXED");
   const color = (label && CONSENSUS_COLORS()[label]) || "var(--t-text3)";
@@ -60,6 +63,13 @@ export default function MarketSummary({ regimeRows, signalRows, consensus, senti
           {segs.map(s => <li key={s.r}><i style={{ background: REGIME_META[s.r]?.color || T.text4 }} />{name(s.r)}<b>{s.c}</b></li>)}
         </ul>}
         {label && <p className="ms-note">{CONSENSUS_NOTES[label] || CONSENSUS_NOTES.MIXED}</p>}
+        {band && <p className="ms-band">
+          <b style={{ color: band.go ? T.green : T.red }}>{band.head}</b><span className="ms-band-sep"> · </span><span>{band.line}</span>{" "}
+          <HelpTip title="BTC weekly band" width={360}>
+            <p>BTC's weekly band is its 20-week SMA and 21-week EMA. When two weekly closes in a row end under the band's middle, the executor takes no new long until a weekly close is back above it. Open positions keep their exits.</p>
+            <p>In replays of 2021 to 2026 on three coin sets it raised returns, most of it in the 2022 bear market. In the 2026 paper trades, the longs it would have refused made money: it guards against long falls and costs a little in other years.</p>
+          </HelpTip>
+        </p>}
       </div>
       <FearGreedDial value={sentiment?.fear_greed_value} loaded={sentiment != null} onHistory={() => navigate("/market?view=fear")} />
       <SignalLadder rows={signalRows} timeframe={timeframe} scopeLabel={scopeLabel} spot={spot}

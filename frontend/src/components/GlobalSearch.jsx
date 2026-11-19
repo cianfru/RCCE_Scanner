@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import TokenLogo from "./TokenLogo.jsx";
 import { WalletAvatar } from "./WalletTag.jsx";
-import useSetupMap from "../hooks/useSetupMap.js";
 import useSearchData from "../hooks/useSearchData.js";
 import { coinEntries, searchAll } from "../utils/search.js";
 import { formatPrice } from "../utils/marketPresentation.js";
@@ -72,7 +71,7 @@ function TraderRow({ e, id, active, phone, onPick, onHover }) {
 // The search for coins and traders, in the header on every page: a field (narrower from 900 to
 // 1279px: compact), a search button on phones. Results open under the field, a full-screen sheet
 // on phones. Coins are Hyperliquid's perps and spot markets; rows: the scanner's rows where loaded.
-export default function GlobalSearch({ rows, radarTf = "1d", phone = false, compact = false, onOpenCoin }) {
+export default function GlobalSearch({ rows, phone = false, compact = false, onOpenCoin }) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -83,10 +82,8 @@ export default function GlobalSearch({ rows, radarTf = "1d", phone = false, comp
   const wrap = useRef(null);
   const listId = useId();
   const { markets, traders } = useSearchData(open || sheet);
-  const { data: radarMap } = useSetupMap(radarTf === "4h" ? "4h" : "1d");
-
-  const radar = useMemo(() => new Map((radarMap?.coins || []).map(c => [c.coin, c])), [radarMap]);
-  const coins = useMemo(() => coinEntries(markets, rows, radar), [markets, rows, radar]);
+  // No Radar status beside coins since 14 November 2026: it read the profitable traders' box.
+  const coins = useMemo(() => coinEntries(markets, rows, null), [markets, rows]);
   const res = useMemo(() => searchAll(q, { coins, traders: traders || [] }), [q, coins, traders]);
   const flat = useMemo(() => (res.address ? [res.address] : [...res.coins, ...res.traders]), [res]);
   const hasStatus = res.coins.some(c => c.status);

@@ -24,6 +24,7 @@ from typing import Dict, List, Optional
 import asyncio
 
 from trading_engine import TradingEngine, PaperEngine, HyperliquidEngine, EngineError
+import btc_band_block
 from price_sanity import PRICE_SANITY_MAX_RATIO, price_rejection, reference_prices
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ _ENTRY_SIZING: Dict[str, Dict[str, float]] = {
 }
 
 _ENTRY_SIGNALS = set(_ENTRY_SIZING.keys())
+# No new long while BTC's weekly close has been under its weekly band's mid for 2+ weeks (btc_band_block.py).
+# Passed on three coin sets in docs/reviews/executor-gap-study.md; on since 14 November 2026, approved by the owner.
+BAND_BLOCK = True
 _EXIT_SIGNALS = {"TRIM", "TRIM_HARD", "NO_LONG", "RISK_OFF"}
 
 # ─── Stop-loss rails (decided with user 2026-04-21) ──────────────────────────
@@ -426,6 +430,10 @@ class Executor:
 
         # ------ ENTRY SIGNALS ------
         if signal in _ENTRY_SIGNALS and not has_position:
+            # BTC weekly-band entry block (btc_band_block.py; approved by the owner on 14 November 2026)
+            if BAND_BLOCK and btc_band_block.blocked():
+                logger.info("Skipping %s for %s — BTC's weekly close under its band for 2+ weeks", signal, symbol)
+                return None
             # Calculate position size
             size_pct = _ENTRY_SIZING[signal].get(confluence_label, 0.0)
             if size_pct <= 0:
@@ -712,6 +720,7 @@ class Executor:
         result = {
             "mode": self.mode,
             "enabled": self.enabled,
+            "band_block": {"on": BAND_BLOCK, **(btc_band_block.current() or {})},
             "initialized": self.initialized,
             "positions": {
                 sym: pos.to_dict() for sym, pos in self.positions.items()
