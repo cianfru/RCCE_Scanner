@@ -92,3 +92,10 @@ def test_judge_passes_only_with_every_condition():
     ev_down = [_o(k, 0.5 if k % 2 == 0 else 0.0, -0.05) for k in range(40)]
     assert not nf.judge(ev_down, comp)["conditions"]["median"]
     assert nf.judge(ev[:29], comp)["reason"] == "too few events"
+
+
+def test_event_records_the_qualifying_print_when_two_share_a_time():
+    c = flat_candles(120, start=T0)
+    p = [(T0 + 10 * STEP, -0.008, 1.0), (T0 + 10 * STEP, 0.001, 1.0)]     # two prints at one time, as in the archive
+    r = nf.analyse({"X": (p, c)}, nf.THRESH)
+    assert [e["rate_per_hour"] for e in r["events"]] == [-0.008]

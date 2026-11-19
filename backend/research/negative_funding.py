@@ -220,7 +220,10 @@ def analyse(data: Dict[str, Tuple[Prints, Candles]], thresh: float) -> dict:
             continue
         coins.add(coin)
         s = Series(prints, candles)
-        rate = {p[0]: per_hour(p) for p in s.prints}
+        rate = {}                       # the qualifying print's rate (an archive can hold two prints at one time)
+        for p in s.prints:
+            if hits(p, thresh) and p[0] not in rate:
+                rate[p[0]] = per_hour(p)
         for t in ts_:
             i = entry_index(s.candles, t)
             if i is None:
