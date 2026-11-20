@@ -2,6 +2,7 @@
 // one-word label with its (i), one headline and one visual.
 import { useMemo } from "react";
 import { Label, Hover, Tween, LiqGlyph, pnlClass } from "./parts.jsx";
+import BookThumb from "./BookThumb.jsx";
 import { usd, pct, atrNum } from "../../utils/portfolio/format.js";
 import { distRed, nearestLiq, reflexShares } from "../../utils/portfolio/checks.js";
 import { worstMargin, PARTS } from "../../utils/portfolio/totals.js";
@@ -147,7 +148,7 @@ function ExposureCell({ rows, equity, onPick, compact, unread = [] }) {
   </div>;
 }
 
-function ReflexCell({ rows, tf, onTf, compact, ctxKnown }) {
+function ReflexCell({ rows, tf, onTf, map, compact, onRadar, ctxKnown }) {
   const s = useMemo(() => reflexShares(rows.filter(r => r.venue === "main" || r.covered), tf), [rows, tf]);
   const total = s.total || 1;
   const w = k => `${(s[k] / total) * 100}%`;
@@ -171,12 +172,13 @@ function ReflexCell({ rows, tf, onTf, compact, ctxKnown }) {
           {ctxKnown && ["with", "against", "none", "uncovered"].filter(k => s[k] > 0).map(k => <Hover key={k} content={tip(k)} width={200} className={`pf-rseg pf-r-${k}`} style={{ width: w(k) }} />)}
         </div>}
       </div>
+      {!compact && rows.length > 0 && <BookThumb rows={rows} map={map} onClick={onRadar} dim={!ctxKnown} />}
     </div>
   </div>;
 }
 
 // unread: names of the venues whose positions are not read now (Liquidation and Exposure partial).
-export default function RiskStrip({ totals, rows, day, tf, onTf, onPick, phone, stale, ctxKnown = true, unread = [] }) {
+export default function RiskStrip({ totals, rows, day, tf, onTf, map, onPick, onRadar, phone, stale, ctxKnown = true, unread = [] }) {
   const venues = totals.venues;
   if (phone) {
     return <div className={`pf-strip-ph${stale ? " pf-stale" : ""}`}>
@@ -184,7 +186,7 @@ export default function RiskStrip({ totals, rows, day, tf, onTf, onPick, phone, 
       <div className="pf-strip pf-strip-3">
         <LiquidationCell rows={rows} venues={venues} compact unread={unread} />
         <ExposureCell rows={rows} equity={totals.equity} onPick={onPick} compact unread={unread} />
-        <ReflexCell rows={rows} tf={tf} onTf={onTf} compact ctxKnown={ctxKnown} />
+        <ReflexCell rows={rows} tf={tf} onTf={onTf} map={map} compact onRadar={onRadar} ctxKnown={ctxKnown} />
       </div>
     </div>;
   }
@@ -192,7 +194,7 @@ export default function RiskStrip({ totals, rows, day, tf, onTf, onPick, phone, 
     <EquityCell totals={totals} day={day} />
     <LiquidationCell rows={rows} venues={venues} unread={unread} />
     <ExposureCell rows={rows} equity={totals.equity} onPick={onPick} unread={unread} />
-    <ReflexCell rows={rows} tf={tf} onTf={onTf} ctxKnown={ctxKnown} />
+    <ReflexCell rows={rows} tf={tf} onTf={onTf} map={map} onRadar={onRadar} ctxKnown={ctxKnown} />
   </div>;
 }
 

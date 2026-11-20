@@ -3,7 +3,8 @@
 // handlers; Close never shows on a builder-dex row, a read-only address or without a wallet client.
 // Colour grammar: green and red are P&L (and the liquidation red); the side reads in plain text.
 import { useRef } from "react";
-import { Eye } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Eye, Radar } from "lucide-react";
 import { kKey } from "../../utils/tickerRenames.js";
 import { displayName } from "../../utils/portfolio/displayNames.js";
 import { usd, pct, weekdayTime } from "../../utils/portfolio/format.js";
@@ -13,7 +14,7 @@ import LevelsRail, { RailSvg, Distance, FlagLine } from "./LevelsRail.jsx";
 import ScannerCell, { HeatBar, sigWord, sigColor } from "./ScannerCell.jsx";
 import TradersCell, { SplitBar } from "./TradersCell.jsx";
 import HeldStrip from "./HeldStrip.jsx";
-import { tradable } from "./tradeActions.js";
+import { tradable, radarHref } from "./tradeActions.js";
 import { ROWS, SHEET, STRIP } from "./copy.js";
 import useElementWidth from "../../hooks/useElementWidth.js";
 import { age } from "../../utils/portfolio/format.js";
@@ -44,7 +45,7 @@ function Carry({ v }) {
   return <span className="pf-carry"><span className={pnlClass(v)}>{usd(v, { sign: true })}</span><span className="pf-t3">{STRIP.carry}</span></span>;
 }
 
-// Watch on every main-perps row, as on the old page (TradingPanel.jsx).
+// Watch and Radar on every main-perps row, as on the old page (TradingPanel.jsx); see radarHref.
 // Each control names its position for screen readers ("Close BTC long", "Watch BTC").
 export function Actions({ row, watching, onWatch, onClose, closing, canClose }) {
   const main = row.venue === "main";
@@ -53,6 +54,7 @@ export function Actions({ row, watching, onWatch, onClose, closing, canClose }) 
   return <div className="pf-acts" onClick={e => e.stopPropagation()}>
     {main && <button type="button" className={`pf-icon${watching ? " pf-on" : ""}`} aria-pressed={watching} title={watching ? ROWS.watching : ROWS.watch}
       aria-label={`${ROWS.watch} ${name}`} onClick={() => onWatch(kKey(row.coin))}><Eye size={16} strokeWidth={1.75} /></button>}
+    {main && <Link className="pf-icon" to={radarHref(row.coin)} title={ROWS.radar} aria-label={`${ROWS.radar} ${name}`}><Radar size={16} strokeWidth={1.75} /></Link>}
     {canClose && tradable(row.coin) && <button type="button" className="pf-close" disabled={closing} aria-label={SHEET.title(name, side)}
       onClick={e => onClose(row, e.currentTarget)}>{closing ? ROWS.closing : ROWS.close}</button>}
   </div>;

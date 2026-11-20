@@ -1,8 +1,8 @@
-// The four main tabs (header at 900px and wider, floating tab bar below): which one is active
-// for an address, and where each one goes. The Radar left the main tabs on 14 November 2026 (owner's
-// request): its axis was the profitable traders, who picked no better than the crowd; /radar still opens.
+// The five main tabs (header at 900px and wider, floating tab bar below): which one is active
+// for an address, and where each one goes.
 export const MAIN_TABS = [
   { key: "scanner", label: "Scanner", icon: "1d" },
+  { key: "radar", label: "Radar", icon: "radar" },
   { key: "traders", label: "Traders", icon: "hyperlens" },
   { key: "market", label: "Market", icon: "market" },
   { key: "portfolio", label: "Portfolio", icon: "trading" },
@@ -10,12 +10,17 @@ export const MAIN_TABS = [
 
 export const LAST_SCANNER_KEY = "rcce-last-scanner";
 
-// Scanner: /scanner and coin pages; Traders: its views, the leaderboard and trader profiles; Market: the
-// market page and its tabs. The Radar, More pages, Settings and unknown addresses have no active tab (null).
-export function activeMainTab(pathname) {
+// Scanner: /scanner and coin pages; Radar: /radar and coin pages opened from it; Traders: its
+// views, the leaderboard and trader profiles; Market: the market page and its tabs.
+// More pages, Settings and unknown addresses have no active tab (null).
+export function activeMainTab(pathname, search = "") {
   const path = String(pathname || "").replace(/\/+$/, "") || "/";
   if (path === "/scanner") return "scanner";
-  if (/^\/scanner\/[^/]+$/.test(path)) return "scanner";
+  if (/^\/scanner\/[^/]+$/.test(path)) {
+    const from = new URLSearchParams(search).get("from") || "";
+    return from.startsWith("/radar") ? "radar" : "scanner";
+  }
+  if (path === "/radar") return "radar";
   if (path === "/traders" || path === "/hyperlens" || path === "/traders/leaderboard") return "traders";
   if (/^\/trader\/0x[0-9a-fA-F]{40}$/.test(path)) return "traders";     // a trader's profile
   if (path === "/market") return "market";
@@ -23,12 +28,13 @@ export function activeMainTab(pathname) {
   return null;
 }
 
-// Scanner returns to the last scanner view (filters, search, sort, timeframe). Only /scanner addresses are
-// accepted as the saved view.
-export function mainTabTargets({ lastScanner } = {}) {
+// Scanner returns to the last scanner view (filters, search, sort, timeframe); Radar opens on
+// the last scanner timeframe. Only /scanner addresses are accepted as the saved view.
+export function mainTabTargets({ lastScanner, lastScannerTf } = {}) {
   const scanner = typeof lastScanner === "string" && /^\/scanner(\?|$)/.test(lastScanner) ? lastScanner : "/scanner";
   return {
     scanner,
+    radar: `/radar?tf=${lastScannerTf === "4h" ? "4h" : "1d"}`,
     traders: "/traders",
     market: "/market",
     portfolio: "/portfolio",

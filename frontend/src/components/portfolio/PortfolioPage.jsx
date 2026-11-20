@@ -292,7 +292,7 @@ export default function PortfolioPage({ api }) {
 
   // Watch (the same store and toast as the Radar). The 4H map (the REFLEX cell's thumbnail) only
   // loads with an address to show.
-  const { watched, telegram, toggleWatch } = useSetupMap(account ? "4h" : null);
+  const { data: map4h, watched, telegram, toggleWatch } = useSetupMap(account ? "4h" : null);
   const [toast, setToast] = useState("");
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(""), 3500); return () => clearTimeout(t); }, [toast]);
   const onWatch = useCallback(async coin => setToast(watchToast(coin, await toggleWatch(coin, "4h"), telegram)), [toggleWatch, telegram]);
@@ -380,6 +380,7 @@ export default function PortfolioPage({ api }) {
   const failedNames = [...new Set([...f.failedNames, ...(reflex.failed ? [FEEDS.context] : [])])];
   const retry = () => { f.retry(); reflex.retry(); };
   const lastClosed = trips.closed[0];
+  const mapData = map4h;
 
   const sheetRow = phone && openCoin ? rows.find(r => r.coin === openCoin) : null;
   // Where the last action's outcome shows (noticePlace.js): the phone sheet, the coin's row or card,
@@ -413,7 +414,7 @@ export default function PortfolioPage({ api }) {
       failedNames={failedNames} onRetry={retry} onCopied={() => setCopied(true)} phone={phone} />
     {loading ? <LoadingShapes phone={phone} /> : <>
       <RiskStrip totals={totals} rows={rows} day={f.portfolio?.day} tf={fit} onTf={k => setParam("fit", k === "1d" ? "1d" : null)}
-        onPick={pick} phone={phone} stale={staleHard} ctxKnown={ctxKnown} unread={unreadNames} />
+        map={mapData} onPick={pick} onRadar={() => navigate("/radar?tf=4h")} phone={phone} stale={staleHard} ctxKnown={ctxKnown} unread={unreadNames} />
       {(sinceBase || slots.base) && <SinceRow mode={mode2} onMode={setSinceMode} summary={summary} changes={changes} onPick={pick} phone={phone} hasBase={!!slots.base} />}
       {rows.length > 0 && <ChecksRow counts={counts} selected={active} onToggle={toggleCheck} sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} phone={phone} ctxKnown={ctxKnown} />}
       {rows.length > 0 && phone && <SortRow sort={sort} onSort={k => setParam("sort", k === "closest" ? null : k)} />}

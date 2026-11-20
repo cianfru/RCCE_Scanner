@@ -480,6 +480,7 @@ function PositionCard({ pos, onClose, closing, readOnly, scanMap4h, scanMap1d, p
           </div>
         ))}
         <div className="pf-card-actions">
+          <Link className="te-link" to={`/radar?tf=4h&focus=${encodeURIComponent(coin)}`}>Open on Radar</Link>
           <button type="button" className="te-link pf-watch" aria-pressed={watching} title={WATCH_TIP} onClick={() => onWatch(appKey)}>
             <WatchMark />{watching ? "Watching" : "Watch"}
           </button>
