@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { col } from "../theme.js";
 import useFollowed from "../hooks/useFollowed.js";
 import { SIDE_COLOR, changeLine, fmtPx, fmtUsd, fmtWhen } from "../utils/traderFormat.js";
@@ -23,7 +23,7 @@ export default function FollowingView() {
     const a = addr.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { setMsg("Enter a 0x wallet address."); return; }
     const ok = await toggle(a);
-    setMsg(ok ? "" : "Could not follow: set the admin key in Settings.");
+    setMsg(ok ? "" : "admin");
     if (ok) setAddr("");
   };
 
@@ -45,7 +45,7 @@ export default function FollowingView() {
       <form className="fol-add" onSubmit={add}>
         <input value={addr} onChange={e => setAddr(e.target.value)} placeholder="0x wallet address" aria-label="Wallet address to follow" spellCheck={false} />
         <button type="submit" className="te-link">Follow</button>
-        {msg && <span className="fol-msg">{msg}</span>}
+        {msg && <span className="fol-msg">{msg === "admin" ? <>Could not follow: add the admin key in <Link to="/settings">Settings</Link>.</> : msg}</span>}
       </form>
       {traders.map(t => (
         <section key={t.address} className="fol-card">
